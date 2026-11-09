@@ -6,17 +6,10 @@
 // The plants are the game's own assets, grown through the package's public functions. Drag to turn
 // round the meadow and use the wheel to step in. Press R to grow it all again from another seed.
 import { defineSketch, timeOfDay } from '@null3d/engine';
-import {
-	createGrass,
-	growPlant,
-	loadSpecies,
-	placePlants,
-	plantMaterials,
-	prepareSpecies,
-	speciesIds,
-} from '@null3d/vegetation';
+import { createGrass } from '@null3d/vegetation';
 import { interact } from '../lib/interact';
-import { plantSign } from './signage';
+import { type MeadowControls, postHud } from './hud';
+import { createMeadow } from './meadow';
 
 export default defineSketch(async (ctx) => {
 	const { scene, assets, post, input, page } = ctx;
@@ -29,7 +22,7 @@ export default defineSketch(async (ctx) => {
 	scene.createAmbientLight(day.ambient);
 
 	// The meadow's grass, grown by the add-on over the same field, so the ground reads as pasture.
-	const grass = createGrass(ctx, {
+	createGrass(ctx, {
 		height: () => 0,
 		area: { x: 0, z: 0, size: 200 },
 		count: 60_000,
@@ -54,96 +47,19 @@ export default defineSketch(async (ctx) => {
 	const view = interact(ctx, camera, { target: [0, 11, 0], groundY: 1.7, zoomSpeed: 1.5 });
 
 	// The season: every record declares what its own does, so the same meadow grows bare in winter,
-	// turns in autumn and flowers in blossom. Summer is the record's default.
-	let season: 'summer' | 'autumn' | 'winter' | 'blossom' = 'summer';
-	// Two shares, each against the record's own, with the slider's middle the record's own: the track
-	// runs 0 at the sparsest, 0.5 at the record's, 1 at the fullest, and the share the add-on takes
-	// runs from 0.4 through 1 to 2. Leaves size what hangs on the wood; limbs decide how much wood
-	// there is, which every growth model answers with its own count of branches, fronds or tillers.
-	let leaves = 0.5;
-	let limbs = 0.5;
+	// turns in autumn and flowers in blossom. Summer is the record's default. Two shares, each against
+	// the record's own, with the slider's middle the record's own: the track runs 0 at the sparsest,
+	// 0.5 at the record's, 1 at the fullest, and the share the add-on takes runs from 0.4 through 1
+	// to 2. Leaves size what hangs on the wood; limbs decide how much wood there is, which every
+	// growth model answers with its own count of branches, fronds or tillers.
+	const controls: MeadowControls = { season: 'summer', leaves: 0.5, limbs: 0.5, coarseness: 0 };
 	const shareOf = (value: number) =>
 		value <= 0.5 ? 0.4 + (value / 0.5) * 0.6 : 1 + ((value - 0.5) / 0.5) * 1;
-	// The coarseness: 0 draws the plant as grown, 1 the coarsest, where the finest twigs are gone
-	// and the shoots that remain are larger.
-	let coarseness = 0;
-	const pruneOf = (value: number, own: number) =>
-		Math.min(0.9, Math.max(0, own * (1.6 - 1.2 * Math.min(1, Math.max(0, value)))));
-	let planted: { destroy(): void }[] = [];
-	const postHud = () =>
-		page.post('hud', {
-			groups: [
-				{
-					name: 'season',
-					title: 'Season',
-					radio: true,
-					buttons: (['blossom', 'summer', 'autumn', 'winter'] as const).map((id) => ({
-						id,
-						label: id[0]?.toUpperCase() + id.slice(1),
-						tip: `Grow the meadow in ${id}.`,
-						active: season === id,
-					})),
-				},
-				{
-					name: 'leaves',
-					title: 'Leaves',
-					radio: false,
-					buttons: [],
-					slider: {
-						min: 0,
-						max: 1,
-						step: 0.05,
-						value: leaves,
-						live: false,
-						marks: [
-							{ at: 0, label: 'small' },
-							{ at: 0.5, label: 'default' },
-							{ at: 1, label: 'large' },
-						],
-						tip: "Drag left to draw smaller leaves on the same wood, or right to draw larger ones. The middle is every record's own leaf, and the wood does not move.",
-					},
-				},
-				{
-					name: 'limbs',
-					title: 'Limbs',
-					radio: false,
-					buttons: [],
-					slider: {
-						min: 0,
-						max: 1,
-						step: 0.05,
-						value: limbs,
-						live: false,
-						marks: [
-							{ at: 0, label: 'sparse' },
-							{ at: 0.5, label: 'default' },
-							{ at: 1, label: 'dense' },
-						],
-						tip: "Drag left to keep fewer limbs toward the bare wood, or right to keep the shoots the record's own density drops. The middle is every record's own crown, and every species answers with its own count of branches, fronds or tillers.",
-					},
-				},
-				{
-					name: 'coarseness',
-					title: 'Coarseness',
-					radio: false,
-					buttons: [],
-					slider: {
-						min: 0,
-						max: 1,
-						step: 0.05,
-						value: coarseness,
-						live: false,
-						marks: [
-							{ at: 0, label: 'as grown' },
-							{ at: 0.5, label: 'coarser' },
-							{ at: 1, label: 'coarsest' },
-						],
-						tip: 'Coarseness answers how much of a plant must draw at a distance. Near the camera every plant draws whole; farther away the add-on may draw fewer of its finest twigs and fewer, larger shoots, which keeps the leaf area but costs the finest detail. 0 is each plant as it grows and 1 the coarsest it may become, and a game sets it from the plant\u2019s size on the screen.',
-					},
-				},
-			],
-			visible: true,
-		});
+
+	let seed = 11;
+	const growMeadow = createMeadow(ctx, page, { controls: () => controls, shareOf });
+	const showHud = () => postHud(page, controls);
+
 	/**
 	 * A slider posts on every step of a drag, so the meadow waits for the hand to settle before it
 	 * grows again: the last change starts a short timer, and only its expiry regrows.
@@ -157,128 +73,22 @@ export default defineSketch(async (ctx) => {
 		if (name === 'season') {
 			if (value !== 'summer' && value !== 'autumn' && value !== 'winter' && value !== 'blossom')
 				return;
-			season = value;
-			postHud();
+			controls.season = value;
+			showHud();
 			void growMeadow(seed);
 			return;
-		} else if (name === 'leaves') {
-			const next = Number(value);
-			if (!Number.isFinite(next)) return;
-			leaves = next;
-		} else if (name === 'limbs') {
-			const next = Number(value);
-			if (!Number.isFinite(next)) return;
-			limbs = next;
-		} else if (name === 'coarseness') {
-			const next = Number(value);
-			// The explainer button shares the group's name, so only a number turns the slider.
-			if (!Number.isFinite(next)) return;
-			coarseness = next;
-		} else return;
-		postHud();
+		}
+		const next = Number(value);
+		if (!Number.isFinite(next)) return;
+		if (name === 'leaves') controls.leaves = next;
+		else if (name === 'limbs') controls.limbs = next;
+		// The explainer button shares the group's name, so only a number turns the slider.
+		else if (name === 'coarseness') controls.coarseness = next;
+		else return;
+		showHud();
 		settleThenGrow();
 	});
-	/** The note that shows while the meadow grows, counting the species it has finished. */
-	const growing = (() => {
-		let box: HTMLElement | undefined;
-		let said: HTMLElement | undefined;
-		return {
-			begin(): void {
-				if (box) return;
-				box = document.createElement('div');
-				box.style.cssText = [
-					'position:fixed',
-					'left:50%',
-					'top:18px',
-					'transform:translateX(-50%)',
-					'padding:10px 16px',
-					'border-radius:10px',
-					'background:rgba(16,18,20,0.86)',
-					'color:#e8eaec',
-					'font:13px/1.4 system-ui,sans-serif',
-					'letter-spacing:0.02em',
-					'z-index:20',
-					'pointer-events:none',
-				].join(';');
-				said = document.createElement('span');
-				box.append(said);
-				document.body.append(box);
-			},
-			set(done: number, total: number): void {
-				if (said)
-					said.textContent = `Growing the meadow, ${Math.round((done / Math.max(1, total)) * 100)}%`;
-			},
-			end(): void {
-				box?.remove();
-				box = undefined;
-				said = undefined;
-			},
-		};
-	})();
 
-	let seed = 11;
-	/** Whether the meadow has been built once: its first build belongs to the sketch's own start. */
-	let grown = false;
-	const growMeadow = async (at: number) => {
-		for (const piece of planted) piece.destroy();
-		planted = [];
-		const ids = speciesIds();
-		const across = Math.max(1, Math.ceil(Math.sqrt(ids.length)));
-		const step = 34;
-		// A meadow's first build is work that starting the sketch does, so it counts on the sketch's
-		// own loading bar and the page shows one start. Every later build is a change the reader
-		// asked for, and shows in a note of its own.
-		const first = !grown;
-		if (first) page.post('starting', { done: 0, total: ids.length });
-		else {
-			growing.begin();
-			growing.set(0, ids.length);
-		}
-		let index = 0;
-		for (const id of ids) {
-			const module = await loadSpecies(id);
-			// The meadow carries eleven species at once, and at close range every copy near the camera
-			// draws its real shoots: the medium tier keeps each plant's shape while halving the nearest
-			// level's triangles, which is what made a pan after a zoom crawl.
-			const kit = await prepareSpecies(ctx, module, { detail: 'medium', placeholders: 'missing' });
-			const materials = plantMaterials(ctx, kit, {});
-			const variant = index % Math.max(1, kit.record.variants);
-			const asset = await growPlant(kit, {
-				seed,
-				variant,
-				near: true,
-				season,
-				coarseness,
-				leaves: shareOf(leaves),
-				limbs: shareOf(limbs),
-			});
-			const x = ((index % across) - (across - 1) / 2) * step;
-			const z = (Math.floor(index / across) - (ids.length / across - 1) / 2) * step;
-			// The sign stands beside the plant's foot, clear of its trunk.
-			plantSign(ctx, kit.record.name, kit.record.latin, [x + 13, z + 6]);
-			planted.push(
-				placePlants(
-					ctx,
-					kit,
-					[asset],
-					{
-						count: 1,
-						position: new Float32Array([x, 0, z]),
-						turn: new Float32Array([index * 0.4]),
-						scale: new Float32Array([1]),
-						variant: new Uint8Array([0]),
-					},
-					{ materials, view: { height: 1080, fov: 45 }, castShadows: true },
-				),
-			);
-			index++;
-			if (first) page.post('starting', { done: index, total: ids.length });
-			else growing.set(index, ids.length);
-		}
-		growing.end();
-		grown = true;
-		void at;
-	};
 	await growMeadow(seed);
 
 	let regrowing = false;
@@ -288,7 +98,7 @@ export default defineSketch(async (ctx) => {
 			view.update(dt);
 			if (!announced) {
 				announced = true;
-				postHud();
+				showHud();
 			}
 			if (input.wasPressed('KeyR') && !regrowing) {
 				regrowing = true;
