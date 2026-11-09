@@ -333,9 +333,9 @@ export const record: Species = {
 		// and too yellow at the base picture, so it darkens and loses some yellow; the mid trunk and
 		// the limbs keep the measured colour until their own figures ask otherwise.
 		zones: [
-			{ layer: 0, by: 'height', from: 0, to: 1.2, blend: 0.3, tint: [0.75, 0.72, 0.62] },
-			{ layer: 0, by: 'height', from: 1.2, to: 3.6, blend: 0.4, tint: [1, 1, 1] },
-			{ layer: 0, by: 'height', from: 3.6, to: 40, blend: 0.6, tint: [1, 1, 1] },
+			{ layer: 0, by: 'height', from: 0, to: 1, blend: 0.25, tint: [0.75, 0.72, 0.62] },
+			{ layer: 0, by: 'height', from: 1, to: 1.9, blend: 0.3, tint: [1, 1, 1] },
+			{ layer: 0, by: 'height', from: 1.9, to: 40, blend: 0.5, tint: [1.05, 1.0, 0.35] },
 		],
 		young: 0,
 		// Still 16: the deep ridges fade to smooth grey-green bark on wood thinner than about six
