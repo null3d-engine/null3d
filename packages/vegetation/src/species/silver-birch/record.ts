@@ -104,7 +104,9 @@ export const record: Species = {
 	// (its own consistency runs 0.67 to 0.87). A round plan reads the same from every side, so the
 	// whole views at turn 0 and turn 90 agree. The two lowest rows are trimmed: a visual hull over
 	// 32 drifting views holds room at the crown's foot that no one photograph shows, where stills 01
-	// and 18 stand a bare bole to a quarter of the height.
+	// and 18 stand a bare bole to a quarter of the height. The trim sharpens that foot at the distant
+	// and silhouette views, and costs the profile view's outline overlap and the from-below view's
+	// width, whose figures the species' review file holds.
 	envelope: {
 		kind: 'radial',
 		heights: [
