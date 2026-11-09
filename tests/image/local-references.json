@@ -189,7 +189,7 @@
 		"test": "plant-common-ash",
 		"tier": "compat",
 		"date": "2026-11-09",
-		"reason": "drawn on this Mac's SwiftShader at 7ab55475c, where the record's sky-share prune and far-card growth closed the crown after the upright leaf; the leaf and crown panels move about 5.3 to 5.5 per cent of their pixels, and a CI drawing replaces the set if it differs"
+		"reason": "drawn on this Mac's SwiftShader at 5c8a4d15d after the m3-start merge; the plant sits a fraction of a pixel over in every panel, so the outlines differ while the interiors do not, and a CI drawing replaces the set if it differs"
 	},
 	"chromium-swiftshader/compat/plant-european-beech.png": {
 		"test": "plant-european-beech",
@@ -525,7 +525,7 @@
 		"test": "plant-common-ash",
 		"tier": "webgl2",
 		"date": "2026-11-09",
-		"reason": "drawn on this Mac's SwiftShader at 7ab55475c, where the record's sky-share prune and far-card growth closed the crown after the upright leaf; the leaf and crown panels move about 5.3 to 5.5 per cent of their pixels, and a CI drawing replaces the set if it differs"
+		"reason": "drawn on this Mac's SwiftShader at 5c8a4d15d after the m3-start merge; the plant sits a fraction of a pixel over in every panel, so the outlines differ while the interiors do not, and a CI drawing replaces the set if it differs"
 	},
 	"chromium-swiftshader/webgl2/plant-european-beech.png": {
 		"test": "plant-european-beech",
@@ -891,7 +891,7 @@
 		"test": "plant-common-ash",
 		"tier": "webgpu",
 		"date": "2026-11-09",
-		"reason": "drawn on this Mac's SwiftShader at 7ab55475c, where the record's sky-share prune and far-card growth closed the crown after the upright leaf; the leaf and crown panels move about 5.3 to 5.5 per cent of their pixels, and a CI drawing replaces the set if it differs"
+		"reason": "drawn on this Mac's SwiftShader at 5c8a4d15d after the m3-start merge; the plant sits a fraction of a pixel over in every panel, so the outlines differ while the interiors do not, and a CI drawing replaces the set if it differs"
 	},
 	"chromium-swiftshader/webgpu/plant-european-beech.png": {
 		"test": "plant-european-beech",
