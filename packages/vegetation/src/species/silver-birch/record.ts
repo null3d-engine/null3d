@@ -343,8 +343,9 @@ export const record: Species = {
 	bark: {
 		zones: [
 			// Still 14: the foot's bark is black and cracked into rough plates, and the black climbs
-			// in tongues about a metre up.
-			{ layer: 0, by: 'height', from: 0, to: 1, blend: 0.12, tint: [1, 1, 1] },
+			// in tongues about a metre up. The photographed plates take a redder cast than the
+			// measured layer draws, which reads green where the moss sits.
+			{ layer: 0, by: 'height', from: 0, to: 1, blend: 0.12, tint: [1.15, 0.95, 1.18] },
 			// Stills 15 and 26: white and papery above, with black diamond marks and dark lenticel
 			// dashes.
 			{ layer: 1, by: 'height', from: 0.8, to: 6, blend: 0.2, tint: [1, 1, 1] },
