@@ -1474,6 +1474,11 @@ export interface BarkSpec {
 	readonly young: number;
 	/** Below this radius in metres, wood uses the young layer. */
 	readonly youngRadius: number;
+	/**
+	 * Multiplies the young layer's own colour where thin wood draws it, so a species can take the
+	 * young bark toward its own photographs. A record that gives none draws the layer as it is.
+	 */
+	readonly youngTint?: readonly [number, number, number];
 	/** Scale of the figure over the texture's own metres, by radius (t = radius / largest radius). */
 	readonly girthScale: Curve;
 	/** Metres of the deepest furrow, which the nearest level displaces on the trunk and largest limbs. */
