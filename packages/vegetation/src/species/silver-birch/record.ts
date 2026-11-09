@@ -102,7 +102,9 @@ export const record: Species = {
 	// The fit's 16 azimuths at each height, averaged to one radius: the species' own notes say the
 	// crown is near round in plan, and the fitted hull carries the turntable's drift between views
 	// (its own consistency runs 0.67 to 0.87). A round plan reads the same from every side, so the
-	// whole views at turn 0 and turn 90 agree.
+	// whole views at turn 0 and turn 90 agree. The two lowest rows are trimmed: a visual hull over
+	// 32 drifting views holds room at the crown's foot that no one photograph shows, where stills 01
+	// and 18 stand a bare bole to a quarter of the height.
 	envelope: {
 		kind: 'radial',
 		heights: [
@@ -110,8 +112,8 @@ export const record: Species = {
 			0.944, 1,
 		],
 		radii: [
-			0.088, 0.104, 0.147, 0.16, 0.179, 0.192, 0.188, 0.182, 0.164, 0.152, 0.134, 0.115, 0.078,
-			0.054, 0,
+			0.05, 0.09, 0.147, 0.16, 0.179, 0.192, 0.188, 0.182, 0.164, 0.152, 0.134, 0.115, 0.078, 0.054,
+			0,
 		],
 		source: { method: 'turntable-hull', from: 'birch-turntable.mp4', views: 32 },
 	},
