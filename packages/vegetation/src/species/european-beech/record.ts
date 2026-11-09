@@ -501,7 +501,9 @@ export const record: Species = {
 			// classes beside them: the branched cut twig and the cluster's own spray. 3.30, 3.99, 5.24
 			// and 7.70 MB at the four tiers; the owner's tree caps are 3.4, 4, 7.1 and 13 MB.
 			kitBytes: { low: 3_350_000, medium: 4_000_000, high: 5_300_000, ultra: 7_800_000 },
-			variantBytes: { low: 10_500_000, medium: 11_000_000, high: 11_200_000, ultra: 11_500_000 },
+			// The blossom and autumn seasons carry the flowers and the fruit, and a seasonal variant at
+			// high measures 16,500,724 bytes; the owner's cap for a tree variant is 20 MB.
+			variantBytes: { low: 10_500_000, medium: 11_000_000, high: 17_000_000, ultra: 11_500_000 },
 			// The crown's strongest shoot carries six leaves a year, which puts the densest near band at
 			// 2,702,377 triangles; the owner's cap for a tree is 2,900,000.
 			lod0Triangles: 2_750_000,
