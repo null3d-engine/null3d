@@ -32,7 +32,7 @@ import {
 	trunkView,
 	walkedRound,
 } from '../../../tests/pages/lib/plant-review/close.ts';
-import { rowAngle } from '../../../tests/pages/lib/plant-review/framing.ts';
+import { rowAngle, spanDistance } from '../../../tests/pages/lib/plant-review/framing.ts';
 import {
 	clutterOf,
 	lensAxes,
@@ -113,6 +113,15 @@ function oakLike(): MacroSkeleton {
 	run(b, rising, upper, [8.3, 6.5, 0], [0.4, 0.8, 0], 3, 0.17, 0.5);
 	return b.finish(1);
 }
+
+describe('a part of a piece framed at its own span', () => {
+	test('stands back far enough that the span fills the frame across it', () => {
+		// A square frame of 40 degrees shows a span equal to twice the distance times the tangent.
+		expect(spanDistance(0.5, 40, 1)).toBeCloseTo(0.25 / Math.tan((20 * Math.PI) / 180), 6);
+		// A taller frame is narrower across, so the camera stands further back for the same span.
+		expect(spanDistance(0.5, 40, 0.75)).toBeGreaterThan(spanDistance(0.5, 40, 1));
+	});
+});
 
 describe('the view up the stem', () => {
 	const skeleton = oakLike();

@@ -134,6 +134,9 @@ rules that set them.
   stands in for that measurement.
 - A picture whose upper half shows under 5 % sky and no clear shadows keeps the page's own light.
   Studio, copy-stand and silhouette pictures keep their own lights.
+- A view up the stem stands its camera at a person's eye height. A plant shorter than a person
+  stands under that height, so the camera drops to a third of the plant's height, and the crown
+  still stands above the lens. Without the drop the view looks over the whole plant at the sky.
 - The turning videos and the wind clip keep the light beside the camera, as the reference videos
   keep it. The oak's turntable holds its light about 9 degrees right of the camera and 41 degrees up
   in every frame. A sun fixed in the world would light half of each turn from behind.

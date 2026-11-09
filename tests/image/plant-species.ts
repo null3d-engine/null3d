@@ -43,7 +43,10 @@ export function plantSpeciesTests(root = ROOT): ImageTest[] {
 		hold: 1,
 		size: [1024, 1024],
 		// Four panels of a whole plant, built and drawn from scratch: the merged foliage of a ground
-		// plant takes longer than the default limit on the software GPU's slower path.
+		// A dense crown takes longer than the default limit on the software GPU's slower path, so the
+		// panels draw the low preset's lighter meshes there; a species measured slower still takes its
+		// own limit.
 		timeoutSeconds: PANELS_SECONDS_BY_SPECIES[id] ?? PANELS_SECONDS,
+		swiftShaderSwitches: ['preset=low'],
 	}));
 }

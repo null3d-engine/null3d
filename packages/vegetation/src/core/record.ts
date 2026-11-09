@@ -1806,6 +1806,19 @@ export interface SeasonSpec {
 	readonly autumn?: { readonly reflectance: Rgb; readonly transmittance: Rgb };
 	/** Blossom: which extra flowers, and the share of leaves that are out. */
 	readonly blossom?: { readonly extra: number; readonly leaves: number };
+	/**
+	 * A linear colour each named season multiplies into the bark, for a stem whose own colour turns
+	 * with the year. A season left out keeps the record's own bark.
+	 */
+	readonly bark?: Partial<Record<Season, Rgb>>;
+	/**
+	 * The leaves' linear reflectance and transmittance in a season, in place of the autumn colours
+	 * that a turning plant draws its dead leaves with. A season left out keeps the autumn colours,
+	 * and the autumn block holds autumn's own.
+	 */
+	readonly leaves?: Partial<
+		Record<Season, { readonly reflectance: Rgb; readonly transmittance: Rgb }>
+	>;
 }
 
 /**
@@ -1821,7 +1834,16 @@ export interface WindSpec {
 	 * speed. A species that names none takes the stated default, so a missing sway never leaves
 	 * the plant still.
 	 */
-	readonly sway?: { readonly frequency: number; readonly amplitude: number };
+	readonly sway?: {
+		readonly frequency: number;
+		readonly amplitude: number;
+		/**
+		 * How sharply the sway grows up a stem: its share of the top's motion is the distance along
+		 * the stem raised to this power. The cantilever's square, 2, is the default; a stiffer stem
+		 * takes a higher power, so its lower length stays put while its top moves. From 1 to 6.
+		 */
+		readonly power?: number;
+	};
 	/** Orders from which shoots swing as hanging chains (willow, birch). */
 	readonly whips?: { readonly fromOrder: number; readonly pendulum: number };
 	/** How leaves flutter. */
@@ -1949,8 +1971,9 @@ export interface CutLeaf {
 	/**
 	 * Whether the leaf lies pressed flat, as a species' single-leaf pictures lay it on a copy stand:
 	 * a blade leaf's fold, curls, twist, wave and stalk droop at nothing, a thick leaf's cup, curl
-	 * and margin wave at nothing, its outline and textures as they are. Without it the leaf keeps
-	 * the shape it has on the plant.
+	 * and margin wave at nothing, and a frond's droop, twist and pinnae fold at nothing too, so its
+	 * rachis runs straight on from the stipe. Its outline and textures are as they are. Without it
+	 * the leaf keeps the shape it has on the plant.
 	 */
 	readonly pressed?: boolean;
 	/**

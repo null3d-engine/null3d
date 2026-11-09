@@ -49,6 +49,8 @@ struct Uniforms {
     displacement: f32,
     // How far into autumn the leaves stand, from 0 for summer to 1 for turned.
     season: f32,
+    // The season the plant stands in: 0 summer, 1 autumn, 2 winter, 3 blossom.
+    seasonKind: f32,
     // 1 to draw the plant black, with its cut-outs and its sway, for an exact outline.
     matte: f32,
 }
@@ -108,6 +110,10 @@ const HEADER_BARK_SECONDS: i32 = 57;
 const HEADER_LICHEN: i32 = 40;
 const HEADER_LICHEN_REACH: i32 = 41;
 const HEADER_SWAY: i32 = 42;
+const HEADER_AUTUMN_BARK: i32 = 57;
+const HEADER_WINTER_BARK: i32 = 58;
+const HEADER_WINTER_REFLECTANCE: i32 = 59;
+const HEADER_WINTER_TRANSMITTANCE: i32 = 60;
 const HEADER_EXTRA_BANDS: i32 = 43;
 // An extra's scale pattern: its scale rows, the cells round its turn, and its band's share of the
 // profile's height at each end, per extra in record order.
@@ -511,9 +517,11 @@ fn sway_point(p: vec3f, own: i32, downwind: vec3f, speed: f32) -> vec3f {
     var point = p;
     var id = own;
     // The whole plant sways as its species' record says: metres at its top at the field's base
-    // speed, in cycles a second, and more as the air is faster.
+    // speed, in cycles a second, and more as the air is faster. The record's power says how
+    // sharply that motion falls away down a stem.
     let plant = header(HEADER_SWAY);
     let sway = plant.x * speed / WIND_SWAY_SPEED;
+    let power = plant.z;
     for (var level = 0; level < MAX_BRANCH_DEPTH; level += 1) {
         if (id < 0) {
             break;
@@ -529,7 +537,10 @@ fn sway_point(p: vec3f, own: i32, downwind: vec3f, speed: f32) -> vec3f {
         let along = clamp(dot(point - pivot, axis) / length_m, 0.0, 1.0);
         if (parent < 0) {
             let wave = 0.5 + 0.5 * sin(TURN * (frame.time * plant.y + fourth_texel.x));
-            point += downwind * (along * along * sway * wave);
+            // A stem's share of its top's motion: the distance along the stem raised to the
+            // record's power. The cantilever's square is the default, taken as it always was.
+            let carried = select(along * along, pow(along, power), abs(power - 2.0) > 0.001);
+            point += downwind * (carried * sway * wave);
         } else {
             let across = cross(axis, downwind);
             let reach = length(across);
@@ -750,10 +761,17 @@ fn leaf_light(texel: vec3f, upper: bool, browning: f32) -> LeafLight {
     let mean = header(select(HEADER_LOWER_MEAN, HEADER_UPPER_MEAN, upper)).rgb;
     let autumn_r = header(HEADER_AUTUMN_REFLECTANCE);
     let autumn_t = header(HEADER_AUTUMN_TRANSMITTANCE).rgb;
+    // Dead leaves that stand through the winter take the colours the record gives for that season,
+    // or the autumn ones it gives for the rest of the year.
+    let winter_r = header(HEADER_WINTER_REFLECTANCE);
+    let winter_t = header(HEADER_WINTER_TRANSMITTANCE).rgb;
+    let wintering = winter_r.w > 0.5 && material.seasonKind == 2.0;
+    let season_r = select(autumn_r, winter_r, wintering);
+    let season_t = select(autumn_t, winter_t, wintering);
     let transmittance = header(HEADER_TRANSMITTANCE).rgb;
-    let turned = select(0.0, saturate(max(material.season, browning)), autumn_r.w > 0.5);
-    let reflect_shift = mix(vec3f(1.0), autumn_r.rgb / max(reflectance, vec3f(0.0001)), turned);
-    let through_shift = mix(vec3f(1.0), autumn_t / max(transmittance, vec3f(0.0001)), turned);
+    let turned = select(0.0, saturate(max(material.season, browning)), season_r.w > 0.5);
+    let reflect_shift = mix(vec3f(1.0), season_r.rgb / max(reflectance, vec3f(0.0001)), turned);
+    let through_shift = mix(vec3f(1.0), season_t / max(transmittance, vec3f(0.0001)), turned);
     var light: LeafLight;
     light.base = min(texel * face.rgb * reflect_shift, vec3f(1.0));
     light.share = through.w;
@@ -983,7 +1001,17 @@ fn surface(input: SurfaceInput) -> Surface {
         bark = mix(bark, lichen.rgb * (0.92 + 0.16 * grain), lichen_mask);
         // The collar's dark ridge where a branch joins its parent.
         bark *= 1.0 - 0.5 * moss_reach.z * junction;
-        base = bark * (1.0 - CAVITY_DARK * cavity);
+        // A stem whose own colour turns with the year takes its season's tint, which multiplies the
+        // bark it would otherwise draw. A season the record does not name multiplies by nothing.
+        let autumn_bark = header(HEADER_AUTUMN_BARK);
+        let winter_bark = header(HEADER_WINTER_BARK);
+        var season_bark = vec3f(1.0);
+        if (autumn_bark.w > 0.5 && material.seasonKind == 1.0) {
+            season_bark = autumn_bark.rgb;
+        } else if (winter_bark.w > 0.5 && material.seasonKind == 2.0) {
+            season_bark = winter_bark.rgb;
+        }
+        base = bark * season_bark * (1.0 - CAVITY_DARK * cavity);
         roughness = saturate(0.82 + CAVITY_ROUGH * cavity);
         // A lichen patch is a flat, matte crust: it hides the furrows under it.
         mapped = normalize(mix(bark_normal, vec3f(0.0, 0.0, 1.0), lichen_mask * 0.35));

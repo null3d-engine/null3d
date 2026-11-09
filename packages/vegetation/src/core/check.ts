@@ -464,11 +464,17 @@ function extraProblems(record: Species, out: string[]): void {
 
 /**
  * Cutting hints that name a shoot class the record does not grow, cut a length of no wood, or press
- * a leaf that is not a blade.
+ * foliage that cannot lie flat.
  */
 function cuttingProblems(record: Species, out: string[]): void {
+	// A blade, a thick leaf or a whole frond can lie pressed flat in its frame's plane.
 	const leaf = record.cuttings?.leaf;
-	if (leaf?.pressed && record.foliage.kind !== 'blade' && record.foliage.kind !== 'thick')
+	if (
+		leaf?.pressed &&
+		record.foliage.kind !== 'blade' &&
+		record.foliage.kind !== 'thick' &&
+		record.foliage.kind !== 'frond'
+	)
 		out.push(`cuttings.leaf.pressed lays a leaf flat, and the foliage is '${record.foliage.kind}'`);
 	if (leaf?.petiole !== undefined && !(leaf.petiole > 0))
 		out.push(`cuttings.leaf.petiole is ${leaf.petiole}; it is metres and must be above 0`);
@@ -575,6 +581,24 @@ export function speciesProblems(record: Species): string[] {
 				out.push(`bark.zones[${i}].second.blend is ${zone.second.blend}; it is metres from 0`);
 		}
 	});
+	for (const [season, tint] of Object.entries(record.seasons.bark ?? {}))
+		tint.forEach((channel, c) => {
+			notNegative(channel, `seasons.bark.${season}[${c}]`, out);
+		});
+	for (const [season, leaves] of Object.entries(record.seasons.leaves ?? {})) {
+		// Only a winter stand draws colours of its own: every other season of a turning plant takes
+		// the autumn colours, and the autumn block holds those.
+		if (season !== 'winter')
+			out.push(
+				`seasons.leaves names ${season}; set winter, the one season the shader draws its own leaf colours for, or leave the season out`,
+			);
+		leaves.reflectance.forEach((channel, c) => {
+			notNegative(channel, `seasons.leaves.${season}.reflectance[${c}]`, out);
+		});
+		leaves.transmittance.forEach((channel, c) => {
+			notNegative(channel, `seasons.leaves.${season}.transmittance[${c}]`, out);
+		});
+	}
 	if (record.bark) curveProblems(record.bark.girthScale, 'bark.girthScale', out);
 	const fork = record.bark?.fork;
 	if (fork?.bend !== undefined && !(fork.bend > 0))
@@ -594,6 +618,9 @@ export function speciesProblems(record: Species): string[] {
 		else if (!(flutter >= 0))
 			out.push(`wind.flutter.byHeight is ${flutter}; a share is not negative`);
 	}
+	const power = record.wind.sway?.power;
+	if (power !== undefined && !(power >= 1 && power <= 6))
+		out.push(`wind.sway.power is ${power}; it is a number from 1 to 6`);
 	const lod = record.lod;
 	lod.switchPixels.forEach((pixels, i) => {
 		if (pixels <= 0) out.push(`lod.switchPixels[${i}] is ${pixels}; it must be above 0`);
