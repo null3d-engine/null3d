@@ -1,4 +1,4 @@
-# D-334: the common alder follows its three whole views, not its widest one, and its cut pieces are proportions
+# D-335: the common alder follows its three whole views, not its widest one, and its cut pieces are proportions
 
 Status: decided and built in the species record. Task: none.
 
@@ -107,9 +107,9 @@ record grows outlines 0.67 against `02`, 0.60 against `18`, 0.62 against `30` an
   review measures, the render's crown-box heights run 251, 326, 304, 299, 304, 310, 325 and 301
   pixels, a spread of about a quarter; its photograph's run 277, 279, 280, 279, 276, 274, 260 and
   277, a spread of about a fourteenth. A flat piece keeps its height as it turns; a shoot whose side
-  shoots fan in azimuth does not. The record has no field for planarity — `lateral` sets the angle
-  from the stem's line, and the azimuth step between one side shoot and the next is the engine's —
-  so this row's turn is the same structural gap as its narrower still, stated rather than bent.
+  shoots fan in azimuth does not. The record has no field for planarity: `lateral` sets the angle from
+  the stem's line, and the azimuth step between one side shoot and the next is the engine's. So
+  this row's turn is the same structural gap as its narrower still, stated rather than bent.
 - The branch piece draws a cutting class of its own rather than the crown's spray. Three years put
   a side shoot at two joints, and the one at the lower joint reaches two units, so the piece
   branches where its photograph does. A class of its own is the fix because the crown's spray is
@@ -157,7 +157,7 @@ record grows outlines 0.67 against `02`, 0.60 against `18`, 0.62 against `30` an
   **How narrow the window is:** still `02` sits exactly on the mark at 3.0 and still `25` at 2.8, so
   the two cross within two tenths of a step. Either side of it fails one of them.
 - Still `13` is the picture row 10 keeps. Its photograph is 145, 155, 105 and still `25`'s is
-  118, 138, 79 — some twelve steps apart — and still `13` reads between 6.0 and 6.8 at every
+  118, 138, 79, some twelve steps apart, and still `13` reads between 6.0 and 6.8 at every
   setting of the back face. One leaf cannot be two undersides as long as the stand's light is fixed.
 - **A studio picture now carries its own light.** `9a1ff7585` gives every light path the slot's
   `daylight` for exposure and `lamp` for white balance, and a studio background stands between its
@@ -190,8 +190,8 @@ record grows outlines 0.67 against `02`, 0.60 against `18`, 0.62 against `30` an
   bands (still `11` at 0.17 against a photograph's 0.18, still `23` at 0.15 against 0.16) while
   outline overlap falls from 0.415 to 0.31 and from 0.421 to 0.23. Eight smaller blades covered what
   the photograph covers and matched its outline; six larger ones cover the same and do not.
-  The class now carries **seven** at a middle size, which suits the field still exactly — its
-  photograph carries seven — and leaves the studio one leaf over rather than two.
+  The class now carries **seven** at a middle size, which suits the field still exactly, because its
+  photograph carries seven, and leaves the studio one leaf over rather than two.
 - **The winter keys are a budget limit.** Still `19` draws one catkin where its photograph shows six
   cones and three catkin strings on one twig end, and the keys are not missing: the winter plant
   holds the same 438,057 extras vertices as summer and autumn. A cone stands on 16 per cent of shoot
@@ -204,7 +204,7 @@ record grows outlines 0.67 against `02`, 0.60 against `18`, 0.62 against `30` an
   **half of those patch pixels are sky and ground**, against 39 per cent of the photograph's,
   because the base camera's stand-off grows with the trunk's radius and this bole is thick. Two
   zones over the one trunk layer, with the foot tinted 0.78, 0.78 and 0.88, moved the figure's
-  red-green by 3.2 steps while moving its light by 0.6 — the signature of a measure that is mostly
+  red-green by 3.2 steps while moving its light by 0.6, the signature of a measure that is mostly
   not the material. On the patches' darkest pixels, which are the bark, the foot reads 18.2, 3.0 and
   4.0 against a photograph's 18.2, 2.6 and 6.8: the bark agrees in light and red-green and stands
   2.8 too blue. A tint that corrects that blue moves the figure the wrong way, so the record keeps
