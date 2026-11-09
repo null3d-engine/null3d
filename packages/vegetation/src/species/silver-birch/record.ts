@@ -258,7 +258,7 @@ export const record: Species = {
 				share: 0,
 				years: 2,
 				length: { mean: 0.35, spread: 0.04 },
-				nodes: { mean: 7, spread: 0.5 },
+				nodes: { mean: 4, spread: 0.4 },
 				leafYears: 2,
 				internode: ALTERNATE,
 				stem: { radius: [0.004, 0.0018] },
@@ -268,8 +268,8 @@ export const record: Species = {
 				phyllotaxis: { kind: 'spiral', divergence: 180 },
 				skyward: 0.2,
 				leafScale: [
-					[0, 0.85],
-					[1, 1],
+					[0, 1.1],
+					[1, 1.3],
 				],
 				leafAngle: [
 					[0, 70],
@@ -445,10 +445,10 @@ export const record: Species = {
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
-			// The largest of the species and its three forms: 3.37, 5.68, 9.64 and 17.16 MB. The kit
+			// The largest of the species and its three forms: 3.37, 5.57, 9.35 and 16.54 MB. The kit
 			// holds the long leafy shoots the fine leaf needs and three cutting classes sized to their
 			// photographs.
-			kitBytes: { low: 3_450_000, medium: 5_800_000, high: 9_800_000, ultra: 17_400_000 },
+			kitBytes: { low: 3_450_000, medium: 5_700_000, high: 9_500_000, ultra: 16_800_000 },
 			// The largest variant of the species and its forms, the woodland's: 6.94, 6.97, 7.02 and
 			// 7.12 MB.
 			variantBytes: { low: 7_100_000, medium: 7_100_000, high: 7_200_000, ultra: 7_300_000 },
