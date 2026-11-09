@@ -287,6 +287,43 @@ than turning a fault of the measure into a pass or a fail.
   not species data. M3-V4 carries the debt, because the review rows are its evidence, while the code
   lives under `tools/`.
 
+## The rows a species still owes
+
+**M3-V4 is ticked, and it carries 67 of the 78 owed rows: the 17 engine items and 50 of the limits.
+Its tick does not cover them.** A reader who meets that task in a list sees a tick; this section is
+the only place that says most of the batch's remaining work sits behind it.
+
+A batch leaves 78 of its 144 look rows unpassed. Classed by what would move each one: **17 engine
+items, 5 recorded reference conflicts, 54 measured limits and 2 void by ruling**.
+
+The 17 engine rows are named to their work and to the task that carries the fix. All seventeen are
+M3-V4's: ten in the package's own code, and seven in the review tool, which M3-V4 carries because the
+review rows are its evidence.
+
+- **The shared crown shade**, four rows: the birch's, holm oak's, hosta's and sedge's whole views.
+  The term lives in the package's crown model.
+- **The joint surface the engine does not draw**, three rows: the birch's and beech's winter wood
+  and the willow's cut pieces. The wood geometry is the package's.
+- **The cut-piece crown box**, five rows, in `crownStartRow` in
+  `tools/lib/plant-review/references.ts`: the hawthorn's rows 3 and 12, the willow's row 3 and the
+  hosta's rows 3 and 12. The code is the review tool's; the debt is M3-V4's.
+- **The flower fix**, one row: the hawthorn's row 10, where its blossom draws nothing. The extras
+  builder is the package's.
+- **The matte tool change**, two rows: the alder's rows 3 and 12, where a cut piece's groups and
+  pieces are read from the matte. The code is the review tool's; the debt is M3-V4's.
+- **The coupled stem**, two rows: the sedge's rows 9 and 10. The generator couples the stem to the
+  leaf.
+
+A row with both a record lever and an engine blocker is classed by its next available lever. That is
+why the limit count is large and the engine count small. Four of the 54 limits also name an engine
+work as their next lever. All four are the bark color: the birch's, the holm oak's, the alder's
+plain pair and the bracken's. That next lever is the bark's shared shading, which belongs to the
+materials task M3-V7. So those four are the only owed rows outside M3-V4's debt. The other 50 name a
+record value already spent, which is what makes them limits.
+
+The per-row list, with each figure, sits in the maintainers' batch handoff, which is not kept in the
+repository. This section is a summary of that record, not a second copy of it.
+
 ## What the reviewer reports
 
 For each species: pass or fail, row by row, with the picture that shows it and the figure where a
