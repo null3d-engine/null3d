@@ -169,6 +169,13 @@ own light they read 1.9, and the head's oak reads 2.2, so the light makes most o
   within 0.05 of the reference's.
 - A video is judged on frames drawn at a still's size, lit beside the camera, as the light rules
   above say.
+- A close view of one kind of wood is judged only once its frame holds that wood. A camera that
+  picks its own subject can draw a great limb where the photograph shows a young branch, and the
+  color figure then measures the wrong material whatever its value. The alder's young-bark picture
+  read 16.13 while it drew a great limb's old plates; setting the slot's `thin` to the photograph's
+  own branch size and its `span` to the photograph's width took it to 3.7 before any material
+  changed, and a tint measured against that frame took it to 2.3. Framing first, material second:
+  a tint chosen before the frame is right measures the camera, not the plant.
 
 ## What a fail looks like
 

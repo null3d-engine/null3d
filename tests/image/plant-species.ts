@@ -21,6 +21,11 @@ const PANELS_SECONDS = 120;
  * Species whose own four panels need longer than the shared limit, with the seconds each was
  * measured at. The common alder's dense crown drew in 96 seconds on this Mac's SwiftShader when its
  * tiers ran one at a time, and its three tiers run together did not finish within 120.
+ *
+ * That is the second figure this species corrected after it was measured on the wrong load: its
+ * young-bark color first read against a picture framing a great limb rather than young wood, and
+ * now its panel time read with one tier drawing instead of three. A number taken under a load the
+ * test never runs under is not a measurement of the test.
  */
 const PANELS_SECONDS_BY_SPECIES: Readonly<Record<string, number>> = {
 	'common-alder': 240,
