@@ -1,6 +1,13 @@
 {
-	"14-bark-base.png": { "barkMask": true },
-	"15-bark-mid-stem.png": { "barkMask": true },
-	"16-bark-on-limb.png": { "barkMask": true },
-	"28-young-bark.png": { "barkMask": true }
+	"14-bark-base.png": {
+		"barkMask": true
+	},
+	"15-bark-mid-stem.png": {
+		"barkMask": true,
+		"daylight": 1.2
+	},
+	"16-bark-on-limb.png": {
+		"barkMask": true,
+		"daylight": 1.2
+	}
 }
