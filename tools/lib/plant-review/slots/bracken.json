@@ -54,10 +54,9 @@
 	"11-crozier-unfurling.png": {
 		"skyShare": 0.357,
 		"daylight": 1.459,
-		"view": "leaf-upper",
-		"background": "studio-grey",
-		"pressed": false,
-		"age": 0.15
+		"view": "branch",
+		"young": true,
+		"cut": 0.35
 	},
 	"12-single-frond-whole.png": {
 		"view": "leaf-upper",
