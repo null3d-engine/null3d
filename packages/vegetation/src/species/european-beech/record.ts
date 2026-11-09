@@ -305,18 +305,6 @@ export const record: Species = {
 		// the measured colour, while still 16's great limb already reads light: only the trunk takes
 		// the lift, and a limb stops short of its girth.
 		zones: [
-			// Still 14 reads the foot 4.8 light, 2.0 short on red and 7.1 short on yellow, so the
-			// thick wood below the bole's first metre and a fifth takes its own warmer, darker cast;
-			// it holds on the height as well as the girth, so the bole above keeps the lift.
-			{
-				layer: 0,
-				by: 'radius',
-				from: 0.45,
-				to: 5,
-				blend: 0.05,
-				second: { from: 0, to: 1.2, blend: 0.15 },
-				tint: [1.1, 1.0, 0.85],
-			},
 			// The trunk's masked close view reads 0.8 light, 2.7 short on red and 2.1 long on yellow,
 			// so its lift carries a warmer, less yellow cast.
 			{ layer: 0, by: 'radius', from: 0.45, to: 5, blend: 0.05, tint: [1.48, 1.4, 1.58] },
