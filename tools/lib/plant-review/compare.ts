@@ -56,6 +56,9 @@ const EDGE_FLOOR = 6;
  */
 const PIECE_AREA = 24;
 
+/** The views that photograph the bark close up, whatever words a species puts in its file names. */
+const BARK_VIEWS: ReadonlySet<string> = new Set(['bark-base', 'bark-mid', 'bark-limb']);
+
 /** The camera's framing of a reference, in screen shares, as the review page takes it. */
 export interface ReferenceFraming {
 	readonly horizon: number;
@@ -1299,7 +1302,10 @@ export function compareStills(
 		const surfaceDeltaE = bark ? patchDifference(refImage, render.image, barkMaskOn) : null;
 		// A bark close view photographs the bark against the bark, so neither picture separates
 		// from its own background and neither draws a matte. The patches compare the material.
-		const barkClose = slot.kind !== 'texture' && /bark/i.test(slot.file);
+		// A close view of the bark is named by the view it draws, not by the words in its file name: a
+		// species whose photographs are called roots or petiole-section still draws the trunk close up,
+		// and its colour is read the same way as any other bark's.
+		const barkClose = slot.kind !== 'texture' && BARK_VIEWS.has(slot.view);
 		const barkColour = barkClose
 			? { reference: patchLab(refImage, barkMaskOn), render: patchLab(render.image, barkMaskOn) }
 			: null;
