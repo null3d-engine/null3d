@@ -125,14 +125,19 @@ export const HEADER = {
 	cardStalk: 55,
 	/** Young bark: the tint its thin wood takes, where the record gives one. */
 	youngTint: 56,
+	/**
+	 * The first bark zone's band on the other axis: its start, end, blend and whether the record
+	 * gives one; the next `MAX_BARK_ZONES - 1` texels hold the other zones' in order.
+	 */
+	barkSeconds: 57,
 	/** The autumn bark's linear tint, and 1 when the record gives one. */
-	autumnBark: 57,
+	autumnBark: 61,
 	/** The winter bark's linear tint, and 1 when the record gives one. */
-	winterBark: 58,
+	winterBark: 62,
 	/** The winter leaves' linear reflectance, and 1 when the record gives them. */
-	winterReflectance: 59,
+	winterReflectance: 63,
 	/** The winter leaves' linear transmittance. */
-	winterTransmittance: 60,
+	winterTransmittance: 64,
 } as const;
 
 /**
@@ -345,6 +350,13 @@ export function speciesHeader(
 				layer?.height.depth ?? 0,
 			]);
 			texel(header, at + 3, [...(layer?.mean ?? STAND_IN_BARK), 0]);
+			const second = zone.second;
+			texel(header, HEADER.barkSeconds + index, [
+				second?.from ?? 0,
+				second?.to ?? 0,
+				second?.blend ?? 0,
+				second ? 1 : 0,
+			]);
 		});
 	}
 	(record.extras ?? []).slice(0, MAX_EXTRAS).forEach((extra, index) => {

@@ -47,17 +47,13 @@ export default defineSketch(async (ctx) => {
 	const view = interact(ctx, camera, { target: [0, 11, 0], groundY: 1.7, zoomSpeed: 1.5 });
 
 	// The season: every record declares what its own does, so the same meadow grows bare in winter,
-	// turns in autumn and flowers in blossom. Summer is the record's default. Two shares, each against
-	// the record's own, with the slider's middle the record's own: the track runs 0 at the sparsest,
-	// 0.5 at the record's, 1 at the fullest, and the share the add-on takes runs from 0.4 through 1
-	// to 2. Leaves size what hangs on the wood; limbs decide how much wood there is, which every
-	// growth model answers with its own count of branches, fronds or tillers.
-	const controls: MeadowControls = { season: 'summer', leaves: 0.5, limbs: 0.5, coarseness: 0 };
-	const shareOf = (value: number) =>
-		value <= 0.5 ? 0.4 + (value / 0.5) * 0.6 : 1 + ((value - 0.5) / 0.5) * 1;
+	// turns in autumn and flowers in blossom. Summer is the record's default. One sparse slider moves a
+	// species' limbs, leaves and coarseness together toward the least it still reads as itself, the
+	// form a phone or a tablet asks for.
+	const controls: MeadowControls = { season: 'summer', sparse: 0 };
 
 	let seed = 11;
-	const growMeadow = createMeadow(ctx, page, { controls: () => controls, shareOf });
+	const growMeadow = createMeadow(ctx, page, { controls: () => controls });
 	const showHud = () => postHud(page, controls);
 
 	/**
@@ -80,11 +76,9 @@ export default defineSketch(async (ctx) => {
 		}
 		const next = Number(value);
 		if (!Number.isFinite(next)) return;
-		if (name === 'leaves') controls.leaves = next;
-		else if (name === 'limbs') controls.limbs = next;
 		// The explainer button shares the group's name, so only a number turns the slider.
-		else if (name === 'coarseness') controls.coarseness = next;
-		else return;
+		if (name !== 'sparse') return;
+		controls.sparse = next;
 		showHud();
 		settleThenGrow();
 	});

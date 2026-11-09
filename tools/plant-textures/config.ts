@@ -40,12 +40,13 @@ export interface LeafConfig {
 	/** The share of the canvas kept empty round the leaf on its longer side. */
 	readonly margin: number;
 	/**
-	 * The stalk's bottom end and the tip, in the upper picture's texels, where the found frame is
-	 * wrong. A pinnate leaf whose tip tapers to a bare rachis reads as a stalk, so a species whose
-	 * picture does that names the frame here rather than taking the found one.
+	 * The stalk's bottom end and the tip, in the upper face's texels after any crop, where the
+	 * found frame is wrong. A leaf whose tip tapers to a bare point narrower than its stalk reads
+	 * as a stalk, so a species whose picture does that names the frame here rather than taking the
+	 * found one.
 	 */
 	readonly frame?: LeafFrame;
-	/** The same for the lower picture, in its own texels. */
+	/** The same for the lower face, in its own texels after the same crop. */
 	readonly lowerFrame?: LeafFrame;
 	readonly delight: DelightConfig;
 	/**

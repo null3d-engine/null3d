@@ -32,6 +32,37 @@ describe('the record check', () => {
 		expect(() => checkSpecies(broken)).toThrow(/cannot grow/);
 	});
 
+	it('holds the flutter by height to a non-negative share', () => {
+		const withCurve = (byHeight: readonly (readonly [number, number])[]): Species => ({
+			...template,
+			wind: { ...template.wind, flutter: { ...template.wind.flutter, byHeight } },
+		});
+		expect(
+			speciesProblems(
+				withCurve([
+					[0, 2],
+					[1, 0.5],
+				]),
+			),
+		).toEqual([]);
+		expect(
+			speciesProblems(
+				withCurve([
+					[0, 2],
+					[1, -0.5],
+				]),
+			).some((p) => p.startsWith('wind.flutter.byHeight')),
+		).toBe(true);
+		expect(
+			speciesProblems(
+				withCurve([
+					[0.5, 1],
+					[0.2, 2],
+				]),
+			).some((p) => p.startsWith('wind.flutter.byHeight')),
+		).toBe(true);
+	});
+
 	it('holds a season bark tint to non-negative channels', () => {
 		const out = {
 			...template,
@@ -262,6 +293,12 @@ describe('the record check', () => {
 		).toBe(true);
 		expect(
 			problems.some((p) => p.startsWith('extras[2].shape.stalkSides is 2.5; it must be a whole')),
+		).toBe(true);
+		expect(speciesProblems({ ...template, extras: [{ ...acorn, group: 3 }] })).toEqual([]);
+		expect(
+			speciesProblems({ ...template, extras: [{ ...acorn, group: 2.5 }] }).some((p) =>
+				p.startsWith('extras[0].group is 2.5; it must be a whole number from 0 to 15'),
+			),
 		).toBe(true);
 	});
 
