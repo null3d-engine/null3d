@@ -17,7 +17,8 @@ Should the base be part of the tuft model, and how should it draw?
 
 ## Rule
 
-The base must stay inside the ground plants' variant cap. The sedge's low tier measures 1,311,837 bytes against its 1,600,000 cap at this record. It must leave every plant that does not ask for it byte-identical. It must
+The base must stay inside the ground plants' variant cap. The sedge binds that cap at 1.535 of
+1.60 MB at the low tier. It must leave every plant that does not ask for it byte-identical. It must
 also move no material and no shader, so the trees and the other models stay as they are.
 
 ## Data
@@ -27,7 +28,6 @@ also move no material and no shader, so the trees and the other models stay as t
 | Sedge kit bytes | 34,460 | 34,460 | this Mac, `high` detail |
 | Sedge variant bytes | 1,778,021 | 1,791,990 | this Mac, `high` detail |
 | Level triangles | 43,236 / 19,126 / 6,052 | 43,772 / 19,126 / 6,052 | this Mac, `high` detail |
-| Low-tier variant bytes | 1,297,868 | 1,311,837 | this Mac, `low` detail |
 | Unrhizomed plant digest | `1bf7ee25ee1f3386` | `1bf7ee25ee1f3386` | this Mac, seed 11, variant 0 |
 
 How the data was produced: `bun` scripts built the sedge's kit with `buildKitNow`. They grew seed

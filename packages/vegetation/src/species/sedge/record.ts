@@ -77,6 +77,18 @@ export const record: Species = {
 				stalk: { mean: 0.035, spread: 0.01 },
 			},
 		},
+		soil: {
+			// Still 09: a short stout rhizome runs either side of the crown, about 8 cm in all.
+			rhizome: { mean: 0.04, spread: 0.01 },
+			// Still 09: the rhizome reads 2 to 2.5 cm thick.
+			rhizomeRadius: 0.011,
+			// Still 14: dense brown roots, about fifteen of them, spread round the crown.
+			roots: { mean: 18, spread: 3 },
+			rootLength: { mean: 0.18, spread: 0.05 },
+			rootRadius: 0.003,
+			// Still 14: the roots dip below the rhizome as they leave it.
+			droop: { mean: 40, spread: 15 },
+		},
 	},
 	envelope,
 	foliage: {
