@@ -550,6 +550,8 @@ export type PowerPreference = 'high-performance' | 'low-power';
 /**
  * Reads the device hints on the page's main thread, which workers cannot: they have no media
  * queries and no screen.
+ *
+ * @category api/engine
  */
 export function readDeviceHints(): DeviceHints {
 	const screen = globalThis.screen;
