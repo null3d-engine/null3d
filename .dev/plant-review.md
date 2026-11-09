@@ -228,7 +228,8 @@ The silver birch rebuilt its leaf upright and stays at 8 of 12. Row 6 passes wit
 0.4. Its three whole views read 0.18/0.21, 0.17/0.17 and 0.20/0.19 against their photographs. Its
 pictures 12 and 13 rose from 0.48 and 0.15 shape overlap to 0.72 and 0.64. Pictures 24 and 25 fell
 from 0.88 and 0.79 to 0.72 and 0.54. The two that fell had been measured through the inverted leaf and a
-half turn that happened to match.
+half turn that happened to match. Row 4, the row those four stills carry, still passes at the new
+figures. The fall costs no row, and the species stays at 8 of 12.
 
 ## When a figure is void
 
