@@ -450,10 +450,10 @@ export const record: Species = {
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
-			// The largest of the species and its three forms: 3.37, 5.57, 9.35 and 16.54 MB. The kit
+			// The largest of the species and its three forms: 3.37, 5.52, 9.42 and 16.89 MB. The kit
 			// holds the long leafy shoots the fine leaf needs and three cutting classes sized to their
 			// photographs.
-			kitBytes: { low: 3_450_000, medium: 5_700_000, high: 9_500_000, ultra: 16_800_000 },
+			kitBytes: { low: 3_450_000, medium: 5_700_000, high: 9_500_000, ultra: 17_000_000 },
 			// The largest variant of the species and its forms, the woodland's: 6.94, 6.97, 7.02 and
 			// 7.12 MB.
 			variantBytes: { low: 7_100_000, medium: 7_100_000, high: 7_200_000, ultra: 7_300_000 },
