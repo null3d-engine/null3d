@@ -429,10 +429,11 @@ export const record: Species = {
 		},
 	},
 	bark: {
-		// Stills 26 and 15 under the copy-stand lamps: a dark grey-brown. The trunk's tint lives in the
-		// texture set; the record adds none. A foot zone was tried and reverted: the base view's
-		// figure is measured over patches that are half sky and ground, so no bark tint moves it.
-		zones: [{ layer: 0, by: 'height', from: 0, to: 40, blend: 0, tint: [1, 1, 1] }],
+		// Stills 26 and 15 under the copy-stand lamps: a dark grey-brown on the thick bole. The
+		// texture set carries the tone; this zone pulls its red and blue down, because the drawn
+		// bole stands warm of its photographs. Thin wood draws the young bark instead and keeps
+		// none of this tint.
+		zones: [{ layer: 0, by: 'height', from: 0, to: 40, blend: 0, tint: [0.89, 1, 0.97] }],
 		young: 0,
 		// Stills 16 and 28: the plates give way to smooth purplish bark with pale orange lenticels on
 		// wood thinner than about seven centimetres across, which is how the limb of still 16 reads.
