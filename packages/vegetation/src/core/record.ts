@@ -1944,6 +1944,14 @@ export interface SpeciesBudget {
  */
 export interface CuttingHints {
 	/**
+	 * The leaves that one shoot of a piece carries, where a plant's pieces are shoots of its crown
+	 * rather than shoot prototypes: a rosette cuts an eye of the grown plant, so the crown's own
+	 * leaf count would give the piece the whole crown's density. A class of its own cannot serve
+	 * these plants, whose leaves carry no prototypes to place. Absent, a piece takes the crown's
+	 * leaf count, as it did before this field.
+	 */
+	readonly leaves?: Spread;
+	/**
 	 * The shoots a cutting kit places over the crown's own, from 0.25 to 8, where a piece cut for
 	 * close review carries a denser covering than the crown can afford. The crown's kit is unchanged:
 	 * the piece is drawn at the nearest level alone, so its kit pays for no card levels.
@@ -1995,6 +2003,13 @@ export interface CutFromPlant {
 	readonly order: number;
 	/** Metres of wood from the cut to the farthest tip. */
 	readonly length: number;
+	/**
+	 * The piece's leaf size over the crown's, where a piece cut from the plant wants leaves of its
+	 * own. A rosette's piece carries the crown's leaves at the crown's size, so a piece that stands
+	 * a little too dense for its photograph is opened by shrinking its leaves rather than by taking
+	 * a whole leaf from it. 1 by default.
+	 */
+	readonly scale?: number;
 }
 
 /**

@@ -469,6 +469,7 @@ function extraProblems(record: Species, out: string[]): void {
 function cuttingProblems(record: Species, out: string[]): void {
 	// A blade, a thick leaf or a whole frond can lie pressed flat in its frame's plane.
 	const leaf = record.cuttings?.leaf;
+	if (record.cuttings?.leaves) spreadProblems(record.cuttings.leaves, 'cuttings.leaves', true, out);
 	if (
 		leaf?.pressed &&
 		record.foliage.kind !== 'blade' &&
@@ -491,8 +492,12 @@ function cuttingProblems(record: Species, out: string[]): void {
 		if ('shoot' in hint) {
 			if (!names.has(hint.shoot))
 				out.push(`cuttings.${part}.shoot '${hint.shoot}' names no class in shoots.classes`);
-		} else if (hint.length <= 0)
-			out.push(`cuttings.${part}.length is ${hint.length}; it must be above 0`);
+		} else {
+			if (hint.length <= 0)
+				out.push(`cuttings.${part}.length is ${hint.length}; it must be above 0`);
+			if (hint.scale !== undefined && !(hint.scale > 0))
+				out.push(`cuttings.${part}.scale is ${hint.scale}; it is a multiple and must be above 0`);
+		}
 	}
 }
 
