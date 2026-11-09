@@ -266,3 +266,34 @@ Limits this record states:
   leaves apart. At close range the same split appears. Still 21's matte holds its stem with the side
   shoot and thirty-eight leaf-sized groups beside it, where the leaves touch the stem in the render.
   The review works at 480 pixels across, so the stalk is two pixels at the render's own size.
+
+## Row 8 on the evidence that survives
+
+The three close views were drawn twice at `f07536cbb`: once with the bark mask, once without it
+(runs `birch-row8-mask-2` and `birch-row8-plain-2`; seed 11, variant 0, preset high). The later land
+commit `46f61668b` takes the view name from the shot instead of the picture's number. It moves none
+of these figures, because each picture draws the view its number names. The color differences are
+4.77, 7.17 and 11.94 with the mask, and 15.47, 2.28 and 3.23 without it. The unmasked figures come
+from the tool's own CIEDE2000 over the stored pair. The field that holds the surface figure is filled
+only when the mask is on.
+
+- Still 15 stands at 2.28 unmasked. Its photograph is bark to all four edges, with dark branch
+  fragments at the frame's edge, so neither picture has a backdrop to cut. The mask removes the
+  photograph's dark fissures and the render's white bark and reads 7.17.
+- Still 14 is inconclusive on color. The mask keeps 75 per cent of the photograph and 38 per cent
+  of the render. The render's kept part is its center column alone, so the two means cover different
+  regions. The patches that both pictures keep differ by 27.9, 8.3 and 9.6 steps. The picture's
+  contrast is the evidence instead. The photograph's darkest fifth reads lightness 9 and its
+  brightest 84; the render's read 21 and 55. The base's bark is drawn with too little contrast, its
+  black foot too light and its white trunk too dark. A sky share of 0.9 brings the mean difference
+  to 2.63. It gets there by cancelling, so it is refused.
+- Still 16 is inconclusive. The mask keeps 44 per cent of the photograph against 43 of the render.
+  It removes the white bark, which sits within its own eight-step cut of the pale sky. The unmasked
+  3.23 partly measures the backdrop the frames disagree about. The render puts 0.26 of the plant
+  behind the subject and fills 0.45 of the frame. It also shows olive ground where the photograph
+  looks up at the limb against sky.
+
+Two landing items follow. The bark figure needs a paired-patch reading, or the share each picture
+keeps printed beside it. The masked mean is a mean of whatever survives the cut, so two figures can
+agree while the pictures do not. The limb view needs a camera rise a picture can ask for. A slot's
+elevation changes nothing today, and the picture drawn twelve degrees up is identical.
