@@ -1,8 +1,9 @@
-# D-334: the saguaro grows as a ribbed column, with one spine-cluster card at every areole
+# D-335: the saguaro grows as a ribbed column, with one spine-cluster card at every areole
 
 Status: decided and built in the column growth model, the saguaro's record and texture folder, and
 the plant review's skin close-ups. The owner approved the raise of the tree class's second-card-level
-triangle cap to 52,000. Task: M3-V4.
+triangle cap to 52,000. The species stands down under D-334's fourth ruling until the twelve existing
+species are complete. Task: M3-V4.
 
 Summary: a saguaro's whole height is one ribbed stem that carries no crown, so no broadleaf model
 draws it. The `column` growth model grows the stem and its arms as tubes, and the wood mesher draws
