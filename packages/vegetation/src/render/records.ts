@@ -123,14 +123,16 @@ export const HEADER = {
 	extraStalks: 51,
 	/** The least width in pixels that a card's stalk draws, or 0 where the record gives none. */
 	cardStalk: 55,
+	/** Young bark: the tint its thin wood takes, where the record gives one. */
+	youngTint: 56,
 	/** The autumn bark's linear tint, and 1 when the record gives one. */
-	autumnBark: 56,
+	autumnBark: 57,
 	/** The winter bark's linear tint, and 1 when the record gives one. */
-	winterBark: 57,
+	winterBark: 58,
 	/** The winter leaves' linear reflectance, and 1 when the record gives them. */
-	winterReflectance: 58,
+	winterReflectance: 59,
 	/** The winter leaves' linear transmittance. */
-	winterTransmittance: 59,
+	winterTransmittance: 60,
 } as const;
 
 /**
@@ -312,6 +314,7 @@ export function speciesHeader(
 	if (bark) {
 		const young = barkManifest?.young;
 		texel(header, HEADER.young, [...(young?.mean ?? STAND_IN_BARK), bark.youngRadius]);
+		texel(header, HEADER.youngTint, [...(bark.youngTint ?? [1, 1, 1]), 0]);
 		const zones = bark.zones.slice(0, MAX_BARK_ZONES);
 		texel(header, HEADER.youngTile, [
 			young?.tile[0] ?? 0.12,
