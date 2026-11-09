@@ -188,8 +188,8 @@
 	"chromium-swiftshader/compat/plant-pedunculate-oak.png": {
 		"test": "plant-pedunculate-oak",
 		"tier": "compat",
-		"date": "2026-11-07",
-		"reason": "the oak's kit took the cut class's forked shapes, so its card atlas grew from five cells a side to six and each card's texel position moved; the crown draws as the review measures it, so the software set is redrawn here while CI redraws it"
+		"date": "2026-11-09",
+		"reason": "drawn on this Mac's SwiftShader at 8c31e17a3 after the oak's bole tint; CI replaces them"
 	},
 	"chromium-swiftshader/compat/probe-grid-wall-night.png": {
 		"test": "probe-grid-wall-night",
@@ -464,8 +464,8 @@
 	"chromium-swiftshader/webgl2/plant-pedunculate-oak.png": {
 		"test": "plant-pedunculate-oak",
 		"tier": "webgl2",
-		"date": "2026-11-07",
-		"reason": "the oak's kit took the cut class's forked shapes, so its card atlas grew from five cells a side to six and each card's texel position moved; the crown draws as the review measures it, so the software set is redrawn here while CI redraws it"
+		"date": "2026-11-09",
+		"reason": "drawn on this Mac's SwiftShader at 8c31e17a3 after the oak's bole tint; CI replaces them"
 	},
 	"chromium-swiftshader/webgl2/probe-grid-wall-night.png": {
 		"test": "probe-grid-wall-night",
@@ -770,8 +770,8 @@
 	"chromium-swiftshader/webgpu/plant-pedunculate-oak.png": {
 		"test": "plant-pedunculate-oak",
 		"tier": "webgpu",
-		"date": "2026-11-07",
-		"reason": "the oak's kit took the cut class's forked shapes, so its card atlas grew from five cells a side to six and each card's texel position moved; the crown draws as the review measures it, so the software set is redrawn here while CI redraws it"
+		"date": "2026-11-09",
+		"reason": "drawn on this Mac's SwiftShader at 8c31e17a3 after the oak's bole tint; CI replaces them"
 	},
 	"chromium-swiftshader/webgpu/probe-grid-wall-night.png": {
 		"test": "probe-grid-wall-night",
