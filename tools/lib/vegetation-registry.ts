@@ -5,7 +5,7 @@
 // tools/lib/generated.ts, and `bun tools/vegetation-registry.ts` writes them alone.
 //
 // A folder whose name starts with an underscore is not a species: `_template` holds the files to
-// copy, and `_stub` holds the stand-in species that the tests and the review page grow.
+// copy.
 import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import { renderFrontMatter } from './frontmatter';

@@ -117,7 +117,13 @@ import {
 } from './engine-checks.ts';
 import { type GeneratorResult, generatorReport } from './environment-generator-checks.ts';
 import { type FirstDrawResult, firstDrawNote, firstDrawProblems } from './first-draw-checks.ts';
-import { type GpuPath, type MissingAllowed, NONE_MISSING, skippedPath } from './gpu-paths.ts';
+import {
+	type GpuPath,
+	type MissingAllowed,
+	NONE_MISSING,
+	skippedForImages,
+	skippedPath,
+} from './gpu-paths.ts';
 import { borrowedRun, type HarnessDirs, type ImageRun, imageProblems } from './images.ts';
 import { JITTER_TABLE_HEAD, jitterRows, saveJitterResult } from './jitter-checks.ts';
 import { type Ktx2Result, ktx2FormatsNote, ktx2Problems } from './ktx2-checks.ts';
@@ -152,6 +158,12 @@ import {
 import { glslProgramCountOf } from './shader-programs.ts';
 import { type SkinPassResult, skinPassNote, skinPassProblems } from './skin-pass-checks.ts';
 import { type StatsResult, statsProblems } from './stats-checks.ts';
+import {
+	type StorageSpeedCheck,
+	type StorageSpeedResult,
+	storageSpeedPlan,
+	storageSpeedProblems,
+} from './storage-speed.ts';
 import { progressName, REST_AFTER_TAB_END_SECONDS } from './tab-end.ts';
 import {
 	type TextureCacheCheck,
@@ -276,11 +288,6 @@ export type Check =
 	 * holds the figures, and nothing judges them.
 	 */
 	| { kind: 'probe'; tier: Tier }
-	/**
-	 * The atlas paint page: how long the bark and the leaf atlas take to paint, in turns. The paint
-	 * runs on the page's own thread, so the figures do not depend on a GPU path.
-	 */
-	| { kind: 'atlas-paint' }
 	/** The sky map cost page: each stage of a sky map's refresh, timed on one GPU path. */
 	| { kind: 'sky-map'; tier: Tier }
 	/** The sky refresh page: the frames from a sun move until the sky's light follows it. */
@@ -317,6 +324,8 @@ export type Check =
 	| { kind: 'warm-up-time'; tier: Tier; scene: string; fresh: boolean }
 	/** A load of the texture cache page with the city's textures, with the cache off or on. */
 	| TextureCacheCheck
+	/** The storage speed page: the storage allowance and each browser store's speed. */
+	| StorageSpeedCheck
 	/** The object growth page's timing mode: the create calls that grow the scene's object tables. */
 	| ObjectGrowthCheck
 	/** S6's occlusion turns at one preset and one occlusion buffer size, for T-36. */
@@ -1546,26 +1555,6 @@ export function grassPlan(): PlanItem<Check>[] {
 	);
 }
 
-/** The seconds that the atlas paint page may take: its painters run three rounds of each atlas. */
-const ATLAS_PAINT_TIMEOUT_SECONDS = 120;
-
-/**
- * How long the bark and the leaf atlas take to paint on each device, separately: the painters that
- * `bakePlantAtlases` runs, three rounds of each in turn. The paint runs on the sketch thread, so one
- * page on each device reports both figures, and no GPU path is asked of it. D-241's bake section
- * records the tablet's and the phone's figures from this plan.
- */
-export function atlasPaintPlan(): PlanItem<Check>[] {
-	return [
-		pageItem(
-			'atlas-paint',
-			'atlas-paint-cost',
-			{ kind: 'atlas-paint' },
-			{ timeoutSeconds: ATLAS_PAINT_TIMEOUT_SECONDS },
-		),
-	];
-}
-
 /** The GPU paths of the alpha-mask plan's pages: the two WebGPU paths draw on WebGPU's tier. */
 const ALPHA_MASK_PATHS = [
 	['webgpu', 'webgpu'],
@@ -1662,23 +1651,6 @@ export function carPaintLoopPlan(): PlanItem<Check>[] {
 					timeoutSeconds: CAR_PAINT_TIMEOUT_SECONDS,
 				},
 			),
-		),
-	];
-}
-
-/**
- * What a far-tree impostor bake costs on the device, at each preset's atlas grid: the bake page
- * bakes a conifer, a birch and an oak at every grid and reports each bake's time on the sketch
- * thread and the bytes that its two atlases hold. The bake runs on the CPU, so one run gives every
- * GPU path the same figures. D-274 records them.
- */
-export function impostorBakePlan(): PlanItem<Check>[] {
-	return [
-		pageItem(
-			'impostor-bake',
-			'impostor-bake',
-			{ kind: 'probe', tier: 'webgl2' },
-			{ timeoutSeconds: 180 },
 		),
 	];
 }
@@ -1975,17 +1947,6 @@ export function vegetationPlan(): PlanItem<Check>[] {
 }
 
 /**
- * What a grove of grown oaks costs at each preset, for M3-V7: the leaf and bark materials sway in
- * the scene's one wind field, the leaves flutter and the sun's shadows follow them. The page times
- * the frames at a fixed preset and GPU path, and reports the GPU time per frame and per pass, the
- * CPU time and the draw calls.
- */
-const VEGETATION_WIND_PATHS = [
-	['webgpu', 'webgpu'],
-	['compat', 'webgpu'],
-	['webgl2', 'webgl2'],
-] as const;
-/**
  * The GPU paths of the grass plan's pages, with the presets that each one draws. WebGL2 and
  * compatibility mode cap the preset at Medium, so a page above the cap would draw Medium again
  * under another name.
@@ -2061,27 +2022,6 @@ export function vegetationGrassPlan(): PlanItem<Check>[] {
 			},
 		),
 	);
-	return items;
-}
-
-/** The presets that the vegetation wind plan runs on each path. */
-const VEGETATION_WIND_PRESETS = ['low', 'medium', 'high', 'ultra'] as const;
-
-export function vegetationWindPlan(): PlanItem<Check>[] {
-	const items: PlanItem<Check>[] = [];
-	for (const preset of VEGETATION_WIND_PRESETS)
-		for (const [path, tier] of VEGETATION_WIND_PATHS)
-			items.push(
-				pageItem(
-					`vegetation-wind-${preset}-${path}`,
-					'vegetation-cost',
-					{ kind: 'probe', tier },
-					{
-						switches: [`gpu=${path}`, `preset=${preset}`, 'seconds=5'],
-						timeoutSeconds: VEGETATION_TIMEOUT_SECONDS,
-					},
-				),
-			);
 	return items;
 }
 
@@ -2410,22 +2350,6 @@ export function webgpuStallPlan(): PlanItem<Check>[] {
 				switches: ['gpu=compat', 'demo=creek', 'preset=low', 'target-fps=1', 'seconds=5'],
 				timeoutSeconds: 240,
 			},
-		),
-	];
-}
-
-/**
- * Procedural tree generation in a worker, for M3-V1's budgets: each species at each preset's
- * detail, generated for several seeds, with the triangles, the vertices and the bytes of each
- * variant. It draws nothing and asks for no GPU path, so every device runs it.
- */
-export function treeGenerationPlan(): PlanItem<Check>[] {
-	return [
-		pageItem(
-			'tree-generation',
-			'tree-generation',
-			{ kind: 'probe', tier: 'webgl2' },
-			{ switches: ['seeds=6'], timeoutSeconds: 120 },
 		),
 	];
 }
@@ -3315,11 +3239,9 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	environment: environmentPlan,
 	'environment-load': environmentLoadPlan,
 	grass: grassPlan,
-	'atlas-paint': atlasPaintPlan,
 	'alpha-mask-cost': alphaMaskPlan,
 	'car-paint-cost': carPaintCostPlan,
 	'car-paint-loop': carPaintLoopPlan,
-	'impostor-bake': impostorBakePlan,
 	'impostor-cost': impostorCostPlan,
 	'impostor-frame': impostorFramePlan,
 	'cluster-cost': clusterCostPlan,
@@ -3335,7 +3257,6 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	'skyway-stall': skywayStallPlan,
 	splats: splatsPlan,
 	vegetation: vegetationPlan,
-	'vegetation-wind': vegetationWindPlan,
 	'wind-field-cost': windFieldCostPlan,
 	'wind-reader-cost': windReaderCostPlan,
 	'leaves-wind-cost': leavesWindCostPlan,
@@ -3343,7 +3264,6 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	terrain: terrainPlan,
 	'terrain-shadow': terrainShadowPlan,
 	'island-phones': islandPhonesPlan,
-	'tree-generation': treeGenerationPlan,
 	'vegetation-scatter': vegetationScatterPlan,
 	'canvas-cost': canvasCostPlan,
 	'wind-stress': windStressPlan,
@@ -3360,6 +3280,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	'warm-up-time': warmUpTimePlan,
 	governor: governorPlan,
 	'texture-cache': textureCachePlan,
+	'storage-speed': storageSpeedPlan,
 	'object-growth': objectGrowthPlan,
 	'compare-bench': compareBenchPlan,
 	'compare-effects': compareEffectsPlan,
@@ -3686,13 +3607,15 @@ export function gpuPathOf({ path, check }: PlanItem<Check>): GpuPath | undefined
 }
 
 /**
- * A plan's items with the GPU path that each page needs, and the flag that lets the runner page
- * skip the pages for the paths that the device lacks, by the report of the plan's capabilities
- * page. A plan without that page, or a run that lets no path be missing, runs every page.
+ * A plan's items with the GPU path that each page needs, and the flags that let the runner page
+ * skip the pages for the paths that the device lacks, and with `imageFaults`, the pages that draw
+ * where the browser's image buffers fail, by the report of the plan's capabilities page. A plan
+ * without that page, or a run that lets nothing be missing, runs every page.
  */
 export function withGpuPaths(
 	items: readonly PlanItem<Check>[],
 	allowed: MissingAllowed,
+	imageFaults = false,
 ): { items: PlanItem<Check>[]; flags: PlanFlags } {
 	const report = items.find((item) => item.check.kind === 'capabilities')?.id;
 	return {
@@ -3700,7 +3623,12 @@ export function withGpuPaths(
 			const gpu = gpuPathOf(item);
 			return gpu ? { ...item, gpu } : item;
 		}),
-		flags: report && (allowed.webgpu || allowed.webgl2) ? { skipMissing: { report, allowed } } : {},
+		flags: report
+			? {
+					...((allowed.webgpu || allowed.webgl2) && { skipMissing: { report, allowed } }),
+					...(imageFaults && { skipImageFaults: { report } }),
+				}
+			: {},
 	};
 }
 
@@ -4017,7 +3945,7 @@ export function judge(
 	missing: MissingAllowed,
 	context?: JudgeContext,
 ): string[] | 'skip' {
-	if (skippedPath(result)) return 'skip';
+	if (skippedPath(result) || skippedForImages(result)) return 'skip';
 	if (!result.ok) {
 		const path = neededPath(check);
 		if (path && missing[path] && missingPath(path, result.error)) return 'skip';
@@ -4251,6 +4179,8 @@ export function judge(
 			return startupProblems(result as StartupResult, check.mode);
 		case 'texture-cache':
 			return textureCacheProblems(check, result as ItemResult & TextureCacheResult);
+		case 'storage-speed':
+			return storageSpeedProblems(result as ItemResult & StorageSpeedResult);
 		case 'overload': {
 			const { overloaded, steps } = result as ItemResult & OverloadResult;
 			if (!overloaded)
@@ -4264,20 +4194,6 @@ export function judge(
 		case 'probe':
 			// The page reports what it found, and the run's result holds it.
 			return [];
-		case 'atlas-paint': {
-			const paint = result as ItemResult & {
-				times?: { bark?: number; leaf?: number }[];
-				barkMs?: number;
-				leafMs?: number;
-				failures?: string[];
-			};
-			return [
-				...(paint.failures ?? []).map((code) => `the engine failed with ${code}`),
-				...((paint.times ?? []).length > 0 ? [] : ['the page painted no round']),
-				...(paint.barkMs && paint.barkMs > 0 ? [] : ['the page measured no bark paint']),
-				...(paint.leafMs && paint.leafMs > 0 ? [] : ['the page measured no leaf paint']),
-			];
-		}
 		case 'effect':
 		case 'environment':
 		case 'grass':

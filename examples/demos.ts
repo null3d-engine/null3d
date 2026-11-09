@@ -853,6 +853,32 @@ export const DEMOS: readonly Demo[] = [
 		timeoutSeconds: 180,
 	},
 	{
+		name: 'vegetation',
+		group: 'Building scenes',
+		sketch: new URL('./vegetation/sketch.ts', import.meta.url),
+		code: 'vegetation/',
+		title: 'Vegetation',
+		scene: 'A meadow of every species',
+		summary:
+			"The vegetation add-on's meadow: every species the catalogue registers, each grown from its own record through the add-on's public functions and planted across a field. The pedunculate oak stands there today with the species that follow it, so the page fills as records land. Drag to turn round the meadow and use the wheel to step in, and press R to grow it all again from another seed.",
+		controls: [{ keys: ['R'], does: 'Grow the meadow again from another seed' }],
+		hold: 2,
+		timeoutSeconds: 240,
+	},
+	{
+		name: 'vegetation-wind',
+		group: 'Building scenes',
+		sketch: new URL('./vegetation-wind/sketch.ts', import.meta.url),
+		code: 'vegetation-wind/',
+		title: 'Plants in wind',
+		scene: 'A meadow in a breeze',
+		summary:
+			"The same plants under the wind add-on's field: set the wind's strength and its bearing on the sliders, and the crowns lift and settle as it passes. The Hold button stops the air, so a still frame can be compared with a moving one.",
+		controls: [],
+		hold: 2,
+		timeoutSeconds: 240,
+	},
+	{
 		name: 'forest',
 		group: 'Scale',
 		sketch: new URL('./forest/sketch.ts', import.meta.url),

@@ -124,6 +124,48 @@ describe('runTask', () => {
 		expect(tasksPending()).toBe(0);
 	});
 
+	test('counts a task while its WebAssembly file compiles, and lowers the count when the file fails', async () => {
+		// Hold mode takes its frame once the count is zero, so a task whose first compile is still
+		// running must count, or the frame misses what the task draws.
+		const original = globalThis.fetch;
+		let answer: (response: Response) => void = () => undefined;
+		globalThis.fetch = (() =>
+			new Promise<Response>((resolve) => (answer = resolve))) as unknown as typeof fetch;
+		try {
+			setJobTasks({
+				ports: [jobPort('built')],
+				running: [0],
+				call: () => {},
+				want: jobAsker(1, () => {}),
+			});
+			const file: WasmFile = {
+				name: 'slow',
+				url: new URL('http://localhost/tasks-slow-compile.wasm'),
+				what: 'the slow module',
+			};
+			const building = runTaskWithError<string>({ name: 'slow', wasm: [file] }, 0, [], error);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			expect(tasksPending()).toBe(1);
+			answer(new Response(EMPTY_BYTES, { headers: { 'Content-Type': 'application/wasm' } }));
+			expect(await building).toBe('built');
+			expect(tasksPending()).toBe(0);
+
+			globalThis.fetch = (async () =>
+				new Response(null, { status: 500 })) as unknown as typeof fetch;
+			const broken: WasmFile = {
+				name: 'broken',
+				url: new URL('http://localhost/tasks-broken-compile.wasm'),
+				what: 'the broken module',
+			};
+			const failing = runTaskWithError({ name: 'broken', wasm: [broken] }, 0, [], error);
+			expect(tasksPending()).toBe(1);
+			await expect(failing).rejects.toBeDefined();
+			expect(tasksPending()).toBe(0);
+		} finally {
+			globalThis.fetch = original;
+		}
+	});
+
 	test('waits for the page to say which job workers run before it sends a task', async () => {
 		const calls: number[] = [];
 		const host = {

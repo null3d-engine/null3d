@@ -7,7 +7,7 @@ import type { ShootPrototype } from '../asset';
 import type { EcoRule } from '../ecology/ecology';
 import type { MacroSkeleton } from './graph';
 import type { SpeciesTextureFiles } from './textures';
-import type { Curve, Rgb, Season, Spread, Vec2, Vec3 } from './types';
+import type { Curve, Detail, Rgb, Season, Spread, Vec2, Vec3 } from './types';
 
 /**
  * One species: the folder of its own under `species/`, grown by one of the eight growth models.
@@ -23,6 +23,13 @@ export interface Species {
 	readonly latin: string;
 	/** The catalogue's growth form, in words. The species page and the distinctness check read it. */
 	readonly form: string;
+	/**
+	 * The species' other forms by name, such as `young` or `woodland`: the same plant grown young or
+	 * in another habit, each given as the changes it makes to this record. A page asks for one by
+	 * name when it prepares the species. Without a form asked for, the plant grows from this record
+	 * as it stands, and a record with no forms grows as one without the field.
+	 */
+	readonly forms?: Readonly<Record<string, SpeciesForm>>;
 	/** The plant's size. */
 	readonly size: PlantSize;
 	/** How the large structure grows: the model and its numbers. */
@@ -57,9 +64,81 @@ export interface Species {
 	readonly roundBand?: number;
 	/** Which pieces a close review cuts from the plant. */
 	readonly cuttings?: CuttingHints;
-	/** The scatter's rule for this species. */
-	readonly ecology?: EcoRule;
+	/** Where the scatter places this species: its layer, spacing and tolerances. */
+	readonly ecology?: SpeciesEcology;
 }
+
+/**
+ * A species' scatter rule without what the record already gives: its id, its variants, and its
+ * radius, which defaults to its crown's. `speciesRule` makes the scatter's rule from it.
+ *
+ * @category api/vegetation
+ */
+export type SpeciesEcology = Omit<EcoRule, 'species' | 'variants' | 'radius'> & {
+	/** The radius the plant keeps to itself, in metres; its crown's by default. */
+	readonly radius?: number;
+};
+
+/**
+ * The fields of a species record that one of its other forms may change: the size, the growth and
+ * the outline, the shoots and the leaves, the bark and the stem base, the extras, the wind, the
+ * all-round band with its exception, and the pieces a close review cuts. The other fields stay the
+ * species' own, so a form's plants keep the species' names, seasons, detail levels and budget,
+ * textures, variants, seeds and scatter rule.
+ *
+ * @category api/vegetation
+ */
+export type FormField =
+	| 'size'
+	| 'growth'
+	| 'envelope'
+	| 'shoots'
+	| 'foliage'
+	| 'bark'
+	| 'base'
+	| 'extras'
+	| 'wind'
+	| 'roundBand'
+	| 'lopsided'
+	| 'cuttings';
+
+/**
+ * Another form of a species, such as the plant grown young or grown in a wood: the form in words, and
+ * the changes it makes to the species' record. A form names only what differs from the record. Its
+ * fields merge into the record's by name, an object's fields into the record's object; a number, a
+ * word, a curve or a list replaces the record's whole value; and null drops one of the record's
+ * optional fields, as a young plant drops the stem's division into great limbs. A form keeps the
+ * species' growth model and its kind of foliage, and the record check checks each form's record as
+ * it checks the species' own.
+ *
+ * @category api/vegetation
+ */
+export type SpeciesForm = {
+	/** The form in words, as the record's own `form` gives the species' growth form. */
+	readonly form: string;
+} & RecordChanges<Pick<Species, FormField>>;
+
+/**
+ * Changes to a part of a record: every field optional, an object's own fields changed in turn, and
+ * null in place of an optional field to drop it.
+ *
+ * @category api/vegetation
+ */
+export type RecordChanges<T> = {
+	readonly [K in keyof T]?: FieldChange<T[K]> | (undefined extends T[K] ? null : never);
+};
+
+/**
+ * A change to one field of a record: a list or a value given whole, or changes to an object's own
+ * fields. A field that may hold one of several kinds of object takes changes to any of them.
+ *
+ * @category api/vegetation
+ */
+export type FieldChange<T> = T extends readonly unknown[]
+	? T
+	: T extends object
+		? RecordChanges<T>
+		: T;
 
 /**
  * The size of a mature plant.
@@ -110,6 +189,41 @@ export interface SelfOrganizing {
 	readonly years: number;
 	/** Botanical orders grown per plant, 2 to 4. Finer orders come from the shoot prototypes. */
 	readonly macroOrders: number;
+	/**
+	 * The share of the plant's height below which its envelope holds no room, from 0 to 0.5: the
+	 * envelope is cut flat there, so the crown's underside stands higher than the fitted outline's
+	 * lowest row without the fit being edited by hand. Absent, the envelope starts at its own lowest
+	 * height.
+	 */
+	readonly floor?: number;
+	/**
+	 * How readily a lateral bud puts out a branch, as a multiplier on its chance: 1 as the light,
+	 * the species' angles and the apical dominance give it, above 1 a denser branching, below 1 a
+	 * sparser one. This is the wood's density, which with the shoots' own count makes a crown.
+	 */
+	readonly branching?: number;
+	/**
+	 * Metres of clear air a shoot keeps from another axis's wood, so two limbs do not pass through
+	 * one another as a real tree's do not. 0 by default, which lets shoots meet as they may. Without
+	 * `turning`, a shoot that would come nearer stops there.
+	 */
+	readonly clearance?: number;
+	/**
+	 * Degrees a shoot may turn aside in one internode to keep its clearance from another axis's
+	 * wood: it tries headings at rising angles either side of the one it chose, and takes the first
+	 * that is clear and inside the envelope, the side it turned to before first, so a shoot passing
+	 * an obstacle curves round it rather than zigzagging. It stops only where no heading within the
+	 * angle is clear. 0 or absent, a shoot that would come within the clearance stops there.
+	 */
+	readonly turning?: number;
+	/**
+	 * The least share of the trunk's radius that another axis's wood must have to keep clear of a
+	 * shoot, from 0 to 1. Each order's share is its girth beside the trunk's. 0 or absent, wood of
+	 * every order keeps the clearance, so thin twigs turn each other and move the crown's layout.
+	 * At 0.5 only the trunk and the great limbs keep it: branches and twigs keep their layout, and
+	 * a great limb does not turn for a twig.
+	 */
+	readonly clearanceThickness?: number;
 	/** Metres of one macro internode in year one, and its shrink per year (0 to 1). */
 	readonly internode: { readonly length: number; readonly ageFactor: number };
 	/** One stem, or a stool of several that share one light grid. */
@@ -124,6 +238,12 @@ export interface SelfOrganizing {
 		readonly angleSpread: number;
 		/** Chance per cycle that a bud dies. */
 		readonly extinction: readonly [apical: number, lateral: number];
+		/**
+		 * The macro orders whose lateral buds grow side axes, from 1 to the macro orders: a lateral
+		 * bud on an axis of this order or finer stays a bud, which carries the shoots, so a young
+		 * tree's limbs run out unbranched from its stem with 1. Absent, every order grows side axes.
+		 */
+		readonly sideOrders?: number;
 	};
 	/** How strongly the leader leads. */
 	readonly apical: {
@@ -133,6 +253,31 @@ export interface SelfOrganizing {
 		readonly dominance: readonly [base: number, distance: number, age: number];
 		/** Degrees the leader wanders from its bud's direction. */
 		readonly wander: number;
+	};
+	/**
+	 * Where the leader divides into its great limbs, as a share of the plant's height: the stem
+	 * stops there and its tip carries the given number of limbs, the first running on up the stem's
+	 * old line and the rest spread wide round it. Absent, the leader runs on to the top.
+	 */
+	readonly divide?: {
+		/** The height the stem reaches before it divides, as a share of the plant's height. */
+		readonly at: number;
+		/** The limbs the division makes, 2 to 6. */
+		readonly count: number;
+		/** Degrees from the stem's line at which the wide limbs leave. */
+		readonly angle: number;
+		/** Degrees from the stem's line at which the first limb runs on. */
+		readonly lean: number;
+		/**
+		 * The most degrees the bole leans, once it runs straight from its foot to the division, from 0
+		 * (upright) to 90. After growth each of the stem's nodes below the division moves onto a line
+		 * from the foot, carrying its side branches, so the bole loses the crook that kinks every shoot
+		 * in the crown. The line runs to where the division grew when that leans no more than this;
+		 * otherwise it leans this far, and the division and the crown it carries move over with it,
+		 * unchanged in shape. Absent, the bole kinks above the envelope's base as the crown's shoots
+		 * do.
+		 */
+		readonly plumb?: number;
 	};
 	/** How light drives the buds, and the shadow grid. */
 	readonly light: {
@@ -144,6 +289,13 @@ export interface SelfOrganizing {
 		readonly shadow: readonly [depth: number, a: number, b: number];
 		/** Cells across the grid's widest side; at most 96. */
 		readonly cells: number;
+		/**
+		 * Whether a bud that the envelope stopped at the crown's surface takes its share of the
+		 * last season's resource by its site's light: its own cell, outside the envelope, holds no
+		 * light, but the outermost shoots of a crown see the most sky. Its shoot then draws the class
+		 * its share gives. Absent or false, such a bud takes no share and draws the weakest class.
+		 */
+		readonly surface?: boolean;
 	};
 	/** How shoots bend toward light and against gravity. */
 	readonly tropism: {
@@ -160,11 +312,69 @@ export interface SelfOrganizing {
 		readonly cleanBole: number;
 		/** Share of shed branches that stay as dead stubs. */
 		readonly stubs: number;
+		/**
+		 * Under the crown, as a share of the envelope's base height from 0 to 1, the base measured
+		 * where `floor` cuts the envelope: a bud whose node stood lower when it grew reads no sky at
+		 * the end of growth, so it dies and the bare wood it leaves dies back as every bare end does.
+		 * The line reads each node's height before the wood bends, so a bend that later lifts a node
+		 * does not save its bud. Wood that carries a live shoot beyond it stays. Absent, a bud outside
+		 * the envelope reads full sky wherever it stands, as at the crown's top and sides.
+		 */
+		readonly underCrown?: number;
 	};
-	/** Sag under the subtree's load, then the tip's upturn (reaction wood). */
-	readonly bending: { readonly strength: number; readonly upturn: number };
+	/**
+	 * Sag under the subtree's load, then the tip's upturn (reaction wood). The strength is from 0 (no
+	 * sag) and divides by the wood's stiffness, which grows with the fourth power of its radius. The
+	 * upturn is the share of its sag an axis's tip turns back up, from 0 to 1.
+	 */
+	readonly bending: {
+		readonly strength: number;
+		readonly upturn: number;
+		/**
+		 * The stem's diameter at 1.3 m, in metres, that the bend weighs the wood at: each radius is
+		 * fitted to this girth for the bend alone, so `size.dbh` changes the drawn wood and not the
+		 * sag, and the strength keeps its meaning whatever diameter the record draws. Above 0.
+		 * Absent, the bend weighs the wood as drawn, and a thinner stem bends more at the same
+		 * strength.
+		 */
+		readonly girth?: number;
+	};
+	/**
+	 * The fork rule: a child's widest angle to its parent shrinks as its share of the parent's wood
+	 * grows, from 80 degrees for the thinnest through 65 at a fifth to 15 once it leads its fork. A
+	 * side shoot's first internode leaves along its bud, and a small branch whose share grows past
+	 * what its angle allows turns toward its parent's line by a few degrees a year, as reaction wood
+	 * rights it. Absent or false, shoots keep the angle they grew at.
+	 */
+	readonly forkRule?: boolean;
+	/**
+	 * Kinked growth: the wander kinks each internode about the shoot's heading, which takes the
+	 * tropisms and only half the wander, so a shoot zigzags, angled at every joint, along a line that
+	 * drifts slowly; a stem kinks by half as much. Absent or false, the wander turns the heading
+	 * itself, and a long shoot drifts as a random walk.
+	 */
+	readonly kinks?: boolean;
+	/**
+	 * The leader's relay: an axis whose leader bud dies hands the lead to the lateral bud at its tip,
+	 * turned in toward the axis's line, and a stem's leader below the crown is spared chance loss, so
+	 * no axis ends in a stump. On when absent; false leaves an axis whose leader dies to stop there,
+	 * and a young plant whose stem stops can die.
+	 */
+	readonly relay?: boolean;
 	/** Pipe model: a parent's diameter to the exponent is the sum of its children's, and a terminal twig's radius in metres. */
-	readonly pipe: { readonly exponent: number; readonly tipRadius: number };
+	readonly pipe: {
+		readonly exponent: number;
+		readonly tipRadius: number;
+		/**
+		 * The least share of its girth that a stem keeps from one node to the next, from 0.5 to 1. A
+		 * leader that carries the crown to its top, as a young tree's or a woodland tree's does, tapers
+		 * slowly: at 0.7 or more no limb outgrows it, so the stem runs on to its top rather than
+		 * dividing into its thickest limb. Where it keeps more than its pipes give, the stem above a
+		 * limb stands thicker than the wood it carries, and it bends a little less under its load.
+		 * Absent, a stem keeps half its girth, as every other axis does.
+		 */
+		readonly leader?: number;
+	};
 	/** A bottle, a twist or a gnarl in the stem. */
 	readonly trunk?: TrunkShape;
 	/** Roots that drop from the limbs and become pillars (banyan). */
@@ -444,25 +654,53 @@ export interface Culm {
 }
 
 /**
- * Leaves from one base on a golden-angle spiral: hosta, agave.
+ * Leaves on long stalks from one crown that has divided into shoots, each shoot a golden-angle spiral
+ * of leaves, with flowering scapes in season: hosta.
  *
  * @category api/vegetation
  */
 export interface Rosette {
 	/** The model's name. */
 	readonly model: 'rosette';
-	/** Leaves per plant. */
+	/** Shoots (eyes) the crown has divided into; each carries its own spiral of leaves. */
+	readonly shoots: Spread;
+	/** Radius in metres of the ring the shoots stand on round the crown's centre. */
+	readonly crown: number;
+	/** Leaves per shoot, the rolled young ones among them. */
 	readonly leaves: Spread;
-	/** Degrees between successive leaves. */
+	/** Degrees between successive leaves of a shoot. */
 	readonly divergence: number;
-	/** Degrees from vertical by leaf age (t = 0 inner, 1 outer). */
+	/** Degrees from vertical at a stalk's base, by leaf age (t = 0 youngest, 1 oldest). */
 	readonly tilt: Curve;
-	/** Degrees a leaf arches along its length, by leaf age. */
+	/** Degrees a stalk bends outward and down over its length, by leaf age. */
 	readonly arch: Curve;
-	/** A short stem under the rosette (agave), metres. */
-	readonly stem: number;
-	/** Dead leaves at the base. */
-	readonly dead: Spread;
+	/** Stalk length in metres, by leaf age. */
+	readonly stalk: Curve;
+	/** Blade length over the foliage's leaf length, by leaf age: young leaves are small. */
+	readonly size: Curve;
+	/** Degrees the blade turns down from its stalk's line where it joins it, by leaf age. */
+	readonly pitch: Curve;
+	/** Share of each shoot's leaves, the youngest, that are still rolled. */
+	readonly rolled: number;
+	/** Extra degrees of tilt in autumn, when the leaves collapse toward the ground. */
+	readonly collapse: number;
+	/** Bare flowering stems in the seasons they name, each carrying the record's flower extras. */
+	readonly scapes?: {
+		/** Scapes per plant. */
+		readonly count: Spread;
+		/** Height in metres. */
+		readonly height: Spread;
+		/** Radius at the base in metres. */
+		readonly radius: number;
+		/** Degrees from vertical. */
+		readonly lean: Spread;
+		/** Share of the scape, from its top, that carries flowers. */
+		readonly raceme: number;
+		/** Flowers per scape, all on one side. */
+		readonly flowers: Spread;
+		/** The seasons the scapes stand in. */
+		readonly seasons: readonly Season[];
+	};
 }
 
 /**
@@ -490,24 +728,80 @@ export interface FrondColony {
 }
 
 /**
- * A tuft of blades from a small base: grasses, sedges and rushes.
+ * A tuft of shoots from one crown, each shoot a column of sheaths with blades in two or three ranks,
+ * and flowering stems in season: grasses and sedges.
  *
  * @category api/vegetation
  */
 export interface Tuft {
 	/** The model's name. */
 	readonly model: 'tuft';
-	/** Blades per tuft. */
-	readonly blades: Spread;
-	/** Radius of the base in metres. */
+	/** Shoots (tillers) per tuft. */
+	readonly shoots: Spread;
+	/** Radius of the crown the shoots rise from, in metres. */
 	readonly base: number;
-	/** Outward lean in degrees by blade length (t = length / longest blade). */
+	/** Degrees a shoot leans out from vertical, by its distance from the centre (t = distance / base). */
 	readonly lean: Curve;
-	/** Seed heads: how many, their kind, and their height in metres. */
-	readonly heads?: {
+	/** Blades per shoot. */
+	readonly blades: Spread;
+	/** Ranks the blades stand in round their shoot: 2 for grasses, 3 for sedges. */
+	readonly ranks: number;
+	/** Metres of sheath under each blade's collar. */
+	readonly sheath: Spread;
+	/** The sheath's radius in metres. */
+	readonly sheathRadius: number;
+	/** Degrees a blade leaves its shoot, by blade age (t = 0 the youngest, innermost, 1 the oldest). */
+	readonly spread: Curve;
+	/** Blade length over the foliage's blade length, by blade age. */
+	readonly size: Curve;
+	/** Flowering stems: how many, how tall, how they bow, and their heads. */
+	readonly heads?: TuftHeads;
+}
+
+/**
+ * The flowering stems of a tuft and the heads they carry. Each head's flowers or spikes are the
+ * record's extras on the stem's flower sites ('flower') and its tip ('stem-tip').
+ *
+ * @category api/vegetation
+ */
+export interface TuftHeads {
+	/** Flowering stems per tuft. */
+	readonly count: Spread;
+	/** What the heads are: an open branched panicle (grasses) or spikes hanging on stalks (sedges). */
+	readonly kind: 'panicle' | 'spike';
+	/** Stem height in metres. */
+	readonly height: Spread;
+	/** The stem's radius at its base in metres. */
+	readonly radius: number;
+	/** Faces round the stem: 3 for a sedge's three-angled stem, more for a round culm. */
+	readonly sides: number;
+	/** Degrees the stem's top bows over from vertical. */
+	readonly bow: Spread;
+	/** The seasons the stems stand in. */
+	readonly seasons: readonly Season[];
+	/** A panicle: its length, whorls of branches, and flowers along each branch. */
+	readonly panicle?: {
+		/** Metres of the stem's top that the panicle takes. */
+		readonly length: Spread;
+		/** Whorls of branches up the panicle. */
+		readonly whorls: number;
+		/** Branches per whorl. */
+		readonly branches: Spread;
+		/** Degrees a branch leaves the stem, low whorls to high (t = 0 lowest, 1 highest). */
+		readonly angle: Curve;
+		/** Degrees a branch droops over its length. */
+		readonly droop: number;
+		/** Flowers (spikelets) per branch, on its outer part. */
+		readonly flowers: Spread;
+	};
+	/** Spikes hanging one below another from the stem's bowed top. */
+	readonly spikes?: {
+		/** Spikes per stem below the one at its tip. */
 		readonly count: Spread;
-		readonly kind: 'panicle' | 'spike';
-		readonly height: Spread;
+		/** Metres between spikes along the stem. */
+		readonly spacing: Spread;
+		/** Metres of the stalk each spike hangs on. */
+		readonly stalk: Spread;
 	};
 }
 
@@ -576,6 +870,11 @@ export interface RadialEnvelope {
 		readonly from: string;
 		/** Views the measure read. */
 		readonly views?: number;
+		/**
+		 * Stills that bound the crown's broad sides, with the turn the review draws each at, in
+		 * degrees round the plant. Turn 0 looks from +Z.
+		 */
+		readonly stills?: readonly { readonly file: string; readonly turn: number }[];
 	};
 }
 
@@ -636,6 +935,13 @@ export interface ShootSpec {
 	readonly prototypes: number;
 	/** The kinds of shoot, each serving a range of bud vigor. */
 	readonly classes: readonly ShootClass[];
+	/**
+	 * Shoots the cuttings draw and the crown never does, each with one prototype of its own. A close
+	 * picture of a cut twig wants shorter, denser twigs than the crown can carry on the same class, and
+	 * a class of its own settles the two without either paying for the other. A name here must not also
+	 * be one of `classes`.
+	 */
+	readonly cuttingClasses?: readonly ShootClass[];
 	/** Leaf or needle arrangement along a shoot. */
 	readonly phyllotaxis: Phyllotaxis;
 	/** Orders inside one prototype, 1 to 3. */
@@ -659,17 +965,121 @@ export interface ShootSpec {
 		readonly width: number;
 		/** Buds crowded at the shoot tip (oak). */
 		readonly tipCluster: number;
+		/**
+		 * How the tip cluster's buds below the terminal one stand round it: `step`, how far each stands
+		 * below the last along the twig as a share of a bud's length, 0 to 1, and `lean`, the degrees
+		 * each leans out from the terminal bud, 0 to 80. A short step and a wide lean gather them into
+		 * the round bunch an oak's twig tip carries. Without it the step is 0.4, which strings them
+		 * down the twig's last centimetres, and the lean 32.
+		 */
+		readonly cluster?: { readonly step: number; readonly lean: number };
+		/** The buds' linear colour, which takes the young bark's pattern; the young bark's own when not given. */
+		readonly colour?: Rgb;
 	};
 	/** Where shoots attach to a variant. */
 	readonly placement: {
 		/** Shoots per metre of the finest macro axes, by bud vigor (t = vigor). */
 		readonly perMetre: Curve;
-		/** No shoot where sky visibility is below this: shade pruning. */
+		/**
+		 * How dense the foliage sits against the curve above, 1 by the curve's own figure. This is
+		 * the dial for a crown too thin for its reference: raising it puts more shoots along the
+		 * finest axes without changing their reach or the species' part sizes.
+		 */
+		readonly density?: number;
+		/**
+		 * How far the shoots gather towards the end of the axis that carries them, 0 to 1. At 0 they
+		 * stand evenly along it; at 1 they crowd at its end and the stretch behind thins. A crown
+		 * that answers its reference's masses puts its foliage at the axes' ends, which also dresses
+		 * each limb's tip, where a bare run otherwise stands past the leaves.
+		 */
+		readonly tipBias?: number;
+		/**
+		 * No shoot where sky visibility is below this: shade pruning. An axis's end bud is spared: it
+		 * keeps its rosette unless it stands in less light than the tip line.
+		 */
 		readonly shadePrune: number;
+		/**
+		 * The sky visibility under which an axis's end bud loses the rosette it is otherwise always
+		 * given, 0 to 1: a tip this dark is a twig that starved inside the crown, so it bears only
+		 * the shoots its vigor and stretch give it, and the limbs between the foliage masses show.
+		 * Absent, every end bud keeps its rosette.
+		 */
+		readonly tipPrune?: number;
+		/**
+		 * No shoot, a tip's rosette among them, where the finished crown's own leaves leave it less
+		 * than this share of the sky, 0 to 1. The shade-prune line reads the light the growth saw,
+		 * which a bud's own neighbours set, and spares a lit tip; this line reads the whole crown's
+		 * leaf mass once every shoot stands, so the inside of a thick mass and the shaded underside
+		 * thin while the lit surface stays. Absent or 0, no shoot goes by it.
+		 */
+		readonly skyPrune?: number;
+		/**
+		 * The depth in metres of the height layers a sky-prune line reads within, from 0.25 to 5:
+		 * given, the line is a share of the sky the best-lit tenth of the shoots at a shoot's own
+		 * height see, so every height keeps its lit outer shoots and loses its shaded inner ones, and
+		 * the crown's underside keeps its rim while its middle opens. Absent, the line is a share of
+		 * the whole sky.
+		 */
+		readonly skyPruneLayer?: number;
+		/**
+		 * The thickest wood that is trimmed away where it bears no shoot, as a radius in metres, 0 to
+		 * 0.1: once the shoots stand, a branch's wood no thicker than this goes past the last node that
+		 * bears a shoot or carries a branch that stays, and a branch left with nothing goes. A twig
+		 * whose every shoot was pruned or starved has died rather than standing bare under the crown.
+		 * Absent or 0, the wood stays as it grew.
+		 */
+		readonly bareTrim?: number;
+		/**
+		 * Degrees each shoot turns toward the sky from the way it leaves its wood, from -30 to 30,
+		 * negative toward the ground. Absent, the turn comes from the finest order's tropism.
+		 */
+		readonly lift?: number;
+		/**
+		 * Degrees each shoot turns away from the wood that carries it, on top of the angle the
+		 * record's buds give, from 0 to 60. A crown whose foliage stands against its twigs opens as
+		 * its shoots reach further out, and the shoots keep their feet on the wood: 0 by default,
+		 * the angle the buds' own curve sets.
+		 */
+		readonly reach?: number;
 		/** How far a shoot turns its leaves toward the sky, 0 to 1 (flat beech sprays). */
 		readonly skyward: number;
+		/**
+		 * How a crowded tip stands its leaves. Round, the default, divides the turn evenly so the
+		 * cluster reads the same from every side; fan spreads them in the stem's own plane, so the
+		 * rosette is one flat face of blades, as an oak's is when its leaves are looked at front on.
+		 */
+		readonly rosette?: 'round' | 'fan';
 		/** A shoot's scale. */
 		readonly scale: Spread;
+		/**
+		 * The share of the internode back from a bud that its shoots may stand in, 0 to 1. Small,
+		 * they gather into a tuft at the node and the internode between nodes stands bare; 1, they
+		 * spread over the whole internode and the axes carry leaves the length of their run.
+		 */
+		readonly gather?: number;
+		/**
+		 * Gathers the shoots into masses along each axis, with a thinner run between them, so the
+		 * crown is built of clumps with sky and wood between rather than an even mesh of leaves.
+		 * Absent, the shoots stand evenly spaced. The masses of neighbouring axes do not line up,
+		 * so the crown's clumps are not rows.
+		 */
+		readonly clump?: {
+			/** Metres from one mass of shoots to the next along an axis. */
+			readonly spacing: number;
+			/** How far the shoots thin between masses, 0 even and 1 bare. */
+			readonly depth: number;
+			/**
+			 * A second, finer scale over the same crown: masses within a mass, so the foliage of one
+			 * plate reads as tufts with wood between them. The coarse scale sets the plates' gaps and
+			 * the fine scale sets the crown's grain; one scale cannot do both.
+			 */
+			readonly fine?: {
+				/** Metres from one tuft to the next. */
+				readonly spacing: number;
+				/** How far the shoots thin between tufts, 0 even and 1 bare. */
+				readonly depth: number;
+			};
+		};
 	};
 }
 
@@ -680,7 +1090,7 @@ export interface ShootSpec {
  */
 export interface ShootClass {
 	/** The class's name. */
-	readonly name: 'long' | 'short' | 'spur' | 'whip' | 'spray';
+	readonly name: 'long' | 'short' | 'spur' | 'whip' | 'spray' | 'cut';
 	/** Bud vigor this class serves, 0 weak to 1 strong. */
 	readonly vigor: readonly [number, number];
 	/** Share of the species' prototypes in this class. */
@@ -695,8 +1105,89 @@ export interface ShootClass {
 	readonly leafScale: Curve;
 	/** Degrees between leaf and shoot, by position. */
 	readonly leafAngle: Curve;
+	/**
+	 * Degrees a leaf's angle varies from the curve, one leaf to the next. A rosette crowds its
+	 * leaves at the shoot's tip, so without this they all take the curve's last angle and the
+	 * cluster stands as one flat cone; with it the leaves open over a range and the cluster reads
+	 * round from every side.
+	 */
+	readonly leafAngleSpread?: number;
 	/** Degrees the shoot hangs over its length (willow whips, birch). */
 	readonly droop: number;
+	/**
+	 * Years of growth in this class's prototypes, 1 to 3: 1 for a current-year shoot alone (an oak's
+	 * terminal rosette), more for one with older years below it. The species' `years` by default.
+	 */
+	readonly years?: number;
+	/**
+	 * The class's own stem radius in metres at the shoot's base and tip, where it differs from the
+	 * species': an old twig is thicker than this year's shoot, and a cutting of it shows that.
+	 */
+	readonly stem?: { readonly radius: readonly [base: number, tip: number] };
+	/**
+	 * How this class's leaves or buds stand along its shoots, where the species' arrangement does not
+	 * fit: a studio cutting's photograph shows leaves two-ranked along the twig, while the crown's
+	 * shoots spiral so they fill from every side. The species' `phyllotaxis` by default.
+	 */
+	readonly phyllotaxis?: Phyllotaxis;
+	/**
+	 * Drawn by a cutting kit alone, which holds this class and no card levels; the plant kit leaves
+	 * it out. A cut piece is only ever drawn close up, so a dense class spends the cutting kit's cap
+	 * rather than the crown's, and the crown's kit does not pay for leaves the crown never draws.
+	 */
+	readonly cutOnly?: boolean;
+	/**
+	 * The share of a leaf's turn toward the sky this class takes, from 0 to 1, where the species' own
+	 * value does not fit: a cut twig held up to the camera shows its blades face on, while a crown's
+	 * leaves turn their faces up to the light. The species' `placement.skyward` by default.
+	 */
+	readonly skyward?: number;
+	/**
+	 * Degrees a lateral of this class leans from its parent, where the species' own value does not
+	 * fit: a spray's side twigs spread wider than a whip's.
+	 */
+	readonly lateral?: number;
+	/**
+	 * The most degrees, from 0 to 180, that a side shoot of any order may leave at from the shoot's
+	 * own line. A side shoot that would leave farther, as one that leaves an already leaning side
+	 * shoot on its far side does, turns toward the line on its own side until it stands at this
+	 * angle, so no twig of the prototype hangs back along the shoot with its leaves turned edge-on.
+	 * Absent, each side shoot leaves as its lean and turn give.
+	 */
+	readonly lateralMost?: number;
+	/**
+	 * Side shoots at each joint of the class's prototypes, where an older year's growth unit ends, as
+	 * a mean and a half-width; each joint draws its own count and rounds it to a whole number from 0
+	 * to 3. One axis's side shoots then turn round it by the golden angle from one joint to the next,
+	 * so they alternate along the stem rather than all leaving on one side. A cutting whose twigs
+	 * leave one at most joints and two at a few takes a mean near 1.3. Absent, the count follows the
+	 * species' tip cluster, from 1 to 3 shoots, and each joint's shoots fan round one azimuth.
+	 */
+	readonly laterals?: Spread;
+	/**
+	 * The share of a growth unit's length between one side shoot of a joint and the next, from 0 to
+	 * 0.45, so a joint's side shoots all leave within its unit. At 0 they all leave the unit's end, a
+	 * fan from one point; above it the first leaves the end and each further one this share of the
+	 * unit lower down the stem, so the twigs leave one at a time along the stem, as a cutting shows
+	 * them. Absent, 0.
+	 */
+	readonly lateralGap?: number;
+	/**
+	 * Breaks the class's long internodes into an even number of straight pieces about `length` metres
+	 * long, each piece turned `angle` degrees from the one before, back and forth about the
+	 * internode's line, so a twig runs stiff and angular between its nodes, as the winter cut branch
+	 * shows. The internode ends on its own line, and its reach falls by the cosine of half the angle,
+	 * about 4 % at 34 degrees. An internode shorter than two pieces stays one. `length` is at least
+	 * 5 mm and `angle` from 0 to 60 degrees. Absent, every internode is one straight piece.
+	 */
+	readonly bend?: { readonly length: number; readonly angle: number };
+	/**
+	 * Years of the class's run that carry leaves, counted back from the newest, where the class
+	 * differs from the species' own `leafYears`: at 1 only this year's shoots are in leaf, so a
+	 * cutting's older wood stands bare between the rosettes at its tips. A whole number from 0 to the
+	 * class's years.
+	 */
+	readonly leafYears?: number;
 }
 
 /**
@@ -809,6 +1300,26 @@ export interface CompoundLeaf {
 	readonly rachis: number;
 	/** Whether a pinnate leaf ends in one leaflet. */
 	readonly terminal: boolean;
+	/**
+	 * How many tiers below the leaf's own a leaflet meshes, a whole number from 0 to 2; 1 by
+	 * default. A leaflet is a fraction of its leaf's size, so a leaf of a dozen leaflets costs
+	 * about as much as a dozen whole leaves at the leaf's own cut. At 0 each leaflet is cut as
+	 * finely as a whole leaf.
+	 */
+	readonly leafletStep?: number;
+	/**
+	 * The share of its drawn stalk that a leaflet keeps, 0 to 1; 1 by default, the stalk the texture
+	 * measured. At 0 the leaflet is sessile: its blade begins at the point where it meets the rachis,
+	 * so no stalk stands between the two. A texture's stalk band may carry no leaf on one face, and a
+	 * leaflet that draws a stalk from it then stands clear of the rachis on that face.
+	 */
+	readonly leafletStalk?: number;
+	/**
+	 * Degrees between each leaflet and the rachis, from 30 to 90; the builder's own angle by default.
+	 * A wider angle spreads the leaflets, so the leaf's plan reads wider against its length, as a
+	 * leaf that has lost its leaflets' stalks reads narrower.
+	 */
+	readonly angle?: number;
 }
 
 /**
@@ -854,20 +1365,27 @@ export interface ScaleSpray {
 }
 
 /**
- * A grass blade.
+ * A grass or sedge blade: a keeled ribbon on an arching curve, of even width or tapering, ending in
+ * a blunt hooded tip (meadow grass) or a long fine point (sedge).
  *
  * @category api/vegetation
  */
 export interface GrassBlade {
-	/** Blade length in metres. */
+	/** Blade length in metres, collar to tip. */
 	readonly length: Spread;
-	/** Blade width in metres. */
+	/** Blade width in metres at its widest. */
 	readonly width: number;
-	/** Degrees of the V-fold along the blade. */
+	/** Width over the widest, by position along the blade, before the tip closes it. */
+	readonly profile: Curve;
+	/** How the blade ends: a short blunt boat-shaped hood, or a long fine point. */
+	readonly tip: 'hooded' | 'pointed';
+	/** Share of the blade's length over which the tip closes. */
+	readonly tipLength: number;
+	/** Degrees each half rises from the keel. */
 	readonly fold: number;
 	/** Degrees of twist over the blade. */
 	readonly twist: number;
-	/** Degrees the blade arches. */
+	/** Degrees the blade arches over its length. */
 	readonly arch: Spread;
 	/** Share of the blade that is dry at the tip. */
 	readonly dryTip: number;
@@ -876,23 +1394,38 @@ export interface GrassBlade {
 }
 
 /**
- * A thick, fleshy leaf with teeth and a spine: agave.
+ * A broad leaf of deep relief on a long channelled stalk: ribs pleated between curved parallel
+ * veins that run from the midrib to the tip, a cupped blade with a heart-shaped base: hosta.
  *
  * @category api/vegetation
  */
 export interface ThickLeaf {
-	/** Leaf length in metres. */
+	/** Blade length in metres, base to tip. */
 	readonly length: Spread;
-	/** Leaf width in metres. */
-	readonly width: number;
-	/** Thickness over width at the base, in a lens-shaped section. */
-	readonly thickness: number;
-	/** Marginal teeth: metres apart and metres long. */
-	readonly teeth: { readonly spacing: number; readonly length: number };
-	/** The terminal spine's length in metres. */
-	readonly spine: number;
-	/** Degrees the leaf arches. */
-	readonly arch: Spread;
+	/** The texture's measured contour, or a parametric outline where no texture leaf exists. */
+	readonly outline: 'texture' | ParametricOutline;
+	/**
+	 * The ribs: veins a side; the pleat's depth over the spacing between two veins; where the
+	 * innermost vein leaves the midrib, as a share of the blade's length; and how far each vein
+	 * sweeps out before it runs on to the tip, as a share of the length per unit of its rank.
+	 */
+	readonly ribs: {
+		readonly count: number;
+		readonly depth: number;
+		readonly start: number;
+		readonly sweep: number;
+	};
+	/** Degrees each half rises at its margin from the midrib's plane: a cupped blade. */
+	readonly cup: number;
+	/** Degrees the tip curls down along the length. */
+	readonly curl: number;
+	/** Margin wave: amplitude in metres and waves per side. */
+	readonly wave: readonly [amplitude: number, count: number];
+	/**
+	 * The stalk: its radius in metres where it meets the blade, and the share of that radius the
+	 * groove on its upper face sinks.
+	 */
+	readonly stalk: { readonly radius: number; readonly channel: number };
 	/** How the leaf looks under light. */
 	readonly optics: LeafOptics;
 }
@@ -909,6 +1442,11 @@ export interface BarkSpec {
 	readonly young: number;
 	/** Below this radius in metres, wood uses the young layer. */
 	readonly youngRadius: number;
+	/**
+	 * Multiplies the young layer's own colour where thin wood draws it, so a species can take the
+	 * young bark toward its own photographs. A record that gives none draws the layer as it is.
+	 */
+	readonly youngTint?: readonly [number, number, number];
 	/** Scale of the figure over the texture's own metres, by radius (t = radius / largest radius). */
 	readonly girthScale: Curve;
 	/** Metres of the deepest furrow, which the nearest level displaces on the trunk and largest limbs. */
@@ -922,11 +1460,30 @@ export interface BarkSpec {
 		/** Dark bark ridge in the upper crotch, 0 to 1. */
 		readonly ridge: number;
 	};
+	/**
+	 * The joint where an axis divides into a fork's leaders. `bend` is the least radius of the elbow
+	 * by which each leader turns from its parent's line onto its own, in the parent's radii (above 0;
+	 * absent, 1.5): a larger one runs the joint out in a longer, gentler curve. A small turn may take
+	 * a longer elbow, so the leader clears its parent's end, and no elbow runs past the leader's own
+	 * length. `knot` swells the joint over the wood it joins, as a share of the radius at the elbow's
+	 * middle that eases to none at either end (from 0 to 1; absent, 0).
+	 */
+	readonly fork?: { readonly bend?: number; readonly knot?: number };
 	/** Moss: how much, how far up, how much more on the north side, and its colour. */
 	readonly moss?: {
 		readonly amount: number;
 		readonly up: number;
 		readonly north: number;
+		readonly colour: Rgb;
+	};
+	/**
+	 * Lichen: pale rosettes on the crests, from a height towards the top of the plant (unless `to`
+	 * gives a higher limit), and its colour.
+	 */
+	readonly lichen?: {
+		readonly amount: number;
+		readonly from: number;
+		readonly to?: number;
 		readonly colour: Rgb;
 	};
 	/** Eyes where shed branches were (beech, aspen, birch), per metre of stem. */
@@ -956,7 +1513,10 @@ export interface BarkZone {
 	readonly to: number;
 	/** Metres over which it blends into the next zone. */
 	readonly blend: number;
-	/** Linear tint on the layer's measured colour. */
+	/**
+	 * Linear factor on each channel of the layer's measured colour, from 0; 1 keeps the measured
+	 * colour, and absent is 1 on every channel.
+	 */
 	readonly tint?: Rgb;
 }
 
@@ -966,23 +1526,55 @@ export interface BarkZone {
  * @category api/vegetation
  */
 export interface BaseSpec {
-	/** Radius times one plus amount times exp(-h / height), h in metres above the ground. */
+	/**
+	 * Radius times one plus amount times exp(-h / height), h in metres above the ground. The amount
+	 * is from 0 (no flare); the height of fade is in metres from 0.
+	 */
 	readonly flare: { readonly amount: number; readonly height: number };
-	/** Buttress lobes: count, amount, sharpness and height in metres. */
+	/**
+	 * The bole's taper toward the ground, on top of the flare: below `height` metres (above 0) the
+	 * radius gains `amount` (from 0) times one minus h / height over the pipe radius, so the bole
+	 * widens evenly from that height down to the foot. Absent, the bole keeps its pipe radius down
+	 * to the flare.
+	 */
+	readonly taper?: { readonly amount: number; readonly height: number };
+	/**
+	 * Buttress lobes round the foot: how many, each one's swell over the radius at the ground (from
+	 * 0), how narrow its crest is (above 0; higher is narrower) and its height of fade in metres
+	 * (above 0).
+	 */
 	readonly buttress?: {
 		readonly lobes: Spread;
 		readonly amount: number;
 		readonly sharpness: number;
 		readonly height: number;
+		/**
+		 * How rounded each lobe's crest stands, from 0 to 1. At 0 the swell falls away from the
+		 * ground over the height of fade, so the crest thins to an edge at the meadow; at 1 it keeps
+		 * its full swell at the ground and eases out by two and a half heights of fade, so the crest
+		 * rises from the meadow as a root's rounded flank. Absent, 0.
+		 */
+		readonly round?: number;
 	};
-	/** Roots that run along the ground from the lobes, then dive. */
+	/** Roots that run along the ground from the lobes, then dive: lengths, radius and dive in metres. */
 	readonly roots?: {
 		readonly count: Spread;
 		readonly length: Spread;
 		readonly radius: number;
 		readonly dive: number;
+		/**
+		 * How far each root stands out of the ground where it leaves the stem, as a share of its
+		 * girth, from 0 to 1. With it, a root runs as a ridge that sinks into the ground along its
+		 * length, slowly at first, while it tapers to half its radius: its top meets the ground at the
+		 * root's end, and it then dives out of sight. Absent, a root runs half buried and dives at its
+		 * end.
+		 */
+		readonly ridge?: number;
 	};
-	/** Vertical flutes up the stem (yew, old olive). */
+	/**
+	 * Vertical flutes up the stem (yew, old olive): how many, the groove's depth in metres at the
+	 * ground (from 0) and the height in metres they fade out by (above 0).
+	 */
 	readonly flutes?: { readonly count: Spread; readonly depth: number; readonly height: number };
 }
 
@@ -1003,16 +1595,53 @@ export interface ExtraSpec {
 		| 'thorn'
 		| 'spine-cluster'
 		| 'berry';
-	/** Which bud sites carry it. */
-	readonly at: 'shoot-tip' | 'node' | 'spur' | 'old-wood' | 'areole' | 'crown-top';
+	/**
+	 * Which bud sites carry it: 'flower' takes the grower's flower sites (a head's spikelets,
+	 * florets or hanging spikes), 'stem-tip' the tip of each flowering stem.
+	 */
+	readonly at:
+		| 'shoot-tip'
+		| 'node'
+		| 'spur'
+		| 'old-wood'
+		| 'areole'
+		| 'crown-top'
+		| 'flower'
+		| 'stem-tip';
 	/** Share of matching bud sites that carry one. */
 	readonly share: number;
+	/** How many stand at one site, 1 by default: an oak's acorns share a stalk in ones to threes. */
+	readonly count?: Spread;
+	/**
+	 * How far out along a shoot a `shoot-tip` site stands, as a share of the way to the tip: 1, the
+	 * tip itself, by default. A fruit that hangs from the last joint instead of the tip leaves the
+	 * twig standing past it, so its stalk meets wood rather than open air.
+	 */
+	readonly tipShare?: number;
 	/** The seasons it shows in. */
 	readonly seasons: readonly Season[];
 	/** Its shape. */
 	readonly shape: ExtraShape;
 	/** Its linear colour. */
 	readonly colour: Rgb;
+	/**
+	 * The linear colour, each channel 0 to 1, of a lathe's scaled band and of the stalks that carry
+	 * it, such as an acorn's cup and peduncle, where the rest of the shape takes `colour`. A key
+	 * takes it for its seed body, so a bunch reads as brown bodies on green wings. The band meets
+	 * the body at a sharp edge. Without one, the whole extra takes `colour`.
+	 */
+	readonly bandColour?: Rgb;
+	/**
+	 * The roughness of the shape's body and of its band, each 0 (polished) to 1 (matte): a ripe
+	 * acorn's nut is glossy and its cup is not. 0.6 for both by default.
+	 */
+	readonly roughness?: readonly [body: number, band: number];
+	/**
+	 * The linear colour, each channel 0 to 1, of the stalk that carries a lathe's copies, such as an
+	 * acorn's peduncle. A stalk is young wood, so it takes the branch's tone rather than the cup's;
+	 * without one it takes `bandColour`, or `colour` where the record names no band.
+	 */
+	readonly stalkColour?: Rgb;
 	/** Degrees it hangs from its site. */
 	readonly hang: number;
 }
@@ -1023,7 +1652,81 @@ export interface ExtraSpec {
  * @category api/vegetation
  */
 export type ExtraShape =
-	| { readonly lathe: readonly Vec2[]; readonly scales?: number }
+	| {
+			readonly lathe: readonly Vec2[];
+			/** Faces round the nearest level's lathe, where the level's own count reads as facets. */
+			readonly sides?: number;
+			/** Rows of scale bumps, one ring a row. */
+			readonly scales?: number;
+			/** The profile heights, in metres, that carry the scale bumps: a cup or a cone's fertile part. */
+			readonly scaled?: readonly [from: number, to: number];
+			/**
+			 * Metres of one stalk from the site, shared by every copy the site carries: the copies
+			 * hang from its end, as an oak's acorns fork from one peduncle.
+			 */
+			readonly stalk?: number;
+			/**
+			 * Metres of each copy's own footstalk from the shared stalk's end. A site that gives
+			 * one splays its copies on them, so their bodies clear one another: an oak's acorns
+			 * stand on short pedicels below the fork.
+			 */
+			readonly pedicel?: number;
+			/**
+			 * Faces round the stalk and the footstalks at the nearest level, where a close view reads
+			 * a thin stem's facets: a whole number from 4 to 16. The farther levels draw four, and so
+			 * does the nearest when the shape names none.
+			 */
+			readonly stalkSides?: number;
+			/**
+			 * How far the crevices between a cup's scales take the body's colour, 0 to 1, on a lathe
+			 * whose record gives a band colour: every other vertex round each of the band's rings,
+			 * offset from ring to ring, mixes that share toward the body, so the cup reads as rows of
+			 * overlapping scales. 0 by default, an even band.
+			 */
+			readonly scaleShade?: number;
+			/**
+			 * How much each scale's shade departs from its neighbours', 0 to 1, as a share of the
+			 * band's colour: a real cup's scales differ one from the next, where an even band reads as
+			 * one flat cone. The departure is fixed for each scale, so the picture repeats. 0 by
+			 * default, every scale the same shade.
+			 */
+			readonly scaleJitter?: number;
+	  }
+	| {
+			/**
+			 * A one-winged key (ash, sycamore, elm): a seed body at the site with a flat wing
+			 * running from it, drawn as a closed lens so it reads from both faces. A bunch of
+			 * them hangs from one stalk.
+			 */
+			readonly samara: {
+				/** Metres from the seed body's top to the wing's tip. */
+				readonly length: number;
+				/** Metres across the wing at its widest. */
+				readonly width: number;
+				/** Share of the length that the seed body takes, from 0.1 to 0.6. */
+				readonly body: number;
+				/**
+				 * Degrees the wing's face turns about the key's own length, 0 to 180. 0 by
+				 * default, every key in a bunch showing the same face.
+				 */
+				readonly twist?: number;
+			};
+			/**
+			 * Metres of one stalk from the site, shared by every copy the site carries: the
+			 * copies hang from its end, as an oak's acorns fork from one peduncle.
+			 */
+			readonly stalk?: number;
+			/**
+			 * Metres of each copy's own footstalk from the shared stalk's end. A site that gives
+			 * one splays its copies on them, so their bodies clear one another.
+			 */
+			readonly pedicel?: number;
+			/**
+			 * Faces round the stalk and the footstalks at the nearest level, where a close view
+			 * reads a thin stem's facets: a whole number from 4 to 16.
+			 */
+			readonly stalkSides?: number;
+	  }
 	| { readonly petals: number; readonly radius: number; readonly cup: number }
 	| { readonly spines: number; readonly length: number; readonly spread: number }
 	| { readonly catkin: { readonly length: number; readonly radius: number } };
@@ -1054,8 +1757,12 @@ export interface SeasonSpec {
 export interface WindSpec {
 	/** Stiffness by order (t = order / deepest order), 0 free to 1 rigid. */
 	readonly stiffness: Curve;
-	/** The whole plant's sway: cycles a second and metres at the top. */
-	readonly sway: { readonly frequency: number; readonly amplitude: number };
+	/**
+	 * The whole plant's sway: cycles a second, and metres at the top in the field's base wind
+	 * speed. A species that names none takes the stated default, so a missing sway never leaves
+	 * the plant still.
+	 */
+	readonly sway?: { readonly frequency: number; readonly amplitude: number };
 	/** Orders from which shoots swing as hanging chains (willow, birch). */
 	readonly whips?: { readonly fromOrder: number; readonly pendulum: number };
 	/** How leaves flutter. */
@@ -1081,6 +1788,29 @@ export interface LodSpec {
 	readonly switchPixels: readonly [lod1: number, lod2: number, lod3: number];
 	/** Macro orders that the first and second card levels keep as wood. */
 	readonly woodOrders: readonly [lod1: number, lod2: number];
+	/**
+	 * How much a shoot's card grows past the shoots it stands for, 1 by default. A card is a picture
+	 * of one shoot with transparent gaps between its leaves, and at a whole view neighbouring cards
+	 * do not meet, so the crown breaks into pieces. Growing them makes the gaps fall on a
+	 * neighbour's leaves instead of on sky.
+	 */
+	readonly cardGrow?: number;
+	/**
+	 * The least width, in pixels, that a card's own stalk draws at any distance, from 0 to 8. A card
+	 * stands on its axis's twig, whose wood may be thinner than a pixel at a whole view, so the
+	 * card's leaves read as a piece in air where the twig does not draw. At 1 or more the card
+	 * draws its supporting twig as a line of at least this width, in the young bark's tone, so the
+	 * join shows. 0 or absent, a card draws no stalk.
+	 */
+	readonly cardStalk?: number;
+	/**
+	 * Whether a card's stalk runs on past the row to the centre of the foliage the card carries. A
+	 * card's plane stands ahead of the row that draws it by the shoot's own length, so the stretch
+	 * behind the row may end half a metre short of the leaves it is meant to carry. With this, the
+	 * line starts at the parent node's end and ends at the card plane's centre, so the card meets the
+	 * wood it grows from. Absent, the line spans only the stretch behind the row, as it always has.
+	 */
+	readonly cardStalkToFoliage?: boolean;
 	/** The impostor's views across and texels per view. */
 	readonly impostor: { readonly views: number; readonly texels: number };
 	/** The level that casts shadows. */
@@ -1095,10 +1825,16 @@ export interface LodSpec {
  * @category api/vegetation
  */
 export interface SpeciesBudget {
-	/** Bytes of the kit: prototypes in every tier, and the card atlas until it uploads. */
-	readonly kitBytes: number;
-	/** Bytes of one variant: the card levels, the shoot rows and the skeleton. */
-	readonly variantBytes: number;
+	/**
+	 * Bytes of the kit at each detail tier, the tier it is built for: the shoot prototypes' meshes at
+	 * that tier and those below it, the leaf meshes, and the card atlas until it uploads.
+	 */
+	readonly kitBytes: Readonly<Record<Detail, number>>;
+	/**
+	 * Bytes of one variant at each detail tier, read at the tier the plant is built for: its levels
+	 * and wind records, the nearest wood left out.
+	 */
+	readonly variantBytes: Readonly<Record<Detail, number>>;
 	/** Triangles of the nearest level of one copy, at the high tier. */
 	readonly lod0Triangles: number;
 	/** Triangles of the first card level. */
@@ -1119,12 +1855,73 @@ export interface SpeciesBudget {
  * @category api/vegetation
  */
 export interface CuttingHints {
-	/** A branch about 1 m long: the macro order to cut and its length. */
-	readonly branch?: { readonly order: number; readonly length: number };
-	/** A sub-branch about 0.35 m long. */
-	readonly subbranch?: { readonly order: number; readonly length: number };
+	/**
+	 * The shoots a cutting kit places over the crown's own, from 0.25 to 8, where a piece cut for
+	 * close review carries a denser covering than the crown can afford. The crown's kit is unchanged:
+	 * the piece is drawn at the nearest level alone, so its kit pays for no card levels.
+	 */
+	readonly density?: number;
+	/**
+	 * A branch about 1 m long: the macro order to cut from the grown plant and the length of its
+	 * wood, or the shoot class whose prototype stands for it.
+	 */
+	readonly branch?: CutFromPlant | CutFromShoots;
+	/** A sub-branch about 0.35 m long, in either form. */
+	readonly subbranch?: CutFromPlant | CutFromShoots;
 	/** A leaf cluster: the shoot class to cut. */
-	readonly cluster?: { readonly shoot: ShootClass['name'] };
+	readonly cluster?: CutFromShoots;
+	/** A single leaf: how it lies. */
+	readonly leaf?: CutLeaf;
+}
+
+/**
+ * How a single leaf cut from the plant lies.
+ *
+ * @category api/vegetation
+ */
+export interface CutLeaf {
+	/**
+	 * Whether the leaf lies pressed flat, as a species' single-leaf pictures lay it on a copy stand:
+	 * a blade leaf's fold, curls, twist, wave and stalk droop at nothing, a thick leaf's cup, curl
+	 * and margin wave at nothing, its outline and textures as they are. Without it the leaf keeps
+	 * the shape it has on the plant.
+	 */
+	readonly pressed?: boolean;
+	/**
+	 * Metres of stalk a pressed leaf keeps under its blade, for a species whose leaves rise on long
+	 * stalks: the piece shows the short piece of stalk a picked leaf does. A share of the blade's
+	 * length by default.
+	 */
+	readonly petiole?: number;
+}
+
+/**
+ * A piece cut from the grown plant: the macro order of the axis it starts from, and the metres of
+ * wood from the cut to the farthest tip.
+ *
+ * @category api/vegetation
+ */
+export interface CutFromPlant {
+	/** The macro order to cut. */
+	readonly order: number;
+	/** Metres of wood from the cut to the farthest tip. */
+	readonly length: number;
+}
+
+/**
+ * A piece taken from the kit: one shoot prototype of a class, for a species whose shoots carry the
+ * piece's twigs, as an oak's two-year twig is its sub-branch.
+ *
+ * @category api/vegetation
+ */
+export interface CutFromShoots {
+	/** The shoot class to take. */
+	readonly shoot: ShootClass['name'];
+	/**
+	 * Which of that class's prototypes to take, 0 for the first: two pieces may want shoots of one
+	 * class and still be different pieces, as a sub-branch and a leaf cluster are.
+	 */
+	readonly pick?: number;
 }
 
 /**

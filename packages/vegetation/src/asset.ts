@@ -66,6 +66,11 @@ export interface ShootPrototype {
 	readonly index: number;
 	/** The shoot class it belongs to. */
 	readonly class: ShootClass['name'];
+	/**
+	 * Set on a shoot that only a cutting draws. The crown never offers one, whatever vigor its buds
+	 * carry, so adding a cutting class leaves the crown's shoots as they were.
+	 */
+	readonly cutting?: true;
 	/** The bud vigor it serves. */
 	readonly vigor: readonly [number, number];
 	/** Metres from the attach point to the farthest tip, at scale 1. */
@@ -127,6 +132,11 @@ export interface ShootRows {
 	readonly bent: Uint8Array;
 	/** Space-filling order, which the second card level thins by. */
 	readonly order: Uint32Array;
+	/**
+	 * 3 per row: the vector from the row's place back along its axis to the stretch's far end, the
+	 * previous bud or the parent node. Absent, a card draws no stalk.
+	 */
+	readonly back?: Float32Array;
 }
 
 /**
@@ -142,11 +152,17 @@ export type PartName = 'wood' | 'foliage' | 'cards' | 'extras';
  * @category api/vegetation
  */
 export interface QuantisedArrays {
-	/** 3 per vertex: 16-bit positions inside the species box, which the copy's transform scales. */
+	/**
+	 * 3 per vertex: 16-bit positions inside the species box, which the plant shader reads as
+	 * fractions of the box and turns into metres, and the copy's transform scales.
+	 */
 	readonly positions: Uint16Array;
 	/** 3 per vertex: 8-bit normals that read from -1 to 1. */
 	readonly normals: Int8Array;
-	/** 2 per vertex, plain 16-bit: wood in 1/1024 m of bark; leaves and cards in 1/65535 of the texture. */
+	/**
+	 * 2 per vertex, plain 16-bit: wood in 1/1024 m of bark; leaves and cards in 1/65535 of the
+	 * texture; extras, which draw no texture, each position's rest below one step of the box.
+	 */
 	readonly uvs: Uint16Array;
 	/** 2 per vertex, plain 16-bit, in the part's own units. */
 	readonly uvs1: Uint16Array;
@@ -176,7 +192,10 @@ export interface PlantPart {
 export interface PlantLevel {
 	/** The level: 0 real geometry, 1 shoot cards, 2 thinned cards. */
 	readonly level: 0 | 1 | 2;
-	/** Its parts. */
+	/**
+	 * Its parts. Several may share a name: a large mesh comes in pieces of at most 65,536 vertices,
+	 * so every part's indices fit 16 bits.
+	 */
 	readonly parts: readonly PlantPart[];
 	/** Metres at which this level starts, for a reference view; the page sets its own from its view. */
 	readonly from: number;
@@ -216,6 +235,11 @@ export interface PlantAsset {
 	readonly variant: number;
 	/** The season it grew for. */
 	readonly season: Season;
+	/**
+	 * How much simpler than grown it is, from 0 to 1: the coarseness its options gave, or the one its
+	 * triangle target picked. Stand-ins are always 0.
+	 */
+	readonly coarseness: number;
 	/** The piece it was cut to, for a close review. */
 	readonly cutting?: CuttingOptions;
 	/** Its grown structure. */
@@ -254,7 +278,10 @@ export interface PlantAsset {
  * @category api/vegetation
  */
 export interface SpeciesKitData {
-	/** The species record. */
+	/**
+	 * The record the kit grows from: the species' own, or the record of the form it was built for,
+	 * without the forms themselves.
+	 */
 	readonly record: Species;
 	/** The texture manifest. */
 	readonly manifest: TextureManifest;
@@ -276,13 +303,35 @@ export interface SpeciesKitData {
 	};
 	/** The records texture's header rows. */
 	readonly header: Float32Array;
-	/** Whether stages that are not built yet grow stand-ins, for review and tests. */
-	readonly placeholders?: boolean;
+	/**
+	 * Which stages grow their stand-ins: every stage with `true`, so a stand-in species draws the same
+	 * as stages land; only the stages that are not built yet with `'missing'`, so a species grows
+	 * through every built stage before the rest exist.
+	 */
+	readonly placeholders?: boolean | 'missing';
+	/** The coarseness its variants grow at when their own options give none, as `prepareSpecies` took it. */
+	readonly coarseness?: number;
+	/** The triangle target its variants grow to when their own options give none. */
+	readonly triangles?: number;
 }
 
 /** The typed arrays of a part, in a fixed order. */
 function quantisedViews(arrays: QuantisedArrays): ArrayBufferView[] {
 	return [arrays.positions, arrays.normals, arrays.uvs, arrays.uvs1, arrays.colors, arrays.indices];
+}
+
+/**
+ * The kit's prototypes a crown may draw: all of them but those a class grows only for cuttings, so
+ * a species that grows cuttings from shoots of their own dresses its crown as it did without them.
+ *
+ * @param prototypes The kit's prototypes.
+ * @returns The crown's, in kit order.
+ * @category api/vegetation
+ */
+export function crownPrototypes<T extends { readonly cutting?: true }>(
+	prototypes: readonly T[],
+): T[] {
+	return prototypes.filter((prototype) => !prototype.cutting);
 }
 
 /**

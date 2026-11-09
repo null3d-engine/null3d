@@ -1,8 +1,8 @@
-// The public names of the plant core's contracts: the species record and its parts, the skeleton,
-// the texture files and their manifest, the registry, the record check, the owner's caps, the
-// species box and the caches.
+// The public names of the plant core's contracts: the species record and its parts, the record each
+// of a species' other forms grows from, the skeleton, the texture files and their manifest, the
+// registry, the record check, the owner's caps, the species box and the caches.
 export { type SpeciesBox, speciesBox } from './box';
-export { indexedDbCache, memoryCache, type PlantCache } from './cache';
+export { memoryCache, type PlantByteCache, type PlantCache } from './cache';
 export {
 	type CapClass,
 	capProblems,
@@ -16,6 +16,8 @@ export {
 	VARIANTS_BY_PRESET,
 } from './caps';
 export { checkSpecies, speciesProblems } from './check';
+export { crownRadius, speciesRule } from './ecology';
+export { formRecord } from './forms';
 export {
 	AXIS_ARM,
 	AXIS_CULM,
@@ -52,12 +54,17 @@ export type {
 	CompoundLeaf,
 	CrownRosette,
 	Culm,
+	CutFromPlant,
+	CutFromShoots,
+	CutLeaf,
 	CuttingHints,
 	Envelope,
 	ExtraShape,
 	ExtraSpec,
+	FieldChange,
 	Foliage,
 	FoliageKind,
+	FormField,
 	FrondColony,
 	FrondShape,
 	GrassBlade,
@@ -72,6 +79,7 @@ export type {
 	PinnaSpec,
 	PlantSize,
 	RadialEnvelope,
+	RecordChanges,
 	Rosette,
 	ScaleSpray,
 	Sdf,
@@ -82,15 +90,24 @@ export type {
 	ShootSpec,
 	Species,
 	SpeciesBudget,
+	SpeciesEcology,
+	SpeciesForm,
 	SpeciesHooks,
 	SpeciesModule,
 	StemSpec,
 	ThickLeaf,
 	TrunkShape,
 	Tuft,
+	TuftHeads,
 	WindSpec,
 } from './record';
 export { isSpeciesId, loadSpecies, type SpeciesId, speciesIds } from './registry';
+export {
+	loadSpeciesOrStandIn,
+	type StandInOptions,
+	standInRecord,
+	standInSpecies,
+} from './stand-in';
 export {
 	noTextureFiles,
 	type SpeciesTextureFiles,

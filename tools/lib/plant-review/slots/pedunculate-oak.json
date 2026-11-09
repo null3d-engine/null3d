@@ -1,0 +1,130 @@
+{
+	"01-whole-distant.png": {
+		"sunAzimuth": 13.8,
+		"sunRise": 41.9,
+		"skyShare": 0.19,
+		"fov": 30,
+		"daylight": 2.428
+	},
+	"02-whole-profile.png": {
+		"sunAzimuth": 4.7,
+		"sunRise": 41,
+		"skyShare": 0.395,
+		"fov": 30,
+		"fill": null,
+		"targetY": null,
+		"top": 0.0558,
+		"eye": 0.3,
+		"daylight": 1.735
+	},
+	"03-whole-from-below.png": {
+		"sunAzimuth": 45,
+		"sunRise": 70,
+		"skyShare": 0.395,
+		"sky": "#d7e6f1",
+		"daylight": 1.739
+	},
+	"05-crown-underneath.png": {
+		"sunAzimuth": 45,
+		"sunRise": 65,
+		"skyShare": 0.19,
+		"sky": "#98bcec",
+		"daylight": 2.334
+	},
+	"18-silhouette.png": {
+		"fov": 30,
+		"fill": null,
+		"targetY": null,
+		"top": 0.17,
+		"eye": 0.3
+	},
+	"31-woodland-clean-bole.png": {
+		"skyShare": 0.702,
+		"daylight": 0.958
+	},
+	"32-young-oak-whole.png": {
+		"fill": null,
+		"targetY": null,
+		"top": 0.09,
+		"eye": 0.4,
+		"skyShare": 0.395,
+		"daylight": 1.053
+	},
+	"04-crown-outside.png": {
+		"skyShare": 0.19,
+		"daylight": 2.761,
+		"distance": 4
+	},
+	"06-inside-crown.png": {
+		"skyShare": 0.395,
+		"daylight": 1.508
+	},
+	"17-trunk-taper.png": {
+		"skyShare": 0.702,
+		"daylight": 0.891
+	},
+	"30-woodland-form-whole.png": {
+		"skyShare": 0.702,
+		"daylight": 0.891,
+		"fill": null,
+		"targetY": null,
+		"top": 0.1,
+		"eye": 0.3
+	},
+	"oak-turntable.mp4": {
+		"skyShare": 0.19,
+		"daylight": 2.408
+	},
+	"oak-wind-motion.mp4": {
+		"skyShare": 0.19,
+		"daylight": 2.408
+	},
+	"13-single-leaf-underside.png": {
+		"pressed": false
+	},
+	"08-limb-fork.png": {
+		"background": "studio-grey",
+		"sky": "#c6c2bd"
+	},
+	"21-branch-studio.png": {
+		"daylight": 1.7
+	},
+	"22-subbranch-studio.png": {
+		"daylight": 0.88,
+		"lamp": "#ebf9ff"
+	},
+	"23-leaf-cluster-studio.png": {
+		"daylight": 1.27,
+		"lamp": "#ebf9ff"
+	},
+	"branch-turntable.mp4": {
+		"daylight": 1.7
+	},
+	"subbranch-turntable.mp4": {
+		"daylight": 0.88,
+		"lamp": "#ebf9ff"
+	},
+	"14-bark-base.png": {
+		"barkMask": true,
+		"daylight": 1,
+		"lamp": "#f5f0b4"
+	},
+	"15-bark-mid-trunk.png": {
+		"barkMask": true
+	},
+	"16-bark-on-limb.png": {
+		"barkMask": true,
+		"foliage": true,
+		"lod": 0,
+		"daylight": 1.25,
+		"lamp": "#f3f2ea"
+	},
+	"28-young-bark.png": {
+		"barkMask": true,
+		"daylight": 1.2
+	},
+	"26-bark-texture.png": {
+		"barkMask": true,
+		"daylight": 1.25
+	}
+}

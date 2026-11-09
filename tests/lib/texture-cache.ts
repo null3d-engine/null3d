@@ -51,7 +51,7 @@ function textureCacheItem(
 	const key = runnerKey(load === 'cold' ? `texture-cache-${onOff(cache)}-${run}` : 'texture-cache');
 	const switches = [
 		'files=city',
-		...(cache ? [] : ['texture-cache=off']),
+		...(cache ? [] : ['derived-cache=off']),
 		...(load === 'cold' ? ['clear', 'fresh'] : []),
 	];
 	return {
@@ -97,7 +97,7 @@ export function textureCacheProblems(
 ): string[] {
 	const { count, entriesBefore, entriesAfter, transcoder } = result;
 	if (!(count > 0)) return ['the page loaded no textures: run bun run samples:fetch on the server'];
-	if (entriesBefore === null) return ['the page has no Cache Storage: serve it over HTTPS'];
+	if (entriesBefore === null) return ['the page has no storage for the cache: serve it over HTTPS'];
 	if (!check.cache)
 		return transcoder ? [] : ['the cache was off, yet the transcoder did not download'];
 	if (check.load === 'cold')

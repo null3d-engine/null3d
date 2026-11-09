@@ -35,13 +35,18 @@ export type PlantTaskInput =
 /** The task's answer: the stage's output and every buffer that moves with it. */
 export interface PlantTaskOutput {
 	/** The kit, the grown variant, the nearest wood or the far bake. */
-	readonly output: SpeciesKitData | PlantAsset | PlantPart | FarBake | undefined;
+	readonly output: SpeciesKitData | PlantAsset | readonly PlantPart[] | FarBake;
 	/** The output's buffers, which move to the page rather than copy. */
 	readonly transfer: ArrayBuffer[];
 }
 
-/** The buffers of a kit, each once. */
-function kitBuffers(kit: SpeciesKitData): ArrayBuffer[] {
+/**
+ * The buffers of a kit, each once: what its transfer to or from the job worker hands over.
+ *
+ * @param kit The species' kit.
+ * @returns The buffers.
+ */
+export function kitBuffers(kit: SpeciesKitData): ArrayBuffer[] {
 	const buffers = new Set<ArrayBuffer>();
 	const add = (view: ArrayBufferView) => buffers.add(view.buffer as ArrayBuffer);
 	for (const prototype of kit.prototypes)
@@ -91,8 +96,8 @@ export async function run(input: unknown): Promise<PlantTaskOutput> {
 			return { output: asset, transfer: plantAssetBuffers(asset) };
 		}
 		case 'near-wood': {
-			const part = growNearWoodNow(request.kit, request.options);
-			return { output: part, transfer: part ? plantPartBuffers(part) : [] };
+			const parts = growNearWoodNow(request.kit, request.options);
+			return { output: parts, transfer: parts.flatMap((part) => plantPartBuffers(part)) };
 		}
 		case 'far': {
 			const far = bakeFarNow(request.kit, request.asset);

@@ -33,7 +33,7 @@ function context(
 ): SketchContext {
 	const pass = { enabled: true, live: true, name: 'wind-field', writes: 'wind', place: 1 };
 	return {
-		time: { now: 1 },
+		time: { now: 1, held: false, drawn: true },
 		engine: { capabilities: { tier, hdr } },
 		// The feature host reads the preset, the budget and the page's stats channel.
 		quality: {
@@ -129,18 +129,44 @@ describe('the field that a reader samples', () => {
 		wind.destroy();
 	});
 
-	test('a held page solves one cycle in its one drawn frame', () => {
+	test('a held page runs the whole hold in its first drawn frame, and only once', () => {
 		const steps: number[] = [];
 		const ctx = context('webgpu', true, undefined, steps);
-		// Hold mode runs the sketch's updates without drawing, from the first step to the hold time,
-		// and draws once at the end. The pass advances only in that drawn frame, so the steps that
-		// the last update sets are the ones that run.
-		(ctx.time as { now: number }).now = 0;
+		const time = ctx.time as { now: number; held: boolean; drawn: boolean };
+		// Hold mode steps the sketch to the held time, and the thread that draws draws only the
+		// frames at the end. The steps before them run no pass, so they owe the air to the first
+		// frame that draws, and a second frame at the same time owes nothing more.
+		time.now = 0;
+		time.held = true;
 		const wind = createWind(ctx, { camera, grid: 8 });
 		for (let step = 0; step <= 60; step++) {
-			(ctx.time as { now: number }).now = step * MEDIUM_STEP;
+			time.now = step * MEDIUM_STEP;
+			time.drawn = step === 60;
 			wind.update();
 		}
+		// Sixty Medium steps of air, all in the one frame that draws.
+		expect(steps.slice(1, -1).every((count) => count === 0)).toBe(true);
+		expect(steps.at(-1)).toBe(60 * MEDIUM_CYCLE);
+		wind.update();
+		expect(steps.at(-1)).toBe(0);
+		wind.destroy();
+	});
+
+	test('a held frame drawn after the frame before it adds only the step between them', () => {
+		const steps: number[] = [];
+		const ctx = context('webgpu', true, undefined, steps);
+		const time = ctx.time as { now: number; held: boolean; drawn: boolean };
+		// A held frame whose passes read the frame before it, as motion vectors do, draws that
+		// frame too. Each drawn frame then runs only its own share of the hold.
+		time.now = 0;
+		time.held = true;
+		const wind = createWind(ctx, { camera, grid: 8 });
+		for (let step = 0; step <= 60; step++) {
+			time.now = step * MEDIUM_STEP;
+			time.drawn = step >= 59;
+			wind.update();
+		}
+		expect(steps.at(-2)).toBe(59 * MEDIUM_CYCLE);
 		expect(steps.at(-1)).toBe(MEDIUM_CYCLE);
 		wind.destroy();
 	});

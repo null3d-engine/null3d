@@ -343,7 +343,7 @@ jobs:
           echo "rust-shaders=${{ hashFiles('crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.config/nextest.toml') }}" >> "$GITHUB_OUTPUT"
           echo "rust-workspace=${{ hashFiles('crates/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.config/nextest.toml', 'packages/engine/src/generated/gpu.ts', 'packages/engine/src/generated/core.ts', 'packages/engine/src/errors/codes.ts', 'tests/fixtures/light-clusters.bin', 'tests/pages/lib/dfg-table.ts', 'packages/splats/src/pack-growth.fixture', 'tests/pages/assets/environments/**', 'examples/addons/aurora/aurora.wgsl', 'examples/addons/car-paint/paint.wgsl', 'tools/shader-compiler.ts') }}" >> "$GITHUB_OUTPUT"
           echo "shader-compiler=${{ hashFiles('crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'tools/build-wasm.ts', 'tools/shader-compiler.ts', 'packages/vite-plugin/src/compiler-calls.js', 'packages/vite-plugin/src/shader-compiler.ts', 'packages/vite-plugin/src/shader-types.ts', 'package.json') }}" >> "$GITHUB_OUTPUT"
-          echo "plugin=${{ hashFiles('crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'tools/build-wasm.ts', 'tools/shaders.ts', 'tools/lib/shader-modules.ts', 'tools/lib/fixture.ts', 'tools/lib/wgsl-modules.ts', 'tools/lib/build-cache.ts', 'tests/lib/run-budget.ts', 'packages/vite-plugin/**', 'package.json', 'bun.lock') }}" >> "$GITHUB_OUTPUT"
+          echo "plugin=${{ hashFiles('crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'tools/build-wasm.ts', 'tools/shaders.ts', 'tools/lib/shader-modules.ts', 'tools/lib/fixture.ts', 'tools/lib/wgsl-modules.ts', 'tools/lib/walk.ts', 'tools/lib/build-cache.ts', 'tests/lib/run-budget.ts', 'packages/vite-plugin/**', 'package.json', 'bun.lock') }}" >> "$GITHUB_OUTPUT"
           echo "plugin-tests=${{ hashFiles('tests/fixtures/typed-uniforms/**', 'tests/pages/sketches/shaders/**', 'examples/showroom/**', 'examples/splat-garden/**') }}" >> "$GITHUB_OUTPUT"
       - name: The parts' keys, and the jobs whose every part passed
         id: passes
@@ -659,6 +659,66 @@ jobs:
           mode: upload
           name: page-wasm
           paths: packages/cli/dist packages/engine/dist packages/engine/src/generated packages/splats/dist packages/terrain/dist packages/vite-plugin/dist packages/wind/dist target/shader-modules.json
+
+  sketch-shaders:
+    # The WGSL that the test pages load, compiled into the Vite plugin's cache with the requests that
+    # the dev server makes, each part a share of the compiles. A custom material builds into every
+    # variant of the standard material, and a browser job that compiled the add-ons' materials
+    # itself spent minutes before the first page of them could start: the Island's sketch, the
+    # vegetation recipe and the water pages waited out their limits in runs 41974284283 and
+    # 41980121555. Every job that serves or builds the pages joins the parts' archives. Each part
+    # keeps its entries in the Actions cache under the compiler's version, so a run compiles only the
+    # modules that changed, and the tool keeps only the current entries.
+    name: sketch-shaders (${{ matrix.share }})
+    needs: build
+    # The browser jobs' full-run condition, which they set later in the file.
+    if: "github.event_name != 'push' || github.ref == 'refs/heads/main'"
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        share: [1/8, 2/8, 3/8, 4/8, 5/8, 6/8, 7/8, 8/8]
+    env:
+      NULL3D_REQUIRE_FRESH_SHADERS: "1"
+      HUSKY: "0"
+    steps:
+      - uses: actions/checkout@v5
+        timeout-minutes: 2
+        with: *without-references
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun install --frozen-lockfile
+      - uses: ./.github/actions/archive
+        timeout-minutes: 5
+        with:
+          mode: download
+          name: page-wasm
+      - id: keys
+        run: |
+          bun tools/lib/wgsl-modules.ts --served | tee -a "$GITHUB_OUTPUT"
+          echo "part=$(echo '${{ matrix.share }}' | cut -d/ -f1)" | tee -a "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@v4
+        id: restore
+        with:
+          path: node_modules/.cache/null3d-shaders
+          key: sketch-shaders-${{ steps.keys.outputs.compiler }}-${{ steps.keys.outputs.part }}-${{ steps.keys.outputs.modules }}
+          restore-keys: sketch-shaders-${{ steps.keys.outputs.compiler }}-${{ steps.keys.outputs.part }}-
+      - name: Compile this share of the WGSL that the test pages load
+        if: steps.restore.outputs.cache-hit != 'true'
+        run: bun tools/lib/wgsl-modules.ts --compile ${{ matrix.share }}
+      - uses: actions/cache/save@v4
+        if: steps.restore.outputs.cache-hit != 'true' && env.SAVE_CACHES == 'true'
+        with:
+          path: node_modules/.cache/null3d-shaders
+          key: sketch-shaders-${{ steps.keys.outputs.compiler }}-${{ steps.keys.outputs.part }}-${{ steps.keys.outputs.modules }}
+      - uses: ./.github/actions/archive
+        timeout-minutes: 5
+        with:
+          mode: upload
+          name: sketch-shaders-${{ steps.keys.outputs.part }}
+          paths: node_modules/.cache/null3d-shaders
 
   size-base:
     # The sizes of the size check's base commit, built at that commit with its own toolchain,
@@ -1122,7 +1182,7 @@ jobs:
     # weights, and .dev/image-tests.md says when to retune them and when to add a shard. The tests
     # that run alone, the heavy tests and S6's image tests have jobs of their own below.
     name: browser (shard ${{ matrix.shard }} of ${{ strategy.job-total }})
-    needs: build
+    needs: [build, sketch-shaders]
     # Every run but a push to a milestone branch, which runs only the quick checks. The other jobs
     # of the full run take the same condition.
     if: &full-run "github.event_name != 'push' || github.ref == 'refs/heads/main'"
@@ -1173,6 +1233,15 @@ jobs:
           mode: download
           name: page-wasm
       - uses: ./.github/actions/playwright-chromium
+      # The compiled WGSL of the pages, from the build job, so the dev server and the page builds
+      # compile none of it. A failed download only makes the first page of each module slow.
+      - uses: ./.github/actions/archive
+        timeout-minutes: 5
+        continue-on-error: true
+        with:
+          mode: download
+          name: sketch-shaders
+          pattern: sketch-shaders-*
       - uses: ./.github/actions/samples
       - name: Browser tests on SwiftShader, WebGPU and WebGL2
         env:
@@ -1208,7 +1277,7 @@ jobs:
     # them can upset (tests/lib/alone.ts). Each runs one at a time on a machine of its own shard, and
     # the shards split them by count. The showcase HUD test has a job of its own below.
     name: browser (tests that run alone, ${{ matrix.shard }} of ${{ strategy.job-total }})
-    needs: build
+    needs: [build, sketch-shaders]
     if: *full-run
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -1234,6 +1303,13 @@ jobs:
           mode: download
           name: page-wasm
       - uses: ./.github/actions/playwright-chromium
+      - uses: ./.github/actions/archive
+        timeout-minutes: 5
+        continue-on-error: true
+        with:
+          mode: download
+          name: sketch-shaders
+          pattern: sketch-shaders-*
       - uses: ./.github/actions/samples
       - name: The tests that run alone, on SwiftShader, WebGPU and WebGL2
         run: bun run test:browser --grep @alone --grep-invert "the showcase HUD" --workers=1 --shard=${{ matrix.shard }}/${{ strategy.job-total }}
@@ -1256,7 +1332,7 @@ jobs:
     # their times model the slowest heavy shard at 13.8 minutes, against 16.4 for the ones before
     # them.
     name: browser (heavy tests, ${{ matrix.shard }} of ${{ strategy.job-total }})
-    needs: build
+    needs: [build, sketch-shaders]
     if: *full-run
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -1282,6 +1358,13 @@ jobs:
           mode: download
           name: page-wasm
       - uses: ./.github/actions/playwright-chromium
+      - uses: ./.github/actions/archive
+        timeout-minutes: 5
+        continue-on-error: true
+        with:
+          mode: download
+          name: sketch-shaders
+          pattern: sketch-shaders-*
       - uses: ./.github/actions/samples
       - name: The heavy browser tests, one at a time, on SwiftShader, WebGPU and WebGL2
         env:
@@ -1323,7 +1406,7 @@ jobs:
     # run after the others, one at a time, on the same build; the second part has none. The test files
     # come before --project, which takes every name that follows it.
     name: browser (the production build, ${{ matrix.part }})
-    needs: build
+    needs: [build, sketch-shaders]
     if: *full-run
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -1360,6 +1443,13 @@ jobs:
           mode: download
           name: page-wasm
       - uses: ./.github/actions/playwright-chromium
+      - uses: ./.github/actions/archive
+        timeout-minutes: 5
+        continue-on-error: true
+        with:
+          mode: download
+          name: sketch-shaders
+          pattern: sketch-shaders-*
       - uses: ./.github/actions/samples
       - name: The production build of the part's test pages
         run: bun run build:test-pages ${{ matrix.pages }}
@@ -1403,7 +1493,7 @@ jobs:
     # S6's image tests, the browser tests that load the city's files, which the browser job's shards
     # leave out, so that only this job waits for the load pages job, which builds those files.
     name: browser (the city)
-    needs: [build, load-pages]
+    needs: [build, sketch-shaders, load-pages]
     if: *full-run
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -1425,6 +1515,13 @@ jobs:
           mode: download
           name: page-wasm
       - uses: ./.github/actions/playwright-chromium
+      - uses: ./.github/actions/archive
+        timeout-minutes: 5
+        continue-on-error: true
+        with:
+          mode: download
+          name: sketch-shaders
+          pattern: sketch-shaders-*
       - uses: ./.github/actions/samples
       - uses: ./.github/actions/city
         with:
@@ -1465,7 +1562,7 @@ jobs:
     # the fog were one test of 20.9 minutes: its page held still after 204 s, the sky took 492 s
     # more and the fog 535 s, so they became two tests.
     name: browser (the showcase HUD, ${{ matrix.part }})
-    needs: build
+    needs: [build, sketch-shaders]
     if: *full-run
     runs-on: ubuntu-latest
     timeout-minutes: 35
@@ -1495,6 +1592,13 @@ jobs:
           mode: download
           name: page-wasm
       - uses: ./.github/actions/playwright-chromium
+      - uses: ./.github/actions/archive
+        timeout-minutes: 5
+        continue-on-error: true
+        with:
+          mode: download
+          name: sketch-shaders
+          pattern: sketch-shaders-*
       - uses: ./.github/actions/samples
       - name: The showcase HUD test on SwiftShader
         run: bun run test:browser image/showcase-hud.spec.ts --grep "${{ matrix.grep }}" --workers=1
@@ -1534,7 +1638,7 @@ jobs:
     # Shard 1's page tests ended at 7.2.
     name: bench (shard ${{ matrix.shard }} of ${{ strategy.job-total }})
     # Every build of the pages holds S6's, so every shard needs the city's files.
-    needs: [build, load-pages]
+    needs: [build, sketch-shaders, load-pages]
     if: *full-run
     runs-on: ubuntu-latest
     # The shards run close to their measured times, and a slow software-renderer runner stretches
@@ -1610,6 +1714,13 @@ jobs:
           name: load-pages
           root: target
       - uses: ./.github/actions/playwright-chromium
+      - uses: ./.github/actions/archive
+        timeout-minutes: 5
+        continue-on-error: true
+        with:
+          mode: download
+          name: sketch-shaders
+          pattern: sketch-shaders-*
       - uses: ./.github/actions/samples
       # S6 loads the city's files, which the city job built.
       - uses: ./.github/actions/city
@@ -1641,7 +1752,7 @@ jobs:
     # three-quarters done. At that rate the warm-up alone takes about 23 minutes, and the plain run
     # and four and a half minutes of setup follow it, so the limit allows for the whole wind run.
     name: allocation (${{ matrix.gpu }})
-    needs: [build, load-pages]
+    needs: [build, sketch-shaders, load-pages]
     if: *full-run
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -1675,6 +1786,13 @@ jobs:
           root: target
       - uses: ./.github/actions/playwright-chromium
       # The benchmark pages' build holds S6's pages, which load the city's files.
+      - uses: ./.github/actions/archive
+        timeout-minutes: 5
+        continue-on-error: true
+        with:
+          mode: download
+          name: sketch-shaders
+          pattern: sketch-shaders-*
       - uses: ./.github/actions/samples
       - uses: ./.github/actions/city
         with:
@@ -1702,7 +1820,7 @@ jobs:
     # 39944103955. The startup pages build in the job below, at the same time, since only the
     # prebuilt real-browser shards serve them.
     name: load pages
-    needs: build
+    needs: [build, sketch-shaders]
     if: *full-run
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -1722,6 +1840,13 @@ jobs:
         with:
           mode: download
           name: page-wasm
+      - uses: ./.github/actions/archive
+        timeout-minutes: 5
+        continue-on-error: true
+        with:
+          mode: download
+          name: sketch-shaders
+          pattern: sketch-shaders-*
       - uses: ./.github/actions/samples
       - uses: ./.github/actions/city
         with:
@@ -1743,7 +1868,7 @@ jobs:
     # about a gigabyte. The two jobs run on machines of their own, and each job that serves one
     # waits only for its own.
     name: load startup pages
-    needs: build
+    needs: [build, sketch-shaders]
     if: *full-run
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -1763,6 +1888,13 @@ jobs:
         with:
           mode: download
           name: page-wasm
+      - uses: ./.github/actions/archive
+        timeout-minutes: 5
+        continue-on-error: true
+        with:
+          mode: download
+          name: sketch-shaders
+          pattern: sketch-shaders-*
       - name: The startup pages, built for production
         run: bun tests/lib/load-server.ts startup-pages
       - uses: ./.github/actions/archive
@@ -1785,14 +1917,22 @@ jobs:
     # it, and Firefox compiles every build (D-147).
     # .dev/devices.md says what to do then. To add a shard, add it to the shard list and raise the
     # count beside it.
+    # Safari runs on the macOS 26 machines. GitHub's macOS images with Safari 27.2, on every macOS 15
+    # machine and on a share of the macOS 26 machines, give Safari image buffers that fail on the
+    # machines' paravirtual GPU: no 2D canvas reads back, and an ImageBitmap uploads to WebGL2
+    # black and reaches a worker as null. Safari 26.6 on the other
+    # macOS 26 machines and Safari 27 on real devices pass the same pages. On a machine with the
+    # fault, --allow-image-faults has Safari skip the pages that draw and say why in the summary
+    # and on the run's page; its shader pages still run. .dev/devices.md, "Safari on CI's machines",
+    # has the evidence.
     # A push to a milestone branch skips them, as every job of the full run.
     # The few pages that load what the load pages job makes, a production build or S6's city
     # files, run in the real-browsers-prebuilt job below, so these shards wait only for the build
     # job, about 3 minutes sooner.
     name: real-browsers (${{ matrix.browser }} ${{ matrix.shard }}/${{ matrix.shards }})
-    needs: build
+    needs: [build, sketch-shaders]
     if: *full-run
-    runs-on: ${{ matrix.browser == 'Safari' && 'macos-15' || 'ubuntu-latest' }}
+    runs-on: ${{ matrix.browser == 'Safari' && 'macos-26' || 'ubuntu-latest' }}
     # Each shard should take at most about 12 minutes, setup included. In run 39291513923 Safari's
     # runner page went quiet for 90 to 235 s on some shards, and a new runner page then ran the rest,
     # so the limit leaves room for one such stop on top of a slow shard.
@@ -1852,13 +1992,26 @@ jobs:
         if: steps.page-wasm.outcome == 'failure'
         timeout-minutes: 6
         with: *page-wasm
+      - uses: ./.github/actions/archive
+        id: sketch-shaders
+        timeout-minutes: 6
+        continue-on-error: true
+        with: &sketch-shaders
+          mode: download
+          name: sketch-shaders
+          pattern: sketch-shaders-*
+      - uses: ./.github/actions/archive
+        if: steps.sketch-shaders.outcome == 'failure'
+        timeout-minutes: 6
+        continue-on-error: true
+        with: *sketch-shaders
       - uses: ./.github/actions/samples
       # A runner page that sends nothing for 90 s counts as stopped, and a new one takes over. A
       # healthy runner page went at most 36 s without writing in CI, and a stop otherwise waited out
       # the page's whole time limit, up to 235 s on a shaders page.
       - &real-browser-run
         name: ${{ matrix.browser }}, shard ${{ matrix.shard }} of ${{ matrix.shards }}
-        run: ${{ runner.os == 'Linux' && 'xvfb-run --auto-servernum' || '' }} bun tests/real-browsers.ts --allow-no-webgpu ${{ matrix.browser == 'Safari' && '--shaders sampled' || '' }} --prebuilt ${{ env.PREBUILT }} --quiet-cap 90 --shard ${{ matrix.shard }}/${{ matrix.shards }} ${{ matrix.browser }}
+        run: ${{ runner.os == 'Linux' && 'xvfb-run --auto-servernum' || '' }} bun tests/real-browsers.ts --allow-no-webgpu ${{ matrix.browser == 'Safari' && '--shaders sampled --allow-image-faults' || '' }} --prebuilt ${{ env.PREBUILT }} --quiet-cap 90 --shard ${{ matrix.shard }}/${{ matrix.shards }} ${{ matrix.browser }}
       # Every shard keeps its runs, whose page times set the shards' model of each page's time, and a
       # failed shard's candidates beside them.
       - &real-browser-runs
@@ -1876,9 +2029,9 @@ jobs:
     # it is the faster browser, and a split sized for Safari would leave its shards idle. The steps
     # are the job above's, anchored and shared, so the two cannot drift.
     name: real-browsers (${{ matrix.browser }} ${{ matrix.shard }}/${{ matrix.shards }})
-    needs: build
+    needs: [build, sketch-shaders]
     if: *full-run
-    runs-on: ${{ matrix.browser == 'Safari' && 'macos-15' || 'ubuntu-latest' }}
+    runs-on: ${{ matrix.browser == 'Safari' && 'macos-26' || 'ubuntu-latest' }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -1897,9 +2050,9 @@ jobs:
     # the engine test page, through the load routes, and S6's pages, with the city's files. They
     # take about a minute of each browser's plan, so one shard in each browser runs them.
     name: real-browsers (${{ matrix.browser }}, the prebuilt pages)
-    needs: [build, load-pages, load-startup-pages]
+    needs: [build, sketch-shaders, load-pages, load-startup-pages]
     if: *full-run
-    runs-on: ${{ matrix.browser == 'Safari' && 'macos-15' || 'ubuntu-latest' }}
+    runs-on: ${{ matrix.browser == 'Safari' && 'macos-26' || 'ubuntu-latest' }}
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -1942,6 +2095,16 @@ jobs:
         if: steps.load-startup-pages.outcome == 'failure'
         timeout-minutes: 6
         with: *load-startup-pages
+      - uses: ./.github/actions/archive
+        id: sketch-shaders
+        timeout-minutes: 6
+        continue-on-error: true
+        with: *sketch-shaders
+      - uses: ./.github/actions/archive
+        if: steps.sketch-shaders.outcome == 'failure'
+        timeout-minutes: 6
+        continue-on-error: true
+        with: *sketch-shaders
       - uses: ./.github/actions/samples
       # S6 loads the city's files, which the city job built.
       - uses: ./.github/actions/city
@@ -2013,6 +2176,7 @@ jobs:
       - rust-lint
       - rust-tests
       - build
+      - sketch-shaders
       - size-base
       - size-parts
       - wasm-checks
@@ -2067,7 +2231,7 @@ jobs:
           echo "jobs that passed in an earlier run: $PASSED"
           jq -r 'to_entries[] | "\(.key): \(.value.result)"' <<< "$NEEDS"
           jq -e --argjson quick "$QUICK" --argjson passed "$PASSED" '[
-              "load-pages", "load-startup-pages", "browser", "browser-alone", "browser-heavy",
+              "sketch-shaders", "load-pages", "load-startup-pages", "browser", "browser-alone", "browser-heavy",
               "browser-production", "browser-city", "showcase", "bench", "allocation",
               "real-browsers", "real-browsers-firefox", "real-browsers-prebuilt"
             ] as $full | length > 0 and all(to_entries[]; .value.result == "success"

@@ -727,6 +727,8 @@ red.set({ roughness: 0.2 });
 
 A material can add its own specular lobe with `fn lobe(input: LobeInput) -> vec3f`. The engine adds the color it returns to that light's specular, for the main directional light and for each point and spot light. Area lights draw with the base lobe only. [Surface functions](../shaders/surface-functions.md#a-materials-own-lobe) describes the lobe input.
 
+A surface function can light the sky's light by a normal of its own, `s.ambientNormal`. A crown then takes its sky light from the gaps above it, and each leaf keeps the sun's light. The field `s.occlusionByMinimum` joins the surface's occlusion with ambient occlusion by the smaller of the two, so an occlusion baked from the same shapes counts once. Only a material whose WGSL names a field builds its code. [Surface functions](../shaders/surface-functions.md#a-normal-for-the-skys-light) describes both fields.
+
 The WGSL can declare uniforms as the fields of `struct Uniforms`. The `uniforms` option gives their first values, and `set` changes them with the standard values:
 
 ```ts

@@ -52,6 +52,7 @@ import { FULL_SCALE, thousandths } from '../quality/budget';
 import { Governor, GovernorLoop } from '../quality/governor';
 import { type QualitySettings, SKETCH_SETTINGS } from '../quality/presets';
 import type { Assets, GltfExtensionHandler, ProgressHandler } from '../scene/assets';
+import type { DerivedCache } from '../scene/derived-cache';
 import { FrameCameras } from '../scene/frame-cameras';
 import { GltfExtensions } from '../scene/gltf-extensions';
 import { GradeTable } from '../scene/grade-table';
@@ -252,6 +253,8 @@ function lazyAssets(
 			if (name === 'then') return undefined;
 			if (name === 'registerGltfExtension')
 				return (handler: GltfExtensionHandler) => extensions.register(handler);
+			if (name === 'cache')
+				return (cacheName: string, version: string | number) => lazyCache(load, cacheName, version);
 			if (name === 'onProgress') {
 				return (handler: ProgressHandler) => {
 					let off: (() => void) | undefined;
@@ -267,6 +270,24 @@ function lazyAssets(
 				);
 		},
 	});
+}
+
+/**
+ * A namespace of the cache of derived data that answers at once, as `assets.cache` does, while
+ * the loader that holds the cache loads with its first read or write.
+ */
+function lazyCache(
+	load: () => Promise<Assets>,
+	name: string,
+	version: string | number,
+): DerivedCache {
+	const cache = () => load().then((assets) => assets.cache(name, version));
+	return {
+		name,
+		version: String(version),
+		get: (key) => cache().then((own) => own.get(key)),
+		put: (key, bytes) => cache().then((own) => own.put(key, bytes)),
+	};
 }
 
 /**
@@ -345,7 +366,7 @@ export class SketchRunner {
 	private resumes = -1;
 	private resumed = false;
 	/** The sketch's `time`, which each frame updates in place. Its frames are those that run the sketch. */
-	private readonly time = { now: 0, dt: 0, frame: 0, held: false };
+	private readonly time = { now: 0, dt: 0, frame: 0, held: false, drawn: true };
 	/**
 	 * The engine's number of the frame it recorded last. The setup's frames, for warm-ups and the
 	 * preset check, count here but not in `time.frame`. The core, the draw lists and the thread that
@@ -580,7 +601,7 @@ export class SketchRunner {
 			() => this.quality.own('uploadBytesPerFrame'),
 			(id) => imagesArrived(slots, id),
 			device.webgl2,
-			device.textureCache,
+			device.derivedCache,
 			() => this.quality.own('textureMemoryMiB'),
 			post,
 		);
@@ -1351,6 +1372,7 @@ export class SketchRunner {
 		let held = 0;
 		this.holding = true;
 		this.time.held = true;
+		this.render.held = true;
 		this.recorded.held = true;
 		try {
 			for (let step = 0; step <= steps; step++) {
@@ -1367,7 +1389,10 @@ export class SketchRunner {
 				// A held frame whose passes read the motion since the frame before it, as the motion
 				// debug view does, has the thread that draws draw the frame before it first.
 				const before = step === steps - 1 && glue.holdsFrameBefore() !== 0;
-				if (first === 0 && (before || step === steps)) {
+				// The thread that draws draws only the frames from the first held one on, so the steps
+				// before it tell the sketch that their GPU work never runs.
+				this.time.drawn = before || step === steps;
+				if (first === 0 && this.time.drawn) {
 					await this.context.scene.imagesSettled();
 					await this.context.scene.areaTablesSettled();
 					// A grading table bakes in a job worker: the held frame waits for the newest
@@ -1381,7 +1406,7 @@ export class SketchRunner {
 					this.gpuEpoch = -1;
 				}
 				frame = this.frame();
-				if (first === 0 && (before || step === steps)) first = frame;
+				if (first === 0 && this.time.drawn) first = frame;
 				for (const one of this.scriptDumps) this.dumpScriptStep(one, dumps, problems);
 			}
 			// A reflection probe captures in one frame and lights surfaces from then on, and the
@@ -1418,6 +1443,8 @@ export class SketchRunner {
 		} finally {
 			this.holding = false;
 			this.time.held = false;
+			this.time.drawn = true;
+			this.render.held = false;
 			this.recorded.held = false;
 		}
 		if (script !== undefined) this.scriptResult = { dumps, problems };
@@ -1512,7 +1539,8 @@ export class SketchRunner {
 				// to wait for the scene's images, as a held frame does. A pass that reads the frame
 				// before it, as screen-space reflections do, draws the frame before the last too.
 				const before = at === frames - 2 && glue.holdsFrameBefore() !== 0;
-				if (first === 0 && (before || at === frames - 1)) {
+				this.time.drawn = before || at === frames - 1;
+				if (first === 0 && this.time.drawn) {
 					await this.context.scene.imagesSettled();
 					await this.context.scene.areaTablesSettled();
 					await this.post.gradingSettled();
@@ -1521,7 +1549,7 @@ export class SketchRunner {
 					this.gpuEpoch = -1;
 				}
 				frame = this.frame();
-				if (first === 0 && (before || at === frames - 1)) first = frame;
+				if (first === 0 && this.time.drawn) first = frame;
 			}
 			held = frame;
 			Atomics.store(slots, Slot.HeldFrom, frame);
@@ -1546,6 +1574,7 @@ export class SketchRunner {
 			);
 		} finally {
 			this.replaying = false;
+			this.time.drawn = true;
 		}
 		this.replayResult = {
 			frames,

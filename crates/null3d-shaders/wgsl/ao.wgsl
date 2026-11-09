@@ -35,7 +35,7 @@
 // WebGPU draws a corner into a target's first rows, and WebGL2, which counts rows from the bottom,
 // into its last, so the steps turn rows around there. Every read clamps inside the drawn corner.
 #import null3d::fullscreen::{triangle}
-#import null3d::depth::{view_position}
+#import null3d::depth::{toward_camera, view_position}
 
 /// The steps' settings, which the frame builder writes once for all of them.
 struct Settings {
@@ -217,7 +217,7 @@ fn horizon(@builtin(position) position: vec4f) -> @location(0) vec4f {
     let falloff = settings.horizon.w;
     let slices = i32(settings.shape.y);
     let steps = i32(settings.shape.z);
-    let to_view = normalize(-center);
+    let to_view = toward_camera(center, settings.projection);
     var open = 0.0;
     for (var slice = 0; slice < slices; slice++) {
         let angle = f32(slice) / f32(slices) * PI;

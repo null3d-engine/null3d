@@ -59,8 +59,14 @@ function envelopeReach(record: Species): number {
  */
 export function speciesBox(record: Species): SpeciesBox {
 	const height = tallest(record);
+	const growth = record.growth;
+	// Fronds reach out from a palm's crown, and from a colony's rhizome as far as it runs.
 	const fronds =
-		record.growth.model === 'crown-rosette' ? spreadMax(record.growth.frond.length) : 0;
+		growth.model === 'crown-rosette'
+			? spreadMax(growth.frond.length)
+			: growth.model === 'frond-colony'
+				? growth.rhizome.length + spreadMax(growth.frond.length)
+				: 0;
 	const reach = Math.max(
 		Math.max(0.5 * record.size.aspect, envelopeReach(record), 0.25) * height,
 		fronds,

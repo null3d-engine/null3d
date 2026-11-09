@@ -79,6 +79,26 @@ export interface PackageBuild {
 /** The prefix of a workspace package's name, as a manifest gives it. */
 const WORKSPACE_PREFIX = '@null3d/';
 
+/**
+ * The files of the vegetation textures package that pages load by address: each species folder's
+ * KTX2 files, as its manifest lists them, its manifest and its module's types.
+ */
+function speciesTextureFiles(): string[] {
+	const root = join(import.meta.dirname, '../../packages/vegetation-textures/textures');
+	if (!existsSync(root)) return [];
+	return readdirSync(root)
+		.filter((species) => existsSync(join(root, species, 'manifest.json')))
+		.sort()
+		.flatMap((species) => {
+			const manifest = JSON.parse(readFileSync(join(root, species, 'manifest.json'), 'utf8')) as {
+				readonly outputs: readonly { readonly file: string }[];
+			};
+			return [...manifest.outputs.map((o) => o.file), 'manifest.json', 'index.d.ts'].map(
+				(file) => `textures/${species}/${file}`,
+			);
+		});
+}
+
 /** Each package in `packages/` by folder name. */
 export const PACKAGES: Readonly<Record<string, PackageBuild>> = {
 	engine: {
@@ -141,19 +161,21 @@ export const PACKAGES: Readonly<Record<string, PackageBuild>> = {
 		required: ['dist/terrain.wasm'],
 		repositoryOnly: ['reference-builder.ts', 'quadtree.ts', 'chunk-vertices.ts'],
 	},
-	// The species template and the stand-in species are folders that the repository's tests and
-	// review page read; the registry leaves them out, and so does the package.
+	// The species template is a folder to copy, which the registry leaves out, and so does the
+	// package.
 	vegetation: {
 		compile: true,
 		shaders: false,
 		docs: false,
-		required: [],
-		repositoryOnly: [
-			'species/_template/record.ts',
-			'species/_template/index.ts',
-			'species/_stub/record.ts',
-			'species/_stub/index.ts',
-		],
+		required: ['THIRD-PARTY-NOTICES.txt'],
+		repositoryOnly: ['species/_template/record.ts', 'species/_template/index.ts'],
+	},
+	// Data only: each species folder's textures, manifest and module, which the textures tool writes.
+	'vegetation-textures': {
+		compile: false,
+		shaders: false,
+		docs: false,
+		required: speciesTextureFiles(),
 	},
 	// Its tone curves and outline passes compile from .wgsl files into modules of their own.
 	'three-compat': {

@@ -3,7 +3,7 @@ id: api/assets
 title: Assets
 status: experimental
 since: "0.1"
-summary: "loadGltf, registerGltfExtension, loadTexture, loadImageBitmap, loadLut, lutFromData, loadEnvironment, builtinEnvironment, skyEnvironment, loadCubemap, loadLightProbeGrid, loadLightMap, lightProbeGridFile, loadJson, loadBinary, preload, onProgress."
+summary: "loadGltf, registerGltfExtension, loadTexture, loadImageBitmap, loadLut, lutFromData, loadEnvironment, builtinEnvironment, skyEnvironment, loadCubemap, loadLightProbeGrid, loadLightMap, lightProbeGridFile, loadJson, loadBinary, preload, onProgress, cache."
 ---
 
 # Assets
@@ -308,7 +308,41 @@ await assets.preload(['/tex/a.png', '/tex/b.png', '/tex/c.png']);
 
 Loads of one address at the same time share one download. Files that `preload` downloaded wait in memory until a load takes them. The HTTP cache keeps everything else, as it does for a page's own requests, so three.js's `THREE.Cache` has no counterpart.
 
-A game that plays with no network caches its files and the engine's in its own service worker, as [Hosting](../getting-started/hosting.md#offline-play) shows.
+A game that plays with no network caches its files and the engine's in its own service worker, as [Hosting](../getting-started/hosting.md#offline-play) shows. [Caches between visits](../getting-started/hosting.md#caches-between-visits) shows how each cache fits in.
+
+### The cache of derived data
+
+The engine keeps the data that it makes from files in the browser's storage. A repeat visit reads the data back instead of making it again. The KTX2 loader keeps each file's transcoded texels there. A page whose KTX2 files are all in the cache never downloads the transcoder.
+
+`assets.cache(name, version)` gives a sketch or an add-on its own namespace in the same cache, for data that it makes itself, such as a generated terrain:
+
+```ts
+const tiles = assets.cache('my-game/terrain', 3);
+
+async function tile(x: number, z: number): Promise<Float32Array> {
+  const key = `${WORLD_SEED}:${x}:${z}`;
+  const stored = await tiles.get(key);
+  if (stored) return new Float32Array(stored.slice().buffer);
+  const heights = makeHeights(WORLD_SEED, x, z);
+  void tiles.put(key, new Uint8Array(heights.buffer));
+  return heights;
+}
+```
+
+- `name` names what makes the data, such as an add-on's package name. `version` is the version of the bytes that it makes. Change it whenever the same key would give other bytes. The first call with a new version deletes the entries of the name's other versions.
+- The key names every input that the bytes come from, such as a seed, a hash of a file or a record's content. Then an entry never goes stale.
+- Store bytes: numbers and typed arrays come back exactly as they went in. Never store engine objects.
+- `get` never rejects. It answers `undefined` on a miss, a failed read, an entry that fails its check on read, and when the cache is off. Make the data on every such answer. The bytes may be a view of a larger buffer, so copy them, as `slice()` does above, before you read them as another typed array.
+- `put` returns at once, and the write starts after the call. Leave the bytes unchanged until its promise resolves. A write that fails, or that would hold too much memory, is dropped.
+- The cache works in the sketch worker and on the page's thread. In the sketch worker it reads fastest.
+
+Every namespace shares one budget: a tenth of the storage that the browser allows the page's origin. Chrome and Firefox allow about 10 GiB, so the cache keeps about 1 GiB there, and Safari on an iPhone keeps about 3.8 GiB. When the cache passes its budget, it deletes the entries used longest ago.
+
+The browser can still delete the origin's storage. Under storage pressure, it deletes the storage of whole origins, the least recently used first. Safari deletes it after seven days of browsing without a visit to the site, unless the game runs from the Home Screen. The engine never asks for persistent storage, because Firefox asks the player with a prompt. A game can ask for it with `navigator.storage.persist()`.
+
+The `?derived-cache=off` switch turns the cache off, so every load makes its data again, as on a first visit ([Testing](../guides/testing.md#switches-for-tests)).
+
+The vegetation add-on keeps its grown plants in a namespace that the page gives it: `prepareSpecies(ctx, module, { cache: ctx.assets.cache('@null3d/vegetation', 1) })` ([Vegetation](vegetation.md)).
 
 ## Errors
 

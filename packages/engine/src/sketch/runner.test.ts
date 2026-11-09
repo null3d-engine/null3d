@@ -91,7 +91,7 @@ const textureOption = (option: number, value: number) => `setTextureOption ${opt
  * keeps the arguments of some calls in `calls`. Its transform updates clear the dirty bits, as the
  * core's do. With `grows`, each frame step grows the memory, which detaches the views of a memory
  * that is not shared, as the single-threaded build's is. `cellsRefused` gives the core's count of
- * refused grid cells. Its other calls do nothing.
+ * refused grid cells. `answers` replaces the answers of some calls. Its other calls do nothing.
  */
 function fakeGlue(
 	log: string[],
@@ -101,6 +101,7 @@ function fakeGlue(
 	cellsRefused = () => 0,
 	handed: { handedMs: number; timing?: boolean[] } = { handedMs: 0 },
 	readsLastFrame = () => 0,
+	answers: GlueAnswers = {},
 ): CoreGlue {
 	// Each scene field, then each ring field, in its own 4 KB block.
 	const block = (index: number) => 4096 * (index + 1);
@@ -128,6 +129,7 @@ function fakeGlue(
 		takeHandedUs: () => (handed.timing?.at(-1) === false ? 0 : Math.round(handed.handedMs * 1000)),
 		// The fake takes numbers, so the flag arrives as one.
 		timeHandedLoops: (on) => handed.timing?.push(Boolean(on)) ?? 0,
+		...answers,
 	};
 	const clearDirty = () =>
 		new Uint32Array(
@@ -149,6 +151,9 @@ function fakeGlue(
 			}),
 	});
 }
+
+/** Calls of the test glue whose answers a test gives. */
+type GlueAnswers = Partial<Record<keyof CoreGlue, (field: number) => number>>;
 
 /**
  * How the thread that draws behaves in a test: the intervals it records, in ms. With `replayMs`,
@@ -221,8 +226,9 @@ const MEDIUM: QualityStart = {
  * draws takes the frames, and the engine runs, so waits for frames wait for that stand-in. With
  * `grows`, each frame step grows the memory. `cellsRefused` gives the core's count of refused grid
  * cells. `control` gives the page's control block, which the test can write. `maxTargetFps` is the
- * highest target that the page allows. `device` replaces fields of the stand-in device. The log
- * also shows the settings that the page got.
+ * highest target that the page allows. `device` replaces fields of the stand-in device. `answers`
+ * replaces the answers of some of the core's calls. The log also shows the settings that the page
+ * got.
  */
 async function start(
 	callbacks: (context: SketchContext, log: string[]) => object,
@@ -243,6 +249,7 @@ async function start(
 		maxTargetFps = 60,
 		jobs = { most: 0, handedMs: 0, asked: [] },
 		device,
+		answers,
 	}: {
 		quality?: QualityStart;
 		drawing?: FakeDrawing;
@@ -264,6 +271,7 @@ async function start(
 		 */
 		jobs?: { most: number; handedMs: number; asked: number[]; timing?: boolean[] };
 		device?: Partial<CoreDevice>;
+		answers?: GlueAnswers;
 	} = {},
 ) {
 	const log: string[] = [];
@@ -280,7 +288,7 @@ async function start(
 		() => {},
 		metrics,
 		{
-			glue: fakeGlue(log, memory, calls, grows, cellsRefused, jobs, readsLastFrame),
+			glue: fakeGlue(log, memory, calls, grows, cellsRefused, jobs, readsLastFrame, answers),
 			memory,
 			control,
 			keyCodes,
@@ -315,7 +323,7 @@ async function start(
 				expectedObjects: 0,
 				gpuOcclusion: false,
 				directDraws: false,
-				textureCache: true,
+				derivedCache: true,
 				occlusionBuffer: 0,
 				occlusionCheck: true,
 				...device,
@@ -1161,6 +1169,44 @@ describe('SketchRunner and quality presets', () => {
 		stopDrawing();
 		expect(context.quality.preset).toBe('medium');
 		expect(updates.at(-1)?.check?.targetFps).toBe(30);
+	});
+});
+
+describe('the held frames that draw', () => {
+	/** Each update's time and whether its frame draws, then the flag after the hold. */
+	const drawnFrames = async (answers?: GlueAnswers) => {
+		const lines: string[] = [];
+		let time: SketchContext['time'] | undefined;
+		await start(
+			(context) => {
+				time = context.time;
+				return {
+					onUpdate: () => lines.push(`${context.time.now.toFixed(3)} ${context.time.drawn}`),
+				};
+			},
+			undefined,
+			{ holdSeconds: 0.05, answers },
+		);
+		return { lines, after: time?.drawn };
+	};
+
+	it('marks only the frame at the held time as drawn', async () => {
+		const { lines, after } = await drawnFrames();
+		expect(lines).toEqual(['0.000 false', '0.017 false', '0.033 false', '0.050 true']);
+		expect(after).toBe(true);
+	});
+
+	it('marks the frame before it drawn when the held frame reads the motion since it', async () => {
+		const { lines } = await drawnFrames({ holdsFrameBefore: () => 1 });
+		expect(lines).toEqual(['0.000 false', '0.017 false', '0.033 true', '0.050 true']);
+	});
+
+	it('runs no update in the settle frame after the held one, so the held update is the one drawn', async () => {
+		// The thread that draws draws a settle frame when a pass reads the frame before, but the
+		// sketch's code stays out of it, so the air and every other drawn-frame cost run once.
+		const { lines, after } = await drawnFrames({ readsLastFrame: () => 1 });
+		expect(lines).toEqual(['0.000 false', '0.017 false', '0.033 false', '0.050 true']);
+		expect(after).toBe(true);
 	});
 });
 

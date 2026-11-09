@@ -68,7 +68,7 @@ In hold mode, the engine does this:
 1. It seeds the engine's random generator, [`math.random`](../api/math.md#random-numbers), in the sketch's thread, and makes `Math.random` draw from it too. This happens before the sketch module loads.
 2. It runs the sketch's setup.
 3. It steps the sketch from time 0 to the held time. The first frame is at time 0 and its `onUpdate` gets a step of 0. Each later frame adds a fixed step of 1/60 second, and the last one lands on the held time exactly. The sketch's own fixed steps fall due from the sketch time, so every hold runs the same ones. At the default rate, each frame after the first runs one.
-4. It draws the last frame on the canvas, and reads its pixels back through its own GPU code.
+4. It draws the last frame on the canvas, and reads its pixels back through its own GPU code. Motion vectors read the frame before, so with them it draws the frame before the last one too. A mirror or a light probe shows its result a frame late, so with one it draws one more frame at the held time. The GPU passes of the other frames never run, and [`time.drawn`](../api/time.md#the-time-object) is false in them.
 5. It publishes the frame, or the error that stopped it, as `window.__null3dHold`.
 
 `createEngine` resolves once the frame is read back, and `engine.captureFrame()` returns that frame. `engine.mode.hold` gives the held time, and it is `null` for a live engine. After the held frame, the engine draws nothing more: it runs no frame loop, so `engine.measure()` finds no frames. The hold's result gives the held frame's own figures instead. The engine draws no frame before the held one, so the held frame creates every GPU object and uploads the whole scene.
@@ -208,7 +208,7 @@ The engine reads these switches from the page's address in development builds. T
 | `?compile=wait` | On WebGL2, wait for each shader program's compile at its first draw, as browsers without the `KHR_parallel_shader_compile` extension do |
 | `?check=fresh` | Measure the quality preset again, as on a first visit, instead of taking the stored result of an earlier [preset check](../concepts/quality-presets.md#repeat-visits) |
 | `?compression=bc`, `?compression=astc,etc2`, `?compression=none` | Keep KTX2 textures to the compressed formats that the list names, of those the device has, as on a device with only those. `none` gives every KTX2 texture `rgba8unorm` |
-| `?texture-cache=off` | Transcode every KTX2 file on every load, as on a first visit, instead of taking its texels from the [cache of transcoded textures](../api/assets.md#caching) |
+| `?derived-cache=off` | Turn the [cache of derived data](../api/assets.md#the-cache-of-derived-data) off, so every load makes its data again, as on a first visit: KTX2 files transcode, and `assets.cache` keeps nothing |
 | `?threads=off` | The single-threaded build |
 | `?wake=message` | Make the worker threads wake each other with messages, as browsers without `Atomics.waitAsync` need, such as Firefox before 145 |
 | `?render=main` | Draw on the page's main thread |

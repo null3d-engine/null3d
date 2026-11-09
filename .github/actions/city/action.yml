@@ -25,7 +25,7 @@ runs:
     - id: key
       if: inputs.mode == 'build'
       shell: bash
-      run: echo "key=null3d-city-${{ hashFiles('tools/samples/lock.json', 'tools/lib/samples.ts', 'tools/lib/sample-url.ts', 'tools/lib/build-cache.ts', 'bench/lib/city-files.ts', 'bench/scenes/s6.ts', 'bench/scenes/spec.ts', 'packages/cli/package.json', 'packages/cli/src/assets/**', '!packages/cli/src/assets/**/*.test.ts', 'packages/cli/src/protocol.js', 'packages/cli/src/text.js', 'packages/cli/src/version.js', 'packages/vite-plugin/src/assets.ts', 'crates/null3d-assets-wasm/**') }}" >> "$GITHUB_OUTPUT"
+      run: echo "key=null3d-city-${{ hashFiles('tools/samples/lock.json', 'tools/lib/samples.ts', 'tools/lib/sample-url.ts', 'tools/lib/build-cache.ts', 'bench/lib/city-files.ts', 'bench/scenes/s6.ts', 'bench/scenes/spec.ts', 'packages/cli/package.json', 'packages/cli/src/assets/**', '!packages/cli/src/assets/**/*.test.ts', 'packages/cli/src/png.js', 'packages/cli/src/protocol.js', 'packages/cli/src/text.js', 'packages/cli/src/version.js', 'packages/vite-plugin/src/assets.ts', 'crates/null3d-assets-wasm/**') }}" >> "$GITHUB_OUTPUT"
     - uses: actions/cache/restore@v4
       if: inputs.mode == 'build'
       id: restore
