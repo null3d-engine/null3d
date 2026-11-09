@@ -72,7 +72,11 @@ jobs:
     # The type check and the unit tests read the shader modules, which the build job makes.
     needs: build
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # The unit suite is this job's longest step and it has grown: eight minutes or more on the
+    # milestone branch, where the same job took 4.4 minutes on 4fb343293. Ten minutes cut the
+    # suite off mid-run and cancelled the job, so the limit leaves room for a slower day. Moving
+    # the unit run into a job of its own is the better shape and is noted, not built.
+    timeout-minutes: 20
     env:
       NULL3D_REQUIRE_FRESH_SHADERS: "1"
       # Git hooks are for local commits; this job runs the same checks directly.
