@@ -26,6 +26,7 @@ import { cos, normalize3, PI, pow, quatFromFrame, radians, sin, type Vector3 } f
 import type { Rosette, Species, ThickLeaf } from '../core/record';
 import { curveAt, spreadAt } from '../core/types';
 import {
+	STALK_LEAST_SKY,
 	stalkDetail,
 	type ThickDetail,
 	thickDetail,
@@ -55,7 +56,11 @@ const STALK_NODES = 6;
 const BLADE_NODES = 7;
 /** Points along a scape. */
 const SCAPE_NODES = 10;
-/** How far a leaf's stalk turns from its spiral's heading toward the plant's outside, 0 to 1. */
+/**
+ * How far a leaf's stalk turns from its spiral's heading toward its shoot's own, 0 to 1. A large
+ * turn gathers each shoot's leaves behind it and leaves the gaps between shoots bare; a small one
+ * keeps the spiral even round the crown.
+ */
 const OUTWARD = 0.4;
 
 /** Purposes of the grower's hash keys, so no two draws share one. */
@@ -413,6 +418,7 @@ export function meshRosette(input: MeshInput, level: MeshLevel): MeshArrays {
 				along: [0, 1],
 				browning,
 				closeTip: true,
+				leastSky: STALK_LEAST_SKY,
 			});
 			continue;
 		}
