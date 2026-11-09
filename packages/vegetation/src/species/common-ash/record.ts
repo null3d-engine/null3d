@@ -457,6 +457,9 @@ export const record: Species = {
 	textures: 'own',
 	variants: 6,
 	seedSalt: 20221107,
+	// A first pass at the floors a phone's lighter form keeps, set from the species' form and to
+	// be measured on the phone set before they are trusted.
+	sparse: { limbs: 0.45, leaves: 0.5, coarseness: 0.55 },
 	roundBand,
 	cuttings: {
 		// Stills 20, 21 and 22: a cut piece is a bare stem that forks once into two leafy shoots, far

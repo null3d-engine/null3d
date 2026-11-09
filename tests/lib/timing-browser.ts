@@ -13,8 +13,7 @@ type Environment = Parameters<typeof repoBrowserOptions>[0];
  * the flags that make its GPU timestamps exact.
  */
 export function timingBrowser(environment: Environment = 'chrome-real-gpu') {
-	const options = repoBrowserOptions(environment);
-	return { launchOptions: { ...options, args: [...(options.args ?? []), ...GPU_TIMING_ARGS] } };
+	return { launchOptions: repoBrowserOptions(environment, GPU_TIMING_ARGS) };
 }
 
 /** The launch of a cost test, which needs a computer with a GPU of its own. */
