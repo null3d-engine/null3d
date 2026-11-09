@@ -30,7 +30,7 @@
 // shadow.
 
 // The wind's swirl reads the engine's value noise, as the grass's copy of the block does.
-#import null3d::noise::{value3}
+#import null3d::noise::{pcg3d, to_unit, value3}
 
 struct Uniforms {
     // The field's box across the ground in metres, and 1 for a material that reads a field, 0 for
@@ -157,8 +157,11 @@ const CAVITY_ROUGH: f32 = 0.2;
 
 /// One texel of the header row.
 /// A fixed value from two whole numbers, from 0 to 1: a scale's own shade, the same every frame.
+/// The hash is integer arithmetic, so every GPU works out the same value.
 fn cell_noise(a: f32, b: f32) -> f32 {
-    return fract(sin(dot(vec2f(a, b), vec2f(12.9898, 78.233))) * 43758.5453);
+    let x = bitcast<u32>(i32(a));
+    let y = bitcast<u32>(i32(b));
+    return to_unit(pcg3d(vec3u(x, y, 0u)).x);
 }
 
 fn header(texel: i32) -> vec4f {
