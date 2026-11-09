@@ -103,9 +103,16 @@ export interface PlantReviewQuery {
 	/**
 	 * Whether a close view's colour is measured on the plant alone, ignoring the backdrop. A stem
 	 * does not fill its frame, so the nine patches of a plain average reach sky and ground; a slot
-	 * naming this has those patches drop every pixel close to the picture's own background.
+	 * naming this has those patches drop every pixel close to the picture's own background. A
+	 * texture source takes it too, since its reference is often a cut-out laid on one colour and
+	 * the render stands on another, so a plain average lifts both sides alike.
 	 */
 	readonly barkMask?: boolean;
+	/**
+	 * Whether a view that draws the wood alone draws the plant's foliage as well, which a bark
+	 * photograph taken among leaves needs if its colour is to be compared with like.
+	 */
+	readonly foliage?: boolean;
 	/** Whether the twigs view looks for the plant's fruit rather than for a sunlit tip. */
 	readonly fruit?: boolean;
 	/**
@@ -220,7 +227,7 @@ const SHARE_FIELDS = new Set(['horizon', 'fill', 'targetY', 'targetX', 'top', 'a
 const COUNT_FIELDS = new Set(['turns', 'columns']);
 
 /** The switches, written as 1 when on. */
-const SWITCHES = ['measure', 'scale', 'matte', 'fruit', 'surface', 'barkMask'] as const;
+const SWITCHES = ['measure', 'scale', 'matte', 'fruit', 'surface', 'barkMask', 'foliage'] as const;
 
 /** A short form of a number for a query, so a query reads well and keeps its precision. */
 function short(value: number): string {
@@ -354,6 +361,7 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 		...(pressed !== null && { pressed: pressed === '1' }),
 		measure: params.get('measure') === '1',
 		barkMask: params.get('barkMask') === '1',
+		foliage: params.get('foliage') === '1',
 		scale: params.get('scale') === '1',
 		matte: params.get('matte') === '1',
 		fruit: params.get('fruit') === '1',
