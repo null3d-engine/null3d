@@ -232,7 +232,7 @@ export const record: Species = {
 			optics: {
 				// The blue-green cast of stills 12, 13 and 24: less yellow than the broadleaves, with
 				// the blue channel close to the green.
-				reflectance: [0.075, 0.135, 0.105],
+				reflectance: [0.1, 0.18, 0.14],
 				reflectanceBack: [0.185, 0.22, 0.235],
 				transmittance: [0.09, 0.16, 0.1],
 				roughness: [0.5, 0.6],
@@ -247,8 +247,8 @@ export const record: Species = {
 		// Still 15: the grey-brown plated bark of the lower trunk changes to warm flaking scales at
 		// mid-trunk; stills 14 and 16 give each zone's figure.
 		zones: [
-			{ layer: 0, by: 'height', from: 0, to: 6.5, blend: 1.5 },
-			{ layer: 1, by: 'height', from: 6.5, to: 40, blend: 1.5 },
+			{ layer: 0, by: 'height', from: 0, to: 9.5, blend: 1.5 },
+			{ layer: 1, by: 'height', from: 9.5, to: 24, blend: 1.5 },
 		],
 		young: 0,
 		// Still 28: thin wood carries the orange-brown flaking bark of young branches.
