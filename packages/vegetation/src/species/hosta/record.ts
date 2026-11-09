@@ -120,7 +120,7 @@ export const record: Species = {
 		deciduous: true,
 		winter: 'bare',
 		// Still 20: the collapsed leaves turn butter yellow, some to papery brown.
-		autumn: { reflectance: [0.35, 0.3, 0.05], transmittance: [0.4, 0.33, 0.04] },
+		autumn: { reflectance: [0.76, 0.5, 0.1], transmittance: [0.8, 0.54, 0.08] },
 		blossom: { extra: 0, leaves: 1 },
 	},
 	wind: {
