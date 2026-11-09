@@ -188,6 +188,12 @@ that drew it.
 
 Limits this record states:
 
+- The young-bark still reads 18.6 color steps from its photograph. Its residual is the picture's
+  own subject: that photograph is young brown bark across the whole frame. The review's limb view
+  shares this slot with the great-limb picture, so it frames a limb. At a 1.5 cm twig the frame was
+  white old bark and sky, and it read 25.0. A 3 cm limb puts young bark across half the frame and
+  the figure falls to 18.6. No value tried frames young wood without the white bole beside it,
+  because the plant shows both. The elm's thin-with-span pair reads 25.6 and 19.3 here.
 - Row 10 fails on the crown's shade. Its three side views read 9.7, 8.9 and 13.9 steps from their
   photographs, where the band is 3. The lever for a far crown's shade is its card's growth, and that
   lever belongs to row 6 here. At 1.35 the color worsens to 10.2. It also closes stills 02 and 18
