@@ -96,6 +96,7 @@ const POSITION_STEPS: f32 = 65535.0;
 const REST_STEPS: f32 = 255.0;
 const HEADER_YOUNG: i32 = 15;
 const HEADER_YOUNG_TILE: i32 = 16;
+const HEADER_YOUNG_TINT: i32 = 56;
 const HEADER_MOSS: i32 = 17;
 const HEADER_MOSS_REACH: i32 = 18;
 const HEADER_EXTRAS: i32 = 19;
@@ -107,10 +108,10 @@ const MAX_BARK_ZONES: i32 = 4;
 const HEADER_LICHEN: i32 = 40;
 const HEADER_LICHEN_REACH: i32 = 41;
 const HEADER_SWAY: i32 = 42;
-const HEADER_AUTUMN_BARK: i32 = 56;
-const HEADER_WINTER_BARK: i32 = 57;
-const HEADER_WINTER_REFLECTANCE: i32 = 58;
-const HEADER_WINTER_TRANSMITTANCE: i32 = 59;
+const HEADER_AUTUMN_BARK: i32 = 57;
+const HEADER_WINTER_BARK: i32 = 58;
+const HEADER_WINTER_REFLECTANCE: i32 = 59;
+const HEADER_WINTER_TRANSMITTANCE: i32 = 60;
 const HEADER_EXTRA_BANDS: i32 = 43;
 // An extra's scale pattern: its scale rows, the cells round its turn, and its band's share of the
 // profile's height at each end, per extra in record order.
@@ -925,10 +926,19 @@ fn surface(input: SurfaceInput) -> Surface {
         let y_uv = uv / young_tile;
         let y_gx = gx / young_tile;
         let y_gy = gy / young_tile;
-        let y_colour = textureSampleGrad(second, secondSampler, y_uv, y_gx, y_gy).rgb;
+        let y_colour =
+            textureSampleGrad(second, secondSampler, y_uv, y_gx, y_gy).rgb *
+            header(HEADER_YOUNG_TINT).rgb;
         let y_relief = textureSampleGrad(third, thirdSampler, y_uv, y_gx, y_gy).rgb;
         let youth = 1.0 - smoothstep(young.w * 0.8, young.w * 1.2, radius);
-        bark = mix(bark, y_colour, youth);
+        // Thin wood keeps the tint of the bark it grows out of, so a limb's young shoots read as that
+        // limb's own wood rather than as a second, paler material beside it.
+        var young_tint = a_tint.rgb;
+        if (second_weight > 0.001) {
+            let b_tint_young = header(HEADER_BARK_ZONES + second_zone * BARK_ZONE_TEXELS);
+            young_tint = mix(a_tint.rgb, b_tint_young.rgb, second_weight / total);
+        }
+        bark = mix(bark, y_colour * young_tint, youth);
         bark_normal = normalize(mix(bark_normal, tangent_normal(y_relief), youth));
         cavity *= 1.0 - youth;
         // Moss grows on the upper, north-facing (toward -Z) side of the low trunk, and in furrows.
@@ -989,7 +999,7 @@ fn surface(input: SurfaceInput) -> Surface {
         let near_copy = object.values.x > 0.5;
         if (abs(input.uv1.y - STALK_PLANE) < 0.1) {
             // A card's stalk: the young bark's tone, so the join the card's leaves stand on shows.
-            base = header(HEADER_YOUNG).rgb;
+            base = header(HEADER_YOUNG).rgb * header(HEADER_YOUNG_TINT).rgb;
             roughness = 0.85;
             occlusion = 1.0;
             if (near_copy && length(input.relativePosition) < material.nearDistance * 0.96) {
@@ -1093,6 +1103,8 @@ fn surface(input: SurfaceInput) -> Surface {
             if (bud.w > 0.5 && kind > (KIND_STEM + KIND_BUD) * 0.5) {
                 let young_mean = max(header(HEADER_YOUNG).rgb, vec3f(0.0001));
                 base = min(bud.rgb * base / young_mean, vec3f(1.0));
+            } else {
+                base *= header(HEADER_YOUNG_TINT).rgb;
             }
             roughness = 0.8;
         } else {

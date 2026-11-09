@@ -43,6 +43,8 @@ export interface ClosePlant {
 	readonly prototypes: readonly ShootPrototype[];
 	/** A leaf's length in metres, when the species' leaves are blades, which sets a twig's frame. */
 	readonly leafLength?: number;
+	/** 3 per point: the places the plant's foliage cards draw, for a view that frames a fringe. */
+	readonly foliage?: Float32Array;
 }
 
 /** A close view's camera and what it framed. */
@@ -1258,6 +1260,125 @@ export function twigView(plant: ClosePlant, lens: Lens): CloseView | undefined {
 			row: found.subject.facts.row,
 			length: found.subject.facts.length,
 			frame: height,
+		},
+	};
+}
+
+/** The frame's height that the strands view covers, in metres: a stretch of drooping shoots. */
+const STRANDS_SPAN = 1.4;
+/** Metres the carrying limb stands above the frame's middle: the top quarter's lower edge. */
+const STRANDS_LIMB_ABOVE = STRANDS_SPAN / 4;
+/** The mid-crown band, as shares of the crown's own height above its base. */
+const STRANDS_BAND = [0.15, 0.6] as const;
+/** The fewest hanging shoots a stretch must carry to be the subject. */
+const STRANDS_LEAST = 3;
+/** Metres about the carrying limb within which a shoot counts as hanging from the stretch. */
+const STRANDS_REACH = 0.8;
+/** The most metres below the limb a hanging shoot may stand and still be in the frame. */
+const STRANDS_BELOW = 1.2;
+/** The shares of a carrying limb that the view weighs as the stretch's middle. */
+const STRANDS_SHARES = [0.2, 0.35, 0.5, 0.65, 0.8] as const;
+/** What one shoot in the sight line beyond the strand costs a stretch's score. */
+const STRANDS_OCCLUDED = 1.5;
+
+/** A stretch of limb that carries hanging shoots, as the strands view finds it. */
+interface StrandStretch {
+	readonly axis: number;
+	readonly point: AxisPoint;
+	/** Shoots hanging below the limb within the frame. */
+	readonly hanging: number;
+	/** Shoots standing in the frame's sight line, before or beyond the strand. */
+	readonly occluded: number;
+}
+
+/**
+ * The view of a limb's hanging shoots: a level camera at mid-crown height at the crown's outer rim,
+ * framing about a metre and a half of strand with the carrying limb across the top quarter and the
+ * sky behind it, as a drooping-twig photograph shows them. It takes the stretches of limb from
+ * which several shoots hang free below the limb and along which the least of the crown stands in
+ * the frame, and looks outward from just inside the rim, so the strands hang against the sky.
+ */
+export function strandsView(plant: ClosePlant, lens: Lens): CloseView | undefined {
+	const { skeleton } = plant;
+	const tall = skeleton.height - skeleton.crownBase;
+	if (tall <= 0) return undefined;
+	const low = skeleton.crownBase + tall * STRANDS_BAND[0];
+	const high = skeleton.crownBase + tall * STRANDS_BAND[1];
+	const p = skeleton.position;
+	let radius = 0;
+	for (let n = 0; n < skeleton.nodeCount; n++) {
+		const y = p[n * 3 + 1] as number;
+		if (y < low || y > high) continue;
+		radius = Math.max(radius, Math.hypot(p[n * 3] as number, p[n * 3 + 2] as number));
+	}
+	if (radius <= 0) return undefined;
+	const rows = plant.shoots;
+	const distance = distanceFor(STRANDS_SPAN, lens.fov);
+	const halfHeight = Math.tan((lens.fov * DEG) / 2);
+	const halfWidth = halfHeight * lens.aspect;
+	// The shoots a frame of this stretch would hold: below the limb as its fringe, and in the sight
+	// line either side of the strand, which should stand against the sky.
+	const weigh = (point: AxisPoint): { hanging: number; occluded: number } | undefined => {
+		const outward = normalize([point.at[0], 0, point.at[2]]);
+		if (!Number.isFinite(outward[0])) return undefined;
+		const cards = plant.foliage;
+		const count = cards ? cards.length / 3 : rows.count;
+		const stride = cards ? 12 : 1;
+		const at = (i: number, k: number) =>
+			(cards ? (cards[i * 3 + k] as number) : (rows.position[i * 3 + k] as number)) -
+			(point.at[k] as number);
+		let hanging = 0;
+		let occluded = 0;
+		for (let i = 0; i < count; i += stride) {
+			const dx = at(i, 0);
+			const dy = at(i, 1);
+			const dz = at(i, 2);
+			const along = dx * outward[0] + dz * outward[2];
+			const lateral = Math.abs(dx * outward[2] - dz * outward[0]);
+			if (lateral <= STRANDS_REACH && -dy > 0.05 && -dy <= STRANDS_BELOW) hanging++;
+			if (along + distance <= 0) continue;
+			const span = along + distance;
+			if (Math.abs(dy) > span * halfHeight || lateral > span * halfWidth) continue;
+			occluded++;
+		}
+		return { hanging, occluded };
+	};
+	let best: StrandStretch | undefined;
+	for (let axis = 0; axis < skeleton.axes.count; axis++) {
+		for (const share of STRANDS_SHARES) {
+			const point = pointAlong(skeleton, axis, share);
+			if (point.at[1] < low || point.at[1] > high) continue;
+			if (Math.hypot(point.at[0], point.at[2]) < radius * 0.82) continue;
+			if (Math.abs(point.direction[1]) > 0.45) continue;
+			const weighed = weigh(point);
+			if (!weighed || weighed.hanging < STRANDS_LEAST) continue;
+			if (
+				!best ||
+				weighed.hanging - weighed.occluded * STRANDS_OCCLUDED >
+					best.hanging - best.occluded * STRANDS_OCCLUDED
+			)
+				best = { axis, point, hanging: weighed.hanging, occluded: weighed.occluded };
+		}
+	}
+	if (!best) return undefined;
+	const outward = normalize([best.point.at[0], 0, best.point.at[2]]);
+	if (!Number.isFinite(outward[0])) return undefined;
+	const target: V3 = [best.point.at[0], best.point.at[1] - STRANDS_LIMB_ABOVE, best.point.at[2]];
+	// The camera stands level at the rim, looking outward past the strand to the sky.
+	const position: V3 = [
+		target[0] - outward[0] * distance,
+		target[1],
+		target[2] - outward[2] * distance,
+	];
+	return {
+		position,
+		target,
+		subject: {
+			kind: 'a limb stretch with hanging shoots',
+			hanging: best.hanging,
+			occluded: best.occluded,
+			height: best.point.at[1],
+			frame: STRANDS_SPAN,
 		},
 	};
 }
