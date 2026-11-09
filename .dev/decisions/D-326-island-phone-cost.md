@@ -2,6 +2,8 @@
 
 Status: decided by the owner. Built: the Low preset's fixed shadow range. The one-view cards are not applied: their saving was inside the load's spread. The slower water reflection is not applied. Measured: both sides on the M3 Max, two loads each, in [the data](#data), with the cards change in; both sides on the two cloud phones, in [the cloud phones](#the-cloud-phones), also with it in. Pending: the pictures, a second load of the shipped code, and the software WebGL2 gap. Task: none.
 
+Owner, 9 November 2026: the better-looking drawing stays. The one-view cards and the slower reflection remain out, the three atlas views and the every-second reflection stay, and the shorter shadow reach is the change that ships.
+
 Summary: A phone draws the Island at Low, where the shadow maps and the far tree cards take most of the frame. On Low the sun's shadows reach 250 m and no longer stretch with the camera. The water's reflection keeps every second frame. A cadence of four still draws a dark sea on the software WebGL2 path, and the held-frame fix is not in this branch. Its trial's saving is forgone. The cards keep their three views, because one view saved 1.5 per cent and the software picture darkens with either change, so the picture is owed whatever this branch keeps. Two loads each side at 576 x 1248 on the M3 Max put the frame at 2.66 ms before and 2.32 ms after with all three changes in. The shorter shadow range is what the branch ships, so the paired figure is smaller and is still owed.
 
 ## Question
