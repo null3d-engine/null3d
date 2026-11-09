@@ -71,7 +71,7 @@ export const record: Species = {
 					[1, 28],
 				],
 				droop: 12,
-				flowers: { mean: 4, spread: 1 },
+				flowers: { mean: 5, spread: 1 },
 			},
 		},
 	},
