@@ -103,6 +103,8 @@ const MAX_EXTRAS: i32 = 4;
 const HEADER_BARK_ZONES: i32 = 24;
 const BARK_ZONE_TEXELS: i32 = 4;
 const MAX_BARK_ZONES: i32 = 4;
+// A zone's band on the other axis: its start, end, blend and whether the record gives one.
+const HEADER_BARK_SECONDS: i32 = 57;
 const HEADER_LICHEN: i32 = 40;
 const HEADER_LICHEN_REACH: i32 = 41;
 const HEADER_SWAY: i32 = 42;
@@ -855,6 +857,19 @@ fn surface(input: SurfaceInput) -> Surface {
         let squared = max(dot(m[0], m[0]), 0.00000001);
         let plant = transpose(m) * (input.relativePosition - origin) / squared;
         let zones = i32(header(HEADER_YOUNG_TILE).z + 0.5);
+        // A zone may hold a band on the other axis too, and where it does it wins over a zone that
+        // holds on a single axis: its weight is the lesser of its two bands', and the single-axis
+        // zones give way by its share.
+        var both_weight = 0.0;
+        for (var z = 0; z < MAX_BARK_ZONES; z += 1) {
+            let range = header(HEADER_BARK_ZONES + z * BARK_ZONE_TEXELS + 1);
+            let other_band = header(HEADER_BARK_SECONDS + z);
+            let by_radius = range.w > 0.5;
+            let live = select(0.0, 1.0, z < zones && other_band.w > 0.5);
+            let main_weight = zone_weight(range, select(plant.y, radius, by_radius));
+            let other_weight = zone_weight(other_band, select(radius, plant.y, by_radius));
+            both_weight = max(both_weight, min(main_weight, other_weight) * live);
+        }
         // The two zones that weigh most at this point.
         var first_zone = 0;
         var first_weight = -1.0;
@@ -862,8 +877,16 @@ fn surface(input: SurfaceInput) -> Surface {
         var second_weight = 0.0;
         for (var z = 0; z < MAX_BARK_ZONES; z += 1) {
             let range = header(HEADER_BARK_ZONES + z * BARK_ZONE_TEXELS + 1);
-            let along_zone = select(plant.y, radius, range.w > 0.5);
-            let weight = select(-1.0, zone_weight(range, along_zone), z < zones);
+            let second_band = header(HEADER_BARK_SECONDS + z);
+            let by_radius = range.w > 0.5;
+            let holds = select(0.0, 1.0, second_band.w > 0.5);
+            let main_weight = zone_weight(range, select(plant.y, radius, by_radius));
+            let both = min(main_weight, zone_weight(second_band, select(radius, plant.y, by_radius)));
+            let mixed = select(
+                main_weight * (1.0 - holds) * (1.0 - both_weight),
+                both,
+                second_band.w > 0.5);
+            let weight = select(-1.0, mixed, z < zones);
             if (weight > first_weight) {
                 second_zone = first_zone;
                 second_weight = max(first_weight, 0.0);

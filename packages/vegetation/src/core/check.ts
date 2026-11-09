@@ -568,6 +568,12 @@ export function speciesProblems(record: Species): string[] {
 		zone.tint?.forEach((channel, c) => {
 			notNegative(channel, `bark.zones[${i}].tint[${c}]`, out);
 		});
+		if (zone.second) {
+			if (zone.second.from >= zone.second.to)
+				out.push(`bark.zones[${i}].second runs from ${zone.second.from} to ${zone.second.to}`);
+			if (!(zone.second.blend >= 0))
+				out.push(`bark.zones[${i}].second.blend is ${zone.second.blend}; it is metres from 0`);
+		}
 	});
 	if (record.bark) curveProblems(record.bark.girthScale, 'bark.girthScale', out);
 	const fork = record.bark?.fork;
