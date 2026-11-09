@@ -163,6 +163,14 @@ export interface GrowOptions extends CoarsenessOptions {
 	 * answers its own count of limbs, so one option sets the wood of any species.
 	 */
 	readonly limbs?: number;
+	/**
+	 * How far toward its sparse form the plant grows, from 0 to 1: 0 is the record's own, and 1 the
+	 * sparsest the species allows, with the record's `sparse` floors holding the limbs, the leaves
+	 * and the coarseness at what still reads as its species. A record with no floors grows its own
+	 * form whatever the level asks. A page sets it by the device class, so a phone or a tablet
+	 * grows the light form and a desktop the full one.
+	 */
+	readonly sparse?: number;
 }
 
 /** The least and the most share of leaves or limbs a growth may ask for. */
@@ -170,6 +178,12 @@ export const LEAVES_LEAST = 0.4;
 export const LEAVES_MOST = 2;
 export const LIMBS_LEAST = 0.4;
 export const LIMBS_MOST = 2;
+/**
+ * The least share a sparse form may reach, below the shares a page passes on its own.
+ *
+ * @category api/vegetation
+ */
+export const SPARSE_LEAST = 0.05;
 
 /**
  * The record a plant grows by when its leaf area is set against the record's own. A shoot carries
@@ -182,9 +196,13 @@ export const LIMBS_MOST = 2;
  * @returns The record to grow by.
  * @category api/vegetation
  */
-export function withLeaves(record: Species, leaves: number | undefined): Species {
+export function withLeaves(
+	record: Species,
+	leaves: number | undefined,
+	least: number = LEAVES_LEAST,
+): Species {
 	if (leaves === undefined || leaves === 1) return record;
-	checkShare('leaves', leaves, LEAVES_LEAST, LEAVES_MOST);
+	checkShare('leaves', leaves, least, LEAVES_MOST);
 	const shoots = record.shoots;
 	if (!shoots) return record;
 	const grow = Math.sqrt(leaves);
@@ -224,9 +242,13 @@ export function withLeaves(record: Species, leaves: number | undefined): Species
  * @returns The record to grow by.
  * @category api/vegetation
  */
-export function withLimbs(record: Species, limbs: number | undefined): Species {
+export function withLimbs(
+	record: Species,
+	limbs: number | undefined,
+	least: number = LIMBS_LEAST,
+): Species {
 	if (limbs === undefined || limbs === 1) return record;
-	checkShare('limbs', limbs, LIMBS_LEAST, LIMBS_MOST);
+	checkShare('limbs', limbs, least, LIMBS_MOST);
 	const thin = Math.min(1, limbs);
 	const growth = thinnedGrowth(record.growth, thin);
 	const shoots = record.shoots;
@@ -565,10 +587,38 @@ function cuttingLeaves(record: Species, cutting: CuttingOptions | undefined): Sp
 	return { ...out, growth: { ...growth, leaves } };
 }
 
+/**
+ * The grow options a sparse level asks for: the leaves, limbs and coarseness moved toward the
+ * record's floors by the level, from 0, the record's own form, to 1, the sparsest the species
+ * allows. A record with no floors, or a level of 0, leaves the options as they stand. The level is
+ * kept in the options so the shares it sets are taken at the sparse bound rather than a page's own.
+ *
+ * @param record The species record.
+ * @param options The options as the page gave them.
+ * @returns The options to grow by.
+ * @category api/vegetation
+ */
+export function withSparse<T extends GrowOptions>(record: Species, options: T): GrowOptions {
+	const floors = record.sparse;
+	const asked = options.sparse;
+	if (!floors || asked === undefined || asked <= 0) return options;
+	if (asked > 1) throw new Error(`sparse is ${asked}; a sparse level lies from 0 to 1`);
+	const level = asked;
+	const at = (least: number) => Math.max(least, 1 - level * (1 - least));
+	return {
+		...options,
+		leaves: at(floors.leaves),
+		limbs: at(floors.limbs),
+		coarseness: Math.max(options.coarseness ?? 0, level * floors.coarseness),
+	};
+}
+
 /** The grown skeleton and its dressing: the stages before the meshes. */
 function dress(kit: SpeciesKitData, options: GrowOptions): MeshInput {
+	// A sparse form's shares may sit below what a page may ask for on its own.
+	const least = options.sparse !== undefined ? SPARSE_LEAST : LEAVES_LEAST;
 	const record = cuttingLeaves(
-		withLimbs(withLeaves(kit.record, options.leaves), options.limbs),
+		withLimbs(withLeaves(kit.record, options.leaves, least), options.limbs, least),
 		options.cutting,
 	);
 	const placeholders = kit.placeholders;
@@ -852,6 +902,7 @@ const now = () => (typeof performance === 'undefined' ? Date.now() : performance
  * @category api/vegetation
  */
 export function growPlantNow(kit: SpeciesKitData, options: GrowOptions): PlantAsset {
+	options = withSparse(kit.record, options);
 	if (options.cutting) return growCutting(kit, options, options.cutting);
 	const started = now();
 	const record = kit.record;
@@ -926,7 +977,7 @@ export function growPlantNow(kit: SpeciesKitData, options: GrowOptions): PlantAs
  * @category api/vegetation
  */
 export function growNearWoodNow(kit: SpeciesKitData, options: GrowOptions): readonly PlantPart[] {
-	return nearWood(dress(kit, options));
+	return nearWood(dress(kit, withSparse(kit.record, options)));
 }
 
 /**

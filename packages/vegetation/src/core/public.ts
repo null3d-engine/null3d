@@ -88,6 +88,7 @@ export type {
 	ShapeEnvelope,
 	ShootClass,
 	ShootSpec,
+	SparseFloors,
 	Species,
 	SpeciesBudget,
 	SpeciesEcology,
