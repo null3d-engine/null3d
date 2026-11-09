@@ -85,8 +85,8 @@
 	},
 	"28-young-bark.png": {
 		"view": "bark-limb",
-		"thin": 0.012,
-		"span": 0.09,
+		"thin": 0.015,
+		"span": 0.1,
 		"barkMask": true
 	},
 	"19-thorns.png": {
