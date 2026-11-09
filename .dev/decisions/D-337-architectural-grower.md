@@ -33,7 +33,7 @@ The first verdict round is `pine-r35`, at which 3 of the 12 rows passed. It pred
 rule below, which removes only the few twigs that stood up to 0.13 m outside the drawn outline; the
 plant's other figures stand. The crown-fill rounds after it are `pine-r38` to `pine-r46`; the last
 of them gives whole-view shape IoUs of 0.54, 0.56 and 0.64, crown-box gaps of 0.17, 0.15 and 0.16
-against the photographs' 0.19, 0.26 and 0.19, and leaf colour differences of 6.5, 12.3 and 8.1.
+against the photographs' 0.19, 0.26 and 0.19, and leaf color differences of 6.5, 12.3 and 8.1.
 The species stands down under the owner's ruling until the twelve existing species are complete;
 its open rows and their causes are in the species' review record.
 
@@ -59,10 +59,10 @@ its open rows and their causes are in the species' review record.
   of its own girth from node to node, so a fork never draws as a cone.
 - **Bud sites line the limbs, not only their tips.** A limb is not bare under its foliage: the
   lateral sites run along every axis below the finest from a bare inner share of its length outward,
-  at a low vigour that keeps the run thin, and every tip carries a terminal site. Without them a
+  at a low vigor that keeps the run thin, and every tip carries a terminal site. Without them a
   conifer draws as bare orange limbs with a tuft at each end, which is the fault the first pine
   verdict and the giant sequoia's review both report. The shoot instancer turns the sites into the
-  species' brushes, and its per-metre curve and clumping make the crown's plates.
+  species' brushes, and its per-meter curve and clumping make the crown's plates.
 - **A thin leaf needs a finer card.** A pine needle is 1.6 mm across, under one texel of the default
   64-texel card cell, so its card would draw only the bare twig. The record may name a cell of 64,
   128 or 256 texels at each tier. The pine takes 128 at the high tiers, which costs four times the
