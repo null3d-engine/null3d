@@ -231,7 +231,7 @@
 		"test": "plant-sedge",
 		"tier": "compat",
 		"date": "2026-11-09",
-		"reason": "the sedge's spike foot now meets its stalk at the body's width, which changes the spikes in its whole-plant and crown panels; drawn on this Mac's SwiftShader at 54fe34bb6 after the engine merge, re-confirmed at 53c46be3a; a CI drawing replaces it if it differs"
+		"reason": "the sedge's blade now closes over a short tip, which redraws the blades in its whole-plant, crown and cluster panels; the software set is redrawn here while CI redraws it"
 	},
 	"chromium-swiftshader/compat/plant-silver-birch.png": {
 		"test": "plant-silver-birch",
@@ -567,7 +567,7 @@
 		"test": "plant-sedge",
 		"tier": "webgl2",
 		"date": "2026-11-09",
-		"reason": "the sedge's spike foot now meets its stalk at the body's width, which changes the spikes in its whole-plant and crown panels; drawn on this Mac's SwiftShader at 54fe34bb6 after the engine merge, re-confirmed at 53c46be3a; a CI drawing replaces it if it differs"
+		"reason": "the sedge's blade now closes over a short tip, which redraws the blades in its whole-plant, crown and cluster panels; the software set is redrawn here while CI redraws it"
 	},
 	"chromium-swiftshader/webgl2/plant-silver-birch.png": {
 		"test": "plant-silver-birch",
@@ -933,7 +933,7 @@
 		"test": "plant-sedge",
 		"tier": "webgpu",
 		"date": "2026-11-09",
-		"reason": "the sedge's spike foot now meets its stalk at the body's width, which changes the spikes in its whole-plant and crown panels; drawn on this Mac's SwiftShader at 54fe34bb6 after the engine merge, re-confirmed at 53c46be3a; a CI drawing replaces it if it differs"
+		"reason": "the sedge's blade now closes over a short tip, which redraws the blades in its whole-plant, crown and cluster panels; the software set is redrawn here while CI redraws it"
 	},
 	"chromium-swiftshader/webgpu/plant-silver-birch.png": {
 		"test": "plant-silver-birch",

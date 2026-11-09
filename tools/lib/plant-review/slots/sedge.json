@@ -1,7 +1,7 @@
 {
 	"04-tuft-from-above.png": {
 		"elevation": 88,
-		"view": "crown"
+		"view": "whole"
 	},
 	"08-leaf-leaving-sheath.png": {
 		"distance": 0.25,
