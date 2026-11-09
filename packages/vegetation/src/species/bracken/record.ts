@@ -29,8 +29,8 @@ export const record: Species = {
 		// fronds a stipe apart along lines that wander out from it, so the plan reads round.
 		rhizome: {
 			length: 0.95,
-			branches: { mean: 5, spread: 1 },
-			spacing: { mean: 0.2, spread: 0.04 },
+			branches: { mean: 10, spread: 1 },
+			spacing: { mean: 0.55, spread: 0.1 },
 		},
 		// Still 02: the bare stipe is about as long as the blade it carries, and leans a little.
 		stipe: { length: { mean: 0.8, spread: 0.1 }, lean: { mean: 6, spread: 5 } },
