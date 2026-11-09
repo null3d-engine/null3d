@@ -176,8 +176,8 @@
 	"chromium-swiftshader/compat/plant-bracken.png": {
 		"test": "plant-bracken",
 		"tier": "compat",
-		"date": "2026-11-08",
-		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that added the species, before the branch's CI run could draw it; a CI drawing replaces it"
+		"date": "2026-11-09",
+		"reason": "drawn on this Mac's SwiftShader at 97c6fd194 after the engine merge; a CI drawing replaces it if it differs"
 	},
 	"chromium-swiftshader/compat/plant-common-ash.png": {
 		"test": "plant-common-ash",
@@ -458,8 +458,8 @@
 	"chromium-swiftshader/webgl2/plant-bracken.png": {
 		"test": "plant-bracken",
 		"tier": "webgl2",
-		"date": "2026-11-08",
-		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that added the species, before the branch's CI run could draw it; a CI drawing replaces it"
+		"date": "2026-11-09",
+		"reason": "drawn on this Mac's SwiftShader at 97c6fd194 after the engine merge; a CI drawing replaces it if it differs"
 	},
 	"chromium-swiftshader/webgl2/plant-common-ash.png": {
 		"test": "plant-common-ash",
@@ -770,8 +770,8 @@
 	"chromium-swiftshader/webgpu/plant-bracken.png": {
 		"test": "plant-bracken",
 		"tier": "webgpu",
-		"date": "2026-11-08",
-		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that added the species, before the branch's CI run could draw it; a CI drawing replaces it"
+		"date": "2026-11-09",
+		"reason": "drawn on this Mac's SwiftShader at 97c6fd194 after the engine merge; a CI drawing replaces it if it differs"
 	},
 	"chromium-swiftshader/webgpu/plant-common-ash.png": {
 		"test": "plant-common-ash",
