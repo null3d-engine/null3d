@@ -191,6 +191,12 @@
 		"date": "2026-11-09",
 		"reason": "drawn on this Mac's SwiftShader at 4800d7737 after the engine merge; a CI drawing replaces it if it differs"
 	},
+	"chromium-swiftshader/compat/plant-hawthorn-shrub.png": {
+		"test": "plant-hawthorn-shrub",
+		"tier": "compat",
+		"date": "2026-11-09",
+		"reason": "drawn on this Mac's SwiftShader at b527459fe after the bark tint and the engine merge; a CI drawing replaces it if it differs"
+	},
 	"chromium-swiftshader/compat/plant-holm-oak.png": {
 		"test": "plant-holm-oak",
 		"tier": "compat",
@@ -484,6 +490,12 @@
 		"tier": "webgl2",
 		"date": "2026-11-09",
 		"reason": "drawn on this Mac's SwiftShader at 4800d7737 after the engine merge; a CI drawing replaces it if it differs"
+	},
+	"chromium-swiftshader/webgl2/plant-hawthorn-shrub.png": {
+		"test": "plant-hawthorn-shrub",
+		"tier": "webgl2",
+		"date": "2026-11-09",
+		"reason": "drawn on this Mac's SwiftShader at 879cbb0ed after the engine merge; a CI drawing replaces it if it differs"
 	},
 	"chromium-swiftshader/webgl2/plant-holm-oak.png": {
 		"test": "plant-holm-oak",
@@ -808,6 +820,12 @@
 		"tier": "webgpu",
 		"date": "2026-11-09",
 		"reason": "drawn on this Mac's SwiftShader at 4800d7737 after the engine merge; a CI drawing replaces it if it differs"
+	},
+	"chromium-swiftshader/webgpu/plant-hawthorn-shrub.png": {
+		"test": "plant-hawthorn-shrub",
+		"tier": "webgpu",
+		"date": "2026-11-09",
+		"reason": "drawn on this Mac's SwiftShader at b527459fe after the bark tint and the engine merge; a CI drawing replaces it if it differs"
 	},
 	"chromium-swiftshader/webgpu/plant-holm-oak.png": {
 		"test": "plant-holm-oak",
