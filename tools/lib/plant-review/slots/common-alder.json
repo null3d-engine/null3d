@@ -106,5 +106,10 @@
 	"13-single-leaf-underside.png": {
 		"daylight": 1.27,
 		"lamp": "#fcf6ff"
+	},
+	"28-young-bark.png": {
+		"thin": 0.015,
+		"span": 0.1,
+		"barkMask": true
 	}
 }
