@@ -160,5 +160,13 @@
 	},
 	"10-ultimate-segments.png": {
 		"span": 0.3
+	},
+	"24-leaf-texture-upper.png": {
+		"fill": 0.985,
+		"targetY": 0.5
+	},
+	"25-leaf-texture-underside.png": {
+		"fill": 0.985,
+		"targetY": 0.5
 	}
 }
