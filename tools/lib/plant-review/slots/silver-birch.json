@@ -12,8 +12,10 @@
 		"skyShare": 0.65
 	},
 	"19-drooping-twig-ends.png": {
+		"view": "strands",
 		"daylight": 3.7,
-		"skyShare": 0.65
+		"skyShare": 0.65,
+		"turn": 135
 	},
 	"20-autumn-yellow.png": {
 		"view": "whole",
