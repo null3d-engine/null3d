@@ -505,7 +505,6 @@ export function belowView(
 	const out = facing(turn + (walked ?? 0) * DEG);
 	const position = standAt(turn + (walked ?? 0) * DEG);
 	let pitch = bole ? bole.pitch / DEG : Math.min(STEEPEST, elevation);
-
 	if (!bole && forkRow !== undefined && fork !== undefined && fork > height) {
 		// The fork shows where the bark nearest the camera divides, a radius nearer than the axis.
 		const near = reach - (stemAt(skeleton, fork)?.radius ?? 0);
