@@ -280,7 +280,7 @@ export const record: Species = {
 			],
 			// Stills 01 and 02: the hanging curtain overlaps into a sheet, so the crown carries
 			// more shoots than the fitted dial and shows its sky only between the outer strands.
-			density: 2.9,
+			density: 5.6,
 			shadePrune: 0.08,
 			// Stills 05 and 06: the inner limbs stand bare near the trunk, so a tip in the crown's
 			// own deepest shade keeps no rosette.
@@ -417,12 +417,12 @@ export const record: Species = {
 		// a shoot of this length spans half a column of pixels at the switch, and the nearer rows
 		// carry only the shoots a walk up to the curtain needs.
 		switchPixels: [500, 12, 160],
-		// The cards stand over three times the shoots they picture, so a hanging shoot's card overlaps
-		// its neighbours and the far crown reads as one curtain rather than a fringe of specks.
-		cardGrow: 3.6,
+		// The cards stand well past the shoots they picture, so a hanging shoot's card overlaps its
+		// neighbours and the far crown reads as one curtain rather than a fringe of specks.
+		cardGrow: 4,
 		// Stills 01 and 02: a card's twig is thinner than a pixel at a whole view, so each draws its
 		// supporting twig as a line and the join shows.
-		cardStalk: 3.5,
+		cardStalk: 4,
 		// A hanging shoot's card stands its whole length ahead of the row that draws it, so the
 		// stalk runs on to the card's centre and the curtain meets the wood it grows from.
 		cardStalkToFoliage: true,
