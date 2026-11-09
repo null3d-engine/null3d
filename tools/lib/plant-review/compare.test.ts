@@ -18,6 +18,7 @@ import {
 	NORMAL_HEIGHT,
 	NORMAL_WIDTH,
 	normalise,
+	patchDifference,
 	patchLab,
 	profileError,
 	rubricBand,
@@ -416,6 +417,53 @@ describe('the patch colour of a texture source', () => {
 				for (let c = 0; c < 3; c++) image.data[at + c] = 50;
 			}
 		expect(patchLab(image)[0] as number).toBeCloseTo(80.6, 0);
+	});
+
+	test('drops the backdrop from the sample when a slot asks for the plant alone', () => {
+		// A pale stem down the picture's middle on a dark backdrop, so the plain average sits
+		// between the two and the masked one reads the stem.
+		const size = 1000;
+		const data = new Uint8Array(size * size * 4);
+		for (let y = 0; y < size; y++)
+			for (let x = 0; x < size; x++) {
+				const stem = x >= 300 && x < 700;
+				const value = stem ? 200 : 50;
+				const at = (y * size + x) * 4;
+				data[at] = value;
+				data[at + 1] = value;
+				data[at + 2] = value;
+				data[at + 3] = 255;
+			}
+		const image = { width: size, height: size, data };
+		const plain = patchLab(image)[0] as number;
+		const onPlant = patchLab(image, true)[0] as number;
+		// The stem's own lightness is about 80 in CIELAB and the backdrop's about 20, so a plain
+		// average of nine patches lands near 40 and a masked one on the stem's own figure.
+		expect(plain).toBeLessThan(50);
+		expect(onPlant).toBeGreaterThan(75);
+	});
+
+	test('compares a texture source on its material when the mask is asked for', () => {
+		// One bark down the middle of two pictures cut out on opposite colours: the plain means move
+		// apart with the backdrops while the masked ones read the same bark and agree.
+		const barkOn = (backdrop: number) => {
+			const size = 1000;
+			const data = new Uint8Array(size * size * 4);
+			for (let y = 0; y < size; y++)
+				for (let x = 0; x < size; x++) {
+					const value = x >= 300 && x < 700 ? 100 : backdrop;
+					const at = (y * size + x) * 4;
+					data[at] = value;
+					data[at + 1] = value;
+					data[at + 2] = value;
+					data[at + 3] = 255;
+				}
+			return { width: size, height: size, data };
+		};
+		const reference = barkOn(255);
+		const render = barkOn(0);
+		expect(patchDifference(reference, render, true)).toBeLessThan(0.5);
+		expect(patchDifference(reference, render, false)).toBeGreaterThan(10);
 	});
 });
 

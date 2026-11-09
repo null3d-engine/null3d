@@ -252,6 +252,19 @@ describe('the species header', () => {
 		expect(texel(lichenHeader, HEADER.lichen)[3]).toBeCloseTo(0.85, 5);
 		near(texel(lichenHeader, HEADER.lichenReach).slice(0, 2), [1.4, 1000]);
 	});
+
+	test('writes the young bark tint, and lays its own colour where the record gives none', () => {
+		const bark = record.bark;
+		if (!bark) throw new Error('the stand-in has no bark');
+		const near = (a: readonly number[], b: readonly number[]) => {
+			for (const [k, v] of a.entries()) expect(v).toBeCloseTo(b[k] as number, 5);
+		};
+		near(texel(header, HEADER.youngTint).slice(0, 3), [1, 1, 1]);
+		const tint: Rgb = [0.9, 0.95, 0.7];
+		const tinted: Species = { ...record, bark: { ...bark, youngTint: tint } };
+		const tintHeader = speciesHeader(tinted, manifest, speciesBox(tinted));
+		near(texel(tintHeader, HEADER.youngTint).slice(0, 3), tint);
+	});
 });
 
 describe('the plant shader', () => {
@@ -281,6 +294,7 @@ describe('the plant shader', () => {
 			HEADER_BOX_SPAN_REST: HEADER.boxSpanRest,
 			HEADER_YOUNG: HEADER.young,
 			HEADER_YOUNG_TILE: HEADER.youngTile,
+			HEADER_YOUNG_TINT: HEADER.youngTint,
 			HEADER_MOSS: HEADER.moss,
 			HEADER_MOSS_REACH: HEADER.mossReach,
 			HEADER_EXTRAS: HEADER.extras,
