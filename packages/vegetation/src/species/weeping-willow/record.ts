@@ -335,7 +335,7 @@ export const record: Species = {
 		zones: [
 			{ layer: 0, by: 'height', from: 0, to: 1, blend: 0.25, tint: [0.75, 0.72, 0.62] },
 			{ layer: 0, by: 'height', from: 1, to: 1.9, blend: 0.3, tint: [1, 1, 1] },
-			{ layer: 0, by: 'height', from: 1.9, to: 40, blend: 0.5, tint: [1.05, 1.0, 0.35] },
+			{ layer: 0, by: 'height', from: 1.9, to: 40, blend: 0.5, tint: [1.15, 1.05, 0.18] },
 		],
 		young: 0,
 		// Still 16: the deep ridges fade to smooth grey-green bark on wood thinner than about six
