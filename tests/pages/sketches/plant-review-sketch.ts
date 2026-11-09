@@ -68,6 +68,11 @@ import { BACKGROUND_COLOURS, type PlantView, VIEW_SPECS } from '../lib/plant-rev
 const QUERY = readPlantReviewQuery(new URL(import.meta.url).searchParams);
 const VIEW: PlantView = QUERY.view ?? 'whole';
 const SPEC = VIEW_SPECS[VIEW];
+/**
+ * Whether the view draws the wood alone: a wood view does, unless the slot asks for the foliage too,
+ * which a bark photograph taken among leaves needs before its colour can be compared with like.
+ */
+const WOOD_ONLY = SPEC.woodOnly === true && QUERY.foliage !== true;
 const SIZE = QUERY.size ?? SPEC.size;
 const FOV = QUERY.fov ?? SPEC.fov;
 const BACKGROUND = QUERY.background ?? SPEC.background;
@@ -84,7 +89,7 @@ const MATTE = VIEW === 'silhouette' || QUERY.matte === true;
  * fruit takes the nearest too: a plant's cones, keys and flowers stand on the grown plant's extras,
  * and only the nearest level carries them, so a farther level frames leaves where the fruit is.
  */
-const LOD = QUERY.lod ?? (SPEC.woodOnly || QUERY.fruit ? 0 : undefined);
+const LOD = QUERY.lod ?? (WOOD_ONLY || QUERY.fruit ? 0 : undefined);
 const DEG = Math.PI / 180;
 /**
  * A colour scaled by another colour's channels, which is how a picture's own white balance tints a
@@ -656,7 +661,7 @@ export default defineSketch(async (ctx) => {
 				// A great limb leaving the stem, seen side on from where no other limb hides it.
 				const found = closeAt(
 					view,
-					() => junctionView(closePlant(spec.woodOnly === true), lens),
+					() => junctionView(closePlant(WOOD_ONLY), lens),
 					turn,
 					fov,
 					0.05,
@@ -668,7 +673,7 @@ export default defineSketch(async (ctx) => {
 				// A limb dividing into two, seen square to its arms against the least of the crown.
 				const found = closeAt(
 					view,
-					() => forkView(closePlant(spec.woodOnly === true), lens, QUERY.thin),
+					() => forkView(closePlant(WOOD_ONLY), lens, QUERY.thin),
 					turn,
 					fov,
 					0.05,
@@ -844,7 +849,7 @@ export default defineSketch(async (ctx) => {
 					const share = QUERY.along ?? 0.3;
 					const found = closeAt(
 						view,
-						() => barkLimbView(closePlant(spec.woodOnly === true), lens, girth, share),
+						() => barkLimbView(closePlant(WOOD_ONLY), lens, girth, share),
 						turn,
 						fov,
 						0.02,
@@ -877,7 +882,7 @@ export default defineSketch(async (ctx) => {
 				// further turns walk round it from there.
 				const bole = closeAt(
 					view,
-					() => trunkView(closePlant(spec.woodOnly === true), lens, turn0),
+					() => trunkView(closePlant(WOOD_ONLY), lens, turn0),
 					turn - turn0,
 					fov,
 					0.05,
@@ -1192,12 +1197,12 @@ export default defineSketch(async (ctx) => {
 				castShadows: !MATTE,
 			},
 		);
-	const drawn = shaped(main, SPEC.woodOnly === true);
+	const drawn = shaped(main, WOOD_ONLY);
 	const far = LOD === 3 && whole ? [await bakeFarPlant(kit, whole)] : undefined;
 	place(drawn, [0, 0, 0], mainKit, far);
 	if (VIEW === 'panels' && piece) place(shaped(piece, false), AWAY, pieceKit);
 	if (
-		!SPEC.woodOnly &&
+		!WOOD_ONLY &&
 		(LOD === undefined || LOD === 0) &&
 		main.levels[0].parts.every((part) => part.name === 'wood') &&
 		main.shoots.count > 0 &&
