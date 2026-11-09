@@ -30,7 +30,7 @@ export const record: Species = {
 		rhizome: {
 			length: 0.95,
 			branches: { mean: 5, spread: 1 },
-			spacing: { mean: 0.26, spread: 0.05 },
+			spacing: { mean: 0.2, spread: 0.04 },
 		},
 		// Still 02: the bare stipe is about as long as the blade it carries, and leans a little.
 		stipe: { length: { mean: 0.8, spread: 0.1 }, lean: { mean: 6, spread: 5 } },
