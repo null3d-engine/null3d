@@ -280,7 +280,7 @@ export const record: Species = {
 			],
 			// Stills 01 and 02: the hanging curtain overlaps into a sheet, so the crown carries
 			// more shoots than the fitted dial and shows its sky only between the outer strands.
-			density: 5.6,
+			density: 4.4,
 			shadePrune: 0.08,
 			// Stills 05 and 06: the inner limbs stand bare near the trunk, so a tip in the crown's
 			// own deepest shade keeps no rosette.
