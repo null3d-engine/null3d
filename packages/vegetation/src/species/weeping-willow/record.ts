@@ -328,9 +328,15 @@ export const record: Species = {
 		},
 	},
 	bark: {
-		// Stills 15, 16 and 26 under the copy-stand lamps: a grey-brown bark, so the measured colour
-		// stands as it is.
-		zones: [{ layer: 0, by: 'height', from: 0, to: 30, blend: 0, tint: [1, 1, 1] }],
+		// Stills 14, 15 and 16: the foot, the mid-trunk and the great limbs draw under different light
+		// and read apart, so each takes its own tint of the one trunk layer. The foot stands too light
+		// and too yellow at the base picture, so it darkens and loses some yellow; the mid trunk and
+		// the limbs keep the measured colour until their own figures ask otherwise.
+		zones: [
+			{ layer: 0, by: 'height', from: 0, to: 1.2, blend: 0.3, tint: [0.75, 0.72, 0.62] },
+			{ layer: 0, by: 'height', from: 1.2, to: 3.6, blend: 0.4, tint: [1, 1, 1] },
+			{ layer: 0, by: 'height', from: 3.6, to: 40, blend: 0.6, tint: [1, 1, 1] },
+		],
 		young: 0,
 		// Still 16: the deep ridges fade to smooth grey-green bark on wood thinner than about six
 		// centimetres across.
