@@ -27,6 +27,11 @@
 	"07-leaf-base-and-petiole.png": {
 		"view": "leaf-under"
 	},
+	"14-petiole-section.png": {
+		"view": "cluster",
+		"pick": 0,
+		"barkMask": true
+	},
 	"15-petiole-base.png": {
 		"view": "inside",
 		"elevation": -35,
