@@ -252,6 +252,25 @@ quiet. Each failure had been a comparison against a stale reference, which reads
 summary line. A timeout is not evidence of a plant's cost until the run has a quiet machine and its
 own failure line is read.
 
+## When a lever fails its own row
+
+The hosta's last attempt is a clean case of a lever that fails the row it aims at and costs another.
+
+Its from-above view read 0.0049 against a floor of 0.0496. That floor is its photograph's own
+reading, 0.0996, less half a tenth, which is the allowance row 6 gives every view. The three side
+views sat inside their bands. Cutting the leaves from nine to seven per eye raised the
+from-above view to 0.0204. The sides stayed inside at 0.1445, 0.1543 and 0.1419 against 0.1098,
+0.1262 and 0.1171. The top still needed 0.0292, and the sides had only 0.0153, 0.0219 and 0.0252 of
+ceiling left.
+
+The same cut dropped three shape overlaps, from 0.7391 to 0.6835, 0.5848 to 0.5384 and 0.8017 to
+0.6988. It also returned a second piece to the whole-with-landmark view. So it was reverted, and nine leaves
+stand. Row 6 is a stated limit carrying those figures, the lever and the cost. The species stays
+at 5 of 12.
+
+A species' result lands with its own range. A record that trails its pictures by a range leaves the
+next reader unable to tell what those pictures show.
+
 ## When a figure is void
 
 Some figures cannot decide a row. The reviewer says so and quotes the figure that survives, rather
