@@ -360,6 +360,9 @@ export const record: Species = {
 			{ layer: 0, by: 'height', from: 0.5, to: 40, blend: 0, tint: [1, 1, 1] },
 		],
 		young: 0,
+		// Still 28: the young layer's bark draws darker and less red than its photograph, so thin wood
+		// takes a tint that lifts it and warms it.
+		youngTint: [1.35, 1.22, 1.18],
 		// Still 16: the net fades to smooth grey-brown wood on branches thinner than about three
 		// centimetres' radius, where still 28 shows the lenticels.
 		youngRadius: 0.03,

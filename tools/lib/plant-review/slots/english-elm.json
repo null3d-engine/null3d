@@ -53,7 +53,9 @@
 		"distance": 3.5
 	},
 	"28-young-bark.png": {
-		"thin": 0.015
+		"thin": 0.015,
+		"span": 0.1,
+		"barkMask": true
 	},
 	"13-single-leaf-underside.png": {
 		"leaves": 0.88,
