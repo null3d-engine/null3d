@@ -5,6 +5,7 @@ import {
 	plantReviewQuery,
 	readPlantReviewQuery,
 } from '../../../tests/pages/lib/plant-review/query.ts';
+import { type PlantView, VIEW_SPECS } from '../../../tests/pages/lib/plant-review/views.ts';
 import { blank, labImage, labOf, type Rgba } from './image.ts';
 import {
 	boxOf,
@@ -630,5 +631,48 @@ describe('the index', () => {
 		expect(rows[3]?.supersededBy).toBeUndefined();
 		expect(rows[4]?.supersededBy).toBe('alder-turntable-c.mp4');
 		expect(rows[5]?.supersededBy).toBeUndefined();
+	});
+});
+
+describe('the strands view', () => {
+	test('a slot names it, and no standard picture takes it', () => {
+		// A slot file's own fields go over the query, so a species names the view itself.
+		const named = withSlot({ species: 'silver-birch', view: 'whole' }, { view: 'strands' });
+		expect(named.view).toBe('strands');
+		// It is off every slot number: no standard picture takes it, so no other render moves.
+		expect(VIEW_SPECS.strands.slots).toEqual([]);
+		// The standard names keep the views they had before the view was added. The birch's
+		// `19-drooping-twig-ends` name reads as `subbranch` by the twig rule today; the species
+		// names the view it wants in its own slot entry.
+		const standard: readonly (readonly [string, PlantView])[] = [
+			['01-whole-distant.png', 'whole'],
+			['02-whole-profile.png', 'whole'],
+			['03-whole-from-below.png', 'below'],
+			['04-crown-outside.png', 'limb'],
+			['05-crown-underside.png', 'below'],
+			['06-inside-crown.png', 'inside'],
+			['07-limb-leaving-trunk.png', 'junction'],
+			['08-limb-fork.png', 'fork'],
+			['09-secondary-branching.png', 'branch'],
+			['10-fine-twigs.png', 'subbranch'],
+			['11-leaf-cluster.png', 'cluster'],
+			['12-single-leaf-upper.png', 'leaf-upper'],
+			['13-single-leaf-underside.png', 'leaf-under'],
+			['14-bark-base.png', 'bark-base'],
+			['15-bark-mid-trunk.png', 'bark-mid'],
+			['16-bark-on-limb.png', 'bark-limb'],
+			['17-trunk-taper.png', 'trunk'],
+			['18-silhouette.png', 'silhouette'],
+			['19-drooping-twig-ends.png', 'subbranch'],
+			['20-winter-held-leaves.png', 'limb'],
+			['21-branch-studio.png', 'branch'],
+			['22-subbranch-studio.png', 'subbranch'],
+			['23-leaf-cluster-studio.png', 'cluster'],
+			['24-leaf-texture-upper.png', 'leaf-upper'],
+			['25-leaf-texture-underside.png', 'leaf-under'],
+			['26-bark-texture.png', 'bark-mid'],
+			['28-young-bark.png', 'bark-limb'],
+		];
+		for (const [file, view] of standard) expect(classifySlot(file)?.view, file).toBe(view);
 	});
 });
