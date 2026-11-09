@@ -219,7 +219,7 @@
 		"test": "plant-meadow-grass",
 		"tier": "compat",
 		"date": "2026-11-09",
-		"reason": "drawn on this Mac's SwiftShader at the branch tip 9 Nov 2026; the branch's CI run will replace them if it differs"
+		"reason": "drawn on this Mac: the tiller lean changed the panels picture at 9cf0cd0db"
 	},
 	"chromium-swiftshader/compat/plant-pedunculate-oak.png": {
 		"test": "plant-pedunculate-oak",
@@ -555,7 +555,7 @@
 		"test": "plant-meadow-grass",
 		"tier": "webgl2",
 		"date": "2026-11-09",
-		"reason": "drawn on this Mac's SwiftShader at the branch tip 9 Nov 2026; the branch's CI run will replace them if it differs"
+		"reason": "drawn on this Mac: the tiller lean changed the panels picture at 9cf0cd0db"
 	},
 	"chromium-swiftshader/webgl2/plant-pedunculate-oak.png": {
 		"test": "plant-pedunculate-oak",
@@ -921,7 +921,7 @@
 		"test": "plant-meadow-grass",
 		"tier": "webgpu",
 		"date": "2026-11-09",
-		"reason": "drawn on this Mac's SwiftShader at the branch tip 9 Nov 2026; the branch's CI run will replace them if it differs"
+		"reason": "drawn on this Mac: the tiller lean changed the panels picture at 9cf0cd0db"
 	},
 	"chromium-swiftshader/webgpu/plant-pedunculate-oak.png": {
 		"test": "plant-pedunculate-oak",
