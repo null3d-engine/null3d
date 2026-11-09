@@ -913,7 +913,14 @@ fn surface(input: SurfaceInput) -> Surface {
             header(HEADER_YOUNG_TINT).rgb;
         let y_relief = textureSampleGrad(third, thirdSampler, y_uv, y_gx, y_gy).rgb;
         let youth = 1.0 - smoothstep(young.w * 0.8, young.w * 1.2, radius);
-        bark = mix(bark, y_colour, youth);
+        // Thin wood keeps the tint of the bark it grows out of, so a limb's young shoots read as that
+        // limb's own wood rather than as a second, paler material beside it.
+        var young_tint = a_tint.rgb;
+        if (second_weight > 0.001) {
+            let b_tint_young = header(HEADER_BARK_ZONES + second_zone * BARK_ZONE_TEXELS);
+            young_tint = mix(a_tint.rgb, b_tint_young.rgb, second_weight / total);
+        }
+        bark = mix(bark, y_colour * young_tint, youth);
         bark_normal = normalize(mix(bark_normal, tangent_normal(y_relief), youth));
         cavity *= 1.0 - youth;
         // Moss grows on the upper, north-facing (toward -Z) side of the low trunk, and in furrows.
