@@ -169,10 +169,10 @@ export const record: Species = {
 		// The wind clip: the leaves and bowed stems sway while the crown stays still.
 		stiffness: [
 			[0, 0.9],
-			[1, 0.35],
+			[1, 0.6],
 		],
 		sway: { frequency: 0.5, amplitude: 0.03 },
-		flutter: { kind: 'grass', amplitude: 0.12, frequency: 2 },
+		flutter: { kind: 'grass', amplitude: 0.06, frequency: 2 },
 	},
 	lod: {
 		nearFoliage: 'merged',
