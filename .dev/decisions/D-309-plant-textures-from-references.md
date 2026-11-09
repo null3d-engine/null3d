@@ -86,7 +86,7 @@ detail, which is the likeliest cause. Nothing here is fixed: the figure is recor
 with lenticels knows the build, and not its tiling alone, sets the grain. The alder's tiling halves
 the span round the stem, which takes its edge-direction mix from 0.401 to 0.309 and costs 0.32 of a
 colour step; that trade is the species' own and is recorded in
-[D-334](D-334-common-alder-follows-its-whole-views.md).
+[D-335](D-335-common-alder-follows-its-whole-views.md).
 
 ## Consequences
 
