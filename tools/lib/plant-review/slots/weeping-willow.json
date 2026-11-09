@@ -90,14 +90,5 @@
 		"thin": 0.015,
 		"span": 0.1,
 		"barkMask": true
-	},
-	"14-bark-base.png": {
-		"barkMask": true
-	},
-	"15-bark-mid-trunk.png": {
-		"barkMask": true
-	},
-	"16-bark-on-limb.png": {
-		"barkMask": true
 	}
 }
