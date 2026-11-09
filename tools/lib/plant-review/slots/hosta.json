@@ -1,6 +1,7 @@
 {
 	"01-whole-plant-distant.png": {
-		"fov": 24
+		"fov": 24,
+		"daylight": 2.304
 	},
 	"02-whole-plant-profile.png": {
 		"fov": 24
@@ -58,6 +59,7 @@
 		"pick": 1
 	},
 	"30-whole-with-landmark.png": {
-		"fov": 24
+		"fov": 24,
+		"daylight": 2.263
 	}
 }
