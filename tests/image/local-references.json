@@ -189,7 +189,7 @@
 		"test": "plant-meadow-grass",
 		"tier": "compat",
 		"date": "2026-11-09",
-		"reason": "drawn on this Mac: the blade pose and the silhouette slot changed the panels picture at 247eab39a"
+		"reason": "drawn on this Mac: the tiller lean changed the panels picture at 9cf0cd0db"
 	},
 	"chromium-swiftshader/compat/plant-pedunculate-oak.png": {
 		"test": "plant-pedunculate-oak",
@@ -477,7 +477,7 @@
 		"test": "plant-meadow-grass",
 		"tier": "webgl2",
 		"date": "2026-11-09",
-		"reason": "drawn on this Mac: the blade pose and the silhouette slot changed the panels picture at 247eab39a"
+		"reason": "drawn on this Mac: the tiller lean changed the panels picture at 9cf0cd0db"
 	},
 	"chromium-swiftshader/webgl2/plant-pedunculate-oak.png": {
 		"test": "plant-pedunculate-oak",
@@ -795,7 +795,7 @@
 		"test": "plant-meadow-grass",
 		"tier": "webgpu",
 		"date": "2026-11-09",
-		"reason": "drawn on this Mac: the blade pose and the silhouette slot changed the panels picture at 247eab39a"
+		"reason": "drawn on this Mac: the tiller lean changed the panels picture at 9cf0cd0db"
 	},
 	"chromium-swiftshader/webgpu/plant-pedunculate-oak.png": {
 		"test": "plant-pedunculate-oak",
