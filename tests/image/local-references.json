@@ -213,7 +213,7 @@
 		"test": "plant-hosta",
 		"tier": "compat",
 		"date": "2026-11-09",
-		"reason": "drawn on this Mac's SwiftShader at 329daee84 after the whole-view light change moved the panels by a fifth; a CI drawing replaces it if it differs"
+		"reason": "drawn on this Mac's SwiftShader with CI=1 at f25dfed92 after the upright leaf rebuild changed all four panels"
 	},
 	"chromium-swiftshader/compat/plant-meadow-grass.png": {
 		"test": "plant-meadow-grass",
@@ -549,7 +549,7 @@
 		"test": "plant-hosta",
 		"tier": "webgl2",
 		"date": "2026-11-09",
-		"reason": "drawn on this Mac's SwiftShader at 329daee84 after the whole-view light change moved the panels by a fifth; a CI drawing replaces it if it differs"
+		"reason": "drawn on this Mac's SwiftShader with CI=1 at f25dfed92 after the upright leaf rebuild changed all four panels"
 	},
 	"chromium-swiftshader/webgl2/plant-meadow-grass.png": {
 		"test": "plant-meadow-grass",
@@ -915,7 +915,7 @@
 		"test": "plant-hosta",
 		"tier": "webgpu",
 		"date": "2026-11-09",
-		"reason": "drawn on this Mac's SwiftShader at 329daee84 after the whole-view light change moved the panels by a fifth; a CI drawing replaces it if it differs"
+		"reason": "drawn on this Mac's SwiftShader with CI=1 at f25dfed92 after the upright leaf rebuild changed all four panels"
 	},
 	"chromium-swiftshader/webgpu/plant-meadow-grass.png": {
 		"test": "plant-meadow-grass",
