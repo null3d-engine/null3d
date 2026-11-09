@@ -177,7 +177,7 @@
 		"test": "plant-common-ash",
 		"tier": "compat",
 		"date": "2026-11-09",
-		"reason": "drawn on this Mac's SwiftShader at 95134a7a0 after the engine merge, which moved the four panels by about a third; a CI drawing replaces it if it differs"
+		"reason": "drawn on this Mac's SwiftShader at e79825576, where the leaf textures were rebuilt upright and every leaflet's base and tip swapped; the leaf and crown panels move about 4.3 to 4.6 per cent of their pixels, and a CI drawing replaces the set if it differs"
 	},
 	"chromium-swiftshader/compat/plant-holm-oak.png": {
 		"test": "plant-holm-oak",
@@ -453,7 +453,7 @@
 		"test": "plant-common-ash",
 		"tier": "webgl2",
 		"date": "2026-11-09",
-		"reason": "drawn on this Mac's SwiftShader at 95134a7a0 after the engine merge, which moved the four panels by about a third; a CI drawing replaces it if it differs"
+		"reason": "drawn on this Mac's SwiftShader at e79825576, where the leaf textures were rebuilt upright and every leaflet's base and tip swapped; the leaf and crown panels move about 4.3 to 4.6 per cent of their pixels, and a CI drawing replaces the set if it differs"
 	},
 	"chromium-swiftshader/webgl2/plant-holm-oak.png": {
 		"test": "plant-holm-oak",
@@ -759,7 +759,7 @@
 		"test": "plant-common-ash",
 		"tier": "webgpu",
 		"date": "2026-11-09",
-		"reason": "drawn on this Mac's SwiftShader at 95134a7a0 after the engine merge, which moved the four panels by about a third; a CI drawing replaces it if it differs"
+		"reason": "drawn on this Mac's SwiftShader at e79825576, where the leaf textures were rebuilt upright and every leaflet's base and tip swapped; the leaf and crown panels move about 4.3 to 4.6 per cent of their pixels, and a CI drawing replaces the set if it differs"
 	},
 	"chromium-swiftshader/webgpu/plant-holm-oak.png": {
 		"test": "plant-holm-oak",
