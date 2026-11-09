@@ -103,7 +103,9 @@ export interface PlantReviewQuery {
 	/**
 	 * Whether a close view's colour is measured on the plant alone, ignoring the backdrop. A stem
 	 * does not fill its frame, so the nine patches of a plain average reach sky and ground; a slot
-	 * naming this has those patches drop every pixel close to the picture's own background.
+	 * naming this has those patches drop every pixel close to the picture's own background. A
+	 * texture source takes it too, since its reference is often a cut-out laid on one colour and
+	 * the render stands on another, so a plain average lifts both sides alike.
 	 */
 	readonly barkMask?: boolean;
 	/**
