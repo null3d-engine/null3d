@@ -217,6 +217,35 @@ Each of these is a fail on its own, and each is a fault an earlier standard let 
   a person who knows the species would take it for that species grown. If not, it fails row 12, and
   the reviewer names the first thing that gives it away.
 
+## What a rebuilt leaf changes
+
+A leaf texture built upside down can pass by accident. The reviewers' proportions and a half turn of
+the still can line up with the picture. A leaf still then reads well without the leaf being right.
+When a species rebuilds its leaf upright, expect its leaf stills to move in both directions. Read
+that movement as the measure catching up, not the plant changing.
+
+The silver birch rebuilt its leaf upright and stays at 8 of 12. Row 6 passes with the sky lever at
+0.4. Its three whole views read 0.18/0.21, 0.17/0.17 and 0.20/0.19 against their photographs. Its
+pictures 12 and 13 rose from 0.48 and 0.15 shape overlap to 0.72 and 0.64. Pictures 24 and 25 fell
+from 0.88 and 0.79 to 0.72 and 0.54. The two that fell had been measured through the inverted leaf and a
+half turn that happened to match.
+
+## When a figure is void
+
+Some figures cannot decide a row. The reviewer says so and quotes the figure that survives, rather
+than turning a fault of the measure into a pass or a fail.
+
+- **A cutting view's gap when the crown box covers a leaf patch.** The crown box starts where the
+  crown starts. The tool finds that row in `crownStartRow` in `tools/lib/plant-review/references.ts`,
+  by looking for a bare stem under the foliage. A cut piece has foliage down to its foot, so the box
+  can land on a dense leaf patch. The gap is then read inside that patch. Three cases so far: the
+  common alder's two cluster stills, the hawthorn's studio cluster, and the silver birch's
+  branch-studio piece 21. On the birch the box fell from 186 by 284 pixels to 25 by 46. The piece's
+  own box and rows did not move, on a mask change of eleven per cent. The outline overlap and the
+  piece count survive such a move, and they are what to quote. The fix is tool work in that file,
+  not species data. M3-V4 carries the debt, because the review rows are its evidence, while the code
+  lives under `tools/`.
+
 ## What the reviewer reports
 
 For each species: pass or fail, row by row, with the picture that shows it and the figure where a
