@@ -33,7 +33,7 @@ export const record: Species = {
 			spacing: { mean: 0.55, spread: 0.1 },
 		},
 		// Still 02: the bare stipe is about as long as the blade it carries, and leans a little.
-		stipe: { length: { mean: 0.8, spread: 0.16 }, lean: { mean: 6, spread: 5 } },
+		stipe: { length: { mean: 0.8, spread: 0.1 }, lean: { mean: 6, spread: 5 } },
 		frond: {
 			// Stills 12 and 21: the blade is bipinnate and broadly triangular, about as long as
 			// its stipe, and the blades of a stand overlap into a continuous roof.
@@ -57,10 +57,10 @@ export const record: Species = {
 				// the pairs shortening to the tip.
 				count: 10,
 				length: [
-					[0, 0.62],
-					[0.15, 0.56],
-					[0.6, 0.3],
-					[1, 0.045],
+					[0, 0.72],
+					[0.15, 0.65],
+					[0.6, 0.35],
+					[1, 0.05],
 				],
 				// Still 08: the lowest pinnae leave almost at right angles to the rachis and the
 				// upper ones stand closer to it.
