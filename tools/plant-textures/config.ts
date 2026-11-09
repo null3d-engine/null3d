@@ -28,6 +28,12 @@ export interface LeafConfig {
 	 * own part of it. The whole picture where none is given.
 	 */
 	readonly crop?: readonly [number, number, number, number];
+	/**
+	 * The lower face's own rectangle, where its picture is not the upper picture's mirror: a genus
+	 * whose underside photograph is another shoot needs its own part of the frame, or the face's
+	 * outline would widen the leaf. `crop` where none is given.
+	 */
+	readonly lowerCrop?: readonly [number, number, number, number];
 	/** Alpha bytes below `floor` are cleared; at or above `solid` the leaf is fully covered. */
 	readonly alpha: { readonly floor: number; readonly solid: number };
 	/**
