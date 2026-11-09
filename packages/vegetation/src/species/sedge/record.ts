@@ -113,7 +113,7 @@ export const record: Species = {
 			// Still 12: the upper face twists part way along the blade.
 			twist: 60,
 			// Still 02: each blade arches from upright to hanging at its tip.
-			arch: { mean: 90, spread: 15 },
+			arch: { mean: 70, spread: 15 },
 			// Still 10: a few tips brown at the edge of the tuft.
 			dryTip: 0.05,
 			optics: {
