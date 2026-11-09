@@ -795,4 +795,35 @@ self.onmessage = () => {
 		expect(thick(stool(true))).toBeGreaterThan(thick(stool(false)));
 		expect(thick(stool(true))).toBeGreaterThanOrEqual(7);
 	});
+
+	it('leaves a stooled form a fraction of the size room for whips above one internode', () => {
+		/** A thicket a fraction of the oak's size: a ring a half-metre out inside a low dome. */
+		const thicket = (): Species => ({
+			...oakRecord,
+			id: 'thicket-test',
+			size: { ...oakRecord.size, height: { mean: 1.4, spread: 0 }, dbh: 0.035 },
+			envelope: {
+				kind: 'radial',
+				heights: [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1],
+				radii: [0.45, 0.5, 0.52, 0.52, 0.5, 0.47, 0.43, 0.38, 0.3, 0.18, 0.02],
+				source: { method: 'hand', from: 'a thicket' },
+			},
+			growth: {
+				...(oakRecord.growth as Extract<Species['growth'], { model: 'self-organizing' }>),
+				years: 3,
+				internode: { length: 0.3, ageFactor: 0.98 },
+				stems: {
+					count: { mean: 9, spread: 0 },
+					lean: { mean: 4, spread: 0 },
+					stool: 0.45,
+					fused: 0,
+				},
+				divide: undefined,
+			},
+		});
+		// The ring and the room its shoots need are both written in metres for a tree many times
+		// this size, so both are held to the envelope: one internode alone would leave the whips
+		// standing at the wall.
+		expect(grow(0, thicket()).height).toBeGreaterThan(0.45);
+	});
 });

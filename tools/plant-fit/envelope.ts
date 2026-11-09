@@ -29,6 +29,12 @@ const MOST_WIDENING = 1.5;
 const WIDENING_STEPS = 12;
 /** The width in plant heights from which a row counts as crown rather than stem. */
 const CROWN_WIDTH = 0.2;
+/**
+ * The share of a plant's widest row that a crown row passes, where the plant is narrower than
+ * CROWN_WIDTH: a column with parallel sides is under a fifth of its height across at every row, so
+ * a fixed width would read its whole slackened foot as bare stem.
+ */
+const NARROW_CROWN_SHARE = 0.5;
 /** The most rows of stem that a crown's run of wide rows passes over. */
 const STEM_GAP = 2;
 /** Below this share of the height, a crown's base sits on the ground and the plant has no stem. */
@@ -77,18 +83,23 @@ function extentsOf(grid: Uint8Array): Extents {
 /**
  * The row where the crown starts: in each view, the lowest row of the run of rows wider than a stem
  * that holds the view's widest row, where narrow stretches of a few rows do not break the run; and
- * the median of those over the views. A trunk's flared foot is wide but stands below a narrow stem,
- * so it is not crown; a tuft or a crown that sweeps down to the ground runs wide to the ground.
+ * the median of those over the views. A row counts as crown when it passes a fifth of the plant's
+ * height, or half the plant's widest row where the plant is narrower than that. A trunk's flared
+ * foot is wide but stands below a narrow stem, so it is not crown; a tuft, a column or a crown that
+ * sweeps down to the ground runs wide to the ground.
  */
 export function crownBaseRow(views: readonly Extents[]): number {
 	const rows = views.map((e) => {
 		const width = (row: number) => (e.left[row] as number) + (e.right[row] as number);
 		let widest = 0;
 		for (let row = 1; row < CELLS; row++) if (width(row) > width(widest)) widest = row;
+		// A narrow plant's crown rows are measured against half its own widest row, since no row of
+		// a column passes the width that a broad crown's rows do.
+		const crownWidth = Math.min(CROWN_WIDTH, width(widest) * NARROW_CROWN_SHARE);
 		let base = widest;
 		let narrow = 0;
 		for (let row = widest - 1; row >= 0 && narrow <= STEM_GAP; row--) {
-			if (width(row) > CROWN_WIDTH) {
+			if (width(row) > crownWidth) {
 				base = row;
 				narrow = 0;
 			} else narrow++;
