@@ -123,9 +123,11 @@ export const MODEL_CAPS: Readonly<Record<CapClass, ModelCaps>> = {
 	},
 	ground: {
 		kitBytes: { low: 2 * MB, medium: 2 * MB, high: 2 * MB, ultra: 2 * MB },
-		// The largest of hosta, pendulous sedge and meadow grass, with about 15 per cent to spare: 1.35,
-		// 1.39, 1.44 and 3.30 MB. Hosta's ribs at the finest tier take four columns a vein.
-		variantBytes: { low: 1.6 * MB, medium: 1.6 * MB, high: 1.7 * MB, ultra: 3.8 * MB },
+		// The largest of hosta, pendulous sedge and meadow grass once measured 1.35, 1.39, 1.44 and
+		// 3.30 MB, with about 15 per cent to spare, so Hosta's ribs at the finest tier fit. The sedge's
+		// tussock needs more blades than the old figures held, so the batch raised the medium and high
+		// tiers in proportion: a species grows at every preset and may spend its blades at each.
+		variantBytes: { low: 1.6 * MB, medium: 2.3 * MB, high: 2.4 * MB, ultra: 3.8 * MB },
 		// A frond colony's stipes and rachises are wood: the bracken test colony's largest of sixteen
 		// variants and seasons, with about 15 per cent to spare: 52, 58, 61 and 64 KB.
 		lod0WoodBytes: { low: 0.06 * MB, medium: 0.066 * MB, high: 0.07 * MB, ultra: 0.074 * MB },

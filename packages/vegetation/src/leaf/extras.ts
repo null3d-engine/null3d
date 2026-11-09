@@ -757,7 +757,9 @@ function writeExtra(
 		} else {
 			const { length, radius } = shape.catkin;
 			profile = [
-				[radius * 0.4, 0],
+				// The foot takes the body's width at the stalk, so a thin hanging spike keeps its
+				// join through a silhouette's half-cover cutoff instead of pinching to nothing.
+				[radius, 0],
 				[radius, length * 0.15],
 				[radius, length * 0.8],
 				[0, length],
