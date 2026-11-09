@@ -338,8 +338,9 @@ export const record: Species = {
 				// Still 21: three years of a limb, its side shoots leaving at a wide angle and
 				// carrying their leaves along their whole length, with the leaf size the photograph
 				// gives beside a piece this long. It stands last so the other two pieces draw the
-				// shoots they drew before it.
-				name: 'branch',
+				// shoots they drew before it. Its kind is the free long kind, since a class kind
+				// names a shoot the four-panel plant also grows.
+				name: 'whip',
 				vigor: [0, 1],
 				share: 0,
 				years: 3,
@@ -597,7 +598,7 @@ export const record: Species = {
 	cuttings: {
 		// Still 21: a branch of alternate leafy side shoots, which its own class draws rather than the
 		// crown's spray, so the leaves keep the size the photograph gives them beside the piece.
-		branch: { shoot: 'branch' },
+		branch: { shoot: 'whip' },
 		// Still 22: a shorter twig whose shoots leave sparse and bare between, as the cut class draws it.
 		subbranch: { shoot: 'cut' },
 		// Still 23: one shoot's five or six alternate leaves round their purple bud.
