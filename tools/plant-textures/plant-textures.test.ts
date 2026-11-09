@@ -8,7 +8,7 @@ import type { BarkLayerConfig } from './config.ts';
 import { signedArea, simplifyTo, traceLoops } from './contour.ts';
 import { encodeKtx2 } from './encode.ts';
 import { type Picture, picture } from './image.ts';
-import { findFrame } from './leaf.ts';
+import { findFrame, leafFrame } from './leaf.ts';
 import { jobIds, type SourceFolder, Sources, supersededFiles } from './sources.ts';
 
 const INDEX = `| file | what it shows | why |
@@ -124,6 +124,23 @@ describe('the leaf frame', () => {
 		const down = findFrame(leaf(true));
 		expect(down.petiole[1]).toBeLessThan(18);
 		expect(down.tip[1]).toBeGreaterThan(113);
+	});
+
+	it('takes a configured frame, turned with a mirrored face', () => {
+		// A pointed frond's tip tapers to a bare rachis, so the ends can read alike; the config
+		// names the frame instead.
+		const p = shape(128, (x, y) => Math.hypot(x - 64, y - 64) < 30);
+		const configured = { petiole: [40, 100] as const, tip: [52, 9] as const };
+		expect(leafFrame(p, configured)).toEqual({
+			petiole: [40, 100],
+			tip: [52, 9],
+		});
+		expect(leafFrame(p, configured, true)).toEqual({
+			petiole: [128 - 1 - 40, 100],
+			tip: [128 - 1 - 52, 9],
+		});
+		// Without one, the frame is found.
+		expect(leafFrame(p)).toEqual(findFrame(p));
 	});
 });
 

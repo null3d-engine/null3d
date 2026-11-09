@@ -66,6 +66,27 @@ export interface Species {
 	readonly cuttings?: CuttingHints;
 	/** Where the scatter places this species: its layer, spacing and tolerances. */
 	readonly ecology?: SpeciesEcology;
+	/**
+	 * The least of each grow share at which this species still reads as itself, for a sparse form:
+	 * a phone or a tablet may grow it lighter than a desktop, but not past these floors. A species
+	 * with no floors has no sparse form and grows the record's own at every device.
+	 */
+	readonly sparse?: SparseFloors;
+}
+
+/**
+ * The floors of a species' sparse form: the least limb and leaf share it keeps, and the most
+ * coarsening its wood and shoots take, before the plant stops reading as its species.
+ *
+ * @category api/vegetation
+ */
+export interface SparseFloors {
+	/** The least limb share, from 0.05 to 1: how much of the record's wood the sparse form keeps. */
+	readonly limbs: number;
+	/** The least leaf-area share, from 0.05 to 1: how much of the record's leaf it keeps. */
+	readonly leaves: number;
+	/** The most coarsening, from 0 to 1: how far the sparse form thins twigs and coarsens wood. */
+	readonly coarseness: number;
 }
 
 /**
@@ -756,6 +777,32 @@ export interface Tuft {
 	readonly size: Curve;
 	/** Flowering stems: how many, how tall, how they bow, and their heads. */
 	readonly heads?: TuftHeads;
+	/**
+	 * The crown's hold in the soil: a short rhizome and the roots that leave it, for a plant whose
+	 * photographs show them. Absent, the crown draws nothing under the shoots, as a tufted grass does.
+	 */
+	readonly soil?: TuftSoil;
+}
+
+/**
+ * What a tuft draws under its shoots: a rhizome lying at the soil's surface and the roots that leave
+ * it. A tufted grass leaves the rhizome absent and draws fibrous roots; a sedge shows both.
+ *
+ * @category api/vegetation
+ */
+export interface TuftSoil {
+	/** Half the rhizome's length, from the crown to either end, in metres; absent draws no rhizome. */
+	readonly rhizome?: Spread;
+	/** The rhizome's radius in metres, at most the crown's own radius. */
+	readonly rhizomeRadius?: number;
+	/** Roots that leave the crown and the rhizome. */
+	readonly roots: Spread;
+	/** A root's length in metres. */
+	readonly rootLength: Spread;
+	/** A root's radius where it leaves the crown, in metres: it tapers to a point. */
+	readonly rootRadius: number;
+	/** Degrees a root leaves the horizontal, downward, by its own draw. */
+	readonly droop: Spread;
 }
 
 /**
@@ -777,6 +824,12 @@ export interface TuftHeads {
 	readonly sides: number;
 	/** Degrees the stem's top bows over from vertical. */
 	readonly bow: Spread;
+	/**
+	 * The radius of a hanging spike's stalk, as a share of the stem's radius, from 0 to 1; absent,
+	 * 0.35. A stalk under a pixel wide drops from a silhouette's matte, so the spike then stands as
+	 * a piece apart from its stem.
+	 */
+	readonly stalkShare?: number;
 	/** The seasons the stems stand in. */
 	readonly seasons: readonly Season[];
 	/** A panicle: its length, whorls of branches, and flowers along each branch. */
@@ -942,7 +995,11 @@ export interface ShootSpec {
 	 * be one of `classes`.
 	 */
 	readonly cuttingClasses?: readonly ShootClass[];
-	/** Leaf or needle arrangement along a shoot. */
+	/**
+	 * Leaf or needle arrangement along a shoot. A two-ranked shoot keeps its laterals in the plane of
+	 * its leaf ranks; a spiral shoot turns them by the golden angle.
+	 */
+
 	readonly phyllotaxis: Phyllotaxis;
 	/** Orders inside one prototype, 1 to 3. */
 	readonly orders: number;
@@ -1030,6 +1087,19 @@ export interface ShootSpec {
 		 */
 		readonly bareTrim?: number;
 		/**
+		 * A bare column round each stem below a share of the plant's height: no shoot stands on wood
+		 * within `radius` metres of a stem's own axis below `height` times the plant's height. An
+		 * open-grown tree leaves its lower trunk and the bases of its great limbs clear, so the bole
+		 * reads through the crown while the skirt's outer foliage still hangs low. Absent, shoots
+		 * stand on every axis.
+		 */
+		readonly bareBole?: {
+			/** Metres from the stem's axis within which no shoot stands. */
+			readonly radius: number;
+			/** The share of the plant's height below which the column holds. */
+			readonly height: number;
+		};
+		/**
 		 * Degrees each shoot turns toward the sky from the way it leaves its wood, from -30 to 30,
 		 * negative toward the ground. Absent, the turn comes from the finest order's tropism.
 		 */
@@ -1049,6 +1119,14 @@ export interface ShootSpec {
 		 * rosette is one flat face of blades, as an oak's is when its leaves are looked at front on.
 		 */
 		readonly rosette?: 'round' | 'fan';
+		/**
+		 * Whether a run of crowded nodes stands its blades in one plane and overlaps them in order,
+		 * as a shingle. The internode curve marks a run by crowding its nodes; without this, each
+		 * blade of the run still turns with the stem's own zigzag and the run reads as a tuft. Set,
+		 * the run's face is the first crowded node's and every blade of the run keeps it. Off, a
+		 * shoot draws exactly as it did.
+		 */
+		readonly plate?: boolean;
 		/** A shoot's scale. */
 		readonly scale: Spread;
 		/**
@@ -1518,6 +1596,13 @@ export interface BarkZone {
 	 * colour, and absent is 1 on every channel.
 	 */
 	readonly tint?: Rgb;
+	/**
+	 * A band on the zone's other axis, so the zone holds only where both bands do: a zone keyed by
+	 * radius may take a height band as well, and its cast then stands on a stem's foot without the
+	 * wood above it. A zone that holds on both axes wins over one that holds on a single axis.
+	 * Absent, the zone holds on its own axis alone.
+	 */
+	readonly second?: { readonly from: number; readonly to: number; readonly blend: number };
 }
 
 /**
@@ -1644,6 +1729,20 @@ export interface ExtraSpec {
 	readonly stalkColour?: Rgb;
 	/** Degrees it hangs from its site. */
 	readonly hang: number;
+	/**
+	 * Metres this extra stands from its site, in the plant's own axes: a group of fruits hangs from
+	 * one twig, and one of them may stand beside the other rather than on top of it. Every part of the
+	 * extra moves with it, its stalks included. Absent, it hangs from the site itself, as it always
+	 * has.
+	 */
+	readonly offset?: Vec3;
+	/**
+	 * A group number, 0 to 15: extras that name the same number draw at the same sites, so the parts
+	 * of one fruit hang on one twig. Each part keeps its own `tipShare` and `offset`, so a group sets
+	 * its parts in an order along the shoot rather than stacking them on one point. Absent, an extra
+	 * picks its own sites, as it always has.
+	 */
+	readonly group?: number;
 }
 
 /**
@@ -1691,6 +1790,19 @@ export type ExtraShape =
 			 * default, every scale the same shade.
 			 */
 			readonly scaleJitter?: number;
+			/**
+			 * A bed of thin bristles over the lathe's scaled band: rows along it and spikes round each
+			 * row, each a short three-sided cone standing along the surface's own normal. A beech's
+			 * cupule is a burr of soft spines, where a scale shade alone engraves the husk.
+			 */
+			readonly bristles?: {
+				/** Rows of bristles along the scaled band, 1 to 16. */
+				readonly rows: number;
+				/** Bristles round each row, 3 to 32. */
+				readonly sides: number;
+				/** The longest bristle in metres, 0.001 to 0.03. */
+				readonly length: number;
+			};
 	  }
 	| {
 			/**
@@ -1747,6 +1859,19 @@ export interface SeasonSpec {
 	readonly autumn?: { readonly reflectance: Rgb; readonly transmittance: Rgb };
 	/** Blossom: which extra flowers, and the share of leaves that are out. */
 	readonly blossom?: { readonly extra: number; readonly leaves: number };
+	/**
+	 * A linear colour each named season multiplies into the bark, for a stem whose own colour turns
+	 * with the year. A season left out keeps the record's own bark.
+	 */
+	readonly bark?: Partial<Record<Season, Rgb>>;
+	/**
+	 * The leaves' linear reflectance and transmittance in a season, in place of the autumn colours
+	 * that a turning plant draws its dead leaves with. A season left out keeps the autumn colours,
+	 * and the autumn block holds autumn's own.
+	 */
+	readonly leaves?: Partial<
+		Record<Season, { readonly reflectance: Rgb; readonly transmittance: Rgb }>
+	>;
 }
 
 /**
@@ -1762,7 +1887,16 @@ export interface WindSpec {
 	 * speed. A species that names none takes the stated default, so a missing sway never leaves
 	 * the plant still.
 	 */
-	readonly sway?: { readonly frequency: number; readonly amplitude: number };
+	readonly sway?: {
+		readonly frequency: number;
+		readonly amplitude: number;
+		/**
+		 * How sharply the sway grows up a stem: its share of the top's motion is the distance along
+		 * the stem raised to this power. The cantilever's square, 2, is the default; a stiffer stem
+		 * takes a higher power, so its lower length stays put while its top moves. From 1 to 6.
+		 */
+		readonly power?: number;
+	};
 	/** Orders from which shoots swing as hanging chains (willow, birch). */
 	readonly whips?: { readonly fromOrder: number; readonly pendulum: number };
 	/** How leaves flutter. */
@@ -1770,6 +1904,13 @@ export interface WindSpec {
 		readonly kind: 'blade' | 'flat-petiole' | 'needle' | 'leaflet' | 'grass';
 		readonly amplitude: number;
 		readonly frequency: number;
+		/**
+		 * The share of `amplitude` at a height up the plant, from 0 at the ground to 1 at the top. A
+		 * beech's open low skirt swings in the wind while its dense crown's top stays still, which one
+		 * amplitude cannot say; a curve lets the low sprays move more than the top. Absent, every
+		 * height takes the whole amplitude, so a species that names no curve moves as it did.
+		 */
+		readonly byHeight?: Curve;
 	};
 }
 
@@ -1856,6 +1997,14 @@ export interface SpeciesBudget {
  */
 export interface CuttingHints {
 	/**
+	 * The leaves that one shoot of a piece carries, where a plant's pieces are shoots of its crown
+	 * rather than shoot prototypes: a rosette cuts an eye of the grown plant, so the crown's own
+	 * leaf count would give the piece the whole crown's density. A class of its own cannot serve
+	 * these plants, whose leaves carry no prototypes to place. Absent, a piece takes the crown's
+	 * leaf count, as it did before this field.
+	 */
+	readonly leaves?: Spread;
+	/**
 	 * The shoots a cutting kit places over the crown's own, from 0.25 to 8, where a piece cut for
 	 * close review carries a denser covering than the crown can afford. The crown's kit is unchanged:
 	 * the piece is drawn at the nearest level alone, so its kit pays for no card levels.
@@ -1883,8 +2032,9 @@ export interface CutLeaf {
 	/**
 	 * Whether the leaf lies pressed flat, as a species' single-leaf pictures lay it on a copy stand:
 	 * a blade leaf's fold, curls, twist, wave and stalk droop at nothing, a thick leaf's cup, curl
-	 * and margin wave at nothing, its outline and textures as they are. Without it the leaf keeps
-	 * the shape it has on the plant.
+	 * and margin wave at nothing, and a frond's droop, twist and pinnae fold at nothing too, so its
+	 * rachis runs straight on from the stipe. Its outline and textures are as they are. Without it
+	 * the leaf keeps the shape it has on the plant.
 	 */
 	readonly pressed?: boolean;
 	/**
@@ -1906,6 +2056,13 @@ export interface CutFromPlant {
 	readonly order: number;
 	/** Metres of wood from the cut to the farthest tip. */
 	readonly length: number;
+	/**
+	 * The piece's leaf size over the crown's, where a piece cut from the plant wants leaves of its
+	 * own. A rosette's piece carries the crown's leaves at the crown's size, so a piece that stands
+	 * a little too dense for its photograph is opened by shrinking its leaves rather than by taking
+	 * a whole leaf from it. 1 by default.
+	 */
+	readonly scale?: number;
 }
 
 /**
