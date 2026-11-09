@@ -344,7 +344,7 @@ export const record: Species = {
 				vigor: [0, 1],
 				share: 0,
 				years: 3,
-				length: { mean: 0.78, spread: 0.08 },
+				length: { mean: 0.68, spread: 0.08 },
 				nodes: { mean: 3.5, spread: 0.5 },
 				internode: RUN,
 				stem: { radius: [0.012, 0.004] },
