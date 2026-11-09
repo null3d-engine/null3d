@@ -73,6 +73,11 @@ export interface PlantReviewQuery {
 	 * tone curve squeezes a bright sky more than the plant under it.
 	 */
 	readonly daylight?: number;
+	/**
+	 * A copy stand's lamp colour, as sRGB hex, in place of white: a photograph's own white balance,
+	 * so a picture taken under warm lamps is drawn under them too.
+	 */
+	readonly lamp?: string;
 	/** The wind's strength: 0 still, 1 the default field, up to 3. */
 	readonly wind?: number;
 	/** Seconds on the wind clock. The runner holds the frame at this sketch time. */
@@ -93,8 +98,26 @@ export interface PlantReviewQuery {
 	readonly cut?: number;
 	/** Whether the page posts its measures of the plant beside the frame. */
 	readonly measure?: boolean;
+	/**
+	 * Whether the picture shows the plant lifted from the soil, as a photograph of its washed base
+	 * does: no ground plane is drawn, so the rhizome and the roots below the crown stay in view.
+	 */
+	readonly lifted?: boolean;
 	/** Whether the page draws a 1 m scale bar beside the view's target. */
 	readonly scale?: boolean;
+	/**
+	 * Whether a close view's colour is measured on the plant alone, ignoring the backdrop. A stem
+	 * does not fill its frame, so the nine patches of a plain average reach sky and ground; a slot
+	 * naming this has those patches drop every pixel close to the picture's own background. A
+	 * texture source takes it too, since its reference is often a cut-out laid on one colour and
+	 * the render stands on another, so a plain average lifts both sides alike.
+	 */
+	readonly barkMask?: boolean;
+	/**
+	 * Whether a view that draws the wood alone draws the plant's foliage as well, which a bark
+	 * photograph taken among leaves needs if its colour is to be compared with like.
+	 */
+	readonly foliage?: boolean;
 	/** Whether the twigs view looks for the plant's fruit rather than for a sunlit tip. */
 	readonly fruit?: boolean;
 	/**
@@ -149,6 +172,12 @@ export interface PlantReviewQuery {
 	 * scale its photograph shows it at. The piece then stands on its cut at the frame's lower edge.
 	 */
 	readonly leaves?: number;
+	/**
+	 * Metres of one leaf that a photographed cutting was measured in, for the `leaves` frame. A
+	 * blade or a cluster whose own leaf is far longer than the photographed one frames at the
+	 * photograph's scale only when the length the photograph was measured in is named.
+	 */
+	readonly leafLength?: number;
 	/** Degrees the camera turns about its line of sight, the picture turning counterclockwise. */
 	readonly roll?: number;
 	/**
@@ -191,6 +220,7 @@ const NUMBER_FIELDS = [
 	'aside',
 	'stand',
 	'leaves',
+	'leafLength',
 	'roll',
 	'girth',
 	'turns',
@@ -209,7 +239,16 @@ const SHARE_FIELDS = new Set(['horizon', 'fill', 'targetY', 'targetX', 'top', 'a
 const COUNT_FIELDS = new Set(['turns', 'columns']);
 
 /** The switches, written as 1 when on. */
-const SWITCHES = ['measure', 'scale', 'matte', 'fruit', 'surface'] as const;
+const SWITCHES = [
+	'measure',
+	'scale',
+	'matte',
+	'fruit',
+	'surface',
+	'lifted',
+	'barkMask',
+	'foliage',
+] as const;
 
 /** A short form of a number for a query, so a query reads well and keeps its precision. */
 function short(value: number): string {
@@ -225,7 +264,7 @@ export function plantReviewQuery(query: PlantReviewQuery): string {
 		const value = query[name];
 		if (value !== undefined) params.set(name, short(value));
 	}
-	for (const name of ['background', 'sky', 'ground', 'season', 'preset', 'sun'] as const) {
+	for (const name of ['background', 'sky', 'ground', 'lamp', 'season', 'preset', 'sun'] as const) {
 		const value = query[name];
 		if (value) params.set(name, value);
 	}
@@ -294,11 +333,15 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 		);
 	if (numbers.leaves !== undefined && numbers.leaves <= 0)
 		throw new Error(`leaves=${numbers.leaves} is a frame in leaf lengths: give a number above 0.`);
+	if (numbers.leafLength !== undefined && numbers.leafLength <= 0)
+		throw new Error(
+			`leafLength=${numbers.leafLength} is a leaf's length in metres: give a number above 0.`,
+		);
 	if (numbers.stand !== undefined && numbers.stand <= 1)
 		throw new Error(
 			`stand=${numbers.stand} is in stem radii from its axis: give a number above 1.`,
 		);
-	for (const name of ['sky', 'ground'] as const) {
+	for (const name of ['sky', 'ground', 'lamp'] as const) {
 		const text = params.get(name);
 		if (text !== null && !/^#[0-9a-f]{6}$/i.test(text))
 			throw new Error(`${name}=${text} is not a colour: give sRGB hex such as #c9d9e6.`);
@@ -333,6 +376,7 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 		...(background && { background }),
 		...(params.get('sky') && { sky: params.get('sky') as string }),
 		...(params.get('ground') && { ground: params.get('ground') as string }),
+		...(params.get('lamp') && { lamp: params.get('lamp') as string }),
 		...(season && { season }),
 		...(preset && { preset }),
 		...(sun && { sun }),
@@ -341,6 +385,9 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 		...(placeholders !== null && { placeholders: placeholders === '1' }),
 		...(pressed !== null && { pressed: pressed === '1' }),
 		measure: params.get('measure') === '1',
+		lifted: params.get('lifted') === '1',
+		barkMask: params.get('barkMask') === '1',
+		foliage: params.get('foliage') === '1',
 		scale: params.get('scale') === '1',
 		matte: params.get('matte') === '1',
 		fruit: params.get('fruit') === '1',
