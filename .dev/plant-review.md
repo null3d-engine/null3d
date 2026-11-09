@@ -231,6 +231,27 @@ from 0.88 and 0.79 to 0.72 and 0.54. The two that fell had been measured through
 half turn that happened to match. Row 4, the row those four stills carry, still passes at the new
 figures. The fall costs no row, and the species stays at 8 of 12.
 
+## What a crown fill costs
+
+A rebuilt leaf can leave a crown too open, and a fuller crown is the obvious answer. It carries a
+price, and the picture guard measures it.
+
+The willow rebuilt its leaf upright, then three fills were tried. Their near bands read 2,138,953,
+1,818,093 and 1,442,596 triangles at densities 5.6, 4.4 and 2.9. They read about 700,000 before
+the rebuild. The fills at 5.6 and 4.4 were dropped once the software guard was at risk. Neither was
+given a quiet run. The 2.9 fill is the one kept, because it is the one proved inside the guard.
+Three software tiers drew in 1.8, 1.8 and 1.0 minutes.
+
+Row 6 is a stated limit at every fill. Two measured attempts at the rebuilt leaf leave picture 01
+above every reference, and picture 18 four hundredths past its band. The fuller fills were never
+proved inside the guard. No fill wins a row, so the guard alone decides.
+
+The guard was nearly blamed for stale pictures. Three software tiers reported "no result within
+120 s" while the machine carried other work. The same tiers drew inside two minutes once it was
+quiet. Each failure had been a comparison against a stale reference, which reads alike in a
+summary line. A timeout is not evidence of a plant's cost until the run has a quiet machine and its
+own failure line is read.
+
 ## When a figure is void
 
 Some figures cannot decide a row. The reviewer says so and quotes the figure that survives, rather
