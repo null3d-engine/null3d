@@ -38,11 +38,12 @@ export const record: Species = {
 		ranks: 2,
 		sheath: { mean: 0.035, spread: 0.01 },
 		sheathRadius: 0.0018,
-		// Still 21: the youngest inner blades stand upright, the oldest outer ones leave their
-		// collars at a widening angle and arch over toward the ground.
+		// Still 21: the youngest inner blades stand tall and almost straight, arching only near
+		// their tips, while the oldest outer ones leave their collars wide and arch toward the
+		// ground. The young blades hold the leaf mass's height; the old ones its width.
 		spread: [
-			[0, 6],
-			[1, 34],
+			[0, 8],
+			[1, 36],
 		],
 		size: [
 			[0, 0.8],
@@ -55,7 +56,7 @@ export const record: Species = {
 			count: { mean: 12, spread: 3 },
 			kind: 'panicle',
 			height: { mean: 0.46, spread: 0.07 },
-			radius: 0.0014,
+			radius: 0.0022,
 			sides: 5,
 			bow: { mean: 6, spread: 4 },
 			seasons: ['blossom', 'summer'],
@@ -92,7 +93,7 @@ export const record: Species = {
 			tipLength: 0.04,
 			fold: 18,
 			twist: 30,
-			arch: { mean: 60, spread: 15 },
+			arch: { mean: 35, spread: 15 },
 			// Stills 02 and 06: the old outer blades carry dry brown tips.
 			dryTip: 0.03,
 			// The texture source's two faces under flat light: the shader scales each face's picture
