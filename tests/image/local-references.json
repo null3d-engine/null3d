@@ -191,6 +191,12 @@
 		"date": "2026-11-07",
 		"reason": "the oak's kit took the cut class's forked shapes, so its card atlas grew from five cells a side to six and each card's texel position moved; the crown draws as the review measures it, so the software set is redrawn here while CI redraws it"
 	},
+	"chromium-swiftshader/compat/plant-silver-birch.png": {
+		"test": "plant-silver-birch",
+		"tier": "compat",
+		"date": "2026-11-09",
+		"reason": "pkg/silver-birch at 048d8b561 adds the silver birch and its picture tests; this Mac's SwiftShader drew the new set with CI=1, and the branch's first CI run replaces it"
+	},
 	"chromium-swiftshader/compat/probe-grid-wall-night.png": {
 		"test": "probe-grid-wall-night",
 		"tier": "compat",
@@ -466,6 +472,12 @@
 		"tier": "webgl2",
 		"date": "2026-11-07",
 		"reason": "the oak's kit took the cut class's forked shapes, so its card atlas grew from five cells a side to six and each card's texel position moved; the crown draws as the review measures it, so the software set is redrawn here while CI redraws it"
+	},
+	"chromium-swiftshader/webgl2/plant-silver-birch.png": {
+		"test": "plant-silver-birch",
+		"tier": "webgl2",
+		"date": "2026-11-09",
+		"reason": "pkg/silver-birch at 048d8b561 adds the silver birch and its picture tests; this Mac's SwiftShader drew the new set with CI=1, and the branch's first CI run replaces it"
 	},
 	"chromium-swiftshader/webgl2/probe-grid-wall-night.png": {
 		"test": "probe-grid-wall-night",
@@ -772,6 +784,12 @@
 		"tier": "webgpu",
 		"date": "2026-11-07",
 		"reason": "the oak's kit took the cut class's forked shapes, so its card atlas grew from five cells a side to six and each card's texel position moved; the crown draws as the review measures it, so the software set is redrawn here while CI redraws it"
+	},
+	"chromium-swiftshader/webgpu/plant-silver-birch.png": {
+		"test": "plant-silver-birch",
+		"tier": "webgpu",
+		"date": "2026-11-09",
+		"reason": "pkg/silver-birch at 048d8b561 adds the silver birch and its picture tests; this Mac's SwiftShader drew the new set with CI=1, and the branch's first CI run replaces it"
 	},
 	"chromium-swiftshader/webgpu/probe-grid-wall-night.png": {
 		"test": "probe-grid-wall-night",
