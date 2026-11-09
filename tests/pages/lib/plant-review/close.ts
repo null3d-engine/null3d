@@ -1324,13 +1324,13 @@ const STRANDS_SPAN = 1.4;
 /** Metres the carrying limb stands above the frame's middle: the top quarter's lower edge. */
 const STRANDS_LIMB_ABOVE = STRANDS_SPAN / 4;
 /** The mid-crown band, as shares of the crown's own height above its base. */
-const STRANDS_BAND = [0.15, 0.6] as const;
+const STRANDS_BAND = [0.18, 0.45] as const;
 /** The fewest hanging shoots a stretch must carry to be the subject. */
 const STRANDS_LEAST = 3;
 /** Metres about the carrying limb within which a shoot counts as hanging from the stretch. */
-const STRANDS_REACH = 0.8;
+const STRANDS_REACH = 0.3;
 /** The most metres below the limb a hanging shoot may stand and still be in the frame. */
-const STRANDS_BELOW = 1.2;
+const STRANDS_BELOW = 1.0;
 /** The shares of a carrying limb that the view weighs as the stretch's middle. */
 const STRANDS_SHARES = [0.2, 0.35, 0.5, 0.65, 0.8] as const;
 /** What one shoot in the sight line beyond the strand costs a stretch's score. */
