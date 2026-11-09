@@ -194,8 +194,8 @@
 	"chromium-swiftshader/compat/plant-sedge.png": {
 		"test": "plant-sedge",
 		"tier": "compat",
-		"date": "2026-11-08",
-		"reason": "a new species' picture has no CI drawing yet; the next CI run replaces these software references"
+		"date": "2026-11-09",
+		"reason": "the sedge's blade arch moved from ninety to seventy degrees, which reframes its whole plant at every scale; the software set is redrawn here while CI redraws it"
 	},
 	"chromium-swiftshader/compat/probe-grid-wall-night.png": {
 		"test": "probe-grid-wall-night",
@@ -476,8 +476,8 @@
 	"chromium-swiftshader/webgl2/plant-sedge.png": {
 		"test": "plant-sedge",
 		"tier": "webgl2",
-		"date": "2026-11-08",
-		"reason": "a new species' picture has no CI drawing yet; the next CI run replaces these software references"
+		"date": "2026-11-09",
+		"reason": "the sedge's blade arch moved from ninety to seventy degrees, which reframes its whole plant at every scale; the software set is redrawn here while CI redraws it"
 	},
 	"chromium-swiftshader/webgl2/probe-grid-wall-night.png": {
 		"test": "probe-grid-wall-night",
@@ -788,8 +788,8 @@
 	"chromium-swiftshader/webgpu/plant-sedge.png": {
 		"test": "plant-sedge",
 		"tier": "webgpu",
-		"date": "2026-11-08",
-		"reason": "a new species' picture has no CI drawing yet; the next CI run replaces these software references"
+		"date": "2026-11-09",
+		"reason": "the sedge's blade arch moved from ninety to seventy degrees, which reframes its whole plant at every scale; the software set is redrawn here while CI redraws it"
 	},
 	"chromium-swiftshader/webgpu/probe-grid-wall-night.png": {
 		"test": "probe-grid-wall-night",
