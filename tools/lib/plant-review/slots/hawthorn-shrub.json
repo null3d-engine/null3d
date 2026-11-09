@@ -105,7 +105,8 @@
 		"background": "studio-grey"
 	},
 	"23-leaf-cluster-studio.png": {
-		"background": "studio-grey"
+		"background": "studio-grey",
+		"pick": 1
 	},
 	"hawthorn-turntable-halfturn.mp4": {
 		"skyShare": 0.19,
