@@ -191,6 +191,12 @@
 		"date": "2026-11-09",
 		"reason": "drawn on this Mac's SwiftShader at 8c31e17a3 after the oak's bole tint; CI replaces them"
 	},
+	"chromium-swiftshader/compat/plant-weeping-willow.png": {
+		"test": "plant-weeping-willow",
+		"tier": "compat",
+		"date": "2026-11-09",
+		"reason": "drawn on this Mac's SwiftShader at the branch tip on 9 Nov 2026 because the earlier CI run was cancelled; a CI drawing replaces it if it differs"
+	},
 	"chromium-swiftshader/compat/probe-grid-wall-night.png": {
 		"test": "probe-grid-wall-night",
 		"tier": "compat",
@@ -466,6 +472,12 @@
 		"tier": "webgl2",
 		"date": "2026-11-09",
 		"reason": "drawn on this Mac's SwiftShader at 8c31e17a3 after the oak's bole tint; CI replaces them"
+	},
+	"chromium-swiftshader/webgl2/plant-weeping-willow.png": {
+		"test": "plant-weeping-willow",
+		"tier": "webgl2",
+		"date": "2026-11-09",
+		"reason": "drawn on this Mac's SwiftShader at the branch tip on 9 Nov 2026 because the earlier CI run was cancelled; a CI drawing replaces it if it differs"
 	},
 	"chromium-swiftshader/webgl2/probe-grid-wall-night.png": {
 		"test": "probe-grid-wall-night",
@@ -772,6 +784,12 @@
 		"tier": "webgpu",
 		"date": "2026-11-09",
 		"reason": "drawn on this Mac's SwiftShader at 8c31e17a3 after the oak's bole tint; CI replaces them"
+	},
+	"chromium-swiftshader/webgpu/plant-weeping-willow.png": {
+		"test": "plant-weeping-willow",
+		"tier": "webgpu",
+		"date": "2026-11-09",
+		"reason": "drawn on this Mac's SwiftShader at the branch tip on 9 Nov 2026 because the earlier CI run was cancelled; a CI drawing replaces it if it differs"
 	},
 	"chromium-swiftshader/webgpu/probe-grid-wall-night.png": {
 		"test": "probe-grid-wall-night",
