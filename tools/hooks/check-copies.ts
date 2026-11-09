@@ -39,6 +39,13 @@ export const KNOWN_COPIES: readonly (readonly [string, string])[] = [
 	['a78512faafd13c4ec68e6e01782fec32b63be7ae', 'e4490963c174b89f2331b274a7c94d5c1e543170'],
 	['ac798ff019c2bfc7a5f6632c424be3e10fbf13a2', 'dc54814e7670a72ff6c93fe1e3a7132a73e9dbe8'],
 	['b3e81d903ef6b433cd73b98131a368c8b763b74c', 'ebbb5b1be08edd74bd88f944fc7273d367492b02'],
+	// The sedge's copy of the plant-review grass-blade fix. The meadow grass branch landed the same
+	// change first, and `cb5e23411` is already on the milestone branch; the sedge carried it again
+	// as `53a549532`, and an earlier integration carried it as `a06a9c5c3`. Dropping either would
+	// re-commit commits that the milestone branch already holds, so they stay as known copies;
+	// none of them changes the tree.
+	['53a5495323d4be073cf566eaf843d9b6a3e45bf8', 'cb5e2341178c5da3e40853b73d692f0e8aa39201'],
+	['a06a9c5c3384ff6bc960d83d2f158524203e80c8', 'cb5e2341178c5da3e40853b73d692f0e8aa39201'],
 ];
 
 /** The most commits that the check reads from the head, far more than a branch holds. */

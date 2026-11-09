@@ -1,4 +1,4 @@
-# D-335: the hosta, a ribbed herbaceous rosette, and what a herb asked of the plant core
+# D-342: the hosta, a ribbed herbaceous rosette, and what a herb asked of the plant core
 
 Status: decided and built: the hosta's record, its leaf textures, the pressed thick leaf, the stalk's
 sky floor and the review camera's floor. The review passes seven of the twenty-six stills outright,

@@ -7,6 +7,7 @@
 // contract lives in `../lib/plant-review/`, which the review tools share. The page posts what it
 // measured and where its cameras stood as the `plant-review` message, so a tool records the facts
 // beside the pixels.
+
 import { type Camera, defineSketch, quat, type SketchContext } from '@null3d/engine';
 import {
 	BUD_TERMINAL,
@@ -36,6 +37,7 @@ import {
 	pointAlong,
 	stemAt,
 	stemFoot,
+	stemSurfaceAt,
 	sunlitTip,
 	turnedAbout,
 	type V3,
@@ -58,7 +60,9 @@ import {
 import {
 	type CutRows,
 	cutCamera,
+	leafFrame,
 	type ScreenFraming,
+	spanDistance,
 	standCamera,
 } from '../lib/plant-review/framing';
 import { measurePlant, partPositions, shootPositions } from '../lib/plant-review/measure';
@@ -476,8 +480,21 @@ export default defineSketch(async (ctx) => {
 	// not built yet; any other id, or the query's `placeholders`, grows the stand-in of every stage.
 	const placeholders: boolean | 'missing' =
 		QUERY.placeholders ?? (isSpeciesId(QUERY.species) ? 'missing' : true);
-	const module = await loadSpeciesOrStandIn(QUERY.species);
-	const record = module.record;
+	const loadedModule = await loadSpeciesOrStandIn(QUERY.species);
+	// A tuft's soil — its rhizome and roots — belongs to the picture that frames the lifted base;
+	// every other view grows the plant above the soil, which is what the ground shows of it.
+	const record =
+		VIEW !== 'soil' &&
+		loadedModule.record.growth.model === 'tuft' &&
+		loadedModule.record.growth.soil !== undefined
+			? (() => {
+					const growth = loadedModule.record.growth;
+					if (growth.model !== 'tuft') return loadedModule.record;
+					const { soil: _soil, ...above } = growth;
+					return { ...loadedModule.record, growth: above };
+				})()
+			: loadedModule.record;
+	const module = { ...loadedModule, record };
 	// The query's form, another habit or the young plant, grows when the record has it. A record
 	// without that form grows as it stands, with a note, so a still of another habit is still drawn.
 	const form =
@@ -497,6 +514,7 @@ export default defineSketch(async (ctx) => {
 		variant: QUERY.variant ?? 0,
 		near: true,
 		...(QUERY.season && { season: QUERY.season }),
+		...(QUERY.sparse !== undefined && { sparse: QUERY.sparse }),
 	};
 	const turn0 = (QUERY.turn ?? 0) * DEG;
 	const cuttingPart = VIEW === 'panels' ? 'cluster' : SPEC.cutting;
@@ -507,6 +525,8 @@ export default defineSketch(async (ctx) => {
 		orient: 'upright' as const,
 		...(VIEW === 'leaf-under' ? { face: 'lower' as const } : {}),
 		...(QUERY.pressed !== undefined && { pressed: QUERY.pressed }),
+		...(QUERY.age !== undefined && { age: QUERY.age }),
+		...(QUERY.young !== undefined && { young: QUERY.young }),
 	};
 	const needsWhole = !SPEC.cutting;
 	// A piece whose record hint names one of the species' cutting classes grows from a kit of its
@@ -554,15 +574,15 @@ export default defineSketch(async (ctx) => {
 	let facts: Record<string, unknown> = {};
 	const foliage = record.foliage;
 	/**
-	 * A leaf's length in metres: one blade, or a compound leaf's stalk, rachis and terminal leaflet,
-	 * which is the piece a cutting's frame and the close views measure in.
+	 * A leaf's length in metres: one blade (broadleaf or grass), or a compound leaf's stalk, rachis
+	 * and terminal leaflet, which is the piece a cutting's frame and the close views measure in.
 	 */
 	const leafLength =
-		foliage.kind !== 'blade'
-			? undefined
-			: (typeof foliage.leaf.length === 'number' ? foliage.leaf.length : foliage.leaf.length.mean) *
+		foliage.kind === 'blade'
+			? (typeof foliage.leaf.length === 'number' ? foliage.leaf.length : foliage.leaf.length.mean) *
 					(foliage.compound ? foliage.compound.rachis + 1 : 1) +
-				(foliage.compound ? foliage.leaf.petiole.length : 0);
+				(foliage.compound ? foliage.leaf.petiole.length : 0)
+			: undefined;
 	/**
 	 * A grass blade's length in metres. A cutting of several blades is framed in the leaf length its
 	 * photograph was measured in, which a blade a metre long would over-scale tenfold, so only a
@@ -730,7 +750,7 @@ export default defineSketch(async (ctx) => {
 				// A limb dividing into two, seen square to its arms against the least of the crown.
 				const found = closeAt(
 					view,
-					() => forkView(closePlant(WOOD_ONLY), lens, QUERY.thin),
+					() => forkView(closePlant(WOOD_ONLY), lens, QUERY.thin, QUERY.span),
 					turn,
 					fov,
 					0.05,
@@ -891,6 +911,22 @@ export default defineSketch(async (ctx) => {
 				if (found) return found;
 				break;
 			}
+			case 'soil': {
+				// The crown lifted from the soil: the rhizome and the roots that leave it, close enough
+				// that their widths read, seen a little from above as a washed base is photographed.
+				const wide = Math.max(
+					(skeleton.bounds.max[0] as number) - (skeleton.bounds.min[0] as number),
+					(skeleton.bounds.max[2] as number) - (skeleton.bounds.min[2] as number),
+				);
+				const reach = Math.max(0.1, Math.min(wide, 0.6) / 2);
+				return orbit(
+					[foot[0], 0.03, foot[2]],
+					(reach * 0.8) / Math.tan((fov * DEG) / 2),
+					e,
+					turn,
+					fov,
+				);
+			}
 			case 'bark-base': {
 				const r = stemAt(skeleton, 0.3)?.radius ?? 0.1;
 				// The foot and its flare, with the ground it stands on. The stand-off is measured from
@@ -899,8 +935,16 @@ export default defineSketch(async (ctx) => {
 				return orbit([foot[0], 0.9, foot[2]], 1.5 + 3.5 * r, e, turn, fov);
 			}
 			case 'bark-mid': {
-				const y = Math.min(1.5, skeleton.height * 0.3);
-				const stem = stemAt(skeleton, y);
+				// A bark zone of its own: the camera stands where that zone covers the wood, so the
+				// surface is the one the zone's texture source shows.
+				const zone = QUERY.barkZone === undefined ? undefined : record.bark?.zones[QUERY.barkZone];
+				const y =
+					zone?.by === 'height'
+						? Math.min(skeleton.height * 0.9, (zone.from + zone.to) / 2)
+						: Math.min(1.5, skeleton.height * 0.3);
+				// A plant with no single trunk, such as a tuft of culms, shows the thickest stem
+				// surface that crosses the height the picture frames.
+				const stem = stemAt(skeleton, y) ?? stemSurfaceAt(skeleton, y)?.at;
 				if (!stem) break;
 				const span = QUERY.span ?? 0.6;
 				const surface = add(stem.at, scale(out, stem.radius));
@@ -959,17 +1003,38 @@ export default defineSketch(async (ctx) => {
 			case 'cluster':
 			case 'leaf-upper':
 			case 'leaf-under': {
+				// A span frames a part of the piece rather than the whole of it: the frame's middle
+				// stands on the piece at the share the query names, halfway up by default, and the
+				// span is the width it shows there.
+				if (QUERY.span !== undefined && piece) {
+					const part = boundsOf(piece as PlantAsset, pieceKit);
+					const low = part.min[1] as number;
+					const high = part.max[1] as number;
+					const at = low + (high - low) * (QUERY.along ?? 0.5);
+					return orbit(
+						[
+							((part.min[0] as number) + (part.max[0] as number)) / 2,
+							at,
+							((part.min[2] as number) + (part.max[2] as number)) / 2,
+						],
+						spanDistance(QUERY.span, fov, aspect),
+						e,
+						turn,
+						fov,
+					);
+				}
 				// A piece framed at the scale its photograph shows, in leaf lengths, stands on its cut:
 				// the cut on the frame's lower edge, the piece running up across it and off its far edge
 				// where it is longer, as a cut branch runs off its photograph. A roll lays it across.
 				const oneLeaf = view === 'leaf-upper' || view === 'leaf-under';
-				const length = leafLength ?? (oneLeaf ? bladeLength : undefined);
+				const length = QUERY.leafLength ?? leafLength ?? (oneLeaf ? bladeLength : undefined);
 				if (QUERY.leaves !== undefined && length !== undefined) {
-					const roll = (QUERY.roll ?? 0) * DEG;
-					const tall = QUERY.leaves * length;
-					const run = Math.abs(Math.sin(roll)) > Math.SQRT1_2 ? tall * aspect : tall;
-					const distance = tall / 2 / Math.tan((fov * DEG) / 2);
-					return { ...orbit([0, run / 2, 0], distance, e, turn, fov), roll, near: 0.01 };
+					const frame = leafFrame(QUERY.leaves, length, QUERY.roll ?? 0, aspect, fov);
+					return {
+						...orbit([0, frame.run / 2, 0], frame.distance, e, turn, fov),
+						roll: frame.roll,
+						near: 0.01,
+					};
 				}
 				// A cutting fills the frame with its own points, as its reference's piece does, on the
 				// rows its reference shows it on when the query measured them.
@@ -1092,7 +1157,7 @@ export default defineSketch(async (ctx) => {
 	const colours = BACKGROUND_COLOURS[BACKGROUND];
 	scene.setBackground(MATTE ? '#ffffff' : (QUERY.sky ?? colours.sky));
 	const groundColour = QUERY.ground ?? colours.ground;
-	if (groundColour && !MATTE && !SPEC.cutting) {
+	if (groundColour && !MATTE && !SPEC.cutting && !QUERY.lifted) {
 		// The meadow is unlit and casts nothing back, so it shows its measured colour everywhere and a
 		// mask can tell it from the plant by colour alone.
 		scene.createMesh({
@@ -1101,7 +1166,7 @@ export default defineSketch(async (ctx) => {
 			rotation: FLAT,
 		});
 	}
-	if (MATTE && SPEC.whole && !SPEC.cutting) {
+	if (MATTE && SPEC.whole && !SPEC.cutting && !QUERY.lifted) {
 		// A whole plant's matte stands on a white ground, so what grows below the ground, such as the
 		// buried part of a root flare, stays hidden as the meadow hides it in the picture.
 		scene.createMesh({

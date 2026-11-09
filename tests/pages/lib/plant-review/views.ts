@@ -20,6 +20,7 @@ export const PLANT_VIEWS = [
 	'cluster',
 	'leaf-upper',
 	'leaf-under',
+	'soil',
 	'bark-base',
 	'bark-mid',
 	'bark-limb',
@@ -139,9 +140,12 @@ export const VIEW_SPECS: Readonly<Record<PlantView, ViewSpec>> = {
 	fork: {
 		slots: [8],
 		fov: 50,
-		background: 'sky-meadow',
-		sun: 'default',
+		// The photographs frame a cut limb on the studio's own ground, so the view cuts one too: a
+		// fork inside a leafy crown carries neighbours the picture has not.
+		background: 'studio-grey',
+		sun: 'flat',
 		elevation: 0,
+		cutting: 'branch',
 		size: [960, 720],
 	},
 	twigs: {
@@ -212,6 +216,14 @@ export const VIEW_SPECS: Readonly<Record<PlantView, ViewSpec>> = {
 		elevation: 0,
 		cutting: 'leaf',
 		size: [720, 960],
+	},
+	soil: {
+		slots: [],
+		fov: 45,
+		background: 'studio-grey',
+		sun: 'flat',
+		elevation: 10,
+		size: [960, 720],
 	},
 	'bark-base': {
 		slots: [14],
