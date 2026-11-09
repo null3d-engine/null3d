@@ -84,5 +84,9 @@
 	"31-young-willow-crown.png": {
 		"skyShare": 0.55,
 		"daylight": 2.0
+	},
+	"28-young-bark.png": {
+		"thin": 0.012,
+		"span": 0.08
 	}
 }
