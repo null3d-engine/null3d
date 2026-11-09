@@ -249,6 +249,26 @@ describe('the width profile', () => {
 		expect(crownStartRow(rowSpans(mask, width, height), box)).toBe(44);
 	});
 
+	test('finds the crown above a flare that is the plant widest row', () => {
+		const width = 100;
+		const height = 90;
+		const mask = new Uint8Array(width * height);
+		// A thin crown of 40 over a stem of 14, over a base that widens to 60 and thins to a point at
+		// the plant's last rows. The flare is the plant's widest row, and the thin row below it keeps
+		// a scan from the foot from skipping the flare, so the crown's base lands on the flare's top.
+		for (let y = 2; y < 40; y++) for (let x = 30; x < 70; x++) mask[y * width + x] = 1;
+		for (let y = 40; y < 72; y++) for (let x = 43; x < 57; x++) mask[y * width + x] = 1;
+		for (let y = 72; y < 89; y++) {
+			const half = Math.round(2 + 28 * ((y - 72) / 16));
+			for (let x = 50 - half; x < 50 + half; x++) mask[y * width + x] = 1;
+		}
+		for (let x = 49; x < 51; x++) mask[89 * width + x] = 1;
+		const box = boxOf(mask, width, height) as NonNullable<ReturnType<typeof boxOf>>;
+		const start = crownStartRow(rowSpans(mask, width, height), box);
+		// The stem's own rows say where the crown starts, not the flare's top and not the crown's top.
+		expect(start).toBe(39);
+	});
+
 	test('starts a mound with no bare stem at its foot', () => {
 		const width = 100;
 		const height = 100;
