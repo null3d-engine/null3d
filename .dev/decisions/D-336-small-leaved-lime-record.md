@@ -169,7 +169,12 @@ Rejected:
   fissures are shallower (0.03 to 0.022), and the moss and lichen that still 14 shows reach the lower
   metre. At the clean run `lime-full-12` at `36baed79d` the masked steps are base **2.62**, limb
   **2.66** and mid-trunk **1.09**, all inside the mark where they read 4.9, 9.2 and 1.1. The young
-  bark floors at 9.2 with its light dimmed and is the row's one open figure.
+  bark did not floor at 9.2 for lack of a tint: its picture was framing a thick stem of old bark,
+  because the limb view serves both the great-limb photograph and the young-bark one and needs the
+  slot's own `thin`. At `thin` 0.045 the picture finds a young shoot, and at a 5.5 cm span it fills
+  the frame as its photograph does; with the record's `youngTint` at 0.9, 1.1 and 0.9, the young
+  bark reads **5.7** where it read 15.95 at the verdict. It is the row's one figure still outside the
+  mark, and the three others are inside at 2.62, 2.66 and 1.09.
 - The clean run `lime-full-11` at `70181eaba` has every still inside the three-step colour mark:
   distant 1.8, profile 1.6, leaf cluster 0.2, flower spray 0.5, branch studio 2.9, sub-branch studio
   2.4 and leaf-cluster studio 1.6, with the turns at 4.22, 6.82, 6.98 and 7.46.
