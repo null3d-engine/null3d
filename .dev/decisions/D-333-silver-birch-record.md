@@ -194,12 +194,12 @@ Limits this record states:
   white old bark and sky, and it read 25.0. A 3 cm limb puts young bark across half the frame and
   the figure falls to 18.6. No value tried frames young wood without the white bole beside it,
   because the plant shows both. The elm's thin-with-span pair reads 25.6 and 19.3 here.
-- Row 10 fails on the crown's shade. Its three side views read 9.7, 8.9 and 13.9 steps from their
-  photographs, where the band is 3. The lever for a far crown's shade is its card's growth, and that
-  lever belongs to row 6 here. At 1.35 the color worsens to 10.2. It also closes stills 02 and 18
-  under their floors, at 0.136 and 0.165. At 1.1 the color moves one step. Still 01 then opens past
-  its ceiling at 0.237. The value 1.2 is the only one that keeps row 6. Row 10 is stated as a limit,
-  not as an untried lever.
+- Row 10 fails on the crown's shade. The owner accepts it as a limit under D-334. The far crown's
+  shading is the batch's engine task, so no round is spent on it here. Its three side views read
+  9.7, 8.9 and 13.9 steps, where the band is 3. The lever for a far crown's shade is its card's
+  growth, and that lever belongs to row 6. At 1.35 the color worsens to 10.2. Stills 02 and 18 also
+  close under their floors, at 0.136 and 0.165. At 1.1 the color moves one step, and still 01 opens
+  past its ceiling at 0.237. The value 1.2 is the only one that keeps row 6.
 - The cut branch's arms run straight where its photograph's arch and fall away. Its outline match
   stays at 0.054 however its openness or extent is set. A droop of 70 degrees closes the piece to
   0.616 open against the photograph's 0.631. More subdivision is barred twice over. A third year of
