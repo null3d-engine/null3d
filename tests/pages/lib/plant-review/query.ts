@@ -192,6 +192,11 @@ export interface PlantReviewQuery {
 	 */
 	readonly leaves?: number;
 	/**
+	 * How far toward its sparse form the plant grows, from 0 to 1, the level a phone or a tablet
+	 * asks for: the species' floors hold it at what still reads as itself. 0 grows the record's own.
+	 */
+	readonly sparse?: number;
+	/**
 	 * Metres of one leaf that a photographed cutting was measured in, for the `leaves` frame. A
 	 * blade or a cluster whose own leaf is far longer than the photographed one frames at the
 	 * photograph's scale only when the length the photograph was measured in is named.
@@ -241,6 +246,7 @@ const NUMBER_FIELDS = [
 	'stand',
 	'leaves',
 	'leafLength',
+	'sparse',
 	'roll',
 	'girth',
 	'turns',
@@ -253,7 +259,16 @@ const NUMBER_FIELDS = [
 ] as const;
 
 /** The fields that are shares, of the frame or of the light, which must lie from 0 to 1. */
-const SHARE_FIELDS = new Set(['horizon', 'fill', 'targetY', 'targetX', 'top', 'along', 'skyShare']);
+const SHARE_FIELDS = new Set([
+	'horizon',
+	'fill',
+	'targetY',
+	'targetX',
+	'top',
+	'along',
+	'skyShare',
+	'sparse',
+]);
 
 /** The fields that are whole numbers of at least one. */
 const COUNT_FIELDS = new Set(['turns', 'columns']);
