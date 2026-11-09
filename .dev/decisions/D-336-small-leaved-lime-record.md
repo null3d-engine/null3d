@@ -164,8 +164,12 @@ Rejected:
   unmasked, mid-trunk **1.1** either way (it fills its frame and is the control), limb **9.2** against
   3.0 unmasked, young bark 9.8 either way. The limb is the one the mask unmasked: it read as a pass
   on the backdrop and reads 9.2 with the backdrop trimmed, its bark 8.8 light-steps dark where the
-  photograph is 49.1. So no bark figure of this species passed on an unmasked reading, and row 8
-  stays open with the mid-trunk the only close view inside its mark.
+  photograph is 49.1. So no bark figure of this species passed on an unmasked reading. The bark was then split the way the
+  oak's was: a second zone above the crown's base carries a lighter, warmer tint for the limbs, the
+  fissures are shallower (0.03 to 0.022), and the moss and lichen that still 14 shows reach the lower
+  metre. At the clean run `lime-full-12` at `36baed79d` the masked steps are base **2.62**, limb
+  **2.66** and mid-trunk **1.09**, all inside the mark where they read 4.9, 9.2 and 1.1. The young
+  bark floors at 9.2 with its light dimmed and is the row's one open figure.
 - The clean run `lime-full-11` at `70181eaba` has every still inside the three-step colour mark:
   distant 1.8, profile 1.6, leaf cluster 0.2, flower spray 0.5, branch studio 2.9, sub-branch studio
   2.4 and leaf-cluster studio 1.6, with the turns at 4.22, 6.82, 6.98 and 7.46.
