@@ -57,6 +57,7 @@ import {
 import {
 	type CutRows,
 	cutCamera,
+	leafFrame,
 	type ScreenFraming,
 	standCamera,
 } from '../lib/plant-review/framing';
@@ -905,13 +906,14 @@ export default defineSketch(async (ctx) => {
 				// the cut on the frame's lower edge, the piece running up across it and off its far edge
 				// where it is longer, as a cut branch runs off its photograph. A roll lays it across.
 				const oneLeaf = view === 'leaf-upper' || view === 'leaf-under';
-				const length = leafLength ?? (oneLeaf ? bladeLength : undefined);
+				const length = QUERY.leafLength ?? leafLength ?? (oneLeaf ? bladeLength : undefined);
 				if (QUERY.leaves !== undefined && length !== undefined) {
-					const roll = (QUERY.roll ?? 0) * DEG;
-					const tall = QUERY.leaves * length;
-					const run = Math.abs(Math.sin(roll)) > Math.SQRT1_2 ? tall * aspect : tall;
-					const distance = tall / 2 / Math.tan((fov * DEG) / 2);
-					return { ...orbit([0, run / 2, 0], distance, e, turn, fov), roll, near: 0.01 };
+					const frame = leafFrame(QUERY.leaves, length, QUERY.roll ?? 0, aspect, fov);
+					return {
+						...orbit([0, frame.run / 2, 0], frame.distance, e, turn, fov),
+						roll: frame.roll,
+						near: 0.01,
+					};
 				}
 				// A cutting fills the frame with its own points, as its reference's piece does, on the
 				// rows its reference shows it on when the query measured them.
