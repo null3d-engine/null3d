@@ -65,7 +65,8 @@
 		"pick": 4
 	},
 	"14-bark-base.png": {
-		"barkMask": true
+		"barkMask": true,
+		"daylight": 1.7
 	},
 	"16-bark-on-limb.png": {
 		"barkMask": true
