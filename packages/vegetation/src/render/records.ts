@@ -122,6 +122,11 @@ export const HEADER = {
 	cardStalk: 55,
 	/** Young bark: the tint its thin wood takes, where the record gives one. */
 	youngTint: 56,
+	/**
+	 * The first bark zone's band on the other axis: its start, end, blend and whether the record
+	 * gives one; the next `MAX_BARK_ZONES - 1` texels hold the other zones' in order.
+	 */
+	barkSeconds: 57,
 } as const;
 
 /**
@@ -131,7 +136,7 @@ export const HEADER = {
 export const BARK_ZONE_TEXELS = 4;
 
 /** The header's texels that hold anything. */
-export const HEADER_TEXELS = HEADER.youngTint + 1;
+export const HEADER_TEXELS = HEADER.barkSeconds + MAX_BARK_ZONES;
 
 /** An extra's roughness where its record names none. */
 export const EXTRA_ROUGHNESS = 0.6;
@@ -334,6 +339,13 @@ export function speciesHeader(
 				layer?.height.depth ?? 0,
 			]);
 			texel(header, at + 3, [...(layer?.mean ?? STAND_IN_BARK), 0]);
+			const second = zone.second;
+			texel(header, HEADER.barkSeconds + index, [
+				second?.from ?? 0,
+				second?.to ?? 0,
+				second?.blend ?? 0,
+				second ? 1 : 0,
+			]);
 		});
 	}
 	(record.extras ?? []).slice(0, MAX_EXTRAS).forEach((extra, index) => {

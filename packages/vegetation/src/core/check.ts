@@ -235,6 +235,14 @@ function shootProblems(shoots: ShootSpec, out: string[]): void {
 		out.push(
 			`shoots.placement.bareTrim is ${trim}; it is a radius in metres from 0 to 0.1, a twig's wood`,
 		);
+	const bole = shoots.placement.bareBole;
+	if (bole !== undefined) {
+		if (!(bole.radius > 0))
+			out.push(
+				`shoots.placement.bareBole.radius is ${bole.radius}; it is a radius in metres above 0`,
+			);
+		shareProblem(bole.height, 'shoots.placement.bareBole.height', out);
+	}
 	const lift = shoots.placement.lift;
 	if (lift !== undefined && !(lift >= -30 && lift <= 30))
 		out.push(`shoots.placement.lift is ${lift}; it is degrees from -30 to 30`);
@@ -414,6 +422,26 @@ function extraProblems(record: Species, out: string[]): void {
 		const jitter = 'lathe' in extra.shape ? extra.shape.scaleJitter : undefined;
 		if (jitter !== undefined && !(jitter >= 0 && jitter <= 1))
 			out.push(`${path}.shape.scaleJitter is ${jitter}; a share lies from 0 to 1`);
+		extra.offset?.forEach((value, k) => {
+			if (!(value >= -0.5 && value <= 0.5))
+				out.push(`${path}.offset[${k}] is ${value}; it is metres from -0.5 to 0.5`);
+		});
+		if (extra.group !== undefined) wholeProblem(extra.group, `${path}.group`, 0, 15, out);
+		const bristles = 'lathe' in extra.shape ? extra.shape.bristles : undefined;
+		if (bristles !== undefined) {
+			if (!(bristles.rows >= 1 && bristles.rows <= 16))
+				out.push(
+					`${path}.shape.bristles.rows is ${bristles.rows}; it is a whole number from 1 to 16`,
+				);
+			if (!(bristles.sides >= 3 && bristles.sides <= 32))
+				out.push(
+					`${path}.shape.bristles.sides is ${bristles.sides}; it is a whole number from 3 to 32`,
+				);
+			if (!(bristles.length >= 0.001 && bristles.length <= 0.03))
+				out.push(
+					`${path}.shape.bristles.length is ${bristles.length}; it is metres from 0.001 to 0.03`,
+				);
+		}
 		extra.bandColour?.forEach((channel, k) => {
 			shareProblem(channel, `${path}.bandColour[${k}]`, out);
 		});
@@ -540,6 +568,12 @@ export function speciesProblems(record: Species): string[] {
 		zone.tint?.forEach((channel, c) => {
 			notNegative(channel, `bark.zones[${i}].tint[${c}]`, out);
 		});
+		if (zone.second) {
+			if (zone.second.from >= zone.second.to)
+				out.push(`bark.zones[${i}].second runs from ${zone.second.from} to ${zone.second.to}`);
+			if (!(zone.second.blend >= 0))
+				out.push(`bark.zones[${i}].second.blend is ${zone.second.blend}; it is metres from 0`);
+		}
 	});
 	if (record.bark) curveProblems(record.bark.girthScale, 'bark.girthScale', out);
 	const fork = record.bark?.fork;
@@ -548,6 +582,18 @@ export function speciesProblems(record: Species): string[] {
 	if (fork?.knot !== undefined && !(fork.knot >= 0 && fork.knot <= 1))
 		out.push(`bark.fork.knot is ${fork.knot}; it is a share from 0 to 1`);
 	curveProblems(record.wind.stiffness, 'wind.stiffness', out);
+	const flutter = record.wind.flutter.byHeight;
+	if (flutter !== undefined) {
+		curveProblems(flutter, 'wind.flutter.byHeight', out);
+		if (typeof flutter !== 'number')
+			for (let i = 0; i < flutter.length; i++) {
+				const value = (flutter[i] as readonly [number, number])[1];
+				if (!(value >= 0))
+					out.push(`wind.flutter.byHeight's pair ${i} is ${value}; a share is not negative`);
+			}
+		else if (!(flutter >= 0))
+			out.push(`wind.flutter.byHeight is ${flutter}; a share is not negative`);
+	}
 	const lod = record.lod;
 	lod.switchPixels.forEach((pixels, i) => {
 		if (pixels <= 0) out.push(`lod.switchPixels[${i}] is ${pixels}; it must be above 0`);
