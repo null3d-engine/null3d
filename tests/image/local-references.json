@@ -477,7 +477,7 @@
 		"test": "plant-weeping-willow",
 		"tier": "webgl2",
 		"date": "2026-11-09",
-		"reason": "drawn on this Mac's SwiftShader at the branch tip on 9 Nov 2026 because the earlier CI run was cancelled; a CI drawing replaces it if it differs"
+		"reason": "drawn on this Mac's SwiftShader at f69a1b0ff after the cluster angles were restored; a CI drawing replaces it if it differs"
 	},
 	"chromium-swiftshader/webgl2/probe-grid-wall-night.png": {
 		"test": "probe-grid-wall-night",
