@@ -68,6 +68,11 @@ import { BACKGROUND_COLOURS, type PlantView, VIEW_SPECS } from '../lib/plant-rev
 const QUERY = readPlantReviewQuery(new URL(import.meta.url).searchParams);
 const VIEW: PlantView = QUERY.view ?? 'whole';
 const SPEC = VIEW_SPECS[VIEW];
+/**
+ * Whether the view draws the wood alone: a wood view does, unless the slot asks for the foliage too,
+ * which a bark photograph taken among leaves needs before its colour can be compared with like.
+ */
+const WOOD_ONLY = SPEC.woodOnly === true && QUERY.foliage !== true;
 const SIZE = QUERY.size ?? SPEC.size;
 const FOV = QUERY.fov ?? SPEC.fov;
 const BACKGROUND = QUERY.background ?? SPEC.background;
@@ -84,7 +89,7 @@ const MATTE = VIEW === 'silhouette' || QUERY.matte === true;
  * fruit takes the nearest too: a plant's cones, keys and flowers stand on the grown plant's extras,
  * and only the nearest level carries them, so a farther level frames leaves where the fruit is.
  */
-const LOD = QUERY.lod ?? (SPEC.woodOnly || QUERY.fruit ? 0 : undefined);
+const LOD = QUERY.lod ?? (WOOD_ONLY || QUERY.fruit ? 0 : undefined);
 const DEG = Math.PI / 180;
 /**
  * A colour scaled by another colour's channels, which is how a picture's own white balance tints a
@@ -557,6 +562,17 @@ export default defineSketch(async (ctx) => {
 			: (typeof foliage.leaf.length === 'number' ? foliage.leaf.length : foliage.leaf.length.mean) *
 					(foliage.compound ? foliage.compound.rachis + 1 : 1) +
 				(foliage.compound ? foliage.leaf.petiole.length : 0);
+	/**
+	 * A grass blade's length in metres. A cutting of several blades is framed in the leaf length its
+	 * photograph was measured in, which a blade a metre long would over-scale tenfold, so only a
+	 * picture of one leaf takes its frame from this.
+	 */
+	const bladeLength =
+		foliage.kind === 'grass-blade'
+			? typeof foliage.blade.length === 'number'
+				? foliage.blade.length
+				: foliage.blade.length.mean
+			: undefined;
 	/** What the close views read of the plant: its wood alone for a view that draws the wood alone. */
 	const closePlant = (woodOnly: boolean): ClosePlant => ({
 		skeleton,
@@ -656,7 +672,7 @@ export default defineSketch(async (ctx) => {
 				// A great limb leaving the stem, seen side on from where no other limb hides it.
 				const found = closeAt(
 					view,
-					() => junctionView(closePlant(spec.woodOnly === true), lens),
+					() => junctionView(closePlant(WOOD_ONLY), lens),
 					turn,
 					fov,
 					0.05,
@@ -668,7 +684,7 @@ export default defineSketch(async (ctx) => {
 				// A limb dividing into two, seen square to its arms against the least of the crown.
 				const found = closeAt(
 					view,
-					() => forkView(closePlant(spec.woodOnly === true), lens, QUERY.thin, QUERY.span),
+					() => forkView(closePlant(WOOD_ONLY), lens, QUERY.thin, QUERY.span),
 					turn,
 					fov,
 					0.05,
@@ -850,7 +866,7 @@ export default defineSketch(async (ctx) => {
 					const share = QUERY.along ?? 0.3;
 					const found = closeAt(
 						view,
-						() => barkLimbView(closePlant(spec.woodOnly === true), lens, girth, share),
+						() => barkLimbView(closePlant(WOOD_ONLY), lens, girth, share),
 						turn,
 						fov,
 						0.02,
@@ -883,7 +899,7 @@ export default defineSketch(async (ctx) => {
 				// further turns walk round it from there.
 				const bole = closeAt(
 					view,
-					() => trunkView(closePlant(spec.woodOnly === true), lens, turn0),
+					() => trunkView(closePlant(WOOD_ONLY), lens, turn0),
 					turn - turn0,
 					fov,
 					0.05,
@@ -899,9 +915,11 @@ export default defineSketch(async (ctx) => {
 				// A piece framed at the scale its photograph shows, in leaf lengths, stands on its cut:
 				// the cut on the frame's lower edge, the piece running up across it and off its far edge
 				// where it is longer, as a cut branch runs off its photograph. A roll lays it across.
-				if (QUERY.leaves !== undefined && leafLength !== undefined) {
+				const oneLeaf = view === 'leaf-upper' || view === 'leaf-under';
+				const length = leafLength ?? (oneLeaf ? bladeLength : undefined);
+				if (QUERY.leaves !== undefined && length !== undefined) {
 					const roll = (QUERY.roll ?? 0) * DEG;
-					const tall = QUERY.leaves * leafLength;
+					const tall = QUERY.leaves * length;
 					const run = Math.abs(Math.sin(roll)) > Math.SQRT1_2 ? tall * aspect : tall;
 					const distance = tall / 2 / Math.tan((fov * DEG) / 2);
 					return { ...orbit([0, run / 2, 0], distance, e, turn, fov), roll, near: 0.01 };
@@ -1135,8 +1153,11 @@ export default defineSketch(async (ctx) => {
 							: SUN === 'overhead'
 								? [0.02, -1, 0.01]
 								: [-0.45, -1, -0.35];
+			// The sun takes the photograph's own white balance too, so a picture lit by a warm or a
+			// cool sun can be matched where its fill alone cannot reach.
 			scene.createDirectionalLight({
 				direction,
+				color: tinted('#ffffff', lamp),
 				intensity: sunLight * sunScale,
 				castShadows: true,
 				shadow,
@@ -1195,12 +1216,12 @@ export default defineSketch(async (ctx) => {
 				castShadows: !MATTE,
 			},
 		);
-	const drawn = shaped(main, SPEC.woodOnly === true);
+	const drawn = shaped(main, WOOD_ONLY);
 	const far = LOD === 3 && whole ? [await bakeFarPlant(kit, whole)] : undefined;
 	place(drawn, [0, 0, 0], mainKit, far);
 	if (VIEW === 'panels' && piece) place(shaped(piece, false), AWAY, pieceKit);
 	if (
-		!SPEC.woodOnly &&
+		!WOOD_ONLY &&
 		(LOD === undefined || LOD === 0) &&
 		main.levels[0].parts.every((part) => part.name === 'wood') &&
 		main.shoots.count > 0 &&
