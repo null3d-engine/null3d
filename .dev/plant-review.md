@@ -134,6 +134,9 @@ rules that set them.
   stands in for that measurement.
 - A picture whose upper half shows under 5 % sky and no clear shadows keeps the page's own light.
   Studio, copy-stand and silhouette pictures keep their own lights.
+- A view up the stem stands its camera at a person's eye height. A plant shorter than a person
+  stands under that height, so the camera drops to a third of the plant's height, and the crown
+  still stands above the lens. Without the drop the view looks over the whole plant at the sky.
 - The turning videos and the wind clip keep the light beside the camera, as the reference videos
   keep it. The oak's turntable holds its light about 9 degrees right of the camera and 41 degrees up
   in every frame. A sun fixed in the world would light half of each turn from behind.
@@ -169,6 +172,13 @@ own light they read 1.9, and the head's oak reads 2.2, so the light makes most o
   within 0.05 of the reference's.
 - A video is judged on frames drawn at a still's size, lit beside the camera, as the light rules
   above say.
+- A close view of one kind of wood is judged only once its frame holds that wood. A camera that
+  picks its own subject can draw a great limb where the photograph shows a young branch, and the
+  color figure then measures the wrong material whatever its value. The alder's young-bark picture
+  read 16.13 while it drew a great limb's old plates; setting the slot's `thin` to the photograph's
+  own branch size and its `span` to the photograph's width took it to 3.7 before any material
+  changed, and a tint measured against that frame took it to 2.3. Framing first, material second:
+  a tint chosen before the frame is right measures the camera, not the plant.
 
 ## What a fail looks like
 

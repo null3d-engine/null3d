@@ -1,0 +1,29 @@
+{
+	"caps": "tree",
+	"leaf": {
+		"upper": 24,
+		"lower": 25
+	},
+	"bark": {
+		"zones": [
+			{
+				"name": "trunk",
+				"slot": 26,
+				"tile": [0.45, 0.45],
+				"depth": 0.03,
+				"smooth": 4,
+				"tint": [1.15, 0.95, 0.92]
+			}
+		],
+		"young": {
+			"name": "young",
+			"slot": 28,
+			"tile": [0.06, 0.12],
+			"depth": 0.0005,
+			"delight": {
+				"radius": 0.12
+			},
+			"tint": [0.92, 0.78, 0.81]
+		}
+	}
+}

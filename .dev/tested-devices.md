@@ -343,6 +343,24 @@ The arrays take 20.5 MB at Low and Medium and 24.5 MB at High and Ultra, which i
 that D-241 sets. The leaf parts carry the next level's place for each vertex, which the material's morph
 reads.
 
+### Tree generation on this Mac with the catalogue species
+
+The plan ran on this Mac's Chrome 156.0.8078.81 at `75b1e59f2`, after the batch's twelve catalogue
+species landed ([its run](tested-devices/macbook-pro-m3-max-chrome/20261109-075455-tree-generation.md)).
+The package ships twelve species, so a preset's set is 72 variants.
+
+| Preset | Variants | Total (ms) | Per variant (ms) | Triangles | Bytes (MB) |
+| --- | --- | --- | --- | --- | --- |
+| Low | 72 | 12,440.8 | 172.79 | 15,274,350 | 382.2 |
+| Medium | 72 | 12,261.9 | 170.30 | 15,863,454 | 393.5 |
+| High | 72 | 12,472.2 | 173.22 | 16,299,114 | 402.3 |
+| Ultra | 72 | 12,878.1 | 178.86 | 17,721,942 | 428.4 |
+
+The catalogue species are far heavier than the thirteen procedural stand-ins the earlier figures
+measured: 50,718 to 887,750 triangles a variant against about 4,300, and the set takes 12.3 to 12.9 s
+against D-241's 200 ms line, about sixty times it. The line's basis no longer matches the set that
+ships: restating it for the catalogue, or making the generator faster, is the owner's decision.
+
 ### Tree generation on the Galaxy S25 with the leaf morph data
 
 The plan ran twice on the cloud Galaxy S25 with the current generator. The second run came after the

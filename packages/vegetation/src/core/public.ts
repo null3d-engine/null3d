@@ -99,6 +99,7 @@ export type {
 	TrunkShape,
 	Tuft,
 	TuftHeads,
+	TuftSoil,
 	WindSpec,
 } from './record';
 export { isSpeciesId, loadSpecies, type SpeciesId, speciesIds } from './registry';
