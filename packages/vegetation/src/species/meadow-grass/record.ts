@@ -79,11 +79,11 @@ export const record: Species = {
 		kind: 'grass-blade',
 		blade: {
 			// Stills 01, 02 and 12: blades of even width that close in a short blunt hood. The
-			// pictures' blades measure about 8 mm at the plant's scale, and the leaf picture's own
-			// width over length is 6.5 per cent, so the record follows the pictures rather than the
-			// fact sheet's narrower figure.
+			// leaf picture draws its blade about 7.4 per cent as wide as it is long, and a 30 cm
+			// blade fills that proportion at 20 mm, the same broad blade the sedge's photographs
+			// show. The record follows the picture rather than the fact sheet's narrower figure.
 			length: { mean: 0.3, spread: 0.02 },
-			width: 0.0075,
+			width: 0.02,
 			profile: [
 				[0, 0.85],
 				[0.1, 1],
