@@ -214,10 +214,12 @@ export default defineSketch(async (ctx) => {
 	})();
 
 	let seed = 11;
-	// The meadow's species and their placements are settled at the start, so every sign can stand on
-	// the bare ground before the plants that it names have grown.
+	// The meadow's species and their placements are settled from the catalogue's ids alone, so the
+	// start draws the field and its ground at once. A species' record is loaded when the meadow first
+	// grows, and its sign stands before its plant does.
 	const ids = speciesIds();
-	const modules = await Promise.all(ids.map((id) => loadSpecies(id)));
+	let modules: Awaited<ReturnType<typeof loadSpecies>>[] | undefined;
+	let signed = false;
 	const across = Math.max(1, Math.ceil(Math.sqrt(ids.length)));
 	const step = 34;
 	/** Where a species stands in the meadow's grid, centred on the origin. */
@@ -225,16 +227,22 @@ export default defineSketch(async (ctx) => {
 		((index % across) - (across - 1) / 2) * step,
 		(Math.floor(index / across) - (ids.length / across - 1) / 2) * step,
 	];
-	for (const [index, module] of modules.entries()) {
-		// The sign stands beside the plant's foot, clear of its trunk.
-		const [x, z] = placeOf(index);
-		plantSign(ctx, module.record.name, module.record.latin, [x + 13, z + 6]);
-	}
 	const growMeadow = async (at: number) => {
 		for (const piece of planted) piece.destroy();
 		planted = [];
 		growing.begin();
 		growing.set(0, ids.length);
+		// The records load after the first frame rather than before it, so the start ends on the
+		// standing field and the meadow's own note carries the wait that the records need.
+		modules ??= await Promise.all(ids.map((id) => loadSpecies(id)));
+		if (!signed) {
+			signed = true;
+			for (const [index, module] of modules.entries()) {
+				// The sign stands beside the plant's foot, clear of its trunk.
+				const [x, z] = placeOf(index);
+				plantSign(ctx, module.record.name, module.record.latin, [x + 13, z + 6]);
+			}
+		}
 		for (const [index, module] of modules.entries()) {
 			// The meadow carries every species at once, and at close range every copy near the camera
 			// draws its real shoots: the medium tier keeps each plant's shape while halving the nearest

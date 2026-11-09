@@ -41,6 +41,9 @@ export const record: Species = {
 	size: { height: { mean: 20, spread: 2 }, dbh: 2.9, aspect },
 	growth: {
 		model: 'self-organizing',
+		// A pedunculate oak carries a few great limbs and thick secondaries, so a node that divides
+		// takes fewer children than the model's own default and the crown reads as boughs, not twigs.
+		branching: 0.7,
 		years: 36,
 		macroOrders: 4,
 		// Stills 01, 02 and 18 show sky under the crown down to the fork: the outline's lowest
@@ -294,11 +297,21 @@ export const record: Species = {
 		},
 	},
 	bark: {
-		// Under the copy-stand lamps still 26 and still 15 are one picture: warm to 15's grey-brown
-		// (CIE b* 5), which keeps 26's flat-lit grey within a colour difference of about 2.
-		zones: [{ layer: 0, by: 'height', from: 0, to: 40, blend: 0, tint: [1.04, 1.02, 0.94] }],
+		zones: [
+			// The foot stands in shade under the crown, where the bark's own albedo is a small part of
+			// what the picture shows, so its tint cuts blue hard to keep the olive the photograph has.
+			{ layer: 0, by: 'height', from: 0, to: 1.2, blend: 0.3, tint: [0.8, 0.72, 0.2] },
+			// The bole: stills 26 and 15 show one bark under a flat light and under daylight, so one
+			// tint keeps the flat-lit grey and the mid-trunk grey-brown close to both.
+			{ layer: 0, by: 'height', from: 1.2, to: 3.6, blend: 0.4, tint: [1.04, 1.02, 0.94] },
+			// The great limbs stand in brighter light than the bole and read lighter and cooler than
+			// still 16, so they take a warmer, darker tint of their own above it.
+			{ layer: 0, by: 'height', from: 3.6, to: 40, blend: 0.6, tint: [0.5, 0.55, 0.1] },
+		],
 		young: 0,
-		youngRadius: 0.08,
+		// A mature oak keeps its rough bark on every limb that carries leaves, so only the current
+		// season's shoots draw the smooth young layer.
+		youngRadius: 0.02,
 		girthScale: [
 			[0, 0.6],
 			[1, 1],
@@ -307,10 +320,10 @@ export const record: Species = {
 		collar: { swell: 0.45, length: 1.8, ridge: 0.6 },
 		// Still 07's limb leaves the trunk on a long, smooth curve under it, not a tight corner.
 		fork: { bend: 3 },
-		moss: { amount: 0.7, up: 1.6, north: 0.3, colour: [0.18, 0.22, 0.06] },
-		// Still 15's lichen on the crests reads grey-green, about 0.36, 0.38, 0.34 in linear light, in
-		// fine flecks the bark shows through; at full strength each rosette draws as a flat pale blob.
-		lichen: { amount: 0.5, from: 0.6, colour: [0.36, 0.38, 0.34] },
+		moss: { amount: 0.35, up: 1.2, north: 0.3, colour: [0.18, 0.22, 0.06] },
+		// Still 16's limb carries pale sage rosettes on its crests, so the lichen reaches the great
+		// limbs as well as the bole, in the fine flecks the bark shows through.
+		lichen: { amount: 0.3, from: 0.6, colour: [0.36, 0.38, 0.26] },
 	},
 	base: {
 		// Stills 01, 02, 17 and 18 flare the foot to about 1.8 times the bole a quarter metre up, 1.5
