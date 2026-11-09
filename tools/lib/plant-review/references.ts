@@ -290,7 +290,9 @@ const TEXTURE_BY_NUMBER: Readonly<Record<number, SlotRule>> = {
 	27: { view: 'bark-mid', framed: false, note: "the second bark zone, at the zone's own height" },
 	28: {
 		view: 'bark-limb',
-		query: { along: 0.85, thin: 0.05, span: 0.07 },
+		// Young bark is two to three centimetres thick, so the view asks for that wood rather than a
+		// great limb, and masks the backdrop so the crown behind it does not enter the figure.
+		query: { along: 0.85, thin: 0.015, span: 0.1, barkMask: true },
 		framed: false,
 		note: 'young bark: thin wood far out on a limb',
 	},

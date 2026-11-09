@@ -121,7 +121,6 @@
 	},
 	"28-young-bark.png": {
 		"barkMask": true,
-		"thin": 0.045,
 		"daylight": 1.2
 	},
 	"26-bark-texture.png": {

@@ -241,6 +241,16 @@ limit is never a reason to stop work on the pictures it names.
 The reviewer is independent: it wrote none of the species' work. The figures it quotes name the commit
 they were measured at, and a figure from another base is a note, not evidence.
 
+## A batch re-read reads each species at its own branch
+
+A species' record lives on its own branch, so the land head draws a stale plant for every species that
+has not merged it. The beech, the hosta and the hawthorn read there with crowns and gaps far from
+their photographs. Those figures say nothing about the species. Read each species at its own tip.
+Check that the tip reaches the land head before you quote it. Name both commits beside every figure:
+the branch tip it was drawn at, and the land commit the branch includes. A figure from a branch
+without that merge is void, not wrong. The land commit names the measure; the branch tip names the
+plant.
+
 ## Tune a crown against its pictures
 
 Move one record field at a time. After each move, draw stills 01, 02 and 18 and the whole-plant
