@@ -126,7 +126,7 @@ export const record: Species = {
 				],
 				leafAngleSpread: 8,
 				skyward: 0.15,
-				droop: 120,
+				droop: -120,
 			},
 			{
 				// Still 22: last year's shoot hangs on below this year's growth, so the curtain keeps
@@ -149,7 +149,7 @@ export const record: Species = {
 					[1, 38],
 				],
 				skyward: 0.15,
-				droop: 110,
+				droop: -110,
 			},
 			{
 				// Stills 05 and 31: the inner wood and the young tree carry short leafy shoots that
@@ -171,7 +171,7 @@ export const record: Species = {
 				],
 				leafAngleSpread: 10,
 				skyward: 0.2,
-				droop: 25,
+				droop: -25,
 			},
 		],
 		// Still 21: the branch held upright in the clamp rises and arches, its side shoots falling
@@ -278,9 +278,9 @@ export const record: Species = {
 				[0.5, 16],
 				[1, 18],
 			],
-			// Stills 01 and 02: the crown's own sky shows between the curtains, and the dial keeps
-			// the fitted density rather than closing it.
-			density: 1.6,
+			// Stills 01 and 02: the hanging curtain overlaps into a sheet, so the crown carries
+			// more shoots than the fitted dial and shows its sky only between the outer strands.
+			density: 2.9,
 			shadePrune: 0.08,
 			// Stills 05 and 06: the inner limbs stand bare near the trunk, so a tip in the crown's
 			// own deepest shade keeps no rosette.
@@ -419,10 +419,10 @@ export const record: Species = {
 		switchPixels: [500, 12, 160],
 		// The cards stand over three times the shoots they picture, so a hanging shoot's card overlaps
 		// its neighbours and the far crown reads as one curtain rather than a fringe of specks.
-		cardGrow: 3.2,
+		cardGrow: 3.6,
 		// Stills 01 and 02: a card's twig is thinner than a pixel at a whole view, so each draws its
 		// supporting twig as a line and the join shows.
-		cardStalk: 2.5,
+		cardStalk: 3.5,
 		// A hanging shoot's card stands its whole length ahead of the row that draws it, so the
 		// stalk runs on to the card's centre and the curtain meets the wood it grows from.
 		cardStalkToFoliage: true,
