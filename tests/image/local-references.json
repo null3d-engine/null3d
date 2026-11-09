@@ -215,6 +215,12 @@
 		"date": "2026-11-09",
 		"reason": "pkg/silver-birch at 048d8b561 adds the silver birch and its picture tests; this Mac's SwiftShader drew the new set with CI=1, and the branch's first CI run replaces it"
 	},
+	"chromium-swiftshader/compat/plant-weeping-willow.png": {
+		"test": "plant-weeping-willow",
+		"tier": "compat",
+		"date": "2026-11-09",
+		"reason": "drawn on this Mac's SwiftShader at fde97e542 after the cluster angles were restored; a CI drawing replaces it if it differs"
+	},
 	"chromium-swiftshader/compat/probe-grid-wall-night.png": {
 		"test": "probe-grid-wall-night",
 		"tier": "compat",
@@ -514,6 +520,12 @@
 		"tier": "webgl2",
 		"date": "2026-11-09",
 		"reason": "pkg/silver-birch at 048d8b561 adds the silver birch and its picture tests; this Mac's SwiftShader drew the new set with CI=1, and the branch's first CI run replaces it"
+	},
+	"chromium-swiftshader/webgl2/plant-weeping-willow.png": {
+		"test": "plant-weeping-willow",
+		"tier": "webgl2",
+		"date": "2026-11-09",
+		"reason": "drawn on this Mac's SwiftShader at f69a1b0ff after the cluster angles were restored; a CI drawing replaces it if it differs"
 	},
 	"chromium-swiftshader/webgl2/probe-grid-wall-night.png": {
 		"test": "probe-grid-wall-night",
@@ -844,6 +856,12 @@
 		"tier": "webgpu",
 		"date": "2026-11-09",
 		"reason": "pkg/silver-birch at 048d8b561 adds the silver birch and its picture tests; this Mac's SwiftShader drew the new set with CI=1, and the branch's first CI run replaces it"
+	},
+	"chromium-swiftshader/webgpu/plant-weeping-willow.png": {
+		"test": "plant-weeping-willow",
+		"tier": "webgpu",
+		"date": "2026-11-09",
+		"reason": "drawn on this Mac's SwiftShader at fde97e542 after the cluster angles were restored; a CI drawing replaces it if it differs"
 	},
 	"chromium-swiftshader/webgpu/probe-grid-wall-night.png": {
 		"test": "probe-grid-wall-night",
