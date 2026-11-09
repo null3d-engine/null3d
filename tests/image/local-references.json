@@ -195,7 +195,7 @@
 		"test": "plant-sedge",
 		"tier": "compat",
 		"date": "2026-11-09",
-		"reason": "the sedge's spike foot now meets its stalk at the body's width, which changes the spikes in its whole-plant and crown panels; the software set is redrawn here while CI redraws it"
+		"reason": "the sedge's blade now closes over a short tip, which redraws the blades in its whole-plant, crown and cluster panels; the software set is redrawn here while CI redraws it"
 	},
 	"chromium-swiftshader/compat/probe-grid-wall-night.png": {
 		"test": "probe-grid-wall-night",
@@ -477,7 +477,7 @@
 		"test": "plant-sedge",
 		"tier": "webgl2",
 		"date": "2026-11-09",
-		"reason": "the sedge's spike foot now meets its stalk at the body's width, which changes the spikes in its whole-plant and crown panels; the software set is redrawn here while CI redraws it"
+		"reason": "the sedge's blade now closes over a short tip, which redraws the blades in its whole-plant, crown and cluster panels; the software set is redrawn here while CI redraws it"
 	},
 	"chromium-swiftshader/webgl2/probe-grid-wall-night.png": {
 		"test": "probe-grid-wall-night",
@@ -789,7 +789,7 @@
 		"test": "plant-sedge",
 		"tier": "webgpu",
 		"date": "2026-11-09",
-		"reason": "the sedge's spike foot now meets its stalk at the body's width, which changes the spikes in its whole-plant and crown panels; the software set is redrawn here while CI redraws it"
+		"reason": "the sedge's blade now closes over a short tip, which redraws the blades in its whole-plant, crown and cluster panels; the software set is redrawn here while CI redraws it"
 	},
 	"chromium-swiftshader/webgpu/probe-grid-wall-night.png": {
 		"test": "probe-grid-wall-night",
