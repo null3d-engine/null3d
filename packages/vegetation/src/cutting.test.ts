@@ -6,9 +6,10 @@ import { describe, expect, it } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { type PlantAsset, plantAssetDigest } from './asset';
+import { type PlantAsset, plantAssetDigest, type SpeciesKitData } from './asset';
 import { AXIS_LIMB, AXIS_STEM, BUD_TERMINAL, SkeletonBuilder } from './core/graph';
 import { quatRotate } from './core/math';
+import type { Species } from './core/record';
 import { standInSpecies } from './core/stand-in';
 import { CUTTING_LENGTH, clusterRank, cutBranch, cutFoliage, cutsShoot } from './cutting';
 import { buildKitNow, growPlantNow, loadPlantCode } from './generate';
@@ -386,6 +387,98 @@ describe('cuttings', () => {
 		expect(() => cutFoliage(frondKit, { part: 'leaf', age: 1.5 }, 'low')).toThrow(
 			/runs from 0 to 1/,
 		);
+	});
+
+	it('gives a rosette piece the leaf count its cutting hint names', async () => {
+		const { hostaRecord } = await import('./grow/ground.fixture');
+		const { noTextureFiles } = await import('./core/textures');
+		const { AXIS_LEAF } = await import('./grow/ground');
+		await loadPlantCode(hostaRecord);
+		// The leaves one cut eye carries, with the hint given and with the crown's own count.
+		const leavesOfPiece = (hint?: number): number => {
+			const record =
+				hint === undefined
+					? hostaRecord
+					: {
+							...hostaRecord,
+							cuttings: { ...hostaRecord.cuttings, leaves: { mean: hint, spread: 0 } },
+						};
+			const kit = buildKitNow(
+				{ record, textures: noTextureFiles(record.id) },
+				{ placeholders: 'missing', detail: 'low' },
+			);
+			const piece = growPlantNow(kit, {
+				seed: 11,
+				variant: 0,
+				near: true,
+				cutting: { part: 'subbranch' },
+			});
+			let leaves = 0;
+			for (let a = 0; a < piece.skeleton.axes.count; a++)
+				if ((piece.skeleton.axes.kind[a] as number) === AXIS_LEAF) leaves++;
+			return leaves;
+		};
+		const crown = leavesOfPiece();
+		const sparse = leavesOfPiece(3);
+		expect(sparse).toBeLessThan(crown);
+		expect(sparse).toBeLessThanOrEqual(4);
+	});
+
+	it('scales the leaf of a rosette piece from its cutting hint', async () => {
+		const { hostaRecord } = await import('./grow/ground.fixture');
+		const { noTextureFiles } = await import('./core/textures');
+		await loadPlantCode(hostaRecord);
+		const heightOfPiece = (scale?: number): number => {
+			const cuttings = {
+				...hostaRecord.cuttings,
+				...(scale === undefined ? {} : { subbranch: { order: 1, length: 0.4, scale } }),
+			};
+			const record = { ...hostaRecord, cuttings };
+			const kit = buildKitNow(
+				{ record, textures: noTextureFiles(record.id) },
+				{ placeholders: 'missing', detail: 'low' },
+			);
+			return growPlantNow(kit, {
+				seed: 11,
+				variant: 0,
+				near: true,
+				cutting: { part: 'subbranch' },
+			}).skeleton.height;
+		};
+		expect(heightOfPiece(0.5)).toBeLessThan(heightOfPiece(1));
+	});
+
+	it('gives a woodless plant a piece with no wood, and a woody plant its cut face', async () => {
+		const { hostaRecord } = await import('./grow/ground.fixture');
+		const { noTextureFiles } = await import('./core/textures');
+		const { species: oak } = await import('./species/pedunculate-oak');
+		await loadPlantCode(hostaRecord);
+		await loadPlantCode(oak.record);
+		const partsOf = (kit: SpeciesKitData, part: 'branch' | 'subbranch'): string[] =>
+			growPlantNow(kit, {
+				seed: 11,
+				variant: 0,
+				near: true,
+				cutting: { part },
+			}).levels[0].parts.map((p) => p.name);
+		const hostaKit = buildKitNow(
+			{ record: hostaRecord, textures: noTextureFiles(hostaRecord.id) },
+			{ placeholders: 'missing', detail: 'low' },
+		);
+		for (const part of ['branch', 'subbranch'] as const)
+			expect(partsOf(hostaKit, part)).not.toContain('wood');
+		// A woody plant's piece keeps its cut face: its root hangs on a stem, so the cut end draws.
+		const cutOak: Species = {
+			...oakRecord,
+			id: 'cut-oak',
+			cuttings: { ...oakRecord.cuttings, branch: { order: 1, length: 1 } },
+		};
+		await loadPlantCode(cutOak);
+		const oakKit = buildKitNow(
+			{ record: cutOak, textures: noTextureFiles(cutOak.id) },
+			{ placeholders: 'missing', detail: 'low' },
+		);
+		expect(partsOf(oakKit, 'branch')).toContain('wood');
 	});
 
 	it('cuts a leaf with either face toward +Z, and a cluster in rank order', () => {

@@ -658,8 +658,20 @@ export default defineSketch(async (ctx) => {
 						);
 					}
 				}
-				const surface = add(add(foot, scale(out, reach)), [0, middle, 0]);
-				return orbit(surface, Math.max(0.5, 0.6 * main.crown.radius), e, turn, fov);
+				// A tree's crown is its outer surface, which its close photographs look along; a plant
+				// whose crown is its whole body, such as a rosette, is framed at its own centre.
+				const surface = stemAt(skeleton, 1.3)
+					? add(add(foot, scale(out, reach)), [0, middle, 0])
+					: add(foot, [0, middle, 0]);
+				// A crown wider than the frame needs the camera further back than a limb's own reach:
+				// a slot names the distance where its photograph shows the whole crown.
+				return orbit(
+					surface,
+					QUERY.distance ?? Math.max(0.5, 0.6 * main.crown.radius),
+					e,
+					turn,
+					fov,
+				);
 			}
 			case 'below': {
 				const below = belowView(closePlant(false), turn, lens, {
@@ -674,6 +686,23 @@ export default defineSketch(async (ctx) => {
 				return { position: below.position, target: below.target, fov, near: 0.1 };
 			}
 			case 'inside': {
+				// A plant with no wood keeps its stalks at the crown's own centre, so its inside photograph
+				// is of the stalk bundle: the camera stands just outside it at the crown's height and
+				// looks at the bundle. A woody plant is framed beside its most level great limb.
+				if (!stemAt(skeleton, 1.3)) {
+					const middle = Math.max(0.05, 0.45 * main.crown.top);
+					plainSubjects.set(view, {
+						kind: 'the stalk bundle at the crown',
+						warning: 'the plant has no wood, so the inside view frames its own crown',
+					});
+					return orbit(
+						add(foot, [0, middle, 0]),
+						QUERY.distance ?? Math.max(0.3, 1.6 * main.crown.radius),
+						e,
+						turn,
+						fov,
+					);
+				}
 				// Beside the most level great limb, under it, looking up along it into the crown.
 				const found = closeAt(view, () => insideView(closePlant(false), lens), turn, fov, 0.05);
 				if (found) return found;
