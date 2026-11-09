@@ -57,10 +57,10 @@ export const record: Species = {
 				// the pairs shortening to the tip.
 				count: 10,
 				length: [
-					[0, 0.55],
-					[0.15, 0.5],
-					[0.6, 0.27],
-					[1, 0.04],
+					[0, 0.62],
+					[0.15, 0.56],
+					[0.6, 0.3],
+					[1, 0.045],
 				],
 				// Still 08: the lowest pinnae leave almost at right angles to the rachis and the
 				// upper ones stand closer to it.
