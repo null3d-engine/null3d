@@ -110,9 +110,9 @@
 		"daylight": 3.0
 	},
 	"28-young-bark.png": {
-		"thin": 0.006,
+		"thin": 0.045,
 		"along": 0.75,
-		"span": 0.012,
+		"span": 0.055,
 		"barkMask": true,
 		"daylight": 0.7
 	},
