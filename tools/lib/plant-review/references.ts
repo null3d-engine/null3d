@@ -1326,10 +1326,19 @@ export function widthProfile(spans: Int32Array, box: Box, bands = PROFILE_BANDS)
 }
 
 /**
- * The least width of a plant's lowest tenth, against its widest row, at which the plant has no bare
- * stem: a tuft, a rosette or a mound runs nearly as wide at its foot as through its crown.
+ * The range over which a plant's foot starts to read as a mound: a tuft, a rosette or a mound runs
+ * nearly as wide at its foot as through its crown, and a tree's foot is a small share of its crown.
+ * The share below is the least width of the plant's lowest tenth against its widest row. The range
+ * is wide on purpose, so a plant near the mark moves its crown's foot by inches, not by a step.
  */
-const CROWN_AT_FOOT = 0.8;
+const MOUND_FROM = 0.7;
+const MOUND_TO = 0.95;
+
+/** A value that rises smoothly from 0 at `from` to 1 at `to`, and stays at the ends. */
+function smoothstep(from: number, to: number, value: number): number {
+	const t = Math.min(1, Math.max(0, (value - from) / (to - from)));
+	return t * t * (3 - 2 * t);
+}
 
 /**
  * The row where the crown starts: going up from the plant's base, the first row from which the
@@ -1363,6 +1372,27 @@ export function crownStartRow(spans: Int32Array, box: Box): number {
 	if (!Number.isFinite(trunk)) trunk = 0;
 	let widest = 0;
 	for (let y = box.top; y <= box.bottom; y++) widest = Math.max(widest, width(y));
+	// The foot's flare: the widening where the stem meets the ground, or a strip of ground that the
+	// mask keeps at the plant's base. It is not the crown, and it can be the plant's widest row, so
+	// the limit below is taken from the crown's own widest row above it. A flare is a wide run at the
+	// foot with the narrower stem continuing above it; a plant wide from its base has none.
+	const crownWidest = ((): number => {
+		const band = Math.max(2, Math.round(tall * 0.15));
+		const stemRun = Math.max(2, Math.round(tall * 0.02));
+		const top = Math.max(box.top, box.bottom - band);
+		let y = box.bottom;
+		let widestCrown = 0;
+		while (y > top && width(y) <= trunk * 1.5) y--;
+		if (y > top && width(y) > trunk * 1.5) {
+			while (y > top && width(y) > trunk * 1.5) y--;
+			let narrow = 0;
+			for (let z = y; z > Math.max(box.top, y - stemRun); z--)
+				if (width(z) <= trunk * 1.5) narrow++;
+			if (narrow < Math.round(stemRun * 0.8)) y = box.bottom;
+		} else y = box.bottom;
+		for (let z = box.top; z <= y; z++) widestCrown = Math.max(widestCrown, width(z));
+		return widestCrown > 0 ? widestCrown : widest;
+	})();
 	// A plant that runs nearly as wide at its foot as at its widest has no bare stem below its
 	// crown: a tuft, a rosette or a mound. Its crown starts at its foot, so its whole box is the
 	// crown's and its openness is measured over the plant rather than a slice above the mound. A
@@ -1380,17 +1410,24 @@ export function crownStartRow(spans: Int32Array, box: Box): number {
 	const low: number[] = [];
 	for (let y = foot; y > foot - Math.max(2, Math.round(tall * 0.1)); y--) low.push(width(y));
 	low.sort((a, b) => a - b);
-	if (widest > 0 && (low[low.length >> 1] as number) > CROWN_AT_FOOT * widest) return box.bottom;
+	// How much of a mound the plant is: a foot as wide as the plant's widest row leaves no bare stem,
+	// so its crown starts at its foot. The share rises smoothly rather than stepping at a mark, since
+	// the crown's box, its openness and every figure read from them would jump as a plant crossed it.
+	const footShare = widest > 0 ? (low[low.length >> 1] as number) / widest : 0;
+	const mound = smoothstep(MOUND_FROM, MOUND_TO, footShare);
 	// A stem's own width plus a clear margin, but never so much of the plant's width that a thick
 	// bole reads as foliage: on a low-crowned tree whose trunk is a third of its height across, an
 	// uncapped margin swallows the crown and the foot lands wherever the first wide run begins.
-	const limit = Math.min(Math.max(trunk * 2.5, widest * 0.12), widest * 0.55);
-	const run = Math.max(2, Math.round(tall * 0.03));
-	// The crown's own rows say where it starts: its widest stretch runs from the top down, and the
-	// first narrow stretch below it that the stem continues below is its base. The scan from the
-	// foot's end cannot be trusted here, because a flared or buttressed foot is a wide stretch of
-	// its own, and on a thick stem the flare is found first and the crown's base lands on it.
-	return crownStartFromTop(spans, box, limit);
+	// The limit is taken from the crown's own widest row, not the plant's: a flare at the foot, or a
+	// strip of ground the mask keeps at its base, is often the plant's widest row of all, and a limit
+	// near the crown's own width leaves the crown's lowest boughs below it as if they were stem.
+	const limit = Math.min(Math.max(trunk * 2.5, crownWidest * 0.12), crownWidest * 0.55);
+	// The crown's own rows say where it starts: its wide stretch runs from the top down, and the
+	// first narrow stretch below it that the stem continues below is its base. A scan from the foot's
+	// end cannot be trusted, because a flare or a ground strip is a wide stretch of its own there.
+	const found = crownStartFromTop(spans, box, limit);
+	// The more the plant is a mound, the further its crown's foot moves towards its own foot.
+	return Math.round(found + mound * (box.bottom - found));
 }
 
 /**

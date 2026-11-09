@@ -326,7 +326,7 @@ export function cameraCopies(copies: Copy[], cam: Camera): CameraCopy[] {
 				if (!inside(cam.planes, scratchC, r)) return;
 				worldAxis(copy.m, p.cone[0], p.cone[1], p.cone[2]);
 				if (facesAway(cam.eye, scratchC, r, scratchA, p.cone[3])) return;
-				keptPieces![k] = 1;
+				if (keptPieces) keptPieces[k] = 1;
 				now += p.count;
 			});
 		}
@@ -368,7 +368,7 @@ export function drawCopies(
 		viewVertices(verts, cam, c.copy.m, lv.positions);
 		if (c.keptPieces) {
 			lv.pieces.forEach((p, k) => {
-				if (c.keptPieces![k]) drawTriangles(depth, cam, verts, lv.indices, p.start, p.count, true);
+				if (c.keptPieces?.[k]) drawTriangles(depth, cam, verts, lv.indices, p.start, p.count, true);
 			});
 		} else drawTriangles(depth, cam, verts, lv.indices, 0, lv.triangles, true);
 	}
