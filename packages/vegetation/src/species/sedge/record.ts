@@ -105,9 +105,10 @@ export const record: Species = {
 				[0.7, 0.95],
 				[1, 0.5],
 			],
-			// Still 12: the blade ends in a long fine point.
+			// Stills 10 and 12: the blade ends in a fine point whose taper runs about four times the
+			// blade's width, so a metre of blade closes over a short last share of it.
 			tip: 'pointed',
-			tipLength: 0.28,
+			tipLength: 0.08,
 			// Stills 08 and 12: the blade is a deep keeled V across its width.
 			fold: 40,
 			// Still 12: the upper face twists part way along the blade.
