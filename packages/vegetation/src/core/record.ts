@@ -942,7 +942,11 @@ export interface ShootSpec {
 	 * be one of `classes`.
 	 */
 	readonly cuttingClasses?: readonly ShootClass[];
-	/** Leaf or needle arrangement along a shoot. */
+	/**
+	 * Leaf or needle arrangement along a shoot. A two-ranked shoot keeps its laterals in the plane of
+	 * its leaf ranks; a spiral shoot turns them by the golden angle.
+	 */
+
 	readonly phyllotaxis: Phyllotaxis;
 	/** Orders inside one prototype, 1 to 3. */
 	readonly orders: number;
@@ -1030,6 +1034,19 @@ export interface ShootSpec {
 		 */
 		readonly bareTrim?: number;
 		/**
+		 * A bare column round each stem below a share of the plant's height: no shoot stands on wood
+		 * within `radius` metres of a stem's own axis below `height` times the plant's height. An
+		 * open-grown tree leaves its lower trunk and the bases of its great limbs clear, so the bole
+		 * reads through the crown while the skirt's outer foliage still hangs low. Absent, shoots
+		 * stand on every axis.
+		 */
+		readonly bareBole?: {
+			/** Metres from the stem's axis within which no shoot stands. */
+			readonly radius: number;
+			/** The share of the plant's height below which the column holds. */
+			readonly height: number;
+		};
+		/**
 		 * Degrees each shoot turns toward the sky from the way it leaves its wood, from -30 to 30,
 		 * negative toward the ground. Absent, the turn comes from the finest order's tropism.
 		 */
@@ -1049,6 +1066,14 @@ export interface ShootSpec {
 		 * rosette is one flat face of blades, as an oak's is when its leaves are looked at front on.
 		 */
 		readonly rosette?: 'round' | 'fan';
+		/**
+		 * Whether a run of crowded nodes stands its blades in one plane and overlaps them in order,
+		 * as a shingle. The internode curve marks a run by crowding its nodes; without this, each
+		 * blade of the run still turns with the stem's own zigzag and the run reads as a tuft. Set,
+		 * the run's face is the first crowded node's and every blade of the run keeps it. Off, a
+		 * shoot draws exactly as it did.
+		 */
+		readonly plate?: boolean;
 		/** A shoot's scale. */
 		readonly scale: Spread;
 		/**
@@ -1518,6 +1543,13 @@ export interface BarkZone {
 	 * colour, and absent is 1 on every channel.
 	 */
 	readonly tint?: Rgb;
+	/**
+	 * A band on the zone's other axis, so the zone holds only where both bands do: a zone keyed by
+	 * radius may take a height band as well, and its cast then stands on a stem's foot without the
+	 * wood above it. A zone that holds on both axes wins over one that holds on a single axis.
+	 * Absent, the zone holds on its own axis alone.
+	 */
+	readonly second?: { readonly from: number; readonly to: number; readonly blend: number };
 }
 
 /**
@@ -1644,6 +1676,20 @@ export interface ExtraSpec {
 	readonly stalkColour?: Rgb;
 	/** Degrees it hangs from its site. */
 	readonly hang: number;
+	/**
+	 * Metres this extra stands from its site, in the plant's own axes: a group of fruits hangs from
+	 * one twig, and one of them may stand beside the other rather than on top of it. Every part of the
+	 * extra moves with it, its stalks included. Absent, it hangs from the site itself, as it always
+	 * has.
+	 */
+	readonly offset?: Vec3;
+	/**
+	 * A group number, 0 to 15: extras that name the same number draw at the same sites, so the parts
+	 * of one fruit hang on one twig. Each part keeps its own `tipShare` and `offset`, so a group sets
+	 * its parts in an order along the shoot rather than stacking them on one point. Absent, an extra
+	 * picks its own sites, as it always has.
+	 */
+	readonly group?: number;
 }
 
 /**
@@ -1691,6 +1737,19 @@ export type ExtraShape =
 			 * default, every scale the same shade.
 			 */
 			readonly scaleJitter?: number;
+			/**
+			 * A bed of thin bristles over the lathe's scaled band: rows along it and spikes round each
+			 * row, each a short three-sided cone standing along the surface's own normal. A beech's
+			 * cupule is a burr of soft spines, where a scale shade alone engraves the husk.
+			 */
+			readonly bristles?: {
+				/** Rows of bristles along the scaled band, 1 to 16. */
+				readonly rows: number;
+				/** Bristles round each row, 3 to 32. */
+				readonly sides: number;
+				/** The longest bristle in metres, 0.001 to 0.03. */
+				readonly length: number;
+			};
 	  }
 	| {
 			/**
@@ -1770,6 +1829,13 @@ export interface WindSpec {
 		readonly kind: 'blade' | 'flat-petiole' | 'needle' | 'leaflet' | 'grass';
 		readonly amplitude: number;
 		readonly frequency: number;
+		/**
+		 * The share of `amplitude` at a height up the plant, from 0 at the ground to 1 at the top. A
+		 * beech's open low skirt swings in the wind while its dense crown's top stays still, which one
+		 * amplitude cannot say; a curve lets the low sprays move more than the top. Absent, every
+		 * height takes the whole amplitude, so a species that names no curve moves as it did.
+		 */
+		readonly byHeight?: Curve;
 	};
 }
 
