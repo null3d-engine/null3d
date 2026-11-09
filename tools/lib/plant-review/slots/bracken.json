@@ -13,8 +13,8 @@
 		"daylight": 1.524,
 		"fill": 0.84,
 		"targetY": 0.49,
-		"turn": 90,
-		"pressed": false
+		"turn": 0,
+		"pressed": true
 	},
 	"03-whole-from-below.png": {
 		"skyShare": 0.357,
