@@ -305,7 +305,7 @@ export const record: Species = {
 		// which the close view reads out to about ten centimetres across; thicker wood shows the
 		// fissures of the bole below it.
 		youngRadius: 0.05,
-		youngTint: [0.9, 1.1, 0.9],
+		youngTint: [0.42, 0.55, 0.5],
 		// The shallow fissures stand wider apart on the thick bole than on the limbs, as stills 15 and
 		// 16 show.
 		girthScale: [
