@@ -1364,14 +1364,11 @@ export function strandsView(plant: ClosePlant, lens: Lens): CloseView | undefine
 	const outward = normalize([best.point.at[0], 0, best.point.at[2]]);
 	if (!Number.isFinite(outward[0])) return undefined;
 	const target: V3 = [best.point.at[0], best.point.at[1] - STRANDS_LIMB_ABOVE, best.point.at[2]];
-	// The camera stands below and outside the rim, looking a little up at the strand, as the
-	// photograph does: the crown's mass stands above the frame's top and the sky lies behind the
-	// hanging shoots.
-	const rise = STRANDS_SPAN * 0.45;
+	// The camera stands level at the rim, looking outward past the strand to the sky.
 	const position: V3 = [
-		target[0] + outward[0] * Math.sqrt(Math.max(0, distance * distance - rise * rise)),
-		target[1] - rise,
-		target[2] + outward[2] * Math.sqrt(Math.max(0, distance * distance - rise * rise)),
+		target[0] - outward[0] * distance,
+		target[1],
+		target[2] - outward[2] * distance,
 	];
 	return {
 		position,
