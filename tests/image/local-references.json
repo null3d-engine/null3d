@@ -182,8 +182,8 @@
 	"chromium-swiftshader/compat/plant-common-ash.png": {
 		"test": "plant-common-ash",
 		"tier": "compat",
-		"date": "2026-11-09",
-		"reason": "drawn on this Mac's SwiftShader at 95134a7a0 after the engine merge, which moved the four panels by about a third; a CI drawing replaces it if it differs"
+		"date": "2026-11-07",
+		"reason": "the branch that adds the species is not pushed yet, so no CI run could draw the software set; it is drawn here on this Mac's SwiftShader with CI=1"
 	},
 	"chromium-swiftshader/compat/plant-european-beech.png": {
 		"test": "plant-european-beech",
@@ -200,14 +200,14 @@
 	"chromium-swiftshader/compat/plant-holm-oak.png": {
 		"test": "plant-holm-oak",
 		"tier": "compat",
-		"date": "2026-11-09",
-		"reason": "drawn on this Mac's SwiftShader at 7c9a68ecd after the whole-view light change; a CI drawing replaces it if it differs"
+		"date": "2026-11-07",
+		"reason": "plant-holm-oak's first software-set reference: CI run 42417946731 failed its browser shards because the reference was the missing file, and its artifact fetch stalled for half an hour without delivering them; the picture was drawn on this Mac with the SwiftShader rasteriser, which the repository's notes record as agreeing with CI's byte for byte."
 	},
 	"chromium-swiftshader/compat/plant-pedunculate-oak.png": {
 		"test": "plant-pedunculate-oak",
 		"tier": "compat",
 		"date": "2026-11-09",
-		"reason": "drawn on this Mac's SwiftShader at 90f85db36 after the look fixes moved the panels by about 16 per cent; a CI drawing replaces it if it differs"
+		"reason": "drawn on this Mac's SwiftShader at 8c31e17a3 after the oak's bole tint; CI replaces them"
 	},
 	"chromium-swiftshader/compat/plant-silver-birch.png": {
 		"test": "plant-silver-birch",
@@ -488,8 +488,8 @@
 	"chromium-swiftshader/webgl2/plant-common-ash.png": {
 		"test": "plant-common-ash",
 		"tier": "webgl2",
-		"date": "2026-11-09",
-		"reason": "drawn on this Mac's SwiftShader at 95134a7a0 after the engine merge, which moved the four panels by about a third; a CI drawing replaces it if it differs"
+		"date": "2026-11-07",
+		"reason": "the branch that adds the species is not pushed yet, so no CI run could draw the software set; it is drawn here on this Mac's SwiftShader with CI=1"
 	},
 	"chromium-swiftshader/webgl2/plant-european-beech.png": {
 		"test": "plant-european-beech",
@@ -506,14 +506,14 @@
 	"chromium-swiftshader/webgl2/plant-holm-oak.png": {
 		"test": "plant-holm-oak",
 		"tier": "webgl2",
-		"date": "2026-11-09",
-		"reason": "drawn on this Mac's SwiftShader at 7c9a68ecd after the whole-view light change; a CI drawing replaces it if it differs"
+		"date": "2026-11-07",
+		"reason": "plant-holm-oak's first software-set reference: CI run 42417946731 failed its browser shards because the reference was the missing file, and its artifact fetch stalled for half an hour without delivering them; the picture was drawn on this Mac with the SwiftShader rasteriser, which the repository's notes record as agreeing with CI's byte for byte."
 	},
 	"chromium-swiftshader/webgl2/plant-pedunculate-oak.png": {
 		"test": "plant-pedunculate-oak",
 		"tier": "webgl2",
 		"date": "2026-11-09",
-		"reason": "drawn on this Mac's SwiftShader at 90f85db36 after the look fixes moved the panels by about 16 per cent; a CI drawing replaces it if it differs"
+		"reason": "drawn on this Mac's SwiftShader at 8c31e17a3 after the oak's bole tint; CI replaces them"
 	},
 	"chromium-swiftshader/webgl2/plant-silver-birch.png": {
 		"test": "plant-silver-birch",
@@ -824,8 +824,8 @@
 	"chromium-swiftshader/webgpu/plant-common-ash.png": {
 		"test": "plant-common-ash",
 		"tier": "webgpu",
-		"date": "2026-11-09",
-		"reason": "drawn on this Mac's SwiftShader at 95134a7a0 after the engine merge, which moved the four panels by about a third; a CI drawing replaces it if it differs"
+		"date": "2026-11-07",
+		"reason": "the branch that adds the species is not pushed yet, so no CI run could draw the software set; it is drawn here on this Mac's SwiftShader with CI=1"
 	},
 	"chromium-swiftshader/webgpu/plant-european-beech.png": {
 		"test": "plant-european-beech",
@@ -842,14 +842,14 @@
 	"chromium-swiftshader/webgpu/plant-holm-oak.png": {
 		"test": "plant-holm-oak",
 		"tier": "webgpu",
-		"date": "2026-11-09",
-		"reason": "drawn on this Mac's SwiftShader at 7c9a68ecd after the whole-view light change; a CI drawing replaces it if it differs"
+		"date": "2026-11-07",
+		"reason": "plant-holm-oak's first software-set reference: CI run 42417946731 failed its browser shards because the reference was the missing file, and its artifact fetch stalled for half an hour without delivering them; the picture was drawn on this Mac with the SwiftShader rasteriser, which the repository's notes record as agreeing with CI's byte for byte."
 	},
 	"chromium-swiftshader/webgpu/plant-pedunculate-oak.png": {
 		"test": "plant-pedunculate-oak",
 		"tier": "webgpu",
 		"date": "2026-11-09",
-		"reason": "drawn on this Mac's SwiftShader at 90f85db36 after the look fixes moved the panels by about 16 per cent; a CI drawing replaces it if it differs"
+		"reason": "drawn on this Mac's SwiftShader at 8c31e17a3 after the oak's bole tint; CI replaces them"
 	},
 	"chromium-swiftshader/webgpu/plant-silver-birch.png": {
 		"test": "plant-silver-birch",
@@ -988,5 +988,23 @@
 		"tier": "webgpu",
 		"date": "2026-10-30",
 		"reason": "No CI run has drawn this picture yet: run 41006111918 drew the three weather pictures and lost them when its shard reached the job's time limit, before the guard let a timed-out shard upload. This Mac's SwiftShader drew these three, and the next CI drawing of them replaces them."
+	},
+	"chromium-swiftshader/compat/plant-bracken.png": {
+		"test": "plant-bracken",
+		"tier": "compat",
+		"date": "2026-11-09",
+		"reason": "drawn on this Mac's SwiftShader at 97c6fd194 after the engine merge; a CI drawing replaces it if it differs"
+	},
+	"chromium-swiftshader/webgl2/plant-bracken.png": {
+		"test": "plant-bracken",
+		"tier": "webgl2",
+		"date": "2026-11-09",
+		"reason": "drawn on this Mac's SwiftShader at 97c6fd194 after the engine merge; a CI drawing replaces it if it differs"
+	},
+	"chromium-swiftshader/webgpu/plant-bracken.png": {
+		"test": "plant-bracken",
+		"tier": "webgpu",
+		"date": "2026-11-09",
+		"reason": "drawn on this Mac's SwiftShader at 97c6fd194 after the engine merge; a CI drawing replaces it if it differs"
 	}
 }

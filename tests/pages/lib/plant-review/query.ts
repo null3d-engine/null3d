@@ -121,6 +121,13 @@ export interface PlantReviewQuery {
 	 */
 	readonly pressed?: boolean;
 	/**
+	 * For a single-leaf still: how far the leaf has opened, from 0 for a crozier still rolled to 1
+	 * for a leaf fully out. Absent, it is drawn as it stands on a mature plant.
+	 */
+	readonly age?: number;
+	/** For a cut branch: whether its candidates rank by how young they are, so the piece is opening. */
+	readonly young?: boolean;
+	/**
 	 * Whether a limb view frames the crown's outer surface, whose depth into the crown is part of its
 	 * subject, rather than one branch that its picture shows against a plain ground.
 	 */
@@ -153,7 +160,11 @@ export interface PlantReviewQuery {
 	 * its photograph shows. From 0.
 	 */
 	readonly barkZone?: number;
-	/** Metres of bark or limb that a bark or limb view's frame height covers. */
+	/**
+	 * Metres that a close view covers: the bark or limb a bark or limb view frames, or the width a
+	 * cut view shows across the frame, where the reference is a picture of a part of the piece
+	 * rather than the whole of it.
+	 */
 	readonly span?: number;
 	/**
 	 * The row share on which a view up the stem puts the stem's first fork: the camera pitches up
