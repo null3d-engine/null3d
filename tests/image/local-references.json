@@ -239,6 +239,12 @@
 		"date": "2026-11-09",
 		"reason": "pkg/silver-birch at 048d8b561 adds the silver birch and its picture tests; this Mac's SwiftShader drew the new set with CI=1, and the branch's first CI run replaces it"
 	},
+	"chromium-swiftshader/compat/plant-sparse-oak.png": {
+		"test": "plant-sparse-oak",
+		"tier": "compat",
+		"date": "2026-11-09",
+		"reason": "a new picture of the sparse form: the oak at the level a phone asks for, drawn here while CI has no reference for the test; a CI drawing replaces it if it differs"
+	},
 	"chromium-swiftshader/compat/plant-weeping-willow.png": {
 		"test": "plant-weeping-willow",
 		"tier": "compat",
@@ -568,6 +574,12 @@
 		"tier": "webgl2",
 		"date": "2026-11-09",
 		"reason": "pkg/silver-birch at 048d8b561 adds the silver birch and its picture tests; this Mac's SwiftShader drew the new set with CI=1, and the branch's first CI run replaces it"
+	},
+	"chromium-swiftshader/webgl2/plant-sparse-oak.png": {
+		"test": "plant-sparse-oak",
+		"tier": "webgl2",
+		"date": "2026-11-09",
+		"reason": "a new picture of the sparse form: the oak at the level a phone asks for, drawn here while CI has no reference for the test; a CI drawing replaces it if it differs"
 	},
 	"chromium-swiftshader/webgl2/plant-weeping-willow.png": {
 		"test": "plant-weeping-willow",
@@ -928,6 +940,12 @@
 		"tier": "webgpu",
 		"date": "2026-11-09",
 		"reason": "pkg/silver-birch at 048d8b561 adds the silver birch and its picture tests; this Mac's SwiftShader drew the new set with CI=1, and the branch's first CI run replaces it"
+	},
+	"chromium-swiftshader/webgpu/plant-sparse-oak.png": {
+		"test": "plant-sparse-oak",
+		"tier": "webgpu",
+		"date": "2026-11-09",
+		"reason": "a new picture of the sparse form: the oak at the level a phone asks for, drawn here while CI has no reference for the test; a CI drawing replaces it if it differs"
 	},
 	"chromium-swiftshader/webgpu/plant-weeping-willow.png": {
 		"test": "plant-weeping-willow",

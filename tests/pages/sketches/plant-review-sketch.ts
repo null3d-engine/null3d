@@ -514,6 +514,7 @@ export default defineSketch(async (ctx) => {
 		variant: QUERY.variant ?? 0,
 		near: true,
 		...(QUERY.season && { season: QUERY.season }),
+		...(QUERY.sparse !== undefined && { sparse: QUERY.sparse }),
 	};
 	const turn0 = (QUERY.turn ?? 0) * DEG;
 	const cuttingPart = VIEW === 'panels' ? 'cluster' : SPEC.cutting;
