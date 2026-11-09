@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import {
 	type CutCamera,
 	cutCamera,
+	leafFrame,
 	projectRow,
 	standCamera,
 } from '../../../tests/pages/lib/plant-review/framing.ts';
@@ -488,5 +489,28 @@ describe('the pieces a plant is drawn as', () => {
 				24,
 			),
 		).toBe(1);
+	});
+});
+
+describe('a cut piece framed in leaf lengths', () => {
+	test('gives two photographs of different leaf sizes two different frames', () => {
+		const young = leafFrame(7.4, 0.1, 0, 1, 20);
+		const mature = leafFrame(7.4, 1.0, 0, 1, 20);
+		expect(young.tall).toBeCloseTo(0.74, 6);
+		expect(mature.tall).toBeCloseTo(7.4, 6);
+		expect(young.distance).not.toBeCloseTo(mature.distance, 2);
+	});
+
+	test('frames as many leaves of the named length as the photograph counts', () => {
+		expect(leafFrame(4.5, 0.1, 0, 1, 20).tall).toBeCloseTo(0.45, 6);
+		expect(leafFrame(7.4, 0.1, 0, 1, 20).distance).not.toBeCloseTo(
+			leafFrame(4.5, 0.1, 0, 1, 20).distance,
+			2,
+		);
+	});
+
+	test('lengthens the run only when the roll lays the piece across the frame', () => {
+		expect(leafFrame(2, 0.5, 0, 2, 20).run).toBeCloseTo(1, 6);
+		expect(leafFrame(2, 0.5, 90, 2, 20).run).toBeCloseTo(2, 6);
 	});
 });
