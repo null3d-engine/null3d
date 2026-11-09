@@ -557,17 +557,22 @@ export default defineSketch(async (ctx) => {
 	 * which is the piece a cutting's frame and the close views measure in.
 	 */
 	const leafLength =
+		foliage.kind !== 'blade'
+			? undefined
+			: (typeof foliage.leaf.length === 'number' ? foliage.leaf.length : foliage.leaf.length.mean) *
+					(foliage.compound ? foliage.compound.rachis + 1 : 1) +
+				(foliage.compound ? foliage.leaf.petiole.length : 0);
+	/**
+	 * A grass blade's length in metres. A cutting of several blades is framed in the leaf length its
+	 * photograph was measured in, which a blade a metre long would over-scale tenfold, so only a
+	 * picture of one leaf takes its frame from this.
+	 */
+	const bladeLength =
 		foliage.kind === 'grass-blade'
 			? typeof foliage.blade.length === 'number'
 				? foliage.blade.length
 				: foliage.blade.length.mean
-			: foliage.kind !== 'blade'
-				? undefined
-				: (typeof foliage.leaf.length === 'number'
-						? foliage.leaf.length
-						: foliage.leaf.length.mean) *
-						(foliage.compound ? foliage.compound.rachis + 1 : 1) +
-					(foliage.compound ? foliage.leaf.petiole.length : 0);
+			: undefined;
 	/** What the close views read of the plant: its wood alone for a view that draws the wood alone. */
 	const closePlant = (woodOnly: boolean): ClosePlant => ({
 		skeleton,
@@ -904,9 +909,11 @@ export default defineSketch(async (ctx) => {
 				// A piece framed at the scale its photograph shows, in leaf lengths, stands on its cut:
 				// the cut on the frame's lower edge, the piece running up across it and off its far edge
 				// where it is longer, as a cut branch runs off its photograph. A roll lays it across.
-				if (QUERY.leaves !== undefined && leafLength !== undefined) {
+				const oneLeaf = view === 'leaf-upper' || view === 'leaf-under';
+				const length = leafLength ?? (oneLeaf ? bladeLength : undefined);
+				if (QUERY.leaves !== undefined && length !== undefined) {
 					const roll = (QUERY.roll ?? 0) * DEG;
-					const tall = QUERY.leaves * leafLength;
+					const tall = QUERY.leaves * length;
 					const run = Math.abs(Math.sin(roll)) > Math.SQRT1_2 ? tall * aspect : tall;
 					const distance = tall / 2 / Math.tan((fov * DEG) / 2);
 					return { ...orbit([0, run / 2, 0], distance, e, turn, fov), roll, near: 0.01 };
