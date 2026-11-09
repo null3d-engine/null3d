@@ -188,8 +188,8 @@
 	"chromium-swiftshader/compat/plant-hosta.png": {
 		"test": "plant-hosta",
 		"tier": "compat",
-		"date": "2026-11-08",
-		"reason": "a new species has no CI drawing yet; CI's own drawing of the page replaces each one on its next run"
+		"date": "2026-11-09",
+		"reason": "drawn on this Mac's SwiftShader at 329daee84 after the whole-view light change moved the panels by a fifth; a CI drawing replaces it if it differs"
 	},
 	"chromium-swiftshader/compat/plant-pedunculate-oak.png": {
 		"test": "plant-pedunculate-oak",
@@ -470,8 +470,8 @@
 	"chromium-swiftshader/webgl2/plant-hosta.png": {
 		"test": "plant-hosta",
 		"tier": "webgl2",
-		"date": "2026-11-08",
-		"reason": "a new species has no CI drawing yet; CI's own drawing of the page replaces each one on its next run"
+		"date": "2026-11-09",
+		"reason": "drawn on this Mac's SwiftShader at 329daee84 after the whole-view light change moved the panels by a fifth; a CI drawing replaces it if it differs"
 	},
 	"chromium-swiftshader/webgl2/plant-pedunculate-oak.png": {
 		"test": "plant-pedunculate-oak",
@@ -782,8 +782,8 @@
 	"chromium-swiftshader/webgpu/plant-hosta.png": {
 		"test": "plant-hosta",
 		"tier": "webgpu",
-		"date": "2026-11-08",
-		"reason": "a new species has no CI drawing yet; CI's own drawing of the page replaces each one on its next run"
+		"date": "2026-11-09",
+		"reason": "drawn on this Mac's SwiftShader at 329daee84 after the whole-view light change moved the panels by a fifth; a CI drawing replaces it if it differs"
 	},
 	"chromium-swiftshader/webgpu/plant-pedunculate-oak.png": {
 		"test": "plant-pedunculate-oak",
