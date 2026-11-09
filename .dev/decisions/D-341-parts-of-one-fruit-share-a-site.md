@@ -1,4 +1,4 @@
-# D-335: the parts of one fruit hang on one twig
+# D-341: the parts of one fruit hang on one twig
 
 Status: decided and built as the optional field `extras[].group`. The European beech sets it on its
 three fruit entries. Task: none.

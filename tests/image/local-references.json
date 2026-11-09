@@ -173,6 +173,12 @@
 		"date": "2026-10-29",
 		"reason": "the card's stored normal no longer turns with the camera's bearing, so the pictures whose eye lies off the tree's forward moved; drawn on the software renderer"
 	},
+	"chromium-swiftshader/compat/plant-common-alder.png": {
+		"test": "plant-common-alder",
+		"tier": "compat",
+		"date": "2026-11-09",
+		"reason": "SwiftShader drawn on the reference Mac at 0fdef2684, after the leaf optics, the cluster counts and the young-bark framing changed what the four panels draw"
+	},
 	"chromium-swiftshader/compat/plant-common-ash.png": {
 		"test": "plant-common-ash",
 		"tier": "compat",
@@ -454,6 +460,12 @@
 		"tier": "webgl2",
 		"date": "2026-10-31",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that fixes the look review's faults; CI's own drawing replaces the set when the branch runs there"
+	},
+	"chromium-swiftshader/webgl2/plant-common-alder.png": {
+		"test": "plant-common-alder",
+		"tier": "webgl2",
+		"date": "2026-11-09",
+		"reason": "SwiftShader drawn on the reference Mac at 0fdef2684, after the leaf optics, the cluster counts and the young-bark framing changed what the four panels draw"
 	},
 	"chromium-swiftshader/webgl2/plant-common-ash.png": {
 		"test": "plant-common-ash",
@@ -766,6 +778,12 @@
 		"tier": "webgpu",
 		"date": "2026-10-31",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that fixes the look review's faults; CI's own drawing replaces the set when the branch runs there"
+	},
+	"chromium-swiftshader/webgpu/plant-common-alder.png": {
+		"test": "plant-common-alder",
+		"tier": "webgpu",
+		"date": "2026-11-09",
+		"reason": "SwiftShader drawn on the reference Mac at 0fdef2684, after the leaf optics, the cluster counts and the young-bark framing changed what the four panels draw"
 	},
 	"chromium-swiftshader/webgpu/plant-common-ash.png": {
 		"test": "plant-common-ash",
