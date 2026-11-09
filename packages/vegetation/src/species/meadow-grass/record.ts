@@ -29,8 +29,8 @@ export const record: Species = {
 		shoots: { mean: 50, spread: 6 },
 		base: 0.05,
 		lean: [
-			[0, 3],
-			[1, 8],
+			[0, 1],
+			[1, 4],
 		],
 		// Still 22 and the fact sheet: two to four blades on each tiller, set in two ranks. The
 		// whole-plant pictures carry four or five, so the crown takes the fuller end.
