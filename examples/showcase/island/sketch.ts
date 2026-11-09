@@ -10,16 +10,16 @@
 // controls pick a time of day (a summer morning at its start) and turn the effects on and off, among them a
 // "DSLR" lens with depth of field. For held frames, the sketch's address takes the mood:
 // `?mood=Midday&dslr`.
-import { defineSketch, type QualityPreset } from '@null3d/engine';
+import { defineSketch } from '@null3d/engine';
 import { type CameraBounds, createCinematic, type Shot } from '../../lib/cinematic';
 import { EFFECT_LAYER, INTERIOR_LAYER, SUN_LAYERS } from '../../lib/layers';
-import type { ShadowReach } from '../../lib/shadow-range';
 import { createShowcaseEffects } from '../../lib/showcase-effects';
 import { createMoods, isMood } from '../../lib/stage';
-import { SEA_LEVEL, TOWN } from './island';
+import { SEA_LEVEL } from './island';
 import { createLand } from './land';
 import { groundHeight } from './plan';
 import { createSea } from './sea';
+import { SHADOW_DISTANCE, SHADOW_REACH } from './shadow';
 import { createTown } from './town';
 import { CASTER_LAYER, createTrees } from './trees';
 
@@ -31,31 +31,6 @@ const HEADING = 4.6;
 
 /** The hour that the scene starts at. */
 const MORNING = 10;
-
-/**
- * The town's core, which keeps its shadows wherever the camera stands. The sun's shadows reach this
- * far close up, and further as the camera draws back.
- */
-export const SHADOW_REACH: ShadowReach = {
-	// Far enough for the route's low flights, so its shadows hold still there: each step of the range moves every
-	// cascade, and every shadow in view jumps at once.
-	distance: 600,
-	center: [TOWN.x, TOWN.height + 20, TOWN.z],
-	radius: TOWN.radius * 1.2,
-};
-
-/**
- * How far the sun's shadows reach on each preset, in meters. A phone draws at Low, where the shadow
- * maps are the scene's largest cost, so its range stays short and fixed. The far hills then lose
- * their shadows, and the town keeps them from the views a phone shows. The other presets take the
- * scene's stretchable range, which grows as the camera draws back.
- */
-export const SHADOW_DISTANCE: Record<QualityPreset, number> = {
-	low: 250,
-	medium: SHADOW_REACH.distance,
-	high: SHADOW_REACH.distance,
-	ultra: SHADOW_REACH.distance,
-};
 
 /**
  * Where the Manual camera may go: far enough back to see the whole island, and down to any place on
