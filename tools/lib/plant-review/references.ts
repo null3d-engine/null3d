@@ -1386,19 +1386,10 @@ export function crownStartRow(spans: Int32Array, box: Box): number {
 	// uncapped margin swallows the crown and the foot lands wherever the first wide run begins.
 	const limit = Math.min(Math.max(trunk * 2.5, widest * 0.12), widest * 0.55);
 	const run = Math.max(2, Math.round(tall * 0.03));
-	// A ground line in frame runs wider than the plant's stem, so skip those rows first: they are
-	// not the crown, and their width would let the scan below find the ground as a crown.
-	let floor = box.bottom;
-	while (floor > box.top && width(floor) > limit) floor--;
-	for (let y = floor; y >= box.top; y--) {
-		let wide = true;
-		for (let k = 0; k < run && y - k >= box.top; k++) if (width(y - k) <= limit) wide = false;
-		if (wide) return y;
-	}
-	// No wide run from the bottom means the lowest bands hold a ground line: a lake or a grassy
-	// slope wider than the crown makes the trunk estimate the ground's width, and its limit clears
-	// nothing. The crown's own rows still say where it starts, so find the first narrow run below
-	// its wide top. A photograph whose start the scan above finds never reaches this.
+	// The crown's own rows say where it starts: its widest stretch runs from the top down, and the
+	// first narrow stretch below it that the stem continues below is its base. The scan from the
+	// foot's end cannot be trusted here, because a flared or buttressed foot is a wide stretch of
+	// its own, and on a thick stem the flare is found first and the crown's base lands on it.
 	return crownStartFromTop(spans, box, limit);
 }
 
