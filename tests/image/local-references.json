@@ -189,7 +189,7 @@
 		"test": "plant-pedunculate-oak",
 		"tier": "compat",
 		"date": "2026-11-09",
-		"reason": "drawn on this Mac's SwiftShader at 8c31e17a3 after the oak's bole tint; CI replaces them"
+		"reason": "drawn on this Mac's SwiftShader at f49f953e2 after the envelope re-fit moved the panels by about 14.6 per cent; a CI drawing replaces it if it differs"
 	},
 	"chromium-swiftshader/compat/probe-grid-wall-night.png": {
 		"test": "probe-grid-wall-night",
@@ -465,7 +465,7 @@
 		"test": "plant-pedunculate-oak",
 		"tier": "webgl2",
 		"date": "2026-11-09",
-		"reason": "drawn on this Mac's SwiftShader at 8c31e17a3 after the oak's bole tint; CI replaces them"
+		"reason": "drawn on this Mac's SwiftShader at f49f953e2 after the envelope re-fit moved the panels by about 14.6 per cent; a CI drawing replaces it if it differs"
 	},
 	"chromium-swiftshader/webgl2/probe-grid-wall-night.png": {
 		"test": "probe-grid-wall-night",
@@ -771,7 +771,7 @@
 		"test": "plant-pedunculate-oak",
 		"tier": "webgpu",
 		"date": "2026-11-09",
-		"reason": "drawn on this Mac's SwiftShader at 8c31e17a3 after the oak's bole tint; CI replaces them"
+		"reason": "drawn on this Mac's SwiftShader at f49f953e2 after the envelope re-fit moved the panels by about 14.6 per cent; a CI drawing replaces it if it differs"
 	},
 	"chromium-swiftshader/webgpu/probe-grid-wall-night.png": {
 		"test": "probe-grid-wall-night",
