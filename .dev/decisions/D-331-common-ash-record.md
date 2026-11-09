@@ -529,9 +529,12 @@ where it stood at 2.08. The base and mid-trunk hold at 2.77 and 1.47.
 The batch re-read was drawn at `980498366`, which merges `6e44d5063`'s strands camera and the land
 head. The whole views read 0.2512, 0.2244 and 0.2442 against 0.2608, 0.1869 and 0.2147, all inside.
 Their crown aspects are 1.157, 1.096 and 1.157 against the photographs' 1.250, 1.227 and 0.900. The
-young bark reads 6.68, drawn at `e0dc7f329` after `038dac7cc` reverted the young-wood zone tint, so
-young wood again takes only the record's own tint. That is a texture-source note, and it is expected
-to stand out under the masked measure, as the oak's 14.32 and the beech's 7.33 do. The ash has no strands reference, so that view has no
+young bark reads 12.03 at the shared frame, `thin` 0.015 with a `span` of 0.1 and the mask, landed
+at `b40edf899`, drawn at `b62625f07`. The ash's own entry for that picture now carries the same
+pair rather than a thin alone. It read 6.68 with the narrower frame, and the rise is the frame's:
+the wider span takes in the branches behind the shoot, which no mask separates from it. That is a
+texture-source note, expected to stand out under the masked measure as the oak's 11.28 and the
+beech's 7.33 do. The ash has no strands reference, so that view has no
 picture.
 
 The measure came first, because it was wrong. A slot's `barkMask` drops every patch pixel as close
