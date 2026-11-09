@@ -106,6 +106,11 @@ export interface PlantReviewQuery {
 	 * naming this has those patches drop every pixel close to the picture's own background.
 	 */
 	readonly barkMask?: boolean;
+	/**
+	 * Whether a view that draws the wood alone draws the plant's foliage as well, which a bark
+	 * photograph taken among leaves needs if its colour is to be compared with like.
+	 */
+	readonly foliage?: boolean;
 	/** Whether the twigs view looks for the plant's fruit rather than for a sunlit tip. */
 	readonly fruit?: boolean;
 	/**
@@ -220,7 +225,7 @@ const SHARE_FIELDS = new Set(['horizon', 'fill', 'targetY', 'targetX', 'top', 'a
 const COUNT_FIELDS = new Set(['turns', 'columns']);
 
 /** The switches, written as 1 when on. */
-const SWITCHES = ['measure', 'scale', 'matte', 'fruit', 'surface', 'barkMask'] as const;
+const SWITCHES = ['measure', 'scale', 'matte', 'fruit', 'surface', 'barkMask', 'foliage'] as const;
 
 /** A short form of a number for a query, so a query reads well and keeps its precision. */
 function short(value: number): string {
@@ -354,6 +359,7 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 		...(pressed !== null && { pressed: pressed === '1' }),
 		measure: params.get('measure') === '1',
 		barkMask: params.get('barkMask') === '1',
+		foliage: params.get('foliage') === '1',
 		scale: params.get('scale') === '1',
 		matte: params.get('matte') === '1',
 		fruit: params.get('fruit') === '1',
