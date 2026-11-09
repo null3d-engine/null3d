@@ -177,43 +177,49 @@ record grows outlines 0.67 against `02`, 0.60 against `18`, 0.62 against `30` an
   scales a view's light and its `lamp` colours it, on the field views and the copy stand alike. Still
   `13` took 4.53 to 2.45 with `daylight` 1.27 and a lamp, while still `25`, which carries no slot
   entry, held at 2.80 across three settings — the control that shows the light is per picture.
-- **Row 8 is open, and its evidence is the three close views**, not the young bark, which is a
-  supplementary note about the material and cannot set a count.
+- **Row 8 rests on the three close views**, not the young bark, which is a supplementary note about
+  the material and cannot set a count. Read at run `alder-bark-tint-clean-1`, commit `9a57b04a0`,
+  dirty false:
 
-  | View | Photograph | Render | Distance | What misses |
-  | --- | --- | --- | --- | --- |
-  | `14` base | 41.0, 2.2, 8.6 | 45.1, −1.5, 11.8 | 6.66, but see below | not judgeable as bark |
-  | `15` mid-trunk | 25.8, 1.0, 3.6 | 26.2, 3.7, 3.5 | **3.66** | red-green by six tenths |
-  | `16` limb | 57.9, 2.1, 5.6 | 54.4, 3.6, 6.1 | **3.78** | lightness by seven tenths |
+  | View | Photograph | Render | Plain | Masked | What the view says |
+  | --- | --- | --- | --- | --- | --- |
+  | `14` base | 41.0, 2.2, 8.6 | 44.9, −2.2, 11.8 | 7.28 | 8.64 | a limit of the measure |
+  | `15` mid-trunk | 25.8, 1.0, 3.6 | 25.8, 2.3, 3.3 | **1.88** | 3.91 | inside |
+  | `16` limb | 57.9, 2.1, 5.6 | 54.4, 3.6, 6.1 | 3.78 | 33.89 | void both ways |
 
-  `14`'s 6.66 is a whole-frame mean that cannot judge bark at all, because half of its nine patch
-  pixels are sky and ground on a bole this thick; its honest reading is the patch-based one, where
+- **The mid-trunk's gap was red-green, and one tint closes it.** Its photograph is 25.8, 1.0, 3.6
+  against a render of 26.2, 3.7, 3.5, so lightness agreed within 0.4 and the red-green axis stood
+  2.7 high. A lightness ratio would have left 3.65, so the lever is the axis. The trunk zone takes
+  the ratio the pair itself gives in linear light, 0.89 on red and 0.97 on blue. The plain pair
+  falls from 3.66 to **1.88** and lightness moves 0.1. The texture set still carries the tone; the
+  zone only pulls it.
+- **`14`'s 7.28 is a whole-frame mean that cannot judge bark**, because half of its nine patch
+  pixels are sky and ground on a bole this thick. Its honest reading is the patch-based one, where
   the bark stands within half a step in light and red-green and 2.8 too blue. That is a limit of
   the measure and is recorded as such, not counted as a pass.
-- **The bark mask is a per-picture decision, and it judges two of the three views.** The mask drops
-  each patch pixel within a small color distance of a corner. It helps only where the corners are
-  backdrop. Both forms were read on the same frame files at the same commit:
+- **The bark mask is a per-picture decision.** The mask drops each patch pixel within a small color
+  distance of a corner. It helps only where the corners are backdrop. Both forms were read on the
+  same frame files of the same round:
 
-  | View | Photograph's four corners | Patch pixels dropped, photograph and render | Unmasked | Masked |
+  | View | Photograph's four corners | Patch pixels dropped, photograph and render | Plain | Masked |
   | --- | --- | --- | --- | --- |
-  | `14` base | sky 77.7, sky 86.8, sky 78.2, soil 38.5 | 25.9 and 53.4 per cent | 6.66 | 8.41 |
-  | `15` mid-trunk | bark 63.0, 68.1, 60.8 and 64.3 | 4.2 and 85.2 per cent | **3.66** | 4.19 |
+  | `14` base | sky 77.7, sky 86.8, sky 78.2, soil 38.5 | 25.9 and 53.8 per cent | 7.28 | 8.64 |
+  | `15` mid-trunk | bark 63.0, 68.1, 60.8 and 64.3 | 4.2 and 86.0 per cent | **1.88** | 3.91 |
   | `16` limb | limb 35.3, sky 71.7, sky 70.2, bark 46.5 | 77.6 and 73.6 per cent | **3.78** | 33.89 |
 
-  `15` is judged unmasked. All four of its photograph's corners are bark. The mask calls 85 per
-  cent of the render's patch pixels backdrop, because the render's bark sits within one step of its
-  own backdrop's tone. `16` is judged unmasked for the same reason. Its photograph has a limb at
-  one corner, so the mask keeps the shaded limb and drops the lit one, and the render does the
-  opposite. Its plant-outline pair, which both pictures give, agrees at 3.68. `14`'s corners are
-  backdrop, which should suit the mask, but it drops twice as many of the render's patch pixels as
-  of the photograph's. The two kept sets are different populations, so the figure stays a limit.
-  Masked, its bark is 10.1 darker than the photograph's rather than 4.1 lighter, so its direction
-  flips with the form and only `15` and `16` can carry one.
-- **The two judged views pull opposite ways on one trunk layer.** `16` draws 3.5 of light too dark
-  and `15` 2.7 too red, and both take the same layer. No single tint serves them; the honest lever
-  is a second trunk layer, which is a texture build with a kit cost and stays **unbuilt** as a
-  landing item. `14` cannot settle which way its bark is off, because its direction flips with the
-  form.
+  `15` is judged plain. All four of its photograph's corners are bark. The mask calls 86 per cent
+  of the render's patch pixels backdrop, because the render's bark sits within one step of its own
+  backdrop's tone. `16` is void both ways. Its photograph has a limb at one corner, so the mask
+  keeps the shaded limb and drops the lit one, and the render does the opposite; the mask reads
+  33.89, which is not a bark figure. `14`'s corners are backdrop, which should suit the mask, but it
+  drops twice as many of the render's patch pixels as of the photograph's. The kept sets are
+  different populations, so the figure stays a limit. Masked, its bark is 10.4 darker than the
+  photograph's rather than 4.0 lighter, so its direction flips with the form.
+- **A height split cannot separate `14` from `15`.** The mid-trunk frames 1.28 to 1.73 m, at a
+  camera stand-off of a quarter of a meter either side of 1.5 m. The base camera orbits a point at
+  0.9 m from 2.76 m away, and at the review's 75-degree lens its frame runs well past both edges of
+  that band. The two views hold the same wood, so a zone boundary would cut bark both of them see.
+  One trunk zone serves the row, and the base follows the mid-trunk.
 - The two cluster photographs draw different shoots of the one class. The slot file names the second
   prototype for the studio still, which costs no kit byte: `23` reads 0.150 background against its
   photograph's 0.152 with outline overlap 0.421, and `11` keeps the first at 0.166 against 0.173 and
