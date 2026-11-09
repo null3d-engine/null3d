@@ -417,12 +417,12 @@ export const record: Species = {
 		// a shoot of this length spans half a column of pixels at the switch, and the nearer rows
 		// carry only the shoots a walk up to the curtain needs.
 		switchPixels: [500, 12, 160],
-		// The cards stand well past the shoots they picture, so a hanging shoot's card overlaps its
-		// neighbours and the far crown reads as one curtain rather than a fringe of specks.
-		cardGrow: 4,
+		// The cards stand over three times the shoots they picture, so a hanging shoot's card overlaps
+		// its neighbours and the far crown reads as one curtain rather than a fringe of specks.
+		cardGrow: 3.6,
 		// Stills 01 and 02: a card's twig is thinner than a pixel at a whole view, so each draws its
 		// supporting twig as a line and the join shows.
-		cardStalk: 4,
+		cardStalk: 3.5,
 		// A hanging shoot's card stands its whole length ahead of the row that draws it, so the
 		// stalk runs on to the card's centre and the curtain meets the wood it grows from.
 		cardStalkToFoliage: true,
@@ -443,9 +443,6 @@ export const record: Species = {
 	textures: 'own',
 	variants: 6,
 	seedSalt: 20261108,
-	// A first pass at the floors a phone's lighter form keeps, set from the species' form and to
-	// be measured on the phone set before they are trusted.
-	sparse: { limbs: 0.4, leaves: 0.5, coarseness: 0.55 },
 	forms,
 	roundBand,
 	cuttings: {
