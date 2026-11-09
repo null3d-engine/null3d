@@ -58,6 +58,9 @@ run('tree-generation', async () => {
 			detail: detail as GenerateRequest['detail'],
 			species: species as GenerateRequest['species'],
 			seeds: SEEDS,
+			// The page's `sparse=1` grows each species' light form, which is what a phone or a
+			// tablet asks for; without it the set is measured at the record's own form.
+			sparse: new URLSearchParams(location.search).has('sparse') ? 1 : 0,
 		};
 		return new Promise((resolve, reject) => {
 			pending = { resolve, reject };
