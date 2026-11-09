@@ -514,14 +514,24 @@ the tool's measure was fixed. The final settings, measured at run `ash-121-retun
 All three stand inside the band of 3. The base slot also carries a `daylight` of 1.0, which brings
 the foot's lightness onto its photograph's.
 
-The count is eleven of twelve. The reviewer confirmed row 8 on run `ash-123` at `dbe7eebda`, 769 of
-769 frames and all 32 reference files. Row 10's crown colour stays open at 12.9, 11.9 and 4.4
-against the band of 3, because a stated limit still fails its row.
+The count is twelve of twelve. The reviewer confirmed row 8 on run `ash-123` at `dbe7eebda`, 769
+of 769 frames and all 32 reference files.
+
+Row 10 passes on the owner's acceptance under D-334, not on its figure. Its only fault is the shared
+review lighting: the far-crown shading under the scene's light. The owner ruled that such a row
+passes, and the engine change becomes a task of its own. Its figures stay recorded beside the
+acceptance, 12.9, 11.9 and 4.4 against the band of 3. Nobody then mistakes a dark crown for a fixed
+one. Scored on the stated limit alone, the ash would read eleven.
 
 Re-read on the land head at `31e48922f`, which brings the thin-wood tint, the limb stands at 1.87
-where it stood at 2.08. The base and mid-trunk hold at 2.77 and 1.47. The young bark measures
-7.65 there, up from 6.53 on the earlier material, and it is a texture-source note rather than a row.
-The whole views hold: 0.2512, 0.2244 and 0.2442.
+where it stood at 2.08. The base and mid-trunk hold at 2.77 and 1.47.
+
+The batch re-read was drawn at `980498366`, which merges `6e44d5063`'s strands camera and the land
+head. The whole views read 0.2512, 0.2244 and 0.2442 against 0.2608, 0.1869 and 0.2147, all inside.
+Their crown aspects are 1.157, 1.096 and 1.157 against the photographs' 1.250, 1.227 and 0.900. The
+young bark reads 7.65, a texture-source note. It is expected to stand out under the masked measure,
+as the oak's 14.32 and the beech's 7.33 do. The ash has no strands reference, so that view has no
+picture.
 
 The measure came first, because it was wrong. A slot's `barkMask` drops every patch pixel as close
 to the picture's corners as the backdrop is. Its first version read the backdrop as one colour: the
