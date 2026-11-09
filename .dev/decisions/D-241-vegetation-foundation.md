@@ -409,15 +409,17 @@ those presets draw on core WebGPU only, and the tablet offers no WebGPU adapter.
   the figure is measured: the far cards' pass takes 43.5 to 49.0 and 49.2 to 62.5 ms, and each
   budget takes the larger Apple figure.
 - **Generation:** a preset's set of variants must build at an average under 250 ms a variant on the
-  reference Mac, the M3 Max this repository develops on, and one species may sit above the figure.
-  The budget is the set's, as the Mac measured it: its Low set averages 172.79 ms while its beech,
-  oak and alder each read above 250, so the line was never a ceiling on every species. It was first
+  reference Mac, the M3 Max this repository develops on. The budget is the set's average, and
+  individual species may sit above it: each run's record states how many and by how much. The Mac's
+  Low set averages 172.79 ms, with its beech, oak and alder above 250, so the line was never a
+  ceiling on every species. It was first
   set for a whole variant set on the slowest measured device, while the stand-in carried about 4,300
   triangles a variant. The catalogue's species carry 50,718 to 887,750, so a preset's set grew about
   sixty times past that line's reach, and the owner restated the line per variant. On phones and
   tablets the six costly broadleaves and the holm oak grow a sparse form, and the owner ruled that
   lighter set for those devices: it measures 110.6 ms a variant on the iPad Pro 13 and 141.7 on the
-  S25, both inside the line, where the full set measured 213.8 on the phone. The stand-in's 78
+  S25, both inside the line, where the full set measured 213.8 on the phone, and the iPad's run has
+  the beech above the figure while the S25's has the beech and the oak. The stand-in's 78
   variants took 77.6 to 105.2 ms on the iPad Pro 13 and 161.9 to 198.6 ms on the S25, inside the old
   whole-set figure; a first S25 run read 213.4 ms at Low on a hot phone and is discarded as an upper
   bound.
