@@ -61,6 +61,19 @@ function spreadProblems(spread: Spread, path: string, positive: boolean, out: st
 		out.push(`${path} can draw ${mean - half}; it must stay above 0`);
 }
 
+/** A species' sparse floors' problems: each share from 0.05 to 1, and the coarsening from 0 to 1. */
+function sparseProblems(record: Species, out: string[]): void {
+	const sparse = record.sparse;
+	if (!sparse) return;
+	for (const key of ['limbs', 'leaves'] as const) {
+		const value = sparse[key];
+		if (value < 0.05 || value > 1)
+			out.push(`sparse.${key} is ${value}; a sparse floor lies from 0.05 to 1`);
+	}
+	if (sparse.coarseness < 0 || sparse.coarseness > 1)
+		out.push(`sparse.coarseness is ${sparse.coarseness}; it lies from 0 to 1`);
+}
+
 /** A share's problems: it lies from 0 to 1. */
 function shareProblem(value: number | undefined, path: string, out: string[]): void {
 	if (value === undefined) return;
@@ -580,6 +593,7 @@ export function speciesProblems(record: Species): string[] {
 	if (record.base) baseProblems(record.base, out);
 	if (record.shoots) shootProblems(record.shoots, out);
 	cuttingProblems(record, out);
+	sparseProblems(record, out);
 	extraProblems(record, out);
 	if (record.lod.nearFoliage === 'instanced' && !record.shoots)
 		out.push("lod.nearFoliage is 'instanced', which needs shoots; give shoots or use 'merged'");
