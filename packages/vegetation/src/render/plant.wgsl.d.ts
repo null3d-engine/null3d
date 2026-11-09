@@ -12,6 +12,7 @@ declare const shader: CompiledMaterial<
 		readonly nearDistance: 'f32';
 		readonly displacement: 'f32';
 		readonly season: 'f32';
+		readonly seasonKind: 'f32';
 		readonly matte: 'f32';
 	},
 	'wind' | 'records' | 'colour' | 'relief' | 'second' | 'third'

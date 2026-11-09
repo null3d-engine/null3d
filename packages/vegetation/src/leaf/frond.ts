@@ -31,7 +31,7 @@ import { type AxisPath, axisPath, emptyFrame, frameAt, type PathFrame } from '..
 import type { FoliageBuilder } from './kinds';
 import { cutLeaf, type LeafCut } from './leaf-mesh';
 import { type LeafOutline, textureOutline } from './outline';
-import { MeshWriter, SURFACE_LEAF, SURFACE_STEM, tube } from './writer';
+import { MeshWriter, SURFACE_LEAF, tube } from './writer';
 
 /**
  * A frond's age in the two shares its shape reads.
@@ -547,6 +547,7 @@ export function frondLeaf(
 	record: Species,
 	manifest: TextureManifest,
 	detail: Detail,
+	age = MATURE_AGE,
 ): PrototypeArrays {
 	const shape = frondShapeOf(record);
 	const growth = record.growth;
@@ -561,7 +562,7 @@ export function frondLeaf(
 	const points = new Float64Array(6);
 	points.set([0, stipe, 0, 0, stipe + length, 0]);
 	const path = axisPath(points, new Float64Array([radius, THINNEST]), 2, [0, 0, 1]);
-	const blade = new FrondBlade(shape, frondAge(MATURE_AGE), path, foldWeight(cut, pinnaeOf(shape)));
+	const blade = new FrondBlade(shape, frondAge(age), path, foldWeight(cut, pinnaeOf(shape)));
 	const mesh = new MeshWriter();
 	const leafBytes = [0, 0, SURFACE_LEAF, 255] as const;
 	writeBlade(
@@ -580,7 +581,15 @@ export function frondLeaf(
 			const share = r / (rings - 1);
 			stem.push({ at: [0, along, 0] as Vector3, radius: radius * (1 - 0.25 * share), along });
 		}
-		tube(mesh, stem, STIPE_SIDES[detail], () => [0, 0, SURFACE_STEM, 255]);
+		// The leaf texture paints the stipe along the line from its cut to the blade's base, so the
+		// tube samples that band and the stipe takes the colours its own picture gives it.
+		const foot = outline.petiole;
+		const head = outline.base;
+		const stipeUv = (_around: number, ring: number): readonly [number, number] => {
+			const t = ring / (rings - 1);
+			return [foot[0], foot[1] + (head[1] - foot[1]) * t];
+		};
+		tube(mesh, stem, STIPE_SIDES[detail], () => [0, 0, SURFACE_LEAF, 255], false, stipeUv);
 	}
 	return mesh.finishPrototype();
 }
@@ -686,9 +695,14 @@ export function frondFoliage(input: MeshInput, level: MeshLevel): MeshArrays {
 
 /** The frond foliage kind's leaf builder: one whole frond on its stipe, per tier. */
 export const builder: FoliageBuilder = {
-	leaves(record: Species, manifest: TextureManifest, detail: Detail): readonly PrototypeArrays[] {
+	leaves(
+		record: Species,
+		manifest: TextureManifest,
+		detail: Detail,
+		age?: number,
+	): readonly PrototypeArrays[] {
 		if (record.foliage.kind !== 'frond')
 			throw new Error(`@null3d/vegetation: the frond builder got '${record.foliage.kind}' foliage`);
-		return [frondLeaf(record, manifest, detail)];
+		return [frondLeaf(record, manifest, detail, age)];
 	},
 };

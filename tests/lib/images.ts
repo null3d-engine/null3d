@@ -818,7 +818,8 @@ function elsewhereHint(place: Place): string {
 }
 
 /** The image in a page's result, or what is wrong with it. */
-function imageOf(
+/** The result's drawn image as pixels, or what is wrong with it. */
+export function imageOf(
 	result: ItemResult,
 	[width, height]: readonly [number, number],
 ): RgbaImage | string {
