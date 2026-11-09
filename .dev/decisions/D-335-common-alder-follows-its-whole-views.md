@@ -182,18 +182,38 @@ record grows outlines 0.67 against `02`, 0.60 against `18`, 0.62 against `30` an
 
   | View | Photograph | Render | Distance | What misses |
   | --- | --- | --- | --- | --- |
-  | `14` base | 41.0, 2.2, 8.6 | 45.1, −1.5, 11.8 | 6.69, but see below | not judgeable as bark |
-  | `15` mid-trunk | 25.8, 1.0, 3.6 | 26.2, 3.7, 3.5 | **3.63** | red-green by six tenths |
-  | `16` limb | 57.9, 2.1, 5.6 | 54.4, 3.6, 6.1 | **3.68** | lightness by seven tenths |
+  | `14` base | 41.0, 2.2, 8.6 | 45.1, −1.5, 11.8 | 6.66, but see below | not judgeable as bark |
+  | `15` mid-trunk | 25.8, 1.0, 3.6 | 26.2, 3.7, 3.5 | **3.66** | red-green by six tenths |
+  | `16` limb | 57.9, 2.1, 5.6 | 54.4, 3.6, 6.1 | **3.78** | lightness by seven tenths |
 
-  `14`'s 6.69 is a whole-frame mean that cannot judge bark at all, because half of its nine patch
+  `14`'s 6.66 is a whole-frame mean that cannot judge bark at all, because half of its nine patch
   pixels are sky and ground on a bole this thick; its honest reading is the patch-based one, where
   the bark stands within half a step in light and red-green and 2.8 too blue. That is a limit of
   the measure and is recorded as such, not counted as a pass.
-- **The limb and the base pull opposite ways on one trunk layer.** `16` draws 3.5 of light too
-  dark and `15` 2.7 too red, while `14`'s bark is too light, and all three take the same layer. No
-  single tint serves them; the honest lever is a second trunk layer, which is a texture build with
-  a kit cost and stays **unbuilt** as a landing item.
+- **The bark mask is a per-picture decision, and it judges two of the three views.** The mask drops
+  each patch pixel within a small color distance of a corner. It helps only where the corners are
+  backdrop. Both forms were read on the same frame files at the same commit:
+
+  | View | Photograph's four corners | Patch pixels dropped, photograph and render | Unmasked | Masked |
+  | --- | --- | --- | --- | --- |
+  | `14` base | sky 77.7, sky 86.8, sky 78.2, soil 38.5 | 25.9 and 53.4 per cent | 6.66 | 8.41 |
+  | `15` mid-trunk | bark 63.0, 68.1, 60.8 and 64.3 | 4.2 and 85.2 per cent | **3.66** | 4.19 |
+  | `16` limb | limb 35.3, sky 71.7, sky 70.2, bark 46.5 | 77.6 and 73.6 per cent | **3.78** | 33.89 |
+
+  `15` is judged unmasked. All four of its photograph's corners are bark. The mask calls 85 per
+  cent of the render's patch pixels backdrop, because the render's bark sits within one step of its
+  own backdrop's tone. `16` is judged unmasked for the same reason. Its photograph has a limb at
+  one corner, so the mask keeps the shaded limb and drops the lit one, and the render does the
+  opposite. Its plant-outline pair, which both pictures give, agrees at 3.68. `14`'s corners are
+  backdrop, which should suit the mask, but it drops twice as many of the render's patch pixels as
+  of the photograph's. The two kept sets are different populations, so the figure stays a limit.
+  Masked, its bark is 10.1 darker than the photograph's rather than 4.1 lighter, so its direction
+  flips with the form and only `15` and `16` can carry one.
+- **The two judged views pull opposite ways on one trunk layer.** `16` draws 3.5 of light too dark
+  and `15` 2.7 too red, and both take the same layer. No single tint serves them; the honest lever
+  is a second trunk layer, which is a texture build with a kit cost and stays **unbuilt** as a
+  landing item. `14` cannot settle which way its bark is off, because its direction flips with the
+  form.
 - The two cluster photographs draw different shoots of the one class. The slot file names the second
   prototype for the studio still, which costs no kit byte: `23` reads 0.150 background against its
   photograph's 0.152 with outline overlap 0.421, and `11` keeps the first at 0.166 against 0.173 and
