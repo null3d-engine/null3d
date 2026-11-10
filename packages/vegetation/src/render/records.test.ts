@@ -384,6 +384,7 @@ describe('the plant shader', () => {
 			HEADER_WINTER_BARK: HEADER.winterBark,
 			HEADER_WINTER_REFLECTANCE: HEADER.winterReflectance,
 			HEADER_WINTER_TRANSMITTANCE: HEADER.winterTransmittance,
+			HEADER_SHEATH: HEADER.sheath,
 			HEADER_EXTRA_BANDS: HEADER.extraBands,
 			HEADER_CARD_STALK: HEADER.cardStalk,
 			BARK_ZONE_TEXELS,
