@@ -39,9 +39,6 @@ export const record: Species = {
 		sheath: { mean: 0.06, spread: 0.012 },
 		// Still 07: each shoot's sheath bundle is about 1.5 cm across.
 		sheathRadius: 0.008,
-		// Stills 07, 08 and 15: the sheaths are red-brown at the crown's foot and pale straw where
-		// the blades leave, so the shoot's column runs from one to the other up its height.
-		sheathColour: { foot: [0.15, 0.08, 0.03], collar: [0.4, 0.4, 0.32], reach: 0.85 },
 		// Still 02: the youngest blades stand nearly upright and the oldest arch out and over.
 		spread: [
 			[0, 2],
