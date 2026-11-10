@@ -54,6 +54,11 @@ export interface LeafConfig {
 	 * its depth as a share of the canvas's side, which sets the normal map's slopes.
 	 */
 	readonly relief: { readonly veins: number; readonly pucker: number; readonly depth: number };
+	/**
+	 * The most points the leaf's outline keeps, and the least where its contour holds that many: a
+	 * finer budget follows a finely cut blade's serrations, at more mesh vertices.
+	 */
+	readonly outline: { readonly least: number; readonly most: number };
 }
 
 /** One bark layer's inputs. */
@@ -127,6 +132,7 @@ export const LEAF_DEFAULTS: LeafConfig = {
 	margin: 0.02,
 	delight: { radius: 0.06, strength: 1 },
 	relief: { veins: 1, pucker: 0.5, depth: 0.002 },
+	outline: { least: 24, most: 64 },
 };
 
 const ZONE_DEFAULTS = { normal: 1, smooth: 0, delight: { radius: 0.2, strength: 1 } };
@@ -166,6 +172,7 @@ export function readConfig(file: string): SourceConfig {
 						alpha: { ...LEAF_DEFAULTS.alpha, ...raw.leaf.alpha },
 						delight: { ...LEAF_DEFAULTS.delight, ...raw.leaf.delight },
 						relief: { ...LEAF_DEFAULTS.relief, ...raw.leaf.relief },
+						outline: { ...LEAF_DEFAULTS.outline, ...raw.leaf.outline },
 					},
 				}
 			: {}),

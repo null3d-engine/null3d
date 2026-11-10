@@ -541,15 +541,18 @@ export function framedLeaf(source: Picture, config: LeafConfig, size: number): F
 
 /**
  * The outline of the leaf on a square canvas of coverage: its largest loop at the cutoff, thinned to
- * 24 to 64 points, in texture coordinates with v up, counter-clockwise.
+ * between `least` and `most` points, in texture coordinates with v up, counter-clockwise. A larger
+ * budget follows a finely cut blade's serrations, at more mesh vertices.
  */
-export function leafOutline(coverage: Float32Array, size: number): Point[] {
+export function leafOutline(coverage: Float32Array, size: number, least = 24, most = 64): Point[] {
 	const loops = traceLoops({ width: size, height: size, data: coverage }, CUTOFF);
 	const largest = loops.reduce<Point[]>(
 		(best, loop) => (Math.abs(signedArea(loop)) > Math.abs(signedArea(best)) ? loop : best),
 		[],
 	);
-	const outline = simplifyTo(largest, 24, 64).map(([x, y]) => [x / size, 1 - y / size] as Point);
+	const outline = simplifyTo(largest, least, most).map(
+		([x, y]) => [x / size, 1 - y / size] as Point,
+	);
 	if (signedArea(outline) < 0) outline.reverse();
 	return outline;
 }
@@ -596,7 +599,7 @@ export function leafTextures(
 	const both = new Float32Array(upper.a.length);
 	for (let i = 0; i < both.length; i++)
 		both[i] = Math.max(upper.a[i] as number, lower.a[i] as number);
-	const outline = leafOutline(both, size);
+	const outline = leafOutline(both, size, config.outline.least, config.outline.most);
 
 	const lum = luminance(upper);
 	const blade: number[] = [];

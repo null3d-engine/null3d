@@ -15,6 +15,10 @@
 			"veins": 1,
 			"pucker": 0.8,
 			"depth": 0.0015
+		},
+		"outline": {
+			"least": 64,
+			"most": 256
 		}
 	},
 	"bark": {

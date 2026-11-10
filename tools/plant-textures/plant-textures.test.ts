@@ -8,7 +8,7 @@ import type { BarkLayerConfig } from './config.ts';
 import { signedArea, simplifyTo, traceLoops } from './contour.ts';
 import { encodeKtx2 } from './encode.ts';
 import { type Picture, picture } from './image.ts';
-import { findFrame, leafFrame } from './leaf.ts';
+import { findFrame, leafFrame, leafOutline } from './leaf.ts';
 import { jobIds, type SourceFolder, Sources, supersededFiles } from './sources.ts';
 
 const INDEX = `| file | what it shows | why |
@@ -104,6 +104,20 @@ describe('the outline', () => {
 		const thinned = simplifyTo(loop, 24, 64);
 		expect(thinned.length).toBeGreaterThanOrEqual(24);
 		expect(thinned.length).toBeLessThanOrEqual(64);
+	});
+
+	it('keeps more of a finely cut contour under a finer budget', () => {
+		// A scalloped blade: a disc with fine teeth, as a fern's pinnae are cut.
+		const blade = shape(128, (x, y) => {
+			const r = Math.hypot(x - 64, y - 64);
+			const a = Math.atan2(y - 64, x - 64);
+			return r < 50 + 5 * Math.cos(24 * a);
+		});
+		const coarse = leafOutline(blade.a, 128);
+		const fine = leafOutline(blade.a, 128, 64, 256);
+		expect(coarse.length).toBeLessThanOrEqual(64);
+		expect(fine.length).toBeGreaterThan(coarse.length);
+		expect(fine.length).toBeLessThanOrEqual(256);
 	});
 });
 
