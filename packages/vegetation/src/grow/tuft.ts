@@ -41,7 +41,7 @@ import {
 	bladeTexture,
 	writeBlade,
 } from '../leaf/grass-blade';
-import { MeshWriter, SURFACE_SHEATH } from '../leaf/writer';
+import { MeshWriter } from '../leaf/writer';
 import type { GrowInput, MeshInput, MeshLevel } from '../stages';
 import {
 	AXIS_LEAF,
@@ -804,7 +804,6 @@ export function meshTuft(input: MeshInput, level: MeshLevel): MeshArrays {
 		const last = axes.last[a] as number;
 		const r0 = skeleton.radius[first] as number;
 		const r1 = skeleton.radius[last] as number;
-		const before = mesh.vertices;
 		writeStem(mesh, {
 			path,
 			from: 0,
@@ -825,8 +824,6 @@ export function meshTuft(input: MeshInput, level: MeshLevel): MeshArrays {
 			browning: isStem ? Math.max(browning, 0.15) : Math.max(browning, 0.3),
 			closeTip: isStem || fine,
 		});
-		if (!isStem && !fine && growth.sheathColour)
-			for (let v = before; v < mesh.vertices; v++) mesh.colors[v * 4 + 2] = SURFACE_SHEATH;
 	}
 	return mesh.finishMesh();
 }
