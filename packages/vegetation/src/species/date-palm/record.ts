@@ -65,10 +65,10 @@ export const record: Species = {
 			// hanging below the middle of the frond.
 			droop: [
 				[0, 0],
-				[0.15, 8],
-				[0.45, 22],
-				[0.75, 36],
-				[1, 46],
+				[0.15, 10],
+				[0.45, 28],
+				[0.75, 46],
+				[1, 60],
 			],
 			twist: 6,
 			pinnae: {
@@ -148,7 +148,7 @@ export const record: Species = {
 			kind: 'fruit',
 			at: 'flower',
 			share: 1,
-			count: { mean: 14, spread: 3 },
+			count: { mean: 22, spread: 4 },
 			seasons: ['summer', 'autumn'],
 			shape: {
 				lathe: [
@@ -163,7 +163,7 @@ export const record: Species = {
 					[0, 0.066],
 				],
 				sides: 10,
-				stalk: 0.35,
+				stalk: 0.5,
 				pedicel: 0.02,
 				stalkSides: 5,
 			},
