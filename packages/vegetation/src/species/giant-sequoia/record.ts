@@ -151,16 +151,16 @@ export const record: Species = {
 				share: 0.38,
 				years: 3,
 				length: { mean: 0.32, spread: 0.04 },
-				nodes: { mean: 72, spread: 8 },
+				nodes: { mean: 56, spread: 6 },
 				internode: EVEN,
 				stem: { radius: [0.006, 0.002] },
 				lateral: 70,
 				laterals: { mean: 3, spread: 0 },
-				lateralGap: 0.14,
+				lateralGap: 0.2,
 				bend: { length: 0.04, angle: 15 },
 				leafScale: [
-					[0, 1.05],
-					[1, 1.15],
+					[0, 0.9],
+					[1, 1],
 				],
 				leafAngle: [
 					[0, 34],
@@ -364,8 +364,9 @@ export const record: Species = {
 		// prototypes rather than a thick macro axis, whose wood reads several times the photographs'.
 		branch: { shoot: 'spray', pick: 0 },
 		subbranch: { shoot: 'spray', pick: 1 },
-		// Still 23's branched shoot tip: the same fuller spray, which carries side shafts and hides
-		// its stem.
-		cluster: { shoot: 'spray', pick: 0 },
+		// Still 23's shoot tip is one rope of this year's scales, and the studio picture is the
+		// cutting's own shoot; still 11's whole spray is a different piece and is recorded as a
+		// reference conflict.
+		cluster: { shoot: 'short' },
 	},
 };
