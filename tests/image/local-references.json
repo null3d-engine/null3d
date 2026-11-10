@@ -206,20 +206,20 @@
 	"chromium-swiftshader/compat/plant-holm-oak.png": {
 		"test": "plant-holm-oak",
 		"tier": "compat",
-		"date": "2026-11-07",
-		"reason": "plant-holm-oak's first software-set reference: CI run 42417946731 failed its browser shards because the reference was the missing file, and its artifact fetch stalled for half an hour without delivering them; the picture was drawn on this Mac with the SwiftShader rasteriser, which the repository's notes record as agreeing with CI's byte for byte."
+		"date": "2026-11-09",
+		"reason": "drawn on this Mac's SwiftShader after the holm oak's leaf frames were rebuilt upright at b3d0d1211; the branch's CI run has not drawn the software set, and a CI drawing replaces this if it differs"
 	},
 	"chromium-swiftshader/compat/plant-hosta.png": {
 		"test": "plant-hosta",
 		"tier": "compat",
 		"date": "2026-11-09",
-		"reason": "drawn on this Mac's SwiftShader at 329daee84 after the whole-view light change moved the panels by a fifth; a CI drawing replaces it if it differs"
+		"reason": "drawn on this Mac's SwiftShader with CI=1 at f25dfed92 after the upright leaf rebuild changed all four panels"
 	},
 	"chromium-swiftshader/compat/plant-meadow-grass.png": {
 		"test": "plant-meadow-grass",
 		"tier": "compat",
 		"date": "2026-11-09",
-		"reason": "drawn on this Mac's SwiftShader at the branch tip 9 Nov 2026; the branch's CI run will replace them if it differs"
+		"reason": "drawn on this Mac: the tiller lean changed the panels picture at 9cf0cd0db"
 	},
 	"chromium-swiftshader/compat/plant-pedunculate-oak.png": {
 		"test": "plant-pedunculate-oak",
@@ -231,13 +231,13 @@
 		"test": "plant-sedge",
 		"tier": "compat",
 		"date": "2026-11-09",
-		"reason": "the sedge's spike foot now meets its stalk at the body's width, which changes the spikes in its whole-plant and crown panels; drawn on this Mac's SwiftShader at 54fe34bb6 after the engine merge, re-confirmed at 53c46be3a; a CI drawing replaces it if it differs"
+		"reason": "the sedge's blade now closes over a short tip, which redraws the blades in its whole-plant, crown and cluster panels; the software set is redrawn here while CI redraws it"
 	},
 	"chromium-swiftshader/compat/plant-silver-birch.png": {
 		"test": "plant-silver-birch",
 		"tier": "compat",
 		"date": "2026-11-09",
-		"reason": "pkg/silver-birch at 048d8b561 adds the silver birch and its picture tests; this Mac's SwiftShader drew the new set with CI=1, and the branch's first CI run replaces it"
+		"reason": "the silver birch's leaf is rebuilt upright on the named frames and its crown's sky prune opened to 0.4 at b96087d0e, which moves the leaf and crown panels; this branch has no CI run to take the software set from, and CI's shards judge it later"
 	},
 	"chromium-swiftshader/compat/plant-sparse-oak.png": {
 		"test": "plant-sparse-oak",
@@ -249,7 +249,19 @@
 		"test": "plant-weeping-willow",
 		"tier": "compat",
 		"date": "2026-11-09",
-		"reason": "drawn on this Mac's SwiftShader at fde97e542 after the cluster angles were restored; a CI drawing replaces it if it differs"
+		"reason": "the leaf rebuild changes the leaf and crown panels, and this Mac's SwiftShader drew all three tiers inside the 120 s guard; no CI run has drawn the rebuilt leaf yet"
+	},
+	"chromium-swiftshader/compat/plant-wind-still.png": {
+		"test": "plant-wind-still",
+		"tier": "compat",
+		"date": "2026-11-10",
+		"reason": "M3-V7's sway picture: the branch is not pushed to CI, so this Mac's SwiftShader drew the software set; a CI drawing replaces it"
+	},
+	"chromium-swiftshader/compat/plant-wind-sway.png": {
+		"test": "plant-wind-sway",
+		"tier": "compat",
+		"date": "2026-11-10",
+		"reason": "M3-V7's sway picture: the branch is not pushed to CI, so this Mac's SwiftShader drew the software set; a CI drawing replaces it"
 	},
 	"chromium-swiftshader/compat/probe-grid-wall-night.png": {
 		"test": "probe-grid-wall-night",
@@ -542,20 +554,20 @@
 	"chromium-swiftshader/webgl2/plant-holm-oak.png": {
 		"test": "plant-holm-oak",
 		"tier": "webgl2",
-		"date": "2026-11-07",
-		"reason": "plant-holm-oak's first software-set reference: CI run 42417946731 failed its browser shards because the reference was the missing file, and its artifact fetch stalled for half an hour without delivering them; the picture was drawn on this Mac with the SwiftShader rasteriser, which the repository's notes record as agreeing with CI's byte for byte."
+		"date": "2026-11-09",
+		"reason": "drawn on this Mac's SwiftShader after the holm oak's leaf frames were rebuilt upright at b3d0d1211; the branch's CI run has not drawn the software set, and a CI drawing replaces this if it differs"
 	},
 	"chromium-swiftshader/webgl2/plant-hosta.png": {
 		"test": "plant-hosta",
 		"tier": "webgl2",
 		"date": "2026-11-09",
-		"reason": "drawn on this Mac's SwiftShader at 329daee84 after the whole-view light change moved the panels by a fifth; a CI drawing replaces it if it differs"
+		"reason": "drawn on this Mac's SwiftShader with CI=1 at f25dfed92 after the upright leaf rebuild changed all four panels"
 	},
 	"chromium-swiftshader/webgl2/plant-meadow-grass.png": {
 		"test": "plant-meadow-grass",
 		"tier": "webgl2",
 		"date": "2026-11-09",
-		"reason": "drawn on this Mac's SwiftShader at the branch tip 9 Nov 2026; the branch's CI run will replace them if it differs"
+		"reason": "drawn on this Mac: the tiller lean changed the panels picture at 9cf0cd0db"
 	},
 	"chromium-swiftshader/webgl2/plant-pedunculate-oak.png": {
 		"test": "plant-pedunculate-oak",
@@ -567,13 +579,13 @@
 		"test": "plant-sedge",
 		"tier": "webgl2",
 		"date": "2026-11-09",
-		"reason": "the sedge's spike foot now meets its stalk at the body's width, which changes the spikes in its whole-plant and crown panels; drawn on this Mac's SwiftShader at 54fe34bb6 after the engine merge, re-confirmed at 53c46be3a; a CI drawing replaces it if it differs"
+		"reason": "the sedge's blade now closes over a short tip, which redraws the blades in its whole-plant, crown and cluster panels; the software set is redrawn here while CI redraws it"
 	},
 	"chromium-swiftshader/webgl2/plant-silver-birch.png": {
 		"test": "plant-silver-birch",
 		"tier": "webgl2",
 		"date": "2026-11-09",
-		"reason": "pkg/silver-birch at 048d8b561 adds the silver birch and its picture tests; this Mac's SwiftShader drew the new set with CI=1, and the branch's first CI run replaces it"
+		"reason": "the silver birch's leaf is rebuilt upright on the named frames and its crown's sky prune opened to 0.4 at b96087d0e, which moves the leaf and crown panels; this branch has no CI run to take the software set from, and CI's shards judge it later"
 	},
 	"chromium-swiftshader/webgl2/plant-sparse-oak.png": {
 		"test": "plant-sparse-oak",
@@ -585,7 +597,19 @@
 		"test": "plant-weeping-willow",
 		"tier": "webgl2",
 		"date": "2026-11-09",
-		"reason": "drawn on this Mac's SwiftShader at f69a1b0ff after the cluster angles were restored; a CI drawing replaces it if it differs"
+		"reason": "the leaf rebuild changes the leaf and crown panels, and this Mac's SwiftShader drew all three tiers inside the 120 s guard; no CI run has drawn the rebuilt leaf yet"
+	},
+	"chromium-swiftshader/webgl2/plant-wind-still.png": {
+		"test": "plant-wind-still",
+		"tier": "webgl2",
+		"date": "2026-11-10",
+		"reason": "M3-V7's sway picture: the branch is not pushed to CI, so this Mac's SwiftShader drew the software set; a CI drawing replaces it"
+	},
+	"chromium-swiftshader/webgl2/plant-wind-sway.png": {
+		"test": "plant-wind-sway",
+		"tier": "webgl2",
+		"date": "2026-11-10",
+		"reason": "M3-V7's sway picture: the branch is not pushed to CI, so this Mac's SwiftShader drew the software set; a CI drawing replaces it"
 	},
 	"chromium-swiftshader/webgl2/probe-grid-wall-night.png": {
 		"test": "probe-grid-wall-night",
@@ -908,20 +932,20 @@
 	"chromium-swiftshader/webgpu/plant-holm-oak.png": {
 		"test": "plant-holm-oak",
 		"tier": "webgpu",
-		"date": "2026-11-07",
-		"reason": "plant-holm-oak's first software-set reference: CI run 42417946731 failed its browser shards because the reference was the missing file, and its artifact fetch stalled for half an hour without delivering them; the picture was drawn on this Mac with the SwiftShader rasteriser, which the repository's notes record as agreeing with CI's byte for byte."
+		"date": "2026-11-09",
+		"reason": "drawn on this Mac's SwiftShader after the holm oak's leaf frames were rebuilt upright at b3d0d1211; the branch's CI run has not drawn the software set, and a CI drawing replaces this if it differs"
 	},
 	"chromium-swiftshader/webgpu/plant-hosta.png": {
 		"test": "plant-hosta",
 		"tier": "webgpu",
 		"date": "2026-11-09",
-		"reason": "drawn on this Mac's SwiftShader at 329daee84 after the whole-view light change moved the panels by a fifth; a CI drawing replaces it if it differs"
+		"reason": "drawn on this Mac's SwiftShader with CI=1 at f25dfed92 after the upright leaf rebuild changed all four panels"
 	},
 	"chromium-swiftshader/webgpu/plant-meadow-grass.png": {
 		"test": "plant-meadow-grass",
 		"tier": "webgpu",
 		"date": "2026-11-09",
-		"reason": "drawn on this Mac's SwiftShader at the branch tip 9 Nov 2026; the branch's CI run will replace them if it differs"
+		"reason": "drawn on this Mac: the tiller lean changed the panels picture at 9cf0cd0db"
 	},
 	"chromium-swiftshader/webgpu/plant-pedunculate-oak.png": {
 		"test": "plant-pedunculate-oak",
@@ -933,13 +957,13 @@
 		"test": "plant-sedge",
 		"tier": "webgpu",
 		"date": "2026-11-09",
-		"reason": "the sedge's spike foot now meets its stalk at the body's width, which changes the spikes in its whole-plant and crown panels; drawn on this Mac's SwiftShader at 54fe34bb6 after the engine merge, re-confirmed at 53c46be3a; a CI drawing replaces it if it differs"
+		"reason": "the sedge's blade now closes over a short tip, which redraws the blades in its whole-plant, crown and cluster panels; the software set is redrawn here while CI redraws it"
 	},
 	"chromium-swiftshader/webgpu/plant-silver-birch.png": {
 		"test": "plant-silver-birch",
 		"tier": "webgpu",
 		"date": "2026-11-09",
-		"reason": "pkg/silver-birch at 048d8b561 adds the silver birch and its picture tests; this Mac's SwiftShader drew the new set with CI=1, and the branch's first CI run replaces it"
+		"reason": "the silver birch's leaf is rebuilt upright on the named frames and its crown's sky prune opened to 0.4 at b96087d0e, which moves the leaf and crown panels; this branch has no CI run to take the software set from, and CI's shards judge it later"
 	},
 	"chromium-swiftshader/webgpu/plant-sparse-oak.png": {
 		"test": "plant-sparse-oak",
@@ -951,7 +975,19 @@
 		"test": "plant-weeping-willow",
 		"tier": "webgpu",
 		"date": "2026-11-09",
-		"reason": "drawn on this Mac's SwiftShader at fde97e542 after the cluster angles were restored; a CI drawing replaces it if it differs"
+		"reason": "the leaf rebuild changes the leaf and crown panels, and this Mac's SwiftShader drew all three tiers inside the 120 s guard; no CI run has drawn the rebuilt leaf yet"
+	},
+	"chromium-swiftshader/webgpu/plant-wind-still.png": {
+		"test": "plant-wind-still",
+		"tier": "webgpu",
+		"date": "2026-11-10",
+		"reason": "M3-V7's sway picture: the branch is not pushed to CI, so this Mac's SwiftShader drew the software set; a CI drawing replaces it"
+	},
+	"chromium-swiftshader/webgpu/plant-wind-sway.png": {
+		"test": "plant-wind-sway",
+		"tier": "webgpu",
+		"date": "2026-11-10",
+		"reason": "M3-V7's sway picture: the branch is not pushed to CI, so this Mac's SwiftShader drew the software set; a CI drawing replaces it"
 	},
 	"chromium-swiftshader/webgpu/probe-grid-wall-night.png": {
 		"test": "probe-grid-wall-night",

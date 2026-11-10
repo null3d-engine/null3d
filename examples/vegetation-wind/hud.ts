@@ -6,6 +6,23 @@ export interface WindControls {
 	still: boolean;
 }
 
+/**
+ * The panel's state after the page posts one control message. A strength arrives as the slider's
+ * string, the Hold button arrives as `still`, and the direction arrives as its slider's string. A
+ * message for another group answers the same state, so a caller can tell nothing changed.
+ */
+export function applyWindControl(state: WindControls, name: string, value: unknown): WindControls {
+	if (name === 'wind') {
+		const strength = Number(value);
+		if (Number.isFinite(strength)) return { ...state, power: strength };
+		if (value === 'still') return { ...state, still: !state.still };
+	} else if (name === 'bearing') {
+		const degrees = Number(value);
+		if (Number.isFinite(degrees)) return { ...state, bearing: degrees };
+	}
+	return state;
+}
+
 /** Posts the panel, with every control showing the state it currently holds. */
 export function postWindHud(
 	page: { post(name: string, value: unknown): void },

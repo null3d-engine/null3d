@@ -102,7 +102,11 @@ export const record: Species = {
 	// The fit's 16 azimuths at each height, averaged to one radius: the species' own notes say the
 	// crown is near round in plan, and the fitted hull carries the turntable's drift between views
 	// (its own consistency runs 0.67 to 0.87). A round plan reads the same from every side, so the
-	// whole views at turn 0 and turn 90 agree.
+	// whole views at turn 0 and turn 90 agree. The two lowest rows are trimmed: a visual hull over
+	// 32 drifting views holds room at the crown's foot that no one photograph shows, where stills 01
+	// and 18 stand a bare bole to a quarter of the height. The trim sharpens that foot at the distant
+	// and silhouette views, and costs the profile view's outline overlap and the from-below view's
+	// width, whose figures the species' review file holds.
 	envelope: {
 		kind: 'radial',
 		heights: [
@@ -110,8 +114,8 @@ export const record: Species = {
 			0.944, 1,
 		],
 		radii: [
-			0.088, 0.104, 0.147, 0.16, 0.179, 0.192, 0.188, 0.182, 0.164, 0.152, 0.134, 0.115, 0.078,
-			0.054, 0,
+			0.05, 0.09, 0.147, 0.16, 0.179, 0.192, 0.188, 0.182, 0.164, 0.152, 0.134, 0.115, 0.078, 0.054,
+			0,
 		],
 		source: { method: 'turntable-hull', from: 'birch-turntable.mp4', views: 32 },
 	},
@@ -308,7 +312,7 @@ export const record: Species = {
 			shadePrune: 0.15,
 			// Stills 01 and 18: the crown is open and the sky shows through it, so its inner shoots
 			// thin where their own leaves leave them under this share of the sky.
-			skyPrune: 0.3,
+			skyPrune: 0.4,
 			skyPruneLayer: 1,
 			// Stills 01 and 19: the hanging strands hang free, and no bare twig runs past them.
 			bareTrim: 0.02,
@@ -343,8 +347,9 @@ export const record: Species = {
 	bark: {
 		zones: [
 			// Still 14: the foot's bark is black and cracked into rough plates, and the black climbs
-			// in tongues about a metre up.
-			{ layer: 0, by: 'height', from: 0, to: 1, blend: 0.12, tint: [1, 1, 1] },
+			// in tongues about a metre up. The photographed plates take a redder cast than the
+			// measured layer draws, which reads green where the moss sits.
+			{ layer: 0, by: 'height', from: 0, to: 1, blend: 0.12, tint: [1.15, 0.95, 1.18] },
 			// Stills 15 and 26: white and papery above, with black diamond marks and dark lenticel
 			// dashes.
 			{ layer: 1, by: 'height', from: 0.8, to: 6, blend: 0.2, tint: [1, 1, 1] },
@@ -445,10 +450,10 @@ export const record: Species = {
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
-			// The largest of the species and its three forms: 3.37, 5.57, 9.35 and 16.54 MB. The kit
+			// The largest of the species and its three forms: 3.37, 5.52, 9.42 and 16.89 MB. The kit
 			// holds the long leafy shoots the fine leaf needs and three cutting classes sized to their
 			// photographs.
-			kitBytes: { low: 3_450_000, medium: 5_700_000, high: 9_500_000, ultra: 16_800_000 },
+			kitBytes: { low: 3_450_000, medium: 5_700_000, high: 9_500_000, ultra: 17_000_000 },
 			// The largest variant of the species and its forms, the woodland's: 6.94, 6.97, 7.02 and
 			// 7.12 MB.
 			variantBytes: { low: 7_100_000, medium: 7_100_000, high: 7_200_000, ultra: 7_300_000 },

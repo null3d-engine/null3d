@@ -493,8 +493,8 @@ describe('sizeProblems', () => {
 
 	it('holds the shader data inlined in a file to the shader budget', () => {
 		// The code keeps its budget, so a gate that stopped counting the inlined data would pass.
-		expect(sizeProblems([split(14 * KB, 2000 * KB)])).toEqual([
-			'addon.js is 2000.0 KB raw of shader data, over its 1792.0 KB budget',
+		expect(sizeProblems([split(14 * KB, 9000 * KB)])).toEqual([
+			'addon.js is 9000.0 KB raw of shader data, over its 8192.0 KB budget',
 		]);
 	});
 
