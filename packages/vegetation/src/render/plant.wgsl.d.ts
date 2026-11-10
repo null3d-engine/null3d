@@ -6,6 +6,8 @@ declare const shader: CompiledMaterial<
 	{
 		readonly windBox: 'f32';
 		readonly windStrength: 'f32';
+		readonly windSpeed: 'f32';
+		readonly windHeading: 'f32';
 		readonly windLayer: 'f32';
 		readonly swayDistance: 'f32';
 		readonly mode: 'f32';
