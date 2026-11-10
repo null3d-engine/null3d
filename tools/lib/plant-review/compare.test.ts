@@ -9,6 +9,7 @@ import {
 import {
 	alignTurn,
 	anchorColumn,
+	cameraWidthShare,
 	crownBoxSpread,
 	edgeDifference,
 	edgeProfile,
@@ -268,6 +269,19 @@ describe('the framing a render takes from a reference', () => {
 			widthShare: 0.9,
 		});
 		expect(framingQuery(shared)).toMatchObject({ top: 0.18, eye: 1.6 });
+	});
+
+	test("reads a clipped plant's width from the camera stand, so it responds and may exceed the frame", () => {
+		const stand = { distance: 1.862, fov: 38 };
+		const share = cameraWidthShare(2.416, stand, 768 / 516) as number;
+		expect(share).toBeCloseTo(1.2658, 3);
+		expect(cameraWidthShare(2.416, { ...stand, distance: 3.724 }, 768 / 516) as number).toBeCloseTo(
+			share / 2,
+			3,
+		);
+		expect(cameraWidthShare(0, stand, 1.5)).toBeNull();
+		expect(cameraWidthShare(2, { distance: 0, fov: 38 }, 1.5)).toBeNull();
+		expect(cameraWidthShare(2, { distance: 1, fov: 0 }, 1.5)).toBeNull();
 	});
 });
 
