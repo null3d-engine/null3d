@@ -24,6 +24,8 @@ import {
 	rowSpans,
 	seasonFromPicture,
 	shadowLike,
+	skyMaskable,
+	soilMaskable,
 	widthProfile,
 	withSlot,
 } from './references.ts';
@@ -764,5 +766,53 @@ describe('the coverage matte', () => {
 		expect(fractional.crownBoxGap).toBeCloseTo(3 / 100, 4);
 		expect(binary.frameGap).toBeCloseTo(304 / 400, 4);
 		expect(fractional.frameGap).toBeCloseTo((300 + 2 + 2 * (1 - 128 / 255)) / 400, 4);
+	});
+});
+
+describe('a fitted sky', () => {
+	const surface = (fit: number, noise: number) =>
+		({
+			coefficients: [
+				[0, 0, 0, 0, 0, 0],
+				[0, 0, 0, 0, 0, 0],
+				[0, 0, 0, 0, 0, 0],
+			],
+			noise,
+			fit,
+		}) as never;
+
+	test('is maskable only when the fit is strong, the residual bounded and no horizon stands', () => {
+		expect(skyMaskable({ horizon: null, sky: surface(0.9999, 17.1), plain: false })).toBe(true);
+		expect(skyMaskable({ horizon: null, sky: surface(0.9, 5), plain: false })).toBe(false);
+		expect(skyMaskable({ horizon: null, sky: surface(0.9999, 40), plain: false })).toBe(false);
+		expect(skyMaskable({ horizon: 100, sky: surface(0.9999, 5), plain: false })).toBe(false);
+	});
+
+	test('a fitted soil is maskable only with a real region each side of a strong ground fit', () => {
+		// The sedge's 07: horizon at 186 of 640, sky 1 / 24.19, ground 1 / 18.55.
+		expect(
+			soilMaskable(
+				{ horizon: 186, sky: surface(1, 24.19), ground: surface(1, 18.55), plain: false },
+				640,
+			),
+		).toBe(true);
+		// The meadow's 07: horizon at 596 of 640, sky 1 / 26.41, ground 1 / 19.90.
+		expect(
+			soilMaskable(
+				{ horizon: 596, sky: surface(1, 26.41), ground: surface(1, 19.9), plain: false },
+				640,
+			),
+		).toBe(true);
+		// A ramp that does not fit, a horizon at the frame's edge, and a background with no horizon.
+		expect(
+			soilMaskable(
+				{ horizon: 300, sky: surface(1, 20), ground: surface(1, 40), plain: false },
+				640,
+			),
+		).toBe(false);
+		expect(
+			soilMaskable({ horizon: 10, sky: surface(1, 20), ground: surface(1, 18), plain: false }, 640),
+		).toBe(false);
+		expect(soilMaskable({ horizon: null, sky: surface(1, 18), plain: false }, 640)).toBe(false);
 	});
 });
