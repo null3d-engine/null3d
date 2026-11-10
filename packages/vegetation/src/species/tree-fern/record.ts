@@ -38,11 +38,11 @@ export const record: Species = {
 			// Still 01 and the crown views: a dense living crown of three dozen fronds.
 			fronds: { mean: 34, spread: 2 },
 			divergence: 137.5,
-			// Still 01: the youngest fronds stand nearly upright in the centre and the oldest arch
-			// over and hang down past the horizontal, so the crown reads as a deep dome rather
-			// than a flat spread.
+			// Still 01: the youngest fronds lean out from the centre and the oldest arch over and
+			// hang down past the horizontal, so the crown reads as a deep dome with an open centre
+			// rather than a flat spread.
 			tilt: [
-				[0, 4],
+				[0, 20],
 				[0.35, 30],
 				[0.7, 80],
 				[1, 150],
