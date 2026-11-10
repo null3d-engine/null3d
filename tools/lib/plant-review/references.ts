@@ -1464,6 +1464,31 @@ export function crownStartRow(spans: Int32Array, box: Box): number {
 }
 
 /**
+ * The row where a cut piece's crown starts: above the continuous narrow stem at its foot, or at its
+ * foot when no stem shows. A stem's projected width moves far less over a turn than its foliage's
+ * does, so anchoring the crown on the stem keeps a piece's box on its silhouette; reading a crown
+ * start from the piece's whole width profile follows the pose from frame to frame instead.
+ */
+function pieceStartRow(spans: Int32Array, box: Box): number {
+	const tall = box.bottom - box.top + 1;
+	const width = (y: number): number => {
+		const left = spans[y * 2] as number;
+		return left < 0 ? 0 : (spans[y * 2 + 1] as number) - left + 1;
+	};
+	// The stem's width is the median of the piece's foot rows, where a branchlet shows it.
+	const foot: number[] = [];
+	for (let y = box.bottom; y > box.bottom - Math.max(2, Math.round(tall * 0.1)); y--)
+		if (y >= box.top) foot.push(width(y));
+	foot.sort((a, b) => a - b);
+	const stem = foot[foot.length >> 1] ?? 0;
+	const limit = Math.max(2, Math.round(stem * 1.2));
+	// A stem is the continuous run of rows at the foot no wider than the stem's own width.
+	let y = box.bottom;
+	while (y > box.top && width(y) <= limit) y--;
+	return y < box.bottom && y >= box.top ? y : box.bottom;
+}
+
+/**
  * Where the crown starts, found from its own rows: the first narrow stretch below the crown's wide
  * top that the stem continues below. The lower edge of the foliage, whatever the ground below it
  * reads as.
@@ -1517,8 +1542,15 @@ function meanColour(
 	return { lab: mean.map((v) => Number(v.toFixed(2))), hex: hexOf(srgbOf(mean)) };
 }
 
-/** Measures a plant from its outline in a picture. */
-export function measurePlant(image: Rgba, plant: PlantMask): PlantMeasures {
+/**
+ * Measures a plant from its outline in a picture.
+ *
+ * A cut piece has no crown above a bare stem the way a whole plant does: its crown's box starts
+ * above the continuous narrow stem at its foot, or at its foot when no stem shows. A stem's
+ * projected width moves far less over a turn than its foliage's, so this keeps a piece's box on its
+ * silhouette rather than on its pose.
+ */
+export function measurePlant(image: Rgba, plant: PlantMask, piece = false): PlantMeasures {
 	const { width, height, mask, coverage, background } = plant;
 	const work = image.width === width ? image : resizeToWidth(image, width);
 	const lab = labImage(work);
@@ -1553,7 +1585,7 @@ export function measurePlant(image: Rgba, plant: PlantMask): PlantMeasures {
 			light: null,
 		};
 	const spans = rowSpans(mask, width, height);
-	const start = crownStartRow(spans, box);
+	const start = piece ? pieceStartRow(spans, box) : crownStartRow(spans, box);
 	const tall = box.bottom - box.top + 1;
 	// The crown's outline: in each crown row, everything between the row's outermost plant pixels.
 	let hull = 0;

@@ -766,3 +766,22 @@ describe('the coverage matte', () => {
 		expect(fractional.frameGap).toBeCloseTo((300 + 2 + 2 * (1 - 128 / 255)) / 400, 4);
 	});
 });
+
+describe('a cut piece', () => {
+	test('crowns above its own stem where a plant would read the stem as foliage', () => {
+		const width = 20;
+		const height = 30;
+		const mask = new Uint8Array(width * height);
+		// A six-pixel stem under an eight-pixel fan: the plant's finder reads the stem as part of
+		// the crown, while the piece rule anchors the crown on the stem's own width.
+		for (let y = 15; y < 25; y++) for (let x = 7; x <= 12; x++) mask[y * width + x] = 1;
+		for (let y = 5; y < 15; y++) for (let x = 6; x <= 13; x++) mask[y * width + x] = 1;
+		const image = blank(width, height, [0, 0, 0]);
+		const plant = mattePlant(width, height, mask);
+		const asPlant = measurePlant(image, plant);
+		const asPiece = measurePlant(image, plant, true);
+		expect(asPlant.crownBox.height).toBe(20);
+		expect(asPiece.crownBox.height).toBe(10);
+		expect(asPiece.crownStart).toBeCloseTo((24 - 14) / 20, 4);
+	});
+});
