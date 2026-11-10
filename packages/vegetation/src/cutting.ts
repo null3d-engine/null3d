@@ -541,6 +541,7 @@ interface Writer {
 	readonly uvs: number[];
 	readonly uvs1: number[];
 	readonly colors: number[];
+	readonly tangents: number[];
 	readonly indices: number[];
 }
 
@@ -550,17 +551,23 @@ const writer = (): Writer => ({
 	uvs: [],
 	uvs1: [],
 	colors: [],
+	tangents: [],
 	indices: [],
 });
 
+/** Steps a metre of a blade's keel offset is packed in, within a signed byte's range. */
+const KEEL_STEPS = 8192;
+
 function finish(mesh: Writer): MeshArrays {
 	const count = mesh.positions.length / 3;
+	const keel = mesh.tangents.some((value, at) => at % 4 === 3 && value > 0);
 	return {
 		positions: new Float32Array(mesh.positions),
 		normals: new Float32Array(mesh.normals),
 		uvs: new Float32Array(mesh.uvs),
 		uvs1: new Float32Array(mesh.uvs1),
 		colors: new Uint8Array(mesh.colors),
+		...(keel && { tangents: new Int8Array(mesh.tangents) }),
 		indices: count > 0xffff ? new Uint32Array(mesh.indices) : new Uint16Array(mesh.indices),
 	};
 }
@@ -615,6 +622,24 @@ function append(
 			record & 255,
 			source.colors[i * 4] as number,
 			source.colors[i * 4 + 3] as number,
+		);
+		const keel = source.tangents ? (source.tangents[i * 4 + 3] as number) : 0;
+		const packed = [0, 0, 0, 0];
+		if (keel > 0) {
+			for (let k = 0; k < 3; k++) v[k] = (source.tangents?.[i * 4 + k] as number) / KEEL_STEPS;
+			quatRotate(q, qo, v, v);
+			for (let k = 0; k < 3; k++)
+				packed[k] = Math.max(
+					-127,
+					Math.min(127, Math.round((v[k] as number) * scale * KEEL_STEPS)),
+				);
+			packed[3] = 127;
+		}
+		mesh.tangents.push(
+			packed[0] as number,
+			packed[1] as number,
+			packed[2] as number,
+			packed[3] as number,
 		);
 	}
 	for (const index of source.indices) mesh.indices.push(base + index);

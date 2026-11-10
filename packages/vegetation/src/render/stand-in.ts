@@ -102,8 +102,8 @@ export function standInMaterials(ctx: SketchContext, kit: SpeciesKit): PlantMate
 		}),
 		foliage: ctx.materials.standard({ color: leaf, roughness: 0.6, doubleSided: true }),
 	};
-	// Extras draw with the leaves' material.
-	return { ...made, extras: made.foliage };
+	// Extras draw with the leaves' material, and the far foliage draws as the plain material does.
+	return { ...made, foliageFar: made.foliage, extras: made.foliage };
 }
 
 /** A part's arrays in floats, in plant-space metres, as the engine's geometry takes them. */

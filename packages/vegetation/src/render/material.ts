@@ -34,6 +34,11 @@ export interface PlantMaterials {
 	readonly cards: PlantMaterial;
 	/** Merged fronds, blades and rosette leaves. */
 	readonly foliage: PlantMaterial;
+	/**
+	 * The card levels' foliage, drawn with the plain plant shader: its mesh carries no blade keel,
+	 * so those levels pay nothing for the nearest level's view-facing width.
+	 */
+	readonly foliageFar: PlantMaterial;
 	/** Cones, fruit, flowers, catkins, thorns and spines. */
 	readonly extras: PlantMaterial;
 }
@@ -206,6 +211,7 @@ export function plantMaterials(
 			true,
 			kit.record.foliage.kind === 'grass-blade' ? viewFaceShader : plantShader,
 		),
+		foliageFar: make('foliage', { colour: t.leafColor, relief: t.leafNormal }, true),
 		extras: make('extras', { colour: t.leafColor, relief: t.leafNormal }, true),
 	};
 }
