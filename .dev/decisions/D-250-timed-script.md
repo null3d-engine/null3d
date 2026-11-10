@@ -80,7 +80,7 @@ second drawing came from the image test's own run of the command line tool, whic
 image with its reference. The first ran the command below at the High preset:
 
 ```text
-bun packages/cli/bin/null3d.js shot --script tests/image/showcase-night-town.script --page
+bun packages/cli/bin/null3d.js shot --script tests/image/showcase-island.script --page
 '/tests/pages/image.html?sketch=/examples/showcase/night-town/sketch.ts&size=320x180&preset=high'
 --size 320x180 --gpu webgl2 --out target/night-town.png
 ```
@@ -104,7 +104,7 @@ The two runs wrote byte-identical images for all three states. The SHA-256 value
 
 ## The showcase and the image tests
 
-The task's Done-when names a showcase. `tests/image/showcase-night-town.script` drives the night
+The task's Done-when names a showcase. `tests/image/showcase-island.script` drives the night
 town showcase through three states on WebGL2. They are `turned` at 2 s, `walked` at 3.5 s and
 `closer` at 5 s. The `c` key takes the camera off its route at the opening view, where it holds
 still. A left pointer drag then turns it around the square, the `w` key walks it toward the town,
