@@ -1,13 +1,4 @@
 {
-	"01-whole-distant.png": {
-		"fill": 0.8
-	},
-	"02-whole-profile.png": {
-		"fill": 0.8
-	},
-	"18-silhouette.png": {
-		"fill": 0.8
-	},
 	"04-crown-outside.png": {
 		"view": "crown",
 		"elevation": -20,
