@@ -223,7 +223,7 @@ export const record: Species = {
 		needle: {
 			// Stills 11, 12 and 13: 4 to 7 cm long, about a millimetre and a half wide, stiff and
 			// twisted, blue-green above and paler grey-blue below.
-			length: { mean: 0.055, spread: 0.008 },
+			length: { mean: 0.06, spread: 0.008 },
 			width: 0.0016,
 			section: 'half-round',
 			density: 4,
