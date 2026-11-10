@@ -337,8 +337,8 @@ export const record: Species = {
 			wave: [0.001, 4],
 			// Still 24: a fresh light green above and paler below, thin enough to glow in the light.
 			optics: {
-				reflectance: [0.09, 0.16, 0.03],
-				reflectanceBack: [0.14, 0.2, 0.06],
+				reflectance: [0.082, 0.182, 0.013],
+				reflectanceBack: [0.218, 0.263, 0.122],
 				transmittance: [0.12, 0.22, 0.08],
 				roughness: [0.5, 0.65],
 			},
