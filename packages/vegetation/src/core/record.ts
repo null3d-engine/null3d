@@ -750,6 +750,11 @@ export interface Tuft {
 	readonly sheath: Spread;
 	/** The sheath's radius in metres. */
 	readonly sheathRadius: number;
+	/**
+	 * The basal sheath's colour, in linear reflectance, where the photographs show red-brown
+	 * sheaths: a merged ground plant draws its sheath columns in it rather than the leaf's green.
+	 */
+	readonly sheathColour?: Rgb;
 	/** Degrees a blade leaves its shoot, by blade age (t = 0 the youngest, innermost, 1 the oldest). */
 	readonly spread: Curve;
 	/** Blade length over the foliage's blade length, by blade age. */
