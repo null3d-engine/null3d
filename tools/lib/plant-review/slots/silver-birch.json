@@ -94,19 +94,19 @@
 	},
 	"12-single-leaf-upper.png": {
 		"leaves": 1.4,
-		"roll": 147
+		"roll": 327
 	},
 	"13-single-leaf-underside.png": {
 		"leaves": 1.3,
-		"roll": 137
+		"roll": 317
 	},
 	"24-leaf-texture-upper.png": {
 		"leaves": 1.45,
-		"roll": 180
+		"roll": 0
 	},
 	"25-leaf-texture-underside.png": {
 		"leaves": 1.45,
-		"roll": 180
+		"roll": 0
 	},
 	"22-subbranch-studio.png": {
 		"turn": 45
