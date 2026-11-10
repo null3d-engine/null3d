@@ -126,5 +126,8 @@
 		"thin": 0.19,
 		"girth": 0.8,
 		"along": 0.4
+	},
+	"saguaro-wind-motion.mp4": {
+		"sway": 100
 	}
 }
