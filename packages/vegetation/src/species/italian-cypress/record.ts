@@ -124,6 +124,35 @@ export const record: Species = {
 		// Stills 12 and 13: the scale-leaf sprays stand in whorls of three round the stem, each
 		// whorl turned on from the last, so the shoot clothes every side.
 		phyllotaxis: { kind: 'whorled', count: 3 },
+		// Still 22: a close picture of the cut twig shows a shorter, denser shoot than the crown
+		// can carry on the same class, so the sub-branch piece draws this class alone.
+		cuttingClasses: [
+			{
+				name: 'cut',
+				cutOnly: true,
+				vigor: [0, 1],
+				share: 1,
+				years: 2,
+				length: { mean: 0.05, spread: 0.01 },
+				nodes: { mean: 8, spread: 1 },
+				internode: [
+					[0, 1],
+					[1, 0.85],
+				],
+				stem: { radius: [0.0013, 0.0007] },
+				leafYears: 2,
+				leafScale: [
+					[0, 1],
+					[1, 1],
+				],
+				leafAngle: [
+					[0, 20],
+					[1, 12],
+				],
+				leafAngleSpread: 6,
+				droop: 2,
+			},
+		],
 		orders: 2,
 		years: 2,
 		leafYears: 2,
@@ -306,13 +335,14 @@ export const record: Species = {
 	roundBand,
 	// Stills 21 to 23: the studio pieces cut from the plant and the kit.
 	cuttings: {
-		// Still 22: the 35 cm spray, drawn by the kit's longer shoot and at the record's own
-		// threefold covering.
+		// The covering a cut piece takes where its own hint names none.
 		density: 3,
 		// Stills 09 and 21: a metre bough clothed along its whole length, at twice the record's
 		// covering, because its photograph fills the frame where the spray's leaves it airy.
 		branch: { order: 1, length: 1, density: 6 },
-		subbranch: { shoot: 'spray', pick: 0 },
+		// Still 22: the close piece shows a shorter, denser twig than the crown's own shoots, so it
+		// draws the class the crown never offers.
+		subbranch: { shoot: 'cut', pick: 0 },
 		// Still 23 and the close spray stills: one shoot tip with its cords. A piece taken from a
 		// shoot prototype carries the prototype's own covering, so no placement density can thin it.
 		cluster: { shoot: 'spray', pick: 1 },
