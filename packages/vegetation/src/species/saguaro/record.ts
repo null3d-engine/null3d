@@ -40,12 +40,13 @@ export const record: Species = {
 		ribDepth: 0.02,
 		// Stills 01, 02, 06 and 07: three to six arms leave the stem singly in two tiers, each from a
 		// pinched junction; the lower tier leaves about a third of the way up and tips at half the
-		// height, the upper leaves just above half and tips at five sixths. Each arm runs out nearly
-		// level, bends at an elbow and rises parallel to the stem to a tip below its top.
+		// height, the upper leaves just above half and tips at five sixths. The lower tier turns up
+		// inside the upper one's span, as the silhouette shows. Each arm runs out nearly level, bends
+		// at an elbow and rises parallel to the stem to a tip below its top.
 		arms: {
 			count: { mean: 5, spread: 1 },
 			from: [0.33, 0.56],
-			elbow: 0.95,
+			elbow: [0.55, 0.95],
 			radius: 0.19,
 			rise: [
 				{ mean: 1.6, spread: 0.35 },
