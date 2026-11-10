@@ -140,9 +140,12 @@ export const VIEW_SPECS: Readonly<Record<PlantView, ViewSpec>> = {
 	fork: {
 		slots: [8],
 		fov: 50,
-		background: 'sky-meadow',
-		sun: 'default',
+		// The photographs frame a cut limb on the studio's own ground, so the view cuts one too: a
+		// fork inside a leafy crown carries neighbours the picture has not.
+		background: 'studio-grey',
+		sun: 'flat',
 		elevation: 0,
+		cutting: 'branch',
 		size: [960, 720],
 	},
 	twigs: {

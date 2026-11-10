@@ -474,8 +474,10 @@ Record the list from a run of your pages. The recorder loads each page in hold m
 ```sh
 NULL3D_SHADER_PERMUTATIONS= bun run examples:build
 bun run examples:preview
-bun tools/shader-permutations.ts --base http://localhost:5173 --pages demos
+bun tools/shader-permutations.ts --base https://localhost:5173 --pages demos
 ```
+
+The preview serves HTTPS by default. A secure origin is what makes WebGPU, and so the High and Ultra presets, available. `NULL3D_HTTPS=0` opts out to plain HTTP on the loopback. The recorder accepts the local certificate.
 
 The empty variable makes a full set, because the recording reads every word that the pages ask for. Without it, the build narrows to the list that a recorded run wrote.
 
@@ -492,7 +494,7 @@ Without the variable, the build compiles every permutation, as before. With it, 
 Record again after a scene gains a feature that turns on a new permutation bit. The build then lacks that word. The engine fails with an error that names the word the first time a pipeline needs it, instead of drawing nothing. A path that a recording cannot reach, such as a feature that a visitor turns on later, goes into the list by hand:
 
 ```sh
-bun tools/shader-permutations.ts --base http://localhost:5173 --pages demos --extra 0x00000010
+bun tools/shader-permutations.ts --base https://localhost:5173 --pages demos --extra 0x00000010
 ```
 
 A word that the recording cannot reach is written without the device bits, as the recorded words are. `0x00000010` is the alpha mask bit, for a masked material that a visitor's action shows.

@@ -25,6 +25,22 @@ import type { MeshInput } from '../stages';
 export const WIND_RECORD_FLOATS = 16;
 
 /**
+ * The flutter amplitude on an axis whose middle stands at a share of the plant's height, from 0 at
+ * the ground to 1 at the top: the record's amplitude, weighed by its `byHeight` curve where it names
+ * one. A record without the curve takes its whole amplitude at every height.
+ *
+ * @param flutter The species' flutter record.
+ * @param height The axis's middle height over the plant's height.
+ * @returns The amplitude in metres.
+ * @category api/vegetation
+ */
+export function flutterAmplitudeAt(flutter: Species['wind']['flutter'], height: number): number {
+	return flutter.byHeight === undefined
+		? flutter.amplitude
+		: flutter.amplitude * curveAt(flutter.byHeight, height);
+}
+
+/**
  * Records each variant may hold. A variant's records start at its index times this, so eight
  * variants fit the species' 65,000 records.
  *
@@ -41,7 +57,7 @@ const PHASE_KEY = 0x57494e44;
  *
  * @category api/vegetation
  */
-export const DEFAULT_WIND_SWAY = { frequency: 0.4, amplitude: 0.05 } as const;
+export const DEFAULT_WIND_SWAY = { frequency: 0.4, amplitude: 0.05, power: 2 } as const;
 
 /**
  * The whole plant's sway of a species: its own, or the stated default when its record names none.
@@ -53,8 +69,11 @@ export const DEFAULT_WIND_SWAY = { frequency: 0.4, amplitude: 0.05 } as const;
 export function windSway(record: Species): {
 	readonly frequency: number;
 	readonly amplitude: number;
+	readonly power: number;
 } {
-	return record.wind.sway ?? DEFAULT_WIND_SWAY;
+	const sway = record.wind.sway;
+	if (!sway) return DEFAULT_WIND_SWAY;
+	return { frequency: sway.frequency, amplitude: sway.amplitude, power: sway.power ?? 2 };
 }
 
 /**
@@ -136,6 +155,9 @@ export function windRecords(input: MeshInput): WindTable {
 	let deepest = 1;
 	for (let a = 0; a < count; a++) deepest = Math.max(deepest, axes.order[a] as number);
 	const { stiffness, flutter, whips } = record.wind;
+	// The flutter's share by height, where the record gives one: the axis takes the share its own
+	// middle reaches, so a low limb's sprays and the crown's top can move by different amounts.
+	const plantHeight = Math.max(1e-6, skeleton.height);
 	const records = new Float32Array(from.length * WIND_RECORD_FLOATS);
 	for (let r = 0; r < from.length; r++) {
 		const a = from[r] as number;
@@ -169,7 +191,10 @@ export function windRecords(input: MeshInput): WindTable {
 		records[at + 5] = length > 0 ? dy / length : 1;
 		records[at + 6] = length > 0 ? dz / length : 0;
 		records[at + 7] = curveAt(stiffness, order / deepest);
-		records[at + 8] = flutter.amplitude;
+		records[at + 8] = flutterAmplitudeAt(
+			flutter,
+			((p[first * 3 + 1] as number) + (p[last * 3 + 1] as number)) / 2 / plantHeight,
+		);
 		records[at + 9] = flutter.frequency;
 		records[at + 10] = order;
 		records[at + 11] = length;
