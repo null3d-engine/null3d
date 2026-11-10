@@ -669,7 +669,7 @@ export const record: Species = {
 		switchPixels: [160, 12, 160],
 		// The cards stand two fifths larger than the shoots they picture, so a gap between one shoot's
 		// leaves falls on a neighbour's leaves rather than on sky, and the crown's rim reads solid.
-		cardGrow: 1.7,
+		cardGrow: 1.5,
 		// Still 18: a card's twig is thinner than a pixel at a whole view, so its leaves would read as a
 		// piece in air. Each card draws its supporting twig as a line from the parent node, so the join
 		// shows. A wider least width draws the line as more specks, which count as more pieces.
