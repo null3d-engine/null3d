@@ -690,6 +690,19 @@ export default defineSketch(async (ctx) => {
 					fov,
 				);
 			}
+			case 'crown-foot': {
+				// The crown at soil level: its shoots' lower length seen side on, standing on the
+				// ground the slot names, with the studio behind. The camera looks at the foot just
+				// above the soil, close enough for the sheath's colour to read.
+				const aim = Math.max(0.05, 0.06 * height);
+				return orbit(
+					[foot[0], aim, foot[2]],
+					QUERY.distance ?? Math.max(0.3, 5 * aim),
+					e,
+					turn,
+					fov,
+				);
+			}
 			case 'below': {
 				const below = belowView(closePlant(false), turn, lens, {
 					elevation: e,
