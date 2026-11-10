@@ -40,6 +40,9 @@ import {
 	pieceCount,
 	plantMask,
 	type ReferenceSet,
+	SOIL_MASK_GROUND_SHARE,
+	skyMaskable,
+	soilMaskable,
 	type TurnVideo,
 	WORK_WIDTH,
 } from './references.ts';
@@ -67,6 +70,8 @@ export interface ReferenceFraming {
 	/** The plant base's row share, or undefined when the base is out of the frame. */
 	readonly base?: number;
 	readonly targetX: number;
+	/** The share of the frame's width that the reference's plant fills, margin included. */
+	readonly widthShare: number;
 	/** The frame's width over its height. */
 	readonly aspect: number;
 	/** The plain sky's and the meadow's colours, as sRGB hex. */
@@ -230,11 +235,19 @@ export function estimateFraming(
 	const columns = usable.map(
 		({ m, mask }) => anchorColumn(mask.mask, mask.width, mask.height, m.box as Box) / m.width,
 	);
+	// The plant's width in its picture, margin included: a whole view stands back until the render
+	// fills no more of its frame's width, so a plant wider than its reference keeps the same margin
+	// instead of being cropped at the sides.
+	const widths = usable.map(({ m }) => {
+		const box = m.box as Box;
+		return (box.right - box.left + 1) / m.width;
+	});
 	return {
 		horizon: Number(horizon.toFixed(4)),
 		top: Number((median(tops) as number).toFixed(4)),
 		...(clipped ? {} : { base: Number((median(bases) as number).toFixed(4)) }),
 		targetX: Number((median(columns) as number).toFixed(4)),
+		widthShare: Number((median(widths) as number).toFixed(4)),
 		aspect: Number((first.width / first.height).toFixed(5)),
 		sky: meanHex(usable.map(({ m }) => m.sky)),
 		...(usable.some(({ m }) => m.ground)
@@ -276,11 +289,34 @@ export function framingQuery(framing: ReferenceFraming): Partial<PlantReviewQuer
 	return {
 		horizon: Math.min(1, framing.horizon),
 		targetX: framing.targetX,
+		widthShare: framing.widthShare,
 		sky: framing.sky,
 		...(framing.ground ? { ground: framing.ground } : {}),
 		...(framing.light ? { sunAzimuth: framing.light.azimuth, sunRise: framing.light.rise } : {}),
 		...placed,
 	};
+}
+
+/** A camera's stand from its target, in metres, and its vertical field of view, in degrees. */
+export interface CameraStand {
+	readonly distance: number;
+	readonly fov: number;
+}
+
+/**
+ * The share of the frame's width that a plant of `plantWidth` metres fills at the camera's target:
+ * the frame holds twice the stand's distance times the half field of view's tangent, times the
+ * aspect. A mask that runs off both side edges cannot report a width, so it reads this instead,
+ * and the figure responds to a redraw's stand rather than saturating at the frame's edge.
+ */
+export function cameraWidthShare(
+	plantWidth: number,
+	stand: CameraStand,
+	aspect: number,
+): number | null {
+	if (!(plantWidth > 0) || !(stand.distance > 0) || !(stand.fov > 0) || !(aspect > 0)) return null;
+	const height = 2 * stand.distance * Math.tan((stand.fov * Math.PI) / 360);
+	return plantWidth / (height * aspect);
 }
 
 /** The size of the canvas that outlines are compared on: the plant's height and the canvas width. */
@@ -705,6 +741,44 @@ function labTriple(lab: readonly number[]): string {
 	return lab.map((v) => v.toFixed(1)).join(' ');
 }
 
+/**
+ * A reference outlined against a fitted background rather than a plain one: the surface that
+ * separated the plant, its fit and residual, and — for a ground — the horizon's share and both
+ * surfaces' figures, so a bad model is on the record and never silently masked.
+ */
+export interface FittedMaskNote {
+	readonly kind: 'sky' | 'ground';
+	readonly skyFit: number;
+	readonly skyNoise: number;
+	readonly groundFit?: number;
+	readonly groundNoise?: number;
+	readonly horizonShare?: number;
+	readonly plantToGround?: number;
+}
+
+/** The summary's note when a reference's outline comes from a fitted background. */
+export function fittedMaskClause(pair: { readonly fittedMask?: FittedMaskNote }): string {
+	const note = pair.fittedMask;
+	if (!note) return '';
+	if (note.kind === 'sky')
+		return ` — the outline comes from a fitted sky (fit ${note.skyFit.toFixed(4)}, residual ${note.skyNoise.toFixed(1)})`;
+	const groundShare = 1 - (note.horizonShare ?? 0);
+	const ground =
+		note.groundFit === undefined
+			? ''
+			: `; ground fit ${note.groundFit.toFixed(4)}, residual ${(note.groundNoise ?? 0).toFixed(1)}`;
+	const [least, most] = SOIL_MASK_GROUND_SHARE;
+	const flagged =
+		groundShare < least || groundShare > most
+			? `; the ground region holds ${groundShare.toFixed(3)} of the frame, outside a soil band's usual share, so the fit may cover the plant`
+			: '';
+	const closeness =
+		note.plantToGround === undefined
+			? ''
+			: `; the plant's median colour sits ${note.plantToGround.toFixed(1)} CIEDE2000 steps from the ground`;
+	return ` — the outline comes from a fitted ground at horizon share ${(note.horizonShare ?? 0).toFixed(3)}, ground region ${groundShare.toFixed(3)} (sky fit ${note.skyFit.toFixed(4)}, residual ${note.skyNoise.toFixed(1)}${ground})${closeness}${flagged}`;
+}
+
 /** The labels of a compared pair. */
 function pairLines(head: readonly string[], pair: PairMetrics): string[] {
 	return [
@@ -1126,6 +1200,11 @@ export interface StillResult extends PairMetrics {
 	readonly kind: 'still' | 'texture';
 	readonly view: string;
 	readonly renderFile?: string;
+	/**
+	 * A reference outlined against a fitted background rather than a plain one: the surface, its
+	 * fit and residual, and the horizon share for a ground, so the figure's basis is on the record.
+	 */
+	readonly fittedMask?: FittedMaskNote;
 	/** Whether both pictures gave an outline on a plain background, so the outline measures hold. */
 	readonly masked: boolean;
 	/** For a bark texture: the CIEDE2000 difference of the middle of each picture. */
@@ -1302,7 +1381,16 @@ export function compareStills(
 		const refPlant = plantMask(refImage);
 		const refSide = side(slot.file, refImage, refPlant, false);
 		const render = renderSideOf(runDir, frame, frame.file, false);
-		const masked = refPlant.background.plain && frame.matte !== undefined;
+		const fittedKind = refPlant.background.plain
+			? null
+			: skyMaskable(refPlant.background)
+				? ('sky' as const)
+				: soilMaskable(refPlant.background, refPlant.height)
+					? ('ground' as const)
+					: null;
+		const masked =
+			(fittedKind === null && frame.matte !== undefined) ||
+			(fittedKind !== null && (frame.matte !== undefined || render.measures.box !== undefined));
 		const pair = pairMetrics(masked ? refSide : { ...refSide, normal: undefined }, render);
 		const bark = slot.kind === 'texture' && !slot.view.startsWith('leaf');
 		// The shot carries the query the page was asked for, which is where a species' slot file
@@ -1335,9 +1423,12 @@ export function compareStills(
 		const pieces =
 			frame.matte !== undefined
 				? {
-						reference: refPlant.background.plain
-							? pieceCount(anyPlantMask(refPlant), refPlant.width, refPlant.height, PIECE_AREA)
-							: null,
+						reference:
+							refPlant.background.plain ||
+							skyMaskable(refPlant.background) ||
+							soilMaskable(refPlant.background, refPlant.height)
+								? pieceCount(anyPlantMask(refPlant), refPlant.width, refPlant.height, PIECE_AREA)
+								: null,
 						render: pieceCount(
 							anyPlantMask(render.plant),
 							render.plant.width,
@@ -1369,6 +1460,25 @@ export function compareStills(
 			view: slot.view,
 			renderFile: frame.file,
 			masked,
+			...(fittedKind === null
+				? {}
+				: {
+						fittedMask: {
+							kind: fittedKind,
+							skyFit: refPlant.background.sky.fit,
+							skyNoise: refPlant.background.sky.noise,
+							...(fittedKind === 'ground' && refPlant.background.ground
+								? {
+										groundFit: refPlant.background.ground.fit,
+										groundNoise: refPlant.background.ground.noise,
+										horizonShare: (refPlant.background.horizon ?? 0) / refPlant.height,
+										...(refPlant.plantToGround !== undefined
+											? { plantToGround: refPlant.plantToGround }
+											: {}),
+									}
+								: {}),
+						},
+					}),
 			surfaceDeltaE,
 			barkColour,
 			// A masked close view reads its bark difference off the same patches, since the page's own
