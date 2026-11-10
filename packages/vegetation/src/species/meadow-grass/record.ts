@@ -34,7 +34,7 @@ export const record: Species = {
 		],
 		// Still 22 and the fact sheet: two to four blades on each tiller, set in two ranks. The
 		// whole-plant pictures carry four or five, so the crown takes the fuller end.
-		blades: { mean: 4, spread: 0.4 },
+		blades: { mean: 5, spread: 0.4 },
 		ranks: 2,
 		sheath: { mean: 0.035, spread: 0.01 },
 		sheathRadius: 0.0018,
@@ -79,11 +79,11 @@ export const record: Species = {
 		kind: 'grass-blade',
 		blade: {
 			// Stills 01, 02 and 12: blades of even width that close in a short blunt hood. The
-			// leaf picture draws its blade about 7.4 per cent as wide as it is long, and a 30 cm
-			// blade fills that proportion at 20 mm, the same broad blade the sedge's photographs
+			// leaf picture draws its blade about 7.4 per cent as wide as it is long, and a 36 cm
+			// blade fills that proportion at 24 mm, the same broad blade the sedge's photographs
 			// show. The record follows the picture rather than the fact sheet's narrower figure.
-			length: { mean: 0.3, spread: 0.02 },
-			width: 0.02,
+			length: { mean: 0.36, spread: 0.024 },
+			width: 0.024,
 			profile: [
 				[0, 0.85],
 				[0.1, 1],
