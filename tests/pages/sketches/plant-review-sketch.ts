@@ -404,7 +404,9 @@ function standView(
 	// Only a drawn box that runs off the frame is stood back: a picture that already holds its plant
 	// keeps the camera its reference was measured with, so its figures do not move.
 	const first = projectedRows(view, bounds, points);
-	const clipped = first.top < 0 || first.base > 1;
+	// A few points a hair past the frame are the geometry's rim, not a cropped plant: only a box
+	// clear of the frame by more than a margin stands the camera back.
+	const clipped = first.top < -0.02 || first.base > 1.02;
 	for (let pass = 0; clipped && pass < 4; pass++) {
 		const rows = projectedRows(view, bounds, points);
 		if (framing.base === undefined) {
