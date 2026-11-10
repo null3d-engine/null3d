@@ -417,6 +417,8 @@ describe('the plant shader', () => {
 			HEADER_WINTER_TRANSMITTANCE: HEADER.winterTransmittance,
 			HEADER_EXTRA_BANDS: HEADER.extraBands,
 			HEADER_CARD_STALK: HEADER.cardStalk,
+			HEADER_SCAR: HEADER.scar,
+			HEADER_SCAR_COLOUR: HEADER.scarColour,
 			BARK_ZONE_TEXELS,
 			MAX_BARK_ZONES,
 			MAX_EXTRAS,
