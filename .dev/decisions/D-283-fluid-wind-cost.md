@@ -583,6 +583,14 @@ the figure and the budget, not for the governor's input.
   landing head, so it is not this branch's. That step would prove the add-on's WGSL compiles for
   both GPU paths, and it is owed to the tool. The pages did compile and run that WGSL in
   Chrome, in the picture tests and the stress runs.
+- The tool's fix has landed, and a fresh run of the same command at `266a7d5d0` passes **all eight
+  gates with nothing skipped**: the package, the public API, the interface, the shaders, the sizes,
+  the page from another origin threaded and single-threaded, the cost per preset and the allocation
+  per preset. The shader step now builds six files with WGSL for WebGPU and WebGL2, where it failed
+  above with `TypeScript parameter property is not supported in strip-only mode`. The cost reads
+  0.49, 0.83, 2.63 and 2.97 ms of GPU time a frame from low to ultra, and the allocation 67, 60, 52
+  and 72 bytes a frame in the add-on's own code, both on Chrome 156.0.8078.80. So the failure above
+  was the tool's and is closed; the pages' own figures still stand as the look witness.
 
 ## Addendum: the leaves' two forms, and the flag and water readers
 

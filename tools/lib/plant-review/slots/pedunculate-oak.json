@@ -100,12 +100,31 @@
 	"branch-turntable.mp4": {
 		"daylight": 1.7
 	},
-	"leaf-cluster-turntable.mp4": {
-		"daylight": 1.27,
-		"lamp": "#ebf9ff"
-	},
 	"subbranch-turntable.mp4": {
 		"daylight": 0.88,
 		"lamp": "#ebf9ff"
+	},
+	"14-bark-base.png": {
+		"barkMask": true,
+		"daylight": 1,
+		"lamp": "#f5f0b4"
+	},
+	"15-bark-mid-trunk.png": {
+		"barkMask": true
+	},
+	"16-bark-on-limb.png": {
+		"barkMask": true,
+		"foliage": true,
+		"lod": 0,
+		"daylight": 1.25,
+		"lamp": "#f3f2ea"
+	},
+	"28-young-bark.png": {
+		"barkMask": true,
+		"daylight": 1.2
+	},
+	"26-bark-texture.png": {
+		"barkMask": true,
+		"daylight": 1.25
 	}
 }

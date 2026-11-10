@@ -3,6 +3,8 @@
 // `hud` message; `examples/lib/hud.ts` draws it in the page. Each button names the message its group
 // posts and the value it posts, so a scene answers its own state without the page knowing it.
 
+import type { QualityPreset } from '@null3d/engine';
+
 /** One button of the controls. */
 export interface HudButton {
 	/** The value that the button posts to the sketch, and its name in its group. */
@@ -17,6 +19,10 @@ export interface HudButton {
 	tip: string;
 	/** The message that the button posts, when it is not its group's name. */
 	name?: string;
+	/** True when the button cannot be used now; its reason says why. */
+	disabled?: boolean;
+	/** Why the button is disabled, in plain words. The HUD shows it when the button has focus. */
+	reason?: string;
 }
 
 /** A slider of one value, with labels at key points along it. */
@@ -79,7 +85,12 @@ export interface HudOption {
 	label: string;
 	tip: string;
 	key?: string;
+	/** The lightest quality preset at which the option works, when a preset can disable it. */
+	minPreset?: QualityPreset;
 }
+
+/** Says why an option cannot be used now, or returns undefined when it can. */
+export type Unavailable = (option: HudOption) => string | undefined;
 
 /** The camera modes. `Auto` follows the scene's route; `Manual` hands the camera to the user. */
 export const CAMERA_OPTIONS: readonly HudOption[] = [
@@ -161,7 +172,12 @@ export const TIME_BUTTONS: readonly HudOption[] = [
 export const ATMOSPHERE: readonly HudOption[] = [
 	{ id: 'sky', label: 'Sky', tip: 'Draw the physical sky and light the scene from it.' },
 	{ id: 'fog', label: 'Fog', tip: 'Haze that thickens with distance, for depth.' },
-	{ id: 'shafts', label: 'Light shafts', tip: 'Visible shafts of light through the haze.' },
+	{
+		id: 'shafts',
+		label: 'Light shafts',
+		tip: 'Visible shafts of light through the haze.',
+		minPreset: 'high',
+	},
 	{ id: 'snow', label: 'Snow', tip: 'Snow that falls through the scene.' },
 	{ id: 'rain', label: 'Rain', tip: 'Rain that falls through the scene.' },
 	{
@@ -180,7 +196,12 @@ export const LIGHTING: readonly HudOption[] = [
 		label: 'Contact',
 		tip: 'Contact shadows ground small objects where they meet a surface.',
 	},
-	{ id: 'ao', label: 'AO', tip: 'Ambient occlusion darkens the creases and corners.' },
+	{
+		id: 'ao',
+		label: 'AO',
+		tip: 'Ambient occlusion darkens the creases and corners.',
+		minPreset: 'high',
+	},
 	{
 		id: 'environment',
 		label: 'Environment',
@@ -191,7 +212,12 @@ export const LIGHTING: readonly HudOption[] = [
 /** The post effects that the showcase scenes offer. */
 export const POST: readonly HudOption[] = [
 	{ id: 'bloom', label: 'Bloom', tip: 'A soft glow around bright lights.' },
-	{ id: 'dof', label: 'Depth of field', tip: 'A lens that blurs the near and far planes.' },
+	{
+		id: 'dof',
+		label: 'Depth of field',
+		tip: 'A lens that blurs the near and far planes.',
+		minPreset: 'medium',
+	},
 	{
 		id: 'exposure',
 		label: 'Exposure',
@@ -216,6 +242,7 @@ export function radioGroup(
 	title: string,
 	options: readonly HudOption[],
 	active: string,
+	unavailable?: Unavailable,
 ): HudGroup {
 	return {
 		name,
@@ -229,6 +256,7 @@ export function radioGroup(
 				active: option.id === active,
 			};
 			if (option.key !== undefined) button.key = option.key;
+			addReason(button, unavailable?.(option));
 			return button;
 		}),
 	};
@@ -236,7 +264,8 @@ export function radioGroup(
 
 /**
  * A row of toggles: each posts the group's name and its own id, and the scene flips its own state.
- * Only the options that the scene supports are shown.
+ * Only the options that the scene supports are shown. An option that the scene supports but that
+ * needs a heavier quality preset stays, disabled, with the reason.
  */
 export function toggleGroup(
 	name: string,
@@ -244,6 +273,7 @@ export function toggleGroup(
 	options: readonly HudOption[],
 	supported: readonly string[],
 	on: (id: string) => boolean,
+	unavailable?: Unavailable,
 ): HudGroup {
 	return {
 		name,
@@ -251,11 +281,64 @@ export function toggleGroup(
 		radio: false,
 		buttons: options
 			.filter((option) => supported.includes(option.id))
-			.map((option) => ({
-				id: option.id,
-				label: option.label,
-				tip: option.tip,
-				active: on(option.id),
-			})),
+			.map((option) => {
+				const button: HudButton = {
+					id: option.id,
+					label: option.label,
+					tip: option.tip,
+					active: on(option.id),
+				};
+				addReason(button, unavailable?.(option));
+				return button;
+			}),
 	};
+}
+
+/** Marks a button disabled with its reason. */
+function addReason(button: HudButton, reason: string | undefined): void {
+	if (reason === undefined) return;
+	button.disabled = true;
+	button.reason = reason;
+}
+
+/** The position of a preset in the HUD's order, from the lightest to the heaviest. */
+function presetRank(preset: QualityPreset): number {
+	return QUALITY.findIndex((option) => option.id === preset);
+}
+
+/** The label that the HUD shows for a preset. */
+function presetLabel(preset: QualityPreset): string {
+	return QUALITY.find((option) => option.id === preset)?.label ?? preset;
+}
+
+/** The names of the presets from `from` to the heaviest, such as "High or Ultra". */
+function presetNames(from: QualityPreset): string {
+	const names = QUALITY.filter(
+		(option) => presetRank(option.id as QualityPreset) >= presetRank(from),
+	).map((option) => option.label);
+	if (names.length <= 1) return names[0] ?? presetLabel(from);
+	return `${names.slice(0, -1).join(', ')} or ${names.at(-1)}`;
+}
+
+/** Why a preset that the GPU path cannot run is disabled. */
+export function presetCapReason(preset: QualityPreset, highest: QualityPreset): string | undefined {
+	if (presetRank(preset) <= presetRank(highest)) return undefined;
+	return `${presetLabel(preset)} is not available. This device is held to ${presetLabel(highest)}, and the heavier presets need a graphics processor that this browser does not offer.`;
+}
+
+/**
+ * Why a feature that needs a heavier preset is disabled: the device cannot reach that preset, or
+ * the preset in use is lighter than the one the feature needs.
+ */
+export function presetFeatureReason(
+	option: HudOption,
+	current: QualityPreset,
+	highest: QualityPreset,
+): string | undefined {
+	const needed = option.minPreset;
+	if (needed === undefined || presetRank(current) >= presetRank(needed)) return undefined;
+	const names = presetNames(needed);
+	if (presetRank(highest) < presetRank(needed))
+		return `Needs ${names}. This device is held to ${presetLabel(highest)}.`;
+	return `Needs ${names}. Choose a higher quality preset.`;
 }
