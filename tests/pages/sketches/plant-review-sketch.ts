@@ -367,6 +367,25 @@ function standView(height: number, foot: V3, turn: number, aspect: number): View
 	return { position, target: add(position, scale(look, stand.distance)), fov: FOV };
 }
 
+/**
+ * A view whose camera moves along its own line to the target by a scale: a review redraw corrects
+ * a picture's margin from the width the picture itself measured.
+ */
+function scaledStand<T extends { readonly position: V3; readonly target: V3 }>(
+	view: T,
+	scale: number | undefined,
+): T {
+	if (scale === undefined || scale === 1 || !(scale > 0)) return view;
+	return {
+		...view,
+		position: [
+			view.target[0] + (view.position[0] - view.target[0]) * scale,
+			view.target[1] + (view.position[1] - view.target[1]) * scale,
+			view.target[2] + (view.position[2] - view.target[2]) * scale,
+		],
+	};
+}
+
 /** Whether the query frames a whole plant in screen shares. */
 const FRAMED =
 	QUERY.horizon !== undefined ||
@@ -660,19 +679,7 @@ export default defineSketch(async (ctx) => {
 				const view = FRAMED
 					? standView(height, foot, turn, aspect)
 					: fit(bounds, turn, e, aspect, fov);
-				// A redraw corrects the stand from the picture's own measured width: the camera moves
-				// along its line to the target, so the plant keeps the reference's margin. The first
-				// draw carries no scale and takes the framing's own stand.
-				const scale = QUERY.standScale;
-				if (scale === undefined || scale === 1 || !(scale > 0)) return view;
-				return {
-					...view,
-					position: [
-						view.target[0] + (view.position[0] - view.target[0]) * scale,
-						view.target[1] + (view.position[1] - view.target[1]) * scale,
-						view.target[2] + (view.position[2] - view.target[2]) * scale,
-					],
-				};
+				return scaledStand(view, QUERY.standScale);
 			}
 			case 'crown-sky': {
 				// The crown against the sky from outside the plant: the eye near a person's height, a
@@ -960,7 +967,7 @@ export default defineSketch(async (ctx) => {
 					fov,
 					0.02,
 				);
-				if (found) return found;
+				if (found) return scaledStand(found, QUERY.standScale);
 				break;
 			}
 			case 'soil': {

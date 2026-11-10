@@ -190,6 +190,14 @@ function stillShot(
 			} = framingQuery(estimateFraming([measures], [plant]));
 			query = { ...query, ...framing };
 		}
+		// A close view of the crown's outside keeps the same margin its whole views do, so the run
+		// measures its render against the photograph's width share too and redraws it if it crops.
+		if (!slot.framed && slot.view === 'limb' && slot.query?.surface === true && measures.box) {
+			query = {
+				...query,
+				widthShare: estimateFraming([measures], [plant]).widthShare,
+			};
+		}
 	}
 	// A still's own query fields, such as a camera its picture needs, go over the rest, and a field
 	// given as null is dropped, so a still can trade the framing's fill for a top row and an eye.
@@ -401,12 +409,23 @@ function slotHeld(path: string): boolean {
 const WIDTH_BAND = 0.05;
 
 /**
+ * The most a close view's stand may be scaled to keep a margin. A close view's subject is its span,
+ * so a large scale frames a different part of the plant rather than the same part with its margin:
+ * a picture that needs more than this is a subject mismatch, not a crop, and its crop stays named.
+ */
+const CLOSE_CROP_MAX = 1.25;
+
+/**
  * The share of the picture's width that the drawn plant fills: from the still's matte when it drew
  * one, which is the exact outline whatever the background, or from the mask the view draws. A
  * silhouette's black shape and a studio background can both defeat the colour mask, so the matte
  * is the figure whenever it exists.
  */
-function drawnShare(path: string, silhouette: boolean, matte?: string): number | null {
+function drawnShare(
+	path: string,
+	silhouette: boolean,
+	matte?: string,
+): { share: number; clipped: boolean } | null {
 	const image = readImage(matte ?? path);
 	const plant = matte !== undefined || silhouette ? matteMask(image) : plantMask(image);
 	if (
@@ -421,7 +440,10 @@ function drawnShare(path: string, silhouette: boolean, matte?: string): number |
 		return null;
 	const box = boxOf(plant.mask, plant.width, plant.height);
 	if (!box) return null;
-	return (box.right - box.left + 1) / plant.width;
+	return {
+		share: (box.right - box.left + 1) / plant.width,
+		clipped: box.left <= 0 || box.right >= plant.width - 1,
+	};
 }
 
 /**
@@ -438,23 +460,35 @@ async function correctWidths(
 	const stills = shots.filter((shot) => shot.group === 'stills' && shot.cells.length === 1);
 	const matteOf = (file: string): string | undefined =>
 		frames.find((frame) => frame.file === file)?.matte;
-	const fixes = new Map<string, { target: number; silhouette: boolean; scale: number }>();
+	const fixes = new Map<
+		string,
+		{ target: number; silhouette: boolean; scale: number; close: boolean }
+	>();
 	for (const shot of stills) {
 		const target = shot.query.widthShare;
 		if (target === undefined || target >= 1) continue;
 		const file = shot.cells[0]?.file;
 		if (!file) continue;
 		const matte = matteOf(file);
-		const share = drawnShare(
+		const measured = drawnShare(
 			join(dir, file),
 			shot.query.view === 'silhouette',
 			matte ? join(dir, matte) : undefined,
 		);
-		if (share === null || Math.abs(share - target) <= WIDTH_BAND) continue;
+		if (measured === null) continue;
+		// A box that touches the frame's sides is a crop whatever its share reads, so it is redrawn
+		// even inside the band: a cropped frame cannot judge its subject.
+		const off = Math.abs(measured.share - target) > WIDTH_BAND;
+		const cropped = measured.clipped && target < 1;
+		if (!off && !cropped) continue;
+		const close = shot.query.view === 'limb' && shot.query.surface === true;
+		const scale = measured.share / target;
+		if (close && scale > CLOSE_CROP_MAX) continue;
 		fixes.set(file, {
 			target,
 			silhouette: shot.query.view === 'silhouette',
-			scale: share / target,
+			scale,
+			close,
 		});
 	}
 	for (let pass = 0; pass < 2 && fixes.size > 0; pass++) {
@@ -477,16 +511,23 @@ async function correctWidths(
 			if (at >= 0) frames[at] = frame;
 			else frames.push(frame);
 		}
-		const next = new Map<string, { target: number; silhouette: boolean; scale: number }>();
+		const next = new Map<
+			string,
+			{ target: number; silhouette: boolean; scale: number; close: boolean }
+		>();
 		for (const [file, fix] of fixes) {
 			const matte = matteOf(file);
-			const share = drawnShare(
+			const measured = drawnShare(
 				join(dir, file),
 				fix.silhouette,
 				matte ? join(dir, matte) : undefined,
 			);
-			if (share !== null && Math.abs(share - fix.target) > WIDTH_BAND)
-				next.set(file, { ...fix, scale: fix.scale * (share / fix.target) });
+			if (measured === null) continue;
+			const off = Math.abs(measured.share - fix.target) > WIDTH_BAND;
+			const cropped = measured.clipped && fix.target < 1;
+			const scale = fix.scale * (measured.share / fix.target);
+			if (fix.close && scale > CLOSE_CROP_MAX) continue;
+			if (off || cropped) next.set(file, { ...fix, scale });
 		}
 		fixes.clear();
 		for (const [file, fix] of next) fixes.set(file, fix);
