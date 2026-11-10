@@ -39,6 +39,12 @@ const GROUP_ANGLE = 16;
 const GROUP_STEP = 0.012;
 /** The narrowest a leaflet ribbon is drawn, as a share of the texture's own leaflet width. */
 const WIDTH_SHARE = 1.4;
+/**
+ * The ribbon's width at the nearest level. A leaflet close to the eye shows the picture's own
+ * proportion, narrow and stiff; the wider share above serves the far crown's silhouette, where a
+ * thin ribbon would vanish between the camera and the coarse levels below.
+ */
+const CLOSE_WIDTH_SHARE = 0.9;
 /** Degrees the planes of a V-section frond fan to either side of the rachis's own upper face. */
 const PLANE_FAN = 62;
 /**
@@ -61,12 +67,11 @@ const PLACE_SAMPLES = 64;
  */
 const CUT_PINNA_SPACING = 0.03;
 /**
- * The width a dead frond's ribbon takes, as a share of the leaflet texture's own. A dead frond's
- * leaflets dry closed and hang in a clump, so the skirt reads as a brown mass rather than as a comb
- * of blades. The wider ribbon fills that mass from the few places a coarse level draws, without the
- * vertices a denser place count would cost.
+ * The share of a dead frond's places the skirt draws. The skirt reads as a brown mass where its
+ * dried leaflets hang close; the coarsest share leaves the rachises bare, and the middle share
+ * costs more than the variant's bytes allow. This is the most that fits.
  */
-const DEAD_WIDTH_SHARE = 2.6;
+const DEAD_PINNA_SHARE = 1 / 7;
 
 /** The record's crown-rosette frond, or a fault for another model. */
 function frondOf(record: Species): FrondShape {
@@ -164,6 +169,8 @@ function leafletsOf(
 	origin: number,
 	level: MeshLevel,
 	places: readonly number[],
+	closeBlade?: number,
+	pinnaShare?: number,
 ): Leaflet[] {
 	const out: Leaflet[] = [];
 	const planes = Math.max(1, pinnae.planes);
@@ -171,12 +178,14 @@ function leafletsOf(
 	// piece of a rachis carries leaflets from its cut, as the pictures show.
 	const petioleShare = Math.min(0.3, shape.petiole.length / Math.max(origin, 1e-6));
 	// A coarser level keeps every so many places along the whole frond, so its tip keeps leaflets.
-	const stride = Math.max(1, Math.round(1 / PINNA_SHARE[level]));
+	const stride = Math.max(1, Math.round(1 / (pinnaShare ?? PINNA_SHARE[level])));
 	places.forEach((place, p) => {
 		if (p % stride !== 0) return;
 		if (place < petioleShare) return;
 		const spine = p < Math.round((pinnae.spines ?? 0) / 2);
-		const blade = curveAt(pinnae.length, place) * origin;
+		// A close piece takes the species' own leaflet length, as the leaflet pictures show it;
+		// the whole frond takes the frond's share of its length.
+		const blade = closeBlade ?? curveAt(pinnae.length, place) * origin;
 		for (let g = 0; g < GROUP; g++) {
 			const at = place + (g - (GROUP - 1) / 2) * GROUP_STEP;
 			if (at < 0 || at > 1) continue;
@@ -369,13 +378,14 @@ export function palmFoliage(input: MeshInput, level: MeshLevel): MeshArrays {
 		rows: grid.rows,
 		columns: grid.columns,
 		fold: leaf.fold,
-		widthShare: WIDTH_SHARE,
+		widthShare: level === 0 ? CLOSE_WIDTH_SHARE : WIDTH_SHARE,
 	};
+	// The dead ribbons keep the far width at every level, so the skirt stays a mass in a close view.
 	const deadRibbon: RibbonShape = {
 		...ribbon,
 		rows: GRID[2].rows,
 		columns: GRID[2].columns,
-		widthShare: DEAD_WIDTH_SHARE,
+		widthShare: WIDTH_SHARE,
 	};
 	// A cut piece of a frond keeps the original's leaflets: the record's frond length gives their
 	// size, and the piece's own run gives only how many of its places it carries. A whole plant's
@@ -405,7 +415,16 @@ export function palmFoliage(input: MeshInput, level: MeshLevel): MeshArrays {
 			? Math.max(1, Math.round(length / CUT_PINNA_SPACING))
 			: Math.max(1, Math.round(spreadMean(pinnae.count) * (length / origin)));
 		const places = pinnaPlaces({ ...pinnae, count }, 1);
-		const list = leafletsOf(shape, pinnae, origin, drawn, places);
+		const closeBlade = closeCut ? spreadMean(leaf.length) : undefined;
+		const list = leafletsOf(
+			shape,
+			pinnae,
+			origin,
+			drawn,
+			places,
+			closeBlade,
+			dead ? DEAD_PINNA_SHARE : undefined,
+		);
 		const frondRibbon = dead ? deadRibbon : ribbon;
 		const bytes: number[] = [0, 0, 0, 0];
 		const record = base + frond.record;
