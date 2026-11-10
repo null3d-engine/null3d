@@ -22,6 +22,8 @@ export interface ScreenFraming {
 	readonly eye?: number;
 	/** The column share of the plant's axis. */
 	readonly targetX: number;
+	/** The least camera height this framing accepts, where a redraw needs a lower one than usual. */
+	readonly floor?: number;
 }
 
 /** A camera that stands on the ground plane's normal side, at a distance from the plant's axis. */
@@ -80,9 +82,27 @@ export function leafFrame(
  * photograph of a low plant such as a sedge or a hosta is taken from a few decimetres up, so the
  * floor clears the ground without refusing the picture's own viewpoint. A plant a hand's width tall
  * asks for a camera near its own foot, so the floor sits at a decimetre and the solve frames a herb
- * or a low shrub as its photograph framed it.
+ * or a low shrub as its photograph framed it. A review redraw can ask a lower floor for one cell,
+ * where a hand-high plant's own photograph needs the camera within a few centimetres of its foot.
  */
 const LOWEST_EYE = 0.1;
+
+/**
+ * The horizontal distance that keeps a plant point inside a share of the frame's width: `across`
+ * metres off the plant's axis and `toward` metres nearer than it. A reference picture leaves a
+ * margin round its plant, so a whole view stands back until the render's widest point keeps that
+ * margin rather than running off the frame's sides.
+ */
+export function widthDistance(
+	across: number,
+	toward: number,
+	share: number,
+	aspect: number,
+	fov: number,
+): number {
+	const half = Math.tan((fov * Math.PI) / 360);
+	return toward + across / (Math.max(0.05, Math.min(1, share)) * half * aspect);
+}
 
 /**
  * The camera that puts a plant `height` metres tall where a framing asks: the horizon's row sets
@@ -103,21 +123,11 @@ export function standCamera(framing: ScreenFraming, height: number): StandCamera
 		if (spread > 1e-6) {
 			const forward = height / spread;
 			const eye = -forward * Math.tan(baseRay);
-			if (eye >= LOWEST_EYE) return { distance: forward / along, height: eye, pitch, yaw };
-			// A plant whose foot runs off the frame's bottom asks for a camera under the ground. It
-			// stands at its least height instead, and the top row then sets the distance.
-			const rise = Math.tan(topRay);
-			if (rise > 1e-6 && height > LOWEST_EYE)
-				return {
-					distance: (height - LOWEST_EYE) / rise / along,
-					height: LOWEST_EYE,
-					pitch,
-					yaw,
-					warning: 'the base row sits below the frame, so the camera stands at its least height',
-				};
+			if (eye >= (framing.floor ?? LOWEST_EYE))
+				return { distance: forward / along, height: eye, pitch, yaw };
 		}
 	}
-	const eye = Math.max(LOWEST_EYE, framing.eye ?? 1.6);
+	const eye = Math.max(framing.floor ?? LOWEST_EYE, framing.eye ?? 1.6);
 	const rise = Math.tan(topRay);
 	if (rise > 1e-6 && height > eye)
 		return {

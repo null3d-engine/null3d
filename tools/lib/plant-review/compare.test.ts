@@ -322,6 +322,19 @@ describe("the page's stand camera", () => {
 		expect(projectRow(camera, 0, fov)).toBeCloseTo(0.8814, 3);
 	});
 
+	test("solves a hand-high plant's base row rather than standing back to eye height", () => {
+		const fov = 38;
+		const camera = standCamera(
+			{ fov, aspect: 1.5, horizon: 0.62, top: 0.5, base: 0.914, targetX: 0.5 },
+			0.56,
+		);
+		// The camera clears the ground by the floor and the foot lands on the row the framing asks
+		// for, so the plant does not run off the frame's foot.
+		expect(camera.height).toBeGreaterThan(0);
+		expect(camera.warning).toBeUndefined();
+		expect(projectRow(camera, 0, fov)).toBeCloseTo(0.914, 5);
+	});
+
 	test('says what it gave up when the base would put the camera under the ground', () => {
 		const camera = standCamera(
 			{ fov: 30, aspect: 1, horizon: 0.9, top: 0.1, base: 0.5, targetX: 0.5 },

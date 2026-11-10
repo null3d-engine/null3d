@@ -102,6 +102,16 @@ export interface PlantReviewQuery {
 	readonly pick?: number;
 	/** The cutting's length in metres. */
 	readonly cut?: number;
+	/**
+	 * A multiplier on a view's solved camera distance. A review run sets it for one re-draw when the
+	 * render's silhouette meets the frame's edge, so the picture keeps the margin it needs.
+	 */
+	readonly standBack?: number;
+	/**
+	 * Whether this cell may stand its camera closer to the ground than the usual floor, so a
+	 * hand-high plant's foot lands on the row its photograph asks for.
+	 */
+	readonly lowBase?: boolean;
 	/** Whether the page posts its measures of the plant beside the frame. */
 	readonly measure?: boolean;
 	/**
@@ -246,6 +256,7 @@ const NUMBER_FIELDS = [
 	'time',
 	'pick',
 	'cut',
+	'standBack',
 	'horizon',
 	'fill',
 	'targetY',
@@ -303,6 +314,7 @@ const SWITCHES = [
 	'lifted',
 	'barkMask',
 	'foliage',
+	'lowBase',
 ] as const;
 
 /** A short form of a number for a query, so a query reads well and keeps its precision. */
