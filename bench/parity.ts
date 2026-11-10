@@ -123,7 +123,8 @@ async function loadFrame(
 ): Promise<HoldFrame | string> {
 	const path = source.path(kind);
 	if (path === null) return `${kind}: no page of this kind draws ${source.name}`;
-	const page = await browser.newPage();
+	// The dev server serves the local certificate, which this browser has not been told to trust.
+	const page = await browser.newPage({ ignoreHTTPSErrors: true });
 	const { errors: pageErrors } = watchConsole(page);
 	try {
 		const response = await page.goto(`${baseUrl}${path}`);

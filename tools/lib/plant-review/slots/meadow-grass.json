@@ -1,0 +1,13 @@
+{
+	"04-tuft-from-above.png": { "elevation": 82, "distance": 0.45, "fov": 40 },
+	"11-blade-cluster.png": { "cut": 0.35, "pick": 1 },
+	"12-single-blade-upper.png": { "leaves": 0.72, "roll": -45 },
+	"13-single-blade-underside.png": { "leaves": 0.72, "roll": -45 },
+	"15-sheath-and-collar.png": { "span": 0.04 },
+	"16-ligule-and-collar.png": { "girth": null, "thin": 0.0018, "span": 0.03 },
+	"18-silhouette.png": { "horizon": 0.455 },
+	"19-seed-head.png": { "distance": 0.32, "fov": 30 },
+	"23-leaf-cluster-studio.png": { "cut": 0.35, "pick": 1 },
+	"24-leaf-texture-upper.png": { "leaves": 0.72, "roll": -45 },
+	"25-leaf-texture-underside.png": { "leaves": 0.72, "roll": -45 }
+}

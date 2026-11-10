@@ -6,6 +6,7 @@ import { describe, expect, it } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { scaledBudget } from '../../../tests/lib/run-budget.ts';
 import { type PlantAsset, plantAssetDigest } from './asset';
 import { hashBytes } from './core/hash';
 import { NotBuiltError } from './core/not-built';
@@ -24,7 +25,7 @@ import {
 import type { PlantTaskInput } from './generate-task';
 
 /** The growth tests grow a real species, which a busy machine draws in tens of seconds. */
-const LONG = 180_000;
+const LONG = scaledBudget(180_000);
 
 const stub = standInSpecies('stub');
 
