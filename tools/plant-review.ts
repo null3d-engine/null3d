@@ -27,6 +27,8 @@ import {
 } from '../tests/pages/lib/plant-review/views.ts';
 import { flag, option, positional } from './lib/plant-review/cli.ts';
 import {
+	type CameraStand,
+	cameraWidthShare,
 	compareStills,
 	compareTurn,
 	compareWind,
@@ -401,12 +403,51 @@ function slotHeld(path: string): boolean {
 const WIDTH_BAND = 0.05;
 
 /**
+ * A drawn frame's camera stand and the plant's width in metres, as the page posted them: the
+ * geometry that gives a clipped mask's share when the mask itself cannot report a width.
+ */
+function framePlacement(
+	frame: RunFrame | undefined,
+): { readonly plantWidth: number; readonly camera: CameraStand } | null {
+	const facts = frame?.facts as { plant?: { width?: number } } | undefined;
+	const cell = frame?.cell as
+		| { camera?: { position?: number[]; target?: number[]; fov?: number } }
+		| undefined;
+	const plantWidth = facts?.plant?.width;
+	const position = cell?.camera?.position;
+	const target = cell?.camera?.target;
+	const fov = cell?.camera?.fov;
+	if (
+		typeof plantWidth !== 'number' ||
+		typeof fov !== 'number' ||
+		!Array.isArray(position) ||
+		!Array.isArray(target) ||
+		position.length < 3 ||
+		target.length < 3
+	)
+		return null;
+	const distance = Math.hypot(
+		(position[0] as number) - (target[0] as number),
+		(position[1] as number) - (target[1] as number),
+		(position[2] as number) - (target[2] as number),
+	);
+	return { plantWidth, camera: { distance, fov } };
+}
+
+/**
  * The share of the picture's width that the drawn plant fills: from the still's matte when it drew
  * one, which is the exact outline whatever the background, or from the mask the view draws. A
  * silhouette's black shape and a studio background can both defeat the colour mask, so the matte
- * is the figure whenever it exists.
+ * is the figure whenever it exists. A mask that runs off both side edges holds the frame's width at
+ * most, so it cannot report the plant's own width: the frame's camera stand gives the figure then,
+ * and the share responds to a redraw instead of saturating at the frame's edge.
  */
-function drawnShare(path: string, silhouette: boolean, matte?: string): number | null {
+function drawnShare(
+	path: string,
+	silhouette: boolean,
+	matte?: string,
+	frame?: RunFrame,
+): number | null {
 	const image = readImage(matte ?? path);
 	const plant = matte !== undefined || silhouette ? matteMask(image) : plantMask(image);
 	if (
@@ -421,6 +462,13 @@ function drawnShare(path: string, silhouette: boolean, matte?: string): number |
 		return null;
 	const box = boxOf(plant.mask, plant.width, plant.height);
 	if (!box) return null;
+	if (box.left <= 0 && box.right >= plant.width - 1) {
+		const placement = framePlacement(frame);
+		const share = placement
+			? cameraWidthShare(placement.plantWidth, placement.camera, image.width / image.height)
+			: null;
+		if (share !== null) return share;
+	}
 	return (box.right - box.left + 1) / plant.width;
 }
 
@@ -449,6 +497,7 @@ async function correctWidths(
 			join(dir, file),
 			shot.query.view === 'silhouette',
 			matte ? join(dir, matte) : undefined,
+			frames.find((frame) => frame.file === file),
 		);
 		if (share === null || Math.abs(share - target) <= WIDTH_BAND) continue;
 		fixes.set(file, {
@@ -484,6 +533,7 @@ async function correctWidths(
 				join(dir, file),
 				fix.silhouette,
 				matte ? join(dir, matte) : undefined,
+				frames.find((frame) => frame.file === file),
 			);
 			if (share !== null && Math.abs(share - fix.target) > WIDTH_BAND)
 				next.set(file, { ...fix, scale: fix.scale * (share / fix.target) });
