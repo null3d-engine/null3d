@@ -256,6 +256,33 @@ describe('the width profile', () => {
 		expect(crownStartRow(rowSpans(mask, width, height), box)).toBe(44);
 	});
 
+	test('reads the stem through side offshoots at its foot, not the row span', () => {
+		const width = 500;
+		const height = 100;
+		const mask = new Uint8Array(width * height);
+		// A palm: a crown that tapers from its widest upper mass down to a thick trunk, with basal
+		// offshoots standing on both sides of the foot. The foot's rows span nearly the crown's width,
+		// but the run through the picture's centre is the narrow stem. The span alone raises the
+		// margin until the crown's taper reads as stem, and the box holds only the apex.
+		for (let y = 0; y < 10; y++) for (let x = 230; x < 270; x++) mask[y * width + x] = 1;
+		for (let y = 10; y < 29; y++) for (let x = 50; x < 450; x++) mask[y * width + x] = 1;
+		for (let y = 29; y < 50; y++) {
+			const half = Math.round(110 - 45 * ((y - 29) / 21));
+			for (let x = 250 - half; x < 250 + half; x++) mask[y * width + x] = 1;
+		}
+		for (let y = 50; y < 100; y++) for (let x = 224; x < 276; x++) mask[y * width + x] = 1;
+		for (let y = 82; y < 100; y++) {
+			for (let x = 130; x < 200; x++) mask[y * width + x] = 1;
+			for (let x = 300; x < 370; x++) mask[y * width + x] = 1;
+		}
+		const box = boxOf(mask, width, height) as NonNullable<ReturnType<typeof boxOf>>;
+		const spans = rowSpans(mask, width, height);
+		// The offshoots' span sets the margin without the mask, and the foot lands at the taper's top.
+		expect(crownStartRow(spans, box)).toBe(28);
+		// The stem's own run sets it with the mask, and the foot lands where the taper ends.
+		expect(crownStartRow(spans, box, mask, width)).toBe(49);
+	});
+
 	test('finds a crown whose lowest boughs are thin above a flared foot', () => {
 		const width = 220;
 		const height = 180;

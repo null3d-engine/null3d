@@ -1393,14 +1393,38 @@ function smoothstep(from: number, to: number, value: number): number {
 /**
  * The row where the crown starts: going up from the plant's base, the first row from which the
  * plant stays wider than its trunk by a clear margin. The trunk's width is the median width of the
- * lowest rows. A plant with no bare stem runs as wide at its foot as at its widest, and its crown
- * starts at its foot; its whole box is its crown, which is what its openness is measured over.
+ * lowest rows' stem runs. A plant with no bare stem runs as wide at its foot as at its widest, and
+ * its crown starts at its foot; its whole box is its crown, which is what its openness is measured
+ * over.
+ *
+ * With the mask and the picture's width, the stem's width is the run through the picture's centre
+ * column, not the row's outermost span: basal offshoots or a strip of ground at the foot widen the
+ * span to their own reach, and a trunk read that wide raises the margin that marks the crown's rows,
+ * so the crown's own upper rows read as stem and the crown's box becomes a band below its apex.
  */
-export function crownStartRow(spans: Int32Array, box: Box): number {
+export function crownStartRow(
+	spans: Int32Array,
+	box: Box,
+	mask?: Uint8Array,
+	pictureWidth = 0,
+): number {
 	const tall = box.bottom - box.top + 1;
 	const width = (y: number) => {
 		const left = spans[y * 2] as number;
 		return left < 0 ? 0 : (spans[y * 2 + 1] as number) - left + 1;
+	};
+	const centre = Math.round((box.left + box.right) / 2);
+	/** The width of the run through the picture's centre column, or the row's span without a mask. */
+	const stemWidth = (y: number): number => {
+		const left = spans[y * 2] as number;
+		if (left < 0 || !mask || pictureWidth <= 0) return width(y);
+		const right = spans[y * 2 + 1] as number;
+		if (centre < left || centre > right || !mask[y * pictureWidth + centre]) return width(y);
+		let a = centre;
+		while (a > left && mask[y * pictureWidth + a - 1]) a--;
+		let b = centre;
+		while (b < right && mask[y * pictureWidth + b + 1]) b++;
+		return b - a + 1;
 	};
 	// The trunk's width is the narrowest median of the lowest bands: a buttressed foot widens the
 	// rows at the ground, and a low crown widens the rows above it, so the stem's own width lies in
@@ -1414,7 +1438,7 @@ export function crownStartRow(spans: Int32Array, box: Box): number {
 		const low: number[] = [];
 		const first = box.bottom - Math.round(tall * from);
 		const last = box.bottom - Math.max(2, Math.round(tall * to));
-		for (let y = first; y > last; y--) low.push(width(y));
+		for (let y = first; y > last; y--) low.push(stemWidth(y));
 		low.sort((a, b) => a - b);
 		const median = low[low.length >> 1];
 		if (median !== undefined) trunk = Math.min(trunk, median);
@@ -1570,7 +1594,7 @@ export function measurePlant(image: Rgba, plant: PlantMask): PlantMeasures {
 			light: null,
 		};
 	const spans = rowSpans(mask, width, height);
-	const start = crownStartRow(spans, box);
+	const start = crownStartRow(spans, box, mask, width);
 	const tall = box.bottom - box.top + 1;
 	// The crown's outline: in each crown row, everything between the row's outermost plant pixels.
 	let hull = 0;
