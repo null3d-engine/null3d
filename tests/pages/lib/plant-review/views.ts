@@ -19,6 +19,7 @@ export const PLANT_VIEWS = [
 	'cluster',
 	'leaf-upper',
 	'leaf-under',
+	'section',
 	'bark-base',
 	'bark-mid',
 	'bark-limb',
@@ -201,6 +202,14 @@ export const VIEW_SPECS: Readonly<Record<PlantView, ViewSpec>> = {
 		elevation: 0,
 		cutting: 'leaf',
 		size: [720, 960],
+	},
+	section: {
+		slots: [13, 16],
+		fov: 30,
+		background: 'white',
+		sun: 'flat',
+		elevation: 0,
+		size: [960, 720],
 	},
 	'bark-base': {
 		slots: [14],

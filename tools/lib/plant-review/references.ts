@@ -136,6 +136,13 @@ const NEST_HOLES: SlotRule = {
 	framed: false,
 };
 
+/** A stem cut across: the cut face's rib star, woody ring and flesh. */
+const STEM_SECTION: SlotRule = {
+	view: 'section',
+	background: 'white',
+	framed: false,
+};
+
 /** A branch with its side branches: the branch cutting laid across a frame of the photograph's scale. */
 const SECONDARY_BRANCHING: SlotRule = {
 	view: 'branch',
@@ -157,6 +164,10 @@ const FINE_TWIGS: SlotRule = {
 /** The slot rules, first match wins: words in the still's name, and the slot they name. */
 const SLOT_RULES: readonly { readonly test: (name: string) => boolean; readonly slot: SlotRule }[] =
 	[
+		// A stem cut across is a section of its own, for the cactus and the sedge alike. It comes
+		// before the rib rule below, which would otherwise read the cactus's cross-section as a skin
+		// close-up.
+		{ test: (n) => /cross-section|cut-across/.test(n), slot: STEM_SECTION },
 		// A cactus's single spine cluster and single areole are the leaf's own card on a plain ground,
 		// as their studio stills are: the species' leaf is the cluster.
 		{
