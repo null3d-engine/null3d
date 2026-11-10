@@ -153,9 +153,6 @@ const LEAF_F90: f32 = 0.875;
 // How much a furrow's cavity darkens the bark's colour and raises its roughness.
 const CAVITY_DARK: f32 = 0.45;
 const CAVITY_ROUGH: f32 = 0.2;
-// How a furrow's shade divides over the bark's channels: a shadowed furrow keeps more of its
-// warmth than a flat darkening, so the shade takes more of the blue than of the red and green.
-const CAVITY_WARM: vec3f = vec3f(1.0, 0.82, 1.35);
 // How much of the crown's baked sky visibility darkens bark. A tree's own leaves shade its limbs,
 // but light scatters through the crown, so the wood keeps more of the sky than a leaf's density
 // alone would give it.
@@ -958,7 +955,7 @@ fn surface(input: SurfaceInput) -> Surface {
         bark = mix(bark, lichen.rgb * (0.92 + 0.16 * grain), lichen_mask);
         // The collar's dark ridge where a branch joins its parent.
         bark *= 1.0 - 0.5 * moss_reach.z * junction;
-        base = bark * (1.0 - CAVITY_DARK * cavity * CAVITY_WARM);
+        base = bark * (1.0 - CAVITY_DARK * cavity);
         roughness = saturate(0.82 + CAVITY_ROUGH * cavity);
         // A lichen patch is a flat, matte crust: it hides the furrows under it.
         mapped = normalize(mix(bark_normal, vec3f(0.0, 0.0, 1.0), lichen_mask * 0.35));
