@@ -107,6 +107,11 @@ export interface PlantReviewQuery {
 	 * render's silhouette meets the frame's edge, so the picture keeps the margin it needs.
 	 */
 	readonly standBack?: number;
+	/**
+	 * Whether this cell may stand its camera closer to the ground than the usual floor, so a
+	 * hand-high plant's foot lands on the row its photograph asks for.
+	 */
+	readonly lowBase?: boolean;
 	/** Whether the page posts its measures of the plant beside the frame. */
 	readonly measure?: boolean;
 	/**
@@ -303,6 +308,7 @@ const SWITCHES = [
 	'lifted',
 	'barkMask',
 	'foliage',
+	'lowBase',
 ] as const;
 
 /** A short form of a number for a query, so a query reads well and keeps its precision. */
