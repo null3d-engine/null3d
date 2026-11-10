@@ -26,6 +26,7 @@ import {
 	prepareSpecies,
 	type SpeciesKit,
 	setWindLayer,
+	swayDistanceFor,
 } from '@null3d/vegetation';
 import { createWind, type Wind } from '@null3d/wind';
 import {
@@ -1289,11 +1290,19 @@ export default defineSketch(async (ctx) => {
 				})
 			: undefined;
 	// A stand-in kit's matte is plain black materials; a real kit's is the plant shader's own, which
-	// keeps its quantised parts, cut-outs and sway.
+	// keeps its quantised parts, cut-outs and sway. A plant under the wind sways out to its preset's
+	// distance, or to the query's own, so a far cascade that only this plant reaches keeps the layer
+	// it holds, and a plant past the distance stands still under the same field.
 	const plantLook =
 		MATTE && kit.placeholders === true
 			? matteMaterials(ctx, kit)
-			: plantMaterials(ctx, kit, { ...(wind && { wind: wind.field }), matte: MATTE });
+			: plantMaterials(ctx, kit, {
+					...(wind && {
+						wind: wind.field,
+						swayDistance: QUERY.sway ?? swayDistanceFor(ctx.quality.preset),
+					}),
+					matte: MATTE,
+				});
 	// A stand-in kit draws through the stand-in near pool. A real kit's one plant stands at a fixed
 	// place, so its placement composes its shoot rows once, with no pool.
 	const near: NearPool | undefined =
