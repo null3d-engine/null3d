@@ -38,13 +38,13 @@ const GROUP_ANGLE = 16;
 /** The share of a frond's length that a group member stands along from its place's. */
 const GROUP_STEP = 0.012;
 /** The narrowest a leaflet ribbon is drawn, as a share of the texture's own leaflet width. */
-const WIDTH_SHARE = 1.4;
+const WIDTH_SHARE = 1.05;
 /**
  * The ribbon's width at the nearest level. A leaflet close to the eye shows the picture's own
  * proportion, narrow and stiff; the wider share above serves the far crown's silhouette, where a
  * thin ribbon would vanish between the camera and the coarse levels below.
  */
-const CLOSE_WIDTH_SHARE = 0.9;
+const CLOSE_WIDTH_SHARE = 0.7;
 /**
  * The share of the nearest level's ribbon width that a spanned cut piece keeps. The leaflet
  * pictures show a rachis's blades standing apart; a piece drawn at the whole frond's close width
