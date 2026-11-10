@@ -692,7 +692,8 @@ export function clusterRank(
 /**
  * A 'cluster' cutting from the kit alone: one shoot row of the prototype that `pick` names, standing
  * upright on its attach point at the origin unless the cutting keeps its pose, and the bounds of its
- * mesh at the tier.
+ * mesh at the tier. A named `length` scales the spray about its attach point, so a still can ask for
+ * the piece's own size; absent, it draws at the prototype's size.
  *
  * @param kit The species' kit.
  * @param cutting The piece.
@@ -731,13 +732,18 @@ export function clusterRow(
 			max[k] = Math.max(max[k] as number, turned[k] as number);
 		}
 	}
+	// A still can name the spray's own length: the row then scales about its attach point so the
+	// piece runs that far from its cut. A piece that names no length draws at the prototype's size.
+	const own = Math.max(0, (max[1] as number) - (min[1] as number));
+	const length = cutting.length;
+	const scale = length !== undefined && own > 1e-6 ? length / own : 1;
 	return {
 		rows: {
 			count: 1,
 			prototype: new Uint8Array([prototype.index]),
 			position: new Float32Array(3),
 			rotation: new Float32Array(turn),
-			scale: new Float32Array([1]),
+			scale: new Float32Array([scale]),
 			record: new Uint16Array(1),
 			phase: new Uint8Array(1),
 			sky: new Uint8Array([250]),
@@ -745,8 +751,8 @@ export function clusterRow(
 			order: new Uint32Array(1),
 		},
 		bounds: {
-			min: [min[0] as number, min[1] as number, min[2] as number],
-			max: [max[0] as number, max[1] as number, max[2] as number],
+			min: [(min[0] as number) * scale, (min[1] as number) * scale, (min[2] as number) * scale],
+			max: [(max[0] as number) * scale, (max[1] as number) * scale, (max[2] as number) * scale],
 		},
 	};
 }

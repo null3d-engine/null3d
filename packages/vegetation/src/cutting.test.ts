@@ -12,7 +12,14 @@ import { AXIS_LIMB, AXIS_STEM, BUD_TERMINAL, SkeletonBuilder } from './core/grap
 import { quatRotate } from './core/math';
 import type { Species } from './core/record';
 import { standInSpecies } from './core/stand-in';
-import { CUTTING_LENGTH, clusterRank, cutBranch, cutFoliage, cutsShoot } from './cutting';
+import {
+	CUTTING_LENGTH,
+	clusterRank,
+	clusterRow,
+	cutBranch,
+	cutFoliage,
+	cutsShoot,
+} from './cutting';
 import { buildKitNow, growPlantNow, loadPlantCode } from './generate';
 import type { PlantTaskInput } from './generate-task';
 import { oakRecord } from './grow/oak.fixture';
@@ -451,6 +458,20 @@ describe('cuttings', () => {
 			}).skeleton.height;
 		};
 		expect(heightOfPiece(0.5)).toBeLessThan(heightOfPiece(1));
+	});
+
+	it('scales a cluster spray to the length a still names', () => {
+		const plain = clusterRow(kit, { part: 'cluster' }, kit.detail);
+		const named = clusterRow(kit, { part: 'cluster', length: 0.5 }, kit.detail);
+		if (!plain || !named) throw new Error('the stub kit holds no cluster prototype');
+		const tall = (b: { readonly min: readonly number[]; readonly max: readonly number[] }) =>
+			(b.max[1] as number) - (b.min[1] as number);
+		const own = tall(plain.bounds);
+		expect(own).toBeGreaterThan(0);
+		expect(named.rows.scale[0]).toBeCloseTo(0.5 / own, 6);
+		expect(tall(named.bounds)).toBeCloseTo(0.5, 5);
+		// A piece that names no length draws the prototype at its own size.
+		expect(plain.rows.scale[0]).toBe(1);
 	});
 
 	it('gives a woodless plant a piece with no wood, and a woody plant its cut face', async () => {
