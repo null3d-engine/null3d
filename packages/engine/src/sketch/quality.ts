@@ -184,6 +184,11 @@ export interface Quality {
 	/** The preset that the engine runs. */
 	readonly preset: QualityPreset;
 	/**
+	 * The heaviest preset that the GPU path allows. `setPreset` caps a heavier request at this one,
+	 * so a page can tell which presets this device cannot run.
+	 */
+	readonly highest: QualityPreset;
+	/**
 	 * The settings in use: the preset's values, with the values of the page's options and the
 	 * changes that `set` made.
 	 */
@@ -376,7 +381,7 @@ export class SketchQuality implements Quality {
 	private readonly options: Partial<QualitySettings>;
 	/** True when the page's own options fix the anti-aliasing mode, which no preset changes. */
 	private readonly antialiasFixed: boolean;
-	private readonly highest: QualityPreset;
+	readonly highest: QualityPreset;
 	private readonly textureCapMiB: number;
 
 	readonly governor: QualityGovernor;
