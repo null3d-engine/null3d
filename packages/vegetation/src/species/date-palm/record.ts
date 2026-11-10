@@ -45,9 +45,10 @@ export const record: Species = {
 			fronds: { mean: 26, spread: 2 },
 			divergence: 137.5,
 			// The centre's youngest fronds stand upright, the oldest arch out and hang. The tilt and
-			// the dead fronds' hang are the palm's own, read from stills 02, 05 and 20; the crown's
-			// depth is left unset on purpose, because no picture measures how much stem the frond
-			// bases clasp, so the grower's 0.7 m stands rather than a guessed figure.
+			// the dead fronds' hang are the palm's own, read from stills 02, 05 and 20. Stills 03, 05
+			// and 06 show the frond bases clasping the stem over more than a metre, so the crown's
+			// base stands lower than the grower's default.
+			depth: 1.3,
 			tilt: [
 				[0, 8],
 				[0.3, 45],
