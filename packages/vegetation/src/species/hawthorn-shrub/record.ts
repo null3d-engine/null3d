@@ -324,12 +324,12 @@ export const record: Species = {
 			// Stills 09, 10 and 19: a long straight woody spine stands out from almost every node of
 			// the twigs, red-brown when young and grey with age.
 			kind: 'thorn',
-			at: 'old-wood',
+			at: 'node',
 			share: 0.5,
 			seasons: ['blossom', 'summer', 'autumn', 'winter'],
 			shape: { spines: 1, length: 0.022, spread: 0 },
 			colour: [0.18, 0.06, 0.04],
-			hang: 0,
+			hang: 90,
 		},
 		{
 			// Stills 01, 02 and 19: dark red haws in twos and threes at the twigs' ends, each a small
