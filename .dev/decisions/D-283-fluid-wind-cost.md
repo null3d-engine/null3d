@@ -7,8 +7,8 @@ phone measures the small grid. The ruling closes the rows and the budgets. Three
 task's Done-when stay open: the smallest-tier look, a side-by-side that the owner judges and has not
 named; the cost of each tier on the M5 Max, because the machine here is an M3 Max and no M5 Max ran
 the plan, while the iPad Pro 13, the Galaxy S25 and the Galaxy Tab A9 Plus now carry their rows; and
-the proof that the chosen rows keep Creek and the forest within D-241's frame ceilings, which waits
-on M3-V11 and M3-V12. The three devices measured their rows. All field rows hold except the Galaxy
+the proof that the chosen rows keep Creek and the forest within D-241's frame ceilings: the S25's
+Ultra Creek row reads 516.56 ms against the 511 ms ceiling, and the forest's side waits on M3-V12. The three devices measured their rows. All field rows hold except the Galaxy
 S25's Ultra cell, which stays open: its 30 Hz display owes two field cycles a frame, so the
 modelled frame is 11.08 ms, from the measured 5.243 ms of its 40 volume steps plus the
 advection and projection floor, doubled. That is over the wind's own 6.25 ms figure, and D-241's
