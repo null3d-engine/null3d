@@ -38,14 +38,13 @@ export const record: Species = {
 			// Still 01 and the crown views: a dense living crown of three dozen fronds.
 			fronds: { mean: 34, spread: 2 },
 			divergence: 137.5,
-			// Still 01: the youngest fronds lean out from the centre and the oldest arch over and
-			// hang down past the horizontal, so the crown reads as a deep dome with an open centre
-			// rather than a flat spread.
+			// Still 01: the youngest fronds lean out from the centre and the oldest rise, arch over
+			// and hang at the tips, so the crown reads as a dome with an open centre.
 			tilt: [
-				[0, 20],
-				[0.35, 30],
-				[0.7, 80],
-				[1, 150],
+				[0, 24],
+				[0.35, 38],
+				[0.7, 70],
+				[1, 95],
 			],
 			// Stills 06 and 07: the fronds spring from one growing point at the trunk's top, where
 			// the old bases cluster, rather than clasping a length of stem as a palm's do.
@@ -70,16 +69,15 @@ export const record: Species = {
 			// Stills 21 and 22: the frond is twice divided, its pinnae in near-opposite pairs; the
 			// pinna itself is the species' leaf, drawn from its own picture.
 			kind: 'pinnate',
-			length: { mean: 1.5, spread: 0.15 },
+			length: { mean: 2.1, spread: 0.2 },
 			// Still 07: a short red-brown stipe, densely hairy, no wider than the rachis.
 			petiole: { length: 0.28, width: 0.055, teeth: 0 },
-			// Still 21: the blade rises from the stipe and arches over, its tip turning well
-			// below the horizontal, so the crown reads as an umbrella rather than a spoke.
+			// Still 21: the blade rises from the stipe and arches over, its tip drooping.
 			droop: [
-				[0, 0],
-				[0.3, 15],
-				[0.6, 35],
-				[1, 60],
+				[0, 2],
+				[0.25, 30],
+				[0.55, 70],
+				[1, 130],
 			],
 			twist: 4,
 			pinnae: {
@@ -134,9 +132,8 @@ export const record: Species = {
 		},
 	},
 	bark: {
-		// Stills 15 and 26: the whole trunk is packed roots and cut frond bases, one surface, a warm
-		// red-brown mat whose drawn colour loses chroma under the review's light.
-		zones: [{ layer: 0, by: 'height', from: -1, to: 4, blend: 0.2, tint: [1.27, 0.9, 0.72] }],
+		// Stills 15 and 26: the whole trunk is packed roots and cut frond bases, one surface.
+		zones: [{ layer: 0, by: 'height', from: -1, to: 4, blend: 0.2, tint: [1.08, 1.07, 1.05] }],
 		young: 0,
 		// The stipes, rachises and pinna midribs take the fine tile, so they read as hairy brown
 		// stalks rather than as the trunk's coarse mat.
