@@ -35,6 +35,8 @@ import {
 	fixed,
 	framingQuery,
 	rubricBand,
+	SHEATH_VIEWS,
+	type SheathTarget,
 	type StillResult,
 	type TurnResult,
 	viewSheets,
@@ -126,6 +128,27 @@ async function formsOf(species: string): Promise<readonly string[]> {
 	return Object.keys((await loadSpecies(species)).record.forms ?? {});
 }
 
+/**
+ * The sheath colours a tuft's record asks its surface to show, when the record names them. The
+ * field is read structurally: a species that grows on another model, or names no sheath colour,
+ * gives no figure.
+ */
+async function sheathOf(species: string): Promise<SheathTarget | undefined> {
+	if (!isSpeciesId(species)) return undefined;
+	const growth = (await loadSpecies(species)).record.growth;
+	if (growth.model !== 'tuft') return undefined;
+	const named = (
+		growth as {
+			sheathColour?: {
+				readonly foot: readonly [number, number, number];
+				readonly collar: readonly [number, number, number];
+				readonly reach: number;
+			};
+		}
+	).sheathColour;
+	return named;
+}
+
 /** The metres a bark view frames, from the species' texture manifest when it has one. */
 function barkSpan(species: string): number | undefined {
 	const path = join(REPO_ROOT, 'packages/vegetation-textures/textures', species, 'manifest.json');
@@ -205,7 +228,10 @@ function stillShot(
 			slot.view !== 'silhouette') ||
 		slot.framed ||
 		slot.query?.fruit === true ||
-		CUTTING_VIEWS.includes(slot.view);
+		CUTTING_VIEWS.includes(slot.view) ||
+		// A sheath picture reads its own surface off the plant alone, so its outline must be exact
+		// even where the photograph does not separate from its soil.
+		SHEATH_VIEWS.has(slot.view);
 	return singleShot(
 		'stills',
 		`${slot.file.replace(/\.\w+$/, '')}.png`,
@@ -509,6 +535,7 @@ function compareRun(
 	manifest: Manifest,
 	set: ReferenceSet | undefined,
 	windFps: number,
+	sheath: SheathTarget | undefined,
 ): boolean {
 	const byGroup = new Map<string, RunFrame[]>();
 	for (const frame of manifest.frames) {
@@ -547,6 +574,7 @@ function compareRun(
 			set,
 			byGroup.get('stills') ?? [],
 			`${label}  STILLS AND TEXTURE SOURCES`,
+			sheath,
 		);
 		for (const pair of result.pairs) stills.set(pair.file, pair);
 		metrics.stills = result;
@@ -562,6 +590,13 @@ function compareRun(
 			...result.pairs.flatMap((pair) =>
 				pair.surfaceDeltaE !== null
 					? [`- ${pair.file}: surface colour difference ${fixed(pair.surfaceDeltaE, 1)}.`]
+					: [],
+			),
+			...result.pairs.flatMap((pair) =>
+				pair.sheath
+					? [
+							`- ${pair.file}: sheath foot difference ${fixed(pair.sheath.foot, 1)} and collar ${fixed(pair.sheath.collar, 1)} against the record, from ${pair.sheath.footPixels} and ${pair.sheath.collarPixels} pixels.`,
+						]
 					: [],
 			),
 			// A picture whose backdrop the tool cannot separate still has edges, and its edges say
@@ -706,7 +741,13 @@ async function main(): Promise<void> {
 		const set = manifest.references
 			? readReferenceSet(manifest.references, await formsOf(manifest.species))
 			: undefined;
-		const complete = compareRun(dir, manifest, set, manifest.windFps ?? windFps);
+		const complete = compareRun(
+			dir,
+			manifest,
+			set,
+			manifest.windFps ?? windFps,
+			await sheathOf(manifest.species),
+		);
 		console.log(readFileSync(join(dir, 'summary.md'), 'utf8'));
 		if (!complete) process.exitCode = 1;
 		return;
@@ -714,6 +755,7 @@ async function main(): Promise<void> {
 	const species = positional(0) ?? option('species');
 	const folder = referenceFolder(species);
 	const set = folder ? readReferenceSet(folder, await formsOf(species)) : undefined;
+	const sheath = await sheathOf(species);
 	const { commit, dirty } = commitOf();
 	const stamp = new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 13);
 	const run = option('run', `${species}-${stamp}`);
@@ -810,7 +852,7 @@ async function main(): Promise<void> {
 	console.log(
 		`${frames.length - failed} of ${frames.length} frames drawn in ${manifest.seconds} s`,
 	);
-	const complete = compareRun(dir, manifest, set, windFps);
+	const complete = compareRun(dir, manifest, set, windFps, sheath);
 	console.log(readFileSync(join(dir, 'summary.md'), 'utf8'));
 	if (failed > 0 || !complete) process.exitCode = 1;
 }

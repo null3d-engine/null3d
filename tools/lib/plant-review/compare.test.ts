@@ -26,6 +26,7 @@ import {
 	profileError,
 	rubricBand,
 	rubricFrames,
+	sheathDifference,
 	spread,
 } from './compare.ts';
 import { blank, deltaE2000, labImage } from './image.ts';
@@ -696,5 +697,76 @@ describe('a fitted-background outline', () => {
 			},
 		});
 		expect(band).not.toContain('outside a soil band');
+	});
+});
+
+describe('the sheath surface figure', () => {
+	const target = {
+		foot: [0.15, 0.08, 0.03] as const,
+		collar: [0.4, 0.4, 0.32] as const,
+		reach: 0.5,
+	};
+	// The record's linear colours as the sRGB bytes a copy stand shows.
+	const footSrgb = [108, 80, 48];
+	const collarSrgb = [170, 170, 153];
+
+	/** A square picture: the collar band above, the foot band below, leaf green between. */
+	function picture(size: number, foot: readonly number[], collar: readonly number[]) {
+		const image = blank(size, size, [70, 110, 40]);
+		const paint = (from: number, to: number, colour: readonly number[]) => {
+			for (let y = from; y <= to; y++)
+				for (let x = 0; x < size; x++) {
+					const at = (y * size + x) * 4;
+					for (let k = 0; k < 3; k++) image.data[at + k] = colour[k] as number;
+				}
+		};
+		const band = Math.round(size * 0.2) - 1;
+		paint(0, band, collar);
+		paint(size - 1 - band, size - 1, foot);
+		return image;
+	}
+
+	const whole = rectangle(100, 100, { left: 0, top: 0, right: 99, bottom: 99 });
+	const box = { left: 0, top: 0, right: 99, bottom: 99 };
+
+	test('reads both ends against the record', () => {
+		const figure = sheathDifference(picture(100, footSrgb, collarSrgb), box, whole, target);
+		expect(figure).not.toBeNull();
+		expect(figure?.foot ?? 99).toBeLessThan(0.5);
+		expect(figure?.collar ?? 99).toBeLessThan(0.5);
+		expect(figure?.footPixels ?? 0).toBeGreaterThan(0);
+	});
+
+	test('reports a patch that has moved from the record', () => {
+		const figure = sheathDifference(picture(100, [255, 255, 255], collarSrgb), box, whole, target);
+		expect(figure?.foot ?? 0).toBeGreaterThan(20);
+		expect(figure?.collar ?? 99).toBeLessThan(0.5);
+	});
+
+	test('finds the surface below the blades', () => {
+		const image = blank(100, 100, [70, 110, 40]);
+		const paint = (from: number, to: number, colour: readonly number[]) => {
+			for (let y = from; y <= to; y++)
+				for (let x = 0; x < 100; x++) {
+					const at = (y * 100 + x) * 4;
+					for (let k = 0; k < 3; k++) image.data[at + k] = colour[k] as number;
+				}
+		};
+		paint(50, 69, collarSrgb);
+		paint(70, 99, footSrgb);
+		const figure = sheathDifference(image, box, whole, target);
+		expect(figure?.foot ?? 99).toBeLessThan(0.5);
+		expect(figure?.collar ?? 99).toBeLessThan(0.5);
+	});
+
+	test('maps a larger picture onto the mask it was measured on', () => {
+		const figure = sheathDifference(picture(200, footSrgb, collarSrgb), box, whole, target);
+		expect(figure?.foot ?? 99).toBeLessThan(0.5);
+		expect(figure?.collar ?? 99).toBeLessThan(0.5);
+	});
+
+	test('gives no figure when the patch holds no plant', () => {
+		const bare: PlantMask = { ...whole, mask: new Uint8Array(100 * 100) };
+		expect(sheathDifference(picture(100, footSrgb, collarSrgb), box, bare, target)).toBeNull();
 	});
 });
