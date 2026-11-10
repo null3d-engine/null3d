@@ -139,14 +139,18 @@ export const HEADER = {
 	winterReflectance: 63,
 	/** The winter leaves' linear transmittance. */
 	winterTransmittance: 64,
-
+	/**
+	 * A tuft's sheath columns' linear colour, then 1 when the record gives one. Absent, the columns
+	 * draw the leaf material.
+	 */
+	sheath: 65,
 	/**
 	 * A fire scar's hollow: its foot and head in metres, its centre's angle in radians about the
 	 * first stem and its half-width. Zeroed where the record gives no scar.
 	 */
-	scar: 65,
+	scar: 66,
 	/** The scar's charred colour, then the share of it the hollow takes. */
-	scarColour: 66,
+	scarColour: 67,
 } as const;
 
 /**
@@ -397,6 +401,9 @@ export function speciesHeader(
 		texel(header, HEADER.winterReflectance, [...winterLeaves.reflectance, 1]);
 		texel(header, HEADER.winterTransmittance, [...winterLeaves.transmittance, 0]);
 	}
+	const growth = record.growth;
+	if (growth.model === 'tuft' && growth.sheathColour)
+		texel(header, HEADER.sheath, [...growth.sheathColour, 1]);
 	texel(header, HEADER.cardStalk, [record.lod.cardStalk ?? 0, 0, 0, 0]);
 	const scar = record.base?.scar;
 	texel(
