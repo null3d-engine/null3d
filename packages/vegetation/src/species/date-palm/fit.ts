@@ -18,11 +18,11 @@ export const envelope: RadialEnvelope | undefined = undefined;
 export const crownBox = {
 	angles: [0, 45, 90, 135, 180, 225, 270, 315],
 	width: 0.1682,
-	height: 0.5315,
+	height: 0.1146,
 } as const;
 
 /** The all-round test's band: the form's, or the reference's own crown-box spread where wider. */
-export const roundBand = 0.54;
+export const roundBand = 0.25;
 
 /** Crown width over plant height, and the crown's base as a share of the height, over the views. */
 export const aspect = undefined;
