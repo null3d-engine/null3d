@@ -39,6 +39,15 @@
 	"13-single-leaf-underside.png": {
 		"view": "subbranch"
 	},
+	"11-leaf-cluster.png": {
+		"view": "subbranch",
+		"cut": 0.55,
+		"span": 0.95
+	},
+	"23-leaf-cluster-studio.png": {
+		"span": 0.85,
+		"along": 0.5
+	},
 	"14-bark-base.png": {
 		"distance": 24
 	},
