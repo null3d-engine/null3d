@@ -712,19 +712,23 @@ function mattePlant(
 }
 
 describe('the coverage matte', () => {
-	test("keeps a texel's own coverage, and a faint tip, above the frame's edge", () => {
-		const image = blank(4, 1, [255, 255, 255]);
+	test('bridges a faint texel only where plant stands on both sides', () => {
+		const image = blank(7, 1, [255, 255, 255]);
 		put(image, 1, 0, [0, 0, 0]);
 		put(image, 2, 0, [128, 128, 128]);
-		put(image, 3, 0, [254, 254, 254]);
+		put(image, 4, 0, [0, 0, 0]);
+		put(image, 5, 0, [128, 128, 128]);
+		put(image, 6, 0, [0, 0, 0]);
 		const plant = matteMask(image);
-		// A half-covered texel is plant, as a faint tip is; the one step below clear is not.
-		expect([...plant.mask]).toEqual([0, 1, 1, 0]);
-		expect([...(plant.coverage as Uint8Array)]).toEqual([0, 255, 127, 0]);
+		// The texel between two solid ones bridges; the one beside a single solid one is a leaf's
+		// own antialiased edge and stays clear.
+		expect([...plant.mask]).toEqual([0, 1, 0, 0, 1, 1, 1]);
+		expect([...(plant.coverage as Uint8Array)]).toEqual([0, 255, 127, 0, 255, 127, 255]);
+		// The matte's frame edge, one step below clear, is not a faint tip.
 		const edge = blank(2, 1, [255, 255, 255]);
 		put(edge, 0, 0, [253, 253, 253]);
 		put(edge, 1, 0, [240, 240, 240]);
-		expect([...matteMask(edge).mask]).toEqual([0, 1]);
+		expect([...matteMask(edge).mask]).toEqual([0, 0]);
 	});
 
 	test('reads any coverage for the piece test, and a plain mask as it stands', () => {

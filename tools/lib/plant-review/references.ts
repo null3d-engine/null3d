@@ -1300,18 +1300,29 @@ export function matteMask(image: Rgba): PlantMask {
 	const { width, height } = work;
 	const mask = new Uint8Array(width * height);
 	const coverage = new Uint8Array(width * height);
-	// A thin frond tip antialiases to a pale grey that a half-black threshold drops, and a close
-	// view then reads the tip as absent and keeps its crop. A texel counts as plant from a faint
-	// coverage up, above the matte's own frame edge, which reads one step below clear.
-	const FAINT_TIP = 8;
 	for (let at = 0; at < mask.length; at++) {
 		const luma =
 			0.2126 * (work.data[at * 4] as number) +
 			0.7152 * (work.data[at * 4 + 1] as number) +
 			0.0722 * (work.data[at * 4 + 2] as number);
 		coverage[at] = luma >= 254 ? 0 : Math.round(255 - luma);
-		mask[at] = (coverage[at] as number) >= FAINT_TIP ? 1 : 0;
+		mask[at] = luma < 128 ? 1 : 0;
 	}
+	// A thin frond tip antialiases to a pale grey that the half-black threshold drops, and a close
+	// view then reads the tip as absent. A faint texel joins the plant only where solid plant
+	// stands on opposite sides of it, so a one-texel gap in a thin run bridges while a leaf's own
+	// antialiased edge keeps its bytes. The coverage must clear the matte's frame edge, one step
+	// below clear.
+	const FAINT_TIP = 8;
+	const solid = mask.slice();
+	for (let y = 0; y < height; y++)
+		for (let x = 0; x < width; x++) {
+			const at = y * width + x;
+			if (mask[at] === 1 || (coverage[at] as number) < FAINT_TIP) continue;
+			const across = x > 0 && x + 1 < width && solid[at - 1] === 1 && solid[at + 1] === 1;
+			const down = y > 0 && y + 1 < height && solid[at - width] === 1 && solid[at + width] === 1;
+			if (across || down) mask[at] = 1;
+		}
 	const flat: ColourSurface = {
 		coefficients: [
 			[100, 0, 0, 0, 0, 0],
