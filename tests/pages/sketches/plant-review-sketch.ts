@@ -1380,6 +1380,13 @@ export default defineSketch(async (ctx) => {
 	const subject = close
 		? { ...close.subject, ...(close.clutter && { clutter: close.clutter }) }
 		: plainSubjects.get(VIEW);
+	// The plant as the view draws it: the level's filled silhouette, not every level's part bounds,
+	// so a vertex or a part outside the drawn cells cannot inflate the posted width and height.
+	const drawnBox = cells[0] ? measurePlant(main, kit.box, cells[0].turn).plantBox : null;
+	// A cut piece is drawn from its own kit, and its posted size is the box its own level draws, not
+	// the union of every part's bounds.
+	const pieceTurn = cells.find((cell) => cell.piece === 'away')?.turn ?? cells[0]?.turn ?? 0;
+	const pieceBox = piece ? measurePlant(piece, pieceKit.box, pieceTurn).plantBox : null;
 	facts = {
 		species: record.id,
 		name: record.name,
@@ -1392,8 +1399,8 @@ export default defineSketch(async (ctx) => {
 		size: SIZE,
 		grid: [columns, rows],
 		plant: {
-			height,
-			width: bounds.max[0] - bounds.min[0],
+			height: drawnBox ? drawnBox.top : height,
+			width: drawnBox ? drawnBox.width : bounds.max[0] - bounds.min[0],
 			depth: bounds.max[2] - bounds.min[2],
 			crownBase: main.crown.base,
 			trunkRadius: trunk?.radius ?? null,
@@ -1405,7 +1412,9 @@ export default defineSketch(async (ctx) => {
 				...piece.cutting,
 				size: (() => {
 					const b = boundsOf(piece, pieceKit);
-					return sub(b.max, b.min);
+					return pieceBox
+						? [pieceBox.width, pieceBox.top, (b.max[2] as number) - (b.min[2] as number)]
+						: sub(b.max, b.min);
 				})(),
 				axes: piece.skeleton.axes.count,
 			},
