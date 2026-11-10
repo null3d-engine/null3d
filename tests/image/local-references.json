@@ -425,6 +425,12 @@
 		"date": "2026-10-27",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that added the pictures; the branch's CI run has not drawn them yet"
 	},
+	"chromium-swiftshader/webgl2/demo-island.png": {
+		"test": "demo-island",
+		"tier": "webgl2",
+		"date": "2026-11-10",
+		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head; this view drew in the idle window and was compared before acceptance, and a CI drawing on a pull request replaces it"
+	},
 	"chromium-swiftshader/webgl2/demo-ocean.png": {
 		"test": "demo-ocean",
 		"tier": "webgl2",
