@@ -914,11 +914,15 @@ export type Sdf =
 /**
  * How leaves or buds stand along a shoot.
  *
+ * A two-ranked shoot may turn each node's leaf past the opposite rank by `turn` degrees. A small
+ * turn keeps the shoot reading as two ranks and spreads its blades out of one plane, so the spray
+ * keeps its height as it turns. Zero, or no turn named, draws strict two ranks.
+ *
  * @category api/vegetation
  */
 export type Phyllotaxis =
 	| { readonly kind: 'spiral'; readonly divergence: number }
-	| { readonly kind: 'distichous'; readonly flatten: number }
+	| { readonly kind: 'distichous'; readonly flatten: number; readonly turn?: number }
 	| { readonly kind: 'opposite'; readonly decussate: boolean }
 	| { readonly kind: 'whorled'; readonly count: number }
 	| { readonly kind: 'fascicle'; readonly needles: number }
