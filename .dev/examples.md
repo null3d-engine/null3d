@@ -39,8 +39,8 @@ The examples page links only by relative addresses, and each demo's entry names 
 
 ### From a clone
 
-- `bun run dev` serves the page at `/examples/` with the other test and benchmark pages.
-- `bun run examples:build` builds the page and every demo into `target/examples/`, against this checkout's packages, with the engine's address switches on. `bun run examples:preview` serves that build with the isolation headers and the sample files. Run `bun run build` first, for the WebAssembly files.
+- `bun run dev` serves the page at `/examples/` with the other test and benchmark pages, over HTTPS on port 5174 by default. A secure origin is what makes WebGPU, and so the High and Ultra presets, available. A demo served over plain HTTP on a network address silently falls back to WebGL2 at Medium. Open `https://localhost:5174/examples/`. On a second machine, open `https://<mac>.local:5174/examples/` and accept the local certificate warning. `bun run dev-cert` makes the certificate; without one the server stops and names that command. `NULL3D_HTTPS=0 bun run dev` serves plain HTTP on port 5173 for a loopback-only run.
+- `bun run examples:build` builds the page and every demo into `target/examples/`, against this checkout's packages, with the engine's address switches on. `bun run examples:preview` serves that build over HTTPS on port 5173, with the isolation headers and the sample files; the same rule, reason and opt-out apply. Run `bun run build` first, for the WebAssembly files.
 - The demos that load files need `bun run samples:fetch` once on a new machine ([Sample content](sample-content.md)).
 - After a merge that changes the shaders, a merge and a core rebuild, clear `node_modules/.cache/null3d-shaders` and restart the server with `--force`. Vite's `--force` does not clear the plugin's cache of compiled custom materials. An entry compiled against an older frame group keeps its old binding declarations, and a material then fails to build its pipeline with E1404 even though its source is right.
 

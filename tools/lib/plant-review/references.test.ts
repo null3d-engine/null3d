@@ -8,18 +8,24 @@ import {
 import { type PlantView, VIEW_SPECS } from '../../../tests/pages/lib/plant-review/views.ts';
 import { blank, labImage, labOf, type Rgba } from './image.ts';
 import {
+	anyPlantMask,
 	boxOf,
 	classifySlot,
 	classifyTurn,
 	crownStartRow,
 	findHorizon,
 	greenLeaves,
+	matteMask,
 	measurePlant,
+	type PlantMask,
+	pieceCount,
 	plantMask,
 	readIndex,
 	rowSpans,
 	seasonFromPicture,
 	shadowLike,
+	skyMaskable,
+	soilMaskable,
 	widthProfile,
 	withSlot,
 } from './references.ts';
@@ -340,7 +346,10 @@ describe('the width profile', () => {
 describe('the slots', () => {
 	test('sort stills by the words in their names before their numbers', () => {
 		expect(classifySlot('13-single-needle-underside.png')?.view).toBe('leaf-under');
-		expect(classifySlot('05-crown-underneath.png')?.view).toBe('below');
+		// The whole-from-below and crown-underside photographs take their own views: one frames the
+		// plant from its foot, the other the crown's underside from under it.
+		expect(classifySlot('03-whole-from-below.png')?.view).toBe('below');
+		expect(classifySlot('05-crown-underneath.png')?.view).toBe('crown-underside');
 		expect(classifySlot('02-whole-profile-b.png')).toMatchObject({
 			view: 'whole',
 			turn: 90,
@@ -641,15 +650,15 @@ describe('the strands view', () => {
 		expect(named.view).toBe('strands');
 		// It is off every slot number: no standard picture takes it, so no other render moves.
 		expect(VIEW_SPECS.strands.slots).toEqual([]);
-		// The standard names keep the views they had before the view was added. The birch's
-		// `19-drooping-twig-ends` name reads as `subbranch` by the twig rule today; the species
-		// names the view it wants in its own slot entry.
+		// The standard names keep their views, except the `05` underside class, which the new view
+		// takes. The birch's `19-drooping-twig-ends` name reads as `subbranch` by the twig rule
+		// today; the species names the view it wants in its own slot entry.
 		const standard: readonly (readonly [string, PlantView])[] = [
 			['01-whole-distant.png', 'whole'],
 			['02-whole-profile.png', 'whole'],
 			['03-whole-from-below.png', 'below'],
 			['04-crown-outside.png', 'limb'],
-			['05-crown-underside.png', 'below'],
+			['05-crown-underside.png', 'crown-underside'],
 			['06-inside-crown.png', 'inside'],
 			['07-limb-leaving-trunk.png', 'junction'],
 			['08-limb-fork.png', 'fork'],
@@ -674,5 +683,139 @@ describe('the strands view', () => {
 			['28-young-bark.png', 'bark-limb'],
 		];
 		for (const [file, view] of standard) expect(classifySlot(file)?.view, file).toBe(view);
+	});
+});
+
+/** A plant's mask on the matte's plain white background. */
+function mattePlant(
+	width: number,
+	height: number,
+	mask: Uint8Array,
+	coverage?: Uint8Array,
+): PlantMask {
+	const flat = {
+		coefficients: [
+			[100, 0, 0, 0, 0, 0],
+			[0, 0, 0, 0, 0, 0],
+			[0, 0, 0, 0, 0, 0],
+		],
+		noise: 0.5,
+		fit: 1,
+	};
+	return {
+		width,
+		height,
+		mask,
+		...(coverage && { coverage }),
+		background: { horizon: null, sky: flat, plain: true },
+	};
+}
+
+describe('the coverage matte', () => {
+	test("keeps a texel's own coverage beside the half-black mask", () => {
+		const image = blank(4, 1, [255, 255, 255]);
+		put(image, 1, 0, [0, 0, 0]);
+		put(image, 2, 0, [128, 128, 128]);
+		put(image, 3, 0, [254, 254, 254]);
+		const plant = matteMask(image);
+		expect([...plant.mask]).toEqual([0, 1, 0, 0]);
+		expect([...(plant.coverage as Uint8Array)]).toEqual([0, 255, 127, 0]);
+	});
+
+	test('reads any coverage for the piece test, and a plain mask as it stands', () => {
+		const plain = mattePlant(2, 1, Uint8Array.from([1, 0]));
+		expect([...anyPlantMask(plain)]).toEqual([1, 0]);
+		const covered = mattePlant(2, 1, Uint8Array.from([0, 0]), Uint8Array.from([0, 3]));
+		expect([...anyPlantMask(covered)]).toEqual([0, 1]);
+	});
+
+	test('joins two runs through a texel that a leaf only partly covers', () => {
+		const width = 20;
+		const height = 8;
+		const mask = new Uint8Array(width * height);
+		for (let y = 1; y <= 6; y++)
+			for (const x of [2, 3, 4, 5, 6, 9, 10, 11, 12, 13]) mask[y * width + x] = 1;
+		const coverage = new Uint8Array(width * height);
+		for (let at = 0; at < coverage.length; at++) coverage[at] = mask[at] ? 255 : 0;
+		for (let y = 1; y <= 6; y++) coverage[y * width + 7] = 100;
+		const plant = mattePlant(width, height, mask, coverage);
+		// The blocks stand two background texels apart, so the plain mask reads two pieces. The
+		// partly covered texel closes the gap to the one the piece rule already bridges.
+		expect(pieceCount(mask, width, height, 24)).toBe(2);
+		expect(pieceCount(anyPlantMask(plant), width, height, 24)).toBe(1);
+	});
+
+	test('counts a partly covered texel as the sky it leaves in the gap', () => {
+		const width = 20;
+		const height = 20;
+		const mask = new Uint8Array(width * height);
+		for (let y = 5; y <= 14; y++) for (let x = 5; x <= 14; x++) mask[y * width + x] = 1;
+		const hole = [8, 9, 10, 11].map((x) => 10 * width + x);
+		for (const at of hole) mask[at] = 0;
+		const coverage = new Uint8Array(width * height);
+		for (let at = 0; at < coverage.length; at++) coverage[at] = mask[at] ? 255 : 0;
+		for (const at of hole.slice(0, 2)) coverage[at] = 128;
+		const image = blank(width, height, [0, 0, 0]);
+		const binary = measurePlant(image, mattePlant(width, height, mask));
+		const fractional = measurePlant(image, mattePlant(width, height, mask, coverage));
+		// The hole is four texels of the crown's hundred; two are half covered, so the fractional
+		// gap gives back the half texel each of them leaves. The measure rounds the share to four
+		// places, which is where three per cent sits.
+		expect(binary.gapFraction).toBeCloseTo(4 / 100, 4);
+		expect(fractional.gapFraction).toBeCloseTo(3 / 100, 4);
+		// The crown's own box holds the same hole as the outline, so its gap agrees; the frame keeps
+		// the empty sky around the plant and reads far larger.
+		expect(binary.crownBoxGap).toBeCloseTo(4 / 100, 4);
+		expect(fractional.crownBoxGap).toBeCloseTo(3 / 100, 4);
+		expect(binary.frameGap).toBeCloseTo(304 / 400, 4);
+		expect(fractional.frameGap).toBeCloseTo((300 + 2 + 2 * (1 - 128 / 255)) / 400, 4);
+	});
+});
+
+describe('a fitted sky', () => {
+	const surface = (fit: number, noise: number) =>
+		({
+			coefficients: [
+				[0, 0, 0, 0, 0, 0],
+				[0, 0, 0, 0, 0, 0],
+				[0, 0, 0, 0, 0, 0],
+			],
+			noise,
+			fit,
+		}) as never;
+
+	test('is maskable only when the fit is strong, the residual bounded and no horizon stands', () => {
+		expect(skyMaskable({ horizon: null, sky: surface(0.9999, 17.1), plain: false })).toBe(true);
+		expect(skyMaskable({ horizon: null, sky: surface(0.9, 5), plain: false })).toBe(false);
+		expect(skyMaskable({ horizon: null, sky: surface(0.9999, 40), plain: false })).toBe(false);
+		expect(skyMaskable({ horizon: 100, sky: surface(0.9999, 5), plain: false })).toBe(false);
+	});
+
+	test('a fitted soil is maskable only with a real region each side of a strong ground fit', () => {
+		// The sedge's 07: horizon at 186 of 640, sky 1 / 24.19, ground 1 / 18.55.
+		expect(
+			soilMaskable(
+				{ horizon: 186, sky: surface(1, 24.19), ground: surface(1, 18.55), plain: false },
+				640,
+			),
+		).toBe(true);
+		// The meadow's 07: horizon at 596 of 640, sky 1 / 26.41, ground 1 / 19.90.
+		expect(
+			soilMaskable(
+				{ horizon: 596, sky: surface(1, 26.41), ground: surface(1, 19.9), plain: false },
+				640,
+			),
+		).toBe(true);
+		// A ramp that does not fit, a horizon at the frame's edge, and a background with no horizon.
+		expect(
+			soilMaskable(
+				{ horizon: 300, sky: surface(1, 20), ground: surface(1, 40), plain: false },
+				640,
+			),
+		).toBe(false);
+		expect(
+			soilMaskable({ horizon: 10, sky: surface(1, 20), ground: surface(1, 18), plain: false }, 640),
+		).toBe(false);
+		expect(soilMaskable({ horizon: null, sky: surface(1, 18), plain: false }, 640)).toBe(false);
 	});
 });

@@ -3,12 +3,12 @@ id: api/vegetation
 title: "Vegetation (@null3d/vegetation)"
 status: experimental
 since: "0.3"
-summary: "The plant core that grows each species from its own record and a seed, the pedunculate oak and the common ash as its first species, stand-ins for the rest, and the scatter that places plants by ecological rules."
+summary: "The plant core that grows each species from its own record and a seed, twelve species, each grown from its own record, a stand-in for any other id, and the scatter that places plants by ecological rules."
 ---
 
 # Vegetation (@null3d/vegetation)
 
-> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. The species are being rebuilt: the pedunculate oak and the common ash ship, and a page draws stand-ins for the other species. Built: the self-organizing growth that broadleaves, pines, shrubs and hedges use, and the leaves and shoots: leaf meshes from each species' texture outline, compound leaves, needles and fascicles, shoot prototypes with their buds, their places on the plant, the seasons and extras, and the shoot cards baked from them. Built too: the wood, the plant material, the wind records that sway each branch and leaf, the placement of a species' copies at fixed places with real shoots near the camera, the coarseness options that grow a simpler plant, bracken's fronds (the frond builder and the frond colony that grows them), and the ground plants' growth: rosettes of broad ribbed leaves on long stalks, and tufts of grass and sedge blades with their flowering stems, panicles and hanging spikes. Not built yet: the other growth models, the level distances, the near pool and the far cards. This page covers the plant core's records and stages, the stand-ins, the scatter, the grass's two GPU paths and its near shadows, and the floating leaves that ride the wind.
+> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. Twelve species ship, each grown from its own record, and a page draws a stand-in for any species id it names that has none. Built: the self-organizing growth that broadleaves, pines, shrubs and hedges use, and the leaves and shoots: leaf meshes from each species' texture outline, compound leaves, needles and fascicles, shoot prototypes with their buds, their places on the plant, the seasons and extras, and the shoot cards baked from them. Built too: the wood, the plant material, the wind records that sway each branch and leaf, the placement of a species' copies at fixed places with real shoots near the camera, the coarseness options that grow a simpler plant, bracken's fronds (the frond builder and the frond colony that grows them), and the ground plants' growth: rosettes of broad ribbed leaves on long stalks, and tufts of grass and sedge blades with their flowering stems, panicles and hanging spikes. Not built yet: the other growth models, the level distances, the near pool and the far cards. This page covers the plant core's records and stages, the stand-ins, the scatter, the grass's two GPU paths and its near shadows, and the floating leaves that ride the wind.
 
 ```mermaid
 flowchart LR
@@ -23,7 +23,7 @@ flowchart LR
 
 The `@null3d/vegetation` package grows plants from a record of numbers and a seed, and places them by ecological rules. Each species lives in a folder of its own, with its record, its entry and its textures. A page loads only the species that it places, and grows them in the engine's job workers at first use.
 
-The species are being rebuilt on the plant core, and the pedunculate oak and the common ash are the first to ship. For a species that has not shipped, a page names it by its id and gives the size and colors of a stand-in. The stand-in draws in its place, through the same calls that the species will take. So a scene keeps its scatter, placement, wind and far cards, and draws the real species once it ships.
+Twelve species ship on the plant core, each grown from its own record. For an id that has no record, a page gives the size and colors of a stand-in, which draws in its place through the same calls that a record-grown species takes. So a scene keeps its scatter, placement, wind and far cards, and draws the real species once it ships.
 
 ```sh
 bun add @null3d/vegetation

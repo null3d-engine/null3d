@@ -4,13 +4,17 @@
 // the wind videos, and the plant's outline separated from a plain background with the measures a
 // reviewer reads from it.
 //
-// The outline (the mask) works on pictures whose background is plain: an open sky, a seamless grey
-// or white, and a meadow below the horizon. It fits a smooth colour surface to the frame's border,
-// above and below the horizon separately, calls a pixel background when its CIELAB distance to the
-// surface is small next to the border's own noise, and keeps the foreground that joins the plant.
-// Its limits, which a reviewer must keep in mind:
-// - A picture with no plain border (bark, the inside of a crown, a twig against foliage) has no
-//   mask; `plain` is false and the measures are left out.
+// The outline (the mask) works on pictures whose background is plain — an open sky, a seamless grey
+// or white, and a meadow below the horizon — or whose sky the surface fit models closely with no
+// horizon. It fits a smooth colour surface to the frame's border, above and below the horizon
+// separately, calls a pixel background when its CIELAB distance to the surface is small next to the
+// border's own noise, and keeps the foreground that joins the plant. Its limits, which a reviewer
+// must keep in mind:
+// - A picture with neither a plain border nor a fitted sky (bark, the inside of a crown, a twig
+//   against foliage) has no mask; `plain` is false and the measures are left out.
+// - A clear sky grades across the frame, so its border residual is larger than a studio's paper; a
+//   sky is masked only where the fit itself is strong and the residual bounded, and the residual is
+//   reported, so a badly fitting sky is refused rather than masked on a guess.
 // - Below the horizon the meadow is textured and green, so dark foliage that touches the ground and
 //   a ground shadow that joins the trunk can both be counted as plant, and pale foliage against the
 //   meadow can be lost. The plant's base is reliable; its outline below the horizon is not.
@@ -29,6 +33,7 @@ import {
 import {
 	blank,
 	deltaE76,
+	deltaE2000,
 	hexOf,
 	labImage,
 	type Rgba,
@@ -99,11 +104,11 @@ const FROM_BELOW: SlotRule = {
 	framed: false,
 };
 
-/** Looking up into the crown's underside from beside the stem. */
+/** Looking up into the crown's underside from under it: the crown's box fills most of the frame, the trunk below. */
 const UNDERNEATH: SlotRule = {
-	view: 'below',
-	elevation: 80,
-	query: { aside: 40, stand: STAND },
+	view: 'crown-underside',
+	elevation: 60,
+	query: { aside: 40 },
 	framed: false,
 };
 
@@ -840,13 +845,76 @@ export function backgroundOf(lab: Float32Array, width: number, height: number): 
 	};
 }
 
+/**
+ * The surface fit above which a sky counts as modelled rather than guessed, and the residual within
+ * which it still separates a plant from the sky. A clear sky grades across the frame, so its border
+ * residual is larger than a studio's plain paper and the old plain gate refused it; the fit itself
+ * says whether the grade is a model or noise. A sky whose fit is weak, or whose residual is wide,
+ * stays refused rather than masked on a guess.
+ */
+export const SKY_MASK_FIT = 0.99;
+export const SKY_MASK_NOISE = 24;
+
+/**
+ * Whether a background that is not plain can still mask a plant: a fitted sky with no horizon. The
+ * mask's own sky threshold scales by the fit's residual, so a badly fitting sky cannot pass it; this
+ * gate only admits a sky the surface fit models closely.
+ */
+export function skyMaskable(background: Background): boolean {
+	return (
+		background.horizon === null &&
+		background.sky.fit >= SKY_MASK_FIT &&
+		background.sky.noise <= SKY_MASK_NOISE
+	);
+}
+
+/** The least share of the frame each of the sky and the ground keeps for a horizon to stand between them. */
+export const SOIL_MASK_EDGE = 0.05;
+
+/**
+ * The share of the frame a soil band under a backdrop usually holds. Outside it a fit whose ground
+ * region is smaller or larger is flagged rather than trusted: the line is likely misplaced or the
+ * plant's own material is inside the ground model.
+ */
+export const SOIL_MASK_GROUND_SHARE: readonly [number, number] = [0.1, 0.6];
+
+/**
+ * Whether a background with a horizon can still mask a plant: the ground surface models the soil
+ * below the horizon, and the horizon leaves a real region to each side. The mask's ground threshold
+ * scales by the ground's residual, so a badly fitting ramp cannot pass it. The horizon's share is
+ * what a reviewer reads beside the fit, because a model whose ground region swallows the plant, or
+ * whose sky region leaves almost no ground, is a misplaced line even when its fit is strong.
+ */
+export function soilMaskable(background: Background, height: number): boolean {
+	if (background.horizon === null || background.ground === undefined) return false;
+	const share = background.horizon / height;
+	return (
+		background.ground.fit >= SKY_MASK_FIT &&
+		background.ground.noise <= SKY_MASK_NOISE &&
+		share >= SOIL_MASK_EDGE &&
+		share <= 1 - SOIL_MASK_EDGE
+	);
+}
+
 /** A plant's outline in a picture, and the background it was taken from. */
 export interface PlantMask {
 	readonly width: number;
 	readonly height: number;
 	/** One byte per pixel: 1 where the plant is. */
 	readonly mask: Uint8Array;
+	/**
+	 * One byte per pixel of the plant's coverage, from 0 for clear sky to 255 for a whole texel,
+	 * where the picture gives it: a render's matte carries each texel's own coverage, where a
+	 * photograph's colour mask carries only whether it is plant.
+	 */
+	readonly coverage?: Uint8Array;
 	readonly background: Background;
+	/**
+	 * For a fitted ground: the CIEDE2000 distance between the plant's median colour and the soil's,
+	 * so a reviewer sees how close the plant's own material stands to the ground model before
+	 * trusting a mask that may merge them.
+	 */
+	readonly plantToGround?: number;
 }
 
 /** The pixels of the foreground's connected parts, 8-connected, labelled from 1; 0 is background. */
@@ -1024,9 +1092,9 @@ export function keepHangingParts(
 const FOOT_SHARE = 0.03;
 
 /**
- * The plant's outline in a picture with a plain background, in the work picture's pixels. The
- * picture is first shrunk to the work width. Returns a mask with no plant when the border is not
- * plain.
+ * The plant's outline in a picture with a plain background or a fitted sky, in the work picture's
+ * pixels. The picture is first shrunk to the work width. Returns a mask with no plant when the
+ * border is neither plain nor a sky the surface fit models (see `skyMaskable`).
  */
 export function plantMask(image: Rgba): PlantMask {
 	const work = image.width > WORK_WIDTH ? resizeToWidth(image, WORK_WIDTH) : image;
@@ -1034,10 +1102,15 @@ export function plantMask(image: Rgba): PlantMask {
 	const lab = labImage(work);
 	const background = backgroundOf(lab, width, height);
 	const mask = new Uint8Array(width * height);
-	if (!background.plain) return { width, height, mask, background };
+	if (!background.plain && !skyMaskable(background) && !soilMaskable(background, height))
+		return { width, height, mask, background };
 	const horizon = background.horizon ?? height;
-	const skyLimit = threshold(background.sky, 8, 3.5);
-	const groundLimit = background.ground ? threshold(background.ground, 10, 3) : skyLimit;
+	// A plain background's spread was tuned against studio paper; a fitted sky or ground carries a
+	// wider residual, so its limit takes fewer spreads or the plant itself falls inside it.
+	const skyLimit = threshold(background.sky, 8, background.plain ? 3.5 : 2);
+	const groundLimit = background.ground
+		? threshold(background.ground, 10, background.plain ? 3 : 2)
+		: skyLimit;
 	// The rows at the horizon blend the sky with the meadow, so there a pixel is background when it
 	// lies near any blend of the two.
 	const band = Math.max(1, Math.round(height * 0.006));
@@ -1067,7 +1140,28 @@ export function plantMask(image: Rgba): PlantMask {
 			height - Math.max(2, Math.round(height * FOOT_SHARE)),
 		);
 	keepPlantParts(mask, width, height, horizon);
-	return { width, height, mask, background };
+	let plantToGround: number | undefined;
+	if (background.ground) {
+		const groundAt = surfaceAt(background.ground, 0.5, (horizon / height + 1) / 2);
+		const channels: number[][] = [[], [], []];
+		for (let at = 0; at < width * height; at++)
+			if (mask[at])
+				for (let c = 0; c < 3; c++) (channels[c] as number[]).push(lab[at * 3 + c] as number);
+		if ((channels[0] as number[]).length > 0) {
+			const median = channels.map((values) => {
+				values.sort((a, b) => a - b);
+				return values[values.length >> 1] ?? 0;
+			});
+			plantToGround = Number(deltaE2000(median, groundAt).toFixed(2));
+		}
+	}
+	return {
+		width,
+		height,
+		mask,
+		background,
+		...(plantToGround !== undefined ? { plantToGround } : {}),
+	};
 }
 
 /** How far above the horizon, as a share of the frame's height, a background band may lie. */
@@ -1205,12 +1299,16 @@ export function matteMask(image: Rgba): PlantMask {
 	const work = image.width > WORK_WIDTH ? resizeToWidth(image, WORK_WIDTH) : image;
 	const { width, height } = work;
 	const mask = new Uint8Array(width * height);
+	const coverage = new Uint8Array(width * height);
 	for (let at = 0; at < mask.length; at++) {
 		const luma =
 			0.2126 * (work.data[at * 4] as number) +
 			0.7152 * (work.data[at * 4 + 1] as number) +
 			0.0722 * (work.data[at * 4 + 2] as number);
 		mask[at] = luma < 128 ? 1 : 0;
+		// The clear sky reads white, and the matte's frame edge reads one step below it. A texel at
+		// that step or above is clear, so the frame's own edge is not taken for a faint leaf.
+		coverage[at] = luma >= 254 ? 0 : Math.round(255 - luma);
 	}
 	const flat: ColourSurface = {
 		coefficients: [
@@ -1221,7 +1319,20 @@ export function matteMask(image: Rgba): PlantMask {
 		noise: 0.5,
 		fit: 1,
 	};
-	return { width, height, mask, background: { horizon: null, sky: flat, plain: true } };
+	return { width, height, mask, coverage, background: { horizon: null, sky: flat, plain: true } };
+}
+
+/**
+ * The outline that the piece test reads: every texel that a leaf covers at all, however little,
+ * since a part joins the mass through the one texel between them. A picture without coverage
+ * gives its mask unchanged.
+ */
+export function anyPlantMask(plant: PlantMask): Uint8Array {
+	const coverage = plant.coverage;
+	if (!coverage) return plant.mask;
+	const mask = new Uint8Array(coverage.length);
+	for (let at = 0; at < coverage.length; at++) mask[at] = coverage[at] ? 1 : 0;
+	return mask;
 }
 
 /** A box of pixels, edges included. */
@@ -1256,6 +1367,14 @@ export interface PlantMeasures {
 	readonly crownBox: { readonly width: number; readonly height: number };
 	/** The share of the crown's outline that shows background: the sky or ground through it. */
 	readonly gapFraction: number;
+	/** The share of the crown's box that shows background: the figure the plant is judged on. */
+	readonly crownBoxGap: number;
+	/**
+	 * The share of the whole picture that shows background. It widens with the empty sky a
+	 * photograph keeps around its plant, so it is reported beside the crown-box figure rather
+	 * than in place of it.
+	 */
+	readonly frameGap: number;
 	/** The share of the plant's box that the plant covers. */
 	readonly solidity: number;
 	/** The mean CIELAB colour of the crown's foliage, and its sRGB hex. */
@@ -1488,7 +1607,7 @@ function meanColour(
 
 /** Measures a plant from its outline in a picture. */
 export function measurePlant(image: Rgba, plant: PlantMask): PlantMeasures {
-	const { width, height, mask, background } = plant;
+	const { width, height, mask, coverage, background } = plant;
 	const work = image.width === width ? image : resizeToWidth(image, width);
 	const lab = labImage(work);
 	const horizon = background.horizon;
@@ -1504,7 +1623,10 @@ export function measurePlant(image: Rgba, plant: PlantMask): PlantMeasures {
 		sky: hexOf(srgbOf(skyAt)),
 		ground: groundAt ? hexOf(srgbOf(groundAt)) : null,
 	};
-	const box = background.plain ? boxOf(mask, width, height) : null;
+	const box =
+		background.plain || skyMaskable(background) || soilMaskable(background, height)
+			? boxOf(mask, width, height)
+			: null;
 	if (!box)
 		return {
 			...base,
@@ -1514,6 +1636,8 @@ export function measurePlant(image: Rgba, plant: PlantMask): PlantMeasures {
 			crownStart: 0,
 			crownBox: { width: 0, height: 0 },
 			gapFraction: 0,
+			crownBoxGap: 0,
+			frameGap: 0,
 			solidity: 0,
 			foliage: null,
 			bark: null,
@@ -1526,18 +1650,36 @@ export function measurePlant(image: Rgba, plant: PlantMask): PlantMeasures {
 	let hull = 0;
 	let gaps = 0;
 	let crownWidth = 0;
+	let crownLeft = width;
+	let crownRight = -1;
 	const inCrown = new Uint8Array(width * height);
 	for (let y = box.top; y <= start; y++) {
 		const left = spans[y * 2] as number;
 		if (left < 0) continue;
 		const right = spans[y * 2 + 1] as number;
 		crownWidth = Math.max(crownWidth, right - left + 1);
+		crownLeft = Math.min(crownLeft, left);
+		crownRight = Math.max(crownRight, right);
 		for (let x = left; x <= right; x++) {
 			hull++;
-			if (!mask[y * width + x]) gaps++;
-			else inCrown[y * width + x] = 1;
+			if (!mask[y * width + x]) {
+				// A render's matte carries how much of the texel a leaf covers, so the sky between
+				// thin leaves weighs as the part of the texel it holds rather than a whole one.
+				const at = y * width + x;
+				gaps += coverage ? 1 - (coverage[at] as number) / 255 : 1;
+			} else inCrown[y * width + x] = 1;
 		}
 	}
+	const sky = (at: number): number =>
+		coverage ? 1 - (coverage[at] as number) / 255 : mask[at] ? 0 : 1;
+	let crownBoxSky = 0;
+	const crownBoxHeight = start - box.top + 1;
+	if (crownRight >= crownLeft)
+		for (let y = box.top; y <= start; y++)
+			for (let x = crownLeft; x <= crownRight; x++) crownBoxSky += sky(y * width + x);
+	const crownBoxArea = crownRight >= crownLeft ? (crownRight - crownLeft + 1) * crownBoxHeight : 0;
+	let frameSky = 0;
+	for (let at = 0; at < mask.length; at++) frameSky += sky(at);
 	let covered = 0;
 	for (let y = box.top; y <= box.bottom; y++)
 		for (let x = box.left; x <= box.right; x++) covered += mask[y * width + x] as number;
@@ -1554,6 +1696,8 @@ export function measurePlant(image: Rgba, plant: PlantMask): PlantMeasures {
 		crownStart: Number(((box.bottom - start) / tall).toFixed(4)),
 		crownBox: { width: crownWidth, height: start - box.top + 1 },
 		gapFraction: hull > 0 ? Number((gaps / hull).toFixed(4)) : 0,
+		crownBoxGap: crownBoxArea > 0 ? Number((crownBoxSky / crownBoxArea).toFixed(4)) : 0,
+		frameGap: Number((frameSky / (width * height)).toFixed(4)),
 		solidity: Number((covered / ((box.right - box.left + 1) * tall)).toFixed(4)),
 		foliage: meanColour(lab, width * height, (at) => inCrown[at] === 1),
 		bark:

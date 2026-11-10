@@ -294,11 +294,11 @@ export async function createGrass(ctx: SketchContext, options: GrassOptions): Pr
 	const shapes = Math.max(1, Math.floor(options.shapes ?? 1));
 	const blades = Math.max(1, Math.floor(options.blades ?? 13));
 	const segments = Math.max(1, Math.floor(options.segments ?? 3));
-	const airSettings = options.wind
-		? readingTexture(ctx.textures, options.wind.air)
+	/** The field's settings as the settings texture holds them, so a change costs one upload. */
+	const held = options.wind ? readingData(options.wind.air) : undefined;
+	const airSettings = held
+		? readingTexture(ctx.textures, held)
 		: stillTextures(ctx.textures).airSettings;
-	/** The sent gust's born time that the settings texture holds, so one gust costs one upload. */
-	let sentBorn = Number.NaN;
 	const materialOptions = (): Omit<ShaderOptions, 'wgsl'> => ({
 		...(options.wind
 			? { textures: { wind: options.wind.texture, airSettings } }
@@ -460,11 +460,14 @@ export async function createGrass(ctx: SketchContext, options: GrassOptions): Pr
 		for (const entry of draws) entry.material.setUniform('windLayer', field.texture.layer);
 		// The cull follows the camera, so a moving page gives the blade list its view each frame.
 		if (passes.length > 0) updateCull();
-		// A gust that a page sends travels through the steady field, which the settings carry. The
-		// texels go up when a gust is sent, not once a frame.
-		if (field.air.sent[3] !== sentBorn) {
-			sentBorn = field.air.sent[3];
-			airSettings.update(readingData(field.air));
+		// The base wind and a sent gust travel through the steady field, which the settings carry.
+		// They go up when either changes, so a page's controls reach the blades at once.
+		if (held && !sameReading(field.air, held)) {
+			held.set(field.air.base, 0);
+			held.set(field.air.gust, 4);
+			held.set(field.air.swirl, 8);
+			held.set(field.air.sent, 12);
+			airSettings.update(held);
 		}
 	};
 	const setSwayDistance = (distance: number) => {
@@ -519,13 +522,28 @@ function readingData(air: WindField['air']): Float32Array {
 	data.set(air.base, 0);
 	data.set(air.gust, 4);
 	data.set(air.swirl, 8);
-	data.set(air.sent.slice(0, 4), 12);
+	data.set(air.sent, 12);
 	return data;
 }
 
+/** True when the field's settings differ from the numbers the settings texture holds. */
+function sameReading(air: WindField['air'], held: Float32Array): boolean {
+	// The texture holds the numbers as 32-bit floats, so compare at that precision, or a value
+	// that the texture rounds would look changed in every frame.
+	for (let i = 0; i < 4; i++)
+		if (
+			held[i] !== Math.fround(air.base[i] ?? 0) ||
+			held[i + 4] !== Math.fround(air.gust[i] ?? 0) ||
+			held[i + 8] !== Math.fround(air.swirl[i] ?? 0) ||
+			held[i + 12] !== Math.fround(air.sent[i] ?? 0)
+		)
+			return false;
+	return true;
+}
+
 /** The texture that holds the field's settings: four texels of four numbers each. */
-function readingTexture(textures: Textures, air: WindField['air']): Texture {
-	return textures.fromData({ width: 4, height: 1, format: 'rgba16float', data: readingData(air) });
+function readingTexture(textures: Textures, data: Float32Array): Texture {
+	return textures.fromData({ width: 4, height: 1, format: 'rgba16float', data });
 }
 
 /** A still field's textures, for grass that names no wind field. */
