@@ -1529,18 +1529,25 @@ function crownStartFromTop(spans: Int32Array, box: Box, limit: number): number {
 	return box.bottom;
 }
 
-/** The mean CIELAB colour of the pixels that a test picks, or null when it picks none. */
+/**
+ * The mean CIELAB colour of the pixels that a test picks, or null when it picks none. A weight
+ * shares each pixel's influence: a render's matte gives the share of the texel its leaf covers, so
+ * a partly covered edge texel, whose colour blends towards the sky, does not count as a whole leaf.
+ */
 function meanColour(
 	lab: Float32Array,
 	count: number,
 	pick: (at: number) => boolean,
+	weight?: (at: number) => number,
 ): { lab: number[]; hex: string } | null {
 	const sum = [0, 0, 0];
 	let n = 0;
 	for (let at = 0; at < count; at++) {
 		if (!pick(at)) continue;
-		for (let c = 0; c < 3; c++) sum[c] = (sum[c] as number) + (lab[at * 3 + c] as number);
-		n++;
+		const share = weight ? weight(at) : 1;
+		if (share <= 0) continue;
+		for (let c = 0; c < 3; c++) sum[c] = (sum[c] as number) + (lab[at * 3 + c] as number) * share;
+		n += share;
 	}
 	if (n === 0) return null;
 	const mean = sum.map((v) => v / n);
@@ -1627,6 +1634,9 @@ export function measurePlant(
 	}
 	const sky = (at: number): number =>
 		coverage ? 1 - (coverage[at] as number) / 255 : mask[at] ? 0 : 1;
+	// A texel's own coverage shares its colour: an edge texel whose colour blends towards the sky
+	// barely counts, where a photograph has no coverage and every texel counts whole.
+	const leafShare = coverage ? (at: number) => (coverage[at] as number) / 255 : undefined;
 	let crownBoxSky = 0;
 	const crownBoxHeight = start - box.top + 1;
 	if (crownRight >= crownLeft)
@@ -1654,7 +1664,7 @@ export function measurePlant(
 		crownBoxGap: crownBoxArea > 0 ? Number((crownBoxSky / crownBoxArea).toFixed(4)) : 0,
 		frameGap: Number((frameSky / (width * height)).toFixed(4)),
 		solidity: Number((covered / ((box.right - box.left + 1) * tall)).toFixed(4)),
-		foliage: meanColour(lab, width * height, (at) => inCrown[at] === 1),
+		foliage: meanColour(lab, width * height, (at) => inCrown[at] === 1, leafShare),
 		bark:
 			start < box.bottom
 				? meanColour(lab, width * height, (at) => {
