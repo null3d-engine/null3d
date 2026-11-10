@@ -191,6 +191,12 @@
 		"date": "2026-11-09",
 		"reason": "drawn on this Mac's SwiftShader at 5c8a4d15d after the m3-start merge; the plant sits a fraction of a pixel over in every panel, so the outlines differ while the interiors do not, and a CI drawing replaces the set if it differs"
 	},
+	"chromium-swiftshader/compat/plant-coverage.png": {
+		"test": "plant-coverage",
+		"tier": "compat",
+		"date": "2026-11-10",
+		"reason": "a push to a milestone branch draws no picture, so the software set was drawn on this machine at the range's head and judged by the landing session"
+	},
 	"chromium-swiftshader/compat/plant-european-beech.png": {
 		"test": "plant-european-beech",
 		"tier": "compat",
@@ -538,6 +544,12 @@
 		"tier": "webgl2",
 		"date": "2026-11-09",
 		"reason": "drawn on this Mac's SwiftShader at 5c8a4d15d after the m3-start merge; the plant sits a fraction of a pixel over in every panel, so the outlines differ while the interiors do not, and a CI drawing replaces the set if it differs"
+	},
+	"chromium-swiftshader/webgl2/plant-coverage.png": {
+		"test": "plant-coverage",
+		"tier": "webgl2",
+		"date": "2026-11-10",
+		"reason": "a push to a milestone branch draws no picture, so the software set was drawn on this machine at the range's head and judged by the landing session"
 	},
 	"chromium-swiftshader/webgl2/plant-european-beech.png": {
 		"test": "plant-european-beech",
@@ -916,6 +928,12 @@
 		"tier": "webgpu",
 		"date": "2026-11-09",
 		"reason": "drawn on this Mac's SwiftShader at 5c8a4d15d after the m3-start merge; the plant sits a fraction of a pixel over in every panel, so the outlines differ while the interiors do not, and a CI drawing replaces the set if it differs"
+	},
+	"chromium-swiftshader/webgpu/plant-coverage.png": {
+		"test": "plant-coverage",
+		"tier": "webgpu",
+		"date": "2026-11-10",
+		"reason": "a push to a milestone branch draws no picture, so the software set was drawn on this machine at the range's head and judged by the landing session"
 	},
 	"chromium-swiftshader/webgpu/plant-european-beech.png": {
 		"test": "plant-european-beech",
