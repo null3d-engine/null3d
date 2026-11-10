@@ -53,6 +53,12 @@
 		"date": "2026-11-02",
 		"reason": "the Mac drew these pictures with CI=1 for the demo's new room; the session that checks the landings replaces them from CI's own SwiftShader when a run draws them"
 	},
+	"chromium-swiftshader/compat/demo-creek.png": {
+		"test": "demo-creek",
+		"tier": "compat",
+		"date": "2026-11-10",
+		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head; the load was 4.4 when these started and rose while they ran, both drawings completed and were compared before acceptance, and a CI drawing on a pull request replaces them"
+	},
 	"chromium-swiftshader/compat/demo-depth-only.png": {
 		"test": "demo-depth-only",
 		"tier": "compat",
@@ -784,6 +790,12 @@
 		"tier": "webgpu",
 		"date": "2026-11-02",
 		"reason": "the Mac drew these pictures with CI=1 for the demo's new room; the session that checks the landings replaces them from CI's own SwiftShader when a run draws them"
+	},
+	"chromium-swiftshader/webgpu/demo-creek.png": {
+		"test": "demo-creek",
+		"tier": "webgpu",
+		"date": "2026-11-10",
+		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head; the load was 4.4 when these started and rose while they ran, both drawings completed and were compared before acceptance, and a CI drawing on a pull request replaces them"
 	},
 	"chromium-swiftshader/webgpu/demo-depth-only.png": {
 		"test": "demo-depth-only",
