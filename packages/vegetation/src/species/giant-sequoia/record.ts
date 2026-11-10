@@ -354,10 +354,17 @@ export const record: Species = {
 	seedSalt: 1919802519,
 	roundBand,
 	cuttings: {
-		// Still 21's branch is the spray, and still 22's branchlet the cutting class's looser spray.
-		branch: { order: 1, length: 1 },
-		subbranch: { shoot: 'spray' },
-		// Still 23's shoot tip is the short even rope of this year's shoot.
-		cluster: { shoot: 'short' },
+		// Still 21's branch is a spray in two or three orders, so the piece is a branch of the second
+		// macro order rather than one of the long boughs: a metre and a half of wood with its short
+		// side branches and their rope shoots.
+		branch: { order: 2, length: 1.2 },
+		// Still 22's branchlet is a short branch carrying a fan of rope shoots.
+		subbranch: { order: 2, length: 0.8 },
+		// Still 23's branched shoot tip: the crown's longer spray, which carries side shoots and hides
+		// its stem, rather than this year's single rope.
+		cluster: { shoot: 'spray' },
+		// A close piece carries the denser covering its photograph shows; the crown's own kit is
+		// unchanged, so the whole views pay for no extra shoots.
+		density: 3,
 	},
 };
