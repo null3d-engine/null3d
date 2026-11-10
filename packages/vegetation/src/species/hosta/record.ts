@@ -62,7 +62,7 @@ export const record: Species = {
 		// Still 23: about a sixth of a shoot's leaves are still rolled at the crown's heart.
 		rolled: 0.17,
 		// Still 20: in autumn the leaves collapse toward the ground and brown.
-		collapse: 35,
+		collapse: 90,
 		// Still 18: bare scapes rise above the leaves in mid to late summer, carrying a one-sided
 		// row of nodding flowers over the top third.
 		scapes: {
