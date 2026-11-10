@@ -317,6 +317,14 @@ export interface SelfOrganizing {
 		 * its share gives. Absent or false, such a bud takes no share and draws the weakest class.
 		 */
 		readonly surface?: boolean;
+		/**
+		 * A bias of a bud's light by the room the envelope leaves at its azimuth, so a crown whose
+		 * envelope is wider on one side carries more mass there. At 0 or absent the shadow grid's
+		 * light stands. Above 0 the light is multiplied by the room's share of the mean room at the
+		 * bud's height, raised to this power: the wide side reads above 1, the narrow below it, and
+		 * the height's own profile is held.
+		 */
+		readonly roomBias?: number;
 	};
 	/** How shoots bend toward light and against gravity. */
 	readonly tropism: {
