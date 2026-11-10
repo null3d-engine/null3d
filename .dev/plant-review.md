@@ -241,6 +241,112 @@ It is not passed, and it is not a limit of the plant.
   foot, draws a blade across it.
 - **A cropped frame is void.** It shows that the picture is wrong, not that the plant is. The row is
   a picture debt until a view draws the subject.
+## What a rebuilt leaf changes
+
+A leaf texture built upside down can pass by accident. The reviewers' proportions and a half turn of
+the still can line up with the picture. A leaf still then reads well without the leaf being right.
+When a species rebuilds its leaf upright, expect its leaf stills to move in both directions. Read
+that movement as the measure catching up, not the plant changing.
+
+The silver birch rebuilt its leaf upright and stays at 8 of 12. Row 6 passes with the sky lever at
+0.4. Its three whole views read 0.18/0.21, 0.17/0.17 and 0.20/0.19 against their photographs. Its
+pictures 12 and 13 rose from 0.48 and 0.15 shape overlap to 0.72 and 0.64. Pictures 24 and 25 fell
+from 0.88 and 0.79 to 0.72 and 0.54. The two that fell had been measured through the inverted leaf and a
+half turn that happened to match. Row 4, the row those four stills carry, still passes at the new
+figures. The fall costs no row, and the species stays at 8 of 12.
+
+## What a crown fill costs
+
+A rebuilt leaf can leave a crown too open, and a fuller crown is the obvious answer. It carries a
+price, and the picture guard measures it.
+
+The willow rebuilt its leaf upright, then three fills were tried. Their near bands read 2,138,953,
+1,818,093 and 1,442,596 triangles at densities 5.6, 4.4 and 2.9. They read about 700,000 before
+the rebuild. The fills at 5.6 and 4.4 were dropped once the software guard was at risk. Neither was
+given a quiet run. The 2.9 fill is the one kept, because it is the one proved inside the guard.
+Three software tiers drew in 1.8, 1.8 and 1.0 minutes.
+
+Row 6 is a stated limit at every fill. Two measured attempts at the rebuilt leaf leave picture 01
+above every reference, and picture 18 four hundredths past its band. The fuller fills were never
+proved inside the guard. No fill wins a row, so the guard alone decides.
+
+The guard was nearly blamed for stale pictures. Three software tiers reported "no result within
+120 s" while the machine carried other work. The same tiers drew inside two minutes once it was
+quiet. Each failure had been a comparison against a stale reference, which reads alike in a
+summary line. A timeout is not evidence of a plant's cost until the run has a quiet machine and its
+own failure line is read.
+
+## When a lever fails its own row
+
+The hosta's last attempt is a clean case of a lever that fails the row it aims at and costs another.
+
+Its from-above view read 0.0049 against a floor of 0.0496. That floor is its photograph's own
+reading, 0.0996, less half a tenth, which is the allowance row 6 gives every view. The three side
+views sat inside their bands. Cutting the leaves from nine to seven per eye raised the
+from-above view to 0.0204. The sides stayed inside at 0.1445, 0.1543 and 0.1419 against 0.1098,
+0.1262 and 0.1171. The top still needed 0.0292, and the sides had only 0.0153, 0.0219 and 0.0252 of
+ceiling left.
+
+The same cut dropped three shape overlaps, from 0.7391 to 0.6835, 0.5848 to 0.5384 and 0.8017 to
+0.6988. It also returned a second piece to the whole-with-landmark view. So it was reverted, and nine leaves
+stand. Row 6 is a stated limit carrying those figures, the lever and the cost. The species stays
+at 5 of 12.
+
+A species' result lands with its own range. A record that trails its pictures by a range leaves the
+next reader unable to tell what those pictures show.
+
+## When a figure is void
+
+Some figures cannot decide a row. The reviewer says so and quotes the figure that survives, rather
+than turning a fault of the measure into a pass or a fail.
+
+- **A cutting view's gap when the crown box covers a leaf patch.** The crown box starts where the
+  crown starts. The tool finds that row in `crownStartRow` in `tools/lib/plant-review/references.ts`,
+  by looking for a bare stem under the foliage. A cut piece has foliage down to its foot, so the box
+  can land on a dense leaf patch. The gap is then read inside that patch. Three cases so far: the
+  common alder's two cluster stills, the hawthorn's studio cluster, and the silver birch's
+  branch-studio piece 21. On the birch the box fell from 186 by 284 pixels to 25 by 46. The piece's
+  own box and rows did not move, on a mask change of eleven per cent. The outline overlap and the
+  piece count survive such a move, and they are what to quote. The fix is tool work in that file,
+  not species data. M3-V4 carries the debt, because the review rows are its evidence, while the code
+  lives under `tools/`.
+
+## The rows a species still owes
+
+**M3-V4 is ticked, and it carries 67 of the 78 owed rows: the 17 engine items and 50 of the limits.
+Its tick does not cover them.** A reader who meets that task in a list sees a tick; this section is
+the only place that says most of the batch's remaining work sits behind it.
+
+A batch leaves 78 of its 144 look rows unpassed. Classed by what would move each one: **17 engine
+items, 5 recorded reference conflicts, 54 measured limits and 2 void by ruling**.
+
+The 17 engine rows are named to their work and to the task that carries the fix. All seventeen are
+M3-V4's: ten in the package's own code, and seven in the review tool, which M3-V4 carries because the
+review rows are its evidence.
+
+- **The shared crown shade**, four rows: the birch's, holm oak's, hosta's and sedge's whole views.
+  The term lives in the package's crown model.
+- **The joint surface the engine does not draw**, three rows: the birch's and beech's winter wood
+  and the willow's cut pieces. The wood geometry is the package's.
+- **The cut-piece crown box**, five rows, in `crownStartRow` in
+  `tools/lib/plant-review/references.ts`: the hawthorn's rows 3 and 12, the willow's row 3 and the
+  hosta's rows 3 and 12. The code is the review tool's; the debt is M3-V4's.
+- **The flower fix**, one row: the hawthorn's row 10, where its blossom draws nothing. The extras
+  builder is the package's.
+- **The matte tool change**, two rows: the alder's rows 3 and 12, where a cut piece's groups and
+  pieces are read from the matte. The code is the review tool's; the debt is M3-V4's.
+- **The coupled stem**, two rows: the sedge's rows 9 and 10. The generator couples the stem to the
+  leaf.
+
+A row with both a record lever and an engine blocker is classed by its next available lever. That is
+why the limit count is large and the engine count small. Four of the 54 limits also name an engine
+work as their next lever. All four are the bark color: the birch's, the holm oak's, the alder's
+plain pair and the bracken's. That next lever is the bark's shared shading, which belongs to the
+materials task M3-V7. So those four are the only owed rows outside M3-V4's debt. The other 50 name a
+record value already spent, which is what makes them limits.
+
+The per-row list, with each figure, sits in the maintainers' batch handoff, which is not kept in the
+repository. This section is a summary of that record, not a second copy of it.
 
 ## What the reviewer reports
 
