@@ -754,6 +754,7 @@ export interface FittedMaskNote {
 	readonly groundNoise?: number;
 	readonly horizonShare?: number;
 	readonly plantToGround?: number;
+	readonly sampledBox?: { readonly width: number; readonly height: number };
 }
 
 /** The summary's note when a reference's outline comes from a fitted background. */
@@ -776,12 +777,15 @@ export function fittedMaskClause(pair: { readonly fittedMask?: FittedMaskNote })
 		note.plantToGround === undefined
 			? ''
 			: `; the plant's median colour sits ${note.plantToGround.toFixed(1)} CIEDE2000 steps from the ground`;
+	const sampled = note.sampledBox
+		? ` (the sampled mask was ${note.sampledBox.width} by ${note.sampledBox.height} pixels)`
+		: '';
 	const held =
 		note.plantToGround !== undefined &&
 		note.groundNoise !== undefined &&
 		note.groundFit !== undefined
 			? note.plantToGround < Math.max(10, note.groundNoise * 2)
-				? "; the plant sits inside the ground's own limit, so the fit has covered the plant and the mask is refused"
+				? `; the plant sits inside the ground's own limit, so the fit has covered the plant and the mask is refused${sampled}`
 				: ''
 			: '';
 	return ` — the outline comes from a fitted ground at horizon share ${(note.horizonShare ?? 0).toFixed(3)}, ground region ${groundShare.toFixed(3)} (sky fit ${note.skyFit.toFixed(4)}, residual ${note.skyNoise.toFixed(1)}${ground})${closeness}${flagged}${held}`;
@@ -1482,6 +1486,9 @@ export function compareStills(
 										horizonShare: (refPlant.background.horizon ?? 0) / refPlant.height,
 										...(refPlant.plantToGround !== undefined
 											? { plantToGround: refPlant.plantToGround }
+											: {}),
+										...(refPlant.refusedBox !== undefined
+											? { sampledBox: refPlant.refusedBox }
 											: {}),
 									}
 								: {}),

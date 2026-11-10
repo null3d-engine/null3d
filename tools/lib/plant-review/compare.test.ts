@@ -630,5 +630,19 @@ describe('a fitted-background outline', () => {
 			},
 		});
 		expect(band).not.toContain('outside a soil band');
+		const refused = fittedMaskClause({
+			fittedMask: {
+				kind: 'ground',
+				skyFit: 1,
+				skyNoise: 24,
+				groundFit: 1,
+				groundNoise: 18,
+				horizonShare: 0.181,
+				plantToGround: 5.43,
+				sampledBox: { width: 19, height: 30 },
+			},
+		});
+		expect(refused).toContain('the mask is refused');
+		expect(refused).toContain('the sampled mask was 19 by 30 pixels');
 	});
 });

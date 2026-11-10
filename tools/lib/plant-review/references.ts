@@ -931,6 +931,11 @@ export interface PlantMask {
 	 * trusting a mask that may merge them.
 	 */
 	readonly plantToGround?: number;
+	/**
+	 * For a refused ground fit: the box of the plant the fit found before the refusal, so a reader
+	 * sees why the reference could not be read — a sliver where the ground model swallowed the plant.
+	 */
+	readonly refusedBox?: { readonly width: number; readonly height: number };
 }
 
 /** The pixels of the foreground's connected parts, 8-connected, labelled from 1; 0 is background. */
@@ -1174,14 +1179,28 @@ export function plantMask(image: Rgba): PlantMask {
 	// A ground whose model has swallowed the plant gives no outline: the plant's own material sits
 	// inside the ground's limit, so the mask would merge the two. The figure is refused and the
 	// distance is kept for the record.
-	if (background.ground && plantToGround !== undefined && soilHoldsPlant(background, plantToGround))
+	if (
+		background.ground &&
+		plantToGround !== undefined &&
+		soilHoldsPlant(background, plantToGround)
+	) {
+		const sampled = boxOf(mask, width, height);
 		return {
 			width,
 			height,
 			mask: new Uint8Array(width * height),
 			background,
 			plantToGround,
+			...(sampled
+				? {
+						refusedBox: {
+							width: sampled.right - sampled.left + 1,
+							height: sampled.bottom - sampled.top + 1,
+						},
+					}
+				: {}),
 		};
+	}
 	return {
 		width,
 		height,
