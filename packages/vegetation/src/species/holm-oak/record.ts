@@ -33,7 +33,7 @@ export const record: Species = {
 		internode: { length: 0.25, ageFactor: 0.99 },
 		stems: {
 			count: { mean: 8, spread: 2 },
-			lean: { mean: 22, spread: 6 },
+			lean: { mean: 26, spread: 6 },
 			stool: 0.45,
 			fused: 0.95,
 		},
