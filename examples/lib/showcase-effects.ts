@@ -17,8 +17,11 @@ import type { Cinematic } from './cinematic';
 import {
 	ATMOSPHERE,
 	type HudGroup,
+	type HudOption,
 	LIGHTING,
 	POST,
+	presetCapReason,
+	presetFeatureReason,
 	QUALITY,
 	radioGroup,
 	TIME_BUTTONS,
@@ -214,58 +217,74 @@ export function createShowcaseEffects(
 	return {
 		on,
 		set,
-		groups: (): readonly HudGroup[] => [
-			{
-				name: 'hour',
-				title: 'Time of day',
-				radio: false,
-				buttons: TIME_BUTTONS.map((option) => ({
-					id: option.id,
-					label: option.label,
-					tip: option.tip,
-					// The slider posts hours; the two buttons beside it pick a mood instead.
-					name: 'mood',
-					active: option.id === 'Auto' ? stage.auto : stage.mood === 'Studio',
-				})),
-				slider: {
-					min: 0,
-					max: 24,
-					step: 0.05,
-					value: stage.hours,
-					live: stage.auto,
-					marks: TIME_MARKS,
-					tip: 'Turn the dial to any hour of the day, round past midnight. Auto moves it by itself and loops.',
-					dial: {
-						colors: TIME_SKY,
-						names: TIME_NAMES,
-						...(stage.mood === 'Studio' && { off: 'Studio' }),
+		groups: (): readonly HudGroup[] => {
+			const current = quality.preset;
+			const highest = quality.highest;
+			// A feature that needs a heavier preset, and a preset above the device's cap, are both
+			// shown disabled with a plain reason rather than hidden or silently ignored.
+			const feature = (option: HudOption) => presetFeatureReason(option, current, highest);
+			const preset = (option: HudOption) => presetCapReason(option.id as QualityPreset, highest);
+			return [
+				{
+					name: 'hour',
+					title: 'Time of day',
+					radio: false,
+					buttons: TIME_BUTTONS.map((option) => ({
+						id: option.id,
+						label: option.label,
+						tip: option.tip,
+						// The slider posts hours; the two buttons beside it pick a mood instead.
+						name: 'mood',
+						active: option.id === 'Auto' ? stage.auto : stage.mood === 'Studio',
+					})),
+					slider: {
+						min: 0,
+						max: 24,
+						step: 0.05,
+						value: stage.hours,
+						live: stage.auto,
+						marks: TIME_MARKS,
+						tip: 'Turn the dial to any hour of the day, round past midnight. Auto moves it by itself and loops.',
+						dial: {
+							colors: TIME_SKY,
+							names: TIME_NAMES,
+							...(stage.mood === 'Studio' && { off: 'Studio' }),
+						},
 					},
 				},
-			},
-			toggleGroup(
-				'atmosphere',
-				'Atmosphere',
-				ATMOSPHERE,
-				supported.atmosphere,
-				(id) => on[id] ?? false,
-			),
-			toggleGroup('lighting', 'Lighting', LIGHTING, supported.lighting, (id) => on[id] ?? false),
-			toggleGroup('post', 'Post', POST, supported.post, (id) => on[id] ?? false),
-			...(options.extra?.() ?? []),
-			{
-				...radioGroup('quality', 'Quality', QUALITY, quality.preset),
-				// The level of detail is a quality setting, and a threshold of 0 draws every mesh at
-				// its fullest, which is what turning it off means.
-				extras: [
-					{
-						id: 'lod',
-						label: 'LOD',
-						tip: 'Draw simpler meshes in the distance. Off draws every mesh at its fullest.',
-						active: quality.settings.lodThreshold > 0,
-					},
-				],
-			},
-		],
+				toggleGroup(
+					'atmosphere',
+					'Atmosphere',
+					ATMOSPHERE,
+					supported.atmosphere,
+					(id) => on[id] ?? false,
+					feature,
+				),
+				toggleGroup(
+					'lighting',
+					'Lighting',
+					LIGHTING,
+					supported.lighting,
+					(id) => on[id] ?? false,
+					feature,
+				),
+				toggleGroup('post', 'Post', POST, supported.post, (id) => on[id] ?? false, feature),
+				...(options.extra?.() ?? []),
+				{
+					...radioGroup('quality', 'Quality', QUALITY, current, preset),
+					// The level of detail is a quality setting, and a threshold of 0 draws every mesh at
+					// its fullest, which is what turning it off means.
+					extras: [
+						{
+							id: 'lod',
+							label: 'LOD',
+							tip: 'Draw simpler meshes in the distance. Off draws every mesh at its fullest.',
+							active: quality.settings.lodThreshold > 0,
+						},
+					],
+				},
+			];
+		},
 		lens: () => (on.dof ? settings : null),
 		fitShadows,
 		update(t) {
