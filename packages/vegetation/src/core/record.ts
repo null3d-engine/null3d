@@ -1484,6 +1484,21 @@ export interface GrassBlade {
 	readonly arch: Spread;
 	/** Share of the blade that is dry at the tip. */
 	readonly dryTip: number;
+	/**
+	 * A pale collar where the blade leaves its sheath: its colour in linear reflectance, and the
+	 * share of the blade's base it takes. Absent, the collar draws as the leaf.
+	 */
+	readonly collar?: { readonly colour: Rgb; readonly share: number };
+	/**
+	 * A ligule: a pale papery flap standing in the V between the blade and its sheath, drawn in
+	 * the collar's colour. Its length and width in metres, and the share of blades that carry
+	 * one. Absent, no flap draws.
+	 */
+	readonly ligule?: {
+		readonly length: Spread;
+		readonly width: number;
+		readonly share?: number;
+	};
 	/** How the blade looks under light. */
 	readonly optics: LeafOptics;
 }
