@@ -206,23 +206,27 @@ describe('createShowcaseEffects', () => {
 		expect(seen).toContain('lodThreshold 1');
 	});
 
-	it("turns a scene's levels of detail off at the start, unless its start list keeps them on", () => {
-		const off = stub({ lodThreshold: 1 });
-		expect(off.seen).toContain('lodThreshold 0');
-		const on = stub({ lodThreshold: 1, start: { lod: true } });
+	it("keeps a scene's levels of detail on at the start, unless its start list turns them off", () => {
+		const on = stub({ lodThreshold: 1 });
 		expect(on.seen).not.toContain('lodThreshold 0');
 		expect(on.effects.groups().find((group) => group.name === 'quality')?.extras?.[0]?.active).toBe(
 			true,
 		);
+		const off = stub({ lodThreshold: 1, start: { lod: false } });
+		expect(off.seen).toContain('lodThreshold 0');
+		expect(
+			off.effects.groups().find((group) => group.name === 'quality')?.extras?.[0]?.active,
+		).toBe(false);
 	});
 
-	it('keeps the level of detail off when a preset is picked', () => {
-		const { effects, scene, seen, quality } = stub();
+	it('keeps the level of detail on when a preset is picked', () => {
+		// A page that starts with the levels of detail on, which is every showcase's default.
+		const { effects, scene, seen, quality } = stub({ lodThreshold: 1 });
 		scene.handler?.('quality', 'medium');
-		expect(quality.settings.lodThreshold).toBe(0);
-		expect(seen).toEqual(['preset medium', 'lodThreshold 0']);
+		expect(quality.settings.lodThreshold).toBe(1);
+		expect(seen).toEqual(['preset medium']);
 		const group = effects.groups().find((entry) => entry.name === 'quality');
-		expect(group?.extras?.[0]?.active).toBe(false);
+		expect(group?.extras?.[0]?.active).toBe(true);
 	});
 
 	it("turns the level of detail on at the preset's threshold", () => {
