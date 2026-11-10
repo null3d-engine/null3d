@@ -179,6 +179,37 @@ describe('the species header', () => {
 		const stalked: Species = { ...record, lod: { ...record.lod, cardStalk: 1.5 } };
 		expect(texel(speciesHeader(stalked, manifest, box), HEADER.cardStalk)[0]).toBeCloseTo(1.5, 6);
 	});
+	test("writes a fire scar's hollow and char into the header, or zeroes it where the record gives none", () => {
+		expect(texel(header, HEADER.scar)).toEqual([0, 0, 0, 0]);
+		expect(texel(header, HEADER.scarColour)).toEqual([0, 0, 0, 0]);
+		const scarred: Species = {
+			...record,
+			base: {
+				flare: { amount: 0.3, height: 0.5 },
+				scar: {
+					from: 0.2,
+					to: 4,
+					angle: 90,
+					width: 40,
+					depth: 0.5,
+					colour: [0.01, 0.012, 0.009],
+					shade: 0.8,
+				},
+			},
+		};
+		const written = speciesHeader(scarred, manifest, box);
+		const scar = texel(written, HEADER.scar);
+		expect(scar[0]).toBeCloseTo(0.2, 3);
+		expect(scar[1]).toBeCloseTo(4, 3);
+		expect(scar[2]).toBeCloseTo(Math.PI / 2, 4);
+		expect(scar[3]).toBeCloseTo((Math.PI * 40) / 180 / 2, 4);
+		const colour = texel(written, HEADER.scarColour);
+		expect(colour[0]).toBeCloseTo(0.01, 5);
+		expect(colour[1]).toBeCloseTo(0.012, 5);
+		expect(colour[2]).toBeCloseTo(0.009, 5);
+		expect(colour[3]).toBeCloseTo(0.8, 5);
+	});
+
 	test('gives the whole plant its species sway, in metres at its top and cycles a second', () => {
 		const sway = record.wind.sway;
 		const written = texel(header, HEADER.sway);

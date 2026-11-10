@@ -1750,6 +1750,37 @@ export interface BaseSpec {
 	 * ground (from 0) and the height in metres they fade out by (above 0).
 	 */
 	readonly flutes?: { readonly count: Spread; readonly depth: number; readonly height: number };
+	/**
+	 * An old fire scar on the first stem's foot: the strong trees carry one where a ground fire
+	 * burned through the bark and the wood closed over it for a century. It cuts a hollow into the
+	 * stem between two heights and darkens the bark there, so the scar faces one side of the tree
+	 * while healthy bark closes round it. Absent, the foot has no scar.
+	 */
+	readonly scar?: ScarSpec;
+}
+
+/**
+ * A fire scar's hollow: a notch out of one side of the foot, charred. The angles run about the
+ * first stem from its frame's normal, which for an upright stem is the plant's +X axis, so a page
+ * can turn the plant to face the scar.
+ *
+ * @category api/vegetation
+ */
+export interface ScarSpec {
+	/** Metres above the ground where the scar's foot stands. */
+	readonly from: number;
+	/** Metres above the ground where the scar's head stands, above `from`. */
+	readonly to: number;
+	/** Degrees about the stem where the hollow's centre faces. */
+	readonly angle: number;
+	/** Degrees of the hollow's full angular width. */
+	readonly width: number;
+	/** Metres the hollow cuts into the stem at its deepest, in the middle of its height. */
+	readonly depth: number;
+	/** The charred colour, linear from 0 to 1. */
+	readonly colour: Rgb;
+	/** The share of the charred colour the hollow takes, from 0 to 1; 0.9 by default. */
+	readonly shade?: number;
 }
 
 /**
