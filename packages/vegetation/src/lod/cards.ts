@@ -110,6 +110,14 @@ export function cardMesh(input: MeshInput, level: 1 | 2): MeshArrays {
 						scale;
 				quatRotate(rows.rotation, r * 4, local, world);
 				const top = capTop ? Math.min(py + world[1], topLimit) : py + world[1];
+				// The card's horizontal reach is its picture's own, so a grown card cannot spread
+				// wider than the shoot it stands for.
+				for (let c = 0; c < 3; c++)
+					local[c] =
+						((plane.centre[c] as number) +
+							(sx * (plane.right[c] as number) + sy * (plane.up[c] as number))) *
+						scale;
+				quatRotate(rows.rotation, r * 4, local, world);
 				mesh.vertex(
 					[px + world[0], top, pz + world[2]],
 					normal,

@@ -1933,9 +1933,10 @@ export interface LodSpec {
 	 * How much a shoot's card grows across the shoot it stands for, 1 by default. A card is a picture
 	 * of one shoot with transparent gaps between its leaves, and at a whole view neighbouring cards
 	 * do not meet, so the crown breaks into pieces. Growing them makes the gaps fall on a
-	 * neighbour's leaves instead of on sky. The growth never raises the plant's top: a card's top
-	 * stops at the shoot picture's own top, because a card stands for leaves and leaves do not rise
-	 * above the shoot, so a species whose shoots stand above its wood keeps that silhouette.
+	 * neighbour's leaves instead of on sky. The growth never raises the plant's top or widens it past
+	 * the shoot picture: a card's top stops at the picture's own top and its corners keep the
+	 * picture's own reach, because a card stands for leaves and leaves do not rise above or spread
+	 * wider than their shoot, so a species whose shoots stand above its wood keeps that silhouette.
 	 */
 	readonly cardGrow?: number;
 	/**
