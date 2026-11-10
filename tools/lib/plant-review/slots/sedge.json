@@ -1,4 +1,18 @@
 {
+	"11-leaf-cluster.png": {
+		"background": "white",
+		"view": "cluster",
+		"cutting": 0,
+		"length": 0.35,
+		"span": 0.5
+	},
+	"23-leaf-cluster-studio.png": {
+		"background": "studio-grey",
+		"view": "cluster",
+		"cutting": 0,
+		"length": 0.35,
+		"span": 0.5
+	},
 	"04-tuft-from-above.png": {
 		"elevation": 88,
 		"view": "whole"
