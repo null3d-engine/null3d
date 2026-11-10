@@ -55,6 +55,28 @@ export function cardMesh(input: MeshInput, level: 1 | 2): MeshArrays {
 	const base = input.variant * VARIANT_RECORDS;
 	const local: Vector3 = [0, 0, 0];
 	const world: Vector3 = [0, 0, 0];
+	// The tallest point the cards stand for: each shoot's own un-grown picture top. A card grows to
+	// meet its neighbours, but no card rises above the shoot it pictures.
+	let topLimit = Number.NEGATIVE_INFINITY;
+	for (let r = 0; r < rows.count; r++) {
+		if (cardKeep(rows.order[r] as number, level) === 0) continue;
+		const prototype = kit.prototypes[rows.prototype[r] as number];
+		if (!prototype) continue;
+		const scale = rows.scale[r] as number;
+		const py = rows.position[r * 3 + 1] as number;
+		for (const plane of prototype.card.planes)
+			for (const [sx, sy] of CORNERS) {
+				for (let c = 0; c < 3; c++)
+					local[c] =
+						((plane.centre[c] as number) +
+							(plane.right[c] as number) * sx +
+							(plane.up[c] as number) * sy) *
+						scale;
+				quatRotate(rows.rotation, r * 4, local, world);
+				topLimit = Math.max(topLimit, py + world[1]);
+			}
+	}
+	const capTop = Number.isFinite(topLimit);
 	for (let r = 0; r < rows.count; r++) {
 		const grow = cardKeep(rows.order[r] as number, level);
 		if (grow === 0) continue;
@@ -87,8 +109,9 @@ export function cardMesh(input: MeshInput, level: 1 | 2): MeshArrays {
 							grow * widen * (sx * (plane.right[c] as number) + sy * (plane.up[c] as number))) *
 						scale;
 				quatRotate(rows.rotation, r * 4, local, world);
+				const top = capTop ? Math.min(py + world[1], topLimit) : py + world[1];
 				mesh.vertex(
-					[px + world[0], py + world[1], pz + world[2]],
+					[px + world[0], top, pz + world[2]],
 					normal,
 					[(rx + ((sx + 1) / 2) * rw) / size, (ry + ((sy + 1) / 2) * rh) / size],
 					[(sy + 1) / 2, k / 2],
