@@ -155,6 +155,16 @@ export interface CutCamera {
 }
 
 /**
+ * The distance at which a part's span fills the frame across it: a photograph of a part of a piece,
+ * such as one pinna of a frond, frames that part rather than the whole piece, and the span names the
+ * metres it shows across the frame.
+ */
+export function spanDistance(span: number, fov: number, aspect: number): number {
+	const half = Math.tan((fov * Math.PI) / 360);
+	return span / 2 / Math.max(half * aspect, 0.0001);
+}
+
+/**
  * The camera that puts a cut piece's points on the rows its photograph puts them on: its highest
  * point on the top row and its lowest on the base row, the frame centred across the piece. The camera
  * looks along `forward`, with `right` and `up` as its frame's axes, at a target straight above or
