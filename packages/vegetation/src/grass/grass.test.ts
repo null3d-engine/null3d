@@ -118,6 +118,11 @@ describe('the cover that meets a species', () => {
 		const mesh = tuftMesh(7, 1, 3, flat);
 		expect(mesh.positions.length).toBe((3 * 2 + 1) * 3);
 		expect(mesh.indices.length).toBe(2 * 6 + 3);
+		// The collar still spans the record's profile of its own width, and its two sides stand level.
+		const at = (index: number) => mesh.positions[index] ?? Number.NaN;
+		const span = Math.hypot(at(0) - at(3), at(2) - at(5));
+		expect(span).toBeCloseTo(blade.width * curveAt(blade.profile, 0), 5);
+		expect(at(1)).toBeCloseTo(at(4), 6);
 	});
 
 	test('a cover with no species blade draws the strip it draws today', () => {
