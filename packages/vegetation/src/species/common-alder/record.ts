@@ -639,11 +639,11 @@ export const record: Species = {
 			// fours from the same twig ends, and sway clear of the leaves above them.
 			kind: 'catkin',
 			at: 'shoot-tip',
-			share: 0.28,
-			count: { mean: 4, spread: 0.5 },
-			tipShare: 0.95,
+			share: 0.18,
+			count: { mean: 3, spread: 0 },
+			tipShare: 0.9,
 			seasons: ['summer', 'autumn', 'winter'],
-			shape: { catkin: { length: 0.1, radius: 0.0035 } },
+			shape: { catkin: { length: 0.055, radius: 0.0028 } },
 			// Still 19: a yellow-green string of pollen sacs, lighter than the cones beside it.
 			colour: [0.14, 0.13, 0.045],
 			roughness: [0.75, 0.8],
