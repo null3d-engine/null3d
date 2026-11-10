@@ -63,7 +63,8 @@
 	"20-nest-holes.png": {
 		"view": "bark-mid",
 		"span": 1,
-		"barkHeight": 8
+		"barkHeight": 8,
+		"lamp": "#f8f9ff"
 	},
 	"22-subbranch-studio.png": {
 		"view": "bark-limb",
