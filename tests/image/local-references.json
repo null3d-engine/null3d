@@ -447,7 +447,7 @@
 		"test": "demo-vegetation",
 		"tier": "webgl2",
 		"date": "2026-11-10",
-		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head, at a load of 8 rising to 33, and judged by the landing session"
+		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head; the load was 8 when it started and 33 when it finished, the drawing completed, and it was compared against its reference and judged by the landing session before acceptance"
 	},
 	"chromium-swiftshader/webgl2/gltf-clearcoat-car-paint.png": {
 		"test": "gltf-clearcoat-car-paint",
