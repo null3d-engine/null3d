@@ -80,7 +80,6 @@
 	"16-stipe-mid.png": {
 		"view": "bark-mid",
 		"skyShare": 0.357,
-		"daylight": 1.459,
 		"span": 0.09,
 		"barkMask": true
 	},
