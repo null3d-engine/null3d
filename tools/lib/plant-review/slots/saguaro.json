@@ -1,6 +1,6 @@
 {
 	"04-arms-outside.png": {
-		"span": 2.2,
+		"span": 0.9,
 		"thin": 0.22,
 		"along": 0.35,
 		"sunAzimuth": -20,
@@ -9,7 +9,7 @@
 		"daylight": 2.3
 	},
 	"05-arm-underside.png": {
-		"span": 2.0,
+		"span": 0.8,
 		"thin": 0.22,
 		"along": 0.25,
 		"sunAzimuth": 10,
@@ -27,7 +27,7 @@
 		"daylight": 2.3
 	},
 	"08-arm-elbow.png": {
-		"span": 2.2,
+		"span": 0.9,
 		"thin": 0.22,
 		"along": 0.3
 	},
