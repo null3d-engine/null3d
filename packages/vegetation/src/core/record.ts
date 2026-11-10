@@ -776,6 +776,11 @@ export interface Tuft {
 	readonly sheath: Spread;
 	/** The sheath's radius in metres. */
 	readonly sheathRadius: number;
+	/**
+	 * The linear colour of each shoot's sheath column, where the species gives one. Absent, the
+	 * column draws the leaf material as the blades do.
+	 */
+	readonly sheathColour?: Rgb;
 	/** Degrees a blade leaves its shoot, by blade age (t = 0 the youngest, innermost, 1 the oldest). */
 	readonly spread: Curve;
 	/** Blade length over the foliage's blade length, by blade age. */
