@@ -74,6 +74,10 @@
 		"span": 0.1,
 		"barkMask": true
 	},
-	"15-bark-mid-trunk.png": {},
-	"16-bark-on-limb.png": {}
+	"15-bark-mid-trunk.png": {
+		"barkMask": true
+	},
+	"16-bark-on-limb.png": {
+		"barkMask": true
+	}
 }
