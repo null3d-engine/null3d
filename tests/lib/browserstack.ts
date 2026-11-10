@@ -3,7 +3,7 @@
 // session passed or failed. The username and access key come from two files in the home folder,
 // and travel only in an Authorization header. Every text that leaves this module for a log goes
 // through the account's redactor first.
-import { readFileSync, statSync } from 'node:fs';
+import { mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { type CloudDevice, isMobile } from './browserstack-devices.ts';
@@ -20,6 +20,12 @@ export const PROJECT_NAME = 'null3D';
 export const IDLE_TIMEOUT_SECONDS = 300;
 /** The longest reason text that the driver sends with a session's status. */
 const REASON_LENGTH = 255;
+/** Where the device list is kept between runs, so a slow cloud is read once a day. */
+const CACHE_FOLDER = join(import.meta.dirname, '..', '..', 'target', 'cache');
+/** How long a cached device list stands, in milliseconds. */
+const DEVICE_LIST_TTL_MS = 24 * 60 * 60 * 1000;
+/** The longest wait for the device list, which is megabytes over a slow path. */
+const DEVICE_LIST_TIMEOUT_MS = 300_000;
 
 export interface Credentials {
 	user: string;
@@ -172,14 +178,19 @@ export function automateApi(
 	fetchFn: typeof fetch = fetch,
 ): AutomateApi {
 	const redact = redactor(credentials);
-	const call = async <T>(method: 'GET' | 'PUT', path: string, body?: unknown): Promise<T> => {
+	const call = async <T>(
+		method: 'GET' | 'PUT',
+		path: string,
+		body?: unknown,
+		timeoutMs = 60_000,
+	): Promise<T> => {
 		let response: Response;
 		try {
 			response = await fetchFn(`${base}${path}`, {
 				method,
 				headers: { 'content-type': 'application/json', ...authHeaders(credentials) },
 				...(body !== undefined && { body: JSON.stringify(body) }),
-				signal: AbortSignal.timeout(60_000),
+				signal: AbortSignal.timeout(timeoutMs),
 			});
 		} catch (e) {
 			throw new Error(redact(`BrowserStack's API did not answer ${path}: ${(e as Error).message}`));
@@ -197,10 +208,50 @@ export function automateApi(
 			);
 		return JSON.parse(text) as T;
 	};
+	/*
+	 * The account's device list, read from the cache while a fresh copy stands and from the cloud
+	 * otherwise. The list is large and the path to the cloud can be slow enough to outlast a
+	 * request's own timeout, so one download a day keeps every later run off that path.
+	 */
+	const cachedBrowsers = async (): Promise<AutomateBrowser[]> => {
+		const file = join(
+			CACHE_FOLDER,
+			`browserstack-browsers-${base.replace(/[^a-z0-9]+/gi, '-')}.json`,
+		);
+		try {
+			const held = JSON.parse(readFileSync(file, 'utf8')) as {
+				readonly base?: string;
+				readonly fetchedAt?: number;
+				readonly browsers?: AutomateBrowser[];
+			};
+			if (
+				held.base === base &&
+				held.browsers !== undefined &&
+				typeof held.fetchedAt === 'number' &&
+				Date.now() - held.fetchedAt < DEVICE_LIST_TTL_MS
+			)
+				return held.browsers;
+		} catch {
+			// A missing or unreadable cache is a cold read, not a failure.
+		}
+		const browsers = await call<AutomateBrowser[]>(
+			'GET',
+			'/browsers.json',
+			undefined,
+			DEVICE_LIST_TIMEOUT_MS,
+		);
+		try {
+			mkdirSync(CACHE_FOLDER, { recursive: true });
+			writeFileSync(file, JSON.stringify({ base, fetchedAt: Date.now(), browsers }));
+		} catch {
+			// A cache that cannot be written costs one download next run, and nothing else.
+		}
+		return browsers;
+	};
 	const sessionPath = (id: string) => `/sessions/${encodeURIComponent(id)}.json`;
 	return {
 		plan: () => call<AutomatePlan>('GET', '/plan.json'),
-		browsers: () => call<AutomateBrowser[]>('GET', '/browsers.json'),
+		browsers: () => cachedBrowsers(),
 		session: async (id) =>
 			(await call<{ automation_session?: SessionDetails }>('GET', sessionPath(id)))
 				.automation_session ?? {},

@@ -7,14 +7,16 @@ import {
 	createGrass,
 	growPlant,
 	loadSpecies,
+	type PlantMaterial,
 	placePlants,
 	plantMaterials,
 	prepareSpecies,
+	setWindLayer,
 	speciesIds,
 } from '@null3d/vegetation';
 import { createWind } from '@null3d/wind';
 import { interact } from '../lib/interact';
-import { postWindHud } from './hud';
+import { applyWindControl, postWindHud, type WindControls } from './hud';
 
 /** Metres a second at the field's top, at the strongest of the sweep. */
 const GUST = 7;
@@ -53,29 +55,24 @@ export default defineSketch(async (ctx) => {
 	});
 	// The wind's own state: its strength in metres a second, its bearing in degrees, and whether it
 	// is held still. The controls post these, and the H key holds it too.
-	let power = GUST;
-	let bearing = 35;
-	let still = false;
-	const postHud = () => postWindHud(page, { power, bearing, still });
+	const controls: WindControls = { power: GUST, bearing: 35, still: false };
+	const postHud = () => postWindHud(page, controls);
 	page.onMessage((name, value) => {
-		if (name === 'wind') {
-			const strength = Number(value);
-			if (Number.isFinite(strength)) power = strength;
-			else still = value === 'still' ? !still : still;
-			postHud();
-		} else if (name === 'bearing') {
-			const degrees = Number(value);
-			if (Number.isFinite(degrees)) bearing = degrees;
-			postHud();
-		}
+		const next = applyWindControl(controls, name, value);
+		if (next === controls) return;
+		Object.assign(controls, next);
+		postHud();
 	});
 	const view = interact(ctx, camera, { target: [0, 6, 0], groundY: 1.7 });
 
 	let planted: { destroy(): void }[] = [];
+	/** Every plant material, so each frame gives the plants the field's newest air. */
+	let plantMats: PlantMaterial[] = [];
 	const seed = 11;
 	const plant = async () => {
 		for (const piece of planted) piece.destroy();
 		planted = [];
+		plantMats = [];
 		const ids = speciesIds();
 		const across = Math.max(1, Math.ceil(Math.sqrt(ids.length)));
 		let index = 0;
@@ -83,6 +80,13 @@ export default defineSketch(async (ctx) => {
 			const module = await loadSpecies(id);
 			const kit = await prepareSpecies(ctx, module, { detail: 'high', placeholders: 'missing' });
 			const materials = plantMaterials(ctx, kit, { wind: wind.field });
+			plantMats.push(
+				materials.wood,
+				materials.shoots,
+				materials.cards,
+				materials.foliage,
+				materials.extras,
+			);
 			const variant = index % Math.max(1, kit.record.variants);
 			const asset = await growPlant(kit, { seed, variant, near: true });
 			const x = ((index % across) - (across - 1) / 2) * 20;
@@ -113,10 +117,13 @@ export default defineSketch(async (ctx) => {
 			view.update(dt);
 			// The set bearing turns slowly and the set strength breathes, so the crowns lift and
 			// settle rather than holding one lean. A held wind stands still.
-			const sweep = (bearing * Math.PI) / 180 + time.now * 0.13;
-			const strength = still ? 0 : power * (0.45 + 0.55 * (0.5 + 0.5 * Math.sin(time.now * 0.7)));
+			const sweep = (controls.bearing * Math.PI) / 180 + time.now * 0.13;
+			const strength = controls.still
+				? 0
+				: controls.power * (0.45 + 0.55 * (0.5 + 0.5 * Math.sin(time.now * 0.7)));
 			wind.setBase(strength, sweep);
 			wind.update();
+			setWindLayer(plantMats, wind.field);
 			grass.setWindLayer(wind.field);
 			if (!announced) {
 				announced = true;

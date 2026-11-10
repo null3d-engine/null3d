@@ -189,7 +189,7 @@ multiplies:
 | A million-triangle tree, about 16,000 patches | 64 blocks a slot, 262,144 bytes, and 786,432 bytes (0.75 MiB) a view |
 | Ten such trees | 7.9 MB a view |
 | A hundred such trees | 78.6 MB a view |
-| The test model, 511 patches | 3 blocks a slot, 36,864 bytes a view |
+| The test model, 514 patches | 3 blocks a slot, 36,864 bytes a view |
 | Each shadow view, a cascade or a tile | The casters' layout's own slot, with the same blocks for each tree that it draws |
 
 The figure is an upper bound: a view chooses fewer ranges than the tree holds, and the blocks
