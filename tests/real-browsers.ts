@@ -1984,7 +1984,10 @@ async function main(): Promise<void> {
 	);
 	const builds = buildsForLoads(paths);
 	for (const load of builds) makeLoadBuild(load);
-	const local = await startServer();
+	// The plain server carries the phone's USB-forwarded port and the browser apps on this machine,
+	// which reach the loopback, a secure origin already. The secure server serves the devices that
+	// reach this Mac over the local network and through the cloud tunnel.
+	const local = await startServer(false);
 	const lan =
 		options.lan.length > 0 || options.cloud.length > 0 ? await startServer(true) : undefined;
 	const forgetCloud = cloud && onStopSignal(() => cloud.closeAll());

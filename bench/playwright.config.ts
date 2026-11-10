@@ -25,6 +25,9 @@ export default defineConfig({
 			command: `${process.env[LOAD_PAGES_SWITCH] === 'prebuilt' ? '' : `bunx vite build --config bench/vite.pages.config.ts --outDir ${BUILD} && `}bunx vite preview --outDir ${BUILD} --port ${PREVIEW_PORT} --strictPort`,
 			cwd: REPO_ROOT,
 			url: `http://localhost:${PREVIEW_PORT}/bench/pages/index.html`,
+			// The preview serves this machine's loopback only, which is a secure origin already, and
+			// CI has no local certificate, so it opts out of the HTTPS default explicitly.
+			env: { NULL3D_HTTPS: '0' },
 			reuseExistingServer: false,
 			// The first build on a machine builds S6's city files and optimizes them, which takes
 			// about four minutes on the owner's Mac; later builds take them from the caches.

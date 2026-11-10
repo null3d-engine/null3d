@@ -38,7 +38,7 @@ import {
 	tan,
 	type Vector3,
 } from '../core/math';
-import type { Phyllotaxis, SelfOrganizing, Species } from '../core/record';
+import type { Phyllotaxis, SelfOrganizing, Species, StemSpec } from '../core/record';
 import { curveAt, spreadAt, spreadMean } from '../core/types';
 import { ShadowGrid } from '../crown/light-grid';
 import type { GrowInput } from '../stages';
@@ -75,6 +75,41 @@ const SITE_STEPS = 4;
 const GIRTH = [1, 0.6, 0.35, 0.2, 0.1] as const;
 /** Degrees between the headings a shoot tries when it turns aside from another axis's wood. */
 const TURN_STEP = 10;
+/**
+ * The most of a plant's own reach that the room its shoots need may take, so a small plant's
+ * envelope keeps room for its stems: a crown's shoots stand down from the outline by their reach,
+ * and on a plant no taller than they are that margin would empty the envelope.
+ */
+const INSET_MOST = 0.25;
+/** The most of the room left inside the outline that a stool's ring may stand out to. */
+const STOOL_MOST = 0.8;
+
+/**
+ * The room a plant's shoots need taken off its outline: their reach, held to a share of the outline
+ * itself, so a plant no taller than its own shoots keeps an envelope to grow in.
+ *
+ * @param record The species record.
+ * @param reach The outline's widest radius, in metres.
+ * @returns Metres to inset the envelope by.
+ * @category api/vegetation
+ */
+export function plantInset(record: Species, reach: number): number {
+	return Math.min(shootReach(record), INSET_MOST * reach);
+}
+
+/**
+ * A stool's ring, held inside the room the envelope leaves its stems: a ring written in metres is
+ * sized for the plant its record was measured on, and a form a fraction of that size would put its
+ * stems outside a room their own reach has left them.
+ *
+ * @param spec The record's stems.
+ * @param volume The inset envelope.
+ * @returns The ring's radius in metres.
+ * @category api/vegetation
+ */
+export function stoolReach(spec: StemSpec, volume: EnvelopeVolume): number {
+	return Math.min(spec.stool, STOOL_MOST * Math.max(0, volume.radius(volume.base, 0)));
+}
 
 /** One axis's girth beside another's, as a share of the record's clearance. */
 export function girthOf(order: number): number {
@@ -391,7 +426,8 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 		envelopeVolume(record.envelope, height, turn),
 		Math.max(0, g.floor ?? 0) * height,
 	);
-	const volume: EnvelopeVolume = insetVolume(outline, shootReach(record));
+	const inset = plantInset(record, outline.reach);
+	const volume: EnvelopeVolume = insetVolume(outline, inset);
 	const radial = record.envelope.kind === 'radial';
 
 	// The shadow grid: its cell is the first year's internode, or larger where the plant needs more
@@ -495,7 +531,15 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 	const divideNodes = new Set<number>();
 
 	// The stems: each starts with a base node on the ground and a terminal bud.
-	const starts = stemStarts(g.stems, seed, salt, variant);
+	const starts = stemStarts(
+		{
+			...g.stems,
+			stool: stoolReach(g.stems, volume),
+		},
+		seed,
+		salt,
+		variant,
+	);
 	// Each stem of a stool forks at its own height, in an even stair round the record's height; one
 	// stem forks at the record's height.
 	const divideHeights = starts.map((_, s) =>

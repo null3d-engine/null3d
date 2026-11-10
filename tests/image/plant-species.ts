@@ -11,12 +11,31 @@ import type { ImageTest } from '../lib/images.ts';
 const ROOT = join(import.meta.dirname, '../..');
 
 /**
- * The seconds a species' picture takes, over the default: a crown of many fine parts builds its
- * four panels one after another, and the software GPU needs longer than the default limit for it.
+ * Seconds a species' four-panel picture may take. The panels stand three metres from the crown, so
+ * every shoot row inside that band is real geometry; a dense crown draws about six million triangles
+ * a frame, which a software rasteriser needs far longer for than the default sixty seconds allows.
  */
-const TIMEOUT: Readonly<Record<string, number>> = {
-	// About two thousand pinnae, each a leaf of its own: the software GPU drew three of the four
-	// panels within the default limit and stopped before the last.
+const PANELS_SECONDS = 120;
+
+/**
+ * Species whose own four panels need longer than the shared limit, with the seconds each was
+ * measured at.
+ *
+ * The measurement is taken with the load the picture run applies: a project's three tiers drawing
+ * together. The common alder's dense crown finished those in under four minutes and overran the
+ * shared two, so its value is 240 and a run against its accepted references passed all three tiers
+ * in three and a half minutes.
+ *
+ * Timing one tier alone is the trap: the same crown drew in 96 seconds that way, which says nothing
+ * about the load the suite runs under. It is the second figure this species corrected after taking
+ * it on the wrong load, the first being its young-bark color read against a picture that framed a
+ * great limb rather than young wood.
+ *
+ * A tree fern's crown carries about two thousand pinnae, each a leaf of its own, and the software
+ * GPU drew three of the four panels within the shared limit and stopped before the last.
+ */
+const PANELS_SECONDS_BY_SPECIES: Readonly<Record<string, number>> = {
+	'common-alder': 240,
 	'tree-fern': 180,
 };
 
@@ -27,6 +46,11 @@ export function plantSpeciesTests(root = ROOT): ImageTest[] {
 		sketch: `tests/pages/sketches/plant-review-sketch.ts?species=${id}&view=panels`,
 		hold: 1,
 		size: [1024, 1024],
-		...(TIMEOUT[id] !== undefined && { timeoutSeconds: TIMEOUT[id] }),
+		// Four panels of a whole plant, built and drawn from scratch: the merged foliage of a ground
+		// A dense crown takes longer than the default limit on the software GPU's slower path, so the
+		// panels draw the low preset's lighter meshes there; a species measured slower still takes its
+		// own limit.
+		timeoutSeconds: PANELS_SECONDS_BY_SPECIES[id] ?? PANELS_SECONDS,
+		swiftShaderSwitches: ['preset=low'],
 	}));
 }

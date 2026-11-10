@@ -140,7 +140,7 @@ Check this table before you write a generator, control, effect or loader. Each f
 | Text in the scene, sharp at any distance | the MSDF text add-on | none yet | not built yet; use HTML labels with `ui.trackLabel` |
 | A river or a lake, with waves, foam, soft shores and a surface seen from below | `@null3d/water` | `api/water` | built |
 | An open sea whose waves come from GPU-transformed spectra | `@null3d/water` | `api/water` | built |
-| Trees, shrubs, ferns, hostas and grass, with detail levels, wind data and ecological placement | `@null3d/vegetation` | `api/vegetation` | built (scatter and grass; species are being rebuilt and draw as stand-ins) |
+| Trees, shrubs, ferns, hostas and grass, with detail levels, wind data and ecological placement | `@null3d/vegetation` | `api/vegetation` | built (scatter, grass, twelve species; other ids draw a stand-in) |
 | Wind that plants, flags and smoke read, with travelling gusts and pushes | `@null3d/wind` | `api/wind` | built (the preset sets the step interval, pressure count and grid) |
 | three.js look modes for a port: Reinhard and Cineon tone curves, and a soft outline with a glow and a pulse | `@null3d/three-compat` | `api/three-compat` | built |
 
