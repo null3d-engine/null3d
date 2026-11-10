@@ -372,10 +372,12 @@ export const record: Species = {
 	seedSalt: 1919802519,
 	roundBand,
 	cuttings: {
-		// Stills 21 and 22: both pieces are sprays of rope shoots, so the two take the class's two
+		// Stills 21 and 22: both pieces are sprays of rope shoots, so the two take the class's
 		// prototypes rather than a thick macro axis, whose wood reads several times the photographs'.
+		// The sub-branch takes the first prototype, whose all-round turn is the steadier of the two;
+		// the second turned the piece nearly edge-on, 201 per cent in height against the fan's 7.
 		branch: { shoot: 'spray', pick: 0 },
-		subbranch: { shoot: 'spray', pick: 1 },
+		subbranch: { shoot: 'spray', pick: 0 },
 		// Still 23's shoot tip is one rope of this year's scales, and the studio picture is the
 		// cutting's own shoot; still 11's whole spray is a different piece and is recorded as a
 		// reference conflict.
