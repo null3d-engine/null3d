@@ -890,8 +890,8 @@
 	"chromium-swiftshader/webgpu/demo-vegetation-wind.png": {
 		"test": "demo-vegetation-wind",
 		"tier": "webgpu",
-		"date": "2026-11-07",
-		"reason": "two new demo pages have no software-set reference yet, so this machine draws their first and CI's run judges them from here"
+		"date": "2026-11-10",
+		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head; this view completed at the machine's idlest moment and was compared before acceptance, and a CI drawing on a pull request replaces it"
 	},
 	"chromium-swiftshader/webgpu/demo-vegetation.png": {
 		"test": "demo-vegetation",
