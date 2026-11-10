@@ -28,6 +28,11 @@
 	"07-leaf-base-and-petiole.png": {
 		"view": "leaf-under"
 	},
+	"08-leaf-surface-ribs.png": {
+		"view": "leaf-upper",
+		"span": 0.2,
+		"along": 0.45
+	},
 	"14-petiole-section.png": {
 		"view": "cluster",
 		"pick": 0,
@@ -50,6 +55,7 @@
 		"fov": 24
 	},
 	"20-autumn-collapse.png": {
+		"view": "whole",
 		"fov": 24
 	},
 	"22-subbranch-studio.png": {
