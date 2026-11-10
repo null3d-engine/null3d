@@ -323,7 +323,9 @@ export async function drawShots(
 	options: { readonly gpu?: string; readonly log?: (line: string) => void } = {},
 ): Promise<RunFrame[]> {
 	const log = options.log ?? console.log;
-	const server = await startServer();
+	// A checkout without a development certificate draws over plain HTTP on the loopback, as the
+	// server asks: the environment's choice reaches the server instead of being forced to HTTPS.
+	const server = await startServer(process.env.NULL3D_HTTPS !== '0');
 	const browser = await launchRepoBrowser(defaultEnvironment());
 	const frames: RunFrame[] = [];
 	try {
