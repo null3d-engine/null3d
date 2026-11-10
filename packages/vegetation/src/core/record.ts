@@ -1845,7 +1845,8 @@ export type ExtraShape =
 			readonly cup: number;
 			/**
 			 * Metres of stalk that holds the cup out from its site along the shoot's own direction.
-			 * Absent, the cup stands at its site as before.
+			 * The stalk draws at the nearest level only, where a thin stem reads; absent, the cup
+			 * stands at its site as before.
 			 */
 			readonly stalk?: number;
 	  }
