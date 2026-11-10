@@ -305,13 +305,14 @@ than turning a fault of the measure into a pass or a fail.
 - **A cutting view's gap when the crown box covers a leaf patch.** The crown box starts where the
   crown starts. The tool finds that row in `crownStartRow` in `tools/lib/plant-review/references.ts`,
   by looking for a bare stem under the foliage. A cut piece has foliage down to its foot, so the box
-  can land on a dense leaf patch. The gap is then read inside that patch. Three cases so far: the
-  common alder's two cluster stills, the hawthorn's studio cluster, and the silver birch's
-  branch-studio piece 21. On the birch the box fell from 186 by 284 pixels to 25 by 46. The piece's
-  own box and rows did not move, on a mask change of eleven per cent. The outline overlap and the
-  piece count survive such a move, and they are what to quote. The fix is tool work in that file,
-  not species data. M3-V4 carries the debt, because the review rows are its evidence, while the code
-  lives under `tools/`.
+  can land on a dense leaf patch. The gap is then read inside that patch. Four cases so far: the
+  common alder's two cluster stills, the hawthorn's studio cluster, the silver birch's branch-studio
+  piece 21, and the hosta's leaf cluster. On the birch the box fell from 186 by 284 pixels to 25 by
+  46. The hosta's cluster reads 220 by 103 pixels against the photograph's 325 by 219, and one
+  placement change took it to 215 by 13. The piece's own box and rows did not move, on a mask change
+  of eleven per cent. The outline overlap and the piece count survive such a move, and they are what
+  to quote. The fix is tool work in that file, not species data. M3-V4 carries the debt, because the
+  review rows are its evidence, while the code lives under `tools/`.
 
 ## The rows a species still owes
 
@@ -332,7 +333,7 @@ review rows are its evidence.
   and the willow's cut pieces. The wood geometry is the package's.
 - **The cut-piece crown box**, five rows, in `crownStartRow` in
   `tools/lib/plant-review/references.ts`: the hawthorn's rows 3 and 12, the willow's row 3 and the
-  hosta's rows 3 and 12. The code is the review tool's; the debt is M3-V4's.
+  hosta's rows 3, 5 and 12. The code is the review tool's; the debt is M3-V4's.
 - **The flower fix**, one row: the hawthorn's row 10, where its blossom draws nothing. The extras
   builder is the package's.
 - **The matte tool change**, two rows: the alder's rows 3 and 12, where a cut piece's groups and
