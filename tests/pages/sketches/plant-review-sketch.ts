@@ -26,7 +26,6 @@ import {
 	prepareSpecies,
 	type SpeciesKit,
 	setWindLayer,
-	swayDistanceFor,
 } from '@null3d/vegetation';
 import { createWind, type Wind } from '@null3d/wind';
 import {
@@ -1348,16 +1347,19 @@ export default defineSketch(async (ctx) => {
 				})
 			: undefined;
 	// A stand-in kit's matte is plain black materials; a real kit's is the plant shader's own, which
-	// keeps its quantised parts, cut-outs and sway. A plant under the wind sways out to its preset's
-	// distance, or to the query's own, so a far cascade that only this plant reaches keeps the layer
-	// it holds, and a plant past the distance stands still under the same field.
+	// keeps its quantised parts, cut-outs and sway. The review frames one plant with a camera of its
+	// own, so the sway reach follows that camera's distance: four times the distance keeps every
+	// vertex of the framed plant inside the fade, whatever the governor's live preset is. A slot may
+	// name a shorter reach to show the fade itself.
+	const windCamera = cells[0]?.view.position ?? [0, 0, 0];
+	const swayReach = Math.hypot(windCamera[0], windCamera[1], windCamera[2]) * 4;
 	const plantLook =
 		MATTE && kit.placeholders === true
 			? matteMaterials(ctx, kit)
 			: plantMaterials(ctx, kit, {
 					...(wind && {
 						wind: wind.field,
-						swayDistance: QUERY.sway ?? swayDistanceFor(ctx.quality.preset),
+						swayDistance: QUERY.sway ?? swayReach,
 					}),
 					matte: MATTE,
 				});
