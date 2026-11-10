@@ -346,7 +346,14 @@ function fit(bounds: Bounds, turn: number, elevation: number, aspect: number, fo
  * The camera that stands on the ground and puts a whole plant where the query's framing in screen
  * shares asks, as a reference picture framed its plant.
  */
-function standView(height: number, bounds: Bounds, foot: V3, turn: number, aspect: number): View {
+function standView(
+	height: number,
+	bounds: Bounds,
+	points: Float32Array | undefined,
+	foot: V3,
+	turn: number,
+	aspect: number,
+): View {
 	const middle = QUERY.targetY ?? 0.5;
 	const fill = QUERY.fill ?? 0.8;
 	const asked = QUERY.top !== undefined && QUERY.fill === undefined;
@@ -361,6 +368,13 @@ function standView(height: number, bounds: Bounds, foot: V3, turn: number, aspec
 	let stand = standCamera(framing, height);
 	const out = facing(turn);
 	const right: V3 = [Math.cos(turn), 0, -Math.sin(turn)];
+	/** The view a stand camera gives, before the box is projected into its frame. */
+	const viewOf = (at: typeof stand): View => {
+		const position = add(add(foot, scale(out, at.distance)), [0, at.height, 0]);
+		const level = sub(scale(out, -Math.cos(at.yaw)), scale(right, Math.sin(at.yaw)));
+		const look = add(scale(level, Math.cos(at.pitch)), [0, Math.sin(at.pitch), 0]);
+		return { position, target: add(position, scale(look, at.distance)), fov: FOV };
+	};
 	// The reference's plant keeps a margin at the frame's sides. The camera stands back until the
 	// render's widest corner keeps that share too, so a plant broader than its reference is framed
 	// with the same margin rather than cropped at the sides.
@@ -380,10 +394,87 @@ function standView(height: number, bounds: Bounds, foot: V3, turn: number, aspec
 		}
 		if (distance > stand.distance) stand = { ...stand, distance };
 	}
-	const position = add(add(foot, scale(out, stand.distance)), [0, stand.height, 0]);
-	const level = sub(scale(out, -Math.cos(stand.yaw)), scale(right, Math.sin(stand.yaw)));
-	const look = add(scale(level, Math.cos(stand.pitch)), [0, Math.sin(stand.pitch), 0]);
-	return { position, target: add(position, scale(look, stand.distance)), fov: FOV };
+	// The drawn box, not the axis, sets the rows: a tuft's near-side blades stand off its axis and
+	// sweep the ground, so they project below the foot row the axis solve aimed at, and a plant whose
+	// foliage rises past the axis's top projects above its row. Project the box's eight corners and
+	// stand the camera until the box spans the asked rows and its middle sits on the asked middle.
+	let view = viewOf(stand);
+	const askedTop = framing.top;
+	const askedBase = framing.base ?? 1;
+	for (let pass = 0; pass < 4; pass++) {
+		const rows = projectedRows(view, bounds, points);
+		if (framing.base === undefined) {
+			// The plant runs off the frame's foot: the solve asks only its top, so stand back until
+			// the drawn box's lowest row is inside the frame.
+			if (rows.base <= 1 - 0.005) break;
+			stand = { ...stand, distance: stand.distance * Math.max(1, (rows.base - 0.5) / 0.5) };
+			view = viewOf(stand);
+			continue;
+		}
+		const span = rows.base - rows.top;
+		const askedSpan = askedBase - askedTop;
+		const scale = span > 1e-4 && askedSpan > 1e-4 ? span / askedSpan : 1;
+		const middle = (rows.base + rows.top) / 2;
+		const askedMiddle = (askedBase + askedTop) / 2;
+		if (Math.abs(scale - 1) < 0.005 && Math.abs(middle - askedMiddle) < 0.005) break;
+		// A row's height at the target's depth, which turns the eye's row error into metres.
+		const metresPerRow = 2 * stand.distance * Math.tan((FOV * DEG) / 2);
+		stand = {
+			...stand,
+			distance: stand.distance * Math.max(0.2, Math.min(5, scale)),
+			height: Math.max(0.02, stand.height - (middle - askedMiddle) * metresPerRow),
+		};
+		view = viewOf(stand);
+	}
+	return view;
+}
+
+/**
+ * The rows a box's outermost corners land on from a view: the topmost and bottommost, as shares of
+ * the frame's height with the frame's top at 0. These cameras stand without roll, so the view's
+ * right is the world up crossed with its line of sight.
+ */
+function projectedRows(
+	view: View,
+	bounds: Bounds,
+	points: Float32Array | undefined,
+): { top: number; base: number } {
+	const forward = normalize(sub(view.target, view.position));
+	const right = normalize(cross(forward, [0, 1, 0]));
+	const up = cross(right, forward);
+	const half = Math.tan((view.fov * DEG) / 2);
+	let top = Number.POSITIVE_INFINITY;
+	let base = Number.NEGATIVE_INFINITY;
+	const row = (x: number, y: number, z: number): number | undefined => {
+		const dx = x - view.position[0];
+		const dy = y - view.position[1];
+		const dz = z - view.position[2];
+		const depth = dx * forward[0] + dy * forward[1] + dz * forward[2];
+		if (depth <= 1e-6) return undefined;
+		const rise = dx * up[0] + dy * up[1] + dz * up[2];
+		return 0.5 - rise / (2 * half * depth);
+	};
+	const take = (value: number | undefined): void => {
+		if (value === undefined) return;
+		top = Math.min(top, value);
+		base = Math.max(base, value);
+	};
+	if (points !== undefined && points.length >= 3) {
+		// The drawn plant's own points: a box's corners can stand in empty air, so they would frame
+		// air below the lowest blade and above the highest leaf.
+		for (let i = 0; i + 2 < points.length; i += 3)
+			take(row(points[i] as number, points[i + 1] as number, points[i + 2] as number));
+	} else {
+		for (let c = 0; c < 8; c++)
+			take(
+				row(
+					c & 1 ? bounds.max[0] : bounds.min[0],
+					c & 2 ? bounds.max[1] : bounds.min[1],
+					c & 4 ? bounds.max[2] : bounds.min[2],
+				),
+			);
+	}
+	return { top, base };
 }
 
 /** Whether the query frames a whole plant in screen shares. */
@@ -629,6 +720,19 @@ export default defineSketch(async (ctx) => {
 		}
 		return out;
 	})();
+	/** The drawn plant's own points, which a framed view holds between its asked rows. */
+	const plantPoints = ((): Float32Array | undefined => {
+		const parts = main.levels[0]?.parts ?? [];
+		if (parts.length === 0) return undefined;
+		const lists = parts.map((part) => partPositions(part, kit.box));
+		const out = new Float32Array(lists.reduce((n, list) => n + list.length, 0));
+		let at = 0;
+		for (const list of lists) {
+			out.set(list, at);
+			at += list.length;
+		}
+		return out;
+	})();
 	/** What the close views read of the plant: its wood alone for a view that draws the wood alone. */
 	const closePlant = (woodOnly: boolean): ClosePlant => ({
 		skeleton,
@@ -677,7 +781,7 @@ export default defineSketch(async (ctx) => {
 			case 'skeleton':
 			case 'silhouette':
 				return FRAMED
-					? standView(height, bounds, foot, turn, aspect)
+					? standView(height, bounds, plantPoints, foot, turn, aspect)
 					: fit(bounds, turn, e, aspect, fov);
 			case 'crown-sky': {
 				// The crown against the sky from outside the plant: the eye near a person's height, a
