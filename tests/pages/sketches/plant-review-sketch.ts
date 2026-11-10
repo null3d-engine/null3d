@@ -347,7 +347,13 @@ function fit(bounds: Bounds, turn: number, elevation: number, aspect: number, fo
  * The camera that stands on the ground and puts a whole plant where the query's framing in screen
  * shares asks, as a reference picture framed its plant.
  */
-function standView(height: number, bounds: Bounds, foot: V3, turn: number, aspect: number): View {
+function standView(
+	height: number,
+	drawnWidth: number,
+	foot: V3,
+	turn: number,
+	aspect: number,
+): View {
 	const middle = QUERY.targetY ?? 0.5;
 	const fill = QUERY.fill ?? 0.8;
 	const asked = QUERY.top !== undefined && QUERY.fill === undefined;
@@ -363,23 +369,13 @@ function standView(height: number, bounds: Bounds, foot: V3, turn: number, aspec
 	const out = facing(turn);
 	const right: V3 = [Math.cos(turn), 0, -Math.sin(turn)];
 	// The reference's plant keeps a margin at the frame's sides. The camera stands back until the
-	// render's widest corner keeps that share too, so a plant broader than its reference is framed
-	// with the same margin rather than cropped at the sides.
+	// drawn plant keeps that share too, so a plant broader than its reference is framed with the
+	// same margin rather than cropped at the sides. The drawn silhouette gives the width, not the
+	// asset's part bounds: a part that draws nothing cannot widen the frame.
 	const widthShare = QUERY.widthShare;
-	if (widthShare !== undefined && widthShare < 1) {
-		let distance = stand.distance;
-		for (let c = 0; c < 8; c++) {
-			const corner: V3 = [
-				c & 1 ? bounds.max[0] : bounds.min[0],
-				c & 2 ? bounds.max[1] : bounds.min[1],
-				c & 4 ? bounds.max[2] : bounds.min[2],
-			];
-			const d = sub(corner, foot);
-			const across = Math.abs(d[0] * right[0] + d[2] * right[2]);
-			const toward = d[0] * out[0] + d[1] * out[1] + d[2] * out[2];
-			distance = Math.max(distance, widthDistance(across, toward, widthShare, aspect, FOV));
-		}
-		if (distance > stand.distance) stand = { ...stand, distance };
+	if (widthShare !== undefined && widthShare < 1 && drawnWidth > 0) {
+		const need = widthDistance(drawnWidth / 2, 0, widthShare, aspect, FOV);
+		if (need > stand.distance) stand = { ...stand, distance: need };
 	}
 	const position = add(add(foot, scale(out, stand.distance)), [0, stand.height, 0]);
 	const level = sub(scale(out, -Math.cos(stand.yaw)), scale(right, Math.sin(stand.yaw)));
@@ -678,7 +674,13 @@ export default defineSketch(async (ctx) => {
 			case 'skeleton':
 			case 'silhouette':
 				return FRAMED
-					? standView(height, bounds, foot, turn, aspect)
+					? standView(
+							height,
+							measurePlant(main, kit.box, turn).plantBox?.width ?? 0,
+							foot,
+							turn,
+							aspect,
+						)
 					: fit(bounds, turn, e, aspect, fov);
 			case 'crown-sky': {
 				// The crown against the sky from outside the plant: the eye near a person's height, a
