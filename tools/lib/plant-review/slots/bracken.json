@@ -175,10 +175,12 @@
 	},
 	"24-leaf-texture-upper.png": {
 		"fill": 0.985,
-		"targetY": 0.5
+		"targetY": 0.5,
+		"daylight": 1.08
 	},
 	"25-leaf-texture-underside.png": {
 		"fill": 0.985,
-		"targetY": 0.5
+		"targetY": 0.5,
+		"daylight": 1.08
 	}
 }
