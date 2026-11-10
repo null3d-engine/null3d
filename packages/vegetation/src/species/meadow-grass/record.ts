@@ -96,11 +96,11 @@ export const record: Species = {
 			arch: { mean: 18, spread: 8 },
 			// Stills 02 and 06: the old outer blades carry dry brown tips.
 			dryTip: 0.03,
-			// The texture source's two faces under flat light: the shader scales each face's picture
+			// The leaf pictures' two faces under flat light: the shader scales each face's picture
 			// by that face's mean, so these figures are the pictures' own means.
 			optics: {
 				reflectance: [0.1284, 0.272, 0.0218],
-				reflectanceBack: [0.0654, 0.158, 0.0104],
+				reflectanceBack: [0.318, 0.349, 0.24],
 				transmittance: [0.16, 0.33, 0.03],
 				roughness: [0.55, 0.6],
 			},
