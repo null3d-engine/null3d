@@ -10,6 +10,12 @@
 	"13-single-leaflet-underside.png": {
 		"roll": -45
 	},
+	"22-subbranch-studio.png": {
+		"span": 3.1,
+		"cut": 1.7,
+		"cutFrom": 1.5,
+		"cutSpan": 1.7
+	},
 	"23-leaf-cluster-studio.png": {
 		"roll": -55,
 		"cutFrom": 0.3,
