@@ -1624,7 +1624,7 @@ describe('materials.shader', () => {
 		]);
 	});
 
-	test('refuses a coverage function without the mask whose cutoff its caster tests', () => {
+	test('refuses a coverage function without the cutoff its caster tests', () => {
 		const { shadings, materials } = fakeCore();
 		const covered = { ...compiledMaterial(), functions: ['surface', 'coverage'] as string[] };
 		const unmasked = thrown(() => materials.shader({ wgsl: covered }));
@@ -1638,6 +1638,8 @@ describe('materials.shader', () => {
 		);
 		expect(shadings).toEqual([]);
 		materials.shader({ wgsl: covered, alphaMode: 'mask' });
+		// A blended surface keeps the cutoff for its caster, so it is allowed.
+		materials.shader({ wgsl: covered, alphaMode: 'blend', alphaCutoff: 0.5 });
 	});
 
 	test('lets light through to the other side only where its WGSL names the diffuse transmission', () => {
