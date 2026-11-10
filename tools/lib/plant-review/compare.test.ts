@@ -662,19 +662,50 @@ describe('the sheath surface figure', () => {
 
 	const whole = rectangle(100, 100, { left: 0, top: 0, right: 99, bottom: 99 });
 	const box = { left: 0, top: 0, right: 99, bottom: 99 };
-
-	test('reads both ends against the record', () => {
-		const figure = sheathDifference(picture(100, footSrgb, collarSrgb), box, whole, target);
-		expect(figure).not.toBeNull();
-		expect(figure?.foot ?? 99).toBeLessThan(0.5);
-		expect(figure?.collar ?? 99).toBeLessThan(0.5);
-		expect(figure?.footPixels ?? 0).toBeGreaterThan(0);
+	const side = (image: ReturnType<typeof picture>, plant: PlantMask = whole) => ({
+		image,
+		box,
+		plant,
 	});
 
-	test('reports a patch that has moved from the record', () => {
-		const figure = sheathDifference(picture(100, [255, 255, 255], collarSrgb), box, whole, target);
-		expect(figure?.foot ?? 0).toBeGreaterThan(20);
-		expect(figure?.collar ?? 99).toBeLessThan(0.5);
+	test('reads both ends against the photograph and the record', () => {
+		const pictureAt = picture(100, footSrgb, collarSrgb);
+		const figure = sheathDifference(side(pictureAt), side(pictureAt), target);
+		expect(figure?.photograph?.foot ?? 99).toBeLessThan(0.5);
+		expect(figure?.photograph?.collar ?? 99).toBeLessThan(0.5);
+		expect(figure?.record.foot ?? 99).toBeLessThan(0.5);
+	});
+
+	test('separates a shaded sheath from the record', () => {
+		// A shade moves both pictures alike, so the photograph figure passes where the record cannot.
+		const shaded = [60, 45, 30];
+		const shadedCollar = [110, 110, 105];
+		const pictureAt = picture(100, shaded, shadedCollar);
+		const figure = sheathDifference(side(pictureAt), side(pictureAt), target);
+		expect(figure?.photograph?.foot ?? 99).toBeLessThan(0.5);
+		expect(figure?.record.foot ?? 0).toBeGreaterThan(5);
+	});
+
+	test('reports a moved patch against both sides', () => {
+		const figure = sheathDifference(
+			side(picture(100, footSrgb, collarSrgb)),
+			side(picture(100, [255, 255, 255], collarSrgb)),
+			target,
+		);
+		expect(figure?.photograph?.foot ?? 0).toBeGreaterThan(20);
+		expect(figure?.record.foot ?? 0).toBeGreaterThan(20);
+		expect(figure?.photograph?.collar ?? 99).toBeLessThan(0.5);
+	});
+
+	test('gives no photograph figure when its box cannot be isolated', () => {
+		const pictureAt = picture(100, footSrgb, collarSrgb);
+		const figure = sheathDifference(
+			{ image: pictureAt, box: null, plant: whole },
+			side(pictureAt),
+			target,
+		);
+		expect(figure?.photograph).toBeNull();
+		expect(figure?.record.foot ?? 99).toBeLessThan(0.5);
 	});
 
 	test('finds the surface below the blades', () => {
@@ -688,19 +719,21 @@ describe('the sheath surface figure', () => {
 		};
 		paint(50, 69, collarSrgb);
 		paint(70, 99, footSrgb);
-		const figure = sheathDifference(image, box, whole, target);
-		expect(figure?.foot ?? 99).toBeLessThan(0.5);
-		expect(figure?.collar ?? 99).toBeLessThan(0.5);
+		const figure = sheathDifference(side(image), side(image), target);
+		expect(figure?.record.foot ?? 99).toBeLessThan(0.5);
+		expect(figure?.record.collar ?? 99).toBeLessThan(0.5);
 	});
 
 	test('maps a larger picture onto the mask it was measured on', () => {
-		const figure = sheathDifference(picture(200, footSrgb, collarSrgb), box, whole, target);
-		expect(figure?.foot ?? 99).toBeLessThan(0.5);
-		expect(figure?.collar ?? 99).toBeLessThan(0.5);
+		const pictureAt = picture(200, footSrgb, collarSrgb);
+		const figure = sheathDifference(side(pictureAt), side(pictureAt), target);
+		expect(figure?.record.foot ?? 99).toBeLessThan(0.5);
+		expect(figure?.record.collar ?? 99).toBeLessThan(0.5);
 	});
 
-	test('gives no figure when the patch holds no plant', () => {
+	test('gives no figure when the render holds no plant', () => {
 		const bare: PlantMask = { ...whole, mask: new Uint8Array(100 * 100) };
-		expect(sheathDifference(picture(100, footSrgb, collarSrgb), box, bare, target)).toBeNull();
+		const pictureAt = picture(100, footSrgb, collarSrgb);
+		expect(sheathDifference(side(pictureAt), side(pictureAt, bare), target)).toBeNull();
 	});
 });
