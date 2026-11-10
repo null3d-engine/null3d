@@ -57,7 +57,8 @@
 		"thin": 0.19,
 		"along": 0.75,
 		"span": 0.45,
-		"girth": null
+		"girth": null,
+		"daylight": 1.2
 	},
 	"20-nest-holes.png": {
 		"view": "crown"
