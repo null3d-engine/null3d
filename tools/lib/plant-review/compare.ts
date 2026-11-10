@@ -1191,6 +1191,28 @@ export function compareWind(
 	return { ...base, motion: { reference, render }, sheets: writeSheets(runDir, group, pages) };
 }
 
+/**
+ * The colours a tuft's record names for its sheath surface, as linear reflectance, and the share of
+ * the surface's length over which the collar colour takes over. A junction still of such a species
+ * is read against these, because its subject is the sheath itself.
+ */
+export interface SheathTarget {
+	readonly foot: readonly [number, number, number];
+	readonly collar: readonly [number, number, number];
+	readonly reach: number;
+}
+
+/** A sheath surface's foot and collar read off a render, each against the record's colour. */
+export interface SheathDifference {
+	/** CIEDE2000 between the foot's patch and the record's foot colour. */
+	readonly foot: number;
+	/** CIEDE2000 between the collar's patch and the record's collar colour. */
+	readonly collar: number;
+	/** The pixels the two patches cover, so a reader can tell a figure from an empty patch. */
+	readonly footPixels: number;
+	readonly collarPixels: number;
+}
+
 /** One still or texture source beside the render of its view. */
 export interface StillResult extends PairMetrics {
 	readonly file: string;
@@ -1226,6 +1248,11 @@ export interface StillResult extends PairMetrics {
 	readonly pieces: { readonly reference: number | null; readonly render: number } | null;
 	/** What a close view's camera framed, and how clear it found its subject, as the page posted it. */
 	readonly framing?: CloseFraming;
+	/**
+	 * For a junction or crown-foot still of a species whose record names its sheath's colours: the
+	 * render's foot and collar patches, each read against the record under the view's own light.
+	 */
+	readonly sheath?: SheathDifference;
 	readonly note?: string;
 	readonly error?: string;
 }
@@ -1339,6 +1366,99 @@ export function patchDifference(
 	);
 }
 
+/**
+ * The share of a sheath's length, at each end, that a patch reads. The record's collar share caps
+ * it, so a colour that takes over only near the tip is not read a fifth of the way down.
+ */
+const SHEATH_PATCH_SHARE = 0.2;
+
+/** The views whose subject is the sheath surface at the crown's foot. */
+export const SHEATH_VIEWS: ReadonlySet<string> = new Set(['junction', 'crown-foot']);
+
+/** A blade's green in CIELAB: a leaf is green on the a axis and warm on b, where a sheath is not. */
+const GREEN_A = -8;
+const GREEN_B = 5;
+
+/** A linear reflectance as the sRGB byte the picture shows. */
+function srgbByte(value: number): number {
+	const v = Math.min(1, Math.max(0, value));
+	return Math.round(255 * (v <= 0.0031308 ? 12.92 * v : 1.055 * v ** (1 / 2.4) - 0.055));
+}
+
+/**
+ * Reads a sheath surface's foot and collar off its render, in the plant's own box, and compares
+ * each patch with the record's colour for that end. The picture's light is the view's own, so the
+ * figure carries the shade the view gives the surface; the record names what the surface should
+ * show, not the light it stands in.
+ *
+ * @param image The render.
+ * @param box The plant's box in the mask's pixels, as the measures give it.
+ * @param plant The render's mask, whose pixels are the surface's own.
+ * @param sheath The record's foot and collar colours and its collar share.
+ * @returns The two differences and the patch areas, or null when a patch holds no plant.
+ */
+export function sheathDifference(
+	image: Rgba,
+	box: Box,
+	plant: PlantMask,
+	sheath: SheathTarget,
+): SheathDifference | null {
+	if (box.right < box.left || box.bottom < box.top) return null;
+	const work = image.width > plant.width ? resizeToWidth(image, plant.width) : image;
+	const width = Math.min(plant.width, work.width);
+	const height = Math.min(plant.height, work.height);
+	const lab = labImage(work);
+	const band = (top: number, bottom: number): { colour: number[]; pixels: number } => {
+		const sum = [0, 0, 0];
+		let pixels = 0;
+		for (let y = Math.max(0, top); y <= Math.min(height - 1, bottom); y++)
+			for (let x = Math.max(0, box.left); x <= Math.min(width - 1, box.right); x++) {
+				if (!plant.mask[y * plant.width + x]) continue;
+				const at = (y * width + x) * 3;
+				for (let c = 0; c < 3; c++) sum[c] = (sum[c] as number) + (lab[at + c] as number);
+				pixels++;
+			}
+		return { colour: sum.map((v) => v / Math.max(1, pixels)), pixels };
+	};
+	// The surface's own rows: the plant's pixels that are not leaf-green, since a sheath draws
+	// brown and pale where a blade draws green. A view whose surface fills the frame, as a junction
+	// close-up does, takes the whole box. A surface that draws green too — a record whose field the
+	// grower does not yet read — leaves the box as the surface, and the figure reports the green.
+	let surfaceTop = Number.POSITIVE_INFINITY;
+	let surfaceBottom = Number.NEGATIVE_INFINITY;
+	for (let y = Math.max(0, box.top); y <= Math.min(height - 1, box.bottom); y++)
+		for (let x = Math.max(0, box.left); x <= Math.min(width - 1, box.right); x++) {
+			if (!plant.mask[y * plant.width + x]) continue;
+			const at = (y * width + x) * 3;
+			if ((lab[at + 1] as number) < GREEN_A && (lab[at + 2] as number) > GREEN_B) continue;
+			surfaceTop = Math.min(surfaceTop, y);
+			surfaceBottom = Math.max(surfaceBottom, y);
+		}
+	const rows = surfaceBottom - surfaceTop;
+	const top = rows >= 3 ? surfaceTop : Math.max(0, box.top);
+	const bottom = rows >= 3 ? surfaceBottom : Math.min(height - 1, box.bottom);
+	const surfaceHeight = bottom - top + 1;
+	const collarRows = Math.max(
+		1,
+		Math.round(surfaceHeight * Math.min(SHEATH_PATCH_SHARE, sheath.reach)),
+	);
+	const footRows = Math.max(
+		1,
+		Math.round(surfaceHeight * Math.min(SHEATH_PATCH_SHARE, 1 - sheath.reach)),
+	);
+	const collar = band(top, top + collarRows - 1);
+	const foot = band(bottom - footRows + 1, bottom);
+	if (collar.pixels === 0 || foot.pixels === 0) return null;
+	const target = (rgb: readonly [number, number, number]) =>
+		labOf(srgbByte(rgb[0]), srgbByte(rgb[1]), srgbByte(rgb[2]));
+	return {
+		foot: Number(deltaE2000(foot.colour, target(sheath.foot)).toFixed(2)),
+		collar: Number(deltaE2000(collar.colour, target(sheath.collar)).toFixed(2)),
+		footPixels: foot.pixels,
+		collarPixels: collar.pixels,
+	};
+}
+
 /** A still or texture source as the comparison reads it: a cut-out laid on white. */
 function referencePicture(path: string): Rgba {
 	return onColour(readImage(path), [255, 255, 255]);
@@ -1350,6 +1470,7 @@ export function compareStills(
 	set: ReferenceSet,
 	frames: readonly RunFrame[],
 	title: string,
+	sheath?: SheathTarget,
 ): { readonly pairs: readonly StillResult[]; readonly sheets: readonly string[] } {
 	const byReference = new Map(
 		frames.flatMap((frame) => (frame.reference ? [[frame.reference, frame]] : [])),
@@ -1437,6 +1558,12 @@ export function compareStills(
 					render: patchLab(render.image, barkMaskOn, barkOnly),
 				}
 			: null;
+		// A junction or crown-foot still's subject is the sheath surface itself, so its foot and
+		// collar are read against the record's own colours. No other view takes this figure.
+		const sheathFigure =
+			sheath && SHEATH_VIEWS.has(drawn) && render.measures.box
+				? sheathDifference(render.image, render.measures.box, render.plant, sheath)
+				: null;
 		const edges = Number(
 			edgeDifference(edgeProfile(refImage), edgeProfile(render.image)).toFixed(3),
 		);
@@ -1515,6 +1642,7 @@ export function compareStills(
 					: shown.barkDeltaE,
 			edgeDifference: edges,
 			pieces,
+			...(sheathFigure ? { sheath: sheathFigure } : {}),
 			...(framing ? { framing } : {}),
 			...(note ? { note } : {}),
 		});
