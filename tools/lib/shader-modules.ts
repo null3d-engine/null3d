@@ -515,6 +515,17 @@ function isFresh(root: string, inputs: string): boolean {
 }
 
 /**
+ * True when a build would change nothing: the modules on disk match both their sources and the
+ * record that the last build wrote. It reads the record and hashes the sources, so it takes no lock
+ * and writes no module, and a caller may ask while another checkout builds or while the machine must
+ * stay quiet. The answer is a snapshot: a source that changes afterwards makes it stale, and the
+ * build that follows decides for itself.
+ */
+export function shaderModulesFresh(root: string): boolean {
+	return isFresh(root, inputHash(root));
+}
+
+/**
  * True when the environment says that this run takes the modules from the build job. CI's jobs that
  * download the build job's artifact set it, so that a set which does not match its record stops the
  * job at once. The check otherwise builds the set again, which costs minutes in every such job and
