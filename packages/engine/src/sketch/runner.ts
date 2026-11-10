@@ -118,8 +118,13 @@ import { type LabelSlotSender, Ui } from './ui';
 
 export type PagePoster = (type: string, data: unknown, transfer?: Transferable[]) => void;
 
-/** Fixed sizes of the engine core. */
-const MAX_BATCHES = 256;
+/**
+ * The engine core's instance batch table, sized for the most batches a page draws at once. A page
+ * that plants twelve species draws 258: 159 for the distance bands' parts, 65 for the near shoot
+ * shapes and the rest for cards and dead wood. The table held 256 until Creek crossed it, so it
+ * holds twice what a full valley needs, which leaves a page room to plant another species.
+ */
+const MAX_BATCHES = 512;
 /**
  * How long a held frame waits for the tasks that the sketch queued before it. A task answers
  * between frames, and a hold runs its frames with no frame loop, so the held frame waits here or
