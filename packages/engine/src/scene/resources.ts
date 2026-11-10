@@ -1761,8 +1761,9 @@ export interface MaterialOptions {
 	 */
 	opacity?: number;
 	/**
-	 * With the `mask` alpha mode, the alpha below which the surface draws nothing, from 0 to 1.
-	 * The default is 0.5, as in glTF.
+	 * The alpha below which a masked surface draws nothing, from 0 to 1, and the cutoff that a
+	 * blended surface's shadow caster tests where its WGSL declares `coverage`. The default is 0.5,
+	 * as in glTF.
 	 */
 	alphaCutoff?: number;
 }
@@ -4628,10 +4629,19 @@ export class Materials {
 					options.alphaMode === 'hash' ? "the alpha mode 'hash'" : 'alphaToCoverage'
 				}, but its WGSL never sets or reads the surface's alpha, so it has no builds that cut its shape. Set the alpha in fn surface, such as s.alpha = texel.a, and keep the mask.`,
 			);
-		if (DEV && compiled.functions.includes('coverage') && options.alphaMode !== 'mask')
+		// A caster tests the coverage under a mask, so a shader that declares coverage takes the mask
+		// mode, or the blend mode with the cutoff that its caster still tests. A bare blend would
+		// leave the caster no cutoff, so it stays refused.
+		const coverageCaster = options.alphaMode === 'blend' && options.alphaCutoff !== undefined;
+		if (
+			DEV &&
+			compiled.functions.includes('coverage') &&
+			options.alphaMode !== 'mask' &&
+			!coverageCaster
+		)
 			throw new EngineError(
 				'E1217',
-				`${call}() declared fn coverage but got ${options.alphaMode === undefined ? 'no alpha mode' : `the alpha mode '${options.alphaMode}'`}; its caster tests that coverage under a mask, so give it alphaMode: 'mask' and its alphaCutoff.`,
+				`${call}() declared fn coverage but got ${options.alphaMode === undefined ? 'no alpha mode' : `the alpha mode '${options.alphaMode}'`}; its caster tests that coverage under a mask, so give it alphaMode: 'mask' and its alphaCutoff, or the 'blend' mode with the cutoff its caster tests.`,
 			);
 		if (DEV)
 			checkSceneInputs(options.sceneInputs ?? [], sceneDepth, compiled.textures.length, call);
