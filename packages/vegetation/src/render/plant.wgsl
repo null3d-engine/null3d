@@ -49,6 +49,8 @@ struct Uniforms {
     displacement: f32,
     // How far into autumn the leaves stand, from 0 for summer to 1 for turned.
     season: f32,
+    // The season the plant stands in: 0 summer, 1 autumn, 2 winter, 3 blossom.
+    seasonKind: f32,
     // 1 to draw the plant black, with its cut-outs and its sway, for an exact outline.
     matte: f32,
 }
@@ -95,6 +97,8 @@ const REST_STEPS: f32 = 255.0;
 const HEADER_YOUNG: i32 = 15;
 const HEADER_YOUNG_TILE: i32 = 16;
 const HEADER_YOUNG_TINT: i32 = 56;
+// A tuft's basal sheath colour and roughness, for the merged foliage's sheath columns.
+const HEADER_SHEATH: i32 = 65;
 // A grass blade's collar: its colour, then the share of the blade's base it takes.
 const HEADER_COLLAR: i32 = 66;
 const HEADER_MOSS: i32 = 17;
@@ -105,9 +109,15 @@ const MAX_EXTRAS: i32 = 4;
 const HEADER_BARK_ZONES: i32 = 24;
 const BARK_ZONE_TEXELS: i32 = 4;
 const MAX_BARK_ZONES: i32 = 4;
+// A zone's band on the other axis: its start, end, blend and whether the record gives one.
+const HEADER_BARK_SECONDS: i32 = 57;
 const HEADER_LICHEN: i32 = 40;
 const HEADER_LICHEN_REACH: i32 = 41;
 const HEADER_SWAY: i32 = 42;
+const HEADER_AUTUMN_BARK: i32 = 61;
+const HEADER_WINTER_BARK: i32 = 62;
+const HEADER_WINTER_REFLECTANCE: i32 = 63;
+const HEADER_WINTER_TRANSMITTANCE: i32 = 64;
 const HEADER_EXTRA_BANDS: i32 = 43;
 // An extra's scale pattern: its scale rows, the cells round its turn, and its band's share of the
 // profile's height at each end, per extra in record order.
@@ -118,6 +128,9 @@ const HEADER_EXTRA_STALKS: i32 = 51;
 const HEADER_CARD_STALK: i32 = 55;
 // The second coordinate that marks a card's stalk, in a place that the card planes leave free.
 const STALK_PLANE: f32 = 0.75;
+// How much of the young bark's tone a card's stalk keeps: it stands inside the crown, where the
+// leaves shade it, so it draws as shaded wood rather than at the young bark's full light.
+const CARD_STALK_SHADE: f32 = 0.35;
 // Rows before the wind records, and wind records in a row.
 const HEADER_ROWS: i32 = 2;
 const RECORDS_PER_ROW: i32 = 256;
@@ -148,6 +161,8 @@ const MAX_BRANCH_DEPTH: i32 = 8;
 const KIND_STEM: f32 = 85.0;
 // The surface kind byte of a shoot's bud, which draws as a stem in the record's bud colour.
 const KIND_BUD: f32 = 128.0;
+/// A merged ground plant's sheath column, marked in the colour's third byte.
+const KIND_SHEATH: f32 = 240.0;
 // Texels across the near table: two for each of its sixteen slots.
 const NEAR_TEXELS: f32 = 32.0;
 // A leaf's reflectance at normal incidence and at grazing, as the plant materials set them.
@@ -508,9 +523,11 @@ fn sway_point(p: vec3f, own: i32, downwind: vec3f, speed: f32) -> vec3f {
     var point = p;
     var id = own;
     // The whole plant sways as its species' record says: metres at its top at the field's base
-    // speed, in cycles a second, and more as the air is faster.
+    // speed, in cycles a second, and more as the air is faster. The record's power says how
+    // sharply that motion falls away down a stem.
     let plant = header(HEADER_SWAY);
     let sway = plant.x * speed / WIND_SWAY_SPEED;
+    let power = plant.z;
     for (var level = 0; level < MAX_BRANCH_DEPTH; level += 1) {
         if (id < 0) {
             break;
@@ -526,7 +543,10 @@ fn sway_point(p: vec3f, own: i32, downwind: vec3f, speed: f32) -> vec3f {
         let along = clamp(dot(point - pivot, axis) / length_m, 0.0, 1.0);
         if (parent < 0) {
             let wave = 0.5 + 0.5 * sin(TURN * (frame.time * plant.y + fourth_texel.x));
-            point += downwind * (along * along * sway * wave);
+            // A stem's share of its top's motion: the distance along the stem raised to the
+            // record's power. The cantilever's square is the default, taken as it always was.
+            let carried = select(along * along, pow(along, power), abs(power - 2.0) > 0.001);
+            point += downwind * (carried * sway * wave);
         } else {
             let across = cross(axis, downwind);
             let reach = length(across);
@@ -747,10 +767,17 @@ fn leaf_light(texel: vec3f, upper: bool, browning: f32) -> LeafLight {
     let mean = header(select(HEADER_LOWER_MEAN, HEADER_UPPER_MEAN, upper)).rgb;
     let autumn_r = header(HEADER_AUTUMN_REFLECTANCE);
     let autumn_t = header(HEADER_AUTUMN_TRANSMITTANCE).rgb;
+    // Dead leaves that stand through the winter take the colours the record gives for that season,
+    // or the autumn ones it gives for the rest of the year.
+    let winter_r = header(HEADER_WINTER_REFLECTANCE);
+    let winter_t = header(HEADER_WINTER_TRANSMITTANCE).rgb;
+    let wintering = winter_r.w > 0.5 && material.seasonKind == 2.0;
+    let season_r = select(autumn_r, winter_r, wintering);
+    let season_t = select(autumn_t, winter_t, wintering);
     let transmittance = header(HEADER_TRANSMITTANCE).rgb;
-    let turned = select(0.0, saturate(max(material.season, browning)), autumn_r.w > 0.5);
-    let reflect_shift = mix(vec3f(1.0), autumn_r.rgb / max(reflectance, vec3f(0.0001)), turned);
-    let through_shift = mix(vec3f(1.0), autumn_t / max(transmittance, vec3f(0.0001)), turned);
+    let turned = select(0.0, saturate(max(material.season, browning)), season_r.w > 0.5);
+    let reflect_shift = mix(vec3f(1.0), season_r.rgb / max(reflectance, vec3f(0.0001)), turned);
+    let through_shift = mix(vec3f(1.0), season_t / max(transmittance, vec3f(0.0001)), turned);
     var light: LeafLight;
     light.base = min(texel * face.rgb * reflect_shift, vec3f(1.0));
     light.share = through.w;
@@ -857,6 +884,19 @@ fn surface(input: SurfaceInput) -> Surface {
         let squared = max(dot(m[0], m[0]), 0.00000001);
         let plant = transpose(m) * (input.relativePosition - origin) / squared;
         let zones = i32(header(HEADER_YOUNG_TILE).z + 0.5);
+        // A zone may hold a band on the other axis too, and where it does it wins over a zone that
+        // holds on a single axis: its weight is the lesser of its two bands', and the single-axis
+        // zones give way by its share.
+        var both_weight = 0.0;
+        for (var z = 0; z < MAX_BARK_ZONES; z += 1) {
+            let range = header(HEADER_BARK_ZONES + z * BARK_ZONE_TEXELS + 1);
+            let other_band = header(HEADER_BARK_SECONDS + z);
+            let by_radius = range.w > 0.5;
+            let live = select(0.0, 1.0, z < zones && other_band.w > 0.5);
+            let main_weight = zone_weight(range, select(plant.y, radius, by_radius));
+            let other_weight = zone_weight(other_band, select(radius, plant.y, by_radius));
+            both_weight = max(both_weight, min(main_weight, other_weight) * live);
+        }
         // The two zones that weigh most at this point.
         var first_zone = 0;
         var first_weight = -1.0;
@@ -864,8 +904,16 @@ fn surface(input: SurfaceInput) -> Surface {
         var second_weight = 0.0;
         for (var z = 0; z < MAX_BARK_ZONES; z += 1) {
             let range = header(HEADER_BARK_ZONES + z * BARK_ZONE_TEXELS + 1);
-            let along_zone = select(plant.y, radius, range.w > 0.5);
-            let weight = select(-1.0, zone_weight(range, along_zone), z < zones);
+            let second_band = header(HEADER_BARK_SECONDS + z);
+            let by_radius = range.w > 0.5;
+            let holds = select(0.0, 1.0, second_band.w > 0.5);
+            let main_weight = zone_weight(range, select(plant.y, radius, by_radius));
+            let both = min(main_weight, zone_weight(second_band, select(radius, plant.y, by_radius)));
+            let mixed = select(
+                main_weight * (1.0 - holds) * (1.0 - both_weight),
+                both,
+                second_band.w > 0.5);
+            let weight = select(-1.0, mixed, z < zones);
             if (weight > first_weight) {
                 second_zone = first_zone;
                 second_weight = max(first_weight, 0.0);
@@ -959,7 +1007,17 @@ fn surface(input: SurfaceInput) -> Surface {
         bark = mix(bark, lichen.rgb * (0.92 + 0.16 * grain), lichen_mask);
         // The collar's dark ridge where a branch joins its parent.
         bark *= 1.0 - 0.5 * moss_reach.z * junction;
-        base = bark * (1.0 - CAVITY_DARK * cavity);
+        // A stem whose own colour turns with the year takes its season's tint, which multiplies the
+        // bark it would otherwise draw. A season the record does not name multiplies by nothing.
+        let autumn_bark = header(HEADER_AUTUMN_BARK);
+        let winter_bark = header(HEADER_WINTER_BARK);
+        var season_bark = vec3f(1.0);
+        if (autumn_bark.w > 0.5 && material.seasonKind == 1.0) {
+            season_bark = autumn_bark.rgb;
+        } else if (winter_bark.w > 0.5 && material.seasonKind == 2.0) {
+            season_bark = winter_bark.rgb;
+        }
+        base = bark * season_bark * (1.0 - CAVITY_DARK * cavity);
         roughness = saturate(0.82 + CAVITY_ROUGH * cavity);
         // A lichen patch is a flat, matte crust: it hides the furrows under it.
         mapped = normalize(mix(bark_normal, vec3f(0.0, 0.0, 1.0), lichen_mask * 0.35));
@@ -968,8 +1026,9 @@ fn surface(input: SurfaceInput) -> Surface {
         // In the shell where a near copy draws its real shoots, its cards give way.
         let near_copy = object.values.x > 0.5;
         if (abs(input.uv1.y - STALK_PLANE) < 0.1) {
-            // A card's stalk: the young bark's tone, so the join the card's leaves stand on shows.
-            base = header(HEADER_YOUNG).rgb * header(HEADER_YOUNG_TINT).rgb;
+            // A card's stalk: a shade of the young bark's tone, so the join the card's leaves stand
+            // on shows without the line standing out pale against the leaves.
+            base = header(HEADER_YOUNG).rgb * header(HEADER_YOUNG_TINT).rgb * CARD_STALK_SHADE;
             roughness = 0.85;
             occlusion = 1.0;
             if (near_copy && length(input.relativePosition) < material.nearDistance * 0.96) {
@@ -1077,6 +1136,12 @@ fn surface(input: SurfaceInput) -> Surface {
                 base *= header(HEADER_YOUNG_TINT).rgb;
             }
             roughness = 0.8;
+        } else if (mode == MODE_FOLIAGE && abs(input.vertexColor.b * 255.0 - KIND_SHEATH) < 0.5) {
+            // A merged ground plant's sheath column draws in the record's sheath colour. Its kind
+            // marks the colour's third byte, since the asset clamps a negative coordinate to zero.
+            let body = header(HEADER_SHEATH);
+            base = body.rgb;
+            roughness = max(body.w, 0.5);
         } else {
             let layer = select(1, 0, upper);
             let texel = textureSampleGrad(colour, colourSampler, uv, layer, gx, gy);
