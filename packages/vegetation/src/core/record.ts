@@ -2057,6 +2057,16 @@ export interface CutFromPlant {
 	/** Metres of wood from the cut to the farthest tip. */
 	readonly length: number;
 	/**
+	 * Metres of the axis that the piece keeps from its cut, for a plant whose pieces are lengths of
+	 * a single long axis, such as a palm's frond. Without it the piece keeps the whole axis.
+	 */
+	readonly span?: number;
+	/**
+	 * Metres along the axis where the piece starts, for a piece cut from the middle of one long
+	 * axis rather than its base. The cut face stands there. 0 by default.
+	 */
+	readonly from?: number;
+	/**
 	 * The piece's leaf size over the crown's, where a piece cut from the plant wants leaves of its
 	 * own. A rosette's piece carries the crown's leaves at the crown's size, so a piece that stands
 	 * a little too dense for its photograph is opened by shrinking its leaves rather than by taking
