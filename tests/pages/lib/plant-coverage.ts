@@ -99,8 +99,8 @@ export interface CoverageRow {
 }
 
 /**
- * Grows the oak and places three copies at three distances, each in a different band of the plant
- * core's card levels: two in the first card level's band and one in the second's.
+ * Grows the oak and places three copies at three distances: two in the first band of the plant
+ * core's card levels and one in the second.
  *
  * @param ctx The sketch's context.
  * @param options The proving controls; the record's own grow by default.
