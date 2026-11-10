@@ -27,6 +27,7 @@ export const PLANT_VIEWS = [
 	'bark-limb',
 	'trunk',
 	'skeleton',
+	'crown-sky',
 	'silhouette',
 	'panels',
 ] as const;
@@ -277,6 +278,17 @@ export const VIEW_SPECS: Readonly<Record<PlantView, ViewSpec>> = {
 		elevation: 5,
 		whole: true,
 		woodOnly: true,
+		size: [960, 720],
+	},
+	'crown-sky': {
+		// The upper crown framed against the sky, the camera below it and looking up: the whole
+		// crown in frame with the sky behind, so the gap inside its box reads the sky between the
+		// foliage rather than the outline's ragged edge.
+		slots: [],
+		fov: 50,
+		background: 'sky-meadow',
+		sun: 'default',
+		elevation: -22,
 		size: [960, 720],
 	},
 	silhouette: {
