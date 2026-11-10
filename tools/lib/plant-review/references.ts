@@ -104,11 +104,11 @@ const FROM_BELOW: SlotRule = {
 	framed: false,
 };
 
-/** Looking up into the crown's underside from beside the stem. */
+/** Looking up into the crown's underside from under it: the crown's box fills most of the frame, the trunk below. */
 const UNDERNEATH: SlotRule = {
-	view: 'below',
-	elevation: 80,
-	query: { aside: 40, stand: STAND },
+	view: 'crown-underside',
+	elevation: 60,
+	query: { aside: 40 },
 	framed: false,
 };
 

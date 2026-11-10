@@ -9,6 +9,7 @@ export const PLANT_VIEWS = [
 	'whole',
 	'crown',
 	'below',
+	'crown-underside',
 	'inside',
 	'junction',
 	'fork',
@@ -114,11 +115,19 @@ export const VIEW_SPECS: Readonly<Record<PlantView, ViewSpec>> = {
 		size: [960, 720],
 	},
 	below: {
-		slots: [3, 5],
+		slots: [3],
 		fov: 70,
 		background: 'sky-meadow',
 		sun: 'default',
 		elevation: 70,
+		size: [960, 720],
+	},
+	'crown-underside': {
+		slots: [5],
+		fov: 70,
+		background: 'sky-meadow',
+		sun: 'default',
+		elevation: 60,
 		size: [960, 720],
 	},
 	inside: {
