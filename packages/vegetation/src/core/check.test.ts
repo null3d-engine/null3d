@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test';
+import { meadowGrassRecord } from '../grow/ground.fixture';
 import { record as template } from '../species/_template/record';
 import { capProblems, capsFor, MODEL_CAPS } from './caps';
 import { checkSpecies, speciesProblems } from './check';
@@ -508,5 +509,22 @@ describe('the record check', () => {
 		expect(speciesProblems(held(65))).toEqual([]);
 		expect(problems(held(200))).toContain('.lateralMost is 200');
 		expect(problems(held(-5))).toContain('.lateralMost is -5');
+	});
+});
+
+describe('a tuft sheath colour', () => {
+	const withColour = (sheathColour: readonly [number, number, number]): Species => {
+		const growth = meadowGrassRecord.growth;
+		if (growth.model !== 'tuft') throw new Error('the meadow grass is a tuft');
+		return { ...meadowGrassRecord, growth: { ...growth, sheathColour } };
+	};
+
+	it('reads a colour as three shares from 0 to 1', () => {
+		expect(speciesProblems(meadowGrassRecord)).toEqual([]);
+		expect(speciesProblems(withColour([0.366, 0.38, 0.309]))).toEqual([]);
+		const problems = speciesProblems(withColour([0.366, 1.38, -0.1]));
+		expect(problems.some((p) => p.startsWith('growth.sheathColour.1'))).toBe(true);
+		expect(problems.some((p) => p.startsWith('growth.sheathColour.2'))).toBe(true);
+		expect(problems.some((p) => p.startsWith('growth.sheathColour.0'))).toBe(false);
 	});
 });
