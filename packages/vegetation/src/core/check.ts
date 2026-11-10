@@ -107,6 +107,19 @@ function spreadsProblem(
 		spreadProblems(value[i] as Spread, i === 0 ? path : `${path}[${i}]`, positive, out);
 }
 
+/** One length's problems, or each length's in a list of tiers: it is metres and above zero. */
+function lengthsProblem(value: number | readonly number[], path: string, out: string[]): void {
+	const lengths: readonly number[] = typeof value === 'number' ? [value] : value;
+	if (lengths.length === 0) out.push(`${path} names no lengths`);
+	for (let i = 0; i < lengths.length; i++) {
+		const length = lengths[i] as number;
+		if (!(length > 0))
+			out.push(
+				`${i === 0 ? path : `${path}[${i}]`} is ${length}; it is metres and must be above 0`,
+			);
+	}
+}
+
 /** The number of tiers a value names: one for a single value, else its length. */
 function tierCount(value: number | Spread | readonly unknown[]): number {
 	return Array.isArray(value) ? value.length : 1;
@@ -437,16 +450,16 @@ function growthProblems(record: Species, out: string[]): void {
 		spreadProblems(growth.arms.count, 'growth.arms.count', false, out);
 		wholeProblem(Math.round(spreadMean(growth.arms.count)), 'growth.arms.count', 0, 12, out);
 		sharesProblem(growth.arms.from, 'growth.arms.from', out);
-		if (!(growth.arms.elbow > 0))
-			out.push(`growth.arms.elbow is ${growth.arms.elbow}; it is metres and must be above 0`);
+		lengthsProblem(growth.arms.elbow, 'growth.arms.elbow', out);
 		if (!(growth.arms.radius > 0))
 			out.push(`growth.arms.radius is ${growth.arms.radius}; it is metres and must be above 0`);
 		spreadsProblem(growth.arms.rise, 'growth.arms.rise', true, out);
 		const fromTiers = tierCount(growth.arms.from);
+		const elbowTiers = tierCount(growth.arms.elbow);
 		const riseTiers = tierCount(growth.arms.rise);
-		if (fromTiers !== riseTiers)
+		if (fromTiers !== elbowTiers || fromTiers !== riseTiers)
 			out.push(
-				`growth.arms.from names ${fromTiers} tiers and growth.arms.rise names ${riseTiers}; each tier needs one share and one rise`,
+				`growth.arms.from, growth.arms.elbow and growth.arms.rise name ${fromTiers}, ${elbowTiers} and ${riseTiers} tiers; each tier needs one share, one elbow and one rise`,
 			);
 		if (!(growth.areoles > 0))
 			out.push(`growth.areoles is ${growth.areoles}; it is metres and must be above 0`);
