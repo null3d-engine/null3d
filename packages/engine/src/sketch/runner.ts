@@ -119,10 +119,18 @@ import { type LabelSlotSender, Ui } from './ui';
 export type PagePoster = (type: string, data: unknown, transfer?: Transferable[]) => void;
 
 /**
- * The engine core's instance batch table, sized for the most batches a page draws at once. A page
- * that plants twelve species draws 258: 159 for the distance bands' parts, 65 for the near shoot
- * shapes and the rest for cards and dead wood. The table held 256 until Creek crossed it, so it
- * holds twice what a full valley needs, which leaves a page room to plant another species.
+ * The engine core's instance batch table, sized for the most batches a page draws at once.
+ *
+ * A page that plants twelve species draws 258: 159 for the distance bands' parts, 65 for the near
+ * shoot shapes and 34 for cards and dead wood. The table held 256 until Creek crossed it, so that
+ * number was never a budget with slack, and one more species broke it. The count grows with each
+ * species and each part a species draws, at about 21 a species, so 512 leaves room for some twelve
+ * species more before the table is full again.
+ *
+ * This is a stopgap. The table should be sized from what a page asks for: the engine learns the
+ * batches a page's meshes and plants need before its first frame, and refuses only past what the
+ * device carries. A raise past that point fails as a browser validation fault, not as this table's
+ * own error; at 1024 this table was still the limit.
  */
 const MAX_BATCHES = 512;
 /**
