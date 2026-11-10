@@ -1300,15 +1300,17 @@ export function matteMask(image: Rgba): PlantMask {
 	const { width, height } = work;
 	const mask = new Uint8Array(width * height);
 	const coverage = new Uint8Array(width * height);
+	// A thin frond tip antialiases to a pale grey that a half-black threshold drops, and a close
+	// view then reads the tip as absent and keeps its crop. A texel counts as plant from a faint
+	// coverage up, above the matte's own frame edge, which reads one step below clear.
+	const FAINT_TIP = 8;
 	for (let at = 0; at < mask.length; at++) {
 		const luma =
 			0.2126 * (work.data[at * 4] as number) +
 			0.7152 * (work.data[at * 4 + 1] as number) +
 			0.0722 * (work.data[at * 4 + 2] as number);
-		mask[at] = luma < 128 ? 1 : 0;
-		// The clear sky reads white, and the matte's frame edge reads one step below it. A texel at
-		// that step or above is clear, so the frame's own edge is not taken for a faint leaf.
 		coverage[at] = luma >= 254 ? 0 : Math.round(255 - luma);
+		mask[at] = (coverage[at] as number) >= FAINT_TIP ? 1 : 0;
 	}
 	const flat: ColourSurface = {
 		coefficients: [

@@ -712,14 +712,19 @@ function mattePlant(
 }
 
 describe('the coverage matte', () => {
-	test("keeps a texel's own coverage beside the half-black mask", () => {
+	test("keeps a texel's own coverage, and a faint tip, above the frame's edge", () => {
 		const image = blank(4, 1, [255, 255, 255]);
 		put(image, 1, 0, [0, 0, 0]);
 		put(image, 2, 0, [128, 128, 128]);
 		put(image, 3, 0, [254, 254, 254]);
 		const plant = matteMask(image);
-		expect([...plant.mask]).toEqual([0, 1, 0, 0]);
+		// A half-covered texel is plant, as a faint tip is; the one step below clear is not.
+		expect([...plant.mask]).toEqual([0, 1, 1, 0]);
 		expect([...(plant.coverage as Uint8Array)]).toEqual([0, 255, 127, 0]);
+		const edge = blank(2, 1, [255, 255, 255]);
+		put(edge, 0, 0, [253, 253, 253]);
+		put(edge, 1, 0, [240, 240, 240]);
+		expect([...matteMask(edge).mask]).toEqual([0, 1]);
 	});
 
 	test('reads any coverage for the piece test, and a plain mask as it stands', () => {
