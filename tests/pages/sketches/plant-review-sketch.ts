@@ -34,7 +34,6 @@ import {
 	facing,
 	largestLimb,
 	limbNear,
-	mainStem,
 	normalize,
 	pointAlong,
 	stemAt,
@@ -940,20 +939,10 @@ export default defineSketch(async (ctx) => {
 				// A bark zone of its own: the camera stands where that zone covers the wood, so the
 				// surface is the one the zone's texture source shows.
 				const zone = QUERY.barkZone === undefined ? undefined : record.bark?.zones[QUERY.barkZone];
-				// A stem's bark at a share of its height, or a middle height when the view names none.
-				// The stem is what the view reads, not the whole plant: a tree fern's crown stands far
-				// above the stem's top, so the plant's own height would put the camera in the crown.
-				const stemAxis = mainStem(skeleton);
-				const stemTop =
-					stemAxis >= 0
-						? (skeleton.position[(skeleton.axes.last[stemAxis] as number) * 3 + 1] as number)
-						: skeleton.height;
 				const y =
-					QUERY.along !== undefined
-						? Math.max(0, Math.min(stemTop, stemTop * QUERY.along))
-						: zone?.by === 'height'
-							? Math.min(stemTop * 0.9, (zone.from + zone.to) / 2)
-							: Math.min(1.5, stemTop * 0.3);
+					zone?.by === 'height'
+						? Math.min(skeleton.height * 0.9, (zone.from + zone.to) / 2)
+						: Math.min(1.5, skeleton.height * 0.3);
 				// A plant with no single trunk, such as a tuft of culms, shows the thickest stem
 				// surface that crosses the height the picture frames.
 				const stem = stemAt(skeleton, y) ?? stemSurfaceAt(skeleton, y)?.at;
@@ -1049,10 +1038,8 @@ export default defineSketch(async (ctx) => {
 					};
 				}
 				// A cutting fills the frame with its own points, as its reference's piece does, on the
-				// rows its reference shows it on when the query measured them. A roll lays the piece as
-				// its photograph does, such as a pinna that runs diagonally across its picture.
-				const fitted = fitPoints(piece as PlantAsset, pieceKit, turn, e, aspect, fov, CUT_ROWS);
-				return QUERY.roll !== undefined ? { ...fitted, roll: QUERY.roll * DEG } : fitted;
+				// rows its reference shows it on when the query measured them.
+				return fitPoints(piece as PlantAsset, pieceKit, turn, e, aspect, fov, CUT_ROWS);
 			}
 			case 'panels':
 				break;
@@ -1396,6 +1383,10 @@ export default defineSketch(async (ctx) => {
 	// The plant as the view draws it: the level's filled silhouette, not every level's part bounds,
 	// so a vertex or a part outside the drawn cells cannot inflate the posted width and height.
 	const drawnBox = cells[0] ? measurePlant(main, kit.box, cells[0].turn).plantBox : null;
+	// A cut piece is drawn from its own kit, and its posted size is the box its own level draws, not
+	// the union of every part's bounds.
+	const pieceTurn = cells.find((cell) => cell.piece === 'away')?.turn ?? cells[0]?.turn ?? 0;
+	const pieceBox = piece ? measurePlant(piece, pieceKit.box, pieceTurn).plantBox : null;
 	facts = {
 		species: record.id,
 		name: record.name,
@@ -1421,7 +1412,9 @@ export default defineSketch(async (ctx) => {
 				...piece.cutting,
 				size: (() => {
 					const b = boundsOf(piece, pieceKit);
-					return sub(b.max, b.min);
+					return pieceBox
+						? [pieceBox.width, pieceBox.top, (b.max[2] as number) - (b.min[2] as number)]
+						: sub(b.max, b.min);
 				})(),
 				axes: piece.skeleton.axes.count,
 			},
