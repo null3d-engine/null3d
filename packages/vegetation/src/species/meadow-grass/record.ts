@@ -93,7 +93,7 @@ export const record: Species = {
 			tipLength: 0.04,
 			fold: 18,
 			twist: 30,
-			arch: { mean: 18, spread: 8 },
+			arch: { mean: 34, spread: 8 },
 			// Stills 02 and 06: the old outer blades carry dry brown tips.
 			dryTip: 0.03,
 			// The leaf pictures' two faces under flat light: the shader scales each face's picture
