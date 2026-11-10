@@ -72,7 +72,9 @@
 		"daylight": 2.4
 	},
 	"09-secondary-branching.png": {},
-	"11-leaf-spray.png": {},
+	"11-leaf-spray.png": {
+		"pick": 5
+	},
 	"21-branch-studio.png": {},
 	"22-subbranch-studio.png": {},
 	"23-leaf-cluster-studio.png": {}
