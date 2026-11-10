@@ -232,8 +232,8 @@ export const record: Species = {
 			optics: {
 				// The blue-green cast of stills 12, 13 and 24: less yellow than the broadleaves, with
 				// the blue channel close to the green.
-				reflectance: [0.1, 0.18, 0.14],
-				reflectanceBack: [0.185, 0.22, 0.235],
+				reflectance: [0.16, 0.17, 0.1],
+				reflectanceBack: [0.28, 0.27, 0.17],
 				transmittance: [0.09, 0.16, 0.1],
 				roughness: [0.5, 0.6],
 			},
