@@ -117,6 +117,16 @@ describe('the phyllotaxis of a shoot, measured by angle', () => {
 			expect(near(step(nodes[k - 1]?.[0] as number, nodes[k]?.[0] as number), 180)).toBe(true);
 	});
 
+	it('turns each node past the opposite rank where the class sets a turn', () => {
+		const turned = azimuthsByNode(straight({ kind: 'distichous', flatten: 0.8, turn: 20 }));
+		for (let k = 1; k < turned.length; k++)
+			expect(near(step(turned[k - 1]?.[0] as number, turned[k]?.[0] as number), 200)).toBe(true);
+		// Without the turn the same record's leaves step by the opposite rank alone, in one plane.
+		const flat = azimuthsByNode(straight({ kind: 'distichous', flatten: 0.8 }));
+		for (let k = 1; k < flat.length; k++)
+			expect(near(step(flat[k - 1]?.[0] as number, flat[k]?.[0] as number), 180)).toBe(true);
+	});
+
 	it('pairs opposite leaves, crossing each pair with the next when decussate', () => {
 		for (const decussate of [false, true]) {
 			const nodes = azimuthsByNode(straight({ kind: 'opposite', decussate }));
