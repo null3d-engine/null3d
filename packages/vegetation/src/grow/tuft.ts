@@ -41,7 +41,7 @@ import {
 	bladeTexture,
 	writeBlade,
 } from '../leaf/grass-blade';
-import { MeshWriter } from '../leaf/writer';
+import { MeshWriter, SURFACE_SHEATH } from '../leaf/writer';
 import type { GrowInput, MeshInput, MeshLevel } from '../stages';
 import {
 	AXIS_LEAF,
@@ -57,11 +57,6 @@ import type { Grower } from './models';
 
 /** The golden angle in radians, which spreads shoots over the crown's disc. */
 const GOLDEN = radians(137.50776405);
-/**
- * The browning value that marks a shoot's sheath column: the plant material draws those vertices
- * in the record's sheath colour instead of the leaf's texture.
- */
-const SHEATH_BROWNING = -1;
 /** Points along each blade's axis. */
 const BLADE_NODES = 8;
 /** Points along each flowering stem. */
@@ -714,6 +709,13 @@ export function meshTuft(input: MeshInput, level: MeshLevel): MeshArrays {
 	const stems = stalkRange(strip);
 	const buds = terminalBuds(skeleton);
 	const meanLength = spreadMean(blade.length);
+	// A ligule stands at the blade's collar only at the nearest and finest detail, where a close
+	// view can read it; the farther levels and the kit's pressed leaf draw none.
+	const ligule =
+		blade.ligule && (input.detail === 'high' || input.detail === 'ultra')
+			? { length: spreadMean(blade.ligule.length), width: blade.ligule.width }
+			: undefined;
+	const liguleShare = blade.ligule?.share ?? 1;
 	const mesh = new MeshWriter();
 	const season = input.season;
 	const browning =
@@ -782,6 +784,7 @@ export function meshTuft(input: MeshInput, level: MeshLevel): MeshArrays {
 						(unitAt(input.seed, key, 2) < 0.5 ? -1 : 1),
 					browning,
 					dry: 0.35 + 0.65 * age * age,
+					...(ligule && unitAt(input.seed, key, 7) < liguleShare ? { ligule } : {}),
 				},
 				{ rows, across: tiers.blade.across },
 				texture,
@@ -801,6 +804,7 @@ export function meshTuft(input: MeshInput, level: MeshLevel): MeshArrays {
 		const last = axes.last[a] as number;
 		const r0 = skeleton.radius[first] as number;
 		const r1 = skeleton.radius[last] as number;
+		const before = mesh.vertices;
 		writeStem(mesh, {
 			path,
 			from: 0,
@@ -818,15 +822,11 @@ export function meshTuft(input: MeshInput, level: MeshLevel): MeshArrays {
 			along: isStem ? [0, 1] : fine ? [0.85, 1] : [0, 0.05],
 			// A sheath column carries a sentinel browning value, which the plant material reads as
 			// the record's sheath colour; every other stalk browns as the season gives.
-			browning: isStem
-				? Math.max(browning, 0.15)
-				: fine
-					? Math.max(browning, 0.3)
-					: growth.sheathColour
-						? SHEATH_BROWNING
-						: Math.max(browning, 0.3),
+			browning: isStem ? Math.max(browning, 0.15) : Math.max(browning, 0.3),
 			closeTip: isStem || fine,
 		});
+		if (!isStem && !fine && growth.sheathColour)
+			for (let v = before; v < mesh.vertices; v++) mesh.colors[v * 4 + 2] = SURFACE_SHEATH;
 	}
 	return mesh.finishMesh();
 }
