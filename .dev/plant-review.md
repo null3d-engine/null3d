@@ -186,7 +186,9 @@ own light they read 1.9, and the head's oak reads 2.2, so the light makes most o
   from 30 to 45 degrees read 0.0049 both times. The one lever that moved where the blades sit, the
   crown's eye ring, moved it from 0.0049 to 0.0274. A row that reads this view therefore takes
   levers of placement, of where each blade sits and at what inclination. It does not take levers of
-  the leaf's own shape, however large their effect on the side views.
+  the leaf's own shape, however large their effect on the side views. A per-age curve gives every
+  leaf of one age the same inclination. The hosta's tilt therefore moved the gap the wrong way, from
+  0.0049 to 0.0017. A spread within one ring needs a per-leaf field, and the record has none.
 
 ## What a fail looks like
 
