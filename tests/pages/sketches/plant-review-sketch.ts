@@ -26,7 +26,6 @@ import {
 	prepareSpecies,
 	type SpeciesKit,
 	setWindLayer,
-	swayDistanceFor,
 } from '@null3d/vegetation';
 import { createWind, type Wind } from '@null3d/wind';
 import {
@@ -1290,16 +1289,16 @@ export default defineSketch(async (ctx) => {
 				})
 			: undefined;
 	// A stand-in kit's matte is plain black materials; a real kit's is the plant shader's own, which
-	// keeps its quantised parts, cut-outs and sway. A plant under the wind sways out to its preset's
-	// distance, or to the query's own, so a far cascade that only this plant reaches keeps the layer
-	// it holds, and a plant past the distance stands still under the same field.
+	// keeps its quantised parts, cut-outs and sway. The review draws one plant, so the scene's
+	// distance fade stays off unless a still asks for one with `sway`: the fade is there to stand far
+	// cascades still, and a plant drawn alone has no cascade to spare.
 	const plantLook =
 		MATTE && kit.placeholders === true
 			? matteMaterials(ctx, kit)
 			: plantMaterials(ctx, kit, {
 					...(wind && {
 						wind: wind.field,
-						swayDistance: QUERY.sway ?? swayDistanceFor(ctx.quality.preset),
+						...(QUERY.sway !== undefined && { swayDistance: QUERY.sway }),
 					}),
 					matte: MATTE,
 				});
