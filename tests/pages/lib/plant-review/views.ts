@@ -8,6 +8,7 @@ export const PLANT_VIEWS = [
 	'turntable',
 	'whole',
 	'crown',
+	'crown-foot',
 	'below',
 	'crown-underside',
 	'inside',
@@ -110,6 +111,16 @@ export const VIEW_SPECS: Readonly<Record<PlantView, ViewSpec>> = {
 		slots: [4],
 		fov: 50,
 		background: 'sky-meadow',
+		sun: 'default',
+		elevation: 0,
+		size: [960, 720],
+	},
+	'crown-foot': {
+		// The crown at soil level on a plain ground: the shoot columns' lower length against the
+		// studio's grey, framed from the foot up as picture 07 frames it.
+		slots: [7],
+		fov: 50,
+		background: 'studio-grey',
 		sun: 'default',
 		elevation: 0,
 		size: [960, 720],
