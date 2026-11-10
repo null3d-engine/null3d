@@ -17,6 +17,10 @@ import {
 // A run refuses to start in another run's quiet window. Its workers and web servers inherit the
 // runner's pass, so a window that opens later never stops a run halfway.
 refuseInQuietWindow('The browser tests');
+// The page servers here serve only this machine's loopback, which is a secure origin already, and
+// CI has no local certificate. They therefore opt out of the HTTPS default explicitly. A demo that
+// a person opens, `bun run dev`, serves HTTPS by default.
+const LOOPBACK_HTTP = { NULL3D_HTTPS: '0' };
 // The test files import the shader modules, which git does not keep, and Playwright loads the test
 // files before it starts the web servers.
 ensureShaderModules(REPO_ROOT);
@@ -66,7 +70,7 @@ export const DEV_SERVER = {
 	// it reached 3,542 MB of resident memory there and died at Node's default heap limit, after which
 	// every later page failed as E1410 with a refused connection rather than as itself. The limit
 	// leaves room above that measured peak so the server outlives the last page.
-	env: SERVER_HEAP_ENV,
+	env: { ...SERVER_HEAP_ENV, ...LOOPBACK_HTTP },
 };
 
 /** The production build of the test pages, and the preview that serves it. */
@@ -86,7 +90,7 @@ const PRODUCTION_SERVER = {
 	timeout: 900_000,
 	// The measured peak belongs to the dev server, so this limit carries the same figure rather than
 	// one of its own; a preview that served more than the dev server did would need its own reading.
-	env: SERVER_HEAP_ENV,
+	env: { ...SERVER_HEAP_ENV, ...LOOPBACK_HTTP },
 };
 
 export default defineConfig({
