@@ -53,6 +53,12 @@
 		"date": "2026-11-02",
 		"reason": "the Mac drew these pictures with CI=1 for the demo's new room; the session that checks the landings replaces them from CI's own SwiftShader when a run draws them"
 	},
+	"chromium-swiftshader/compat/demo-contact-shadows.png": {
+		"test": "demo-contact-shadows",
+		"tier": "compat",
+		"date": "2026-11-10",
+		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head; each drawing completed with the raised budget and was compared before acceptance, and a CI drawing on a pull request replaces them"
+	},
 	"chromium-swiftshader/compat/demo-creek.png": {
 		"test": "demo-creek",
 		"tier": "compat",
@@ -412,6 +418,12 @@
 		"tier": "webgl2",
 		"date": "2026-11-02",
 		"reason": "the Mac drew these pictures with CI=1 for the demo's new room; the session that checks the landings replaces them from CI's own SwiftShader when a run draws them"
+	},
+	"chromium-swiftshader/webgl2/demo-contact-shadows.png": {
+		"test": "demo-contact-shadows",
+		"tier": "webgl2",
+		"date": "2026-11-10",
+		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head; each drawing completed with the raised budget and was compared before acceptance, and a CI drawing on a pull request replaces them"
 	},
 	"chromium-swiftshader/webgl2/demo-creek.png": {
 		"test": "demo-creek",
@@ -802,6 +814,12 @@
 		"tier": "webgpu",
 		"date": "2026-11-02",
 		"reason": "the Mac drew these pictures with CI=1 for the demo's new room; the session that checks the landings replaces them from CI's own SwiftShader when a run draws them"
+	},
+	"chromium-swiftshader/webgpu/demo-contact-shadows.png": {
+		"test": "demo-contact-shadows",
+		"tier": "webgpu",
+		"date": "2026-11-10",
+		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head; each drawing completed with the raised budget and was compared before acceptance, and a CI drawing on a pull request replaces them"
 	},
 	"chromium-swiftshader/webgpu/demo-creek.png": {
 		"test": "demo-creek",
