@@ -181,9 +181,9 @@ export const record: Species = {
 				[0, 3],
 				[1, 5.5],
 			],
-			// The reference's dense view closes its leaf masses into one canopy; the crowns of the shoots
-			// must overlap for the silhouette to hang together.
-			density: 1.3,
+			// The reference's plume is open between its fans: the shoots spread along the branches
+			// without closing the crown, and the silhouette still hangs together as one piece.
+			density: 1.0,
 			shadePrune: 0,
 			// Stills 01, 05 and 18: the plume is open, with sky between the fans and the branches
 			// showing through it, so only the innermost shoots go.
