@@ -24,6 +24,7 @@ import {
 	rowSpans,
 	seasonFromPicture,
 	shadowLike,
+	skyHoldsPlant,
 	skyMaskable,
 	soilHoldsPlant,
 	soilMaskable,
@@ -818,6 +819,16 @@ describe('a fitted sky', () => {
 			soilMaskable({ horizon: 10, sky: surface(1, 20), ground: surface(1, 18), plain: false }, 640),
 		).toBe(false);
 		expect(soilMaskable({ horizon: null, sky: surface(1, 18), plain: false }, 640)).toBe(false);
+	});
+
+	test('refuses a sky whose own noise holds the plant, and keeps a plant outside it', () => {
+		const sky = { horizon: null, sky: surface(0.9999, 17.1), plain: false };
+		// The cypress's 03 passes: its median sits 32.97 from the sky, outside the 17.1 residual.
+		expect(skyHoldsPlant(sky, 32.97)).toBe(false);
+		expect(skyHoldsPlant(sky, 10)).toBe(true);
+		const still = { horizon: null, sky: surface(0.9999, 5), plain: false };
+		expect(skyHoldsPlant(still, 9)).toBe(false);
+		expect(skyHoldsPlant(still, 6)).toBe(true);
 	});
 
 	test('refuses a ground whose model has covered the plant', () => {

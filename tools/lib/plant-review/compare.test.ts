@@ -590,6 +590,26 @@ describe('a fitted-background outline', () => {
 		expect(fittedMaskClause({})).toBe('');
 	});
 
+	test('names a refused sky, its distance and the sampled box', () => {
+		const refused = fittedMaskClause({
+			fittedMask: {
+				kind: 'sky',
+				skyFit: 0.9999,
+				skyNoise: 17.1,
+				plantToSky: 9.2,
+				refused: true,
+				sampledBox: { width: 64, height: 48 },
+			},
+		});
+		expect(refused).toContain('the plant sits inside the sky');
+		expect(refused).toContain('the sampled mask was 64 by 48 pixels');
+		const passed = fittedMaskClause({
+			fittedMask: { kind: 'sky', skyFit: 0.9999, skyNoise: 17.1, plantToSky: 32.97 },
+		});
+		expect(passed).toContain('32.97'.replace('32.97', '33.0'));
+		expect(passed).not.toContain('refused');
+	});
+
 	test('reports the ground fit, residual and horizon share for a soil', () => {
 		const clause = fittedMaskClause({
 			fittedMask: {

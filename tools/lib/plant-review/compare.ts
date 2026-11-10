@@ -754,6 +754,8 @@ export interface FittedMaskNote {
 	readonly groundNoise?: number;
 	readonly horizonShare?: number;
 	readonly plantToGround?: number;
+	readonly plantToSky?: number;
+	readonly refused?: boolean;
 	readonly sampledBox?: { readonly width: number; readonly height: number };
 }
 
@@ -761,8 +763,19 @@ export interface FittedMaskNote {
 export function fittedMaskClause(pair: { readonly fittedMask?: FittedMaskNote }): string {
 	const note = pair.fittedMask;
 	if (!note) return '';
-	if (note.kind === 'sky')
-		return ` — the outline comes from a fitted sky (fit ${note.skyFit.toFixed(4)}, residual ${note.skyNoise.toFixed(1)})`;
+	if (note.kind === 'sky') {
+		const distance =
+			note.plantToSky === undefined
+				? ''
+				: `; the plant's median colour sits ${note.plantToSky.toFixed(1)} CIEDE2000 steps from the sky`;
+		const sampled = note.sampledBox
+			? ` (the sampled mask was ${note.sampledBox.width} by ${note.sampledBox.height} pixels)`
+			: '';
+		const refused = note.refused
+			? `; the plant sits inside the sky's own limit, so the fit has covered the plant and the mask is refused${sampled}`
+			: '';
+		return ` — the outline comes from a fitted sky (fit ${note.skyFit.toFixed(4)}, residual ${note.skyNoise.toFixed(1)})${distance}${refused}`;
+	}
 	const groundShare = 1 - (note.horizonShare ?? 0);
 	const ground =
 		note.groundFit === undefined
@@ -1479,6 +1492,11 @@ export function compareStills(
 							kind: fittedKind,
 							skyFit: refPlant.background.sky.fit,
 							skyNoise: refPlant.background.sky.noise,
+							...(refPlant.plantToSky !== undefined ? { plantToSky: refPlant.plantToSky } : {}),
+							...(refPlant.refused === true ? { refused: true } : {}),
+							...(refPlant.refusedBox !== undefined && fittedKind === 'sky'
+								? { sampledBox: refPlant.refusedBox }
+								: {}),
 							...(fittedKind === 'ground' && refPlant.background.ground
 								? {
 										groundFit: refPlant.background.ground.fit,

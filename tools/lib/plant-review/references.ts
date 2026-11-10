@@ -901,6 +901,17 @@ export function soilHoldsPlant(background: Background, plantToGround: number): b
 	return plantToGround < threshold(background.ground, 10, background.plain ? 3 : 2);
 }
 
+/**
+ * Whether the sky model has covered the plant itself: the plant's median colour lies inside the
+ * sky's own colour limit, as a pale bark does against a pale sky. Such a fit is refused.
+ */
+export function skyHoldsPlant(background: Background, plantToSky: number): boolean {
+	// One residual, not the mask's own tolerance of two: a plant within the sky's own noise is
+	// indistinguishable from it, while the wider tolerance is what admits a plant at all, so a
+	// marginal median just under it says nothing.
+	return plantToSky < Math.max(8, background.sky.noise);
+}
+
 export function soilMaskable(background: Background, height: number): boolean {
 	if (background.horizon === null || background.ground === undefined) return false;
 	const share = background.horizon / height;
@@ -931,8 +942,12 @@ export interface PlantMask {
 	 * trusting a mask that may merge them.
 	 */
 	readonly plantToGround?: number;
+	/** For a fitted sky: the CIEDE2000 distance between the plant's median colour and the sky's. */
+	readonly plantToSky?: number;
+	/** The fit covered the plant, or kept no part of it, so the outline is refused. */
+	readonly refused?: true;
 	/**
-	 * For a refused ground fit: the box of the plant the fit found before the refusal, so a reader
+	 * For a refused fit: the box of the plant the fit found before the refusal, so a reader
 	 * sees why the reference could not be read — a sliver where the ground model swallowed the plant.
 	 */
 	readonly refusedBox?: { readonly width: number; readonly height: number };
@@ -1150,6 +1165,58 @@ export function plantMask(image: Rgba): PlantMask {
 			}
 			mask[at] = d > (below ? groundLimit : skyLimit) ? 1 : 0;
 		}
+	// The plant's own material against the fitted surface, before the part rules: a fit whose limit
+	// holds the plant's median colour has covered the plant, and a fit that keeps no part after the
+	// rules has not found it. Both refuse the outline rather than report a figure for nothing.
+	const fitted = !background.plain;
+	const skyAt = surfaceAt(
+		background.sky,
+		0.5,
+		background.horizon === null ? 0.5 : background.horizon / height / 2,
+	);
+	const groundAt =
+		background.ground && background.horizon !== null
+			? surfaceAt(background.ground, 0.5, (background.horizon / height + 1) / 2)
+			: undefined;
+	const sampled = fitted ? boxOf(mask, width, height) : null;
+	let plantToSky: number | undefined;
+	let plantToGround: number | undefined;
+	if (fitted) {
+		const channels: number[][] = [[], [], []];
+		for (let at = 0; at < width * height; at++)
+			if (mask[at])
+				for (let c = 0; c < 3; c++) (channels[c] as number[]).push(lab[at * 3 + c] as number);
+		if ((channels[0] as number[]).length > 0) {
+			const median = channels.map((values) => {
+				values.sort((a, b) => a - b);
+				return values[values.length >> 1] ?? 0;
+			});
+			plantToSky = Number(deltaE2000(median, skyAt).toFixed(2));
+			if (groundAt) plantToGround = Number(deltaE2000(median, groundAt).toFixed(2));
+		}
+	}
+	const refusedBox = sampled
+		? { width: sampled.right - sampled.left + 1, height: sampled.bottom - sampled.top + 1 }
+		: undefined;
+	const heldBySky =
+		background.horizon === null &&
+		plantToSky !== undefined &&
+		skyHoldsPlant(background, plantToSky);
+	const heldByGround =
+		background.horizon !== null &&
+		plantToGround !== undefined &&
+		soilHoldsPlant(background, plantToGround);
+	if (fitted && (heldBySky || heldByGround))
+		return {
+			width,
+			height,
+			mask: new Uint8Array(width * height),
+			background,
+			refused: true,
+			...(plantToSky !== undefined ? { plantToSky } : {}),
+			...(plantToGround !== undefined ? { plantToGround } : {}),
+			...(refusedBox ? { refusedBox } : {}),
+		};
 	clearSideBands(mask, lab, width, height, horizon);
 	if (background.ground) keepHangingParts(mask, lab, width, height, horizon, background.ground);
 	else
@@ -1161,51 +1228,27 @@ export function plantMask(image: Rgba): PlantMask {
 			height - Math.max(2, Math.round(height * FOOT_SHARE)),
 		);
 	keepPlantParts(mask, width, height, horizon);
-	let plantToGround: number | undefined;
-	if (background.ground) {
-		const groundAt = surfaceAt(background.ground, 0.5, (horizon / height + 1) / 2);
-		const channels: number[][] = [[], [], []];
-		for (let at = 0; at < width * height; at++)
-			if (mask[at])
-				for (let c = 0; c < 3; c++) (channels[c] as number[]).push(lab[at * 3 + c] as number);
-		if ((channels[0] as number[]).length > 0) {
-			const median = channels.map((values) => {
-				values.sort((a, b) => a - b);
-				return values[values.length >> 1] ?? 0;
-			});
-			plantToGround = Number(deltaE2000(median, groundAt).toFixed(2));
-		}
-	}
-	// A ground whose model has swallowed the plant gives no outline: the plant's own material sits
-	// inside the ground's limit, so the mask would merge the two. The figure is refused and the
-	// distance is kept for the record.
-	if (
-		background.ground &&
-		plantToGround !== undefined &&
-		soilHoldsPlant(background, plantToGround)
-	) {
-		const sampled = boxOf(mask, width, height);
+	let kept = 0;
+	for (let at = 0; at < mask.length; at++) if (mask[at]) kept++;
+	// A fit that keeps no part of the plant after the part rules has not found it, as a pale bark
+	// against a pale sky does not; the outline is refused and the sampled box is reported.
+	if (fitted && kept === 0 && refusedBox)
 		return {
 			width,
 			height,
 			mask: new Uint8Array(width * height),
 			background,
-			plantToGround,
-			...(sampled
-				? {
-						refusedBox: {
-							width: sampled.right - sampled.left + 1,
-							height: sampled.bottom - sampled.top + 1,
-						},
-					}
-				: {}),
+			refused: true,
+			...(plantToSky !== undefined ? { plantToSky } : {}),
+			...(plantToGround !== undefined ? { plantToGround } : {}),
+			refusedBox,
 		};
-	}
 	return {
 		width,
 		height,
 		mask,
 		background,
+		...(plantToSky !== undefined ? { plantToSky } : {}),
 		...(plantToGround !== undefined ? { plantToGround } : {}),
 	};
 }
