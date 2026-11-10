@@ -274,7 +274,7 @@ export const record: Species = {
 	lod: {
 		nearFoliage: 'instanced',
 		switchPixels: [240, 12, 160],
-		cardGrow: 1.35,
+		cardGrow: 1.6,
 		// A card draws a short stalk so a leaf mass ties to its shoot, not floats free.
 		cardStalk: 2,
 		// The farthest card level keeps the culms alone: a branch a few centimetres thick is under a
