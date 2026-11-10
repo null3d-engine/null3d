@@ -155,6 +155,11 @@ export interface PlantReviewQuery {
 	readonly targetY?: number;
 	/** The column share where the plant's axis sits. */
 	readonly targetX?: number;
+	/**
+	 * The share of the frame's width that the reference's plant fills. A whole view stands its camera
+	 * back until the render's plant keeps that margin, so a wide plant is not cropped at the sides.
+	 */
+	readonly widthShare?: number;
 	/** The row share of the plant's top, for a frame whose plant base is cut off: give `eye` too. */
 	readonly top?: number;
 	/** The camera's height above the ground in metres, with `top`, when the base is out of frame. */
@@ -240,6 +245,7 @@ const NUMBER_FIELDS = [
 	'fill',
 	'targetY',
 	'targetX',
+	'widthShare',
 	'top',
 	'eye',
 	'along',
@@ -271,6 +277,7 @@ const SHARE_FIELDS = new Set([
 	'fill',
 	'targetY',
 	'targetX',
+	'widthShare',
 	'top',
 	'along',
 	'skyShare',
