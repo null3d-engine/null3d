@@ -69,6 +69,8 @@ const CLUSTER_LEAN = 32;
 const CLUSTER_STEP = 0.4;
 /** How far inside a twig's surface a crowded node's leaves root, so their blades meet the wood. */
 const CROWDED_ROOT = 1;
+/** The crowding at which a node joins a plate run, from 0 at an even spacing to 1 at a point. */
+const PLATE_CROWDED = 0.25;
 
 /** Purposes of the prototypes' hash keys, so no two draws share one. */
 const Purpose = {
@@ -561,6 +563,8 @@ export function planShoot(
 		foliage.kind === 'needle' || foliage.kind === 'fascicle' ? foliage.needle.angle : undefined;
 	const ranks = foliage.kind === 'needle' ? foliage.needle.ranks : 0;
 	const flatten = phyllotaxis.kind === 'distichous' ? phyllotaxis.flatten : 0;
+	/** A two-ranked shoot keeps its laterals in the plane of its leaf ranks. */
+	const twoRanked = phyllotaxis.kind === 'distichous';
 	/**
 	 * A leaf's turn from leaf space: the upper face looks toward the shoot's tip, turned toward the sky
 	 * side. `flatToAxis` sets the share that instead squares the lamina across the shoot, which is how a
@@ -614,6 +618,10 @@ export function planShoot(
 		let node = 0;
 		const azimuthStart = draw(Purpose.Start, axis) * 360;
 		const axisLength = start.unitLength * start.units;
+		// A plate run holds one face; it starts at the run's first crowded node and ends when the
+		// internodes open out again. A new growth unit starts a new run.
+		const plated = shoots.placement.plate === true;
+		let plateFace: Vector3 | undefined;
 		let zig = 1;
 		// Side shoots this axis has put out so far.
 		let placed = 0;
@@ -621,6 +629,7 @@ export function planShoot(
 			const length = start.unitLength * (0.85 + 0.3 * draw(Purpose.Unit, axis, unit));
 			const newest = unit === start.units - 1;
 			const leafy = unit >= start.units - leafYears;
+			plateFace = undefined;
 			const nodes = unitNodes(record, shootClass, length, draw(Purpose.Nodes, axis, unit));
 			// The unit's start and each of its nodes, along which its joint's side shoots may leave.
 			const unitStart: StemFrame = {
@@ -651,6 +660,10 @@ export function planShoot(
 				direction = turn(direction, sky, (draw(Purpose.Wander, axis, node) - 0.5) * 6);
 				normalize3(direction);
 				sky = square(sky, direction, [0, 0, 1]);
+				if (plated) {
+					if (crowded >= PLATE_CROWDED) plateFace ??= [...sky];
+					else plateFace = undefined;
+				}
 				// A long internode breaks into an even number of straight pieces that turn back and forth
 				// about its line, by half the bend each way, so it ends on its line and the next node keeps
 				// its frame.
@@ -676,7 +689,19 @@ export function planShoot(
 				span = Math.max(span, along);
 				const t = nodes === 1 ? 1 : k / (nodes - 1);
 				if (leafy && leafMeshes > 0)
-					placeLeaves(axis, node, at, direction, sky, radius, along, t, azimuthStart, crowded);
+					placeLeaves(
+						axis,
+						node,
+						at,
+						direction,
+						sky,
+						radius,
+						along,
+						t,
+						azimuthStart,
+						crowded,
+						plateFace,
+					);
 				node++;
 			}
 			points[points.length - 1] = { ...(points[points.length - 1] as AxisPoint), unitEnd: true };
@@ -714,7 +739,11 @@ export function planShoot(
 								];
 					// The first side shoot leaves the joint itself, each further one the gap below the last.
 					const from = frameAt(unitStart, frames, along - k * jointGap * (along - unitStart.along));
-					const azimuth = azimuthStart + n * GOLDEN + turnDraw * 40;
+					// A two-ranked shoot keeps its laterals in the plane of its two leaf ranks, as a
+					// flat-sprayed species grows; a spiral shoot turns them by the golden angle.
+					const azimuth = twoRanked
+						? azimuthStart + 90 + n * 180 + (turnDraw - 0.5) * 6
+						: azimuthStart + n * GOLDEN + turnDraw * 40;
 					const outward = turn(from.sky, from.direction, azimuth);
 					const lean = leanAngle * (0.75 + 0.5 * leanDraw);
 					const lateral = normalize3([
@@ -730,8 +759,11 @@ export function planShoot(
 								: within(lateral, SHOOT_LINE, lateralMost, from.sky),
 						sky: from.sky,
 						order: start.order + 1,
-						units: start.units - unit - 1,
-						unitLength: start.unitLength * (0.6 + 0.25 * lengthDraw),
+						// A two-ranked shoot's lateral is one long side shoot in the axis's own plane; a
+						// spiral shoot's is a shorter side twig that may branch again.
+						units: twoRanked ? 1 : start.units - unit - 1,
+						unitLength:
+							start.unitLength * (twoRanked ? 2 + 0.4 * lengthDraw : 0.6 + 0.25 * lengthDraw),
 						radius: Math.max(tipRadius, from.radius * 0.75),
 						along: from.along,
 					});
@@ -752,8 +784,12 @@ export function planShoot(
 		t: number,
 		azimuthStart: number,
 		crowded: number,
+		plateFace?: Vector3,
 	): void => {
-		const side = normalize3(cross3(stem, sky, [0, 0, 0]));
+		// A plate run holds every blade to its own face, so the run reads as one shingle rather than
+		// a tuft that turns with the stem.
+		const face = plateFace ?? sky;
+		const side = normalize3(cross3(stem, face, [0, 0, 0]));
 		const azimuths = nodeAzimuths(phyllotaxis, node, azimuthStart, (key) =>
 			phyllotaxis.kind === 'rosette-spur'
 				? spreadAt(phyllotaxis.leaves, draw(Purpose.Spur, axis, key))
@@ -774,9 +810,9 @@ export function planShoot(
 				azimuth += gap * ranks;
 			}
 			const radial = normalize3([
-				side[0] * cos(azimuth) + sky[0] * sin(azimuth),
-				side[1] * cos(azimuth) + sky[1] * sin(azimuth),
-				side[2] * cos(azimuth) + sky[2] * sin(azimuth),
+				side[0] * cos(azimuth) + face[0] * sin(azimuth),
+				side[1] * cos(azimuth) + face[1] * sin(azimuth),
+				side[2] * cos(azimuth) + face[2] * sin(azimuth),
 			]);
 			const a = radians(leafAngle);
 			const direction = normalize3([
@@ -784,7 +820,7 @@ export function planShoot(
 				stem[1] * cos(a) + radial[1] * sin(a),
 				stem[2] * cos(a) + radial[2] * sin(a),
 			]);
-			const rotation = leafRotation(direction, stem, sky, radial);
+			const rotation = leafRotation(direction, stem, face, radial);
 			const key = node * 8 + k;
 			const size =
 				curveAt(shootClass.leafScale, t) *
@@ -802,7 +838,7 @@ export function planShoot(
 				axis,
 				node,
 				stem: [...stem],
-				sky: [...sky],
+				sky: [...face],
 				radial,
 				direction,
 				crowded,
@@ -1045,12 +1081,14 @@ function prototypeOf(
  * @param record The species record.
  * @param manifest The texture manifest.
  * @param leaves The species' leaf meshes at every tier, low first.
+ * @param cutting Build only the classes a cut piece draws, which the crown's kit then leaves out.
  * @returns The prototypes.
  */
 export function shootPrototypes(
 	record: Species,
 	manifest: TextureManifest,
 	leaves: readonly (readonly PrototypeArrays[])[],
+	cutting = false,
 ): UncardedPrototype[] {
 	void manifest;
 	const shoots = record.shoots;
@@ -1068,15 +1106,19 @@ export function shootPrototypes(
 			classes[index] as ShootClass,
 		),
 	);
-	if (leafMeshes > 0 && hasBareTwins(record))
+	if (!cutting && leafMeshes > 0 && hasBareTwins(record))
 		for (const [index, plan] of plans.entries())
 			out.push(
 				prototypeOf({ ...plan, leaves: [] }, leaves, out.length, classes[index] as ShootClass),
 			);
 	// A cutting class is planned last and marked as a cutting's, so the crown never offers one however
 	// its variants fall. It keeps a leafless twin beside it where the species has them, so a winter
-	// cutting of it still finds a piece.
-	for (const shootClass of shoots.cuttingClasses ?? [])
+	// cutting of it still finds a piece. A kit of a kind holds only the classes of its kind: the
+	// plant's kit the crown's and the cutting classes both are drawn from, the cutting kit the classes
+	// that only a cut piece draws.
+	for (const shootClass of (shoots.cuttingClasses ?? []).filter(
+		(shoot) => (shoot.cutOnly === true) === cutting,
+	))
 		for (let k = 0; k < CUTTING_PROTOTYPES; k++) {
 			const plan = planShoot(record, out.length, leafMeshes, shootClass);
 			out.push(

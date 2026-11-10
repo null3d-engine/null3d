@@ -480,6 +480,21 @@
 				transition: background 140ms ease, border-color 140ms ease, color 140ms ease, box-shadow 140ms ease;
 			}
 			.hud__btn:hover { background: linear-gradient(180deg, rgb(255 255 255 / 0.24), rgb(255 255 255 / 0.1)); border-color: rgb(255 255 255 / 0.32); }
+			/* A control that this device or preset cannot use: it reads as unavailable, keeps its focus
+			   ring for the keyboard, and never lights up as if a press would work. */
+			.hud__btn[aria-disabled="true"] { opacity: 0.45; cursor: not-allowed; filter: saturate(0.4); }
+			.hud__btn[aria-disabled="true"]:hover { background: linear-gradient(180deg, rgb(255 255 255 / 0.16), rgb(255 255 255 / 0.055)); border-color: rgb(255 255 255 / 0.24); }
+			.hud__why {
+				position: absolute;
+				width: 1px;
+				height: 1px;
+				margin: -1px;
+				padding: 0;
+				border: 0;
+				overflow: hidden;
+				white-space: nowrap;
+				clip-path: inset(50%);
+			}
 			.hud__btn:focus-visible { outline: 2px solid #7fd1ff; outline-offset: 2px; }
 			.hud__btn[aria-pressed="true"] {
 				background: linear-gradient(180deg, rgb(151 219 255 / 0.96), rgb(127 209 255 / 0.74));

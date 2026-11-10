@@ -6,7 +6,8 @@ import { oakRecord } from '../../packages/vegetation/src/grow/oak.fixture.ts';
 import { scaledBudget } from '../../tests/lib/run-budget.ts';
 import { REPO_ROOT } from '../../tests/lib/server.ts';
 import { iou } from '../lib/plant-review/compare.ts';
-import { readReferenceSet } from '../lib/plant-review/references.ts';
+import { probeVideo, readImage, videoFrames } from '../lib/plant-review/image.ts';
+import { readReferenceSet, WORK_WIDTH } from '../lib/plant-review/references.ts';
 import { AZIMUTHS, crownBaseRow, type HullView, hullEnvelope, nearSilhouette } from './envelope.ts';
 import { roundBandOf } from './fit-file.ts';
 import { checkLeaf } from './leaf.ts';
@@ -239,6 +240,13 @@ describe('the crown base', () => {
 		const tuft = extents((row) => (row < 2 ? 0.25 : row === 2 ? 0.1 : 0.6));
 		expect(crownBaseRow([tuft])).toBe(0);
 	});
+
+	test('runs a narrow column down to its own foot', () => {
+		// A cypress is under a fifth of its height across at every row, so a fixed crown width
+		// would read its whole slackened lower quarter as bare stem.
+		const column = extents((row) => (row < 2 ? 0.04 : row < 6 ? 0.12 : 0.16));
+		expect(crownBaseRow([column])).toBe(2);
+	});
 });
 
 describe('the outline of a frame', () => {
@@ -292,9 +300,30 @@ const OAK_VIDEO = join(OAK, 'oak-turntable.mp4');
 
 describe.skipIf(!existsSync(OAK_VIDEO))('the pedunculate oak, from the private references', () => {
 	test(
-		"measures the oak's envelope that the grower's tests hold, from the video it was measured from",
+		"measures the oak's envelope that the grower's tests hold, from the references it was measured from",
 		() => {
-			const fit = fitTurn({ file: 'oak-turntable.mp4', path: OAK_VIDEO, piece: 'whole', arc: 360 });
+			const video = {
+				file: 'oak-turntable.mp4',
+				path: OAK_VIDEO,
+				piece: 'whole',
+				arc: 360,
+			} as const;
+			const frames = videoFrames(video.path, probeVideo(video.path), WORK_WIDTH);
+			// The record's hull takes the whole-plant stills too, which bound the crown's broad sides.
+			const set = readReferenceSet(OAK);
+			const stills = set.stills
+				.filter(
+					(still) =>
+						still.framed &&
+						still.number <= 18 &&
+						(still.view === 'whole' || still.view === 'silhouette'),
+				)
+				.map((still) => ({
+					file: still.file,
+					image: readImage(join(OAK, still.file)),
+					turn: still.turn ?? 0,
+				}));
+			const fit = fitTurn(video, frames, stills);
 			const hull = fit.hull;
 			expect(hull).not.toBeNull();
 			if (!hull || !oakRecord.envelope) return;
@@ -308,9 +337,11 @@ describe.skipIf(!existsSync(OAK_VIDEO))('the pedunculate oak, from the private r
 					iou(envelopeSilhouette(ours, turn, frame), envelopeSilhouette(theirs, turn, frame)),
 				).toBeGreaterThanOrEqual(0.95);
 			}
-			// The grower's record found its envelope's outlines 0.72 to 0.89 against the views.
+			// The 5 November turntable (SHA-256 43e6ca23) and the whole-plant stills overlap the hull
+			// at 0.728 to 0.866, mean 0.795. The floors guard the fit against a regression; they are
+			// not a claim about the recording's own symmetry.
 			expect(hull.consistency.lowest).toBeGreaterThan(0.7);
-			expect(hull.consistency.mean).toBeGreaterThan(0.83);
+			expect(hull.consistency.mean).toBeGreaterThan(0.78);
 		},
 		VIDEO_MS,
 	);

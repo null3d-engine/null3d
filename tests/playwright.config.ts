@@ -11,11 +11,16 @@ import {
 	PRODUCTION_BUILD_TESTS,
 	PRODUCTION_PAGES_SWITCH,
 	REPO_ROOT,
+	SERVER_HEAP_ENV,
 } from './lib/server.ts';
 
 // A run refuses to start in another run's quiet window. Its workers and web servers inherit the
 // runner's pass, so a window that opens later never stops a run halfway.
 refuseInQuietWindow('The browser tests');
+// The page servers here serve only this machine's loopback, which is a secure origin already, and
+// CI has no local certificate. They therefore opt out of the HTTPS default explicitly. A demo that
+// a person opens, `bun run dev`, serves HTTPS by default.
+const LOOPBACK_HTTP = { NULL3D_HTTPS: '0' };
 // The test files import the shader modules, which git does not keep, and Playwright loads the test
 // files before it starts the web servers.
 ensureShaderModules(REPO_ROOT);
@@ -53,15 +58,6 @@ const PRODUCTION_BUILD = {
 };
 
 /**
- * The heap limit that both page servers are given. A full picture run asks the dev server for 1,915
- * pages, and it reached 3,542 MB of resident memory on this Mac before dying at Node's default limit;
- * eight gigabytes leaves room above that peak. The figure is the dev server's own measurement — the
- * preview server serves a page set rather than building one and is given the same limit so that it
- * cannot die the same way with less room than the server that made its pages.
- */
-const PAGE_SERVER_HEAP_ENV = { NODE_OPTIONS: '--max-old-space-size=8192' };
-
-/**
  * The dev server, which serves every page of the repository from its source. Off CI a run reuses a
  * server that already answers on its port, and the checkout setup refuses one of another copy.
  */
@@ -74,7 +70,7 @@ export const DEV_SERVER = {
 	// it reached 3,542 MB of resident memory there and died at Node's default heap limit, after which
 	// every later page failed as E1410 with a refused connection rather than as itself. The limit
 	// leaves room above that measured peak so the server outlives the last page.
-	env: PAGE_SERVER_HEAP_ENV,
+	env: { ...SERVER_HEAP_ENV, ...LOOPBACK_HTTP },
 };
 
 /** The production build of the test pages, and the preview that serves it. */
@@ -94,7 +90,7 @@ const PRODUCTION_SERVER = {
 	timeout: 900_000,
 	// The measured peak belongs to the dev server, so this limit carries the same figure rather than
 	// one of its own; a preview that served more than the dev server did would need its own reading.
-	env: PAGE_SERVER_HEAP_ENV,
+	env: { ...SERVER_HEAP_ENV, ...LOOPBACK_HTTP },
 };
 
 export default defineConfig({
@@ -138,13 +134,9 @@ export default defineConfig({
 			testMatch: 'resize.spec.ts',
 			use: {
 				deviceScaleFactor: HIGH_DENSITY_RATIO,
-				launchOptions: {
-					...launchOptions,
-					args: [
-						...(launchOptions.args ?? []),
-						`--force-device-scale-factor=${HIGH_DENSITY_RATIO}`,
-					],
-				},
+				launchOptions: repoBrowserOptions(environment, [
+					`--force-device-scale-factor=${HIGH_DENSITY_RATIO}`,
+				]),
 			},
 		},
 		// The tests that run alone (`tests/lib/alone.ts`), one at a time in each project. CI runs
