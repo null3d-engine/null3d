@@ -346,6 +346,8 @@ function fit(bounds: Bounds, turn: number, elevation: number, aspect: number, fo
  * The camera that stands on the ground and puts a whole plant where the query's framing in screen
  * shares asks, as a reference picture framed its plant.
  */
+const STAND_ROWS: Record<string, number>[] = [];
+
 function standView(
 	height: number,
 	bounds: Bounds,
@@ -404,9 +406,17 @@ function standView(
 	// Only a drawn box that runs off the frame is stood back: a picture that already holds its plant
 	// keeps the camera its reference was measured with, so its figures do not move.
 	const first = projectedRows(view, bounds, points);
-	// A few points a hair past the frame are the geometry's rim, not a cropped plant: only a box
-	// clear of the frame by more than a margin stands the camera back.
-	const clipped = first.top < -0.02 || first.base > 1.02;
+	// Only a box clear of the frame itself is cropped: a plant whose geometry project past the rows
+	// its photograph asked for, yet stays inside the frame, is not cropped and keeps the axis camera.
+	const clipped = first.base > 1.05 || first.top < -0.05;
+	if (STAND_ROWS.length < 1)
+		STAND_ROWS.push({
+			top: Number(first.top.toFixed(4)),
+			base: Number(first.base.toFixed(4)),
+			askedTop: Number(askedTop.toFixed(4)),
+			askedBase: Number(askedBase.toFixed(4)),
+			clipped: clipped ? 1 : 0,
+		});
 	for (let pass = 0; clipped && pass < 4; pass++) {
 		const rows = projectedRows(view, bounds, points);
 		if (framing.base === undefined) {
@@ -469,7 +479,10 @@ function projectedRows(
 		// The drawn plant's own points: a box's corners can stand in empty air, so they would frame
 		// air below the lowest blade and above the highest leaf.
 		for (let i = 0; i + 2 < points.length; i += 3)
-			take(row(points[i] as number, points[i + 1] as number, points[i + 2] as number));
+			// The frames these cameras make stand on a ground that hides the wood below it, so the
+			// points under the ground never show and cannot crop the picture.
+			if ((points[i + 1] as number) >= 0)
+				take(row(points[i] as number, points[i + 1] as number, points[i + 2] as number));
 	} else {
 		for (let c = 0; c < 8; c++)
 			take(
@@ -1554,6 +1567,7 @@ export default defineSketch(async (ctx) => {
 	const pieceTurn = cells.find((cell) => cell.piece === 'away')?.turn ?? cells[0]?.turn ?? 0;
 	const pieceBox = piece ? measurePlant(piece, pieceKit.box, pieceTurn).plantBox : null;
 	facts = {
+		...(STAND_ROWS[0] ? { stand: STAND_ROWS[0] } : {}),
 		species: record.id,
 		name: record.name,
 		form: form ?? null,
