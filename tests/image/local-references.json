@@ -683,6 +683,24 @@
 		"date": "2026-10-30",
 		"reason": "the branch has no CI run; the prototype S3 page is a test page that draws its fixed scene with plain GPU calls, so the software set can be drawn here until a CI run replaces it"
 	},
+	"chromium-swiftshader/webgl2/script-demo-island-closer.png": {
+		"test": "script-demo-island-closer",
+		"tier": "webgl2",
+		"date": "2026-11-10",
+		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head; each command drew its frame and was compared before acceptance, and a CI drawing on a pull request replaces them"
+	},
+	"chromium-swiftshader/webgl2/script-demo-island-turned.png": {
+		"test": "script-demo-island-turned",
+		"tier": "webgl2",
+		"date": "2026-11-10",
+		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head; each command drew its frame and was compared before acceptance, and a CI drawing on a pull request replaces them"
+	},
+	"chromium-swiftshader/webgl2/script-demo-island-walked.png": {
+		"test": "script-demo-island-walked",
+		"tier": "webgl2",
+		"date": "2026-11-10",
+		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head; each command drew its frame and was compared before acceptance, and a CI drawing on a pull request replaces them"
+	},
 	"chromium-swiftshader/webgl2/shadows-contact-far.png": {
 		"test": "shadows-contact-far",
 		"tier": "webgl2",
