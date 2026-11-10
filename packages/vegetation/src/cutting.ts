@@ -57,6 +57,13 @@ export interface CuttingOptions {
 	readonly length?: number;
 	/** The candidate to take, 0 for the best. */
 	readonly pick?: number;
+	/**
+	 * Metres along the axis where a spanned piece starts, in place of the record's hint: a close
+	 * view of one rachis may stand at the frond's base or at its middle, as its photograph shows.
+	 */
+	readonly from?: number;
+	/** Metres of the axis a spanned piece keeps, in place of the record's hint. */
+	readonly span?: number;
 	/** 'upright' stands the piece on its cut, as the studio stills do; 'as-grown' keeps its pose. */
 	readonly orient?: 'upright' | 'as-grown';
 	/** For 'leaf': the face toward +Z. */
@@ -407,8 +414,8 @@ export function cutBranch(
 	// A piece that keeps a span of one long axis starts and ends there, as a palm's frond piece
 	// does: the cut face stands where the span begins.
 	const hint = plantHint(record, cutting.part);
-	const span = hint?.span;
-	const begin = hint?.from ?? 0;
+	const span = cutting.span ?? hint?.span;
+	const begin = cutting.from ?? hint?.from ?? 0;
 	const inside = new Uint8Array(axes.count);
 	const depth = depths(skeleton);
 	const order = Array.from({ length: axes.count }, (_, a) => a).sort(

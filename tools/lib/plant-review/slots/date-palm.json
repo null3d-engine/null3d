@@ -1,6 +1,8 @@
 {
 	"11-leaflet-group.png": {
-		"roll": 50
+		"roll": 50,
+		"cutFrom": 2.1,
+		"cutSpan": 0.4
 	},
 	"12-single-leaflet-upper.png": {
 		"roll": -45
@@ -9,7 +11,9 @@
 		"roll": -45
 	},
 	"23-leaf-cluster-studio.png": {
-		"roll": -55
+		"roll": -55,
+		"cutFrom": 0.3,
+		"cutSpan": 0.4
 	},
 	"24-leaf-texture-upper.png": {
 		"roll": -45

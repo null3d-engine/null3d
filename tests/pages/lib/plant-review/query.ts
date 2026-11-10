@@ -91,6 +91,10 @@ export interface PlantReviewQuery {
 	readonly pick?: number;
 	/** The cutting's length in metres. */
 	readonly cut?: number;
+	/** Metres along the axis where a spanned piece starts, in place of the record's hint. */
+	readonly cutFrom?: number;
+	/** Metres of the axis a spanned piece keeps, in place of the record's hint. */
+	readonly cutSpan?: number;
 	/** Whether the page posts its measures of the plant beside the frame. */
 	readonly measure?: boolean;
 	/** Whether the page draws a 1 m scale bar beside the view's target. */
@@ -176,6 +180,8 @@ const NUMBER_FIELDS = [
 	'time',
 	'pick',
 	'cut',
+	'cutFrom',
+	'cutSpan',
 	'horizon',
 	'fill',
 	'targetY',
@@ -292,6 +298,12 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 		throw new Error(
 			`girth=${numbers.girth} is a share of the frame that a limb fills: give a number above 0, up to 1.`,
 		);
+	if (numbers.cutFrom !== undefined && numbers.cutFrom < 0)
+		throw new Error(
+			`cutFrom=${numbers.cutFrom} is a distance along the axis: give a number of 0 or more.`,
+		);
+	if (numbers.cutSpan !== undefined && numbers.cutSpan <= 0)
+		throw new Error(`cutSpan=${numbers.cutSpan} is a length of axis: give a number above 0.`);
 	if (numbers.leaves !== undefined && numbers.leaves <= 0)
 		throw new Error(`leaves=${numbers.leaves} is a frame in leaf lengths: give a number above 0.`);
 	if (numbers.stand !== undefined && numbers.stand <= 1)

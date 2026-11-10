@@ -443,6 +443,7 @@ function dress(kit: SpeciesKitData, options: GrowOptions): MeshInput {
 		kit,
 		skeleton: cutSkeleton(kit, coarsenSkeleton(grown, coarseness), options.cutting),
 		coarseness,
+		cutting: options.cutting,
 		...lit,
 	};
 	// The shoots stand on the skeleton, which loses the bare twigs the record trims once they stand.
