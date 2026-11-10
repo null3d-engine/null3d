@@ -67,11 +67,7 @@
 		"lamp": "#f8f9ff"
 	},
 	"22-subbranch-studio.png": {
-		"view": "bark-limb",
-		"thin": 0.19,
-		"along": 0.4,
-		"girth": null,
-		"leaves": null
+		"view": "subbranch"
 	},
 	"23-leaf-cluster-studio.png": {
 		"view": "limb",
