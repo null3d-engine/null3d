@@ -61,7 +61,9 @@
 		"daylight": 1.2
 	},
 	"20-nest-holes.png": {
-		"view": "crown"
+		"view": "bark-mid",
+		"span": 1,
+		"barkHeight": 8
 	},
 	"22-subbranch-studio.png": {
 		"view": "bark-limb",
