@@ -20,6 +20,13 @@ import {
 } from '@null3d/vegetation';
 import type { WindField } from '@null3d/wind';
 
+/**
+ * The sparse level every demo grows its plants at when the page opens: the sparsest the species
+ * allows, so a scene loads light and a reader adds density from there. A page that grows plants
+ * itself passes this beside the others.
+ */
+export const DEMO_SPARSENESS = 1;
+
 /** One copy of a plant: where it stands, its turn about +Y in radians, its scale and variant. */
 export interface PlantSpot {
 	readonly x: number;
@@ -128,7 +135,7 @@ export async function plantSpecies(
 	const grown = (async () => {
 		const assets = await Promise.all(
 			Array.from({ length: variants }, (_, variant) =>
-				growPlant(kit, { seed: options.seed, variant, near: true }),
+				growPlant(kit, { seed: options.seed, variant, near: true, sparse: DEMO_SPARSENESS }),
 			),
 		);
 		const far = options.far

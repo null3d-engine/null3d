@@ -41,7 +41,7 @@ export function postHud(
 						{ at: 0.5, label: 'lighter' },
 						{ at: 1, label: 'sparsest' },
 					],
-					tip: "Drag right to grow a lighter tree: fewer limbs, less leaf on what wood it keeps, and coarser wood, all together, toward the least the species still reads as itself. 0 is the record's own form. The light form is what a phone or a tablet asks for, so a forest of full trees can load and draw on a small device.",
+					tip: "Drag right to grow a lighter tree: fewer limbs, less leaf on what wood it keeps, and coarser wood, all together, toward the least the species still reads as itself. 0 is the record's own form. The meadow opens at the sparsest form, and a drag to the left adds density. The light form is what a phone or a tablet asks for, so a forest of full trees can load and draw on a small device.",
 				},
 			},
 		],
