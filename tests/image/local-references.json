@@ -248,8 +248,8 @@
 	"chromium-swiftshader/compat/plant-sparse-oak.png": {
 		"test": "plant-sparse-oak",
 		"tier": "compat",
-		"date": "2026-11-09",
-		"reason": "a new picture of the sparse form: the oak at the level a phone asks for, drawn here while CI has no reference for the test; a CI drawing replaces it if it differs"
+		"date": "2026-11-10",
+		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head, at a load of 7.6, and judged by the landing session"
 	},
 	"chromium-swiftshader/compat/plant-weeping-willow.png": {
 		"test": "plant-weeping-willow",
@@ -446,8 +446,8 @@
 	"chromium-swiftshader/webgl2/demo-vegetation.png": {
 		"test": "demo-vegetation",
 		"tier": "webgl2",
-		"date": "2026-11-07",
-		"reason": "two new demo pages have no software-set reference yet, so this machine draws their first and CI's run judges them from here"
+		"date": "2026-11-10",
+		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head, at a load of 8 rising to 33, and judged by the landing session"
 	},
 	"chromium-swiftshader/webgl2/gltf-clearcoat-car-paint.png": {
 		"test": "gltf-clearcoat-car-paint",
@@ -602,8 +602,8 @@
 	"chromium-swiftshader/webgl2/plant-sparse-oak.png": {
 		"test": "plant-sparse-oak",
 		"tier": "webgl2",
-		"date": "2026-11-09",
-		"reason": "a new picture of the sparse form: the oak at the level a phone asks for, drawn here while CI has no reference for the test; a CI drawing replaces it if it differs"
+		"date": "2026-11-10",
+		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head, at a load of 7.6, and judged by the landing session"
 	},
 	"chromium-swiftshader/webgl2/plant-weeping-willow.png": {
 		"test": "plant-weeping-willow",
@@ -986,8 +986,8 @@
 	"chromium-swiftshader/webgpu/plant-sparse-oak.png": {
 		"test": "plant-sparse-oak",
 		"tier": "webgpu",
-		"date": "2026-11-09",
-		"reason": "a new picture of the sparse form: the oak at the level a phone asks for, drawn here while CI has no reference for the test; a CI drawing replaces it if it differs"
+		"date": "2026-11-10",
+		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head, at a load of 7.6, and judged by the landing session"
 	},
 	"chromium-swiftshader/webgpu/plant-weeping-willow.png": {
 		"test": "plant-weeping-willow",
