@@ -98,8 +98,8 @@
 	"chromium-swiftshader/compat/demo-vegetation-wind.png": {
 		"test": "demo-vegetation-wind",
 		"tier": "compat",
-		"date": "2026-11-07",
-		"reason": "two new demo pages have no software-set reference yet, so this machine draws their first and CI's run judges them from here"
+		"date": "2026-11-10",
+		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head in the idle window; both drawings completed and were compared before acceptance, and a CI drawing on a pull request replaces them"
 	},
 	"chromium-swiftshader/compat/demo-vegetation.png": {
 		"test": "demo-vegetation",
@@ -458,8 +458,8 @@
 	"chromium-swiftshader/webgl2/demo-vegetation-wind.png": {
 		"test": "demo-vegetation-wind",
 		"tier": "webgl2",
-		"date": "2026-11-07",
-		"reason": "two new demo pages have no software-set reference yet, so this machine draws their first and CI's run judges them from here"
+		"date": "2026-11-10",
+		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head in the idle window; both drawings completed and were compared before acceptance, and a CI drawing on a pull request replaces them"
 	},
 	"chromium-swiftshader/webgl2/demo-vegetation.png": {
 		"test": "demo-vegetation",
