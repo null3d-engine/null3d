@@ -39,6 +39,7 @@
 	"28-young-bark.png": {
 		"thin": 0.0165,
 		"span": 0.031,
+		"barkMask": false,
 		"daylight": 0.6
 	},
 	"15-bark-mid-trunk.png": {
