@@ -711,6 +711,7 @@ function writeExtra(
 	direction: Vector3,
 	sides: number,
 	turn: number,
+	nearest: boolean,
 ): void {
 	const colour = colourOf(site, index);
 	const shape = extra.shape;
@@ -853,7 +854,7 @@ function writeExtra(
 		// A cup of petals: each petal a pointed blade from the centre, opening by the cup. A stalk of
 		// the record's length holds the cup along the shoot's own direction, so a corymb stands above
 		// its rosette; with no length the cup sits at its site, as before.
-		const length = Math.max(0, shape.stalk ?? 0);
+		const length = Math.max(0, shape.stalk ?? 0) * (nearest ? 1 : 0);
 		const centre: Vector3 =
 			length > 0
 				? [
@@ -872,7 +873,7 @@ function writeExtra(
 				],
 				site.at,
 				site.direction,
-				4,
+				3,
 				colour,
 			);
 			// The stalk is wood, so its vertices say so and take the extra's stalk colour.
@@ -1086,7 +1087,7 @@ export function extrasMesh(input: MeshInput, level: MeshLevel): MeshArrays | und
 					markBand(mesh, first, stalkBand);
 					// The footstalk is wood too: its vertices say so, as the shared stalk's do.
 					for (let v = first; v < mesh.vertices; v++) mesh.uvs1[v * 2 + 1] = 1;
-					writeExtra(mesh, extra, index, { ...from, at: end }, body, faces, azimuth);
+					writeExtra(mesh, extra, index, { ...from, at: end }, body, faces, azimuth, level === 0);
 					continue;
 				}
 				const direction: Vector3 =
@@ -1097,7 +1098,7 @@ export function extrasMesh(input: MeshInput, level: MeshLevel): MeshArrays | und
 								down[2] * cos(lean) + outward[2] * sin(lean),
 							])
 						: down;
-				writeExtra(mesh, extra, index, from, direction, faces, azimuth);
+				writeExtra(mesh, extra, index, from, direction, faces, azimuth, level === 0);
 			}
 		});
 	});
