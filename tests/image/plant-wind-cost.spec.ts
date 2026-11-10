@@ -1,9 +1,11 @@
 // What the plant material's wind offset costs at each preset, on the Mac's real GPU. The plant
-// review page draws one hawthorn in its whole view under the wind add-on's field. The on side uses
-// the preset's sway distance, and the off side uses one millimetre, so the plant stands past the
-// fade. The field runs on both sides, so its cost is common and cancels; the difference is the
-// material's own cost: its vertex offset and the far shadow redraws that its moving vertices force.
-// The spec also splits the difference into the shadow cascades' share and the rest.
+// review page draws one hawthorn in its batch view: the turntable sheet draws the plant once in
+// each of 30 cells, so the material's vertex work scales with the cell count while the scene keeps
+// one plant. The on side uses the preset's sway distance, and the off side uses one millimeter, so
+// the plant stands past the fade. The field runs on both sides, so its cost is common and cancels;
+// the difference is the material's own cost: its vertex offset and the far shadow redraws that its
+// moving vertices force. The spec also splits the difference into the shadow cascades' share and
+// the rest.
 //
 // One side per page load, because a material's sway distance is fixed when the engine makes it. Each
 // pair is two loads of the same page with the same view, size, wind and measurement time, in the
@@ -36,6 +38,8 @@ const PRESETS = (process.env.NULL3D_PLANT_PRESETS ?? 'low,medium,high,ultra').sp
 ) as Preset[];
 const ROUNDS = Math.max(1, Number(process.env.NULL3D_PLANT_ROUNDS ?? 5));
 const SECONDS = Math.max(1, Number(process.env.NULL3D_PLANT_SECONDS ?? 2));
+/** The turntable sheet's cells, each drawing the plant once. */
+const TURNS = 30;
 
 /** What one side publishes. */
 interface Result {
@@ -50,6 +54,8 @@ interface Result {
 		species?: string;
 		view?: string;
 		size?: number[];
+		grid?: [number, number];
+		cells?: unknown[];
 		plant?: { triangles?: number[] };
 	} | null;
 	failures: string[];
@@ -117,13 +123,16 @@ async function measured(page: Page, preset: Preset, side: 'on' | 'off'): Promise
 	);
 	expect(result.preset, `${preset}: the preset the engine drew`).toBe(preset);
 	expect(result.built?.species).toBe('hawthorn-shrub');
-	expect(result.built?.view, 'the review page drew its whole view').toBe('whole');
+	expect(result.built?.view, 'the review page drew its batch view').toBe('turntable');
+	expect(result.built?.cells?.length, 'the sheet drew every cell').toBe(TURNS);
 	expect(result.built?.size, 'the review page drew the fixed size').toEqual([960, 540]);
 	expect(result.cost.gpuMs, `${preset} ${side}: the GPU timer read a frame`).not.toBeNull();
 	return result;
 }
 
-test('the plant material costs its wind offset at each preset', async ({ page }) => {
+test('the plant material costs its wind offset at each preset in the batch view', async ({
+	page,
+}) => {
 	test.setTimeout(COST_TEST_MS + PRESETS.length * 2 * COST_PAGE_MS);
 	await waitForQuietLoad();
 	await page.setViewportSize({ width: 1600, height: 900 });
