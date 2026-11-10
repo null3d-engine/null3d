@@ -28,11 +28,8 @@ export interface MeshArrays {
 	readonly uvs1: Float32Array;
 	/** 4 bytes per vertex: wind record high and low byte, then two bytes the part defines. */
 	readonly colors: Uint8Array;
-	/**
-	 * 4 per vertex, in metres: the point a leaf's width turns about, then 1 on a leaf that turns
-	 * its width to the view and 0 on any other vertex. Absent when the mesh has no leaf.
-	 */
-	readonly targets?: Float32Array;
+	/** 4 bytes per vertex: the packed offset from a blade's keel, its fourth byte 127 on a blade. */
+	readonly tangents?: Int8Array;
 	/** 3 per triangle. */
 	readonly indices: Uint16Array | Uint32Array;
 }
@@ -56,11 +53,8 @@ export interface PrototypeArrays {
 	 * (0 leaf, 1 stem or bud, 2 extra, in steps of 85) and self-occlusion inside the shoot.
 	 */
 	readonly colors: Uint8Array;
-	/**
-	 * 4 per vertex, in metres: the point a leaf's width turns about, then 1 on a leaf that turns
-	 * its width to the view and 0 on any other vertex. Absent when the prototype has no leaf.
-	 */
-	readonly targets?: Float32Array;
+	/** 4 bytes per vertex: the packed offset from a blade's keel, its fourth byte 127 on a blade. */
+	readonly tangents?: Int8Array;
 	/** 3 per triangle. */
 	readonly indices: Uint16Array;
 }
@@ -178,11 +172,8 @@ export interface QuantisedArrays {
 	readonly uvs1: Uint16Array;
 	/** 4 per vertex: wind record high and low byte, then two bytes the part's mode defines. */
 	readonly colors: Uint8Array;
-	/**
-	 * 4 per vertex, in metres: the point a leaf's width turns about, then 1 on a leaf that turns
-	 * its width to the view and 0 on any other vertex. Absent when the part has no leaf.
-	 */
-	readonly targets?: Float32Array;
+	/** 4 bytes per vertex: the packed offset from a blade's keel, its fourth byte 127 on a blade. */
+	readonly tangents?: Int8Array;
 	/** 3 per triangle. */
 	readonly indices: Uint16Array | Uint32Array;
 }
@@ -338,7 +329,7 @@ function quantisedViews(arrays: QuantisedArrays): ArrayBufferView[] {
 		arrays.uvs,
 		arrays.uvs1,
 		arrays.colors,
-		...(arrays.targets ? [arrays.targets] : []),
+		...(arrays.tangents ? [arrays.tangents] : []),
 		arrays.indices,
 	];
 }
