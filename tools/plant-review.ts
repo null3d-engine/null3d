@@ -418,6 +418,15 @@ const WIDTH_BAND = 0.05;
 const CLOSE_CROP_MAX = 1.25;
 
 /**
+ * The band a whole view's stand may be scaled by. A reference whose mask holds background reports
+ * its plant wider than it draws, and a redraw that chases that share stands so close that the
+ * subject no longer matches the distant picture. A correction that needs a stand outside this band
+ * is that fault, so the picture keeps the framing's own stand and the refusal is reported.
+ */
+const WHOLE_SCALE_MIN = 0.4;
+const WHOLE_SCALE_MAX = 2.5;
+
+/**
  * A drawn frame's camera stand and the plant's width in metres, as the page posted them: the
  * geometry that gives a clipped mask's share when the mask itself cannot report a width.
  */
@@ -530,6 +539,12 @@ async function correctWidths(
 		const close = shot.query.view === 'limb' && shot.query.surface === true;
 		const scale = measured.share / target;
 		if (close && scale > CLOSE_CROP_MAX) continue;
+		if (!close && (scale < WHOLE_SCALE_MIN || scale > WHOLE_SCALE_MAX)) {
+			console.warn(
+				`width: ${file} keeps its stand: the target needs a scale of ${scale.toFixed(3)}, outside ${WHOLE_SCALE_MIN} to ${WHOLE_SCALE_MAX}`,
+			);
+			continue;
+		}
 		fixes.set(file, {
 			target,
 			silhouette: shot.query.view === 'silhouette',
@@ -574,6 +589,12 @@ async function correctWidths(
 			const cropped = measured.clipped && fix.target < 1;
 			const scale = fix.scale * (measured.share / fix.target);
 			if (fix.close && scale > CLOSE_CROP_MAX) continue;
+			if (!fix.close && (scale < WHOLE_SCALE_MIN || scale > WHOLE_SCALE_MAX)) {
+				console.warn(
+					`width: ${file} keeps its stand: the target needs a scale of ${scale.toFixed(3)}, outside ${WHOLE_SCALE_MIN} to ${WHOLE_SCALE_MAX}`,
+				);
+				continue;
+			}
 			if (off || cropped) next.set(file, { ...fix, scale });
 		}
 		fixes.clear();
