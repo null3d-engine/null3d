@@ -13,5 +13,14 @@
 /// moves the place by its normal's tilt, such as `s.normal.xz * 0.05` on water that faces up.
 fn reflection_uv(clip: vec4f, offset: vec2f) -> vec2f {
     let ndc = clip.xy / clip.w;
-    return vec2f(0.5 - 0.5 * ndc.x, 0.5 + 0.5 * ndc.y) + offset;
+    var v = 0.5 + 0.5 * ndc.y;
+#ifndef WEBGL2
+#ifndef TONE_MAP
+    // On the HDR WebGPU path a reflection view draws into the texture that this reads, and WebGPU
+    // draws its rows from the top. The 8-bit path keeps the copy that turns them, and the copy also
+    // decodes the display color.
+    v = 1.0 - v;
+#endif
+#endif
+    return vec2f(0.5 - 0.5 * ndc.x, v) + offset;
 }

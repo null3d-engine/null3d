@@ -4,10 +4,12 @@
 //! three.js's render targets do on WebGL. WebGL2 draws a view's rows into its target in that
 //! order, so the view draws into its target directly. WebGPU draws the top row first, so there a
 //! view draws into an image of its own, and one full-screen pass copies the image into the target
-//! with its rows turned around. The copy reads one texel per pixel of the target. Turning the rows
-//! around in every shader that samples a map would cost every material a test per sample, and
-//! drawing the view upside down would turn its triangles' winding around, which every pipeline
-//! that draws it fixes.
+//! with its rows turned around. A reflection view on the HDR WebGPU path draws into its target
+//! directly instead, and `reflection_uv` turns the rows of the lookups: that view's material is the
+//! only reader, and the copy costs a pass over the whole target. The 8-bit path keeps the copy,
+//! which also decodes the display color. Turning the rows around in every shader that samples a
+//! map would cost every material a test per sample, and drawing the view upside down would turn
+//! its triangles' winding around, which every pipeline that draws it fixes.
 
 use null3d_gpu::drawlist::template;
 use null3d_gpu::drawlist::{

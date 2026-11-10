@@ -72,9 +72,28 @@ fn surface(input: SurfaceInput) -> Surface {
 }
 `;
 
+const selfWgsl = /* wgsl */ `
+#import null3d::reflection::{reflection_uv}
+
+var mirror: texture_2d<f32>;
+
+fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    s.baseColor = vec3f(0.0, 0.85, 0.95);
+    s.roughness = 0.4;
+    let clip = camera.viewProjection * vec4f(input.relativePosition, 1.0);
+    let uv = reflection_uv(clip, vec2f(0.0));
+    s.reflection = vec4f(textureSampleLevel(mirror, mirrorSampler, uv, 0.0).rgb, 0.5);
+    return s;
+}
+`;
+
 export default defineSketch(({ scene, materials, geometry, textures, render, quality }) => {
 	if (params.has('half'))
 		quality.set({ minRenderScale: 0.5, maxRenderScale: 0.5, governor: false });
+	// The self-sample pair compares two loads, so both draw at one scale with the governor off:
+	// otherwise the panel's extra draw can settle the scale a little differently.
+	if (params.has('self')) quality.set({ minRenderScale: 1, maxRenderScale: 1, governor: false });
 	const lamps = params.has('lamps');
 	scene.setBackground(
 		lamps ? '#0a0c14' : { sky: { sunPosition: [0.4, 0.35, -0.85], cloudCoverage: 0 } },
@@ -155,6 +174,24 @@ export default defineSketch(({ scene, materials, geometry, textures, render, qua
 		material: plane,
 	});
 	floor.setRotationEuler(-Math.PI / 2, 0, 0);
+
+	// ?self stands a panel in the sky that reads the reflection's texture itself, so a test can
+	// prove that the reflection view leaves it out: a panel drawn there would sample the texture
+	// that the view is drawing. ?panel=0 leaves the panel out, so a test compares the two frames.
+	if (params.has('self') && params.get('panel') !== '0') {
+		const panel = materials.shader({
+			wgsl: selfWgsl,
+			color: '#00d8f0',
+			roughness: 0.4,
+			textures: { mirror },
+		});
+		scene.createMesh({
+			mesh: geometry.plane({ width: 1.2, height: 0.9 }),
+			material: panel,
+			position: [-1.0, 3.6, 2.0],
+			castShadows: false,
+		});
+	}
 
 	// The batches' materials come after the floor's, so the pass draws them after the floor's
 	// draws, which it leaves out.

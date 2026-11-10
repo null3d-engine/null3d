@@ -109,7 +109,7 @@ post.addEffect({ wgsl: vignetteFromImage, textures: { mask: await assets.loadTex
 ```
 
 - A texture samples as white until its image is on the GPU. A declared texture that the option leaves out stays white.
-- An image texture's first row is at v = 0, so `input.uv` reads it upside down unless the image was decoded with `imageOrientation: 'flipY'`, as `assets.loadTexture` does. A pass's texture holds its bottom row first too: read it at `effectPassUv(input.uv)`.
+- An image texture's first row is at v = 0, so `input.uv` reads it upside down unless the image was decoded with `imageOrientation: 'flipY'`, as `assets.loadTexture` does. A pass's texture holds its bottom row first too: read it at `effectPassUv(input.uv)`. A reflection pass's texture on the HDR WebGPU path starts at the top row instead: read it at `input.uv`.
 - Each texture takes one of the 32 uniform numbers for its layer, so with textures the uniforms have that much less room. At most 6 textures.
 - An effect with textures draws in a pass of its own: it joins no other effect, and nothing folds it into the final pass.
 
@@ -456,7 +456,7 @@ The engine runs the scene pass, then the full-screen pass, then the camera's pas
 - `input.uv`, `input.pixel` and `input.size` belong to the pass's own texture: `input.uv` is (0, 0) at the top left of its image, as in an effect.
 - With `input: 'sceneColor'` or `input: 'outlineMask'`, `input.color`, `effectColor` and `effectPixel` read that image, and `effectInputSize()` gives its size. A pass at half size steps one pixel of its input with `1.0 / effectInputSize()`. Without an input, they read transparent black.
 - The depth functions read the scene's depth, as in an effect.
-- Its textures, by the `textures` option. A pass's texture holds its bottom row first, as materials sample it, so read another pass's texture at `effectPassUv(input.uv)`.
+- Its textures, by the `textures` option. A pass's texture holds its bottom row first, as materials sample it, so read another pass's texture at `effectPassUv(input.uv)`. A reflection pass's texture on the HDR WebGPU path starts at the top row instead: read it at `input.uv`.
 
 ### When a full-screen pass runs
 

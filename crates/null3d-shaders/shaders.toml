@@ -1289,7 +1289,10 @@ variants.lighting = { defs = ["LIGHTING"], targets = ["wgsl", "glsl"] }
 variants.math = { defs = ["MATH"], targets = ["wgsl", "glsl"] }
 variants.motion_math = { defs = ["MOTION_MATH"], targets = ["wgsl", "glsl"] }
 variants.noise = { defs = ["NOISE"], targets = ["wgsl", "glsl"] }
-variants.reflection = { defs = ["REFLECTION"], targets = ["wgsl", "glsl"] }
+# The reflection's lookup turns the rows of a view's own image on WebGPU, and the GLSL build has the
+# def that says its view's rows start at the bottom, as the engine's WebGL2 builds do.
+variants.reflection = { defs = ["REFLECTION"], targets = ["wgsl"] }
+variants.reflection_glsl = { defs = ["REFLECTION", "WEBGL2"], targets = ["glsl"] }
 variants.sdf = { defs = ["SDF"], targets = ["wgsl", "glsl"] }
 variants.temporal = { defs = ["TEMPORAL"], targets = ["wgsl", "glsl"] }
 variants.vertex = { defs = ["VERTEX"], targets = ["wgsl", "glsl"] }

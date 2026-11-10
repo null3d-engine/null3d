@@ -110,3 +110,78 @@ for (const name of [
 					.toBe(true);
 		}
 	});
+
+/**
+ * A panel in the sky reads the reflection's texture, as the floor does. The reflection view must
+ * leave that panel out: a view that drew it would sample the texture that it is drawing in the same
+ * frame, which is a feedback loop, and WebGPU refuses it as a validation error. The test draws the
+ * frame with the panel and without it, and requires the panel to show in the sky, no page or
+ * console error, and no strong mark in the floor. A panel's presence moves a few pixels of the
+ * sphere's shading by up to 14 levels, even when the panel is off screen, so the floor check counts
+ * only a strong change, such as the panel's own color reflected in the plane.
+ */
+const SELF_SKETCH = '/tests/pages/sketches/reflection-sketch.ts';
+/** The share of the image's height that holds only sky, above the plane's horizon. */
+const SKY_SHARE = 0.2;
+/** The share below which the plane shows, and holds every reflection. */
+const FLOOR_SHARE = 0.4;
+/** The least change in a channel that counts as a different pixel. */
+const STEP = 2;
+/** The change in a channel that a surface's own picture makes, such as feedback's color. */
+const FEEDBACK_STEP = 40;
+/** The least count of changed sky pixels that shows the panel drew at all. */
+const PANEL_PIXELS = 50;
+
+/** The image page's address for the reflection sketch with the panel, or without it. */
+function selfPath(tier: string, panel: boolean): string {
+	const sketch = encodeURIComponent(`${SELF_SKETCH}?self${panel ? '' : '&panel=0'}`).replaceAll(
+		'%2F',
+		'/',
+	);
+	// FXAA keeps compatibility mode on HDR color, which is where a reflection view draws into its
+	// own target. The default anti-aliasing there multisamples an 8-bit target and keeps the copy.
+	return `/tests/pages/image.html?gpu=${tier}&hold=0&preset=high&antialias=fxaa&size=320x180&sketch=${sketch}`;
+}
+
+async function selfFrame(page: Page, tier: string, panel: boolean): Promise<Image> {
+	await page.goto(selfPath(tier, panel));
+	const frame = await pageResult<Frame>(page, 90_000);
+	expect.soft(frame.error).toBeUndefined();
+	const pixels = new Uint8Array(Buffer.from(frame.pixels, 'base64'));
+	return { width: frame.width, height: pixels.length / 4 / frame.width, pixels };
+}
+
+for (const tier of ['webgpu', 'compat', 'webgl2'] as const)
+	test(`${tier}: the reflection view leaves out a surface that reads its texture`, async ({
+		page,
+	}) => {
+		test.setTimeout(180_000);
+		const errors: string[] = [];
+		page.on('pageerror', (error) => errors.push(error.message));
+		page.on('console', (message) => {
+			if (message.type() === 'error' && !message.location().url.endsWith('/favicon.ico'))
+				errors.push(message.text());
+		});
+		const drawn = await selfFrame(page, tier, true);
+		const plain = await selfFrame(page, tier, false);
+		expect(drawn.height).toBe(plain.height);
+		const sky = Math.floor(drawn.height * SKY_SHARE);
+		const floor = Math.floor(drawn.height * FLOOR_SHARE);
+		let panel = 0;
+		let feedback = 0;
+		for (let row = 0; row < drawn.height; row++)
+			for (let column = 0; column < drawn.width; column++) {
+				const at = 4 * (row * drawn.width + column);
+				const step = Math.max(
+					Math.abs((drawn.pixels[at] ?? 0) - (plain.pixels[at] ?? 0)),
+					Math.abs((drawn.pixels[at + 1] ?? 0) - (plain.pixels[at + 1] ?? 0)),
+					Math.abs((drawn.pixels[at + 2] ?? 0) - (plain.pixels[at + 2] ?? 0)),
+				);
+				if (step <= STEP) continue;
+				if (row < sky) panel++;
+				else if (row >= floor && step > FEEDBACK_STEP) feedback++;
+			}
+		expect(panel, 'the panel drew in the sky').toBeGreaterThan(PANEL_PIXELS);
+		expect(feedback, 'the panel left a strong mark in the floor, so the mirror drew it').toBe(0);
+		expect(errors).toEqual([]);
+	});
