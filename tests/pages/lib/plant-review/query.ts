@@ -66,11 +66,13 @@ export interface PlantReviewQuery {
 	readonly skyShare?: number;
 	/**
 	 * The strength of a sunlit view's light, the sky, the sun and the light the ground throws back
-	 * together, as a multiple of the page's soft daylight, above 0 and up to 8; 1 by default. A
+	 * together, as a multiple of the page's soft daylight, above 0 and up to 10; 1 by default. A
 	 * picture under a clear sky lights its plant more brightly than that soft daylight, against the
 	 * same sky colour behind it. A review measures each view's value from its photograph's own sky,
 	 * which calibrates the light to the picture rather than deriving it from physics: a photograph's
-	 * tone curve squeezes a bright sky more than the plant under it.
+	 * tone curve squeezes a bright sky more than the plant under it. The cap is 10 rather than 8
+	 * because a reference whose light no fit measures, such as the sedge's soil-backed crown, needs
+	 * 9.2 to reach its record colour.
 	 */
 	readonly daylight?: number;
 	/**
@@ -356,9 +358,9 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 		throw new Error(
 			`sway=${numbers.sway} is a distance in metres: give a number above 0, or leave it out for the preset's distance.`,
 		);
-	if (numbers.daylight !== undefined && (numbers.daylight <= 0 || numbers.daylight > 8))
+	if (numbers.daylight !== undefined && (numbers.daylight <= 0 || numbers.daylight > 10))
 		throw new Error(
-			`daylight=${numbers.daylight} is a multiple of the soft daylight: give a number above 0, up to 8.`,
+			`daylight=${numbers.daylight} is a multiple of the soft daylight: give a number above 0, up to 10.`,
 		);
 	for (const name of ['forkRow', 'footRow', 'crownRow'] as const) {
 		const value = numbers[name];
