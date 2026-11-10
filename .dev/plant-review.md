@@ -327,14 +327,18 @@ than turning a fault of the measure into a pass or a fail.
   a filled band into narrow rows. A leaf that stands out, or a blade that rises, does it, and the
   foot moves up. That is the input the change acts on.
 
-  **The smallest change that would stop it.** One clamp in `crownStartRow` would stop it. The
-  crown's foot may not stand above the row of the crown's widest run, which the function already
-  computes as `crownWidest`. A foot below that row is unchanged, so every ordinary plant keeps its
-  figures. A foot above it is the collapse, and the clamp holds the crown over the wide stretch. The
-  function's own comments say the limit comes from the crown's own widest row, because a flare or a
-  ground strip can be the plant's widest. The same reasoning serves the clamp. This is written, not
-  applied, because the measure is frozen. A session that applies it re-reads every species' piece
-  figures at one commit, since any piece whose foot was taken high will move.
+  **The fix I would apply with an unfrozen measure.** One clamp in `crownStartRow`, on the row that
+  function returns. The crown's foot may not stand above the row of the crown's widest run. The
+  function already finds that run as `crownWidest`, so keep its row while it is computed, then clamp
+  `found` to it before the mound blend: `found = Math.max(found, widestRow)`. A foot below the widest
+  row is unchanged, so every ordinary plant keeps its figures. A foot above it is the collapse, and
+  the clamp holds the crown over the wide stretch. On the four cases it should restore a box of the
+  piece's own size: the hosta's found row 22 of 340 moves to the row of its 376-pixel run, and the
+  birch's 25-by-46 patch moves to the run that held 186 by 284. The function's own comments already
+  take the narrow limit from the crown's widest row, because a flare or a ground strip can be the
+  plant's widest. The same reasoning serves the clamp. This is written, not applied, since the
+  measure is frozen. A session that applies it re-reads every species' piece figures at one commit,
+  because any piece whose foot was taken high will move.
 
   **What to quote instead.** The outline overlap and the piece count survive such a move. The hosta's
   cluster quotes its overlap of 0.3928 and its one piece. M3-V4 carries the debt, because the review
