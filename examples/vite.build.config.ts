@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { defineConfig } from 'vite';
 import null3d from '../packages/vite-plugin/src/index.ts';
 import { refuseStaleCore } from '../tools/lib/core-sources.ts';
+import { DEV_CERT_DIR, requireDevCertificate, servesHttps } from '../tools/lib/dev-https.ts';
 import { samplesServer } from '../tools/lib/samples.ts';
 import { ensureShaderModules } from '../tools/lib/shader-modules.ts';
 import { sourceResolve } from '../tools/lib/source-condition.ts';
@@ -16,7 +17,12 @@ const repo = join(import.meta.dirname, '..');
 /** The words that the demos draw with, which this build compiles instead of every word. */
 const PERMUTATIONS = join(import.meta.dirname, 'shader-permutations.txt');
 
-export default defineConfig(({ isPreview }) => {
+export default defineConfig(({ command, isPreview }) => {
+	// The preview serves the demos, which a person may open from another machine, so it uses HTTPS
+	// by default: a secure origin is what makes WebGPU, and so the High and Ultra presets,
+	// available. NULL3D_HTTPS=0 opts out for a loopback-only server, which is secure already.
+	const https = servesHttps(command);
+	if (https) requireDevCertificate(repo);
 	// The engine imports the shader modules, which git does not keep. A preview serves a build that
 	// already holds them.
 	if (!isPreview) {
@@ -31,7 +37,7 @@ export default defineConfig(({ isPreview }) => {
 		root: import.meta.dirname,
 		base: './',
 		// The engine's test switches, such as ?hold= and ?gpu=, work in this build too.
-		plugins: [null3d({ urlSwitches: true }), samplesServer(repo)],
+		plugins: [null3d({ https, certDir: DEV_CERT_DIR, urlSwitches: true }), samplesServer(repo)],
 		// The demos take the packages' source, not the files that their pack step builds.
 		resolve: sourceResolve,
 		logLevel: 'warn',

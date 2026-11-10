@@ -61,6 +61,19 @@ function spreadProblems(spread: Spread, path: string, positive: boolean, out: st
 		out.push(`${path} can draw ${mean - half}; it must stay above 0`);
 }
 
+/** A species' sparse floors' problems: each share from 0.05 to 1, and the coarsening from 0 to 1. */
+function sparseProblems(record: Species, out: string[]): void {
+	const sparse = record.sparse;
+	if (!sparse) return;
+	for (const key of ['limbs', 'leaves'] as const) {
+		const value = sparse[key];
+		if (value < 0.05 || value > 1)
+			out.push(`sparse.${key} is ${value}; a sparse floor lies from 0.05 to 1`);
+	}
+	if (sparse.coarseness < 0 || sparse.coarseness > 1)
+		out.push(`sparse.coarseness is ${sparse.coarseness}; it lies from 0 to 1`);
+}
+
 /** A share's problems: it lies from 0 to 1. */
 function shareProblem(value: number | undefined, path: string, out: string[]): void {
 	if (value === undefined) return;
@@ -351,11 +364,30 @@ function growthProblems(record: Species, out: string[]): void {
 		if (heads) {
 			spreadProblems(heads.height, 'growth.heads.height', true, out);
 			wholeProblem(heads.sides, 'growth.heads.sides', 3, 12, out);
+			shareProblem(heads.stalkShare, 'growth.heads.stalkShare', out);
 			if (heads.kind === 'panicle' && !heads.panicle)
 				out.push("growth.heads is a 'panicle' and needs its panicle");
 			if (heads.kind === 'spike' && !heads.spikes)
 				out.push("growth.heads is a 'spike' head and needs its spikes");
 			if (heads.panicle) curveProblems(heads.panicle.angle, 'growth.heads.panicle.angle', out);
+		}
+		const soil = growth.soil;
+		if (soil) {
+			spreadProblems(soil.roots, 'growth.soil.roots', true, out);
+			spreadProblems(soil.rootLength, 'growth.soil.rootLength', true, out);
+			spreadProblems(soil.droop, 'growth.soil.droop', true, out);
+			if (!(soil.rootRadius > 0))
+				out.push(`growth.soil.rootRadius is ${soil.rootRadius}; it must be above 0`);
+			if (soil.rhizome !== undefined) {
+				spreadProblems(soil.rhizome, 'growth.soil.rhizome', true, out);
+				const radius = soil.rhizomeRadius;
+				if (!(radius !== undefined && radius > 0))
+					out.push('a rhizome needs its rhizomeRadius, in metres above 0');
+				else if (radius > growth.base)
+					out.push(
+						`growth.soil.rhizomeRadius is ${radius}, thicker than the crown's base ${growth.base}: a rhizome is no wider than the crown it holds`,
+					);
+			}
 		}
 	}
 	if (record.foliage.kind === 'blade' && record.foliage.compound) {
@@ -467,11 +499,18 @@ function extraProblems(record: Species, out: string[]): void {
 
 /**
  * Cutting hints that name a shoot class the record does not grow, cut a length of no wood, or press
- * a leaf that is not a blade.
+ * foliage that cannot lie flat.
  */
 function cuttingProblems(record: Species, out: string[]): void {
+	// A blade, a thick leaf or a whole frond can lie pressed flat in its frame's plane.
 	const leaf = record.cuttings?.leaf;
-	if (leaf?.pressed && record.foliage.kind !== 'blade' && record.foliage.kind !== 'thick')
+	if (record.cuttings?.leaves) spreadProblems(record.cuttings.leaves, 'cuttings.leaves', true, out);
+	if (
+		leaf?.pressed &&
+		record.foliage.kind !== 'blade' &&
+		record.foliage.kind !== 'thick' &&
+		record.foliage.kind !== 'frond'
+	)
 		out.push(`cuttings.leaf.pressed lays a leaf flat, and the foliage is '${record.foliage.kind}'`);
 	if (leaf?.petiole !== undefined && !(leaf.petiole > 0))
 		out.push(`cuttings.leaf.petiole is ${leaf.petiole}; it is metres and must be above 0`);
@@ -488,8 +527,12 @@ function cuttingProblems(record: Species, out: string[]): void {
 		if ('shoot' in hint) {
 			if (!names.has(hint.shoot))
 				out.push(`cuttings.${part}.shoot '${hint.shoot}' names no class in shoots.classes`);
-		} else if (hint.length <= 0)
-			out.push(`cuttings.${part}.length is ${hint.length}; it must be above 0`);
+		} else {
+			if (hint.length <= 0)
+				out.push(`cuttings.${part}.length is ${hint.length}; it must be above 0`);
+			if (hint.scale !== undefined && !(hint.scale > 0))
+				out.push(`cuttings.${part}.scale is ${hint.scale}; it is a multiple and must be above 0`);
+		}
 	}
 }
 
@@ -553,6 +596,7 @@ export function speciesProblems(record: Species): string[] {
 	if (record.base) baseProblems(record.base, out);
 	if (record.shoots) shootProblems(record.shoots, out);
 	cuttingProblems(record, out);
+	sparseProblems(record, out);
 	extraProblems(record, out);
 	if (record.lod.nearFoliage === 'instanced' && !record.shoots)
 		out.push("lod.nearFoliage is 'instanced', which needs shoots; give shoots or use 'merged'");
@@ -578,6 +622,24 @@ export function speciesProblems(record: Species): string[] {
 				out.push(`bark.zones[${i}].second.blend is ${zone.second.blend}; it is metres from 0`);
 		}
 	});
+	for (const [season, tint] of Object.entries(record.seasons.bark ?? {}))
+		tint.forEach((channel, c) => {
+			notNegative(channel, `seasons.bark.${season}[${c}]`, out);
+		});
+	for (const [season, leaves] of Object.entries(record.seasons.leaves ?? {})) {
+		// Only a winter stand draws colours of its own: every other season of a turning plant takes
+		// the autumn colours, and the autumn block holds those.
+		if (season !== 'winter')
+			out.push(
+				`seasons.leaves names ${season}; set winter, the one season the shader draws its own leaf colours for, or leave the season out`,
+			);
+		leaves.reflectance.forEach((channel, c) => {
+			notNegative(channel, `seasons.leaves.${season}.reflectance[${c}]`, out);
+		});
+		leaves.transmittance.forEach((channel, c) => {
+			notNegative(channel, `seasons.leaves.${season}.transmittance[${c}]`, out);
+		});
+	}
 	if (record.bark) curveProblems(record.bark.girthScale, 'bark.girthScale', out);
 	const fork = record.bark?.fork;
 	if (fork?.bend !== undefined && !(fork.bend > 0))
@@ -597,6 +659,9 @@ export function speciesProblems(record: Species): string[] {
 		else if (!(flutter >= 0))
 			out.push(`wind.flutter.byHeight is ${flutter}; a share is not negative`);
 	}
+	const power = record.wind.sway?.power;
+	if (power !== undefined && !(power >= 1 && power <= 6))
+		out.push(`wind.sway.power is ${power}; it is a number from 1 to 6`);
 	const lod = record.lod;
 	lod.switchPixels.forEach((pixels, i) => {
 		if (pixels <= 0) out.push(`lod.switchPixels[${i}] is ${pixels}; it must be above 0`);

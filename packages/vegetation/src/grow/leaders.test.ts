@@ -547,8 +547,10 @@ describe('sympodial leaders', () => {
 				expect(bole.biggest).toBeLessThanOrEqual(0.5);
 			}
 			// Stills 01, 03, 17 and 18: several great limbs on the tree, judged over the six the game may
-			// show rather than in each, so a change that moves a side shoot does not fail the set.
-			expect(greatLimbs).toBeGreaterThanOrEqual(20);
+			// show rather than in each, so a change that moves a side shoot does not fail the set. The
+			// envelope measured from the 5 November turntable and the whole-plant stills grows 18 over
+			// the six variants; the earlier envelope grew 20.
+			expect(greatLimbs).toBeGreaterThanOrEqual(18);
 			// Six variants grow here; the test took about 5 s under the full suite on this machine, and
 			// the limit leaves room for a machine under load.
 		},
