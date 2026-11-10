@@ -1232,6 +1232,9 @@ export default defineSketch(async (ctx) => {
 	const subject = close
 		? { ...close.subject, ...(close.clutter && { clutter: close.clutter }) }
 		: plainSubjects.get(VIEW);
+	// The plant as the view draws it: the level's filled silhouette, not every level's part bounds,
+	// so a vertex or a part outside the drawn cells cannot inflate the posted width and height.
+	const drawnBox = cells[0] ? measurePlant(main, kit.box, cells[0].turn).plantBox : null;
 	facts = {
 		species: record.id,
 		name: record.name,
@@ -1244,8 +1247,8 @@ export default defineSketch(async (ctx) => {
 		size: SIZE,
 		grid: [columns, rows],
 		plant: {
-			height,
-			width: bounds.max[0] - bounds.min[0],
+			height: drawnBox ? drawnBox.top : height,
+			width: drawnBox ? drawnBox.width : bounds.max[0] - bounds.min[0],
 			depth: bounds.max[2] - bounds.min[2],
 			crownBase: main.crown.base,
 			trunkRadius: trunk?.radius ?? null,
