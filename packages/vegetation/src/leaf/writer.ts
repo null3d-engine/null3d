@@ -18,6 +18,8 @@ export class MeshWriter {
 	readonly uvs: number[] = [];
 	readonly uvs1: number[] = [];
 	readonly colors: number[] = [];
+	/** 4 per vertex: the point a leaf's width turns about, then 1 on such a leaf. */
+	readonly targets: number[] = [];
 	readonly indices: number[] = [];
 	/** The first vertex of each part that `mark` began, so meshes of one plan match part by part. */
 	readonly parts: number[] = [];
@@ -39,6 +41,7 @@ export class MeshWriter {
 		uv: ArrayLike<number>,
 		uv1: ArrayLike<number>,
 		color: ArrayLike<number>,
+		target?: ArrayLike<number>,
 	): number {
 		this.positions.push(p[0] as number, p[1] as number, p[2] as number);
 		this.normals.push(n[0] as number, n[1] as number, n[2] as number);
@@ -49,6 +52,12 @@ export class MeshWriter {
 			color[1] as number,
 			color[2] as number,
 			color[3] as number,
+		);
+		this.targets.push(
+			target ? (target[0] as number) : 0,
+			target ? (target[1] as number) : 0,
+			target ? (target[2] as number) : 0,
+			target ? (target[3] as number) : 0,
 		);
 		return this.vertices - 1;
 	}
@@ -68,6 +77,7 @@ export class MeshWriter {
 			uvs: new Float32Array(this.uvs),
 			uvs1: new Float32Array(this.uvs1),
 			colors: new Uint8Array(this.colors),
+			targets: new Float32Array(this.targets),
 			indices: new Uint16Array(this.indices),
 		};
 	}
@@ -80,6 +90,7 @@ export class MeshWriter {
 			uvs: new Float32Array(this.uvs),
 			uvs1: new Float32Array(this.uvs1),
 			colors: new Uint8Array(this.colors),
+			targets: new Float32Array(this.targets),
 			indices:
 				this.vertices > 0xffff ? new Uint32Array(this.indices) : new Uint16Array(this.indices),
 		};
@@ -98,6 +109,9 @@ export class MeshWriter {
 		const n: Vector3 = [0, 0, 0];
 		const bytes = [0, 0, 0, 0];
 		const second = [0, 0];
+		const keel: Vector3 = [0, 0, 0];
+		const keelNormal: Vector3 = [0, 0, 0];
+		const target = [0, 0, 0, 0];
 		for (let i = 0; i < count; i++) {
 			p[0] = mesh.positions[i * 3] as number;
 			p[1] = mesh.positions[i * 3 + 1] as number;
@@ -111,7 +125,24 @@ export class MeshWriter {
 			second[0] = mesh.uvs1[i * 2] as number;
 			second[1] = mesh.uvs1[i * 2 + 1] as number;
 			uv1?.(second, i);
-			this.vertex(p, n, [mesh.uvs[i * 2] as number, mesh.uvs[i * 2 + 1] as number], second, bytes);
+			target[3] = mesh.targets ? (mesh.targets[i * 4 + 3] as number) : 0;
+			if (target[3] > 0.5) {
+				keel[0] = mesh.targets?.[i * 4] as number;
+				keel[1] = mesh.targets?.[i * 4 + 1] as number;
+				keel[2] = mesh.targets?.[i * 4 + 2] as number;
+				transform(keel, keelNormal);
+				target[0] = keel[0];
+				target[1] = keel[1];
+				target[2] = keel[2];
+			}
+			this.vertex(
+				p,
+				n,
+				[mesh.uvs[i * 2] as number, mesh.uvs[i * 2 + 1] as number],
+				second,
+				bytes,
+				target[3] > 0.5 ? target : undefined,
+			);
 		}
 		for (const index of mesh.indices) this.indices.push(base + (index as number));
 	}
