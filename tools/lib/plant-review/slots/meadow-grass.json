@@ -1,5 +1,6 @@
 {
 	"04-tuft-from-above.png": { "elevation": 82, "distance": 0.45, "fov": 40 },
+	"09-tiller-division.png": { "roll": 0 },
 	"11-blade-cluster.png": { "cut": 0.35, "pick": 1 },
 	"12-single-blade-upper.png": { "leaves": 0.72, "roll": -45 },
 	"13-single-blade-underside.png": { "leaves": 0.72, "roll": -45 },

@@ -641,7 +641,13 @@ export default defineSketch(async (ctx) => {
 			target: walked.target,
 			fov,
 			near,
-			...(walked.roll && { roll: walked.roll }),
+			// A slot's roll poses the close view as its photograph shows the subject. The subject
+			// solve's own roll stands when the slot names none.
+			...(QUERY.roll !== undefined
+				? { roll: QUERY.roll * DEG }
+				: walked.roll
+					? { roll: walked.roll }
+					: {}),
 		};
 	};
 
@@ -1004,6 +1010,9 @@ export default defineSketch(async (ctx) => {
 			case 'cluster':
 			case 'leaf-upper':
 			case 'leaf-under': {
+				// A cut piece's pose is the slot's roll, the angle at which its photograph shows the
+				// piece. The leaf frame applies it above; the span and fitted frames apply it here.
+				const pose = QUERY.roll;
 				// A span frames a part of the piece rather than the whole of it: the frame's middle
 				// stands on the piece at the share the query names, halfway up by default, and the
 				// span is the width it shows there.
@@ -1012,17 +1021,20 @@ export default defineSketch(async (ctx) => {
 					const low = part.min[1] as number;
 					const high = part.max[1] as number;
 					const at = low + (high - low) * (QUERY.along ?? 0.5);
-					return orbit(
-						[
-							((part.min[0] as number) + (part.max[0] as number)) / 2,
-							at,
-							((part.min[2] as number) + (part.max[2] as number)) / 2,
-						],
-						spanDistance(QUERY.span, fov, aspect),
-						e,
-						turn,
-						fov,
-					);
+					return {
+						...orbit(
+							[
+								((part.min[0] as number) + (part.max[0] as number)) / 2,
+								at,
+								((part.min[2] as number) + (part.max[2] as number)) / 2,
+							],
+							spanDistance(QUERY.span, fov, aspect),
+							e,
+							turn,
+							fov,
+						),
+						...(pose !== undefined && { roll: pose * DEG }),
+					};
 				}
 				// A piece framed at the scale its photograph shows, in leaf lengths, stands on its cut:
 				// the cut on the frame's lower edge, the piece running up across it and off its far edge
@@ -1038,8 +1050,10 @@ export default defineSketch(async (ctx) => {
 					};
 				}
 				// A cutting fills the frame with its own points, as its reference's piece does, on the
-				// rows its reference shows it on when the query measured them.
-				return fitPoints(piece as PlantAsset, pieceKit, turn, e, aspect, fov, CUT_ROWS);
+				// rows its reference shows it on when the query measured them. A cut piece's pose lays
+				// it as its photograph shows it.
+				const fitted = fitPoints(piece as PlantAsset, pieceKit, turn, e, aspect, fov, CUT_ROWS);
+				return pose !== undefined ? { ...fitted, roll: pose * DEG } : fitted;
 			}
 			case 'panels':
 				break;
@@ -1380,6 +1394,13 @@ export default defineSketch(async (ctx) => {
 	const subject = close
 		? { ...close.subject, ...(close.clutter && { clutter: close.clutter }) }
 		: plainSubjects.get(VIEW);
+	// The plant as the view draws it: the level's filled silhouette, not every level's part bounds,
+	// so a vertex or a part outside the drawn cells cannot inflate the posted width and height.
+	const drawnBox = cells[0] ? measurePlant(main, kit.box, cells[0].turn).plantBox : null;
+	// A cut piece is drawn from its own kit, and its posted size is the box its own level draws, not
+	// the union of every part's bounds.
+	const pieceTurn = cells.find((cell) => cell.piece === 'away')?.turn ?? cells[0]?.turn ?? 0;
+	const pieceBox = piece ? measurePlant(piece, pieceKit.box, pieceTurn).plantBox : null;
 	facts = {
 		species: record.id,
 		name: record.name,
@@ -1392,8 +1413,8 @@ export default defineSketch(async (ctx) => {
 		size: SIZE,
 		grid: [columns, rows],
 		plant: {
-			height,
-			width: bounds.max[0] - bounds.min[0],
+			height: drawnBox ? drawnBox.top : height,
+			width: drawnBox ? drawnBox.width : bounds.max[0] - bounds.min[0],
 			depth: bounds.max[2] - bounds.min[2],
 			crownBase: main.crown.base,
 			trunkRadius: trunk?.radius ?? null,
@@ -1405,7 +1426,9 @@ export default defineSketch(async (ctx) => {
 				...piece.cutting,
 				size: (() => {
 					const b = boundsOf(piece, pieceKit);
-					return sub(b.max, b.min);
+					return pieceBox
+						? [pieceBox.width, pieceBox.top, (b.max[2] as number) - (b.min[2] as number)]
+						: sub(b.max, b.min);
 				})(),
 				axes: piece.skeleton.axes.count,
 			},

@@ -8,13 +8,17 @@ import {
 import { type PlantView, VIEW_SPECS } from '../../../tests/pages/lib/plant-review/views.ts';
 import { blank, labImage, labOf, type Rgba } from './image.ts';
 import {
+	anyPlantMask,
 	boxOf,
 	classifySlot,
 	classifyTurn,
 	crownStartRow,
 	findHorizon,
 	greenLeaves,
+	matteMask,
 	measurePlant,
+	type PlantMask,
+	pieceCount,
 	plantMask,
 	readIndex,
 	rowSpans,
@@ -674,5 +678,91 @@ describe('the strands view', () => {
 			['28-young-bark.png', 'bark-limb'],
 		];
 		for (const [file, view] of standard) expect(classifySlot(file)?.view, file).toBe(view);
+	});
+});
+
+/** A plant's mask on the matte's plain white background. */
+function mattePlant(
+	width: number,
+	height: number,
+	mask: Uint8Array,
+	coverage?: Uint8Array,
+): PlantMask {
+	const flat = {
+		coefficients: [
+			[100, 0, 0, 0, 0, 0],
+			[0, 0, 0, 0, 0, 0],
+			[0, 0, 0, 0, 0, 0],
+		],
+		noise: 0.5,
+		fit: 1,
+	};
+	return {
+		width,
+		height,
+		mask,
+		...(coverage && { coverage }),
+		background: { horizon: null, sky: flat, plain: true },
+	};
+}
+
+describe('the coverage matte', () => {
+	test("keeps a texel's own coverage beside the half-black mask", () => {
+		const image = blank(4, 1, [255, 255, 255]);
+		put(image, 1, 0, [0, 0, 0]);
+		put(image, 2, 0, [128, 128, 128]);
+		put(image, 3, 0, [254, 254, 254]);
+		const plant = matteMask(image);
+		expect([...plant.mask]).toEqual([0, 1, 0, 0]);
+		expect([...(plant.coverage as Uint8Array)]).toEqual([0, 255, 127, 0]);
+	});
+
+	test('reads any coverage for the piece test, and a plain mask as it stands', () => {
+		const plain = mattePlant(2, 1, Uint8Array.from([1, 0]));
+		expect([...anyPlantMask(plain)]).toEqual([1, 0]);
+		const covered = mattePlant(2, 1, Uint8Array.from([0, 0]), Uint8Array.from([0, 3]));
+		expect([...anyPlantMask(covered)]).toEqual([0, 1]);
+	});
+
+	test('joins two runs through a texel that a leaf only partly covers', () => {
+		const width = 20;
+		const height = 8;
+		const mask = new Uint8Array(width * height);
+		for (let y = 1; y <= 6; y++)
+			for (const x of [2, 3, 4, 5, 6, 9, 10, 11, 12, 13]) mask[y * width + x] = 1;
+		const coverage = new Uint8Array(width * height);
+		for (let at = 0; at < coverage.length; at++) coverage[at] = mask[at] ? 255 : 0;
+		for (let y = 1; y <= 6; y++) coverage[y * width + 7] = 100;
+		const plant = mattePlant(width, height, mask, coverage);
+		// The blocks stand two background texels apart, so the plain mask reads two pieces. The
+		// partly covered texel closes the gap to the one the piece rule already bridges.
+		expect(pieceCount(mask, width, height, 24)).toBe(2);
+		expect(pieceCount(anyPlantMask(plant), width, height, 24)).toBe(1);
+	});
+
+	test('counts a partly covered texel as the sky it leaves in the gap', () => {
+		const width = 20;
+		const height = 20;
+		const mask = new Uint8Array(width * height);
+		for (let y = 5; y <= 14; y++) for (let x = 5; x <= 14; x++) mask[y * width + x] = 1;
+		const hole = [8, 9, 10, 11].map((x) => 10 * width + x);
+		for (const at of hole) mask[at] = 0;
+		const coverage = new Uint8Array(width * height);
+		for (let at = 0; at < coverage.length; at++) coverage[at] = mask[at] ? 255 : 0;
+		for (const at of hole.slice(0, 2)) coverage[at] = 128;
+		const image = blank(width, height, [0, 0, 0]);
+		const binary = measurePlant(image, mattePlant(width, height, mask));
+		const fractional = measurePlant(image, mattePlant(width, height, mask, coverage));
+		// The hole is four texels of the crown's hundred; two are half covered, so the fractional
+		// gap gives back the half texel each of them leaves. The measure rounds the share to four
+		// places, which is where three per cent sits.
+		expect(binary.gapFraction).toBeCloseTo(4 / 100, 4);
+		expect(fractional.gapFraction).toBeCloseTo(3 / 100, 4);
+		// The crown's own box holds the same hole as the outline, so its gap agrees; the frame keeps
+		// the empty sky around the plant and reads far larger.
+		expect(binary.crownBoxGap).toBeCloseTo(4 / 100, 4);
+		expect(fractional.crownBoxGap).toBeCloseTo(3 / 100, 4);
+		expect(binary.frameGap).toBeCloseTo(304 / 400, 4);
+		expect(fractional.frameGap).toBeCloseTo((300 + 2 + 2 * (1 - 128 / 255)) / 400, 4);
 	});
 });
