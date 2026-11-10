@@ -701,6 +701,10 @@ function levelOf(detail: Detail, level: MeshLevel): TuftLevel {
  */
 export function meshTuft(input: MeshInput, level: MeshLevel): MeshArrays {
 	const { blade, growth } = tuftOf(input.record);
+	// A species that gives its sheath columns a colour reserves the flutter byte's top bit for the
+	// sheath mark, so every other foliage axis keeps its phase in the low seven bits. A species
+	// without the colour leaves every byte as it was.
+	const sheathed = growth.sheathColour !== undefined;
 	const { skeleton, crown, kit } = input;
 	const axes = skeleton.axes;
 	const tiers = levelOf(input.detail, level);
@@ -719,7 +723,8 @@ export function meshTuft(input: MeshInput, level: MeshLevel): MeshArrays {
 				: 0;
 	for (let a = 0; a < axes.count; a++) {
 		const kind = axes.kind[a] as number;
-		const bytes = axisBytes(input, a);
+		const raw = axisBytes(input, a);
+		const bytes = sheathed ? { ...raw, phase: raw.phase >> 1 } : raw;
 		if (kind === AXIS_ROOT) {
 			// The crown's own axis holds the shoots and draws nothing itself; a rhizome and the
 			// roots lie along its soil and draw as tubes, the roots closing to a point. They stand
@@ -813,6 +818,8 @@ export function meshTuft(input: MeshInput, level: MeshLevel): MeshArrays {
 			along: isStem ? [0, 1] : fine ? [0.85, 1] : [0, 0.05],
 			browning: Math.max(browning, isStem ? 0.15 : 0.3),
 			closeTip: isStem || fine,
+			// The shoot's sheath column is the one merged-foliage run a sheath colour draws.
+			sheath: !isStem && !fine && sheathed,
 		});
 	}
 	return mesh.finishMesh();
