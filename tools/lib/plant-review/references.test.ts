@@ -24,6 +24,8 @@ import {
 	rowSpans,
 	seasonFromPicture,
 	shadowLike,
+	skyMaskable,
+	soilMaskable,
 	widthProfile,
 	withSlot,
 } from './references.ts';
@@ -344,7 +346,10 @@ describe('the width profile', () => {
 describe('the slots', () => {
 	test('sort stills by the words in their names before their numbers', () => {
 		expect(classifySlot('13-single-needle-underside.png')?.view).toBe('leaf-under');
-		expect(classifySlot('05-crown-underneath.png')?.view).toBe('below');
+		// The whole-from-below and crown-underside photographs take their own views: one frames the
+		// plant from its foot, the other the crown's underside from under it.
+		expect(classifySlot('03-whole-from-below.png')?.view).toBe('below');
+		expect(classifySlot('05-crown-underneath.png')?.view).toBe('crown-underside');
 		expect(classifySlot('02-whole-profile-b.png')).toMatchObject({
 			view: 'whole',
 			turn: 90,
@@ -645,15 +650,15 @@ describe('the strands view', () => {
 		expect(named.view).toBe('strands');
 		// It is off every slot number: no standard picture takes it, so no other render moves.
 		expect(VIEW_SPECS.strands.slots).toEqual([]);
-		// The standard names keep the views they had before the view was added. The birch's
-		// `19-drooping-twig-ends` name reads as `subbranch` by the twig rule today; the species
-		// names the view it wants in its own slot entry.
+		// The standard names keep their views, except the `05` underside class, which the new view
+		// takes. The birch's `19-drooping-twig-ends` name reads as `subbranch` by the twig rule
+		// today; the species names the view it wants in its own slot entry.
 		const standard: readonly (readonly [string, PlantView])[] = [
 			['01-whole-distant.png', 'whole'],
 			['02-whole-profile.png', 'whole'],
 			['03-whole-from-below.png', 'below'],
 			['04-crown-outside.png', 'limb'],
-			['05-crown-underside.png', 'below'],
+			['05-crown-underside.png', 'crown-underside'],
 			['06-inside-crown.png', 'inside'],
 			['07-limb-leaving-trunk.png', 'junction'],
 			['08-limb-fork.png', 'fork'],
@@ -788,5 +793,53 @@ describe('the coverage matte', () => {
 		expect(measurePlant(image, mattePlant(width, height, mask, full)).foliage).toEqual(
 			plain.foliage,
 		);
+	});
+});
+
+describe('a fitted sky', () => {
+	const surface = (fit: number, noise: number) =>
+		({
+			coefficients: [
+				[0, 0, 0, 0, 0, 0],
+				[0, 0, 0, 0, 0, 0],
+				[0, 0, 0, 0, 0, 0],
+			],
+			noise,
+			fit,
+		}) as never;
+
+	test('is maskable only when the fit is strong, the residual bounded and no horizon stands', () => {
+		expect(skyMaskable({ horizon: null, sky: surface(0.9999, 17.1), plain: false })).toBe(true);
+		expect(skyMaskable({ horizon: null, sky: surface(0.9, 5), plain: false })).toBe(false);
+		expect(skyMaskable({ horizon: null, sky: surface(0.9999, 40), plain: false })).toBe(false);
+		expect(skyMaskable({ horizon: 100, sky: surface(0.9999, 5), plain: false })).toBe(false);
+	});
+
+	test('a fitted soil is maskable only with a real region each side of a strong ground fit', () => {
+		// The sedge's 07: horizon at 186 of 640, sky 1 / 24.19, ground 1 / 18.55.
+		expect(
+			soilMaskable(
+				{ horizon: 186, sky: surface(1, 24.19), ground: surface(1, 18.55), plain: false },
+				640,
+			),
+		).toBe(true);
+		// The meadow's 07: horizon at 596 of 640, sky 1 / 26.41, ground 1 / 19.90.
+		expect(
+			soilMaskable(
+				{ horizon: 596, sky: surface(1, 26.41), ground: surface(1, 19.9), plain: false },
+				640,
+			),
+		).toBe(true);
+		// A ramp that does not fit, a horizon at the frame's edge, and a background with no horizon.
+		expect(
+			soilMaskable(
+				{ horizon: 300, sky: surface(1, 20), ground: surface(1, 40), plain: false },
+				640,
+			),
+		).toBe(false);
+		expect(
+			soilMaskable({ horizon: 10, sky: surface(1, 20), ground: surface(1, 18), plain: false }, 640),
+		).toBe(false);
+		expect(soilMaskable({ horizon: null, sky: surface(1, 18), plain: false }, 640)).toBe(false);
 	});
 });
