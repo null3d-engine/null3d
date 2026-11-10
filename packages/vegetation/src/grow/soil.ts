@@ -48,7 +48,9 @@ export function growSoil(
 		// its own stipes, bending along the line's wander between them: the body starts thick at
 		// the colony's middle and thins toward the ends.
 		const radius = soil.rhizomeRadius ?? 0.01;
-		let firstNode = -1;
+		let rootAxis = -1;
+		let rootNode = -1;
+		let rootDistance = Number.POSITIVE_INFINITY;
 		for (const spine of spines) {
 			if (spine.length < 2) continue;
 			const axis = builder.addAxis({ parent: -1, parentNode: -1, order: 0, kind: AXIS_ROOT });
@@ -65,13 +67,22 @@ export function growSoil(
 					light: 1,
 					flags: soil.body ? NODE_SOIL_BODY : 0,
 				});
-				if (i === 0 && firstNode < 0) {
-					firstNode = previous;
-					from = axis;
+				// The roots leave the first body nearest the colony's middle, so they hang below
+				// the rhizome rather than from one of its cut ends.
+				if (rootAxis < 0) {
+					const distance = point[0] * point[0] + point[1] * point[1];
+					if (distance < rootDistance) {
+						rootDistance = distance;
+						rootNode = previous;
+						rootAxis = axis;
+					}
 				}
 			});
 		}
-		if (firstNode >= 0) fromNode = firstNode;
+		if (rootAxis >= 0) {
+			from = rootAxis;
+			fromNode = rootNode;
+		}
 	} else if (soil.rhizome !== undefined) {
 		const half = spreadAt(soil.rhizome, draw(rhizomePurpose) as number);
 		const radius = soil.rhizomeRadius ?? 0.01;

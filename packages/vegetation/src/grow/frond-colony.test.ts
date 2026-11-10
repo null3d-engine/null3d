@@ -111,7 +111,7 @@ describe('the frond-colony grower', () => {
 		}
 	});
 
-	it('runs each rhizome body through its own line, bending with it, and joins every stipe foot', () => {
+	it('lies one main rhizome across the colony, its lines leaving as side branches to every stipe foot', () => {
 		const growth = brackenRecord.growth;
 		if (growth.model !== 'frond-colony') throw new Error('the fixture is not a frond colony');
 		const soil = {
@@ -139,6 +139,8 @@ describe('the frond-colony grower', () => {
 		expect(bodies.length).toBeGreaterThan(1);
 		const nodes: [number, number][] = [];
 		let bends = 0;
+		let spanned = 0;
+		let across = false;
 		for (const a of bodies) {
 			const first = axes.first[a] as number;
 			const last = axes.last[a] as number;
@@ -154,6 +156,17 @@ describe('the frond-colony grower', () => {
 				const turn = Math.abs(Math.atan2(x1 * z2 - z1 * x2, x1 * x2 + z1 * z2));
 				if (turn > Math.PI / 90) bends++;
 			}
+			// The main rhizome crosses the colony: it is the longest body, and its two ends stand
+			// on opposite sides of the middle.
+			const ax = position[first * 3] as number;
+			const az = position[first * 3 + 2] as number;
+			const bx = position[last * 3] as number;
+			const bz = position[last * 3 + 2] as number;
+			const span = Math.hypot(bx - ax, bz - az);
+			if (span > spanned) {
+				spanned = span;
+				across = ax * bx + az * bz < 0;
+			}
 		}
 		// Every stipe's foot sits on a body node, so the join is exact rather than near.
 		for (const foot of feet) {
@@ -162,7 +175,10 @@ describe('the frond-colony grower', () => {
 			);
 			expect(near).toBeLessThan(1e-9);
 		}
-		// The bodies bend with their own lines: at least one knuckle turns by more than two degrees.
+		expect(spanned).toBeGreaterThan(1);
+		expect(across).toBe(true);
+		// The side branches bend with their own lines: at least one knuckle turns by more than
+		// two degrees.
 		expect(bends).toBeGreaterThan(0);
 	});
 

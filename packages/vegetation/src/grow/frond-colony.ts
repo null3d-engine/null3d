@@ -59,12 +59,15 @@ const DRAW = {
 	broken: 15,
 	soilRoot: 30,
 	soilRhizome: 31,
+	soilMain: 32,
 } as const;
 
 /** Metres between the points that trace a rhizome line. */
 const RHIZOME_STEP = 0.1;
 /** The most a rhizome line turns over one step, in radians. */
 const RHIZOME_WANDER = 0.35;
+/** The most the colony's main rhizome bends sideways between its ends, in metres. */
+const MAIN_BEND = 0.14;
 /** Metres between a stipe's nodes. */
 const STIPE_NODE = 0.08;
 /** Degrees a stipe bows toward its blade's reach over its upper half. */
@@ -352,19 +355,55 @@ export function growFrondColony(input: GrowInput): MacroSkeleton {
 		// from the colony's middle through the feet of the stipes that line rises.
 		const soilDraw = (purpose: number, a = 0, b = 0) =>
 			unitAt(seed, salt, variant, purpose, a * 4096 + b);
-		const reach = 2 * spreadAt(colony.soil.rhizome ?? 0, soilDraw(DRAW.soilRhizome) as number);
-		const spines: [number, number][][] = [];
-		for (let l = 0; l < lines; l++) {
-			const feet = plans
-				.filter((plan) => plan.line === l && Math.hypot(plan.x, plan.z) <= reach)
+		const half = spreadAt(colony.soil.rhizome ?? 0, soilDraw(DRAW.soilRhizome) as number);
+		const reach = 2 * half;
+		// One main rhizome lies across the colony, and each line leaves it as a side branch at the
+		// point where that line rises from it.
+		const heading = soilDraw(DRAW.soilMain) * 2 * PI;
+		const alongMain: [number, number] = [cos(heading), sin(heading)];
+		const acrossMain: [number, number] = [-alongMain[1], alongMain[0]];
+		const phase = soilDraw(DRAW.soilMain, 1) * 2 * PI;
+		const bendAt = (at: number): number => {
+			if (Math.abs(at) >= half - 1e-9) return 0;
+			const share = (at + half) / reach;
+			return (
+				MAIN_BEND *
+				sin(PI * share) *
+				(0.6 * sin(2 * PI * share) + 0.4 * sin(4 * PI * share + phase))
+			);
+		};
+		const onMain = (at: number): [number, number] => {
+			const bend = bendAt(at);
+			return [alongMain[0] * at + acrossMain[0] * bend, alongMain[1] * at + acrossMain[1] * bend];
+		};
+		const lineFeet = (line: number): FrondPlan[] =>
+			plans
+				.filter((plan) => plan.line === line && Math.hypot(plan.x, plan.z) <= reach)
 				.sort((a, b) => a.along - b.along);
+		const attachments = new Map<number, [number, number]>();
+		const keys: number[] = [];
+		for (let l = 0; l < lines; l++) {
+			const first = lineFeet(l)[0];
+			if (first === undefined) continue;
+			const at = Math.max(-half, Math.min(half, first.x * alongMain[0] + first.z * alongMain[1]));
+			const key = Math.round(at * 1000) / 1000;
+			keys.push(key);
+			attachments.set(key, onMain(key));
+		}
+		const main = [...new Set([-half, ...keys, half])].sort((a, b) => a - b).map(onMain);
+		const spines: [number, number][][] = [main];
+		for (let l = 0; l < lines; l++) {
+			const feet = lineFeet(l);
 			if (feet.length === 0) continue;
-			// The body runs out from the colony's middle through its stipes' feet, bowing between
-			// them by the bend its own line makes over the same stretch.
-			const spine: [number, number][] = [[0, 0]];
+			// The branch leaves the main rhizome at its line's own point, then bows between its
+			// stipes by the bend the line makes over the same stretch.
+			const first = feet[0] as FrondPlan;
+			const at = Math.max(-half, Math.min(half, first.x * alongMain[0] + first.z * alongMain[1]));
+			const start = attachments.get(Math.round(at * 1000) / 1000) as [number, number];
+			const spine: [number, number][] = [start];
 			const trace = traces[l] as number[];
 			let previousAlong = 0;
-			let previous: [number, number] = [0, 0];
+			let previous: [number, number] = start;
 			for (const plan of feet) {
 				const from = traceAt(trace, previousAlong);
 				const to = traceAt(trace, plan.along);
