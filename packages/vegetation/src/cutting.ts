@@ -733,8 +733,25 @@ export function clusterRow(
 		}
 	}
 	// A still can name the spray's own length: the row then scales about its attach point so the
-	// piece runs that far from its cut. A piece that names no length draws at the prototype's size.
-	const own = Math.max(0, (max[1] as number) - (min[1] as number));
+	// visible foliage runs that far from its lowest leaf. The leaves' extent is the measure, not the
+	// whole shoot's mesh, whose bare stem below the leaves would shorten the spray a photograph shows.
+	let spread = 0;
+	for (let i = 0; i < p.length; i += 3) {
+		quatRotate(turn, 0, [p[i] as number, p[i + 1] as number, p[i + 2] as number], turned);
+		spread = Math.max(spread, Math.hypot(turned[0] as number, turned[2] as number));
+	}
+	let leafyExtent = 0;
+	if (spread > 0) {
+		let bottom = Number.POSITIVE_INFINITY;
+		for (let i = 0; i < p.length; i += 3) {
+			quatRotate(turn, 0, [p[i] as number, p[i + 1] as number, p[i + 2] as number], turned);
+			if (Math.hypot(turned[0] as number, turned[2] as number) >= spread * 0.5)
+				bottom = Math.min(bottom, turned[1] as number);
+		}
+		if (Number.isFinite(bottom)) leafyExtent = Math.max(0, (max[1] as number) - bottom);
+	}
+	const own =
+		leafyExtent > 1e-6 ? leafyExtent : Math.max(0, (max[1] as number) - (min[1] as number));
 	const length = cutting.length;
 	const scale = length !== undefined && own > 1e-6 ? length / own : 1;
 	return {

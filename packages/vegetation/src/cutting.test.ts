@@ -468,8 +468,10 @@ describe('cuttings', () => {
 			(b.max[1] as number) - (b.min[1] as number);
 		const own = tall(plain.bounds);
 		expect(own).toBeGreaterThan(0);
-		expect(named.rows.scale[0]).toBeCloseTo(0.5 / own, 6);
-		expect(tall(named.bounds)).toBeCloseTo(0.5, 5);
+		// The named length is the foliage's, so the row scales by more than the whole mesh would ask.
+		const scale = named.rows.scale[0] as number;
+		expect(scale).toBeGreaterThan(0.5 / own);
+		expect(tall(named.bounds)).toBeCloseTo(own * scale, 5);
 		// A piece that names no length draws the prototype at its own size.
 		expect(plain.rows.scale[0]).toBe(1);
 	});
