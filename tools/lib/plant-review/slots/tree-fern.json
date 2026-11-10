@@ -1,15 +1,12 @@
 {
 	"01-whole-distant.png": {
-		"distance": 6.8,
-		"top": 0.034
+		"fill": 0.8
 	},
 	"02-whole-profile.png": {
-		"distance": 6.8,
-		"top": 0.039
+		"fill": 0.8
 	},
 	"18-silhouette.png": {
-		"distance": 6.8,
-		"top": 0.034
+		"fill": 0.8
 	},
 	"04-crown-outside.png": {
 		"view": "crown",
