@@ -295,7 +295,6 @@ describe('the plant shader', () => {
 			HEADER_YOUNG: HEADER.young,
 			HEADER_YOUNG_TILE: HEADER.youngTile,
 			HEADER_YOUNG_TINT: HEADER.youngTint,
-			HEADER_SHEATH: HEADER.sheath,
 			HEADER_COLLAR: HEADER.collar,
 			HEADER_MOSS: HEADER.moss,
 			HEADER_MOSS_REACH: HEADER.mossReach,
