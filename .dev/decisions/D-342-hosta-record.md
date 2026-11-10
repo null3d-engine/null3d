@@ -150,10 +150,14 @@ forty leaves, against the reference's fifty.
     section of a stalk is a drawing convention rather than a surface, so both render nothing.
   - **Row 4, the leaf surface.** Still 10 magnifies the margin. The review has no view that frames a
     part of a leaf. Its figure compares a whole leaf against a magnified edge, which cannot be read.
-  - **Row 10, the wind.** The wind clip's frames do not differ on some runs. On others they move
-    three to ten times the reference, with no setting between. The measure is not yet repeatable on
-    this machine, so the motion test cannot judge the species. The figures are 0.000 and 0.39 to
-    0.69 against the reference's 0.03 to 0.15.
+  - **Row 10, the color.** The whole views stand at the derived daylight, 2.304 and 2.263, each pi
+    times its photograph's sky luminance. There they read 13.93 and 13.58 against a band of 3. The
+    lever is the leaf's reflectance. Reaching the photographs needs 0.52 of its linear value. That
+    scale takes the two texture sources to 11.62 and 15.79 from 1.75 and 1.70. It takes the
+    single-leaf pictures to 18.38 and 20.02 from 7.19 and 6.78. At the page's soft daylight the
+    same views read 4.94, 5.60 and 4.83. The light is derived and never fitted, and the optics are
+    pinned by the texture sources. The wind's motion cannot decide the row either, since its
+    reference moves between runs.
 
 Every limit above is a round of its own, not a reason to stop. The next round takes the whole views'
 openness, which is the row the owner would notice first.
