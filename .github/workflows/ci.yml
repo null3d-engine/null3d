@@ -75,7 +75,10 @@ jobs:
     # The unit suite is this job's longest step and it has grown: eight minutes or more on the
     # milestone branch, where the same job took 4.4 minutes on 4fb343293. Ten minutes cut the
     # suite off mid-run and cancelled the job, so the limit leaves room for a slower day. Moving
-    # the unit run into a job of its own is the better shape and is noted, not built.
+    # the unit run into a job of its own is the better shape and is noted, not built: the suite's
+    # 536 seconds of test time sit in 5,710 passing tests, of which 21 take over five seconds and
+    # hold 217 between them, so a split buys isolation from this limit and takes no time off the
+    # suite itself.
     timeout-minutes: 20
     env:
       NULL3D_REQUIRE_FRESH_SHADERS: "1"
@@ -1255,7 +1258,10 @@ jobs:
           # runs were red, so their times carry failure costs and 31 tests had no time of their own
           # and took their file's mean: these are the direction of the weights, not a measurement of
           # them. The same tool modelled the slowest browser shard at 35.1 minutes with the weights
-          # that stood before this and at 14.9 with these.
+          # that stood before this and at 14.9 with these. Measured once they were in the workflow,
+          # against the same two runs: the slowest browser shard models at 19.6 minutes against the
+          # 35.1 before, and the heavy job at 9.3 against 20.6, where the best split of that data
+          # is 15.1 — so the set lands within five minutes of the optimum.
           PWTEST_SHARD_WEIGHTS: "65:55:76:27:33:158:117:128:134:76:244:234:204:159:111:121:79:8:27:95:19:107:77:75:122:75:80:58:43:74:308:68:76:72:69:86:70:37"
           # Set only by a run started by hand that asked for the drawings.
           NULL3D_TAKE_IMAGES: ${{ inputs['drawn-images'] && '1' || '' }}

@@ -213,7 +213,7 @@
 		"test": "plant-hosta",
 		"tier": "compat",
 		"date": "2026-11-09",
-		"reason": "drawn on this Mac's SwiftShader at 329daee84 after the whole-view light change moved the panels by a fifth; a CI drawing replaces it if it differs"
+		"reason": "drawn on this Mac's SwiftShader with CI=1 at f25dfed92 after the upright leaf rebuild changed all four panels"
 	},
 	"chromium-swiftshader/compat/plant-meadow-grass.png": {
 		"test": "plant-meadow-grass",
@@ -237,7 +237,7 @@
 		"test": "plant-silver-birch",
 		"tier": "compat",
 		"date": "2026-11-09",
-		"reason": "the silver birch's crown foot and bark changed at 0d521edd7: the fitted hull's two lowest rows are trimmed, the base bark zone takes a tint and each bark picture its own light; this branch has no CI run to take the software set from, and CI's shards judge it later"
+		"reason": "the silver birch's leaf is rebuilt upright on the named frames and its crown's sky prune opened to 0.4 at b96087d0e, which moves the leaf and crown panels; this branch has no CI run to take the software set from, and CI's shards judge it later"
 	},
 	"chromium-swiftshader/compat/plant-sparse-oak.png": {
 		"test": "plant-sparse-oak",
@@ -549,7 +549,7 @@
 		"test": "plant-hosta",
 		"tier": "webgl2",
 		"date": "2026-11-09",
-		"reason": "drawn on this Mac's SwiftShader at 329daee84 after the whole-view light change moved the panels by a fifth; a CI drawing replaces it if it differs"
+		"reason": "drawn on this Mac's SwiftShader with CI=1 at f25dfed92 after the upright leaf rebuild changed all four panels"
 	},
 	"chromium-swiftshader/webgl2/plant-meadow-grass.png": {
 		"test": "plant-meadow-grass",
@@ -573,7 +573,7 @@
 		"test": "plant-silver-birch",
 		"tier": "webgl2",
 		"date": "2026-11-09",
-		"reason": "the silver birch's crown foot and bark changed at 0d521edd7: the fitted hull's two lowest rows are trimmed, the base bark zone takes a tint and each bark picture its own light; this branch has no CI run to take the software set from, and CI's shards judge it later"
+		"reason": "the silver birch's leaf is rebuilt upright on the named frames and its crown's sky prune opened to 0.4 at b96087d0e, which moves the leaf and crown panels; this branch has no CI run to take the software set from, and CI's shards judge it later"
 	},
 	"chromium-swiftshader/webgl2/plant-sparse-oak.png": {
 		"test": "plant-sparse-oak",
@@ -915,7 +915,7 @@
 		"test": "plant-hosta",
 		"tier": "webgpu",
 		"date": "2026-11-09",
-		"reason": "drawn on this Mac's SwiftShader at 329daee84 after the whole-view light change moved the panels by a fifth; a CI drawing replaces it if it differs"
+		"reason": "drawn on this Mac's SwiftShader with CI=1 at f25dfed92 after the upright leaf rebuild changed all four panels"
 	},
 	"chromium-swiftshader/webgpu/plant-meadow-grass.png": {
 		"test": "plant-meadow-grass",
@@ -939,7 +939,7 @@
 		"test": "plant-silver-birch",
 		"tier": "webgpu",
 		"date": "2026-11-09",
-		"reason": "the silver birch's crown foot and bark changed at 0d521edd7: the fitted hull's two lowest rows are trimmed, the base bark zone takes a tint and each bark picture its own light; this branch has no CI run to take the software set from, and CI's shards judge it later"
+		"reason": "the silver birch's leaf is rebuilt upright on the named frames and its crown's sky prune opened to 0.4 at b96087d0e, which moves the leaf and crown panels; this branch has no CI run to take the software set from, and CI's shards judge it later"
 	},
 	"chromium-swiftshader/webgpu/plant-sparse-oak.png": {
 		"test": "plant-sparse-oak",
