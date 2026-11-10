@@ -129,21 +129,85 @@ export function standCamera(framing: ScreenFraming, height: number): StandCamera
 	};
 }
 
+/** A camera that looks from a position at a target, with its vertical field of view. */
+export interface FramedCamera {
+	readonly position: readonly [number, number, number];
+	readonly target: readonly [number, number, number];
+	readonly fov: number;
+}
+
 /**
- * The horizontal distance that keeps a plant point inside a share of the frame's width: `across`
- * metres off the plant's axis and `toward` metres nearer than it. A reference picture leaves a
- * margin round its plant, so a whole view stands back until the render's widest point keeps that
- * margin rather than running off the frame's sides.
+ * The share of the frame's width that the vertices fill as the camera draws them, in perspective:
+ * the widest left and right columns of their projection. The vertices are the geometry the view
+ * actually draws, so a level or a part the view leaves out cannot widen the figure.
  */
-export function widthDistance(
-	across: number,
-	toward: number,
+export function widthShareOf(camera: FramedCamera, vertices: Float32Array, aspect: number): number {
+	const forward = unit([
+		camera.target[0] - camera.position[0],
+		camera.target[1] - camera.position[1],
+		camera.target[2] - camera.position[2],
+	]);
+	const right = unit(cross(forward, [0, 1, 0]));
+	const half = Math.tan((camera.fov * Math.PI) / 360);
+	let low = Number.POSITIVE_INFINITY;
+	let high = Number.NEGATIVE_INFINITY;
+	for (let at = 0; at < vertices.length; at += 3) {
+		const rel = [
+			(vertices[at] as number) - camera.position[0],
+			(vertices[at + 1] as number) - camera.position[1],
+			(vertices[at + 2] as number) - camera.position[2],
+		] as const;
+		const depth = rel[0] * forward[0] + rel[1] * forward[1] + rel[2] * forward[2];
+		if (depth <= 1e-4) continue;
+		const ndc =
+			(rel[0] * right[0] + rel[1] * right[1] + rel[2] * right[2]) / (depth * half * aspect);
+		low = Math.min(low, ndc);
+		high = Math.max(high, ndc);
+	}
+	return low <= high ? (high - low) / 2 : 0;
+}
+
+/**
+ * The camera stood back along its own line until the drawn vertices fill no more than a share of
+ * the frame's width. The rows and the pitch are kept, so a plant wider than its reference keeps
+ * the reference's margin instead of being cropped at the sides.
+ */
+export function fitWidth(
+	camera: FramedCamera,
+	vertices: Float32Array,
 	share: number,
 	aspect: number,
-	fov: number,
-): number {
-	const half = Math.tan((fov * Math.PI) / 360);
-	return toward + across / (Math.max(0.05, Math.min(1, share)) * half * aspect);
+): FramedCamera {
+	const target = Math.max(0.05, Math.min(1, share));
+	let fitted: FramedCamera = camera;
+	for (let pass = 0; pass < 3; pass++) {
+		const drawn = widthShareOf(fitted, vertices, aspect);
+		if (drawn <= target * 1.001) break;
+		const scale = drawn / target;
+		fitted = {
+			...fitted,
+			position: [
+				fitted.target[0] + (fitted.position[0] - fitted.target[0]) * scale,
+				fitted.target[1] + (fitted.position[1] - fitted.target[1]) * scale,
+				fitted.target[2] + (fitted.position[2] - fitted.target[2]) * scale,
+			],
+		};
+	}
+	return fitted;
+}
+
+/** A vector's unit length, or zero for a zero vector. */
+function unit(v: readonly [number, number, number]): readonly [number, number, number] {
+	const length = Math.hypot(v[0], v[1], v[2]);
+	return length > 0 ? [v[0] / length, v[1] / length, v[2] / length] : [0, 0, 0];
+}
+
+/** The cross product of two vectors. */
+function cross(
+	a: readonly [number, number, number],
+	b: readonly [number, number, number],
+): readonly [number, number, number] {
+	return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
 }
 
 /** The row share at which a point `y` metres up the plant's axis lands for a stand camera. */

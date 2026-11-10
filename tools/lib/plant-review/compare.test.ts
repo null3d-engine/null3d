@@ -2,10 +2,11 @@ import { describe, expect, test } from 'bun:test';
 import {
 	type CutCamera,
 	cutCamera,
+	fitWidth,
 	leafFrame,
 	projectRow,
 	standCamera,
-	widthDistance,
+	widthShareOf,
 } from '../../../tests/pages/lib/plant-review/framing.ts';
 import {
 	alignTurn,
@@ -318,17 +319,18 @@ describe("the page's stand camera", () => {
 		expect(camera.height).toBeGreaterThan(0);
 	});
 
-	test('stands back until a plant keeps the share of the width its reference keeps', () => {
-		const fov = 30;
-		const aspect = 16 / 9;
-		const half = Math.tan((fov * Math.PI) / 360);
-		// A point 4 m off the axis and 2 m nearer than the axis lands on the margin's edge.
-		const distance = widthDistance(4, 2, 0.9, aspect, fov);
-		const share = 4 / ((distance - 2) * half * aspect);
-		expect(share).toBeCloseTo(0.9, 6);
-		// A narrower point needs a shorter stand, and a share just under one keeps the frame's edge.
-		expect(widthDistance(2, 2, 0.9, aspect, fov)).toBeLessThan(distance);
-		expect(widthDistance(4, 2, 1, aspect, fov)).toBeLessThan(distance);
+	test('measures the drawn width and stands back until it keeps the reference share', () => {
+		const camera = { position: [0, 0, 10] as const, target: [0, 0, 0] as const, fov: 90 };
+		const vertices = new Float32Array([-1, 0, 0, 1, 0, 0]);
+		// The frame's half-tangent is one, so a point one metre off the axis at ten metres lands a
+		// tenth of the way to the edge: the full width fills a tenth of the frame.
+		expect(widthShareOf(camera, vertices, 1)).toBeCloseTo(0.1, 6);
+		// A point nearer the camera widens the figure more than the same point far away.
+		expect(widthShareOf(camera, new Float32Array([-1, 0, 5, 1, 0, 0]), 1)).toBeCloseTo(0.15, 6);
+		const fitted = fitWidth(camera, vertices, 0.05, 1);
+		expect(widthShareOf(fitted, vertices, 1)).toBeCloseTo(0.05, 3);
+		// A share the drawing already keeps leaves the camera where it stands.
+		expect(fitWidth(camera, vertices, 0.2, 1)).toEqual(camera);
 	});
 });
 
