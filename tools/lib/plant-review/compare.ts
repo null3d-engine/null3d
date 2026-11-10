@@ -70,6 +70,8 @@ export interface ReferenceFraming {
 	/** The plant base's row share, or undefined when the base is out of the frame. */
 	readonly base?: number;
 	readonly targetX: number;
+	/** The share of the frame's width that the reference's plant fills, margin included. */
+	readonly widthShare: number;
 	/** The frame's width over its height. */
 	readonly aspect: number;
 	/** The plain sky's and the meadow's colours, as sRGB hex. */
@@ -233,11 +235,19 @@ export function estimateFraming(
 	const columns = usable.map(
 		({ m, mask }) => anchorColumn(mask.mask, mask.width, mask.height, m.box as Box) / m.width,
 	);
+	// The plant's width in its picture, margin included: a whole view stands back until the render
+	// fills no more of its frame's width, so a plant wider than its reference keeps the same margin
+	// instead of being cropped at the sides.
+	const widths = usable.map(({ m }) => {
+		const box = m.box as Box;
+		return (box.right - box.left + 1) / m.width;
+	});
 	return {
 		horizon: Number(horizon.toFixed(4)),
 		top: Number((median(tops) as number).toFixed(4)),
 		...(clipped ? {} : { base: Number((median(bases) as number).toFixed(4)) }),
 		targetX: Number((median(columns) as number).toFixed(4)),
+		widthShare: Number((median(widths) as number).toFixed(4)),
 		aspect: Number((first.width / first.height).toFixed(5)),
 		sky: meanHex(usable.map(({ m }) => m.sky)),
 		...(usable.some(({ m }) => m.ground)
@@ -279,6 +289,7 @@ export function framingQuery(framing: ReferenceFraming): Partial<PlantReviewQuer
 	return {
 		horizon: Math.min(1, framing.horizon),
 		targetX: framing.targetX,
+		widthShare: framing.widthShare,
 		sky: framing.sky,
 		...(framing.ground ? { ground: framing.ground } : {}),
 		...(framing.light ? { sunAzimuth: framing.light.azimuth, sunRise: framing.light.rise } : {}),
