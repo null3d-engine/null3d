@@ -435,8 +435,7 @@ those presets draw on core WebGPU only, and the tablet offers no WebGPU adapter.
 M3-V7's look is a grove of grown oaks in the wind add-on's field, with the leaf and bark materials
 swaying and the sun's shadows following. Its page is `tests/pages/vegetation-cost.html`, run with
 the governor's target at one frame a second so the render scale stays at 1. The page and the grove's
-four pictures went with the grove in `39a537749`, so the figures below record that run and no longer
-reproduce at the head. The Mac's Chrome drew
+four pictures no longer exist, so the figures below record a run that cannot be repeated. The Mac's Chrome drew
 it at 1280 by 720 at each preset and path
 ([its run](../tested-devices/macbook-pro-m3-max-chrome/20261030-1700-vegetation-wind.md)). The
 machine was shared and the load sat between 4 and 7, so a row within about a millisecond of its
@@ -639,10 +638,13 @@ last, and returns flat arrays of nine floats for each point.
   in Creek, with nothing in the ground layer. Their bounds are narrower than the ground's own
   bands. A scene on other terrain moves the numbers that differ.
 
-**Figures.** Creek's 160 m valley, placed with its eight species at seed 7, holds 956 points. They
-are 104 canopy trees, 174 saplings, 652 ground plants and 26 dead wood. The checksum of that
-placement is 3358570449, read from the exact bytes of every float, so a page compares its point list
-with another device's and any difference at all shows. The device page compares it on every device
+**Figures.** Creek's 160 m valley, placed with its eight species at seed 7, holds **1,245 points**:
+101 canopy trees, 170 saplings, 956 ground plants and 18 dead wood. The checksum of that placement is
+**2493806866**, read from the exact bytes of every float, so a page compares its point list with
+another device's and any difference at all shows. The earlier figure of 956 points and checksum
+3358570449 was taken before the scatter's own changes moved the placement, and the page has shipped
+the later reference since; the Galaxy S25 reaches it on both GPU paths, recorded at
+[20261110-025541](../tested-devices/galaxy-s25-sm-s931b-chrome/20261110-025541-vegetation-scatter.md). The device page compares it on every device
 and both GPU paths. The ground maps hold their samples as 32-bit floats, which is what keeps the
 samples of a height function that uses `Math.sin` and a fractional power equal between engines: the
 last bits that an engine may round another way do not survive the narrowing. A height function that
