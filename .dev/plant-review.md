@@ -302,17 +302,23 @@ next reader unable to tell what those pictures show.
 Some figures cannot decide a row. The reviewer says so and quotes the figure that survives, rather
 than turning a fault of the measure into a pass or a fail.
 
-- **A cutting view's gap when the crown box covers a leaf patch.** The crown box starts where the
-  crown starts. The tool finds that row in `crownStartRow` in `tools/lib/plant-review/references.ts`,
-  by looking for a bare stem under the foliage. A cut piece has foliage down to its foot, so the box
-  can land on a dense leaf patch. The gap is then read inside that patch. Four cases so far: the
-  common alder's two cluster stills, the hawthorn's studio cluster, the silver birch's branch-studio
-  piece 21, and the hosta's leaf cluster. On the birch the box fell from 186 by 284 pixels to 25 by
-  46. The hosta's cluster reads 220 by 103 pixels against the photograph's 325 by 219, and one
-  placement change took it to 215 by 13. The piece's own box and rows did not move, on a mask change
-  of eleven per cent. The outline overlap and the piece count survive such a move, and they are what
-  to quote. The fix is tool work in that file, not species data. M3-V4 carries the debt, because the
-  review rows are its evidence, while the code lives under `tools/`.
+- **A cutting view's gap when the crown box covers a patch of its foliage.** The tool finds the
+  crown's foot in `crownStartRow` in `tools/lib/plant-review/references.ts`. The function takes the
+  first narrow stretch below the crown's wide top that the stem continues below. It then moves that
+  row toward the plant's own foot by the plant's mound share. The box collapses when the stretch is
+  found high and the mound share is zero. A cut piece gives both. Its gaps between leaves read as a
+  stem that runs on below. Its cut stalk is far narrower than its widest row. The foot share then
+  sits under the 0.7 mark, and the mound share is 0. The gap is then read inside that patch.
+
+  The hosta's cluster is the smallest case. Its photograph's box is 325 by 219 pixels, and its cut
+  piece drew 220 by 103. A tilt change from 20 and 40 degrees to 14 and 30 took the found row from
+  112 to 22 of a 340-row box. The foot share moved from 0.41 to 0.37, the mound share stayed 0, and
+  the box fell to 215 by 13. The piece's own box and rows did not move. The other cases are the
+  common alder's two cluster stills, the hawthorn's studio cluster and the silver birch's piece 21.
+  The birch's box fell from 186 by 284 pixels to 25 by 46. The outline overlap and the piece count
+  survive such a move, and they are what to quote. The fix is one place in that file, not species
+  data. M3-V4 carries the debt, because the review rows are its evidence, while the code lives under
+  `tools/`.
 
 ## The rows a species still owes
 
@@ -331,7 +337,7 @@ review rows are its evidence.
   The term lives in the package's crown model.
 - **The joint surface the engine does not draw**, three rows: the birch's and beech's winter wood
   and the willow's cut pieces. The wood geometry is the package's.
-- **The cut-piece crown box**, five rows, in `crownStartRow` in
+- **The cut-piece crown box**, six rows so far, in `crownStartRow` in
   `tools/lib/plant-review/references.ts`: the hawthorn's rows 3 and 12, the willow's row 3 and the
   hosta's rows 3, 5 and 12. The code is the review tool's; the debt is M3-V4's.
 - **The flower fix**, one row: the hawthorn's row 10, where its blossom draws nothing. The extras
