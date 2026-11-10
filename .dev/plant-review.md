@@ -179,6 +179,14 @@ own light they read 1.9, and the head's oak reads 2.2, so the light makes most o
   own branch size and its `span` to the photograph's width took it to 3.7 before any material
   changed, and a tint measured against that frame took it to 2.3. Framing first, material second:
   a tint chosen before the frame is right measures the camera, not the plant.
+- **A from-above view reads the spread of blade placement, not the leaf's shape.** The sky gap there
+  counts the background inside the crown's outline. It rises when neighbouring blades leave wedges
+  between their tips. It does not rise when one blade changes shape. The hosta's two shape probes
+  moved it by nothing: the blade's cup from 22 to 45 degrees read 0.0049 to 0.0044, and its curl
+  from 30 to 45 degrees read 0.0049 both times. The one lever that moved where the blades sit, the
+  crown's eye ring, moved it from 0.0049 to 0.0274. A row that reads this view therefore takes
+  levers of placement, of where each blade sits and at what inclination. It does not take levers of
+  the leaf's own shape, however large their effect on the side views.
 
 ## What a fail looks like
 
