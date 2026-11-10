@@ -112,7 +112,7 @@ Check every rendering mode and the whole camera path, with repeats, as [Testing 
 
 Desktop browsers that emulate a phone show neither its GPU nor its heat, so test on the phones and tablets that your audience uses.
 
-- Serve the page over HTTPS, or reach it as `localhost` over USB. [Hosting and cross-origin isolation](../getting-started/hosting.md#during-development) shows both.
+- Serve the page over HTTPS, or reach it as `localhost` over USB. A secure origin is what makes WebGPU, and so the High and Ultra presets, available. On a network address over plain HTTP, the engine silently falls back to WebGL2 at Medium. [Hosting and cross-origin isolation](../getting-started/hosting.md#during-development) shows both.
 - Check the preset that the engine chose in `engine.mode.preset`. The capability report in `engine.report` holds the facts that it chose from: `coarsePointer`, `screenMinEdge` and `deviceMemoryGB`.
 - Add `?preset=low`, `?preset=medium`, `?preset=high` or `?preset=ultra` to the page's address to test each preset on one device. The GPU path still caps the preset.
 - Add `?gpu=webgl2` to test the WebGL2 path, which many phones use.
