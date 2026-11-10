@@ -79,10 +79,11 @@ export function leafFrame(
  * The least height a camera stands at, in metres: one that would stand lower is raised to it. A
  * photograph of a low plant such as a sedge or a hosta is taken from a few decimetres up, so the
  * floor clears the ground without refusing the picture's own viewpoint. A plant a hand's width tall
- * asks for a camera near its own foot, so the floor sits at a decimetre and the solve frames a herb
- * or a low shrub as its photograph framed it.
+ * asks for a camera at its own foot, within a few centimetres, so the floor sits at the ground's own
+ * clearance and the solve places the base row its photograph asks for rather than falling back to a
+ * camera whose foot runs off the frame.
  */
-const LOWEST_EYE = 0.1;
+const LOWEST_EYE = 0.02;
 
 /**
  * The camera that puts a plant `height` metres tall where a framing asks: the horizon's row sets
