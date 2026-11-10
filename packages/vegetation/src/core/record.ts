@@ -938,8 +938,11 @@ export interface Column {
 		 * lowest first. The grower deals the arms among the tiers in turn.
 		 */
 		readonly from: number | readonly number[];
-		/** Metres out from the column where an arm turns upward. */
-		readonly elbow: number;
+		/**
+		 * Metres out from the column where an arm turns upward: one distance for every arm, or one
+		 * distance per tier of arms, lowest first.
+		 */
+		readonly elbow: number | readonly number[];
 		/** An arm's radius in metres. */
 		readonly radius: number;
 		/**
