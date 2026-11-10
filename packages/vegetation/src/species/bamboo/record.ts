@@ -92,10 +92,13 @@ export const record: Species = {
 				nodes: { mean: 6, spread: 1 },
 				internode: BRANCHLET,
 				stem: { radius: [0.004, 0.002] },
+				// The cluster still's fan alone takes this length: the shorter leaves bring its 235-
+				// pixel height toward the photograph's 164, while the cluster turn's piece is moved
+				// to the long class's shoot and keeps that class's length.
 				leafScale: [
-					[0, 0.9],
-					[0.7, 1],
-					[1, 0.95],
+					[0, 0.63],
+					[0.7, 0.7],
+					[1, 0.665],
 				],
 				leafAngle: [
 					[0, 95],
