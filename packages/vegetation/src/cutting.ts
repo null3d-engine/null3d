@@ -733,23 +733,18 @@ export function clusterRow(
 		}
 	}
 	// A still can name the spray's own length: the row then scales about its attach point so the
-	// visible foliage runs that far from its lowest leaf. The leaves' extent is the measure, not the
-	// whole shoot's mesh, whose bare stem below the leaves would shorten the spray a photograph shows.
-	let spread = 0;
+	// drawn leaves run that far. The leaves' own vertices give the box, their surface kind telling a
+	// leaf from the stem: a stem below or beyond the leaves cannot set the spray a photograph shows.
+	const kinds = tier.colors;
+	let leafLow = Number.POSITIVE_INFINITY;
+	let leafHigh = Number.NEGATIVE_INFINITY;
 	for (let i = 0; i < p.length; i += 3) {
+		if ((kinds[i * 4 + 2] as number) !== 0) continue;
 		quatRotate(turn, 0, [p[i] as number, p[i + 1] as number, p[i + 2] as number], turned);
-		spread = Math.max(spread, Math.hypot(turned[0] as number, turned[2] as number));
+		leafLow = Math.min(leafLow, turned[1] as number);
+		leafHigh = Math.max(leafHigh, turned[1] as number);
 	}
-	let leafyExtent = 0;
-	if (spread > 0) {
-		let bottom = Number.POSITIVE_INFINITY;
-		for (let i = 0; i < p.length; i += 3) {
-			quatRotate(turn, 0, [p[i] as number, p[i + 1] as number, p[i + 2] as number], turned);
-			if (Math.hypot(turned[0] as number, turned[2] as number) >= spread * 0.5)
-				bottom = Math.min(bottom, turned[1] as number);
-		}
-		if (Number.isFinite(bottom)) leafyExtent = Math.max(0, (max[1] as number) - bottom);
-	}
+	const leafyExtent = leafHigh > leafLow ? leafHigh - leafLow : 0;
 	const own =
 		leafyExtent > 1e-6 ? leafyExtent : Math.max(0, (max[1] as number) - (min[1] as number));
 	const length = cutting.length;
