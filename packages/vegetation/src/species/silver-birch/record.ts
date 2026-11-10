@@ -230,8 +230,8 @@ export const record: Species = {
 			{
 				// Still 23: a short shoot of six large leaves spaced along its run, as its photograph shows
 				// it, and a side shoot at the joint below its newest year. The same class draws the close
-				// cluster, whose photograph holds eight over the same box. The blades run larger than the
-				// species' own, because six of them must cover what the pictures show.
+				// cluster, whose photograph holds eight over the same box. Six blades cover the leaves,
+				// and their length holds the open sky the pictures keep between them.
 				name: 'cut',
 				vigor: [0, 1],
 				share: 0,
@@ -245,8 +245,8 @@ export const record: Species = {
 				lateralGap: 0.4,
 				bend: { length: 0.05, angle: 20 },
 				leafScale: [
-					[0, 1.4],
-					[1, 1.6],
+					[0, 1.2],
+					[1, 1.4],
 				],
 				leafAngle: [
 					[0, 70],
