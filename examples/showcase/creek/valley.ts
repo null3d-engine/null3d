@@ -161,7 +161,9 @@ const ALL_RULES: readonly EcoRule[] = [
 		layer: 'ground',
 		spacing: 1.2,
 		tolerances: [
-			curve('heightAboveWater', -0.75, -0.4, 0.05, 0.55),
+			// The waterline's own species stand on wet ground beside the stream, never in it: the
+			// owner ruled that no vegetation grows below the water's surface.
+			curve('heightAboveWater', 0, 0.05, 0.1, 0.55),
 			curve('distanceToWater', 0, 0, 2.5, 4.5),
 			curve('wetness', 0.15, 0.4, 1, 1.01),
 		],
@@ -174,7 +176,7 @@ const ALL_RULES: readonly EcoRule[] = [
 		layer: 'ground',
 		spacing: 1.4,
 		tolerances: [
-			curve('heightAboveWater', -0.5, -0.1, 0.5, 1.1),
+			curve('heightAboveWater', 0, 0.05, 0.5, 1.1),
 			curve('distanceToWater', 0, 0.5, 3.5, 6),
 			curve('wetness', 0.1, 0.3, 1, 1.01),
 		],

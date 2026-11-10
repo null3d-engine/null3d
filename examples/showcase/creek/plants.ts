@@ -10,6 +10,7 @@ import { type PlantMaterial, setWindLayer } from '@null3d/vegetation';
 import type { WindField } from '@null3d/wind';
 import { type PlantSpot, plantSpecies } from '../../lib/plants';
 import { random } from '../../lib/procedural';
+import { fromStream } from './land';
 import { type CreekSpecies, placeValley, SEED, SPECIES, VARIANTS } from './valley';
 
 /** The far cards on the mountain ring: how many, the heights they cover and how far out they stand. */
@@ -18,6 +19,12 @@ const CARD_LOW = 2;
 const CARD_HIGH = 50;
 const RING_INNER = 86;
 const RING_OUTER = 260;
+/**
+ * How far from the stream, in stream half-widths, a copy keeps its own variant. Past it one shape
+ * serves every copy of its species, which is the owner's rule: reuse a tree where the camera reads
+ * it as a silhouette, and keep the variety near the water where it passes close.
+ */
+const VARIED_NEAR_STREAM = 12;
 /** The range of a card's height, in meters: the trees that the ring's scale cannot show. */
 const CARD_SHORT = 9;
 const CARD_TALL = 17;
@@ -52,13 +59,21 @@ function groupBySpecies(points: ReturnType<typeof placeValley>): Map<string, Pla
 			spots = [];
 			grouped.set(rule.species, spots);
 		}
+		const x = points.data[at] as number;
+		const z = points.data[at + 2] as number;
 		spots.push({
-			x: points.data[at] as number,
+			x,
 			y: points.data[at + 1] as number,
-			z: points.data[at + 2] as number,
+			z,
 			scale: points.data[at + 5] as number,
 			turn: (points.data[at + 6] as number) * Math.PI * 2,
-			variant: Math.min(VARIANTS - 1, Math.floor(points.data[at + 4] as number)),
+			// A copy far from the stream reuses the first variant: at that distance the camera reads
+			// a crown as a silhouette, so one shape serves every copy of a species there. Near the
+			// stream each copy keeps its own, where the camera passes close to them.
+			variant:
+				fromStream(x, z) > VARIED_NEAR_STREAM
+					? 0
+					: Math.min(VARIANTS - 1, Math.floor(points.data[at + 4] as number)),
 		});
 	}
 	return grouped;
