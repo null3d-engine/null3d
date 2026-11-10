@@ -702,6 +702,22 @@ export default defineSketch(async (ctx) => {
 				closeViews.set(view, below);
 				return { position: below.position, target: below.target, fov, near: 0.1 };
 			}
+			case 'crown-underside': {
+				// The camera stands under the crown, the eye as far below its base as the underside
+				// photographs keep it, and looks up at the crown's top: the crown's box fills most of
+				// the frame, its leaves overhead and the trunk below.
+				const top = main.crown.top;
+				const base = main.crown.base;
+				const half = Math.max(0.3, (top - base) / 2);
+				const distance = QUERY.distance ?? Math.max(0.6, half / Math.tan((fov * 0.78 * DEG) / 2));
+				const eye = Math.max(0.3, base - 1.6);
+				return {
+					position: [foot[0] + out[0] * distance, eye, foot[2] + out[2] * distance],
+					target: [foot[0], top, foot[2]],
+					fov,
+					near: 0.1,
+				};
+			}
 			case 'inside': {
 				// A plant with no wood keeps its stalks at the crown's own centre, so its inside photograph
 				// is of the stalk bundle: the camera stands just outside it at the crown's height and
