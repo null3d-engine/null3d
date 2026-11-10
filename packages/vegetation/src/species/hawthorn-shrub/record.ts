@@ -358,13 +358,15 @@ export const record: Species = {
 			hang: 160,
 		},
 		{
-			// Still 20: flat corymbs of five-petalled cream flowers, carried on the crowded nodes at a
-			// spring spur's end, with the leaves out among them.
+			// Still 20: flat corymbs of five-petalled cream flowers at a spring spur's end, with the
+			// leaves out among them. The shoot-tip site stands each corymb at the shoot's wood tip,
+			// inside the terminal leaf rosette, so the leaves hide it; a petal cup takes no stalk or
+			// pedicel to stand clear of them.
 			kind: 'flower',
-			at: 'node',
+			at: 'shoot-tip',
 			share: 0.4,
 			count: { mean: 6, spread: 1.5 },
-			tipShare: 0.95,
+			tipShare: 1,
 			seasons: ['blossom'],
 			shape: { petals: 5, radius: 0.007, cup: 0.45, stalk: 0.03 },
 			colour: [0.85, 0.83, 0.76],
