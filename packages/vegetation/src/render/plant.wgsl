@@ -113,6 +113,8 @@ const HEADER_EXTRA_SCALES: i32 = 47;
 const HEADER_EXTRA_STALKS: i32 = 51;
 // The least width in pixels that a card's stalk draws, or 0 where the record gives none.
 const HEADER_CARD_STALK: i32 = 55;
+const HEADER_SCAR: i32 = 56;
+const HEADER_SCAR_COLOUR: i32 = 57;
 // The second coordinate that marks a card's stalk, in a place that the card planes leave free.
 const STALK_PLANE: f32 = 0.75;
 // Rows before the wind records, and wind records in a row.
@@ -951,6 +953,23 @@ fn surface(input: SurfaceInput) -> Surface {
         bark = mix(bark, lichen.rgb * (0.92 + 0.16 * grain), lichen_mask);
         // The collar's dark ridge where a branch joins its parent.
         bark *= 1.0 - 0.5 * moss_reach.z * junction;
+        // A fire scar's hollow: the bark chars to the record's colour between its foot and head, on
+        // one side of the first stem. The hollow's own geometry cuts the notch; this darkens it and
+        // keeps it matte, so the charred wood reads as the burnt surface the old trees carry.
+        let scar = header(HEADER_SCAR);
+        let scar_colour = header(HEADER_SCAR_COLOUR);
+        if (scar.y > scar.x && scar_colour.w > 0.0) {
+            let outward = normalize(vec2f(n.x, n.z) + vec2f(0.000001, 0.0));
+            let want = vec2f(cos(scar.z), sin(scar.z));
+            let half = max(scar.w, 0.0001);
+            let facing = dot(outward, want);
+            let angular = smoothstep(cos(half), 1.0, facing);
+            let up = (plant.y - scar.x) / max(scar.y - scar.x, 0.001);
+            let vertical = smoothstep(0.0, 0.08, up) * (1.0 - smoothstep(0.82, 1.0, up));
+            let burnt = angular * vertical * (1.0 - youth);
+            bark = mix(bark, scar_colour.rgb, burnt * scar_colour.w);
+            cavity = max(cavity, burnt);
+        }
         base = bark * (1.0 - CAVITY_DARK * cavity);
         roughness = saturate(0.82 + CAVITY_ROUGH * cavity);
         // A lichen patch is a flat, matte crust: it hides the furrows under it.

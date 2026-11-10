@@ -33,12 +33,25 @@
 		"footRow": 0.98,
 		"crownRow": 0.12
 	},
+	"12-single-leaf-upper.png": {
+		"view": "subbranch"
+	},
+	"13-single-leaf-underside.png": {
+		"view": "subbranch"
+	},
 	"14-bark-base.png": {
 		"distance": 24
 	},
 	"15-bark-mid-trunk.png": {
 		"span": 3,
 		"distance": 5.5
+	},
+	"20-fire-scar.png": {
+		"view": "bark-base",
+		"distance": 22,
+		"season": null,
+		"span": null,
+		"thin": null
 	},
 	"26-bark-texture.png": {
 		"span": 3,
