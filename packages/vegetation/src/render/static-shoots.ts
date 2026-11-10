@@ -190,7 +190,11 @@ export function placeStaticPlants(
 		for (const band of bands) {
 			if (!(band.to > band.from)) continue;
 			for (const part of band.parts) {
-				const material = materialOf(materials, part.name, band !== bands[0]);
+				const material = materialOf(
+					materials,
+					part.name,
+					asset.cutting !== undefined || band !== bands[0],
+				);
 				const mesh = plantGeometry(ctx, part.arrays);
 				meshes.push(mesh);
 				// The first card level of a copy with real shoots draws from the copy out: its shader
@@ -240,8 +244,8 @@ export function placeStaticPlants(
 
 /** The material a part draws with. */
 /**
- * The material that a part draws with. A foliage part beyond the nearest band draws with the far
- * foliage material, whose shader pays no blade keel.
+ * The material that a part draws with. A foliage part beyond the nearest band, or one of a cut
+ * piece, draws with the far foliage material, whose shader pays no blade keel.
  */
 function materialOf(materials: PlantMaterials, name: PlantPart['name'], far = false): Material {
 	switch (name) {
