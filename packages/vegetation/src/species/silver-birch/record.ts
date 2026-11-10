@@ -358,9 +358,9 @@ export const record: Species = {
 			{ layer: 1, by: 'height', from: 6, to: 40, blend: 0.2, tint: [1, 1, 1] },
 		],
 		young: 2,
-		// Still 16: the white bark fades to the young purple-brown layer on wood thinner than about
-		// four centimetres across.
-		youngRadius: 0.02,
+		// Stills 16 and 28: the white bark fades to the young purple-brown layer on wood thinner than
+		// about eight centimetres across, so the young view's limb draws its photograph's bark.
+		youngRadius: 0.04,
 		girthScale: [
 			[0, 0.6],
 			[1, 1],
