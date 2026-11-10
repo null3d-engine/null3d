@@ -88,6 +88,7 @@ export type {
 	ShapeEnvelope,
 	ShootClass,
 	ShootSpec,
+	SparseFloors,
 	Species,
 	SpeciesBudget,
 	SpeciesEcology,
@@ -99,6 +100,7 @@ export type {
 	TrunkShape,
 	Tuft,
 	TuftHeads,
+	TuftSoil,
 	WindSpec,
 } from './record';
 export { isSpeciesId, loadSpecies, type SpeciesId, speciesIds } from './registry';

@@ -56,6 +56,9 @@ const EDGE_FLOOR = 6;
  */
 const PIECE_AREA = 24;
 
+/** The views that photograph the bark close up, whatever words a species puts in its file names. */
+const BARK_VIEWS: ReadonlySet<string> = new Set(['bark-base', 'bark-mid', 'bark-limb']);
+
 /** The camera's framing of a reference, in screen shares, as the review page takes it. */
 export interface ReferenceFraming {
 	readonly horizon: number;
@@ -1180,8 +1183,20 @@ export function closeFraming(facts: unknown): CloseFraming | undefined {
  * and together they cover different phases of a bark tile. Averaging them measures the material
  * rather than the one window the camera happens to frame.
  */
-export function patchLab(image: Rgba): number[] {
+export function patchLab(image: Rgba, onPlant = false): number[] {
 	const lab = labImage(image);
+	// A picture's own background, read from its four corners: a close view lays a stem on sky or
+	// on a plain studio ground, so the corners are the backdrop wherever the stem does not reach.
+	// Each corner is read on its own, since a view can stand a stem against sky above and meadow
+	// below: a single mean of the four would match neither, and the sky would be counted as bark.
+	const corners = [
+		[0, 0],
+		[image.width - 1, 0],
+		[0, image.height - 1],
+		[image.width - 1, image.height - 1],
+	].map(([x, y]) =>
+		[0, 1, 2].map((c) => lab[((y as number) * image.width + (x as number)) * 3 + c] as number),
+	);
 	const sum = [0, 0, 0];
 	let n = 0;
 	const share = 0.2;
@@ -1194,11 +1209,32 @@ export function patchLab(image: Rgba): number[] {
 			for (let y = y0; y < y1; y++)
 				for (let x = x0; x < x1; x++) {
 					const at = (y * image.width + x) * 3;
+					if (onPlant) {
+						// A patch pixel as close to any corner as the paint itself is not the paint.
+						const backdrop = corners.some(
+							(corner) =>
+								Math.hypot(
+									(lab[at] as number) - (corner[0] as number),
+									(lab[at + 1] as number) - (corner[1] as number),
+									(lab[at + 2] as number) - (corner[2] as number),
+								) < 8,
+						);
+						if (backdrop) continue;
+					}
 					for (let c = 0; c < 3; c++) sum[c] = (sum[c] as number) + (lab[at + c] as number);
 					n++;
 				}
 		}
 	return sum.map((v) => v / Math.max(1, n));
+}
+
+/**
+ * The colour difference between two pictures' nine-patch means, read on the plant alone when asked.
+ * A texture source and its render are cut out on different colours, so asking for the plant drops
+ * both backdrops and compares the material.
+ */
+export function patchDifference(reference: Rgba, render: Rgba, onPlant = false): number {
+	return Number(deltaE2000(patchLab(reference, onPlant), patchLab(render, onPlant)).toFixed(2));
 }
 
 /** A still or texture source as the comparison reads it: a cut-out laid on white. */
@@ -1257,14 +1293,25 @@ export function compareStills(
 		const masked = refPlant.background.plain && frame.matte !== undefined;
 		const pair = pairMetrics(masked ? refSide : { ...refSide, normal: undefined }, render);
 		const bark = slot.kind === 'texture' && !slot.view.startsWith('leaf');
-		const surfaceDeltaE = bark
-			? Number(deltaE2000(patchLab(refImage), patchLab(render.image)).toFixed(2))
-			: null;
+		// The shot carries the query the page was asked for, which is where a species' slot file
+		// reaches; the reference rule's own query is a different thing and is often empty.
+		const barkMaskOn = frame.query?.barkMask === true;
+		// A texture source is a cut-out laid on one colour and the render stands on another, so an
+		// unmasked average lifts both sides and the lifts nearly cancel. With the flag set, the
+		// material is read on the bark alone.
+		const surfaceDeltaE = bark ? patchDifference(refImage, render.image, barkMaskOn) : null;
 		// A bark close view photographs the bark against the bark, so neither picture separates
 		// from its own background and neither draws a matte. The patches compare the material.
-		const barkClose = slot.kind !== 'texture' && /bark/i.test(slot.file);
+		// A close view of the bark is named by the view it draws, not by the words in its file name: a
+		// species whose photographs are called roots or petiole-section still draws the trunk close up,
+		// and its colour is read the same way as any other bark's.
+		// The view the picture was drawn at, from the shot's own query, is what decides whether its
+		// colour is a bark colour: a species that names a picture's view draws that view, and the
+		// reference's number must not overrule it.
+		const drawn = frame.query?.view ?? slot.view;
+		const barkClose = slot.kind !== 'texture' && BARK_VIEWS.has(drawn);
 		const barkColour = barkClose
-			? { reference: patchLab(refImage), render: patchLab(render.image) }
+			? { reference: patchLab(refImage, barkMaskOn), render: patchLab(render.image, barkMaskOn) }
 			: null;
 		const edges = Number(
 			edgeDifference(edgeProfile(refImage), edgeProfile(render.image)).toFixed(3),
@@ -1310,6 +1357,12 @@ export function compareStills(
 			masked,
 			surfaceDeltaE,
 			barkColour,
+			// A masked close view reads its bark difference off the same patches, since the page's own
+			// figure averages a plant mask that on a thin stem is mostly the backdrop.
+			barkDeltaE:
+				barkMaskOn && barkColour
+					? Number(deltaE2000(barkColour.reference, barkColour.render).toFixed(2))
+					: shown.barkDeltaE,
 			edgeDifference: edges,
 			pieces,
 			...(framing ? { framing } : {}),

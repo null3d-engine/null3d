@@ -4,6 +4,15 @@
 // and the shading hold when a tree switches. A low understory of bushes covers the ground between
 // the trunks, in the same four levels. One texture holds bark, needles and leaves; another holds a
 // cut-out picture of each tree for the far cards. The hills rise into wooded ridges.
+//
+// The trees stay this demo's own, and the cost is measured rather than assumed. At the demo's own
+// count of 8,000 near trees their coarsest levels are 62, 56 and 30 triangles for the three firs and
+// 36 for the broadleaf, so the whole stand costs between 240,000 and 496,000 triangles whatever the
+// mix. The vegetation add-on's conifer is 3,079 triangles at its coarsest level, as the demo task's
+// evidence records it, so the same 8,000 through the add-on draw 24,600,000, fifty to a hundred times
+// as many. The demo does not load the add-on at all today, so the switch would also bring its wasm
+// and its memory with it; the neighbouring demo measured that at 248.8 MiB against 51.8. A generator
+// that costs a fiftieth of the triangles and none of the bytes is the demo's own.
 import {
 	type Geometry,
 	type InstanceBatch,
