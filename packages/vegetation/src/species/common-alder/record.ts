@@ -551,9 +551,26 @@ export const record: Species = {
 			count: { mean: 4, spread: 0.5 },
 			tipShare: 0.95,
 			seasons: ['summer', 'autumn', 'winter'],
-			shape: { catkin: { length: 0.1, radius: 0.0035 } },
+			shape: {
+				// Still 19: a hanging string of pollen sacs. The lathe gives the slim taper, and the
+				// scale rows stand as the sacs along its length, each row a little proud.
+				lathe: [
+					[0.0035, 0],
+					[0.0035, 0.015],
+					[0.0035, 0.08],
+					[0.0015, 0.095],
+					[0, 0.1],
+				],
+				sides: 6,
+				scales: 18,
+				scaled: [0.008, 0.092],
+				scaleShade: 0.35,
+				scaleJitter: 0.2,
+			},
 			// Still 19: a yellow-green string of pollen sacs, lighter than the cones beside it.
 			colour: [0.14, 0.13, 0.045],
+			// The sacs' own reddish cast over the string's yellow-green.
+			bandColour: [0.12, 0.05, 0.035],
 			roughness: [0.75, 0.8],
 			hang: 175,
 		},
