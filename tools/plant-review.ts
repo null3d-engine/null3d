@@ -400,13 +400,15 @@ function slotHeld(path: string): boolean {
 const STAND_BACK = 1.06;
 
 /** Whether the drawn plant's silhouette meets one of the picture's edges. */
-function meetsTheEdge(matte: string): boolean {
+/** Which of a picture's edges the drawn plant's silhouette meets. */
+function edgeContact(matte: string): { side: boolean; bottom: boolean } {
 	const mask = plantMask(readImage(matte));
 	const box = boxOf(mask.mask, mask.width, mask.height);
-	if (!box) return false;
-	return (
-		box.left <= 0 || box.top <= 0 || box.right >= mask.width - 1 || box.bottom >= mask.height - 1
-	);
+	if (!box) return { side: false, bottom: false };
+	return {
+		side: box.left <= 0 || box.top <= 0 || box.right >= mask.width - 1,
+		bottom: box.bottom >= mask.height - 1,
+	};
 }
 
 /**
@@ -420,13 +422,28 @@ async function gateMasks(
 	shots: readonly Shot[],
 	gpu?: string,
 ): Promise<RunFrame[]> {
-	const cropped = new Set<string>();
-	for (const frame of frames)
-		if (frame.matte && meetsTheEdge(join(dir, frame.matte))) cropped.add(frame.file);
-	if (cropped.size === 0) return frames;
-	const redraws = shots
-		.filter((shot) => shot.cells.some((cell) => cropped.has(cell.file)))
-		.map((shot) => ({ ...shot, query: { ...shot.query, standBack: STAND_BACK } }));
+	const contact = new Map<string, { side: boolean; bottom: boolean }>();
+	for (const frame of frames) {
+		if (!frame.matte) continue;
+		const edges = edgeContact(join(dir, frame.matte));
+		if (edges.side || edges.bottom) contact.set(frame.file, edges);
+	}
+	if (contact.size === 0) return frames;
+	// Only the cells that met an edge are drawn again, so a picture inside its frame keeps its
+	// bytes. A side or top crop is stood back; a foot on the bottom edge is re-solved to the base
+	// row its photograph asks for, with the lower floor the page takes from the query.
+	const redraws: Shot[] = [];
+	for (const shot of shots) {
+		const bottom = shot.cells.filter((cell) => {
+			const edges = contact.get(cell.file);
+			return edges !== undefined && !edges.side && edges.bottom;
+		});
+		const sides = shot.cells.filter((cell) => contact.get(cell.file)?.side === true);
+		if (bottom.length > 0)
+			redraws.push({ ...shot, cells: bottom, query: { ...shot.query, lowBase: true } });
+		if (sides.length > 0)
+			redraws.push({ ...shot, cells: sides, query: { ...shot.query, standBack: STAND_BACK } });
+	}
 	if (redraws.length === 0) return frames;
 	const release = await takeDrawSlot();
 	let again: RunFrame[];

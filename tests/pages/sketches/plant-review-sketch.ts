@@ -366,6 +366,9 @@ function standView(
 		top: asked ? (QUERY.top as number) : middle - fill / 2,
 		...(asked ? { eye: QUERY.eye ?? EYE } : { base: middle + fill / 2 }),
 		targetX: QUERY.targetX ?? 0.5,
+		// A redraw can ask a lower floor for a hand-high plant, whose own photograph stands at its
+		// foot; the first draw keeps the usual floor.
+		...(QUERY.lowBase === true && { floor: 0.02 }),
 	};
 	let stand = standCamera(framing, height);
 	const out = facing(turn);
