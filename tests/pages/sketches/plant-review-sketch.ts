@@ -661,6 +661,22 @@ export default defineSketch(async (ctx) => {
 			case 'skeleton':
 			case 'silhouette':
 				return FRAMED ? standView(height, foot, turn, aspect) : fit(bounds, turn, e, aspect, fov);
+			case 'crown-sky': {
+				// The crown against the sky from outside the plant: the eye near a person's height, a
+				// stand far enough that the crown's height fills the frame and the whole crown stands
+				// in it, looking up so the sky is behind. The gap inside its box then reads the sky
+				// between the foliage rather than the outline's ragged edge.
+				const base = main.crown.base;
+				const top = main.crown.top;
+				const middle = base + (top - base) * 0.55;
+				const span = 2 * Math.tan((fov * DEG) / 2);
+				const away = ((top - base) / span) * 1.15;
+				const eyeHeight = 1.7;
+				const lift = middle - eyeHeight;
+				const distance = Math.hypot(away, lift);
+				const elevation = (Math.atan2(eyeHeight - middle, away) * 180) / Math.PI;
+				return orbit([foot[0], middle, foot[2]], distance, elevation, turn, fov);
+			}
 			case 'crown': {
 				const top = main.crown.top;
 				const middle = (main.crown.base + top) / 2;
