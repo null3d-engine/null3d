@@ -75,13 +75,13 @@ export const record: Species = {
 				// Still 09: a hundred and twenty leaflets a side, about one every five centimetres,
 				// the longest near the middle of the rachis and the shortest at the tip.
 				count: { mean: 120, spread: 8 },
-				// Still 09: the leaflets are about a seventh of the frond's length at their longest,
-				// 40 to 45 cm on a mature frond, and shortest at its tip.
+				// Stills 09 and 21: the leaflets are about a tenth of the frond's length at their
+				// longest, the studio frond's own proportion, and shortest at its tip.
 				length: [
-					[0, 0.07],
-					[0.3, 0.073],
-					[0.65, 0.063],
-					[1, 0.031],
+					[0, 0.098],
+					[0.3, 0.1022],
+					[0.65, 0.0882],
+					[1, 0.0434],
 				],
 				angle: [
 					[0, 42],
