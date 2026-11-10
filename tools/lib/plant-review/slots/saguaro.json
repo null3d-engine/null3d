@@ -33,11 +33,15 @@
 	},
 	"09-rib-pattern.png": {
 		"span": 0.24,
-		"barkHeight": 4
+		"barkHeight": 4,
+		"lamp": "#fff0e2",
+		"daylight": 1.08
 	},
 	"10-areoles-and-spines.png": {
 		"span": 0.16,
-		"barkHeight": 4
+		"barkHeight": 4,
+		"lamp": "#ffedc4",
+		"daylight": 1.03
 	},
 	"13-rib-cross-section.png": {
 		"span": 0.5,
@@ -45,7 +49,8 @@
 	},
 	"15-skin-mid-trunk.png": {
 		"span": 0.72,
-		"barkHeight": 4
+		"barkHeight": 4,
+		"daylight": 0.9
 	},
 	"16-skin-on-arm.png": {
 		"view": "bark-limb",
