@@ -66,7 +66,6 @@ import {
 	spanDistance,
 	standCamera,
 } from '../lib/plant-review/framing';
-import { blueGained, LIGHT_CALIBRATION } from '../lib/plant-review/light';
 import { measurePlant, partPositions, shootPositions } from '../lib/plant-review/measure';
 import { readPlantReviewQuery } from '../lib/plant-review/query';
 import { sharedRecords } from '../lib/plant-review/sight';
@@ -1236,17 +1235,15 @@ export default defineSketch(async (ctx) => {
 				});
 		} else if (SUN === 'flat' && REFERENCE_LIGHT === null) {
 			// A studio's fill: an even light from every side rather than a sun, at the strength and the
-			// colour its reference measures, so a studio picture is matched as a daylight one is. The
-			// measured factors correct the light's under-scale; blue takes its own gain.
-			const fill = (QUERY.daylight ?? 1) * LIGHT_CALIBRATION.flat;
-			const gain = LIGHT_CALIBRATION.blue;
+			// colour its reference measures, so a studio picture is matched as a daylight one is.
+			const fill = QUERY.daylight ?? 1;
 			const studio = BACKGROUND === 'studio-grey';
 			const lamp = QUERY.lamp ?? '#ffffff';
-			scene.createAmbientLight({ intensity: fill * gain, color: blueGained('#ffffff') });
+			scene.createAmbientLight({ intensity: fill });
 			scene.createHemisphereLight({
-				skyColor: blueGained(tinted(studio ? '#f1ede6' : '#eef1f4', lamp)),
-				groundColor: blueGained(tinted(studio ? '#c8c2b6' : '#b9b9b4', lamp)),
-				intensity: 1.5 * fill * gain,
+				skyColor: tinted(studio ? '#f1ede6' : '#eef1f4', lamp),
+				groundColor: tinted(studio ? '#c8c2b6' : '#b9b9b4', lamp),
+				intensity: 1.5 * fill,
 			});
 		} else {
 			// Soft daylight: most of the light from the whole sky, with a sun that gives the crown its
@@ -1255,8 +1252,7 @@ export default defineSketch(async (ctx) => {
 			// below is what the ground throws back, so it grows with the daylight too.
 			const skyLight = 0.6 + 1.7;
 			const sunLight = 1.9;
-			const strength = (QUERY.daylight ?? 1) * LIGHT_CALIBRATION.daylight;
-			const gain = LIGHT_CALIBRATION.blue;
+			const strength = QUERY.daylight ?? 1;
 			const share = QUERY.skyShare;
 			const total = (skyLight + sunLight) * strength;
 			const skyScale = share === undefined ? strength : (share * total) / skyLight;
@@ -1265,14 +1261,11 @@ export default defineSketch(async (ctx) => {
 			// studio's own walls and paper are the base under it, warmer than an open sky's blue.
 			const studio = BACKGROUND === 'studio-grey';
 			const lamp = QUERY.lamp ?? '#ffffff';
-			scene.createAmbientLight({
-				intensity: 0.6 * skyScale * gain,
-				color: blueGained('#ffffff'),
-			});
+			scene.createAmbientLight({ intensity: 0.6 * skyScale });
 			scene.createHemisphereLight({
-				skyColor: blueGained(tinted(studio ? '#f2eee7' : '#dfe8f0', lamp)),
-				groundColor: blueGained(tinted(studio ? '#c9c3b7' : '#7f8166', lamp)),
-				intensity: 1.7 * skyScale * gain,
+				skyColor: tinted(studio ? '#f2eee7' : '#dfe8f0', lamp),
+				groundColor: tinted(studio ? '#c9c3b7' : '#7f8166', lamp),
+				intensity: 1.7 * skyScale,
 			});
 			// The reference's own light when it gave one: the sun stands that far to the camera's
 			// right and that high, so the crown is lit and shadowed as its reference's is.
@@ -1290,8 +1283,8 @@ export default defineSketch(async (ctx) => {
 			// cool sun can be matched where its fill alone cannot reach.
 			scene.createDirectionalLight({
 				direction,
-				color: blueGained(tinted('#ffffff', lamp)),
-				intensity: sunLight * sunScale * gain,
+				color: tinted('#ffffff', lamp),
+				intensity: sunLight * sunScale,
 				castShadows: true,
 				shadow,
 			});
