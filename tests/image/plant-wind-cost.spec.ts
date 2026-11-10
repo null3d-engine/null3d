@@ -41,6 +41,17 @@ const SECONDS = Math.max(1, Number(process.env.NULL3D_PLANT_SECONDS ?? 2));
 /** The turntable sheet's cells, each drawing the plant once. */
 const TURNS = 30;
 
+/**
+ * The timing window's own guard, run before each preset so the run's record carries the guard's
+ * answer rather than an assumption. It asks the coordination helpers whether a marker stands and
+ * whether its holder is alive.
+ */
+const GUARD_COMMAND =
+	'source /Users/ram/dev/null3d/.internal/coordination/quiet-window.sh; ' +
+	'quiet_markers_present /Users/ram/dev/null3d/.internal/coordination && ' +
+	'quiet_holder_alive /Users/ram/dev/null3d/.internal/coordination && ' +
+	'echo "window open" || echo "window NOT open"';
+
 /** What one side publishes. */
 interface Result {
 	error?: string;
@@ -138,6 +149,10 @@ test('the plant material costs its wind offset at each preset in the batch view'
 	await page.setViewportSize({ width: 1600, height: 900 });
 	const unresolved: string[] = [];
 	for (const [index, preset] of PRESETS.entries()) {
+		const guard = execFileSync('zsh', ['-c', GUARD_COMMAND], { encoding: 'utf8' }).trim();
+		console.log(`GUARD ${preset}: ${guard}`);
+		if (!guard.includes('window open'))
+			throw new Error(`the quiet-window guard says "${guard}" before ${preset}; stopping`);
 		const order = index % 2 === 0 ? (['on', 'off'] as const) : (['off', 'on'] as const);
 		const sides: Partial<Record<'on' | 'off', Result>> = {};
 		const conditions: string[] = [];
