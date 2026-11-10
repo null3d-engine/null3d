@@ -815,12 +815,21 @@ export function meshTuft(input: MeshInput, level: MeshLevel): MeshArrays {
 		const r0 = skeleton.radius[first] as number;
 		const r1 = skeleton.radius[last] as number;
 		const rings = Math.max(2, Math.min(last - first + 1, isStem ? (level === 0 ? 12 : 5) : 4));
+		const surface = sheath ? growth.sheathSurface : undefined;
+		// A surface over the column's lower length replaces that length: the column draws above it
+		// and the surface below, so the plant spends no vertices on a hidden tube.
+		const split = surface ? path.length * surface.share : path.length;
+		const lowerRings = surface ? Math.max(2, Math.round(rings * surface.share)) : rings;
+		const upperRings = surface ? Math.max(2, rings - lowerRings + 1) : rings;
 		writeStem(mesh, {
 			path,
-			from: 0,
+			from: surface ? split : 0,
 			to: path.length,
-			rings,
-			radius: (share) => r0 + (r1 - r0) * share,
+			rings: upperRings,
+			radius: (share) => {
+				const at = surface ? surface.share + (1 - surface.share) * share : share;
+				return r0 + (r1 - r0) * at;
+			},
 			section: {
 				sides: tiers.stemSides(sides),
 				...(isStem && sides === 3 ? { shape: triangle } : {}),
@@ -829,24 +838,25 @@ export function meshTuft(input: MeshInput, level: MeshLevel): MeshArrays {
 			uHalf: strip.stalkHalf,
 			// A shoot's sheath column is marked in the surface-kind byte, which survives the
 			// quantiser, so the plant material draws it in the record's sheath colours. Its second
-			// coordinates run from the column's foot to its collar, which the colours read.
-			bytes: sheath ? { ...bytes, phase: SHEATH_KIND } : bytes,
+			// coordinates run from the column's foot to its collar, which the colours read. A surface
+			// carries the colours instead, so the column under it draws as the leaf.
+			bytes: sheath && !surface ? { ...bytes, phase: SHEATH_KIND } : bytes,
 			crown,
-			along: sheath || isStem ? [0, 1] : fine ? [0.85, 1] : [0, 0.05],
+			along: (sheath && !surface) || isStem ? [0, 1] : fine ? [0.85, 1] : [0, 0.05],
 			browning: isStem ? Math.max(browning, 0.15) : Math.max(browning, 0.3),
 			closeTip: isStem || fine,
 		});
-		const surface = growth.sheathSurface;
-		if (sheath && surface) {
-			// A thin outer sheath over the blade bases, drawn as its own open tube round the lower
-			// share of the column, so the photographs' outer sheaths have geometry of their own.
+		if (surface) {
+			// The surface: a thin outer sheath over the blade bases, its own open tube round the
+			// column's lower length. Its section is coarse where the column's was fine, so the
+			// vertices it adds stay within the budget the column's own length gives back.
 			writeStem(mesh, {
 				path,
 				from: 0,
-				to: path.length * surface.share,
-				rings,
+				to: split,
+				rings: lowerRings,
 				radius: (share) => surface.radius * (1 - 0.1 * share),
-				section: { sides: tiers.stemSides(6) },
+				section: { sides: tiers.stemSides(4) },
 				v: stems,
 				uHalf: strip.stalkHalf,
 				bytes: { ...bytes, phase: SHEATH_KIND },
