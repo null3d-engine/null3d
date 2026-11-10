@@ -401,7 +401,11 @@ function standView(
 	let view = viewOf(stand);
 	const askedTop = framing.top;
 	const askedBase = framing.base ?? 1;
-	for (let pass = 0; pass < 4; pass++) {
+	// Only a drawn box that runs off the frame is stood back: a picture that already holds its plant
+	// keeps the camera its reference was measured with, so its figures do not move.
+	const first = projectedRows(view, bounds, points);
+	const clipped = first.top < 0 || first.base > 1;
+	for (let pass = 0; clipped && pass < 4; pass++) {
 		const rows = projectedRows(view, bounds, points);
 		if (framing.base === undefined) {
 			// The plant runs off the frame's foot: the solve asks only its top, so stand back until
