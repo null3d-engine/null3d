@@ -95,7 +95,7 @@ The command ends with status 1 when a frame failed or when the coverage is not c
 | `leaves`, `roll` | A cut piece framed at its photograph's scale: the leaf lengths that the frame's height covers, with the piece standing on its cut at the lower edge. Then the degrees the camera turns about its line of sight: a quarter turn lays the piece across the frame. |
 | `turns`, `step`, `columns` | A sheet of turns, each in a cell of its own camera. |
 
-The page posts a `plant-review` message with the form it grew, the plant's height, width, crown base, trunk radius and triangles, each cell's camera, the cutting's size, and, with `measure`, each cell's measures: the crown box in metres, the foliage share, the silhouette, the trunk diameter at 1.3 m, the crown base and the first fork's height.
+The page posts a `plant-review` message with the form it grew, the plant's drawn height and width (the filled silhouette of the level the view draws, so a part outside that level cannot inflate them), crown base, trunk radius and triangles, each cell's camera, the cutting's size, and, with `measure`, each cell's measures: the crown box in metres, the plant's filled box, the foliage share, the silhouette, the trunk diameter at 1.3 m, the crown base and the first fork's height.
 
 ## How the measures work
 
