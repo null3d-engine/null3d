@@ -217,6 +217,23 @@ Each of these is a fail on its own, and each is a fault an earlier standard let 
   a person who knows the species would take it for that species grown. If not, it fails row 12, and
   the reviewer names the first thing that gives it away.
 
+### Pictures the tool cannot draw
+
+Some rows need a picture that no view of the review tool can draw. Such a row is a **picture debt**.
+It is not passed, and it is not a limit of the plant.
+
+- **A low rosette's crown join.** The inside view aims at 0.45 of the crown's top, with a floor of
+  five centimeters, in `tests/pages/sketches/plant-review-sketch.ts`. On a plant whose crown is its
+  whole body, that point sits in the middle of the mound. The join at the soil then falls below
+  every frame the view allows. Four cameras were measured on the hosta against the same picture.
+  Edge directions compare the two pictures' mixtures of edge angles, and a lower figure is closer.
+  The inside view at 0.75 m reads **0.151** and draws one leaf blade. At 0.30 m it reads **0.088**
+  and draws the petiole bundle, with the crown cropped below the frame. At 0.30 m, looking down 40
+  degrees, it reads **0.080** and draws blades over the crown. The soil view, aimed at the crown's
+  foot, draws a blade across it.
+- **A cropped frame is void.** It shows that the picture is wrong, not that the plant is. The row is
+  a picture debt until a view draws the subject.
+
 ## What the reviewer reports
 
 For each species: pass or fail, row by row, with the picture that shows it and the figure where a
