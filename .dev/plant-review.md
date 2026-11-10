@@ -304,8 +304,10 @@ own failure line is read.
 
 The hosta's last attempt is a clean case of a lever that fails the row it aims at and costs another.
 
-Its from-above view read 0.0049 against a floor of 0.0496. That floor is its photograph's own
-reading, 0.0996, less half a tenth, which is the allowance row 6 gives every view. The three side
+Its from-above view read 0.0049 against a floor of 0.0796. That floor is its photograph's own
+reading, 0.0996, less two hundredths, which is the allowance row 6 gives below its reference. The
+rule above allows five hundredths above and two below, and this case read half a tenth either way
+until a reviewer checked it against the rule. The three side
 views sat inside their bands. Cutting the leaves from nine to seven per eye raised the
 from-above view to 0.0204. The sides stayed inside at 0.1445, 0.1543 and 0.1419 against 0.1098,
 0.1262 and 0.1171. The top still needed 0.0292, and the sides had only 0.0153, 0.0219 and 0.0252 of
