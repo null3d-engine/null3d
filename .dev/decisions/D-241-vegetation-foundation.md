@@ -1135,6 +1135,8 @@ The battle demo keeps its own trees. The owner confirmed the same day that `pine
 `examples/compare/battle/shapes.ts` keeps building the woods that `scene.ts` plants, which records
 the exception that until now was asserted only in a task note. <!-- outside date -->
 
-M3-V12 asks that no demo keeps a plant generator of its own. With these five rulings recorded, every
-demo that keeps one has the owner's answer beside it, and the task closes on those rulings rather
-than on a generator being removed from each.
+M3-V12 asks that no demo keeps a plant generator of its own. Four of the five demos that keep one
+have the owner's answer beside them: the translucency garden, the impostor forest, the campfire
+glade and the battle demo. The forest is not one of them. Its own generator stays only until the
+sparse tree lands, and then it draws through the add-on, so the task does not close on these
+rulings. It closes when the forest swaps.
