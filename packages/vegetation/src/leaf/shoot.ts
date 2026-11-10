@@ -1094,28 +1094,34 @@ export function shootPrototypes(
 	const shoots = record.shoots;
 	if (!shoots) return [];
 	const leafMeshes = Math.min(...leaves.map((tier) => tier.length));
-	const plans = Array.from({ length: shoots.prototypes }, (_, index) =>
-		planShoot(record, index, leafMeshes),
-	);
-	const classes = plans.map((_, index) => classOf(shoots.classes, index, shoots.prototypes));
-	const out = plans.map((plan, index) =>
-		prototypeOf(
-			leafMeshes > 0 ? plan : { ...plan, leaves: [] },
-			leaves,
-			index,
-			classes[index] as ShootClass,
-		),
-	);
-	if (!cutting && leafMeshes > 0 && hasBareTwins(record))
-		for (const [index, plan] of plans.entries())
-			out.push(
-				prototypeOf({ ...plan, leaves: [] }, leaves, out.length, classes[index] as ShootClass),
-			);
-	// A cutting class is planned last and marked as a cutting's, so the crown never offers one however
+	const out: UncardedPrototype[] = [];
+	// A kit of a kind holds only the classes of its kind: the plant's kit the crown's classes and any
+	// cutting class a piece cut from the plant draws, the cutting kit only the classes that a cut piece
+	// alone draws, so it never pays for a prototype the piece cannot draw.
+	if (!cutting) {
+		const plans = Array.from({ length: shoots.prototypes }, (_, index) =>
+			planShoot(record, index, leafMeshes),
+		);
+		const classes = plans.map((_, index) => classOf(shoots.classes, index, shoots.prototypes));
+		out.push(
+			...plans.map((plan, index) =>
+				prototypeOf(
+					leafMeshes > 0 ? plan : { ...plan, leaves: [] },
+					leaves,
+					index,
+					classes[index] as ShootClass,
+				),
+			),
+		);
+		if (leafMeshes > 0 && hasBareTwins(record))
+			for (const [index, plan] of plans.entries())
+				out.push(
+					prototypeOf({ ...plan, leaves: [] }, leaves, out.length, classes[index] as ShootClass),
+				);
+	}
+	// A cut-only class is planned last and marked as a cutting's, so the crown never offers one however
 	// its variants fall. It keeps a leafless twin beside it where the species has them, so a winter
-	// cutting of it still finds a piece. A kit of a kind holds only the classes of its kind: the
-	// plant's kit the crown's and the cutting classes both are drawn from, the cutting kit the classes
-	// that only a cut piece draws.
+	// cutting of it still finds a piece.
 	for (const shootClass of (shoots.cuttingClasses ?? []).filter(
 		(shoot) => (shoot.cutOnly === true) === cutting,
 	))
