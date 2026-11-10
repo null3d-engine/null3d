@@ -1366,6 +1366,10 @@ export function widthProfile(spans: Int32Array, box: Box, bands = PROFILE_BANDS)
  */
 const MOUND_FROM = 0.7;
 const MOUND_TO = 0.95;
+/** How much of a mound a plant must be before the bole rule reaches its crown start. */
+const MOUND_BOLE_FROM = 0.5;
+/** How many trunk widths a row may stand before it belongs to the crown rather than the bole. */
+const BOLE_MULTIPLE = 2.5;
 
 /** A value that rises smoothly from 0 at `from` to 1 at `to`, and stays at the ends. */
 function smoothstep(from: number, to: number, value: number): number {
@@ -1459,8 +1463,22 @@ export function crownStartRow(spans: Int32Array, box: Box): number {
 	// first narrow stretch below it that the stem continues below is its base. A scan from the foot's
 	// end cannot be trusted, because a flare or a ground strip is a wide stretch of its own there.
 	const found = crownStartFromTop(spans, box, limit);
-	// The more the plant is a mound, the further its crown's foot moves towards its own foot.
-	return Math.round(found + mound * (box.bottom - found));
+	const fromMound = Math.round(found + mound * (box.bottom - found));
+	// A photograph of a whole plant can read its bole as crown: when the stem is wide the mound rule
+	// pulls the start to the foot, and the crown's box then holds the whole plant. The stem below the
+	// first row standing wider than a set multiple of the trunk's own width is not crown, so on a
+	// plant the mound rule reaches, the start never falls below that row's top. A tuft is wide at its
+	// own foot, so its first wide row is its foot and its start is unchanged.
+	if (mound <= MOUND_BOLE_FROM) return fromMound;
+	const boleLimit = trunk * BOLE_MULTIPLE;
+	let bole = box.bottom;
+	for (let y = box.bottom; y > box.top; y--) {
+		if (width(y) > boleLimit) {
+			bole = y;
+			break;
+		}
+	}
+	return Math.min(fromMound, bole);
 }
 
 /**
