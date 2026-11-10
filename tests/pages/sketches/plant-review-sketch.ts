@@ -1283,6 +1283,16 @@ export default defineSketch(async (ctx) => {
 		}
 	}
 
+	// A stand-back multiplies the solved distance: the camera moves along its own line from the
+	// target, so a re-draw asked for a margin keeps its subject, its light and its turn.
+	const standBack = QUERY.standBack;
+	if (standBack !== undefined && standBack > 0 && standBack !== 1)
+		for (const cell of cells) {
+			const { position, target } = cell.view;
+			for (let k = 0; k < 3; k++)
+				position[k] =
+					(target[k] as number) + ((position[k] as number) - (target[k] as number)) * standBack;
+		}
 	const cameras: Camera[] = cells.map((cell) => {
 		const { position, target, roll } = cell.view;
 		const span = Math.hypot(...sub(target, position));

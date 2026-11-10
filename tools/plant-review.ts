@@ -49,6 +49,7 @@ import {
 	videoFrame,
 } from './lib/plant-review/image.ts';
 import {
+	boxOf,
 	measurePlant,
 	plantMask,
 	type ReferenceSet,
@@ -395,6 +396,53 @@ function slotHeld(path: string): boolean {
 }
 
 /** Takes the first free draw slot, waiting until one frees, and returns the way to give it back. */
+/** The stand-back one re-draw takes: a few per cent, enough to clear a silhouette of the edge. */
+const STAND_BACK = 1.06;
+
+/** Whether the drawn plant's silhouette meets one of the picture's edges. */
+function meetsTheEdge(matte: string): boolean {
+	const mask = plantMask(readImage(matte));
+	const box = boxOf(mask.mask, mask.width, mask.height);
+	if (!box) return false;
+	return (
+		box.left <= 0 || box.top <= 0 || box.right >= mask.width - 1 || box.bottom >= mask.height - 1
+	);
+}
+
+/**
+ * The mask gate: after the first draw, each still and turn cell's matte is read through the same
+ * plant mask the comparison uses, and a picture whose silhouette meets its frame's edge is drawn
+ * once more with the camera stood back, so no picture judges a cropped subject.
+ */
+async function gateMasks(
+	dir: string,
+	frames: RunFrame[],
+	shots: readonly Shot[],
+	gpu?: string,
+): Promise<RunFrame[]> {
+	const cropped = new Set<string>();
+	for (const frame of frames)
+		if (frame.matte && meetsTheEdge(join(dir, frame.matte))) cropped.add(frame.file);
+	if (cropped.size === 0) return frames;
+	const redraws = shots
+		.filter((shot) => shot.cells.some((cell) => cropped.has(cell.file)))
+		.map((shot) => ({ ...shot, query: { ...shot.query, standBack: STAND_BACK } }));
+	if (redraws.length === 0) return frames;
+	const release = await takeDrawSlot();
+	let again: RunFrame[];
+	try {
+		again = await drawShots(dir, redraws, { ...(gpu && { gpu }) });
+	} finally {
+		release();
+	}
+	for (const frame of again) {
+		const at = frames.findIndex((candidate) => candidate.file === frame.file);
+		if (at >= 0) frames[at] = frame;
+		else frames.push(frame);
+	}
+	return frames;
+}
+
 async function takeDrawSlot(): Promise<() => void> {
 	if (flag('no-slot')) return () => {};
 	for (let attempt = 0; attempt < 720; attempt++) {
@@ -783,12 +831,13 @@ async function main(): Promise<void> {
 	);
 	const started = Date.now();
 	const release = await takeDrawSlot();
-	let frames: readonly RunFrame[];
+	let frames: RunFrame[];
 	try {
 		frames = await drawShots(dir, shots, { ...(flag('gpu') && { gpu: option('gpu') }) });
 	} finally {
 		release();
 	}
+	frames = await gateMasks(dir, frames, shots, flag('gpu') ? option('gpu') : undefined);
 	const manifest: Manifest = {
 		tool: 'tools/plant-review.ts',
 		species,
