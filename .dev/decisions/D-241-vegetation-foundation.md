@@ -767,10 +767,21 @@ atlas, at 12, 24 and 48 meters from one camera, cover the same share of their ow
 `tests/image/leaf-card-coverage.spec.ts` runs it on all three GPU paths, and the
 `vegetation-coverage` picture shows the same for three crowns at three distances.
 
-**Owed.** The paint's time on each device, which the device record keeps. The owner's judgment of
-the generated leaves is given: he found them at least as good as the painted set and ruled his sample
-stands for the catalogue, so the leaves are no longer owed here. The `vegetation-versus-creek` picture
-that showed them side by side is removed with Creek's Blender models.
+**The owner's judgment is given.** On 10 November 2026 he judged the generated leaf and bark files
+of the pedunculate oak and the common ash, from review sheets that write both faces of the leaf, its
+relief, the mature bark tiled and one corner at full size, and the young wood, each beside a note of
+what a wrong one would look like. He judged them at least as good as the painted set they replace.
+Asked in two parts, he answered yes that those two species' sheets stand as the sample for every
+species the add-on generates, and yes that he wants the other species shown as well. <!-- outside date -->
+
+The ruling's scope is the approach, not each file. It answers whether the generated atlases are at
+least as good as the painted set they replace; it does not certify that any one species' files are
+right. A fault found in a species' sheet is a finding against that species' work, the painter's when
+the fault is shared and that species' record when it is local, and this ruling never dissolves one.
+Showing him the remaining species' sheets is an obligation this record carries until they are drawn
+and read.
+
+**Owed.** The paint's time on each device, which the device record keeps.
 
 ## What each leaf cell holds
 
