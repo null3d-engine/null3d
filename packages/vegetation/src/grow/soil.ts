@@ -45,16 +45,16 @@ export function growSoil(
 	let fromNode = hostNode;
 	if (spines && spines.length > 0) {
 		// A colony's rhizome lines carry its fronds, so each line's body runs through the feet of
-		// its own stipes: the body starts thick at the colony's middle and thins toward the ends.
+		// its own stipes, bending along the line's wander between them: the body starts thick at
+		// the colony's middle and thins toward the ends.
 		const radius = soil.rhizomeRadius ?? 0.01;
 		let firstNode = -1;
 		for (const spine of spines) {
 			if (spine.length < 2) continue;
-			const points = resample(spine, 5);
 			const axis = builder.addAxis({ parent: -1, parentNode: -1, order: 0, kind: AXIS_ROOT });
 			let previous = -1;
-			points.forEach((point, i) => {
-				const share = i / (points.length - 1);
+			spine.forEach((point, i) => {
+				const share = i / (spine.length - 1);
 				previous = builder.addNode({
 					x: point[0],
 					y: -radius * (1.15 - 0.35 * share),
@@ -111,35 +111,6 @@ export function growSoil(
 		];
 		rootPath(builder, from, fromNode, position, out, -droop, length, soil.rootRadius);
 	}
-}
-
-/** A polyline's points at even arc lengths, so a body's rings spread along its line. */
-function resample(
-	spine: readonly (readonly [number, number])[],
-	count: number,
-): [number, number][] {
-	const lengths: number[] = [0];
-	let total = 0;
-	for (let i = 1; i < spine.length; i++) {
-		const from = spine[i - 1] as readonly [number, number];
-		const to = spine[i] as readonly [number, number];
-		total += Math.hypot(to[0] - from[0], to[1] - from[1]);
-		lengths.push(total);
-	}
-	const only = spine[0] as readonly [number, number];
-	if (total < 1e-6) return [[only[0], only[1]]];
-	const points: [number, number][] = [];
-	for (let k = 0; k < count; k++) {
-		const at = (total * k) / (count - 1);
-		let i = 1;
-		while (i < lengths.length - 1 && (lengths[i] as number) < at) i++;
-		const from = spine[i - 1] as readonly [number, number];
-		const to = spine[i] as readonly [number, number];
-		const span = (lengths[i] as number) - (lengths[i - 1] as number) || 1;
-		const t = (at - (lengths[i - 1] as number)) / span;
-		points.push([from[0] + (to[0] - from[0]) * t, from[1] + (to[1] - from[1]) * t]);
-	}
-	return points;
 }
 
 /**

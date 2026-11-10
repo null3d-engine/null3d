@@ -11,9 +11,11 @@ import { capsFor } from '../core/caps';
 import { speciesProblems } from '../core/check';
 import {
 	AXIS_RACHIS,
+	AXIS_ROOT,
 	AXIS_STIPE,
 	BUD_TERMINAL,
 	type MacroSkeleton,
+	NODE_SOIL_BODY,
 	skeletonBuffers,
 } from '../core/graph';
 import { hashAt, hashBytes } from '../core/hash';
@@ -107,6 +109,61 @@ describe('the frond-colony grower', () => {
 			expect(axes.kind[stipe]).toBe(AXIS_STIPE);
 			expect(axes.parentNode[axis]).toBe(axes.last[stipe] as number);
 		}
+	});
+
+	it('runs each rhizome body through its own line, bending with it, and joins every stipe foot', () => {
+		const growth = brackenRecord.growth;
+		if (growth.model !== 'frond-colony') throw new Error('the fixture is not a frond colony');
+		const soil = {
+			rhizome: 0.6,
+			rhizomeRadius: 0.028,
+			body: true,
+			roots: 6,
+			rootLength: 0.2,
+			rootRadius: 0.004,
+			droop: 78,
+		};
+		const record: Species = { ...brackenRecord, id: 'bracken-soil', growth: { ...growth, soil } };
+		const skeleton = growFrondColony({ record, seed: 11, variant: 0, season: 'summer' });
+		const { axes, position } = skeleton;
+		const feet: [number, number][] = [];
+		for (let a = 0; a < axes.count; a++) {
+			if ((axes.kind[a] as number) !== AXIS_STIPE) continue;
+			const n = axes.first[a] as number;
+			feet.push([position[n * 3] as number, position[n * 3 + 2] as number]);
+		}
+		const bodies: number[] = [];
+		for (let a = 0; a < axes.count; a++)
+			if ((axes.kind[a] as number) === AXIS_ROOT && (axes.parent[a] as number) === -1)
+				bodies.push(a);
+		expect(bodies.length).toBeGreaterThan(1);
+		const nodes: [number, number][] = [];
+		let bends = 0;
+		for (const a of bodies) {
+			const first = axes.first[a] as number;
+			const last = axes.last[a] as number;
+			for (let n = first; n <= last; n++) {
+				expect(skeleton.flags[n]).toBe(NODE_SOIL_BODY);
+				nodes.push([position[n * 3] as number, position[n * 3 + 2] as number]);
+				if (n === first || n === last) continue;
+				const before = n - 1;
+				const x1 = (position[n * 3] as number) - (position[before * 3] as number);
+				const z1 = (position[n * 3 + 2] as number) - (position[before * 3 + 2] as number);
+				const x2 = (position[(n + 1) * 3] as number) - (position[n * 3] as number);
+				const z2 = (position[(n + 1) * 3 + 2] as number) - (position[n * 3 + 2] as number);
+				const turn = Math.abs(Math.atan2(x1 * z2 - z1 * x2, x1 * x2 + z1 * z2));
+				if (turn > Math.PI / 90) bends++;
+			}
+		}
+		// Every stipe's foot sits on a body node, so the join is exact rather than near.
+		for (const foot of feet) {
+			const near = Math.min(
+				...nodes.map((node) => Math.hypot(node[0] - foot[0], node[1] - foot[1])),
+			);
+			expect(near).toBeLessThan(1e-9);
+		}
+		// The bodies bend with their own lines: at least one knuckle turns by more than two degrees.
+		expect(bends).toBeGreaterThan(0);
 	});
 
 	it('holds each mature blade near level on top of its stipe, the blades in tiers', () => {

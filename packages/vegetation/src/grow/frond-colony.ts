@@ -96,7 +96,25 @@ interface FrondPlan {
 	readonly x: number;
 	readonly z: number;
 	readonly line: number;
+	/** Metres from the colony's middle along its rhizome line. */
+	readonly along: number;
 	readonly age: number;
+}
+
+/** A point and its direction on a rhizome line's trace, at a distance along the line. */
+function traceAt(
+	trace: readonly number[],
+	along: number,
+): { x: number; z: number; dx: number; dz: number } {
+	const last = trace.length / 2 - 1;
+	const at = Math.min(last, Math.max(0, along / RHIZOME_STEP));
+	const i = Math.max(0, Math.min(Math.max(0, last - 1), Math.floor(at)));
+	const t = at - i;
+	const x0 = trace[i * 2] as number;
+	const z0 = trace[i * 2 + 1] as number;
+	const x1 = (trace[i * 2 + 2] ?? x0) as number;
+	const z1 = (trace[i * 2 + 3] ?? z0) as number;
+	return { x: x0 + (x1 - x0) * t, z: z0 + (z1 - z0) * t, dx: x1 - x0, dz: z1 - z0 };
 }
 
 /**
@@ -107,7 +125,11 @@ interface FrondPlan {
 function frondPlaces(
 	input: GrowInput,
 	colony: FrondColony,
-): { places: { x: number; z: number; line: number }[]; lines: number } {
+): {
+	places: { x: number; z: number; line: number; along: number }[];
+	lines: number;
+	traces: number[][];
+} {
 	const { seed, variant } = input;
 	const salt = input.record.seedSalt >>> 0;
 	const draw = (purpose: number, index = 0) => unitAt(seed, salt, variant, purpose, index);
@@ -131,7 +153,7 @@ function frondPlaces(
 		traces.push(trace);
 	}
 	const reached = new Float64Array(lines);
-	const places: { x: number; z: number; line: number }[] = [];
+	const places: { x: number; z: number; line: number; along: number }[] = [];
 	for (let f = 0; f < count; f++) {
 		const l = f % lines;
 		const gap = Math.max(0.02, spreadAt(colony.rhizome.spacing, draw(DRAW.spacing, f)));
@@ -139,25 +161,17 @@ function frondPlaces(
 		const along = (reached[l] as number) + (f < lines ? gap / 2 : gap);
 		if (along > colony.rhizome.length) continue;
 		reached[l] = along;
-		const trace = traces[l] as number[];
-		const at = Math.min(trace.length / 2 - 1.001, along / RHIZOME_STEP);
-		const i = Math.floor(at);
-		const t = at - i;
-		const x0 = trace[i * 2] as number;
-		const z0 = trace[i * 2 + 1] as number;
-		const x1 = trace[i * 2 + 2] as number;
-		const z1 = trace[i * 2 + 3] as number;
-		const dx = x1 - x0;
-		const dz = z1 - z0;
-		const d = Math.sqrt(dx * dx + dz * dz) || 1;
+		const at = traceAt(traces[l] as number[], along);
+		const d = Math.sqrt(at.dx * at.dx + at.dz * at.dz) || 1;
 		const aside = (draw(DRAW.offset, f) * 2 - 1) * gap * 0.35;
 		places.push({
-			x: x0 + dx * t - (dz / d) * aside,
-			z: z0 + dz * t + (dx / d) * aside,
+			x: at.x - (at.dz / d) * aside,
+			z: at.z + (at.dx / d) * aside,
 			line: l,
+			along,
 		});
 	}
-	return { places, lines };
+	return { places, lines, traces };
 }
 
 /** A frond's age for the season: its share of the way from a new crozier to dead. */
@@ -200,7 +214,7 @@ export function growFrondColony(input: GrowInput): MacroSkeleton {
 	const shape = colony.frond;
 	const salt = record.seedSalt >>> 0;
 	const draw = (purpose: number, index: number) => unitAt(seed, salt, variant, purpose, index);
-	const { places, lines } = frondPlaces(input, colony);
+	const { places, lines, traces } = frondPlaces(input, colony);
 	const plans: FrondPlan[] = places.map((place, f) => ({
 		...place,
 		age: ageFor(season, colony, input, f, places.length),
@@ -341,10 +355,31 @@ export function growFrondColony(input: GrowInput): MacroSkeleton {
 		const reach = 2 * spreadAt(colony.soil.rhizome ?? 0, soilDraw(DRAW.soilRhizome) as number);
 		const spines: [number, number][][] = [];
 		for (let l = 0; l < lines; l++) {
+			const feet = plans
+				.filter((plan) => plan.line === l && Math.hypot(plan.x, plan.z) <= reach)
+				.sort((a, b) => a.along - b.along);
+			if (feet.length === 0) continue;
+			// The body runs out from the colony's middle through its stipes' feet, bowing between
+			// them by the bend its own line makes over the same stretch.
 			const spine: [number, number][] = [[0, 0]];
-			for (const plan of plans)
-				if (plan.line === l && Math.hypot(plan.x, plan.z) <= reach) spine.push([plan.x, plan.z]);
-			if (spine.length > 1) spines.push(spine);
+			const trace = traces[l] as number[];
+			let previousAlong = 0;
+			let previous: [number, number] = [0, 0];
+			for (const plan of feet) {
+				const from = traceAt(trace, previousAlong);
+				const to = traceAt(trace, plan.along);
+				const middle = traceAt(trace, (previousAlong + plan.along) / 2);
+				spine.push(
+					[
+						(previous[0] + plan.x) / 2 + (middle.x - (from.x + to.x) / 2),
+						(previous[1] + plan.z) / 2 + (middle.z - (from.z + to.z) / 2),
+					],
+					[plan.x, plan.z],
+				);
+				previous = [plan.x, plan.z];
+				previousAlong = plan.along;
+			}
+			spines.push(spine);
 		}
 		growSoil(
 			builder,
