@@ -81,7 +81,7 @@ The command ends with status 1 when a frame failed or when the coverage is not c
 | `sunAzimuth`, `sunRise`, `skyShare`, `daylight` | A sunlit view's light as its reference was lit: the sun's degrees to the camera's right and above the horizon, the sky's share of the light, and the light's strength, sky, sun and ground bounce together, as a multiple of the page's soft daylight (1 by default, up to 8). A clear sky lights a plant more brightly than the soft daylight does against the same sky colour. A review measures the strength from each photograph's own sky: a calibration to the picture, not a derivation from physics, since a photograph's tone curve squeezes a bright sky more than the plant. |
 | `wind`, `time` | The wind's strength from 0 to 3, and the wind clock's time, at which the tool holds the frame. |
 | `season`, `lod`, `preset` | The season, a level forced at every distance (0 to 3), and the mesh tier. |
-| `pick`, `cut` | The cutting candidate and its length in metres. |
+| `pick`, `cut` | The cutting candidate and its length in metres. `cut` picks the candidate whose extent is nearest that length; it does not slice a span out of one axis. The piece's span comes from the candidate the record's cutting class offers. |
 | `measure`, `scale`, `matte` | Post the measures; draw a 1 m bar; draw the plant black on white. |
 | `placeholders` | Grow stand-ins; on by default for an id that is not registered. |
 | `horizon`, `fill`, `targetY`, `targetX`, `top`, `eye` | A whole-plant framing in screen shares, which stands the camera on the ground as a reference's camera stood. |
