@@ -1469,10 +1469,16 @@ export function crownStartRow(spans: Int32Array, box: Box): number {
 	// first row standing wider than a set multiple of the trunk's own width is not crown, so on a
 	// plant the mound rule reaches, the start never falls below that row's top. A tuft is wide at its
 	// own foot, so its first wide row is its foot and its start is unchanged.
-	if (mound <= MOUND_BOLE_FROM) return fromMound;
+	// The rule reaches two cases: a plant the mound rule pulls to its foot, and any start the finder
+	// itself leaves at the foot, where a photograph's bole reads as crown. A close view's crown
+	// starts well above its foot, so its start is untouched.
+	const footStart = box.bottom - fromMound <= Math.max(1, Math.round(tall * 0.01));
+	if (mound <= MOUND_BOLE_FROM && !footStart) return fromMound;
 	const boleLimit = trunk * BOLE_MULTIPLE;
-	let bole = box.bottom;
-	for (let y = box.bottom; y > box.top; y--) {
+	// The scan starts above the strip of ground the mask keeps at the plant's foot, which is often
+	// the widest run of all and is not the bole.
+	let bole = foot;
+	for (let y = foot; y > box.top; y--) {
 		if (width(y) > boleLimit) {
 			bole = y;
 			break;
