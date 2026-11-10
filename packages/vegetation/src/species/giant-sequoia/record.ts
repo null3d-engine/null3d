@@ -144,22 +144,23 @@ export const record: Species = {
 			},
 			{
 				// Still 21's branch: a spray of this year's and last year's rope shoots in two or three
-				// orders, each short sub-shoot carrying its own tip.
+				// orders, each short sub-shoot carrying its own tip. The close pieces are sprays, so
+				// the shoots run denser and carry their side shafts, as the photographs show.
 				name: 'spray',
 				vigor: [0.62, 1],
 				share: 0.38,
 				years: 3,
 				length: { mean: 0.32, spread: 0.04 },
-				nodes: { mean: 56, spread: 6 },
+				nodes: { mean: 72, spread: 8 },
 				internode: EVEN,
 				stem: { radius: [0.006, 0.002] },
 				lateral: 70,
 				laterals: { mean: 3, spread: 0 },
-				lateralGap: 0.2,
+				lateralGap: 0.14,
 				bend: { length: 0.04, angle: 15 },
 				leafScale: [
-					[0, 0.9],
-					[1, 1],
+					[0, 1.05],
+					[1, 1.15],
 				],
 				leafAngle: [
 					[0, 34],
@@ -293,16 +294,21 @@ export const record: Species = {
 					[0.003, 0.067],
 					[0, 0.068],
 				],
-				sides: 10,
-				scales: 10,
+				// Still 19: six rows of broad diamond bosses with dark crevices between them, so the
+				// close cone reads as overlapping scales rather than one smooth green form.
+				sides: 14,
+				scales: 6,
 				scaled: [0.008, 0.062],
-				scaleShade: 0.5,
-				scaleJitter: 0.3,
+				scaleShade: 0.7,
+				scaleJitter: 0.35,
 				stalk: 0.004,
 				stalkSides: 5,
 			},
-			colour: [0.1, 0.125, 0.05],
-			bandColour: [0.14, 0.125, 0.075],
+			// The photographs' fresh cones are a yellow-green, brighter than the cone's shade on the
+			// tree; the linear ratios of the picture's cones over the render's are about 1.45 in red
+			// and green and 1.05 in blue.
+			colour: [0.145, 0.18, 0.053],
+			bandColour: [0.2, 0.19, 0.075],
 			roughness: [0.85, 0.9],
 			stalkColour: [0.16, 0.09, 0.05],
 			hang: 20,
@@ -354,17 +360,12 @@ export const record: Species = {
 	seedSalt: 1919802519,
 	roundBand,
 	cuttings: {
-		// Still 21's branch is a spray in two or three orders, so the piece is a branch of the second
-		// macro order rather than one of the long boughs: a metre and a half of wood with its short
-		// side branches and their rope shoots.
-		branch: { order: 2, length: 1.2 },
-		// Still 22's branchlet is a short branch carrying a fan of rope shoots.
-		subbranch: { order: 2, length: 0.8 },
-		// Still 23's branched shoot tip: the crown's longer spray, which carries side shoots and hides
-		// its stem, rather than this year's single rope.
-		cluster: { shoot: 'spray' },
-		// A close piece carries the denser covering its photograph shows; the crown's own kit is
-		// unchanged, so the whole views pay for no extra shoots.
-		density: 3,
+		// Stills 21 and 22: both pieces are sprays of rope shoots, so the two take the class's two
+		// prototypes rather than a thick macro axis, whose wood reads several times the photographs'.
+		branch: { shoot: 'spray', pick: 0 },
+		subbranch: { shoot: 'spray', pick: 1 },
+		// Still 23's branched shoot tip: the same fuller spray, which carries side shafts and hides
+		// its stem.
+		cluster: { shoot: 'spray', pick: 0 },
 	},
 };
