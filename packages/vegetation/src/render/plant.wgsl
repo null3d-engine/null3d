@@ -37,6 +37,10 @@ struct Uniforms {
     // one that names none.
     windBox: f32,
     windStrength: f32,
+    // The base wind's speed in metres a second and its heading in radians, which a page sets each
+    // frame after its controls change.
+    windSpeed: f32,
+    windHeading: f32,
     // The layer of the field's texture that holds the newest state, which a page sets each frame.
     windLayer: f32,
     // The distance from the camera out to which the plant sways, in metres: 0 for every distance.
@@ -490,7 +494,11 @@ fn air_at(place: vec3f) -> vec4f {
     let gust = textureLoad(records, vec2i(1, 1), 0);
     let swirl = textureLoad(records, vec2i(2, 1), 0);
     let sent = textureLoad(records, vec2i(3, 1), 0);
-    let reading = wind_reading(base, gust, swirl, sent, frame.time);
+    var reading = wind_reading(base, gust, swirl, sent, frame.time);
+    // The base wind follows the page's controls, which the records rows keep only until the
+    // material is made. They carry the gust and the swirl, which change when a page sends a gust.
+    reading.speed = material.windSpeed;
+    reading.heading = material.windHeading;
     return wind_sample(
         place,
         camera.position.xz - vec2f(material.windBox * 0.5),
