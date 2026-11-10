@@ -10,6 +10,7 @@
 // import.
 import type { WindTable } from '../asset';
 import type { SpeciesBox } from '../core/box';
+import { radians } from '../core/math';
 import type { BarkZone, LeafOptics, Species } from '../core/record';
 import { STAND_IN_BARK, type TextureManifest } from '../core/textures';
 import { type Rgb, spreadMean } from '../core/types';
@@ -144,6 +145,13 @@ export const HEADER = {
 	collar: 66,
 	/** A tuft's sheath colour at the column's collar, then the share of the column it takes. */
 	sheathCollar: 67,
+	/**
+	 * A fire scar's hollow: its foot and head in metres, its centre's angle in radians about the
+	 * first stem and its half-width. Zeroed where the record gives no scar.
+	 */
+	scar: 68,
+	/** The scar's charred colour, then the share of it the hollow takes. */
+	scarColour: 69,
 } as const;
 
 /**
@@ -153,7 +161,7 @@ export const HEADER = {
 export const BARK_ZONE_TEXELS = 4;
 
 /** The header's texels that hold anything. */
-export const HEADER_TEXELS = HEADER.sheathCollar + 1;
+export const HEADER_TEXELS = HEADER.scarColour + 1;
 
 /** An extra's roughness where its record names none. */
 export const EXTRA_ROUGHNESS = 0.6;
@@ -405,6 +413,13 @@ export function speciesHeader(
 		texel(header, HEADER.winterTransmittance, [...winterLeaves.transmittance, 0]);
 	}
 	texel(header, HEADER.cardStalk, [record.lod.cardStalk ?? 0, 0, 0, 0]);
+	const scar = record.base?.scar;
+	texel(
+		header,
+		HEADER.scar,
+		scar ? [scar.from, scar.to, radians(scar.angle), radians(scar.width) * 0.5] : [0, 0, 0, 0],
+	);
+	texel(header, HEADER.scarColour, scar ? [...scar.colour, scar.shade ?? 0.9] : [0, 0, 0, 0]);
 	return header;
 }
 

@@ -195,6 +195,20 @@ function baseProblems(base: BaseSpec, out: string[]): void {
 		if (!(flutes.height > 0))
 			out.push(`base.flutes.height is ${flutes.height}; it is metres and must be above 0`);
 	}
+	const scar = base.scar;
+	if (scar) {
+		notNegative(scar.from, 'base.scar.from', out);
+		notNegative(scar.to, 'base.scar.to', out);
+		if (!(scar.to > scar.from))
+			out.push(`base.scar.to is ${scar.to}; it must stand above base.scar.from`);
+		if (!(scar.width > 0 && scar.width <= 360))
+			out.push(`base.scar.width is ${scar.width}; it is degrees from 0 to 360`);
+		notNegative(scar.depth, 'base.scar.depth', out);
+		scar.colour.forEach((channel, k) => {
+			shareProblem(channel, `base.scar.colour[${k}]`, out);
+		});
+		shareProblem(scar.shade, 'base.scar.shade', out);
+	}
 }
 
 /**
