@@ -384,8 +384,10 @@ describe('the pendulous sedge', () => {
 			{ record: { ...module.record, growth: bare }, textures: noTextureFiles(module.record.id) },
 			{ placeholders: 'missing', detail: 'high' },
 		);
-		// The plant's bytes before the soil block existed: a record without it grows exactly these.
-		expect(plantAssetDigest(growPlantNow(kit, OPTIONS))).toBe('1bf7ee25ee1f3386');
+		// The plant's bytes with the soil block stripped, at this record: a plant that names no
+		// soil grows exactly these. A deliberate record change re-records the figure, and the
+		// growth path that reads no soil must not move it.
+		expect(plantAssetDigest(growPlantNow(kit, OPTIONS))).toBe('6da56c091b5e5e77');
 	});
 
 	it('ends its blades in long fine points', () => {
