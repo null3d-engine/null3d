@@ -36,7 +36,7 @@ export const record: Species = {
 		layout: 'clump',
 		// The culms rise from one foot with sky between their swollen bases, the outer ones leaning
 		// out, as stills 01 and 02 show: the clump holds together by its crown, not by a fused base.
-		spacing: 1.35,
+		spacing: 0.95,
 		height: { mean: 8, spread: 1 },
 		// Still 17: a culm's width over its height is about a fortieth, far thicker in proportion than
 		// a tree's bole.
@@ -53,12 +53,12 @@ export const record: Species = {
 		// Still 15: the node is a raised ring of about a third of a centimetre over the culm's surface,
 		// with a wax band above it and the sheath's scar below.
 		node: { ridge: 0.007, waxBand: 0.02, sheathScar: 0.005 },
-		// Stills 08 and 09: the branch complement leaves above the lower half of each culm, so the
-		// lowest leaves of the shortest culm stand near half the clump's height. The two or three
-		// branches leave on opposite sides, steeply upward, and one takes the node's lead. Stills 01
-		// and 02 show lower branches shorter and the longest near the top of the branching zone.
+		// Stills 08 and 09: the branch complement leaves above the lower three fifths of each culm,
+		// so the clump stands bare to about its middle. The two or three branches leave on opposite
+		// sides, steeply upward, and one takes the node's lead. Stills 01 and 02 show lower branches
+		// shorter and the longest near the top of the branching zone.
 		branches: {
-			from: 0.7,
+			from: 0.62,
 			perNode: { mean: 2, spread: 0.4 },
 			dominant: true,
 			length: [
@@ -73,7 +73,7 @@ export const record: Species = {
 		// Still 09: the flattened groove up the internode above a branch.
 		sulcus: 0.12,
 		// Stills 07 and 19: young culms carry papery sheaths low down, which shed as the culm hardens.
-		sheaths: { upTo: 0.12, length: 0.28 },
+		sheaths: { upTo: 0.06, length: 0.28 },
 		// Still 17: the culm stands nearly plumb, leaning out only slightly toward its tip.
 		arch: { mean: 8, spread: 2 },
 	},
@@ -136,23 +136,24 @@ export const record: Species = {
 		],
 		cuttingClasses: [
 			{
-				// Still 22: a cut branchlet of about half a metre, its leaves after a bare run and three
-				// side branchlets each ending in a fan. The crown cannot carry shoots this bare, so the
-				// sub-branch draws this class and the crown never does.
+				// Still 22: a cut branchlet of about half a metre, its leaves after a bare run and side
+				// branchlets each ending in a fan. The crown cannot carry shoots this bare, so the
+				// sub-branch draws this class and the crown never does. The photograph shows three or
+				// four fans; a third costs the kit more bytes than its owner cap leaves.
 				name: 'cut',
 				vigor: [0, 1],
 				share: 0,
 				years: 2,
-				length: { mean: 0.5, spread: 0.05 },
-				nodes: { mean: 8, spread: 1 },
+				length: { mean: 0.42, spread: 0.05 },
+				nodes: { mean: 6, spread: 1 },
 				internode: BRANCHLET,
 				stem: { radius: [0.005, 0.002] },
 				lateral: 58,
-				laterals: 3,
+				laterals: 2,
 				lateralGap: 0.45,
 				leafScale: [
 					[0, 1.05],
-					[1, 1.15],
+					[1, 1.1],
 				],
 				leafAngle: [
 					[0, 95],
@@ -236,21 +237,21 @@ export const record: Species = {
 	},
 	extras: [
 		{
-			// Stills 07, 16 and 19: a young culm's lower nodes carry papery sheaths, which shed as the
-			// culm hardens. The sheath flares wider than the culm it wraps and hangs from its node as a
+			// Stills 07, 16 and 19: a young culm's lowest nodes carry papery sheaths, which shed as the
+			// culm hardens. A sheath flares wider than the culm it wraps and hangs from its node as a
 			// skirt, so it stands proud of the smooth green surface rather than hugging it.
 			kind: 'sheath',
 			at: 'culm-node',
-			share: 1,
+			share: 0.5,
 			count: 1,
 			seasons: ['summer', 'autumn', 'winter', 'blossom'],
 			shape: {
 				lathe: [
 					[0.12, 0],
-					[0.19, 0.03],
-					[0.22, 0.08],
-					[0.2, 0.16],
-					[0.17, 0.26],
+					[0.17, 0.03],
+					[0.18, 0.07],
+					[0.17, 0.13],
+					[0.15, 0.18],
 				],
 				sides: 10,
 			},
