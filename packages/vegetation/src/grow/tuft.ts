@@ -814,11 +814,12 @@ export function meshTuft(input: MeshInput, level: MeshLevel): MeshArrays {
 		const last = axes.last[a] as number;
 		const r0 = skeleton.radius[first] as number;
 		const r1 = skeleton.radius[last] as number;
+		const rings = Math.max(2, Math.min(last - first + 1, isStem ? (level === 0 ? 12 : 5) : 4));
 		writeStem(mesh, {
 			path,
 			from: 0,
 			to: path.length,
-			rings: Math.max(2, Math.min(last - first + 1, isStem ? (level === 0 ? 12 : 5) : 4)),
+			rings,
 			radius: (share) => r0 + (r1 - r0) * share,
 			section: {
 				sides: tiers.stemSides(sides),
@@ -835,6 +836,26 @@ export function meshTuft(input: MeshInput, level: MeshLevel): MeshArrays {
 			browning: isStem ? Math.max(browning, 0.15) : Math.max(browning, 0.3),
 			closeTip: isStem || fine,
 		});
+		const surface = growth.sheathSurface;
+		if (sheath && surface) {
+			// A thin outer sheath over the blade bases, drawn as its own open tube round the lower
+			// share of the column, so the photographs' outer sheaths have geometry of their own.
+			writeStem(mesh, {
+				path,
+				from: 0,
+				to: path.length * surface.share,
+				rings,
+				radius: (share) => surface.radius * (1 - 0.1 * share),
+				section: { sides: tiers.stemSides(6) },
+				v: stems,
+				uHalf: strip.stalkHalf,
+				bytes: { ...bytes, phase: SHEATH_KIND },
+				crown,
+				along: [0, 1],
+				browning: Math.max(browning, 0.3),
+				closeTip: false,
+			});
+		}
 	}
 	return mesh.finishMesh();
 }

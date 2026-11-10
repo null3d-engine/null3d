@@ -366,6 +366,12 @@ function growthProblems(record: Species, out: string[]): void {
 					);
 			shareProblem(sheath.reach, 'growth.sheathColour.reach', out);
 		}
+		const surface = growth.sheathSurface;
+		if (surface) {
+			if (!(surface.radius > 0))
+				out.push(`growth.sheathSurface.radius is ${surface.radius}; it must be above 0`);
+			shareProblem(surface.share, 'growth.sheathSurface.share', out);
+		}
 		wholeProblem(growth.ranks, 'growth.ranks', 1, 3, out);
 		for (const key of ['lean', 'spread', 'size'] as const)
 			curveProblems(growth[key], `growth.${key}`, out);

@@ -792,6 +792,13 @@ export interface Tuft {
 	 * than the leaf's green.
 	 */
 	readonly sheathColour?: SheathColour;
+	/**
+	 * A thin outer sheath over the shoot's blade bases: its radius in metres and the share of the
+	 * column's height it covers. It draws its own surface in the record's sheath colours, so the
+	 * photographs' outer sheaths have geometry of their own rather than a tint on the blade.
+	 * Absent, no surface draws and the plant keeps its leaf texture.
+	 */
+	readonly sheathSurface?: { readonly radius: number; readonly share: number };
 	/** Degrees a blade leaves its shoot, by blade age (t = 0 the youngest, innermost, 1 the oldest). */
 	readonly spread: Curve;
 	/** Blade length over the foliage's blade length, by blade age. */
