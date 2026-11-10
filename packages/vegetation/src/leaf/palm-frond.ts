@@ -53,6 +53,20 @@ const SPINE_LENGTH = 0.42;
 const SPINE_WIDTH = 0.16;
 /** Steps along a place's spacing, for the pinnae's own spacing curve. */
 const PLACE_SAMPLES = 64;
+/**
+ * Metres between the pinna places of a close cut piece. The leaflet pictures show a close rachis's
+ * leaflets set denser than a whole frond's own count spreads them, and a piece is its own small
+ * mesh, so it can carry that density without the variant's bytes. A cut of a whole frond keeps the
+ * frond's own spacing.
+ */
+const CUT_PINNA_SPACING = 0.03;
+/**
+ * The width a dead frond's ribbon takes, as a share of the leaflet texture's own. A dead frond's
+ * leaflets dry closed and hang in a clump, so the skirt reads as a brown mass rather than as a comb
+ * of blades. The wider ribbon fills that mass from the few places a coarse level draws, without the
+ * vertices a denser place count would cost.
+ */
+const DEAD_WIDTH_SHARE = 2.6;
 
 /** The record's crown-rosette frond, or a fault for another model. */
 function frondOf(record: Species): FrondShape {
@@ -148,13 +162,14 @@ function leafletsOf(
 	shape: FrondShape,
 	pinnae: PinnaSpec,
 	origin: number,
-	length: number,
 	level: MeshLevel,
 	places: readonly number[],
 ): Leaflet[] {
 	const out: Leaflet[] = [];
 	const planes = Math.max(1, pinnae.planes);
-	const petioleShare = Math.min(0.3, shape.petiole.length / Math.max(length, 1e-6));
+	// The bare petiole is a share of the whole frond, not of the run a piece was cut over: a close
+	// piece of a rachis carries leaflets from its cut, as the pictures show.
+	const petioleShare = Math.min(0.3, shape.petiole.length / Math.max(origin, 1e-6));
 	// A coarser level keeps every so many places along the whole frond, so its tip keeps leaflets.
 	const stride = Math.max(1, Math.round(1 / PINNA_SHARE[level]));
 	places.forEach((place, p) => {
@@ -360,6 +375,7 @@ export function palmFoliage(input: MeshInput, level: MeshLevel): MeshArrays {
 		...ribbon,
 		rows: GRID[2].rows,
 		columns: GRID[2].columns,
+		widthShare: DEAD_WIDTH_SHARE,
 	};
 	// A cut piece of a frond keeps the original's leaflets: the record's frond length gives their
 	// size, and the piece's own run gives only how many of its places it carries. A whole plant's
@@ -382,9 +398,14 @@ export function palmFoliage(input: MeshInput, level: MeshLevel): MeshArrays {
 		const dead = frond.age > 0.99;
 		const drawn = dead ? 2 : level;
 		const origin = hasStem ? length : Math.max(length, recordFrond);
-		const count = Math.max(1, Math.round(spreadMean(pinnae.count) * (length / origin)));
+		// A close cut piece takes its density from the picture's own leaflet spacing; a whole
+		// frond, grown or cut, takes the frond's count.
+		const closeCut = !hasStem && length < recordFrond * 0.5;
+		const count = closeCut
+			? Math.max(1, Math.round(length / CUT_PINNA_SPACING))
+			: Math.max(1, Math.round(spreadMean(pinnae.count) * (length / origin)));
 		const places = pinnaPlaces({ ...pinnae, count }, 1);
-		const list = leafletsOf(shape, pinnae, origin, length, drawn, places);
+		const list = leafletsOf(shape, pinnae, origin, drawn, places);
 		const frondRibbon = dead ? deadRibbon : ribbon;
 		const bytes: number[] = [0, 0, 0, 0];
 		const record = base + frond.record;
