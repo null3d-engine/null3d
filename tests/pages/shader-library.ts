@@ -37,11 +37,20 @@ const COPY_ROW_ALIGNMENT = 256;
 /** The frame group's binding of the texture that holds a material's custom values. */
 const CUSTOM_VALUES_BINDING = 2;
 
-/** The test shader's variants, one per library module, by the module's name. */
+/**
+ * The test shader's variants, by name: one for each library module, and one more where a module's
+ * WebGL2 build differs from its WebGPU build, such as the reflection's.
+ */
 const VARIANTS: [string, ShaderVariant<'main'>][] = Object.entries(SHADERS.test_library);
 
 /** The library module of each function, by function number. */
 const MODULES = FUNCTIONS.map((fn) => fn.name.slice(0, fn.name.indexOf('::')));
+
+/**
+ * The library module of a test variant: its name without the suffix that marks a build of one
+ * language only, such as the reflection's GLSL build.
+ */
+const moduleOf = (variant: string) => variant.replace(/_glsl$/, '');
 
 /** The input texture's texels: one row per case. */
 function inputTexels(cases: readonly Case[]): Uint32Array {
@@ -187,8 +196,9 @@ async function runWebGPU(cases: readonly Case[], input: Uint32Array): Promise<Dr
 	const failures = new Map<string, string>();
 	const pipelines: [string, GPURenderPipeline][] = [];
 	for (const [module, variant] of VARIANTS) {
+		if (!variant.wgsl) continue;
 		try {
-			const wgsl = variant.wgsl!;
+			const wgsl = variant.wgsl;
 			pipelines.push([
 				module,
 				await scoped(device, () => libraryPipeline(device, pipelineLayout, module, wgsl)),
@@ -376,9 +386,10 @@ function runWebGL2(cases: readonly Case[], input: Uint32Array): Drawn {
 	let echoed = deviceFault !== undefined;
 	let shaderFault: string | undefined;
 	for (const [module, variant] of VARIANTS) {
+		if (!variant.glsl) continue;
 		try {
-			useProgram(gl, variant.glsl!.main);
-			for (const [first, count] of moduleRows(cases, module)) {
+			useProgram(gl, variant.glsl.main);
+			for (const [first, count] of moduleRows(cases, moduleOf(module))) {
 				gl.scissor(0, first, RESULT_TEXELS, count);
 				gl.drawArrays(gl.TRIANGLES, 0, 3);
 			}
@@ -634,6 +645,7 @@ run('shader-library', async () => {
 				: compareResults(
 						drawn.map((row) => cases[row]!),
 						drawnBits,
+						{ fromTop: tier !== 'webgl2' },
 					),
 	};
 });
