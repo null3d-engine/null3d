@@ -400,11 +400,17 @@ function slotHeld(path: string): boolean {
 /** The band, as a share of the frame's width, inside which a render's width counts as its reference's. */
 const WIDTH_BAND = 0.05;
 
-/** The share of the picture's width that the drawn plant fills, from the mask the view draws. */
-function drawnShare(path: string, silhouette: boolean): number | null {
-	const image = readImage(path);
-	const plant = silhouette ? matteMask(image) : plantMask(image);
+/**
+ * The share of the picture's width that the drawn plant fills: from the still's matte when it drew
+ * one, which is the exact outline whatever the background, or from the mask the view draws. A
+ * silhouette's black shape and a studio background can both defeat the colour mask, so the matte
+ * is the figure whenever it exists.
+ */
+function drawnShare(path: string, silhouette: boolean, matte?: string): number | null {
+	const image = readImage(matte ?? path);
+	const plant = matte !== undefined || silhouette ? matteMask(image) : plantMask(image);
 	if (
+		matte === undefined &&
 		!silhouette &&
 		!(
 			plant.background.plain ||
@@ -430,13 +436,20 @@ async function correctWidths(
 	gpu?: string,
 ): Promise<RunFrame[]> {
 	const stills = shots.filter((shot) => shot.group === 'stills' && shot.cells.length === 1);
+	const matteOf = (file: string): string | undefined =>
+		frames.find((frame) => frame.file === file)?.matte;
 	const fixes = new Map<string, { target: number; silhouette: boolean; scale: number }>();
 	for (const shot of stills) {
 		const target = shot.query.widthShare;
 		if (target === undefined || target >= 1) continue;
 		const file = shot.cells[0]?.file;
 		if (!file) continue;
-		const share = drawnShare(join(dir, file), shot.query.view === 'silhouette');
+		const matte = matteOf(file);
+		const share = drawnShare(
+			join(dir, file),
+			shot.query.view === 'silhouette',
+			matte ? join(dir, matte) : undefined,
+		);
 		if (share === null || Math.abs(share - target) <= WIDTH_BAND) continue;
 		fixes.set(file, {
 			target,
@@ -466,7 +479,12 @@ async function correctWidths(
 		}
 		const next = new Map<string, { target: number; silhouette: boolean; scale: number }>();
 		for (const [file, fix] of fixes) {
-			const share = drawnShare(join(dir, file), fix.silhouette);
+			const matte = matteOf(file);
+			const share = drawnShare(
+				join(dir, file),
+				fix.silhouette,
+				matte ? join(dir, matte) : undefined,
+			);
 			if (share !== null && Math.abs(share - fix.target) > WIDTH_BAND)
 				next.set(file, { ...fix, scale: fix.scale * (share / fix.target) });
 		}
