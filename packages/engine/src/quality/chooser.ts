@@ -29,7 +29,11 @@ export interface DeviceHints {
 	deviceMemoryGB: number | null;
 }
 
-/** A kind of device, as the main pointer and the screen's smaller edge tell them apart. */
+/**
+ * A kind of device, as the main pointer and the screen's smaller edge tell them apart.
+ *
+ * @category api/quality
+ */
 export type DeviceKind = 'phone' | 'tablet' | 'desktop';
 
 /**
@@ -92,7 +96,11 @@ export interface PresetRequest {
 	crashedStarts: number;
 }
 
-/** The kind of device that the hints describe. */
+/**
+ * The kind of device that the hints describe.
+ *
+ * @category api/quality
+ */
 export function deviceKind(hints: DeviceHints): DeviceKind {
 	if (!hints.coarsePointer) return 'desktop';
 	return hints.screenMinEdge < TABLET_MIN_EDGE ? 'phone' : 'tablet';
