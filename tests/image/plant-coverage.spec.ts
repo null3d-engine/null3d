@@ -1,7 +1,8 @@
 // The plant core's far cards must keep a crown's density as it recedes. One oak is drawn three
-// times from one camera, at three distances, with each copy in a different band of the core's card
-// levels. The measure is the share of each crown's own box that its foliage covers: a card level
-// that thinned without growing its cards leaves holes, and its share falls below the near copy's.
+// times from one camera, at three distances: two copies in the first band of the core's card
+// levels and one in the second. The measure is the share of each crown's own box that its foliage
+// covers: a card level that thinned without growing its cards leaves holes, and its share falls
+// below the near copy's.
 //
 // The tolerance is set by the gap to the forced cut, not by the nearest honest reading. With the
 // cards' coverage cutoff forced, the far crown loses 16.0 to 20.7 per cent of the near share, while
