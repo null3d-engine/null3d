@@ -216,7 +216,9 @@ export const record: Species = {
 				// mid green, and still 13's lower face a pale blue-green.
 				reflectance: [0.0808, 0.2188, 0.0047],
 				reflectanceBack: [0.1699, 0.257, 0.1894],
-				transmittance: [0.11, 0.26, 0.02],
+				// The through-light carries more red than the reflected face, so a back-lit crown
+				// reads as the photographs' yellow-green rather than the sky's blue-green.
+				transmittance: [0.2, 0.26, 0.02],
 				roughness: [0.42, 0.58],
 			},
 		},
