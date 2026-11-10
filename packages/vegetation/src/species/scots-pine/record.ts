@@ -31,9 +31,9 @@ export const record: Species = {
 			// where the crown's plates lie closest.
 			kind: 'whorl',
 			spacing: [
-				[0, 2.5],
-				[0.5, 2],
-				[1, 1.3],
+				[0, 2.9],
+				[0.5, 2.3],
+				[1, 1.45],
 			],
 			perWhorl: { mean: 3, spread: 1 },
 			between: 0,
@@ -123,7 +123,7 @@ export const record: Species = {
 				share: 0.62,
 				years: 2,
 				length: { mean: 0.12, spread: 0.015 },
-				nodes: { mean: 50, spread: 2 },
+				nodes: { mean: 30, spread: 2 },
 				internode: [
 					[0, 1.2],
 					[1, 0.8],
@@ -199,7 +199,7 @@ export const record: Species = {
 			tipPrune: 0.32,
 			// Stills 03 and 05: sky and bare limb show through the crown's middle and under it,
 			// while the lit outer plates stay.
-			skyPrune: 0.3,
+			skyPrune: 0.33,
 			skyPruneLayer: 1.2,
 			// Stills 01 and 18: no bare whisker stands outside the crown; a twig left with no shoot
 			// has died and goes.
@@ -369,7 +369,8 @@ export const record: Species = {
 		branch: { order: 1, length: 1 },
 		// Still 22: a shoot forking into three, drawn by the kit's longer class.
 		subbranch: { shoot: 'long', pick: 0 },
-		// Still 23: the tip of one shoot with its buds and paired needles.
+		// Still 23: the tip of one shoot with its buds and paired needles, drawn by the crown's own
+		// short class, whose brush the photograph shows at a shoot tip.
 		cluster: { shoot: 'short', pick: 0 },
 	},
 	forms,
