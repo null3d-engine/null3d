@@ -75,5 +75,12 @@
 	"11-leaf-spray.png": {},
 	"21-branch-studio.png": {},
 	"22-subbranch-studio.png": {},
-	"23-leaf-cluster-studio.png": {}
+	"23-leaf-cluster-studio.png": {},
+	"leaf-cluster-turntable.mp4": {
+		"view": "leaf-upper",
+		"background": "studio-grey",
+		"sunAzimuth": null,
+		"sunRise": null,
+		"pick": 1
+	}
 }
