@@ -11,19 +11,29 @@ import type { ImageTest } from '../lib/images.ts';
 const ROOT = join(import.meta.dirname, '../..');
 
 /**
- * How long a species' four panels may take, in seconds, where the shared limit is not enough. A
- * species earns a figure of its own by its measured page time, so a slow plant names itself instead
- * of raising the limit under every other plant.
+ * Seconds a species' four-panel picture may take. The panels stand three metres from the crown, so
+ * every shoot row inside that band is real geometry; a dense crown draws about six million triangles
+ * a frame, which a software rasteriser needs far longer for than the default sixty seconds allows.
  */
-const PANEL_TIMEOUT_SECONDS: Readonly<Record<string, number>> = {
-	// The tallest plant of the batch: its four panels of a 60 m crown, with the near shoots in real
-	// geometry, take 78 seconds on the software rasteriser at this machine's load. The figure keeps
-	// headroom above that for a busy CI runner.
-	'giant-sequoia': 150,
-};
+const PANELS_SECONDS = 120;
 
-/** Four panels of a whole plant, built and drawn from scratch, on the software GPU's slower path. */
-const SHARED_PANEL_TIMEOUT_SECONDS = 120;
+/**
+ * Species whose own four panels need longer than the shared limit, with the seconds each was
+ * measured at.
+ *
+ * The measurement is taken with the load the picture run applies: a project's three tiers drawing
+ * together. The common alder's dense crown finished those in under four minutes and overran the
+ * shared two, so its value is 240 and a run against its accepted references passed all three tiers
+ * in three and a half minutes.
+ *
+ * Timing one tier alone is the trap: the same crown drew in 96 seconds that way, which says nothing
+ * about the load the suite runs under. It is the second figure this species corrected after taking
+ * it on the wrong load, the first being its young-bark color read against a picture that framed a
+ * great limb rather than young wood.
+ */
+const PANELS_SECONDS_BY_SPECIES: Readonly<Record<string, number>> = {
+	'common-alder': 240,
+};
 
 /** The picture test of each species folder. */
 export function plantSpeciesTests(root = ROOT): ImageTest[] {
@@ -32,6 +42,11 @@ export function plantSpeciesTests(root = ROOT): ImageTest[] {
 		sketch: `tests/pages/sketches/plant-review-sketch.ts?species=${id}&view=panels`,
 		hold: 1,
 		size: [1024, 1024],
-		timeoutSeconds: PANEL_TIMEOUT_SECONDS[id] ?? SHARED_PANEL_TIMEOUT_SECONDS,
+		// Four panels of a whole plant, built and drawn from scratch: the merged foliage of a ground
+		// A dense crown takes longer than the default limit on the software GPU's slower path, so the
+		// panels draw the low preset's lighter meshes there; a species measured slower still takes its
+		// own limit.
+		timeoutSeconds: PANELS_SECONDS_BY_SPECIES[id] ?? PANELS_SECONDS,
+		swiftShaderSwitches: ['preset=low'],
 	}));
 }

@@ -22,6 +22,7 @@ import {
 	imageRuns,
 	manifestProblems,
 	type Place,
+	pageFactsOf,
 	readPng,
 	referenceFileProblems,
 	referenceOf,
@@ -566,6 +567,40 @@ describe('comparing an image with its reference', () => {
 			...(ciRunOf(process.env) && { ciRun: ciRunOf(process.env) }),
 		});
 		expect(readPng(`${saved}.png`)).toEqual(image([10, 20, 30]));
+	});
+
+	it('keeps the device facts that the page reported with a candidate', () => {
+		const page = pageFactsOf({
+			ok: true,
+			tier: 'webgpu',
+			hdr: true,
+			halfPrecision: true,
+			multiDraw: false,
+			mode: { build: 'threaded', pipelined: true },
+			depth: 'reversed',
+			clipControl: false,
+			drewAsked: true,
+			pixels: 'AAAA',
+			sketch: { noise: 1 },
+		});
+		compareWithReference(boxes(), REAL, image([10, 20, 30]), dirs, page);
+		const saved = base('chrome-real-gpu', 'webgpu', 'boxes');
+		expect(facts(`${saved}.json`)).toMatchObject({
+			page: {
+				tier: 'webgpu',
+				hdr: true,
+				halfPrecision: true,
+				multiDraw: false,
+				mode: { build: 'threaded', pipelined: true },
+				depth: 'reversed',
+				clipControl: false,
+				drewAsked: true,
+			},
+		});
+		// The pixels and the sketch's messages stay out of the facts.
+		const written = JSON.stringify(facts(`${saved}.json`));
+		expect(written).not.toContain('pixels');
+		expect(written).not.toContain('noise');
 	});
 
 	it('names the CI run that drew an image only inside GitHub Actions, not in a local CI=1 run', () => {
