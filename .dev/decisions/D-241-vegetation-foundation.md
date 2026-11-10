@@ -1,6 +1,6 @@
 # D-241: A vegetation foundation add-on, with GPU grass, generated plants and wind on custom materials
 
-Status: decided by the owner. The generator, its built-in species, its bark and leaf atlases, its plant materials and its far trees are removed. [D-323](D-323-plant-core-three-scales.md) supersedes them with the plant core. It also supersedes four sections below: "The generator's shape", "The bark and leaf atlases, and why the browser paints them", "What each leaf cell holds" and "The plants' look, after the owner's first review". Built: the `@null3d/vegetation` package (M3-V4), the scatter (M3-V6), and the grass, whose blade list a compute pass builds and counts on WebGPU and whose rows an instance batch draws on WebGL2, with near shadows and the per-view cull ([below](#the-grasss-two-halves)). The engine's vertex offsets read a compute pass in every pass (M3-V3), custom materials have the standard material's cut-out features (M3-V2), and the wind add-on's first stage is built (M3-V15, D-265). Not built yet: far-tree impostors (M3-V9) and Creek's move to the add-on (M3-V11). Branch poses (M3-V10) were built and measured beside the per-vertex sway, and the owner ruled that wind per vertex is the trees' default, so the branch-pose path is removed. The generated leaves wait for the owner's judgment. Tasks: M3-V1 to M3-V17.
+Status: decided by the owner. The generator, its built-in species, its bark and leaf atlases, its plant materials and its far trees are removed. [D-323](D-323-plant-core-three-scales.md) supersedes them with the plant core. It also supersedes four sections below: "The generator's shape", "The bark and leaf atlases, and why the browser paints them", "What each leaf cell holds" and "The plants' look, after the owner's first review". Built: the `@null3d/vegetation` package (M3-V4), the scatter (M3-V6), and the grass, whose blade list a compute pass builds and counts on WebGPU and whose rows an instance batch draws on WebGL2, with near shadows and the per-view cull ([below](#the-grasss-two-halves)). The engine's vertex offsets read a compute pass in every pass (M3-V3), custom materials have the standard material's cut-out features (M3-V2), and the wind add-on's first stage is built (M3-V15, D-265). Far-tree impostors (M3-V9) are built. Branch poses (M3-V10) were measured and removed on the owner's ruling for wind per vertex, and Creek moved to the add-on (M3-V11). Settled by the owner: the wind moves the trees per vertex, where branch poses were measured and set aside. The generated leaves are judged: the owner found them at least as good as the painted set, and ruled his sample stands for the catalogue. Tasks: M3-V1 to M3-V17.
 
 Summary: Vegetation is the eleventh foundation add-on, `@null3d/vegetation`, which grows plants at first use and places them by ecological rules. It draws grass on the GPU, sways plants in the wind add-on's field and hands far trees to impostors. Creek drops its 3.1 MB of Blender plants for it, and custom materials, whose vertex offsets carry the wind, gain the standard material's cut-out features.
 
@@ -756,9 +756,21 @@ atlas, at 12, 24 and 48 meters from one camera, cover the same share of their ow
 `tests/image/leaf-card-coverage.spec.ts` runs it on all three GPU paths, and the
 `vegetation-coverage` picture shows the same for three crowns at three distances.
 
-**Owed.** The paint's time on each device, which the device record keeps, and the owner's judgment
-of the generated leaves beside Creek's painted textures, which the `vegetation-versus-creek` picture
-shows side by side.
+**The owner's judgment is given.** On 10 November 2026 he judged the generated leaf and bark files
+of the pedunculate oak and the common ash, from review sheets that write both faces of the leaf, its
+relief, the mature bark tiled and one corner at full size, and the young wood, each beside a note of
+what a wrong one would look like. He judged them at least as good as the painted set they replace.
+Asked in two parts, he answered yes that those two species' sheets stand as the sample for every
+species the add-on generates, and yes that he wants the other species shown as well. <!-- outside date -->
+
+The ruling's scope is the approach, not each file. It answers whether the generated atlases are at
+least as good as the painted set they replace; it does not certify that any one species' files are
+right. A fault found in a species' sheet is a finding against that species' work, the painter's when
+the fault is shared and that species' record when it is local, and this ruling never dissolves one.
+Showing him the remaining species' sheets is an obligation this record carries until they are drawn
+and read.
+
+**Owed.** The paint's time on each device, which the device record keeps.
 
 ## What each leaf cell holds
 
@@ -1112,7 +1124,11 @@ translucency demo is. <!-- outside date -->
 
 The forest's own trees stay only until the swap. The add-on's limbs, leaves and coarseness gain the
 much sparser setting that this record's foundation section defines, and the forest then swaps its
-56,000 trees of four kinds to the add-on. Its three fir kinds take variants of the Scots pine, which
+56,000 trees of four kinds to the add-on. The owner confirmed the swap on 10 November 2026, when the
+sparse setting existed and the choice was between swapping and keeping a measured stand-in. His own
+stand costs 240,000 to 496,000 triangles at the demo's count, against 24,600,000 through the add-on,
+which is why the swap waits for the sparse form rather than happening at the dense one.
+<!-- outside date --> Its three fir kinds take variants of the Scots pine, which
 is revived to the species bar, rather than the add-on's built-in conifer.
 
 The translucency demo is an accepted exception. Its own leaf mesh and the standard material's
@@ -1135,6 +1151,8 @@ The battle demo keeps its own trees. The owner confirmed the same day that `pine
 `examples/compare/battle/shapes.ts` keeps building the woods that `scene.ts` plants, which records
 the exception that until now was asserted only in a task note. <!-- outside date -->
 
-M3-V12 asks that no demo keeps a plant generator of its own. With these five rulings recorded, every
-demo that keeps one has the owner's answer beside it, and the task closes on those rulings rather
-than on a generator being removed from each.
+M3-V12 asks that no demo keeps a plant generator of its own. Four of the five demos that keep one
+have the owner's answer beside them: the translucency garden, the impostor forest, the campfire
+glade and the battle demo. The forest is not one of them. Its own generator stays only until the
+sparse tree lands, and then it draws through the add-on, so the task does not close on these
+rulings. It closes when the forest swaps.

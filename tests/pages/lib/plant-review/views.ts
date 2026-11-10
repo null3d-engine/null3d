@@ -8,7 +8,9 @@ export const PLANT_VIEWS = [
 	'turntable',
 	'whole',
 	'crown',
+	'crown-foot',
 	'below',
+	'crown-underside',
 	'inside',
 	'junction',
 	'fork',
@@ -26,6 +28,7 @@ export const PLANT_VIEWS = [
 	'bark-limb',
 	'trunk',
 	'skeleton',
+	'crown-sky',
 	'silhouette',
 	'panels',
 ] as const;
@@ -112,12 +115,30 @@ export const VIEW_SPECS: Readonly<Record<PlantView, ViewSpec>> = {
 		elevation: 0,
 		size: [960, 720],
 	},
+	'crown-foot': {
+		// The crown at soil level on a plain ground: the shoot columns' lower length against the
+		// studio's grey, framed from the foot up as picture 07 frames it.
+		slots: [7],
+		fov: 50,
+		background: 'studio-grey',
+		sun: 'default',
+		elevation: 0,
+		size: [960, 720],
+	},
 	below: {
-		slots: [3, 5],
+		slots: [3],
 		fov: 70,
 		background: 'sky-meadow',
 		sun: 'default',
 		elevation: 70,
+		size: [960, 720],
+	},
+	'crown-underside': {
+		slots: [5],
+		fov: 70,
+		background: 'sky-meadow',
+		sun: 'default',
+		elevation: 60,
 		size: [960, 720],
 	},
 	inside: {
@@ -268,6 +289,17 @@ export const VIEW_SPECS: Readonly<Record<PlantView, ViewSpec>> = {
 		elevation: 5,
 		whole: true,
 		woodOnly: true,
+		size: [960, 720],
+	},
+	'crown-sky': {
+		// The upper crown framed against the sky, the camera below it and looking up: the whole
+		// crown in frame with the sky behind, so the gap inside its box reads the sky between the
+		// foliage rather than the outline's ragged edge.
+		slots: [],
+		fov: 50,
+		background: 'sky-meadow',
+		sun: 'default',
+		elevation: -22,
 		size: [960, 720],
 	},
 	silhouette: {

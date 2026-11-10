@@ -2,6 +2,7 @@
 // stem and its radius at a height, the largest first-order limb, the limb that carries a thickness,
 // where the stem first forks, and a sunlit shoot tip. They read only the skeleton's arrays, so they
 // hold for every growth model.
+import { AXIS_ROOT } from '../../../../packages/vegetation/src/core/graph';
 import type { MacroSkeleton, ShootRows } from './plant-types';
 
 /** A point or direction in plant space. */
@@ -149,6 +150,9 @@ export function mainStem(skeleton: MacroSkeleton): number {
 	let thickest = -1;
 	for (let a = 0; a < axes.count; a++) {
 		if ((axes.parent[a] as number) >= 0) continue;
+		// The soil's rhizome and roots are not a stem, even where the rhizome is the thickest ground
+		// axis: the views stand on the plant's stems.
+		if ((axes.kind[a] as number) === AXIS_ROOT) continue;
 		const r = skeleton.radius[axes.first[a] as number] as number;
 		if (r > thickest) {
 			thickest = r;

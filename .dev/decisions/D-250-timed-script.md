@@ -104,8 +104,8 @@ The two runs wrote byte-identical images for all three states. The SHA-256 value
 
 ## The showcase and the image tests
 
-The task's Done-when names a showcase. `tests/image/showcase-island.script` drives the island showcase (the night town's
-replacement) through three states on WebGL2. They are `turned` at 2 s, `walked` at 3.5 s and
+The task's Done-when names a showcase. `tests/image/showcase-island.script` drives the island showcase
+through three states on WebGL2. They are `turned` at 2 s, `walked` at 3.5 s and
 `closer` at 5 s. The `c` key takes the camera off its route at the opening view, where it holds
 still. A left pointer drag then turns it around the square, the `w` key walks it toward the town,
 and the wheel brings it closer. Every state therefore comes from a key or pointer step that the
