@@ -592,13 +592,19 @@ function compareRun(
 					? [`- ${pair.file}: surface colour difference ${fixed(pair.surfaceDeltaE, 1)}.`]
 					: [],
 			),
-			...result.pairs.flatMap((pair) =>
-				pair.sheath
+			...result.pairs.flatMap((pair) => {
+				if (!pair.sheath) return [];
+				const { photograph, record } = pair.sheath;
+				const material = `against the record, foot ${fixed(record.foot, 1)} and collar ${fixed(record.collar, 1)} (the material check)`;
+				const patches = `from ${pair.sheath.footPixels} and ${pair.sheath.collarPixels} render pixels`;
+				return photograph
 					? [
-							`- ${pair.file}: sheath foot difference ${fixed(pair.sheath.foot, 1)} and collar ${fixed(pair.sheath.collar, 1)} against the record, from ${pair.sheath.footPixels} and ${pair.sheath.collarPixels} pixels.`,
+							`- ${pair.file}: sheath against the photograph, foot ${fixed(photograph.foot, 1)} and collar ${fixed(photograph.collar, 1)} (the row's figure); ${material}, ${patches}.`,
 						]
-					: [],
-			),
+					: [
+							`- ${pair.file}: the photograph's sheath cannot be isolated on this view, so the row has no photograph figure (the carrier's limit); ${material}, ${patches}.`,
+						];
+			}),
 			// A picture whose backdrop the tool cannot separate still has edges, and its edges say
 			// where its parts run. It gets that figure instead of an outline it cannot trust.
 			...edgeLines(result.pairs),
