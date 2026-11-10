@@ -1104,3 +1104,36 @@ by about 87 ms, and the two places that could close it stand unchanged.
 Two pictures hold the look. `vegetation-grass` holds the hill. `vegetation-grass-shadow` holds it at a
 low sun, where the grass's shadows follow the count, so a view that drew the capacity would show the
 rows past it.
+## Addendum: the demos that keep their own plants
+
+The owner ruled on 9 November 2026 that the forest demo is not an exception and that the
+translucency demo is. <!-- outside date -->
+
+The forest's own trees stay only until the swap. The add-on's limbs, leaves and coarseness gain the
+much sparser setting that this record's foundation section defines, and the forest then swaps its
+56,000 trees of four kinds to the add-on. Its three fir kinds take variants of the Scots pine, which
+is revived to the species bar, rather than the add-on's built-in conifer.
+
+The translucency demo is an accepted exception. Its own leaf mesh and the standard material's
+translucency are the subject the demo exists to show, so no species record replaces them: the garden
+draws ninety-six leaves for 21,504 triangles, where one grown plant for each of the twelve clumps
+would cost 36,948 through the add-on and would not draw the cupped, drooping leaf.
+
+The impostor forest keeps its own pine. The owner ruled on 10 November 2026 that the stand-in
+stays, with its figures beside it: 40 triangles and 1.4 KB at its coarsest level, against the
+add-on conifer's 3,079 and 205 KB, where drawing that demo's forest through the add-on measures
+180.22 ms at Low against 4.33, with 24,600,000 triangles against 240,000 to 496,000 and 248.8 MiB
+of wasm against 51.8. <!-- outside date --> Watching it, he also reported that trees disappear and
+reappear as the camera moves. That is a fault of the demo's own drawing rather than a reason to
+swap the generator, and it is traced as a defect of its own.
+
+The campfire glade keeps its own vegetation. The owner ruled on 10 November 2026 that the birches
+and cone firs it builds in `examples/particles/glade.ts` stay as they are. <!-- outside date -->
+
+The battle demo keeps its own trees. The owner confirmed the same day that `pineTree` in
+`examples/compare/battle/shapes.ts` keeps building the woods that `scene.ts` plants, which records
+the exception that until now was asserted only in a task note. <!-- outside date -->
+
+M3-V12 asks that no demo keeps a plant generator of its own. With these five rulings recorded, every
+demo that keeps one has the owner's answer beside it, and the task closes on those rulings rather
+than on a generator being removed from each.
