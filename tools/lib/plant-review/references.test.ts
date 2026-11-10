@@ -24,9 +24,7 @@ import {
 	rowSpans,
 	seasonFromPicture,
 	shadowLike,
-	skyHoldsPlant,
 	skyMaskable,
-	soilHoldsPlant,
 	soilMaskable,
 	widthProfile,
 	withSlot,
@@ -348,7 +346,10 @@ describe('the width profile', () => {
 describe('the slots', () => {
 	test('sort stills by the words in their names before their numbers', () => {
 		expect(classifySlot('13-single-needle-underside.png')?.view).toBe('leaf-under');
-		expect(classifySlot('05-crown-underneath.png')?.view).toBe('below');
+		// The whole-from-below and crown-underside photographs take their own views: one frames the
+		// plant from its foot, the other the crown's underside from under it.
+		expect(classifySlot('03-whole-from-below.png')?.view).toBe('below');
+		expect(classifySlot('05-crown-underneath.png')?.view).toBe('crown-underside');
 		expect(classifySlot('02-whole-profile-b.png')).toMatchObject({
 			view: 'whole',
 			turn: 90,
@@ -649,15 +650,15 @@ describe('the strands view', () => {
 		expect(named.view).toBe('strands');
 		// It is off every slot number: no standard picture takes it, so no other render moves.
 		expect(VIEW_SPECS.strands.slots).toEqual([]);
-		// The standard names keep the views they had before the view was added. The birch's
-		// `19-drooping-twig-ends` name reads as `subbranch` by the twig rule today; the species
-		// names the view it wants in its own slot entry.
+		// The standard names keep their views, except the `05` underside class, which the new view
+		// takes. The birch's `19-drooping-twig-ends` name reads as `subbranch` by the twig rule
+		// today; the species names the view it wants in its own slot entry.
 		const standard: readonly (readonly [string, PlantView])[] = [
 			['01-whole-distant.png', 'whole'],
 			['02-whole-profile.png', 'whole'],
 			['03-whole-from-below.png', 'below'],
 			['04-crown-outside.png', 'limb'],
-			['05-crown-underside.png', 'below'],
+			['05-crown-underside.png', 'crown-underside'],
 			['06-inside-crown.png', 'inside'],
 			['07-limb-leaving-trunk.png', 'junction'],
 			['08-limb-fork.png', 'fork'],
@@ -816,39 +817,5 @@ describe('a fitted sky', () => {
 			soilMaskable({ horizon: 10, sky: surface(1, 20), ground: surface(1, 18), plain: false }, 640),
 		).toBe(false);
 		expect(soilMaskable({ horizon: null, sky: surface(1, 18), plain: false }, 640)).toBe(false);
-	});
-
-	test('refuses a sky whose own noise holds the plant, and keeps a plant outside it', () => {
-		const sky = { horizon: null, sky: surface(0.9999, 17.1), plain: false };
-		// The cypress's 03 passes: its median sits 32.97 from the sky, outside the 17.1 residual.
-		expect(skyHoldsPlant(sky, 32.97)).toBe(false);
-		expect(skyHoldsPlant(sky, 10)).toBe(true);
-		const still = { horizon: null, sky: surface(0.9999, 5), plain: false };
-		expect(skyHoldsPlant(still, 9)).toBe(false);
-		expect(skyHoldsPlant(still, 6)).toBe(true);
-	});
-
-	test('refuses a ground whose model has covered the plant', () => {
-		// The sedge 07: the plant's median sits 5.43 from the ground, whose limit is 36.
-		expect(
-			soilHoldsPlant(
-				{ horizon: 116, sky: surface(1, 24), ground: surface(1, 18), plain: false },
-				5.43,
-			),
-		).toBe(true);
-		// The meadow 07: 40.82 against a limit of 41.6.
-		expect(
-			soilHoldsPlant(
-				{ horizon: 255, sky: surface(1, 26.07), ground: surface(1, 20.82), plain: false },
-				40.82,
-			),
-		).toBe(true);
-		expect(
-			soilHoldsPlant(
-				{ horizon: 255, sky: surface(1, 26.07), ground: surface(1, 20.82), plain: false },
-				60,
-			),
-		).toBe(false);
-		expect(soilHoldsPlant({ horizon: null, sky: surface(1, 10), plain: false }, 1)).toBe(false);
 	});
 });

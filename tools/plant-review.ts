@@ -27,6 +27,8 @@ import {
 } from '../tests/pages/lib/plant-review/views.ts';
 import { flag, option, positional } from './lib/plant-review/cli.ts';
 import {
+	type CameraStand,
+	cameraWidthShare,
 	compareStills,
 	compareTurn,
 	compareWind,
@@ -49,6 +51,8 @@ import {
 	videoFrame,
 } from './lib/plant-review/image.ts';
 import {
+	boxOf,
+	matteMask,
 	measurePlant,
 	plantMask,
 	type ReferenceSet,
@@ -187,6 +191,14 @@ function stillShot(
 				...framing
 			} = framingQuery(estimateFraming([measures], [plant]));
 			query = { ...query, ...framing };
+		}
+		// A close view of the crown's outside keeps the same margin its whole views do, so the run
+		// measures its render against the photograph's width share too and redraws it if it crops.
+		if (!slot.framed && slot.view === 'limb' && slot.query?.surface === true && measures.box) {
+			query = {
+				...query,
+				widthShare: estimateFraming([measures], [plant]).widthShare,
+			};
 		}
 	}
 	// A still's own query fields, such as a camera its picture needs, go over the rest, and a field
@@ -395,6 +407,181 @@ function slotHeld(path: string): boolean {
 }
 
 /** Takes the first free draw slot, waiting until one frees, and returns the way to give it back. */
+/** The band, as a share of the frame's width, inside which a render's width counts as its reference's. */
+const WIDTH_BAND = 0.05;
+
+/**
+ * The most a close view's stand may be scaled to keep a margin. A close view's subject is its span,
+ * so a large scale frames a different part of the plant rather than the same part with its margin:
+ * a picture that needs more than this is a subject mismatch, not a crop, and its crop stays named.
+ */
+const CLOSE_CROP_MAX = 1.25;
+
+/**
+ * A drawn frame's camera stand and the plant's width in metres, as the page posted them: the
+ * geometry that gives a clipped mask's share when the mask itself cannot report a width.
+ */
+function framePlacement(
+	frame: RunFrame | undefined,
+): { readonly plantWidth: number; readonly camera: CameraStand } | null {
+	const facts = frame?.facts as { plant?: { width?: number } } | undefined;
+	const cell = frame?.cell as
+		| { camera?: { position?: number[]; target?: number[]; fov?: number } }
+		| undefined;
+	const plantWidth = facts?.plant?.width;
+	const position = cell?.camera?.position;
+	const target = cell?.camera?.target;
+	const fov = cell?.camera?.fov;
+	if (
+		typeof plantWidth !== 'number' ||
+		typeof fov !== 'number' ||
+		!Array.isArray(position) ||
+		!Array.isArray(target) ||
+		position.length < 3 ||
+		target.length < 3
+	)
+		return null;
+	const distance = Math.hypot(
+		(position[0] as number) - (target[0] as number),
+		(position[1] as number) - (target[1] as number),
+		(position[2] as number) - (target[2] as number),
+	);
+	return { plantWidth, camera: { distance, fov } };
+}
+
+/**
+ * The share of the picture's width that the drawn plant fills: from the still's matte when it drew
+ * one, which is the exact outline whatever the background, or from the mask the view draws. A
+ * silhouette's black shape and a studio background can both defeat the colour mask, so the matte
+ * is the figure whenever it exists. A mask that runs off both side edges holds the frame's width at
+ * most, so it cannot report the plant's own width: the frame's camera stand gives the figure then,
+ * and the share responds to a redraw instead of saturating at the frame's edge.
+ */
+function drawnShare(
+	path: string,
+	silhouette: boolean,
+	matte?: string,
+	frame?: RunFrame,
+): { share: number; clipped: boolean } | null {
+	const image = readImage(matte ?? path);
+	const plant = matte !== undefined || silhouette ? matteMask(image) : plantMask(image);
+	if (
+		matte === undefined &&
+		!silhouette &&
+		!(
+			plant.background.plain ||
+			skyMaskable(plant.background) ||
+			soilMaskable(plant.background, plant.height)
+		)
+	)
+		return null;
+	const box = boxOf(plant.mask, plant.width, plant.height);
+	if (!box) return null;
+	if (box.left <= 0 && box.right >= plant.width - 1) {
+		const placement = framePlacement(frame);
+		const share = placement
+			? cameraWidthShare(placement.plantWidth, placement.camera, image.width / image.height)
+			: null;
+		if (share !== null) return { share, clipped: true };
+	}
+	return {
+		share: (box.right - box.left + 1) / plant.width,
+		clipped: box.left <= 0 || box.right >= plant.width - 1,
+	};
+}
+
+/**
+ * Redraws a whole view whose drawn width is outside the band from its reference's, at a stand
+ * corrected by the width the picture itself measured, and once more if the residual stays outside.
+ * A picture inside the band keeps the framing's own stand.
+ */
+async function correctWidths(
+	dir: string,
+	frames: RunFrame[],
+	shots: readonly Shot[],
+	gpu?: string,
+): Promise<RunFrame[]> {
+	const stills = shots.filter((shot) => shot.group === 'stills' && shot.cells.length === 1);
+	const frameOf = (file: string): RunFrame | undefined =>
+		frames.find((frame) => frame.file === file);
+	const matteOf = (file: string): string | undefined => frameOf(file)?.matte;
+	const fixes = new Map<
+		string,
+		{ target: number; silhouette: boolean; scale: number; close: boolean }
+	>();
+	for (const shot of stills) {
+		const target = shot.query.widthShare;
+		if (target === undefined || target >= 1) continue;
+		const file = shot.cells[0]?.file;
+		if (!file) continue;
+		const matte = matteOf(file);
+		const measured = drawnShare(
+			join(dir, file),
+			shot.query.view === 'silhouette',
+			matte ? join(dir, matte) : undefined,
+			frameOf(file),
+		);
+		if (measured === null) continue;
+		// A box that touches the frame's sides is a crop whatever its share reads, so it is redrawn
+		// even inside the band: a cropped frame cannot judge its subject.
+		const off = Math.abs(measured.share - target) > WIDTH_BAND;
+		const cropped = measured.clipped && target < 1;
+		if (!off && !cropped) continue;
+		const close = shot.query.view === 'limb' && shot.query.surface === true;
+		const scale = measured.share / target;
+		if (close && scale > CLOSE_CROP_MAX) continue;
+		fixes.set(file, {
+			target,
+			silhouette: shot.query.view === 'silhouette',
+			scale,
+			close,
+		});
+	}
+	for (let pass = 0; pass < 2 && fixes.size > 0; pass++) {
+		const redraws = stills
+			.filter((shot) => fixes.has(shot.cells[0]?.file ?? ''))
+			.map((shot) => {
+				const fix = fixes.get(shot.cells[0]?.file ?? '');
+				return { ...shot, query: { ...shot.query, standScale: fix?.scale ?? 1 } };
+			});
+		if (redraws.length === 0) break;
+		const release = await takeDrawSlot();
+		let again: RunFrame[];
+		try {
+			again = await drawShots(dir, redraws, { ...(gpu && { gpu }) });
+		} finally {
+			release();
+		}
+		for (const frame of again) {
+			const at = frames.findIndex((f) => f.file === frame.file);
+			if (at >= 0) frames[at] = frame;
+			else frames.push(frame);
+		}
+		const next = new Map<
+			string,
+			{ target: number; silhouette: boolean; scale: number; close: boolean }
+		>();
+		for (const [file, fix] of fixes) {
+			const matte = matteOf(file);
+			const measured = drawnShare(
+				join(dir, file),
+				fix.silhouette,
+				matte ? join(dir, matte) : undefined,
+				frameOf(file),
+			);
+			if (measured === null) continue;
+			const off = Math.abs(measured.share - fix.target) > WIDTH_BAND;
+			const cropped = measured.clipped && fix.target < 1;
+			const scale = fix.scale * (measured.share / fix.target);
+			if (fix.close && scale > CLOSE_CROP_MAX) continue;
+			if (off || cropped) next.set(file, { ...fix, scale });
+		}
+		fixes.clear();
+		for (const [file, fix] of next) fixes.set(file, fix);
+	}
+	return frames;
+}
+
 async function takeDrawSlot(): Promise<() => void> {
 	if (flag('no-slot')) return () => {};
 	for (let attempt = 0; attempt < 720; attempt++) {
@@ -783,12 +970,13 @@ async function main(): Promise<void> {
 	);
 	const started = Date.now();
 	const release = await takeDrawSlot();
-	let frames: readonly RunFrame[];
+	let frames: RunFrame[];
 	try {
 		frames = await drawShots(dir, shots, { ...(flag('gpu') && { gpu: option('gpu') }) });
 	} finally {
 		release();
 	}
+	frames = await correctWidths(dir, frames, shots, flag('gpu') ? option('gpu') : undefined);
 	const manifest: Manifest = {
 		tool: 'tools/plant-review.ts',
 		species,

@@ -9,6 +9,7 @@ import {
 import {
 	alignTurn,
 	anchorColumn,
+	cameraWidthShare,
 	crownBoxSpread,
 	edgeDifference,
 	edgeProfile,
@@ -255,6 +256,7 @@ describe('the framing a render takes from a reference', () => {
 			horizon: 0.76,
 			top: 0.18,
 			targetX: 0.49,
+			widthShare: 0.9,
 			aspect: 16 / 9,
 			sky: '#d9dad5',
 			frames: 8,
@@ -264,8 +266,22 @@ describe('the framing a render takes from a reference', () => {
 			fill: 0.79 - 0.18,
 			targetY: (0.79 + 0.18) / 2,
 			horizon: 0.76,
+			widthShare: 0.9,
 		});
 		expect(framingQuery(shared)).toMatchObject({ top: 0.18, eye: 1.6 });
+	});
+
+	test("reads a clipped plant's width from the camera stand, so it responds and may exceed the frame", () => {
+		const stand = { distance: 1.862, fov: 38 };
+		const share = cameraWidthShare(2.416, stand, 768 / 516) as number;
+		expect(share).toBeCloseTo(1.2658, 3);
+		expect(cameraWidthShare(2.416, { ...stand, distance: 3.724 }, 768 / 516) as number).toBeCloseTo(
+			share / 2,
+			3,
+		);
+		expect(cameraWidthShare(0, stand, 1.5)).toBeNull();
+		expect(cameraWidthShare(2, { distance: 0, fov: 38 }, 1.5)).toBeNull();
+		expect(cameraWidthShare(2, { distance: 1, fov: 0 }, 1.5)).toBeNull();
 	});
 });
 
@@ -574,26 +590,6 @@ describe('a fitted-background outline', () => {
 		expect(fittedMaskClause({})).toBe('');
 	});
 
-	test('names a refused sky, its distance and the sampled box', () => {
-		const refused = fittedMaskClause({
-			fittedMask: {
-				kind: 'sky',
-				skyFit: 0.9999,
-				skyNoise: 17.1,
-				plantToSky: 9.2,
-				refused: true,
-				sampledBox: { width: 64, height: 48 },
-			},
-		});
-		expect(refused).toContain('the plant sits inside the sky');
-		expect(refused).toContain('the sampled mask was 64 by 48 pixels');
-		const passed = fittedMaskClause({
-			fittedMask: { kind: 'sky', skyFit: 0.9999, skyNoise: 17.1, plantToSky: 32.97 },
-		});
-		expect(passed).toContain('32.97'.replace('32.97', '33.0'));
-		expect(passed).not.toContain('refused');
-	});
-
 	test('reports the ground fit, residual and horizon share for a soil', () => {
 		const clause = fittedMaskClause({
 			fittedMask: {
@@ -634,19 +630,5 @@ describe('a fitted-background outline', () => {
 			},
 		});
 		expect(band).not.toContain('outside a soil band');
-		const refused = fittedMaskClause({
-			fittedMask: {
-				kind: 'ground',
-				skyFit: 1,
-				skyNoise: 24,
-				groundFit: 1,
-				groundNoise: 18,
-				horizonShare: 0.181,
-				plantToGround: 5.43,
-				sampledBox: { width: 19, height: 30 },
-			},
-		});
-		expect(refused).toContain('the mask is refused');
-		expect(refused).toContain('the sampled mask was 19 by 30 pixels');
 	});
 });
