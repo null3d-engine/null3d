@@ -30,6 +30,7 @@ import {
 	videoFrames,
 } from './image.ts';
 import {
+	anyPlantMask,
 	type Box,
 	boxOf,
 	matteMask,
@@ -1324,10 +1325,10 @@ export function compareStills(
 			frame.matte !== undefined
 				? {
 						reference: refPlant.background.plain
-							? pieceCount(refPlant.mask, refPlant.width, refPlant.height, PIECE_AREA)
+							? pieceCount(anyPlantMask(refPlant), refPlant.width, refPlant.height, PIECE_AREA)
 							: null,
 						render: pieceCount(
-							render.plant.mask,
+							anyPlantMask(render.plant),
 							render.plant.width,
 							render.plant.height,
 							PIECE_AREA,
