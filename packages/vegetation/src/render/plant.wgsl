@@ -620,6 +620,47 @@ fn stalk_widen(input: VertexInput, plant: vec3f) -> vec3f {
     return transpose(linear) * world_offset / squared;
 }
 
+/// The camera's place in a mesh's own space: the inverse of the object's uniform scale and turn,
+/// applied to the camera-relative origin. The plant's own blade work needs it to turn a blade's
+/// width toward the view that draws it.
+fn plant_camera() -> vec3f {
+    let model = object.worldMatrix;
+    let linear = mat3x3f(model[0].xyz, model[1].xyz, model[2].xyz);
+    let squared = max(dot(linear[0], linear[0]), 0.000001);
+    return transpose(linear) * (-model[3].xyz) / squared;
+}
+
+/// A blade's width turned to the view: its row's keel stays, and the across offset that the mesh
+/// writes turns from the binormal to the direction across the view, so a level camera sees the
+/// blade's face rather than its edge. The keel and the vertex's up offset are the vertex record's
+/// and the normal's. A vertex with no keel stays where it is.
+fn face_view(input: VertexInput, plant: vec3f) -> vec3f {
+    if (input.vertexRecord.w < 0.5) {
+        return plant;
+    }
+    let normal = normalize(input.normal);
+    let keel = input.vertexRecord.xyz;
+    let offset = plant - keel;
+    let up = dot(offset, normal);
+    let across = offset - normal * up;
+    let span = length(across);
+    if (span < 0.000001) {
+        return plant;
+    }
+    let to = plant_camera() - plant;
+    let distance = length(to);
+    if (distance < 0.000001) {
+        return plant;
+    }
+    let width = cross(to / distance, normal);
+    let reach = length(width);
+    if (reach < 0.000001) {
+        return plant;
+    }
+    let side = select(-1.0, 1.0, dot(width, across) >= 0.0);
+    return keel + (width / reach) * side * span + normal * up;
+}
+
 /// Wood, cards, merged foliage and extras: the 16-bit position into the plant's metres, lifted by
 /// the bark's height on the nearest wood, and moved by the wind in the plant's own space. The
 /// position comes as a fraction of the box, so the offset back from it keeps the plant's own
@@ -663,6 +704,9 @@ fn plant_offset(input: VertexInput, mode: i32) -> vec3f {
     if (mode == MODE_CARDS && abs(input.uv1.y - STALK_PLANE) < 0.1) {
         moved += stalk_widen(input, plant);
     }
+    if (mode != MODE_WOOD) {
+        moved = face_view(input, moved);
+    }
     return moved - input.position;
 }
 
@@ -670,43 +714,47 @@ fn plant_offset(input: VertexInput, mode: i32) -> vec3f {
 /// the near table and brought back into the prototype's space, then the shoot's own bend along its
 /// length and its leaves' flutter about their stalks.
 fn shoot_offset(input: VertexInput) -> vec3f {
+    var local = vec3f(0.0);
     let fade = sway_fade();
-    if (material.windStrength <= 0.0 || fade <= 0.0) {
-        return vec3f(0.0);
+    if (material.windStrength > 0.0 && fade > 0.0) {
+        let row = shoot_row(object.values);
+        let high = near_texel(row.slot * 2);
+        let low = near_texel(row.slot * 2 + 1);
+        let copy = high.xyz + low.xyz;
+        let turn = high.w;
+        let scale = max(low.w, 0.0001);
+        let air = air_at(object.position);
+        let world_wind = vec3f(air.x, 0.0, air.z);
+        if (air.a > 0.0 && length(world_wind) > 0.00001) {
+            let downwind = normalize(world_wind);
+            let base = into_turn(object.position - copy, turn) / scale;
+            let own = row.record;
+            let swayed = sway_point(base, own, into_turn(downwind, turn), air.a);
+            let moved = out_of_turn(swayed - base, turn) * scale;
+            // The row's matrix is its turn times its scale: its transpose over the squared scale undoes it.
+            let m = object_frame();
+            let squared = max(dot(m[0], m[0]), 0.00000001);
+            local = transpose(m) * moved / squared;
+            let local_wind = normalize(transpose(m) * downwind);
+            let bend = input.colors.r;
+            local += local_wind * (bend * bend * length(input.position) * air.a * SHOOT_BEND);
+            let kind = input.colors.b * 255.0;
+            if (kind < KIND_STEM * 0.5) {
+                let flutter = wind_record(own, 2);
+                let leaf_length = max(header(HEADER_LOWER_REFLECTANCE).w, 0.01);
+                let along = clamp(input.uv1.x / leaf_length, 0.0, 1.0);
+                let brisk = clamp(air.a / 10.0, 0.0, 1.5);
+                let flap = sin(TURN * (frame.time * flutter.y + row.phase + input.colors.g));
+                local += normalize(input.normal) * (flutter.x * brisk * flap * along / sqrt(squared));
+            }
+            local = local * fade;
+        }
     }
-    let row = shoot_row(object.values);
-    let high = near_texel(row.slot * 2);
-    let low = near_texel(row.slot * 2 + 1);
-    let copy = high.xyz + low.xyz;
-    let turn = high.w;
-    let scale = max(low.w, 0.0001);
-    let air = air_at(object.position);
-    let world_wind = vec3f(air.x, 0.0, air.z);
-    if (air.a <= 0.0 || length(world_wind) <= 0.00001) {
-        return vec3f(0.0);
+    // A prototype's leaf turns its width to the view too.
+    if (input.vertexRecord.w > 0.5) {
+        local += face_view(input, input.position) - input.position;
     }
-    let downwind = normalize(world_wind);
-    let base = into_turn(object.position - copy, turn) / scale;
-    let own = row.record;
-    let swayed = sway_point(base, own, into_turn(downwind, turn), air.a);
-    let moved = out_of_turn(swayed - base, turn) * scale;
-    // The row's matrix is its turn times its scale: its transpose over the squared scale undoes it.
-    let m = object_frame();
-    let squared = max(dot(m[0], m[0]), 0.00000001);
-    var local = transpose(m) * moved / squared;
-    let local_wind = normalize(transpose(m) * downwind);
-    let bend = input.colors.r;
-    local += local_wind * (bend * bend * length(input.position) * air.a * SHOOT_BEND);
-    let kind = input.colors.b * 255.0;
-    if (kind < KIND_STEM * 0.5) {
-        let flutter = wind_record(own, 2);
-        let leaf_length = max(header(HEADER_LOWER_REFLECTANCE).w, 0.01);
-        let along = clamp(input.uv1.x / leaf_length, 0.0, 1.0);
-        let brisk = clamp(air.a / 10.0, 0.0, 1.5);
-        let flap = sin(TURN * (frame.time * flutter.y + row.phase + input.colors.g));
-        local += normalize(input.normal) * (flutter.x * brisk * flap * along / sqrt(squared));
-    }
-    return local * fade;
+    return local;
 }
 
 fn vertexOffset(input: VertexInput) -> vec3f {

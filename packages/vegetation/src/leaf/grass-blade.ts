@@ -138,6 +138,13 @@ export function writeBlade(
 		const st = sin(twist);
 		const cf = cos(fold);
 		const sf = sin(fold);
+		// The keel is the point the blade's width turns about when its face turns to the view.
+		const target = [
+			frame.position[0] as number,
+			frame.position[1] as number,
+			frame.position[2] as number,
+			1,
+		];
 		const v = texture.base + (texture.tip - texture.base) * t;
 		const brown = Math.max(
 			form.browning,
@@ -161,6 +168,7 @@ export function writeBlade(
 				[0.5 + c * texture.half * Math.min(1, half / Math.max(1e-6, 0.5 * form.width)), v],
 				[t, brown],
 				colour,
+				target,
 			);
 		}
 		if (r > 0) {
