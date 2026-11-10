@@ -218,7 +218,9 @@ export const record: Species = {
 		subbranch: { order: 1, length: 2.4, from: 0.3, span: 1 },
 		// Still 23: a length of the blade carrying its pinnae. The length takes a mature living
 		// frond and the section runs through the blade's middle, where the pinnae are longest.
-		cluster: { order: 1, length: 2.4, from: 0.5, span: 0.9 },
+		// Its leaves stand a tenth under the crown's, which opens the piece's gaps without
+		// taking a leaf away.
+		cluster: { order: 1, length: 2.4, from: 0.5, span: 0.9, scale: 0.9 },
 		// Stills 12, 13 and 24: the pinna laid flat on its own.
 		leaf: { pressed: true },
 	},
