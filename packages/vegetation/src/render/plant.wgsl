@@ -110,10 +110,10 @@ const HEADER_BARK_SECONDS: i32 = 57;
 const HEADER_LICHEN: i32 = 40;
 const HEADER_LICHEN_REACH: i32 = 41;
 const HEADER_SWAY: i32 = 42;
-const HEADER_AUTUMN_BARK: i32 = 57;
-const HEADER_WINTER_BARK: i32 = 58;
-const HEADER_WINTER_REFLECTANCE: i32 = 59;
-const HEADER_WINTER_TRANSMITTANCE: i32 = 60;
+const HEADER_AUTUMN_BARK: i32 = 61;
+const HEADER_WINTER_BARK: i32 = 62;
+const HEADER_WINTER_REFLECTANCE: i32 = 63;
+const HEADER_WINTER_TRANSMITTANCE: i32 = 64;
 const HEADER_EXTRA_BANDS: i32 = 43;
 // An extra's scale pattern: its scale rows, the cells round its turn, and its band's share of the
 // profile's height at each end, per extra in record order.
