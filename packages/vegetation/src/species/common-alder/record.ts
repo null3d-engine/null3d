@@ -356,9 +356,11 @@ export const record: Species = {
 			{
 				// Still 21: three years of a limb, its side shoots leaving at a wide angle and
 				// carrying their leaves along their whole length, with the leaf size the photograph
-				// gives beside a piece this long. It stands last so the other two pieces draw the
-				// shoots they drew before it. Its kind is the free long kind, since a class kind
-				// names a shoot the four-panel plant also grows.
+				// gives beside a piece this long. Three side shoots fill each joint within its unit,
+				// so the piece carries its leaves round every angle of its turn rather than standing
+				// as one flat fan. It stands last so the other two pieces draw the shoots they drew
+				// before it. Its kind is the free long kind, since a class kind names a shoot the
+				// four-panel plant also grows.
 				name: 'whip',
 				vigor: [0, 1],
 				share: 0,
@@ -368,8 +370,8 @@ export const record: Species = {
 				internode: RUN,
 				stem: { radius: [0.012, 0.004] },
 				lateral: 70,
-				laterals: { mean: 2.6, spread: 0.2 },
-				lateralGap: 0.3,
+				laterals: { mean: 3, spread: 0 },
+				lateralGap: 0.15,
 				leafYears: 2,
 				bend: { length: 0.06, angle: 30 },
 				leafScale: [
