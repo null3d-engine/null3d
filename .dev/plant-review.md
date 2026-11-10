@@ -180,6 +180,54 @@ own light they read 1.9, and the head's oak reads 2.2, so the light makes most o
   changed, and a tint measured against that frame took it to 2.3. Framing first, material second:
   a tint chosen before the frame is right measures the camera, not the plant.
 
+## What a reviewer must see for the picture-judged rows
+
+Seven rows are judged on a picture, not only on a band: 1 structure, 2 branch density, 3 branch
+length and taper, 5 leaf cluster density, 7 bark curviness, 11 distinctness, and 12 plausibility,
+neatness and pattern. Rows 4, 6, 8, 9 and 10 carry a numeric band, and their picture check is named
+beside the band.
+
+For each picture row the reviewer writes three things: what must be seen, which reference picture it
+is set beside, and what makes it fail. The same three apply in the same way at every round. The
+standard picture map:
+
+| View | Reference pictures |
+| --- | --- |
+| Whole plant | `01` distant, `02` profile, `03` from below, `18` silhouette, and any other whole view in the set |
+| Wood and joins | `07` limb leaving the trunk, `08` limb fork, `09` secondary branching, `10` fine twigs, `17` trunk taper |
+| Leaf cluster | `11` field cluster, `23` studio cluster |
+| Cut piece | `21` branch, `22` sub-branch, and `09` and `10` where the species uses them |
+| Single leaf | `12` upper, `13` underside, `24` and `25` texture sources |
+| Bark | `14` base, `15` mid-trunk, `16` limb, `26` and `28` texture sources |
+| Season and marks | `19` fruit, cones or keys; `20` the species' own mark, such as roots, a skirt, thorns or a scar |
+
+| Row | Must see | Beside | Fails if |
+| --- | --- | --- | --- |
+| 1 Structure | The species' stem count and habit, where the first limbs leave and at what angle, the crown base, and one solid silhouette or the reference's own piece count | `01`, `02`, `18`, and `03` where it exists; the skeleton view for the wood alone | The habit differs, the limb angle or arrangement differs, the crown base leaves the reference's, or the silhouette breaks into more pieces than the reference's |
+| 2 Branch density | The count of visible first-order limbs and their spacing: whorled, opposite, alternate, spiral or a fan | The skeleton view; count on `03` and the whole views at a matched framing | The count leaves the reference's visible count by more than a quarter, or the spacing is the wrong pattern |
+| 3 Branch length and taper | A branch reaching far enough before it forks and thinning along its length; a cut piece with the photograph's side shoots and scale | `07`, `08`, `09`, `17`; the cut pieces `21` and `22` | The branch forks too early or late, the taper is wrong, the piece is one leafy stem where the photograph has side shoots, or the piece is at the wrong scale |
+| 5 Leaf cluster density | The photograph's leaf count, the cluster's spread and tightness, the terminal bud where the species has one, and one joined piece | `11`, `23`, and `04` for the crown close-up | The count differs beyond the photograph's own spread, the gap leaves its band, or the cluster breaks into pieces |
+| 7 Bark curviness | The stem plumb or bending as the species does; the surface's own figure, such as plates, strips, lenticels, a sheath or fibres; the collar and the fork | `03`, `05`, `07`, `08`, `14`, `15`, `16`, `17`, as the species has them | The stem is kinked where the reference is straight, the limb angle is wrong, the surface reads as generic bark, or the join is hard |
+| 11 Distinctness | A silhouette that differs from the named built neighbour in aspect, fork height, crown form or branching | The species' `01`, `02`, `18` beside the neighbour's whole view | The two share the neighbour's aspect, fork or crown, and only the leaf differs; or the row is passed with no neighbour named |
+| 12 Plausibility, neatness and pattern | Every part joined to its wood; each order dividing into the next; no crossing; a readable species pattern; no bare strays; no scatter | Every view; the species' own review names the pictures where its fault shows | Any one entry of the checklist fails |
+
+**A picture that cannot show the subject decides nothing.** A bark view with no bark, a cut turn
+whose crown box is void, a silhouette with no recorded angle, or a piece at the wrong subject is
+stated as a slot limit. It is not used to pass or fail the row. A row fails when a picture that can
+show the subject shows the fault.
+
+**A same-angle conflict is a reference conflict; a cross-angle comparison is not.** When two
+reference pictures disagree, read the turn each is drawn at. Compare only figures at the same turn,
+and intersect their bands. A figure at turn 0 and a figure at turn 90 do not bind one projection.
+The meadow grass's row 6 is a true same-angle conflict: both pictures draw at turn 0 and their bands
+do not intersect. The alder's row 6 compared a turn-90 profile with a turn-0 silhouette; the bands at
+one turn do intersect, and the silhouette was the outlier against the species' own turntable.
+
+**A per-still choice may pick a different subject; it may not rotate the tree.** A slot may draw a
+different shoot for a still whose photograph shows a different shoot, as the hawthorn's second
+prototype did. It may not move one tree to a view its photographs never show: the camera turn is the
+comparison's basis, not a species input.
+
 ## What a fail looks like
 
 Each of these is a fail on its own, and each is a fault an earlier standard let through.
