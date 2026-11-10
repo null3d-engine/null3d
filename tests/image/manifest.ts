@@ -4049,6 +4049,14 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 	...HALF_PRECISION_TESTS.map((name) => copyWithSwitch(name, 'half', 'half=on')),
 	...INDEX_INSTANCE_TESTS.map(withIndexInstances),
 	...plantSpeciesTests(),
+	// One oak crown at three distances from one camera, each copy in a different band of the plant
+	// core's card levels, so the plant coverage test can read the share of each crown's own box.
+	{
+		name: 'plant-coverage',
+		page: 'tests/pages/plant-coverage.html',
+		size: [1280, 720],
+		timeoutSeconds: 180,
+	},
 	...sparseFormTests(),
 ];
 
