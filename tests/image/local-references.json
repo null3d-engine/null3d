@@ -249,7 +249,7 @@
 		"test": "plant-sparse-oak",
 		"tier": "compat",
 		"date": "2026-11-10",
-		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head, at a load of 7.6, and judged by the landing session"
+		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head, at a load of 7.6, and judged by the landing session. CI draws the software set on a pull request and its drawing replaces this one."
 	},
 	"chromium-swiftshader/compat/plant-weeping-willow.png": {
 		"test": "plant-weeping-willow",
@@ -447,7 +447,7 @@
 		"test": "demo-vegetation",
 		"tier": "webgl2",
 		"date": "2026-11-10",
-		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head; the load was 8 when it started and 33 when it finished, the drawing completed, and it was compared against its reference and judged by the landing session before acceptance"
+		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head; the load was 8 when it started and 33 when it finished, the drawing completed, and it was compared against its reference and judged by the landing session before acceptance. CI draws the software set on a pull request and its drawing replaces this one."
 	},
 	"chromium-swiftshader/webgl2/gltf-clearcoat-car-paint.png": {
 		"test": "gltf-clearcoat-car-paint",
@@ -603,7 +603,7 @@
 		"test": "plant-sparse-oak",
 		"tier": "webgl2",
 		"date": "2026-11-10",
-		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head, at a load of 7.6, and judged by the landing session"
+		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head, at a load of 7.6, and judged by the landing session. CI draws the software set on a pull request and its drawing replaces this one."
 	},
 	"chromium-swiftshader/webgl2/plant-weeping-willow.png": {
 		"test": "plant-weeping-willow",
@@ -987,7 +987,7 @@
 		"test": "plant-sparse-oak",
 		"tier": "webgpu",
 		"date": "2026-11-10",
-		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head, at a load of 7.6, and judged by the landing session"
+		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head, at a load of 7.6, and judged by the landing session. CI draws the software set on a pull request and its drawing replaces this one."
 	},
 	"chromium-swiftshader/webgpu/plant-weeping-willow.png": {
 		"test": "plant-weeping-willow",
