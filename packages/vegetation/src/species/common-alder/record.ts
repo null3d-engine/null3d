@@ -664,10 +664,10 @@ export const record: Species = {
 		// of the ground and sinking as they go.
 		roots: {
 			count: { mean: 6, spread: 1 },
-			length: { mean: 1.6, spread: 0.3 },
-			radius: 0.45,
-			dive: 0.35,
-			ridge: 0.95,
+			length: { mean: 2, spread: 0.3 },
+			radius: 0.22,
+			dive: 0.15,
+			ridge: 1,
 		},
 	},
 	extras: [
@@ -675,14 +675,15 @@ export const record: Species = {
 			// Still 19: small woody cones, each about twice as long as wide, hanging in twos to fours
 			// from one short stalk at the twig's end. Their scales stand in rows that open as the seed
 			// leaves.
-			// Still 19 wants more cones on more tips, but they are the costliest part the species carries:
-			// at three tenths of the tips the densest variant measures 28.2 MB against the owner's twenty.
-			// A sixth stands, as the budget allows no more.
+			// Still 19 wants cones where its twig shows them. They are the costliest part the species
+			// carries: at three tenths of the tips the densest variant measures 28.2 MB against the
+			// owner's 19.7 MB budget. This share keeps the variant under that budget, and the cone
+			// stands nearer the tip than the catkins so the winter picture frames it.
 			kind: 'cone',
 			at: 'shoot-tip',
-			share: 0.16,
+			share: 0.18,
 			count: { mean: 3, spread: 1 },
-			tipShare: 0.8,
+			tipShare: 0.95,
 			seasons: ['summer', 'autumn', 'winter'],
 			shape: {
 				lathe: [
