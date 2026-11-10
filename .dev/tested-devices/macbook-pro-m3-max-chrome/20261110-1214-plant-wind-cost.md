@@ -1,7 +1,8 @@
 # The plant material's wind offset: cost per preset
 
 Plans: M3-V7's cost per preset, the page `plant-wind-cost` on the Mac's real GPU. The branch is
-`feat/v7-sway-picture` at `ca8801bd8`. The page is `tests/pages/plant-wind-cost.html` with
+`feat/v7-sway-picture` at `ca8801bd8`, whose content is the test commit that lands with this
+record (`984e0039e`). The page is `tests/pages/plant-wind-cost.html` with
 `?gpu=webgpu&preset=<preset>&side=<on|off>&rounds=9&seconds=2`. It loads
 `tests/pages/sketches/plant-review-sketch.ts?species=hawthorn-shrub&view=whole&size=960x540&preset=<preset>&wind=2`.
 The off side adds `&sway=0.001`. The field runs on both sides at strength 2, so its cost is
