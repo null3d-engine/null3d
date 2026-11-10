@@ -101,10 +101,12 @@ const REST_STEPS: f32 = 255.0;
 const HEADER_YOUNG: i32 = 15;
 const HEADER_YOUNG_TILE: i32 = 16;
 const HEADER_YOUNG_TINT: i32 = 56;
-// A tuft's sheath colour and roughness, for the merged foliage's sheath columns.
+// A tuft's sheath colour at the column's foot, and its roughness, for the merged foliage.
 const HEADER_SHEATH: i32 = 65;
 // A grass blade's collar: its colour, then the share of the blade's base it takes.
 const HEADER_COLLAR: i32 = 66;
+// A tuft's sheath colour at the column's collar, then the share of the column it takes.
+const HEADER_SHEATH_COLLAR: i32 = 67;
 const HEADER_MOSS: i32 = 17;
 const HEADER_MOSS_REACH: i32 = 18;
 const HEADER_EXTRAS: i32 = 19;
@@ -1150,10 +1152,14 @@ fn surface(input: SurfaceInput) -> Surface {
             roughness = 0.8;
         } else if (mode == MODE_FOLIAGE && abs(input.vertexColor.b * 255.0 - KIND_SHEATH) < 0.5) {
             // A tuft's sheath column is marked in the surface-kind byte, which survives the
-            // quantiser, and draws in the record's sheath colour.
-            let body = header(HEADER_SHEATH);
-            base = body.rgb;
-            roughness = max(body.w, 0.5);
+            // quantiser. Its second coordinates' x carries the share up the column: the record's
+            // brown holds at the foot and its pale takes over toward the collar.
+            let foot = header(HEADER_SHEATH);
+            let collar = header(HEADER_SHEATH_COLLAR);
+            let up = saturate(input.uv1.x);
+            let reach = clamp(collar.w, 0.05, 1.0);
+            base = mix(foot.rgb, collar.rgb, smoothstep(1.0 - reach, 1.0, up));
+            roughness = max(foot.w, 0.5);
         } else {
             let layer = select(1, 0, upper);
             let texel = textureSampleGrad(colour, colourSampler, uv, layer, gx, gy);

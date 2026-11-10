@@ -804,6 +804,8 @@ export function meshTuft(input: MeshInput, level: MeshLevel): MeshArrays {
 		const fine = (axes.order[a] as number) >= 3;
 		if (fine && !tiers.fine) continue;
 		const isStem = kind === AXIS_CULM;
+		// A shoot's column of sheaths takes the record's colours, marked in the surface-kind byte.
+		const sheath = !isStem && !fine && growth.sheathColour !== undefined;
 		if (!isStem && !fine && level === 2) continue;
 		const path = wholePath(skeleton, a, [0, 1, 0]);
 		if (!path) continue;
@@ -825,10 +827,11 @@ export function meshTuft(input: MeshInput, level: MeshLevel): MeshArrays {
 			v: stems,
 			uHalf: strip.stalkHalf,
 			// A shoot's sheath column is marked in the surface-kind byte, which survives the
-			// quantiser, so the plant material draws it in the record's sheath colour.
-			bytes: !isStem && !fine && growth.sheathColour ? { ...bytes, phase: SHEATH_KIND } : bytes,
+			// quantiser, so the plant material draws it in the record's sheath colours. Its second
+			// coordinates run from the column's foot to its collar, which the colours read.
+			bytes: sheath ? { ...bytes, phase: SHEATH_KIND } : bytes,
 			crown,
-			along: isStem ? [0, 1] : fine ? [0.85, 1] : [0, 0.05],
+			along: sheath || isStem ? [0, 1] : fine ? [0.85, 1] : [0, 0.05],
 			browning: isStem ? Math.max(browning, 0.15) : Math.max(browning, 0.3),
 			closeTip: isStem || fine,
 		});

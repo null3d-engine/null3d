@@ -138,10 +138,12 @@ export const HEADER = {
 	winterReflectance: 63,
 	/** The winter leaves' linear transmittance. */
 	winterTransmittance: 64,
-	/** A tuft's sheath colour and roughness, and 1 when the record gives a colour. */
+	/** A tuft's sheath colour at the column's foot, and its roughness. */
 	sheath: 65,
 	/** A grass blade's collar: its colour, then the share of the blade's base it takes. */
 	collar: 66,
+	/** A tuft's sheath colour at the column's collar, then the share of the column it takes. */
+	sheathCollar: 67,
 } as const;
 
 /**
@@ -151,7 +153,7 @@ export const HEADER = {
 export const BARK_ZONE_TEXELS = 4;
 
 /** The header's texels that hold anything. */
-export const HEADER_TEXELS = HEADER.collar + 1;
+export const HEADER_TEXELS = HEADER.sheathCollar + 1;
 
 /** An extra's roughness where its record names none. */
 export const EXTRA_ROUGHNESS = 0.6;
@@ -394,8 +396,11 @@ export function speciesHeader(
 	}
 	texel(header, HEADER.cardStalk, [record.lod.cardStalk ?? 0, 0, 0, 0]);
 	const growth = record.growth;
-	if (growth.model === 'tuft' && growth.sheathColour)
-		texel(header, HEADER.sheath, [...growth.sheathColour, 0.8]);
+	const sheath = growth.model === 'tuft' ? growth.sheathColour : undefined;
+	if (sheath) {
+		texel(header, HEADER.sheath, [...sheath.foot, 0.8]);
+		texel(header, HEADER.sheathCollar, [...sheath.collar, sheath.reach]);
+	}
 	return header;
 }
 

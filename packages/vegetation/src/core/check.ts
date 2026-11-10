@@ -354,6 +354,18 @@ function growthProblems(record: Species, out: string[]): void {
 		spreadProblems(growth.shoots, 'growth.shoots', true, out);
 		spreadProblems(growth.blades, 'growth.blades', true, out);
 		spreadProblems(growth.sheath, 'growth.sheath', true, out);
+		const sheath = growth.sheathColour;
+		if (sheath) {
+			for (const [end, colour] of [
+				['foot', sheath.foot],
+				['collar', sheath.collar],
+			] as const)
+				if (colour.some((value) => !(value >= 0 && value <= 1)))
+					out.push(
+						`growth.sheathColour.${end} is ${JSON.stringify(colour)}; a colour lies from 0 to 1`,
+					);
+			shareProblem(sheath.reach, 'growth.sheathColour.reach', out);
+		}
 		wholeProblem(growth.ranks, 'growth.ranks', 1, 3, out);
 		for (const key of ['lean', 'spread', 'size'] as const)
 			curveProblems(growth[key], `growth.${key}`, out);
