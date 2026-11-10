@@ -45,7 +45,6 @@ export const record: Species = {
 		// toward the photographs' brown and leaves a picture that frames the leaf's own sheath at
 		// its collar, or the stem, where it is; the row 8 colour differences fall toward 3 only
 		// where the shoot's column stands in frame.
-		sheathColour: [0.15, 0.08, 0.03],
 		// Still 02: the youngest blades stand nearly upright and the oldest arch out and over.
 		spread: [
 			[0, 2],
