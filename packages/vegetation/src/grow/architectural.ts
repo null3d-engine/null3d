@@ -60,6 +60,8 @@ const UPTURN_FROM = 0.55;
 const TOP_WHORL = 0.97;
 /** The most children one parent node puts out from a whorled arrangement. */
 const MOST_WHORL = 8;
+/** The share of the way each measured height is rounded toward its azimuthal mean. */
+const ENVELOPE_ROUND = 0.35;
 
 /** The choices an axis makes, each its own hash purpose. */
 const Purpose = {
@@ -265,15 +267,15 @@ export function growArchitectural(input: GrowInput): MacroSkeleton {
 	const crownSpan = Math.max(0.001, height - crownBase);
 
 	// The outline caps the wood, with room left for the shoots that attach beyond it.
-	// The measured hull is as irregular as its views. Rounding each height toward its mean for half
-	// the way keeps the widest side and lifts the narrow ones, so no single view draws a thin crown.
+	// The measured hull is as irregular as its views. Rounding each height toward its mean by this
+	// share keeps the widest side and lifts the narrow ones, so no single view draws a thin crown.
 	const volume: EnvelopeVolume | undefined = record.envelope
 		? smoothedVolume(
 				insetVolume(
 					envelopeVolume(record.envelope, height, turn),
 					Math.max(0, shootReach(record) * 0.6),
 				),
-				0.5,
+				ENVELOPE_ROUND,
 			)
 		: undefined;
 
