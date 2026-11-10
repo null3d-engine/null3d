@@ -1104,3 +1104,27 @@ by about 87 ms, and the two places that could close it stand unchanged.
 Two pictures hold the look. `vegetation-grass` holds the hill. `vegetation-grass-shadow` holds it at a
 low sun, where the grass's shadows follow the count, so a view that drew the capacity would show the
 rows past it.
+## Addendum: the demos that keep their own plants
+
+The owner ruled on 9 November 2026 that the forest demo is not an exception and that the
+translucency demo is. <!-- outside date -->
+
+The forest's own trees stay only until the swap. The add-on's limbs, leaves and coarseness gain the
+much sparser setting that this record's foundation section defines, and the forest then swaps its
+56,000 trees of four kinds to the add-on. Its three fir kinds take variants of the Scots pine, which
+is revived to the species bar, rather than the add-on's built-in conifer.
+
+The translucency demo is an accepted exception. Its own leaf mesh and the standard material's
+translucency are the subject the demo exists to show, so no species record replaces them: the garden
+draws ninety-six leaves for 21,504 triangles, where one grown plant for each of the twelve clumps
+would cost 36,948 through the add-on and would not draw the cupped, drooping leaf.
+
+Two demos keep their own plants with no ruling yet. The impostor forest's stand-in pine costs
+40 triangles and 1.4 KB at its coarsest level, against the add-on conifer's 3,079 and 205 KB.
+Drawing that demo's forest through the add-on measures 180.22 ms at Low against 4.33, with
+24,600,000 triangles against 240,000 to 496,000 and 248.8 MiB of wasm against 51.8. The campfire
+glade, in `examples/particles/glade.ts`, builds its birches and cone firs in code. The battle demo's
+generator in `examples/compare/battle/shapes.ts` waits on the same kind of ruling recorded here.
+
+M3-V12 asks that no demo keeps a plant generator of its own. It stays open until each of those
+rulings is taken and recorded.
