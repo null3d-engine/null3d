@@ -693,8 +693,7 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 		const n = plant.budNode[b] as number;
 		if (n < 0) return light;
 		return (
-			light *
-			room.factor(plant.y[n] as number, atan2(plant.z[n] as number, plant.x[n] as number))
+			light * room.factor(plant.y[n] as number, atan2(plant.z[n] as number, plant.x[n] as number))
 		);
 	};
 
