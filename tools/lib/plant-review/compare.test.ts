@@ -2,11 +2,9 @@ import { describe, expect, test } from 'bun:test';
 import {
 	type CutCamera,
 	cutCamera,
-	fitWidth,
 	leafFrame,
 	projectRow,
 	standCamera,
-	widthShareOf,
 } from '../../../tests/pages/lib/plant-review/framing.ts';
 import {
 	alignTurn,
@@ -317,20 +315,6 @@ describe("the page's stand camera", () => {
 		);
 		expect(camera.warning).toBeDefined();
 		expect(camera.height).toBeGreaterThan(0);
-	});
-
-	test('measures the drawn width and stands back until it keeps the reference share', () => {
-		const camera = { position: [0, 0, 10] as const, target: [0, 0, 0] as const, fov: 90 };
-		const vertices = new Float32Array([-1, 0, 0, 1, 0, 0]);
-		// The frame's half-tangent is one, so a point one metre off the axis at ten metres lands a
-		// tenth of the way to the edge: the full width fills a tenth of the frame.
-		expect(widthShareOf(camera, vertices, 1)).toBeCloseTo(0.1, 6);
-		// A point nearer the camera widens the figure more than the same point far away.
-		expect(widthShareOf(camera, new Float32Array([-1, 0, 5, 1, 0, 0]), 1)).toBeCloseTo(0.15, 6);
-		const fitted = fitWidth(camera, vertices, 0.05, 1);
-		expect(widthShareOf(fitted, vertices, 1)).toBeCloseTo(0.05, 3);
-		// A share the drawing already keeps leaves the camera where it stands.
-		expect(fitWidth(camera, vertices, 0.2, 1)).toEqual(camera);
 	});
 });
 

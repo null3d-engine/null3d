@@ -49,6 +49,8 @@ import {
 	videoFrame,
 } from './lib/plant-review/image.ts';
 import {
+	boxOf,
+	matteMask,
 	measurePlant,
 	plantMask,
 	type ReferenceSet,
@@ -395,6 +397,85 @@ function slotHeld(path: string): boolean {
 }
 
 /** Takes the first free draw slot, waiting until one frees, and returns the way to give it back. */
+/** The band, as a share of the frame's width, inside which a render's width counts as its reference's. */
+const WIDTH_BAND = 0.05;
+
+/** The share of the picture's width that the drawn plant fills, from the mask the view draws. */
+function drawnShare(path: string, silhouette: boolean): number | null {
+	const image = readImage(path);
+	const plant = silhouette ? matteMask(image) : plantMask(image);
+	if (
+		!silhouette &&
+		!(
+			plant.background.plain ||
+			skyMaskable(plant.background) ||
+			soilMaskable(plant.background, plant.height)
+		)
+	)
+		return null;
+	const box = boxOf(plant.mask, plant.width, plant.height);
+	if (!box) return null;
+	return (box.right - box.left + 1) / plant.width;
+}
+
+/**
+ * Redraws a whole view whose drawn width is outside the band from its reference's, at a stand
+ * corrected by the width the picture itself measured, and once more if the residual stays outside.
+ * A picture inside the band keeps the framing's own stand.
+ */
+async function correctWidths(
+	dir: string,
+	frames: RunFrame[],
+	shots: readonly Shot[],
+	gpu?: string,
+): Promise<RunFrame[]> {
+	const stills = shots.filter((shot) => shot.group === 'stills' && shot.cells.length === 1);
+	const fixes = new Map<string, { target: number; silhouette: boolean; scale: number }>();
+	for (const shot of stills) {
+		const target = shot.query.widthShare;
+		if (target === undefined || target >= 1) continue;
+		const file = shot.cells[0]?.file;
+		if (!file) continue;
+		const share = drawnShare(join(dir, file), shot.query.view === 'silhouette');
+		if (share === null || Math.abs(share - target) <= WIDTH_BAND) continue;
+		fixes.set(file, {
+			target,
+			silhouette: shot.query.view === 'silhouette',
+			scale: share / target,
+		});
+	}
+	for (let pass = 0; pass < 2 && fixes.size > 0; pass++) {
+		const redraws = stills
+			.filter((shot) => fixes.has(shot.cells[0]?.file ?? ''))
+			.map((shot) => {
+				const fix = fixes.get(shot.cells[0]?.file ?? '');
+				return { ...shot, query: { ...shot.query, standScale: fix?.scale ?? 1 } };
+			});
+		if (redraws.length === 0) break;
+		const release = await takeDrawSlot();
+		let again: RunFrame[];
+		try {
+			again = await drawShots(dir, redraws, { ...(gpu && { gpu }) });
+		} finally {
+			release();
+		}
+		for (const frame of again) {
+			const at = frames.findIndex((f) => f.file === frame.file);
+			if (at >= 0) frames[at] = frame;
+			else frames.push(frame);
+		}
+		const next = new Map<string, { target: number; silhouette: boolean; scale: number }>();
+		for (const [file, fix] of fixes) {
+			const share = drawnShare(join(dir, file), fix.silhouette);
+			if (share !== null && Math.abs(share - fix.target) > WIDTH_BAND)
+				next.set(file, { ...fix, scale: fix.scale * (share / fix.target) });
+		}
+		fixes.clear();
+		for (const [file, fix] of next) fixes.set(file, fix);
+	}
+	return frames;
+}
+
 async function takeDrawSlot(): Promise<() => void> {
 	if (flag('no-slot')) return () => {};
 	for (let attempt = 0; attempt < 720; attempt++) {
@@ -783,12 +864,13 @@ async function main(): Promise<void> {
 	);
 	const started = Date.now();
 	const release = await takeDrawSlot();
-	let frames: readonly RunFrame[];
+	let frames: RunFrame[];
 	try {
 		frames = await drawShots(dir, shots, { ...(flag('gpu') && { gpu: option('gpu') }) });
 	} finally {
 		release();
 	}
+	frames = await correctWidths(dir, frames, shots, flag('gpu') ? option('gpu') : undefined);
 	const manifest: Manifest = {
 		tool: 'tools/plant-review.ts',
 		species,
