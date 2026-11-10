@@ -4,10 +4,10 @@
 		"upper": 24,
 		"lower": 25,
 		"alpha": {
-			"floor": 24,
+			"floor": 16,
 			"solid": 200
 		},
-		"erode": 2,
+		"erode": 1,
 		"margin": 0.04,
 		"delight": {
 			"radius": 0.12,
