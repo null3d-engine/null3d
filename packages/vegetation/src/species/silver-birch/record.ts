@@ -361,6 +361,10 @@ export const record: Species = {
 		// Stills 16 and 28: the white bark fades to the young purple-brown layer on wood thinner than
 		// about eight centimetres across, so the young view's limb draws its photograph's bark.
 		youngRadius: 0.04,
+		// Still 28: the photograph's young bark is warmer than the measured layer. The tint lifts all
+		// three channels for lightness and gives red the larger gain, which is the axis the colour
+		// distance is short on.
+		youngTint: [1.9, 1.29, 0.94],
 		girthScale: [
 			[0, 0.6],
 			[1, 1],
