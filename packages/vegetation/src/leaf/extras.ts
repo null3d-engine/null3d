@@ -365,6 +365,8 @@ function colourOf(site: Site, index: number): number[] {
  * beside its twig.
  */
 const STALK_OVERLAP = 0.02;
+/** Metres a hanging body reaches back into its support, so the two tubes share a length. */
+const BODY_ROOT = 0.012;
 /** Degrees a copy's own footstalk splays from the shared stalk at its fork. */
 const PEDICEL_SPLAY = 60;
 /** Degrees a body leans from straight down below its footstalk. */
@@ -766,10 +768,18 @@ function writeExtra(
 				? bandEdges(profile, shape.scaled[0], shape.scaled[1])
 				: undefined;
 		if (banded) profile = banded.profile;
+		// A hanging body roots a short way back along the support it hangs from, so the body's tube
+		// and the stalk's share a length rather than meeting at a point that a thin outline drops.
+		const root = 'catkin' in shape ? Math.min(BODY_ROOT, shape.catkin.length * 0.15) : 0;
+		const base: Readonly<Vector3> = [
+			site.at[0] - site.direction[0] * root,
+			site.at[1] - site.direction[1] * root,
+			site.at[2] - site.direction[2] * root,
+		];
 		const first = mesh.vertices;
 		if (scaledTo > scaledFrom)
-			scallopedLathe(mesh, profile, site.at, direction, sides, colour, scaledFrom, scaledTo);
-		else lathe(mesh, profile, site.at, direction, sides, colour);
+			scallopedLathe(mesh, profile, base, direction, sides, colour, scaledFrom, scaledTo);
+		else lathe(mesh, profile, base, direction, sides, colour);
 		// The band's crevices take part of the body's colour on every other vertex round each ring,
 		// offset from ring to ring, so a cup reads as rows of overlapping scales. Each scale's own
 		// shade then departs from its neighbours' by a fixed share, so no two read alike.
