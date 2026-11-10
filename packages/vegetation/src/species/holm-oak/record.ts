@@ -136,7 +136,7 @@ export const record: Species = {
 				share: 0.35,
 				years: 3,
 				length: { mean: 1, spread: 0.15 },
-				nodes: { mean: 7, spread: 1 },
+				nodes: { mean: 9, spread: 1 },
 				internode: SHOOT,
 				stem: { radius: [0.026, 0.012] },
 				lateral: 72,
