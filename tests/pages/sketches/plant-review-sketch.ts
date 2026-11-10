@@ -61,13 +61,18 @@ import {
 import {
 	type CutRows,
 	cutCamera,
+	fitWidth,
 	leafFrame,
 	type ScreenFraming,
 	spanDistance,
 	standCamera,
-	widthDistance,
 } from '../lib/plant-review/framing';
-import { measurePlant, partPositions, shootPositions } from '../lib/plant-review/measure';
+import {
+	drawnVertices,
+	measurePlant,
+	partPositions,
+	shootPositions,
+} from '../lib/plant-review/measure';
 import { readPlantReviewQuery } from '../lib/plant-review/query';
 import { sharedRecords } from '../lib/plant-review/sight';
 import { BACKGROUND_COLOURS, type PlantView, VIEW_SPECS } from '../lib/plant-review/views';
@@ -347,13 +352,7 @@ function fit(bounds: Bounds, turn: number, elevation: number, aspect: number, fo
  * The camera that stands on the ground and puts a whole plant where the query's framing in screen
  * shares asks, as a reference picture framed its plant.
  */
-function standView(
-	height: number,
-	drawnWidth: number,
-	foot: V3,
-	turn: number,
-	aspect: number,
-): View {
+function standView(height: number, foot: V3, turn: number, aspect: number): View {
 	const middle = QUERY.targetY ?? 0.5;
 	const fill = QUERY.fill ?? 0.8;
 	const asked = QUERY.top !== undefined && QUERY.fill === undefined;
@@ -365,18 +364,9 @@ function standView(
 		...(asked ? { eye: QUERY.eye ?? EYE } : { base: middle + fill / 2 }),
 		targetX: QUERY.targetX ?? 0.5,
 	};
-	let stand = standCamera(framing, height);
+	const stand = standCamera(framing, height);
 	const out = facing(turn);
 	const right: V3 = [Math.cos(turn), 0, -Math.sin(turn)];
-	// The reference's plant keeps a margin at the frame's sides. The camera stands back until the
-	// drawn plant keeps that share too, so a plant broader than its reference is framed with the
-	// same margin rather than cropped at the sides. The drawn silhouette gives the width, not the
-	// asset's part bounds: a part that draws nothing cannot widen the frame.
-	const widthShare = QUERY.widthShare;
-	if (widthShare !== undefined && widthShare < 1 && drawnWidth > 0) {
-		const need = widthDistance(drawnWidth / 2, 0, widthShare, aspect, FOV);
-		if (need > stand.distance) stand = { ...stand, distance: need };
-	}
 	const position = add(add(foot, scale(out, stand.distance)), [0, stand.height, 0]);
 	const level = sub(scale(out, -Math.cos(stand.yaw)), scale(right, Math.sin(stand.yaw)));
 	const look = add(scale(level, Math.cos(stand.pitch)), [0, Math.sin(stand.pitch), 0]);
@@ -672,16 +662,27 @@ export default defineSketch(async (ctx) => {
 			case 'turntable':
 			case 'whole':
 			case 'skeleton':
-			case 'silhouette':
-				return FRAMED
-					? standView(
-							height,
-							measurePlant(main, kit.box, turn).plantBox?.width ?? 0,
-							foot,
-							turn,
-							aspect,
-						)
-					: fit(bounds, turn, e, aspect, fov);
+			case 'silhouette': {
+				if (!FRAMED) return fit(bounds, turn, e, aspect, fov);
+				const view = standView(height, foot, turn, aspect);
+				// A reference picture leaves a margin round its plant, so the camera stands back
+				// until the vertices the view draws fill no more of the frame's width than the
+				// reference's plant does. The drawn vertices, every level and the shoot rows, give
+				// the width: a level the view leaves out cannot widen the figure.
+				const share = QUERY.widthShare;
+				if (share === undefined || share >= 1) return view;
+				const fitted = fitWidth(
+					{ position: view.position, target: view.target, fov: view.fov },
+					drawnVertices(main, kit),
+					share,
+					aspect,
+				);
+				return {
+					...view,
+					position: [fitted.position[0], fitted.position[1], fitted.position[2]],
+					target: [fitted.target[0], fitted.target[1], fitted.target[2]],
+				};
+			}
 			case 'crown-sky': {
 				// The crown against the sky from outside the plant: the eye near a person's height, a
 				// stand far enough that the crown's height fills the frame and the whole crown stands

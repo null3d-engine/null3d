@@ -57,6 +57,25 @@ export function shootPositions(
 	return out;
 }
 
+/**
+ * Every vertex the plant draws, in plant-space metres: each level's parts and the shoot rows. A
+ * whole view frames this set, so the width it fits is the silhouette the picture shows, not the
+ * asset's part bounds or one level alone.
+ */
+export function drawnVertices(asset: PlantAsset, kit: SpeciesKitData): Float32Array {
+	const lists = asset.levels.flatMap((level) =>
+		level.parts.map((part) => partPositions(part, kit.box)),
+	);
+	lists.push(shootPositions(asset, kit));
+	const out = new Float32Array(lists.reduce((n, list) => n + list.length, 0));
+	let at = 0;
+	for (const list of lists) {
+		out.set(list, at);
+		at += list.length;
+	}
+	return out;
+}
+
 /** The silhouette's raster: one byte per cell, 1 for wood, 2 for foliage, 3 for both. */
 export interface Silhouette {
 	readonly columns: number;
