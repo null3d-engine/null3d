@@ -12,6 +12,7 @@ import {
 	crownBoxSpread,
 	edgeDifference,
 	edgeProfile,
+	fittedMaskClause,
 	framingQuery,
 	iou,
 	motionProfile,
@@ -254,6 +255,7 @@ describe('the framing a render takes from a reference', () => {
 			horizon: 0.76,
 			top: 0.18,
 			targetX: 0.49,
+			widthShare: 0.9,
 			aspect: 16 / 9,
 			sky: '#d9dad5',
 			frames: 8,
@@ -263,6 +265,7 @@ describe('the framing a render takes from a reference', () => {
 			fill: 0.79 - 0.18,
 			targetY: (0.79 + 0.18) / 2,
 			horizon: 0.76,
+			widthShare: 0.9,
 		});
 		expect(framingQuery(shared)).toMatchObject({ top: 0.18, eye: 1.6 });
 	});
@@ -560,5 +563,58 @@ describe('a cut piece framed in leaf lengths', () => {
 	test('lengthens the run only when the roll lays the piece across the frame', () => {
 		expect(leafFrame(2, 0.5, 0, 2, 20).run).toBeCloseTo(1, 6);
 		expect(leafFrame(2, 0.5, 90, 2, 20).run).toBeCloseTo(2, 6);
+	});
+});
+
+describe('a fitted-background outline', () => {
+	test('reports the sky fit and residual beside the figure', () => {
+		expect(
+			fittedMaskClause({
+				fittedMask: { kind: 'sky', skyFit: 0.9999, skyNoise: 17.1 },
+			}),
+		).toContain('fit 0.9999, residual 17.1');
+		expect(fittedMaskClause({})).toBe('');
+	});
+
+	test('reports the ground fit, residual and horizon share for a soil', () => {
+		const clause = fittedMaskClause({
+			fittedMask: {
+				kind: 'ground',
+				skyFit: 1,
+				skyNoise: 24.19,
+				groundFit: 1,
+				groundNoise: 18.55,
+				horizonShare: 0.291,
+				plantToGround: 14.22,
+			},
+		});
+		expect(clause).toContain('fitted ground at horizon share 0.291, ground region 0.709');
+		expect(clause).toContain("the plant's median colour sits 14.2 CIEDE2000 steps from the ground");
+		expect(clause).toContain('ground fit 1.0000, residual 18.6');
+		expect(clause).toContain('sky fit 1.0000, residual 24.2');
+		expect(clause).toContain('the ground region holds 0.709 of the frame');
+		const meadow = fittedMaskClause({
+			fittedMask: {
+				kind: 'ground',
+				skyFit: 1,
+				skyNoise: 26.41,
+				groundFit: 1,
+				groundNoise: 19.9,
+				horizonShare: 0.931,
+			},
+		});
+		expect(meadow).toContain('ground region 0.069');
+		expect(meadow).toContain('the ground region holds 0.069 of the frame');
+		const band = fittedMaskClause({
+			fittedMask: {
+				kind: 'ground',
+				skyFit: 1,
+				skyNoise: 12,
+				groundFit: 1,
+				groundNoise: 10,
+				horizonShare: 0.7,
+			},
+		});
+		expect(band).not.toContain('outside a soil band');
 	});
 });

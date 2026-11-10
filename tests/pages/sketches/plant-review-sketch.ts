@@ -656,8 +656,40 @@ export default defineSketch(async (ctx) => {
 			case 'turntable':
 			case 'whole':
 			case 'skeleton':
-			case 'silhouette':
-				return FRAMED ? standView(height, foot, turn, aspect) : fit(bounds, turn, e, aspect, fov);
+			case 'silhouette': {
+				const view = FRAMED
+					? standView(height, foot, turn, aspect)
+					: fit(bounds, turn, e, aspect, fov);
+				// A redraw corrects the stand from the picture's own measured width: the camera moves
+				// along its line to the target, so the plant keeps the reference's margin. The first
+				// draw carries no scale and takes the framing's own stand.
+				const scale = QUERY.standScale;
+				if (scale === undefined || scale === 1 || !(scale > 0)) return view;
+				return {
+					...view,
+					position: [
+						view.target[0] + (view.position[0] - view.target[0]) * scale,
+						view.target[1] + (view.position[1] - view.target[1]) * scale,
+						view.target[2] + (view.position[2] - view.target[2]) * scale,
+					],
+				};
+			}
+			case 'crown-sky': {
+				// The crown against the sky from outside the plant: the eye near a person's height, a
+				// stand far enough that the crown's height fills the frame and the whole crown stands
+				// in it, looking up so the sky is behind. The gap inside its box then reads the sky
+				// between the foliage rather than the outline's ragged edge.
+				const base = main.crown.base;
+				const top = main.crown.top;
+				const middle = base + (top - base) * 0.55;
+				const span = 2 * Math.tan((fov * DEG) / 2);
+				const away = ((top - base) / span) * 1.15;
+				const eyeHeight = 1.7;
+				const lift = middle - eyeHeight;
+				const distance = Math.hypot(away, lift);
+				const elevation = (Math.atan2(eyeHeight - middle, away) * 180) / Math.PI;
+				return orbit([foot[0], middle, foot[2]], distance, elevation, turn, fov);
+			}
 			case 'crown': {
 				const top = main.crown.top;
 				const middle = (main.crown.base + top) / 2;
@@ -701,6 +733,25 @@ export default defineSketch(async (ctx) => {
 				});
 				closeViews.set(view, below);
 				return { position: below.position, target: below.target, fov, near: 0.1 };
+			}
+			case 'crown-underside': {
+				// The camera stands under the crown, the eye as far below its base as the underside
+				// photographs keep it, and looks up at the crown's top: the crown's box fills most of
+				// the frame, its leaves overhead and the trunk below.
+				const top = main.crown.top;
+				const base = main.crown.base;
+				const half = Math.max(0.3, (top - base) / 2);
+				const distance = QUERY.distance ?? Math.max(0.6, half / Math.tan((fov * 0.78 * DEG) / 2));
+				// A plant shorter than the eye stand has no room for a person's eye below its crown:
+				// the eye goes as low as the ground allows, under the crown rather than level with
+				// it, which is where its photograph was taken.
+				const eye = Math.max(0.05, base - 1.6);
+				return {
+					position: [foot[0] + out[0] * distance, eye, foot[2] + out[2] * distance],
+					target: [foot[0], top, foot[2]],
+					fov,
+					near: 0.1,
+				};
 			}
 			case 'inside': {
 				// A plant with no wood keeps its stalks at the crown's own centre, so its inside photograph
