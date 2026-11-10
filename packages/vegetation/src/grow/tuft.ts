@@ -57,6 +57,11 @@ import type { Grower } from './models';
 
 /** The golden angle in radians, which spreads shoots over the crown's disc. */
 const GOLDEN = radians(137.50776405);
+/**
+ * The browning value that marks a shoot's sheath column: the plant material draws those vertices
+ * in the record's sheath colour instead of the leaf's texture.
+ */
+const SHEATH_BROWNING = -1;
 /** Points along each blade's axis. */
 const BLADE_NODES = 8;
 /** Points along each flowering stem. */
@@ -905,7 +910,15 @@ export function meshTuft(input: MeshInput, level: MeshLevel): MeshArrays {
 			bytes,
 			crown,
 			along: isStem ? [0, 1] : fine ? [0.85, 1] : [0, 0.05],
-			browning: Math.max(browning, isStem ? 0.15 : 0.3),
+			// A sheath column carries a sentinel browning value, which the plant material reads as
+			// the record's sheath colour; every other stalk browns as the season gives.
+			browning: isStem
+				? Math.max(browning, 0.15)
+				: fine
+					? Math.max(browning, 0.3)
+					: growth.sheathColour
+						? SHEATH_BROWNING
+						: Math.max(browning, 0.3),
 			closeTip: isStem || fine,
 		});
 	}

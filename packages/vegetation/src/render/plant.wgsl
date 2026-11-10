@@ -101,6 +101,8 @@ const REST_STEPS: f32 = 255.0;
 const HEADER_YOUNG: i32 = 15;
 const HEADER_YOUNG_TILE: i32 = 16;
 const HEADER_YOUNG_TINT: i32 = 56;
+// A tuft's basal sheath colour and roughness, for the merged foliage's sheath columns.
+const HEADER_SHEATH: i32 = 57;
 const HEADER_MOSS: i32 = 17;
 const HEADER_MOSS_REACH: i32 = 18;
 const HEADER_EXTRAS: i32 = 19;
@@ -1138,6 +1140,12 @@ fn surface(input: SurfaceInput) -> Surface {
                 base *= header(HEADER_YOUNG_TINT).rgb;
             }
             roughness = 0.8;
+        } else if (mode == MODE_FOLIAGE && input.uv1.y < -0.5) {
+            // A merged ground plant's sheath column draws in the record's sheath colour; the
+            // sentinel browning value in the second coordinates marks the sheath.
+            let body = header(HEADER_SHEATH);
+            base = body.rgb;
+            roughness = max(body.w, 0.5);
         } else {
             let layer = select(1, 0, upper);
             let texel = textureSampleGrad(colour, colourSampler, uv, layer, gx, gy);
