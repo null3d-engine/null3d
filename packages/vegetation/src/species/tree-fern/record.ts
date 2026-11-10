@@ -218,9 +218,10 @@ export const record: Species = {
 		// the mature frond's, so the cut takes one of the crown's long living fronds rather than a
 		// short one or a dead one.
 		subbranch: { order: 1, length: 2.4, from: 0.3, span: 1 },
-		// Still 23: the frond's tip, where its pinnae shorten. The length takes a mature living frond
-		// and the span keeps its last half metre, so the piece draws the tip's own short pinnae.
-		cluster: { order: 1, length: 2.4, from: 1.75, span: 0.45 },
+		// Still 23: the outer blade, where the pinnae shorten toward the tip. The length takes a
+		// mature living frond and the span keeps a section of its blade, so the piece draws pinnae
+		// rather than the bare rachis past them.
+		cluster: { order: 1, length: 2.4, from: 1, span: 0.45 },
 		// Stills 12, 13 and 24: the pinna laid flat on its own.
 		leaf: { pressed: true },
 	},
