@@ -144,15 +144,26 @@ function armPlans(input: GrowInput, growth: Column, height: number): ArmPlan[] {
 	const count = Math.max(0, Math.round(spreadAt(growth.arms.count, draw(input, Purpose.Arms))));
 	const turn = draw(input, Purpose.ArmAzimuth) * 2 * Math.PI;
 	const tiers = armTiers(growth.arms);
+	// Each tier spreads its own arms around the stem, so the tiers stack over one another as the
+	// candelabrum's do, rather than filling the gaps between each other's arms.
+	const tierArms = tiers.map((_, t) =>
+		t < count ? Math.floor((count - 1 - t) / tiers.length) + 1 : 0,
+	);
+	const ranks = tiers.map(() => 0);
 	const plans: ArmPlan[] = [];
 	for (let k = 0; k < count; k++) {
+		const tierIndex = k % tiers.length;
+		const tier = tiers[tierIndex] as ArmTier;
+		const rank = ranks[tierIndex] as number;
+		ranks[tierIndex] = rank + 1;
 		const jitter = draw(input, Purpose.ArmHeight, k) * 2 - 1;
-		const tier = tiers[k % tiers.length] as ArmTier;
 		plans.push({
 			// Arms stand across the middle of the stem, give or take a tenth of its height.
 			height: height * Math.min(0.66, Math.max(0.3, tier.from + jitter * 0.1)),
 			heading:
-				turn + (2 * PI * k) / Math.max(1, count) + (draw(input, Purpose.ArmAzimuth, k) - 0.5) * 0.7,
+				turn +
+				(2 * PI * rank) / Math.max(1, tierArms[tierIndex] as number) +
+				(draw(input, Purpose.ArmAzimuth, k) - 0.5) * 0.7,
 			// Each arm runs out its own distance before it turns up, so the elbows stand at different
 			// heights and the arms do not read as fingers from one point.
 			elbow: Math.max(0.1, tier.elbow * (0.65 + 0.7 * draw(input, Purpose.ArmElbow, k))),
