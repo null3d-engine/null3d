@@ -7,8 +7,8 @@ phone measures the small grid. The ruling closes the rows and the budgets. Three
 task's Done-when stay open: the smallest-tier look, a side-by-side that the owner judges and has not
 named; the cost of each tier on the M5 Max, because the machine here is an M3 Max and no M5 Max ran
 the plan, while the iPad Pro 13, the Galaxy S25 and the Galaxy Tab A9 Plus now carry their rows; and
-the proof that the chosen rows keep Creek and the forest within D-241's frame ceilings, which waits
-on M3-V11 and M3-V12. The three devices measured their rows. All field rows hold except the Galaxy
+the proof that the chosen rows keep Creek and the forest within D-241's frame ceilings: the S25's
+Ultra Creek row reads 516.56 ms against the 511 ms ceiling, and the forest's side waits on M3-V12. The three devices measured their rows. All field rows hold except the Galaxy
 S25's Ultra cell, which stays open: its 30 Hz display owes two field cycles a frame, so the
 modelled frame is 11.08 ms, from the measured 5.243 ms of its 40 volume steps plus the
 advection and projection floor, doubled. That is over the wind's own 6.25 ms figure, and D-241's
@@ -583,6 +583,14 @@ the figure and the budget, not for the governor's input.
   landing head, so it is not this branch's. That step would prove the add-on's WGSL compiles for
   both GPU paths, and it is owed to the tool. The pages did compile and run that WGSL in
   Chrome, in the picture tests and the stress runs.
+- The tool's fix has landed, and a fresh run of the same command at `266a7d5d0` passes **all eight
+  gates with nothing skipped**: the package, the public API, the interface, the shaders, the sizes,
+  the page from another origin threaded and single-threaded, the cost per preset and the allocation
+  per preset. The shader step now builds six files with WGSL for WebGPU and WebGL2, where it failed
+  above with `TypeScript parameter property is not supported in strip-only mode`. The cost reads
+  0.49, 0.83, 2.63 and 2.97 ms of GPU time a frame from low to ultra, and the allocation 67, 60, 52
+  and 72 bytes a frame in the add-on's own code, both on Chrome 156.0.8078.80. So the failure above
+  was the tool's and is closed; the pages' own figures still stand as the look witness.
 
 ## Addendum: the leaves' two forms, and the flag and water readers
 
@@ -823,10 +831,8 @@ it ([D-241](D-241-vegetation-foundation.md)). `creek-band` keeps no picture: it 
 picture's frame, so it re-runs after the references are drawn. `creek-lod` also kept no picture, and
 M3-V11 removed it with the model files that it measured, so nothing re-runs there.
 
-Those four are owed a drawing in each set. The machine's milestone gate bars browser image runs, so
-the Mac's drawings wait for it to lift, and `bun run images:review --accept` then makes them
-references. The software set comes only from CI's drawing: a full run on the branch saves the
-images, and `bun run images:review --ci <run> --accept <name>` accepts them, as
+Those four are drawn in each set. The Mac drew the three real-GPU tiers, and the software set came
+from CI's drawing, which `bun run images:review --ci <run> --accept <name>` accepted, as
 [the image tests guide](../../.dev/image-tests.md#references) says.
 
 ### What the task's clauses stand at
@@ -838,8 +844,6 @@ the S25 and the tablet. It is a partial delivery. These clauses stay open:
 - **The particles add-on's wind input.** The task's bullet asks for a field texture and its box, so
   dust, motes, smoke and rain take an offset from the field. The add-on takes a constant vector
   still, so the bullet is unbuilt.
-- **The pictures.** Four Creek drawings are owed; the section above names the tests and the run
-  that measured them, and why they wait.
 - **The iPhone 17's row.** The Done-when names four cloud devices. The branch has rows for the iPad,
   the S25 and the Tab A9 Plus, and none for the iPhone.
 - **The forest at the head.** Its Medium and above rows were never measured at `fcafb9cd7`, so

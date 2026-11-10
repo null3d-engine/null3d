@@ -356,7 +356,9 @@ export async function displayRateCheck(page: Page): Promise<string | undefined> 
  */
 export function newParkedPage(browser: Browser, options?: BrowserContextOptions): Promise<Page> {
 	return keepingFocus(async () => {
-		const page = await browser.newPage(options);
+		// A page may come from the repository's HTTPS dev server, whose local certificate this
+		// browser has not been told to trust.
+		const page = await browser.newPage({ ignoreHTTPSErrors: true, ...options });
 		const session = await page.context().newCDPSession(page);
 		await parkChromeWindow((method, params) =>
 			session.send(method as 'Browser.setWindowBounds', params as never),
