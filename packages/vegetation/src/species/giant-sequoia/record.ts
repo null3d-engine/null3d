@@ -169,6 +169,38 @@ export const record: Species = {
 				droop: 22,
 			},
 		],
+		// The studio shot of a shoot tip, still 23: a long central rope with its side shoots rising
+		// close beside it, its scales dense enough to hide the stem. The crown's own sprays are
+		// shorter and open wider, so the close piece takes a class of its own rather than make the
+		// crown carry the picture's tuft.
+		cuttingClasses: [
+			{
+				name: 'cut',
+				cutOnly: true,
+				vigor: [0.62, 1],
+				share: 0,
+				years: 3,
+				length: { mean: 0.32, spread: 0.03 },
+				nodes: { mean: 60, spread: 6 },
+				internode: EVEN,
+				stem: { radius: [0.007, 0.002] },
+				lateral: 26,
+				laterals: { mean: 2, spread: 0 },
+				lateralGap: 0.3,
+				bend: { length: 0.04, angle: 15 },
+				// A leader's scales reach up to twice a side shoot's, and the picture shows this tuft
+				// at that size: each rope reads as a green mass rather than a bare stem.
+				leafScale: [
+					[0, 1.8],
+					[1, 2],
+				],
+				leafAngle: [
+					[0, 46],
+					[1, 38],
+				],
+				droop: 6,
+			},
+		],
 		phyllotaxis: { kind: 'spiral', divergence: 137.5 },
 		orders: 3,
 		years: 3,
@@ -339,7 +371,7 @@ export const record: Species = {
 	},
 	lod: {
 		nearFoliage: 'instanced',
-		// A shoot's card stands fourteen times the shoot, which reads as a blobby sheet closer than a
+		// A shoot's card stands many times the shoot, which reads as a blobby sheet closer than a
 		// few tens of pixels, so the real shoots draw from twenty pixels up and the cards serve the
 		// whole views alone.
 		switchPixels: [20, 12, 160],
@@ -378,9 +410,9 @@ export const record: Species = {
 		// the second turned the piece nearly edge-on, 201 per cent in height against the fan's 7.
 		branch: { shoot: 'spray', pick: 0 },
 		subbranch: { shoot: 'spray', pick: 0 },
-		// Still 23's shoot tip is one rope of this year's scales, and the studio picture is the
-		// cutting's own shoot; still 11's whole spray is a different piece and is recorded as a
-		// reference conflict.
-		cluster: { shoot: 'short' },
+		// Still 23's shoot tip is a fan of long shoots whose scales hide their stems, and the cutting
+		// class draws that tuft; still 11's whole spray with a cone is a different piece and is
+		// recorded as a reference conflict.
+		cluster: { shoot: 'cut' },
 	},
 };
