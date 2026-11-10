@@ -434,7 +434,9 @@ those presets draw on core WebGPU only, and the tablet offers no WebGPU adapter.
 
 M3-V7's look is a grove of grown oaks in the wind add-on's field, with the leaf and bark materials
 swaying and the sun's shadows following. Its page is `tests/pages/vegetation-cost.html`, run with
-the governor's target at one frame a second so the render scale stays at 1. The Mac's Chrome drew
+the governor's target at one frame a second so the render scale stays at 1. The page and the grove's
+four pictures went with the grove in `39a537749`, so the figures below record that run and no longer
+reproduce at the head. The Mac's Chrome drew
 it at 1280 by 720 at each preset and path
 ([its run](../tested-devices/macbook-pro-m3-max-chrome/20261030-1700-vegetation-wind.md)). The
 machine was shared and the load sat between 4 and 7, so a row within about a millisecond of its
