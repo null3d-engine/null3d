@@ -93,7 +93,8 @@
 		"view": "soil",
 		"lifted": true,
 		"skyShare": 0.357,
-		"daylight": 1.459
+		"daylight": 1.459,
+		"sky": "#584638"
 	},
 	"18-silhouette.png": {
 		"skyShare": 0.357,
