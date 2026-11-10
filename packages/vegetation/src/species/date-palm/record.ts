@@ -119,9 +119,12 @@ export const record: Species = {
 	},
 	bark: {
 		zones: [
-			// Stills 15, 17 and 26: one lattice of cut leaf bases over the whole trunk, warmer than
-			// the texture's own grey.
-			{ layer: 0, by: 'height', from: 0, to: 40, blend: 0.6, tint: [1.15, 1.15, 1.1] },
+			// Stills 15, 17 and 26: one lattice of cut leaf bases over the lower trunk, warmer than
+			// the texture's own grey. Stills 01 and 02: the upper trunk's bark reads cooler than its
+			// photographs, so that zone carries a warmer tint; the texture view stands at the foot
+			// and keeps the lower zone.
+			{ layer: 0, by: 'height', from: 0, to: 3, blend: 0.6, tint: [1.15, 1.15, 1.1] },
+			{ layer: 0, by: 'height', from: 3, to: 40, blend: 0.6, tint: [1.5, 1.18, 1.0] },
 		],
 		young: 0,
 		youngRadius: 0.06,
