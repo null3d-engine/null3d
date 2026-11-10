@@ -359,12 +359,14 @@ function standView(height: number, foot: V3, turn: number, aspect: number): View
 		targetX: QUERY.targetX ?? 0.5,
 	};
 	const stand = standCamera(framing, height);
+	// A still may name the distance in place of the one its framing solves.
+	const distance = QUERY.distance ?? stand.distance;
 	const out = facing(turn);
 	const right: V3 = [Math.cos(turn), 0, -Math.sin(turn)];
-	const position = add(add(foot, scale(out, stand.distance)), [0, stand.height, 0]);
+	const position = add(add(foot, scale(out, distance)), [0, stand.height, 0]);
 	const level = sub(scale(out, -Math.cos(stand.yaw)), scale(right, Math.sin(stand.yaw)));
 	const look = add(scale(level, Math.cos(stand.pitch)), [0, Math.sin(stand.pitch), 0]);
-	return { position, target: add(position, scale(look, stand.distance)), fov: FOV };
+	return { position, target: add(position, scale(look, distance)), fov: FOV };
 }
 
 /** Whether the query frames a whole plant in screen shares. */
@@ -652,6 +654,13 @@ export default defineSketch(async (ctx) => {
 		const fov = QUERY.fov ?? spec.fov;
 		const out = facing(turn);
 		const lens = { fov, aspect };
+		// A bark close view that names its framing stands where the record says; one that names
+		// none keeps the subject solve that the batch's close stills rely on. Named beats solved.
+		const namedFraming =
+			view === 'bark-base' || view === 'bark-mid' || view === 'bark-limb'
+				? FRAMED || QUERY.distance !== undefined
+				: false;
+		if (namedFraming) return standView(height, foot, turn, aspect);
 		switch (view) {
 			case 'turntable':
 			case 'whole':
