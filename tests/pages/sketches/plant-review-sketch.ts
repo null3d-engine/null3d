@@ -937,12 +937,14 @@ export default defineSketch(async (ctx) => {
 			}
 			case 'bark-mid': {
 				// A bark zone of its own: the camera stands where that zone covers the wood, so the
-				// surface is the one the zone's texture source shows.
+				// surface is the one the zone's texture source shows. A slot that names a height stands
+				// there instead, for a trunk whose zones are wider than the picture's frame.
 				const zone = QUERY.barkZone === undefined ? undefined : record.bark?.zones[QUERY.barkZone];
 				const y =
-					zone?.by === 'height'
+					QUERY.barkHeight ??
+					(zone?.by === 'height'
 						? Math.min(skeleton.height * 0.9, (zone.from + zone.to) / 2)
-						: Math.min(1.5, skeleton.height * 0.3);
+						: Math.min(1.5, skeleton.height * 0.3));
 				// A plant with no single trunk, such as a tuft of culms, shows the thickest stem
 				// surface that crosses the height the picture frames.
 				const stem = stemAt(skeleton, y) ?? stemSurfaceAt(skeleton, y)?.at;
