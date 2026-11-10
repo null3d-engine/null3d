@@ -90,8 +90,10 @@
 	"18-silhouette.png": {
 		"skyShare": 0.357,
 		"daylight": 1.959,
-		"fill": 0.73,
-		"targetY": 0.45
+		"fill": null,
+		"targetY": null,
+		"top": 0.425,
+		"eye": 0.1
 	},
 	"19-autumn-colour.png": {
 		"view": "whole",
