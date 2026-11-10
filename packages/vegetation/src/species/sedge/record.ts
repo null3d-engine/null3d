@@ -39,6 +39,13 @@ export const record: Species = {
 		sheath: { mean: 0.06, spread: 0.012 },
 		// Still 07: each shoot's sheath bundle is about 1.5 cm across.
 		sheathRadius: 0.008,
+		// Stills 07, 08 and 14: the basal sheaths are red-brown, and the leaf's own sheath reads a
+		// paler straw-brown, so the sheath draws a warm brown between the two. The colour belongs
+		// to the shoot's sheath column, so it moves the basal-crown pictures (07 and 14) from green
+		// toward the photographs' brown and leaves a picture that frames the leaf's own sheath at
+		// its collar, or the stem, where it is; the row 8 colour differences fall toward 3 only
+		// where the shoot's column stands in frame.
+		sheathColour: [0.15, 0.08, 0.03],
 		// Still 02: the youngest blades stand nearly upright and the oldest arch out and over.
 		spread: [
 			[0, 2],
