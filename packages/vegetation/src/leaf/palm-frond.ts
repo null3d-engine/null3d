@@ -164,19 +164,16 @@ interface Leaflet {
  * as a date palm's frond base does.
  */
 function leafletsOf(
-	shape: FrondShape,
 	pinnae: PinnaSpec,
 	origin: number,
 	level: MeshLevel,
 	places: readonly number[],
+	petioleShare: number,
 	closeBlade?: number,
 	pinnaShare?: number,
 ): Leaflet[] {
 	const out: Leaflet[] = [];
 	const planes = Math.max(1, pinnae.planes);
-	// The bare petiole is a share of the whole frond, not of the run a piece was cut over: a close
-	// piece of a rachis carries leaflets from its cut, as the pictures show.
-	const petioleShare = Math.min(0.3, shape.petiole.length / Math.max(origin, 1e-6));
 	// A coarser level keeps every so many places along the whole frond, so its tip keeps leaflets.
 	const stride = Math.max(1, Math.round(1 / (pinnaShare ?? PINNA_SHARE[level])));
 	places.forEach((place, p) => {
@@ -392,6 +389,11 @@ export function palmFoliage(input: MeshInput, level: MeshLevel): MeshArrays {
 	// frond is its own measure, so its leaflets follow the length it grew.
 	const hasStem = hasStemAxis(input.skeleton);
 	const recordFrond = spreadMean(shape.length) + shape.petiole.length;
+	// A spanned piece may begin at the frond's bare petiole or past it. The bare share is the part
+	// of that petiole the span carries, so a piece that starts at the base shows the bare stem and
+	// one cut from the middle shows leaflets from its cut, as the two leaflet pictures do.
+	const cutFrom = input.cutting?.from ?? 0;
+	const spanned = !hasStem && input.cutting?.span !== undefined;
 	const mesh = new MeshWriter();
 	const base = input.variant * VARIANT_RECORDS;
 	const frame: PathFrame = emptyFrame();
@@ -416,12 +418,15 @@ export function palmFoliage(input: MeshInput, level: MeshLevel): MeshArrays {
 			: Math.max(1, Math.round(spreadMean(pinnae.count) * (length / origin)));
 		const places = pinnaPlaces({ ...pinnae, count }, 1);
 		const closeBlade = closeCut ? spreadMean(leaf.length) : undefined;
+		const petioleShare = spanned
+			? Math.max(0, Math.min(1, (shape.petiole.length - cutFrom) / Math.max(length, 1e-6)))
+			: Math.min(0.3, shape.petiole.length / Math.max(origin, 1e-6));
 		const list = leafletsOf(
-			shape,
 			pinnae,
 			origin,
 			drawn,
 			places,
+			petioleShare,
 			closeBlade,
 			dead ? DEAD_PINNA_SHARE : undefined,
 		);

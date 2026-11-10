@@ -82,6 +82,7 @@ The command ends with status 1 when a frame failed or when the coverage is not c
 | `wind`, `time` | The wind's strength from 0 to 3, and the wind clock's time, at which the tool holds the frame. |
 | `season`, `lod`, `preset` | The season, a level forced at every distance (0 to 3), and the mesh tier. |
 | `pick`, `cut` | The cutting candidate and its length in metres. |
+| `cutFrom`, `cutSpan` | Metres along the axis where a spanned piece starts, and the metres it keeps, in place of the record's hint: a close still may show the frond's base or its middle, as its photograph does. |
 | `measure`, `scale`, `matte` | Post the measures; draw a 1 m bar; draw the plant black on white. |
 | `placeholders` | Grow stand-ins; on by default for an id that is not registered. |
 | `horizon`, `fill`, `targetY`, `targetX`, `top`, `eye` | A whole-plant framing in screen shares, which stands the camera on the ground as a reference's camera stood. |
