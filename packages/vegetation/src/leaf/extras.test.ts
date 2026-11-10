@@ -207,6 +207,14 @@ describe('the extras', () => {
 		}
 	});
 
+	it('draws a spine as a three-triangle cone with a shared apex', () => {
+		// Each spine writes three base vertices and one apex, and three triangles between them.
+		const thorn = { ...(OTHERS[1] as ExtraSpec), share: 1 };
+		const mesh = extrasMesh(dressed(oakRecord({ extras: [thorn] }), 'summer'), 0);
+		if (!mesh) throw new Error('no thorns');
+		expect(mesh.indices.length / 3).toBe(((mesh.positions.length / 3) * 3) / 4);
+	});
+
 	it('keeps an extra on a card level only where it spans a few pixels', () => {
 		expect(byEntry(extrasMesh(dressed(record, 'summer'), 2))[2]).toBe(0); // thorns of 12 mm
 		// Cones 4 cm across span several pixels where the first card level starts, and a pixel or

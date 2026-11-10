@@ -854,17 +854,45 @@ function writeExtra(
 			direction[1] * cos(tilt) + (x[1] * cos(a) + y[1] * sin(a)) * sin(tilt),
 			direction[2] * cos(tilt) + (x[2] * cos(a) + y[2] * sin(a)) * sin(tilt),
 		]);
-		lathe(
-			mesh,
+		// A cone of three base vertices and one shared apex: three triangles, a third of the lathe's
+		// six, and the same small spine to the eye.
+		const [bx, by] = sideAxes(spine, [0, 1, 0]);
+		const ring = shape.length * 0.05;
+		const corner = (angle: number): number => {
+			const radial: Vector3 = [
+				bx[0] * cos(angle) + by[0] * sin(angle),
+				bx[1] * cos(angle) + by[1] * sin(angle),
+				bx[2] * cos(angle) + by[2] * sin(angle),
+			];
+			return mesh.vertex(
+				[
+					site.at[0] + radial[0] * ring,
+					site.at[1] + radial[1] * ring,
+					site.at[2] + radial[2] * ring,
+				],
+				radial,
+				[0, 0],
+				[0, 0],
+				colour,
+			);
+		};
+		const b0 = corner(0);
+		const b1 = corner((2 * Math.PI) / 3);
+		const b2 = corner((4 * Math.PI) / 3);
+		const apex = mesh.vertex(
 			[
-				[shape.length * 0.05, 0],
-				[0, shape.length],
+				site.at[0] + spine[0] * shape.length,
+				site.at[1] + spine[1] * shape.length,
+				site.at[2] + spine[2] * shape.length,
 			],
-			site.at,
 			spine,
-			3,
+			[0, 1],
+			[0, 0],
 			colour,
 		);
+		mesh.tri(b0, b1, apex);
+		mesh.tri(b1, b2, apex);
+		mesh.tri(b2, b0, apex);
 	}
 }
 
