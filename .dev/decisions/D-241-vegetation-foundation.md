@@ -1119,12 +1119,21 @@ translucency are the subject the demo exists to show, so no species record repla
 draws ninety-six leaves for 21,504 triangles, where one grown plant for each of the twelve clumps
 would cost 36,948 through the add-on and would not draw the cupped, drooping leaf.
 
-Two demos keep their own plants with no ruling yet. The impostor forest's stand-in pine costs
-40 triangles and 1.4 KB at its coarsest level, against the add-on conifer's 3,079 and 205 KB.
-Drawing that demo's forest through the add-on measures 180.22 ms at Low against 4.33, with
-24,600,000 triangles against 240,000 to 496,000 and 248.8 MiB of wasm against 51.8. The campfire
-glade, in `examples/particles/glade.ts`, builds its birches and cone firs in code. The battle demo's
-generator in `examples/compare/battle/shapes.ts` waits on the same kind of ruling recorded here.
+The impostor forest keeps its own pine. The owner ruled on 10 November 2026 that the stand-in
+stays, with its figures beside it: 40 triangles and 1.4 KB at its coarsest level, against the
+add-on conifer's 3,079 and 205 KB, where drawing that demo's forest through the add-on measures
+180.22 ms at Low against 4.33, with 24,600,000 triangles against 240,000 to 496,000 and 248.8 MiB
+of wasm against 51.8. <!-- outside date --> Watching it, he also reported that trees disappear and
+reappear as the camera moves. That is a fault of the demo's own drawing rather than a reason to
+swap the generator, and it is traced as a defect of its own.
 
-M3-V12 asks that no demo keeps a plant generator of its own. It stays open until each of those
-rulings is taken and recorded.
+The campfire glade keeps its own vegetation. The owner ruled on 10 November 2026 that the birches
+and cone firs it builds in `examples/particles/glade.ts` stay as they are. <!-- outside date -->
+
+The battle demo keeps its own trees. The owner confirmed the same day that `pineTree` in
+`examples/compare/battle/shapes.ts` keeps building the woods that `scene.ts` plants, which records
+the exception that until now was asserted only in a task note. <!-- outside date -->
+
+M3-V12 asks that no demo keeps a plant generator of its own. With these five rulings recorded, every
+demo that keeps one has the owner's answer beside it, and the task closes on those rulings rather
+than on a generator being removed from each.
