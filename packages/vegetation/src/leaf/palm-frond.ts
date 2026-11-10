@@ -77,7 +77,7 @@ const CUT_PINNA_SPACING = 0.03;
  * dried leaflets hang close; the coarsest share leaves the rachises bare, and the middle share
  * costs more than the variant's bytes allow. This is the most that fits.
  */
-const DEAD_PINNA_SHARE = 1 / 7;
+const DEAD_PINNA_SHARE = 1 / 6;
 
 /** The record's crown-rosette frond, or a fault for another model. */
 function frondOf(record: Species): FrondShape {
@@ -387,7 +387,7 @@ export function palmFoliage(input: MeshInput, level: MeshLevel): MeshArrays {
 	const deadRibbon: RibbonShape = {
 		...ribbon,
 		rows: GRID[2].rows,
-		columns: GRID[2].columns,
+		columns: 1,
 		widthShare: WIDTH_SHARE,
 	};
 	// A spanned cut piece keeps the same rachis length and leaflet length as the picture, with
