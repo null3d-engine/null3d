@@ -96,7 +96,7 @@ const HEADER_YOUNG: i32 = 15;
 const HEADER_YOUNG_TILE: i32 = 16;
 const HEADER_YOUNG_TINT: i32 = 56;
 // A tuft's basal sheath colour and roughness, for the merged foliage's sheath columns.
-const HEADER_SHEATH: i32 = 57;
+const HEADER_SHEATH: i32 = 65;
 const HEADER_MOSS: i32 = 17;
 const HEADER_MOSS_REACH: i32 = 18;
 const HEADER_EXTRAS: i32 = 19;

@@ -123,7 +123,7 @@ export const HEADER = {
 	/** Young bark: the tint its thin wood takes, where the record gives one. */
 	youngTint: 56,
 	/** A tuft's basal sheath colour, then its roughness, where the record names one. */
-	sheath: 57,
+	sheath: 65,
 } as const;
 
 /**
