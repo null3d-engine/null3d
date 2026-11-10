@@ -128,8 +128,8 @@ const HEADER_EXTRA_SCALES: i32 = 47;
 const HEADER_EXTRA_STALKS: i32 = 51;
 // The least width in pixels that a card's stalk draws, or 0 where the record gives none.
 const HEADER_CARD_STALK: i32 = 55;
-const HEADER_SCAR: i32 = 65;
-const HEADER_SCAR_COLOUR: i32 = 66;
+const HEADER_SCAR: i32 = 66;
+const HEADER_SCAR_COLOUR: i32 = 67;
 // The second coordinate that marks a card's stalk, in a place that the card planes leave free.
 const STALK_PLANE: f32 = 0.75;
 // How much of the young bark's tone a card's stalk keeps: it stands inside the crown, where the
