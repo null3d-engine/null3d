@@ -1228,15 +1228,27 @@ export interface SheathTarget {
 	readonly reach: number;
 }
 
-/** A sheath surface's foot and collar read off a render, each against the record's colour. */
+/** A sheath surface's two ends as a picture shows them: mean CIELAB colour and pixels. */
+export interface SheathPatches {
+	readonly foot: { readonly colour: readonly number[]; readonly pixels: number };
+	readonly collar: { readonly colour: readonly number[]; readonly pixels: number };
+}
+
+/** A sheath surface's figure: the render against the photograph, and against the record. */
 export interface SheathDifference {
-	/** CIEDE2000 between the foot's patch and the record's foot colour. */
-	readonly foot: number;
-	/** CIEDE2000 between the collar's patch and the record's collar colour. */
-	readonly collar: number;
-	/** The pixels the two patches cover, so a reader can tell a figure from an empty patch. */
+	/**
+	 * The render's foot and collar against the photograph's, both lit by the view: the row's mark.
+	 * Null when the photograph's sheath cannot be isolated in its picture.
+	 */
+	readonly photograph: { readonly foot: number; readonly collar: number } | null;
+	/** The render's ends against the record's authored colours: the material check, not the row. */
+	readonly record: { readonly foot: number; readonly collar: number };
+	/** The pixels the render's two patches cover, so a reader can tell a figure from an empty patch. */
 	readonly footPixels: number;
 	readonly collarPixels: number;
+	/** The photograph's patch areas, when it gave a figure. */
+	readonly photographFootPixels?: number;
+	readonly photographCollarPixels?: number;
 }
 
 /** One still or texture source beside the render of its view. */
@@ -1396,23 +1408,22 @@ function srgbByte(value: number): number {
 }
 
 /**
- * Reads a sheath surface's foot and collar off its render, in the plant's own box, and compares
- * each patch with the record's colour for that end. The picture's light is the view's own, so the
- * figure carries the shade the view gives the surface; the record names what the surface should
- * show, not the light it stands in.
+ * Reads a sheath surface's foot and collar off a picture, in the plant's own box. The surface's
+ * rows are the plant's pixels that are not leaf-green, since a sheath draws brown and pale where a
+ * blade draws green; a view whose surface fills the frame takes the whole box. A surface that draws
+ * green too — a record whose field the grower does not yet read — leaves the box as the surface.
  *
- * @param image The render.
+ * @param image The picture.
  * @param box The plant's box in the mask's pixels, as the measures give it.
- * @param plant The render's mask, whose pixels are the surface's own.
- * @param sheath The record's foot and collar colours and its collar share.
- * @returns The two differences and the patch areas, or null when a patch holds no plant.
+ * @param plant The picture's mask, whose pixels are the plant's own.
+ * @returns The two patches and their pixel counts, or null when an end holds no plant.
  */
-export function sheathDifference(
+export function sheathPatches(
 	image: Rgba,
 	box: Box,
 	plant: PlantMask,
-	sheath: SheathTarget,
-): SheathDifference | null {
+	reach: number,
+): SheathPatches | null {
 	if (box.right < box.left || box.bottom < box.top) return null;
 	const work = image.width > plant.width ? resizeToWidth(image, plant.width) : image;
 	const width = Math.min(plant.width, work.width);
@@ -1430,10 +1441,6 @@ export function sheathDifference(
 			}
 		return { colour: sum.map((v) => v / Math.max(1, pixels)), pixels };
 	};
-	// The surface's own rows: the plant's pixels that are not leaf-green, since a sheath draws
-	// brown and pale where a blade draws green. A view whose surface fills the frame, as a junction
-	// close-up does, takes the whole box. A surface that draws green too — a record whose field the
-	// grower does not yet read — leaves the box as the surface, and the figure reports the green.
 	let surfaceTop = Number.POSITIVE_INFINITY;
 	let surfaceBottom = Number.NEGATIVE_INFINITY;
 	for (let y = Math.max(0, box.top); y <= Math.min(height - 1, box.bottom); y++)
@@ -1448,24 +1455,58 @@ export function sheathDifference(
 	const top = rows >= 3 ? surfaceTop : Math.max(0, box.top);
 	const bottom = rows >= 3 ? surfaceBottom : Math.min(height - 1, box.bottom);
 	const surfaceHeight = bottom - top + 1;
-	const collarRows = Math.max(
-		1,
-		Math.round(surfaceHeight * Math.min(SHEATH_PATCH_SHARE, sheath.reach)),
-	);
-	const footRows = Math.max(
-		1,
-		Math.round(surfaceHeight * Math.min(SHEATH_PATCH_SHARE, 1 - sheath.reach)),
-	);
+	const collarRows = Math.max(1, Math.round(surfaceHeight * Math.min(SHEATH_PATCH_SHARE, reach)));
+	const footRows = Math.max(1, Math.round(surfaceHeight * Math.min(SHEATH_PATCH_SHARE, 1 - reach)));
 	const collar = band(top, top + collarRows - 1);
 	const foot = band(bottom - footRows + 1, bottom);
 	if (collar.pixels === 0 || foot.pixels === 0) return null;
+	return { foot, collar };
+}
+
+/**
+ * The sheath surface's figure: the render's foot and collar against the photograph's, both lit by
+ * the view, which is the row's mark; and against the record's authored colours, which is the
+ * material check. A record is an albedo, so a shaded sheath cannot pass it; the photograph is the
+ * same lit surface the render draws.
+ *
+ * @param reference The photograph and its mask, or a null box when its sheath cannot be isolated.
+ * @param render The render and its mask.
+ * @param sheath The record's foot and collar colours and its collar share.
+ * @returns The photograph and record steps and the patch areas, or null when the render holds none.
+ */
+export function sheathDifference(
+	reference: { readonly image: Rgba; readonly box: Box | null; readonly plant: PlantMask },
+	render: { readonly image: Rgba; readonly box: Box; readonly plant: PlantMask },
+	sheath: SheathTarget,
+): SheathDifference | null {
+	const rendered = sheathPatches(render.image, render.box, render.plant, sheath.reach);
+	if (!rendered) return null;
 	const target = (rgb: readonly [number, number, number]) =>
 		labOf(srgbByte(rgb[0]), srgbByte(rgb[1]), srgbByte(rgb[2]));
+	const record = {
+		foot: Number(deltaE2000(rendered.foot.colour, target(sheath.foot)).toFixed(2)),
+		collar: Number(deltaE2000(rendered.collar.colour, target(sheath.collar)).toFixed(2)),
+	};
+	const photographed = reference.box
+		? sheathPatches(reference.image, reference.box, reference.plant, sheath.reach)
+		: null;
+	const photograph = photographed
+		? {
+				foot: Number(deltaE2000(rendered.foot.colour, photographed.foot.colour).toFixed(2)),
+				collar: Number(deltaE2000(rendered.collar.colour, photographed.collar.colour).toFixed(2)),
+			}
+		: null;
 	return {
-		foot: Number(deltaE2000(foot.colour, target(sheath.foot)).toFixed(2)),
-		collar: Number(deltaE2000(collar.colour, target(sheath.collar)).toFixed(2)),
-		footPixels: foot.pixels,
-		collarPixels: collar.pixels,
+		photograph,
+		record,
+		footPixels: rendered.foot.pixels,
+		collarPixels: rendered.collar.pixels,
+		...(photographed
+			? {
+					photographFootPixels: photographed.foot.pixels,
+					photographCollarPixels: photographed.collar.pixels,
+				}
+			: {}),
 	};
 }
 
@@ -1562,7 +1603,11 @@ export function compareStills(
 		// collar are read against the record's own colours. No other view takes this figure.
 		const sheathFigure =
 			sheath && SHEATH_VIEWS.has(drawn) && render.measures.box
-				? sheathDifference(render.image, render.measures.box, render.plant, sheath)
+				? sheathDifference(
+						{ image: refImage, box: refSide.measures.box, plant: refPlant },
+						{ image: render.image, box: render.measures.box, plant: render.plant },
+						sheath,
+					)
 				: null;
 		const edges = Number(
 			edgeDifference(edgeProfile(refImage), edgeProfile(render.image)).toFixed(3),
