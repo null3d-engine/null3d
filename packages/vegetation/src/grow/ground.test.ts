@@ -193,6 +193,66 @@ self.onmessage = async (event) => {
 	});
 });
 
+describe('the tuft sheath marker', () => {
+	const growth = meadowGrassRecord.growth;
+	if (growth.model !== 'tuft') throw new Error('the meadow grass is a tuft');
+	const sheathed: Species = {
+		...meadowGrassRecord,
+		growth: { ...growth, sheathColour: [0.366, 0.38, 0.309] },
+	};
+	const grow = (record: Species) => {
+		const kit = buildKitNow(
+			{ record, textures: noTextureFiles(record.id) },
+			{ placeholders: 'missing' },
+		);
+		return growPlantNow(kit, OPTIONS);
+	};
+	const marked = grow(sheathed);
+	const plain = grow(meadowGrassRecord);
+
+	/** The merged foliage's colour bytes, part by part. */
+	const foliageColours = (asset: PlantAsset) =>
+		asset.levels[0].parts
+			.filter((part) => part.name === 'foliage')
+			.map((part) => part.arrays.colors as Uint8Array);
+
+	it('marks the sheath columns in the flutter byte and holds the plant otherwise', () => {
+		expect(marked.skeleton.nodeCount).toBe(plain.skeleton.nodeCount);
+		expect(marked.skeleton.height).toBe(plain.skeleton.height);
+		const a = foliageColours(marked);
+		const b = foliageColours(plain);
+		expect(a.length).toBe(b.length);
+		let sheathVertices = 0;
+		let vertices = 0;
+		for (let p = 0; p < a.length; p++) {
+			const one = a[p] as Uint8Array;
+			const other = b[p] as Uint8Array;
+			expect(one.length).toBe(other.length);
+			for (let i = 0; i < one.length; i += 4) {
+				// The wind record and the sky visibility are the same plant's.
+				expect([one[i], one[i + 1], one[i + 3]]).toEqual([other[i], other[i + 1], other[i + 3]]);
+				// The phase keeps its seven low bits, and only the sheath's byte takes the mark.
+				expect((one[i + 2] as number) & 0x7f).toBe((other[i + 2] as number) >> 1);
+				if (((one[i + 2] as number) & 0x80) !== 0) sheathVertices++;
+				vertices++;
+			}
+		}
+		expect(sheathVertices).toBeGreaterThan(0);
+		expect(sheathVertices).toBeLessThan(vertices);
+	});
+
+	it('leaves a species without a sheath colour its full eight-bit phases', () => {
+		expect(sedgeRecord.growth.model === 'tuft' && sedgeRecord.growth.sheathColour).toBe(undefined);
+		// The sedge gives no sheath colour, so its phases keep the top bit, the mark's place.
+		const phases = foliageColours(assetOf(sedgeRecord)).flatMap((part) => {
+			const out: number[] = [];
+			for (let i = 2; i < part.length; i += 4) out.push(part[i] as number);
+			return out;
+		});
+		expect(phases.some((phase) => (phase & 0x80) !== 0)).toBe(true);
+	});
+});
+
 describe('the hosta', () => {
 	it('is a mound about twice as wide as tall', () => {
 		const { min, max } = drawnBounds(assetOf(hostaRecord), kitOf(hostaRecord));
