@@ -33,8 +33,8 @@ export const record: Species = {
 			spacing: { mean: 0.55, spread: 0.1 },
 		},
 		// Still 17: a thick dark rhizome lies along the soil with the dead stipes rising from it and
-		// fine roots below. The body is half the colony's own reach, so the soil view frames the
-		// rhizome the photograph shows.
+		// fine roots below. Each rhizome line carries its own fronds, so a body runs through the feet
+		// of the stipes that line rises, out to twice the half length the soil view frames.
 		soil: {
 			rhizome: 0.55,
 			rhizomeRadius: 0.028,
@@ -121,10 +121,25 @@ export const record: Species = {
 		// litter's tone at the foot. Still 16: the mid stipe above that third keeps the green that
 		// the photograph shows, so the black zone must not reach it.
 		zones: [
+			// Below the ground the roots and the rhizome's underside are the photograph's dark
+			// brown-black; the stipes above take the litter's plum instead.
+			{ layer: 0, by: 'height', from: -1, to: 0, blend: 0.004, tint: [0.22, 0.11, 0.14] },
 			// The mid stipe's camera frames 0.29 to 0.38 m, so the black ends below it and the green
 			// above keeps the mid view inside its band.
-			{ layer: 0, by: 'height', from: -1, to: 0.24, blend: 0.04, tint: [0.78, 0.37, 1.3] },
+			{ layer: 0, by: 'height', from: 0, to: 0.24, blend: 0.04, tint: [0.78, 0.37, 1.3] },
 			{ layer: 0, by: 'height', from: 0.24, to: 4, blend: 0.04, tint: [1.07, 1.1, 0.88] },
+			// Still 17: the rhizome is dark brown-black where the thin stipes take the litter's plum,
+			// so the thick wood below the stipes' feet takes its own tint. The stipes stay under the
+			// radius band's start and keep the height zone's own colour.
+			{
+				layer: 0,
+				by: 'radius',
+				from: 0.012,
+				to: 1,
+				blend: 0.004,
+				tint: [0.22, 0.11, 0.14],
+				second: { from: -1, to: 0.24, blend: 0.04 },
+			},
 		],
 		young: 0,
 		youngRadius: 0,
