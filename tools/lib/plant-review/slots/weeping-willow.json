@@ -84,6 +84,13 @@
 		"leaves": 1.25,
 		"roll": -45.0
 	},
+	"16-bark-on-limb.png": {
+		"girth": null,
+		"thin": 0.153,
+		"span": 0.5,
+		"along": 0.3,
+		"barkMask": true
+	},
 	"30-young-willow-whole.png": {
 		"sunAzimuth": 40,
 		"sunRise": 48,
