@@ -429,20 +429,21 @@ async function gateMasks(
 		if (edges.side || edges.bottom) contact.set(frame.file, edges);
 	}
 	if (contact.size === 0) return frames;
-	// Only the cells that met an edge are drawn again, so a picture inside its frame keeps its
-	// bytes. A side or top crop is stood back; a foot on the bottom edge is re-solved to the base
-	// row its photograph asks for, with the lower floor the page takes from the query.
+	// A sheet draws every cell from one camera, so a redraw takes the whole shot. A side or top
+	// crop is stood back; a foot on the bottom edge is re-solved to the base row its photograph
+	// asks for, with the lower floor the page takes from the query.
 	const redraws: Shot[] = [];
 	for (const shot of shots) {
-		const bottom = shot.cells.filter((cell) => {
-			const edges = contact.get(cell.file);
-			return edges !== undefined && !edges.side && edges.bottom;
+		const edges = shot.cells.flatMap((cell) => {
+			const found = contact.get(cell.file);
+			return found === undefined ? [] : [found];
 		});
-		const sides = shot.cells.filter((cell) => contact.get(cell.file)?.side === true);
-		if (bottom.length > 0)
-			redraws.push({ ...shot, cells: bottom, query: { ...shot.query, lowBase: true } });
-		if (sides.length > 0)
-			redraws.push({ ...shot, cells: sides, query: { ...shot.query, standBack: STAND_BACK } });
+		if (edges.length === 0) continue;
+		const side = edges.some((found) => found.side);
+		redraws.push({
+			...shot,
+			query: { ...shot.query, ...(side ? { standBack: STAND_BACK } : { lowBase: true }) },
+		});
 	}
 	if (redraws.length === 0) return frames;
 	const release = await takeDrawSlot();
