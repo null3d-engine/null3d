@@ -351,16 +351,19 @@ function candidates(
 	const leafy = (c: Candidate) => (c.buds > 0 ? 1 : 0);
 	const head = (c: Candidate) => c.head;
 	const divides = (c: Candidate) => (c.axes > 1 ? 1 : 0);
-	// A photograph of a piece shows a thick axis where it shows one at all, so a cut with no hinted
-	// order prefers the thickest axis among those near the asked length, before the closest match.
+	// A photograph of a piece shows a shoot with the leaves on it where it shows one at all, so a
+	// cut with no hinted order prefers a piece that divides ahead of a single thick axis, then the
+	// thickest among those near the asked length, before the closest match. A merged ground plant's
+	// leaf axis is a thick single axis whose own piece carries no mesh, so ranking it first would
+	// draw nothing.
 	return out.sort(
 		(x, y) =>
 			(young ? x.age - y.age : 0) ||
 			leafy(y) - leafy(x) ||
 			near(y) - near(x) ||
 			head(x) - head(y) ||
-			y.thickness - x.thickness ||
 			divides(y) - divides(x) ||
+			y.thickness - x.thickness ||
 			match(x) - match(y) ||
 			y.light - x.light ||
 			x.axis - y.axis,
