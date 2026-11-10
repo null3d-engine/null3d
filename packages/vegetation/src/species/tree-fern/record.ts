@@ -69,7 +69,7 @@ export const record: Species = {
 			// Stills 21 and 22: the frond is twice divided, its pinnae in near-opposite pairs; the
 			// pinna itself is the species' leaf, drawn from its own picture.
 			kind: 'pinnate',
-			length: { mean: 2.1, spread: 0.2 },
+			length: { mean: 1.5, spread: 0.15 },
 			// Still 07: a short red-brown stipe, densely hairy, no wider than the rachis.
 			petiole: { length: 0.28, width: 0.055, teeth: 0 },
 			// Still 21: the blade rises from the stipe and arches over, its tip drooping.
