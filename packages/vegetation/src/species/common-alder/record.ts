@@ -23,6 +23,18 @@ import { roundBand } from './fit';
  * drifts between the video's frames and each frame's reach is kept. The whole views are the frames
  * that rows 1, 6, 9 and 11 are judged on, so the crown follows them; `fit.ts` keeps the tool's own
  * measurement beside it.
+ *
+ * The hull's shape round the stem is far more lopsided than this table: at mid-height it reads 1.71
+ * broad to narrow against the record's 1.07, which is why the crown reads round. The record keeps
+ * the narrow stills' mean width; the review records that stills 18 (0.750), 01 (1.227) and 30
+ * (1.192) all draw at turn 0 and do not agree, with the turntable's turn-0 frame at 1.191.
+ *
+ * Laying the hull's shape on the record's mean width should widen the turn-0 side (stills 01 and 30)
+ * toward 1.227 and 1.192 and narrow the turn-90 side (still 02) toward 0.658, while still 18, also
+ * at turn 0, rises away from its 0.750, the outlier. The measured attempt at this commit,
+ * `alder-env-shape-2`, moved 01 from 0.736 to 0.860, 30 from 0.767 to 0.883, 18 from 0.768 to 0.887
+ * and 02 from 0.833 to 0.829, and widened the plant from 14.89 m to 17.26 m, so the shape is not
+ * kept.
  */
 const envelope: RadialEnvelope = {
 	kind: 'radial',
