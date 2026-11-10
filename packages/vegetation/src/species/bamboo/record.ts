@@ -1,8 +1,8 @@
 // The bamboo, a running timber bamboo: a giant grass whose clump rises as a bundle of near-straight
-// jointed culms, clean for the lower two fifths of the height, then opening into an airy plume of
-// thin branches and fans of narrow leaves. Each branch leaves a ringed node in a complement of two
-// or three, one branch taking the lead, and divides into leafy branchlets. The culm barely tapers
-// and its node rings cross a hollow, smooth green surface that no tree has.
+// jointed culms, clean for its lower half, then opening into an airy plume of thin branches and fans
+// of narrow leaves. Each branch leaves a ringed node in a complement of two or three, one branch
+// taking the lead, and divides into leafy branchlets. The culm barely tapers and its node rings
+// cross a hollow, smooth green surface that no tree has.
 //
 // The envelope, the crown's aspect and the all-round band are measured from the reference turntable
 // by the fitting tool (fit.ts); the shoot classes from the studio stills of a branch, a sub-branch
@@ -34,9 +34,9 @@ export const record: Species = {
 		// out, the whole clump about as wide as a third of its height at the foot.
 		culms: { mean: 16, spread: 3 },
 		layout: 'clump',
-		// The culms stand packed, their swollen feet meeting, so the clump reads as one plant's
-		// silhouette at a distance, as stills 01 and 18 show.
-		spacing: 0.8,
+		// The culms rise from one foot with sky between their swollen bases, the outer ones leaning
+		// out, as stills 01 and 02 show: the clump holds together by its crown, not by a fused base.
+		spacing: 1.35,
 		height: { mean: 8, spread: 1 },
 		// Still 17: a culm's width over its height is about a fortieth, far thicker in proportion than
 		// a tree's bole.
@@ -53,11 +53,12 @@ export const record: Species = {
 		// Still 15: the node is a raised ring of about a third of a centimetre over the culm's surface,
 		// with a wax band above it and the sheath's scar below.
 		node: { ridge: 0.007, waxBand: 0.02, sheathScar: 0.005 },
-		// Stills 08 and 09: the branch complement leaves above the lower two fifths; the two or three
-		// branches leave on opposite sides, steeply upward, and one takes the node's lead. Stills 01 and
-		// 02 show lower branches shorter and the longest near the top of the branching zone.
+		// Stills 08 and 09: the branch complement leaves above the lower half of each culm, so the
+		// lowest leaves of the shortest culm stand near half the clump's height. The two or three
+		// branches leave on opposite sides, steeply upward, and one takes the node's lead. Stills 01
+		// and 02 show lower branches shorter and the longest near the top of the branching zone.
 		branches: {
-			from: 0.62,
+			from: 0.7,
 			perNode: { mean: 2, spread: 0.4 },
 			dominant: true,
 			length: [
@@ -135,23 +136,23 @@ export const record: Species = {
 		],
 		cuttingClasses: [
 			{
-				// Still 22: a cut branchlet of about 35 cm, its leaves after a bare run and two side
-				// branchlets each ending in a fan. The crown cannot carry shoots this bare, so the
+				// Still 22: a cut branchlet of about half a metre, its leaves after a bare run and three
+				// side branchlets each ending in a fan. The crown cannot carry shoots this bare, so the
 				// sub-branch draws this class and the crown never does.
 				name: 'cut',
 				vigor: [0, 1],
 				share: 0,
 				years: 2,
-				length: { mean: 0.34, spread: 0.04 },
-				nodes: { mean: 6, spread: 1 },
+				length: { mean: 0.5, spread: 0.05 },
+				nodes: { mean: 8, spread: 1 },
 				internode: BRANCHLET,
 				stem: { radius: [0.005, 0.002] },
 				lateral: 58,
-				laterals: 2,
-				lateralGap: 0.4,
+				laterals: 3,
+				lateralGap: 0.45,
 				leafScale: [
-					[0, 0.95],
-					[1, 1],
+					[0, 1.05],
+					[1, 1.15],
 				],
 				leafAngle: [
 					[0, 95],
@@ -236,19 +237,20 @@ export const record: Species = {
 	extras: [
 		{
 			// Stills 07, 16 and 19: a young culm's lower nodes carry papery sheaths, which shed as the
-			// culm hardens. The lathe stands round the node as the sheath's flared skirt.
+			// culm hardens. The sheath flares wider than the culm it wraps and hangs from its node as a
+			// skirt, so it stands proud of the smooth green surface rather than hugging it.
 			kind: 'sheath',
 			at: 'culm-node',
-			share: 0.7,
+			share: 1,
 			count: 1,
 			seasons: ['summer', 'autumn', 'winter', 'blossom'],
 			shape: {
 				lathe: [
-					[0.1, 0],
-					[0.13, 0.02],
-					[0.15, 0.05],
-					[0.13, 0.1],
-					[0.1, 0.16],
+					[0.12, 0],
+					[0.19, 0.03],
+					[0.22, 0.08],
+					[0.2, 0.16],
+					[0.17, 0.26],
 				],
 				sides: 10,
 			},
@@ -300,19 +302,19 @@ export const record: Species = {
 		// culm model grown short and broad, with no branch complement.
 		shoot: {
 			form: 'a spring spear: one thick sheathed culm rising from the soil',
-			size: { height: { mean: 0.5, spread: 0.02 }, dbh: 0.14, aspect: 0.6 },
+			size: { height: { mean: 0.5, spread: 0.02 }, dbh: 0.2, aspect: 0.6 },
 			growth: {
 				culms: 1,
 				layout: 'clump',
 				spacing: 0.02,
 				height: { mean: 0.5, spread: 0.02 },
-				diameter: { mean: 0.14, spread: 0.01 },
+				diameter: { mean: 0.2, spread: 0.01 },
 				internode: [
 					[0, 0.07],
 					[0.6, 0.05],
 					[1, 0.03],
 				],
-				node: { ridge: 0.004, waxBand: 0.01, sheathScar: 0.003 },
+				node: { ridge: 0.002, waxBand: 0.01, sheathScar: 0.003 },
 				branches: { from: 1, perNode: 1, dominant: false, length: 0.05, angle: 45, orders: 1 },
 				sulcus: 0,
 				sheaths: { upTo: 1, length: 0.02 },
@@ -349,7 +351,8 @@ export const record: Species = {
 				},
 			},
 			bark: {
-				zones: [{ layer: 0, by: 'height', from: 0, to: 2, blend: 0, tint: [0.5, 0.42, 0.3] }],
+				// Still 19: the spear's flesh shows dark brown between its pale sheaths.
+				zones: [{ layer: 0, by: 'height', from: 0, to: 2, blend: 0, tint: [0.5, 0.2, 0.3] }],
 				young: 0,
 				youngRadius: 0.01,
 				girthScale: 1,
