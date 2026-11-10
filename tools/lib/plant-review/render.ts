@@ -323,7 +323,8 @@ export async function drawShots(
 	options: { readonly gpu?: string; readonly log?: (line: string) => void } = {},
 ): Promise<RunFrame[]> {
 	const log = options.log ?? console.log;
-	const server = await startServer();
+	// The review page fetches over plain HTTP, so a server started here serves it that way.
+	const server = await startServer(false);
 	const browser = await launchRepoBrowser(defaultEnvironment());
 	const frames: RunFrame[] = [];
 	try {
