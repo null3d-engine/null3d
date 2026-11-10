@@ -37,12 +37,42 @@ export function growSoil(
 	host: number,
 	hostNode: number,
 	margin: number,
+	spines?: readonly (readonly (readonly [number, number])[])[],
 ): void {
 	const roots = Math.max(0, Math.round(spreadAt(soil.roots, draw(rootPurpose) as number)));
 	const heading = (draw(rhizomePurpose, 2) as number) * 2 * Math.PI;
 	let from = host;
 	let fromNode = hostNode;
-	if (soil.rhizome !== undefined) {
+	if (spines && spines.length > 0) {
+		// A colony's rhizome lines carry its fronds, so each line's body runs through the feet of
+		// its own stipes: the body starts thick at the colony's middle and thins toward the ends.
+		const radius = soil.rhizomeRadius ?? 0.01;
+		let firstNode = -1;
+		for (const spine of spines) {
+			if (spine.length < 2) continue;
+			const points = resample(spine, 5);
+			const axis = builder.addAxis({ parent: -1, parentNode: -1, order: 0, kind: AXIS_ROOT });
+			let previous = -1;
+			points.forEach((point, i) => {
+				const share = i / (points.length - 1);
+				previous = builder.addNode({
+					x: point[0],
+					y: -radius * (1.15 - 0.35 * share),
+					z: point[1],
+					radius: radius * (1 - 0.45 * share),
+					parent: previous < 0 ? -1 : previous,
+					axis,
+					light: 1,
+					flags: soil.body ? NODE_SOIL_BODY : 0,
+				});
+				if (i === 0 && firstNode < 0) {
+					firstNode = previous;
+					from = axis;
+				}
+			});
+		}
+		if (firstNode >= 0) fromNode = firstNode;
+	} else if (soil.rhizome !== undefined) {
 		const half = spreadAt(soil.rhizome, draw(rhizomePurpose) as number);
 		const radius = soil.rhizomeRadius ?? 0.01;
 		const along: [number, number] = [cos(heading), sin(heading)];
@@ -83,11 +113,39 @@ export function growSoil(
 	}
 }
 
+/** A polyline's points at even arc lengths, so a body's rings spread along its line. */
+function resample(
+	spine: readonly (readonly [number, number])[],
+	count: number,
+): [number, number][] {
+	const lengths: number[] = [0];
+	let total = 0;
+	for (let i = 1; i < spine.length; i++) {
+		const from = spine[i - 1] as readonly [number, number];
+		const to = spine[i] as readonly [number, number];
+		total += Math.hypot(to[0] - from[0], to[1] - from[1]);
+		lengths.push(total);
+	}
+	const only = spine[0] as readonly [number, number];
+	if (total < 1e-6) return [[only[0], only[1]]];
+	const points: [number, number][] = [];
+	for (let k = 0; k < count; k++) {
+		const at = (total * k) / (count - 1);
+		let i = 1;
+		while (i < lengths.length - 1 && (lengths[i] as number) < at) i++;
+		const from = spine[i - 1] as readonly [number, number];
+		const to = spine[i] as readonly [number, number];
+		const span = (lengths[i] as number) - (lengths[i - 1] as number) || 1;
+		const t = (at - (lengths[i - 1] as number)) / span;
+		points.push([from[0] + (to[0] - from[0]) * t, from[1] + (to[1] - from[1]) * t]);
+	}
+	return points;
+}
+
 /**
  * Adds a root's axis: nodes running out from the crown and down below the soil, its radius closing
  * to a point at the end.
- */
-function rootPath(
+ */ function rootPath(
 	builder: SkeletonBuilder,
 	parent: number,
 	parentNode: number,

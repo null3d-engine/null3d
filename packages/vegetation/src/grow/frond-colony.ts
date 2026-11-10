@@ -95,6 +95,7 @@ function colonyOf(record: Species): FrondColony {
 interface FrondPlan {
 	readonly x: number;
 	readonly z: number;
+	readonly line: number;
 	readonly age: number;
 }
 
@@ -103,7 +104,10 @@ interface FrondPlan {
  * wander, a frond at each spacing along a line, a little to either side of it, the lines taking
  * turns so the colony spreads evenly.
  */
-function frondPlaces(input: GrowInput, colony: FrondColony): { x: number; z: number }[] {
+function frondPlaces(
+	input: GrowInput,
+	colony: FrondColony,
+): { places: { x: number; z: number; line: number }[]; lines: number } {
 	const { seed, variant } = input;
 	const salt = input.record.seedSalt >>> 0;
 	const draw = (purpose: number, index = 0) => unitAt(seed, salt, variant, purpose, index);
@@ -127,7 +131,7 @@ function frondPlaces(input: GrowInput, colony: FrondColony): { x: number; z: num
 		traces.push(trace);
 	}
 	const reached = new Float64Array(lines);
-	const places: { x: number; z: number }[] = [];
+	const places: { x: number; z: number; line: number }[] = [];
 	for (let f = 0; f < count; f++) {
 		const l = f % lines;
 		const gap = Math.max(0.02, spreadAt(colony.rhizome.spacing, draw(DRAW.spacing, f)));
@@ -147,9 +151,13 @@ function frondPlaces(input: GrowInput, colony: FrondColony): { x: number; z: num
 		const dz = z1 - z0;
 		const d = Math.sqrt(dx * dx + dz * dz) || 1;
 		const aside = (draw(DRAW.offset, f) * 2 - 1) * gap * 0.35;
-		places.push({ x: x0 + dx * t - (dz / d) * aside, z: z0 + dz * t + (dx / d) * aside });
+		places.push({
+			x: x0 + dx * t - (dz / d) * aside,
+			z: z0 + dz * t + (dx / d) * aside,
+			line: l,
+		});
 	}
-	return places;
+	return { places, lines };
 }
 
 /** A frond's age for the season: its share of the way from a new crozier to dead. */
@@ -192,7 +200,7 @@ export function growFrondColony(input: GrowInput): MacroSkeleton {
 	const shape = colony.frond;
 	const salt = record.seedSalt >>> 0;
 	const draw = (purpose: number, index: number) => unitAt(seed, salt, variant, purpose, index);
-	const places = frondPlaces(input, colony);
+	const { places, lines } = frondPlaces(input, colony);
 	const plans: FrondPlan[] = places.map((place, f) => ({
 		...place,
 		age: ageFor(season, colony, input, f, places.length),
@@ -326,9 +334,18 @@ export function growFrondColony(input: GrowInput): MacroSkeleton {
 	});
 	if (colony.soil && firstBase >= 0) {
 		// The colony's rhizome and roots: the soil draws from its own purposes, so adding it after
-		// the fronds cannot move a frond.
+		// the fronds cannot move a frond. Each rhizome line carries its own fronds, so its body runs
+		// from the colony's middle through the feet of the stipes that line rises.
 		const soilDraw = (purpose: number, a = 0, b = 0) =>
 			unitAt(seed, salt, variant, purpose, a * 4096 + b);
+		const reach = 2 * spreadAt(colony.soil.rhizome ?? 0, soilDraw(DRAW.soilRhizome) as number);
+		const spines: [number, number][][] = [];
+		for (let l = 0; l < lines; l++) {
+			const spine: [number, number][] = [[0, 0]];
+			for (const plan of plans)
+				if (plan.line === l && Math.hypot(plan.x, plan.z) <= reach) spine.push([plan.x, plan.z]);
+			if (spine.length > 1) spines.push(spine);
+		}
 		growSoil(
 			builder,
 			colony.soil,
@@ -338,6 +355,7 @@ export function growFrondColony(input: GrowInput): MacroSkeleton {
 			firstStipe,
 			firstBase,
 			0.02,
+			spines,
 		);
 	}
 	const finished = builder.finish();
