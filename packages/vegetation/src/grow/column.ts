@@ -8,14 +8,24 @@ import {
 	AXIS_ARM,
 	AXIS_STEM,
 	BUD_AREOLE,
+	BUD_DORMANT,
 	BUD_TERMINAL,
 	type MacroSkeleton,
 	SkeletonBuilder,
 } from '../core/graph';
 import { unitAt } from '../core/hash';
-import { cos, normalize3, PI, quatFromFrame, radians, sin, type Vector3 } from '../core/math';
+import {
+	cos,
+	length3,
+	normalize3,
+	PI,
+	quatFromFrame,
+	radians,
+	sin,
+	type Vector3,
+} from '../core/math';
 import type { Column, Species } from '../core/record';
-import { curveAt, spreadAt } from '../core/types';
+import { curveAt, type Spread, spreadAt } from '../core/types';
 import type { GrowInput } from '../stages';
 import { ribPlan } from '../wood/ribs';
 import type { Grower } from './models';
@@ -27,9 +37,11 @@ const Purpose = {
 	ArmHeight: 3,
 	ArmAzimuth: 4,
 	ArmRise: 5,
+	ArmElbow: 9,
 	Lean: 6,
 	LeanTurn: 7,
 	Flowers: 8,
+	Nest: 10,
 } as const;
 
 /** Metres between the stem's nodes. */
@@ -38,8 +50,16 @@ const STEM_NODE = 0.2;
 const ARM_NODE = 0.12;
 /** Degrees the stem may lean from upright, least and most. */
 const LEAN = [0, 1.5] as const;
+
 /** The share of the stem's height where its flower ring stands. */
 const FLOWER_RING = 0.97;
+/** Nest holes on the upper stem, and the band of the height they stand in. */
+const NEST_HOLES = 30;
+const NEST_BAND = [0.5, 0.85] as const;
+/** Metres a nest hole's site is set inside the skin, so its socket sits flush. */
+const NEST_INSET = 0.012;
+/** Metres an arm climbs over its run out, so its crotch leaves the stem on a curve. */
+const ARM_CROTCH = 0.14;
 
 /** A unit draw for one purpose of one variant. */
 function draw(input: GrowInput, purpose: number, a = 0, b = 0): number {
@@ -74,7 +94,7 @@ function skyOf(direction: Vector3): Vector3 {
 		up[1] - dot * direction[1],
 		up[2] - dot * direction[2],
 	];
-	const length = Math.hypot(out[0], out[1], out[2]);
+	const length = length3(out[0], out[1], out[2]);
 	// A vertical axis has no sky side square to it; any side will do.
 	return length > 1e-6 ? [out[0] / length, out[1] / length, out[2] / length] : [1, 0, 0];
 }
@@ -92,20 +112,48 @@ interface ArmPlan {
 	readonly rise: number;
 }
 
-/** The arms' plans: each at its own height, spread round the stem. */
+/** One tier of arms: where its arms leave the stem and how far they rise after the elbow. */
+interface ArmTier {
+	readonly from: number;
+	readonly rise: Spread;
+}
+
+/**
+ * The record's arm tiers, lowest first. A record that names one starting share and one rise has one
+ * tier, so every arm leaves and rises as it did before tiers were named.
+ */
+function armTiers(arms: Column['arms']): ArmTier[] {
+	const froms: readonly number[] = typeof arms.from === 'number' ? [arms.from] : arms.from;
+	const rises: readonly Spread[] = Array.isArray(arms.rise) ? arms.rise : [arms.rise as Spread];
+	if (froms.length === 0 || rises.length === 0)
+		throw new Error(
+			'@null3d/vegetation: the column record names an arm tier with no share or rise',
+		);
+	const tiers = Math.max(froms.length, rises.length);
+	return Array.from({ length: tiers }, (_, i) => ({
+		from: froms[Math.min(i, froms.length - 1)] as number,
+		rise: rises[Math.min(i, rises.length - 1)] as Spread,
+	}));
+}
+
+/** The arms' plans: each at its own height, spread round the stem and dealt among the tiers. */
 function armPlans(input: GrowInput, growth: Column, height: number): ArmPlan[] {
 	const count = Math.max(0, Math.round(spreadAt(growth.arms.count, draw(input, Purpose.Arms))));
 	const turn = draw(input, Purpose.ArmAzimuth) * 2 * Math.PI;
+	const tiers = armTiers(growth.arms);
 	const plans: ArmPlan[] = [];
 	for (let k = 0; k < count; k++) {
 		const jitter = draw(input, Purpose.ArmHeight, k) * 2 - 1;
+		const tier = tiers[k % tiers.length] as ArmTier;
 		plans.push({
 			// Arms stand across the middle of the stem, give or take a tenth of its height.
-			height: height * Math.min(0.66, Math.max(0.3, growth.arms.from + jitter * 0.08)),
+			height: height * Math.min(0.66, Math.max(0.3, tier.from + jitter * 0.1)),
 			heading:
 				turn + (2 * PI * k) / Math.max(1, count) + (draw(input, Purpose.ArmAzimuth, k) - 0.5) * 0.7,
-			elbow: Math.max(0.1, growth.arms.elbow),
-			rise: Math.max(0.2, spreadAt(growth.arms.rise, draw(input, Purpose.ArmRise, k))),
+			// Each arm runs out its own distance before it turns up, so the elbows stand at different
+			// heights and the arms do not read as fingers from one point.
+			elbow: Math.max(0.1, growth.arms.elbow * (0.65 + 0.7 * draw(input, Purpose.ArmElbow, k))),
+			rise: Math.max(0.2, spreadAt(tier.rise, draw(input, Purpose.ArmRise, k))),
 		});
 	}
 	return plans;
@@ -148,7 +196,7 @@ function placeAreoles(
 		const dx = b.at[0] - a.at[0];
 		const dy = b.at[1] - a.at[1];
 		const dz = b.at[2] - a.at[2];
-		const runLength = Math.hypot(dx, dy, dz);
+		const runLength = length3(dx, dy, dz);
 		if (runLength <= 1e-6) continue;
 		const dir: Vector3 = [dx / runLength, dy / runLength, dz / runLength];
 		const side = skyOf(dir);
@@ -284,30 +332,67 @@ export function growColumn(input: GrowInput): MacroSkeleton {
 			kind: AXIS_ARM,
 		});
 		const arm: Laid[] = [];
-		// The arm starts just clear of the stem's skin, so the weld has a ring to meet.
-		const start = radiusAt(at[1]) + ARM_NODE * 0.5;
-		const firstX = at[0] + heading[0] * start;
-		const firstZ = at[2] + heading[2] * start;
+		// The arm starts clear of the stem's skin, by most of its own radius, so the weld meets a
+		// ring that stands outside the parent rather than buried in it.
+		const start = radiusAt(at[1]) + armBase * 0.6;
+		let px = at[0] + heading[0] * start;
+		let py = at[1];
+		let pz = at[2] + heading[2] * start;
+		// The arm is pinched where it leaves the stem, as the junction photograph shows, so its first
+		// ring is a share of its own girth and it swells back over its run.
+		const pinch = armBase * 0.55;
 		let previous = builder.addNode({
-			x: firstX,
-			y: at[1],
-			z: firstZ,
-			radius: armBase,
+			x: px,
+			y: py,
+			z: pz,
+			radius: pinch,
 			parent: (trunk[fromNode] as Laid).node,
 			axis: armAxis,
 			light: 1,
 		});
-		arm.push({ at: [firstX, at[1], firstZ], node: previous, radius: armBase });
-		// A quarter turn from level to upright: the arm runs out and rises together.
-		const elbowNodes = Math.max(2, Math.ceil((plan.elbow * (PI / 2)) / ARM_NODE));
-		for (let n = 1; n <= elbowNodes; n++) {
-			const t = (n / elbowNodes) * (PI / 2);
-			const x = at[0] + heading[0] * (start + plan.elbow * sin(t));
-			const y = at[1] + plan.elbow * (1 - cos(t));
-			const z = at[2] + heading[2] * (start + plan.elbow * sin(t));
-			const radius = armBase + (armTip - armBase) * 0.4 * (n / elbowNodes);
-			previous = builder.addNode({ x, y, z, radius, parent: previous, axis: armAxis, light: 1 });
-			arm.push({ at: [x, y, z], node: previous, radius });
+		arm.push({ at: [px, py, pz], node: previous, radius: pinch });
+		// The arm runs out to its elbow, climbing a little at first so the crotch is not a right angle,
+		// as the junction photograph's own underside curve shows.
+		const runNodes = Math.max(2, Math.ceil(plan.elbow / ARM_NODE));
+		for (let n = 1; n <= runNodes; n++) {
+			const share = n / runNodes;
+			px = at[0] + heading[0] * (start + plan.elbow * share);
+			pz = at[2] + heading[2] * (start + plan.elbow * share);
+			py = at[1] + ARM_CROTCH * (1 - (share - 1) * (share - 1));
+			const radius =
+				pinch + (armBase - pinch) * Math.min(1, share * 2) + (armTip - armBase) * 0.2 * share;
+			previous = builder.addNode({
+				x: px,
+				y: py,
+				z: pz,
+				radius,
+				parent: previous,
+				axis: armAxis,
+				light: 1,
+			});
+			arm.push({ at: [px, py, pz], node: previous, radius });
+		}
+		// The turn: a quarter circle of a few arm girths across, from level to upright, so the elbow
+		// reads as the photograph's rounded U rather than a corner.
+		const turnRadius = Math.max(0.24, armBase * 1.6);
+		const turnNodes = Math.max(3, Math.ceil((turnRadius * (PI / 2)) / ARM_NODE));
+		const runOut = start + plan.elbow;
+		for (let n = 1; n <= turnNodes; n++) {
+			const t = (n / turnNodes) * (PI / 2);
+			px = at[0] + heading[0] * (runOut + turnRadius * sin(t));
+			py = at[1] + turnRadius * (1 - cos(t));
+			pz = at[2] + heading[2] * (runOut + turnRadius * sin(t));
+			const radius = armBase + (armTip - armBase) * (0.2 + 0.2 * (n / turnNodes));
+			previous = builder.addNode({
+				x: px,
+				y: py,
+				z: pz,
+				radius,
+				parent: previous,
+				axis: armAxis,
+				light: 1,
+			});
+			arm.push({ at: [px, py, pz], node: previous, radius });
 		}
 		const base = arm[arm.length - 1] as Laid;
 		// The rise stands the arm parallel to the stem, to a rounded tip below its top.
@@ -342,6 +427,31 @@ export function growColumn(input: GrowInput): MacroSkeleton {
 			woodRadius: armTip,
 		});
 		placeAreoles(input, builder, growth, armAxis, { points: arm }, armBase, frame, Math.PI);
+	}
+	// Woodpecker holes on the upper stem, as nearly every old saguaro carries. Each is a dormant
+	// site set a little inside the skin, so the extra's dark socket sits flush with it.
+	for (let h = 0; h < NEST_HOLES; h++) {
+		const y =
+			height * (NEST_BAND[0] + (NEST_BAND[1] - NEST_BAND[0]) * draw(input, Purpose.Nest, h));
+		let near = trunk[0] as Laid;
+		for (const point of trunk)
+			if (Math.abs(point.at[1] - y) < Math.abs(near.at[1] - y)) near = point;
+		const theta = draw(input, Purpose.Nest, h, 1) * 2 * Math.PI;
+		const radial: Vector3 = [cos(theta), 0, sin(theta)];
+		const stand = near.radius - NEST_INSET;
+		quatFromFrame(radial, normalize3([0, 1, 0]), frame);
+		builder.addBud({
+			node: near.node,
+			x: near.at[0] + radial[0] * stand,
+			y: near.at[1],
+			z: near.at[2] + radial[2] * stand,
+			frame,
+			kind: BUD_DORMANT,
+			vigor: 0.5,
+			light: 1,
+			axis: stemAxis,
+			woodRadius: near.radius,
+		});
 	}
 	placeAreoles(input, builder, growth, stemAxis, stem, radiusAt(0), frame);
 	return builder.finish(0);
