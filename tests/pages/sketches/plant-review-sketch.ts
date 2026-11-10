@@ -367,6 +367,25 @@ function standView(height: number, foot: V3, turn: number, aspect: number): View
 	return { position, target: add(position, scale(look, stand.distance)), fov: FOV };
 }
 
+/**
+ * A view whose camera moves along its own line to the target by a scale: a review redraw corrects
+ * a picture's margin from the width the picture itself measured.
+ */
+function scaledStand<T extends { readonly position: V3; readonly target: V3 }>(
+	view: T,
+	scale: number | undefined,
+): T {
+	if (scale === undefined || scale === 1 || !(scale > 0)) return view;
+	return {
+		...view,
+		position: [
+			view.target[0] + (view.position[0] - view.target[0]) * scale,
+			view.target[1] + (view.position[1] - view.target[1]) * scale,
+			view.target[2] + (view.position[2] - view.target[2]) * scale,
+		],
+	};
+}
+
 /** Whether the query frames a whole plant in screen shares. */
 const FRAMED =
 	QUERY.horizon !== undefined ||
@@ -656,8 +675,12 @@ export default defineSketch(async (ctx) => {
 			case 'turntable':
 			case 'whole':
 			case 'skeleton':
-			case 'silhouette':
-				return FRAMED ? standView(height, foot, turn, aspect) : fit(bounds, turn, e, aspect, fov);
+			case 'silhouette': {
+				const view = FRAMED
+					? standView(height, foot, turn, aspect)
+					: fit(bounds, turn, e, aspect, fov);
+				return scaledStand(view, QUERY.standScale);
+			}
 			case 'crown-sky': {
 				// The crown against the sky from outside the plant: the eye near a person's height, a
 				// stand far enough that the crown's height fills the frame and the whole crown stands
@@ -726,7 +749,10 @@ export default defineSketch(async (ctx) => {
 				const base = main.crown.base;
 				const half = Math.max(0.3, (top - base) / 2);
 				const distance = QUERY.distance ?? Math.max(0.6, half / Math.tan((fov * 0.78 * DEG) / 2));
-				const eye = Math.max(0.3, base - 1.6);
+				// A plant shorter than the eye stand has no room for a person's eye below its crown:
+				// the eye goes as low as the ground allows, under the crown rather than level with
+				// it, which is where its photograph was taken.
+				const eye = Math.max(0.05, base - 1.6);
 				return {
 					position: [foot[0] + out[0] * distance, eye, foot[2] + out[2] * distance],
 					target: [foot[0], top, foot[2]],
@@ -941,7 +967,7 @@ export default defineSketch(async (ctx) => {
 					fov,
 					0.02,
 				);
-				if (found) return found;
+				if (found) return scaledStand(found, QUERY.standScale);
 				break;
 			}
 			case 'soil': {

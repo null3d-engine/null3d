@@ -348,7 +348,10 @@ describe('the width profile', () => {
 describe('the slots', () => {
 	test('sort stills by the words in their names before their numbers', () => {
 		expect(classifySlot('13-single-needle-underside.png')?.view).toBe('leaf-under');
-		expect(classifySlot('05-crown-underneath.png')?.view).toBe('below');
+		// The whole-from-below and crown-underside photographs take their own views: one frames the
+		// plant from its foot, the other the crown's underside from under it.
+		expect(classifySlot('03-whole-from-below.png')?.view).toBe('below');
+		expect(classifySlot('05-crown-underneath.png')?.view).toBe('crown-underside');
 		expect(classifySlot('02-whole-profile-b.png')).toMatchObject({
 			view: 'whole',
 			turn: 90,
@@ -649,15 +652,15 @@ describe('the strands view', () => {
 		expect(named.view).toBe('strands');
 		// It is off every slot number: no standard picture takes it, so no other render moves.
 		expect(VIEW_SPECS.strands.slots).toEqual([]);
-		// The standard names keep the views they had before the view was added. The birch's
-		// `19-drooping-twig-ends` name reads as `subbranch` by the twig rule today; the species
-		// names the view it wants in its own slot entry.
+		// The standard names keep their views, except the `05` underside class, which the new view
+		// takes. The birch's `19-drooping-twig-ends` name reads as `subbranch` by the twig rule
+		// today; the species names the view it wants in its own slot entry.
 		const standard: readonly (readonly [string, PlantView])[] = [
 			['01-whole-distant.png', 'whole'],
 			['02-whole-profile.png', 'whole'],
 			['03-whole-from-below.png', 'below'],
 			['04-crown-outside.png', 'limb'],
-			['05-crown-underside.png', 'below'],
+			['05-crown-underside.png', 'crown-underside'],
 			['06-inside-crown.png', 'inside'],
 			['07-limb-leaving-trunk.png', 'junction'],
 			['08-limb-fork.png', 'fork'],
