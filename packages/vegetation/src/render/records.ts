@@ -101,7 +101,10 @@ export const HEADER = {
 	lichen: 40,
 	/** Lichen: its lowest and highest height in metres. */
 	lichenReach: 41,
-	/** The whole plant's sway: metres at its top at the field's base speed, then cycles a second. */
+	/**
+	 * The whole plant's sway: metres at its top at the field's base speed, cycles a second, then
+	 * the power its share of that motion rises with along a stem.
+	 */
 	sway: 42,
 	/**
 	 * The first extra's band colour, then the band's roughness, as `extras` holds its body's; the
@@ -121,13 +124,29 @@ export const HEADER = {
 	extraStalks: 51,
 	/** The least width in pixels that a card's stalk draws, or 0 where the record gives none. */
 	cardStalk: 55,
+	/** Young bark: the tint its thin wood takes, where the record gives one. */
+	youngTint: 56,
+	/**
+	 * The first bark zone's band on the other axis: its start, end, blend and whether the record
+	 * gives one; the next `MAX_BARK_ZONES - 1` texels hold the other zones' in order.
+	 */
+	barkSeconds: 57,
+	/** The autumn bark's linear tint, and 1 when the record gives one. */
+	autumnBark: 61,
+	/** The winter bark's linear tint, and 1 when the record gives one. */
+	winterBark: 62,
+	/** The winter leaves' linear reflectance, and 1 when the record gives them. */
+	winterReflectance: 63,
+	/** The winter leaves' linear transmittance. */
+	winterTransmittance: 64,
+
 	/**
 	 * A fire scar's hollow: its foot and head in metres, its centre's angle in radians about the
 	 * first stem and its half-width. Zeroed where the record gives no scar.
 	 */
-	scar: 56,
+	scar: 65,
 	/** The scar's charred colour, then the share of it the hollow takes. */
-	scarColour: 57,
+	scarColour: 66,
 } as const;
 
 /**
@@ -309,6 +328,7 @@ export function speciesHeader(
 	if (bark) {
 		const young = barkManifest?.young;
 		texel(header, HEADER.young, [...(young?.mean ?? STAND_IN_BARK), bark.youngRadius]);
+		texel(header, HEADER.youngTint, [...(bark.youngTint ?? [1, 1, 1]), 0]);
 		const zones = bark.zones.slice(0, MAX_BARK_ZONES);
 		texel(header, HEADER.youngTile, [
 			young?.tile[0] ?? 0.12,
@@ -339,6 +359,13 @@ export function speciesHeader(
 				layer?.height.depth ?? 0,
 			]);
 			texel(header, at + 3, [...(layer?.mean ?? STAND_IN_BARK), 0]);
+			const second = zone.second;
+			texel(header, HEADER.barkSeconds + index, [
+				second?.from ?? 0,
+				second?.to ?? 0,
+				second?.blend ?? 0,
+				second ? 1 : 0,
+			]);
 		});
 	}
 	(record.extras ?? []).slice(0, MAX_EXTRAS).forEach((extra, index) => {
@@ -361,7 +388,15 @@ export function speciesHeader(
 	const bud = record.shoots?.bud.colour;
 	if (bud) texel(header, HEADER.bud, [...bud, 1]);
 	const sway = windSway(record);
-	texel(header, HEADER.sway, [sway.amplitude, sway.frequency, 0, 0]);
+	texel(header, HEADER.sway, [sway.amplitude, sway.frequency, sway.power, 0]);
+	const seasonBark = record.seasons.bark;
+	if (seasonBark?.autumn) texel(header, HEADER.autumnBark, [...seasonBark.autumn, 1]);
+	if (seasonBark?.winter) texel(header, HEADER.winterBark, [...seasonBark.winter, 1]);
+	const winterLeaves = record.seasons.leaves?.winter;
+	if (winterLeaves) {
+		texel(header, HEADER.winterReflectance, [...winterLeaves.reflectance, 1]);
+		texel(header, HEADER.winterTransmittance, [...winterLeaves.transmittance, 0]);
+	}
 	texel(header, HEADER.cardStalk, [record.lod.cardStalk ?? 0, 0, 0, 0]);
 	const scar = record.base?.scar;
 	texel(

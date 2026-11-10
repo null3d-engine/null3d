@@ -100,6 +100,7 @@ describe('the grass batches', () => {
 		const made: ReturnType<typeof batch>[] = [];
 		const materials: Record<string, unknown>[] = [];
 		const uploads: Record<string, unknown>[] = [];
+		const updates: Float32Array[] = [];
 		const layers: number[] = [];
 		const ctx = {
 			materials: {
@@ -123,13 +124,18 @@ describe('the grass batches', () => {
 			textures: {
 				fromData: (options: Record<string, unknown>) => {
 					uploads.push(options);
-					return { update: () => undefined };
+					return {
+						update: (data: Float32Array) => {
+							// Keep the numbers as the engine receives them, not the live buffer.
+							updates.push(new Float32Array(data));
+						},
+					};
 				},
 			},
 			quality: { preset, onChange: () => () => {} },
 			engine: { capabilities: { tier: 'webgl2' } },
 		} as unknown as SketchContext;
-		return { ctx, made, materials, uploads, layers };
+		return { ctx, made, materials, uploads, updates, layers };
 	}
 
 	test('the High count fills the hill and each preset draws its share', async () => {
@@ -182,6 +188,36 @@ describe('the grass batches', () => {
 		]);
 		grass.setWindLayer(wind);
 		expect(layers).toEqual([3]);
+	});
+	test('the steady settings follow a base wind that a page changes', async () => {
+		const { ctx, updates } = context('high');
+		const air = {
+			base: [2, 0.5, 0.3, 7],
+			gust: [1, 10, 0.4, 8],
+			swirl: [0.5, 20, 0.1, 0],
+			sent: [0, 0, 0, -1e9],
+		};
+		const wind = {
+			texture: { layer: 0 },
+			origin: [0, 0],
+			size: 128,
+			air,
+		} as unknown as WindField;
+		const grass = await createGrass(ctx, { ...field, wind });
+		grass.setWindLayer(wind);
+		const settled = updates.length;
+		// A page's strength slider raises the base wind, as the demo's does.
+		air.base[0] = 9;
+		air.base[1] = 1.2;
+		grass.setWindLayer(wind);
+		expect(updates.length).toBe(settled + 1);
+		const held = updates.at(-1) as Float32Array;
+		expect(held[0]).toBe(9);
+		// The texture holds the numbers as 32-bit floats, so the test rounds the expected value.
+		expect(held[1]).toBe(Math.fround(1.2));
+		// A frame that changes nothing writes nothing.
+		grass.setWindLayer(wind);
+		expect(updates.length).toBe(settled + 1);
 	});
 	test('the grass that names no field binds the slots and stands still', async () => {
 		const { ctx, materials, uploads } = context('high');
