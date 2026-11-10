@@ -297,7 +297,6 @@ export const builder: FoliageBuilder = {
 			bladeTexture(manifest),
 			{ high: 0, low: 0, phase: 0 },
 			undefined,
-			true,
 		);
 		return [mesh.finishPrototype()];
 	},
