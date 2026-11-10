@@ -88,6 +88,23 @@ export function leafFrame(
 const LOWEST_EYE = 0.1;
 
 /**
+ * The horizontal distance that keeps a plant point inside a share of the frame's width: `across`
+ * metres off the plant's axis and `toward` metres nearer than it. A reference picture leaves a
+ * margin round its plant, so a whole view stands back until the render's widest point keeps that
+ * margin rather than running off the frame's sides.
+ */
+export function widthDistance(
+	across: number,
+	toward: number,
+	share: number,
+	aspect: number,
+	fov: number,
+): number {
+	const half = Math.tan((fov * Math.PI) / 360);
+	return toward + across / (Math.max(0.05, Math.min(1, share)) * half * aspect);
+}
+
+/**
  * The camera that puts a plant `height` metres tall where a framing asks: the horizon's row sets
  * the pitch, and the top and base rows set the distance and the camera's height. Without a base
  * row, the camera stands at `eye` and only the top row sets the distance.
@@ -131,23 +148,6 @@ export function standCamera(framing: ScreenFraming, height: number): StandCamera
 		yaw,
 		warning: 'the top row sits at or under the horizon, so the camera stands back at plant height',
 	};
-}
-
-/**
- * The horizontal distance that keeps a plant point inside a share of the frame's width: `across`
- * metres off the plant's axis and `toward` metres nearer than it. A reference picture leaves a
- * margin round its plant, so a whole view stands back until the render's widest point keeps that
- * margin rather than running off the frame's sides.
- */
-export function widthDistance(
-	across: number,
-	toward: number,
-	share: number,
-	aspect: number,
-	fov: number,
-): number {
-	const half = Math.tan((fov * Math.PI) / 360);
-	return toward + across / (Math.max(0.05, Math.min(1, share)) * half * aspect);
 }
 
 /** The row share at which a point `y` metres up the plant's axis lands for a stand camera. */

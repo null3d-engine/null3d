@@ -297,6 +297,28 @@ export function framingQuery(framing: ReferenceFraming): Partial<PlantReviewQuer
 	};
 }
 
+/** A camera's stand from its target, in metres, and its vertical field of view, in degrees. */
+export interface CameraStand {
+	readonly distance: number;
+	readonly fov: number;
+}
+
+/**
+ * The share of the frame's width that a plant of `plantWidth` metres fills at the camera's target:
+ * the frame holds twice the stand's distance times the half field of view's tangent, times the
+ * aspect. A mask that runs off both side edges cannot report a width, so it reads this instead,
+ * and the figure responds to a redraw's stand rather than saturating at the frame's edge.
+ */
+export function cameraWidthShare(
+	plantWidth: number,
+	stand: CameraStand,
+	aspect: number,
+): number | null {
+	if (!(plantWidth > 0) || !(stand.distance > 0) || !(stand.fov > 0) || !(aspect > 0)) return null;
+	const height = 2 * stand.distance * Math.tan((stand.fov * Math.PI) / 360);
+	return plantWidth / (height * aspect);
+}
+
 /** The size of the canvas that outlines are compared on: the plant's height and the canvas width. */
 export const NORMAL_HEIGHT = 160;
 export const NORMAL_WIDTH = 640;
