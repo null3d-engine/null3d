@@ -172,6 +172,12 @@ const SLOT_RULES: readonly { readonly test: (name: string) => boolean; readonly 
 			test: (n) => /(crown|canopy).*(underside|underneath)/.test(n),
 			slot: UNDERNEATH,
 		},
+		{
+			// The crown at soil level, its shoot sheaths against a plain ground: a view of the foot
+			// from the side, aimed where the columns leave the soil.
+			test: (n) => n.includes('basal-crown'),
+			slot: { view: 'crown-foot', framed: false },
+		},
 		{ test: (n) => n.includes('inside'), slot: { view: 'inside', framed: false } },
 		{
 			// The crown's outer surface seen from outside it: a limb running low across the frame with

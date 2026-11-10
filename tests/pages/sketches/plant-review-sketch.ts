@@ -47,6 +47,7 @@ import {
 	belowView,
 	type ClosePlant,
 	type CloseView,
+	departures,
 	forkView,
 	insideView,
 	junctionView,
@@ -728,6 +729,19 @@ export default defineSketch(async (ctx) => {
 					fov,
 				);
 			}
+			case 'crown-foot': {
+				// The crown at soil level: its shoots' lower length seen side on, standing on the
+				// ground the slot names, with the studio behind. The camera looks at the foot just
+				// above the soil, close enough for the sheath's colour to read.
+				const aim = Math.max(0.05, 0.06 * height);
+				return orbit(
+					[foot[0], aim, foot[2]],
+					QUERY.distance ?? Math.max(0.3, 5 * aim),
+					e,
+					turn,
+					fov,
+				);
+			}
 			case 'below': {
 				const below = belowView(closePlant(false), turn, lens, {
 					elevation: e,
@@ -802,6 +816,18 @@ export default defineSketch(async (ctx) => {
 					0.05,
 				);
 				if (found) return found;
+				// A tuft whose crown axis leaves no main stem has no limb to stand at. Its picture is
+				// its crown's foot, where the sheaths that the row judges stand.
+				if (record.growth.model === 'tuft' && departures(skeleton).limbs.length === 0) {
+					const aim = Math.max(0.05, 0.06 * height);
+					return orbit(
+						[foot[0], aim, foot[2]],
+						QUERY.distance ?? Math.max(0.3, 5 * aim),
+						e,
+						turn,
+						fov,
+					);
+				}
 				break;
 			}
 			case 'fork': {
