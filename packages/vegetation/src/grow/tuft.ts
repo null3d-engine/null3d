@@ -57,6 +57,12 @@ import type { Grower } from './models';
 
 /** The golden angle in radians, which spreads shoots over the crown's disc. */
 const GOLDEN = radians(137.50776405);
+/**
+ * The surface-kind byte that marks a shoot's sheath column: the plant material draws those vertices
+ * in the record's sheath colour instead of the leaf's texture. The colour byte survives the asset's
+ * quantiser, where a negative coordinate sentinel would be clamped away.
+ */
+const SHEATH_KIND = 64;
 /** Points along each blade's axis. */
 const BLADE_NODES = 8;
 /** Points along each flowering stem. */
@@ -818,11 +824,11 @@ export function meshTuft(input: MeshInput, level: MeshLevel): MeshArrays {
 			},
 			v: stems,
 			uHalf: strip.stalkHalf,
-			bytes,
+			// A shoot's sheath column is marked in the surface-kind byte, which survives the
+			// quantiser, so the plant material draws it in the record's sheath colour.
+			bytes: !isStem && !fine && growth.sheathColour ? { ...bytes, phase: SHEATH_KIND } : bytes,
 			crown,
 			along: isStem ? [0, 1] : fine ? [0.85, 1] : [0, 0.05],
-			// A sheath column carries a sentinel browning value, which the plant material reads as
-			// the record's sheath colour; every other stalk browns as the season gives.
 			browning: isStem ? Math.max(browning, 0.15) : Math.max(browning, 0.3),
 			closeTip: isStem || fine,
 		});

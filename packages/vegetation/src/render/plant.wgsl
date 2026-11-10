@@ -101,6 +101,8 @@ const REST_STEPS: f32 = 255.0;
 const HEADER_YOUNG: i32 = 15;
 const HEADER_YOUNG_TILE: i32 = 16;
 const HEADER_YOUNG_TINT: i32 = 56;
+// A tuft's sheath colour and roughness, for the merged foliage's sheath columns.
+const HEADER_SHEATH: i32 = 65;
 // A grass blade's collar: its colour, then the share of the blade's base it takes.
 const HEADER_COLLAR: i32 = 66;
 const HEADER_MOSS: i32 = 17;
@@ -163,6 +165,8 @@ const MAX_BRANCH_DEPTH: i32 = 8;
 const KIND_STEM: f32 = 85.0;
 // The surface kind byte of a shoot's bud, which draws as a stem in the record's bud colour.
 const KIND_BUD: f32 = 128.0;
+// The surface kind byte that marks a tuft's sheath column, between the leaf and the stem values.
+const KIND_SHEATH: f32 = 64.0;
 // Texels across the near table: two for each of its sixteen slots.
 const NEAR_TEXELS: f32 = 32.0;
 // A leaf's reflectance at normal incidence and at grazing, as the plant materials set them.
@@ -1140,6 +1144,12 @@ fn surface(input: SurfaceInput) -> Surface {
                 base *= header(HEADER_YOUNG_TINT).rgb;
             }
             roughness = 0.8;
+        } else if (mode == MODE_FOLIAGE && abs(input.vertexColor.b * 255.0 - KIND_SHEATH) < 0.5) {
+            // A tuft's sheath column is marked in the surface-kind byte, which survives the
+            // quantiser, and draws in the record's sheath colour.
+            let body = header(HEADER_SHEATH);
+            base = body.rgb;
+            roughness = max(body.w, 0.5);
         } else {
             let layer = select(1, 0, upper);
             let texel = textureSampleGrad(colour, colourSampler, uv, layer, gx, gy);
