@@ -12,6 +12,7 @@ import type {
 	SpeciesKitData,
 } from './asset';
 import {
+	AXIS_RACHIS,
 	AXIS_ROOT,
 	AXIS_STEM,
 	AXIS_STIPE,
@@ -275,6 +276,7 @@ function candidates(
 	length: number,
 	shade: number,
 	young = false,
+	cluster = false,
 ): Candidate[] {
 	const { axes } = skeleton;
 	const depth = depths(skeleton);
@@ -283,9 +285,12 @@ function candidates(
 	);
 	// The candidate ancestors of each axis, nearest first, found walking parents before children.
 	const owners: number[][] = Array.from({ length: axes.count }, () => []);
+	// A cluster is one shoot: a leaf's own axis meshes no piece, so a cluster of a species without
+	// shoot prototypes refuses the leaf axes rather than drawing an empty still.
 	const isCandidate = (a: number) =>
 		(axes.parent[a] as number) >= 0 &&
-		(order === undefined ? (axes.order[a] as number) >= 1 : (axes.order[a] as number) === order);
+		(order === undefined ? (axes.order[a] as number) >= 1 : (axes.order[a] as number) === order) &&
+		(!cluster || (axes.kind[a] as number) !== AXIS_RACHIS);
 	for (const a of byDepth) {
 		const parent = axes.parent[a] as number;
 		const inherited = parent >= 0 ? (owners[parent] as number[]) : [];
@@ -414,9 +419,23 @@ export function cutBranch(
 	const length = cuttingLength(record, cutting);
 	const hinted = plantHint(record, cutting.part)?.order;
 	const shade = record.shoots?.placement.shadePrune ?? 0;
-	let ranked = candidates(skeleton, hinted, length, shade, cutting.young);
+	let ranked = candidates(
+		skeleton,
+		hinted,
+		length,
+		shade,
+		cutting.young,
+		cutting.part === 'cluster',
+	);
 	if (ranked.length === 0 && hinted !== undefined)
-		ranked = candidates(skeleton, undefined, length, shade, cutting.young);
+		ranked = candidates(
+			skeleton,
+			undefined,
+			length,
+			shade,
+			cutting.young,
+			cutting.part === 'cluster',
+		);
 	if (ranked.length === 0) return undefined;
 	const chosen = ranked[(cutting.pick ?? 0) % ranked.length] as Candidate;
 	const { axes, buds } = skeleton;
