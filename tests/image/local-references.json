@@ -242,8 +242,8 @@
 	"chromium-swiftshader/compat/plant-silver-birch.png": {
 		"test": "plant-silver-birch",
 		"tier": "compat",
-		"date": "2026-11-09",
-		"reason": "the silver birch's leaf is rebuilt upright on the named frames and its crown's sky prune opened to 0.4 at b96087d0e, which moves the leaf and crown panels; this branch has no CI run to take the software set from, and CI's shards judge it later"
+		"date": "2026-11-10",
+		"reason": "the silver birch's cluster blades stand at 1.2 to 1.4 of the species' leaf length at def9c1d9e, which moves the leaf-cluster panel; this branch has no CI run to take the software set from, and CI's shards judge it later"
 	},
 	"chromium-swiftshader/compat/plant-sparse-oak.png": {
 		"test": "plant-sparse-oak",
@@ -596,8 +596,8 @@
 	"chromium-swiftshader/webgl2/plant-silver-birch.png": {
 		"test": "plant-silver-birch",
 		"tier": "webgl2",
-		"date": "2026-11-09",
-		"reason": "the silver birch's leaf is rebuilt upright on the named frames and its crown's sky prune opened to 0.4 at b96087d0e, which moves the leaf and crown panels; this branch has no CI run to take the software set from, and CI's shards judge it later"
+		"date": "2026-11-10",
+		"reason": "the silver birch's cluster blades stand at 1.2 to 1.4 of the species' leaf length at def9c1d9e, which moves the leaf-cluster panel; this branch has no CI run to take the software set from, and CI's shards judge it later"
 	},
 	"chromium-swiftshader/webgl2/plant-sparse-oak.png": {
 		"test": "plant-sparse-oak",
@@ -980,8 +980,8 @@
 	"chromium-swiftshader/webgpu/plant-silver-birch.png": {
 		"test": "plant-silver-birch",
 		"tier": "webgpu",
-		"date": "2026-11-09",
-		"reason": "the silver birch's leaf is rebuilt upright on the named frames and its crown's sky prune opened to 0.4 at b96087d0e, which moves the leaf and crown panels; this branch has no CI run to take the software set from, and CI's shards judge it later"
+		"date": "2026-11-10",
+		"reason": "the silver birch's cluster blades stand at 1.2 to 1.4 of the species' leaf length at def9c1d9e, which moves the leaf-cluster panel; this branch has no CI run to take the software set from, and CI's shards judge it later"
 	},
 	"chromium-swiftshader/webgpu/plant-sparse-oak.png": {
 		"test": "plant-sparse-oak",
