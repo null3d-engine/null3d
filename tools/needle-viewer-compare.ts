@@ -199,7 +199,9 @@ async function startDev(port: number): Promise<{ url: string; stop: () => void }
 	const root = resolve(import.meta.dirname, '..');
 	const server = Bun.spawn([process.execPath, join(root, 'node_modules/vite/bin/vite.js')], {
 		cwd: root,
-		env: { ...Bun.env, NULL3D_PORT: String(port) },
+		// This tool reaches its server over the loopback, which is a secure origin already, and its
+		// readiness poll and page loads use plain HTTP, so it opts out of the HTTPS default.
+		env: { ...Bun.env, NULL3D_PORT: String(port), NULL3D_HTTPS: '0' },
 		stdout: 'ignore',
 		stderr: 'inherit',
 	});

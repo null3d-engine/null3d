@@ -1,0 +1,251 @@
+// Written by tools/plant-textures from the reference set: the texture files of the species
+// hosta, as `bun run plants:textures hosta` writes them. A page fetches the files only
+// when it prepares the species, and the literal URLs let every bundler emit them as files.
+/** @type {import('@null3d/vegetation/textures').SpeciesTextureFiles} */
+export const files = {
+	manifest: {
+		"format": 1,
+		"species": "hosta",
+		"source": {
+			"repository": "null3d-engine/plant-references",
+			"commit": "8355243695f3bae7eec19015855ea7459d019f0b",
+			"files": [
+				{
+					"name": "24-leaf-texture-upper.png",
+					"sha256": "2a98aef03d6ee1d9211c0258af25e7957a32a20d78f3af5a366e18dc18aec56d",
+					"job": "1394320f-f021-4e04-859f-07b305008f78"
+				},
+				{
+					"name": "25-leaf-texture-underside.png",
+					"sha256": "1d094af569498eb35f66e432cf4e2e0d10f98530ca5f33e3942b55d476b055e0",
+					"job": "280bc99b-be84-4bee-90d1-21bce4ba79fa"
+				}
+			]
+		},
+		"tool": {
+			"version": "1",
+			"encoder": "Basis Universal 2.50, ETC1S, effort 2"
+		},
+		"leaf": {
+			"size": 1024,
+			"layers": [
+				"upper",
+				"lower"
+			],
+			"length": 0.78425,
+			"frame": {
+				"petiole": [
+					0.5,
+					0.02241
+				],
+				"base": [
+					0.5,
+					0.19336
+				],
+				"tip": [
+					0.5,
+					0.97761
+				]
+			},
+			"outline": [
+				0.4995,
+				0.9793,
+				0.4845,
+				0.9565,
+				0.4712,
+				0.9446,
+				0.395,
+				0.9088,
+				0.3481,
+				0.8816,
+				0.2759,
+				0.8219,
+				0.2279,
+				0.77,
+				0.1954,
+				0.7202,
+				0.1591,
+				0.6401,
+				0.1401,
+				0.5776,
+				0.135,
+				0.5435,
+				0.1338,
+				0.5112,
+				0.136,
+				0.4751,
+				0.1428,
+				0.436,
+				0.1544,
+				0.395,
+				0.1701,
+				0.3579,
+				0.1898,
+				0.3228,
+				0.2172,
+				0.2847,
+				0.2403,
+				0.2593,
+				0.2729,
+				0.2315,
+				0.3081,
+				0.2103,
+				0.3354,
+				0.1995,
+				0.3726,
+				0.1921,
+				0.4009,
+				0.1927,
+				0.4253,
+				0.1994,
+				0.4468,
+				0.2131,
+				0.4598,
+				0.229,
+				0.4731,
+				0.2584,
+				0.4765,
+				0.1987,
+				0.4708,
+				0.0278,
+				0.4761,
+				0.0208,
+				0.5181,
+				0.0204,
+				0.5269,
+				0.0218,
+				0.5292,
+				0.0288,
+				0.5246,
+				0.1812,
+				0.5274,
+				0.2524,
+				0.5373,
+				0.2271,
+				0.5522,
+				0.2085,
+				0.5757,
+				0.1945,
+				0.6021,
+				0.1878,
+				0.6304,
+				0.1877,
+				0.6655,
+				0.1955,
+				0.7065,
+				0.2134,
+				0.7349,
+				0.2326,
+				0.7671,
+				0.2613,
+				0.7968,
+				0.2954,
+				0.8181,
+				0.3267,
+				0.8337,
+				0.356,
+				0.8486,
+				0.394,
+				0.8581,
+				0.4302,
+				0.8639,
+				0.4731,
+				0.8654,
+				0.5161,
+				0.8632,
+				0.5464,
+				0.8581,
+				0.5747,
+				0.8307,
+				0.6665,
+				0.8107,
+				0.7114,
+				0.7715,
+				0.771,
+				0.7426,
+				0.8042,
+				0.6938,
+				0.8472,
+				0.6567,
+				0.8739,
+				0.5981,
+				0.91,
+				0.5308,
+				0.9435,
+				0.5147,
+				0.9595,
+				0.5036,
+				0.978
+			],
+			"mean": {
+				"upper": [
+					0.08131,
+					0.18831,
+					0.01736
+				],
+				"lower": [
+					0.33762,
+					0.42653,
+					0.14361
+				]
+			},
+			"veins": {
+				"luminance": 0.15325,
+				"contrast": 12.903
+			},
+			"profile": {
+				"upper": [
+					0.15513,
+					0.15235,
+					0.15187,
+					0.15374,
+					0.15347,
+					0.15335,
+					0.15337,
+					0.15363
+				],
+				"lower": [
+					0.38336,
+					0.38922,
+					0.38689,
+					0.38806,
+					0.38788,
+					0.3884,
+					0.3868,
+					0.37934
+				]
+			},
+			"coverage": 0.4358
+		},
+		"outputs": [
+			{
+				"file": "leaf-color.ktx2",
+				"sha256": "143f8d13633a2b2eee17c26225295f8d04a9e6b20c1404480da9844fd0644562",
+				"bytes": 230396
+			},
+			{
+				"file": "leaf-normal.ktx2",
+				"sha256": "ed3b298e8ac3fa64442fdc2add28d67462b51bae9112f7ca125c1c5af15af417",
+				"bytes": 50741
+			},
+			{
+				"file": "leaf-color-half.ktx2",
+				"sha256": "d1585217e48072117af0e83d1e45a751eef1cb832a9f88b03664d90643bc1cdc",
+				"bytes": 74039
+			},
+			{
+				"file": "leaf-normal-half.ktx2",
+				"sha256": "0653d130063aa5bc8b43aa07310922b8b2cf5e5d2839a549db2649d6ffe05c82",
+				"bytes": 11242
+			}
+		]
+	},
+	full: {
+		leafColor: new URL('./leaf-color.ktx2', import.meta.url),
+		leafNormal: new URL('./leaf-normal.ktx2', import.meta.url),
+	},
+	half: {
+		leafColor: new URL('./leaf-color-half.ktx2', import.meta.url),
+		leafNormal: new URL('./leaf-normal-half.ktx2', import.meta.url),
+	},
+};

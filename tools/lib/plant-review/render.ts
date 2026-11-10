@@ -256,7 +256,11 @@ async function drawPage(
 	hold: number,
 	gpu: string | undefined,
 ): Promise<{ image: Rgba; facts: Record<string, unknown> | undefined }> {
-	const page = await browser.newPage({ viewport: { width: size[0], height: size[1] } });
+	// The dev server serves the local certificate, which this browser has not been told to trust.
+	const page = await browser.newPage({
+		viewport: { width: size[0], height: size[1] },
+		ignoreHTTPSErrors: true,
+	});
 	try {
 		const params = new URLSearchParams({
 			sketch: `${SKETCH}?${plantReviewQuery({ ...query, size })}`,

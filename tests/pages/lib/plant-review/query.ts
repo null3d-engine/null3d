@@ -80,6 +80,12 @@ export interface PlantReviewQuery {
 	readonly lamp?: string;
 	/** The wind's strength: 0 still, 1 the default field, up to 3. */
 	readonly wind?: number;
+	/**
+	 * Metres from the camera out to which the plant's materials sway, in place of the preset's
+	 * distance: a plant beyond it stands still under the same field, which a picture contrasts
+	 * with the plant swaying inside the preset's distance.
+	 */
+	readonly sway?: number;
 	/** Seconds on the wind clock. The runner holds the frame at this sketch time. */
 	readonly time?: number;
 	/** The season the plant grows for; the record's by default. */
@@ -98,6 +104,11 @@ export interface PlantReviewQuery {
 	readonly cut?: number;
 	/** Whether the page posts its measures of the plant beside the frame. */
 	readonly measure?: boolean;
+	/**
+	 * Whether the picture shows the plant lifted from the soil, as a photograph of its washed base
+	 * does: no ground plane is drawn, so the rhizome and the roots below the crown stay in view.
+	 */
+	readonly lifted?: boolean;
 	/** Whether the page draws a 1 m scale bar beside the view's target. */
 	readonly scale?: boolean;
 	/**
@@ -121,6 +132,13 @@ export interface PlantReviewQuery {
 	 */
 	readonly pressed?: boolean;
 	/**
+	 * For a single-leaf still: how far the leaf has opened, from 0 for a crozier still rolled to 1
+	 * for a leaf fully out. Absent, it is drawn as it stands on a mature plant.
+	 */
+	readonly age?: number;
+	/** For a cut branch: whether its candidates rank by how young they are, so the piece is opening. */
+	readonly young?: boolean;
+	/**
 	 * Whether a limb view frames the crown's outer surface, whose depth into the crown is part of its
 	 * subject, rather than one branch that its picture shows against a plain ground.
 	 */
@@ -143,9 +161,21 @@ export interface PlantReviewQuery {
 	readonly eye?: number;
 	/** How far along a limb the limb view looks, as a share of the limb's length. */
 	readonly along?: number;
-	/** Metres of radius that a limb view frames: it picks the limb that carries that thickness. */
+	/**
+	 * Metres of radius that a limb view frames: it picks the limb that carries that thickness.
+	 */
 	readonly thin?: number;
-	/** Metres of bark or limb that a bark or limb view's frame height covers. */
+	/**
+	 * The bark zone whose own height a bark view frames, as an index into the record's zones: the
+	 * camera stands where that zone covers the wood, so each bark source is compared with the bark
+	 * its photograph shows. From 0.
+	 */
+	readonly barkZone?: number;
+	/**
+	 * Metres that a close view covers: the bark or limb a bark or limb view frames, or the width a
+	 * cut view shows across the frame, where the reference is a picture of a part of the piece
+	 * rather than the whole of it.
+	 */
 	readonly span?: number;
 	/**
 	 * The row share on which a view up the stem puts the stem's first fork: the camera pitches up
@@ -167,6 +197,17 @@ export interface PlantReviewQuery {
 	 * scale its photograph shows it at. The piece then stands on its cut at the frame's lower edge.
 	 */
 	readonly leaves?: number;
+	/**
+	 * How far toward its sparse form the plant grows, from 0 to 1, the level a phone or a tablet
+	 * asks for: the species' floors hold it at what still reads as itself. 0 grows the record's own.
+	 */
+	readonly sparse?: number;
+	/**
+	 * Metres of one leaf that a photographed cutting was measured in, for the `leaves` frame. A
+	 * blade or a cluster whose own leaf is far longer than the photographed one frames at the
+	 * photograph's scale only when the length the photograph was measured in is named.
+	 */
+	readonly leafLength?: number;
 	/** Degrees the camera turns about its line of sight, the picture turning counterclockwise. */
 	readonly roll?: number;
 	/**
@@ -191,6 +232,7 @@ const NUMBER_FIELDS = [
 	'distance',
 	'fov',
 	'wind',
+	'sway',
 	'time',
 	'pick',
 	'cut',
@@ -202,6 +244,7 @@ const NUMBER_FIELDS = [
 	'eye',
 	'along',
 	'thin',
+	'barkZone',
 	'span',
 	'forkRow',
 	'footRow',
@@ -209,6 +252,8 @@ const NUMBER_FIELDS = [
 	'aside',
 	'stand',
 	'leaves',
+	'leafLength',
+	'sparse',
 	'roll',
 	'girth',
 	'turns',
@@ -221,13 +266,31 @@ const NUMBER_FIELDS = [
 ] as const;
 
 /** The fields that are shares, of the frame or of the light, which must lie from 0 to 1. */
-const SHARE_FIELDS = new Set(['horizon', 'fill', 'targetY', 'targetX', 'top', 'along', 'skyShare']);
+const SHARE_FIELDS = new Set([
+	'horizon',
+	'fill',
+	'targetY',
+	'targetX',
+	'top',
+	'along',
+	'skyShare',
+	'sparse',
+]);
 
 /** The fields that are whole numbers of at least one. */
 const COUNT_FIELDS = new Set(['turns', 'columns']);
 
 /** The switches, written as 1 when on. */
-const SWITCHES = ['measure', 'scale', 'matte', 'fruit', 'surface', 'barkMask', 'foliage'] as const;
+const SWITCHES = [
+	'measure',
+	'scale',
+	'matte',
+	'fruit',
+	'surface',
+	'lifted',
+	'barkMask',
+	'foliage',
+] as const;
 
 /** A short form of a number for a query, so a query reads well and keeps its precision. */
 function short(value: number): string {
@@ -289,6 +352,10 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 	}
 	if (numbers.wind !== undefined && (numbers.wind < 0 || numbers.wind > 3))
 		throw new Error(`wind=${numbers.wind} is a strength: give a number from 0 to 3.`);
+	if (numbers.sway !== undefined && numbers.sway <= 0)
+		throw new Error(
+			`sway=${numbers.sway} is a distance in metres: give a number above 0, or leave it out for the preset's distance.`,
+		);
 	if (numbers.daylight !== undefined && (numbers.daylight <= 0 || numbers.daylight > 8))
 		throw new Error(
 			`daylight=${numbers.daylight} is a multiple of the soft daylight: give a number above 0, up to 8.`,
@@ -312,6 +379,17 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 		);
 	if (numbers.leaves !== undefined && numbers.leaves <= 0)
 		throw new Error(`leaves=${numbers.leaves} is a frame in leaf lengths: give a number above 0.`);
+	if (
+		numbers.barkZone !== undefined &&
+		(!Number.isInteger(numbers.barkZone) || numbers.barkZone < 0)
+	)
+		throw new Error(
+			`barkZone=${numbers.barkZone} is an index into the record's bark zones: give a whole number of 0 or more.`,
+		);
+	if (numbers.leafLength !== undefined && numbers.leafLength <= 0)
+		throw new Error(
+			`leafLength=${numbers.leafLength} is a leaf's length in metres: give a number above 0.`,
+		);
 	if (numbers.stand !== undefined && numbers.stand <= 1)
 		throw new Error(
 			`stand=${numbers.stand} is in stem radii from its axis: give a number above 1.`,
@@ -360,6 +438,7 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 		...(placeholders !== null && { placeholders: placeholders === '1' }),
 		...(pressed !== null && { pressed: pressed === '1' }),
 		measure: params.get('measure') === '1',
+		lifted: params.get('lifted') === '1',
 		barkMask: params.get('barkMask') === '1',
 		foliage: params.get('foliage') === '1',
 		scale: params.get('scale') === '1',
