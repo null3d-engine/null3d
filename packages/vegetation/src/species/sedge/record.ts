@@ -138,11 +138,13 @@ export const record: Species = {
 				share: 0.4,
 			},
 			optics: {
-				// Still 12's glossy yellow-green upper face.
-				reflectance: [0.064, 0.122, 0.0065],
-				// Still 13's matt glaucous blue-green underside.
-				reflectanceBack: [0.092, 0.113, 0.059],
-				transmittance: [0.064, 0.122, 0.016],
+				// The upper face's linear colour, read from stills 12 and 24 through the copy stand's
+				// measured light: a deep green at the photograph's own luminance.
+				reflectance: [0.042, 0.076, 0.006],
+				// The underside's linear colour, read the same way from stills 13 and 25: a glaucous
+				// blue-green with its blue raised toward the photographs.
+				reflectanceBack: [0.073, 0.109, 0.091],
+				transmittance: [0.04, 0.077, 0.01],
 				roughness: [0.45, 0.7],
 			},
 		},
