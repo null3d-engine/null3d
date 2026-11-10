@@ -75,7 +75,13 @@
 		"view": "bark-base",
 		"skyShare": 0.357,
 		"daylight": 1.459,
-		"barkMask": true
+		"barkMask": true,
+		"fill": null,
+		"targetY": null,
+		"top": 0,
+		"eye": 0.1,
+		"distance": 0.6,
+		"horizon": 0
 	},
 	"16-stipe-mid.png": {
 		"view": "bark-mid",

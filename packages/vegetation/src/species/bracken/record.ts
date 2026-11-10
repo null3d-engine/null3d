@@ -105,11 +105,14 @@ export const record: Species = {
 		},
 	},
 	bark: {
-		// Stills 15 and 16: the stipe is black in its lowest tenth and green above it, and the
-		// stipe's own photograph carries the green, so the zone above the black takes it as it is.
+		// Still 15: the stipe darkens from green to black over its lower third, the black taking the
+		// litter's tone at the foot. Still 16: the mid stipe above that third keeps the green that
+		// the photograph shows, so the black zone must not reach it.
 		zones: [
-			{ layer: 0, by: 'height', from: -1, to: 0.12, blend: 0.06, tint: [0.06, 0.06, 0.05] },
-			{ layer: 0, by: 'height', from: 0.12, to: 4, blend: 0.06, tint: [1.07, 1.1, 0.88] },
+			// The mid stipe's camera frames 0.29 to 0.38 m, so the black ends below it and the green
+			// above keeps the mid view inside its band.
+			{ layer: 0, by: 'height', from: -1, to: 0.24, blend: 0.04, tint: [0.78, 0.37, 1.3] },
+			{ layer: 0, by: 'height', from: 0.24, to: 4, blend: 0.04, tint: [1.07, 1.1, 0.88] },
 		],
 		young: 0,
 		youngRadius: 0,
