@@ -45,6 +45,12 @@ const WIDTH_SHARE = 1.4;
  * thin ribbon would vanish between the camera and the coarse levels below.
  */
 const CLOSE_WIDTH_SHARE = 0.9;
+/**
+ * The share of the nearest level's ribbon width that a spanned cut piece keeps. The leaflet
+ * pictures show a rachis's blades standing apart; a piece drawn at the whole frond's close width
+ * fills its own box with leaf, so the cut keeps narrow blades along the same rachis length.
+ */
+const CUT_WIDTH_SHARE = 0.6;
 /** Degrees the planes of a V-section frond fan to either side of the rachis's own upper face. */
 const PLANE_FAN = 62;
 /**
@@ -384,6 +390,12 @@ export function palmFoliage(input: MeshInput, level: MeshLevel): MeshArrays {
 		columns: GRID[2].columns,
 		widthShare: WIDTH_SHARE,
 	};
+	// A spanned cut piece keeps the same rachis length and leaflet length as the picture, with
+	// narrower blades, so its leaflets stand apart inside its own box.
+	const cutRibbon: RibbonShape = {
+		...ribbon,
+		widthShare: ribbon.widthShare * CUT_WIDTH_SHARE,
+	};
 	// A cut piece of a frond keeps the original's leaflets: the record's frond length gives their
 	// size, and the piece's own run gives only how many of its places it carries. A whole plant's
 	// frond is its own measure, so its leaflets follow the length it grew.
@@ -430,7 +442,7 @@ export function palmFoliage(input: MeshInput, level: MeshLevel): MeshArrays {
 			closeBlade,
 			dead ? DEAD_PINNA_SHARE : undefined,
 		);
-		const frondRibbon = dead ? deadRibbon : ribbon;
+		const frondRibbon = dead ? deadRibbon : closeCut ? cutRibbon : ribbon;
 		const bytes: number[] = [0, 0, 0, 0];
 		const record = base + frond.record;
 		const brown = Math.max(0, Math.min(1, (frond.age - 0.5) * 2));
