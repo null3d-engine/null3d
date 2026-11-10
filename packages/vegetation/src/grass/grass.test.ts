@@ -108,6 +108,22 @@ describe('the cover that meets a species', () => {
 		expect(at(3)).toBeCloseTo((at(0) + at(6)) / 2, 5);
 		expect(at(4)).toBeLessThan(at(1));
 		expect(at(4)).toBeLessThan(at(7));
+		// The two halves light apart, since the fold turns each one's normal its own way.
+		const normal = (index: number) => shaped.normals[index] ?? Number.NaN;
+		expect(Math.abs(normal(0) - normal(6))).toBeGreaterThan(0.01);
+	});
+
+	test('a blade with no fold keeps the flat two-sided strip', () => {
+		const flat = { ...blade, fold: 0 };
+		const mesh = tuftMesh(7, 1, 3, flat);
+		expect(mesh.positions.length).toBe((3 * 2 + 1) * 3);
+		expect(mesh.indices.length).toBe(2 * 6 + 3);
+	});
+
+	test('a cover with no species blade draws the strip it draws today', () => {
+		const mesh = tuftMesh(7, 2, 3);
+		expect(mesh.positions.length).toBe(2 * (3 * 2 + 1) * 3);
+		expect(mesh.indices.length).toBe(2 * (2 * 6 + 3));
 	});
 
 	test('a species without a grass blade is refused', () => {

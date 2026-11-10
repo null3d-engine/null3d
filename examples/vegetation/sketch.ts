@@ -51,10 +51,10 @@ export default defineSketch(async (ctx) => {
 	});
 
 	// The season: every record declares what its own does, so the same meadow grows bare in winter,
-	// turns in autumn and flowers in blossom. Summer is the record's default. One sparse slider moves a
-	// species' limbs, leaves and coarseness together toward the least it still reads as itself, the
-	// form a phone or a tablet asks for. The meadow opens at the sparsest form, as every demo does,
-	// and a hand that drags the slider toward the left adds density.
+	// turns in autumn and flowers in blossom. Summer is the record's default. One sparse slider moves
+	// a species' limbs, leaves and coarseness together toward the least it still reads as itself. The
+	// meadow opens at the sparsest form, as every demo that grows plants through the add-on does by
+	// the owner's ruling, and a hand that drags the slider to the left adds density.
 	const controls: MeadowControls = { season: 'summer', sparse: DEMO_SPARSENESS };
 
 	let seed = 11;

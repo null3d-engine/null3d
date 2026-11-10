@@ -21,9 +21,11 @@ import {
 import type { WindField } from '@null3d/wind';
 
 /**
- * The sparse level every demo grows its plants at when the page opens: the sparsest the species
- * allows, so a scene loads light and a reader adds density from there. A page that grows plants
- * itself passes this beside the others.
+ * The sparse level every demo that grows plants through the add-on starts at, by the owner's
+ * ruling of 10 November 2026: every such demo opens at the sparsest form the species allows, on
+ * every device, so a scene loads light and a reader adds density from there. The ruling is not the
+ * device rule — a desktop opens sparse too. A page that grows its own plants passes this beside
+ * the other options.
  */
 export const DEMO_SPARSENESS = 1;
 
