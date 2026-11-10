@@ -12,6 +12,7 @@
 		"targetY": 0.483
 	},
 	"02-whole-profile.png": {
+		"form": "narrow",
 		"sunAzimuth": -13.3,
 		"sunRise": 43.3,
 		"skyShare": 0.6,
