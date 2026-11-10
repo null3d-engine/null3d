@@ -297,6 +297,34 @@ describe('cuttings', () => {
 		expect(cutsShoot(stub.record, 'leaf')).toBe(false);
 	});
 
+	it("takes a plant cut's leaf scale from its record, and the crown's size when none is named", async () => {
+		const { species: fern } = await import('./species/tree-fern');
+		await loadPlantCode(fern.record);
+		const hint = fern.record.cuttings?.cluster;
+		if (!hint || !('order' in hint)) throw new Error('the fern names no plant cut for its cluster');
+		const kitOf = (scale?: number) =>
+			buildKitNow(
+				{
+					...fern,
+					record: {
+						...fern.record,
+						cuttings: {
+							...fern.record.cuttings,
+							cluster: scale === undefined ? hint : { ...hint, scale },
+						},
+					},
+				},
+				{ placeholders: 'missing', detail: 'low' },
+			);
+		const grow = { seed: 11, variant: 0, cutting: { part: 'cluster' } } as const;
+		const plain = growPlantNow(kitOf(), grow);
+		const one = growPlantNow(kitOf(1), grow);
+		const smaller = growPlantNow(kitOf(0.9), grow);
+		expect(plantAssetDigest(one)).toBe(plantAssetDigest(plain));
+		expect(smaller.levels[0].triangles).toBe(plain.levels[0].triangles);
+		expect(plantAssetDigest(smaller)).not.toBe(plantAssetDigest(plain));
+	});
+
 	it('stands a shoot cutting upright on its attach point, or as grown when asked', async () => {
 		const { species: oak } = await import('./species/pedunculate-oak');
 		await loadPlantCode(oak.record);
