@@ -4,6 +4,9 @@
 import type { MeshArrays, PrototypeArrays } from '../asset';
 import { cos, cross3, normalize3, sin, type Vector3 } from '../core/math';
 
+/** Steps a metre of a blade's keel offset is packed in, within a signed byte's range. */
+const KEEL_STEPS = 8192;
+
 /** Surface kinds in a prototype's third colour byte: leaf, stem or bud, extra. */
 export const SURFACE_LEAF = 0;
 export const SURFACE_STEM = 85;
@@ -18,6 +21,10 @@ export class MeshWriter {
 	readonly uvs: number[] = [];
 	readonly uvs1: number[] = [];
 	readonly colors: number[] = [];
+	/** 4 bytes per vertex: the packed offset from a blade's keel, its fourth byte 127 on a blade. */
+	readonly keel: number[] = [];
+	/** True once a vertex names a keel, so a mesh without one writes no tangent attribute. */
+	private keelUsed = false;
 	readonly indices: number[] = [];
 	/** The first vertex of each part that `mark` began, so meshes of one plan match part by part. */
 	readonly parts: number[] = [];
@@ -39,6 +46,7 @@ export class MeshWriter {
 		uv: ArrayLike<number>,
 		uv1: ArrayLike<number>,
 		color: ArrayLike<number>,
+		keel?: ArrayLike<number>,
 	): number {
 		this.positions.push(p[0] as number, p[1] as number, p[2] as number);
 		this.normals.push(n[0] as number, n[1] as number, n[2] as number);
@@ -50,6 +58,13 @@ export class MeshWriter {
 			color[2] as number,
 			color[3] as number,
 		);
+		this.keel.push(
+			keel ? (keel[0] as number) : 0,
+			keel ? (keel[1] as number) : 0,
+			keel ? (keel[2] as number) : 0,
+			keel ? (keel[3] as number) : 0,
+		);
+		if (keel) this.keelUsed = true;
 		return this.vertices - 1;
 	}
 
@@ -68,6 +83,7 @@ export class MeshWriter {
 			uvs: new Float32Array(this.uvs),
 			uvs1: new Float32Array(this.uvs1),
 			colors: new Uint8Array(this.colors),
+			...(this.keelUsed && { tangents: new Int8Array(this.keel) }),
 			indices: new Uint16Array(this.indices),
 		};
 	}
@@ -80,6 +96,7 @@ export class MeshWriter {
 			uvs: new Float32Array(this.uvs),
 			uvs1: new Float32Array(this.uvs1),
 			colors: new Uint8Array(this.colors),
+			...(this.keelUsed && { tangents: new Int8Array(this.keel) }),
 			indices:
 				this.vertices > 0xffff ? new Uint32Array(this.indices) : new Uint16Array(this.indices),
 		};
@@ -98,20 +115,49 @@ export class MeshWriter {
 		const n: Vector3 = [0, 0, 0];
 		const bytes = [0, 0, 0, 0];
 		const second = [0, 0];
+		const from: Vector3 = [0, 0, 0];
+		const keel: Vector3 = [0, 0, 0];
+		const spare: Vector3 = [0, 0, 0];
+		const packed = [0, 0, 0, 0];
 		for (let i = 0; i < count; i++) {
-			p[0] = mesh.positions[i * 3] as number;
-			p[1] = mesh.positions[i * 3 + 1] as number;
-			p[2] = mesh.positions[i * 3 + 2] as number;
+			from[0] = mesh.positions[i * 3] as number;
+			from[1] = mesh.positions[i * 3 + 1] as number;
+			from[2] = mesh.positions[i * 3 + 2] as number;
+			p[0] = from[0];
+			p[1] = from[1];
+			p[2] = from[2];
 			n[0] = mesh.normals[i * 3] as number;
 			n[1] = mesh.normals[i * 3 + 1] as number;
 			n[2] = mesh.normals[i * 3 + 2] as number;
+			const packedKeel = mesh.tangents ? (mesh.tangents[i * 4 + 3] as number) : 0;
+			if (packedKeel > 0) {
+				for (let k = 0; k < 3; k++)
+					keel[k] = (from[k] as number) - (mesh.tangents?.[i * 4 + k] as number) / KEEL_STEPS;
+				transform(keel, spare);
+			}
 			transform(p, n);
+			if (packedKeel > 0) {
+				// The offset's direction and scale follow the piece, so the packed keel turns with it.
+				for (let k = 0; k < 3; k++)
+					packed[k] = Math.max(
+						-127,
+						Math.min(127, Math.round(((p[k] as number) - (keel[k] as number)) * KEEL_STEPS)),
+					);
+				packed[3] = 127;
+			}
 			for (let c = 0; c < 4; c++) bytes[c] = mesh.colors[i * 4 + c] as number;
 			colour?.(bytes, i);
 			second[0] = mesh.uvs1[i * 2] as number;
 			second[1] = mesh.uvs1[i * 2 + 1] as number;
 			uv1?.(second, i);
-			this.vertex(p, n, [mesh.uvs[i * 2] as number, mesh.uvs[i * 2 + 1] as number], second, bytes);
+			this.vertex(
+				p,
+				n,
+				[mesh.uvs[i * 2] as number, mesh.uvs[i * 2 + 1] as number],
+				second,
+				bytes,
+				packedKeel > 0 ? packed : undefined,
+			);
 		}
 		for (const index of mesh.indices) this.indices.push(base + (index as number));
 	}
