@@ -258,12 +258,14 @@ function growHeads(
 			];
 			let previous = node;
 			let end = node;
-			points.forEach((point, i) => {
+			points.forEach((point) => {
 				end = builder.addNode({
 					x: point[0],
 					y: point[1],
 					z: point[2],
-					radius: radius * (1 - 0.3 * (i / 3)),
+					// The stalk holds its width to the spike's foot: a taper there thins the join under
+					// the outline's half-cover cutoff, so the hanging spike draws as a piece of its own.
+					radius,
 					parent: previous,
 					axis,
 					light: 1,
