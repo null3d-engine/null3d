@@ -61,18 +61,12 @@ import {
 import {
 	type CutRows,
 	cutCamera,
-	fitWidth,
 	leafFrame,
 	type ScreenFraming,
 	spanDistance,
 	standCamera,
 } from '../lib/plant-review/framing';
-import {
-	drawnVertices,
-	measurePlant,
-	partPositions,
-	shootPositions,
-} from '../lib/plant-review/measure';
+import { measurePlant, partPositions, shootPositions } from '../lib/plant-review/measure';
 import { readPlantReviewQuery } from '../lib/plant-review/query';
 import { sharedRecords } from '../lib/plant-review/sight';
 import { BACKGROUND_COLOURS, type PlantView, VIEW_SPECS } from '../lib/plant-review/views';
@@ -663,24 +657,21 @@ export default defineSketch(async (ctx) => {
 			case 'whole':
 			case 'skeleton':
 			case 'silhouette': {
-				if (!FRAMED) return fit(bounds, turn, e, aspect, fov);
-				const view = standView(height, foot, turn, aspect);
-				// A reference picture leaves a margin round its plant, so the camera stands back
-				// until the vertices the view draws fill no more of the frame's width than the
-				// reference's plant does. The drawn vertices, every level and the shoot rows, give
-				// the width: a level the view leaves out cannot widen the figure.
-				const share = QUERY.widthShare;
-				if (share === undefined || share >= 1) return view;
-				const fitted = fitWidth(
-					{ position: view.position, target: view.target, fov: view.fov },
-					drawnVertices(main, kit),
-					share,
-					aspect,
-				);
+				const view = FRAMED
+					? standView(height, foot, turn, aspect)
+					: fit(bounds, turn, e, aspect, fov);
+				// A redraw corrects the stand from the picture's own measured width: the camera moves
+				// along its line to the target, so the plant keeps the reference's margin. The first
+				// draw carries no scale and takes the framing's own stand.
+				const scale = QUERY.standScale;
+				if (scale === undefined || scale === 1 || !(scale > 0)) return view;
 				return {
 					...view,
-					position: [fitted.position[0], fitted.position[1], fitted.position[2]],
-					target: [fitted.target[0], fitted.target[1], fitted.target[2]],
+					position: [
+						view.target[0] + (view.position[0] - view.target[0]) * scale,
+						view.target[1] + (view.position[1] - view.target[1]) * scale,
+						view.target[2] + (view.position[2] - view.target[2]) * scale,
+					],
 				};
 			}
 			case 'crown-sky': {
