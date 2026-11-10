@@ -37,6 +37,12 @@ import { MeshWriter } from './writer';
 
 /** Degrees each half of a rolled young leaf wraps round its midrib. */
 const ROLLED_WRAP = 290;
+
+/**
+ * The least sky a leaf's stalk takes, from 0 to 1. A stalk stands under its own shoot's blades, so
+ * the crown's sky there is low, and without a floor it draws as black wood among green leaves.
+ */
+export const STALK_LEAST_SKY = 0.22;
 /** How far a lobe's veins run back into it, as a share of the way they run up the blade. */
 const LOBE_VEINS = 0.6;
 
@@ -148,7 +154,7 @@ export interface ThickDetail {
 	readonly ribs: boolean;
 }
 
-/** The blade's grid by tier: two and a half columns a rib at high, four at ultra, so the pleats light. */
+/** The blade's grid by tier: two columns a rib at high, three at ultra, so the pleats light. */
 export function thickDetail(leaf: ThickLeaf, detail: Detail): ThickDetail {
 	const count = Math.max(1, leaf.ribs.count);
 	switch (detail) {
@@ -157,9 +163,9 @@ export function thickDetail(leaf: ThickLeaf, detail: Detail): ThickDetail {
 		case 'medium':
 			return { rows: 14, columns: count * 2, ribs: true };
 		case 'high':
-			return { rows: 16, columns: Math.round(count * 2.5), ribs: true };
+			return { rows: 12, columns: count * 2, ribs: true };
 		case 'ultra':
-			return { rows: 28, columns: count * 4, ribs: true };
+			return { rows: 20, columns: count * 3, ribs: true };
 	}
 }
 
@@ -407,6 +413,7 @@ export function writeStalk(
 		crown,
 		along: [0, stalk.bladeStart],
 		browning: stalk.browning,
+		leastSky: STALK_LEAST_SKY,
 	});
 }
 

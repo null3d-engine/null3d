@@ -1,0 +1,65 @@
+{
+	"01-whole-plant-distant.png": {
+		"fov": 24,
+		"daylight": 2.304
+	},
+	"02-whole-plant-profile.png": {
+		"fov": 24
+	},
+	"03-whole-from-below.png": {
+		"view": "whole",
+		"elevation": -10,
+		"fill": 1.0,
+		"targetY": 0.72
+	},
+	"04-rosette-from-above.png": {
+		"elevation": 88,
+		"distance": 1.3,
+		"daylight": 1.6
+	},
+	"05-underside-of-leaves.png": {
+		"view": "crown",
+		"elevation": -20,
+		"distance": 0.7
+	},
+	"06-inside-rosette.png": {
+		"distance": 0.75
+	},
+	"07-leaf-base-and-petiole.png": {
+		"view": "leaf-under"
+	},
+	"14-petiole-section.png": {
+		"view": "cluster",
+		"pick": 0,
+		"barkMask": true
+	},
+	"15-petiole-base.png": {
+		"view": "inside",
+		"elevation": -35,
+		"distance": 0.45
+	},
+	"16-young-hosta-plant.png": {
+		"view": "whole",
+		"fov": 24
+	},
+	"17-silhouette.png": {
+		"fov": 24
+	},
+	"18-flower-scape.png": {
+		"view": "whole",
+		"fov": 24
+	},
+	"20-autumn-collapse.png": {
+		"fov": 24
+	},
+	"22-subbranch-studio.png": {
+		"pick": 0
+	},
+	"23-leaf-cluster-studio.png": {
+		"pick": 1
+	},
+	"30-whole-with-landmark.png": {
+		"fov": 24,
+		"daylight": 2.263
+	}
+}

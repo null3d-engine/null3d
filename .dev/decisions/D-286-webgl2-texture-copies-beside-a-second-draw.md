@@ -98,16 +98,20 @@ stutters and the median is the figure:
 The display ran at 60 Hz. Low holds it; Medium takes two display frames at both settings, so the
 pass adds no measurable upload and no frame time.
 
-On the iPad Pro 13 in Safari 26.6.1, through BrowserStack, Creek Low on the WebGL2 path reads 15.94
-ms against D-241's 30.8 ms ceiling, with 445,988 bytes uploaded a frame at the median and 694,674 at
-the 99th percentile: the scene's own writes, far below the preset's 2 MiB budget. The Medium page
-failed three times while a module loaded over BrowserStack Local's TLS (E1410, E1406 and E1424),
-so that row, and the rows of the other three devices of M3-V1, stay owed.
+The iPad Pro 13 in Safari 26.6.1 drew the same pair, each side twice, on that path: the two sides'
+upload medians read 186.2 and 185.4 KB a frame at Low and 256.5 and 255.4 KB at Medium, 0.4 per
+cent apart where two runs of one build move by 0 to 11 per cent, so the pass adds no upload there
+either. Low read 15.54 and 15.56 ms against D-241's 30.8 ms ceiling and Medium 46.20 and 46.22 ms
+against 90.8, with every page on WebGL2 at the preset asked for and a render scale of 1.00
+([its record](../tested-devices/ipad-pro-13-safari/20261109-1908-creek-upload.md)). An earlier iPad
+run read Creek Low at 15.94 ms with 445,988 bytes uploaded a frame at the median and 694,674 at the
+99th percentile: the scene's own writes, far below the preset's 2 MiB budget. The three other cloud
+devices hold their ceilings too, in their own records: the iPhone at 15 against 15.7 ms and 31
+against 43.9, the S24 at 33 against 33.3 at both presets, and the Tab's Creek Low at 1059 against
+1268.5. D-241 gives the Tab no Creek ceiling above Low, so no row is owed there.
 
 ## What the fix shows
 
 - The upload figure per frame holds the scene's own, the same as the scene without the pass.
 - The frame that a pass fallback shares with a second draw costs no more than the frame without it.
-- Owed: the iPad's Medium row and the other three cloud devices of M3-V1. The iPad's Medium page
-  failed three times while a worker's module loaded over BrowserStack Local's TLS, and the other
-  devices' pages did not run.
+- The iPad Pro 13's pair and the other three cloud devices' rows are recorded beside the Mac's, above.
