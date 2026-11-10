@@ -1,6 +1,6 @@
 # D-241: A vegetation foundation add-on, with GPU grass, generated plants and wind on custom materials
 
-Status: decided by the owner. The generator, its built-in species, its bark and leaf atlases, its plant materials and its far trees are removed. [D-323](D-323-plant-core-three-scales.md) supersedes them with the plant core. It also supersedes four sections below: "The generator's shape", "The bark and leaf atlases, and why the browser paints them", "What each leaf cell holds" and "The plants' look, after the owner's first review". Built: the `@null3d/vegetation` package (M3-V4), the scatter (M3-V6), and the grass, whose blade list a compute pass builds and counts on WebGPU and whose rows an instance batch draws on WebGL2, with near shadows and the per-view cull ([below](#the-grasss-two-halves)). The engine's vertex offsets read a compute pass in every pass (M3-V3), custom materials have the standard material's cut-out features (M3-V2), and the wind add-on's first stage is built (M3-V15, D-265). Far-tree impostors (M3-V9) are built. Branch poses (M3-V10) were measured and removed on the owner's ruling for wind per vertex, and Creek moved to the add-on (M3-V11). Settled by the owner: the wind moves the trees per vertex, where branch poses were measured and set aside. The generated leaves are judged: the owner found them at least as good as the painted set, and ruled his sample stands for the catalogue. Tasks: M3-V1 to M3-V17.
+Status: decided by the owner. The generator, its built-in species, its bark and leaf atlases, its plant materials and its far trees are removed. [D-323](D-323-plant-core-three-scales.md) supersedes them with the plant core. It also supersedes four sections below: "The generator's shape", "The bark and leaf atlases, and why the browser paints them", "What each leaf cell holds" and "The plants' look, after the owner's first review". Built: the `@null3d/vegetation` package (M3-V4), the scatter (M3-V6), and the grass, whose blade list a compute pass builds and counts on WebGPU and whose rows an instance batch draws on WebGL2, with near shadows and the per-view cull ([below](#the-grasss-two-halves)). The engine's vertex offsets read a compute pass in every pass (M3-V3), custom materials have the standard material's cut-out features (M3-V2), and the wind add-on's first stage is built (M3-V15, D-265). Not built yet: far-tree impostors (M3-V9) and Creek's move to the add-on (M3-V11). Branch poses (M3-V10) were built and measured beside the per-vertex sway, and the owner ruled that wind per vertex is the trees' default, so the branch-pose path is removed. The generated leaves wait for the owner's judgment. Tasks: M3-V1 to M3-V17.
 
 Summary: Vegetation is the eleventh foundation add-on, `@null3d/vegetation`, which grows plants at first use and places them by ecological rules. It draws grass on the GPU, sways plants in the wind add-on's field and hands far trees to impostors. Creek drops its 3.1 MB of Blender plants for it, and custom materials, whose vertex offsets carry the wind, gain the standard material's cut-out features.
 
@@ -756,10 +756,9 @@ atlas, at 12, 24 and 48 meters from one camera, cover the same share of their ow
 `tests/image/leaf-card-coverage.spec.ts` runs it on all three GPU paths, and the
 `vegetation-coverage` picture shows the same for three crowns at three distances.
 
-**Owed.** The paint's time on each device, which the device record keeps. The owner's judgment of
-the generated leaves is given: he found them at least as good as the painted set and ruled his sample
-stands for the catalogue, so the leaves are no longer owed here. The `vegetation-versus-creek` picture
-that showed them side by side is removed with Creek's Blender models.
+**Owed.** The paint's time on each device, which the device record keeps, and the owner's judgment
+of the generated leaves beside Creek's painted textures, which the `vegetation-versus-creek` picture
+shows side by side.
 
 ## What each leaf cell holds
 

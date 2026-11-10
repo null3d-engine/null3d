@@ -660,13 +660,7 @@ export default defineSketch(async (ctx) => {
 			target: walked.target,
 			fov,
 			near,
-			// A slot's roll poses the close view as its photograph shows the subject. The subject
-			// solve's own roll stands when the slot names none.
-			...(QUERY.roll !== undefined
-				? { roll: QUERY.roll * DEG }
-				: walked.roll
-					? { roll: walked.roll }
-					: {}),
+			...(walked.roll && { roll: walked.roll }),
 		};
 	};
 
@@ -1066,9 +1060,6 @@ export default defineSketch(async (ctx) => {
 			case 'cluster':
 			case 'leaf-upper':
 			case 'leaf-under': {
-				// A cut piece's pose is the slot's roll, the angle at which its photograph shows the
-				// piece. The leaf frame applies it above; the span and fitted frames apply it here.
-				const pose = QUERY.roll;
 				// A span frames a part of the piece rather than the whole of it: the frame's middle
 				// stands on the piece at the share the query names, halfway up by default, and the
 				// span is the width it shows there.
@@ -1077,20 +1068,17 @@ export default defineSketch(async (ctx) => {
 					const low = part.min[1] as number;
 					const high = part.max[1] as number;
 					const at = low + (high - low) * (QUERY.along ?? 0.5);
-					return {
-						...orbit(
-							[
-								((part.min[0] as number) + (part.max[0] as number)) / 2,
-								at,
-								((part.min[2] as number) + (part.max[2] as number)) / 2,
-							],
-							spanDistance(QUERY.span, fov, aspect),
-							e,
-							turn,
-							fov,
-						),
-						...(pose !== undefined && { roll: pose * DEG }),
-					};
+					return orbit(
+						[
+							((part.min[0] as number) + (part.max[0] as number)) / 2,
+							at,
+							((part.min[2] as number) + (part.max[2] as number)) / 2,
+						],
+						spanDistance(QUERY.span, fov, aspect),
+						e,
+						turn,
+						fov,
+					);
 				}
 				// A piece framed at the scale its photograph shows, in leaf lengths, stands on its cut:
 				// the cut on the frame's lower edge, the piece running up across it and off its far edge
@@ -1106,10 +1094,8 @@ export default defineSketch(async (ctx) => {
 					};
 				}
 				// A cutting fills the frame with its own points, as its reference's piece does, on the
-				// rows its reference shows it on when the query measured them. A cut piece's pose lays
-				// it as its photograph shows it.
-				const fitted = fitPoints(piece as PlantAsset, pieceKit, turn, e, aspect, fov, CUT_ROWS);
-				return pose !== undefined ? { ...fitted, roll: pose * DEG } : fitted;
+				// rows its reference shows it on when the query measured them.
+				return fitPoints(piece as PlantAsset, pieceKit, turn, e, aspect, fov, CUT_ROWS);
 			}
 			case 'panels':
 				break;
