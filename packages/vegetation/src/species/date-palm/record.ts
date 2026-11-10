@@ -50,9 +50,9 @@ export const record: Species = {
 			// bases clasp, so the grower's 0.7 m stands rather than a guessed figure.
 			tilt: [
 				[0, 8],
-				[0.3, 45],
-				[0.65, 82],
-				[1, 118],
+				[0.3, 52],
+				[0.65, 95],
+				[1, 135],
 			],
 			// Still 20: a skirt of dead fronds hangs below the crown, over the top of the trunk.
 			dead: { count: { mean: 18, spread: 2 }, hang: 142, skirt: 0.35 },
