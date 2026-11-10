@@ -35,6 +35,8 @@ const still = (file: string): StillResult => ({
 	pieces: null,
 	profileError: 0.05,
 	gap: null,
+	crownBoxGap: null,
+	frameGap: null,
 	foliageDeltaE: 3,
 	barkDeltaE: null,
 	barkColour: null,
