@@ -40,8 +40,8 @@
 	"10-areoles-and-spines.png": {
 		"span": 0.16,
 		"barkHeight": 4,
-		"lamp": "#ffedc4",
-		"daylight": 1.03
+		"lamp": "#fff2d2",
+		"daylight": 1.1
 	},
 	"13-rib-cross-section.png": {
 		"span": 0.5,
