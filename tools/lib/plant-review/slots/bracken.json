@@ -90,6 +90,8 @@
 		"barkMask": true
 	},
 	"17-rhizome.png": {
+		"view": "soil",
+		"lifted": true,
 		"skyShare": 0.357,
 		"daylight": 1.459
 	},

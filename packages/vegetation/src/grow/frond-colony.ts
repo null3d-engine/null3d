@@ -15,6 +15,7 @@
 // standing broken.
 import {
 	AXIS_RACHIS,
+	AXIS_ROOT,
 	AXIS_STIPE,
 	BUD_TERMINAL,
 	type MacroSkeleton,
@@ -37,6 +38,7 @@ import { type Season, spreadAt } from '../core/types';
 import { frondAge, frondFoliage, MATURE_AGE, rachisCurve } from '../leaf/frond';
 import type { GrowInput } from '../stages';
 import type { Grower } from './models';
+import { growSoil } from './soil';
 
 /** Draw purposes, so no two draws share a key. */
 const DRAW = {
@@ -55,6 +57,8 @@ const DRAW = {
 	blade: 13,
 	bow: 14,
 	broken: 15,
+	soilRoot: 30,
+	soilRhizome: 31,
 } as const;
 
 /** Metres between the points that trace a rhizome line. */
@@ -195,6 +199,9 @@ export function growFrondColony(input: GrowInput): MacroSkeleton {
 	}));
 	const builder = new SkeletonBuilder();
 	const frame = new Float32Array(4);
+	// The first stipe's foot is where a soil without its own rhizome would root.
+	let firstStipe = -1;
+	let firstBase = -1;
 	plans.forEach((plan, f) => {
 		const age = frondAge(plan.age);
 		const size = YOUNG_SIZE + (1 - YOUNG_SIZE) * age.unrolled;
@@ -232,6 +239,10 @@ export function growFrondColony(input: GrowInput): MacroSkeleton {
 			]);
 		};
 		node = builder.addNode({ x, y, z, radius, parent: -1, axis: stipeAxis });
+		if (f === 0) {
+			firstStipe = stipeAxis;
+			firstBase = node;
+		}
 		for (let n = 1; n <= nodes; n++) {
 			const step = stipeDirection((n - 0.5) / nodes);
 			x += (step[0] * standing) / nodes;
@@ -313,7 +324,46 @@ export function growFrondColony(input: GrowInput): MacroSkeleton {
 			woodRadius: baseRadius,
 		});
 	});
-	return builder.finish();
+	if (colony.soil && firstBase >= 0) {
+		// The colony's rhizome and roots: the soil draws from its own purposes, so adding it after
+		// the fronds cannot move a frond.
+		const soilDraw = (purpose: number, a = 0, b = 0) =>
+			unitAt(seed, salt, variant, purpose, a * 4096 + b);
+		growSoil(
+			builder,
+			colony.soil,
+			soilDraw,
+			DRAW.soilRoot,
+			DRAW.soilRhizome,
+			firstStipe,
+			firstBase,
+			0.02,
+		);
+	}
+	const finished = builder.finish();
+	if (!colony.soil) return finished;
+	// The soil's nodes sit below the ground, outside every picture and the crown's light grid, so
+	// the box is the fronds' alone and every view stands where it did before the rhizome was drawn.
+	const min = [Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY];
+	const max = [Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY];
+	for (let n = 0; n < finished.nodeCount; n++) {
+		if ((finished.axes.kind[finished.axisOf[n] as number] as number) === AXIS_ROOT) continue;
+		const radius = finished.radius[n] as number;
+		for (let k = 0; k < 3; k++) {
+			const value = finished.position[n * 3 + k] as number;
+			min[k] = Math.min(min[k] as number, k === 1 ? value : value - radius);
+			max[k] = Math.max(max[k] as number, k === 1 ? value : value + radius);
+		}
+	}
+	if (!Number.isFinite(min[0])) return finished;
+	return {
+		...finished,
+		bounds: {
+			min: [min[0] as number, min[1] as number, min[2] as number],
+			max: [max[0] as number, max[1] as number, max[2] as number],
+		},
+		height: max[1] as number,
+	};
 }
 
 /** The frond-colony grower: the colony's skeleton, and its fronds as the variant's own foliage. */

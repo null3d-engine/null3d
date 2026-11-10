@@ -54,6 +54,7 @@ import {
 	writeStem,
 } from './ground';
 import type { Grower } from './models';
+import { growSoil } from './soil';
 
 /** The golden angle in radians, which spreads shoots over the crown's disc. */
 const GOLDEN = radians(137.50776405);
@@ -419,7 +420,17 @@ export function growTuft(input: GrowInput): MacroSkeleton {
 		axis: crown,
 		light: 1,
 	});
-	growSoil(input, builder, crown, crownTop);
+	if (growth.soil)
+		growSoil(
+			builder,
+			growth.soil,
+			(purpose, a, b) => draw(input, purpose, a, b),
+			Purpose.Root,
+			Purpose.Rhizome,
+			crown,
+			crownTop,
+			growth.base,
+		);
 	const shoots = Math.max(1, Math.round(spreadAt(growth.shoots, draw(input, Purpose.Shoots))));
 	const meanLength = spreadMean(blade.length);
 	const turn = draw(input, Purpose.Shoots, 1) * 2 * PI;
@@ -565,100 +576,6 @@ export function growTuft(input: GrowInput): MacroSkeleton {
 			max: finished.bounds.max,
 		},
 	};
-}
-
-/**
- * The crown's hold in the soil: a rhizome along the ground and the roots that leave it and the
- * crown. A root runs below the soil, where the blades' own path never goes, so it takes its own
- * node run rather than the arching one.
- */
-function growSoil(
-	input: GrowInput,
-	builder: SkeletonBuilder,
-	crown: number,
-	crownNode: number,
-): void {
-	const { growth } = tuftOf(input.record);
-	const soil = growth.soil;
-	if (!soil) return;
-	const roots = Math.max(0, Math.round(spreadAt(soil.roots, draw(input, Purpose.Root))));
-	const heading = draw(input, Purpose.Rhizome, 2) * 2 * PI;
-	let host = crown;
-	let hostNode = crownNode;
-	if (soil.rhizome !== undefined) {
-		const half = spreadAt(soil.rhizome, draw(input, Purpose.Rhizome));
-		const radius = soil.rhizomeRadius ?? 0.01;
-		const along: [number, number] = [cos(heading), sin(heading)];
-		const axis = builder.addAxis({ parent: -1, parentNode: -1, order: 0, kind: AXIS_ROOT });
-		const nodes = 5;
-		let previous = -1;
-		for (let i = 0; i < nodes; i++) {
-			const share = i / (nodes - 1);
-			const reach = -half + 2 * half * share;
-			const end = Math.abs(2 * share - 1);
-			const node = builder.addNode({
-				x: along[0] * reach,
-				y: -radius * (0.4 + 0.35 * end),
-				z: along[1] * reach,
-				radius: radius * (0.55 + 0.45 * (1 - end)),
-				parent: previous < 0 ? -1 : previous,
-				axis,
-				light: 1,
-			});
-			previous = node;
-		}
-		host = axis;
-		hostNode = previous;
-	}
-	for (let r = 0; r < roots; r++) {
-		const unit = (k: number) => draw(input, Purpose.Root, r, k);
-		const out = heading + (r / Math.max(1, roots)) * 2 * PI + (unit(0) - 0.5) * 0.8;
-		const droop = radians(spreadAt(soil.droop, unit(1)));
-		const length = spreadAt(soil.rootLength, unit(2));
-		const start = host === crown ? -0.02 : -0.01;
-		const margin = host === crown ? growth.base : 0.01;
-		const from: Vector3 = [cos(out) * margin * unit(3), start, sin(out) * margin * unit(3)];
-		rootPath(builder, host, hostNode, from, out, -droop, length, soil.rootRadius);
-	}
-}
-
-/**
- * Adds a root's axis: nodes running out from the crown and down below the soil, its radius closing
- * to a point at the end.
- */
-function rootPath(
-	builder: SkeletonBuilder,
-	parent: number,
-	parentNode: number,
-	start: Readonly<Vector3>,
-	heading: number,
-	elevation: number,
-	length: number,
-	radius: number,
-): void {
-	const axis = builder.addAxis({ parent, parentNode, parentT: 1, order: 1, kind: AXIS_ROOT });
-	const nodes = 4;
-	const p: Vector3 = [start[0], start[1], start[2]];
-	const step = length / (nodes - 1);
-	let previous = parentNode;
-	for (let i = 0; i < nodes; i++) {
-		const share = i / (nodes - 1);
-		if (i > 0) {
-			const d = inPlane(heading, elevation - radians(25) * share);
-			p[0] += d[0] * step;
-			p[1] += d[1] * step;
-			p[2] += d[2] * step;
-		}
-		previous = builder.addNode({
-			x: p[0],
-			y: p[1],
-			z: p[2],
-			radius: radius * (1 - 0.85 * share),
-			parent: i === 0 ? parentNode : previous,
-			axis,
-			light: 1,
-		});
-	}
 }
 
 /** The signed angle from one heading to another, from -π to π. */

@@ -32,6 +32,17 @@ export const record: Species = {
 			branches: { mean: 10, spread: 1 },
 			spacing: { mean: 0.55, spread: 0.1 },
 		},
+		// Still 17: a thick dark rhizome lies along the soil with the dead stipes rising from it and
+		// fine roots below. The body is half the colony's own reach, so the soil view frames the
+		// rhizome the photograph shows.
+		soil: {
+			rhizome: 0.55,
+			rhizomeRadius: 0.028,
+			roots: 14,
+			rootLength: 0.2,
+			rootRadius: 0.004,
+			droop: 78,
+		},
 		// Still 02: the bare stipe is about as long as the blade it carries, and leans a little.
 		stipe: { length: { mean: 0.76, spread: 0.16 }, lean: { mean: 6, spread: 5 } },
 		frond: {

@@ -746,6 +746,11 @@ export interface FrondColony {
 	readonly frond: FrondShape;
 	/** Young fronds still rolled. */
 	readonly croziers: Spread;
+	/**
+	 * What the colony draws under its fronds: the rhizome body and the roots that leave it. Absent
+	 * draws only the fronds, so a colony whose photographs show no rhizome is unchanged.
+	 */
+	readonly soil?: TuftSoil;
 }
 
 /**
