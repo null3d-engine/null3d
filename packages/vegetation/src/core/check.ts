@@ -80,6 +80,38 @@ function shareProblem(value: number | undefined, path: string, out: string[]): v
 	if (value < 0 || value > 1) out.push(`${path} is ${value}; a share lies from 0 to 1`);
 }
 
+/** One share's problems, or each share's in a list of tiers. */
+function sharesProblem(value: number | readonly number[], path: string, out: string[]): void {
+	if (typeof value === 'number') {
+		shareProblem(value, path, out);
+		return;
+	}
+	if (value.length === 0) out.push(`${path} names no shares`);
+	for (let i = 0; i < value.length; i++)
+		shareProblem(value[i], i === 0 ? path : `${path}[${i}]`, out);
+}
+
+/** One spread's problems, or each spread's in a list of tiers. */
+function spreadsProblem(
+	value: Spread | readonly Spread[],
+	path: string,
+	positive: boolean,
+	out: string[],
+): void {
+	if (!Array.isArray(value)) {
+		spreadProblems(value as Spread, path, positive, out);
+		return;
+	}
+	if (value.length === 0) out.push(`${path} names no spreads`);
+	for (let i = 0; i < value.length; i++)
+		spreadProblems(value[i] as Spread, i === 0 ? path : `${path}[${i}]`, positive, out);
+}
+
+/** The number of tiers a value names: one for a single value, else its length. */
+function tierCount(value: number | Spread | readonly unknown[]): number {
+	return Array.isArray(value) ? value.length : 1;
+}
+
 /** A whole number's problems: it is whole and within its range. */
 function wholeProblem(value: number, path: string, low: number, high: number, out: string[]): void {
 	if (!Number.isInteger(value) || value < low || value > high)
@@ -404,12 +436,18 @@ function growthProblems(record: Species, out: string[]): void {
 			out.push(`growth.ribDepth is ${growth.ribDepth}; a depth is not negative`);
 		spreadProblems(growth.arms.count, 'growth.arms.count', false, out);
 		wholeProblem(Math.round(spreadMean(growth.arms.count)), 'growth.arms.count', 0, 12, out);
-		shareProblem(growth.arms.from, 'growth.arms.from', out);
+		sharesProblem(growth.arms.from, 'growth.arms.from', out);
 		if (!(growth.arms.elbow > 0))
 			out.push(`growth.arms.elbow is ${growth.arms.elbow}; it is metres and must be above 0`);
 		if (!(growth.arms.radius > 0))
 			out.push(`growth.arms.radius is ${growth.arms.radius}; it is metres and must be above 0`);
-		spreadProblems(growth.arms.rise, 'growth.arms.rise', true, out);
+		spreadsProblem(growth.arms.rise, 'growth.arms.rise', true, out);
+		const fromTiers = tierCount(growth.arms.from);
+		const riseTiers = tierCount(growth.arms.rise);
+		if (fromTiers !== riseTiers)
+			out.push(
+				`growth.arms.from names ${fromTiers} tiers and growth.arms.rise names ${riseTiers}; each tier needs one share and one rise`,
+			);
 		if (!(growth.areoles > 0))
 			out.push(`growth.areoles is ${growth.areoles}; it is metres and must be above 0`);
 	}

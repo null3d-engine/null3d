@@ -933,14 +933,20 @@ export interface Column {
 	readonly arms: {
 		/** Arms per plant. */
 		readonly count: Spread;
-		/** Share of height where arms leave. */
-		readonly from: number;
+		/**
+		 * Share of height where arms leave: one share for every arm, or one share per tier of arms,
+		 * lowest first. The grower deals the arms among the tiers in turn.
+		 */
+		readonly from: number | readonly number[];
 		/** Metres out from the column where an arm turns upward. */
 		readonly elbow: number;
 		/** An arm's radius in metres. */
 		readonly radius: number;
-		/** Metres an arm rises after its elbow. */
-		readonly rise: Spread;
+		/**
+		 * Metres an arm rises after its elbow: one spread for every arm, or one spread per tier of
+		 * arms, lowest first.
+		 */
+		readonly rise: Spread | readonly Spread[];
 	};
 	/** Metres between areoles on a rib crest; each carries a spine-cluster prototype. */
 	readonly areoles: number;
