@@ -138,9 +138,12 @@ export const record: Species = {
 			// Still 14: the foot is grey-brown, corky and scarred, its ribs worn, for the lowest metre
 			// and a half of the stem.
 			{ layer: 1, by: 'height', from: 0, to: 1.6, blend: 0.8, tint: [0.68, 0.68, 0.68] },
+			// Still 14: the green above the corky foot reads paler and bluer than the photograph, so
+			// the lowest band of green takes a tint that darkens it toward the picture's own tone.
+			{ layer: 0, by: 'height', from: 1.6, to: 3.2, blend: 0.8, tint: [0.88, 0.83, 0.72] },
 			// Stills 09 and 15: waxy grey-green skin on rounded ribs and deep pleated grooves up the
 			// whole stem.
-			{ layer: 0, by: 'height', from: 1.6, to: 40, blend: 0.5, tint: [1, 1, 1] },
+			{ layer: 0, by: 'height', from: 3.2, to: 40, blend: 0.5, tint: [1, 1, 1] },
 		],
 		// Still 16: an arm's skin is fresher green than the old stem's. The arms are the wood below the
 		// stem's girth, so the young layer carries their skin.
