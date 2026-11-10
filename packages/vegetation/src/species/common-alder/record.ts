@@ -193,6 +193,13 @@ export const record: Species = {
 			wander: 8,
 		},
 		// Stills 01 and 02: the crown's lit top and rim carry its fullest shoots.
+		// No earlier record value put more buds on one side: the arrangement is a constant spiral
+		// and the light is an isotropic shadow grid, so the room bias is the species' first
+		// per-azimuth control. The fitting tool's hull reads 1.71 broad to narrow at mid-height
+		// against the record's 1.07. A room bias of 1 was drawn at f4cd557ac: it narrowed still 02
+		// from 0.833 to 0.687 toward its 0.658 and still 18 from 0.768 to 0.744, but it narrowed
+		// stills 01 and 30 (0.736 to 0.720 and 0.767 to 0.743) instead of widening them, and moved
+		// row 9's aspect from 0.677 to 0.705, so the alder does not set it.
 		light: { apical: 1, lateral: 1, shadow: [5, 0.15, 2], cells: 96, surface: true },
 		// Stills 03 and 05: a branch runs out almost level and turns up a little at its end, where its
 		// last year's wood reaches for the light.
