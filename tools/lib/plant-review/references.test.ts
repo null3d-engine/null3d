@@ -25,6 +25,7 @@ import {
 	seasonFromPicture,
 	shadowLike,
 	skyMaskable,
+	soilHoldsPlant,
 	soilMaskable,
 	widthProfile,
 	withSlot,
@@ -817,5 +818,29 @@ describe('a fitted sky', () => {
 			soilMaskable({ horizon: 10, sky: surface(1, 20), ground: surface(1, 18), plain: false }, 640),
 		).toBe(false);
 		expect(soilMaskable({ horizon: null, sky: surface(1, 18), plain: false }, 640)).toBe(false);
+	});
+
+	test('refuses a ground whose model has covered the plant', () => {
+		// The sedge 07: the plant's median sits 5.43 from the ground, whose limit is 36.
+		expect(
+			soilHoldsPlant(
+				{ horizon: 116, sky: surface(1, 24), ground: surface(1, 18), plain: false },
+				5.43,
+			),
+		).toBe(true);
+		// The meadow 07: 40.82 against a limit of 41.6.
+		expect(
+			soilHoldsPlant(
+				{ horizon: 255, sky: surface(1, 26.07), ground: surface(1, 20.82), plain: false },
+				40.82,
+			),
+		).toBe(true);
+		expect(
+			soilHoldsPlant(
+				{ horizon: 255, sky: surface(1, 26.07), ground: surface(1, 20.82), plain: false },
+				60,
+			),
+		).toBe(false);
+		expect(soilHoldsPlant({ horizon: null, sky: surface(1, 10), plain: false }, 1)).toBe(false);
 	});
 });

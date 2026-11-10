@@ -776,7 +776,15 @@ export function fittedMaskClause(pair: { readonly fittedMask?: FittedMaskNote })
 		note.plantToGround === undefined
 			? ''
 			: `; the plant's median colour sits ${note.plantToGround.toFixed(1)} CIEDE2000 steps from the ground`;
-	return ` — the outline comes from a fitted ground at horizon share ${(note.horizonShare ?? 0).toFixed(3)}, ground region ${groundShare.toFixed(3)} (sky fit ${note.skyFit.toFixed(4)}, residual ${note.skyNoise.toFixed(1)}${ground})${closeness}${flagged}`;
+	const held =
+		note.plantToGround !== undefined &&
+		note.groundNoise !== undefined &&
+		note.groundFit !== undefined
+			? note.plantToGround < Math.max(10, note.groundNoise * 2)
+				? "; the plant sits inside the ground's own limit, so the fit has covered the plant and the mask is refused"
+				: ''
+			: '';
+	return ` — the outline comes from a fitted ground at horizon share ${(note.horizonShare ?? 0).toFixed(3)}, ground region ${groundShare.toFixed(3)} (sky fit ${note.skyFit.toFixed(4)}, residual ${note.skyNoise.toFixed(1)}${ground})${closeness}${flagged}${held}`;
 }
 
 /** The labels of a compared pair. */

@@ -891,6 +891,16 @@ export const SOIL_MASK_GROUND_SHARE: readonly [number, number] = [0.1, 0.6];
  * what a reviewer reads beside the fit, because a model whose ground region swallows the plant, or
  * whose sky region leaves almost no ground, is a misplaced line even when its fit is strong.
  */
+/**
+ * Whether the ground model has covered the plant itself: the plant's median colour lies inside the
+ * ground's own colour limit, so a mask built against it would merge the plant into the soil. Such a
+ * fit is refused, not merely flagged.
+ */
+export function soilHoldsPlant(background: Background, plantToGround: number): boolean {
+	if (background.ground === undefined) return false;
+	return plantToGround < threshold(background.ground, 10, background.plain ? 3 : 2);
+}
+
 export function soilMaskable(background: Background, height: number): boolean {
 	if (background.horizon === null || background.ground === undefined) return false;
 	const share = background.horizon / height;
@@ -1161,6 +1171,17 @@ export function plantMask(image: Rgba): PlantMask {
 			plantToGround = Number(deltaE2000(median, groundAt).toFixed(2));
 		}
 	}
+	// A ground whose model has swallowed the plant gives no outline: the plant's own material sits
+	// inside the ground's limit, so the mask would merge the two. The figure is refused and the
+	// distance is kept for the record.
+	if (background.ground && plantToGround !== undefined && soilHoldsPlant(background, plantToGround))
+		return {
+			width,
+			height,
+			mask: new Uint8Array(width * height),
+			background,
+			plantToGround,
+		};
 	return {
 		width,
 		height,
