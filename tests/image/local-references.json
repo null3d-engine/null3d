@@ -251,6 +251,18 @@
 		"date": "2026-11-09",
 		"reason": "the leaf rebuild changes the leaf and crown panels, and this Mac's SwiftShader drew all three tiers inside the 120 s guard; no CI run has drawn the rebuilt leaf yet"
 	},
+	"chromium-swiftshader/compat/plant-wind-still.png": {
+		"test": "plant-wind-still",
+		"tier": "compat",
+		"date": "2026-11-10",
+		"reason": "M3-V7's sway picture: the branch is not pushed to CI, so this Mac's SwiftShader drew the software set; a CI drawing replaces it"
+	},
+	"chromium-swiftshader/compat/plant-wind-sway.png": {
+		"test": "plant-wind-sway",
+		"tier": "compat",
+		"date": "2026-11-10",
+		"reason": "M3-V7's sway picture: the branch is not pushed to CI, so this Mac's SwiftShader drew the software set; a CI drawing replaces it"
+	},
 	"chromium-swiftshader/compat/probe-grid-wall-night.png": {
 		"test": "probe-grid-wall-night",
 		"tier": "compat",
@@ -586,6 +598,18 @@
 		"tier": "webgl2",
 		"date": "2026-11-09",
 		"reason": "the leaf rebuild changes the leaf and crown panels, and this Mac's SwiftShader drew all three tiers inside the 120 s guard; no CI run has drawn the rebuilt leaf yet"
+	},
+	"chromium-swiftshader/webgl2/plant-wind-still.png": {
+		"test": "plant-wind-still",
+		"tier": "webgl2",
+		"date": "2026-11-10",
+		"reason": "M3-V7's sway picture: the branch is not pushed to CI, so this Mac's SwiftShader drew the software set; a CI drawing replaces it"
+	},
+	"chromium-swiftshader/webgl2/plant-wind-sway.png": {
+		"test": "plant-wind-sway",
+		"tier": "webgl2",
+		"date": "2026-11-10",
+		"reason": "M3-V7's sway picture: the branch is not pushed to CI, so this Mac's SwiftShader drew the software set; a CI drawing replaces it"
 	},
 	"chromium-swiftshader/webgl2/probe-grid-wall-night.png": {
 		"test": "probe-grid-wall-night",
@@ -952,6 +976,18 @@
 		"tier": "webgpu",
 		"date": "2026-11-09",
 		"reason": "the leaf rebuild changes the leaf and crown panels, and this Mac's SwiftShader drew all three tiers inside the 120 s guard; no CI run has drawn the rebuilt leaf yet"
+	},
+	"chromium-swiftshader/webgpu/plant-wind-still.png": {
+		"test": "plant-wind-still",
+		"tier": "webgpu",
+		"date": "2026-11-10",
+		"reason": "M3-V7's sway picture: the branch is not pushed to CI, so this Mac's SwiftShader drew the software set; a CI drawing replaces it"
+	},
+	"chromium-swiftshader/webgpu/plant-wind-sway.png": {
+		"test": "plant-wind-sway",
+		"tier": "webgpu",
+		"date": "2026-11-10",
+		"reason": "M3-V7's sway picture: the branch is not pushed to CI, so this Mac's SwiftShader drew the software set; a CI drawing replaces it"
 	},
 	"chromium-swiftshader/webgpu/probe-grid-wall-night.png": {
 		"test": "probe-grid-wall-night",
