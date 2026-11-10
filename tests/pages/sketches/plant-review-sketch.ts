@@ -1010,10 +1010,9 @@ export default defineSketch(async (ctx) => {
 			case 'cluster':
 			case 'leaf-upper':
 			case 'leaf-under': {
-				// A cluster still's pose is the slot's roll, the angle at which its photograph shows
-				// the cut piece. Other cut pieces keep the framing they have today, where a roll
-				// reaches the camera only with a leaf frame.
-				const pose = view === 'cluster' && QUERY.leaves === undefined ? QUERY.roll : undefined;
+				// A cut piece's pose is the slot's roll, the angle at which its photograph shows the
+				// piece. The leaf frame applies it above; the span and fitted frames apply it here.
+				const pose = QUERY.roll;
 				// A span frames a part of the piece rather than the whole of it: the frame's middle
 				// stands on the piece at the share the query names, halfway up by default, and the
 				// span is the width it shows there.
@@ -1051,8 +1050,8 @@ export default defineSketch(async (ctx) => {
 					};
 				}
 				// A cutting fills the frame with its own points, as its reference's piece does, on the
-				// rows its reference shows it on when the query measured them. A cluster's pose lays
-				// the piece as its photograph shows it.
+				// rows its reference shows it on when the query measured them. A cut piece's pose lays
+				// it as its photograph shows it.
 				const fitted = fitPoints(piece as PlantAsset, pieceKit, turn, e, aspect, fov, CUT_ROWS);
 				return pose !== undefined ? { ...fitted, roll: pose * DEG } : fitted;
 			}
