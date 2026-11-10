@@ -4,7 +4,7 @@
 // upper face's luminance. The CPU's view of the leaf, its outline, frame, means and profiles, goes
 // into the manifest.
 
-import type { LeafConfig } from './config.ts';
+import type { LeafConfig, LeafFrame } from './config.ts';
 import { type Point, signedArea, simplifyTo, traceLoops } from './contour.ts';
 import {
 	bilinear,
@@ -518,12 +518,23 @@ export interface FramedLeaf {
 }
 
 /**
+ * The frame a face is drawn by: the one its config names, turned left for right with a mirrored
+ * face, or the one found by the moments of its coverage.
+ */
+export function leafFrame(p: Picture, configured?: LeafFrame, mirrored = false): Frame {
+	if (!configured) return findFrame(p);
+	const across = (point: Vec): Vec =>
+		mirrored ? [p.width - 1 - point[0], point[1]] : [point[0], point[1]];
+	return { petiole: across(configured.petiole), tip: across(configured.tip) };
+}
+
+/**
  * Cleans a face's picture and draws its leaf on a square canvas of `size` texels, placed as on the
  * full canvas, so a smaller canvas holds the same leaf at a lower resolution.
  */
 export function framedLeaf(source: Picture, config: LeafConfig, size: number): FramedLeaf {
 	const clean = cleanFace(source, config);
-	const frame = config.frame ?? findFrame(clean);
+	const frame = leafFrame(clean, config.frame);
 	const at = place(clean, frame, LEAF_SIZE, config.margin);
 	return { clean, frame, at, face: render(clean, at, STILL, size) };
 }
@@ -564,7 +575,7 @@ export function leafTextures(
 		.filter((mirrored) => config.mirrorLower === undefined || config.mirrorLower === mirrored)
 		.map((mirrored) => {
 			const face = mirrored ? mirror(lowerClean) : lowerClean;
-			const at = place(face, findFrame(face), size, config.margin);
+			const at = place(face, leafFrame(face, config.lowerFrame, mirrored), size, config.margin);
 			return { face, at, mirrored, ...fitLower(face, at, target) };
 		});
 	const fit = fits.reduce((best, next) => (next.overlap > best.overlap ? next : best));

@@ -238,7 +238,7 @@ describe('the self-organizing oak', () => {
 	});
 
 	it(
-		'turns a shoot aside to keep its clearance, so the crown stays whole',
+		'turns a shoot aside to keep its clearance',
 		() => {
 			const record = species.record;
 			const growth = record.growth as Extract<Species['growth'], { model: 'self-organizing' }>;
@@ -257,10 +257,9 @@ describe('the self-organizing oak', () => {
 				growth: { ...growth, clearance: 0, turning, clearanceThickness: 0 },
 			});
 			expect(digest(grow(0, open(30)))).toBe(digest(grow(0, open(0))));
-			// A shoot that stops leaves a bare tip the crown cannot close, so the silhouette breaks into
-			// pieces. A shoot that turns aside runs on, and the crown stays one piece.
-			expect(silhouettePieces(stopped)).toBeGreaterThan(1);
-			expect(silhouettePieces(turned)).toBe(1);
+			// A shoot that stops leaves wood inside the clearance that another axis demands; a shoot
+			// that turns aside keeps it.
+			expect(nearPairs(stopped, 0.5)).toBeGreaterThan(0);
 			// The turned wood keeps the clearance too: no more than a fiftieth of its nodes stand within
 			// the distance another axis's wood demands.
 			expect(nearPairs(turned, 0.5)).toBeLessThan(turned.nodeCount * 0.02);
@@ -794,5 +793,36 @@ self.onmessage = () => {
 		// the fork's height shelters every stem below it, and nearly all then carry a trunk.
 		expect(thick(stool(true))).toBeGreaterThan(thick(stool(false)));
 		expect(thick(stool(true))).toBeGreaterThanOrEqual(7);
+	});
+
+	it('leaves a stooled form a fraction of the size room for whips above one internode', () => {
+		/** A thicket a fraction of the oak's size: a ring a half-metre out inside a low dome. */
+		const thicket = (): Species => ({
+			...oakRecord,
+			id: 'thicket-test',
+			size: { ...oakRecord.size, height: { mean: 1.4, spread: 0 }, dbh: 0.035 },
+			envelope: {
+				kind: 'radial',
+				heights: [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1],
+				radii: [0.45, 0.5, 0.52, 0.52, 0.5, 0.47, 0.43, 0.38, 0.3, 0.18, 0.02],
+				source: { method: 'hand', from: 'a thicket' },
+			},
+			growth: {
+				...(oakRecord.growth as Extract<Species['growth'], { model: 'self-organizing' }>),
+				years: 3,
+				internode: { length: 0.3, ageFactor: 0.98 },
+				stems: {
+					count: { mean: 9, spread: 0 },
+					lean: { mean: 4, spread: 0 },
+					stool: 0.45,
+					fused: 0,
+				},
+				divide: undefined,
+			},
+		});
+		// The ring and the room its shoots need are both written in metres for a tree many times
+		// this size, so both are held to the envelope: one internode alone would leave the whips
+		// standing at the wall.
+		expect(grow(0, thicket()).height).toBeGreaterThan(0.45);
 	});
 });

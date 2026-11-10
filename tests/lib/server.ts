@@ -1,6 +1,7 @@
 // The dev server that serves every browser page, and a way for scripts to start it and wait until
-// it answers. Plain HTTP stays on localhost, which phones reach through adb; HTTPS on the local
-// network serves tablets and phones that reach the Mac by its .local name.
+// it answers. HTTPS is the default: a secure origin is what makes WebGPU, and so the High and Ultra
+// presets, available. Plain HTTP on localhost stays for a caller that opts out, such as a phone
+// reached through adb, whose loopback is a secure origin already.
 import { type ChildProcess, spawn } from 'node:child_process';
 import { createWriteStream, mkdirSync, realpathSync } from 'node:fs';
 import { constants } from 'node:os';
@@ -11,10 +12,11 @@ import { refuseInQuietWindow } from '../../tools/lib/quiet-window.ts';
 import { RUNS_DIR } from './report-collector.ts';
 
 /**
- * The dev server's port: 5173, or the one that NULL3D_PORT names. Each copy of the repository, such
- * as a second worktree, can then run its own server, and its tools reach that one. The HTTPS server
- * takes the next port, `vite preview`, which serves the production build of the test pages, the
- * one after, and the Chrome debugging port of the benchmark tools the one after that.
+ * The plain HTTP server's port: 5173, or the one that NULL3D_PORT names. Each copy of the
+ * repository, such as a second worktree, can then run its own server, and its tools reach that one.
+ * The HTTPS server takes the next port, `vite preview`, which serves the production build of the
+ * test pages, the one after, and the Chrome debugging port of the benchmark tools the one after.
+ * HTTPS is the default for a server a person opens; plain HTTP is the opt-out.
  */
 export const HTTP_PORT = devServerPort(process.env.NULL3D_PORT);
 export const HTTPS_PORT = HTTP_PORT + 1;
@@ -207,7 +209,12 @@ const DEV_PROBE = '/tests/pages/index.html';
  * server answers at `selfUrl` followed by `probe`. Stopping the server ends its process, and so does
  * a signal that stops this one. The server's output goes to a log file per port in the runs folder,
  * which CI keeps when a job fails, so a failed page can be checked against what the server said.
+ *
+ * Every server this module starts takes the heap limit a full picture run needs, whatever the
+ * caller passes, since a server that dies part-way through a run refuses every later page and the
+ * run then reads as a plant fault rather than a crash.
  */
+export const SERVER_HEAP_ENV = { NODE_OPTIONS: '--max-old-space-size=8192' };
 async function spawnServer(
 	root: string,
 	args: readonly string[],
@@ -219,7 +226,7 @@ async function spawnServer(
 	const child: ChildProcess = spawn('bunx', ['vite', ...args], {
 		cwd: root,
 		stdio: ['ignore', 'pipe', 'pipe'],
-		env: { ...process.env, ...env },
+		env: { ...process.env, ...SERVER_HEAP_ENV, ...env },
 	});
 	const stop = trackServer(child);
 	mkdirSync(RUNS_DIR, { recursive: true });
@@ -277,9 +284,10 @@ export async function refuseOtherCopy(url: string, root = REPO_ROOT): Promise<vo
 
 /**
  * Starts the dev server, or reuses one that already runs and serves this copy of the repository,
- * and waits until it answers.
+ * and waits until it answers. It serves HTTPS unless `https` is false, which is the caller's
+ * explicit opt-out for a loopback-only server.
  */
-export async function startServer(https = false): Promise<DevServer> {
+export async function startServer(https = true): Promise<DevServer> {
 	refuseInQuietWindow('The dev server');
 	const url = https
 		? `https://${localHostName()}.local:${HTTPS_PORT}`
@@ -294,8 +302,10 @@ export async function startServer(https = false): Promise<DevServer> {
 
 /**
  * Starts the dev server of another copy of the repository, such as a git worktree that holds
- * another build, on plain HTTP at `port`. It never reuses a server: one that already answers there
- * could serve another copy's code, so the start fails instead.
+ * another build, on plain HTTP at `port`. Plain HTTP is the explicit opt-out: the tools that call
+ * this reach the server over the loopback, which is a secure origin already. It never reuses a
+ * server: one that already answers there could serve another copy's code, so the start fails
+ * instead.
  */
 export async function startServerAt(root: string, port: number): Promise<DevServer> {
 	const url = `http://localhost:${port}`;
@@ -308,7 +318,8 @@ export async function startServerAt(root: string, port: number): Promise<DevServ
  * build before shipping it, and waits until it answers at `probe`, a path in the build. It never
  * reuses a server, which could serve another build. The server runs in the copy of the repository
  * at `root`, whose config and built tools serve the files that the build's pages make on request,
- * such as the sample environment maps.
+ * such as the sample environment maps. It serves plain HTTP by explicit opt-out: the production
+ * build is checked over the loopback, which is a secure origin already.
  */
 export async function startPreview(
 	outDir: string,
@@ -320,5 +331,5 @@ export async function startPreview(
 	const url = `http://localhost:${port}`;
 	await refuseTaken(url);
 	const args = ['preview', '--outDir', outDir, '--port', String(port), '--strictPort'];
-	return spawnServer(root, args, {}, url, url, probe);
+	return spawnServer(root, args, { NULL3D_HTTPS: '0' }, url, url, probe);
 }
