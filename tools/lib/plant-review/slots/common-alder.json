@@ -1,5 +1,6 @@
 {
 	"01-whole-distant.png": {
+		"form": "mature",
 		"sunAzimuth": 5.2,
 		"sunRise": 42.9,
 		"skyShare": 0.6,
@@ -27,6 +28,7 @@
 		"targetY": 0.501
 	},
 	"30-whole-with-landmark.png": {
+		"form": "mature",
 		"sunAzimuth": 1.5,
 		"sunRise": 42.5,
 		"skyShare": 0.6,
