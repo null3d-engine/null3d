@@ -61,6 +61,12 @@ pattern turns with it. The picture references were accepted against the upside-d
 species' redraw is named here rather than assumed. Bark, stipe and rhizome pictures sample other
 materials and are not redrawn.
 
+The numbers in this table are the review round's pictures and turns. The texture tool draws them
+for each round, and they are not committed files. A reader who looks for them in the repository
+finds nothing. What the repository holds is the picture tests' references. Each of the two sets,
+the machine's own GPU and the software renderer, holds three tiers. A redraw replaces every tier
+that shows the changed panel, and the software set carries a recorded reason.
+
 | Species | Pictures redrawn | Pictures not redrawn |
 | --- | --- | --- |
 | Silver birch | 01, 02, 03, 12, 13, 18, 19, 20, 22, 24, 25, 30, 31, 33, and the turntable and wind videos | 15, 26, 27, 28, 32 and 34 (bark); 35 (catkins) |
@@ -70,6 +76,16 @@ materials and are not redrawn.
 | Bracken | 01 to 14, 18 to 25, and the three halfturn videos | 15 and 16 (stipe), 17 (rhizome) |
 
 The sedge builds no leaf texture and the pedunculate oak reads clear, so neither redraws a picture.
+
+## Ownership
+
+The species' owed look rows are carried under M3-V4, the package and its species generator. That
+task is ticked, and its tick covers its own four Done-when clauses. It does not cover these rows.
+
+The debt is a separate item carried under the task: the rows this change does not reach, and the
+stated limits beside them. The holm oak is the instance now: nine look rows still owed, and row 10
+recorded as a limit with its figures and its levers. A limit is not a closed row. Named this way,
+the debt stays visible in a task list that shows only the tick.
 
 ## Consequences
 
