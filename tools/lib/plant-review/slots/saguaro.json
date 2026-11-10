@@ -58,7 +58,8 @@
 		"along": 0.75,
 		"span": 0.45,
 		"girth": null,
-		"daylight": 1.2
+		"daylight": 1.2,
+		"lamp": "#ffd8ff"
 	},
 	"20-nest-holes.png": {
 		"view": "crown"
