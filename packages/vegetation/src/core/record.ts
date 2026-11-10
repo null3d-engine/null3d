@@ -119,6 +119,7 @@ export type FormField =
 	| 'base'
 	| 'extras'
 	| 'wind'
+	| 'lod'
 	| 'roundBand'
 	| 'lopsided'
 	| 'cuttings';
