@@ -97,7 +97,9 @@ export const record: Species = {
 					[0.5, 72],
 					[1, 50],
 				],
-				planes: 2,
+				// Stills 08 and 21: the pinnae lie in the frond's own plane, so the blade reads flat
+				// rather than as a V-section.
+				planes: 1,
 				fold: 8,
 				droop: 12,
 				spines: 0,
