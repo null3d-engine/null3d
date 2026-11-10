@@ -14,9 +14,18 @@ import {
 	SkeletonBuilder,
 } from '../core/graph';
 import { unitAt } from '../core/hash';
-import { cos, normalize3, PI, quatFromFrame, radians, sin, type Vector3 } from '../core/math';
+import {
+	cos,
+	length3,
+	normalize3,
+	PI,
+	quatFromFrame,
+	radians,
+	sin,
+	type Vector3,
+} from '../core/math';
 import type { Column, Species } from '../core/record';
-import { curveAt, spreadAt } from '../core/types';
+import { curveAt, type Spread, spreadAt } from '../core/types';
 import type { GrowInput } from '../stages';
 import { ribPlan } from '../wood/ribs';
 import type { Grower } from './models';
@@ -85,7 +94,7 @@ function skyOf(direction: Vector3): Vector3 {
 		up[1] - dot * direction[1],
 		up[2] - dot * direction[2],
 	];
-	const length = Math.hypot(out[0], out[1], out[2]);
+	const length = length3(out[0], out[1], out[2]);
 	// A vertical axis has no sky side square to it; any side will do.
 	return length > 1e-6 ? [out[0] / length, out[1] / length, out[2] / length] : [1, 0, 0];
 }
@@ -103,22 +112,48 @@ interface ArmPlan {
 	readonly rise: number;
 }
 
-/** The arms' plans: each at its own height, spread round the stem. */
+/** One tier of arms: where its arms leave the stem and how far they rise after the elbow. */
+interface ArmTier {
+	readonly from: number;
+	readonly rise: Spread;
+}
+
+/**
+ * The record's arm tiers, lowest first. A record that names one starting share and one rise has one
+ * tier, so every arm leaves and rises as it did before tiers were named.
+ */
+function armTiers(arms: Column['arms']): ArmTier[] {
+	const froms: readonly number[] = typeof arms.from === 'number' ? [arms.from] : arms.from;
+	const rises: readonly Spread[] = Array.isArray(arms.rise) ? arms.rise : [arms.rise as Spread];
+	if (froms.length === 0 || rises.length === 0)
+		throw new Error(
+			'@null3d/vegetation: the column record names an arm tier with no share or rise',
+		);
+	const tiers = Math.max(froms.length, rises.length);
+	return Array.from({ length: tiers }, (_, i) => ({
+		from: froms[Math.min(i, froms.length - 1)] as number,
+		rise: rises[Math.min(i, rises.length - 1)] as Spread,
+	}));
+}
+
+/** The arms' plans: each at its own height, spread round the stem and dealt among the tiers. */
 function armPlans(input: GrowInput, growth: Column, height: number): ArmPlan[] {
 	const count = Math.max(0, Math.round(spreadAt(growth.arms.count, draw(input, Purpose.Arms))));
 	const turn = draw(input, Purpose.ArmAzimuth) * 2 * Math.PI;
+	const tiers = armTiers(growth.arms);
 	const plans: ArmPlan[] = [];
 	for (let k = 0; k < count; k++) {
 		const jitter = draw(input, Purpose.ArmHeight, k) * 2 - 1;
+		const tier = tiers[k % tiers.length] as ArmTier;
 		plans.push({
 			// Arms stand across the middle of the stem, give or take a tenth of its height.
-			height: height * Math.min(0.66, Math.max(0.3, growth.arms.from + jitter * 0.1)),
+			height: height * Math.min(0.66, Math.max(0.3, tier.from + jitter * 0.1)),
 			heading:
 				turn + (2 * PI * k) / Math.max(1, count) + (draw(input, Purpose.ArmAzimuth, k) - 0.5) * 0.7,
 			// Each arm runs out its own distance before it turns up, so the elbows stand at different
 			// heights and the arms do not read as fingers from one point.
 			elbow: Math.max(0.1, growth.arms.elbow * (0.65 + 0.7 * draw(input, Purpose.ArmElbow, k))),
-			rise: Math.max(0.2, spreadAt(growth.arms.rise, draw(input, Purpose.ArmRise, k))),
+			rise: Math.max(0.2, spreadAt(tier.rise, draw(input, Purpose.ArmRise, k))),
 		});
 	}
 	return plans;
@@ -161,7 +196,7 @@ function placeAreoles(
 		const dx = b.at[0] - a.at[0];
 		const dy = b.at[1] - a.at[1];
 		const dz = b.at[2] - a.at[2];
-		const runLength = Math.hypot(dx, dy, dz);
+		const runLength = length3(dx, dy, dz);
 		if (runLength <= 1e-6) continue;
 		const dir: Vector3 = [dx / runLength, dy / runLength, dz / runLength];
 		const side = skyOf(dir);
