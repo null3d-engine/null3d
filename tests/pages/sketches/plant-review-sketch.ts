@@ -682,18 +682,20 @@ export default defineSketch(async (ctx) => {
 				return scaledStand(view, QUERY.standScale);
 			}
 			case 'crown-sky': {
-				// The crown against the sky from outside the plant: the eye near a person's height, a
-				// stand far enough that the crown's height fills the frame and the whole crown stands
-				// in it, looking up so the sky is behind. The gap inside its box then reads the sky
-				// between the foliage rather than the outline's ragged edge.
-				const base = main.crown.base;
+				// The crown against the sky from close below: the eye at a person's height, the stand
+				// near enough that the crown's own width fills two thirds of the frame, and the aim
+				// high enough that the tip sits near the top edge while the lower crown leaves the
+				// frame, as a close photograph of the upper crown crops it. The gap then reads the
+				// sky between the foliage rather than the empty sky around a whole column.
 				const top = main.crown.top;
-				const middle = base + (top - base) * 0.55;
-				const span = 2 * Math.tan((fov * DEG) / 2);
-				const away = ((top - base) / span) * 1.15;
 				const eyeHeight = 1.7;
-				const lift = middle - eyeHeight;
-				const distance = Math.hypot(away, lift);
+				const width = Math.max(bounds.max[0] - bounds.min[0], bounds.max[2] - bounds.min[2]);
+				const half = Math.tan((fov * DEG) / 2) * aspect;
+				const away = width / (2 * half * 0.65);
+				const tip = Math.atan2(top - eyeHeight, away);
+				const aim = tip - fov * DEG * 0.425;
+				const middle = eyeHeight + away * Math.tan(aim);
+				const distance = Math.hypot(away, middle - eyeHeight);
 				const elevation = (Math.atan2(eyeHeight - middle, away) * 180) / Math.PI;
 				return orbit([foot[0], middle, foot[2]], distance, elevation, turn, fov);
 			}
