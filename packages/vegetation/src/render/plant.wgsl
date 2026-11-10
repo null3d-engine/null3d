@@ -153,6 +153,10 @@ const LEAF_F90: f32 = 0.875;
 // How much a furrow's cavity darkens the bark's colour and raises its roughness.
 const CAVITY_DARK: f32 = 0.45;
 const CAVITY_ROUGH: f32 = 0.2;
+// How much of the crown's baked sky visibility darkens bark. A tree's own leaves shade its limbs,
+// but light scatters through the crown, so the wood keeps more of the sky than a leaf's density
+// alone would give it.
+const WOOD_SHADE: f32 = 0.35;
 
 /// One texel of the header row.
 /// A fixed value from two whole numbers, from 0 to 1: a scale's own shade, the same every frame.
@@ -955,7 +959,7 @@ fn surface(input: SurfaceInput) -> Surface {
         roughness = saturate(0.82 + CAVITY_ROUGH * cavity);
         // A lichen patch is a flat, matte crust: it hides the furrows under it.
         mapped = normalize(mix(bark_normal, vec3f(0.0, 0.0, 1.0), lichen_mask * 0.35));
-        occlusion = input.vertexColor.a;
+        occlusion = mix(1.0, input.vertexColor.a, WOOD_SHADE);
     } else if (mode == MODE_CARDS) {
         // In the shell where a near copy draws its real shoots, its cards give way.
         let near_copy = object.values.x > 0.5;
