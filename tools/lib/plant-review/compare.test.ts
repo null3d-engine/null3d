@@ -5,11 +5,11 @@ import {
 	leafFrame,
 	projectRow,
 	standCamera,
-	widthDistance,
 } from '../../../tests/pages/lib/plant-review/framing.ts';
 import {
 	alignTurn,
 	anchorColumn,
+	cameraWidthShare,
 	crownBoxSpread,
 	edgeDifference,
 	edgeProfile,
@@ -270,6 +270,19 @@ describe('the framing a render takes from a reference', () => {
 		});
 		expect(framingQuery(shared)).toMatchObject({ top: 0.18, eye: 1.6 });
 	});
+
+	test("reads a clipped plant's width from the camera stand, so it responds and may exceed the frame", () => {
+		const stand = { distance: 1.862, fov: 38 };
+		const share = cameraWidthShare(2.416, stand, 768 / 516) as number;
+		expect(share).toBeCloseTo(1.2658, 3);
+		expect(cameraWidthShare(2.416, { ...stand, distance: 3.724 }, 768 / 516) as number).toBeCloseTo(
+			share / 2,
+			3,
+		);
+		expect(cameraWidthShare(0, stand, 1.5)).toBeNull();
+		expect(cameraWidthShare(2, { distance: 0, fov: 38 }, 1.5)).toBeNull();
+		expect(cameraWidthShare(2, { distance: 1, fov: 0 }, 1.5)).toBeNull();
+	});
 });
 
 describe("the page's stand camera", () => {
@@ -329,19 +342,6 @@ describe("the page's stand camera", () => {
 		);
 		expect(camera.warning).toBeDefined();
 		expect(camera.height).toBeGreaterThan(0);
-	});
-
-	test('stands back until a plant keeps the share of the width its reference keeps', () => {
-		const fov = 30;
-		const aspect = 16 / 9;
-		const half = Math.tan((fov * Math.PI) / 360);
-		// A point 4 m off the axis and 2 m nearer than the axis lands on the margin's edge.
-		const distance = widthDistance(4, 2, 0.9, aspect, fov);
-		const share = 4 / ((distance - 2) * half * aspect);
-		expect(share).toBeCloseTo(0.9, 6);
-		// A narrower point needs a shorter stand, and a share just under one keeps the frame's edge.
-		expect(widthDistance(2, 2, 0.9, aspect, fov)).toBeLessThan(distance);
-		expect(widthDistance(4, 2, 1, aspect, fov)).toBeLessThan(distance);
 	});
 });
 
