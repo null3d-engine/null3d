@@ -67,5 +67,8 @@
 	"30-whole-with-landmark.png": {
 		"fov": 24,
 		"daylight": 2.263
+	},
+	"hosta-wind-motion.mp4": {
+		"fov": 24
 	}
 }
