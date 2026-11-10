@@ -14,13 +14,13 @@ cost. The Mac's figures are measured on the current tree of the test model, of 5
 Task: M3-L3.
 
 Summary: A heightfield of 32,768 triangles in a tree of 514 patches draws its frame on the Mac in
-0.8, 0.5 and 0.6 ms of GPU time on WebGPU and 5.4, 7.3 and 3.5 ms on WebGL2, as the camera stands
+0.8, 0.5 and 0.6 ms of GPU time on WebGPU and 2.0, 1.5 and 1.2 ms on WebGL2, as the camera stands
 12, 30 and 80 meters from the middle of the ground. The GPU time falls by 25 percent on WebGPU and
-35 percent on WebGL2 as the camera draws back, which is the saving that coarser patches make, while
+40 percent on WebGL2 as the camera draws back, which is the saving that coarser patches make, while
 the frame interval stays at the display's 60 Hz; the pass that picks the patches holds their
-indices for one draw. The WebGL2 figures are more than twice the earlier 511-patch tree's 2.1, 2.5
-and 1.7 ms, and that difference is a finding. On the earlier tree the device rows draw in 3.1 to
-4.8 ms on a Galaxy S25 and 3.4 to 5.1 ms on an iPad Pro 13 at those distances.
+indices for one draw. The WebGL2 figures sit at or below the earlier 511-patch tree's 2.1, 2.5 and
+1.7 ms. On the earlier tree the device rows draw in 3.1 to 4.8 ms on a Galaxy S25 and 3.4 to 5.1
+ms on an iPad Pro 13 at those distances.
 
 ## Question
 
@@ -71,13 +71,13 @@ pixels cost more fill than the far patches save in triangles. The Mac's row is t
 GPU time in 0.5 to 0.8 ms, where the frame runs at the display's 60 Hz; the tree costs it under a
 millisecond at every distance, and the figures there are at the timer's resolution.
 
-The WebGL2 route, on the Mac at Medium in the same quiet window:
+The WebGL2 route, on the Mac at Medium, from the clean rerun with no other run beside it:
 
 | Distance | GPU time | Frame interval | CPU time | Busiest job |
 | --- | --- | --- | --- | --- |
-| 12 m | 5.4 ms | 16.7 ms | 0.2 ms | not reported |
-| 30 m | 7.3 ms | 16.7 ms | 0.2 ms | not reported |
-| 80 m | 3.5 ms | 16.7 ms | 0.2 ms | not reported |
+| 12 m | 2.0 ms | 16.7 ms | 0.2 ms | not reported |
+| 30 m | 1.5 ms | 16.7 ms | 0.2 ms | not reported |
+| 80 m | 1.2 ms | 16.7 ms | 0.1 ms | not reported |
 
 The WebGL2 route on the two devices, from the runs on the earlier tree at the plan's High preset:
 
@@ -94,25 +94,24 @@ work and do not depend on the display. The two device records hold the runs and 
 
 The WebGL2 route costs more GPU time than WebGPU at every distance, because it draws one range a
 mesh at a time through the driver's multi-draw path, where WebGPU draws one indirect call. The
-saving still reaches the GPU time: at 80 m it takes 3.5 ms against 5.4 ms at 12 m, 35 percent
-less. The 30 m row is 1.9 ms above the close row because the camera sees more of the ground there.
-The CPU figure is the busiest thread's. The raw report names the sketch worker as that thread in
-every row, at about twice the drawing thread's time, because the walk runs inline on the caller
-that the report names `sketch-worker`; no job worker is listed.
+saving still reaches the GPU time: at 80 m it takes 1.2 ms against 2.0 ms at 12 m, 40 percent
+less. The 30 m row is 0.5 ms below the close row, within the timer's resolution and the ground the
+camera sees there. The CPU figure is the busiest thread's. The raw report names the sketch worker as
+that thread in every row, at about twice the drawing thread's time, because the walk runs inline on
+the caller that the report names `sketch-worker`; no job worker is listed.
 
-The current tree's WebGL2 figures are more than twice the earlier tree's 2.1, 2.5 and 1.7 ms,
-which is beyond the spread of the earlier run. The cause is not established, and no change follows
-from it here. The measurement shared the machine with a `test:images` run of `demo-island` on
-WebGL2, whose SwiftShader GPU process used about one core; the one-minute load was 6.6 before and
-5.8 after, and the frame interval held 16.7 ms. A clean run on a machine with no other work is
-owed before the absolute WebGL2 figures are used.
+The first WebGL2 run at this tree read 5.4, 7.3 and 3.5 ms beside a `test:images` run of
+`demo-island` on WebGL2, whose SwiftShader GPU process used about one core, at a load of 6.6 before
+and 5.8 after. A WebGL2-only rerun with no other run beside it read 2.0, 1.5 and 1.2 ms at a load of
+7.9 before and 7.2 after, with the frame at 16.7 ms. The high first figures were the neighbour's,
+not the model's, and the clean figures are the record's WebGL2 row.
 
-The Mac's run holds the Medium preset and both routes in one quiet window, with the page at 1600
-by 900 at 1x and its frame at 60 Hz. The WebGPU route ran at a one-minute load of 7.1 before and
-6.6 after, and the WebGL2 route at 6.6 and 5.8. A `test:images` run of `demo-island` on WebGL2
-started during them, as the WebGL2 paragraph says. The earlier tree's Mac rows held 0.6, 0.9 and
-0.4 ms on WebGPU and 2.1, 2.5 and 1.7 ms on WebGL2. The WebGPU figures agree with the earlier row
-within the timer's resolution, and the WebGL2 figures do not.
+The Mac's WebGPU row is the first window, at Medium, with the page at 1600 by 900 at 1x and its
+frame at 60 Hz, at a one-minute load of 7.1 before and 6.6 after. A `test:images` run of
+`demo-island` on WebGL2 started during that window, as the WebGL2 paragraph says. The WebGL2 row is
+the clean rerun with no other run beside it, at a load of 7.9 before and 7.2 after. The earlier
+tree's Mac rows held 0.6, 0.9 and 0.4 ms on WebGPU and 2.1, 2.5 and 1.7 ms on WebGL2. Both current
+rows agree with their earlier rows within the timer's resolution.
 
 The WebGL2 rows for the iPad and the phone come from the runs at the plan's High preset, which
 matches the earlier device rows. The plan runs the page on `gpu=webgl2` with `direct=off`, as its
@@ -141,9 +140,10 @@ noise figures; this line replaces it.
 
 No change follows. Both routes' GPU time falls from the close distance to the far one, which is
 what the pass exists for, and the frames stay within a 60 Hz frame on the phone. The WebGL2 route
-costs more absolute GPU time than WebGPU, and it still saves 35 percent of its GPU time at 80 m.
-Its absolute figures are more than twice the earlier tree's, and that finding stands until a clean
-run says otherwise. The view's list is sized to the indices that each view picks, with a sixteenth
+costs more absolute GPU time than WebGPU, and it still saves 40 percent of its GPU time at 80 m.
+Its absolute figures agree with the earlier tree's within the timer's resolution; the first read
+beside a software-rendered picture run was that neighbour's, and the clean rerun replaced it. The
+view's list is sized to the indices that each view picks, with a sixteenth
 more and three patches to spare, as [D-213](D-213-cluster-levels.md#what-it-costs) says; a list
 sized for the whole tree would cost a 1,000,000-triangle mesh about 8 MB a view. The WebGL2
 draw-record buffer's figures are in
@@ -156,9 +156,9 @@ draw-record buffer's figures are in
 - The WebGL2 rows for the iPad and the phone are measured on the earlier tree at the High preset,
   and both devices report no GPU timer on that path, so their interval and CPU time are what stand
   in.
-- The Mac's figures are one preset's and one window's, on the current tree. That window shared the
-  machine with a software-rendered picture run at a load of 6.6 to 7.1, so the WebGL2 absolute
-  figures wait for a clean run.
+- The Mac's figures are one preset's, on the current tree. The WebGPU row is the first window at a
+  load of 6.6 to 7.1, which shared the machine with a software-rendered picture run's start; the
+  WebGL2 row is a clean rerun at a load of 7.2 to 7.9 with no other run beside it.
 
 ## The tree that the figures measured
 
@@ -167,13 +167,11 @@ distance from the mesh below it, and its top patch holds 15 triangles. The earli
 patches and 202,032 indices: its errors added up along each chain, its spheres held their own
 triangles alone, and its outer edge stayed locked, so its coarse patches switched in later than
 they should ([D-213](D-213-cluster-levels.md#options-rejected)). A view at the far distance
-therefore picks coarser patches sooner. The far rows do not fall further than the earlier tree's in
-absolute time: WebGPU reads 0.6 ms against 0.4 ms and WebGL2 3.5 ms against 1.7 ms, both higher,
-while the WebGL2 fall from its own close row is 35 percent against 19 percent. The timer's
-resolution covers the WebGPU difference. The pass reads one more sphere for each patch whose own
-error passes, which adds little to the count stage.
+therefore picks coarser patches sooner. The far rows against the earlier tree's: WebGPU reads 0.6
+ms against 0.4 ms, within the timer's resolution, and WebGL2 1.2 ms against 1.7 ms, lower, with its
+fall from its own close row 40 percent against 19 percent. The pass reads one more sphere for each
+patch whose own error passes, which adds little to the count stage.
 
-The Mac's figures above are measured at `40e551ca3` on the current tree, at Medium on both routes
-in one quiet window, and the device rows and the earlier Mac rows are the 511-patch tree's, kept
-with that model named. A clean run without another session's picture run is owed before the
-absolute WebGL2 figures are used.
+The Mac's figures above are measured at `40e551ca3` on the current tree, at Medium: the WebGPU row
+in the first window and the WebGL2 row in a clean rerun with no other run beside it. The device rows
+and the earlier Mac rows are the 511-patch tree's, kept with that model named.
