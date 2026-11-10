@@ -7,7 +7,7 @@
 // face toward +Z, its colour bytes those a cutting copies (flutter phase first, full sky last) and its
 // second coordinate the share along it and its browning, as the plant's own blades carry them.
 import type { PrototypeArrays } from '../asset';
-import { cos, cross3, normalize3, pow, radians, sin, type Vector3 } from '../core/math';
+import { cos, cross3, normalize3, PI, pow, radians, sin, type Vector3 } from '../core/math';
 import type { GrassBlade, Species } from '../core/record';
 import type { TextureManifest } from '../core/textures';
 import { curveAt, type Detail, spreadMean } from '../core/types';
@@ -127,13 +127,19 @@ export function writeBlade(
 	const colour = [bytes.high, bytes.low, bytes.phase, 255];
 	const p = [0, 0, 0];
 	const dryStart = 1 - form.blade.dryTip;
+	// The blade's face turns along its bend: the cross-section rolls by the tangent's fall, so the
+	// width stands closer to vertical in a level view instead of tipping flat with the arch's tip.
+	frameAt(path, 0, frame);
+	const collarRise = Math.asin(Math.max(-1, Math.min(1, frame.tangent[1] as number)));
 	for (let r = 0; r <= rows; r++) {
 		// Rows crowd toward the tip, where the blade closes and arches most.
 		const t = 1 - pow(1 - r / rows, 1.35);
 		frameAt(path, t * path.length, frame);
 		const half = bladeHalf(form, t);
 		const fold = radians(foldAt(form, t));
-		const twist = radians(form.twist * t);
+		const rise = Math.asin(Math.max(-1, Math.min(1, frame.tangent[1] as number)));
+		const turn = Math.max(0, Math.min(PI / 2, collarRise - rise));
+		const twist = Math.max(-PI / 2, Math.min(PI / 2, radians(form.twist * t) + turn));
 		const ct = cos(twist);
 		const st = sin(twist);
 		const cf = cos(fold);
