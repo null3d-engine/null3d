@@ -75,7 +75,7 @@ export const record: Species = {
 		// Stills 07 and 19: young culms carry papery sheaths low down, which shed as the culm hardens.
 		sheaths: { upTo: 0.06, length: 0.28 },
 		// Still 17: the culm stands nearly plumb, leaning out only slightly toward its tip.
-		arch: { mean: 8, spread: 2 },
+		arch: { mean: 6.5, spread: 2 },
 	},
 	envelope,
 	shoots: {
