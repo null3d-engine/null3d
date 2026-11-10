@@ -35,10 +35,7 @@ const realGpu = !process.env.CI;
  * backend has none to leave out.
  */
 const NO_LINK_WARMUP = '--disable-angle-features=warmUpPipelineCacheAtLink';
-const launchOptions = repoBrowserOptions(defaultEnvironment());
-test.use({
-	launchOptions: { ...launchOptions, args: [...(launchOptions.args ?? []), NO_LINK_WARMUP] },
-});
+test.use({ launchOptions: repoBrowserOptions(defaultEnvironment(), [NO_LINK_WARMUP]) });
 
 /**
  * The most GLSL programs that one part compiles. CI's SwiftShader takes about 70 ms for each, so a
