@@ -143,8 +143,14 @@ export function plantMaterials(
 			metalness: 0,
 			specularIntensity: matte ? 0 : LEAF_SPECULAR,
 			doubleSided: leafy,
-			alphaMode: 'mask',
+			// A matte carries each texel's own coverage, so it blends that coverage over the white
+			// ground. A cut at the leaf's cutoff would turn a partly covered texel whole or clear,
+			// and the review could not weigh the part. Every colour role keeps the cut that draws
+			// its blade solid to its edge. The matte keeps the cutoff for its shadow caster, and
+			// writes no depth so that every leaf over a texel adds its coverage to the matte's own.
+			alphaMode: matte ? 'blend' : 'mask',
 			alphaCutoff: ALPHA_CUTOFF,
+			...(matte ? { depthWrite: false } : {}),
 			...(leafy && share > 0 && { diffuseTransmission: share }),
 			...(swayDistance > 0 && { swayDistance }),
 			uniforms: {
