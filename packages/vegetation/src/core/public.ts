@@ -82,6 +82,7 @@ export type {
 	RecordChanges,
 	Rosette,
 	ScaleSpray,
+	ScarSpec,
 	Sdf,
 	SeasonSpec,
 	SelfOrganizing,

@@ -151,16 +151,16 @@ export const record: Species = {
 				share: 0.38,
 				years: 3,
 				length: { mean: 0.32, spread: 0.04 },
-				nodes: { mean: 56, spread: 6 },
+				nodes: { mean: 72, spread: 8 },
 				internode: EVEN,
 				stem: { radius: [0.006, 0.002] },
 				lateral: 70,
 				laterals: { mean: 3, spread: 0 },
-				lateralGap: 0.2,
+				lateralGap: 0.14,
 				bend: { length: 0.04, angle: 15 },
 				leafScale: [
-					[0, 0.9],
-					[1, 1],
+					[0, 1.05],
+					[1, 1.15],
 				],
 				leafAngle: [
 					[0, 34],
@@ -271,6 +271,18 @@ export const record: Species = {
 		// Stills 03, 15 and 17: long vertical fibrous ridges run up the column, so the flutes fade
 		// slowly and high.
 		flutes: { count: { mean: 12, spread: 2 }, depth: 0.5, height: 25 },
+		// Still 20: an old ground fire burned a hollow up the foot about four metres, its charred
+		// wood near black and the new bark rolled over its edges. The hollow faces the plant's +Z
+		// side, which the review turns to the camera for the picture.
+		scar: {
+			from: 0,
+			to: 4.2,
+			angle: 90,
+			width: 46,
+			depth: 0.8,
+			colour: [0.012, 0.011, 0.009],
+			shade: 0.92,
+		},
 	},
 	extras: [
 		{
