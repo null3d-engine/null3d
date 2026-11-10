@@ -29,5 +29,11 @@
 	},
 	"11-single-spray.png": {
 		"view": "leaf-upper"
+	},
+	"24-leaf-texture-upper.png": {
+		"view": "cluster"
+	},
+	"25-leaf-texture-underside.png": {
+		"view": "cluster"
 	}
 }
