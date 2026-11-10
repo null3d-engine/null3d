@@ -649,7 +649,11 @@ fn plant_offset(input: VertexInput, mode: i32) -> vec3f {
             let downwind = normalize(local);
             let own = colour_record(input.colors);
             var swayed = sway_point(plant, own, downwind, air.a);
-            if (mode == MODE_CARDS || mode == MODE_FOLIAGE) {
+            // A marked sheath column carries the surface kind in its flutter-phase byte, so it
+            // takes no flutter: the mark only chooses its colour, never a motion.
+            let sheath = mode == MODE_FOLIAGE
+                && abs(input.colors.b * 255.0 - KIND_SHEATH) < 0.5;
+            if (!sheath && (mode == MODE_CARDS || mode == MODE_FOLIAGE)) {
                 // Leaves and cards flutter across the air by their phase byte, more toward their
                 // tips: the second coordinates' x is the share along the leaf or up the card.
                 let flutter = wind_record(own, 2);
