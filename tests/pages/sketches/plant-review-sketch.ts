@@ -468,6 +468,7 @@ function matteMaterials(ctx: SketchContext, kit: SpeciesKit): PlantMaterials {
 			alphaCutoff: 0.5,
 		}),
 		foliage: ctx.materials.unlit(black),
+		foliageFar: ctx.materials.unlit(black),
 		extras: ctx.materials.unlit(black),
 	};
 }

@@ -20,6 +20,9 @@ import { MeshWriter } from './writer';
 /** Degrees each half of a hooded tip rises at its very end, closing over the keel. */
 const HOOD_FOLD = 72;
 
+/** Steps a metre of a blade's keel offset is packed in, within a signed byte's range. */
+export const KEEL_STEPS = 8192;
+
 /** One blade as written: its length and the record's blade shape. */
 export interface BladeForm {
 	/** The blade's own length in metres, collar to tip. */
@@ -117,6 +120,7 @@ export function writeBlade(
 	texture: BladeTexture,
 	bytes: AxisBytes,
 	crown: CrownLight | undefined,
+	keel = false,
 ): void {
 	const firstVertex = mesh.vertices;
 	const firstIndex = mesh.indices.length;
@@ -126,6 +130,7 @@ export function writeBlade(
 	const rows = Math.max(2, detail.rows);
 	const colour = [bytes.high, bytes.low, bytes.phase, 255];
 	const p = [0, 0, 0];
+	const packed = [0, 0, 0, 127];
 	const dryStart = 1 - form.blade.dryTip;
 	for (let r = 0; r <= rows; r++) {
 		// Rows crowd toward the tip, where the blade closes and arches most.
@@ -155,12 +160,22 @@ export function writeBlade(
 					(frame.binormal[k] as number) * x +
 					(frame.normal[k] as number) * z;
 			if (crown) colour[3] = skyByte(crown, p);
+			if (keel)
+				for (let k = 0; k < 3; k++)
+					packed[k] = Math.max(
+						-127,
+						Math.min(
+							127,
+							Math.round(((p[k] as number) - (frame.position[k] as number)) * KEEL_STEPS),
+						),
+					);
 			mesh.vertex(
 				p,
 				[frame.normal[0] as number, frame.normal[1] as number, frame.normal[2] as number],
 				[0.5 + c * texture.half * Math.min(1, half / Math.max(1e-6, 0.5 * form.width)), v],
 				[t, brown],
 				colour,
+				keel ? packed : undefined,
 			);
 		}
 		if (r > 0) {
