@@ -38,16 +38,17 @@ export const record: Species = {
 			// Still 01 and the crown views: a dense living crown of three dozen fronds.
 			fronds: { mean: 34, spread: 2 },
 			divergence: 137.5,
-			// Still 01: the youngest fronds stand up in the centre and the oldest arch out and down.
+			// Still 01: the youngest fronds stand up in the centre and the oldest rise, arch over and
+			// hang at the tips, so the crown reads as a dome rather than a flat spread.
 			tilt: [
-				[0, 14],
-				[0.35, 48],
-				[0.7, 84],
-				[1, 110],
+				[0, 8],
+				[0.35, 32],
+				[0.7, 56],
+				[1, 76],
 			],
 			// Stills 06 and 07: the fronds spring from one growing point at the trunk's top, where
 			// the old bases cluster, rather than clasping a length of stem as a palm's do.
-			depth: 0.2,
+			depth: 0.06,
 			// Still 06: the crown's centre holds the young fronds, still rolled, coiled through a
 			// turn and a half above a hairy stalk.
 			croziers: {
@@ -60,9 +61,9 @@ export const record: Species = {
 				// Still 01 and 06: the fiddleheads are hairy red-brown, the same mat as the trunk.
 				bark: 'grown',
 			},
-			// Still 16, 17 and 20: the dead fronds hang against the trunk as a brown skirt, and
+			// Still 16, 17 and 20: the dead fronds hang against the trunk as a brown curtain, and
 			// still 20 shows their pinnae, so a dead frond keeps the detail of a living one.
-			dead: { count: { mean: 20, spread: 2 }, hang: 160, skirt: 0.1, blades: true },
+			dead: { count: { mean: 30, spread: 2 }, hang: 165, skirt: 0.08, blades: true },
 		},
 		frond: {
 			// Stills 21 and 22: the frond is twice divided, its pinnae in near-opposite pairs; the
@@ -73,22 +74,22 @@ export const record: Species = {
 			petiole: { length: 0.28, width: 0.055, teeth: 0 },
 			// Still 21: the blade rises from the stipe and arches over, its tip drooping.
 			droop: [
-				[0, 0],
-				[0.3, 12],
-				[0.6, 26],
-				[1, 40],
+				[0, 2],
+				[0.25, 16],
+				[0.55, 38],
+				[1, 68],
 			],
 			twist: 4,
 			pinnae: {
 				// Stills 08 to 11: thirty or more pairs a side. The count gives the places and each
 				// place carries a group, so the frond holds twice this many.
-				count: { mean: 22, spread: 1 },
+				count: { mean: 36, spread: 1 },
 				// Pinna length over the frond's length, by position along the rachis.
 				length: [
 					[0, 0.05],
-					[0.15, 0.13],
-					[0.4, 0.21],
-					[0.8, 0.13],
+					[0.15, 0.14],
+					[0.4, 0.24],
+					[0.8, 0.14],
 					[1, 0.05],
 				],
 				angle: [
@@ -144,8 +145,16 @@ export const record: Species = {
 		collar: { swell: 0, length: 1, ridge: 0 },
 	},
 	base: {
-		// Stills 14 and 17: the foot flares into a low mound of roots over the litter.
-		flare: { amount: 0.45, height: 0.35 },
+		// Stills 14 and 17: the foot flares into a wide low mound of roots that run out over the
+		// litter, not a smooth taper.
+		flare: { amount: 1.2, height: 0.45 },
+		roots: {
+			count: { mean: 28, spread: 4 },
+			length: { mean: 0.6, spread: 0.15 },
+			radius: 0.02,
+			dive: 0.15,
+			ridge: 0.8,
+		},
 	},
 	seasons: {
 		default: 'summer',
@@ -181,17 +190,17 @@ export const record: Species = {
 			// the photographs' three dozen fronds and their skirt set the variant's size.
 			kitBytes: { low: 40_000, medium: 50_000, high: 60_000, ultra: 70_000 },
 			variantBytes: {
-				low: 1_300_000,
-				medium: 1_300_000,
-				high: 1_300_000,
-				ultra: 1_300_000,
+				low: 2_600_000,
+				medium: 2_600_000,
+				high: 2_600_000,
+				ultra: 2_600_000,
 			},
-			lod0Triangles: 45_000,
-			lod1Triangles: 8_000,
-			lod2Triangles: 5_000,
+			lod0Triangles: 120_000,
+			lod1Triangles: 20_000,
+			lod2Triangles: 12_000,
 			downloadBytes: 900_000,
 			downloadHalfBytes: 300_000,
-			growMilliseconds: 60,
+			growMilliseconds: 120,
 		},
 	},
 	textures: 'own',
@@ -203,8 +212,9 @@ export const record: Species = {
 		branch: { order: 1, length: 2.4 },
 		// Still 22: a length of rachis from the middle of the frond, with its pinnae.
 		subbranch: { order: 1, length: 1, from: 0.3, span: 1 },
-		// Still 23: the frond's tip, where its pinnae shorten.
-		cluster: { order: 1, length: 0.35, from: 1.05, span: 0.35 },
+		// Still 23: the frond's tip, where its pinnae shorten. The span starts near the end of the
+		// mature frond's blade, so the piece draws the tip's own short pinnae and their spacing.
+		cluster: { order: 1, length: 0.32, from: 1.78, span: 0.32 },
 		// Stills 12, 13 and 24: the pinna laid flat on its own.
 		leaf: { pressed: true },
 	},
