@@ -109,7 +109,7 @@ export const record: Species = {
 		// stipe's own photograph carries the green, so the zone above the black takes it as it is.
 		zones: [
 			{ layer: 0, by: 'height', from: -1, to: 0.12, blend: 0.06, tint: [0.06, 0.06, 0.05] },
-			{ layer: 0, by: 'height', from: 0.12, to: 4, blend: 0.06, tint: [1, 1, 1] },
+			{ layer: 0, by: 'height', from: 0.12, to: 4, blend: 0.06, tint: [1.07, 1.1, 0.88] },
 		],
 		young: 0,
 		youngRadius: 0,
