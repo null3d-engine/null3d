@@ -414,7 +414,11 @@ const WIDTH_BAND = 0.05;
  * silhouette's black shape and a studio background can both defeat the colour mask, so the matte
  * is the figure whenever it exists.
  */
-function drawnShare(path: string, silhouette: boolean, matte?: string): number | null {
+function drawnShare(
+	path: string,
+	silhouette: boolean,
+	matte?: string,
+): { share: number; clipped: boolean } | null {
 	const image = readImage(matte ?? path);
 	const plant = matte !== undefined || silhouette ? matteMask(image) : plantMask(image);
 	if (
@@ -429,7 +433,10 @@ function drawnShare(path: string, silhouette: boolean, matte?: string): number |
 		return null;
 	const box = boxOf(plant.mask, plant.width, plant.height);
 	if (!box) return null;
-	return (box.right - box.left + 1) / plant.width;
+	return {
+		share: (box.right - box.left + 1) / plant.width,
+		clipped: box.left <= 0 || box.right >= plant.width - 1,
+	};
 }
 
 /**
@@ -453,16 +460,21 @@ async function correctWidths(
 		const file = shot.cells[0]?.file;
 		if (!file) continue;
 		const matte = matteOf(file);
-		const share = drawnShare(
+		const measured = drawnShare(
 			join(dir, file),
 			shot.query.view === 'silhouette',
 			matte ? join(dir, matte) : undefined,
 		);
-		if (share === null || Math.abs(share - target) <= WIDTH_BAND) continue;
+		if (measured === null) continue;
+		// A box that touches the frame's sides is a crop whatever its share reads, so it is redrawn
+		// even inside the band: a cropped frame cannot judge its subject.
+		const off = Math.abs(measured.share - target) > WIDTH_BAND;
+		const cropped = measured.clipped && target < 1;
+		if (!off && !cropped) continue;
 		fixes.set(file, {
 			target,
 			silhouette: shot.query.view === 'silhouette',
-			scale: share / target,
+			scale: measured.share / target,
 		});
 	}
 	for (let pass = 0; pass < 2 && fixes.size > 0; pass++) {
@@ -488,13 +500,16 @@ async function correctWidths(
 		const next = new Map<string, { target: number; silhouette: boolean; scale: number }>();
 		for (const [file, fix] of fixes) {
 			const matte = matteOf(file);
-			const share = drawnShare(
+			const measured = drawnShare(
 				join(dir, file),
 				fix.silhouette,
 				matte ? join(dir, matte) : undefined,
 			);
-			if (share !== null && Math.abs(share - fix.target) > WIDTH_BAND)
-				next.set(file, { ...fix, scale: fix.scale * (share / fix.target) });
+			if (measured === null) continue;
+			const off = Math.abs(measured.share - fix.target) > WIDTH_BAND;
+			const cropped = measured.clipped && fix.target < 1;
+			if (off || cropped)
+				next.set(file, { ...fix, scale: fix.scale * (measured.share / fix.target) });
 		}
 		fixes.clear();
 		for (const [file, fix] of next) fixes.set(file, fix);
