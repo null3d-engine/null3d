@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { scaledBudget } from '../../../tests/lib/run-budget.ts';
 import { type PlantAsset, plantAssetDigest, type SpeciesKitData } from './asset';
-import { AXIS_LIMB, AXIS_STEM, BUD_TERMINAL, SkeletonBuilder } from './core/graph';
+import { AXIS_LIMB, AXIS_RACHIS, AXIS_STEM, BUD_TERMINAL, SkeletonBuilder } from './core/graph';
 import { quatRotate } from './core/math';
 import type { Species } from './core/record';
 import { standInSpecies } from './core/stand-in';
@@ -219,6 +219,63 @@ describe('cuttings', () => {
 				);
 			expect(far).toBeCloseTo(cut.extent, 4);
 		}
+	});
+
+	it('keeps a rachis for a cluster whose hint cuts a span of one long axis', () => {
+		// A stem carrying one frond axis. A cluster hint that keeps a span names a part of that frond,
+		// so its rachis is the piece; the same cluster without the hint refuses the rachis.
+		const b = new SkeletonBuilder();
+		const stem = b.addAxis({ parent: -1, parentNode: -1, order: 0, kind: AXIS_STEM });
+		const stemNodes: number[] = [];
+		for (let k = 0; k < 4; k++)
+			stemNodes.push(
+				b.addNode({
+					x: 0,
+					y: k,
+					z: 0,
+					radius: 0.2,
+					parent: k === 0 ? -1 : (stemNodes[k - 1] as number),
+					axis: stem,
+				}),
+			);
+		const fork = stemNodes[3] as number;
+		const frond = b.addAxis({
+			parent: stem,
+			parentNode: fork,
+			parentT: 1,
+			order: 1,
+			kind: AXIS_RACHIS,
+		});
+		const first = b.addNode({ x: 0.5, y: 4, z: 0, radius: 0.02, parent: fork, axis: frond });
+		b.addNode({ x: 1.2, y: 4.3, z: 0, radius: 0.01, parent: first, axis: frond });
+		const skeleton = b.finish();
+		const span = { ...stub.record, cuttings: { cluster: { order: 1, length: 0.2, span: 0.2 } } };
+		const cut = cutBranch(skeleton, span, { part: 'cluster' });
+		if (!cut) throw new Error('the span hint cut no frond part');
+		expect(cut.axis).toBe(frond);
+		expect(cut.skeleton.axes.count).toBe(1);
+		expect(
+			cutBranch(skeleton, { ...stub.record, cuttings: undefined }, { part: 'cluster' }),
+		).toBeUndefined();
+	});
+
+	it('warns rather than passing a failed cut as the whole plant', async () => {
+		// The bracken names no cluster hint and grows no shoot prototypes, so its cluster cut finds
+		// no piece. The fallback must say so instead of standing the whole plant in as the piece.
+		const { species: bracken } = await import('./species/bracken');
+		await loadPlantCode(bracken.record);
+		const brackenKit = buildKitNow(bracken, { placeholders: 'missing', detail: 'low' });
+		const warnings: string[] = [];
+		const warn = console.warn;
+		console.warn = (...args: unknown[]) => {
+			warnings.push(args.join(' '));
+		};
+		try {
+			growPlantNow(brackenKit, { seed: 11, variant: 0, cutting: { part: 'cluster' } });
+		} finally {
+			console.warn = warn;
+		}
+		expect(warnings.some((line) => line.includes("cluster cutting of 'bracken'"))).toBe(true);
 	});
 
 	it('ranks the branch nearest the asked length first, and takes others by pick', () => {

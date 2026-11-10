@@ -715,7 +715,14 @@ function cutSkeleton(
 	cutting: CuttingOptions | undefined,
 ): MacroSkeleton {
 	if (!cutting || !cutsSkeleton(kit, cutting)) return skeleton;
-	return cutBranch(skeleton, kit.record, cutting)?.skeleton ?? skeleton;
+	const cut = cutBranch(skeleton, kit.record, cutting);
+	if (cut) return cut.skeleton;
+	// A cut that finds no piece must not pass as one: the whole plant is not the part the still
+	// asked for, and a silent fallback reads as a plant figure.
+	console.warn(
+		`null3D: the ${cutting.part} cutting of '${kit.record.id}' found no piece to cut; the whole plant stands in its place`,
+	);
+	return skeleton;
 }
 
 /** The bounds of a mesh's positions, or a point at the origin for an empty one. */
