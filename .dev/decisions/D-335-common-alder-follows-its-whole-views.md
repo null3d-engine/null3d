@@ -172,11 +172,11 @@ record grows outlines 0.67 against `02`, 0.60 against `18`, 0.62 against `30` an
   the zone tint was reverted and 2.3 again after the picture was asked for young wood. A species
   that moves under the same change has moved because its own colour path differs, not because the
   engine shifted under everything. The control's own line is `thin` 0.015, `span` 0.1 and
-  `barkMask` true, with the texture tint at 0.92, 0.78 and 0.81 — framing first, material second.
+  `barkMask` true, with the texture tint at 0.92, 0.78 and 0.81: framing first, material second.
 - **A studio view's light is the slot's, and that includes the copy stand.** A slot's `daylight`
   scales a view's light and its `lamp` colours it, on the field views and the copy stand alike. Still
   `13` took 4.53 to 2.45 with `daylight` 1.27 and a lamp, while still `25`, which carries no slot
-  entry, held at 2.80 across three settings — the control that shows the light is per picture.
+  entry, held at 2.80 across three settings, the control that shows the light is per picture.
 - **Row 8 rests on the three close views**, not the young bark, which is a supplementary note about
   the material and cannot set a count. Read at run `alder-bark-tint-clean-1`, commit `9a57b04a0`,
   dirty false:

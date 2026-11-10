@@ -15,8 +15,6 @@ import { plantSign } from './signage';
 export interface MeadowOptions {
 	/** The controls as they stand at the moment of a build. */
 	controls(): MeadowControls;
-	/** The share of a record's own leaves or limbs that the controls ask for. */
-	shareOf(value: number): number;
 }
 
 /** A plant piece the meadow can take down again. */
@@ -79,7 +77,7 @@ export function createMeadow(
 	return async function growMeadow(seed: number): Promise<void> {
 		for (const piece of planted) piece.destroy();
 		planted = [];
-		const { season, coarseness, leaves, limbs } = options.controls();
+		const { season, sparse } = options.controls();
 		const ids = speciesIds();
 		const across = Math.max(1, Math.ceil(Math.sqrt(ids.length)));
 		const step = 34;
@@ -103,9 +101,7 @@ export function createMeadow(
 				variant,
 				near: true,
 				season,
-				coarseness,
-				leaves: options.shareOf(leaves),
-				limbs: options.shareOf(limbs),
+				sparse,
 			});
 			const x = ((index % across) - (across - 1) / 2) * step;
 			const z = (Math.floor(index / across) - (ids.length / across - 1) / 2) * step;

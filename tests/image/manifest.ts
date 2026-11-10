@@ -64,6 +64,7 @@ import {
 import { PRECISION } from '../pages/lib/depth-precision.ts';
 import { MOTION_HOLD } from '../pages/lib/motion-vectors.ts';
 import { plantSpeciesTests } from './plant-species.ts';
+import { sparseFormTests } from './sparse-form.ts';
 
 /**
  * The tolerance of a scene drawn about 1,000 km out against its image at the origin: any change of
@@ -4025,6 +4026,7 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 	...HALF_PRECISION_TESTS.map((name) => copyWithSwitch(name, 'half', 'half=on')),
 	...INDEX_INSTANCE_TESTS.map(withIndexInstances),
 	...plantSpeciesTests(),
+	...sparseFormTests(),
 ];
 
 /** Every run of the manifest's tests: each test on each of its tiers, in each of its thread modes. */
