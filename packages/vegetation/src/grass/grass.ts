@@ -254,6 +254,15 @@ export function tuftMesh(
 		// The face's normal, across the strip, leaned up by two thirds.
 		const [fx, fz] = [-sz, sx];
 		const length = Math.hypot(fx * 0.35, 1, fz * 0.35);
+		const [nx, ny, nz] = [(fx * 0.35) / length, 1 / length, (fz * 0.35) / length];
+		// A keel turns each half's normal away from the flat face by the fold, so the two halves
+		// light apart as the plant's blade does. The across direction, square to the face, is the
+		// axis the normal turns about.
+		const fold = across === 3 && blade ? radians(blade.fold) : 0;
+		const [sinFold, cosFold] = [Math.sin(fold), Math.cos(fold)];
+		const along = sx * nx + sz * nz;
+		const [ax, ay, az] = [sx - nx * along, -ny * along, sz - nz * along];
+		const axis = Math.hypot(ax, ay, az) || 1;
 		const first = b * perBlade;
 		for (let j = 0; j <= segments; j++) {
 			const t = j / segments;
@@ -267,7 +276,7 @@ export function tuftMesh(
 			if (j === segments) {
 				const v = first + segments * across;
 				positions.set([cx, cy, cz], v * 3);
-				normals.set([(fx * 0.35) / length, 1 / length, (fz * 0.35) / length], v * 3);
+				normals.set([nx, ny, nz], v * 3);
 				colors.set([shade * (0.9 + 0.25 * t), shade, shade * (0.85 - 0.2 * t)], v * 3);
 				uvs.set([0.5, t], v * 2);
 				continue;
@@ -279,7 +288,13 @@ export function tuftMesh(
 					[cx + sx * half * side, cy + Math.abs(side) * rise, cz + sz * half * side],
 					v * 3,
 				);
-				normals.set([(fx * 0.35) / length, 1 / length, (fz * 0.35) / length], v * 3);
+				const [tx, ty, tz] = [
+					nx * cosFold - side * (ax / axis) * sinFold,
+					ny * cosFold - side * (ay / axis) * sinFold,
+					nz * cosFold - side * (az / axis) * sinFold,
+				];
+				const turn = Math.hypot(tx, ty, tz) || 1;
+				normals.set([tx / turn, ty / turn, tz / turn], v * 3);
 				colors.set([shade * (0.9 + 0.25 * t), shade, shade * (0.85 - 0.2 * t)], v * 3);
 				uvs.set([s / (across - 1), t], v * 2);
 			}
