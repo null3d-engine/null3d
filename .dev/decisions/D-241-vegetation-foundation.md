@@ -1136,7 +1136,11 @@ translucency demo is. <!-- outside date -->
 
 The forest's own trees stay only until the swap. The add-on's limbs, leaves and coarseness gain the
 much sparser setting that this record's foundation section defines, and the forest then swaps its
-56,000 trees of four kinds to the add-on. Its three fir kinds take variants of the Scots pine, which
+56,000 trees of four kinds to the add-on. The owner confirmed the swap on 10 November 2026, when the
+sparse setting existed and the choice was between swapping and keeping a measured stand-in. His own
+stand costs 240,000 to 496,000 triangles at the demo's count, against 24,600,000 through the add-on,
+which is why the swap waits for the sparse form rather than happening at the dense one.
+<!-- outside date --> Its three fir kinds take variants of the Scots pine, which
 is revived to the species bar, rather than the add-on's built-in conifer.
 
 The translucency demo is an accepted exception. Its own leaf mesh and the standard material's
