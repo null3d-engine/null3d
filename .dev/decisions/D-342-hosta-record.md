@@ -144,7 +144,11 @@ forty leaves, against the reference's fifty.
     close the sides and over-close the top. The owner's cap for a ground plant holds the variant at
     1.62 MB of 1.70. The forty-nine leaves it carries cannot grow into the reference's fifty-odd.
   - **Rows 3 and 5, the pieces.** The three lifted pieces draw 0.22, 0.23 and 0.23 of sky against
-    0.25, 0.20 and 0.22. The sub-branch and the cluster are a twentieth too dense.
+    0.25, 0.20 and 0.22. The sub-branch is a twentieth too dense.
+  - **Row 5, the cluster's density.** The cluster still's gap figure is void. Its crown box is 220 by
+    103 pixels against the photograph's 325 by 219. One placement change took the box to 215 by 13,
+    so the gap measures a slice of the piece. The row rests on the outline overlap, 0.3928, and on
+    the piece drawing as one piece.
   - **Rows 7 and 8, the petiole's surface.** Stills 13 and 14 show the lifted crown with its fleshy
     roots and one stalk cut across. The model draws no root system and no above-ground crown. A
     section of a stalk is a drawing convention rather than a surface, so both render nothing.

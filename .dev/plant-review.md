@@ -302,23 +302,43 @@ next reader unable to tell what those pictures show.
 Some figures cannot decide a row. The reviewer says so and quotes the figure that survives, rather
 than turning a fault of the measure into a pass or a fail.
 
-- **A cutting view's gap when the crown box covers a patch of its foliage.** The tool finds the
-  crown's foot in `crownStartRow` in `tools/lib/plant-review/references.ts`. The function takes the
-  first narrow stretch below the crown's wide top that the stem continues below. It then moves that
-  row toward the plant's own foot by the plant's mound share. The box collapses when the stretch is
-  found high and the mound share is zero. A cut piece gives both. Its gaps between leaves read as a
-  stem that runs on below. Its cut stalk is far narrower than its widest row. The foot share then
-  sits under the 0.7 mark, and the mound share is 0. The gap is then read inside that patch.
+- **A cutting view's gap when the crown box covers a patch of its foliage.** The gap is read inside
+  the crown box, so when the box covers a patch the figure measures the patch. Four cases, four
+  species:
 
-  The hosta's cluster is the smallest case. Its photograph's box is 325 by 219 pixels, and its cut
-  piece drew 220 by 103. A tilt change from 20 and 40 degrees to 14 and 30 took the found row from
-  112 to 22 of a 340-row box. The foot share moved from 0.41 to 0.37, the mound share stayed 0, and
-  the box fell to 215 by 13. The piece's own box and rows did not move. The other cases are the
-  common alder's two cluster stills, the hawthorn's studio cluster and the silver birch's piece 21.
-  The birch's box fell from 186 by 284 pixels to 25 by 46. The outline overlap and the piece count
-  survive such a move, and they are what to quote. The fix is one place in that file, not species
-  data. M3-V4 carries the debt, because the review rows are its evidence, while the code lives under
-  `tools/`.
+  | Species | The change | Box before | Box after | Figure voided |
+  | --- | --- | --- | --- | --- |
+  | Common alder | six large cluster leaves became eight a seventh smaller, `alder-r42` at `411449e97` | the plant's own matte, 405 by 751 and 214 by 399 pixels | 329 by 163 and 174 by 86 | both stills' gaps, 0.1611 and 0.1651 |
+  | Hawthorn | the leaf-cluster turn's edge-on frame, `hawthorn-full05` at `c193601b1` | the piece's own matte, about 400 by 400 | 180 by 148 | the turn's height spread, 60 per cent |
+  | Silver birch | the rebuilt leaf stands its blades out from the twig, `birch-r15` at `b96087d0e` | 186 by 284 | 25 by 46 | the piece's gap, 0.6307 became 0.1677 |
+  | Hosta | the tilt curve from 20 and 40 degrees to 14 and 30 | 220 by 103, against the photograph's 325 by 219 | 215 by 13 | the cluster's gap, 0.2139 |
+
+  **Two of the voided figures were passing before the change**: the birch's piece at 0.6307 and the
+  hosta's cluster at 0.2139. A figure that passes is therefore no safer than one that fails.
+
+  **The condition, in the measure's own terms.** The crown's foot is the row that `crownStartRow`
+  returns. Two inputs make it. `crownStartFromTop` takes the first narrow stretch below the crown's
+  wide top where the rows beneath stay at least 70 per cent narrow. The mound share then moves that
+  row toward the plant's foot, and it steps on the foot's width over the widest row. A cut piece
+  fails both. Its foliage is sparse, so a gap between leaves is a narrow stretch. The rows beneath
+  keep it, so the stretch is found high. Its foot is a cut stalk, far narrower than its widest row.
+  The foot share sits under 0.7, so the mound share is 0. The foot then stays where the stretch was
+  found, and the box holds only the rows above it. A change that opens gaps between the leaves turns
+  a filled band into narrow rows. A leaf that stands out, or a blade that rises, does it, and the
+  foot moves up. That is the input the change acts on.
+
+  **The smallest change that would stop it.** One clamp in `crownStartRow` would stop it. The
+  crown's foot may not stand above the row of the crown's widest run, which the function already
+  computes as `crownWidest`. A foot below that row is unchanged, so every ordinary plant keeps its
+  figures. A foot above it is the collapse, and the clamp holds the crown over the wide stretch. The
+  function's own comments say the limit comes from the crown's own widest row, because a flare or a
+  ground strip can be the plant's widest. The same reasoning serves the clamp. This is written, not
+  applied, because the measure is frozen. A session that applies it re-reads every species' piece
+  figures at one commit, since any piece whose foot was taken high will move.
+
+  **What to quote instead.** The outline overlap and the piece count survive such a move. The hosta's
+  cluster quotes its overlap of 0.3928 and its one piece. M3-V4 carries the debt, because the review
+  rows are its evidence, while the code lives under `tools/`.
 
 ## The rows a species still owes
 
