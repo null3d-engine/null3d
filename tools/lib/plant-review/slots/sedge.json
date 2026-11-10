@@ -22,9 +22,7 @@
 	},
 	"07-basal-crown.png": {
 		"background": "studio-grey",
-		"daylight": 9.2,
 		"ground": "#4a3b2c",
-		"lamp": "#e8e8ff",
 		"view": "crown-foot"
 	},
 	"08-leaf-leaving-sheath.png": {
