@@ -526,7 +526,7 @@ function compareRun(
 	const summary = [
 		`# ${manifest.species} against ${set?.slug ?? 'no references'}`,
 		'',
-		`Run \`${manifest.run}\` at commit \`${manifest.commit.slice(0, 8)}\`${manifest.dirty ? ' with changes' : ''}, seed ${manifest.seed}, variant ${manifest.variant}, preset ${manifest.preset}. Shape IoU compares outlines scaled to the same height and centred on the trunk; frame IoU compares them as framed. Colour differences are CIEDE2000, where about 2 is a visible step.`,
+		`Run \`${manifest.run}\` at commit \`${manifest.commit.slice(0, 8)}\`${manifest.dirty ? ' with changes' : ''}, seed ${manifest.seed}, variant ${manifest.variant}, preset ${manifest.preset}.${plantStateOf(manifest)} Shape IoU compares outlines scaled to the same height and centred on the trunk; frame IoU compares them as framed. Colour differences are CIEDE2000, where about 2 is a visible step.`,
 		'',
 	];
 	const views = byGroup.get('views');
@@ -813,6 +813,19 @@ async function main(): Promise<void> {
 	const complete = compareRun(dir, manifest, set, windFps);
 	console.log(readFileSync(join(dir, 'summary.md'), 'utf8'));
 	if (failed > 0 || !complete) process.exitCode = 1;
+}
+
+/** What the page said it drew: the species' own plant, a stand-in, or nothing posted. */
+function plantStateOf(manifest: Manifest): string {
+	const facts = manifest.frames.find((frame) => frame.facts !== undefined)?.facts as
+		| { standIn?: boolean; placeholders?: unknown; plant?: { height?: number } }
+		| undefined;
+	const plant = facts?.plant;
+	const height = plant?.height === undefined ? '' : `, drawn ${plant.height.toFixed(2)} m tall`;
+	if (!facts) return '';
+	if (facts.standIn === true)
+		return ` The plant is a stand-in${facts.placeholders === true ? ' (placeholder parts)' : ''}${height}: the figures below are not a species' own.`;
+	return plant?.height === undefined ? '' : ` The plant is the species' own${height}.`;
 }
 
 if (import.meta.main) {
