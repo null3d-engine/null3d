@@ -758,5 +758,11 @@ describe('the coverage matte', () => {
 		// places, which is where three per cent sits.
 		expect(binary.gapFraction).toBeCloseTo(4 / 100, 4);
 		expect(fractional.gapFraction).toBeCloseTo(3 / 100, 4);
+		// The crown's own box holds the same hole as the outline, so its gap agrees; the frame keeps
+		// the empty sky around the plant and reads far larger.
+		expect(binary.crownBoxGap).toBeCloseTo(4 / 100, 4);
+		expect(fractional.crownBoxGap).toBeCloseTo(3 / 100, 4);
+		expect(binary.frameGap).toBeCloseTo(304 / 400, 4);
+		expect(fractional.frameGap).toBeCloseTo((300 + 2 + 2 * (1 - 128 / 255)) / 400, 4);
 	});
 });
