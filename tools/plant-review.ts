@@ -190,6 +190,14 @@ function stillShot(
 			} = framingQuery(estimateFraming([measures], [plant]));
 			query = { ...query, ...framing };
 		}
+		// A close view of the crown's outside keeps the same margin its whole views do, so the run
+		// measures its render against the photograph's width share too and redraws it if it crops.
+		if (!slot.framed && slot.view === 'limb' && slot.query?.surface === true && measures.box) {
+			query = {
+				...query,
+				widthShare: estimateFraming([measures], [plant]).widthShare,
+			};
+		}
 	}
 	// A still's own query fields, such as a camera its picture needs, go over the rest, and a field
 	// given as null is dropped, so a still can trade the framing's fill for a top row and an eye.
