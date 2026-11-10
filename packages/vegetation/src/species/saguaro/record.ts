@@ -28,11 +28,11 @@ export const record: Species = {
 		// Still 17: a column that hardly tapers above the foot. Stills 01 and 18: the arms' span is
 		// about a third of the height, so the widest ring of foliage stands at the arms.
 		radius: [
-			[0, 0.4],
-			[0.12, 0.37],
-			[0.5, 0.35],
-			[0.85, 0.33],
-			[1, 0.28],
+			[0, 0.58],
+			[0.12, 0.54],
+			[0.5, 0.51],
+			[0.85, 0.48],
+			[1, 0.41],
 		],
 		// Stills 04, 09 and 13: twelve to twenty ribs on the stem, their crests five to eight
 		// centimetres apart, and the cross-section's pleats a couple of centimetres deep.
