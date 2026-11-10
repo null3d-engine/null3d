@@ -94,10 +94,13 @@
 		"barkMask": true
 	},
 	"16-bark-on-limb.png": {
-		"thin": 0.025,
+		"girth": null,
+		"thin": 0.035,
+		"span": 0.086,
+		"along": 0.3,
+		"barkMask": true,
 		"skyShare": 0.6,
-		"daylight": 1.5,
-		"barkMask": true
+		"daylight": 1.5
 	},
 	"09-secondary-branching.png": {},
 	"10-fine-twigs.png": {},
