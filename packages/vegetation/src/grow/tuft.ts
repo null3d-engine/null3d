@@ -792,7 +792,7 @@ export function meshTuft(input: MeshInput, level: MeshLevel): MeshArrays {
 				texture,
 				bytes,
 				crown,
-				true,
+				level === 0,
 			);
 			continue;
 		}

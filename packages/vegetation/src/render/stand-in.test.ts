@@ -154,6 +154,7 @@ describe('the stand-ins on the page', () => {
 				shoots: material('shoots'),
 				cards: material('cards'),
 				foliage: material('foliage'),
+				foliageFar: material('foliage'),
 				extras: material('extras'),
 			},
 			far,
