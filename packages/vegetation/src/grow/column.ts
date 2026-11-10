@@ -112,26 +112,29 @@ interface ArmPlan {
 	readonly rise: number;
 }
 
-/** One tier of arms: where its arms leave the stem and how far they rise after the elbow. */
+/** One tier of arms: where its arms leave the stem, how far they run out, and how far they rise. */
 interface ArmTier {
 	readonly from: number;
+	readonly elbow: number;
 	readonly rise: Spread;
 }
 
 /**
- * The record's arm tiers, lowest first. A record that names one starting share and one rise has one
- * tier, so every arm leaves and rises as it did before tiers were named.
+ * The record's arm tiers, lowest first. A record that names one starting share, one elbow and one
+ * rise has one tier, so every arm leaves and rises as it did before tiers were named.
  */
 function armTiers(arms: Column['arms']): ArmTier[] {
 	const froms: readonly number[] = typeof arms.from === 'number' ? [arms.from] : arms.from;
+	const elbows: readonly number[] = typeof arms.elbow === 'number' ? [arms.elbow] : arms.elbow;
 	const rises: readonly Spread[] = Array.isArray(arms.rise) ? arms.rise : [arms.rise as Spread];
-	if (froms.length === 0 || rises.length === 0)
+	if (froms.length === 0 || elbows.length === 0 || rises.length === 0)
 		throw new Error(
-			'@null3d/vegetation: the column record names an arm tier with no share or rise',
+			'@null3d/vegetation: the column record names an arm tier with no share, elbow or rise',
 		);
-	const tiers = Math.max(froms.length, rises.length);
+	const tiers = Math.max(froms.length, elbows.length, rises.length);
 	return Array.from({ length: tiers }, (_, i) => ({
 		from: froms[Math.min(i, froms.length - 1)] as number,
+		elbow: elbows[Math.min(i, elbows.length - 1)] as number,
 		rise: rises[Math.min(i, rises.length - 1)] as Spread,
 	}));
 }
@@ -152,7 +155,7 @@ function armPlans(input: GrowInput, growth: Column, height: number): ArmPlan[] {
 				turn + (2 * PI * k) / Math.max(1, count) + (draw(input, Purpose.ArmAzimuth, k) - 0.5) * 0.7,
 			// Each arm runs out its own distance before it turns up, so the elbows stand at different
 			// heights and the arms do not read as fingers from one point.
-			elbow: Math.max(0.1, growth.arms.elbow * (0.65 + 0.7 * draw(input, Purpose.ArmElbow, k))),
+			elbow: Math.max(0.1, tier.elbow * (0.65 + 0.7 * draw(input, Purpose.ArmElbow, k))),
 			rise: Math.max(0.2, spreadAt(tier.rise, draw(input, Purpose.ArmRise, k))),
 		});
 	}
