@@ -58,6 +58,11 @@ export class MeshWriter {
 		this.indices.push(a, b, c, a, c, d);
 	}
 
+	/** One triangle over the vertices a, b, c, counter-clockwise. */
+	tri(a: number, b: number, c: number): void {
+		this.indices.push(a, b, c);
+	}
+
 	/** The finished arrays, with 16-bit indices: a prototype or a leaf. */
 	finishPrototype(): PrototypeArrays {
 		if (this.vertices > 0xffff)
