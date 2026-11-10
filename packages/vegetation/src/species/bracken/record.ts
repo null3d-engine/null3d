@@ -38,6 +38,7 @@ export const record: Species = {
 		soil: {
 			rhizome: 0.55,
 			rhizomeRadius: 0.028,
+			body: true,
 			roots: 14,
 			rootLength: 0.2,
 			rootRadius: 0.004,

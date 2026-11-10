@@ -35,6 +35,12 @@ export const NODE_GROUND = 8;
  * @category api/vegetation
  */
 export const NODE_PILLAR = 16;
+/**
+ * Node flag: a soil body's node, such as a rhizome's, which is meshed although it has no parent.
+ *
+ * @category api/vegetation
+ */
+export const NODE_SOIL_BODY = 64;
 
 /**
  * Axis kind: a stem.

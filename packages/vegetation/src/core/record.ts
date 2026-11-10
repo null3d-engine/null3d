@@ -800,6 +800,11 @@ export interface TuftSoil {
 	readonly rhizome?: Spread;
 	/** The rhizome's radius in metres, at most the crown's own radius. */
 	readonly rhizomeRadius?: number;
+	/**
+	 * Whether the rhizome is drawn as a body of its own, meshed like wood; absent, it only anchors the
+	 * roots and draws no surface.
+	 */
+	readonly body?: boolean;
 	/** Roots that leave the crown and the rhizome. */
 	readonly roots: Spread;
 	/** A root's length in metres. */

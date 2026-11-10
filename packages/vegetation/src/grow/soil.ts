@@ -2,7 +2,7 @@
 // crown. A tuft draws it from its crown; a frond colony draws the same rhizome under its fronds when
 // its record gives one. A root runs below the soil, where a shoot's own path never goes, so it takes
 // its own node run rather than the arching one.
-import { AXIS_ROOT, type SkeletonBuilder } from '../core/graph';
+import { AXIS_ROOT, NODE_SOIL_BODY, type SkeletonBuilder } from '../core/graph';
 import { cos, radians, sin, type Vector3 } from '../core/math';
 import type { TuftSoil } from '../core/record';
 import { spreadAt } from '../core/types';
@@ -61,6 +61,7 @@ export function growSoil(
 				parent: previous < 0 ? -1 : previous,
 				axis,
 				light: 1,
+				flags: soil.body ? NODE_SOIL_BODY : 0,
 			});
 		}
 		from = axis;
