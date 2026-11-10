@@ -1,4 +1,13 @@
 {
+	"01-whole-distant.png": {
+		"fov": 51
+	},
+	"02-whole-profile.png": {
+		"fov": 51
+	},
+	"18-silhouette.png": {
+		"fov": 51
+	},
 	"04-crown-outside.png": {
 		"view": "crown",
 		"elevation": -20,
