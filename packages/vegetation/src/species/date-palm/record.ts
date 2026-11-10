@@ -78,10 +78,10 @@ export const record: Species = {
 				// Still 09: the leaflets are about a seventh of the frond's length at their longest,
 				// 40 to 45 cm on a mature frond, and shortest at its tip.
 				length: [
-					[0, 0.07],
-					[0.3, 0.073],
-					[0.65, 0.063],
-					[1, 0.031],
+					[0, 0.098],
+					[0.3, 0.1022],
+					[0.65, 0.0882],
+					[1, 0.0434],
 				],
 				angle: [
 					[0, 42],
