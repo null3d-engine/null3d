@@ -66,6 +66,8 @@ const LIMB_BARE = 0.3;
 /** The vigour a limb's first shoot site carries, and the rise from it to the limb's last. */
 const LIMB_VIGOUR = 0.06;
 const LIMB_VIGOUR_RISE = 0.2;
+/** The share of the way each measured height is rounded toward its azimuthal mean. */
+const ENVELOPE_ROUND = 0.35;
 
 /** The choices an axis makes, each its own hash purpose. */
 const Purpose = {
@@ -271,15 +273,15 @@ export function growArchitectural(input: GrowInput): MacroSkeleton {
 	const crownSpan = Math.max(0.001, height - crownBase);
 
 	// The outline caps the wood, with room left for the shoots that attach beyond it.
-	// The measured hull is as irregular as its views. Rounding each height toward its mean for half
-	// the way keeps the widest side and lifts the narrow ones, so no single view draws a thin crown.
+	// The measured hull is as irregular as its views. Rounding each height toward its mean by this
+	// share keeps the widest side and lifts the narrow ones, so no single view draws a thin crown.
 	const volume: EnvelopeVolume | undefined = record.envelope
 		? smoothedVolume(
 				insetVolume(
 					envelopeVolume(record.envelope, height, turn),
 					Math.max(0, shootReach(record) * 0.6),
 				),
-				0.5,
+				ENVELOPE_ROUND,
 			)
 		: undefined;
 
