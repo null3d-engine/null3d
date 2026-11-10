@@ -8,6 +8,8 @@ import type { SketchContext } from '@null3d/engine';
 import {
 	bakeFarPlant,
 	growPlant,
+	isSpeciesId,
+	loadSpeciesOrStandIn,
 	type PlacedPlants,
 	type PlantCopies,
 	type PlantMaterial,
@@ -15,7 +17,6 @@ import {
 	plantMaterials,
 	prepareSpecies,
 	type StandInOptions,
-	standInSpecies,
 } from '@null3d/vegetation';
 import type { WindField } from '@null3d/wind';
 
@@ -108,11 +109,21 @@ export async function plantSpecies(
 	let variants = options.variants ?? 0;
 	if (options.variants === undefined)
 		for (const spot of options.spots) variants = Math.max(variants, spot.variant + 1);
-	const module = Promise.resolve(
-		standInSpecies(options.id, { variants: Math.max(1, variants), ...options.standIn }),
-	);
+	// A species that has landed in the add-on draws as itself; one that has not draws as the stand-in
+	// the demo names, at that stand-in's size, colours and ecology.
+	const module = loadSpeciesOrStandIn(options.id, {
+		variants: Math.max(1, variants),
+		...options.standIn,
+	});
+	// A landed species takes its own textures and stages, and a stand-in takes the white textures the
+	// stand-in prepare draws. Passing the stand-in's flag for a landed species would draw its geometry
+	// with every texture white.
 	const kit = await inTurn('prepare', module, async () =>
-		prepareSpecies(ctx, await module, { placeholders: true }),
+		prepareSpecies(
+			ctx,
+			await module,
+			isSpeciesId(options.id) ? { placeholders: 'missing' } : { placeholders: true },
+		),
 	);
 	const grown = (async () => {
 		const assets = await Promise.all(
