@@ -141,9 +141,10 @@ export const record: Species = {
 				// The upper face's linear colour, read from stills 12 and 24 through the copy stand's
 				// measured light: a deep green at the photograph's own luminance.
 				reflectance: [0.042, 0.076, 0.006],
-				// The underside's linear colour, read the same way from stills 13 and 25: a glaucous
-				// blue-green with its blue raised toward the photographs.
-				reflectanceBack: [0.073, 0.109, 0.091],
+				// The underside's linear colour, read the same way from stills 13 and 25: the render's
+				// remaining difference is its missing blue, so the value takes the photographs' own
+				// measured ratio on that face.
+				reflectanceBack: [0.083, 0.114, 0.133],
 				transmittance: [0.04, 0.077, 0.01],
 				roughness: [0.45, 0.7],
 			},
