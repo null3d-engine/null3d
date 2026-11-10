@@ -26,5 +26,9 @@
 	},
 	"25-leaf-texture-underside.png": {
 		"roll": -45
+	},
+	"21-branch-studio.png": {
+		"cutFrom": 0,
+		"cutSpan": 4.2
 	}
 }
