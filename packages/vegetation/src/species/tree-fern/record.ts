@@ -38,13 +38,14 @@ export const record: Species = {
 			// Still 01 and the crown views: a dense living crown of three dozen fronds.
 			fronds: { mean: 34, spread: 2 },
 			divergence: 137.5,
-			// Still 01: the youngest fronds stand up in the centre and the oldest rise, arch over and
-			// hang at the tips, so the crown reads as a dome rather than a flat spread.
+			// Still 01: the youngest fronds stand nearly upright in the centre and the oldest arch
+			// over and hang down past the horizontal, so the crown reads as a deep dome rather
+			// than a flat spread.
 			tilt: [
-				[0, 8],
-				[0.35, 38],
-				[0.7, 70],
-				[1, 95],
+				[0, 4],
+				[0.35, 30],
+				[0.7, 80],
+				[1, 150],
 			],
 			// Stills 06 and 07: the fronds spring from one growing point at the trunk's top, where
 			// the old bases cluster, rather than clasping a length of stem as a palm's do.
@@ -72,12 +73,12 @@ export const record: Species = {
 			length: { mean: 1.5, spread: 0.15 },
 			// Still 07: a short red-brown stipe, densely hairy, no wider than the rachis.
 			petiole: { length: 0.28, width: 0.055, teeth: 0 },
-			// Still 21: the blade rises from the stipe and arches over, its tip drooping.
+			// Still 21: the blade rises from the stipe and arches gently, its tip turning over.
 			droop: [
-				[0, 2],
-				[0.25, 30],
-				[0.55, 70],
-				[1, 130],
+				[0, 0],
+				[0.3, 10],
+				[0.6, 17],
+				[1, 30],
 			],
 			twist: 4,
 			pinnae: {
