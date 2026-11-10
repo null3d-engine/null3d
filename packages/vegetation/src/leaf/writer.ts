@@ -6,11 +6,6 @@ import { cos, cross3, normalize3, sin, type Vector3 } from '../core/math';
 
 /** Surface kinds in a prototype's third colour byte: leaf, stem or bud, extra. */
 export const SURFACE_LEAF = 0;
-/**
- * The kind byte of a tuft's sheath columns. The colour's third byte carries a surface kind, and the
- * asset clamps a negative coordinate, so a kind here is the only marker that survives it.
- */
-export const SURFACE_SHEATH = 240;
 export const SURFACE_STEM = 85;
 /** A shoot's bud: drawn as its stem, in the record's bud colour where it gives one. */
 export const SURFACE_BUD = 128;

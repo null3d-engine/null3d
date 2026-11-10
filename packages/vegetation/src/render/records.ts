@@ -122,8 +122,6 @@ export const HEADER = {
 	cardStalk: 55,
 	/** Young bark: the tint its thin wood takes, where the record gives one. */
 	youngTint: 56,
-	/** A tuft's basal sheath colour, then its roughness, where the record names one. */
-	sheath: 65,
 	/** A grass blade's collar: its colour, then the share of the blade's base it takes. */
 	collar: 66,
 } as const;
@@ -362,9 +360,6 @@ export function speciesHeader(
 	});
 	const bud = record.shoots?.bud.colour;
 	if (bud) texel(header, HEADER.bud, [...bud, 1]);
-	const growth = record.growth;
-	if (growth.model === 'tuft' && growth.sheathColour)
-		texel(header, HEADER.sheath, [...growth.sheathColour, 0.8]);
 	const sway = windSway(record);
 	texel(header, HEADER.sway, [sway.amplitude, sway.frequency, 0, 0]);
 	texel(header, HEADER.cardStalk, [record.lod.cardStalk ?? 0, 0, 0, 0]);
