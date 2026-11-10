@@ -7,8 +7,9 @@
 // words. Record again after a scene gains a feature that turns on a new bit, or the build lacks the
 // word, and the engine names it the moment a pipeline asks for it.
 //
-// Usage, from the repository root, with the pages served by `bun run examples:preview`:
-//   bun tools/shader-permutations.ts --base http://localhost:5173 --out examples/shader-permutations.txt
+// Usage, from the repository root, with the pages served by `bun run examples:preview`, which
+// serves HTTPS by default:
+//   bun tools/shader-permutations.ts --base https://localhost:5173 --out examples/shader-permutations.txt
 //     [--pages demos] [--workers 4] [--extra a,b]
 // `--pages` names a page list: `demos` runs every demo of `examples/demos.ts` in hold mode at each
 // quality preset on both GPU paths, and then live, where it advances the scene and presses every
@@ -70,7 +71,7 @@ function options(): {
 		const at = args.indexOf(name);
 		return at < 0 ? undefined : args[at + 1];
 	};
-	const base = value('--base') ?? 'http://localhost:5173';
+	const base = value('--base') ?? 'https://localhost:5173';
 	const out = value('--out') ?? 'examples/shader-permutations.txt';
 	const workers = Math.max(1, Math.min(16, Number(value('--workers') ?? 4)));
 	const pages: Target[] = [];
@@ -150,7 +151,9 @@ const words = new Set<number>(extra);
 async function recordPage(entry: Target): Promise<void> {
 	const query = entry.path.includes('?') ? '&' : '?';
 	const url = `${base}${entry.path}${query}permutations=record`;
-	const tab = await browser.newPage();
+	// The examples preview serves the local certificate, which this browser has not been told to
+	// trust.
+	const tab = await browser.newPage({ ignoreHTTPSErrors: true });
 	try {
 		await tab.goto(url, { waitUntil: 'load', timeout: 120_000 });
 		if (entry.live) {

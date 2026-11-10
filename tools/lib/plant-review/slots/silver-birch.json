@@ -1,0 +1,114 @@
+{
+	"01-whole-distant.png": {
+		"daylight": 2.95,
+		"skyShare": 0.65
+	},
+	"02-whole-profile.png": {
+		"daylight": 2.95,
+		"skyShare": 0.65
+	},
+	"03-whole-from-below.png": {
+		"daylight": 4.1,
+		"skyShare": 0.65
+	},
+	"19-drooping-twig-ends.png": {
+		"view": "strands",
+		"daylight": 3.7,
+		"skyShare": 0.65,
+		"turn": 90
+	},
+	"20-autumn-yellow.png": {
+		"view": "whole",
+		"thin": null,
+		"span": null,
+		"season": "autumn",
+		"horizon": 1,
+		"targetX": 0.4883,
+		"sky": "#d0dcee",
+		"sunAzimuth": -19.1,
+		"sunRise": 37.1,
+		"top": 0.007,
+		"eye": 1.6,
+		"daylight": 3.7,
+		"skyShare": 0.7
+	},
+	"27-bark-texture-zone2.png": {
+		"barkZone": 0,
+		"daylight": 0.9
+	},
+	"28-young-bark.png": {
+		"thin": 0.03,
+		"daylight": 0.6
+	},
+	"15-bark-mid-trunk.png": {
+		"daylight": 0.95
+	},
+	"26-bark-texture.png": {
+		"daylight": 1.4
+	},
+	"30-woodland-form-whole.png": {
+		"daylight": 4.4,
+		"skyShare": 0.7
+	},
+	"31-young-birch-whole.png": {
+		"daylight": 3.85,
+		"skyShare": 0.65
+	},
+	"32-juvenile-bark.png": {
+		"form": "young"
+	},
+	"33-mature-dense-crown-whole.png": {
+		"view": "whole",
+		"horizon": 0.9512,
+		"targetX": 0.4891,
+		"sky": "#95c5f8",
+		"ground": "#8b8756",
+		"sunAzimuth": 20.5,
+		"sunRise": 39.8,
+		"fill": 0.9674,
+		"targetY": 0.4837,
+		"daylight": 2.85,
+		"skyShare": 0.4
+	},
+	"34-peeling-bark-macro.png": {
+		"span": 0.35,
+		"daylight": 0.9,
+		"lamp": "#fff6e8"
+	},
+	"35-catkins.png": {
+		"view": "twigs",
+		"fruit": true,
+		"season": "summer"
+	},
+	"birch-turntable.mp4": {
+		"daylight": 2.95,
+		"skyShare": 0.65
+	},
+	"birch-wind-motion.mp4": {
+		"daylight": 2.95,
+		"skyShare": 0.65
+	},
+	"18-silhouette.png": {
+		"daylight": 2.95,
+		"skyShare": 0.65
+	},
+	"12-single-leaf-upper.png": {
+		"leaves": 1.4,
+		"roll": 327
+	},
+	"13-single-leaf-underside.png": {
+		"leaves": 1.3,
+		"roll": 317
+	},
+	"24-leaf-texture-upper.png": {
+		"leaves": 1.45,
+		"roll": 0
+	},
+	"25-leaf-texture-underside.png": {
+		"leaves": 1.45,
+		"roll": 0
+	},
+	"22-subbranch-studio.png": {
+		"turn": 45
+	}
+}

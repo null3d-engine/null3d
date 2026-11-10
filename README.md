@@ -124,14 +124,16 @@ bun run build
 bun run dev
 ```
 
-Then open one of these pages in Chrome:
+The dev server serves HTTPS by default. A secure origin is what makes WebGPU, and so the High and Ultra presets, available. On a network address, a demo served over plain HTTP silently falls back to WebGL2 at Medium. `bun run dev-cert` makes the local certificate once. Then open one of these pages in Chrome:
 
 | Page | What it shows |
 | --- | --- |
-| `http://localhost:5173/bench/pages/null3d/s1.html?demo` | S1: 100,000 boxes, each moved every frame by sketch code |
-| `http://localhost:5173/bench/pages/null3d/s2.html?demo` | S2: a scene graph of 5,096 objects |
-| `http://localhost:5173/bench/pages/threejs/s1.html?renderer=webgl&demo` | S1 in three.js, to compare |
-| `http://localhost:5173/examples/` | The feature demos: one short sketch for each feature |
+| `https://localhost:5174/bench/pages/null3d/s1.html?demo` | S1: 100,000 boxes, each moved every frame by sketch code |
+| `https://localhost:5174/bench/pages/null3d/s2.html?demo` | S2: a scene graph of 5,096 objects |
+| `https://localhost:5174/bench/pages/threejs/s1.html?renderer=webgl&demo` | S1 in three.js, to compare |
+| `https://localhost:5174/examples/` | The feature demos: one short sketch for each feature |
+
+To open a demo from a second machine, use `https://<mac>.local:5174/` and accept the local certificate warning. `NULL3D_HTTPS=0 bun run dev` serves plain HTTP on port 5173. That suits a run that only this machine reaches.
 
 `bun run bench:run` measures S1 in both engines and prints a table of CPU time per frame.
 
@@ -328,16 +330,17 @@ Requirements:
 - The Rust toolchain through [rustup](https://rustup.rs/). The repository pins a nightly compiler, and rustup installs it on the first build.
 - Node.js 24 or newer, which runs the browser tests
 - Chrome for Testing, which the browser tests drive on your real GPU. `bun run chrome:install` installs the pinned build, which every copy of the repository shares
-- [mkcert](https://github.com/FiloSottile/mkcert), only to test on phones and tablets over HTTPS
+- [mkcert](https://github.com/FiloSottile/mkcert), which `bun run dev-cert` uses to make the local HTTPS certificate
 
 ```sh
 git clone https://github.com/null3d-engine/null3d.git
 cd null3d
 bun install              # installs the tools and the git hooks
 bun run build            # builds both WebAssembly files and prints their sizes
+bun run dev-cert         # makes the local HTTPS certificate that the dev server uses
 bun run test             # unit tests for the engine, the docs and the repository tools
 bun run test:browser     # image tests on WebGPU and WebGL2 in Chrome
-bun run dev              # serves the test pages, benchmark pages and demos with the isolation headers
+bun run dev              # serves the test pages, benchmark pages and demos over HTTPS with the isolation headers
 bun run bench:run        # measures S1 in null3d and three.js in Chrome and prints a table
 ```
 

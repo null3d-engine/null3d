@@ -11,15 +11,28 @@ import type { ImageTest } from '../lib/images.ts';
 const ROOT = join(import.meta.dirname, '../..');
 
 /**
- * Switches for the software GPU, per species. A dense evergreen's picture takes longer to draw on
- * SwiftShader than a page's wait allows, so its software picture draws the low tier's cards at every
- * distance and waits longer. Its real-GPU picture draws the high tier with the levels the record's
- * switches name.
+ * Seconds a species' four-panel picture may take. The panels stand three metres from the crown, so
+ * every shoot row inside that band is real geometry; a dense crown draws about six million triangles
+ * a frame, which a software rasteriser needs far longer for than the default sixty seconds allows.
  */
-const SOFTWARE: Readonly<
-	Record<string, { readonly switches?: readonly string[]; readonly timeoutSeconds?: number }>
-> = {
-	'italian-cypress': { switches: ['preset=low', 'lod=2'], timeoutSeconds: 300 },
+const PANELS_SECONDS = 120;
+
+/**
+ * Species whose own four panels need longer than the shared limit, with the seconds each was
+ * measured at.
+ *
+ * The measurement is taken with the load the picture run applies: a project's three tiers drawing
+ * together. The common alder's dense crown finished those in under four minutes and overran the
+ * shared two, so its value is 240 and a run against its accepted references passed all three tiers
+ * in three and a half minutes.
+ *
+ * Timing one tier alone is the trap: the same crown drew in 96 seconds that way, which says nothing
+ * about the load the suite runs under. It is the second figure this species corrected after taking
+ * it on the wrong load, the first being its young-bark color read against a picture that framed a
+ * great limb rather than young wood.
+ */
+const PANELS_SECONDS_BY_SPECIES: Readonly<Record<string, number>> = {
+	'common-alder': 240,
 };
 
 /** The picture test of each species folder. */
@@ -29,10 +42,11 @@ export function plantSpeciesTests(root = ROOT): ImageTest[] {
 		sketch: `tests/pages/sketches/plant-review-sketch.ts?species=${id}&view=panels`,
 		hold: 1,
 		size: [1024, 1024],
-		// A dense evergreen bakes its card atlas and draws its nearest band of real shoots on the
-		// software GPU, which takes longer than a broadleaf's page. The ceiling covers it, and a page
-		// that draws quickly still finishes quickly.
-		timeoutSeconds: SOFTWARE[id]?.timeoutSeconds ?? 150,
-		...(SOFTWARE[id]?.switches && { swiftShaderSwitches: SOFTWARE[id]?.switches }),
+		// Four panels of a whole plant, built and drawn from scratch: the merged foliage of a ground
+		// A dense crown takes longer than the default limit on the software GPU's slower path, so the
+		// panels draw the low preset's lighter meshes there; a species measured slower still takes its
+		// own limit.
+		timeoutSeconds: PANELS_SECONDS_BY_SPECIES[id] ?? PANELS_SECONDS,
+		swiftShaderSwitches: ['preset=low'],
 	}));
 }
