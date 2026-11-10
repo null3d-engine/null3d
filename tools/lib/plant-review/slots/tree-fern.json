@@ -1,12 +1,12 @@
 {
 	"01-whole-distant.png": {
-		"fov": 51
+		"distance": 6.8
 	},
 	"02-whole-profile.png": {
-		"fov": 51
+		"distance": 6.8
 	},
 	"18-silhouette.png": {
-		"fov": 51
+		"distance": 6.8
 	},
 	"04-crown-outside.png": {
 		"view": "crown",
