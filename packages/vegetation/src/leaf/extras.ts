@@ -786,7 +786,34 @@ function writeExtra(
 	}
 	const [x, y] = sideAxes(direction, [0, 1, 0]);
 	if ('petals' in shape) {
-		// A cup of petals: each petal a pointed blade from the centre, opening by the cup.
+		// A cup of petals: each petal a pointed blade from the centre, opening by the cup. A stalk of
+		// the record's length holds the cup along the shoot's own direction, so a corymb stands above
+		// its rosette; with no length the cup sits at its site, as before.
+		const length = Math.max(0, shape.stalk ?? 0);
+		const centre: Vector3 =
+			length > 0
+				? [
+						site.at[0] + site.direction[0] * length,
+						site.at[1] + site.direction[1] * length,
+						site.at[2] + site.direction[2] * length,
+					]
+				: site.at;
+		if (length > 0) {
+			const first = mesh.vertices;
+			lathe(
+				mesh,
+				[
+					[0.0017, 0],
+					[0.0013, length],
+				],
+				site.at,
+				site.direction,
+				4,
+				colour,
+			);
+			// The stalk is wood, so its vertices say so and take the extra's stalk colour.
+			for (let i = first; i < mesh.vertices; i++) mesh.uvs1[i * 2 + 1] = 1;
+		}
 		const open = radians(90 * (1 - Math.min(1, Math.max(0, shape.cup))));
 		for (let k = 0; k < shape.petals; k++) {
 			const a = turn + (2 * Math.PI * k) / shape.petals;
@@ -805,9 +832,9 @@ function writeExtra(
 			const r = shape.radius;
 			const w = (r * Math.PI) / shape.petals;
 			const point = (along: number, side: number): number[] => [
-				site.at[0] + petal[0] * along * r + across[0] * side * w,
-				site.at[1] + petal[1] * along * r + across[1] * side * w,
-				site.at[2] + petal[2] * along * r + across[2] * side * w,
+				centre[0] + petal[0] * along * r + across[0] * side * w,
+				centre[1] + petal[1] * along * r + across[1] * side * w,
+				centre[2] + petal[2] * along * r + across[2] * side * w,
 			];
 			const a0 = mesh.vertex(point(0, 0), normal, [0, 0], [0, 0], colour);
 			const a1 = mesh.vertex(point(0.55, 0.5), normal, [0, 0.55], [0, 0], colour);

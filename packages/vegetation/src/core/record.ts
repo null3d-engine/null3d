@@ -1727,7 +1727,16 @@ export type ExtraShape =
 			 */
 			readonly stalkSides?: number;
 	  }
-	| { readonly petals: number; readonly radius: number; readonly cup: number }
+	| {
+			readonly petals: number;
+			readonly radius: number;
+			readonly cup: number;
+			/**
+			 * Metres of stalk that holds the cup out from its site along the shoot's own direction.
+			 * Absent, the cup stands at its site as before.
+			 */
+			readonly stalk?: number;
+	  }
 	| { readonly spines: number; readonly length: number; readonly spread: number }
 	| { readonly catkin: { readonly length: number; readonly radius: number } };
 
