@@ -413,6 +413,12 @@
 		"date": "2026-11-02",
 		"reason": "the Mac drew these pictures with CI=1 for the demo's new room; the session that checks the landings replaces them from CI's own SwiftShader when a run draws them"
 	},
+	"chromium-swiftshader/webgl2/demo-creek.png": {
+		"test": "demo-creek",
+		"tier": "webgl2",
+		"date": "2026-11-10",
+		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head; this view completed at a load of 3.7, the lowest of the night, was compared before acceptance, and a CI drawing on a pull request replaces it"
+	},
 	"chromium-swiftshader/webgl2/demo-depth-only.png": {
 		"test": "demo-depth-only",
 		"tier": "webgl2",
