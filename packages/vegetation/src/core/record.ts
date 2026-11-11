@@ -2134,6 +2134,28 @@ export interface CutFromShoots {
 	 * default, and a cluster or a leaf keeps one whatever it names.
 	 */
 	readonly shoots?: number;
+	/**
+	 * The radius of the ring the fanned shoots stand on, as a share of the piece's height. A small
+	 * ring joins the shoots at the base; a wide one spreads them. Applies only where `shoots` names
+	 * more than one. 0.18 by default.
+	 */
+	readonly fanRing?: number;
+	/**
+	 * The degrees each fanned shoot leans outward from the piece's upright axis, so the shoots share
+	 * a base and diverge above it. Negative values lean them inward. 0 by default.
+	 */
+	readonly fanLean?: number;
+	/**
+	 * The share of a full turn each fanned shoot takes about the piece's axis, from 0 for every
+	 * shoot keeping the prototype's own leaf plane to 1 for an even fan. 1 by default.
+	 */
+	readonly fanSpin?: number;
+	/**
+	 * The degrees the whole piece turns about its upright axis before it is framed. A branch whose
+	 * side shoots lie in one plane shows that plane from the camera the pieces are drawn from, so a
+	 * species whose photograph lays the branch across the frame turns it by a quarter. 0 by default.
+	 */
+	readonly fanYaw?: number;
 }
 
 /**
