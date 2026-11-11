@@ -90,7 +90,8 @@
 	"19-thorns.png": {
 		"background": "studio-grey",
 		"leaves": 2.5,
-		"fruit": false
+		"fruit": false,
+		"season": "winter"
 	},
 	"20-flowers-spring.png": {
 		"view": "twigs",

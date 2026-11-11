@@ -14,9 +14,13 @@ const params = new URLSearchParams(location.search);
 /** The seed that the reference was recorded from. */
 const DEFAULT_SEED = 7;
 
-/** The checksum that every device and both GPU paths must give for the default seed. */
+/**
+ * The checksum that every device and both GPU paths must give for the default seed. It follows the
+ * waterline: the rules refuse ground at or below the water, which places 1,020 plants where the
+ * older bands placed 1,245.
+ */
 const REFERENCE: Record<number, number> = {
-	7: 2493806866,
+	7: 2006477110,
 };
 
 /** The seed to place with. */

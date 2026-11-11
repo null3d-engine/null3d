@@ -269,8 +269,9 @@ interface Candidate {
 /**
  * The axes a branch cut can start from, ranked: those of the wanted order (any order past the stems
  * when it is undefined): first those that carry bud sites in enough light to grow shoots (at or
- * above the record's shade line), then those whose subtree's extent is near `length`, then those
- * that divide, then by how near the extent is, then the sunniest.
+ * above the record's shade line), then those whose subtree's extent is near `length`, then a leafy
+ * shoot before a flowering head, then those that divide, then the thickest, then by how near the
+ * extent is, then the sunniest.
  */
 function candidates(
 	skeleton: MacroSkeleton,
