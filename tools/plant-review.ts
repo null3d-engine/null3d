@@ -551,7 +551,11 @@ async function correctWidths(
 		const cropped = measured.clipped && target < 1;
 		if (!off && !cropped) continue;
 		const close = shot.query.view === 'limb' && shot.query.surface === true;
-		const scale = measured.share / target;
+		// A whole view's framing already fits the plant's height, so a width share that would stand it
+		// closer crops that height: the picture keeps the further of the two distances, as the framing
+		// asks. A close view keeps its own crop bound.
+		const raw = measured.share / target;
+		const scale = close ? raw : Math.max(1, raw);
 		if (close && scale > CLOSE_CROP_MAX) continue;
 		if (!close && (scale < WHOLE_SCALE_MIN || scale > WHOLE_SCALE_MAX)) {
 			console.warn(
@@ -611,7 +615,8 @@ async function correctWidths(
 			if (measured === null) continue;
 			const off = Math.abs(measured.share - fix.target) > WIDTH_BAND;
 			const cropped = measured.clipped && fix.target < 1;
-			const scale = fix.scale * (measured.share / fix.target);
+			const raw = fix.scale * (measured.share / fix.target);
+			const scale = fix.close ? raw : Math.max(1, raw);
 			if (fix.close && scale > CLOSE_CROP_MAX) continue;
 			if (!fix.close && (scale < WHOLE_SCALE_MIN || scale > WHOLE_SCALE_MAX)) {
 				console.warn(

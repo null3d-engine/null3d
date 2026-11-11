@@ -1,12 +1,14 @@
 {
 	"04-arms-outside.png": {
-		"span": 0.9,
+		"span": 4.5,
 		"thin": 0.22,
-		"along": 0.35,
+		"along": 0.8,
 		"sunAzimuth": -20,
 		"sunRise": 55,
 		"skyShare": 0.3,
-		"daylight": 2.3
+		"daylight": 2.3,
+		"composition": "arms",
+		"elevation": 5
 	},
 	"05-arm-underside.png": {
 		"span": 0.8,
@@ -18,13 +20,15 @@
 		"daylight": 2.2
 	},
 	"06-between-arms.png": {
-		"span": 2.2,
+		"span": 3.5,
 		"thin": 0.22,
-		"along": 0.2,
+		"along": 0.75,
 		"sunAzimuth": -15,
 		"sunRise": 55,
 		"skyShare": 0.3,
-		"daylight": 2.3
+		"daylight": 2.3,
+		"composition": "between",
+		"elevation": 0
 	},
 	"08-arm-elbow.png": {
 		"span": 0.9,
