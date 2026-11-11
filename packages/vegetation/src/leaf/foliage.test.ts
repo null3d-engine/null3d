@@ -3,6 +3,7 @@
 // leaves low in a marcescent crown, and stay in leaf in summer.
 import { describe, expect, it } from 'bun:test';
 import type { ShootRows } from '../asset';
+import { AXIS_LIMB, AXIS_STEM, BUD_LATERAL, SkeletonBuilder } from '../core/graph';
 import { placeholderSkeleton } from '../core/placeholder';
 import type { NeedleShape, Species } from '../core/record';
 import type { Season } from '../core/types';
@@ -115,5 +116,149 @@ describe('the seasons on shoots', () => {
 		};
 		expect(inLeaf(blossom, 'blossom', 0.5, 0.2)).toBe(true);
 		expect(inLeaf(blossom, 'blossom', 0.5, 0.3)).toBe(false);
+	});
+});
+
+describe('the bare bole', () => {
+	const record = oakRecord();
+	// A stem to 10 m with a low limb near the trunk and a higher one at the same offset, so a bud can
+	// stand inside the column below its line, inside it above the line, and outside it.
+	const builder = new SkeletonBuilder();
+	const stem = builder.addAxis({ parent: -1, parentNode: -1, order: 0, kind: AXIS_STEM });
+	let below = -1;
+	for (let k = 0; k <= 10; k++) {
+		const node = builder.addNode({
+			x: 0,
+			y: k,
+			z: 0,
+			radius: 0.3 - 0.02 * k,
+			parent: below,
+			axis: stem,
+		});
+		if (k === 2) below = node;
+	}
+	const lowLimb = builder.addAxis({
+		parent: stem,
+		parentNode: below,
+		parentT: 0,
+		order: 1,
+		kind: AXIS_LIMB,
+	});
+	const near = builder.addNode({ x: 0.6, y: 2, z: 0, radius: 0.05, parent: -1, axis: lowLimb });
+	const far = builder.addNode({ x: 3, y: 2, z: 0, radius: 0.02, parent: near, axis: lowLimb });
+	const highLimb = builder.addAxis({
+		parent: stem,
+		parentNode: builder.addNode({
+			x: 0,
+			y: 6,
+			z: 0,
+			radius: 0.2,
+			parent: -1,
+			axis: stem,
+		}) as number,
+		parentT: 0,
+		order: 1,
+		kind: AXIS_LIMB,
+	});
+	const high = builder.addNode({ x: 0.6, y: 6, z: 0, radius: 0.04, parent: -1, axis: highLimb });
+	const frame = [0, 0, 0, 1];
+	builder.addBud({
+		node: near,
+		x: 0.6,
+		y: 2,
+		z: 0,
+		frame,
+		kind: BUD_LATERAL,
+		vigor: 0.5,
+		light: 1,
+		axis: lowLimb,
+		woodRadius: 0.02,
+	});
+	builder.addBud({
+		node: far,
+		x: 3,
+		y: 2,
+		z: 0,
+		frame,
+		kind: BUD_LATERAL,
+		vigor: 0.5,
+		light: 1,
+		axis: lowLimb,
+		woodRadius: 0.01,
+	});
+	builder.addBud({
+		node: high,
+		x: 0.6,
+		y: 6,
+		z: 0,
+		frame,
+		kind: BUD_LATERAL,
+		vigor: 0.5,
+		light: 1,
+		axis: highLimb,
+		woodRadius: 0.02,
+	});
+	const skeleton = builder.finish();
+	const rowsFor = (species: Species) =>
+		placeShoots({
+			record: species,
+			seed: 11,
+			variant: 0,
+			season: 'summer',
+			kit: { ...testKit(record), record: species },
+			skeleton,
+		});
+	const withBole = (bareBole: { radius: number; height: number } | undefined): Species => ({
+		...record,
+		shoots: { ...record.shoots!, placement: { ...record.shoots!.placement, bareBole } },
+	});
+	const feet = (rows: ShootRows) => {
+		const out: string[] = [];
+		for (let r = 0; r < rows.count; r++)
+			out.push([0, 1, 2].map((k) => (rows.position[r * 3 + k] as number).toFixed(2)).join(','));
+		return out.sort();
+	};
+
+	it('places exactly as before where no record names a column', () => {
+		expect(rowsFor(withBole(undefined))).toEqual(rowsFor(record));
+	});
+
+	it('keeps every shoot out of the column the record names, below its line', () => {
+		const bole = { radius: 1.2, height: 0.5 };
+		const rows = rowsFor(withBole(bole));
+		const plain = rowsFor(record);
+		// The buds on the limb are within the column below its line, and their shoots spread along it,
+		// so the plain case has rows just off the stem; the column takes them all.
+		const inside = (build: typeof rows) => {
+			let count = 0;
+			for (let r = 0; r < build.count; r++) {
+				const y = build.position[r * 3 + 1] as number;
+				if (y >= bole.height * skeleton.height) continue;
+				if (
+					Math.hypot(build.position[r * 3] as number, build.position[r * 3 + 2] as number) <
+					bole.radius
+				)
+					count++;
+			}
+			return count;
+		};
+		expect(inside(plain)).toBeGreaterThan(0);
+		expect(inside(rows)).toBe(0);
+		// The far bud keeps its shoots, and the high one inside the radius does too: a column, not a floor.
+		const near = (build: typeof rows, x: number, y: number) => {
+			let count = 0;
+			for (let r = 0; r < build.count; r++)
+				if (
+					Math.hypot(
+						(build.position[r * 3] as number) - x,
+						(build.position[r * 3 + 1] as number) - y,
+					) < 0.3
+				)
+					count++;
+			return count;
+		};
+		expect(near(rows, 3, 2)).toBeGreaterThan(0);
+		expect(near(rows, 0.6, 6)).toBeGreaterThan(0);
+		expect(rows.count).toBeLessThan(plain.count);
 	});
 });

@@ -32,8 +32,10 @@ describe('copiesOf', () => {
 	it('passes a pair that the branch took before the rule, by its ids', () => {
 		const reached = [commit('a'), commit('b')];
 		expect(copiesOf(reached, new Set(['a', 'b']), () => 'same change', [['b', 'a']])).toEqual([]);
-		// Fourteen pairs, by full ids, so a copy under another id is still refused.
-		expect(KNOWN_COPIES).toHaveLength(14);
+		// Forty-one pairs, by full ids, so a copy under another id is still refused. Twenty-five of
+		// them arrived together with the redraw, which replayed the species branches onto a
+		// milestone that already held each of those changes.
+		expect(KNOWN_COPIES).toHaveLength(41);
 		for (const pair of KNOWN_COPIES) for (const sha of pair) expect(sha).toMatch(/^[0-9a-f]{40}$/);
 	});
 

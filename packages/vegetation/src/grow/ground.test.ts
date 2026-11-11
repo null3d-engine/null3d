@@ -11,8 +11,17 @@ import { join } from 'node:path';
 import { type PlantAsset, plantAssetDigest, type SpeciesKitData } from '../asset';
 import { capsFor, variantBytesOf } from '../core/caps';
 import { speciesProblems } from '../core/check';
-import { AXIS_CULM, BUD_FLOWER, BUD_TERMINAL, type MacroSkeleton } from '../core/graph';
+import {
+	AXIS_CULM,
+	AXIS_LIMB,
+	AXIS_ROOT,
+	BUD_FLOWER,
+	BUD_TERMINAL,
+	type MacroSkeleton,
+} from '../core/graph';
 import type { GrassBlade, Species, ThickLeaf } from '../core/record';
+import { loadSpecies } from '../core/registry';
+import { noTextureFiles } from '../core/textures';
 import { DETAILS } from '../core/types';
 import { buildKitNow, growPlantNow, loadPlantCode } from '../generate';
 import type { PlantTaskInput } from '../generate-task';
@@ -295,6 +304,90 @@ describe('the pendulous sedge', () => {
 		expect(top).toBeLessThan(2);
 		expect(topOf(skeleton, AXIS_LEAF)).toBeGreaterThan(0.45);
 		expect(assetOf(sedgeRecord).levels[0].parts.map((part) => part.name)).toContain('extras');
+	});
+
+	it("gives each hanging spike's stalk the share of the stem's radius the record asks", () => {
+		const growth = sedgeRecord.growth;
+		if (growth.model !== 'tuft' || !growth.heads) throw new Error('the fixture is not a tuft');
+		const heads = { ...growth.heads, stalkShare: 0.6 };
+		const shared: Species = {
+			...sedgeRecord,
+			id: 'sedge-stalk-share',
+			growth: { ...growth, heads },
+		};
+		const kit = buildKitNow(
+			{ record: shared, textures: noTextureFiles(shared.id) },
+			{ placeholders: 'missing' },
+		);
+		const { skeleton } = growPlantNow(kit, OPTIONS);
+		let stalks = 0;
+		for (let a = 0; a < skeleton.axes.count; a++) {
+			const parent = skeleton.axes.parent[a] as number;
+			if (parent < 0) continue;
+			if ((skeleton.axes.kind[a] as number) !== AXIS_LIMB) continue;
+			if ((skeleton.axes.kind[parent] as number) !== AXIS_CULM) continue;
+			const radius = skeleton.radius[skeleton.axes.first[a] as number] as number;
+			expect(radius).toBeCloseTo(heads.radius * 0.6, 3);
+			stalks++;
+		}
+		expect(stalks).toBeGreaterThan(3);
+	});
+
+	it('draws the rhizome and its roots under the crown when the record names them', () => {
+		const growth = sedgeRecord.growth;
+		if (growth.model !== 'tuft') throw new Error('the fixture is not a tuft');
+		const soil = {
+			rhizome: { mean: 0.04, spread: 0.01 },
+			rhizomeRadius: 0.011,
+			roots: { mean: 15, spread: 3 },
+			rootLength: { mean: 0.14, spread: 0.05 },
+			rootRadius: 0.0018,
+			droop: { mean: 40, spread: 15 },
+		};
+		const rhizomed: Species = { ...sedgeRecord, id: 'sedge-rhizome', growth: { ...growth, soil } };
+		const kit = buildKitNow(
+			{ record: rhizomed, textures: noTextureFiles(rhizomed.id) },
+			{ placeholders: 'missing' },
+		);
+		const bare = growPlantNow(kitOf(sedgeRecord), OPTIONS);
+		const { skeleton, levels } = growPlantNow(kit, OPTIONS);
+		let under = 0;
+		let lowest = 0;
+		let reach = 0;
+		// Axis 0 is the crown's own, which holds the shoots; the rest are the rhizome and its roots.
+		for (let a = 1; a < skeleton.axes.count; a++) {
+			if ((skeleton.axes.kind[a] as number) !== AXIS_ROOT) continue;
+			under++;
+			for (let n = skeleton.axes.first[a] as number; n <= (skeleton.axes.last[a] as number); n++) {
+				lowest = Math.min(lowest, skeleton.position[n * 3 + 1] as number);
+				reach = Math.max(
+					reach,
+					Math.hypot(skeleton.position[n * 3] as number, skeleton.position[n * 3 + 2] as number),
+				);
+			}
+		}
+		expect(under).toBeGreaterThan(5);
+		expect(lowest).toBeLessThan(-0.01);
+		expect(reach).toBeGreaterThan(0.1);
+		expect(levels[0].triangles).toBeGreaterThan(bare.levels[0].triangles);
+		expect(levels[1].triangles).toBe(bare.levels[1].triangles);
+		expect(levels[2].triangles).toBe(bare.levels[2].triangles);
+	});
+
+	it("leaves an unrhizomed plant's blades and stems byte-identical", async () => {
+		const module = await loadSpecies('sedge');
+		const growth = module.record.growth;
+		if (growth.model !== 'tuft') throw new Error('the species is not a tuft');
+		expect(growth.soil).toBeDefined();
+		const { soil: _soil, ...bare } = growth;
+		const kit = buildKitNow(
+			{ record: { ...module.record, growth: bare }, textures: noTextureFiles(module.record.id) },
+			{ placeholders: 'missing', detail: 'high' },
+		);
+		// The plant's bytes with the soil block stripped, at this record: a plant that names no
+		// soil grows exactly these. A deliberate record change re-records the figure, and the
+		// growth path that reads no soil must not move it.
+		expect(plantAssetDigest(growPlantNow(kit, OPTIONS))).toBe('8bf941dc30511c5c');
 	});
 
 	it('ends its blades in long fine points', () => {

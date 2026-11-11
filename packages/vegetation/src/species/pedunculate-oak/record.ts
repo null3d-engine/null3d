@@ -255,7 +255,7 @@ export const record: Species = {
 			// The reference's crown is denser than the curve alone gives: this is the dial, not a
 			// change of reach or part size. The low limbs now keep the foliage they carry below the
 			// bole's line, so the dial sits lower than it did when that foliage was missing.
-			density: 1.25,
+			density: 1,
 			// No shade line and no starved-tip line: the sky prune below takes the same wood, so one rule
 			// that can be read stands where three stood. A shade line is still there for a species that
 			// cannot prune by the sky its own leaves block.
@@ -287,7 +287,7 @@ export const record: Species = {
 			wave: [0.003, 5],
 			optics: {
 				reflectance: [0.0429, 0.0864, 0.0194],
-				reflectanceBack: [0.2344, 0.2975, 0.232],
+				reflectanceBack: [0.2344, 0.2975, 0.212],
 				transmittance: [0.091, 0.195, 0.0195],
 				roughness: [0.45, 0.6],
 			},
@@ -295,15 +295,25 @@ export const record: Species = {
 	},
 	bark: {
 		zones: [
-			// The bole: stills 26 and 15 show one bark under a flat light and under daylight, so one
-			// tint keeps the flat-lit grey and the mid-trunk grey-brown close to both.
-			{ layer: 0, by: 'height', from: 0, to: 3.6, blend: 0.4, tint: [1.04, 1.02, 0.94] },
-			// The great limbs stand in brighter light than the bole and read lighter and cooler than
-			// still 16, so they take a warmer, darker tint of their own above it.
-			{ layer: 0, by: 'height', from: 3.6, to: 40, blend: 0.6, tint: [0.45, 0.42, 0.28] },
+			// The foot stands in shade under the crown, where the bark's own albedo is a small part of
+			// what the picture shows, so its tint deepens the bark a little. It changes over the
+			// longest blend the foot allows, so the flare's colour never steps.
+			{ layer: 0, by: 'height', from: 0, to: 1.2, blend: 0.8, tint: [0.78, 0.71, 0.38] },
+			// The bole's bark is dark: the mid-trunk photograph shows its own tone under the page's
+			// daylight, so this tint scales the sampled colour to match it. The flat-lit texture source
+			// drawing the same wood sits a little dark beside its photograph, but a texture source
+			// sets no row.
+			{ layer: 0, by: 'height', from: 1.2, to: 3.6, blend: 1, tint: [0.69, 0.67, 0.62] },
+			// The great limbs stand in brighter light than the bole and read a little lighter and
+			// warmer than still 16. Their tint stays close to the bole's and changes over a long blend,
+			// so a limb that crosses the zone's height keeps one colour along its length.
+			{ layer: 0, by: 'height', from: 3.6, to: 40, blend: 2, tint: [0.52, 0.56, 0.18] },
 		],
 		young: 0,
-		youngRadius: 0.08,
+		// The young bark is the smooth grey-green of a young shoot, and the photographs of it are
+		// pale. Only truly thin wood keeps it, so a sub-branch the size of a sapling's stem reads as
+		// the same wood as the limb it leaves, a shade lighter, rather than turning pale grey.
+		youngRadius: 0.05,
 		girthScale: [
 			[0, 0.6],
 			[1, 1],
@@ -312,10 +322,10 @@ export const record: Species = {
 		collar: { swell: 0.45, length: 1.8, ridge: 0.6 },
 		// Still 07's limb leaves the trunk on a long, smooth curve under it, not a tight corner.
 		fork: { bend: 3 },
-		moss: { amount: 0.7, up: 1.6, north: 0.3, colour: [0.18, 0.22, 0.06] },
+		moss: { amount: 0.35, up: 1.2, north: 0.3, colour: [0.18, 0.22, 0.06] },
 		// Still 16's limb carries pale sage rosettes on its crests, so the lichen reaches the great
 		// limbs as well as the bole, in the fine flecks the bark shows through.
-		lichen: { amount: 0.65, from: 0.6, colour: [0.36, 0.38, 0.26] },
+		lichen: { amount: 0.3, from: 0.6, colour: [0.36, 0.38, 0.26] },
 	},
 	base: {
 		// Stills 01, 02, 17 and 18 flare the foot to about 1.8 times the bole a quarter metre up, 1.5
@@ -323,14 +333,21 @@ export const record: Species = {
 		// deep furrows between them, each running out over the leaf litter as a root, so the lobes
 		// and the roots take it between them and the round flare stays small.
 		flare: { amount: 0.3, height: 0.5 },
-		buttress: { lobes: { mean: 5, spread: 1 }, amount: 0.6, sharpness: 3, height: 0.6, round: 0.3 },
-		// Still 14's roots stand out of the litter as round-topped ridges that sink as they run out.
+		buttress: {
+			lobes: { mean: 9, spread: 1.5 },
+			amount: 0.55,
+			sharpness: 5,
+			height: 0.6,
+			round: 0.15,
+		},
+		// Still 14's roots stand out of the litter as round-topped ridges that sink as they run out;
+		// more, narrower toes carry the flare, so the foot reads as legs rather than a skirt.
 		roots: {
-			count: { mean: 5, spread: 1 },
+			count: { mean: 8, spread: 1.5 },
 			length: { mean: 1.6, spread: 0.3 },
-			radius: 0.42,
+			radius: 0.32,
 			dive: 0.3,
-			ridge: 0.95,
+			ridge: 1,
 		},
 		// The furrows between the buttress roots of still 14 come from the lobes; the flutes only
 		// break the foot's regularity.
@@ -446,6 +463,10 @@ export const record: Species = {
 	textures: 'own',
 	variants: 6,
 	seedSalt: 1121298234,
+	// A phone grows this oak lighter than a desktop: below about half the record's wood and leaf the
+	// open-grown dome closes into a ball, and past this coarsening the twigs it hangs its leaves on
+	// start to break. These floors are a first pass and are measured against the phone set.
+	sparse: { limbs: 0.35, leaves: 0.42, coarseness: 0.6 },
 	roundBand,
 	// The woodland oak of stills 30 and 31 and the young oak of still 32.
 	forms,

@@ -117,6 +117,16 @@ describe('the phyllotaxis of a shoot, measured by angle', () => {
 			expect(near(step(nodes[k - 1]?.[0] as number, nodes[k]?.[0] as number), 180)).toBe(true);
 	});
 
+	it('turns each node past the opposite rank where the class sets a turn', () => {
+		const turned = azimuthsByNode(straight({ kind: 'distichous', flatten: 0.8, turn: 20 }));
+		for (let k = 1; k < turned.length; k++)
+			expect(near(step(turned[k - 1]?.[0] as number, turned[k]?.[0] as number), 200)).toBe(true);
+		// Without the turn the same record's leaves step by the opposite rank alone, in one plane.
+		const flat = azimuthsByNode(straight({ kind: 'distichous', flatten: 0.8 }));
+		for (let k = 1; k < flat.length; k++)
+			expect(near(step(flat[k - 1]?.[0] as number, flat[k]?.[0] as number), 180)).toBe(true);
+	});
+
 	it('pairs opposite leaves, crossing each pair with the next when decussate', () => {
 		for (const decussate of [false, true]) {
 			const nodes = azimuthsByNode(straight({ kind: 'opposite', decussate }));
@@ -320,6 +330,49 @@ describe('the shoot prototypes', () => {
 					(reach[2] as number) * 0.05 + bud,
 				);
 		}
+	});
+
+	it("keeps a two-ranked shoot's laterals in the plane of its leaf ranks", () => {
+		const base = oakRecord();
+		const shoots = base.shoots as NonNullable<typeof base.shoots>;
+		const twoRanked: Species = {
+			...base,
+			shoots: {
+				...shoots,
+				phyllotaxis: { kind: 'distichous', flatten: 1 },
+				orders: 3,
+				years: 3,
+				stem: { ...shoots.stem, zigzag: 0 },
+				classes: shoots.classes.map((c) => ({ ...c, years: 3, droop: 0, internode: 1 })),
+			},
+		};
+		const plan = planShoot(twoRanked, shoots.prototypes - 1, 1);
+		expect(plan.axes.length).toBeGreaterThan(1);
+		const direction = (axis: (typeof plan.axes)[number]): number[] => {
+			const first = axis[0] as { at: readonly number[] };
+			const last = axis[axis.length - 1] as { at: readonly number[] };
+			return normalize3([
+				(last.at[0] as number) - (first.at[0] as number),
+				(last.at[1] as number) - (first.at[1] as number),
+				(last.at[2] as number) - (first.at[2] as number),
+			]) as number[];
+		};
+		const main = direction(plan.axes[0] as (typeof plan.axes)[number]);
+		// Each lateral's direction, square to the main axis: a flat shoot keeps them on one line.
+		const flat = plan.axes.slice(1).map((axis) => {
+			const d = direction(axis);
+			const along = d[0]! * main[0]! + d[1]! * main[1]! + d[2]! * main[2]!;
+			return normalize3([
+				d[0]! - along * main[0]!,
+				d[1]! - along * main[1]!,
+				d[2]! - along * main[2]!,
+			]) as number[];
+		});
+		const first = flat[0] as number[];
+		for (const p of flat)
+			expect(Math.abs(p[0]! * first[0]! + p[1]! * first[1]! + p[2]! * first[2]!)).toBeGreaterThan(
+				0.95,
+			);
 	});
 
 	it('crowds the leaves at the shoot tip round its bud cluster', () => {
@@ -1132,5 +1185,55 @@ describe('the bare trim', () => {
 		const skeleton = tree();
 		const ends = [1, 2, 3, 5, 6].map((a) => skeleton.axes.last[a] as number);
 		expect(bareTrimmed(skeleton, ends, [1, 2, 3, 5, 6], 0.05, 1)).toBeUndefined();
+	});
+});
+
+describe('the plate run', () => {
+	/** Internodes that crowd three leaves, open out, then crowd three more. */
+	const BUNCHED: readonly (readonly [number, number])[] = [
+		[0, 1.5],
+		[0.15, 0.3],
+		[0.45, 0.3],
+		[0.6, 1.5],
+		[0.8, 0.3],
+		[1, 0.3],
+	];
+	const withCurve = (plate: boolean): Species => {
+		const base = oakRecord();
+		return {
+			...base,
+			shoots: {
+				...base.shoots!,
+				// A strong zigzag, so a blade that keeps its own node's frame visibly turns away.
+				stem: { ...base.shoots!.stem, zigzag: 40 },
+				placement: { ...base.shoots!.placement, plate },
+				classes: base.shoots!.classes.map((c) => ({ ...c, internode: BUNCHED })),
+			},
+		};
+	};
+	/** The runs of consecutive crowded nodes, each with its blades. */
+	const runs = (plan: ShootPlan): PlannedLeaf[][] => {
+		const crowded = plan.leaves
+			.filter((leaf) => leaf.crowded >= 0.4)
+			.sort((a, b) => a.node - b.node);
+		const groups: PlannedLeaf[][] = [];
+		for (const leaf of crowded) {
+			const last = groups[groups.length - 1] as PlannedLeaf[] | undefined;
+			if (last && leaf.node === (last[last.length - 1] as PlannedLeaf).node + 1) last.push(leaf);
+			else groups.push([leaf]);
+		}
+		return groups.filter((group) => group.length > 1);
+	};
+	const shared = (group: PlannedLeaf[]) =>
+		group.every((leaf) => leaf.sky.every((v, k) => v === (group[0] as PlannedLeaf).sky[k]));
+
+	it('holds a run of crowded nodes to one face where the record asks', () => {
+		const on = runs(planShoot(withCurve(true), 0, 1));
+		const off = runs(planShoot(withCurve(false), 0, 1));
+		expect(on.length).toBeGreaterThan(0);
+		expect(off.length).toBe(on.length);
+		// With the field every blade of a run keeps the run's first face; without it they turn apart.
+		for (const group of on) expect(shared(group)).toBe(true);
+		expect(off.some((group) => !shared(group))).toBe(true);
 	});
 });

@@ -23,6 +23,16 @@ const IMAGE_PAGE = '/tests/pages/image.html';
 const SKETCH = '/tests/pages/sketches/plant-review-sketch.ts';
 /** How long one page may take, in milliseconds: the first page builds its shaders. */
 const PAGE_TIMEOUT = 600_000;
+/**
+ * How many times the tool asks a page for the result it published. A browser that cannot return a
+ * large result by value answers with nothing rather than an error, and the page keeps its result, so
+ * a later ask reads it.
+ */
+const RESULT_READS = 4;
+/** How long the tool waits before asking a page again for the result it published, in milliseconds. */
+const RESULT_RETRY_MS = 750;
+/** How many characters of a page's pixels one read returns, which keeps that return small. */
+const PIXEL_SLICE = 4_000_000;
 /** The most cells one sheet holds, which keeps a sheet's canvas inside the GPU's limits. */
 export const SHEET_CELLS = 24;
 /** The most columns a sheet has. */
@@ -159,7 +169,7 @@ export function singleShot(
 }
 
 /** What the image page published for one page. */
-interface PageResult {
+export interface PageResult {
 	ok?: boolean;
 	error?: string;
 	width?: number;
@@ -170,6 +180,65 @@ interface PageResult {
 
 /** The browser that the shots are drawn in. */
 type Browser = Awaited<ReturnType<typeof launchRepoBrowser>>;
+
+/** One page of the browser. */
+type Page = Awaited<ReturnType<Browser['newPage']>>;
+
+/**
+ * Reads the result a page published, asking again while the browser hands back nothing. The page
+ * keeps its result after it publishes, so a result that a loaded browser could not pass back whole
+ * is read by a later ask, or in pieces.
+ */
+export async function readPublished(page: Page): Promise<PageResult> {
+	for (let read = 1; read <= RESULT_READS; read++) {
+		const result = (await page.evaluate(
+			() => (globalThis as { __null3dResult?: unknown }).__null3dResult,
+		)) as PageResult | undefined;
+		if (result !== undefined) return result;
+		if (read < RESULT_READS) await new Promise((settle) => setTimeout(settle, RESULT_RETRY_MS));
+	}
+	const pieces = await readInPieces(page);
+	if (pieces !== undefined) return pieces;
+	throw new Error(
+		`the page published a result, and the browser returned none of it in ${RESULT_READS} reads`,
+	);
+}
+
+/** A page's result with its pixels replaced by their length, as the piecewise read first asks. */
+type ResultWithoutPixels = Omit<PageResult, 'pixels'> & { readonly pixels: number | null };
+
+/**
+ * Reads a result that the browser would not pass back whole, in pieces: the small fields first, then
+ * the pixels in slices. The page keeps its result, so every piece comes from the one held object.
+ */
+async function readInPieces(page: Page): Promise<PageResult | undefined> {
+	const whole = (await page.evaluate(() => {
+		const held = (globalThis as { __null3dResult?: unknown }).__null3dResult;
+		if (held === undefined || held === null) return undefined;
+		const { pixels, ...rest } = held as Record<string, unknown>;
+		return { ...rest, pixels: typeof pixels === 'string' ? pixels.length : null };
+	})) as ResultWithoutPixels | undefined;
+	if (whole === undefined) return undefined;
+	const length = whole.pixels;
+	if (typeof length !== 'number') {
+		const { pixels: _length, ...rest } = whole;
+		return rest;
+	}
+	const slices: string[] = [];
+	for (let at = 0; at < length; at += PIXEL_SLICE) {
+		slices.push(
+			(await page.evaluate(
+				([from, size]: readonly [number, number]) =>
+					(
+						(globalThis as { __null3dResult?: { pixels?: string } }).__null3dResult?.pixels ?? ''
+					).slice(from, from + size),
+				[at, PIXEL_SLICE] as const,
+			)) as string,
+		);
+	}
+	const { pixels: _length, ...rest } = whole;
+	return { ...rest, pixels: slices.join('') };
+}
 
 /** The canvas size of a shot: its cells in its grid. */
 function canvasOf(shot: Shot): [number, number] {
@@ -187,7 +256,11 @@ async function drawPage(
 	hold: number,
 	gpu: string | undefined,
 ): Promise<{ image: Rgba; facts: Record<string, unknown> | undefined }> {
-	const page = await browser.newPage({ viewport: { width: size[0], height: size[1] } });
+	// The dev server serves the local certificate, which this browser has not been told to trust.
+	const page = await browser.newPage({
+		viewport: { width: size[0], height: size[1] },
+		ignoreHTTPSErrors: true,
+	});
 	try {
 		const params = new URLSearchParams({
 			sketch: `${SKETCH}?${plantReviewQuery({ ...query, size })}`,
@@ -202,9 +275,7 @@ async function drawPage(
 			undefined,
 			{ timeout: PAGE_TIMEOUT },
 		);
-		const result = (await page.evaluate(
-			() => (globalThis as { __null3dResult?: unknown }).__null3dResult,
-		)) as PageResult;
+		const result = await readPublished(page);
 		if (result.ok !== true) throw new Error(result.error ?? 'the page published no result');
 		return {
 			image: {
@@ -252,7 +323,9 @@ export async function drawShots(
 	options: { readonly gpu?: string; readonly log?: (line: string) => void } = {},
 ): Promise<RunFrame[]> {
 	const log = options.log ?? console.log;
-	const server = await startServer();
+	// A checkout without a development certificate draws over plain HTTP on the loopback, as the
+	// server asks: the environment's choice reaches the server instead of being forced to HTTPS.
+	const server = await startServer(process.env.NULL3D_HTTPS !== '0');
 	const browser = await launchRepoBrowser(defaultEnvironment());
 	const frames: RunFrame[] = [];
 	try {

@@ -288,11 +288,11 @@ does not create it again.
 
 | Measure | Value |
 | --- | --- |
-| The test model | A heightfield of 32,768 triangles, a tree of 511 patches and 202,032 indices |
+| The test model | A heightfield of 32,768 triangles, a tree of 514 patches and 196,941 indices |
 | Per-patch buffers | 4 bytes a patch for the runs, and 4 for each group of 64 patches for their total and its offset |
 | The view's list | 4 bytes an index, sized to the indices that the view picks in the frame, with a sixteenth and three patches to spare, and half again when it grows |
-| The scene's tables | 32 bytes a patch and 4 bytes an index, shared by every view: 824,480 bytes for the test model |
-| Per-view buffers, allocated | About 1.16 MiB for the test model, half again the bytes in use |
+| The scene's tables | 32 bytes a patch and 4 bytes an index, shared by every view: 804,212 bytes for the test model |
+| Per-view buffers, allocated | About 1.16 MiB for the earlier 511-patch tree, half again the bytes in use |
 | The benchmark's ground | 2,000,000 triangles and 1,002,001 vertices in 16 parts or more, a tree of 32,768 patches and 13,154,310 indices |
 | The ground's scene tables | 1 MiB of patches and 52.6 MB of indices, 41% of the 128 MiB binding |
 | The ground's view list | The indices that each view picks: about 420,000 in the walk view, whose camera draws 139,929 of the ground's triangles, so 1.7 MB and up to half again; 256 KiB of runs and offsets |

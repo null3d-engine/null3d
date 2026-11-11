@@ -397,6 +397,40 @@ function placedRows(input: DressInput, bySky = true): Row[] {
 	const pick = (purpose: number, a = 0, b = 0) => hashAt(seed, salt, variant * 64 + purpose, a, b);
 	const buds = skeleton.buds;
 	const position = skeleton.position;
+	// The bare column round each stem, below its share of the plant's height: an open-grown tree's
+	// trunk and the bases of its great limbs carry no foliage, so the bole reads through the crown.
+	const bole = shoots.placement.bareBole;
+	const boleRadius = bole ? Math.max(0, bole.radius) : 0;
+	const boleTop = bole ? Math.max(0, bole.height) * skeleton.height : 0;
+	const stems: { base: Vector3; dir: Vector3 }[] = [];
+	if (boleRadius > 0 && boleTop > 0)
+		for (let a = 0; a < skeleton.axes.count; a++) {
+			if ((skeleton.axes.parent[a] as number) >= 0) continue;
+			const first = skeleton.axes.first[a] as number;
+			const last = skeleton.axes.last[a] as number;
+			const base: Vector3 = [
+				position[first * 3] as number,
+				position[first * 3 + 1] as number,
+				position[first * 3 + 2] as number,
+			];
+			const dir = normalize3([
+				(position[last * 3] as number) - base[0],
+				(position[last * 3 + 1] as number) - base[1],
+				(position[last * 3 + 2] as number) - base[2],
+			]);
+			if (dir[1] > 1e-6) stems.push({ base, dir });
+		}
+	/** Whether a point stands inside a stem's bare column, below its line. */
+	const inBole = (point: Vector3): boolean => {
+		if (stems.length === 0 || point[1] >= boleTop) return false;
+		for (const stem of stems) {
+			const t = (point[1] - stem.base[1]) / stem.dir[1];
+			const sx = stem.base[0] + stem.dir[0] * t;
+			const sz = stem.base[2] + stem.dir[2] * t;
+			if (length3(point[0] - sx, 0, point[2] - sz) < boleRadius) return true;
+		}
+		return false;
+	};
 	const step = divergence(record);
 	// A record may turn each shoot further out from its wood, so the crown's foliage reaches away
 	// from the twigs that carry it; the shoot's foot stays on the wood either way.
@@ -428,6 +462,9 @@ function placedRows(input: DressInput, bySky = true): Row[] {
 	for (const b of order) {
 		const axis = buds.axis[b] as number;
 		const kind = buds.kind[b] as number;
+		// A dormant bud carries nothing, and it is no anchor for the stretch the next shoot's count
+		// shares: a culm's sheath buds must not stretch its tip's shoot down the bare culm.
+		if (kind === BUD_DORMANT) continue;
 		const at: Vector3 = [
 			buds.position[b * 3] as number,
 			buds.position[b * 3 + 1] as number,
@@ -435,7 +472,6 @@ function placedRows(input: DressInput, bySky = true): Row[] {
 		];
 		const before = previous.get(axis);
 		previous.set(axis, b);
-		if (kind === BUD_DORMANT) continue;
 		const node = buds.node[b] as number;
 		const host = skeleton.axisOf[node] as number;
 		// The clean bole carries no shoot: the trunk below the crown is bare, as the record says. The
@@ -578,6 +614,8 @@ function placedRows(input: DressInput, bySky = true): Row[] {
 					centre[2] + outward[2] * woodRadius,
 				];
 			}
+			// No shoot stands inside a stem's bare column: the bole and the great limbs' bases read.
+			if (inBole(place)) continue;
 			// The plant's tropism turns the row toward the sky or the ground.
 			if (tropism !== 0) {
 				const across = cross3(direction, up, [0, 0, 0]);

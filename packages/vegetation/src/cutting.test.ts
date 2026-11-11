@@ -6,9 +6,11 @@ import { describe, expect, it } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { type PlantAsset, plantAssetDigest } from './asset';
-import { AXIS_LIMB, AXIS_STEM, SkeletonBuilder } from './core/graph';
+import { scaledBudget } from '../../../tests/lib/run-budget.ts';
+import { type PlantAsset, plantAssetDigest, type SpeciesKitData } from './asset';
+import { AXIS_CULM, AXIS_LIMB, AXIS_STEM, BUD_TERMINAL, SkeletonBuilder } from './core/graph';
 import { quatRotate } from './core/math';
+import type { Species } from './core/record';
 import { standInSpecies } from './core/stand-in';
 import { CUTTING_LENGTH, clusterRank, cutBranch, cutFoliage, cutsShoot } from './cutting';
 import { buildKitNow, growPlantNow, loadPlantCode } from './generate';
@@ -56,6 +58,153 @@ describe('cuttings', () => {
 			}
 		});
 	}
+
+	it('prefers the thickest axis near the asked length when the record hints no order', () => {
+		const builder = new SkeletonBuilder();
+		const stem = builder.addAxis({ parent: -1, parentNode: -1, order: 0, kind: AXIS_STEM });
+		let node = builder.addNode({ x: 0, y: 0, z: 0, radius: 0.4, parent: -1, axis: stem });
+		for (let i = 1; i <= 12; i++)
+			node = builder.addNode({ x: 0, y: i, z: 0, radius: 0.4, parent: node, axis: stem });
+		const limb = (at: number, radius: number): number => {
+			const axis = builder.addAxis({
+				parent: stem,
+				parentNode: at,
+				parentT: 0,
+				order: 1,
+				kind: AXIS_LIMB,
+			});
+			let previous = builder.addNode({
+				x: radius,
+				y: at,
+				z: 0,
+				radius,
+				parent: at,
+				axis,
+			});
+			const first = previous;
+			for (let i = 1; i <= 3; i++)
+				previous = builder.addNode({
+					x: radius + i * 0.3,
+					y: at,
+					z: 0,
+					radius: radius * (1 - i * 0.1),
+					parent: previous,
+					axis,
+				});
+			builder.addBud({
+				node: first,
+				x: radius,
+				y: at,
+				z: 0,
+				frame: [0, 0, 0, 1],
+				kind: BUD_TERMINAL,
+				vigor: 0.5,
+				light: 1,
+				axis,
+				woodRadius: radius,
+			});
+			return axis;
+		};
+		const thin = limb(4, 0.04);
+		const thick = limb(8, 0.16);
+		const cut = cutBranch(
+			builder.finish(0),
+			{ ...stub.record, cuttings: undefined },
+			{
+				part: 'branch',
+			},
+		);
+		if (!cut) throw new Error('nothing was cut');
+		expect(cut.order).toBe(1);
+		expect(cut.axis).toBe(thick);
+		expect(cut.axis).not.toBe(thin);
+	});
+
+	/** A stem of twelve nodes, and a helper that hangs an axis on it with a bud and an optional child. */
+	function stemWithAxes() {
+		const builder = new SkeletonBuilder();
+		const stem = builder.addAxis({ parent: -1, parentNode: -1, order: 0, kind: AXIS_STEM });
+		let node = builder.addNode({ x: 0, y: 0, z: 0, radius: 0.4, parent: -1, axis: stem });
+		for (let i = 1; i <= 12; i++)
+			node = builder.addNode({ x: 0, y: i, z: 0, radius: 0.4, parent: node, axis: stem });
+		const growth = (at: number, radius: number, order: number, kind: number, child: boolean) => {
+			const axis = builder.addAxis({ parent: stem, parentNode: at, parentT: 0, order, kind });
+			let previous = builder.addNode({ x: radius, y: at, z: 0, radius, parent: at, axis });
+			const first = previous;
+			for (let i = 1; i <= 3; i++)
+				previous = builder.addNode({
+					x: radius + i * 0.3,
+					y: at,
+					z: 0,
+					radius: radius * (1 - i * 0.1),
+					parent: previous,
+					axis,
+				});
+			builder.addBud({
+				node: first,
+				x: radius,
+				y: at,
+				z: 0,
+				frame: [0, 0, 0, 1],
+				kind: BUD_TERMINAL,
+				vigor: 0.5,
+				light: 1,
+				axis,
+				woodRadius: radius,
+			});
+			if (child) {
+				const childAxis = builder.addAxis({
+					parent: axis,
+					parentNode: previous,
+					parentT: 0,
+					order: order + 1,
+					kind,
+				});
+				builder.addNode({
+					x: radius + 0.9,
+					y: at + 0.5,
+					z: 0,
+					radius: radius * 0.6,
+					parent: previous,
+					axis: childAxis,
+				});
+			}
+			return axis;
+		};
+		return { builder, growth };
+	}
+
+	it('takes a leafy shoot that divides before a thicker single axis near the asked length', () => {
+		const { builder, growth } = stemWithAxes();
+		const single = growth(4, 0.16, 1, AXIS_LIMB, false);
+		const shoot = growth(8, 0.04, 1, AXIS_LIMB, true);
+		const cut = cutBranch(
+			builder.finish(0),
+			{ ...stub.record, cuttings: undefined },
+			{
+				part: 'branch',
+			},
+		);
+		if (!cut) throw new Error('nothing was cut');
+		expect(cut.axis).toBe(shoot);
+		expect(cut.axis).not.toBe(single);
+	});
+
+	it('takes a leafy shoot before a flowering head near the asked length', () => {
+		const { builder, growth } = stemWithAxes();
+		const head = growth(8, 0.16, 2, AXIS_CULM, true);
+		const shoot = growth(4, 0.04, 1, AXIS_LIMB, true);
+		const cut = cutBranch(
+			builder.finish(0),
+			{ ...stub.record, cuttings: undefined },
+			{
+				part: 'branch',
+			},
+		);
+		if (!cut) throw new Error('nothing was cut');
+		expect(cut.axis).toBe(shoot);
+		expect(cut.axis).not.toBe(head);
+	});
 
 	it('cuts an axis that leaves at its parent node there, with every axis whose parents reach it', () => {
 		// A stem of five nodes; a limb leaving its third node; a twig on the limb; a second limb above.
@@ -193,6 +342,31 @@ describe('cuttings', () => {
 		expect(piece.skeleton.height).toBeLessThan(whole.skeleton.height);
 	});
 
+	it('leaves the crown as it was when a cutting class joins the kit', async () => {
+		// A cutting class is planned after the crown's prototypes and marked as a cutting's, so the
+		// crown never offers one and no index it reads moves. A species that adds a cutting class
+		// therefore keeps the crown it grew, and a figure that moves came from something else.
+		const { species: oak } = await import('./species/pedunculate-oak');
+		await loadPlantCode(oak.record);
+		const without = { ...oak.record, shoots: { ...oak.record.shoots!, cuttingClasses: [] } };
+		const before = buildKitNow(
+			{ ...oak, record: without },
+			{ placeholders: 'missing', detail: 'low' },
+		);
+		const after = buildKitNow(oak, { placeholders: 'missing', detail: 'low' });
+		expect(after.prototypes.length).toBeGreaterThan(before.prototypes.length);
+		const grow = { seed: 11, variant: 0, near: true } as const;
+		const own = growPlantNow(before, grow).shoots;
+		const withCuttings = growPlantNow(after, grow).shoots;
+		expect(withCuttings.count).toBe(own.count);
+		expect(Array.from(withCuttings.prototype.subarray(0, own.count))).toEqual(
+			Array.from(own.prototype),
+		);
+		expect(Array.from(withCuttings.position.subarray(0, own.count * 3))).toEqual(
+			Array.from(own.position),
+		);
+	});
+
 	it('takes a branch or sub-branch from the shoot class its record names', async () => {
 		const { species: oak } = await import('./species/pedunculate-oak');
 		await loadPlantCode(oak.record);
@@ -234,37 +408,168 @@ describe('cuttings', () => {
 		}
 	});
 
-	it('presses a cut leaf flat where the record says, and leaves it as on the plant otherwise', async () => {
-		const { species: oak } = await import('./species/pedunculate-oak');
-		await loadPlantCode(oak.record);
-		const shaped = {
-			...oak,
-			record: { ...oak.record, cuttings: { ...oak.record.cuttings, leaf: undefined } },
+	it(
+		'presses a cut leaf flat where the record says, and leaves it as on the plant otherwise',
+		async () => {
+			const { species: oak } = await import('./species/pedunculate-oak');
+			await loadPlantCode(oak.record);
+			const shaped = {
+				...oak,
+				record: { ...oak.record, cuttings: { ...oak.record.cuttings, leaf: undefined } },
+			};
+			const pressedKit = buildKitNow(oak, { placeholders: 'missing', detail: 'low' });
+			const shapedKit = buildKitNow(shaped, { placeholders: 'missing', detail: 'low' });
+			const pressed = cutFoliage(pressedKit, { part: 'leaf' }, 'low');
+			const plain = cutFoliage(shapedKit, { part: 'leaf' }, 'low');
+			if (!pressed || !plain) throw new Error('the oak has no leaf');
+			// The pressed blade lies in the plane of its frame; the plant's own blade folds and curls out
+			// of it, and the kit's leaves are the plant's.
+			let flat = 0;
+			let shapedDepth = 0;
+			for (let i = 2; i < pressed.positions.length; i += 3)
+				flat = Math.max(flat, Math.abs(pressed.positions[i] as number));
+			for (let i = 2; i < plain.positions.length; i += 3)
+				shapedDepth = Math.max(shapedDepth, Math.abs(plain.positions[i] as number));
+			expect(flat).toBeLessThan(1e-6);
+			expect(shapedDepth).toBeGreaterThan(0.005);
+			expect(Array.from(plain.positions)).toEqual(Array.from(shapedKit.leaves[0]?.positions ?? []));
+			expect(Array.from(pressedKit.leaves[0]?.positions ?? [])).toEqual(
+				Array.from(shapedKit.leaves[0]?.positions ?? []),
+			);
+			// A piece may ask for itself: as grown where the record presses, pressed where it does not.
+			const grown = cutFoliage(pressedKit, { part: 'leaf', pressed: false }, 'low');
+			const flattened = cutFoliage(shapedKit, { part: 'leaf', pressed: true }, 'low');
+			expect(Array.from(grown?.positions ?? [])).toEqual(Array.from(plain.positions));
+			expect(Array.from(flattened?.positions ?? [])).toEqual(Array.from(pressed.positions));
+			// Two whole kits of a mature species are built, which no other test in this file does.
+		},
+		scaledBudget(20_000),
+	);
+
+	it('presses a cut frond flat in its own plane', async () => {
+		const { brackenRecord } = await import('./grow/bracken.fixture');
+		const { noTextureFiles } = await import('./core/textures');
+		await loadPlantCode(brackenRecord);
+		const species = { record: brackenRecord, textures: noTextureFiles(brackenRecord.id) };
+		const frondKit = buildKitNow(species, { placeholders: 'missing', detail: 'low' });
+		const depth = (mesh: ReturnType<typeof cutFoliage> | undefined): number => {
+			let far = 0;
+			for (let i = 2; i < (mesh?.positions.length ?? 0); i += 3)
+				far = Math.max(far, Math.abs(mesh?.positions[i] as number));
+			return far;
 		};
-		const pressedKit = buildKitNow(oak, { placeholders: 'missing', detail: 'low' });
-		const shapedKit = buildKitNow(shaped, { placeholders: 'missing', detail: 'low' });
-		const pressed = cutFoliage(pressedKit, { part: 'leaf' }, 'low');
-		const plain = cutFoliage(shapedKit, { part: 'leaf' }, 'low');
-		if (!pressed || !plain) throw new Error('the oak has no leaf');
-		// The pressed blade lies in the plane of its frame; the plant's own blade folds and curls out
-		// of it, and the kit's leaves are the plant's.
-		let flat = 0;
-		let shapedDepth = 0;
-		for (let i = 2; i < pressed.positions.length; i += 3)
-			flat = Math.max(flat, Math.abs(pressed.positions[i] as number));
-		for (let i = 2; i < plain.positions.length; i += 3)
-			shapedDepth = Math.max(shapedDepth, Math.abs(plain.positions[i] as number));
-		expect(flat).toBeLessThan(1e-6);
-		expect(shapedDepth).toBeGreaterThan(0.005);
-		expect(Array.from(plain.positions)).toEqual(Array.from(shapedKit.leaves[0]?.positions ?? []));
-		expect(Array.from(pressedKit.leaves[0]?.positions ?? [])).toEqual(
-			Array.from(shapedKit.leaves[0]?.positions ?? []),
+		// The frond of the plant curls out of its frame's plane; the pressed one lies in it, the
+		// blade flat and only its stipe's own tube standing off the axis.
+		expect(depth(cutFoliage(frondKit, { part: 'leaf' }, 'low'))).toBeGreaterThan(0.05);
+		expect(depth(cutFoliage(frondKit, { part: 'leaf', pressed: true }, 'low'))).toBeLessThan(0.01);
+		// A frond named young is the same leaf earlier in its opening: it is drawn again, and it is
+		// shorter than the frond it opens into, which is the crozier the picture shows.
+		const tall = (mesh: ReturnType<typeof cutFoliage> | undefined): number => {
+			let high = 0;
+			for (let i = 1; i < (mesh?.positions.length ?? 0); i += 3)
+				high = Math.max(high, mesh?.positions[i] as number);
+			return high;
+		};
+		const mature = cutFoliage(frondKit, { part: 'leaf' }, 'low');
+		const young = cutFoliage(frondKit, { part: 'leaf', age: 0.1 }, 'low');
+		expect(Array.from(young?.positions ?? [])).not.toEqual(Array.from(mature?.positions ?? []));
+		expect(tall(young)).toBeLessThan(tall(mature));
+		// An age outside the leaf's opening is refused rather than drawn as something else.
+		expect(() => cutFoliage(frondKit, { part: 'leaf', age: 1.5 }, 'low')).toThrow(
+			/runs from 0 to 1/,
 		);
-		// A piece may ask for itself: as grown where the record presses, pressed where it does not.
-		const grown = cutFoliage(pressedKit, { part: 'leaf', pressed: false }, 'low');
-		const flattened = cutFoliage(shapedKit, { part: 'leaf', pressed: true }, 'low');
-		expect(Array.from(grown?.positions ?? [])).toEqual(Array.from(plain.positions));
-		expect(Array.from(flattened?.positions ?? [])).toEqual(Array.from(pressed.positions));
+	});
+
+	it('gives a rosette piece the leaf count its cutting hint names', async () => {
+		const { hostaRecord } = await import('./grow/ground.fixture');
+		const { noTextureFiles } = await import('./core/textures');
+		const { AXIS_LEAF } = await import('./grow/ground');
+		await loadPlantCode(hostaRecord);
+		// The leaves one cut eye carries, with the hint given and with the crown's own count.
+		const leavesOfPiece = (hint?: number): number => {
+			const record =
+				hint === undefined
+					? hostaRecord
+					: {
+							...hostaRecord,
+							cuttings: { ...hostaRecord.cuttings, leaves: { mean: hint, spread: 0 } },
+						};
+			const kit = buildKitNow(
+				{ record, textures: noTextureFiles(record.id) },
+				{ placeholders: 'missing', detail: 'low' },
+			);
+			const piece = growPlantNow(kit, {
+				seed: 11,
+				variant: 0,
+				near: true,
+				cutting: { part: 'subbranch' },
+			});
+			let leaves = 0;
+			for (let a = 0; a < piece.skeleton.axes.count; a++)
+				if ((piece.skeleton.axes.kind[a] as number) === AXIS_LEAF) leaves++;
+			return leaves;
+		};
+		const crown = leavesOfPiece();
+		const sparse = leavesOfPiece(3);
+		expect(sparse).toBeLessThan(crown);
+		expect(sparse).toBeLessThanOrEqual(4);
+	});
+
+	it('scales the leaf of a rosette piece from its cutting hint', async () => {
+		const { hostaRecord } = await import('./grow/ground.fixture');
+		const { noTextureFiles } = await import('./core/textures');
+		await loadPlantCode(hostaRecord);
+		const heightOfPiece = (scale?: number): number => {
+			const cuttings = {
+				...hostaRecord.cuttings,
+				...(scale === undefined ? {} : { subbranch: { order: 1, length: 0.4, scale } }),
+			};
+			const record = { ...hostaRecord, cuttings };
+			const kit = buildKitNow(
+				{ record, textures: noTextureFiles(record.id) },
+				{ placeholders: 'missing', detail: 'low' },
+			);
+			return growPlantNow(kit, {
+				seed: 11,
+				variant: 0,
+				near: true,
+				cutting: { part: 'subbranch' },
+			}).skeleton.height;
+		};
+		expect(heightOfPiece(0.5)).toBeLessThan(heightOfPiece(1));
+	});
+
+	it('gives a woodless plant a piece with no wood, and a woody plant its cut face', async () => {
+		const { hostaRecord } = await import('./grow/ground.fixture');
+		const { noTextureFiles } = await import('./core/textures');
+		const { species: oak } = await import('./species/pedunculate-oak');
+		await loadPlantCode(hostaRecord);
+		await loadPlantCode(oak.record);
+		const partsOf = (kit: SpeciesKitData, part: 'branch' | 'subbranch'): string[] =>
+			growPlantNow(kit, {
+				seed: 11,
+				variant: 0,
+				near: true,
+				cutting: { part },
+			}).levels[0].parts.map((p) => p.name);
+		const hostaKit = buildKitNow(
+			{ record: hostaRecord, textures: noTextureFiles(hostaRecord.id) },
+			{ placeholders: 'missing', detail: 'low' },
+		);
+		for (const part of ['branch', 'subbranch'] as const)
+			expect(partsOf(hostaKit, part)).not.toContain('wood');
+		// A woody plant's piece keeps its cut face: its root hangs on a stem, so the cut end draws.
+		const cutOak: Species = {
+			...oakRecord,
+			id: 'cut-oak',
+			cuttings: { ...oakRecord.cuttings, branch: { order: 1, length: 1 } },
+		};
+		await loadPlantCode(cutOak);
+		const oakKit = buildKitNow(
+			{ record: cutOak, textures: noTextureFiles(cutOak.id) },
+			{ placeholders: 'missing', detail: 'low' },
+		);
+		expect(partsOf(oakKit, 'branch')).toContain('wood');
 	});
 
 	it('cuts a leaf with either face toward +Z, and a cluster in rank order', () => {

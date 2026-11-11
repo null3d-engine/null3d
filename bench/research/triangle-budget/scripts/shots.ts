@@ -120,7 +120,9 @@ const server = Bun.spawn(
 	['bunx', 'vite', '--config', join(import.meta.dirname, '../vite.config.ts')],
 	{
 		cwd: root,
-		env: { ...process.env, TB_PORT: String(port) },
+		// The shots reach the study's server over the loopback, which is a secure origin already,
+		// and their readiness poll and page loads use plain HTTP.
+		env: { ...process.env, TB_PORT: String(port), NULL3D_HTTPS: '0' },
 		stdout: 'inherit',
 		stderr: 'inherit',
 	},

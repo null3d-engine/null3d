@@ -39,6 +39,42 @@ export const KNOWN_COPIES: readonly (readonly [string, string])[] = [
 	['a78512faafd13c4ec68e6e01782fec32b63be7ae', 'e4490963c174b89f2331b274a7c94d5c1e543170'],
 	['ac798ff019c2bfc7a5f6632c424be3e10fbf13a2', 'dc54814e7670a72ff6c93fe1e3a7132a73e9dbe8'],
 	['b3e81d903ef6b433cd73b98131a368c8b763b74c', 'ebbb5b1be08edd74bd88f944fc7273d367492b02'],
+	// The sedge's copy of the plant-review grass-blade fix. The meadow grass branch landed the same
+	// change first, and `cb5e23411` is already on the milestone branch; the sedge carried it again
+	// as `53a549532`, and an earlier integration carried it as `a06a9c5c3`. Dropping either would
+	// re-commit commits that the milestone branch already holds, so they stay as known copies;
+	// none of them changes the tree.
+	['53a5495323d4be073cf566eaf843d9b6a3e45bf8', 'cb5e2341178c5da3e40853b73d692f0e8aa39201'],
+	['a06a9c5c3384ff6bc960d83d2f158524203e80c8', 'cb5e2341178c5da3e40853b73d692f0e8aa39201'],
+	// The species series the redraw carries, landed once on the milestone before this branch was
+	// rebuilt: each pair is one change that reached the milestone by its own branch and the
+	// redraw again by the replay, identical by `git patch-id`. They are listed so the redraw
+	// can land; the pair is the range's copy first and the milestone's second.
+	['101df4e56c7b228a788f15d3449615103409dc81', '7f48b9f4441ea00cf035358ead90a53089ab64c7'],
+	['1d51e2f4bae14b5382c79d4ae7d2647d6668df42', '48aabe3f42111de01ee47ead2bcfca3115120e63'],
+	['28dd5bd7cd9b0bae0c4b6b59d0215c5cefb91be6', '636c4162acd329f91f1ed444ec611db43c95388f'],
+	['3c9b7188766b0a6fde5f3d7764eda165b1d08ddb', '0ee9ffa07394b2a487611a53dd7856d32f726679'],
+	['3cb64328c1eb30fe2ee5e81587053418d8c517e2', '4202b44d18bedd42bd88bc34cd9de566bef87b84'],
+	['43d00905cf0c2e316c04bc35888024546476b55e', '92086af9f8d303ef8609323a00cee7dd38fbffdc'],
+	['4675d19ccfdc355150ace68d99c63d0da533b661', '910a9bdb1d17fc664fc4f468564961ace67ec88c'],
+	['47375e9697fc4db1d7bf9312b8b9ec84e503df3e', 'cbe551d4c4da60e23aba0fa4e727b0d5ab967e28'],
+	['65452d3324f90e87cff73dd643bb7f06ea0fbd39', '6b29eeb3b98976b7302edff134a6e74ab3138077'],
+	['662209d3f433173d00de9441a33146ebbbcc3ef5', '872b6b5e426c37a725cae7009a4dd91dc7eef77b'],
+	['6b95e704e5e3d2305c12dd7ae9913292d6b3f66c', '5ff31a23e76e020bd61bb4d8951559984a8409e6'],
+	['6eac9d5b5b54ab68119b3cf2ce25dbf511f2b459', 'fcf1bc783b39ce5a5002c3d5b3f37872568a7e0f'],
+	['7915bf95e6c9300b29b64ab9cd2b97dcd6ff25f3', '02bb95154394337fb05638f90e3f5387837f9bf1'],
+	['a3ecee2d3520076978f9a5202bb7a8d249502ce9', 'af51deb1d7b1e68087a1a5102ffe8bc7a033bc29'],
+	['a44fb8dadc65c527875c3b4dcd495235d0df6c8f', '37ce203a6ab6b5cfffd7ffbd6fdd5f88c57806ce'],
+	['a8d321eb054436f7f20f1952eee6b28adb1b42a8', '0f4f74553759bac02e6827dae18a8c012a1b87cf'],
+	['befdb127ed865d6c4f5f565810e6441abd1eccfc', 'ac341d5c3026cd43237406862fcf95e30390e7ab'],
+	['c4134b2dfaa519818826959ec18d633c42f204d1', '66e63370a8cd8547b75e2aa3a892ec65b765521c'],
+	['c59867511878b9befe5d9149311e7466352678c6', 'ee1c7f4c7220cee2a4c9ed799a3ccf14f37671d0'],
+	['c65cc312dc95416b32323523a6350fd79c6d8fde', '27aa526b1a19e22153f0176b2d57f2ac3e8a3af7'],
+	['c6750a50dec92c8e8eb8f8fa3b65f645b2f6a948', '3b438f5f10557743df2f918dcff75eff79d49854'],
+	['c6756f712dafd1aa728947f93939d440ea72c320', '1267c550337d818e382361c924f340aba3d6f643'],
+	['d1d1be0dcce6918686ac4ba683d99d3790002753', 'b3fc4ff314b747f725eb88f383cc2af91639fa74'],
+	['e4bde51dba2e28d809c85cd609172f2db2908d95', 'df8d489bba10124f996d3dd07fbce498749dc8ec'],
+	['fe35f85792a02c34f74533b0a65ee66940265beb', '4e1442441dde4230870c470765d6a2d0ac601acd'],
 ];
 
 /** The most commits that the check reads from the head, far more than a branch holds. */

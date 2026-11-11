@@ -645,6 +645,12 @@ export interface CandidateFacts {
 	 * that it fetched itself.
 	 */
 	ciRun?: string;
+	/**
+	 * The device and depth facts that the page reported for the drawing, so two runs of one test
+	 * can be told apart when their images differ. A software drawing's sea once changed between
+	 * runs of one commit, and the artifact held nothing to compare the two runs by.
+	 */
+	page?: Record<string, unknown>;
 }
 
 /** The CI run that draws in this process, from GitHub Actions' own variables, or none elsewhere. */
@@ -678,8 +684,9 @@ export function clearCandidates(place: Place, dirs = HARNESS_DIRS): void {
 /**
  * Saves the image that the renderer drew, with the facts that the review reads, under the folder
  * of drawings. A run asked for its drawings keeps one picture for each test and tier that it drew
- * in, whichever thread mode drew it first. A run whose image cannot become a reference keeps
- * nothing, since the artifact exists to hand references on.
+ * in, whichever thread mode drew it first. A picture that cannot become a reference is kept too,
+ * with the reason in its facts, so the artifact records every image that the shard drew and the
+ * review refuses to accept one that belongs to another test.
  */
 export function saveDrawnImage(
 	run: ImageRun,
@@ -687,9 +694,9 @@ export function saveDrawnImage(
 	image: RgbaImage,
 	share: number | undefined,
 	dirs = HARNESS_DIRS,
+	page?: Record<string, unknown>,
 ): void {
 	const reference = referenceOf(run, place);
-	if (reference.fixed) return;
 	const base = join(dirs.drawn ?? DRAWN_IMAGES, drawnIn(place), run.tier, run.test);
 	if (existsSync(`${base}${CANDIDATE_FILES.facts}`)) return;
 	const facts: CandidateFacts = {
@@ -701,7 +708,9 @@ export function saveDrawnImage(
 		reference: reference.file,
 		...(share !== undefined && { share }),
 		tolerance: reference.tolerance,
+		...(reference.fixed && { fixed: reference.fixed }),
 		...(ciRunOf(process.env) && { ciRun: ciRunOf(process.env) }),
+		...(page && { page }),
 	};
 	writePng(`${base}${CANDIDATE_FILES.image}`, image);
 	writeFileSync(`${base}${CANDIDATE_FILES.facts}`, `${JSON.stringify(facts, null, '\t')}\n`);
@@ -717,6 +726,7 @@ export function compareWithReference(
 	place: Place,
 	image: RgbaImage,
 	dirs = HARNESS_DIRS,
+	page?: Record<string, unknown>,
 ): string[] {
 	const reference = referenceOf(run, place);
 	const referencePath = join(dirs.references, reference.file);
@@ -732,6 +742,7 @@ export function compareWithReference(
 		tolerance: reference.tolerance,
 		...(reference.fixed && { fixed: reference.fixed }),
 		...(ciRunOf(process.env) && { ciRun: ciRunOf(process.env) }),
+		...(page && { page }),
 	};
 	// The first mode that differs keeps its candidate: the later modes of a test on a tier draw the
 	// same pixels, or fail for that on their own. The facts go last, so they mark a whole candidate.
@@ -750,20 +761,20 @@ export function compareWithReference(
 	const shown = relative(REPO_ROOT, `${base}${CANDIDATE_FILES.image}`);
 	if (!existsSync(referencePath)) {
 		save({});
-		if (keepDrawn) saveDrawnImage(run, place, image, undefined, dirs);
+		if (keepDrawn) saveDrawnImage(run, place, image, undefined, dirs, page);
 		return [`there is no reference ${reference.file} yet. The new image is ${shown}`];
 	}
 	const expected = readPng(referencePath);
 	if (expected.width !== image.width || expected.height !== image.height) {
 		save({ status: 'changed', share: 1 });
-		if (keepDrawn) saveDrawnImage(run, place, image, 1, dirs);
+		if (keepDrawn) saveDrawnImage(run, place, image, 1, dirs, page);
 		return [
 			`the image is ${image.width} x ${image.height}, and the reference ${reference.file} is ${expected.width} x ${expected.height}. The new image is ${shown}`,
 		];
 	}
 	const tolerance = toleranceFor(place, reference.tolerance);
 	const { share, diff } = compareImages(expected, image, tolerance.threshold);
-	if (keepDrawn) saveDrawnImage(run, place, image, share, dirs);
+	if (keepDrawn) saveDrawnImage(run, place, image, share, dirs, page);
 	if (share <= tolerance.maxDiffRatio) return [];
 	save({ status: 'changed', share }, diff);
 	return [
@@ -808,7 +819,8 @@ function elsewhereHint(place: Place): string {
 }
 
 /** The image in a page's result, or what is wrong with it. */
-function imageOf(
+/** The result's drawn image as pixels, or what is wrong with it. */
+export function imageOf(
 	result: ItemResult,
 	[width, height]: readonly [number, number],
 ): RgbaImage | string {
@@ -856,6 +868,36 @@ const softwareAdapter = (adapter: string) => adapter.toLowerCase().includes('swi
  * engine draws a frame, never what it draws. Real-GPU runs refuse a software GPU, which would hide
  * real GPU faults.
  */
+/**
+ * The facts that the page reported about the device that drew an image: its GPU tier, its lighting
+ * and precision choices, whether it draws many ranges in one call, its thread mode and its depth
+ * mode. A candidate keeps them so that two runs whose images differ can be compared by what drew
+ * them, not only by the pixels.
+ */
+const PAGE_FACTS = [
+	'tier',
+	'hdr',
+	'halfPrecision',
+	'multiDraw',
+	'clusterPatches',
+	'mode',
+	'depth',
+	'clipControl',
+	'drewAsked',
+] as const;
+
+/** The page's own facts about a drawing, without the pixels and the sketch's messages. */
+export function pageFactsOf(result: ItemResult): Record<string, unknown> {
+	const facts: Record<string, unknown> = {};
+	for (const field of PAGE_FACTS) if (result[field] !== undefined) facts[field] = result[field];
+	return facts;
+}
+
+/**
+ * Checks a run's result: its page's errors, its tier, its thread mode and its image against the
+ * reference. The result's device facts go with a candidate, so a drawing that differs from its
+ * reference says what drew it.
+ */
 export function imageProblems(
 	run: ImageRun,
 	result: ItemResult,
@@ -900,7 +942,7 @@ export function imageProblems(
 				`${count} pixels differ from the image of the first thread mode, which every mode must draw`,
 			);
 	}
-	return [...problems, ...compareWithReference(run, place, image, dirs)];
+	return [...problems, ...compareWithReference(run, place, image, dirs, pageFactsOf(result))];
 }
 
 /**

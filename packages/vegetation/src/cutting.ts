@@ -11,7 +11,14 @@ import type {
 	ShootRows,
 	SpeciesKitData,
 } from './asset';
-import { type MacroSkeleton, SkeletonBuilder } from './core/graph';
+import {
+	AXIS_CULM,
+	AXIS_ROOT,
+	AXIS_STEM,
+	AXIS_STIPE,
+	type MacroSkeleton,
+	SkeletonBuilder,
+} from './core/graph';
 import {
 	acos,
 	cross3,
@@ -23,8 +30,16 @@ import {
 	quatRotate,
 	type Vector3,
 } from './core/math';
-import type { CutFromPlant, LeafShape, ShootClass, Species } from './core/record';
-import { DETAILS, type Detail, type Vec3 } from './core/types';
+import type {
+	CutFromPlant,
+	FrondShape,
+	LeafShape,
+	PinnaSpec,
+	ShootClass,
+	Species,
+	ThickLeaf,
+} from './core/record';
+import { DETAILS, type Detail, spreadMean, type Vec3 } from './core/types';
 import { foliage } from './leaf/kinds';
 import { SURFACE_STEM } from './leaf/writer';
 
@@ -66,6 +81,18 @@ export interface CuttingOptions {
 	 * the plant, as a leaf held in the hand does. The record's cutting hint by default.
 	 */
 	readonly pressed?: boolean;
+	/**
+	 * For 'leaf': how far the leaf has opened, from 0 for a crozier still rolled to 1 for a leaf
+	 * fully out. A species with a leaf that grows through a shape a picture shows, such as a fern's
+	 * crozier, names it there; absent, the leaf is drawn as it stands on a mature plant.
+	 */
+	readonly age?: number;
+	/**
+	 * For 'branch' and 'subbranch': whether the candidates rank by how young they are rather than by
+	 * how well their length matches, so the piece draws a shoot that is still opening. Absent, a
+	 * cut ranks as it always has.
+	 */
+	readonly young?: boolean;
 }
 
 /**
@@ -79,6 +106,12 @@ export const CUTTING_LENGTH: Readonly<Record<CuttingPart, number>> = {
 	cluster: 0.15,
 	leaf: 0.15,
 };
+
+/**
+ * The share of the blade's length that a pressed leaf keeps as its stalk where the record names
+ * none: a leaf picked from the crown shows a short piece of it under the blade.
+ */
+export const LEAF_CUT_PETIOLE = 0.12;
 
 /**
  * Steps of length match within which a piece counts as near the asked length, about a third either
@@ -225,19 +258,27 @@ interface Candidate {
 	/** Axes in its subtree, itself included, and the bud sites they carry in light enough for shoots. */
 	readonly axes: number;
 	readonly buds: number;
+	/** 1 when the axis is a flowering head: its shoots are the flowers, not the leaves. */
+	readonly head: number;
+	/** Its pipe radius at its first node, the thickness a piece's photograph shows. */
+	readonly thickness: number;
+	/** The mean age of its nodes, from 0 for a shoot still opening to 1 for a mature one. */
+	readonly age: number;
 }
 
 /**
  * The axes a branch cut can start from, ranked: those of the wanted order (any order past the stems
  * when it is undefined): first those that carry bud sites in enough light to grow shoots (at or
- * above the record's shade line), then those whose subtree's extent is near `length`, then those
- * that divide, then by how near the extent is, then the sunniest.
+ * above the record's shade line), then those whose subtree's extent is near `length`, then a leafy
+ * shoot before a flowering head, then those that divide, then the thickest, then by how near the
+ * extent is, then the sunniest.
  */
 function candidates(
 	skeleton: MacroSkeleton,
 	order: number | undefined,
 	length: number,
 	shade: number,
+	young = false,
 ): Candidate[] {
 	const { axes } = skeleton;
 	const depth = depths(skeleton);
@@ -286,6 +327,13 @@ function candidates(
 		for (const owner of owners[skeleton.buds.axis[b] as number] as number[])
 			subtreeBuds[owner] = (subtreeBuds[owner] as number) + 1;
 	}
+	// A shoot's age is the vigor of the bud that carries it, which the foliage reads too; an axis
+	// with no bud of its own has no age and ranks last among the young.
+	const vigor = new Float64Array(axes.count).fill(Number.POSITIVE_INFINITY);
+	for (let b = 0; b < skeleton.buds.count; b++) {
+		const axis = skeleton.buds.axis[b] as number;
+		vigor[axis] = Math.min(vigor[axis] as number, skeleton.buds.vigor[b] as number);
+	}
 	const out: Candidate[] = [];
 	for (let a = 0; a < axes.count; a++)
 		if (isCandidate(a) && (extent[a] as number) > 0)
@@ -295,16 +343,27 @@ function candidates(
 				light: (light[a] as number) / Math.max(1, nodes[a] as number),
 				axes: subtreeAxes[a] as number,
 				buds: subtreeBuds[a] as number,
+				head: (axes.kind[a] as number) === AXIS_CULM ? 1 : 0,
+				thickness: skeleton.radius[axes.first[a] as number] as number,
+				age: vigor[a] as number,
 			});
 	const match = (c: Candidate) => Math.round(Math.abs(log(c.extent / length)) / MATCH_STEP);
 	const near = (c: Candidate) => (match(c) <= NEAR_STEPS ? 1 : 0);
 	const leafy = (c: Candidate) => (c.buds > 0 ? 1 : 0);
+	const head = (c: Candidate) => c.head;
 	const divides = (c: Candidate) => (c.axes > 1 ? 1 : 0);
+	// A photograph of a piece shows a thick axis where it shows one at all. Among the pieces near the
+	// asked length, a leafy shoot ranks before a flowering head, and a piece that divides ranks before
+	// a single thick axis, so a cluster is a fan of leaves and not one blade or one panicle; then the
+	// thickest axis, then the closest match.
 	return out.sort(
 		(x, y) =>
+			(young ? x.age - y.age : 0) ||
 			leafy(y) - leafy(x) ||
 			near(y) - near(x) ||
+			head(x) - head(y) ||
 			divides(y) - divides(x) ||
+			y.thickness - x.thickness ||
 			match(x) - match(y) ||
 			y.light - x.light ||
 			x.axis - y.axis,
@@ -323,6 +382,21 @@ export interface CutBranch {
 	readonly extent: number;
 	/** How many axes could have been cut for the asked length and order. */
 	readonly candidates: number;
+}
+
+/**
+ * Whether an axis hangs on wood the whole plant draws: a stem's axis or a frond colony's stipe at the
+ * foot of its chain. A rosette's eye and a tuft's shoot hang on a crown that carries no wood, so a
+ * piece cut from them is all foliage.
+ */
+function onWood(skeleton: MacroSkeleton, axis: number): boolean {
+	let at = axis;
+	while (at >= 0) {
+		const kind = skeleton.axes.kind[at] as number;
+		if (kind === AXIS_STEM || kind === AXIS_STIPE) return true;
+		at = skeleton.axes.parent[at] as number;
+	}
+	return false;
 }
 
 /**
@@ -346,9 +420,9 @@ export function cutBranch(
 	const length = cuttingLength(record, cutting);
 	const hinted = plantHint(record, cutting.part)?.order;
 	const shade = record.shoots?.placement.shadePrune ?? 0;
-	let ranked = candidates(skeleton, hinted, length, shade);
+	let ranked = candidates(skeleton, hinted, length, shade, cutting.young);
 	if (ranked.length === 0 && hinted !== undefined)
-		ranked = candidates(skeleton, undefined, length, shade);
+		ranked = candidates(skeleton, undefined, length, shade, cutting.young);
 	if (ranked.length === 0) return undefined;
 	const chosen = ranked[(cutting.pick ?? 0) % ranked.length] as Candidate;
 	const { axes, buds } = skeleton;
@@ -397,7 +471,11 @@ export function cutBranch(
 			parentNode: isRoot || parentNode < 0 ? -1 : (nodeMap[parentNode] as number),
 			parentT: axes.parentT[a] as number,
 			order: axes.order[a] as number,
-			kind: axes.kind[a] as number,
+			// A piece's root stands in for the wood it was cut from. An axis that hangs on a stem or a
+			// stipe is wood and keeps its kind, so the cut face is drawn; an axis that hangs on nothing
+			// woody, such as a rosette's eye, carries no wood in the whole plant either, and its cut
+			// root stays a root the wood mesher skips.
+			kind: isRoot && !onWood(skeleton, a) ? AXIS_ROOT : (axes.kind[a] as number),
 			barkV: axes.barkV[a] as number,
 			barkU: axes.barkU[a] as number,
 		});
@@ -695,16 +773,99 @@ function pressedShape(shape: LeafShape): LeafShape {
 	};
 }
 
+/** A pinna's shape pressed flat: no fold and no droop, and its own pinnules flat too. */
+function pressedPinnae(pinnae: PinnaSpec): PinnaSpec {
+	return {
+		...pinnae,
+		fold: 0,
+		droop: 0,
+		...(pinnae.sub ? { sub: pressedPinnae(pinnae.sub) } : {}),
+	};
+}
+
+/** A frond's shape pressed flat: the rachis runs straight on from the stipe, its pinnae in its plane. */
+function pressedFrond(shape: FrondShape): FrondShape {
+	return {
+		...shape,
+		droop: 0,
+		twist: 0,
+		...(shape.pinnae ? { pinnae: pressedPinnae(shape.pinnae) } : {}),
+	};
+}
+
+/** A pressed specimen's stalk, as a share of its blade's length. */
+const PRESSED_STALK = 0.6;
+
+/** The record a pressed frond grows from: the species' frond laid flat in its own plane. */
+function pressedFrondRecord(record: Species): Species | undefined {
+	const growth = record.growth;
+	if (growth.model === 'frond-colony') {
+		// A copy-stand picture cuts the frond's stalk to a short piece over its blade, so the
+		// pressed specimen carries that stalk rather than the length the plant holds its blade up.
+		return {
+			...record,
+			growth: {
+				...growth,
+				stipe: {
+					...growth.stipe,
+					length: { mean: spreadMean(growth.frond.length) * PRESSED_STALK, spread: 0.02 },
+				},
+				frond: pressedFrond(growth.frond),
+			},
+		};
+	}
+	if (growth.model === 'crown-rosette')
+		return { ...record, growth: { ...growth, frond: pressedFrond(growth.frond) } };
+	return undefined;
+}
+
+/** A thick leaf's shape pressed flat: no cup, no curl and a flat margin. */
+function pressedThickShape(shape: ThickLeaf): ThickLeaf {
+	return { ...shape, cup: 0, curl: 0, wave: [0, shape.wave[1]] };
+}
+
 /**
  * The species' leaf meshes for a leaf cutting: the kit's own, or, where the piece or else the
- * record presses its leaf, the blade built again pressed flat at the kit's tier.
+ * record presses its leaf, the leaf built again pressed flat at the kit's tier. A pressed thick leaf
+ * keeps a short piece of its stalk, as a leaf picked from the crown shows, and a species that grows
+ * its leaves on long stalks names the metres its pictures show.
  */
-function cutLeaves(kit: SpeciesKitData, press?: boolean): readonly PrototypeArrays[] {
+function cutLeaves(kit: SpeciesKitData, press?: boolean, age?: number): readonly PrototypeArrays[] {
 	const record = kit.record;
 	const leaf = record.foliage;
-	if (!(press ?? record.cuttings?.leaf?.pressed) || leaf.kind !== 'blade') return kit.leaves;
-	const pressed: Species = { ...record, foliage: { ...leaf, leaf: pressedShape(leaf.leaf) } };
-	return foliage('blade').leaves(pressed, kit.manifest, kit.detail);
+	const flat = press ?? record.cuttings?.leaf?.pressed;
+	// A frond is built again when it lies flat or when the cut names an age of its own, because a
+	// crozier is the same leaf at another point of its opening rather than another shape.
+	if (leaf.kind === 'frond') {
+		const pressed = flat ? pressedFrondRecord(record) : undefined;
+		if (!pressed && age === undefined) return kit.leaves;
+		return foliage('frond').leaves(pressed ?? record, kit.manifest, kit.detail, age);
+	}
+	if (!flat) return kit.leaves;
+	if (leaf.kind === 'thick') {
+		const growth = record.growth;
+		const stalk = record.cuttings?.leaf?.petiole ?? LEAF_CUT_PETIOLE * spreadMean(leaf.leaf.length);
+		const pressed: Species = {
+			...record,
+			// The kit's leaf takes the stalk's length from the growth model, so a flat piece gives
+			// it the short stalk its picture shows in place of the crown's long one.
+			growth:
+				growth.model === 'rosette'
+					? {
+							...growth,
+							stalk: [
+								[0, stalk],
+								[1, stalk],
+							],
+						}
+					: growth,
+			foliage: { kind: 'thick', leaf: pressedThickShape(leaf.leaf) },
+		};
+		return foliage('thick').leaves(pressed, kit.manifest, kit.detail);
+	}
+	if (leaf.kind !== 'blade') return kit.leaves;
+	const pressedLeaf: Species = { ...record, foliage: { ...leaf, leaf: pressedShape(leaf.leaf) } };
+	return foliage('blade').leaves(pressedLeaf, kit.manifest, kit.detail);
 }
 
 /**
@@ -725,10 +886,12 @@ export function cutFoliage(
 	cutting: CuttingOptions,
 	detail: Detail,
 ): MeshArrays | undefined {
+	if (cutting.age !== undefined && !(cutting.age >= 0 && cutting.age <= 1))
+		throw new Error(`@null3d/vegetation: a cutting's age is ${cutting.age}; it runs from 0 to 1`);
 	const mesh = writer();
 	const origin: Vector3 = [0, 0, 0];
 	if (cutting.part === 'leaf') {
-		const leaves = cutLeaves(kit, cutting.pressed);
+		const leaves = cutLeaves(kit, cutting.pressed, cutting.age);
 		const leaf = leaves[(cutting.pick ?? 0) % Math.max(1, leaves.length)];
 		if (!leaf) return finish(mesh);
 		const turn = cutting.face === 'lower' ? [0, 1, 0, 0] : [0, 0, 0, 1];
