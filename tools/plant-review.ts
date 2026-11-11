@@ -41,6 +41,7 @@ import {
 } from './lib/plant-review/compare.ts';
 import { coverageMarkdown, coverageOf } from './lib/plant-review/coverage.ts';
 import {
+	deltaE2000,
 	onColour,
 	probeVideo,
 	type Rgba,
@@ -553,6 +554,12 @@ function compareRun(
 					? [`- ${pair.file}: surface colour difference ${fixed(pair.surfaceDeltaE, 1)}.`]
 					: [],
 			),
+			// A bark close view photographs the bark against bark, so it has no outline. Its row is
+			// its material, and the pair below names each side's colour and the distance between.
+			...result.pairs.flatMap((pair) => {
+				const line = masked.includes(pair) ? null : barkLine(pair);
+				return line ? [line] : [];
+			}),
 			// A picture whose backdrop the tool cannot separate still has edges, and its edges say
 			// where its parts run. It gets that figure instead of an outline it cannot trust.
 			...edgeLines(result.pairs),
@@ -664,6 +671,13 @@ function barkClause(pair: StillResult): string {
 	const show = (lab: readonly number[]) => lab.map((n) => n.toFixed(1)).join(' ');
 	const { reference, render } = pair.barkColour;
 	return `, bark photographs ${show(reference)} and draws ${show(render)}`;
+}
+
+/** A bark close view's colour pair for a picture that has no outline to carry it. */
+function barkLine(pair: StillResult): string | null {
+	if (!pair.barkColour) return null;
+	const steps = deltaE2000(pair.barkColour.reference, pair.barkColour.render);
+	return `- ${pair.file}: no plain outline${barkClause(pair)}, ${steps.toFixed(2)} steps apart.`;
 }
 
 /** Where the render is drawn as more or fewer separate pieces than its reference. */
