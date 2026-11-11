@@ -824,7 +824,7 @@ export function clusterRow(
 		// lean opens the row away from the axis and a small ring keeps every base at one point.
 		const r = [0, 0, 0, 1];
 		if (lean !== 0) {
-			const tangent: [number, number, number] = [-Math.sin(angle), 0, Math.cos(angle)];
+			const tangent: [number, number, number] = [-sin(angle), 0, cos(angle)];
 			const leanQ = [0, 0, 0, 1];
 			quatAxisAngle(tangent, (-lean * Math.PI) / 180, leanQ);
 			quatMultiply(leanQ, 0, q, 0, r);
@@ -834,9 +834,9 @@ export function clusterRow(
 			r[2] = q[2] as number;
 			r[3] = q[3] as number;
 		}
-		position[row * 3] = ring * tall * Math.cos(angle);
+		position[row * 3] = ring * tall * cos(angle);
 		position[row * 3 + 1] = (row * 0.55 * tall) / shoots;
-		position[row * 3 + 2] = ring * tall * Math.sin(angle);
+		position[row * 3 + 2] = ring * tall * sin(angle);
 		rotation.set(r, row * 4);
 		for (let i = 0; i < p.length; i += 3) {
 			quatRotate(r, 0, [p[i] as number, p[i + 1] as number, p[i + 2] as number], placed);
