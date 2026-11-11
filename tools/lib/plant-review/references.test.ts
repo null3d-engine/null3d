@@ -405,6 +405,19 @@ describe('a bole hidden by the boughs beside it', () => {
 		expect(measured.crownStart).toBeCloseTo(0.1567, 3);
 	});
 
+	test('keeps a mound form at its foot when a central run exists', () => {
+		// The same beech mask, read as a species the record grows as a mound of leaves: the central
+		// run is a leaf, not a stem, so the crown start stays at the foot.
+		const { mask, box, width, height } = beech('european-beech-profile');
+		const plain = crownStartRow(rowSpans(mask, width, height), box);
+		const measured = measurePlant(
+			blank(width, height, [255, 255, 255]),
+			plantOf(width, height, mask),
+			true,
+		);
+		expect(measured.crownStart).toBeCloseTo((box.bottom - plain) / (box.bottom - box.top + 1), 3);
+	});
+
 	test('leaves an ordinary bole untouched by the central run', () => {
 		// A crown of 80 over a trunk of 20 and a foot of 50: the outer span is the stem itself, so
 		// the corruption guard does not fire and the central run changes no figure.

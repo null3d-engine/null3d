@@ -1532,7 +1532,12 @@ function centralRuns(mask: Uint8Array, width: number, box: Box): Int32Array {
  * lowest rows. A plant with no bare stem runs as wide at its foot as at its widest, and its crown
  * starts at its foot; its whole box is its crown, which is what its openness is measured over.
  */
-export function crownStartRow(spans: Int32Array, box: Box, central?: Int32Array): number {
+export function crownStartRow(
+	spans: Int32Array,
+	box: Box,
+	central?: Int32Array,
+	moundForm = false,
+): number {
 	const tall = box.bottom - box.top + 1;
 	const width = (y: number) => {
 		const left = spans[y * 2] as number;
@@ -1614,7 +1619,7 @@ export function crownStartRow(spans: Int32Array, box: Box, central?: Int32Array)
 	// that shows, the stem is the row's own central run: scan that, past the frame's bottom sliver
 	// and the foot's flare, for the first row above the stem that stands wider than the bole limit.
 	const stem =
-		central !== undefined && widest > 0 && trunk > widest * CORRUPT_TRUNK_SHARE
+		central !== undefined && !moundForm && widest > 0 && trunk > widest * CORRUPT_TRUNK_SHARE
 			? central
 			: undefined;
 	const boleLimit =
@@ -1706,7 +1711,7 @@ function meanColour(
 }
 
 /** Measures a plant from its outline in a picture. */
-export function measurePlant(image: Rgba, plant: PlantMask): PlantMeasures {
+export function measurePlant(image: Rgba, plant: PlantMask, moundForm = false): PlantMeasures {
 	const { width, height, mask, coverage, background } = plant;
 	const work = image.width === width ? image : resizeToWidth(image, width);
 	const lab = labImage(work);
@@ -1744,7 +1749,7 @@ export function measurePlant(image: Rgba, plant: PlantMask): PlantMeasures {
 			light: null,
 		};
 	const spans = rowSpans(mask, width, height);
-	const start = crownStartRow(spans, box, centralRuns(mask, width, box));
+	const start = crownStartRow(spans, box, centralRuns(mask, width, box), moundForm);
 	const tall = box.bottom - box.top + 1;
 	// The crown's outline: in each crown row, everything between the row's outermost plant pixels.
 	let hull = 0;
