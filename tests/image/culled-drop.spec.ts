@@ -2,19 +2,26 @@
 // slices are made too small in the browser's copy of its source alone, and a page's normal run must
 // warn once, while the real shader never warns.
 import { expect, type Page, test } from '@playwright/test';
+import { defaultEnvironment } from '../../packages/cli/src/browser.js';
 
 /** How long the page runs before the test reads its warnings, in milliseconds. */
 const RUN_TIME = 6_000;
 /**
- * How long the instances page may take to start. It makes 100,000 columns and tens of thousands of
- * cars, and CI's software GPU needs more than two minutes to start it. This Mac's software GPU took
- * more than five minutes under other helpers' load, so the wait takes ten minutes, the ceiling that
- * the large demos use. The test's own limit clears the wait.
+ * How long the instances page may take to start. CI's software GPU did not start the full window
+ * within 120 s, and this Mac's did not within ten minutes. The page draws a smaller window there,
+ * so the wait allows more than twice the full window's failure, and the test's own limit clears it.
  */
-const START_MS = 600_000;
+const START_MS = 300_000;
+/** True on the software GPU, where the page draws the smaller window. */
+const SOFTWARE_GPU = defaultEnvironment() === 'chromium-swiftshader';
 
 /** Runs the page on the GPU culling path and returns its warnings of dropped copies. */
 async function droppedWarnings(page: Page, forced: boolean) {
+	// The instances page makes 100,000 columns and tens of thousands of cars. At the full window
+	// the software GPU did not start it within ten minutes, while the demo's own image test draws
+	// the same scene at 320 x 180 in seconds. The warning counts the copies in the culling batch,
+	// not the pixels, so a software GPU draws a smaller window; a real GPU keeps the full one.
+	if (SOFTWARE_GPU) await page.setViewportSize({ width: 480, height: 320 });
 	if (forced)
 		await page.route(/generated\/shaders[^/]*wgsl[^/]*\.js/, async (route) => {
 			const response = await route.fetch();
