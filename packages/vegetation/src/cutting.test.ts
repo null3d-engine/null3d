@@ -661,6 +661,45 @@ describe('cuttings', () => {
 		expect(Math.abs(tz - px)).toBeLessThan(0.05 * Math.max(1, px));
 	});
 
+	it('fans a piece from one shared base across its own leaf plane', () => {
+		const className = kit.record.shoots?.classes?.[0]?.name ?? 'cut';
+		const hinted = {
+			...kit,
+			record: {
+				...kit.record,
+				cuttings: { branch: { shoot: className, shoots: 5, fanRing: 0, fanSpin: 0 } },
+			},
+		} as SpeciesKitData;
+		const ring = clusterRow(hinted, { part: 'branch' }, kit.detail);
+		const fan = clusterRow(hinted, { part: 'branch', layout: 'fan', spread: 1 }, kit.detail);
+		if (!ring || !fan) throw new Error('the kit grew no piece to fan');
+		// Every row of a fan leaves the same foot.
+		for (let row = 0; row < fan.rows.count; row++)
+			expect([...fan.rows.position.subarray(row * 3, row * 3 + 3)]).toEqual([0, 0, 0]);
+		// The fan opens a body the unspread rows do not reach.
+		const size = (row: typeof fan) =>
+			[0, 1, 2].reduce(
+				(v, k) => v * ((row.bounds.max[k] as number) - (row.bounds.min[k] as number)),
+				1,
+			);
+		expect(size(fan)).toBeGreaterThan(size(ring) * 1.1);
+		// A record hint names the same fan the caller can.
+		const recorded = clusterRow(
+			{
+				...hinted,
+				record: {
+					...hinted.record,
+					cuttings: {
+						branch: { shoot: className, shoots: 5, layout: 'fan', spread: 1 },
+					},
+				},
+			} as SpeciesKitData,
+			{ part: 'branch' },
+			kit.detail,
+		);
+		expect(recorded?.bounds.max[2]).toBeCloseTo(fan.bounds.max[2] as number, 5);
+	});
+
 	it('grows the same bytes twice, and in a worker that runs the job-worker task', async () => {
 		const options = { seed: 11, variant: 0, cutting: { part: 'subbranch' as const } };
 		const here = plantAssetDigest(growPlantNow(kit, options));

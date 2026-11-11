@@ -2156,6 +2156,17 @@ export interface CutFromShoots {
 	 * species whose photograph lays the branch across the frame turns it by a quarter. 0 by default.
 	 */
 	readonly fanYaw?: number;
+	/**
+	 * How the fanned shoots are placed: round a ring about the axis, along one lateral spray, or
+	 * across the prototype's own leaf plane from one shared base. A fan keeps every row's leaf faces
+	 * turned alike, so a species whose leaves are two-ranked can spread the piece and still show its
+	 * blades. 'ring' by default.
+	 */
+	readonly layout?: 'ring' | 'spray' | 'fan';
+	/**
+	 * The width a spray or fan spans, as a share of the piece's height. 0 by default.
+	 */
+	readonly spread?: number;
 }
 
 /**

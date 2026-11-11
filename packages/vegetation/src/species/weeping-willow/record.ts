@@ -258,8 +258,8 @@ export const record: Species = {
 					[1, 0.9],
 				],
 				stem: { radius: [0.005, 0.003] },
-				laterals: { mean: 2, spread: 0.5 },
-				lateralGap: 0.3,
+				// The piece's rows are its hanging shoots, so a row carries none of its own.
+				laterals: { mean: 0, spread: 0 },
 				bend: { length: 0.07, angle: 22 },
 				leafScale: [
 					[0, 1],
@@ -489,12 +489,13 @@ export const record: Species = {
 	roundBand,
 	cuttings: {
 		// Still 21: a metre of arching branch with its hanging shoots still on it. The shoots share
-		// one base and stay in one leaf plane, and the whole piece turns a quarter about its axis so
-		// that plane and its side shoots face the frame.
-		branch: { shoot: 'cut', shoots: 8, fanRing: 0.06, fanSpin: 0, fanYaw: 90 },
+		// one base and open as a fan across their own leaf plane, and the whole piece turns a quarter
+		// about its axis so that plane and its side shoots face the frame.
+		branch: { shoot: 'cut', shoots: 8, layout: 'fan', spread: 0.25, fanYaw: 90 },
 		// Still 22: a short twig with two or three pliant shoots hanging from its end. Its photograph
-		// is narrower than the branch's, so the piece turns less about its axis.
-		subbranch: { shoot: 'spray', shoots: 3, fanRing: 0.06, fanSpin: 0, fanYaw: 38 },
+		// is narrower than the branch's, so its fan opens less; the shoots are the piece's own rows,
+		// and a row carries no laterals of its own.
+		subbranch: { shoot: 'spray', shoots: 3, layout: 'fan', spread: 0.25, fanYaw: 90 },
 		// Still 23: the end of one shoot, its narrow leaves in alternate ranks.
 		cluster: { shoot: 'spur' },
 		// Stills 12, 13, 24 and 25 lay the leaf flat on a copy stand.
