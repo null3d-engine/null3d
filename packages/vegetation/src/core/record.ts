@@ -317,6 +317,14 @@ export interface SelfOrganizing {
 		 * its share gives. Absent or false, such a bud takes no share and draws the weakest class.
 		 */
 		readonly surface?: boolean;
+		/**
+		 * A bias of a bud's light by the room the envelope leaves at its azimuth, so a crown whose
+		 * envelope is wider on one side carries more mass there. At 0 or absent the shadow grid's
+		 * light stands. Above 0 the light is multiplied by the room's share of the mean room at the
+		 * bud's height, raised to this power: the wide side reads above 1, the narrow below it, and
+		 * the height's own profile is held.
+		 */
+		readonly roomBias?: number;
 	};
 	/** How shoots bend toward light and against gravity. */
 	readonly tropism: {
@@ -1008,11 +1016,15 @@ export type Sdf =
 /**
  * How leaves or buds stand along a shoot.
  *
+ * A two-ranked shoot may turn each node's leaf past the opposite rank by `turn` degrees. A small
+ * turn keeps the shoot reading as two ranks and spreads its blades out of one plane, so the spray
+ * keeps its height as it turns. Zero, or no turn named, draws strict two ranks.
+ *
  * @category api/vegetation
  */
 export type Phyllotaxis =
 	| { readonly kind: 'spiral'; readonly divergence: number }
-	| { readonly kind: 'distichous'; readonly flatten: number }
+	| { readonly kind: 'distichous'; readonly flatten: number; readonly turn?: number }
 	| { readonly kind: 'opposite'; readonly decussate: boolean }
 	| { readonly kind: 'whorled'; readonly count: number }
 	| { readonly kind: 'fascicle'; readonly needles: number }
@@ -1518,6 +1530,21 @@ export interface GrassBlade {
 	readonly arch: Spread;
 	/** Share of the blade that is dry at the tip. */
 	readonly dryTip: number;
+	/**
+	 * A pale collar where the blade leaves its sheath: its colour in linear reflectance, and the
+	 * share of the blade's base it takes. Absent, the collar draws as the leaf.
+	 */
+	readonly collar?: { readonly colour: Rgb; readonly share: number };
+	/**
+	 * A ligule: a pale papery flap standing in the V between the blade and its sheath, drawn in
+	 * the collar's colour. Its length and width in metres, and the share of blades that carry
+	 * one. Absent, no flap draws.
+	 */
+	readonly ligule?: {
+		readonly length: Spread;
+		readonly width: number;
+		readonly share?: number;
+	};
 	/** How the blade looks under light. */
 	readonly optics: LeafOptics;
 }
@@ -1890,7 +1917,17 @@ export type ExtraShape =
 			 */
 			readonly stalkSides?: number;
 	  }
-	| { readonly petals: number; readonly radius: number; readonly cup: number }
+	| {
+			readonly petals: number;
+			readonly radius: number;
+			readonly cup: number;
+			/**
+			 * Metres of stalk that holds the cup out from its site along the shoot's own direction.
+			 * The stalk draws at the nearest level only, where a thin stem reads; absent, the cup
+			 * stands at its site as before.
+			 */
+			readonly stalk?: number;
+	  }
 	| { readonly spines: number; readonly length: number; readonly spread: number }
 	| { readonly catkin: { readonly length: number; readonly radius: number } };
 
