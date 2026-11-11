@@ -219,8 +219,9 @@ const SLOT_RULES: readonly { readonly test: (name: string) => boolean; readonly 
 		},
 		{
 			// A ground plant's sheath, collar or ligule: one tiller's column, seen side on at the
-			// scale the photograph frames it, since such a plant has no woody stem to show.
-			test: (n) => /sheath|ligule|collar/.test(n),
+			// scale the photograph frames it, since such a plant has no woody stem to show. The
+			// name must begin with the part, so a blade leaving its sheath keeps its fork picture.
+			test: (n) => /^(sheath|ligule|collar)/.test(n),
 			slot: { view: 'sheath', framed: false },
 		},
 		{
