@@ -46,7 +46,7 @@ export const record: Species = {
 		arms: {
 			count: { mean: 5, spread: 1 },
 			from: [0.33, 0.56],
-			elbow: [0.55, 0.95],
+			elbow: [0.45, 0.85],
 			// Still 18: an arm reads about three quarters of the trunk's width, so the radius takes
 			// that share of the trunk's girth.
 			radius: 0.26,
