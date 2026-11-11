@@ -39,6 +39,12 @@ export const record: Species = {
 		sheath: { mean: 0.06, spread: 0.012 },
 		// Still 07: each shoot's sheath bundle is about 1.5 cm across.
 		sheathRadius: 0.008,
+		// Stills 07, 08 and 14: the basal sheaths are red-brown, and the leaf's own sheath reads a
+		// paler straw-brown, so the sheath draws a warm brown between the two. The colour belongs
+		// to the shoot's sheath column, so it moves the basal-crown pictures (07 and 14) from green
+		// toward the photographs' brown and leaves a picture that frames the leaf's own sheath at
+		// its collar, or the stem, where it is; the row 8 colour differences fall toward 3 only
+		// where the shoot's column stands in frame.
 		// Still 02: the youngest blades stand nearly upright and the oldest arch out and over.
 		spread: [
 			[0, 2],
@@ -117,6 +123,20 @@ export const record: Species = {
 			arch: { mean: 70, spread: 15 },
 			// Still 10: a few tips brown at the edge of the tuft.
 			dryTip: 0.05,
+			// Stills 08 and 15: a pale line marks the collar where the blade leaves its sheath, in
+			// the lower fiftieth of the blade. It should move the leaf-base pictures 08 and 15 and
+			// the pressed leaves' bases toward the photographs, and leave the whole views nearly
+			// where they are.
+			collar: { colour: [0.4, 0.4, 0.32], share: 0.02 },
+			// Stills 08 and 15: a pale papery ligule stands in the V where the blade leaves its
+			// sheath, about a centimetre and a half long, in the collar's colour. It draws at the near
+			// detail only; it should move the leaf-base
+			// pictures 08 and 15 toward the photographs.
+			ligule: {
+				length: { mean: 0.015, spread: 0.004 },
+				width: 0.008,
+				share: 0.4,
+			},
 			optics: {
 				// Still 12's glossy yellow-green upper face.
 				reflectance: [0.064, 0.122, 0.0065],
@@ -182,8 +202,9 @@ export const record: Species = {
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
-			// Measured at seed 11 over the first four variants: the kit holds 33 to 37 KB, and a
-			// variant 1.54, 1.79, 2.08 and 3.32 MB from Low to Ultra.
+			// The budget check grows variant 0 alone, so these caps are not proved by it; they were
+			// measured at seed 11 against every variant, whose largest holds 1.53, 1.79, 2.16 and
+			// 3.42 MB from Low to Ultra. The kit holds 33 to 37 KB.
 			kitBytes: { low: 100_000, medium: 100_000, high: 100_000, ultra: 100_000 },
 			variantBytes: { low: 1_600_000, medium: 1_900_000, high: 2_200_000, ultra: 3_500_000 },
 			lod0Triangles: 140_000,
