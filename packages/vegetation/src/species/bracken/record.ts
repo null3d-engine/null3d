@@ -40,7 +40,7 @@ export const record: Species = {
 			kind: 'bipinnate',
 			length: { mean: 1.05, spread: 0.15 },
 			// Stills 06 and 16: a stipe stout enough to carry the blade.
-			petiole: { length: 0, width: 0.013, teeth: 0 },
+			petiole: { length: 0, width: 0.014, teeth: 0 },
 			// Still 02: the rachis leaves the stipe's top rising, turns over through the blade's
 			// first third to near level, and lets the tip fall a little below it.
 			droop: [

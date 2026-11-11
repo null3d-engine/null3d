@@ -256,7 +256,11 @@ async function drawPage(
 	hold: number,
 	gpu: string | undefined,
 ): Promise<{ image: Rgba; facts: Record<string, unknown> | undefined }> {
-	const page = await browser.newPage({ viewport: { width: size[0], height: size[1] } });
+	// The dev server serves the local certificate, which this browser has not been told to trust.
+	const page = await browser.newPage({
+		viewport: { width: size[0], height: size[1] },
+		ignoreHTTPSErrors: true,
+	});
 	try {
 		const params = new URLSearchParams({
 			sketch: `${SKETCH}?${plantReviewQuery({ ...query, size })}`,
@@ -319,7 +323,9 @@ export async function drawShots(
 	options: { readonly gpu?: string; readonly log?: (line: string) => void } = {},
 ): Promise<RunFrame[]> {
 	const log = options.log ?? console.log;
-	const server = await startServer();
+	// A checkout without a development certificate draws over plain HTTP on the loopback, as the
+	// server asks: the environment's choice reaches the server instead of being forced to HTTPS.
+	const server = await startServer(process.env.NULL3D_HTTPS !== '0');
 	const browser = await launchRepoBrowser(defaultEnvironment());
 	const frames: RunFrame[] = [];
 	try {

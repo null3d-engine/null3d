@@ -1,8 +1,9 @@
 # D-273: Vertex morphing for generated shapes
 
-Status: decided by the owner, on the rule below. Built: the terrain morphs each
-block toward its parent's surface, and a tree's leaf cards morph toward the next level. Task:
-M3-L4.
+Status: decided by the owner, on the rule below. Built: the terrain morphs each block toward its
+parent's surface. The leaf-card morph was built with the first generator and removed with it, under
+[D-323](D-323-plant-core-three-scales.md)'s ruling. The plant core hands its levels over with the
+dither, so decision 4 below describes the removed generator. Task: M3-L4.
 
 Summary: Both add-ons write a four-number vertex record and read it in their own custom material's
 vertex offset. The terrain stores the parent grid's height, the block's size and the block's height

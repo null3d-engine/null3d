@@ -546,7 +546,7 @@ function compareRun(
 			`- ${result.pairs.length} files beside a render of their view; ${masked.length} give an outline on a plain background in both pictures.`,
 			...masked.map(
 				(pair) =>
-					`- ${pair.file}: shape IoU ${fixed(pair.shapeIou)}, width error ${fixed(pair.profileError, 3)}, gap ${fixed(pair.gap?.reference)} against ${fixed(pair.gap?.render)}, leaf colour difference ${fixed(pair.foliageDeltaE, 1)}${barkClause(pair)}${pieceClause(pair)}.`,
+					`- ${pair.file}: shape IoU ${fixed(pair.shapeIou)}, width error ${fixed(pair.profileError, 3)}, gap ${fixed(pair.crownBoxGap?.reference)} against ${fixed(pair.crownBoxGap?.render)} in the crown box, frame ${fixed(pair.frameGap?.reference)} against ${fixed(pair.frameGap?.render)}, leaf colour difference ${fixed(pair.foliageDeltaE, 1)}${barkClause(pair)}${pieceClause(pair)}.`,
 			),
 			...result.pairs.flatMap((pair) =>
 				pair.surfaceDeltaE !== null

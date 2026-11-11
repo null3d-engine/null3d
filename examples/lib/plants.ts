@@ -8,6 +8,8 @@ import type { SketchContext } from '@null3d/engine';
 import {
 	bakeFarPlant,
 	growPlant,
+	isSpeciesId,
+	loadSpeciesOrStandIn,
 	type PlacedPlants,
 	type PlantCopies,
 	type PlantMaterial,
@@ -15,9 +17,17 @@ import {
 	plantMaterials,
 	prepareSpecies,
 	type StandInOptions,
-	standInSpecies,
 } from '@null3d/vegetation';
 import type { WindField } from '@null3d/wind';
+
+/**
+ * The sparse level every demo that grows plants through the add-on starts at: every such demo
+ * opens at the sparsest form the species allows, on every device, so a scene loads light and a
+ * reader adds density from there. The ruling is not the
+ * device rule — a desktop opens sparse too. A page that grows its own plants passes this beside
+ * the other options.
+ */
+export const DEMO_SPARSENESS = 1;
 
 /** One copy of a plant: where it stands, its turn about +Y in radians, its scale and variant. */
 export interface PlantSpot {
@@ -108,16 +118,26 @@ export async function plantSpecies(
 	let variants = options.variants ?? 0;
 	if (options.variants === undefined)
 		for (const spot of options.spots) variants = Math.max(variants, spot.variant + 1);
-	const module = Promise.resolve(
-		standInSpecies(options.id, { variants: Math.max(1, variants), ...options.standIn }),
-	);
+	// A species that has landed in the add-on draws as itself; one that has not draws as the stand-in
+	// the demo names, at that stand-in's size, colours and ecology.
+	const module = loadSpeciesOrStandIn(options.id, {
+		variants: Math.max(1, variants),
+		...options.standIn,
+	});
+	// A landed species takes its own textures and stages, and a stand-in takes the white textures the
+	// stand-in prepare draws. Passing the stand-in's flag for a landed species would draw its geometry
+	// with every texture white.
 	const kit = await inTurn('prepare', module, async () =>
-		prepareSpecies(ctx, await module, { placeholders: true }),
+		prepareSpecies(
+			ctx,
+			await module,
+			isSpeciesId(options.id) ? { placeholders: 'missing' } : { placeholders: true },
+		),
 	);
 	const grown = (async () => {
 		const assets = await Promise.all(
 			Array.from({ length: variants }, (_, variant) =>
-				growPlant(kit, { seed: options.seed, variant, near: true }),
+				growPlant(kit, { seed: options.seed, variant, near: true, sparse: DEMO_SPARSENESS }),
 			),
 		);
 		const far = options.far

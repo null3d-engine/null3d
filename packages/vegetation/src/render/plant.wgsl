@@ -37,6 +37,10 @@ struct Uniforms {
     // one that names none.
     windBox: f32,
     windStrength: f32,
+    // The base wind's speed in metres a second and its heading in radians, which a page sets each
+    // frame after its controls change.
+    windSpeed: f32,
+    windHeading: f32,
     // The layer of the field's texture that holds the newest state, which a page sets each frame.
     windLayer: f32,
     // The distance from the camera out to which the plant sways, in metres: 0 for every distance.
@@ -97,6 +101,10 @@ const REST_STEPS: f32 = 255.0;
 const HEADER_YOUNG: i32 = 15;
 const HEADER_YOUNG_TILE: i32 = 16;
 const HEADER_YOUNG_TINT: i32 = 56;
+// A tuft's basal sheath colour and roughness, for the merged foliage's sheath columns.
+const HEADER_SHEATH: i32 = 65;
+// A grass blade's collar: its colour, then the share of the blade's base it takes.
+const HEADER_COLLAR: i32 = 66;
 const HEADER_MOSS: i32 = 17;
 const HEADER_MOSS_REACH: i32 = 18;
 const HEADER_EXTRAS: i32 = 19;
@@ -110,10 +118,10 @@ const HEADER_BARK_SECONDS: i32 = 57;
 const HEADER_LICHEN: i32 = 40;
 const HEADER_LICHEN_REACH: i32 = 41;
 const HEADER_SWAY: i32 = 42;
-const HEADER_AUTUMN_BARK: i32 = 57;
-const HEADER_WINTER_BARK: i32 = 58;
-const HEADER_WINTER_REFLECTANCE: i32 = 59;
-const HEADER_WINTER_TRANSMITTANCE: i32 = 60;
+const HEADER_AUTUMN_BARK: i32 = 61;
+const HEADER_WINTER_BARK: i32 = 62;
+const HEADER_WINTER_REFLECTANCE: i32 = 63;
+const HEADER_WINTER_TRANSMITTANCE: i32 = 64;
 const HEADER_EXTRA_BANDS: i32 = 43;
 // An extra's scale pattern: its scale rows, the cells round its turn, and its band's share of the
 // profile's height at each end, per extra in record order.
@@ -157,6 +165,8 @@ const MAX_BRANCH_DEPTH: i32 = 8;
 const KIND_STEM: f32 = 85.0;
 // The surface kind byte of a shoot's bud, which draws as a stem in the record's bud colour.
 const KIND_BUD: f32 = 128.0;
+/// A merged ground plant's sheath column, marked in the colour's third byte.
+const KIND_SHEATH: f32 = 240.0;
 // Texels across the near table: two for each of its sixteen slots.
 const NEAR_TEXELS: f32 = 32.0;
 // A leaf's reflectance at normal incidence and at grazing, as the plant materials set them.
@@ -165,6 +175,10 @@ const LEAF_F90: f32 = 0.875;
 // How much a furrow's cavity darkens the bark's colour and raises its roughness.
 const CAVITY_DARK: f32 = 0.45;
 const CAVITY_ROUGH: f32 = 0.2;
+// How much of the crown's baked sky visibility darkens bark. A tree's own leaves shade its limbs,
+// but light scatters through the crown, so the wood keeps more of the sky than a leaf's density
+// alone would give it.
+const WOOD_SHADE: f32 = 0.35;
 
 /// One texel of the header row.
 /// A fixed value from two whole numbers, from 0 to 1: a scale's own shade, the same every frame.
@@ -490,7 +504,11 @@ fn air_at(place: vec3f) -> vec4f {
     let gust = textureLoad(records, vec2i(1, 1), 0);
     let swirl = textureLoad(records, vec2i(2, 1), 0);
     let sent = textureLoad(records, vec2i(3, 1), 0);
-    let reading = wind_reading(base, gust, swirl, sent, frame.time);
+    var reading = wind_reading(base, gust, swirl, sent, frame.time);
+    // The base wind follows the page's controls, which the records rows keep only until the
+    // material is made. They carry the gust and the swirl, which change when a page sends a gust.
+    reading.speed = material.windSpeed;
+    reading.heading = material.windHeading;
     return wind_sample(
         place,
         camera.position.xz - vec2f(material.windBox * 0.5),
@@ -1015,7 +1033,7 @@ fn surface(input: SurfaceInput) -> Surface {
         roughness = saturate(0.82 + CAVITY_ROUGH * cavity);
         // A lichen patch is a flat, matte crust: it hides the furrows under it.
         mapped = normalize(mix(bark_normal, vec3f(0.0, 0.0, 1.0), lichen_mask * 0.35));
-        occlusion = input.vertexColor.a;
+        occlusion = mix(1.0, input.vertexColor.a, WOOD_SHADE);
     } else if (mode == MODE_CARDS) {
         // In the shell where a near copy draws its real shoots, its cards give way.
         let near_copy = object.values.x > 0.5;
@@ -1130,6 +1148,12 @@ fn surface(input: SurfaceInput) -> Surface {
                 base *= header(HEADER_YOUNG_TINT).rgb;
             }
             roughness = 0.8;
+        } else if (mode == MODE_FOLIAGE && abs(input.vertexColor.b * 255.0 - KIND_SHEATH) < 0.5) {
+            // A merged ground plant's sheath column draws in the record's sheath colour. Its kind
+            // marks the colour's third byte, since the asset clamps a negative coordinate to zero.
+            let body = header(HEADER_SHEATH);
+            base = body.rgb;
+            roughness = max(body.w, 0.5);
         } else {
             let layer = select(1, 0, upper);
             let texel = textureSampleGrad(colour, colourSampler, uv, layer, gx, gy);
@@ -1153,6 +1177,12 @@ fn surface(input: SurfaceInput) -> Surface {
             let flatten = 1.0 / max(leaf_normal.z, 0.5);
             base = min(base * flatten, vec3f(1.0));
             through *= flatten;
+            // A pale collar marks where the blade leaves its sheath, over the share the record
+            // names at the blade's base.
+            let collar = header(HEADER_COLLAR);
+            if (collar.w > 0.0 && input.uv1.x < collar.w) {
+                base = mix(collar.rgb, base, smoothstep(collar.w * 0.6, collar.w, input.uv1.x));
+            }
             sheen = select(header(HEADER_UPPER_REFLECTANCE).w, 0.0, upper);
         }
         if (mode == MODE_SHOOTS) {
@@ -1190,7 +1220,11 @@ fn surface(input: SurfaceInput) -> Surface {
     s.ambientNormal = select(normal, normalize(sky_normal), dot(sky_normal, sky_normal) > 0.0);
     s.occlusion = saturate(occlusion);
     s.occlusionByMinimum = true;
-    s.alpha = sharpen(alpha, width);
+    // A matte carries the texel's own coverage rather than a sharpened edge, so the review can weigh
+    // a partly covered texel as the part of plant it is: the piece test joins a group through it, and
+    // the openness test keeps the sky it does not cover. A sharpened edge would do the first and lose
+    // the second.
+    s.alpha = select(sharpen(alpha, width), alpha, matte);
     s.diffuseTransmission = select(share, 0.0, matte);
     s.diffuseTransmissionColor = select(through, vec3f(0.0), matte);
     return s;

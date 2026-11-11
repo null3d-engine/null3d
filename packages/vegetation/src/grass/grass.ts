@@ -16,6 +16,9 @@ import {
 } from '@null3d/engine';
 import type { WindField } from '@null3d/wind';
 import { unitAt } from '../core/hash';
+import { radians } from '../core/math';
+import type { GrassBlade } from '../core/record';
+import { bladeWidth } from '../leaf/grass-blade';
 import grassShader from './grass.wgsl';
 import bladesShader from './grass-blades.wgsl';
 
@@ -63,6 +66,12 @@ export interface GrassOptions {
 	readonly where?: (x: number, z: number) => boolean;
 	/** The blades' color, which meets the ground's own at their roots. The default is a fresh green. */
 	readonly color?: string;
+	/**
+	 * A species' blade, whose width, profile and tip the cover's blades take. Give it with the
+	 * species' own colour, as `grassCover` returns them, so the cover reads as the same grass where
+	 * a plant of that species stands in it. Without it a blade narrows to a point from its root.
+	 */
+	readonly blade?: GrassBlade;
 	/** The steepest ground that a tuft grows on, as rise over run. The default is 0.6. */
 	readonly maxSlope?: number;
 	/**
@@ -209,16 +218,25 @@ export interface TuftMesh {
 }
 
 /**
- * One tuft's mesh: blades that lean out from its middle and curve over. Each blade is a strip that
- * narrows to a point, its normal leans up so it lights like the ground, and its colours run from a
- * dark root to a lighter tip.
+ * One tuft's mesh: blades that lean out from its middle and curve over. Each blade is a strip
+ * whose normal leans up so it lights like the ground, and whose colours run from a dark root to a
+ * lighter tip. A blade narrows to a point, or takes the profile and tip that a species' blade
+ * gives it.
  *
  * @category api/vegetation
  */
-export function tuftMesh(seed: number, blades: number, segments: number): TuftMesh {
+export function tuftMesh(
+	seed: number,
+	blades: number,
+	segments: number,
+	blade?: GrassBlade,
+): TuftMesh {
 	let index = 0;
 	const next = () => unitAt(seed, index++);
-	const perBlade = segments * 2 + 1;
+	// A species' blade shows its keel: the two halves rise from the midrib by the record's fold, so
+	// a row of its cross-section holds a vertex at the midrib between the two sides.
+	const across = blade && blade.fold > 0 ? 3 : 2;
+	const perBlade = segments * across + 1;
 	const positions = new Float32Array(blades * perBlade * 3);
 	const normals = new Float32Array(blades * perBlade * 3);
 	const colors = new Float32Array(blades * perBlade * 3);
@@ -230,34 +248,68 @@ export function tuftMesh(seed: number, blades: number, segments: number): TuftMe
 		const root = 0.015 + 0.11 * next();
 		const height = 0.12 + 0.22 * next() ** 1.5;
 		const lean = (0.1 + 0.25 * next()) * height;
-		const width = 0.016 + 0.012 * next();
+		const width = blade?.width ?? 0.016 + 0.012 * next();
 		const twist = angle + Math.PI / 2 + (next() - 0.5) * 0.8;
 		const [sx, sz] = [Math.cos(twist), Math.sin(twist)];
 		// The face's normal, across the strip, leaned up by two thirds.
 		const [fx, fz] = [-sz, sx];
 		const length = Math.hypot(fx * 0.35, 1, fz * 0.35);
+		const [nx, ny, nz] = [(fx * 0.35) / length, 1 / length, (fz * 0.35) / length];
+		// A keel turns each half's normal away from the flat face by the fold, so the two halves
+		// light apart as the plant's blade does. The across direction, square to the face, is the
+		// axis the normal turns about.
+		const fold = across === 3 && blade ? radians(blade.fold) : 0;
+		const [sinFold, cosFold] = [Math.sin(fold), Math.cos(fold)];
+		const along = sx * nx + sz * nz;
+		const [ax, ay, az] = [sx - nx * along, -ny * along, sz - nz * along];
+		const axis = Math.hypot(ax, ay, az) || 1;
 		const first = b * perBlade;
 		for (let j = 0; j <= segments; j++) {
 			const t = j / segments;
 			const cx = ox * (root + lean * t * t);
 			const cz = oz * (root + lean * t * t);
 			const cy = height * (t - 0.15 * t * t);
-			const half = (width / 2) * (1 - t) ** 0.9;
-			const sides = j === segments ? [0] : [-1, 1];
-			for (const side of sides) {
-				const v = first + (j === segments ? segments * 2 : j * 2 + (side + 1) / 2);
-				positions.set([cx + sx * half * side, cy, cz + sz * half * side], v * 3);
-				normals.set([(fx * 0.35) / length, 1 / length, (fz * 0.35) / length], v * 3);
-				const shade = 0.3 + 0.7 * t;
+			const half = blade ? 0.5 * bladeWidth(width, blade, t) : (width / 2) * (1 - t) ** 0.9;
+			// A keel lifts each side of the cross-section, and the tip closes on one vertex.
+			const rise = across === 3 && blade ? half * Math.sin(radians(blade.fold)) : 0;
+			const shade = 0.3 + 0.7 * t;
+			if (j === segments) {
+				const v = first + segments * across;
+				positions.set([cx, cy, cz], v * 3);
+				normals.set([nx, ny, nz], v * 3);
 				colors.set([shade * (0.9 + 0.25 * t), shade, shade * (0.85 - 0.2 * t)], v * 3);
-				uvs.set([(side + 1) / 2, t], v * 2);
+				uvs.set([0.5, t], v * 2);
+				continue;
+			}
+			for (let s = 0; s < across; s++) {
+				const side = across === 2 ? s * 2 - 1 : s - 1;
+				const v = first + j * across + s;
+				positions.set(
+					[cx + sx * half * side, cy + Math.abs(side) * rise, cz + sz * half * side],
+					v * 3,
+				);
+				const [tx, ty, tz] = [
+					nx * cosFold - side * (ax / axis) * sinFold,
+					ny * cosFold - side * (ay / axis) * sinFold,
+					nz * cosFold - side * (az / axis) * sinFold,
+				];
+				const turn = Math.hypot(tx, ty, tz) || 1;
+				normals.set([tx / turn, ty / turn, tz / turn], v * 3);
+				colors.set([shade * (0.9 + 0.25 * t), shade, shade * (0.85 - 0.2 * t)], v * 3);
+				uvs.set([s / (across - 1), t], v * 2);
 			}
 		}
 		for (let j = 0; j < segments - 1; j++) {
-			const a = first + j * 2;
-			indices.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
+			for (let s = 0; s < across - 1; s++) {
+				const a = first + j * across + s;
+				const b = first + (j + 1) * across + s;
+				indices.push(a, a + 1, b, a + 1, b + 1, b);
+			}
 		}
-		indices.push(first + segments * 2 - 2, first + segments * 2 - 1, first + segments * 2);
+		// The last row closes in the tip's one vertex.
+		const last = first + (segments - 1) * across;
+		const tip = first + segments * across;
+		for (let s = 0; s < across - 1; s++) indices.push(last + s, last + s + 1, tip);
 	}
 	return { positions, normals, colors, uvs, indices };
 }
@@ -294,11 +346,11 @@ export async function createGrass(ctx: SketchContext, options: GrassOptions): Pr
 	const shapes = Math.max(1, Math.floor(options.shapes ?? 1));
 	const blades = Math.max(1, Math.floor(options.blades ?? 13));
 	const segments = Math.max(1, Math.floor(options.segments ?? 3));
-	const airSettings = options.wind
-		? readingTexture(ctx.textures, options.wind.air)
+	/** The field's settings as the settings texture holds them, so a change costs one upload. */
+	const held = options.wind ? readingData(options.wind.air) : undefined;
+	const airSettings = held
+		? readingTexture(ctx.textures, held)
 		: stillTextures(ctx.textures).airSettings;
-	/** The sent gust's born time that the settings texture holds, so one gust costs one upload. */
-	let sentBorn = Number.NaN;
 	const materialOptions = (): Omit<ShaderOptions, 'wgsl'> => ({
 		...(options.wind
 			? { textures: { wind: options.wind.texture, airSettings } }
@@ -343,7 +395,7 @@ export async function createGrass(ctx: SketchContext, options: GrassOptions): Pr
 				{
 					...materialOptions(),
 					shader: grassShader,
-					vertices: tuftMesh(101 + shape, blades, segments),
+					vertices: tuftMesh(101 + shape, blades, segments, options.blade),
 					capacity,
 					count: 0,
 				},
@@ -380,7 +432,10 @@ export async function createGrass(ctx: SketchContext, options: GrassOptions): Pr
 			const material = ctx.materials.shader({ ...materialOptions(), wgsl: grassShader });
 			const batch = ctx.scene.createInstances(
 				// The wind bends the blades in the shader, and the field thins by distance itself.
-				ctx.geometry.fromArrays({ ...tuftMesh(101 + shape, blades, segments), levels: false }),
+				ctx.geometry.fromArrays({
+					...tuftMesh(101 + shape, blades, segments, options.blade),
+					levels: false,
+				}),
 				rows.length,
 				{
 					material,
@@ -460,11 +515,14 @@ export async function createGrass(ctx: SketchContext, options: GrassOptions): Pr
 		for (const entry of draws) entry.material.setUniform('windLayer', field.texture.layer);
 		// The cull follows the camera, so a moving page gives the blade list its view each frame.
 		if (passes.length > 0) updateCull();
-		// A gust that a page sends travels through the steady field, which the settings carry. The
-		// texels go up when a gust is sent, not once a frame.
-		if (field.air.sent[3] !== sentBorn) {
-			sentBorn = field.air.sent[3];
-			airSettings.update(readingData(field.air));
+		// The base wind and a sent gust travel through the steady field, which the settings carry.
+		// They go up when either changes, so a page's controls reach the blades at once.
+		if (held && !sameReading(field.air, held)) {
+			held.set(field.air.base, 0);
+			held.set(field.air.gust, 4);
+			held.set(field.air.swirl, 8);
+			held.set(field.air.sent, 12);
+			airSettings.update(held);
 		}
 	};
 	const setSwayDistance = (distance: number) => {
@@ -519,13 +577,28 @@ function readingData(air: WindField['air']): Float32Array {
 	data.set(air.base, 0);
 	data.set(air.gust, 4);
 	data.set(air.swirl, 8);
-	data.set(air.sent.slice(0, 4), 12);
+	data.set(air.sent, 12);
 	return data;
 }
 
+/** True when the field's settings differ from the numbers the settings texture holds. */
+function sameReading(air: WindField['air'], held: Float32Array): boolean {
+	// The texture holds the numbers as 32-bit floats, so compare at that precision, or a value
+	// that the texture rounds would look changed in every frame.
+	for (let i = 0; i < 4; i++)
+		if (
+			held[i] !== Math.fround(air.base[i] ?? 0) ||
+			held[i + 4] !== Math.fround(air.gust[i] ?? 0) ||
+			held[i + 8] !== Math.fround(air.swirl[i] ?? 0) ||
+			held[i + 12] !== Math.fround(air.sent[i] ?? 0)
+		)
+			return false;
+	return true;
+}
+
 /** The texture that holds the field's settings: four texels of four numbers each. */
-function readingTexture(textures: Textures, air: WindField['air']): Texture {
-	return textures.fromData({ width: 4, height: 1, format: 'rgba16float', data: readingData(air) });
+function readingTexture(textures: Textures, data: Float32Array): Texture {
+	return textures.fromData({ width: 4, height: 1, format: 'rgba16float', data });
 }
 
 /** A still field's textures, for grass that names no wind field. */

@@ -709,6 +709,13 @@ export function meshTuft(input: MeshInput, level: MeshLevel): MeshArrays {
 	const stems = stalkRange(strip);
 	const buds = terminalBuds(skeleton);
 	const meanLength = spreadMean(blade.length);
+	// A ligule stands at the blade's collar only at the nearest and finest detail, where a close
+	// view can read it; the farther levels and the kit's pressed leaf draw none.
+	const ligule =
+		blade.ligule && (input.detail === 'high' || input.detail === 'ultra')
+			? { length: spreadMean(blade.ligule.length), width: blade.ligule.width }
+			: undefined;
+	const liguleShare = blade.ligule?.share ?? 1;
 	const mesh = new MeshWriter();
 	const season = input.season;
 	const browning =
@@ -777,6 +784,7 @@ export function meshTuft(input: MeshInput, level: MeshLevel): MeshArrays {
 						(unitAt(input.seed, key, 2) < 0.5 ? -1 : 1),
 					browning,
 					dry: 0.35 + 0.65 * age * age,
+					...(ligule && unitAt(input.seed, key, 7) < liguleShare ? { ligule } : {}),
 				},
 				{ rows, across: tiers.blade.across },
 				texture,
@@ -811,7 +819,9 @@ export function meshTuft(input: MeshInput, level: MeshLevel): MeshArrays {
 			bytes,
 			crown,
 			along: isStem ? [0, 1] : fine ? [0.85, 1] : [0, 0.05],
-			browning: Math.max(browning, isStem ? 0.15 : 0.3),
+			// A sheath column carries a sentinel browning value, which the plant material reads as
+			// the record's sheath colour; every other stalk browns as the season gives.
+			browning: isStem ? Math.max(browning, 0.15) : Math.max(browning, 0.3),
 			closeTip: isStem || fine,
 		});
 	}

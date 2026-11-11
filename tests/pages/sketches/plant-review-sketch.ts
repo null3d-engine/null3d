@@ -26,6 +26,7 @@ import {
 	prepareSpecies,
 	type SpeciesKit,
 	setWindLayer,
+	swayDistanceFor,
 } from '@null3d/vegetation';
 import { createWind, type Wind } from '@null3d/wind';
 import {
@@ -475,6 +476,7 @@ export default defineSketch(async (ctx) => {
 	// A review picture is laid beside a reference that carries no display curve; a tone curve
 	// would crush and saturate the sky and the foliage that the reference shows as they are.
 	post.set({ toneMapping: 'none' });
+	if (QUERY.motion) debug.view('motion');
 	const notes: string[] = [];
 	// A registered species grows through its own stages, with a stand-in only for each stage that is
 	// not built yet; any other id, or the query's `placeholders`, grows the stand-in of every stage.
@@ -1289,11 +1291,19 @@ export default defineSketch(async (ctx) => {
 				})
 			: undefined;
 	// A stand-in kit's matte is plain black materials; a real kit's is the plant shader's own, which
-	// keeps its quantised parts, cut-outs and sway.
+	// keeps its quantised parts, cut-outs and sway. A plant under the wind sways out to its preset's
+	// distance, or to the query's own, so a far cascade that only this plant reaches keeps the layer
+	// it holds, and a plant past the distance stands still under the same field.
 	const plantLook =
 		MATTE && kit.placeholders === true
 			? matteMaterials(ctx, kit)
-			: plantMaterials(ctx, kit, { ...(wind && { wind: wind.field }), matte: MATTE });
+			: plantMaterials(ctx, kit, {
+					...(wind && {
+						wind: wind.field,
+						swayDistance: QUERY.sway ?? swayDistanceFor(ctx.quality.preset),
+					}),
+					matte: MATTE,
+				});
 	// A stand-in kit draws through the stand-in near pool. A real kit's one plant stands at a fixed
 	// place, so its placement composes its shoot rows once, with no pool.
 	const near: NearPool | undefined =
@@ -1371,6 +1381,13 @@ export default defineSketch(async (ctx) => {
 	const subject = close
 		? { ...close.subject, ...(close.clutter && { clutter: close.clutter }) }
 		: plainSubjects.get(VIEW);
+	// The plant as the view draws it: the level's filled silhouette, not every level's part bounds,
+	// so a vertex or a part outside the drawn cells cannot inflate the posted width and height.
+	const drawnBox = cells[0] ? measurePlant(main, kit.box, cells[0].turn).plantBox : null;
+	// A cut piece is drawn from its own kit, and its posted size is the box its own level draws, not
+	// the union of every part's bounds.
+	const pieceTurn = cells.find((cell) => cell.piece === 'away')?.turn ?? cells[0]?.turn ?? 0;
+	const pieceBox = piece ? measurePlant(piece, pieceKit.box, pieceTurn).plantBox : null;
 	facts = {
 		species: record.id,
 		name: record.name,
@@ -1383,8 +1400,8 @@ export default defineSketch(async (ctx) => {
 		size: SIZE,
 		grid: [columns, rows],
 		plant: {
-			height,
-			width: bounds.max[0] - bounds.min[0],
+			height: drawnBox ? drawnBox.top : height,
+			width: drawnBox ? drawnBox.width : bounds.max[0] - bounds.min[0],
 			depth: bounds.max[2] - bounds.min[2],
 			crownBase: main.crown.base,
 			trunkRadius: trunk?.radius ?? null,
@@ -1396,7 +1413,9 @@ export default defineSketch(async (ctx) => {
 				...piece.cutting,
 				size: (() => {
 					const b = boundsOf(piece, pieceKit);
-					return sub(b.max, b.min);
+					return pieceBox
+						? [pieceBox.width, pieceBox.top, (b.max[2] as number) - (b.min[2] as number)]
+						: sub(b.max, b.min);
 				})(),
 				axes: piece.skeleton.axes.count,
 			},
