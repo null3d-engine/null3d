@@ -251,10 +251,14 @@ function growHeads(
 				],
 				[
 					from[0] + out[0] * length * 0.55,
-					from[1] - length * 0.3,
+					from[1] - length * 0.32,
 					from[2] + out[2] * length * 0.55,
 				],
-				[from[0] + out[0] * length * 0.6, from[1] - length * 0.65, from[2] + out[2] * length * 0.6],
+				[
+					from[0] + out[0] * length * 0.68,
+					from[1] - length * 0.62,
+					from[2] + out[2] * length * 0.68,
+				],
 			];
 			let previous = node;
 			let end = node;
