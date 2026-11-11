@@ -212,10 +212,9 @@ export const record: Species = {
 				nodes: { mean: 5, spread: 0.5 },
 				internode: PLATE_RUN,
 				// A young shoot's leaves are larger than the crown's, and the photograph's sprig
-				// spans its own breadth with six of them. The ranks turn a little round the stem; the
-				// piece gains 5 mm of depth, not the depth its turn needs, so the spray still reads
-				// flat and the turn's height stays the fault.
-				phyllotaxis: { kind: 'distichous', flatten: 0.7 },
+				// spans its own breadth with six of them. Each node's leaf turns a little past the
+				// opposite rank, so the still keeps its two ranks and the turn finds depth.
+				phyllotaxis: { kind: 'distichous', flatten: 0.7, turn: 10 },
 				leafScale: [
 					[0, 1.35],
 					[1, 1.65],
@@ -311,6 +310,19 @@ export const record: Species = {
 			// The limb's masked view reads 1.7 light and 5.0 short on yellow, so the thinner wood
 			// keeps a darker, yellower cast.
 			{ layer: 0, by: 'radius', from: 0, to: 0.45, blend: 0.05, tint: [0.95, 0.93, 0.72] },
+			// Still 14: the foot's bark reads lighter and yellower than the photograph's grey. The
+			// cast fades over 0.2 m centred at 1.1 m, so the fade ends at 1.2 m where the mid-trunk
+			// view's frame begins: the foot gains the cast without a hard seam and that view keeps
+			// its material.
+			{
+				layer: 0,
+				by: 'radius',
+				from: 0,
+				to: 5,
+				blend: 0.05,
+				tint: [1.18, 1.02, 0.9],
+				second: { from: 0, to: 1.1, blend: 0.2 },
+			},
 		],
 		young: 0,
 		// Stills 16 and 28: the young olive bark runs up the limbs and thin wood, so a limb in a close
@@ -519,8 +531,8 @@ export const record: Species = {
 	textures: 'own',
 	variants: 6,
 	seedSalt: 2357111317,
-	// A first pass at the floors a phone's lighter form keeps, set from the species' form and to
-	// be measured on the phone set before they are trusted.
+	// The owner's ruling, and the floors the measured runs used: the broadleaf keeps little wood and
+	// less leaf, and coarsens more than any other species, because its crown carries the most.
 	sparse: { limbs: 0.32, leaves: 0.38, coarseness: 0.65 },
 	roundBand,
 	cuttings: {

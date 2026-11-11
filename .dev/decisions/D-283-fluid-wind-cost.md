@@ -4,11 +4,14 @@ Status: decided by the owner. The owner accepted the rows and budgets that this 
 0.5, 1.2, 4.9 and 6.25 ms from Low to Ultra, with Medium on the flat 64x64 grid, High on four
 layers of 128x128, Ultra on the volume 64x24x64, and Low on the formula wind on phones until a
 phone measures the small grid. The ruling closes the rows and the budgets. Three clauses of the
-task's Done-when stay open: the smallest-tier look, a side-by-side that the owner judges and has not
-named; the cost of each tier on the M5 Max, because the machine here is an M3 Max and no M5 Max ran
+task's Done-when stay open: the smallest-tier look, which the owner has judged: shown the wind demo at
+Low beside Medium, he answered that he can tell the difference, so the smallest tier he cannot tell
+from the next one up stands at Medium or above, and Low's look stays open; the cost of each tier on the M5 Max, because the machine here is an M3 Max and no M5 Max ran
 the plan, while the iPad Pro 13, the Galaxy S25 and the Galaxy Tab A9 Plus now carry their rows; and
 the proof that the chosen rows keep Creek and the forest within D-241's frame ceilings: the S25's
-Ultra Creek row reads 516.56 ms against the 511 ms ceiling, and the forest's side waits on M3-V12. The three devices measured their rows. All field rows hold except the Galaxy
+Ultra Creek row reads 516.56 ms against the 511 ms ceiling, and the forest's rows are measured over
+their ceilings too, at 88, 111 and 97 ms on the iPad at Medium, High and Ultra against 54.8, 67.1 and
+71.1, and 66 ms on the cloud S24 at Medium against 33.3. The three devices measured their rows. All field rows hold except the Galaxy
 S25's Ultra cell, which stays open: its 30 Hz display owes two field cycles a frame, so the
 modelled frame is 11.08 ms, from the measured 5.243 ms of its 40 volume steps plus the
 advection and projection floor, doubled. That is over the wind's own 6.25 ms figure, and D-241's
@@ -454,8 +457,9 @@ case as its test.
   not by 0.5 ms. The iPhone's busiest thread rises 2.77 ms for the 22 runs, which puts Low's rate
   near 0.3 ms of CPU there. On the Mac's WebGL2 the row costs about 0.43 ms at 0.17 ms a run, inside
   the ceiling. So the formula field stays the safe row, and it is also the fallback for a device
-  without a float target. The owner has not named the smallest-tier look, which a side-by-side of
-  the formula wind and the 32x32 field would settle.
+  without a float target. The owner has judged the smallest-tier look, having said that he can tell Low
+  from Medium, so the tier he cannot tell from the next one up stands at Medium or above; a
+  side-by-side of the formula wind and the 32x32 field would settle Low's.
 - High and Ultra take the plan's own shapes, four layers of 128x128 at High and the volume 64x24x64
   at Ultra. The layered and the volume grids look better where the air has height. They cost 0.20
   and 0.73 ms at their rows on WebGPU, well inside their budgets, so the better look wins when it is
@@ -591,6 +595,15 @@ the figure and the budget, not for the governor's input.
   0.49, 0.83, 2.63 and 2.97 ms of GPU time a frame from low to ultra, and the allocation 67, 60, 52
   and 72 bytes a frame in the add-on's own code, both on Chrome 156.0.8078.80. So the failure above
   was the tool's and is closed; the pages' own figures still stand as the look witness.
+- The same command passes all eight gates at `188601c05`, the tree the redraw's range was built on:
+  the redraw ran `bun packages/cli/bin/null3d.js check-addon packages/wind` and read `8 passed`.
+  `cdf1cb99f` is that tree's formatting-only descendant, so the two are the same code for this run's
+  inputs. That is the range's own full pass, which the addendum above could not name. Its cost reads 5.07, 4.57, 8.28
+  and 6.16 ms of GPU time a frame from low to ultra, and its allocation 64, 61, 65 and 56 bytes a
+  frame in the add-on's own code. The add-on's code is byte-identical at the two heads, so the
+  difference between their readings is the machine's state rather than the code, and each reading
+  belongs to its own run. The run recorded no machine load, so no clean-window claim is made for its
+  figures.
 
 ## Addendum: the leaves' two forms, and the flag and water readers
 

@@ -5,18 +5,15 @@
 import { defineSketch, timeOfDay } from '@null3d/engine';
 import {
 	createGrass,
-	growPlant,
+	grassCover,
 	loadSpecies,
 	type PlantMaterial,
-	placePlants,
-	plantMaterials,
-	prepareSpecies,
 	setWindLayer,
-	speciesIds,
 } from '@null3d/vegetation';
 import { createWind } from '@null3d/wind';
 import { interact } from '../lib/interact';
 import { applyWindControl, postWindHud, type WindControls } from './hud';
+import { plantWindClump } from './planting';
 
 /** Metres a second at the field's top, at the strongest of the sweep. */
 const GUST = 7;
@@ -43,14 +40,17 @@ export default defineSketch(async (ctx) => {
 	scene.setActiveCamera(camera);
 	// The wind: one field for the whole page, read at each plant's root.
 	const wind = createWind(ctx, { camera, box: 160 });
-	// The meadow's grass, which bends in the same air as the plants.
+	// The meadow's grass, which bends in the same air as the plants. The cover takes the meadow
+	// grass's own blade and colour, so a plant of that species stands in it without a seam.
+	const meadow = await loadSpecies('meadow-grass');
+	// The cover fills the ground that the camera sees, and each blade bends in the field's air.
 	const grass = await createGrass(ctx, {
 		height: () => 0,
-		area: { x: 0, z: 0, size: 220 },
-		count: 30_000,
+		area: { x: 0, z: 0, size: 120 },
+		count: 100_000,
 		seed: 11,
-		blades: 12,
-		color: '#59732f',
+		blades: 14,
+		...grassCover(meadow.record),
 		wind: wind.field,
 	});
 	// The wind's own state: its strength in metres a second, its bearing in degrees, and whether it
@@ -71,43 +71,9 @@ export default defineSketch(async (ctx) => {
 	const seed = 11;
 	const plant = async () => {
 		for (const piece of planted) piece.destroy();
-		planted = [];
-		plantMats = [];
-		const ids = speciesIds();
-		const across = Math.max(1, Math.ceil(Math.sqrt(ids.length)));
-		let index = 0;
-		for (const id of ids) {
-			const module = await loadSpecies(id);
-			const kit = await prepareSpecies(ctx, module, { detail: 'high', placeholders: 'missing' });
-			const materials = plantMaterials(ctx, kit, { wind: wind.field });
-			plantMats.push(
-				materials.wood,
-				materials.shoots,
-				materials.cards,
-				materials.foliage,
-				materials.extras,
-			);
-			const variant = index % Math.max(1, kit.record.variants);
-			const asset = await growPlant(kit, { seed, variant, near: true });
-			const x = ((index % across) - (across - 1) / 2) * 20;
-			const z = (Math.floor(index / across) - (ids.length / across - 1) / 2) * 20;
-			planted.push(
-				placePlants(
-					ctx,
-					kit,
-					[asset],
-					{
-						count: 1,
-						position: new Float32Array([x, 0, z]),
-						turn: new Float32Array([index * 0.6]),
-						scale: new Float32Array([1]),
-						variant: new Uint8Array([0]),
-					},
-					{ materials, view: { height: 1080, fov: 50 }, castShadows: true },
-				),
-			);
-			index++;
-		}
+		const clump = await plantWindClump(ctx, wind.field, seed);
+		planted = clump.planted;
+		plantMats = clump.materials;
 	};
 	await plant();
 

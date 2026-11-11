@@ -180,6 +180,35 @@ describe('the extras', () => {
 		expect(reach(back)).toBeLessThan(reach(tip));
 	});
 
+	it('holds a petal cup on a stalk along the shoot, and leaves it at the site without one', () => {
+		type Mesh = NonNullable<ReturnType<typeof extrasMesh>>;
+		const highest = (mesh: Mesh): number => {
+			let top = Number.NEGATIVE_INFINITY;
+			for (let i = 1; i < mesh.positions.length; i += 3)
+				top = Math.max(top, mesh.positions[i] as number);
+			return top;
+		};
+		const cup = (stalk?: number): ExtraSpec => ({
+			kind: 'flower',
+			at: 'shoot-tip',
+			share: 1,
+			seasons: ['blossom'],
+			shape: {
+				petals: 5,
+				radius: 0.015,
+				cup: 0.4,
+				...(stalk === undefined ? {} : { stalk }),
+			},
+			colour: [1, 1, 1],
+			hang: 0,
+		});
+		const plain = extrasMesh(dressed(oakRecord({ extras: [cup()] }), 'blossom'), 0) as Mesh;
+		const stalked = extrasMesh(dressed(oakRecord({ extras: [cup(0.03)] }), 'blossom'), 0) as Mesh;
+		// The stalk adds a thin stem, and the crown-top cups stand the stalk's length higher.
+		expect(stalked.positions.length).toBeGreaterThan(plain.positions.length);
+		expect(highest(stalked)).toBeGreaterThan(highest(plain) + 0.01);
+	});
+
 	it('hangs an acorn straight down from its shoot tip', () => {
 		const mesh = extrasMesh(dressed(oakRecord({ extras: [{ ...ACORN, share: 1 }] }), 'summer'), 0);
 		if (!mesh) throw new Error('no acorns');
@@ -190,6 +219,14 @@ describe('the extras', () => {
 			const point = mesh.positions[(a + perAcorn - 1) * 3 + 1] as number;
 			expect(point).toBeLessThan(top - 0.05);
 		}
+	});
+
+	it('draws a spine as a three-triangle cone with a shared apex', () => {
+		// Each spine writes three base vertices and one apex, and three triangles between them.
+		const thorn = { ...(OTHERS[1] as ExtraSpec), share: 1 };
+		const mesh = extrasMesh(dressed(oakRecord({ extras: [thorn] }), 'summer'), 0);
+		if (!mesh) throw new Error('no thorns');
+		expect(mesh.indices.length / 3).toBe(((mesh.positions.length / 3) * 3) / 4);
 	});
 
 	it('keeps an extra on a card level only where it spans a few pixels', () => {

@@ -10,6 +10,11 @@
 // the field's pass runs with them, so a held page draws the same frames every time; two live pages
 // on a busy machine would not. The control page makes the same field, but its materials fade the
 // offset out at one millimetre, so the plant cannot move.
+//
+// The second test reads the plant's motion data: the motion debug view draws each pixel's motion
+// since the frame before, so a swaying twig lights the picture and the short-distance twin stays
+// black. The whole view moves less than a pixel a frame at this size, so the twigs view frames the
+// moving twig closely.
 import { expect, type Page, test } from '@playwright/test';
 import type { ImageRun } from '../lib/images.ts';
 import { pageResult, watchPageProblems } from '../lib/page-result.ts';
@@ -37,19 +42,43 @@ const LATE = 1.6;
  */
 const STEP = 2 / 255;
 
-/** Each pixel's red, green and blue, from 0 to 1. */
-async function imageOf(page: Page, address: string): Promise<Float32Array> {
+/**
+ * The summed brightness above which a motion-view pixel counts as moving. A still frame's rounding
+ * leaves a faint level below it, and the swaying twig lights far above it.
+ */
+const MOTION_LEVEL = 24;
+
+/** A page's pixels as RGBA8 rows, top row first. */
+async function pixelsOf(page: Page, address: string): Promise<Uint8Array> {
 	const problems = watchPageProblems(page);
 	await page.goto(address);
 	const frame = await pageResult<Frame>(page, PAGE_MS).catch((error: unknown) => {
 		throw new Error(`${address}: ${String(error)}\n${problems.join('\n')}`);
 	});
 	expect(frame.error).toBeUndefined();
-	const pixels = new Uint8Array(Buffer.from(frame.pixels, 'base64'));
+	return new Uint8Array(Buffer.from(frame.pixels, 'base64'));
+}
+
+/** Each pixel's red, green and blue, from 0 to 1. */
+async function imageOf(page: Page, address: string): Promise<Float32Array> {
+	const pixels = await pixelsOf(page, address);
 	const rgb = new Float32Array((pixels.length / 4) * 3);
 	for (let i = 0, j = 0; i < pixels.length; i += 4, j += 3)
 		for (let c = 0; c < 3; c++) rgb[j + c] = (pixels[i + c] ?? 0) / 255;
 	return rgb;
+}
+
+/**
+ * The share of a motion-view picture whose pixels show motion, as a share of all its pixels. A
+ * still pixel is black, below the level that counts.
+ */
+function moving(pixels: Uint8Array): number {
+	let count = 0;
+	for (let i = 0; i < pixels.length; i += 4) {
+		const lit = (pixels[i] ?? 0) + (pixels[i + 1] ?? 0) + (pixels[i + 2] ?? 0);
+		if (lit > MOTION_LEVEL) count++;
+	}
+	return count / (pixels.length / 4);
 }
 
 /** The share of channels that differ by more than `step`. */
@@ -71,6 +100,16 @@ function pair(name: string, run: ImageRun): ImageRun {
 	);
 	expect(found, `the manifest holds ${name} for ${run.tier}`).toBeDefined();
 	return found as ImageRun;
+}
+
+/** The run's page, with `changes` written into the sketch's own query. */
+function sketchQuery(run: ImageRun, changes: Readonly<Record<string, string>>): string {
+	const marker = 'sketch=';
+	const start = run.path.indexOf(marker) + marker.length;
+	const [path, query = ''] = decodeURIComponent(run.path.slice(start)).split('?');
+	const params = new URLSearchParams(query);
+	for (const [key, value] of Object.entries(changes)) params.set(key, value);
+	return `${run.path.slice(0, start)}${encodeURIComponent(`${path}?${params}`)}`;
 }
 
 test('plant-sway: a plant under the field moves between two held times, and its short-distance twin holds still', async ({
@@ -109,4 +148,52 @@ test('plant-sway: a plant under the field moves between two held times, and its 
 			.toBeGreaterThan(control * 4 + 0.001);
 	}
 	expect(measured, `runs that measured the sway, of ${runs.length}`).toBe(runs.length);
+});
+
+/**
+ * The least share of a motion-view picture that the swaying plant must light, and the most that its
+ * short-distance twin may. The twigs view frames the moving twig closely, and the strongest wind
+ * moves it far enough for the 8-bit view: the sway lights 0.73 of the frame on every tier, and the
+ * twin lights none of it, so both bounds keep a wide margin.
+ */
+const MOTION_FLOOR = 0.05;
+const MOTION_CEILING = 0.0002;
+
+test('plant-motion: a swaying plant shows motion, and its still twin does not', async ({
+	page,
+}) => {
+	const runs = IMAGE_RUNS.filter((run) => run.test === 'plant-wind-sway');
+	expect(runs.length).toBeGreaterThan(0);
+	// Two drawings a run: the swaying plant and the still plant, both under the motion view.
+	test.setTimeout(runs.length * 2 * PAGE_MS);
+	let measured = 0;
+	for (const run of runs) {
+		const still = pair('plant-wind-still', run);
+		const swayPixels = await pixelsOf(
+			page,
+			sketchQuery(run, { view: 'twigs', wind: '3', motion: '1' }),
+		);
+		const stillPixels = await pixelsOf(
+			page,
+			sketchQuery(still, { view: 'twigs', wind: '3', motion: '1' }),
+		);
+		const swaying = moving(swayPixels);
+		const control = moving(stillPixels);
+		measured++;
+		console.log(`${run.id}: motion ${swaying.toFixed(5)} still ${control.toFixed(5)}`);
+		// A plant whose offset reads the clock shows its motion in the frame's motion data.
+		expect
+			.soft(swaying, `${run.id}: the swaying plant shows its motion`)
+			.toBeGreaterThan(MOTION_FLOOR);
+		// The plant past its sway distance stands still, so its motion data holds none.
+		expect
+			.soft(control, `${run.id}: the plant past the distance shows no motion`)
+			.toBeLessThan(MOTION_CEILING);
+		// The moving plant lights far more of the view than its still twin, so a motion view that
+		// drew the same picture for both fails here.
+		expect
+			.soft(swaying, `${run.id}: the motion is far more than the still twin's`)
+			.toBeGreaterThan(control * 4 + 0.0005);
+	}
+	expect(measured, `runs that measured the motion, of ${runs.length}`).toBe(runs.length);
 });
