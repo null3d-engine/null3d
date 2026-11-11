@@ -653,10 +653,9 @@ answers other samples on another engine would move the points that it places.
 
 The species records set the room that each plant keeps, so the placement follows a change to one.
 The conifer's whorled tiers and the cards of many small leaves moved it twice after the linked runs
-below were measured. Only the Galaxy S25's latest run reaches the 1,245 reference
-of that day, on both GPU paths, and the waterline rules have replaced it since. No Mac or iPad row
-reaches it: those rows, and the Galaxy S24's, hold the earlier record of 956 plants and checksum
-3358570449.
+below were measured. The run of 11 November reaches the shipped reference on every device and both
+GPU paths, which is what the table below holds; the earlier rows, taken against 956 and 1,245, are
+kept in M3-V6's evidence for the size of each move.
 
 **The budget.** The placement runs once, after the ground maps and before the first plant draws, so
 it holds a one-time line rather than a frame ceiling: 250 ms on the reference Mac, the line that
@@ -665,19 +664,23 @@ maps are timed apart from it and take 26 to 86 ms once. The placement starts no 
 GPU, so its GPU time is nil. Its arrays hold about 1.8 MB once for a valley this size: 1.6 MB for
 the ground maps' samples, 0.13 MB for the variance maps and 34 KB for the points.
 
-The `vegetation-scatter` plan ran on two cloud phones, a cloud iPad and the Mac. The Galaxy S25's
-rows are its later run; every other row is an earlier run.
+The `vegetation-scatter` plan ran at `396cab7df` on two cloud phones, a cloud iPad and the Mac, two
+pages on each device, and every page compared against the shipped reference. The placement is the
+middle of three timed runs; the ground maps are read once.
 
-| Device | Plants | Checksum | Placement | Ground maps | Display | At the 1,245 reference |
-| --- | --- | --- | --- | --- | --- | --- |
-| Galaxy S24, Chrome, WebGL2 page | 956 | 3358570449 | 7.35 ms | 71.54 ms | 30 Hz | no |
-| Galaxy S24, Chrome, WebGPU page | 956 | 3358570449 | 7.19 ms | 55.19 ms | 30 Hz | no |
-| Galaxy S25, Chrome, WebGL2 page | 1,245 | 2493806866 | 6.42 ms | 49.40 ms | 30 Hz | yes |
-| Galaxy S25, Chrome, WebGPU page | 1,245 | 2493806866 | 6.42 ms | 49.40 ms | 30 Hz | yes |
-| iPad Pro 13, Safari, WebGL2 page | 956 | 3358570449 | 5.20 ms | 37.02 ms | none timed | no |
-| iPad Pro 13, Safari, WebGPU page | 956 | 3358570449 | 4.84 ms | 35.92 ms | none timed | no |
-| MacBook Pro M3 Max, Chrome, WebGL2 page | 956 | 3358570449 | 5.77 ms | 27.98 ms | 120 Hz | no |
-| MacBook Pro M3 Max, Chrome, WebGPU page | 956 | 3358570449 | 5.21 ms | 21.57 ms | 120 Hz | no |
+| Device | Plants | Checksum | Placement | Ground maps | Display |
+| --- | --- | --- | --- | --- | --- |
+| Galaxy S24, Chrome, WebGL2 page | 1,020 | 2006477110 | 11.30 ms | 82.70 ms | 30 Hz |
+| Galaxy S24, Chrome, WebGPU page | 1,020 | 2006477110 | 9.33 ms | 69.05 ms | 30 Hz |
+| Galaxy S25, Chrome, WebGL2 page | 1,020 | 2006477110 | 5.77 ms | 46.61 ms | 30 Hz |
+| Galaxy S25, Chrome, WebGPU page | 1,020 | 2006477110 | 6.35 ms | 46.35 ms | 30 Hz |
+| iPad Pro 13, Safari, WebGL2 page | 1,020 | 2006477110 | 5.10 ms | 36.02 ms | 59 Hz |
+| iPad Pro 13, Safari, WebGPU page | 1,020 | 2006477110 | 5.22 ms | 40.30 ms | 59 Hz |
+| MacBook Pro M3 Max, Chrome, WebGL2 page | 1,020 | 2006477110 | 5.89 ms | 24.58 ms | 60 Hz |
+| MacBook Pro M3 Max, Chrome, WebGPU page | 1,020 | 2006477110 | 6.15 ms | 24.17 ms | 60 Hz |
+
+Both phones reported a 30 Hz display where 60 was expected, so their frame timing is unreliable and
+no frame rate is claimed from them; the placement and ground-map times are the pages' own timers.
 
 The placement runs on the CPU and starts no engine, so both pages of a device run the same work.
 The S24 has no WebGPU adapter, so its second page named a path that it did not start. Both phone
