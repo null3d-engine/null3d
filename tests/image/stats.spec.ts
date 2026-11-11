@@ -347,7 +347,11 @@ for (const gpu of ['webgpu', 'webgl2'])
 		// measurement still runs after the card is ready; the timer samples while any measurement
 		// runs, so the count waits for the first window that shows none.
 		let quiet = await counted();
-		for (let tries = 1; tries < 6 && quiet.readbacks + quiet.resolves + quiet.timerQueries > 0; tries++)
+		for (
+			let tries = 1;
+			tries < 6 && quiet.readbacks + quiet.resolves + quiet.timerQueries > 0;
+			tries++
+		)
 			quiet = await counted();
 		expect(quiet).toEqual({ timerQueries: 0, resolves: 0, readbacks: 0 });
 		// The open card samples, which shows that the page counts what the GPU path does.
