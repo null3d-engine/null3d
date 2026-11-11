@@ -51,6 +51,28 @@ describe('the wood mesher', () => {
 		for (const welds of oakWelds) for (const weld of welds) expect(weld.vJump).toBeLessThan(0.001);
 	});
 
+	it('marks the parent crotch only where the record names creases', () => {
+		const input = testMeshInput('high');
+		const record = input.record;
+		const bark = record.bark;
+		if (!bark) throw new Error('the test record has no bark');
+		const collar = bark.collar;
+		const plain = meshWood(input, 0);
+		const zero = meshWood(
+			{ ...input, record: { ...record, bark: { ...bark, collar: { ...collar, creases: 0 } } } },
+			0,
+		);
+		expect(zero.uvs1).toEqual(plain.uvs1);
+		const creased = meshWood(
+			{ ...input, record: { ...record, bark: { ...bark, collar: { ...collar, creases: 1 } } } },
+			0,
+		);
+		let marked = 0;
+		for (let i = 0; i < creased.uvs1.length; i += 2)
+			if (creased.uvs1[i + 1] !== plain.uvs1[i + 1]) marked++;
+		expect(marked).toBeGreaterThan(0);
+	});
+
 	it('pushes no child tube into its parent at the joint', () => {
 		const report = reports[0] as (typeof reports)[0];
 		for (const [child, parent] of report.parents) {

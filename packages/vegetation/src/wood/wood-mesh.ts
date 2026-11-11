@@ -659,6 +659,8 @@ class Mesher {
 	private readonly built: (AxisRings | undefined)[] = [];
 	private readonly contexts: (AxisContext | undefined)[] = [];
 	private readonly barks: (BarkRings | undefined)[] = [];
+	/** Per axis: the output vertex where each written bark ring starts, for the parent's crotch mask. */
+	private readonly outputRingFirst = new Map<number, Int32Array>();
 	private readonly frame: PathFrame = emptyFrame();
 	private readonly sample: PathSample = { radius: 0, height: 0 };
 	private readonly place: SurfacePlace = { ring: 0, t: 0, angle: 0, v: 0 };
@@ -1145,6 +1147,10 @@ class Mesher {
 			lowest = Math.min(lowest, seamS[j] as number);
 			highest = Math.max(highest, seamS[j] as number);
 		}
+		// A species whose bark draws the armpit's creases marks the parent's bark round the seam
+		// too: the photograph's fan sits on the parent's crotch, not on the child's weld alone.
+		if ((this.record.bark?.collar.creases ?? 0) > 0)
+			this.markParentCrotch(parentContext.wood.key, parentRings, seamX, sides, rp);
 		// The blend holds the whole fillet and collar, so the plain rings after it are the child's own.
 		const end = Math.min(path.length, highest + Math.max(BLEND_RADII * rc, collarLength));
 		// Blend rings follow the girth: a thin child's fillet is too small to need many.
@@ -1328,6 +1334,53 @@ class Mesher {
 		}
 		rings.welded = blend;
 		return { context: welded, end, sides };
+	}
+
+	/**
+	 * Marks the parent's written bark round a child's seam, so the crease fan reaches the crotch on
+	 * the parent as the photograph shows it. Only a record that names creases calls this, so every
+	 * other species' bark coordinates stay as they were.
+	 */
+	private markParentCrotch(
+		key: number,
+		rings: AxisRings,
+		seam: Float64Array,
+		sides: number,
+		radius: number,
+	): void {
+		const ends = this.outputRingFirst.get(key);
+		if (!ends) return;
+		let cx = 0;
+		let cy = 0;
+		let cz = 0;
+		for (let j = 0; j < sides; j++) {
+			cx += seam[j * 3] as number;
+			cy += seam[j * 3 + 1] as number;
+			cz += seam[j * 3 + 2] as number;
+		}
+		cx /= sides;
+		cy /= sides;
+		cz /= sides;
+		const reach = Math.max(radius * 1.5, 1e-3);
+		const uvs1 = this.writer.uvs1;
+		for (let r = 0; r < rings.count; r++) {
+			const out = ends[r] as number;
+			if (out < 0) continue;
+			const first = rings.first[r] as number;
+			const count = rings.sides[r] as number;
+			for (let j = 0; j <= count; j++) {
+				const at = first + (j % count);
+				const dx = (rings.position[at * 3] as number) - cx;
+				const dy = (rings.position[at * 3 + 1] as number) - cy;
+				const dz = (rings.position[at * 3 + 2] as number) - cz;
+				const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+				if (distance >= reach) continue;
+				const fade = 1 - distance / reach;
+				const mask = fade * fade;
+				const to = (out + j) * 2 + 1;
+				if ((uvs1[to] as number) < mask) uvs1[to] = mask;
+			}
+		}
 	}
 
 	/**
@@ -1936,6 +1989,9 @@ class Mesher {
 				);
 			}
 		}
+		const ends = new Int32Array(rings.count).fill(-1);
+		for (let e = 0; e < count; e++) ends[bark.ring[e] as number] = starts[e] as number;
+		this.outputRingFirst.set(wood.key, ends);
 		const apex = count - 1;
 		for (let e = 0; e < apex; e++) {
 			if (bark.restart[e + 1]) continue;
