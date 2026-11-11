@@ -771,8 +771,8 @@ fn far_cascades_cull_and_draw_in_turn_and_keep_their_layers_in_between() {
 }
 
 /// A frame's count of the far cascade's depth passes over a run, with a card of `features` at
-/// `position`.
-fn far_cascade_draws(features: u32, position: [f32; 3]) -> usize {
+/// `position`, whose vertex offset sways out to `sway` meters, or at every distance for 0.
+fn far_cascade_draws(features: u32, position: [f32; 3], sway: f32) -> usize {
     let quality = ShadowQuality {
         filter: 3,
         far_interval: 2,
@@ -782,6 +782,13 @@ fn far_cascade_draws(features: u32, position: [f32; 3]) -> usize {
     let mut world = shadowed(SUN);
     world.renderer.settings_mut().set_shadow_quality(quality);
     let card = world.add_object_at(&base_box(), card_shading(), features, position);
+    let material = world.scene.materials()[card.slot() as usize];
+    world
+        .renderer
+        .settings_mut()
+        .materials_mut()
+        .set_sway(material - 1, sway)
+        .unwrap();
     world
         .scene
         .apply_commands(
@@ -813,9 +820,13 @@ fn far_cascade_draws(features: u32, position: [f32; 3]) -> usize {
 
 #[test]
 fn a_still_card_in_a_far_cascade_leaves_its_layer_cached() {
-    let still = far_cascade_draws(feature::MOVING_VERTICES | feature::STILL_CASTER, FAR_CARD);
-    let fixed = far_cascade_draws(0, FAR_CARD);
-    let moving = far_cascade_draws(feature::MOVING_VERTICES, FAR_CARD);
+    let still = far_cascade_draws(
+        feature::MOVING_VERTICES | feature::STILL_CASTER,
+        FAR_CARD,
+        0.0,
+    );
+    let fixed = far_cascade_draws(0, FAR_CARD, 0.0);
+    let moving = far_cascade_draws(feature::MOVING_VERTICES, FAR_CARD, 0.0);
     assert_eq!(
         still, fixed,
         "a still card redraws the far cascade as often as a caster that never moves"
@@ -823,6 +834,30 @@ fn a_still_card_in_a_far_cascade_leaves_its_layer_cached() {
     assert_eq!(
         moving, 8,
         "a moving card redraws the far cascade in every frame"
+    );
+}
+
+/// The card stands about 50 m from the camera. A sway distance short of that leaves it still,
+/// and one that reaches past it keeps the card moving.
+const SHORT_SWAY: f32 = 40.0;
+const LONG_SWAY: f32 = 60.0;
+
+#[test]
+fn a_card_past_its_sway_distance_leaves_a_far_cascade_cached() {
+    let fixed = far_cascade_draws(0, FAR_CARD, 0.0);
+    let past = far_cascade_draws(feature::MOVING_VERTICES, FAR_CARD, SHORT_SWAY);
+    let within = far_cascade_draws(feature::MOVING_VERTICES, FAR_CARD, LONG_SWAY);
+    assert!(
+        fixed < 8,
+        "a caster that never moves leaves the far cascade to its turns"
+    );
+    assert_eq!(
+        past, fixed,
+        "a card past its sway distance redraws the far cascade as often as a still one"
+    );
+    assert_eq!(
+        within, 8,
+        "a card within its sway distance redraws the far cascade in every frame"
     );
 }
 
