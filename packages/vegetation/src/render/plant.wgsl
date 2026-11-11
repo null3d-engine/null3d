@@ -122,8 +122,6 @@ const HEADER_AUTUMN_BARK: i32 = 61;
 const HEADER_WINTER_BARK: i32 = 62;
 const HEADER_WINTER_REFLECTANCE: i32 = 63;
 const HEADER_WINTER_TRANSMITTANCE: i32 = 64;
-// A tuft's sheath columns' linear colour, then 1 when the record gives one.
-const HEADER_SHEATH: i32 = 65;
 const HEADER_EXTRA_BANDS: i32 = 43;
 // An extra's scale pattern: its scale rows, the cells round its turn, and its band's share of the
 // profile's height at each end, per extra in record order.
