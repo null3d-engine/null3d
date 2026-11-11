@@ -1,7 +1,7 @@
 {
 	"04-tuft-from-above.png": {
 		"elevation": 88,
-		"view": "whole"
+		"view": "crown"
 	},
 	"07-basal-crown.png": {
 		"background": "studio-grey",
@@ -15,22 +15,23 @@
 	},
 	"09-new-shoots.png": {
 		"background": "studio-grey",
-		"view": "cluster"
+		"lifted": 1,
+		"view": "soil"
 	},
 	"12-single-leaf-upper.png": {
-		"leaves": 0.1,
+		"leaves": 1.0,
 		"roll": -40
 	},
 	"13-single-leaf-underside.png": {
-		"leaves": 0.1,
+		"leaves": 1.0,
 		"roll": -40
 	},
 	"24-leaf-texture-upper.png": {
-		"leaves": 0.2,
+		"leaves": 1.0,
 		"roll": -40
 	},
 	"25-leaf-texture-underside.png": {
-		"leaves": 0.2,
+		"leaves": 1.0,
 		"roll": -40
 	},
 	"15-sheath-and-ligule.png": {
@@ -43,7 +44,7 @@
 		"fill": null,
 		"targetY": null,
 		"top": null,
-		"view": "strands"
+		"view": "whole"
 	},
 	"21-branch-studio.png": {
 		"background": "studio-grey",
