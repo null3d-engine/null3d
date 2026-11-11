@@ -65,6 +65,7 @@ import {
 	withSlot,
 } from './lib/plant-review/references.ts';
 import {
+	correctedScale,
 	drawShots,
 	type RunFrame,
 	type Shot,
@@ -524,7 +525,7 @@ async function correctWidths(
 	const matteOf = (file: string): string | undefined => frameOf(file)?.matte;
 	const fixes = new Map<
 		string,
-		{ target: number; silhouette: boolean; scale: number; close: boolean }
+		{ target: number; silhouette: boolean; scale: number; close: boolean; fraction: number }
 	>();
 	for (const shot of stills) {
 		const target = shot.query.widthShare;
@@ -545,7 +546,10 @@ async function correctWidths(
 		const cropped = measured.clipped && target < 1;
 		if (!off && !cropped) continue;
 		const close = shot.query.view === 'limb' && shot.query.surface === true;
-		const scale = measured.share / target;
+		// A species whose crown's openness passes its band between the framing's stand and the full
+		// correction names the share of the correction it takes; every other picture takes it all.
+		const fraction = Math.min(1, Math.max(0, shot.query.widthFraction ?? 1));
+		const scale = correctedScale(measured.share, target, fraction);
 		if (close && scale > CLOSE_CROP_MAX) continue;
 		if (!close && (scale < WHOLE_SCALE_MIN || scale > WHOLE_SCALE_MAX)) {
 			console.warn(
@@ -558,9 +562,13 @@ async function correctWidths(
 			silhouette: shot.query.view === 'silhouette',
 			scale,
 			close,
+			fraction,
 		});
 	}
 	for (let pass = 0; pass < 2 && fixes.size > 0; pass++) {
+		// A picture that takes a share of the correction keeps the stand that share gives: a second
+		// pass would chase the reference's own share and undo the share.
+		const fractioned = [...fixes.values()].some((fix) => fix.fraction < 1);
 		const redraws = stills
 			.filter((shot) => fixes.has(shot.cells[0]?.file ?? ''))
 			.map((shot) => {
@@ -592,7 +600,7 @@ async function correctWidths(
 		}
 		const next = new Map<
 			string,
-			{ target: number; silhouette: boolean; scale: number; close: boolean }
+			{ target: number; silhouette: boolean; scale: number; close: boolean; fraction: number }
 		>();
 		for (const [file, fix] of fixes) {
 			const matte = matteOf(file);
@@ -605,7 +613,7 @@ async function correctWidths(
 			if (measured === null) continue;
 			const off = Math.abs(measured.share - fix.target) > WIDTH_BAND;
 			const cropped = measured.clipped && fix.target < 1;
-			const scale = fix.scale * (measured.share / fix.target);
+			const scale = correctedScale(measured.share, fix.target, fix.fraction);
 			if (fix.close && scale > CLOSE_CROP_MAX) continue;
 			if (!fix.close && (scale < WHOLE_SCALE_MIN || scale > WHOLE_SCALE_MAX)) {
 				console.warn(
@@ -617,6 +625,7 @@ async function correctWidths(
 		}
 		fixes.clear();
 		for (const [file, fix] of next) fixes.set(file, fix);
+		if (fractioned) break;
 	}
 	return frames;
 }
