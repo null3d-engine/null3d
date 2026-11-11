@@ -19,10 +19,10 @@ export const PLANT_PRESETS = ['low', 'medium', 'high', 'ultra'] as const;
 
 /**
  * A limb view's composition, where a plant's limbs leave one stem as a cluster rather than along a
- * branch: `arms` frames the stem's top with its limbs either side, and `between` stands close
- * between two of them.
+ * branch: `arms` frames the stem's top with its limbs either side, `between` stands close between
+ * two of them, and `elbow` frames the sharpest turn of one limb's run into its rise.
  */
-export const PLANT_COMPOSITIONS = ['arms', 'between'] as const;
+export const PLANT_COMPOSITIONS = ['arms', 'between', 'elbow'] as const;
 
 /** The level a query forces: the nearest level, the two card levels, or the impostor. */
 export type ForcedLevel = 0 | 1 | 2 | 3;

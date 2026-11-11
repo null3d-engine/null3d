@@ -11,13 +11,15 @@
 		"elevation": 5
 	},
 	"05-arm-underside.png": {
-		"span": 0.8,
+		"span": 2.2,
 		"thin": 0.22,
-		"along": 0.25,
+		"along": 0.5,
 		"sunAzimuth": 10,
 		"sunRise": 50,
 		"skyShare": 0.3,
-		"daylight": 2.2
+		"daylight": 2.2,
+		"composition": "arms",
+		"elevation": -55
 	},
 	"06-between-arms.png": {
 		"span": 3.5,
@@ -31,9 +33,11 @@
 		"elevation": 0
 	},
 	"08-arm-elbow.png": {
-		"span": 0.9,
+		"span": 2,
 		"thin": 0.22,
-		"along": 0.3
+		"along": 0.5,
+		"composition": "elbow",
+		"elevation": 0
 	},
 	"09-rib-pattern.png": {
 		"span": 0.24,
