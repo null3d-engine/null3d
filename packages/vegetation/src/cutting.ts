@@ -21,6 +21,7 @@ import {
 } from './core/graph';
 import {
 	acos,
+	cos,
 	cross3,
 	length3,
 	log,
@@ -28,6 +29,7 @@ import {
 	quatAxisAngle,
 	quatMultiply,
 	quatRotate,
+	sin,
 	type Vector3,
 } from './core/math';
 import type {
@@ -797,9 +799,9 @@ export function clusterRow(
 		quatAxisAngle(UP, angle, spin);
 		const q = [0, 0, 0, 1];
 		quatMultiply(spin, 0, turn, 0, q);
-		position[row * 3] = 0.18 * tall * Math.cos(angle);
+		position[row * 3] = 0.18 * tall * cos(angle);
 		position[row * 3 + 1] = (row * 0.55 * tall) / shoots;
-		position[row * 3 + 2] = 0.18 * tall * Math.sin(angle);
+		position[row * 3 + 2] = 0.18 * tall * sin(angle);
 		rotation.set(q, row * 4);
 		for (let i = 0; i < p.length; i += 3) {
 			quatRotate(q, 0, [p[i] as number, p[i + 1] as number, p[i + 2] as number], placed);
