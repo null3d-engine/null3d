@@ -126,6 +126,10 @@ describe('the record check', () => {
 					bareTrim: 0.5,
 					lift: 45,
 					tipPrune: 1.5,
+					scaleByHeight: [
+						[0, 1],
+						[1, 0],
+					],
 				},
 			},
 		} as Species;
@@ -139,6 +143,9 @@ describe('the record check', () => {
 		expect(problems.some((p) => p.startsWith('shoots.placement.bareTrim is 0.5'))).toBe(true);
 		expect(problems.some((p) => p.startsWith('shoots.placement.lift is 45'))).toBe(true);
 		expect(problems.some((p) => p.startsWith('shoots.placement.tipPrune is 1.5'))).toBe(true);
+		expect(
+			problems.some((p) => p.startsWith('shoots.placement.scaleByHeight is 0 at pair 1')),
+		).toBe(true);
 		const within = {
 			...template,
 			growth: { ...growth, floor: 0.15, turning: 30 },
@@ -151,6 +158,10 @@ describe('the record check', () => {
 					bareTrim: 0.03,
 					lift: -30,
 					tipPrune: 0.05,
+					scaleByHeight: [
+						[0, 1],
+						[1, 0.5],
+					],
 				},
 			},
 		} as Species;

@@ -1147,6 +1147,13 @@ export interface ShootSpec {
 		/** A shoot's scale. */
 		readonly scale: Spread;
 		/**
+		 * A multiplier on each shoot's scale by the shoot's height in the crown, 0 at the crown's
+		 * base and 1 at the plant's top: a limb carries its own shoot length, so a crown may widen
+		 * its skirt and shorten its top without moving the crown's foot. Absent, every shoot takes
+		 * the species' one scale.
+		 */
+		readonly scaleByHeight?: Curve;
+		/**
 		 * The share of the internode back from a bud that its shoots may stand in, 0 to 1. Small,
 		 * they gather into a tuft at the node and the internode between nodes stands bare; 1, they
 		 * spread over the whole internode and the axes carry leaves the length of their run.
