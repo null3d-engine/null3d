@@ -89,12 +89,6 @@
 		"date": "2026-10-27",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that added the pictures; the branch's CI run has not drawn them yet"
 	},
-	"chromium-swiftshader/compat/demo-island.png": {
-		"test": "demo-island",
-		"tier": "compat",
-		"date": "2026-11-10",
-		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head; both views completed under the two-minute pipeline wait and were compared before acceptance, and a CI drawing on a pull request replaces them"
-	},
 	"chromium-swiftshader/compat/demo-ocean.png": {
 		"test": "demo-ocean",
 		"tier": "compat",
@@ -478,12 +472,6 @@
 		"tier": "webgl2",
 		"date": "2026-10-27",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that added the pictures; the branch's CI run has not drawn them yet"
-	},
-	"chromium-swiftshader/webgl2/demo-island.png": {
-		"test": "demo-island",
-		"tier": "webgl2",
-		"date": "2026-11-10",
-		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head; this view drew in the idle window and was compared before acceptance, and a CI drawing on a pull request replaces it"
 	},
 	"chromium-swiftshader/webgl2/demo-ocean.png": {
 		"test": "demo-ocean",
@@ -916,12 +904,6 @@
 		"tier": "webgpu",
 		"date": "2026-10-29",
 		"reason": "M3-V2 moves two kinds of cut edge: a batch whose rows bring values now tests its mask by alpha to coverage, and a custom material whose WGSL names the surface's alpha takes it too. This machine's SwiftShader run drew the new pictures, and CI has no run of this branch to take them from"
-	},
-	"chromium-swiftshader/webgpu/demo-island.png": {
-		"test": "demo-island",
-		"tier": "webgpu",
-		"date": "2026-11-10",
-		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head; both views completed under the two-minute pipeline wait and were compared before acceptance, and a CI drawing on a pull request replaces them"
 	},
 	"chromium-swiftshader/webgpu/demo-ocean.png": {
 		"test": "demo-ocean",
