@@ -310,17 +310,17 @@ export const record: Species = {
 			// The limb's masked view reads 1.7 light and 5.0 short on yellow, so the thinner wood
 			// keeps a darker, yellower cast.
 			{ layer: 0, by: 'radius', from: 0, to: 0.45, blend: 0.05, tint: [0.95, 0.93, 0.72] },
-			// Still 14: under the calibrated daylight the foot's bark reads 2.3 short on red and 5.7
-			// short on yellow against the photograph's grey. The cast fades over 0.2 m centred at
-			// 1.1 m, so the fade ends at 1.2 m where the mid-trunk view's frame begins: the foot
-			// gains the cast without a hard seam and that view keeps its material.
+			// Still 14: the foot's bark reads lighter and yellower than the photograph's grey. The
+			// cast fades over 0.2 m centred at 1.1 m, so the fade ends at 1.2 m where the mid-trunk
+			// view's frame begins: the foot gains the cast without a hard seam and that view keeps
+			// its material.
 			{
 				layer: 0,
 				by: 'radius',
 				from: 0,
 				to: 5,
 				blend: 0.05,
-				tint: [1.4, 1.02, 0.76],
+				tint: [1.18, 1.02, 0.9],
 				second: { from: 0, to: 1.1, blend: 0.2 },
 			},
 		],
