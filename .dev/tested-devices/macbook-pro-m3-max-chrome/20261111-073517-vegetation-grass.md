@@ -24,6 +24,7 @@ Result: 13 passed, 0 skipped, 0 failed.
 
 Every page drew and the run carried no warning about the drawing buffer, which the earlier attempt
 did. The medians are the figures the ceilings compare; the p95 column shows the frames' tail, and
-this window ran beside the test server rather than alone.
+this window ran beside the test server rather than alone. The Ultra preset's tail, 38.69 ms, is the
+largest in the row, so its median, not its worst frame, carries the comparison.
 
 The session's results are in `target/runs/20261111-073517-vegetation-grass`.
