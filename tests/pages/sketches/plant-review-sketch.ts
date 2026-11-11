@@ -260,6 +260,7 @@ function fitPoints(
 	aspect: number,
 	fov: number,
 	rows?: CutRows,
+	rollDegrees = 0,
 ): View {
 	const points: number[] = [];
 	const min: V3 = [...asset.skeleton.bounds.min] as V3;
@@ -281,8 +282,15 @@ function fitPoints(
 	const centre = scale(add(min, max), 0.5);
 	const back = orbit([0, 0, 0], 1, elevation, turn);
 	const forward = normalize(scale(back.position, -1));
-	const right = normalize(cross(forward, [0, 1, 0]));
-	const up = cross(right, forward);
+	const baseRight = normalize(cross(forward, [0, 1, 0]));
+	const baseUp = cross(baseRight, forward);
+	// A rolled frame turns the picture about its line of sight: its own right and up axes stand
+	// where the camera's roll puts them, so the piece fits the frame as its photograph lays it.
+	const roll = (rollDegrees * Math.PI) / 180;
+	const cosRoll = Math.cos(roll);
+	const sinRoll = Math.sin(roll);
+	const right = add(scale(baseRight, cosRoll), scale(baseUp, sinRoll));
+	const up = add(scale(baseUp, cosRoll), scale(baseRight, -sinRoll));
 	if (rows) {
 		const { distance, lift } = cutCamera(
 			points,
@@ -295,7 +303,10 @@ function fitPoints(
 			rows,
 			MARGIN,
 		);
-		return orbit(add(centre, scale(up, lift)), distance, elevation, turn, fov);
+		return {
+			...orbit(add(centre, scale(up, lift)), distance, elevation, turn, fov),
+			...(roll !== 0 ? { roll } : {}),
+		};
 	}
 	const half = Math.tan((fov * DEG) / 2) * (1 - 2 * MARGIN);
 	let distance = 0.05;
@@ -310,7 +321,10 @@ function fitPoints(
 		const toward = -(d[0] * forward[0] + d[1] * forward[1] + d[2] * forward[2]);
 		distance = Math.max(distance, across / (half * aspect) + toward, tall / half + toward);
 	}
-	return orbit(centre, distance, elevation, turn, fov);
+	return {
+		...orbit(centre, distance, elevation, turn, fov),
+		...(roll !== 0 ? { roll } : {}),
+	};
 }
 
 /**
@@ -1123,7 +1137,10 @@ export default defineSketch(async (ctx) => {
 				}
 				// A cutting fills the frame with its own points, as its reference's piece does, on the
 				// rows its reference shows it on when the query measured them.
-				return fitPoints(piece as PlantAsset, pieceKit, turn, e, aspect, fov, CUT_ROWS);
+				return scaledStand(
+					fitPoints(piece as PlantAsset, pieceKit, turn, e, aspect, fov, CUT_ROWS, QUERY.roll ?? 0),
+					QUERY.standScale,
+				);
 			}
 			case 'panels':
 				break;

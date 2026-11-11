@@ -541,6 +541,16 @@ async function correctWidths(
 	for (const shot of stills) {
 		const target = shot.query.widthShare;
 		if (target === undefined || target >= 1) continue;
+		// A cut piece is fitted to its photograph's rows, so a width correction moves the piece's
+		// scale as well. It takes one only when the slot names a share; the framing's own fit stands
+		// for every cut piece that names none.
+		const view = shot.query.view;
+		if (
+			view !== undefined &&
+			CUTTING_VIEWS.includes(view) &&
+			shot.query.widthFraction === undefined
+		)
+			continue;
 		const file = shot.cells[0]?.file;
 		if (!file) continue;
 		const matte = matteOf(file);
