@@ -1095,7 +1095,7 @@ export default defineSketch(async (ctx) => {
 					fov,
 					0.05,
 				);
-				if (bole) return bole;
+				if (bole) return scaledStand(bole, QUERY.standScale);
 				break;
 			}
 			case 'branch':

@@ -208,6 +208,14 @@ function stillShot(
 				widthShare: estimateFraming([measures], [plant]).widthShare,
 			};
 		}
+		// A trunk view stands at a person's eye height on a bole whose size the plant sets, so a
+		// bole drawn larger than its photograph needs the photograph's width share to stand it back.
+		if (!slot.framed && slot.view === 'trunk' && measures.box) {
+			query = {
+				...query,
+				widthShare: estimateFraming([measures], [plant]).widthShare,
+			};
+		}
 	}
 	// A still's own query fields, such as a camera its picture needs, go over the rest, and a field
 	// given as null is dropped, so a still can trade the framing's fill for a top row and an eye.
@@ -438,7 +446,13 @@ const WHOLE_SCALE_MIN = 0.4;
 
 /** How long a width correction waits for a draw slot before it keeps the framing's own stand. */
 const CORRECTION_WAIT_MS = 300_000;
-const WHOLE_SCALE_MAX = 2.5;
+/**
+ * The most a whole view's or a trunk view's stand may be scaled back to clear a crop. A mask that
+ * reports the plant narrower than it draws asks for a stand beyond this, and the picture keeps the
+ * framing's own; the bound sits above the largest accepted correction a crop has needed here: 2.978
+ * for the saguaro's trunk picture 17, whose bole a person's eye height fills the frame with.
+ */
+const WHOLE_SCALE_MAX = 3;
 
 /**
  * A drawn frame's camera stand and the plant's width in metres, as the page posted them: the
