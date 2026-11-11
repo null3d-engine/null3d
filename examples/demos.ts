@@ -487,7 +487,10 @@ export const DEMOS: readonly Demo[] = [
 			'A stone garden in the low evening sun, made in code: raked sand, mossy granite rocks, 640 pebbles and moss clumps in one batch, tufts of meadow grass and pines from the vegetation add-on, a stone lantern, and a plaster wall with bamboo beyond it. Contact shadows give each pebble, blade and stone the dark line where it meets the sand, which the shadow map is too coarse to hold. Every 3 seconds they turn off and on again.',
 		controls: [{ keys: ['Move', 'Tap'], does: 'Swing the sun around the garden' }],
 		hold: 1,
-		timeoutSeconds: 60,
+		// The garden draws 640 pebbles' contact shadows in one batch, and a software GPU needs past a
+		// minute for its held frame: three drawings on this machine ran past seventy seconds at loads
+		// from six to thirty-seven. The budget is what failed, not the scene.
+		timeoutSeconds: 180,
 	},
 	{
 		name: 'hero-shadow',
