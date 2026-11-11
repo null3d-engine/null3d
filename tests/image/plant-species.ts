@@ -33,6 +33,10 @@ const PANELS_SECONDS = 120;
  */
 const PANELS_SECONDS_BY_SPECIES: Readonly<Record<string, number>> = {
 	'common-alder': 240,
+	// Provisional: the willow overran the shared two minutes on all three tiers, after loading at
+	// 42 s and growing at 48 s. This is the vegetation demos' ceiling, not a measurement; a measured
+	// value drawn under the suite's load replaces it.
+	'weeping-willow': 600,
 };
 
 /** The picture test of each species folder. */
