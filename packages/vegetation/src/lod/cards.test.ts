@@ -195,9 +195,10 @@ describe('the card levels', () => {
 		detail: 'high' as const,
 	};
 
-	it("draws each row's two planes at the first level", () => {
+	it('draws three rows of every four at the first level, each two planes', () => {
+		const kept = Array.from(rows.order).filter((order) => order % 4 !== 3).length;
 		const first = cardMesh(mesh, 1);
-		expect(first.indices.length / 3).toBe(rows.count * 4);
+		expect(first.indices.length / 3).toBe(kept * 4);
 		for (let i = 0; i < first.uvs.length; i++) {
 			expect(first.uvs[i]).toBeGreaterThanOrEqual(0);
 			expect(first.uvs[i]).toBeLessThanOrEqual(1);
@@ -205,14 +206,16 @@ describe('the card levels', () => {
 	});
 
 	it("draws each card's stalk only where the record gives a least width", () => {
+		const kept = Array.from(rows.order).filter((order) => order % 4 !== 3).length;
 		const plain = cardMesh(mesh, 1);
-		expect(plain.indices.length / 3).toBe(rows.count * 4);
+		expect(plain.indices.length / 3).toBe(kept * 4);
 		const stalked = cardMesh(
 			{ ...mesh, record: { ...record, lod: { ...record.lod, cardStalk: 1 } } },
 			1,
 		);
 		let stretched = 0;
 		for (let r = 0; r < rows.count; r++) {
+			if ((rows.order[r] as number) % 4 === 3) continue;
 			const bx = (rows.back?.[r * 3] as number) ?? 0;
 			const by = (rows.back?.[r * 3 + 1] as number) ?? 0;
 			const bz = (rows.back?.[r * 3 + 2] as number) ?? 0;
@@ -220,7 +223,7 @@ describe('the card levels', () => {
 		}
 		expect(stretched).toBeGreaterThan(0);
 		// Each stalk is one quad from either side, so it shows whichever way the view turns it.
-		expect(stalked.indices.length / 3).toBe(rows.count * 4 + stretched * 4);
+		expect(stalked.indices.length / 3).toBe(kept * 4 + stretched * 4);
 		let stalks = 0;
 		for (let v = 0; v < stalked.uvs1.length / 2; v++) {
 			if (Math.abs((stalked.uvs1[v * 2 + 1] as number) - 0.75) >= 1e-6) continue;
@@ -305,6 +308,8 @@ describe('the card levels', () => {
 		expect(second.indices.length / 3).toBe(kept * 4);
 		expect(cardKeep(4, 2)).toBeCloseTo(Math.SQRT2, 12);
 		expect(cardKeep(3, 2)).toBe(0);
-		expect(cardKeep(3, 1)).toBe(1);
+		// The first level keeps three rows of every four, without growing them.
+		expect(cardKeep(2, 1)).toBe(1);
+		expect(cardKeep(3, 1)).toBe(0);
 	});
 });

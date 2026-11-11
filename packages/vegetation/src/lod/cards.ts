@@ -25,8 +25,10 @@ const CORNERS = [
 const STALK_PLANE = 0.75;
 
 /**
- * Whether a card level keeps a row, and how much it grows the row's cards: every second row of the
- * level above in the space-filling order, grown by the square root of the step.
+ * Whether a card level keeps a row, and how much it grows the row's cards. The first level keeps
+ * three rows of every four in the space-filling order, so the crown shows the sky between its leaf
+ * masses; the second keeps every second row of the level above, grown by the square root of the
+ * step.
  *
  * @param order The row's rank on the space-filling curve.
  * @param level The card level.
@@ -34,6 +36,7 @@ const STALK_PLANE = 0.75;
  * @category api/vegetation
  */
 export function cardKeep(order: number, level: 1 | 2): number {
+	if (level === 1) return order % 4 === 3 ? 0 : 1;
 	const every = 1 << (level - 1);
 	if (order % every !== 0) return 0;
 	const grow = Math.sqrt(every);
@@ -106,7 +109,7 @@ export function cardMesh(input: MeshInput, level: 1 | 2): MeshArrays {
 			// the record asks, the centre of the foliage the card carries. That centre stands ahead
 			// of the row by the shoot's own length, so the stretch alone can end short of it and
 			// leave the leaves joined to nothing; the line then runs the whole way from the wood.
-			let from: Vector3 = [px, py, pz];
+			const from: Vector3 = [px, py, pz];
 			let to: Vector3 = [px + bx, py + by, pz + bz];
 			const centre = input.record.lod.cardStalkToFoliage
 				? prototype.card.planes[0]?.centre
