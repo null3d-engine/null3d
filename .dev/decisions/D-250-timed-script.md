@@ -122,8 +122,8 @@ three images matched their references. The runs are `script-demo-island-turned`,
 `tests/image/script-runs.ts`, and each keeps its own references. The real GPU draws at the High
 preset, and the software GPU at Low, as the image manifest's showcase tests do.
 
-The real GPU's three references are in the repository, drawn on this Mac. The software GPU's
-references are drawn on CI's SwiftShader: the spec saves each new picture as a candidate, and
+The real GPU's three references are in the repository, drawn on this Mac. A software GPU's
+reference comes from a SwiftShader drawing: the spec saves each new picture as a candidate, and
 accepting one makes it a reference. CI run `40445667147` drew the three and saved them as
 candidates, and it failed only because those references did not exist yet, as a run that draws new
 references does. The redraw replaced those three with drawings made on this Mac at the landed head,

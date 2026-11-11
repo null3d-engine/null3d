@@ -56,7 +56,7 @@ export default defineSketch(({ scene, materials, geometry, textures, render }) =
 - A pass runs only while something shows its texture: a texture from `textures.fromPass`, or another running pass that names it in `reads`. A pass that nothing shows costs nothing, not even its texture's memory.
 - The texture holds linear color, after the exposure and before the tone curve. On most devices it holds high dynamic range color. A material that shows it, such as an unlit material, gives the camera the same light that the pass saw. The final pass then maps it as it maps the rest of the scene.
 - Devices that draw 8-bit color tone map in each material's shader: compatibility mode with MSAA, and WebGL2 devices without float targets ([Color management](../concepts/color-management.md)). In compatibility mode the engine turns the pass's colors back to linear as it fills the texture. But they stay tone mapped, so the material that shows the texture applies the tone curve a second time. With the default curve the image then looks a little lighter in the middle tones. On WebGL2 devices without float targets the texture holds display color, so the image looks brighter and flatter.
-- The image stands upright on a plane, with v = 0 at its bottom row, as three.js's render targets do.
+- The image stands upright on a plane, with v = 0 at its bottom row, as three.js's render targets do. A reflection pass's texture on the HDR WebGPU path is the exception: its rows start at the top, so read it with `reflection_uv`.
 - Each pass texture has the scene's anti-aliasing: with MSAA the pass draws with the same samples, then resolves.
 - A pass never draws an object whose material shows the texture of a pass that it does not read, or its own texture. So a mirror does not show itself, and a minimap's screen does not appear in the minimap. To show a mirror in a mirror, add a second pass for it.
 - A pass with a `scale` fills its whole texture at any render scale, so a material samples it from 0 to 1 across. Its texture follows the render size: when the engine lowers the render scale to keep up, the texture shrinks with it, and the pass costs less too.
@@ -134,7 +134,7 @@ export default defineSketch(({ scene, materials, geometry, textures, render }) =
 | `clearAlpha` | The alpha that the texture clears to with `clearColor`, from 0 to 1. | 1 |
 
 - The pass follows the active camera, its lens and the canvas's shape, so it needs no camera of its own. Its texture follows the render size: `RenderPass.width` and `height` are 0.
-- The texture holds the mirrored image, turned around across x and upright. `reflection_uv` from `null3d::reflection` finds where a surface point lies in it. It takes the point's clip position, and an offset that moves the place. A normal that ripples then bends the reflection.
+- The texture holds the mirrored image, turned around across x. `reflection_uv` from `null3d::reflection` finds the upright place of a surface point in it on every GPU path. It takes the point's clip position, and an offset that moves the place. A normal that ripples then bends the reflection. The lookup decides from the shader permutation, not from the pass that the texture comes from. Read only a reflection pass's texture with it: a scene pass's texture would look flipped on the HDR WebGPU path.
 - The pass clips the scene at the plane with the projection's near plane, so the clip costs nothing in any shader. An object that crosses the plane shows only its part above the plane.
 - When the camera stands on the plane or below it, the pass draws nothing, and its texture keeps its last image.
 - A material that shows the pass's texture never draws in the pass, so the water does not reflect itself.
@@ -215,7 +215,7 @@ export default defineSketch(({ scene, materials, geometry, textures, render, pos
 
 - `input.uv` and `input.pixel` place the pixel on the pass's own texture, from the top left. `input.size` is that texture's size. `input.color` is the input image at the same place, read with a linear filter.
 - `effectColor(uv)` and `effectPixel(pixel)` read the input image at other places, as an effect reads its image. `effectInputSize()` gives the input image's size in pixels, which a pass at half size needs to step one pixel of its input. The depth functions, such as `effectDistance(uv)`, read the scene's depth.
-- A pass texture holds its image's bottom row first, as materials sample it. To read another pass's texture at the place `input.uv`, sample it at `effectPassUv(input.uv)`, as the glow effect above does.
+- A pass texture holds its image's bottom row first, as materials sample it. To read another pass's texture at the place `input.uv`, sample it at `effectPassUv(input.uv)`, as the glow effect above does. A reflection pass's texture on the HDR WebGPU path starts at the top row instead: read it at `input.uv`.
 - `render.setPassUniform(pass, name, value)` changes a uniform from the next frame on. It allocates nothing. The textures are fixed when the pass is added.
 - A pass runs only while something shows or reads its texture: a material, a custom effect, another pass's `textures`, or a scene pass's `reads`.
 - A pass with an `input`, or whose WGSL reads the depth, runs after the camera's passes. A custom effect that reads its texture sees the pass's image of the same frame. A material that shows it shows the image of the frame before.
@@ -460,7 +460,7 @@ console.log(render.dumpGraph());
 ## Cost
 
 - A scene pass culls the scene and draws it again, at its own size. A 256 by 256 minimap costs far less than the main view. A pass at the canvas's size costs about as much as the main view.
-- On WebGPU, a full-screen copy turns each scene pass's and reflection's image upright, at one texel read per texel of the texture. WebGL2 draws it upright directly, and a full-screen pass writes its image upright on both paths.
+- On WebGPU, a full-screen copy turns each scene pass's image upright, at one texel read per texel of the texture. A reflection pass on the HDR WebGPU path draws into its texture directly, and `reflection_uv` turns its lookups. The 8-bit path keeps the copy for it, which also decodes the display color. WebGL2 draws each view upright directly, and a full-screen pass writes its image upright on both paths.
 - A full-screen pass costs one triangle over its texture, plus what its WGSL reads, as an effect's pass does: about 0.05 ms of GPU time over the whole canvas on a MacBook Pro ([custom effects](../guides/custom-passes.md#cost)). At half the size each way it shades a quarter of the pixels.
 - Each pass texture takes memory for its texels, and for its samples with MSAA, while something shows it.
 - To save time, switch a pass off in frames where its image need not change.
