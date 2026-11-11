@@ -12,9 +12,9 @@ export interface PageReport {
 
 /**
  * How long a page may take to publish its result. A software GPU on a loaded CI runner needs longer:
- * the page builds its pipelines before it can run its benchmark.
+ * the page builds its pipelines and finishes its first frame before it can run its benchmark.
  */
-const RESULT_TIMEOUT_MS = process.env.CI ? 180_000 : 90_000;
+export const RESULT_TIMEOUT_MS = process.env.CI ? 180_000 : 90_000;
 
 /**
  * Opens a page and returns the result that it publishes, with every error that it logs. A page that

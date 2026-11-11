@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
+import { createHash } from 'node:crypto';
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -21,6 +22,8 @@ import {
 	imageProblems,
 	imageRuns,
 	manifestProblems,
+	type OtherDrawing,
+	otherDrawingProblems,
 	type Place,
 	pageFactsOf,
 	readPng,
@@ -332,6 +335,7 @@ describe('the reference of a run', () => {
 	it("is the environment's own in Playwright's runs, and becomes the reference", () => {
 		expect(referenceOf(run('boxes-compat-pipelined'), REAL)).toEqual({
 			file: 'chrome-real-gpu/compat/boxes.png',
+			others: [],
 			tolerance: TOLERANCE,
 		});
 	});
@@ -355,6 +359,7 @@ describe('the reference of a run', () => {
 	it("is a device's own where the test records the device", () => {
 		expect(referenceOf(run('grid-webgpu'), IPAD)).toEqual({
 			file: 'ipad/webgpu/grid.png',
+			others: [],
 			tolerance: TOLERANCE,
 		});
 	});
@@ -367,6 +372,7 @@ describe('the reference of a run', () => {
 			referenceOf(shared as ImageRun, { runner: 'sm-s921b-chrome', device: 'sm-s921b' }),
 		).toEqual({
 			file: 'sm-s926b/webgl2/boxes.png',
+			others: [],
 			tolerance: TOLERANCE,
 		});
 	});
@@ -475,6 +481,136 @@ describe('the files in the folder of references', () => {
 					(file) => `${file} is a reference of no test. Delete it, or add its test to the manifest`,
 				),
 		);
+	});
+});
+
+describe('the other drawings that a test records', () => {
+	/** A test of one scene that keeps the two pictures of the linux device, on WebGL2. */
+	const tied = (otherDrawings: readonly OtherDrawing[]): readonly ImageTest[] => [
+		{
+			name: 'tied',
+			sketch: 'sketches/tied.ts',
+			hold: 0,
+			size: [20, 20],
+			tiers: ['webgl2'],
+			devices: ['linux'],
+			otherDrawings,
+		},
+	];
+	const primary = 'linux/webgl2/tied.png';
+	const second = 'linux/webgl2/tied.2.png';
+	const digest = 'a'.repeat(64);
+	const drawing = (over: Partial<OtherDrawing> = {}): OtherDrawing => ({
+		place: 'linux',
+		tier: 'webgl2',
+		file: second,
+		sha256: digest,
+		reason: 'a tied sample row',
+		...over,
+	});
+
+	/** A 20 x 20 image of one colour, with an optional square block of another. */
+	const picture = (
+		at?: readonly [number, number],
+		size = 1,
+		rgb: readonly number[] = [200, 10, 10],
+	) => {
+		const width = 20;
+		const height = 20;
+		const data = new Uint8Array(width * height * 4);
+		for (let i = 0; i < data.length; i += 4) data.set([10, 20, 30, 255], i);
+		if (at) {
+			for (let y = at[1]; y < at[1] + size; y++)
+				for (let x = at[0]; x < at[0] + size; x++) data.set([...rgb, 255], (y * width + x) * 4);
+		}
+		return { width, height, data };
+	};
+	const problemsOf = (
+		drawings: readonly OtherDrawing[],
+		pictures: Readonly<Record<string, ReturnType<typeof picture>>>,
+		digests: Readonly<Record<string, string>> = { [second]: digest },
+	) =>
+		otherDrawingProblems(
+			imageRuns(tied(drawings)),
+			(file) => digests[file],
+			(file) => pictures[file],
+		);
+
+	it('pass while a picture differs only outside the guarded end rows and columns', () => {
+		expect(problemsOf([drawing()], { [primary]: picture(), [second]: picture([3, 3]) })).toEqual(
+			[],
+		);
+	});
+
+	it('name a picture that differs inside the guarded end rows and columns', () => {
+		expect(
+			problemsOf([drawing()], { [primary]: picture(), [second]: picture([14, 14], 2) }),
+		).toEqual([
+			'tied: linux/webgl2/tied.2.png differs from linux/webgl2/tied.png in 2.500% of the guarded end rows and columns, and at most 0.100% may: an extra drawing must not absorb a fringe',
+		]);
+	});
+
+	it('name a picture that differs nowhere outside the guarded end rows and columns', () => {
+		expect(problemsOf([drawing()], { [primary]: picture(), [second]: picture() })).toEqual([
+			'tied: linux/webgl2/tied.2.png differs from linux/webgl2/tied.png nowhere outside the guarded end rows and columns',
+		]);
+	});
+
+	it('name a digest that does not match, and skip a missing file that the reference check names', () => {
+		expect(
+			problemsOf(
+				[drawing()],
+				{ [primary]: picture(), [second]: picture([3, 3]) },
+				{
+					[second]: 'b'.repeat(64),
+				},
+			),
+		).toEqual([
+			`tied: linux/webgl2/tied.2.png has SHA-256 ${'b'.repeat(64)}, not the recorded ${digest}`,
+		]);
+		expect(problemsOf([drawing()], { [primary]: picture() }, {})).toEqual([]);
+	});
+
+	it('name a second drawing, a place or tier the test does not keep, the primary file, and a reason or digest that is missing', () => {
+		const two = [drawing(), drawing({ file: 'linux/webgl2/tied.3.png' })];
+		const outside = drawing({ place: 'mac' });
+		const wrongTier = drawing({ tier: 'webgpu' });
+		const sameFile = drawing({ file: primary });
+		const noReason = drawing({ reason: ' ' });
+		const noDigest = drawing({ sha256: 'short' });
+		expect(
+			problemsOf(two, { [primary]: picture(), [second]: picture([3, 3]) }).concat(
+				problemsOf([outside], { [primary]: picture(), [second]: picture([3, 3]) }),
+				problemsOf([wrongTier], { [primary]: picture(), [second]: picture([3, 3]) }),
+				problemsOf([sameFile], { [primary]: picture(), [second]: picture([3, 3]) }),
+				problemsOf([noReason], { [primary]: picture(), [second]: picture([3, 3]) }),
+				problemsOf([noDigest], { [primary]: picture(), [second]: picture([3, 3]) }),
+			),
+		).toEqual([
+			'tied: at most one other drawing may be recorded, not 2',
+			'tied: the other drawing linux/webgl2/tied.2.png names the place mac, where the test keeps no pictures of its own',
+			"tied: the other drawing linux/webgl2/tied.2.png is on webgpu, and the test's references are on webgl2",
+			'tied: the other drawing linux/webgl2/tied.png is the primary reference',
+			'tied: the other drawing linux/webgl2/tied.2.png needs a reason',
+			'tied: the other drawing linux/webgl2/tied.2.png needs its SHA-256',
+		]);
+	});
+
+	it('need the second file, and keep the set closed when it is not recorded', () => {
+		const runs = imageRuns(tied([drawing()]));
+		const primaryFiles = [
+			'chrome-real-gpu/webgl2/tied.png',
+			'chromium-swiftshader/webgl2/tied.png',
+			'linux/webgl2/tied.png',
+		];
+		const files = [...primaryFiles, 'linux/webgl2/tied.2.png'];
+		expect(referenceFileProblems(runs, files)).toEqual([]);
+		expect(referenceFileProblems(runs, primaryFiles)).toEqual([
+			`linux/webgl2/tied.2.png is missing. Make it: run the checks plan on linux (.dev/devices.md), then copy tied's candidate to linux/webgl2/tied.2.png`,
+		]);
+		expect(referenceFileProblems(runs, [...files, 'linux/webgl2/tied.3.png'])).toEqual([
+			'linux/webgl2/tied.3.png is a reference of no test. Delete it, or add its test to the manifest',
+		]);
 	});
 });
 
@@ -735,6 +871,123 @@ describe('comparing an image with its reference', () => {
 		expect(saved.fixed).toContain("add 'mac' to the test's devices");
 		clearCandidates(SAFARI, dirs);
 		expect(existsSync(join(dirs.candidates, 'mac-safari'))).toBe(false);
+	});
+});
+
+describe('the two drawings of the Firefox render-scale picture', () => {
+	const firefox: Place = { runner: 'linux-firefox', device: 'linux' };
+	const wrapped = IMAGE_RUNS.find(
+		(candidate) => candidate.test === 'render-scale-75-fxaa' && candidate.tier === 'webgl2',
+	);
+	if (!wrapped) throw new Error('the manifest has no render-scale-75-fxaa on webgl2');
+	const references = join(REPO_ROOT, 'tests/image/references');
+	const fileOf = (name: string) => join(references, name);
+	const primary = 'linux/webgl2/render-scale-75-fxaa.png';
+	const second = 'linux/webgl2/render-scale-75-fxaa.2.png';
+	const realDirs = (): HarnessDirs => ({
+		references,
+		candidates: dirs.candidates,
+		drawn: dirs.drawn,
+	});
+
+	/** A copy of an image, so a test can change it without touching the reference. */
+	const copy = (image: ReturnType<typeof readPng>) => ({
+		width: image.width,
+		height: image.height,
+		data: new Uint8Array(image.data),
+	});
+
+	/** `save` with the request for drawings on, and the setting put back afterwards. */
+	const asking = (save: () => void) => {
+		const kept = process.env.NULL3D_TAKE_IMAGES;
+		process.env.NULL3D_TAKE_IMAGES = '1';
+		try {
+			save();
+		} finally {
+			if (kept === undefined) delete process.env.NULL3D_TAKE_IMAGES;
+			else process.env.NULL3D_TAKE_IMAGES = kept;
+		}
+	};
+
+	it('records the second picture as the other drawing of the linux device', () => {
+		expect(referenceOf(wrapped, firefox)).toEqual({
+			file: primary,
+			others: [second],
+			tolerance: TOLERANCE,
+		});
+		// The manifest's digest is the file's own, so the accepted picture cannot drift.
+		expect(wrapped.otherDrawings?.[0]?.sha256).toBe(
+			createHash('sha256')
+				.update(readFileSync(fileOf(second)))
+				.digest('hex'),
+		);
+		expect(wrapped.otherDrawings?.[0]?.sha256).toBe(
+			'b5ffd9a9b60fed696d5f98b361505f23a1166443daf6b3a32c1c3ba84305e708',
+		);
+	});
+
+	it('passes the candidate picture as the other drawing, and records which picture matched', () => {
+		const candidate = readPng(fileOf(second));
+		asking(() => {
+			expect(compareWithReference(wrapped, firefox, candidate, realDirs())).toEqual([]);
+		});
+		const saved = JSON.parse(
+			readFileSync(
+				join(dirs.drawn as string, 'linux-firefox/webgl2/render-scale-75-fxaa.json'),
+				'utf8',
+			),
+		) as CandidateFacts;
+		expect(saved).toMatchObject({
+			status: 'drawn',
+			reference: second,
+			matched: second,
+			share: 0,
+			shares: [
+				{ reference: primary, share: 0.004548611111111111 },
+				{ reference: second, share: 0 },
+			],
+		});
+	});
+
+	it('passes the primary picture too, and names it as the one that matched', () => {
+		const reference = readPng(fileOf(primary));
+		asking(() => {
+			expect(compareWithReference(wrapped, firefox, reference, realDirs())).toEqual([]);
+		});
+		const saved = JSON.parse(
+			readFileSync(
+				join(dirs.drawn as string, 'linux-firefox/webgl2/render-scale-75-fxaa.json'),
+				'utf8',
+			),
+		) as CandidateFacts;
+		expect(saved).toMatchObject({ reference: primary, matched: primary, share: 0 });
+	});
+
+	it('fails a third drawing that is apart from both pictures', () => {
+		const third = copy(readPng(fileOf(second)));
+		for (let y = 40; y < 80; y++)
+			for (let x = 100; x < 140; x++) third.data.set([255, 0, 255, 255], (y * 320 + x) * 4);
+		const [problem] = compareWithReference(wrapped, firefox, third, realDirs());
+		expect(problem).toContain(
+			'of pixels differ from the closest accepted drawing linux/webgl2/render-scale-75-fxaa.2.png, and at most 0.100% may',
+		);
+		expect(problem).toContain(`${second} 2.776%`);
+		expect(problem).toContain(`${primary} 3.231%`);
+	});
+
+	it("fails a fringe added to the image's last rows and columns", () => {
+		const fringed = copy(readPng(fileOf(second)));
+		for (let y = 0; y < 180; y++)
+			for (let x = 0; x < 320; x++)
+				if (y >= 177 || x >= 317) fringed.data.set([255, 0, 255, 255], (y * 320 + x) * 4);
+		const [problem] = compareWithReference(wrapped, firefox, fringed, realDirs());
+		expect(problem).toContain(
+			'of pixels differ from the closest accepted drawing linux/webgl2/render-scale-75-fxaa.2.png',
+		);
+	});
+
+	it('holds the recorded set: the digest matches and the pictures agree in the guarded end', () => {
+		expect(otherDrawingProblems(IMAGE_RUNS)).toEqual([]);
 	});
 });
 
