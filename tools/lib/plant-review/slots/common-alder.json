@@ -25,8 +25,8 @@
 	},
 	"18-silhouette.png": {
 		"fov": 30,
-		"fill": 0.923,
-		"targetY": 0.501
+		"fill": 0.73,
+		"targetY": 0.41
 	},
 	"30-whole-with-landmark.png": {
 		"form": "mature",
