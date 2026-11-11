@@ -479,13 +479,13 @@ const FIRST_USE_ALSO: Partial<Record<ShaderFeature, ShaderFeature>> = {
 
 /**
  * How long a first-use page may take to answer. The page itself waits for the frame's pipelines to
- * build for up to 30 s (`BUILD_WAIT_LIMIT_MS`), and answers with its error when that runs out. So
+ * build for up to `BUILD_WAIT_LIMIT_MS`, and answers with its error when that runs out. So
  * the test must wait longer than the page's own limit, or it races the page and reports a bare
  * timeout in place of the page's answer. The clear coat and sheen page builds 24 pipelines, more
  * than any other feature's page, and needs about 30 s for them on CI's software GPU: it passed at
  * 30.2 s and failed at 30.5 s and 30.6 s while this wait was 30 s.
  */
-const FIRST_USE_WAIT_MS = 60_000;
+const FIRST_USE_WAIT_MS = 180_000;
 
 // A page that uses one such feature downloads that feature's shader file once, for its device's
 // fixed bits, and no other feature's shader file. The features come from the shader manifest's
@@ -497,6 +497,9 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 			page,
 		}, testInfo) => {
 			test.skip(testInfo.project.name === 'production build', 'no image test page');
+			// The project's own timeout is shorter than this test's patience, so a page that answers
+			// between the two would be killed with a bare timeout instead of its own error.
+			test.setTimeout(FIRST_USE_WAIT_MS + 60_000);
 			// A decal material with any map cannot build its pipeline on a WebGPU device: the
 			// pipeline layout asks for 17 sampled textures in the fragment stage, one over the device's
 			// default limit of 16 (E1305), so no decal draws there. The decals image tests fail with it

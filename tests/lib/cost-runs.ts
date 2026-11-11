@@ -25,6 +25,37 @@ export interface CostResult {
 	failures: string[];
 }
 
+/** The medians of one part of a frame's GPU time, as the device reports it. */
+export interface PassCost {
+	name: string;
+	ms: number | null;
+}
+
+/** The medians of one side's measurements: GPU time where the device has a timer, frame interval and CPU time. */
+export interface SideCost {
+	gpuMs: number | null;
+	intervalMs: number | null;
+	cpuMs: number | null;
+	/** The display's refresh rate in hertz, where the device measured one. */
+	refreshHz: number | null;
+	/** Draw calls per frame in the middle of the side's measurements. */
+	draws: number | null;
+	/** Each part of the frame's GPU time, in the order that the device reported it. */
+	passes: PassCost[];
+	/** The median busy time per frame of each thread, by name. */
+	threads: Record<string, number | null>;
+	/** Each round's GPU time, in the order the rounds ran; empty without a timer. */
+	gpuRoundsMs: number[];
+	/** Each round's frame interval, in the order the rounds ran. */
+	intervalRoundsMs: number[];
+	/** Each round's CPU time, in the order the rounds ran. */
+	cpuRoundsMs: number[];
+	/** Each part's own time in each round, by name, in the order the rounds ran. */
+	passRoundsMs: Record<string, number[]>;
+	/** The step between the GPU's timestamps, as the last measurement that saw one reported it. */
+	stepMs: number | null;
+}
+
 /**
  * The 1-minute load under which a timing run measures, which the benchmark summaries also name, and
  * how often a test checks the load.
