@@ -229,8 +229,8 @@ export const record: Species = {
 	seedSalt: 0x5ed6e,
 	roundBand,
 	cuttings: {
-		// Stills 21 and 22: one shoot lifted with its leaves.
-		branch: { order: 1, length: 1 },
+		// Stills 21 and 22: the whole young plant lifted with its leaves, sheath and roots.
+		branch: { order: 0, length: 1 },
 		subbranch: { order: 1, length: 0.4 },
 	},
 };
