@@ -223,5 +223,8 @@ export const record: Species = {
 		// Stills 21 and 22: one shoot lifted with its leaves.
 		branch: { order: 1, length: 1 },
 		subbranch: { order: 1, length: 0.4 },
+		// Stills 12, 13, 24 and 25: a picked blade lies on the copy stand, so its fold and twist
+		// straighten and the pictures show the blade's own width rather than its edge-on projection.
+		leaf: { pressed: true },
 	},
 };
