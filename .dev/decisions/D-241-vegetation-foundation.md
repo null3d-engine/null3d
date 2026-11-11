@@ -638,23 +638,24 @@ last, and returns flat arrays of nine floats for each point.
   in Creek, with nothing in the ground layer. Their bounds are narrower than the ground's own
   bands. A scene on other terrain moves the numbers that differ.
 
-**Figures.** Creek's 160 m valley, placed with its eight species at seed 7, holds **1,245 points**:
-101 canopy trees, 170 saplings, 956 ground plants and 18 dead wood. The checksum of that placement is
-**2493806866**, read from the exact bytes of every float, so a page compares its point list with
-another device's and any difference at all shows. The earlier figure of 956 points and checksum
-3358570449 was taken before the scatter's own changes moved the placement, and the page has shipped
-the later reference since; the Galaxy S25 reaches it on both GPU paths, recorded at
-[20261110-025541](../tested-devices/galaxy-s25-sm-s931b-chrome/20261110-025541-vegetation-scatter.md). The device page compares it on every device
-and both GPU paths. The ground maps hold their samples as 32-bit floats, which is what keeps the
+**Figures.** Creek's 160 m valley, placed with its eight species at seed 7, holds **1,020 points**
+now that the waterline rules refuse ground at or below the water. The checksum of that placement is
+**2006477110**, read from the exact bytes of every float, so a page compares its point list with
+another device's and any difference at all shows. Before the waterline rules the shipped reference
+was **1,245 points** with checksum **2493806866**: 101 canopy trees, 170 saplings, 956 ground plants
+and 18 dead wood. The earlier figure of 956 points and checksum 3358570449 came before the scatter's
+own changes moved the placement. No device row reaches the current reference: the Galaxy S25's
+latest run reaches the 1,245 one on both GPU paths, recorded at
+[20261110-025541](../tested-devices/galaxy-s25-sm-s931b-chrome/20261110-025541-vegetation-scatter.md). The ground maps hold their samples as 32-bit floats, which is what keeps the
 samples of a height function that uses `Math.sin` and a fractional power equal between engines: the
 last bits that an engine may round another way do not survive the narrowing. A height function that
 answers other samples on another engine would move the points that it places.
 
 The species records set the room that each plant keeps, so the placement follows a change to one.
 The conifer's whorled tiers and the cards of many small leaves moved it twice after the linked runs
-below were measured. Only the Galaxy S25's latest run reaches the shipped reference of
-1,245 plants and checksum 2493806866, on both GPU paths. No Mac or iPad row reaches it: those rows,
-and the Galaxy S24's, hold the earlier record of 956 plants and checksum 3358570449.
+below were measured. The run of 11 November reaches the shipped reference on every device and both
+GPU paths, which is what the table below holds; the earlier rows, taken against 956 and 1,245, are
+kept in M3-V6's evidence for the size of each move.
 
 **The budget.** The placement runs once, after the ground maps and before the first plant draws, so
 it holds a one-time line rather than a frame ceiling: 250 ms on the reference Mac, the line that
@@ -663,29 +664,34 @@ maps are timed apart from it and take 26 to 86 ms once. The placement starts no 
 GPU, so its GPU time is nil. Its arrays hold about 1.8 MB once for a valley this size: 1.6 MB for
 the ground maps' samples, 0.13 MB for the variance maps and 34 KB for the points.
 
-The `vegetation-scatter` plan ran on two cloud phones, a cloud iPad and the Mac. The Galaxy S25's
-rows are its later run; every other row is an earlier run.
+The `vegetation-scatter` plan ran at `396cab7df` on two cloud phones, a cloud iPad and the Mac, two
+pages on each device, and every page compared against the shipped reference. The Mac, the S25 and
+the iPad start both GPU paths; the S24 has no WebGPU adapter, so its second page is a WebGL2 drawing.
+The placement is the middle of three timed runs; the ground maps are read once.
 
-| Device | Plants | Checksum | Placement | Ground maps | Display | At the shipped reference |
-| --- | --- | --- | --- | --- | --- | --- |
-| Galaxy S24, Chrome, WebGL2 page | 956 | 3358570449 | 7.35 ms | 71.54 ms | 30 Hz | no |
-| Galaxy S24, Chrome, WebGPU page | 956 | 3358570449 | 7.19 ms | 55.19 ms | 30 Hz | no |
-| Galaxy S25, Chrome, WebGL2 page | 1,245 | 2493806866 | 6.42 ms | 49.40 ms | 30 Hz | yes |
-| Galaxy S25, Chrome, WebGPU page | 1,245 | 2493806866 | 6.42 ms | 49.40 ms | 30 Hz | yes |
-| iPad Pro 13, Safari, WebGL2 page | 956 | 3358570449 | 5.20 ms | 37.02 ms | none timed | no |
-| iPad Pro 13, Safari, WebGPU page | 956 | 3358570449 | 4.84 ms | 35.92 ms | none timed | no |
-| MacBook Pro M3 Max, Chrome, WebGL2 page | 956 | 3358570449 | 5.77 ms | 27.98 ms | 120 Hz | no |
-| MacBook Pro M3 Max, Chrome, WebGPU page | 956 | 3358570449 | 5.21 ms | 21.57 ms | 120 Hz | no |
+| Device | Plants | Checksum | Placement | Ground maps | Display |
+| --- | --- | --- | --- | --- | --- |
+| Galaxy S24, Chrome, WebGL2 page | 1,020 | 2006477110 | 11.30 ms | 82.70 ms | 30 Hz |
+| Galaxy S24, Chrome, second page, drawn on WebGL2 | 1,020 | 2006477110 | 9.33 ms | 69.05 ms | 30 Hz |
+| Galaxy S25, Chrome, WebGL2 page | 1,020 | 2006477110 | 5.77 ms | 46.61 ms | 30 Hz |
+| Galaxy S25, Chrome, WebGPU page | 1,020 | 2006477110 | 6.35 ms | 46.35 ms | 30 Hz |
+| iPad Pro 13, Safari, WebGL2 page | 1,020 | 2006477110 | 5.10 ms | 36.02 ms | 59 Hz |
+| iPad Pro 13, Safari, WebGPU page | 1,020 | 2006477110 | 5.22 ms | 40.30 ms | 59 Hz |
+| MacBook Pro M3 Max, Chrome, WebGL2 page | 1,020 | 2006477110 | 5.89 ms | 24.58 ms | 60 Hz |
+| MacBook Pro M3 Max, Chrome, WebGPU page | 1,020 | 2006477110 | 6.15 ms | 24.17 ms | 60 Hz |
+
+Both phones reported a 30 Hz display where 60 was expected, so their frame timing is unreliable and
+no frame rate is claimed from them; the placement and ground-map times are the pages' own timers.
 
 The placement runs on the CPU and starts no engine, so both pages of a device run the same work.
 The S24 has no WebGPU adapter, so its second page named a path that it did not start. Both phone
 displays ran at 30 Hz, and the cloud reported each phone hot, so read the times as upper bounds.
 Safari on iPadOS runs WebKit and JavaScriptCore, so that row places the points on the second
 JavaScript engine beside Chrome's V8. The run files are
-[the S24's](../tested-devices/galaxy-s24-sm-s921b-chrome/20261102-013756-vegetation-scatter.md),
-[the S25's](../tested-devices/galaxy-s25-sm-s931b-chrome/20261110-025541-vegetation-scatter.md),
-[the iPad's](../tested-devices/ipad-pro-13-safari/20261102-013401-vegetation-scatter.md) and
-[the Mac's](../tested-devices/macbook-pro-m3-max-chrome/20261102-014351-vegetation-scatter.md).
+[the S24's](../tested-devices/galaxy-s24-sm-s921b-chrome/20261111-034601-vegetation-scatter.md),
+[the S25's](../tested-devices/galaxy-s25-sm-s931b-chrome/20261111-034402-vegetation-scatter.md),
+[the iPad's](../tested-devices/ipad-pro-13-safari/20261111-034748-vegetation-scatter.md) and
+[the Mac's](../tested-devices/macbook-pro-m3-max-chrome/20261111-034314-vegetation-scatter.md).
 
 **Options rejected.**
 
@@ -1156,3 +1162,22 @@ have the owner's answer beside them: the translucency garden, the impostor fores
 glade and the battle demo. The forest is not one of them. Its own generator stays only until the
 sparse tree lands, and then it draws through the add-on, so the task does not close on these
 rulings. It closes when the forest swaps.
+
+## Addendum: the owner's completeness ruling
+
+The owner ruled: "We're going to take the current state of the vegetation add-on as complete so that
+we can go ahead and complete all the milestone tasks." The add-on as it stands on the milestone is
+what the milestone ships, and the species batch's remaining rows are not a gate on anything here.
+
+What the ruling closes, by task:
+- M3-V4: its generation clause closes on the shipped set. The measured figures are an upper bound for
+  the form shipped now, because the floors are the ruling's and the shared coarseness and the species
+  work since make the sparse mesh cheaper, never dearer.
+- M3-V5: the bake-time clause closes on the shipped path. The files ship; there is no runtime bake to
+  measure.
+- M3-V12: the forest's own generator closes the task, as the paragraph above says, and the ruling's
+  line is drawn at the add-on's current state rather than at the sparse tree.
+
+What it does not do: it does not settle any species' pictures, which follow the shipped records and
+are redrawn when a record moves; and it does not open the milestone to the vegetation session's
+branches, which wait for the owner's word before they merge.
