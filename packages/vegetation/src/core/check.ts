@@ -341,6 +341,18 @@ function growthProblems(record: Species, out: string[]): void {
 				`growth.pipe.leader is ${leader}; a stem keeps a share of its girth from 0.5 to 1 from node to node`,
 			);
 	}
+	if (growth.model === 'frond-colony') {
+		const clump = growth.rhizome.clump;
+		if (clump !== undefined) {
+			wholeProblem(clump.count, 'growth.rhizome.clump.count', 1, 16, out);
+			if (!(clump.radius >= 0))
+				out.push(
+					`growth.rhizome.clump.radius is ${clump.radius}; it is metres and is not negative`,
+				);
+			if (!(clump.ring >= 0))
+				out.push(`growth.rhizome.clump.ring is ${clump.ring}; it is metres and is not negative`);
+		}
+	}
 	if (growth.model === 'rosette') {
 		if (record.foliage.kind !== 'thick') out.push("a rosette's foliage is 'thick'");
 		spreadProblems(growth.shoots, 'growth.shoots', true, out);
