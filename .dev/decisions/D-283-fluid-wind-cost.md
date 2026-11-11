@@ -598,7 +598,8 @@ the figure and the budget, not for the governor's input.
   and 6.16 ms of GPU time a frame from low to ultra, and its allocation 64, 61, 65 and 56 bytes a
   frame in the add-on's own code. The add-on's code is byte-identical at the two heads, so the
   difference between their readings is the machine's state rather than the code, and each reading
-  belongs to its own run.
+  belongs to its own run. The run recorded no machine load, so no clean-window claim is made for its
+  figures.
 
 ## Addendum: the leaves' two forms, and the flag and water readers
 
