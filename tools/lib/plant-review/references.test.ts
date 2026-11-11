@@ -681,6 +681,17 @@ describe('the strands view', () => {
 	});
 });
 
+describe('the sheath view', () => {
+	test('a ground plant’s sheath, collar and ligule pictures take it', () => {
+		expect(classifySlot('15-sheath-and-collar.png')?.view).toBe('sheath');
+		expect(classifySlot('16-ligule-and-collar.png')?.view).toBe('sheath');
+		expect(classifySlot('15-sheath-and-ligule.png')?.view).toBe('sheath');
+		// The bark pictures keep the views they had: only the sheath words take the new view.
+		expect(classifySlot('15-bark-mid-trunk.png')?.view).toBe('bark-mid');
+		expect(classifySlot('16-bark-on-limb.png')?.view).toBe('bark-limb');
+	});
+});
+
 /** A plant's mask on the matte's plain white background. */
 function mattePlant(
 	width: number,

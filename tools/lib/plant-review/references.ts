@@ -218,6 +218,12 @@ const SLOT_RULES: readonly { readonly test: (name: string) => boolean; readonly 
 			slot: { view: 'bark-limb', query: { girth: 0.38, along: 0.3 }, framed: false },
 		},
 		{
+			// A ground plant's sheath, collar or ligule: one tiller's column, seen side on at the
+			// scale the photograph frames it, since such a plant has no woody stem to show.
+			test: (n) => /sheath|ligule|collar/.test(n),
+			slot: { view: 'sheath', framed: false },
+		},
+		{
 			// A winter picture of a branch shows one branch on its own against the sky, as its
 			// reference does: the summer branch cutting, drawn in the season the name gives. A crop
 			// into the whole plant puts other limbs behind it and cannot be read the same way.

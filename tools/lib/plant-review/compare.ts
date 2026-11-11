@@ -58,7 +58,14 @@ const EDGE_FLOOR = 6;
 const PIECE_AREA = 24;
 
 /** The views that photograph the bark close up, whatever words a species puts in its file names. */
-const BARK_VIEWS: ReadonlySet<string> = new Set(['bark-base', 'bark-mid', 'bark-limb']);
+const BARK_VIEWS: ReadonlySet<string> = new Set([
+	'bark-base',
+	'bark-mid',
+	'bark-limb',
+	// A ground plant's bark is its sheath, so the sheath close view reads the material as a bark
+	// close view does.
+	'sheath',
+]);
 
 /** The camera's framing of a reference, in screen shares, as the review page takes it. */
 export interface ReferenceFraming {

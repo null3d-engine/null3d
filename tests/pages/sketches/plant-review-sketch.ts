@@ -36,6 +36,7 @@ import {
 	limbNear,
 	normalize,
 	pointAlong,
+	sheathColumn,
 	stemAt,
 	stemFoot,
 	stemSurfaceAt,
@@ -985,6 +986,17 @@ export default defineSketch(async (ctx) => {
 						: normalize([at.at[0] - foot[0], 0, at.at[2] - foot[2]]);
 				const reach = QUERY.span !== undefined ? QUERY.span / 2 / Math.tan((fov * DEG) / 2) : 0.8;
 				return orbit(at.at, reach + at.radius, e, Math.atan2(across[0], across[2]), fov);
+			}
+			case 'sheath': {
+				// A ground plant's sheath column, seen side on as its photograph frames it: one
+				// tiller's sheaths stand on the frame's foot with the blade leaving the collar above,
+				// at the span the picture covers.
+				const axis = sheathColumn(skeleton);
+				if (axis < 0) break;
+				const base = pointAlong(skeleton, axis, 0).at;
+				const span = QUERY.span ?? 0.13;
+				const reach = span / 2 / Math.tan((fov * DEG) / 2);
+				return orbit([base[0], base[1] + span / 2, base[2]], reach, e, turn, fov);
 			}
 			case 'trunk': {
 				// The bole from its foot to where it first divides, seen from a person's eye height on
