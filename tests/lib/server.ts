@@ -287,17 +287,24 @@ export async function refuseOtherCopy(url: string, root = REPO_ROOT): Promise<vo
  * and waits until it answers. It serves HTTPS unless `https` is false, which is the caller's
  * explicit opt-out for a loopback-only server.
  */
-export async function startServer(https = true): Promise<DevServer> {
+export async function startServer(https = true, probe?: string): Promise<DevServer> {
 	refuseInQuietWindow('The dev server');
 	const url = https
 		? `https://${localHostName()}.local:${HTTPS_PORT}`
 		: `http://localhost:${HTTP_PORT}`;
 	const selfUrl = https ? `https://localhost:${HTTPS_PORT}` : url;
-	if (await answers(`${selfUrl}${DEV_PROBE}`)) {
+	if (await answers(`${selfUrl}${probe ?? DEV_PROBE}`)) {
 		await refuseOtherCopy(selfUrl);
 		return { url, selfUrl, stop: async () => {} };
 	}
-	return spawnServer(REPO_ROOT, [], { NULL3D_HTTPS: https ? '1' : '0' }, url, selfUrl);
+	return spawnServer(
+		REPO_ROOT,
+		[],
+		{ NULL3D_HTTPS: https ? '1' : '0' },
+		url,
+		selfUrl,
+		probe ?? DEV_PROBE,
+	);
 }
 
 /**

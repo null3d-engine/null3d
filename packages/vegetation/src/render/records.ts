@@ -395,6 +395,9 @@ export function speciesHeader(
 		texel(header, HEADER.winterReflectance, [...winterLeaves.reflectance, 1]);
 		texel(header, HEADER.winterTransmittance, [...winterLeaves.transmittance, 0]);
 	}
+	const growth = record.growth;
+	if (growth.model === 'tuft' && growth.sheathColour)
+		texel(header, HEADER.sheath, [...growth.sheathColour, 1]);
 	texel(header, HEADER.cardStalk, [record.lod.cardStalk ?? 0, 0, 0, 0]);
 	return header;
 }
