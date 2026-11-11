@@ -1,8 +1,10 @@
 // Copies that cull each piece of their mesh draw what copies that draw it whole draw, pixel for
 // pixel, on every GPU path: the culling shader on WebGPU, the CPU culling of the direct-draw path
 // and the job workers' culling on WebGL2. In the first view the pieces must also cut the triangles
-// drawn, so the test fails when the pieces never reach the culling. A file's house that too few
-// copies draw must draw whole: the same triangles and draws as the house without pieces.
+// drawn, so the test fails when the pieces never reach the culling. Each side must draw a frame in
+// the window that measures its triangles, so a window that caught none fails rather than judging an
+// empty measure. A file's house that too few copies draw must draw whole: the same triangles and
+// draws as the house without pieces.
 import { expect, test } from '@playwright/test';
 import { pageResult } from '../lib/page-result.ts';
 
@@ -52,6 +54,10 @@ for (const scene of SCENES)
 			expect(result.tier).toBe(path.tier);
 			expect(result.failures).toEqual([]);
 			expect(result.differingPixels).toEqual(new Array(result.views).fill(0));
+			// Each side recorded the triangles of a drawn frame, so a window that caught none fails
+			// rather than comparing an empty measurement.
+			expect(result.triangles.whole).toBeGreaterThan(0);
+			expect(result.triangles.pieces).toBeGreaterThan(0);
 			if (scene.culls) expect(result.triangles.pieces).toBeLessThan(result.triangles.whole);
 			else {
 				expect(result.triangles.pieces).toBe(result.triangles.whole);
