@@ -64,6 +64,55 @@ fn only_problem(source: &str) -> Problem {
     error.problems[0].clone()
 }
 
+/// The permutation words of every shading build that a custom material can make, on both paths.
+/// A shading build shades a surface. The shadow, motion and pick builds add their pass's bit, so
+/// no word here makes one of them, and a test that reads only shading builds compiles these.
+fn shading_words() -> Vec<u32> {
+    use std::collections::BTreeSet;
+
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let inputs = Inputs::read(&root).expect("the repository's shaders");
+    let manifest = Manifest::parse(&inputs.manifest).expect("the shader manifest");
+    let template = manifest
+        .shaders
+        .values()
+        .find(|shader| shader.custom_materials)
+        .expect("the template that custom materials build with");
+    // The compiler drops these bits from every custom material's builds before it expands the
+    // rest, so the free bits are the variant's list without them.
+    let left_out = ["HALF", "MORPH", "INSTANCE_INDEX", "WEIGHTED", "AREA_LIGHTS"]
+        .iter()
+        .fold(0, |word, name| {
+            word | permutation::bit(name).unwrap_or_else(|| panic!("{name} is a permutation bit"))
+        });
+    let mut words = BTreeSet::new();
+    for variant in template
+        .variants
+        .values()
+        .filter(|variant| variant.required.is_empty())
+    {
+        let free: Vec<u32> = variant
+            .permutations
+            .iter()
+            .filter_map(|name| permutation::bit(name))
+            .filter(|bit| left_out & bit == 0)
+            .collect();
+        for combination in 0..(1u32 << free.len()) {
+            let mut word = 0;
+            for (k, bit) in free.iter().enumerate() {
+                if combination & (1 << k) != 0 {
+                    word |= bit;
+                }
+            }
+            if permutation::buildable(word) {
+                words.insert(word);
+            }
+        }
+    }
+    assert!(!words.is_empty(), "the template makes no shading build");
+    words.into_iter().collect()
+}
+
 #[test]
 fn a_surface_function_builds_into_every_variant_of_the_template() {
     let built = compile(STRIPES).expect("the surface function builds");
@@ -236,7 +285,10 @@ fn surface(input: SurfaceInput) -> Surface {
 
 #[test]
 fn uniforms_are_packed_into_the_row_of_custom_values_and_loaded_from_it() {
-    let built = compile(TINTED).expect("the surface function with uniforms builds");
+    // The uniforms come from the source before any build, and the test reads the two builds of no
+    // permutation bits.
+    let built =
+        compile_with(TINTED, None, &[0]).expect("the surface function with uniforms builds");
     let places: Vec<(&str, &str, u32)> = built
         .uniforms
         .iter()
@@ -263,7 +315,7 @@ fn uniforms_are_packed_into_the_row_of_custom_values_and_loaded_from_it() {
 
 #[test]
 fn a_surface_function_without_uniforms_has_none() {
-    let built = compile(STRIPES).expect("the surface function builds");
+    let built = compile_with(STRIPES, None, &[0]).expect("the surface function builds");
     assert!(built.uniforms.is_empty());
     let wgsl = &built.variants["webgpu"].wgsl.as_ref().expect("WGSL").source;
     assert!(!wgsl.contains("load_material_uniforms"), "{wgsl}");
@@ -384,13 +436,15 @@ const RECORD: &str = "fn vertexOffset(input: VertexInput) -> vec3f {
 
 #[test]
 fn a_vertex_offset_that_reads_the_record_takes_the_record_attribute() {
-    let built = compile(RECORD).expect("the record builds");
+    // The vertex inputs come from the source before any build, so one build of no bits carries
+    // every value that the test reads.
+    let built = compile_with(RECORD, None, &[0]).expect("the record builds");
     assert_eq!(built.functions, ["vertexOffset"]);
     // The record is the vertex attribute at location 8, which a mesh with the record carries.
     assert_eq!(built.attributes & vertex::MORPH, vertex::MORPH);
     assert!(built.locations.contains(&8), "{:?}", built.locations);
     // A material that reads none of the record pays nothing for it.
-    let plain = compile(WAVE).expect("the wave builds");
+    let plain = compile_with(WAVE, None, &[0]).expect("the wave builds");
     assert_eq!(plain.attributes & vertex::MORPH, 0);
     assert!(!plain.locations.contains(&8), "{:?}", plain.locations);
 }
@@ -531,7 +585,7 @@ fn a_full_shader_builds_for_both_paths_and_reports_the_attributes_it_reads() {
 
 #[test]
 fn a_surface_function_reads_the_first_texture_coordinates() {
-    let built = compile(STRIPES).expect("the surface function builds");
+    let built = compile_with(STRIPES, None, &[0]).expect("the surface function builds");
     assert_eq!(built.locations, [0, 1, 2]);
     assert_eq!(built.attributes, null3d_gpu::drawlist::vertex::UV0);
     assert!(built.base_color);
@@ -699,7 +753,19 @@ fn surface(input: SurfaceInput) -> Surface {
 
 #[test]
 fn textures_build_into_every_variant_and_read_their_layers_in_both_stages() {
-    let built = compile(TEXTURED).expect("the textured material builds");
+    // The test reads the plain builds of each path, the draw-index build and the two skinned
+    // builds, so it builds those words alone.
+    let built = compile_with(
+        TEXTURED,
+        None,
+        &[
+            0,
+            permutation::DRAW_INDEX,
+            permutation::SKIN,
+            permutation::DRAW_INDEX | permutation::SKIN,
+        ],
+    )
+    .expect("the textured material builds");
     let textures: Vec<(&str, u32)> = built
         .textures
         .iter()
@@ -758,7 +824,7 @@ fn surface(input: SurfaceInput) -> Surface {
     return s;
 }
 ";
-    let built = compile(source).expect("the texture array builds");
+    let built = compile_with(source, None, &[0]).expect("the texture array builds");
     let textures: Vec<(&str, bool)> = built
         .textures
         .iter()
@@ -802,7 +868,8 @@ fn texture_layers_take_room_from_the_uniforms() {
     // Eight vec4f fill the row without textures; one texture takes its last float.
     let fields: String = (0..8).map(|k| format!("    v{k}: vec4f,\n")).collect();
     let uniforms = format!("struct Uniforms {{\n{fields}}}\n");
-    compile(&format!("{uniforms}{STRIPES}")).expect("eight vec4f fit");
+    // The fit is decided before a build, so one build of no bits reads it.
+    compile_with(&format!("{uniforms}{STRIPES}"), None, &[0]).expect("eight vec4f fit");
     let sampled = STRIPES.replace(
         "var s = defaultSurface(input);",
         "var s = defaultSurface(input);\n    s.alpha = textureSample(t, tSampler, input.uv).a;",
@@ -1117,7 +1184,8 @@ fn summary(source: &str) -> String {
 
 #[test]
 fn a_material_with_a_lobe_answers_the_sun_and_every_point_and_spot_light_on_both_paths() {
-    let built = compile(SPARKLE).expect("the material with a lobe builds");
+    // The test reads the two builds of no permutation bits, so it builds those.
+    let built = compile_with(SPARKLE, None, &[0]).expect("the material with a lobe builds");
     for name in ["webgpu", "webgl2"] {
         let variant = &built.variants[name];
         // The shading build calls the lobe once for the sun and once for the lights of the
@@ -1176,7 +1244,8 @@ const CAR_PAINT: &str = include_str!("../../../examples/addons/car-paint/paint.w
 
 #[test]
 fn the_car_paints_glint_model_builds_on_both_paths() {
-    let built = compile(CAR_PAINT).expect("the car paint builds");
+    // The test reads one build of each path, which one word without bits makes.
+    let built = compile_with(CAR_PAINT, None, &[0]).expect("the car paint builds");
     assert_eq!(built.functions, ["surface", "lobe"]);
     assert!(built.variants["webgpu"].wgsl.is_some());
     assert!(built.variants["webgl2"].glsl.is_some());
@@ -1287,7 +1356,20 @@ fn a_custom_material_leaves_out_the_instance_index_build() {
 
 #[test]
 fn a_material_that_sets_the_surface_alpha_cuts_its_shape_its_shadow_and_its_motion() {
-    let built = compile(LEAF).expect("the masked leaf builds");
+    // The test reads the builds that the alpha's bits make and the two masked pass builds, so it
+    // asks for those words rather than every build of the template.
+    let words = [
+        // The base build gives the vertex inputs that the test reads.
+        0,
+        permutation::ALPHA_MASK,
+        permutation::ALPHA_MASK | permutation::ALPHA_COVERAGE,
+        permutation::ALPHA_MASK | permutation::ALPHA_COVERAGE | permutation::SAMPLE_MASK,
+        permutation::ALPHA_MASK | permutation::ALPHA_HASH,
+        permutation::LOD_FADE,
+        permutation::ALPHA_MASK | permutation::CASTER,
+        permutation::ALPHA_MASK | permutation::MOTION,
+    ];
+    let built = compile_with(LEAF, None, &words).expect("the masked leaf builds");
     assert!(built.alpha);
     // The vertex offset reads the mesh's vertex color, so the material needs that attribute.
     assert!(built.locations.contains(&5), "{:?}", built.locations);
@@ -1330,8 +1412,9 @@ fn a_material_that_sets_the_surface_alpha_cuts_its_shape_its_shadow_and_its_moti
     assert!(motion.contains("fn surface("), "{motion}");
     assert!(motion.contains("discard"), "{motion}");
     // WGSL that never names the alpha keeps its builds as few as before: no coverage and no hash,
-    // and a caster that writes its whole shape.
-    let plain = compile(STRIPES).expect("the plain surface builds");
+    // and a caster that writes its whole shape. The same words are asked for, so any build that
+    // the alpha's bits would have made shows here.
+    let plain = compile_with(STRIPES, None, &words).expect("the plain surface builds");
     assert!(!plain.alpha);
     let names: Vec<&String> = plain.variants.keys().collect();
     assert!(
@@ -1400,7 +1483,16 @@ fn surface(input: SurfaceInput) -> Surface {
 
 #[test]
 fn a_material_with_both_hooks_cuts_its_shadow_by_coverage_and_its_motion_by_alpha() {
-    let built = compile(BOTH_HOOKS).expect("the material with both hooks builds");
+    // The test reads the masked caster and the masked motion build alone, so it builds those two.
+    let built = compile_with(
+        BOTH_HOOKS,
+        None,
+        &[
+            permutation::CASTER | permutation::ALPHA_MASK,
+            permutation::MOTION | permutation::ALPHA_MASK,
+        ],
+    )
+    .expect("the material with both hooks builds");
     let masked = |prefix: &str| {
         built
             .variants
@@ -1668,7 +1760,10 @@ fn build_words(built: &MaterialOutput) -> Vec<(String, u32)> {
 fn the_ambient_normal_reaches_only_the_builds_that_name_it() {
     // A material that names the field lights its ambient, hemisphere and environment light by it in
     // every build of both paths, and keeps the sun's diffuse light on the surface's normal.
-    let named = compile(SKY_LIT).expect("the surface with a normal for the sky's light builds");
+    // `shading_sources` reads the shading builds alone, so the test builds those.
+    let words = shading_words();
+    let named = compile_with(SKY_LIT, None, &words)
+        .expect("the surface with a normal for the sky's light builds");
     let sources = shading_sources(&named);
     assert!(!sources.is_empty());
     for (name, source) in &sources {
@@ -1679,10 +1774,11 @@ fn the_ambient_normal_reaches_only_the_builds_that_name_it() {
     let webgpu = &named.variants["webgpu"].wgsl.as_ref().expect("WGSL").source;
     assert!(webgpu.contains("ambient_light(ambient_normal"), "{webgpu}");
     // The field is a def, not a permutation bit: the material keeps the plain material's builds.
-    let plain = compile(STRIPES).expect("the plain surface builds");
+    let plain = compile_with(STRIPES, None, &words).expect("the plain surface builds");
     assert_eq!(build_words(&named), build_words(&plain));
     // A material that never names the field, or names only the diffuse normal, has no trace of it.
-    let crown = compile(CROWN_LIT).expect("the surface with a diffuse normal builds");
+    let crown =
+        compile_with(CROWN_LIT, None, &words).expect("the surface with a diffuse normal builds");
     for (name, source) in shading_sources(&plain)
         .iter()
         .chain(&shading_sources(&crown))
@@ -1699,7 +1795,7 @@ fn the_ambient_normal_joins_the_diffuse_normal() {
         "    return s;",
         "    s.diffuseNormal = normalize(input.normal + vec3f(0.1, 0.0, 0.0));\n    return s;",
     );
-    let built = compile(&both).expect("the surface with both normals builds");
+    let built = compile_with(&both, None, &[0]).expect("the surface with both normals builds");
     let webgpu = &built.variants["webgpu"].wgsl.as_ref().expect("WGSL").source;
     assert!(webgpu.contains("dot(diffuse_normal, to_sun)"), "{webgpu}");
     assert!(webgpu.contains("ambient_light(ambient_normal"), "{webgpu}");
@@ -1709,14 +1805,16 @@ fn the_ambient_normal_joins_the_diffuse_normal() {
 #[test]
 fn the_occlusion_by_minimum_reaches_only_the_builds_that_name_it() {
     // A material that names the switch joins its occlusion with screen-space occlusion in every
-    // shading build of both paths.
-    let named = compile(BAKED_SHADE).expect("the surface with a baked shade builds");
+    // shading build of both paths, so the test builds the shading builds alone.
+    let words = shading_words();
+    let named =
+        compile_with(BAKED_SHADE, None, &words).expect("the surface with a baked shade builds");
     let sources = shading_sources(&named);
     assert!(!sources.is_empty());
     for (name, source) in &sources {
         assert!(source.contains("joined_occlusion"), "{name}");
     }
-    let plain = compile(STRIPES).expect("the plain surface builds");
+    let plain = compile_with(STRIPES, None, &words).expect("the plain surface builds");
     assert_eq!(build_words(&named), build_words(&plain));
     for (name, source) in shading_sources(&plain) {
         assert!(!source.contains("joined_occlusion"), "{name}");
@@ -1753,8 +1851,11 @@ const GLOW: &str = "fn unlit(input: SurfaceInput) -> vec4f {
 #[test]
 fn the_light_hooks_build_with_a_sway_and_a_cut_shape() {
     // The shadow caster, motion and pick builds run the material's own WGSL, so they declare both
-    // fields too: a leaf that names them still sways and casts its cut shape.
-    let built = compile(SWAYING_LEAF).expect("the swaying leaf builds");
+    // fields too: a leaf that names them still sways and casts its cut shape. The test reads every
+    // shading build and one build of each pass, so it builds those.
+    let mut words = shading_words();
+    words.extend([permutation::CASTER, permutation::MOTION, permutation::PICK]);
+    let built = compile_with(SWAYING_LEAF, None, &words).expect("the swaying leaf builds");
     for kind in ["_shadow", "_motion", "_pick"] {
         assert!(
             built.variants.keys().any(|name| name.contains(kind)),

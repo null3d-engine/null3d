@@ -15,4 +15,5 @@ The plan's two Creek-density rows draw the hill at its own density, with the vie
 
 At 2,312 tufts the three runs sit between 288.75 and 298.22 ms, so the per-view cull takes about 8 to 17 ms back from 306.09, 3 to 6 per cent. At 6,820 tufts the three runs straddle the earlier row, 466.35 to 497.68 against 490.73, so the change there is inside the run-to-run spread.
 
-The near cascades cost little at either density: the three passes together time at 2.1 to 2.2 ms a frame at 2,312 tufts and 6.3 at 6,820, so the shadow views were never the large part of these rows. Neither row reaches D-241's 208.3 ms High ceiling; the grass at the valley's density misses it by about 87 ms.
+The near cascades cost little at either density: the three passes together time at 2.1 to 2.2 ms a frame at 2,312 tufts and 6.3 at 6,820, so the shadow views were never the large part of these rows. Neither row reaches the 208.3 ms target, the S24 class's High ceiling; the grass at the valley's
+density misses it by about 87 ms.
