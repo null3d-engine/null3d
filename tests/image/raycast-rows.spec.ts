@@ -3,8 +3,9 @@
 // seeded rays through both. Rays from the camera must give the hits of three.js's Sprite, Line2 and
 // LineSegments2, and rays from anywhere with three.js's thresholds the hits of its Points, Line,
 // LineSegments and LineLoop. A ray through each pixel of a frame must hit the row that the pixel
-// shows, or nothing where it shows the background, so rays hit what each GPU path draws. And a
-// click on a sprite, a point and a line reaches the handler of its batch with the row under it.
+// shows, or nothing where it shows the background, so rays hit what each GPU path draws. A pixel
+// that anti-aliasing blends at a row's edge shows neither, so it is not judged. And a click on a
+// sprite, a point and a line reaches the handler of its batch with the row under it.
 import { expect, test } from '@playwright/test';
 import { pageResult } from '../lib/page-result.ts';
 import type { RowRaycastResults, RowTarget } from '../pages/lib/raycast-rows.ts';
@@ -48,9 +49,11 @@ for (const tier of ['webgpu', 'compat', 'webgl2'] as const)
 		for (const batch of ROW_BATCHES)
 			expect(results.hitsByBatch[batch] ?? 0, batch).toBeGreaterThan(20);
 		// Every pixel away from a row's edge shows a row where its ray hits one, and nothing where it
-		// hits none. Where two rows overlap at almost one depth, the GPU's depth test and the ray can
-		// pick either: a line's depth on the GPU is its end point's, and a ray's hit near a line is its
-		// closest point. So a few such pixels may show the other row.
+		// hits none. A pixel at an edge holds a blend of colors, so only a pixel that shows a row's
+		// own color or the background is judged. Where two rows overlap at almost one depth, the
+		// GPU's depth test and the ray can pick either: a line's depth on the GPU is its end point's,
+		// and a ray's hit near a line is its closest point. So a few such pixels may show the other
+		// row.
 		expect([picture.missing, picture.extra], picture.examples.join('\n')).toEqual([0, 0]);
 		expect(picture.swapped, picture.examples.join('\n')).toBeLessThanOrEqual(3);
 		expect(picture.judged).toBeGreaterThan(50_000);
