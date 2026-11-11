@@ -188,12 +188,14 @@ export const record: Species = {
 		},
 	},
 	bark: {
-		// Still 15 and 26: one zone of thin grey-brown bark in long narrow fibrous strips, with
-		// red-brown in the furrows. The bark changes little over the short bole.
-		zones: [{ layer: 0, by: 'height', from: 0, to: 22, blend: 1.5 }],
+		// Stills 15 and 26: one zone of thin grey-brown bark in long narrow fibrous strips, with
+		// red-brown in the furrows. The bark changes little over the short bole. Under the copy
+		// stand the plates read 5.1 light and 3.0 too yellow, so the zone darkens and keeps more blue.
+		zones: [{ layer: 0, by: 'height', from: 0, to: 22, blend: 1.5, tint: [0.8, 0.78, 0.855] }],
 		young: 0,
-		// Still 16: thin wood carries the redder, finer branch bark.
-		youngRadius: 0.03,
+		// Stills 16 and 28: thin wood carries the redder, finer branch bark. The young source frames
+		// wood about five centimetres across, so the split reaches past that radius.
+		youngRadius: 0.06,
 		// Still 16: the strips are narrow on the thin limbs and broader on the bole.
 		girthScale: [
 			[0, 0.6],
