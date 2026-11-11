@@ -43,16 +43,39 @@ export async function plantWindClump(
 	// visit reads the same bytes back instead of growing them again.
 	const cache = ctx.assets.cache('vegetation-wind', 1);
 	const options = { detail: 'high', placeholders: 'missing', cache } as const;
+	// The species grow together, and each one that finishes moves the loading bar by the work it did,
+	// so the bar follows the plants rather than a timer. The count of triangles is what the browser
+	// actually built, so a species that takes longer than the others shows as tri count, not as a
+	// stuck bar.
+	const total = ids.length;
+	let prepared = 0;
+	let grownCount = 0;
+	let triangles = 0;
+	const report = (text: string, value: number, detail: string): void => {
+		ctx.page.post('loading', { kind: 'build', text, value, detail });
+	};
+	const count = (n: number): string => n.toLocaleString('en-GB');
+	report('Preparing the plants', 0, `0 of ${total} species`);
 	const grown = await Promise.all(
 		ids.map(async (id, index) => {
 			const module = await loadSpecies(id);
 			const kit = await prepareSpecies(ctx, module, options);
+			prepared++;
+			report('Preparing the plants', prepared / total, `${prepared} of ${total} species`);
 			const asset = await growPlant(kit, {
 				seed,
 				variant: index % Math.max(1, kit.record.variants),
 				near: true,
 				sparse: DEMO_SPARSENESS,
 			});
+			grownCount++;
+			const [near, middle, far] = asset.stats.triangles;
+			triangles += near + middle + far;
+			report(
+				'Growing the plants',
+				grownCount / total,
+				`${grownCount} of ${total} species, ${count(triangles)} triangles`,
+			);
 			return { kit, asset };
 		}),
 	);
