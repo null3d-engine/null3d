@@ -559,6 +559,19 @@ describe('the facing pieces of a smaller mesh that many copies draw', () => {
 		expect(record.pieces.at(-1)).toEqual({ mesh: large.id, count: 2 });
 	});
 
+	test("give a file's held pieces to a mesh whose material draws both faces", async () => {
+		const { geometry, record } = engine();
+		const rock = geometry.fromArrays(strip(2000, { levels: false }));
+		rock.fromFileWith(filePieces(1000, 1000), 'test');
+		const both = { shapesVertices: false, wholeOnly: false, facesBoth: true } as Material;
+		rock.drawnWith(both, 40, 'test');
+		await settled();
+		// The copies pay for the list, whose pieces cull the view's frustum alone; a material that
+		// draws both faces plans no facing pieces, which its cones would never drop.
+		expect(record.pieces).toEqual([{ mesh: rock.id, count: 2 }]);
+		expect(asked).toHaveLength(0);
+	});
+
 	test("plan the pieces of a file's smaller list that holds none once its copies pay", async () => {
 		const { geometry } = engine();
 		const pebble = geometry.fromArrays(strip(2000, { levels: false }));
