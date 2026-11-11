@@ -11,8 +11,16 @@ const DISTANCES = [6, 400];
 /** Where the large grid with pieces draws, and the same grid without them, by name. */
 const CORNERS = { pieces: 500, whole: -500 };
 
-/** The most measures that a view takes while the counts of the drawn triangles catch up. */
-const SETTLE_WAITS = 8;
+/** The most measures that a view takes while its frames and counts catch up. */
+const SETTLE_WAITS = 90;
+/**
+ * Frames that a view draws before it reads its count. The GPU samples the triangles of the draws
+ * that it culled on one frame in eleven, so this covers a sample drawn after the camera moved,
+ * and the few frames that its sums take to come back.
+ */
+const SETTLE_FRAMES = 16;
+/** The most reads that a view takes to repeat its count. */
+const REPEAT_READS = 4;
 
 run('runtime-levels', async () => {
 	const canvas = document.querySelector('canvas');
@@ -41,32 +49,30 @@ run('runtime-levels', async () => {
 			engine.postToSketch(type, place);
 		});
 	/**
-	 * The triangles that a frame draws, once the counts have caught up with the view. WebGPU takes
-	 * the triangles of the draws that it culled from the GPU, on one frame in eleven and a few
-	 * frames late, so a slow device still reports the count of the camera before this one. Two
-	 * reads that agree can both be that stale count, so a settled count must differ from the first
-	 * read of its own view, or from the view before once one has settled, and then repeat.
+	 * The triangles that a frame draws, once the GPU's counts describe the view. WebGPU takes the
+	 * triangles of the draws that it culled from the GPU, on one frame in eleven and a few frames
+	 * late, so a slow device still reports the count of the camera before this one. Waiting a
+	 * wall-clock time can pass no frames at all on such a device, so the page first draws enough
+	 * frames for a later sample to describe the view, then reads until a count differs from the
+	 * view before and repeats.
 	 */
 	let lastDrawn = -1;
 	const drawn = async () => {
-		let previous = -1;
-		let firstRead = -1;
-		let settled = -1;
-		for (let k = 0; k < SETTLE_WAITS; k++) {
-			await engine.measure(0.5);
-			const triangles = (await engine.measure(1)).triangles.median;
-			if (k === 0) firstRead = triangles;
-			const baseline = lastDrawn === -1 ? firstRead : lastDrawn;
-			if (triangles !== baseline && triangles > 0 && triangles === previous) {
-				settled = triangles;
-				break;
-			}
-			previous = triangles;
+		let frames = 0;
+		for (let k = 0; k < SETTLE_WAITS && frames < SETTLE_FRAMES; k++)
+			frames += (await engine.measure(0.5)).frames;
+		let triangles = -1;
+		for (let k = 0; k < REPEAT_READS; k++) {
+			const read = (await engine.measure(1)).triangles.median;
+			if (read > 0 && read !== lastDrawn && read === triangles) break;
+			triangles = read;
 		}
-		if (settled === -1) settled = previous > 0 ? previous : firstRead;
-		lastDrawn = settled;
-		return settled;
+		lastDrawn = triangles;
+		return triangles;
 	};
+	// The count of the camera before the first view, which a stale read can still repeat.
+	const before = (await engine.measure(1)).triangles.median;
+	if (before > 0) lastDrawn = before;
 	const triangles: Record<string, number> = {};
 	for (const distance of DISTANCES) {
 		await moved('distance', distance);
