@@ -844,7 +844,7 @@ describe('the shoot rows', () => {
 					...record,
 					shoots: {
 						...OAK_SHOOTS,
-						placement: { ...OAK_SHOOTS.placement, limbMass },
+						placement: { ...OAK_SHOOTS.placement, bareTrim: 0.1, limbMass },
 					},
 				},
 			});
@@ -879,6 +879,28 @@ describe('the shoot rows', () => {
 		expect(Array.from(even.position)).toEqual(Array.from(massed(undefined).position));
 		const flat = massed({ order: 1, hold: 0.5, reach: 2, depth: 0 });
 		expect(Math.abs(flat.count - even.count)).toBeLessThan(even.count * 0.05);
+		// A tip below the share carries its rosette back to the previous bud, and the trim takes the
+		// bare twig with it: the skeleton loses nodes and the rows stand no farther from the mass's
+		// wood. The rosettes themselves survive, so the crown keeps its foliage.
+		const dressed = (limbMass?: NonNullable<typeof OAK_SHOOTS.placement>['limbMass']) =>
+			dressShoots({
+				...input,
+				record: {
+					...record,
+					shoots: {
+						...OAK_SHOOTS,
+						placement: { ...OAK_SHOOTS.placement, limbMass },
+					},
+				},
+			});
+		const setting = { order: 1, hold: 0.5, reach: 2, depth: 1 } as const;
+		const plain = dressed(setting);
+		const tipped = dressed({ ...setting, tipShare: 0.9 });
+		// The tips carry one rosette at most, back on the mass's wood; the bare trim then follows each
+		// row's node, which the bare-trim tests cover. No foliage is added in the thin space.
+		expect(tipped.rows.count).toBeLessThanOrEqual(plain.rows.count);
+		expect(Array.from(tipped.rows.position)).not.toEqual(Array.from(plain.rows.position));
+		expect(distanceToCoarse(tipped.rows)).toBeLessThanOrEqual(distanceToCoarse(plain.rows));
 	});
 
 	it('gathers the shoots of one bud into a tuft at its node when the record asks', () => {
