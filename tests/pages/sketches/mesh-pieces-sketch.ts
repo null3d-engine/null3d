@@ -1,11 +1,14 @@
 // A field of rough rocks drawn by many copies, whose triangle lists come in pieces (NULL3D_pieces)
-// with ?pieces=1 and whole without it. Both files hold the same triangles in the same order, so
+// with ?pieces=1 and whole without it. Both sides draw the same triangles in the same order, so
 // only the culling of each piece of each copy differs, and the frames must match pixel for pixel.
-// The rock is open at the top, so its inside shows. One batch draws it single-sided, whose back
-// faces the cone test may drop, and one double-sided, whose pieces must keep their back faces. A
-// mirrored copy and a stretched one skip the cone test. The rock has a coarser level of its own,
-// with pieces too, so far copies cull that level's pieces. On the page's 'view' message, with a
-// view's place in VIEWS, the camera moves there, and a few frames later the sketch posts 'turned'.
+// With ?pieces=1 the rock comes from a file that stores its pieces, and with ?pieces=0 the same
+// arrays are made in code with `levels: false`: a file's mesh that stores no pieces plans them at
+// run time once its copies pay, so it would cull too. The rock is open at the top, so its inside
+// shows. One batch draws it single-sided, whose back faces the cone test may drop, and one
+// double-sided, whose pieces must keep their back faces. A mirrored copy and a stretched one skip
+// the cone test. The rock has a coarser level of its own, with pieces too, so far copies cull that
+// level's pieces. On the page's 'view' message, with a view's place in VIEWS, the camera moves
+// there, and a few frames later the sketch posts 'turned'.
 import { defineSketch } from '@null3d/engine';
 import { planPieces } from '../../../packages/engine/levels/pieces.js';
 import { GltfBuilder, type GltfJson } from '../lib/gltf-files';
@@ -14,6 +17,8 @@ const params = new URL(import.meta.url).searchParams;
 const PIECES = params.get('pieces') === '1';
 /** Frames after a move before 'turned': a pipelined engine draws a frame or two behind the sketch. */
 const TURN_FRAMES = 3;
+/** The fine rock's error, which switches its coarser level in about 12 m out at the picture's size. */
+const LOD_ERROR = 0.04;
 
 /** The camera's place and target in each view: inside the field, at its edge, and far above it. */
 export const VIEWS: readonly { position: number[]; target: number[] }[] = [
@@ -89,7 +94,10 @@ function rock(around: number, rings: number) {
 	return { positions: new Float32Array(positions), normals, indices: sorted, plan };
 }
 
-/** The file: a rock mesh for each material, each with its coarser level, with or without pieces. */
+/**
+ * The file: a rock mesh for each material, each with its coarser level, which stores its pieces
+ * with ?pieces=1. The whole side draws the same arrays made in code with the file's material.
+ */
 function rockFile(): Uint8Array {
 	const b = new GltfBuilder();
 	if (PIECES) b.uses('NULL3D_pieces');
@@ -135,8 +143,7 @@ function rockFile(): Uint8Array {
 			name: side.name,
 			mesh: b.mesh([primitive(fine, material)]),
 			extensions: { MSFT_lod: { ids: [level] } },
-			// The coarse level switches in about 12 m out at the picture's size.
-			extras: { NULL3D_lod_error: [0.04] },
+			extras: { NULL3D_lod_error: [LOD_ERROR] },
 		});
 	}
 	return b.glb();
@@ -151,7 +158,7 @@ function hash(n: number): number {
 	return (x >>> 0) / 0xffffffff;
 }
 
-export default defineSketch(async ({ scene, assets, quality, page }) => {
+export default defineSketch(async ({ scene, geometry, assets, quality, page }) => {
 	quality.set({ minRenderScale: 1, maxRenderScale: 1, governor: false });
 	scene.setBackground([0.55, 0.62, 0.7]);
 	scene.createDirectionalLight({ direction: [-0.4, -1, -0.5], intensity: 2.5 });
@@ -168,13 +175,30 @@ export default defineSketch(async ({ scene, assets, quality, page }) => {
 		new Blob([rockFile() as Uint8Array<ArrayBuffer>], { type: 'model/gltf-binary' }),
 	);
 	const file = await assets.loadGltf(url);
+	/**
+	 * The whole side: the file's arrays made in code with `levels: false`, which plans no pieces,
+	 * and the same coarser level, set by hand at the file's error. Both sides draw it.
+	 */
+	const wholeRock = () => {
+		const arrays = (around: number, rings: number) => {
+			const { positions, normals, indices } = rock(around, rings);
+			return { positions, normals, indices: Array.from(indices) };
+		};
+		const fine = geometry.fromArrays({ ...arrays(128, 64), levels: false });
+		const coarse = geometry.fromArrays({ ...arrays(40, 20), levels: false });
+		fine.setLevels([{ mesh: coarse, error: LOD_ERROR }]);
+		return fine;
+	};
+	const whole = PIECES ? undefined : wholeRock();
 	for (const [side, count] of [
 		['single', 60],
 		['double', 24],
 	] as const) {
 		const node = file.find(side);
-		if (!node?.mesh || !node.material) throw new Error(`no ${side} rock`);
-		const batch = scene.createInstances(node.mesh, count, { material: node.material });
+		if (!node?.material) throw new Error(`no ${side} rock`);
+		const mesh = PIECES ? node.mesh : whole;
+		if (!mesh) throw new Error(`no ${side} rock`);
+		const batch = scene.createInstances(mesh, count, { material: node.material });
 		for (let k = 0; k < count; k++) {
 			const seed = (side === 'single' ? 0 : 1000) + k * 7;
 			const angle = hash(seed) * Math.PI * 2;
