@@ -343,7 +343,7 @@ A row's central run is the stem where its boughs stand apart from it. The crown 
 
 The mound guard is `36fe37843`. A species the record grows as a tuft or a rosette keeps the outer span, and its crown starts at its foot. The sedge's 25 in-use stills, the hosta's 26 and the meadow grass's 25 are byte-identical before and after the guard. The oak's 30 are byte-identical too.
 
-The in-use references that still move, by species, their number and the start before and after:
+The in-use references that still move, by species, their number and the start before and after. The figures follow the review's reference path: each picture is flattened onto white before its mask:
 
 | Species | References that move |
 | --- | --- |
@@ -352,7 +352,7 @@ The in-use references that still move, by species, their number and the start be
 | bamboo | 17 0 to 0.0266, 26 0 to 0.0566 |
 | banyan | 02 0.0042 to 0.2881, 08 0 to 0.2857, 18 0.0041 to 0.0248 |
 | bracken | 01 0 to 0.1084, 18 0 to 0.033 |
-| cedar-of-lebanon | 14 0 to 0.0338, 24 0 to 0.0606 |
+| cedar-of-lebanon | 14 0 to 0.0338 |
 | clipped-box-hedge | 17 0 to 0.0938, 19 0.0031 to 0.0453 |
 | coconut-palm | 09 0 to 0.0696, 14 0.0057 to 0.0324 |
 | common-alder | 01 0 to 0.0493, 09 0.0042 to 0.0063 |
@@ -382,7 +382,7 @@ The in-use references that still move, by species, their number and the start be
 | olive | 14 0 to 0.0081 |
 | quaking-aspen | 16 0 to 0.0259, 30 0.0034 to 0.0952, 31 0 to 0.3284 |
 | rush | 05 0 to 0.2984 |
-| saguaro | 25 0.0078 to 0.013 |
+| saguaro | 25 0 to 0.0382 |
 | scots-pine | 04 0 to 0.0506, 17 0 to 0.0352 |
 | silver-birch | 14 0 to 0.0216, 34 0 to 0.0453 |
 | small-leaved-lime | 15 0 to 0.0187 |
@@ -390,6 +390,8 @@ The in-use references that still move, by species, their number and the start be
 | tree-fern | 07 0 to 0.0175 |
 | weeping-willow | 01 0.0034 to 0.055, 09 0 to 0.0156, 18 0.0033 to 0.32, 31 0 to 0.0289 |
 | winter-oak-bare | 14 0 to 0.0918 |
+
+A cut piece's subject crop sets its crown bottom. The crown-start move does not reach such a picture: the sequoia's `11` keeps its box 506×596 and its figures, and the raw reading above is not its row figure.
 
 The affected owners are told. The beech and the alder were told first; the oak keeps its figures.
 ## The rows a species still owes
