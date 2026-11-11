@@ -162,7 +162,9 @@ export const record: Species = {
 			// third of the visible stem, so the body is longer than a catkin and its rows follow.
 			shape: { catkin: { length: 0.17, radius: 0.0036, spikelets: { count: 12, bulge: 0.28 } } },
 			colour: [0.13, 0.2, 0.06],
-			hang: 180,
+			// The body keeps its stalk's outward droop rather than being forced straight down, so
+			// the heads splay as the photographs show them.
+			hang: 5,
 		},
 		{
 			// The fact sheet: the spikes stay on the plant brown through autumn and winter.
@@ -172,7 +174,7 @@ export const record: Species = {
 			seasons: ['autumn', 'winter'],
 			shape: { catkin: { length: 0.17, radius: 0.0036, spikelets: { count: 12, bulge: 0.28 } } },
 			colour: [0.17, 0.11, 0.05],
-			hang: 180,
+			hang: 5,
 		},
 		{
 			// Still 19: one short brown male spike at the stem's tip.
