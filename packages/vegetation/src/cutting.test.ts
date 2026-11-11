@@ -8,12 +8,18 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { scaledBudget } from '../../../tests/lib/run-budget.ts';
 import { type PlantAsset, plantAssetDigest, type SpeciesKitData } from './asset';
-import { AXIS_CULM, AXIS_LIMB, AXIS_STEM, BUD_TERMINAL, SkeletonBuilder } from './core/graph';
+import { AXIS_LIMB, AXIS_STEM, BUD_TERMINAL, SkeletonBuilder } from './core/graph';
 import { quatRotate } from './core/math';
 import type { Species } from './core/record';
 import { standInSpecies } from './core/stand-in';
-import { curveAt } from './core/types';
-import { CUTTING_LENGTH, clusterRank, cutBranch, cutFoliage, cutsShoot } from './cutting';
+import {
+	CUTTING_LENGTH,
+	clusterRank,
+	clusterRow,
+	cutBranch,
+	cutFoliage,
+	cutsShoot,
+} from './cutting';
 import { buildKitNow, growPlantNow, loadPlantCode } from './generate';
 import type { PlantTaskInput } from './generate-task';
 import { oakRecord } from './grow/oak.fixture';
@@ -119,92 +125,6 @@ describe('cuttings', () => {
 		expect(cut.order).toBe(1);
 		expect(cut.axis).toBe(thick);
 		expect(cut.axis).not.toBe(thin);
-	});
-
-	/** A stem of twelve nodes, and a helper that hangs an axis on it with a bud and an optional child. */
-	function stemWithAxes() {
-		const builder = new SkeletonBuilder();
-		const stem = builder.addAxis({ parent: -1, parentNode: -1, order: 0, kind: AXIS_STEM });
-		let node = builder.addNode({ x: 0, y: 0, z: 0, radius: 0.4, parent: -1, axis: stem });
-		for (let i = 1; i <= 12; i++)
-			node = builder.addNode({ x: 0, y: i, z: 0, radius: 0.4, parent: node, axis: stem });
-		const growth = (at: number, radius: number, order: number, kind: number, child: boolean) => {
-			const axis = builder.addAxis({ parent: stem, parentNode: at, parentT: 0, order, kind });
-			let previous = builder.addNode({ x: radius, y: at, z: 0, radius, parent: at, axis });
-			const first = previous;
-			for (let i = 1; i <= 3; i++)
-				previous = builder.addNode({
-					x: radius + i * 0.3,
-					y: at,
-					z: 0,
-					radius: radius * (1 - i * 0.1),
-					parent: previous,
-					axis,
-				});
-			builder.addBud({
-				node: first,
-				x: radius,
-				y: at,
-				z: 0,
-				frame: [0, 0, 0, 1],
-				kind: BUD_TERMINAL,
-				vigor: 0.5,
-				light: 1,
-				axis,
-				woodRadius: radius,
-			});
-			if (child) {
-				const childAxis = builder.addAxis({
-					parent: axis,
-					parentNode: previous,
-					parentT: 0,
-					order: order + 1,
-					kind,
-				});
-				builder.addNode({
-					x: radius + 0.9,
-					y: at + 0.5,
-					z: 0,
-					radius: radius * 0.6,
-					parent: previous,
-					axis: childAxis,
-				});
-			}
-			return axis;
-		};
-		return { builder, growth };
-	}
-
-	it('takes a leafy shoot that divides before a thicker single axis near the asked length', () => {
-		const { builder, growth } = stemWithAxes();
-		const single = growth(4, 0.16, 1, AXIS_LIMB, false);
-		const shoot = growth(8, 0.04, 1, AXIS_LIMB, true);
-		const cut = cutBranch(
-			builder.finish(0),
-			{ ...stub.record, cuttings: undefined },
-			{
-				part: 'branch',
-			},
-		);
-		if (!cut) throw new Error('nothing was cut');
-		expect(cut.axis).toBe(shoot);
-		expect(cut.axis).not.toBe(single);
-	});
-
-	it('takes a leafy shoot before a flowering head near the asked length', () => {
-		const { builder, growth } = stemWithAxes();
-		const head = growth(8, 0.16, 2, AXIS_CULM, true);
-		const shoot = growth(4, 0.04, 1, AXIS_LIMB, true);
-		const cut = cutBranch(
-			builder.finish(0),
-			{ ...stub.record, cuttings: undefined },
-			{
-				part: 'branch',
-			},
-		);
-		if (!cut) throw new Error('nothing was cut');
-		expect(cut.axis).toBe(shoot);
-		expect(cut.axis).not.toBe(head);
 	});
 
 	it('cuts an axis that leaves at its parent node there, with every axis whose parents reach it', () => {
@@ -382,28 +302,6 @@ describe('cuttings', () => {
 		}
 		expect(cutsShoot(stub.record, 'branch')).toBe(false);
 		expect(cutsShoot(stub.record, 'leaf')).toBe(false);
-	});
-
-	it('gives a cutting hint its own shoot density over the record’s', () => {
-		const record = {
-			...stub.record,
-			cuttings: {
-				density: 2,
-				branch: { order: 1, length: 1, density: 6 },
-				subbranch: { order: 1, length: 0.35, density: 0.5 },
-			},
-		};
-		const densityOf = (part: 'branch' | 'subbranch' | 'cluster' | 'leaf') => {
-			const built = buildKitNow({ ...stub, record }, { cutting: part }).record;
-			return curveAt(built.shoots?.placement.perMetre ?? 0, 0);
-		};
-		const whole = curveAt(stub.record.shoots?.placement.perMetre ?? 0, 0);
-		// Each hint scales the crown's own placement by its density; one that names none takes the
-		// record's.
-		expect(densityOf('branch')).toBeCloseTo(whole * 6, 6);
-		expect(densityOf('subbranch')).toBeCloseTo(whole * 0.5, 6);
-		expect(densityOf('cluster')).toBeCloseTo(whole * 2, 6);
-		expect(densityOf('leaf')).toBeCloseTo(whole * 2, 6);
 	});
 
 	it('stands a shoot cutting upright on its attach point, or as grown when asked', async () => {
@@ -607,6 +505,26 @@ describe('cuttings', () => {
 		const leaf = growPlantNow(kit, { seed: 11, variant: 0, cutting: { part: 'leaf' } });
 		expect(leaf.levels[0].parts.map((part) => part.name)).toEqual(['foliage']);
 		expect(leaf.skeleton.height).toBeGreaterThan(0);
+	});
+
+	it('fans the shoots a branch hint names, and keeps one without it', () => {
+		const className = kit.record.shoots?.classes?.[0]?.name ?? 'cut';
+		const hinted = {
+			...kit,
+			record: {
+				...kit.record,
+				cuttings: { branch: { shoot: className, shoots: 3 } },
+			},
+		} as SpeciesKitData;
+		const single = clusterRow(kit, { part: 'branch' }, kit.detail);
+		const fanned = clusterRow(hinted, { part: 'branch' }, kit.detail);
+		expect(single?.rows.count).toBe(1);
+		expect(fanned?.rows.count).toBe(3);
+		// The shoots stand apart: the second row's place differs from the first's.
+		expect(fanned?.rows.position[3]).not.toBe(fanned?.rows.position[0]);
+		// A cluster keeps one shoot whatever its hint names.
+		const clusterHinted = clusterRow(hinted, { part: 'cluster' }, kit.detail);
+		expect(clusterHinted?.rows.count).toBe(1);
 	});
 
 	it('grows the same bytes twice, and in a worker that runs the job-worker task', async () => {

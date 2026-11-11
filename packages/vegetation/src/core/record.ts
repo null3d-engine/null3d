@@ -317,14 +317,6 @@ export interface SelfOrganizing {
 		 * its share gives. Absent or false, such a bud takes no share and draws the weakest class.
 		 */
 		readonly surface?: boolean;
-		/**
-		 * A bias of a bud's light by the room the envelope leaves at its azimuth, so a crown whose
-		 * envelope is wider on one side carries more mass there. At 0 or absent the shadow grid's
-		 * light stands. Above 0 the light is multiplied by the room's share of the mean room at the
-		 * bud's height, raised to this power: the wide side reads above 1, the narrow below it, and
-		 * the height's own profile is held.
-		 */
-		readonly roomBias?: number;
 	};
 	/** How shoots bend toward light and against gravity. */
 	readonly tropism: {
@@ -516,20 +508,6 @@ export interface Architectural {
 	readonly orders: readonly ArchitecturalOrder[];
 	/** Hanging second-order curtains (Norway spruce comb, larch). */
 	readonly pendulous?: { readonly order: number; readonly length: Curve; readonly share: number };
-	/**
-	 * The pipe model that gives the wood its thickness: a parent's diameter to the exponent is the
-	 * sum of its children's, and a terminal twig's radius in metres. The wood is then fitted to the
-	 * species' diameter at 1.3 m. Absent, an exponent of 2.3 and a 5 mm twig are used.
-	 */
-	readonly pipe?: {
-		readonly exponent: number;
-		readonly tipRadius: number;
-		/**
-		 * The least share of its girth a stem keeps from one node to the next, from 0.5 to 1.
-		 * Absent, 0.7, so a leader that carries the crown to the top is not outgrown by a whorl.
-		 */
-		readonly leader?: number;
-	};
 }
 
 /**
@@ -794,8 +772,8 @@ export interface Tuft {
 	/** The sheath's radius in metres. */
 	readonly sheathRadius: number;
 	/**
-	 * The basal sheath's colour, in linear reflectance, where the photographs show red-brown
-	 * sheaths: a merged ground plant draws its sheath columns in it rather than the leaf's green.
+	 * The linear colour of each shoot's sheath column, where the species gives one. Absent, the
+	 * column draws the leaf material as the blades do.
 	 */
 	readonly sheathColour?: Rgb;
 	/** Degrees a blade leaves its shoot, by blade age (t = 0 the youngest, innermost, 1 the oldest). */
@@ -994,15 +972,11 @@ export type Sdf =
 /**
  * How leaves or buds stand along a shoot.
  *
- * A two-ranked shoot may turn each node's leaf past the opposite rank by `turn` degrees. A small
- * turn keeps the shoot reading as two ranks and spreads its blades out of one plane, so the spray
- * keeps its height as it turns. Zero, or no turn named, draws strict two ranks.
- *
  * @category api/vegetation
  */
 export type Phyllotaxis =
 	| { readonly kind: 'spiral'; readonly divergence: number }
-	| { readonly kind: 'distichous'; readonly flatten: number; readonly turn?: number }
+	| { readonly kind: 'distichous'; readonly flatten: number }
 	| { readonly kind: 'opposite'; readonly decussate: boolean }
 	| { readonly kind: 'whorled'; readonly count: number }
 	| { readonly kind: 'fascicle'; readonly needles: number }
@@ -1459,7 +1433,7 @@ export interface NeedleShape {
  * @category api/vegetation
  */
 export interface ScaleSpray {
-	/** Orders of branchlets in one spray, 1 to 4: 1 for a single cord, as a cypress's shoot carries. */
+	/** Orders of branchlets in one spray, 2 to 4. */
 	readonly orders: number;
 	/** Segment length in metres. */
 	readonly segment: number;
@@ -1498,21 +1472,6 @@ export interface GrassBlade {
 	readonly arch: Spread;
 	/** Share of the blade that is dry at the tip. */
 	readonly dryTip: number;
-	/**
-	 * A pale collar where the blade leaves its sheath: its colour in linear reflectance, and the
-	 * share of the blade's base it takes. Absent, the collar draws as the leaf.
-	 */
-	readonly collar?: { readonly colour: Rgb; readonly share: number };
-	/**
-	 * A ligule: a pale papery flap standing in the V between the blade and its sheath, drawn in
-	 * the collar's colour. Its length and width in metres, and the share of blades that carry
-	 * one. Absent, no flap draws.
-	 */
-	readonly ligule?: {
-		readonly length: Spread;
-		readonly width: number;
-		readonly share?: number;
-	};
 	/** How the blade looks under light. */
 	readonly optics: LeafOptics;
 }
@@ -1885,17 +1844,7 @@ export type ExtraShape =
 			 */
 			readonly stalkSides?: number;
 	  }
-	| {
-			readonly petals: number;
-			readonly radius: number;
-			readonly cup: number;
-			/**
-			 * Metres of stalk that holds the cup out from its site along the shoot's own direction.
-			 * The stalk draws at the nearest level only, where a thin stem reads; absent, the cup
-			 * stands at its site as before.
-			 */
-			readonly stalk?: number;
-	  }
+	| { readonly petals: number; readonly radius: number; readonly cup: number }
 	| { readonly spines: number; readonly length: number; readonly spread: number }
 	| { readonly catkin: { readonly length: number; readonly radius: number } };
 
@@ -1993,14 +1942,6 @@ export interface LodSpec {
 	 */
 	readonly cardGrow?: number;
 	/**
-	 * Texels a side of one cell of the card atlas, at each tier, where the species' leaves are
-	 * thinner than the default cell can hold: each entry is a power of two from 64 to 256, and 64
-	 * by default. A needle a millimetre and a half across is under one texel of a 64 cell, so its
-	 * card would draw only the bare twig; a cell of 128 holds it while the crown still reads green.
-	 * Each doubling costs four times the atlas memory.
-	 */
-	readonly cardCell?: Readonly<Record<Detail, number>>;
-	/**
 	 * The least width, in pixels, that a card's own stalk draws at any distance, from 0 to 8. A card
 	 * stands on its axis's twig, whose wood may be thinner than a pixel at a whole view, so the
 	 * card's leaves read as a piece in air where the twig does not draw. At 1 or more the card
@@ -2071,8 +2012,7 @@ export interface CuttingHints {
 	/**
 	 * The shoots a cutting kit places over the crown's own, from 0.25 to 8, where a piece cut for
 	 * close review carries a denser covering than the crown can afford. The crown's kit is unchanged:
-	 * the piece is drawn at the nearest level alone, so its kit pays for no card levels. A piece's
-	 * own hint may give a density of its own in place of this one.
+	 * the piece is drawn at the nearest level alone, so its kit pays for no card levels.
 	 */
 	readonly density?: number;
 	/**
@@ -2122,13 +2062,6 @@ export interface CutFromPlant {
 	/** Metres of wood from the cut to the farthest tip. */
 	readonly length: number;
 	/**
-	/**
-	 * The shoots this piece places over the crown's own, from 0.25 to 8: a density of its own, where
-	 * the piece covers more or less than the species' `cuttings.density`, which applies where it
-	 * names none. A piece cut from the grown plant takes the kit this reshapes.
-	 */
-	readonly density?: number;
-	/**
 	 * The piece's leaf size over the crown's, where a piece cut from the plant wants leaves of its
 	 * own. A rosette's piece carries the crown's leaves at the crown's size, so a piece that stands
 	 * a little too dense for its photograph is opened by shrinking its leaves rather than by taking
@@ -2152,11 +2085,11 @@ export interface CutFromShoots {
 	 */
 	readonly pick?: number;
 	/**
-	 * A density here does nothing: a piece taken from a shoot prototype carries the prototype's own
-	 * covering, and only a piece cut from the grown plant has placement to reshape. Thin a shoot-cut
-	 * piece with a class of its own instead, or leave the field out.
+	 * How many shoots the piece carries, fanned about its own upright axis, where a branch photograph
+	 * shows a divided, hanging branch: one shoot is a class prototype, and a branch needs more. 1 by
+	 * default, and a cluster or a leaf keeps one whatever it names.
 	 */
-	readonly density?: number;
+	readonly shoots?: number;
 }
 
 /**
