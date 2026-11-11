@@ -27,8 +27,14 @@ const FLOOR = 0.05;
 /** The frames wanted before the capture stops early, and the least that a capture must give. */
 const WANTED = 24;
 const LEAST = 8;
-/** How long the capture may take on a software GPU, where a frame can take seconds. */
-const CAPTURE_MS = 30_000;
+/**
+ * How long the page may take to start, and the capture after it. CI's software GPU did not publish
+ * the engine within 180 s, and this Mac's did not within 360 s under other helpers' load. The start
+ * wait takes ten minutes, and the capture takes a minute, where a software frame can take seconds
+ * and the measure needs at least eight of them.
+ */
+const READY_MS = 600_000;
+const CAPTURE_MS = 60_000;
 
 /** The mean luminance of a box, from the canvas pixels of one frame. */
 function meanOf(
@@ -53,12 +59,12 @@ function meanOf(
 }
 
 test('the showroom floor holds still on a still camera', async ({ page, context }) => {
-	test.setTimeout(300_000);
+	test.setTimeout(READY_MS + CAPTURE_MS + 60_000);
 	await page.goto('/examples/?demo=showroom&bench');
 	await page.waitForFunction(
 		() => (globalThis as { __null3dEngine?: unknown }).__null3dEngine !== undefined,
 		null,
-		{ timeout: 180_000 },
+		{ timeout: READY_MS },
 	);
 	await page.evaluate(async () => {
 		const engine = (globalThis as { __null3dEngine?: { firstFrame?: Promise<unknown> } })

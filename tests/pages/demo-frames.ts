@@ -3,7 +3,10 @@
 // preset and the mode the engine ran, the frame rate, the first-frame time and the bytes that the
 // page downloaded before the first frame and in total, and the GPU time per frame and per pass, the
 // triangles and the draw calls where the device times them. ?demo= names the demo, ?seconds= the
-// measured time. It fails when the measure drew no frame.
+// measured time. It fails when the measure drew no frame. It also reports the GPU's finish latency,
+// the page's own animation rate and the render scale the governor settled at, which separate the
+// frame's own work from the cost of presenting it.
+import type { Engine } from '@null3d/engine';
 import { DEMOS } from '../../examples/demos';
 import { startDemo } from '../../examples/lib/run';
 import { progress, run } from './lib/result';
@@ -12,6 +15,12 @@ const params = new URLSearchParams(location.search);
 
 /** The seconds that the page measures after the first frame. */
 const SECONDS = Number(params.get('seconds') ?? 5);
+/**
+ * The seconds that the page draws live before it measures, so a measurement can cover a scene that
+ * has settled into play: the quality governor's steps need several judged seconds to reach the
+ * setting that holds the rate.
+ */
+const SETTLE = Number(params.get('settle') ?? 0);
 /** How long the page waits for the preset check's result before it measures anyway. */
 const CHECK_WAIT_MS = 30_000;
 /**
@@ -49,6 +58,40 @@ function downloadedBytes(): number {
 	for (const entry of performance.getEntriesByType('resource') as PerformanceResourceTiming[])
 		bytes += entry.encodedBodySize;
 	return bytes;
+}
+
+/**
+ * The page's own animation callbacks while the measure runs. The engine draws on a worker, so this
+ * rate says whether the browser still offers the page its display's frames while the engine's frames
+ * come slower. It is separate from the engine's presented rate.
+ */
+let pageFrames = 0;
+let countingPageFrames = false;
+requestAnimationFrame(function countPageFrame() {
+	if (countingPageFrames) pageFrames++;
+	requestAnimationFrame(countPageFrame);
+});
+
+/**
+ * The render scale that the governor settled at, read from the stats overlay's heading once the
+ * measure has ended. The overlay samples the page's own thread, so showing it after the window keeps
+ * its cost out of the measured frames. Null when the heading never showed a scale.
+ */
+async function settledScale(engine: Engine): Promise<string | null> {
+	engine.stats({ collapsed: false });
+	try {
+		const limit = performance.now() + 5000;
+		while (performance.now() < limit) {
+			const root = document.querySelector<HTMLElement>('[data-null3d-stats]')?.shadowRoot;
+			const text = root?.querySelector<HTMLElement>('[data-figure="heading"]')?.textContent;
+			const scale = /scale\s+([\d.]+)/.exec(text ?? '');
+			if (scale?.[1]) return scale[1];
+			await new Promise((resolve) => setTimeout(resolve, 100));
+		}
+		return null;
+	} finally {
+		engine.stats(false);
+	}
 }
 
 run('demo-frames', async () => {
@@ -92,15 +135,27 @@ run('demo-frames', async () => {
 		while (engine.mode.presetCheck === null && performance.now() < limit)
 			await new Promise((resolve) => setTimeout(resolve, 50));
 	}
+	// The scene draws live for a while before the measure, so the quality governor's steps can
+	// reach the setting that holds the rate and the window covers steady play.
+	if (SETTLE > 0) {
+		progress(`settling for ${SETTLE} s`);
+		await new Promise((resolve) => setTimeout(resolve, SETTLE * 1000));
+	}
 	// The frame figures' code loads on the measure's first use. A tunnel can fail that one request
 	// and take the measure with it, so warm it in a very short measure that is not reported, and
 	// try the timed measure once more if its first attempt fails.
 	await engine.measure(0.05).catch(() => undefined);
+	countingPageFrames = true;
+	pageFrames = 0;
+	const startedAt = performance.now();
 	const metrics = await engine.measure(SECONDS).catch(async (error) => {
 		progress(`the measure failed (${(error as Error).message}); trying once more`);
 		await new Promise((resolve) => setTimeout(resolve, 1000));
 		return engine.measure(SECONDS);
 	});
+	countingPageFrames = false;
+	const pageSeconds = (performance.now() - startedAt) / 1000;
+	const renderScale = await settledScale(engine).catch(() => null);
 	const bytesTotal = downloadedBytes();
 	const { tier } = engine.capabilities;
 	const mode = { ...engine.mode };
@@ -133,6 +188,23 @@ run('demo-frames', async () => {
 		gpuMs: metrics.gpuMs,
 		gpuStepMs: metrics.gpuStepMs,
 		gpuPassMs: metrics.gpuPassMs,
+		// How long the GPU held each frame after its submit, and the frames it finished. A latency
+		// above the frame's own GPU span, or a finished rate below the presented one, means the
+		// frames queue on the GPU rather than on the page's work.
+		gpuLatencyMs: metrics.gpuLatencyMs,
+		completedFps: metrics.completedFps,
+		// The rate of each whole second, so a walk of the render scale or a slow stretch shows.
+		perSecond: metrics.perSecond,
+		// Changes during the measure: a new render scale makes GPU objects while a reflection draws.
+		gpuObjects: metrics.gpuObjects,
+		rebuilds: metrics.rebuilds,
+		pipelines: metrics.pipelines,
+		lostRecords: metrics.lostRecords,
+		// The page's own animation rate beside the engine's, which separates a slow engine frame
+		// from a browser that offers the page fewer frames.
+		pageFps: pageSeconds > 0 ? pageFrames / pageSeconds : null,
+		// The render scale at the end of the measure, after the governor's steps.
+		renderScale,
 		cpuMs: metrics.cpuMs,
 		drawCalls: metrics.drawCalls,
 		// The engine's own stages of the start, so a slow first frame names its one-time cost.
