@@ -665,13 +665,14 @@ GPU, so its GPU time is nil. Its arrays hold about 1.8 MB once for a valley this
 the ground maps' samples, 0.13 MB for the variance maps and 34 KB for the points.
 
 The `vegetation-scatter` plan ran at `396cab7df` on two cloud phones, a cloud iPad and the Mac, two
-pages on each device, and every page compared against the shipped reference. The placement is the
-middle of three timed runs; the ground maps are read once.
+pages on each device, and every page compared against the shipped reference. The Mac, the S25 and
+the iPad start both GPU paths; the S24 has no WebGPU adapter, so its second page is a WebGL2 drawing.
+The placement is the middle of three timed runs; the ground maps are read once.
 
 | Device | Plants | Checksum | Placement | Ground maps | Display |
 | --- | --- | --- | --- | --- | --- |
 | Galaxy S24, Chrome, WebGL2 page | 1,020 | 2006477110 | 11.30 ms | 82.70 ms | 30 Hz |
-| Galaxy S24, Chrome, WebGPU page | 1,020 | 2006477110 | 9.33 ms | 69.05 ms | 30 Hz |
+| Galaxy S24, Chrome, second page, drawn on WebGL2 | 1,020 | 2006477110 | 9.33 ms | 69.05 ms | 30 Hz |
 | Galaxy S25, Chrome, WebGL2 page | 1,020 | 2006477110 | 5.77 ms | 46.61 ms | 30 Hz |
 | Galaxy S25, Chrome, WebGPU page | 1,020 | 2006477110 | 6.35 ms | 46.35 ms | 30 Hz |
 | iPad Pro 13, Safari, WebGL2 page | 1,020 | 2006477110 | 5.10 ms | 36.02 ms | 59 Hz |
@@ -687,10 +688,10 @@ The S24 has no WebGPU adapter, so its second page named a path that it did not s
 displays ran at 30 Hz, and the cloud reported each phone hot, so read the times as upper bounds.
 Safari on iPadOS runs WebKit and JavaScriptCore, so that row places the points on the second
 JavaScript engine beside Chrome's V8. The run files are
-[the S24's](../tested-devices/galaxy-s24-sm-s921b-chrome/20261102-013756-vegetation-scatter.md),
-[the S25's](../tested-devices/galaxy-s25-sm-s931b-chrome/20261110-025541-vegetation-scatter.md),
-[the iPad's](../tested-devices/ipad-pro-13-safari/20261102-013401-vegetation-scatter.md) and
-[the Mac's](../tested-devices/macbook-pro-m3-max-chrome/20261102-014351-vegetation-scatter.md).
+[the S24's](../tested-devices/galaxy-s24-sm-s921b-chrome/20261111-034601-vegetation-scatter.md),
+[the S25's](../tested-devices/galaxy-s25-sm-s931b-chrome/20261111-034402-vegetation-scatter.md),
+[the iPad's](../tested-devices/ipad-pro-13-safari/20261111-034748-vegetation-scatter.md) and
+[the Mac's](../tested-devices/macbook-pro-m3-max-chrome/20261111-034314-vegetation-scatter.md).
 
 **Options rejected.**
 
