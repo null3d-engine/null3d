@@ -22,7 +22,7 @@ import {
 	S4_FOG,
 	s2Trees,
 } from '../scenes/spec';
-import { openPage, type PageReport, runPage } from './open-page';
+import { openPage, type PageReport, RESULT_TIMEOUT_MS, runPage } from './open-page';
 
 // Each test opens a page of its own, so the tests run on any worker and in any shard.
 test.describe.configure({ mode: 'parallel' });
@@ -199,6 +199,24 @@ const SWIFTSHADER_START_MS: Readonly<Record<string, number>> = {
 /** The most that any other page may take to start on SwiftShader. */
 const SWIFTSHADER_START_MS_DEFAULT = 90_000;
 
+/**
+ * The longest that a page may take to publish a short run's result: its start limit, the measured
+ * window that the run asks for, and the page's load and report around them, and never less than a
+ * page's ordinary wait. A retry's window grows with the page's own start, by up to four times it,
+ * so a fixed wait can end while the page is still measuring the window that the run gave it. The
+ * wait must contain the work the run asked for; `expectUsualSpeed` still fails a page that started
+ * far slower than usual.
+ */
+const RESULT_MARGIN_MS = 30_000;
+function resultWaitMs(page: string, measureSeconds: number): number {
+	return Math.max(
+		RESULT_TIMEOUT_MS,
+		(SWIFTSHADER_START_MS[page] ?? SWIFTSHADER_START_MS_DEFAULT) +
+			measureSeconds * 1000 +
+			RESULT_MARGIN_MS,
+	);
+}
+
 /** The fewest frames a second that a short run may finish on SwiftShader. */
 const SWIFTSHADER_COMPLETED_FPS = 0.1;
 
@@ -283,18 +301,23 @@ async function runShortBenchmark(
 	kind: PageKind,
 	switches = `n=${shortRunAsked(scene)}`,
 ): Promise<BenchReport> {
-	const path = (seconds: number, measure?: number) =>
-		pagePath(scene, kind, `seconds=${seconds}&${measure ? `measure=${measure}&` : ''}${switches}`);
-	const run = (seconds: number, measure?: number) =>
-		runPage<BenchReport>(page, path(seconds, measure));
-	const seconds = shortRunSeconds(scene, kind);
-	if (!SWIFTSHADER) return run(seconds);
-	const first = await runOrNoFrame(page, path(seconds));
 	const pageKey = `${scene} on ${kind}`;
 	const name = `${pageKey} (${switches})`;
+	const path = (seconds: number, measure?: number) =>
+		pagePath(scene, kind, `seconds=${seconds}&${measure ? `measure=${measure}&` : ''}${switches}`);
+	const run = (seconds: number, measure?: number) => {
+		if (!SWIFTSHADER) return runPage<BenchReport>(page, path(seconds, measure));
+		const wait = resultWaitMs(pageKey, measure ?? seconds);
+		test.setTimeout(wait + 60_000);
+		return runPage<BenchReport>(page, path(seconds, measure), wait);
+	};
+	const seconds = shortRunSeconds(scene, kind);
+	if (!SWIFTSHADER) return run(seconds);
+	const firstWait = resultWaitMs(pageKey, seconds);
+	test.setTimeout(firstWait + 60_000);
+	const first = await runOrNoFrame(page, path(seconds), firstWait);
 	console.log(`${name} on SwiftShader: ${runFigures(first)}`);
 	if (first?.frames) return first;
-	test.slow();
 	if (first) expectUsualSpeed(pageKey, `${name}'s first try`, first);
 	const measure = secondTrySeconds(
 		seconds,
@@ -310,7 +333,6 @@ async function runShortBenchmark(
 	// The rate that sized the second window came from frames that no counted frame followed: the
 	// frames the renderer finished and the frames the measurement paired were not the same. Measure
 	// once more at the unknown pace, which grows with the page's own start.
-	test.slow();
 	expectUsualSpeed(pageKey, `${name}'s second try`, second);
 	const longest = secondTrySeconds(seconds, 0, second.stats?.load?.engineStartMs);
 	const third = await run(seconds, longest);
@@ -324,8 +346,12 @@ async function runShortBenchmark(
  * The three.js pages report that as an error, where the engine's pages report a run with no frames;
  * the first window then gives way to the retries either way.
  */
-async function runOrNoFrame(page: Page, path: string): Promise<BenchReport | undefined> {
-	const { result, errors } = await openPage<BenchReport>(page, path);
+async function runOrNoFrame(
+	page: Page,
+	path: string,
+	timeoutMs: number,
+): Promise<BenchReport | undefined> {
+	const { result, errors } = await openPage<BenchReport>(page, path, timeoutMs);
 	expect(errors).toEqual([]);
 	if (result.error === NO_FRAME_ERROR) return undefined;
 	expect(result.error).toBeUndefined();
