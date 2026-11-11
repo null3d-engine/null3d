@@ -765,7 +765,12 @@ export function planShoot(
 						// spiral shoot's is a shorter side twig that may branch again.
 						units: twoRanked ? 1 : start.units - unit - 1,
 						unitLength:
-							start.unitLength * (twoRanked ? 2 + 0.4 * lengthDraw : 0.6 + 0.25 * lengthDraw),
+							start.unitLength *
+							(twoRanked
+								? shootClass.arm !== undefined
+									? spreadAt(shootClass.arm, lengthDraw)
+									: 2 + 0.4 * lengthDraw
+								: 0.6 + 0.25 * lengthDraw),
 						radius: Math.max(tipRadius, from.radius * 0.75),
 						along: from.along,
 					});

@@ -1268,6 +1268,13 @@ export interface ShootClass {
 	 */
 	readonly lateralGap?: number;
 	/**
+	 * Length of a two-ranked shoot's lateral as a multiple of its parent's growth unit, where the
+	 * species' own rule does not fit: the default runs two to 2.4 times the unit, which suits a
+	 * crown's flat sprays, while a cutting whose side sprays reach only part way takes a smaller
+	 * multiple. A mean and a half-width. Absent, the species' rule.
+	 */
+	readonly arm?: Spread;
+	/**
 	 * Breaks the class's long internodes into an even number of straight pieces about `length` metres
 	 * long, each piece turned `angle` degrees from the one before, back and forth about the
 	 * internode's line, so a twig runs stiff and angular between its nodes, as the winter cut branch

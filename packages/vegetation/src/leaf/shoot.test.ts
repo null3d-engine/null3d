@@ -375,6 +375,53 @@ describe('the shoot prototypes', () => {
 			);
 	});
 
+	it("sizes a two-ranked shoot's laterals from its class's arm", () => {
+		const base = oakRecord();
+		const shoots = base.shoots as NonNullable<typeof base.shoots>;
+		const twoRanked = (arm?: number): Species => ({
+			...base,
+			shoots: {
+				...shoots,
+				phyllotaxis: { kind: 'distichous', flatten: 1 },
+				orders: 3,
+				years: 3,
+				stem: { ...shoots.stem, zigzag: 0 },
+				classes: shoots.classes.map((c) => ({
+					...c,
+					years: 3,
+					droop: 0,
+					internode: 1,
+					...(arm === undefined ? {} : { arm }),
+				})),
+				cuttingClasses: shoots.cuttingClasses?.map((c) => ({
+					...c,
+					years: 3,
+					droop: 0,
+					internode: 1,
+					...(arm === undefined ? {} : { arm }),
+				})),
+			},
+		});
+		const reach = (species: Species): number[] =>
+			planShoot(species, shoots.prototypes - 1, 1)
+				.axes.slice(1)
+				.map((axis) => {
+					const first = axis[0] as { at: readonly number[] };
+					const last = axis[axis.length - 1] as { at: readonly number[] };
+					return Math.hypot(
+						(last.at[0] as number) - (first.at[0] as number),
+						(last.at[1] as number) - (first.at[1] as number),
+						(last.at[2] as number) - (first.at[2] as number),
+					);
+				});
+		const full = reach(twoRanked());
+		const short = reach(twoRanked(1));
+		expect(full.length).toBeGreaterThan(0);
+		expect(short.length).toBe(full.length);
+		for (let i = 0; i < full.length; i++)
+			expect(short[i] as number).toBeLessThan((full[i] as number) * 0.7);
+	});
+
 	it('crowds the leaves at the shoot tip round its bud cluster', () => {
 		const plan = planShoot(record, 0, 1);
 		const tipAlong = Math.max(...plan.leaves.map((leaf) => leaf.along));
