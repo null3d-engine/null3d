@@ -30,6 +30,7 @@ import {
 	videoFrames,
 } from './image.ts';
 import {
+	anyPlantMask,
 	type Box,
 	boxOf,
 	matteMask,
@@ -477,6 +478,8 @@ interface PairMetrics {
 	readonly frameIou: number | null;
 	readonly profileError: number | null;
 	readonly gap: { readonly reference: number; readonly render: number } | null;
+	readonly crownBoxGap: { readonly reference: number; readonly render: number } | null;
+	readonly frameGap: { readonly reference: number; readonly render: number } | null;
 	readonly foliageDeltaE: number | null;
 	readonly barkDeltaE: number | null;
 	readonly crownBox: {
@@ -506,6 +509,12 @@ function pairMetrics(reference: Side, render: Side): PairMetrics {
 			: null,
 		gap: both
 			? { reference: reference.measures.gapFraction, render: render.measures.gapFraction }
+			: null,
+		crownBoxGap: both
+			? { reference: reference.measures.crownBoxGap, render: render.measures.crownBoxGap }
+			: null,
+		frameGap: both
+			? { reference: reference.measures.frameGap, render: render.measures.frameGap }
 			: null,
 		foliageDeltaE: colour(reference.measures.foliage, render.measures.foliage),
 		barkDeltaE: colour(reference.measures.bark, render.measures.bark),
@@ -703,7 +712,8 @@ function pairLines(head: readonly string[], pair: PairMetrics): string[] {
 		`SHAPE IOU ${fixed(pair.shapeIou)}`,
 		`FRAME IOU ${fixed(pair.frameIou)}`,
 		`WIDTH ERR ${fixed(pair.profileError, 3)}`,
-		`GAP ${fixed(pair.gap?.reference)} / ${fixed(pair.gap?.render)}`,
+		`GAP BOX ${fixed(pair.crownBoxGap?.reference)} / ${fixed(pair.crownBoxGap?.render)}`,
+		`GAP FRAME ${fixed(pair.frameGap?.reference)} / ${fixed(pair.frameGap?.render)}`,
 		`LEAF DE ${fixed(pair.foliageDeltaE, 1)}`,
 		`BARK DE ${fixed(pair.barkDeltaE, 1)}`,
 		pair.crownBox
@@ -1265,6 +1275,8 @@ export function compareStills(
 			frameIou: null,
 			profileError: null,
 			gap: null,
+			crownBoxGap: null,
+			frameGap: null,
 			foliageDeltaE: null,
 			barkDeltaE: null,
 			crownBox: null,
@@ -1324,10 +1336,10 @@ export function compareStills(
 			frame.matte !== undefined
 				? {
 						reference: refPlant.background.plain
-							? pieceCount(refPlant.mask, refPlant.width, refPlant.height, PIECE_AREA)
+							? pieceCount(anyPlantMask(refPlant), refPlant.width, refPlant.height, PIECE_AREA)
 							: null,
 						render: pieceCount(
-							render.plant.mask,
+							anyPlantMask(render.plant),
 							render.plant.width,
 							render.plant.height,
 							PIECE_AREA,
@@ -1342,6 +1354,8 @@ export function compareStills(
 					frameIou: null,
 					profileError: null,
 					gap: null,
+					crownBoxGap: null,
+					frameGap: null,
 					barkDeltaE: null,
 					crownBox: null,
 					foliageDeltaE: refPlant.background.plain ? pair.foliageDeltaE : null,

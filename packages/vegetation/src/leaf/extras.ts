@@ -55,6 +55,11 @@ const SMALLEST_FAR = 0.025;
 const FEWEST_PIXELS = 5;
 /** The first hash purpose of the extras, past every purpose the instancer uses. */
 const PURPOSE = 40;
+/**
+ * The first hash purpose of an extra group, past the entries' own purposes, so a group and an entry
+ * number never draw the same sites.
+ */
+const GROUP = 44;
 /** Extras a record can draw: the first four, whose colours the plant material's header holds. */
 const MOST = 4;
 /**
@@ -706,6 +711,7 @@ function writeExtra(
 	direction: Vector3,
 	sides: number,
 	turn: number,
+	nearest: boolean,
 ): void {
 	const colour = colourOf(site, index);
 	const shape = extra.shape;
@@ -752,7 +758,9 @@ function writeExtra(
 		} else {
 			const { length, radius } = shape.catkin;
 			profile = [
-				[radius * 0.4, 0],
+				// The foot takes the body's width at the stalk, so a thin hanging spike keeps its
+				// join through a silhouette's half-cover cutoff instead of pinching to nothing.
+				[radius, 0],
 				[radius, length * 0.15],
 				[radius, length * 0.8],
 				[0, length],
@@ -782,11 +790,95 @@ function writeExtra(
 					mesh.uvs1[(from + j) * 2] = Math.min(1, Math.max(0, shaded * (1 + scale)));
 				}
 			});
+		// A bed of bristles over the scaled band: short cones standing along the surface's own
+		// normal, so the husk reads as a burr rather than a shaded cone. They take the band's colour.
+		if ('lathe' in shape && shape.bristles) {
+			const { rows: beds, sides: around, length: longest } = shape.bristles;
+			const outline = shape.lathe;
+			const top = (outline[outline.length - 1] as readonly [number, number])[1] || 1;
+			const from = shape.scaled?.[0] ?? 0;
+			const to = Math.min(top, shape.scaled?.[1] ?? top);
+			const radiusAt = (h: number): number => {
+				for (let k = 1; k < outline.length; k++) {
+					const a = outline[k - 1] as readonly [number, number];
+					const b = outline[k] as readonly [number, number];
+					if (h <= b[1])
+						return b[1] > a[1] ? a[0] + ((h - a[1]) / (b[1] - a[1])) * (b[0] - a[0]) : b[0];
+				}
+				return 0;
+			};
+			const [bx, by] = sideAxes(direction, [0, 1, 0]);
+			for (let bed = 0; bed < beds; bed++) {
+				const h = from + ((bed + 0.5) / beds) * Math.max(1e-6, to - from);
+				const radius = radiusAt(h);
+				if (radius <= 0) continue;
+				for (let j = 0; j < around; j++) {
+					// Each row stands its bristles half a step round from the last, so the bed staggers.
+					const angle = turn + (2 * Math.PI * (j + (bed % 2) * 0.5)) / around;
+					const radial: Vector3 = [
+						cos(angle) * bx[0] + sin(angle) * by[0],
+						cos(angle) * bx[1] + sin(angle) * by[1],
+						cos(angle) * bx[2] + sin(angle) * by[2],
+					];
+					const point: Vector3 = [
+						site.at[0] + direction[0] * h + radial[0] * radius,
+						site.at[1] + direction[1] * h + radial[1] * radius,
+						site.at[2] + direction[2] * h + radial[2] * radius,
+					];
+					const lean = normalize3([
+						radial[0] + direction[0] * 0.25,
+						radial[1] + direction[1] * 0.25,
+						radial[2] + direction[2] * 0.25,
+					]);
+					const spike = longest * (0.65 + 0.7 * (((bed * 7 + j * 3) % 5) / 5));
+					const start = mesh.vertices;
+					lathe(
+						mesh,
+						[
+							[0.0004, 0],
+							[0.00004, spike],
+						],
+						point,
+						lean,
+						3,
+						colour,
+					);
+					for (let v = start; v < mesh.vertices; v++) mesh.uvs1[v * 2] = 1;
+				}
+			}
+		}
 		return;
 	}
 	const [x, y] = sideAxes(direction, [0, 1, 0]);
 	if ('petals' in shape) {
-		// A cup of petals: each petal a pointed blade from the centre, opening by the cup.
+		// A cup of petals: each petal a pointed blade from the centre, opening by the cup. A stalk of
+		// the record's length holds the cup along the shoot's own direction, so a corymb stands above
+		// its rosette; with no length the cup sits at its site, as before.
+		const length = Math.max(0, shape.stalk ?? 0) * (nearest ? 1 : 0);
+		const centre: Vector3 =
+			length > 0
+				? [
+						site.at[0] + site.direction[0] * length,
+						site.at[1] + site.direction[1] * length,
+						site.at[2] + site.direction[2] * length,
+					]
+				: site.at;
+		if (length > 0) {
+			const first = mesh.vertices;
+			lathe(
+				mesh,
+				[
+					[0.0017, 0],
+					[0.0013, length],
+				],
+				site.at,
+				site.direction,
+				3,
+				colour,
+			);
+			// The stalk is wood, so its vertices say so and take the extra's stalk colour.
+			for (let i = first; i < mesh.vertices; i++) mesh.uvs1[i * 2 + 1] = 1;
+		}
 		const open = radians(90 * (1 - Math.min(1, Math.max(0, shape.cup))));
 		for (let k = 0; k < shape.petals; k++) {
 			const a = turn + (2 * Math.PI * k) / shape.petals;
@@ -805,9 +897,9 @@ function writeExtra(
 			const r = shape.radius;
 			const w = (r * Math.PI) / shape.petals;
 			const point = (along: number, side: number): number[] => [
-				site.at[0] + petal[0] * along * r + across[0] * side * w,
-				site.at[1] + petal[1] * along * r + across[1] * side * w,
-				site.at[2] + petal[2] * along * r + across[2] * side * w,
+				centre[0] + petal[0] * along * r + across[0] * side * w,
+				centre[1] + petal[1] * along * r + across[1] * side * w,
+				centre[2] + petal[2] * along * r + across[2] * side * w,
 			];
 			const a0 = mesh.vertex(point(0, 0), normal, [0, 0], [0, 0], colour);
 			const a1 = mesh.vertex(point(0.55, 0.5), normal, [0, 0.55], [0, 0], colour);
@@ -827,17 +919,45 @@ function writeExtra(
 			direction[1] * cos(tilt) + (x[1] * cos(a) + y[1] * sin(a)) * sin(tilt),
 			direction[2] * cos(tilt) + (x[2] * cos(a) + y[2] * sin(a)) * sin(tilt),
 		]);
-		lathe(
-			mesh,
+		// A cone of three base vertices and one shared apex: three triangles, a third of the lathe's
+		// six, and the same small spine to the eye.
+		const [bx, by] = sideAxes(spine, [0, 1, 0]);
+		const ring = shape.length * 0.05;
+		const corner = (angle: number): number => {
+			const radial: Vector3 = [
+				bx[0] * cos(angle) + by[0] * sin(angle),
+				bx[1] * cos(angle) + by[1] * sin(angle),
+				bx[2] * cos(angle) + by[2] * sin(angle),
+			];
+			return mesh.vertex(
+				[
+					site.at[0] + radial[0] * ring,
+					site.at[1] + radial[1] * ring,
+					site.at[2] + radial[2] * ring,
+				],
+				radial,
+				[0, 0],
+				[0, 0],
+				colour,
+			);
+		};
+		const b0 = corner(0);
+		const b1 = corner((2 * Math.PI) / 3);
+		const b2 = corner((4 * Math.PI) / 3);
+		const apex = mesh.vertex(
 			[
-				[shape.length * 0.05, 0],
-				[0, shape.length],
+				site.at[0] + spine[0] * shape.length,
+				site.at[1] + spine[1] * shape.length,
+				site.at[2] + spine[2] * shape.length,
 			],
-			site.at,
 			spine,
-			3,
+			[0, 1],
+			[0, 0],
 			colour,
 		);
+		mesh.tri(b0, b1, apex);
+		mesh.tri(b1, b2, apex);
+		mesh.tri(b2, b0, apex);
 	}
 }
 
@@ -872,10 +992,21 @@ export function extrasMesh(input: MeshInput, level: MeshLevel): MeshArrays | und
 				: STALK_SIDES;
 		// The stalks take the band colour where the record gives one, as an acorn's peduncle does.
 		const stalkBand = extra.bandColour ? 1 : 0;
-		sitesOf(input, extra).forEach((site, s) => {
-			const purpose = input.variant * 64 + PURPOSE + index;
+		sitesOf(input, extra).forEach((given: Site, s) => {
+			// Extras that name one group pick the same sites, so the parts of one fruit hang on one
+			// twig; each part keeps its own place on the shoot through its tip share and offset.
+			const purpose =
+				input.variant * 64 + (extra.group === undefined ? PURPOSE + index : GROUP + extra.group);
 			if (unitAt(input.seed, salt, purpose, s) >= extra.share) return;
 			const turn = unitAt(input.seed, salt, purpose, s, 1) * 2 * Math.PI;
+			// A fruit that stands beside its site moves with its whole body, stalks included.
+			const offset = extra.offset;
+			const site: Site = offset
+				? {
+						...given,
+						at: [given.at[0] + offset[0], given.at[1] + offset[1], given.at[2] + offset[2]],
+					}
+				: given;
 			site.sky = Math.round(
 				255 * Math.min(1, Math.max(0, crownSkyAt(input.crown, site.at[0], site.at[1], site.at[2]))),
 			);
@@ -956,7 +1087,7 @@ export function extrasMesh(input: MeshInput, level: MeshLevel): MeshArrays | und
 					markBand(mesh, first, stalkBand);
 					// The footstalk is wood too: its vertices say so, as the shared stalk's do.
 					for (let v = first; v < mesh.vertices; v++) mesh.uvs1[v * 2 + 1] = 1;
-					writeExtra(mesh, extra, index, { ...from, at: end }, body, faces, azimuth);
+					writeExtra(mesh, extra, index, { ...from, at: end }, body, faces, azimuth, level === 0);
 					continue;
 				}
 				const direction: Vector3 =
@@ -967,7 +1098,7 @@ export function extrasMesh(input: MeshInput, level: MeshLevel): MeshArrays | und
 								down[2] * cos(lean) + outward[2] * sin(lean),
 							])
 						: down;
-				writeExtra(mesh, extra, index, from, direction, faces, azimuth);
+				writeExtra(mesh, extra, index, from, direction, faces, azimuth, level === 0);
 			}
 		});
 	});

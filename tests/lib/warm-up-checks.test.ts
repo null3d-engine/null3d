@@ -54,6 +54,27 @@ describe('warmUpProblems', () => {
 		]);
 	});
 
+	it('allows one more pipeline when the preset steps down during play', () => {
+		// The software GPU steps High to Medium; the scale change builds the final pass's 8-bit
+		// variant, so the object's measure holds two where its path builds one.
+		expect(
+			warmUpProblems(
+				{ ...result(false, 38, 'high', 'webgpu', 'medium'), addedPipelines: 2 },
+				'webgpu',
+			),
+		).toEqual([]);
+		expect(
+			warmUpProblems(
+				{ ...result(false, 38, 'high', 'webgpu', 'medium'), addedPipelines: 3 },
+				'webgpu',
+			),
+		).toEqual(["the added object built 3 pipelines at 'medium', not 1 or 2"]);
+		// A warm-up at the same preset stays exact.
+		expect(warmUpProblems({ ...result(false, 38), addedPipelines: 4 }, 'webgpu')).toEqual([
+			"the added object built 4 pipelines at 'high', not 3",
+		]);
+	});
+
 	it('accepts one pipeline fewer when the device draws directly', () => {
 		expect(warmUpProblems(result(true, 37), 'webgpu')).toEqual([]);
 	});

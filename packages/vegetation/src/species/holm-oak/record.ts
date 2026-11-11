@@ -73,7 +73,7 @@ export const record: Species = {
 		clearanceThickness: 0.35,
 		turning: 30,
 		shedding: { threshold: 0.06, cleanBole: 0.35, stubs: 0.12 },
-		bending: { strength: 0.05, upturn: 0.2 },
+		bending: { strength: 0.05, upturn: 0.25 },
 		forkRule: true,
 		kinks: true,
 		pipe: { exponent: 2.3, tipRadius: 0.004 },
@@ -176,7 +176,7 @@ export const record: Species = {
 	foliage: {
 		kind: 'blade',
 		leaf: {
-			length: { mean: 0.07, spread: 0.012 },
+			length: { mean: 0.08, spread: 0.012 },
 			outline: 'texture',
 			petiole: { length: 0.004, radius: 0.0008, flat: 0, droop: 12 },
 			fold: 16,
@@ -185,8 +185,8 @@ export const record: Species = {
 			twist: 6,
 			wave: [0, 0],
 			optics: {
-				reflectance: [0.0326, 0.0587, 0.0132],
-				reflectanceBack: [0.345, 0.348, 0.285],
+				reflectance: [0.0271, 0.0546, 0.009],
+				reflectanceBack: [0.365, 0.368, 0.3],
 				transmittance: [0.04, 0.08, 0.012],
 				roughness: [0.32, 0.72],
 				sheen: 0.6,
@@ -194,7 +194,17 @@ export const record: Species = {
 		},
 	},
 	bark: {
-		zones: [{ layer: 0, by: 'height', from: 0, to: 40, blend: 0 }],
+		zones: [
+			// The stool: the photograph's bark reads light and yellow-green where the algae sit, and
+			// the moss over the foot pulls the drawn mean dark, so the foot takes its own tint.
+			{ layer: 0, by: 'height', from: 0, to: 1, blend: 0.3, tint: [1.75, 1.8, 1.15] },
+			// The trunk keeps the texture's measured colour, since the flat-lit texture view draws the
+			// same material: the mid-stem view takes its own light instead.
+			{ layer: 0, by: 'height', from: 1, to: 3.6, blend: 0.4, tint: [1, 1, 1] },
+			// The great limbs stand above the texture view's own height and carry the yellow that
+			// their photograph shows over the bark and its lichen.
+			{ layer: 0, by: 'height', from: 3.6, to: 40, blend: 0.5, tint: [1.14, 1.22, 0.6] },
+		],
 		young: 0,
 		youngRadius: 0.06,
 		girthScale: [
@@ -203,16 +213,16 @@ export const record: Species = {
 		],
 		displacement: 0.012,
 		collar: { swell: 0.4, length: 1.8, ridge: 0.5 },
-		moss: { amount: 0.9, up: 1, north: 0.3, colour: [0.16, 0.26, 0.1] },
-		lichen: { amount: 0.8, from: 3, colour: [0.42, 0.46, 0.38] },
+		moss: { amount: 0.25, up: 0.5, north: 0, colour: [0.3, 0.36, 0.16] },
+		lichen: { amount: 0.9, from: 3, colour: [0.48, 0.56, 0.06] },
 	},
 	base: {
 		flare: { amount: 0.6, height: 0.4 },
-		buttress: { lobes: { mean: 5, spread: 1 }, amount: 0.6, sharpness: 3, height: 0.6 },
+		buttress: { lobes: { mean: 5, spread: 1 }, amount: 0.6, sharpness: 2, height: 0.6 },
 		roots: {
 			count: { mean: 5, spread: 1 },
 			length: { mean: 0.9, spread: 0.25 },
-			radius: 0.14,
+			radius: 0.1,
 			dive: 0.2,
 		},
 		flutes: { count: { mean: 5, spread: 1 }, depth: 0.1, height: 1.5 },
@@ -299,6 +309,9 @@ export const record: Species = {
 	textures: 'own',
 	variants: 6,
 	seedSalt: 1477281293,
+	// A first pass at the floors a phone's lighter form keeps, set from the species' form and to
+	// be measured on the phone set before they are trusted.
+	sparse: { limbs: 0.4, leaves: 0.5, coarseness: 0.55 },
 	roundBand,
 	cuttings: {
 		branch: { shoot: 'spray' },

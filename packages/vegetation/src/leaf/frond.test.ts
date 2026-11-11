@@ -168,7 +168,8 @@ describe('a frond', () => {
 			let up = 0;
 			for (let i = 0; i < leaf.positions.length / 3; i++) {
 				top = Math.max(top, leaf.positions[i * 3 + 1] as number);
-				if ((leaf.colors[i * 4 + 2] as number) === 85) stems++;
+				// The stipe's tube writes no second coordinates; the blade writes its metres.
+				if (leaf.uvs1[i * 2] === 0 && leaf.uvs1[i * 2 + 1] === 0) stems++;
 				else up += leaf.normals[i * 3 + 2] as number;
 			}
 			expect(stems).toBeGreaterThan(0);

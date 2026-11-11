@@ -879,7 +879,7 @@ export default defineSketch(async (ctx) => {
 });
 ```
 
-The species are being rebuilt. Until a species ships, `loadSpeciesOrStandIn` makes a stand-in of the size and colors that you give, and the same calls draw the real species once it ships. So write the scene against species ids now. `placePlants` draws each copy with its levels by distance, and with far cards from the far bakes. Docs: `api/vegetation`.
+Twelve species ship, each grown from its own record. For any other id, `loadSpeciesOrStandIn` makes a stand-in of the size and colors that you give, and the same calls draw a real species once it ships. So write the scene against species ids now. `placePlants` draws each copy with its levels by distance, and with far cards from the far bakes. Docs: `api/vegetation`.
 
 To place the plants rather than set them out by hand, read the ground once with `groundMaps`, write a rule for each species, and call `scatterVegetation`. A record's own `ecology` gives a rule through `speciesRule(record)`. The scatter returns flat point arrays, one record for each plant, so a page reads the variant and draws a copy at each point. The same seed places the same plants on every device and both GPU paths. `scatterChecksum` compares a placement with a reference that another device recorded. Pass `EcoScatter` and `addTile` when a scene should place its ground in tiles beside the frames.
 

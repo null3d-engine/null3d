@@ -119,6 +119,16 @@ const JUNCTION_LEVEL = 3;
 const LEADER_ANGLE = 45;
 /** The share of the frame's height that the limb below a fork fills with its thickness. */
 const FORK_LIMB_SHARE = 0.28;
+/**
+ * How many times the reach of a fork's arms the frame's height spans: the photograph shows both arms
+ * and the twigs they carry, with the limb coming up to the joint from below.
+ */
+const FORK_ARM_SPAN = 2.2;
+/**
+ * The limb's diameters that the arms' reach may pull the frame out to, so a fork inside a crown does
+ * not frame the crown above it. The photograph's frame spans about twenty of them.
+ */
+const FORK_REACH_DIAMETERS = 20;
 /** The least radius of an arm, against its limb's radius at the fork, for a division to be a fork. */
 const FORK_ARM = 0.5;
 /** The radius a fork's limb is sought at, against the stem's radius at breast height. */
@@ -964,14 +974,56 @@ function planeNormal(fork: Fork): V3 {
 }
 
 /**
+ * How far a fork's arms run from its joint, their twigs included: the farthest node of the two
+ * subtrees the joint divides into. The photograph frames both arms and the twigs they carry, so the
+ * frame follows this reach rather than the limb's thickness alone.
+ */
+function armsReach(skeleton: MacroSkeleton, fork: Fork): number {
+	const { axes, position } = skeleton;
+	// Every axis that descends from the two arms, by walking each one's parents.
+	const inside = new Set<number>([fork.arm, fork.limb]);
+	for (let a = 0; a < axes.count; a++) {
+		let parent = axes.parent[a] as number;
+		for (let guard = 0; parent >= 0 && guard <= axes.count; guard++) {
+			if (inside.has(parent)) {
+				inside.add(a);
+				break;
+			}
+			parent = axes.parent[parent] as number;
+		}
+	}
+	let reach = 0;
+	for (const axis of inside)
+		for (let n = axes.first[axis] as number; n <= (axes.last[axis] as number); n++) {
+			const at = skeleton.position;
+			reach = Math.max(
+				reach,
+				Math.hypot(
+					(at[n * 3] as number) - fork.at[0],
+					(at[n * 3 + 1] as number) - fork.at[1],
+					(at[n * 3 + 2] as number) - fork.at[2],
+				),
+			);
+		}
+	return reach;
+}
+
+/**
  * The view of a limb dividing into two. It takes the forks whose limb is nearest `thin` metres of
  * radius, or a share of the stem's own radius, away from the stem, seen square to the plane of the
- * two arms so the fork opens at its true angle, framed so the limb below it fills the share of the
- * frame that the photograph gives it, from the side where the least of the rest of the plant stands
- * in front of the fork or behind it. Arms nearer the limb's own size, and a fork that stands upright
- * so a level camera sees it square, make the likelier subject.
+ * two arms so the fork opens at its true angle, from the side where the least of the rest of the
+ * plant stands in front of the fork or behind it. The frame spans both arms and the twigs they
+ * carry, at least as far as the limb below the joint fills the share of it that the photograph
+ * gives, and never out into the crown above them; `span` asks for a frame height in metres instead,
+ * as it does for a limb. Arms nearer the limb's own size, and a fork that stands upright so a level
+ * camera sees it square, make the likelier subject.
  */
-export function forkView(plant: ClosePlant, lens: Lens, thin?: number): CloseView | undefined {
+export function forkView(
+	plant: ClosePlant,
+	lens: Lens,
+	thin?: number,
+	span?: number,
+): CloseView | undefined {
 	const { skeleton } = plant;
 	const stemRadius = stemAt(skeleton, 1.3)?.radius ?? stemAt(skeleton, 0.3)?.radius ?? 0.1;
 	const sought = thin ?? FORK_STEM_SHARE * stemRadius;
@@ -991,7 +1043,10 @@ export function forkView(plant: ClosePlant, lens: Lens, thin?: number): CloseVie
 		.sort((a, b) => Math.abs(Math.log(a.radius / sought)) - Math.abs(Math.log(b.radius / sought)))
 		.slice(0, MOST_SUBJECTS)
 		.map((fork) => {
-			const height = (2 * fork.radius) / FORK_LIMB_SHARE;
+			// The photograph frames both arms and their twigs with the limb coming up to the joint from
+			// below. The frame never runs past the arms' own reach into the crown above them.
+			const reach = Math.min(armsReach(skeleton, fork), FORK_REACH_DIAMETERS * 2 * fork.radius);
+			const height = span ?? Math.max((2 * fork.radius) / FORK_LIMB_SHARE, FORK_ARM_SPAN * reach);
 			const normal = planeNormal(fork);
 			const size = Math.max(0, 1 - Math.abs(Math.log(fork.radius / sought)));
 			// The photograph's fork opens wide: arms that part at a right angle show it best.

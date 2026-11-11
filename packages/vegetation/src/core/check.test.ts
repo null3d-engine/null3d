@@ -32,6 +32,80 @@ describe('the record check', () => {
 		expect(() => checkSpecies(broken)).toThrow(/cannot grow/);
 	});
 
+	it('holds the flutter by height to a non-negative share', () => {
+		const withCurve = (byHeight: readonly (readonly [number, number])[]): Species => ({
+			...template,
+			wind: { ...template.wind, flutter: { ...template.wind.flutter, byHeight } },
+		});
+		expect(
+			speciesProblems(
+				withCurve([
+					[0, 2],
+					[1, 0.5],
+				]),
+			),
+		).toEqual([]);
+		expect(
+			speciesProblems(
+				withCurve([
+					[0, 2],
+					[1, -0.5],
+				]),
+			).some((p) => p.startsWith('wind.flutter.byHeight')),
+		).toBe(true);
+		expect(
+			speciesProblems(
+				withCurve([
+					[0.5, 1],
+					[0.2, 2],
+				]),
+			).some((p) => p.startsWith('wind.flutter.byHeight')),
+		).toBe(true);
+	});
+
+	it('holds a season bark tint to non-negative channels', () => {
+		const out = {
+			...template,
+			seasons: {
+				...template.seasons,
+				bark: { autumn: [1.2, -0.1, 0.9] as [number, number, number] },
+			},
+		} as Species;
+		expect(speciesProblems(out).some((p) => p.startsWith('seasons.bark.autumn[1]'))).toBe(true);
+	});
+
+	it('draws a winter stand its own leaf colours, and names any other season a problem', () => {
+		const colours = {
+			reflectance: [0.2, 0.1, 0.05] as [number, number, number],
+			transmittance: [0.2, 0.1, 0.05] as [number, number, number],
+		};
+		const winter = {
+			...template,
+			seasons: { ...template.seasons, leaves: { winter: colours } },
+		} as Species;
+		expect(speciesProblems(winter).some((p) => p.startsWith('seasons.leaves'))).toBe(false);
+		const summer = {
+			...template,
+			seasons: { ...template.seasons, leaves: { summer: colours } },
+		} as Species;
+		expect(speciesProblems(summer).some((p) => p.startsWith('seasons.leaves names summer'))).toBe(
+			true,
+		);
+	});
+
+	it('holds the sway power to its range', () => {
+		const out = {
+			...template,
+			wind: { ...template.wind, sway: { frequency: 0.4, amplitude: 0.05, power: 9 } },
+		} as Species;
+		expect(speciesProblems(out).some((p) => p.startsWith('wind.sway.power is 9'))).toBe(true);
+		const fine = {
+			...template,
+			wind: { ...template.wind, sway: { frequency: 0.4, amplitude: 0.05, power: 3 } },
+		} as Species;
+		expect(speciesProblems(fine)).toEqual([]);
+	});
+
 	it('holds the crown fields to their ranges', () => {
 		if (template.growth.model !== 'self-organizing' || !template.shoots)
 			throw new Error('the template grows by the self-organizing model, with shoots');
@@ -220,9 +294,15 @@ describe('the record check', () => {
 		expect(
 			problems.some((p) => p.startsWith('extras[2].shape.stalkSides is 2.5; it must be a whole')),
 		).toBe(true);
+		expect(speciesProblems({ ...template, extras: [{ ...acorn, group: 3 }] })).toEqual([]);
+		expect(
+			speciesProblems({ ...template, extras: [{ ...acorn, group: 2.5 }] }).some((p) =>
+				p.startsWith('extras[0].group is 2.5; it must be a whole number from 0 to 15'),
+			),
+		).toBe(true);
 	});
 
-	it('presses only a leaf whose kind can lie flat', () => {
+	it('presses a blade, a thick leaf or a whole frond flat, and no other foliage', () => {
 		const pressed: Species = { ...template, cuttings: { leaf: { pressed: true } } };
 		const flat = template.foliage.kind === 'blade' || template.foliage.kind === 'thick';
 		expect(speciesProblems(pressed).some((p) => p.startsWith('cuttings.leaf.pressed'))).toBe(!flat);
@@ -233,6 +313,11 @@ describe('the record check', () => {
 		expect(
 			speciesProblems(needled).some((p) => p.startsWith('cuttings.leaf.pressed lays a leaf')),
 		).toBe(true);
+		const frond = {
+			...pressed,
+			foliage: { kind: 'frond', optics: {} },
+		} as unknown as Species;
+		expect(speciesProblems(frond).some((p) => p.startsWith('cuttings.leaf.pressed'))).toBe(false);
 	});
 
 	it('holds a pressed leaf own stalk to a length above zero', () => {

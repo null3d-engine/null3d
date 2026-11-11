@@ -6,8 +6,9 @@
 // The plants are the game's own assets, grown through the package's public functions. Drag to turn
 // round the meadow and use the wheel to step in. Press R to grow it all again from another seed.
 import { defineSketch, timeOfDay } from '@null3d/engine';
-import { createGrass } from '@null3d/vegetation';
+import { createGrass, grassCover, loadSpecies } from '@null3d/vegetation';
 import { interact } from '../lib/interact';
+import { DEMO_SPARSENESS } from '../lib/plants';
 import { type MeadowControls, postHud } from './hud';
 import { createMeadow } from './meadow';
 
@@ -20,16 +21,6 @@ export default defineSketch(async (ctx) => {
 	post.set({ exposure: day.exposure });
 	scene.createDirectionalLight({ ...day.light, castShadows: true, shadow: { distance: 60 } });
 	scene.createAmbientLight(day.ambient);
-
-	// The meadow's grass, grown by the add-on over the same field, so the ground reads as pasture.
-	createGrass(ctx, {
-		height: () => 0,
-		area: { x: 0, z: 0, size: 200 },
-		count: 60_000,
-		seed: 11,
-		blades: 12,
-		color: '#59732f',
-	});
 
 	// The ground: a wide field, so a row of several species reads as a meadow rather than a plinth.
 	scene.createMesh({
@@ -46,18 +37,28 @@ export default defineSketch(async (ctx) => {
 	// small change in metres, and the shadows reach only as far as the meadow the camera can see.
 	const view = interact(ctx, camera, { target: [0, 11, 0], groundY: 1.7, zoomSpeed: 1.5 });
 
+	// The meadow's grass, grown by the add-on over the field that the camera frames, so the ground
+	// reads as pasture rather than as one flat colour. The cover takes the meadow grass's own blade,
+	// its keel and its colour, so a plant of that species stands in it without a seam.
+	const meadow = await loadSpecies('meadow-grass');
+	createGrass(ctx, {
+		height: () => 0,
+		area: { x: 0, z: 0, size: 140 },
+		count: 140_000,
+		seed: 11,
+		blades: 14,
+		...grassCover(meadow.record),
+	});
+
 	// The season: every record declares what its own does, so the same meadow grows bare in winter,
-	// turns in autumn and flowers in blossom. Summer is the record's default. Two shares, each against
-	// the record's own, with the slider's middle the record's own: the track runs 0 at the sparsest,
-	// 0.5 at the record's, 1 at the fullest, and the share the add-on takes runs from 0.4 through 1
-	// to 2. Leaves size what hangs on the wood; limbs decide how much wood there is, which every
-	// growth model answers with its own count of branches, fronds or tillers.
-	const controls: MeadowControls = { season: 'summer', leaves: 0.5, limbs: 0.5, coarseness: 0 };
-	const shareOf = (value: number) =>
-		value <= 0.5 ? 0.4 + (value / 0.5) * 0.6 : 1 + ((value - 0.5) / 0.5) * 1;
+	// turns in autumn and flowers in blossom. Summer is the record's default. One sparse slider moves
+	// a species' limbs, leaves and coarseness together toward the least it still reads as itself. The
+	// meadow opens at the sparsest form, as every demo that grows plants through the add-on does by
+	// the owner's ruling, and a hand that drags the slider to the left adds density.
+	const controls: MeadowControls = { season: 'summer', sparse: DEMO_SPARSENESS };
 
 	let seed = 11;
-	const growMeadow = createMeadow(ctx, page, { controls: () => controls, shareOf });
+	const growMeadow = createMeadow(ctx, page, { controls: () => controls });
 	const showHud = () => postHud(page, controls);
 
 	/**
@@ -80,11 +81,9 @@ export default defineSketch(async (ctx) => {
 		}
 		const next = Number(value);
 		if (!Number.isFinite(next)) return;
-		if (name === 'leaves') controls.leaves = next;
-		else if (name === 'limbs') controls.limbs = next;
 		// The explainer button shares the group's name, so only a number turns the slider.
-		else if (name === 'coarseness') controls.coarseness = next;
-		else return;
+		if (name !== 'sparse') return;
+		controls.sparse = next;
 		showHud();
 		settleThenGrow();
 	});

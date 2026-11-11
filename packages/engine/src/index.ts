@@ -94,7 +94,9 @@ export type { PointerLockOptions } from './page/pointer-lock';
 export type { DepthMode, LatencyMode, SketchThread } from './page/switches';
 export type { VideoOptions } from './page/videos';
 export type { PresetCheck, PresetCheckRound, TargetFps } from './quality/check';
-export type { DeviceHints } from './quality/chooser';
+export type { DeviceHints, DeviceKind } from './quality/chooser';
+export { deviceKind } from './quality/chooser';
+export { readDeviceHints } from './quality/device-hints';
 export type { QualityPreset, QualitySettings } from './quality/presets';
 export type {
 	AnimationEvent,

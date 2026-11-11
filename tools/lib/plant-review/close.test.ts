@@ -33,7 +33,7 @@ import {
 	trunkView,
 	walkedRound,
 } from '../../../tests/pages/lib/plant-review/close.ts';
-import { rowAngle } from '../../../tests/pages/lib/plant-review/framing.ts';
+import { rowAngle, spanDistance } from '../../../tests/pages/lib/plant-review/framing.ts';
 import {
 	clutterOf,
 	lensAxes,
@@ -114,6 +114,15 @@ function oakLike(): MacroSkeleton {
 	run(b, rising, upper, [8.3, 6.5, 0], [0.4, 0.8, 0], 3, 0.17, 0.5);
 	return b.finish(1);
 }
+
+describe('a part of a piece framed at its own span', () => {
+	test('stands back far enough that the span fills the frame across it', () => {
+		// A square frame of 40 degrees shows a span equal to twice the distance times the tangent.
+		expect(spanDistance(0.5, 40, 1)).toBeCloseTo(0.25 / Math.tan((20 * Math.PI) / 180), 6);
+		// A taller frame is narrower across, so the camera stands further back for the same span.
+		expect(spanDistance(0.5, 40, 0.75)).toBeGreaterThan(spanDistance(0.5, 40, 1));
+	});
+});
 
 describe('the view up the stem', () => {
 	const skeleton = oakLike();
@@ -366,6 +375,27 @@ describe('a limb dividing into two', () => {
 		const back = [0, 1, 2].map((k) => (view.position[k] as number) - (view.target[k] as number));
 		expect(Math.abs((back[2] as number) / Math.hypot(...back))).toBeGreaterThan(0.8);
 		expect(view.target[1]).toBeGreaterThan(upright?.at[1] ?? 0);
+	});
+
+	/** The height in metres that a view's frame covers at its target. */
+	const frameHeight = (view: { position: number[]; target: number[] }): number =>
+		2 *
+		Math.hypot(...[0, 1, 2].map((k) => (view.position[k] as number) - (view.target[k] as number))) *
+		Math.tan((50 * Math.PI) / 360);
+
+	test("frames the arms' run, and takes the span a picture asks for", () => {
+		const plant = { skeleton, shoots: NO_ROWS, prototypes: [] };
+		const plain = forkView(plant, { fov: 50, aspect: 1 });
+		if (!plain) throw new Error('the fork view found no fork');
+		const fork = forks(skeleton).find((f) => f.node === plain.subject.node);
+		if (!fork) throw new Error('the framed fork is not a fork');
+		// The photograph frames both arms and their twigs, so the frame runs well past the limb's own
+		// thickness.
+		expect(frameHeight(plain)).toBeGreaterThan(4 * 2 * fork.radius);
+		// A picture that asks for a span gets it, as the limb view does.
+		const asked = forkView(plant, { fov: 50, aspect: 1 }, undefined, 3);
+		if (!asked) throw new Error('the fork view found no fork');
+		expect(frameHeight(asked)).toBeCloseTo(3, 5);
 	});
 
 	test("takes a great limb's fork over a branch's fork nearer the sought size", () => {

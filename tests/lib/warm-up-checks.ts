@@ -105,9 +105,15 @@ export function warmUpProblems(result: WarmUpResult, gpu: 'webgpu' | 'webgl2'): 
 		const perObject =
 			(prepass(tier, playPreset) ? 2 : 1) +
 			(tier === 'webgpu' && prepass(tier, playPreset) ? 1 : 0);
-		if (result.addedPipelines !== perObject)
+		// A preset that steps down during play can change the render scale, which builds the final
+		// pass's 8-bit variant beside its full-precision one: only that case may hold one more.
+		const stepping = result.firstFramePreset !== result.playPreset;
+		if (
+			result.addedPipelines !== perObject &&
+			!(stepping && result.addedPipelines === perObject + 1)
+		)
 			problems.push(
-				`the added object built ${result.addedPipelines} pipelines at '${playPreset}', not ${perObject}`,
+				`the added object built ${result.addedPipelines} pipelines at '${playPreset}', not ${perObject}${stepping ? ` or ${perObject + 1}` : ''}`,
 			);
 	}
 	if (result.warmUpMs === null || result.warmUpMs < 0)

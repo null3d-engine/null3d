@@ -268,6 +268,11 @@ export interface StemRun {
 	readonly browning: number;
 	/** Whether to close the top to a point. */
 	readonly closeTip?: boolean;
+	/**
+	 * The least sky visibility a vertex takes, from 0 to 1: a stalk under its own leaves keeps this
+	 * much light, so it does not read as black wood among them.
+	 */
+	readonly leastSky?: number;
 }
 
 const frame: PathFrame = emptyFrame();
@@ -301,7 +306,7 @@ export function writeStem(mesh: MeshWriter, run: StemRun): void {
 				p[k] =
 					(frame.position[k] as number) +
 					((frame.normal[k] as number) * c + (frame.binormal[k] as number) * s) * scale;
-			colour[3] = skyByte(run.crown, p);
+			colour[3] = Math.max(Math.round(255 * (run.leastSky ?? 0)), skyByte(run.crown, p));
 			mesh.vertex(
 				p,
 				[
