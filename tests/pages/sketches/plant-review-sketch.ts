@@ -504,10 +504,13 @@ export default defineSketch(async (ctx) => {
 	const placeholders: boolean | 'missing' =
 		QUERY.placeholders ?? (isSpeciesId(QUERY.species) ? 'missing' : true);
 	const loadedModule = await loadSpeciesOrStandIn(QUERY.species);
-	// A tuft's soil — its rhizome and roots — belongs to the picture that frames the lifted base;
-	// every other view grows the plant above the soil, which is what the ground shows of it.
+	// A tuft's soil — its rhizome and roots — belongs to the picture that frames the lifted base:
+	// the soil view, or any view that lifts the plant from the ground, so a lifted whole plant
+	// shows the root ball its photograph shows. Every other view grows the plant above the soil,
+	// which is what the ground shows of it.
 	const record =
 		VIEW !== 'soil' &&
+		!QUERY.lifted &&
 		loadedModule.record.growth.model === 'tuft' &&
 		loadedModule.record.growth.soil !== undefined
 			? (() => {
