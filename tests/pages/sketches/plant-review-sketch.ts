@@ -544,7 +544,9 @@ export default defineSketch(async (ctx) => {
 		...(QUERY.cut !== undefined && { length: QUERY.cut }),
 		...(QUERY.pick !== undefined && { pick: QUERY.pick }),
 		...(QUERY.shoots !== undefined && { shoots: QUERY.shoots }),
+		...(QUERY.shoot !== undefined && { shoot: QUERY.shoot }),
 		...(QUERY.ring !== undefined && { ring: QUERY.ring }),
+		...(QUERY.lean !== undefined && { lean: QUERY.lean }),
 		orient: 'upright' as const,
 		...(VIEW === 'leaf-under' ? { face: 'lower' as const } : {}),
 		...(QUERY.pressed !== undefined && { pressed: QUERY.pressed }),
@@ -555,11 +557,12 @@ export default defineSketch(async (ctx) => {
 	// A piece whose record hint names one of the species' cutting classes grows from a kit of its
 	// own, which holds that class and no cards: the piece is only ever drawn at the nearest level.
 	const cutHint = cutting ? record.cuttings?.[cutting.part] : undefined;
+	const cutClass =
+		QUERY.shoot ?? (cutHint !== undefined && 'shoot' in cutHint ? cutHint.shoot : undefined);
 	const cutsClass =
-		cutHint !== undefined &&
-		'shoot' in cutHint &&
+		cutClass !== undefined &&
 		(record.shoots?.cuttingClasses ?? []).some(
-			(shoot) => shoot.name === cutHint.shoot && shoot.cutOnly === true,
+			(shoot) => shoot.name === cutClass && shoot.cutOnly === true,
 		);
 	// A plant cut carries a denser covering when the record asks for one: its cutting kit places the
 	// shoots the studio piece needs and holds no card levels.

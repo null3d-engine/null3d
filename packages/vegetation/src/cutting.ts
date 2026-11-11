@@ -96,11 +96,23 @@ export interface CuttingOptions {
 	 */
 	readonly shoots?: number;
 	/**
+	 * For 'branch' and 'subbranch': the shoot class the piece draws, over the record hint's class, so
+	 * a close view can draw a thin twig while the studio piece draws the whole branch. Absent, the
+	 * hint's class stands. A cluster names its class through the record alone.
+	 */
+	readonly shoot?: string;
+	/**
 	 * For 'branch' and 'subbranch': the radius of the ring the fanned shoots stand on, as a share of
 	 * the piece's height, over the record's hint. A wide ring draws the shoots as separate pieces;
 	 * a near-base ring joins them. Absent, the hint's ring stands.
 	 */
 	readonly ring?: number;
+	/**
+	 * For 'branch' and 'subbranch': the degrees each fanned shoot leans outward from the piece's
+	 * axis, over the record's hint. A lean with a near-base ring opens the tips while the bases
+	 * stay joined. Absent, the hint's lean stands.
+	 */
+	readonly lean?: number;
 	/**
 	 * For 'branch' and 'subbranch': whether the candidates rank by how young they are rather than by
 	 * how well their length matches, so the piece draws a shoot that is still opening. Absent, a
@@ -709,8 +721,9 @@ function heldTier(kit: SpeciesKitData, detail: Detail): number {
 export function clusterRank(
 	kit: SpeciesKitData,
 	part: CuttingPart = 'cluster',
+	shoot?: string,
 ): readonly ShootPrototype[] {
-	const hint = shootHint(kit.record, part);
+	const hint = shoot ?? shootHint(kit.record, part);
 	return [...kit.prototypes].sort(
 		(a, b) =>
 			Number(b.class === hint) - Number(a.class === hint) ||
@@ -739,7 +752,7 @@ export function clusterRow(
 ):
 	| { readonly rows: ShootRows; readonly bounds: { readonly min: Vec3; readonly max: Vec3 } }
 	| undefined {
-	const all = clusterRank(kit, cutting.part);
+	const all = clusterRank(kit, cutting.part, cutting.shoot);
 	// A piece is drawn in the season it is asked for: in a leafless season it takes the shoot's
 	// leafless twin where the kit holds one, as the whole plant's rows do.
 	const wanted = leafy === undefined ? all : all.filter((p) => p.leaves > 0 === leafy);
@@ -767,7 +780,7 @@ export function clusterRow(
 			: Math.max(1, Math.min(CUT_SHOOTS_MOST, Math.round(asked)));
 	const fan = hint && 'shoot' in hint ? hint : undefined;
 	const ring = Math.min(1, Math.max(0, cutting.ring ?? fan?.fanRing ?? 0.18));
-	const lean = Math.min(90, Math.max(-90, fan?.fanLean ?? 0));
+	const lean = Math.min(90, Math.max(-90, cutting.lean ?? fan?.fanLean ?? 0));
 	const spinShare = Math.min(1, Math.max(0, fan?.fanSpin ?? 1));
 	const yaw = Math.min(180, Math.max(-180, fan?.fanYaw ?? 0));
 	// The whole piece turns about its upright axis once, before any row's own fan, so a branch whose
@@ -836,7 +849,7 @@ export function clusterRow(
 		// lean opens the row away from the axis and a small ring keeps every base at one point.
 		const r = [0, 0, 0, 1];
 		if (lean !== 0) {
-			const tangent: [number, number, number] = [-Math.sin(angle), 0, Math.cos(angle)];
+			const tangent: [number, number, number] = [-sin(angle), 0, cos(angle)];
 			const leanQ = [0, 0, 0, 1];
 			quatAxisAngle(tangent, (-lean * Math.PI) / 180, leanQ);
 			quatMultiply(leanQ, 0, q, 0, r);
@@ -846,9 +859,9 @@ export function clusterRow(
 			r[2] = q[2] as number;
 			r[3] = q[3] as number;
 		}
-		position[row * 3] = ring * tall * Math.cos(angle);
+		position[row * 3] = ring * tall * cos(angle);
 		position[row * 3 + 1] = (row * 0.55 * tall) / shoots;
-		position[row * 3 + 2] = ring * tall * Math.sin(angle);
+		position[row * 3 + 2] = ring * tall * sin(angle);
 		rotation.set(r, row * 4);
 		for (let i = 0; i < p.length; i += 3) {
 			quatRotate(r, 0, [p[i] as number, p[i + 1] as number, p[i + 2] as number], placed);
