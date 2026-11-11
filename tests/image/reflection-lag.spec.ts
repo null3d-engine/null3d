@@ -12,8 +12,8 @@ const WATER_FROM = 0.6;
 const MOST_LATE = 0.25;
 /**
  * The distinct rendered frames that a capture needs, and the longest it may take. The sketch jumps
- * the camera once every 30 frames it draws, so any 40 distinct frames hold two jumps, the first
- * with 30 frames after it, and the late measure reads the four frames after a jump. Counting the
+ * the camera once every 30 frames it draws, so 40 distinct frames hold a jump with at least nine
+ * transitions after it, and the late measure reads the four frames after a jump. Counting the
  * browser's screencast frames is not enough: it presents the same canvas frame more than once when
  * the software GPU draws slower than the display, so 40 presentations can hold fewer than 30 drawn
  * frames and no jump at all. The capture keeps the frames whose image differs from the one before,
@@ -77,7 +77,10 @@ function change(
 function lateShare(frames: ReturnType<typeof decodePngRgba>[]): number {
 	const above = frames.slice(1).map((frame, k) => change(frames[k] as never, frame, 0, 0.45));
 	const water = frames.slice(1).map((frame, k) => change(frames[k] as never, frame, WATER_FROM, 1));
-	const steps = Math.max(...above);
+	// The first transition is where the page's first presented frame arrives, not a camera move.
+	// On WebGPU that arrival can change more of the top of the frame than any move does, so it must
+	// not set the threshold by which the moves are found.
+	const steps = Math.max(...above.slice(1), 0);
 	let worst = 0;
 	let jumps = 0;
 	for (let k = 1; k + 5 < above.length; k++) {
@@ -86,6 +89,10 @@ function lateShare(frames: ReturnType<typeof decodePngRgba>[]): number {
 		const late = Math.max(...water.slice(k + 1, k + 5));
 		worst = Math.max(worst, late / Math.max(water[k] as number, 1e-3));
 	}
+	console.log(
+		`top move ${steps.toFixed(2)} at frame ${above.indexOf(steps) + 1}, ` +
+			`first transition ${above[0]?.toFixed(2)}, ${jumps} jumps in ${above.length} frames`,
+	);
 	expect(jumps).toBeGreaterThan(0);
 	return worst;
 }

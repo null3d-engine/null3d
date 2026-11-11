@@ -21,9 +21,9 @@ const CHANNEL = 24;
 const MAX_CHANGED = 0.015;
 /**
  * The longest that one held frame may take. The island's first frame builds the pipelines of its
- * town, trees and water before it draws, and CI's software GPU did not draw it within 300 s: the
- * island demo, which draws the same scene at 320 x 180, holds a budget of 600 s for that reason.
- * This page draws at four times the pixels, so its capture takes the same ceiling.
+ * town, trees and water before it draws, and CI's software GPU did not draw the demo's first frame
+ * within 300 s: the demo holds 600 s for that reason. This page draws at 640 x 360 at the High
+ * preset, so its capture takes the same ceiling.
  */
 const HOLD_MS = 600_000;
 

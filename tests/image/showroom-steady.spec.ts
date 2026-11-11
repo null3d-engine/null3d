@@ -29,11 +29,11 @@ const WANTED = 24;
 const LEAST = 8;
 /**
  * How long the page may take to start, and the capture after it. CI's software GPU did not publish
- * the engine within 180 s, and the showroom's image test holds 300 s for the whole demo. The start
- * wait takes 360 s, and the capture takes a minute, where a software frame can take seconds and the
- * measure needs at least eight of them.
+ * the engine within 180 s, and this Mac's did not within 360 s under other helpers' load. The start
+ * wait takes ten minutes, and the capture takes a minute, where a software frame can take seconds
+ * and the measure needs at least eight of them.
  */
-const READY_MS = 360_000;
+const READY_MS = 600_000;
 const CAPTURE_MS = 60_000;
 
 /** The mean luminance of a box, from the canvas pixels of one frame. */

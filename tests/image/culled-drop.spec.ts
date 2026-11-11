@@ -7,10 +7,11 @@ import { expect, type Page, test } from '@playwright/test';
 const RUN_TIME = 6_000;
 /**
  * How long the instances page may take to start. It makes 100,000 columns and tens of thousands of
- * cars, and CI's software GPU needs more than two minutes to start it. The demo's own held image
- * allows 180 s, and the page here runs at the full window, so the start takes a longer wait.
+ * cars, and CI's software GPU needs more than two minutes to start it. This Mac's software GPU took
+ * more than five minutes under other helpers' load, so the wait takes ten minutes, the ceiling that
+ * the large demos use. The test's own limit clears the wait.
  */
-const START_MS = 300_000;
+const START_MS = 600_000;
 
 /** Runs the page on the GPU culling path and returns its warnings of dropped copies. */
 async function droppedWarnings(page: Page, forced: boolean) {
