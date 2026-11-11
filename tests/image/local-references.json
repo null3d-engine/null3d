@@ -107,12 +107,6 @@
 		"date": "2026-11-11",
 		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head; both views completed and were compared before acceptance, and a CI drawing on a pull request replaces them"
 	},
-	"chromium-swiftshader/compat/demo-vegetation.png": {
-		"test": "demo-vegetation",
-		"tier": "compat",
-		"date": "2026-11-11",
-		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head; both views completed and were compared before acceptance, and a CI drawing on a pull request replaces them"
-	},
 	"chromium-swiftshader/compat/feature-instances-shadow.png": {
 		"test": "feature-instances-shadow",
 		"tier": "compat",
@@ -442,18 +436,6 @@
 		"tier": "webgl2",
 		"date": "2026-10-27",
 		"reason": "the software GPU's drawing of the terrain's per-pixel normals and height-blended layers; drawn on this Mac because the shared queue blocked a CI image run"
-	},
-	"chromium-swiftshader/webgl2/demo-vegetation-wind.png": {
-		"test": "demo-vegetation-wind",
-		"tier": "webgl2",
-		"date": "2026-11-10",
-		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head in the idle window; both drawings completed and were compared before acceptance, and a CI drawing on a pull request replaces them"
-	},
-	"chromium-swiftshader/webgl2/demo-vegetation.png": {
-		"test": "demo-vegetation",
-		"tier": "webgl2",
-		"date": "2026-11-10",
-		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head; the load was 8 when it started and 33 when it finished, the drawing completed, and it was compared against its reference and judged by the landing session before acceptance. CI draws the software set on a pull request and its drawing replaces this one."
 	},
 	"chromium-swiftshader/webgl2/gltf-clearcoat-car-paint.png": {
 		"test": "gltf-clearcoat-car-paint",
