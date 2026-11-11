@@ -80,6 +80,12 @@ export interface PlantReviewQuery {
 	readonly lamp?: string;
 	/** The wind's strength: 0 still, 1 the default field, up to 3. */
 	readonly wind?: number;
+	/**
+	 * Metres from the camera out to which the plant's materials sway, in place of the preset's
+	 * distance: a plant beyond it stands still under the same field, which a picture contrasts
+	 * with the plant swaying inside the preset's distance.
+	 */
+	readonly sway?: number;
 	/** Seconds on the wind clock. The runner holds the frame at this sketch time. */
 	readonly time?: number;
 	/** The season the plant grows for; the record's by default. */
@@ -105,6 +111,12 @@ export interface PlantReviewQuery {
 	readonly lifted?: boolean;
 	/** Whether the page draws a 1 m scale bar beside the view's target. */
 	readonly scale?: boolean;
+	/**
+	 * Whether the page draws the motion debug view in place of the plant: each pixel's motion since
+	 * the frame before, as a color. A held frame has the frame before it, so a plant that its vertex
+	 * offset sways shows its motion and a plant past its sway distance stays black.
+	 */
+	readonly motion?: boolean;
 	/**
 	 * Whether a close view's colour is measured on the plant alone, ignoring the backdrop. A stem
 	 * does not fill its frame, so the nine patches of a plain average reach sky and ground; a slot
@@ -226,6 +238,7 @@ const NUMBER_FIELDS = [
 	'distance',
 	'fov',
 	'wind',
+	'sway',
 	'time',
 	'pick',
 	'cut',
@@ -345,6 +358,10 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 	}
 	if (numbers.wind !== undefined && (numbers.wind < 0 || numbers.wind > 3))
 		throw new Error(`wind=${numbers.wind} is a strength: give a number from 0 to 3.`);
+	if (numbers.sway !== undefined && numbers.sway <= 0)
+		throw new Error(
+			`sway=${numbers.sway} is a distance in metres: give a number above 0, or leave it out for the preset's distance.`,
+		);
 	if (numbers.daylight !== undefined && (numbers.daylight <= 0 || numbers.daylight > 8))
 		throw new Error(
 			`daylight=${numbers.daylight} is a multiple of the soft daylight: give a number above 0, up to 8.`,
@@ -431,6 +448,7 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 		barkMask: params.get('barkMask') === '1',
 		foliage: params.get('foliage') === '1',
 		scale: params.get('scale') === '1',
+		motion: params.get('motion') === '1',
 		matte: params.get('matte') === '1',
 		fruit: params.get('fruit') === '1',
 		surface: params.get('surface') === '1',

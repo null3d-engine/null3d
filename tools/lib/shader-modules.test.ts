@@ -33,6 +33,7 @@ import {
 	RECORD,
 	setIsComplete,
 	shaderLock,
+	shaderModulesFresh,
 } from './shader-modules';
 
 /**
@@ -374,6 +375,19 @@ version = "0.2.0"
 		const record = { inputs: inputHash(root), modules: moduleHash(root) };
 		writeFileSync(join(root, RECORD), JSON.stringify(record));
 		expect(ensureShaderModules(root)).toBe(false);
+	});
+
+	it('answer whether a build would change anything, and take no lock to answer', () => {
+		const root = repository();
+		mkdirSync(join(root, 'target'));
+		const inputs = inputHash(root);
+		writeFileSync(join(root, RECORD), JSON.stringify({ inputs, modules: moduleHash(root) }));
+		expect(shaderModulesFresh(root)).toBe(true);
+		// A source that the build reads is what decides, not the record alone.
+		writeFileSync(join(root, 'crates/null3d-shaders/wgsl/lit.wgsl'), 'fn main() { }\n');
+		expect(shaderModulesFresh(root)).toBe(false);
+		// The question compiles nothing, so it must leave no lock for a build to wait behind.
+		expect(existsSync(shaderLock(inputs))).toBe(false);
 	});
 
 	it('read no module byte when every file has the size and time that the record keeps', () => {

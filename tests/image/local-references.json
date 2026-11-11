@@ -29,6 +29,12 @@
 		"date": "2026-11-03",
 		"reason": "drawn on the Mac's SwiftShader because the branch is not pushed for a CI run; a CI drawing replaces it"
 	},
+	"chromium-swiftshader/compat/creek-water-close.png": {
+		"test": "creek-water-close",
+		"tier": "compat",
+		"date": "2026-11-11",
+		"reason": "drawn here at the head after the species rework moved the plants; the references these replace were drawn on 4 and 5 November, and a CI drawing replaces them"
+	},
 	"chromium-swiftshader/compat/custom-cutout-motion.png": {
 		"test": "custom-cutout-motion",
 		"tier": "compat",
@@ -52,6 +58,12 @@
 		"tier": "compat",
 		"date": "2026-11-02",
 		"reason": "the Mac drew these pictures with CI=1 for the demo's new room; the session that checks the landings replaces them from CI's own SwiftShader when a run draws them"
+	},
+	"chromium-swiftshader/compat/demo-contact-shadows.png": {
+		"test": "demo-contact-shadows",
+		"tier": "compat",
+		"date": "2026-11-10",
+		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head; each drawing completed with the raised budget and was compared before acceptance, and a CI drawing on a pull request replaces them"
 	},
 	"chromium-swiftshader/compat/demo-depth-only.png": {
 		"test": "demo-depth-only",
@@ -92,14 +104,14 @@
 	"chromium-swiftshader/compat/demo-vegetation-wind.png": {
 		"test": "demo-vegetation-wind",
 		"tier": "compat",
-		"date": "2026-11-07",
-		"reason": "two new demo pages have no software-set reference yet, so this machine draws their first and CI's run judges them from here"
+		"date": "2026-11-11",
+		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head; both views completed and were compared before acceptance, and a CI drawing on a pull request replaces them"
 	},
 	"chromium-swiftshader/compat/demo-vegetation.png": {
 		"test": "demo-vegetation",
 		"tier": "compat",
-		"date": "2026-11-07",
-		"reason": "two new demo pages have no software-set reference yet, so this machine draws their first and CI's run judges them from here"
+		"date": "2026-11-11",
+		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head; both views completed and were compared before acceptance, and a CI drawing on a pull request replaces them"
 	},
 	"chromium-swiftshader/compat/feature-instances-shadow.png": {
 		"test": "feature-instances-shadow",
@@ -176,32 +188,26 @@
 	"chromium-swiftshader/compat/plant-bracken.png": {
 		"test": "plant-bracken",
 		"tier": "compat",
-		"date": "2026-11-09",
-		"reason": "drawn on this Mac's SwiftShader at 97c6fd194 after the engine merge; a CI drawing replaces it if it differs"
+		"date": "2026-11-10",
+		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head in the one idle window, each drawing completed and compared before acceptance, and a CI drawing on a pull request replaces them"
 	},
-	"chromium-swiftshader/compat/plant-common-alder.png": {
-		"test": "plant-common-alder",
+	"chromium-swiftshader/compat/plant-coverage.png": {
+		"test": "plant-coverage",
 		"tier": "compat",
-		"date": "2026-11-09",
-		"reason": "SwiftShader drawn on the reference Mac at 0fdef2684, after the leaf optics, the cluster counts and the young-bark framing changed what the four panels draw"
-	},
-	"chromium-swiftshader/compat/plant-common-ash.png": {
-		"test": "plant-common-ash",
-		"tier": "compat",
-		"date": "2026-11-09",
-		"reason": "drawn on this Mac's SwiftShader at 5c8a4d15d after the m3-start merge; the plant sits a fraction of a pixel over in every panel, so the outlines differ while the interiors do not, and a CI drawing replaces the set if it differs"
+		"date": "2026-11-10",
+		"reason": "a push to a milestone branch draws no picture, so the software set was drawn on this machine at the range's head and judged by the landing session"
 	},
 	"chromium-swiftshader/compat/plant-european-beech.png": {
 		"test": "plant-european-beech",
 		"tier": "compat",
-		"date": "2026-11-09",
-		"reason": "drawn on this Mac's SwiftShader at 4800d7737 after the engine merge; a CI drawing replaces it if it differs"
+		"date": "2026-11-10",
+		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head in the one idle window, each drawing completed and compared before acceptance, and a CI drawing on a pull request replaces them"
 	},
 	"chromium-swiftshader/compat/plant-hawthorn-shrub.png": {
 		"test": "plant-hawthorn-shrub",
 		"tier": "compat",
-		"date": "2026-11-09",
-		"reason": "drawn on this Mac's SwiftShader at b527459fe after the bark tint and the engine merge; a CI drawing replaces it if it differs"
+		"date": "2026-11-10",
+		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head in the one idle window, each drawing completed and compared before acceptance, and a CI drawing on a pull request replaces them"
 	},
 	"chromium-swiftshader/compat/plant-holm-oak.png": {
 		"test": "plant-holm-oak",
@@ -218,8 +224,8 @@
 	"chromium-swiftshader/compat/plant-meadow-grass.png": {
 		"test": "plant-meadow-grass",
 		"tier": "compat",
-		"date": "2026-11-09",
-		"reason": "drawn on this Mac: the tiller lean changed the panels picture at 9cf0cd0db"
+		"date": "2026-11-10",
+		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head in the one idle window, each drawing completed and compared before acceptance, and a CI drawing on a pull request replaces them"
 	},
 	"chromium-swiftshader/compat/plant-pedunculate-oak.png": {
 		"test": "plant-pedunculate-oak",
@@ -230,26 +236,38 @@
 	"chromium-swiftshader/compat/plant-sedge.png": {
 		"test": "plant-sedge",
 		"tier": "compat",
-		"date": "2026-11-09",
-		"reason": "the sedge's blade now closes over a short tip, which redraws the blades in its whole-plant, crown and cluster panels; the software set is redrawn here while CI redraws it"
+		"date": "2026-11-10",
+		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head in the one idle window, each drawing completed and compared before acceptance, and a CI drawing on a pull request replaces them"
 	},
 	"chromium-swiftshader/compat/plant-silver-birch.png": {
 		"test": "plant-silver-birch",
 		"tier": "compat",
-		"date": "2026-11-09",
-		"reason": "the silver birch's leaf is rebuilt upright on the named frames and its crown's sky prune opened to 0.4 at b96087d0e, which moves the leaf and crown panels; this branch has no CI run to take the software set from, and CI's shards judge it later"
+		"date": "2026-11-10",
+		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head in the one idle window, each drawing completed and compared before acceptance, and a CI drawing on a pull request replaces them"
 	},
 	"chromium-swiftshader/compat/plant-sparse-oak.png": {
 		"test": "plant-sparse-oak",
 		"tier": "compat",
-		"date": "2026-11-09",
-		"reason": "a new picture of the sparse form: the oak at the level a phone asks for, drawn here while CI has no reference for the test; a CI drawing replaces it if it differs"
+		"date": "2026-11-10",
+		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head, at a load of 7.6, and judged by the landing session. CI draws the software set on a pull request and its drawing replaces this one."
 	},
 	"chromium-swiftshader/compat/plant-weeping-willow.png": {
 		"test": "plant-weeping-willow",
 		"tier": "compat",
 		"date": "2026-11-09",
 		"reason": "the leaf rebuild changes the leaf and crown panels, and this Mac's SwiftShader drew all three tiers inside the 120 s guard; no CI run has drawn the rebuilt leaf yet"
+	},
+	"chromium-swiftshader/compat/plant-wind-still.png": {
+		"test": "plant-wind-still",
+		"tier": "compat",
+		"date": "2026-11-10",
+		"reason": "M3-V7's sway picture: the branch is not pushed to CI, so this Mac's SwiftShader drew the software set; a CI drawing replaces it"
+	},
+	"chromium-swiftshader/compat/plant-wind-sway.png": {
+		"test": "plant-wind-sway",
+		"tier": "compat",
+		"date": "2026-11-10",
+		"reason": "M3-V7's sway picture: the branch is not pushed to CI, so this Mac's SwiftShader drew the software set; a CI drawing replaces it"
 	},
 	"chromium-swiftshader/compat/probe-grid-wall-night.png": {
 		"test": "probe-grid-wall-night",
@@ -335,12 +353,6 @@
 		"date": "2026-11-03",
 		"reason": "the contact pair on the software GPU at the shortened far cover"
 	},
-	"chromium-swiftshader/compat/weather.png": {
-		"test": "weather",
-		"tier": "compat",
-		"date": "2026-10-30",
-		"reason": "No CI run has drawn this picture yet: run 41006111918 drew the three weather pictures and lost them when its shard reached the job's time limit, before the guard let a timed-out shard upload. This Mac's SwiftShader drew these three, and the next CI drawing of them replaces them."
-	},
 	"chromium-swiftshader/webgl2/asset-bent-grid.png": {
 		"test": "asset-bent-grid",
 		"tier": "webgl2",
@@ -371,6 +383,12 @@
 		"date": "2026-11-03",
 		"reason": "drawn on the Mac's SwiftShader because the branch is not pushed for a CI run; a CI drawing replaces it"
 	},
+	"chromium-swiftshader/webgl2/creek-water-close.png": {
+		"test": "creek-water-close",
+		"tier": "webgl2",
+		"date": "2026-11-11",
+		"reason": "drawn here at the head after the species rework moved the plants; the references these replace were drawn on 4 and 5 November, and a CI drawing replaces them"
+	},
 	"chromium-swiftshader/webgl2/custom-cutout-motion.png": {
 		"test": "custom-cutout-motion",
 		"tier": "webgl2",
@@ -388,6 +406,12 @@
 		"tier": "webgl2",
 		"date": "2026-11-02",
 		"reason": "the Mac drew these pictures with CI=1 for the demo's new room; the session that checks the landings replaces them from CI's own SwiftShader when a run draws them"
+	},
+	"chromium-swiftshader/webgl2/demo-contact-shadows.png": {
+		"test": "demo-contact-shadows",
+		"tier": "webgl2",
+		"date": "2026-11-10",
+		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head; each drawing completed with the raised budget and was compared before acceptance, and a CI drawing on a pull request replaces them"
 	},
 	"chromium-swiftshader/webgl2/demo-depth-only.png": {
 		"test": "demo-depth-only",
@@ -422,14 +446,14 @@
 	"chromium-swiftshader/webgl2/demo-vegetation-wind.png": {
 		"test": "demo-vegetation-wind",
 		"tier": "webgl2",
-		"date": "2026-11-07",
-		"reason": "two new demo pages have no software-set reference yet, so this machine draws their first and CI's run judges them from here"
+		"date": "2026-11-10",
+		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head in the idle window; both drawings completed and were compared before acceptance, and a CI drawing on a pull request replaces them"
 	},
 	"chromium-swiftshader/webgl2/demo-vegetation.png": {
 		"test": "demo-vegetation",
 		"tier": "webgl2",
-		"date": "2026-11-07",
-		"reason": "two new demo pages have no software-set reference yet, so this machine draws their first and CI's run judges them from here"
+		"date": "2026-11-10",
+		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head; the load was 8 when it started and 33 when it finished, the drawing completed, and it was compared against its reference and judged by the landing session before acceptance. CI draws the software set on a pull request and its drawing replaces this one."
 	},
 	"chromium-swiftshader/webgl2/gltf-clearcoat-car-paint.png": {
 		"test": "gltf-clearcoat-car-paint",
@@ -512,32 +536,26 @@
 	"chromium-swiftshader/webgl2/plant-bracken.png": {
 		"test": "plant-bracken",
 		"tier": "webgl2",
-		"date": "2026-11-09",
-		"reason": "drawn on this Mac's SwiftShader at 97c6fd194 after the engine merge; a CI drawing replaces it if it differs"
+		"date": "2026-11-10",
+		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head in the one idle window, each drawing completed and compared before acceptance, and a CI drawing on a pull request replaces them"
 	},
-	"chromium-swiftshader/webgl2/plant-common-alder.png": {
-		"test": "plant-common-alder",
+	"chromium-swiftshader/webgl2/plant-coverage.png": {
+		"test": "plant-coverage",
 		"tier": "webgl2",
-		"date": "2026-11-09",
-		"reason": "SwiftShader drawn on the reference Mac at 0fdef2684, after the leaf optics, the cluster counts and the young-bark framing changed what the four panels draw"
-	},
-	"chromium-swiftshader/webgl2/plant-common-ash.png": {
-		"test": "plant-common-ash",
-		"tier": "webgl2",
-		"date": "2026-11-09",
-		"reason": "drawn on this Mac's SwiftShader at 5c8a4d15d after the m3-start merge; the plant sits a fraction of a pixel over in every panel, so the outlines differ while the interiors do not, and a CI drawing replaces the set if it differs"
+		"date": "2026-11-10",
+		"reason": "a push to a milestone branch draws no picture, so the software set was drawn on this machine at the range's head and judged by the landing session"
 	},
 	"chromium-swiftshader/webgl2/plant-european-beech.png": {
 		"test": "plant-european-beech",
 		"tier": "webgl2",
-		"date": "2026-11-09",
-		"reason": "drawn on this Mac's SwiftShader at 4800d7737 after the engine merge; a CI drawing replaces it if it differs"
+		"date": "2026-11-10",
+		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head in the one idle window, each drawing completed and compared before acceptance, and a CI drawing on a pull request replaces them"
 	},
 	"chromium-swiftshader/webgl2/plant-hawthorn-shrub.png": {
 		"test": "plant-hawthorn-shrub",
 		"tier": "webgl2",
-		"date": "2026-11-09",
-		"reason": "drawn on this Mac's SwiftShader at 879cbb0ed after the engine merge; a CI drawing replaces it if it differs"
+		"date": "2026-11-10",
+		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head in the one idle window, each drawing completed and compared before acceptance, and a CI drawing on a pull request replaces them"
 	},
 	"chromium-swiftshader/webgl2/plant-holm-oak.png": {
 		"test": "plant-holm-oak",
@@ -554,8 +572,8 @@
 	"chromium-swiftshader/webgl2/plant-meadow-grass.png": {
 		"test": "plant-meadow-grass",
 		"tier": "webgl2",
-		"date": "2026-11-09",
-		"reason": "drawn on this Mac: the tiller lean changed the panels picture at 9cf0cd0db"
+		"date": "2026-11-10",
+		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head in the one idle window, each drawing completed and compared before acceptance, and a CI drawing on a pull request replaces them"
 	},
 	"chromium-swiftshader/webgl2/plant-pedunculate-oak.png": {
 		"test": "plant-pedunculate-oak",
@@ -566,26 +584,38 @@
 	"chromium-swiftshader/webgl2/plant-sedge.png": {
 		"test": "plant-sedge",
 		"tier": "webgl2",
-		"date": "2026-11-09",
-		"reason": "the sedge's blade now closes over a short tip, which redraws the blades in its whole-plant, crown and cluster panels; the software set is redrawn here while CI redraws it"
+		"date": "2026-11-10",
+		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head in the one idle window, each drawing completed and compared before acceptance, and a CI drawing on a pull request replaces them"
 	},
 	"chromium-swiftshader/webgl2/plant-silver-birch.png": {
 		"test": "plant-silver-birch",
 		"tier": "webgl2",
-		"date": "2026-11-09",
-		"reason": "the silver birch's leaf is rebuilt upright on the named frames and its crown's sky prune opened to 0.4 at b96087d0e, which moves the leaf and crown panels; this branch has no CI run to take the software set from, and CI's shards judge it later"
+		"date": "2026-11-10",
+		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head in the one idle window, each drawing completed and compared before acceptance, and a CI drawing on a pull request replaces them"
 	},
 	"chromium-swiftshader/webgl2/plant-sparse-oak.png": {
 		"test": "plant-sparse-oak",
 		"tier": "webgl2",
-		"date": "2026-11-09",
-		"reason": "a new picture of the sparse form: the oak at the level a phone asks for, drawn here while CI has no reference for the test; a CI drawing replaces it if it differs"
+		"date": "2026-11-10",
+		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head, at a load of 7.6, and judged by the landing session. CI draws the software set on a pull request and its drawing replaces this one."
 	},
 	"chromium-swiftshader/webgl2/plant-weeping-willow.png": {
 		"test": "plant-weeping-willow",
 		"tier": "webgl2",
 		"date": "2026-11-09",
 		"reason": "the leaf rebuild changes the leaf and crown panels, and this Mac's SwiftShader drew all three tiers inside the 120 s guard; no CI run has drawn the rebuilt leaf yet"
+	},
+	"chromium-swiftshader/webgl2/plant-wind-still.png": {
+		"test": "plant-wind-still",
+		"tier": "webgl2",
+		"date": "2026-11-10",
+		"reason": "M3-V7's sway picture: the branch is not pushed to CI, so this Mac's SwiftShader drew the software set; a CI drawing replaces it"
+	},
+	"chromium-swiftshader/webgl2/plant-wind-sway.png": {
+		"test": "plant-wind-sway",
+		"tier": "webgl2",
+		"date": "2026-11-10",
+		"reason": "M3-V7's sway picture: the branch is not pushed to CI, so this Mac's SwiftShader drew the software set; a CI drawing replaces it"
 	},
 	"chromium-swiftshader/webgl2/probe-grid-wall-night.png": {
 		"test": "probe-grid-wall-night",
@@ -616,6 +646,24 @@
 		"tier": "webgl2",
 		"date": "2026-10-30",
 		"reason": "the branch has no CI run; the prototype S3 page is a test page that draws its fixed scene with plain GPU calls, so the software set can be drawn here until a CI run replaces it"
+	},
+	"chromium-swiftshader/webgl2/script-demo-island-closer.png": {
+		"test": "script-demo-island-closer",
+		"tier": "webgl2",
+		"date": "2026-11-10",
+		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head; each command drew its frame and was compared before acceptance, and a CI drawing on a pull request replaces them"
+	},
+	"chromium-swiftshader/webgl2/script-demo-island-turned.png": {
+		"test": "script-demo-island-turned",
+		"tier": "webgl2",
+		"date": "2026-11-10",
+		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head; each command drew its frame and was compared before acceptance, and a CI drawing on a pull request replaces them"
+	},
+	"chromium-swiftshader/webgl2/script-demo-island-walked.png": {
+		"test": "script-demo-island-walked",
+		"tier": "webgl2",
+		"date": "2026-11-10",
+		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head; each command drew its frame and was compared before acceptance, and a CI drawing on a pull request replaces them"
 	},
 	"chromium-swiftshader/webgl2/shadows-contact-far.png": {
 		"test": "shadows-contact-far",
@@ -695,12 +743,6 @@
 		"date": "2026-11-03",
 		"reason": "the contact pair on the software GPU at the shortened far cover"
 	},
-	"chromium-swiftshader/webgl2/weather.png": {
-		"test": "weather",
-		"tier": "webgl2",
-		"date": "2026-10-30",
-		"reason": "No CI run has drawn this picture yet: run 41006111918 drew the three weather pictures and lost them when its shard reached the job's time limit, before the guard let a timed-out shard upload. This Mac's SwiftShader drew these three, and the next CI drawing of them replaces them."
-	},
 	"chromium-swiftshader/webgpu/asset-bent-grid.png": {
 		"test": "asset-bent-grid",
 		"tier": "webgpu",
@@ -749,17 +791,17 @@
 		"date": "2026-11-02",
 		"reason": "the Mac drew these pictures with CI=1 for the demo's new room; the session that checks the landings replaces them from CI's own SwiftShader when a run draws them"
 	},
+	"chromium-swiftshader/webgpu/demo-contact-shadows.png": {
+		"test": "demo-contact-shadows",
+		"tier": "webgpu",
+		"date": "2026-11-10",
+		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head; each drawing completed with the raised budget and was compared before acceptance, and a CI drawing on a pull request replaces them"
+	},
 	"chromium-swiftshader/webgpu/demo-depth-only.png": {
 		"test": "demo-depth-only",
 		"tier": "webgpu",
 		"date": "2026-10-27",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that added the pictures; the branch's CI run has not drawn them yet"
-	},
-	"chromium-swiftshader/webgpu/demo-impostors.png": {
-		"test": "demo-impostors",
-		"tier": "webgpu",
-		"date": "2026-10-29",
-		"reason": "M3-V2 moves two kinds of cut edge: a batch whose rows bring values now tests its mask by alpha to coverage, and a custom material whose WGSL names the surface's alpha takes it too. This machine's SwiftShader run drew the new pictures, and CI has no run of this branch to take them from"
 	},
 	"chromium-swiftshader/webgpu/demo-ocean.png": {
 		"test": "demo-ocean",
@@ -794,14 +836,14 @@
 	"chromium-swiftshader/webgpu/demo-vegetation-wind.png": {
 		"test": "demo-vegetation-wind",
 		"tier": "webgpu",
-		"date": "2026-11-07",
-		"reason": "two new demo pages have no software-set reference yet, so this machine draws their first and CI's run judges them from here"
+		"date": "2026-11-10",
+		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head; this view completed at the machine's idlest moment and was compared before acceptance, and a CI drawing on a pull request replaces it"
 	},
 	"chromium-swiftshader/webgpu/demo-vegetation.png": {
 		"test": "demo-vegetation",
 		"tier": "webgpu",
-		"date": "2026-11-07",
-		"reason": "two new demo pages have no software-set reference yet, so this machine draws their first and CI's run judges them from here"
+		"date": "2026-11-10",
+		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head; the drawing completed at a load of 5 and was compared against its reference before the landing session judged it, and a CI drawing on a pull request replaces it"
 	},
 	"chromium-swiftshader/webgpu/gltf-clearcoat-car-paint.png": {
 		"test": "gltf-clearcoat-car-paint",
@@ -878,32 +920,26 @@
 	"chromium-swiftshader/webgpu/plant-bracken.png": {
 		"test": "plant-bracken",
 		"tier": "webgpu",
-		"date": "2026-11-09",
-		"reason": "drawn on this Mac's SwiftShader at 97c6fd194 after the engine merge; a CI drawing replaces it if it differs"
+		"date": "2026-11-10",
+		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head in the one idle window, each drawing completed and compared before acceptance, and a CI drawing on a pull request replaces them"
 	},
-	"chromium-swiftshader/webgpu/plant-common-alder.png": {
-		"test": "plant-common-alder",
+	"chromium-swiftshader/webgpu/plant-coverage.png": {
+		"test": "plant-coverage",
 		"tier": "webgpu",
-		"date": "2026-11-09",
-		"reason": "SwiftShader drawn on the reference Mac at 0fdef2684, after the leaf optics, the cluster counts and the young-bark framing changed what the four panels draw"
-	},
-	"chromium-swiftshader/webgpu/plant-common-ash.png": {
-		"test": "plant-common-ash",
-		"tier": "webgpu",
-		"date": "2026-11-09",
-		"reason": "drawn on this Mac's SwiftShader at 5c8a4d15d after the m3-start merge; the plant sits a fraction of a pixel over in every panel, so the outlines differ while the interiors do not, and a CI drawing replaces the set if it differs"
+		"date": "2026-11-10",
+		"reason": "a push to a milestone branch draws no picture, so the software set was drawn on this machine at the range's head and judged by the landing session"
 	},
 	"chromium-swiftshader/webgpu/plant-european-beech.png": {
 		"test": "plant-european-beech",
 		"tier": "webgpu",
-		"date": "2026-11-09",
-		"reason": "drawn on this Mac's SwiftShader at 4800d7737 after the engine merge; a CI drawing replaces it if it differs"
+		"date": "2026-11-10",
+		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head in the one idle window, each drawing completed and compared before acceptance, and a CI drawing on a pull request replaces them"
 	},
 	"chromium-swiftshader/webgpu/plant-hawthorn-shrub.png": {
 		"test": "plant-hawthorn-shrub",
 		"tier": "webgpu",
-		"date": "2026-11-09",
-		"reason": "drawn on this Mac's SwiftShader at b527459fe after the bark tint and the engine merge; a CI drawing replaces it if it differs"
+		"date": "2026-11-10",
+		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head in the one idle window, each drawing completed and compared before acceptance, and a CI drawing on a pull request replaces them"
 	},
 	"chromium-swiftshader/webgpu/plant-holm-oak.png": {
 		"test": "plant-holm-oak",
@@ -920,8 +956,8 @@
 	"chromium-swiftshader/webgpu/plant-meadow-grass.png": {
 		"test": "plant-meadow-grass",
 		"tier": "webgpu",
-		"date": "2026-11-09",
-		"reason": "drawn on this Mac: the tiller lean changed the panels picture at 9cf0cd0db"
+		"date": "2026-11-10",
+		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head in the one idle window, each drawing completed and compared before acceptance, and a CI drawing on a pull request replaces them"
 	},
 	"chromium-swiftshader/webgpu/plant-pedunculate-oak.png": {
 		"test": "plant-pedunculate-oak",
@@ -932,26 +968,38 @@
 	"chromium-swiftshader/webgpu/plant-sedge.png": {
 		"test": "plant-sedge",
 		"tier": "webgpu",
-		"date": "2026-11-09",
-		"reason": "the sedge's blade now closes over a short tip, which redraws the blades in its whole-plant, crown and cluster panels; the software set is redrawn here while CI redraws it"
+		"date": "2026-11-10",
+		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head in the one idle window, each drawing completed and compared before acceptance, and a CI drawing on a pull request replaces them"
 	},
 	"chromium-swiftshader/webgpu/plant-silver-birch.png": {
 		"test": "plant-silver-birch",
 		"tier": "webgpu",
-		"date": "2026-11-09",
-		"reason": "the silver birch's leaf is rebuilt upright on the named frames and its crown's sky prune opened to 0.4 at b96087d0e, which moves the leaf and crown panels; this branch has no CI run to take the software set from, and CI's shards judge it later"
+		"date": "2026-11-10",
+		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head in the one idle window, each drawing completed and compared before acceptance, and a CI drawing on a pull request replaces them"
 	},
 	"chromium-swiftshader/webgpu/plant-sparse-oak.png": {
 		"test": "plant-sparse-oak",
 		"tier": "webgpu",
-		"date": "2026-11-09",
-		"reason": "a new picture of the sparse form: the oak at the level a phone asks for, drawn here while CI has no reference for the test; a CI drawing replaces it if it differs"
+		"date": "2026-11-10",
+		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head, at a load of 7.6, and judged by the landing session. CI draws the software set on a pull request and its drawing replaces this one."
 	},
 	"chromium-swiftshader/webgpu/plant-weeping-willow.png": {
 		"test": "plant-weeping-willow",
 		"tier": "webgpu",
 		"date": "2026-11-09",
 		"reason": "the leaf rebuild changes the leaf and crown panels, and this Mac's SwiftShader drew all three tiers inside the 120 s guard; no CI run has drawn the rebuilt leaf yet"
+	},
+	"chromium-swiftshader/webgpu/plant-wind-still.png": {
+		"test": "plant-wind-still",
+		"tier": "webgpu",
+		"date": "2026-11-10",
+		"reason": "M3-V7's sway picture: the branch is not pushed to CI, so this Mac's SwiftShader drew the software set; a CI drawing replaces it"
+	},
+	"chromium-swiftshader/webgpu/plant-wind-sway.png": {
+		"test": "plant-wind-sway",
+		"tier": "webgpu",
+		"date": "2026-11-10",
+		"reason": "M3-V7's sway picture: the branch is not pushed to CI, so this Mac's SwiftShader drew the software set; a CI drawing replaces it"
 	},
 	"chromium-swiftshader/webgpu/probe-grid-wall-night.png": {
 		"test": "probe-grid-wall-night",
@@ -1072,11 +1120,5 @@
 		"tier": "webgpu",
 		"date": "2026-10-29",
 		"reason": "the band hand-over and the water bounds view were drawn before a CI run; CI draws this set again on the next push"
-	},
-	"chromium-swiftshader/webgpu/weather.png": {
-		"test": "weather",
-		"tier": "webgpu",
-		"date": "2026-10-30",
-		"reason": "No CI run has drawn this picture yet: run 41006111918 drew the three weather pictures and lost them when its shard reached the job's time limit, before the guard let a timed-out shard upload. This Mac's SwiftShader drew these three, and the next CI drawing of them replaces them."
 	}
 }

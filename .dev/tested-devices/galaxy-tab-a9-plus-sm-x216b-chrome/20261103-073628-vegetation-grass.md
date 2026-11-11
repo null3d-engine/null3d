@@ -13,7 +13,8 @@ The block settles the far cover's distance. The row draws the hill at Creek's ow
 | Creek density | 25.59 | 216.60 | 226.27 | 227.13 | 23 | 2 |
 | Known page, after | n/a | 156.30 | 159.02 | 159.26 | 30 | 3 |
 
-At 24.31 meters the two runs give 209.72 and 196.02, a mean of 202.87 and a spread of 13.7. At 25.59 both runs are over the ceiling at 217.45 and 216.60, a spread of 0.85. The known page fell from 162.27 to 156.30 across the block, so the machine drifted about 6 milliseconds, 3.7 per cent, faster within it. D-241's High ceiling for the tablet is 208.3: it sits inside the row's spread at 24.31 rather than outside it, and the mean is 5.4 ms under.
+At 24.31 meters the two runs give 209.72 and 196.02, a mean of 202.87 and a spread of 13.7. At 25.59 both runs are over the target at 217.45 and 216.60, a spread of 0.85. The known page fell from 162.27 to 156.30 across the block, so the machine drifted about 6 milliseconds, 3.7 per cent, faster within it. D-241 sets no High ceiling for the tablet; 208.3 is the S24 class's target, and it sits inside the
+row's spread at 24.31 rather than outside it, and the mean is 5.4 ms under.
 
 The far cover's fade now reaches its floor at 24.31 meters, against the authored 45. Computed from the placement hash on the same camera, that removes 36.9 per cent of the drawn tufts, and the share bands become all under 10 meters, 71 per cent from 10 to 20, 28 from 20 to 30 and 25 past 30; the 20,000 tuft hill keeps 8,452 instead of 13,730.
 

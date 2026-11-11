@@ -3,6 +3,14 @@
 	"leaf": {
 		"upper": 24,
 		"lower": 25,
+		"frame": {
+			"petiole": [511, 1016],
+			"tip": [519, 6]
+		},
+		"lowerFrame": {
+			"petiole": [511, 1013],
+			"tip": [516, 9]
+		},
 		"relief": {
 			"veins": 1,
 			"pucker": 0.8,

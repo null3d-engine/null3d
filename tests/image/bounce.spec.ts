@@ -28,9 +28,10 @@ const MOVED = 1 / 255;
 /** The share of the frame that the bounce light must move to count as drawn. */
 const MOVES = 0.05;
 /**
- * How far one floor box's bleed may lie from the bake's, in 8-bit levels. The measured gaps are
- * 3.1 levels at the left box, and 0.1 at the right, on both paths, so four levels covers both
- * boxes on both paths with a level to spare.
+ * How far one floor box's bleed may lie from the bake's, in 8-bit levels. D-284's addendum records
+ * the run at `af1ffe477`, where the probe's sky share is weighted by the surface's tilt: the left
+ * box reads 3.06 levels from the bake and the right 0.01, on both paths. Four levels therefore
+ * covers both boxes on both paths.
  */
 const BLEED_MATCH = 4;
 /** The most that the picture's own light may move one floor box's red-minus-green, in 8-bit levels. */
