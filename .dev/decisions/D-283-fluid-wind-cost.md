@@ -10,8 +10,8 @@ from the next one up stands at Medium or above, and Low's look stays open; the c
 the plan, while the iPad Pro 13, the Galaxy S25 and the Galaxy Tab A9 Plus now carry their rows; and
 the proof that the chosen rows keep Creek and the forest within D-241's frame ceilings: the S25's
 Ultra Creek row reads 516.56 ms against the 511 ms ceiling, and the forest's rows are measured over
-their ceilings too, at 84 to 88 ms on the iPad against 54.8, 67.1 and 71.1 and 66 ms on the cloud
-S24 against 33.3. The three devices measured their rows. All field rows hold except the Galaxy
+their ceilings too, at 88, 111 and 97 ms on the iPad at Medium, High and Ultra against 54.8, 67.1 and
+71.1, and 66 ms on the cloud S24 at Medium against 33.3. The three devices measured their rows. All field rows hold except the Galaxy
 S25's Ultra cell, which stays open: its 30 Hz display owes two field cycles a frame, so the
 modelled frame is 11.08 ms, from the measured 5.243 ms of its 40 volume steps plus the
 advection and projection floor, doubled. That is over the wind's own 6.25 ms figure, and D-241's
