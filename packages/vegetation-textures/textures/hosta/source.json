@@ -1,0 +1,15 @@
+{
+	"caps": "ground",
+	"leaf": {
+		"upper": 24,
+		"lower": 25,
+		"frame": {
+			"petiole": [513, 1012],
+			"tip": [514, 12]
+		},
+		"lowerFrame": {
+			"petiole": [514, 1014],
+			"tip": [514, 10]
+		}
+	}
+}

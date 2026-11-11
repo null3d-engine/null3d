@@ -124,7 +124,8 @@ export function analyse(input: SceneInput) {
 		for (const [name, set] of slotSets)
 			for (const size of input.sizes)
 				for (const c of list) {
-					const g = c.groups.get(size)!;
+					const g = c.groups.get(size);
+					if (!g) continue;
 					const slot = set.has(c);
 					const k = `camera.cfg.${name}.g${size}`;
 					const seen = slot ? c.now - g.offscreen - g.facing : c.now;
@@ -149,12 +150,20 @@ export function analyse(input: SceneInput) {
 			const k = `camera.occlusion.${c.copy.kind}`;
 			add(r, `${k}.copies`, 1);
 			add(r, `${k}.now`, c.now);
-			if (c.copyHiddenFull)
-				add(r, `${k}.copyHiddenFull`, 1), add(r, `${k}.copyHiddenFullTris`, c.now);
-			if (c.copyHiddenD40) add(r, `${k}.copyHiddenD40`, 1), add(r, `${k}.copyHiddenD40Tris`, c.now);
+			if (c.copyHiddenFull) {
+				add(r, `${k}.copyHiddenFull`, 1);
+				add(r, `${k}.copyHiddenFullTris`, c.now);
+			}
+			if (c.copyHiddenD40) {
+				add(r, `${k}.copyHiddenD40`, 1);
+				add(r, `${k}.copyHiddenD40Tris`, c.now);
+			}
 			add(r, `${k}.pieceHiddenFull`, c.copyHiddenFull ? c.now : c.pieceHiddenFull);
 			add(r, `${k}.pieceHiddenD40`, c.copyHiddenD40 ? c.now : c.pieceHiddenD40);
-			if (c.occluder) add(r, `${k}.occluderTris`, c.now), add(r, `${k}.occluders`, 1);
+			if (c.occluder) {
+				add(r, `${k}.occluderTris`, c.now);
+				add(r, `${k}.occluders`, 1);
+			}
 		}
 
 		if (input.sun && input.shadows) {

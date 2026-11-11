@@ -1,0 +1,341 @@
+// Written by tools/plant-textures from the reference set: the texture files of the species
+// bracken, as `bun run plants:textures bracken` writes them. A page fetches the files only
+// when it prepares the species, and the literal URLs let every bundler emit them as files.
+/** @type {import('@null3d/vegetation/textures').SpeciesTextureFiles} */
+export const files = {
+	manifest: {
+		"format": 1,
+		"species": "bracken",
+		"source": {
+			"repository": "null3d-engine/plant-references",
+			"commit": "8355243695f3bae7eec19015855ea7459d019f0b",
+			"files": [
+				{
+					"name": "24-leaf-texture-upper.png",
+					"sha256": "89616346add767c7e4761859a57b00076fa8e9a3dd23fc665a6f5d032681c577",
+					"job": "7e5e9d4d-6b3c-457c-8880-4e307abba7cf"
+				},
+				{
+					"name": "25-leaf-texture-underside.png",
+					"sha256": "597f67b000ee0e34578a860c7fd0b3bd9b97cae79209c65cfabae805260a7240",
+					"job": "bb83f7b7-a06a-4f03-8344-22f7d694d3aa"
+				},
+				{
+					"name": "16-stipe-mid.png",
+					"sha256": "b5b339dd1a2a3678ec12779322e668cf1634e0af85359fab81d31d6524ad6559",
+					"job": "cd9b56a2-fc0d-4e07-8ecc-304f65c5ad0e"
+				},
+				{
+					"name": "16-stipe-mid.png",
+					"sha256": "b5b339dd1a2a3678ec12779322e668cf1634e0af85359fab81d31d6524ad6559",
+					"job": "cd9b56a2-fc0d-4e07-8ecc-304f65c5ad0e"
+				}
+			]
+		},
+		"tool": {
+			"version": "1",
+			"encoder": "Basis Universal 2.50, ETC1S, effort 2"
+		},
+		"leaf": {
+			"size": 1024,
+			"layers": [
+				"upper",
+				"lower"
+			],
+			"length": 0.87307,
+			"frame": {
+				"petiole": [
+					0.5,
+					0.02146
+				],
+				"base": [
+					0.5,
+					0.10645
+				],
+				"tip": [
+					0.5,
+					0.97951
+				]
+			},
+			"outline": [
+				0.4995,
+				0.9793,
+				0.4719,
+				0.8403,
+				0.4149,
+				0.8481,
+				0.4753,
+				0.7974,
+				0.3927,
+				0.8208,
+				0.4922,
+				0.7339,
+				0.3578,
+				0.7759,
+				0.4927,
+				0.6656,
+				0.3024,
+				0.7095,
+				0.4937,
+				0.5819,
+				0.2597,
+				0.646,
+				0.4937,
+				0.479,
+				0.2144,
+				0.5643,
+				0.3263,
+				0.4126,
+				0.1538,
+				0.4542,
+				0.1487,
+				0.4116,
+				0.3352,
+				0.3198,
+				0.3247,
+				0.2399,
+				0.2964,
+				0.3092,
+				0.2134,
+				0.3112,
+				0.0331,
+				0.2222,
+				0.2065,
+				0.2151,
+				0.1909,
+				0.1723,
+				0.4224,
+				0.0904,
+				0.4888,
+				0.1402,
+				0.519,
+				0,
+				0.5405,
+				0.0619,
+				0.5996,
+				0.0298,
+				0.5796,
+				0.0777,
+				0.6392,
+				0.0392,
+				0.6206,
+				0.0928,
+				0.6792,
+				0.0536,
+				0.6589,
+				0.1069,
+				0.7202,
+				0.0687,
+				0.6978,
+				0.1219,
+				0.7583,
+				0.0852,
+				0.7358,
+				0.1353,
+				0.7915,
+				0.0998,
+				0.77,
+				0.1454,
+				0.9341,
+				0.1651,
+				0.8285,
+				0.1812,
+				0.812,
+				0.2442,
+				0.9648,
+				0.2524,
+				0.8481,
+				0.2628,
+				0.9091,
+				0.3315,
+				0.8618,
+				0.349,
+				0.6442,
+				0.3022,
+				0.8267,
+				0.4752,
+				0.5874,
+				0.4217,
+				0.5776,
+				0.3602,
+				0.5522,
+				0.4078,
+				0.5474,
+				0.3438,
+				0.5112,
+				0.3907,
+				0.791,
+				0.5679,
+				0.5864,
+				0.503,
+				0.563,
+				0.5655,
+				0.7163,
+				0.6638,
+				0.5083,
+				0.6022,
+				0.6771,
+				0.7378,
+				0.5062,
+				0.6851,
+				0.6375,
+				0.7739,
+				0.5413,
+				0.7603,
+				0.6053,
+				0.8237,
+				0.5472,
+				0.8052
+			],
+			"mean": {
+				"upper": [
+					0.10512,
+					0.1815,
+					0.03273
+				],
+				"lower": [
+					0.25341,
+					0.30583,
+					0.0735
+				]
+			},
+			"veins": {
+				"luminance": 0.14985,
+				"contrast": 6.886
+			},
+			"profile": {
+				"upper": [
+					0.15424,
+					0.15448,
+					0.15437,
+					0.15458,
+					0.15427,
+					0.15391,
+					0.15438,
+					0.15476
+				],
+				"lower": [
+					0.27679,
+					0.27802,
+					0.27785,
+					0.27865,
+					0.27965,
+					0.27834,
+					0.28171,
+					0.25283
+				]
+			},
+			"coverage": 0.2633
+		},
+		"bark": {
+			"size": 1024,
+			"layers": [
+				{
+					"name": "stipe",
+					"tile": [
+						0.04,
+						0.04
+					],
+					"mean": [
+						0.23708,
+						0.27615,
+						0.10705
+					],
+					"height": {
+						"offset": 0.25564,
+						"depth": 0.000823
+					}
+				}
+			],
+			"young": {
+				"tile": [
+					0.02,
+					0.02
+				],
+				"mean": [
+					0.23716,
+					0.27628,
+					0.10726
+				]
+			}
+		},
+		"outputs": [
+			{
+				"file": "leaf-color.ktx2",
+				"sha256": "24aec4ff64e655b10fb7c7dcc487ecb8d9a241ff419c04a8be56d4343a8f4e37",
+				"bytes": 286577
+			},
+			{
+				"file": "leaf-normal.ktx2",
+				"sha256": "06c507b734473b139a6da537fdbc418667e2fa0823791341fced21cbd2d46386",
+				"bytes": 23031
+			},
+			{
+				"file": "leaf-color-half.ktx2",
+				"sha256": "325a5bb6b7567e246a2d42eeffe354c7051ec5ed61f19c34614c004740ec128d",
+				"bytes": 93196
+			},
+			{
+				"file": "leaf-normal-half.ktx2",
+				"sha256": "1146264935957bbeeec89d2e4947c17946942971cf4c36af9e705154d5607a06",
+				"bytes": 4891
+			},
+			{
+				"file": "bark-color.ktx2",
+				"sha256": "341c6367978f8fa2fe178adf1ebc5614ccbd6b5db0f4063339bacedeafef183b",
+				"bytes": 151202
+			},
+			{
+				"file": "bark-normal.ktx2",
+				"sha256": "29c8dea40462fd4c7a209a3eb41e5a7d3f990ba686b174659743da8a4f2f4e11",
+				"bytes": 184858
+			},
+			{
+				"file": "young-color.ktx2",
+				"sha256": "36fa5719ffb5feec117653c8e3a404f01c5f384288eb68f82cce35d3573351e4",
+				"bytes": 37525
+			},
+			{
+				"file": "young-normal.ktx2",
+				"sha256": "b2ef858f595607767abef4fd2e082e27ad40fd4436feaedca0e230389e1996b1",
+				"bytes": 46620
+			},
+			{
+				"file": "bark-color-half.ktx2",
+				"sha256": "1b55ff87031e6088eb850baadf2920a9a17be134d9de033baa383ea89a76ecd0",
+				"bytes": 46047
+			},
+			{
+				"file": "bark-normal-half.ktx2",
+				"sha256": "0f65de8e4e6e814883185ca0114a57906e6c9e425fc2a19b39945c647dce4bf8",
+				"bytes": 51104
+			},
+			{
+				"file": "young-color-half.ktx2",
+				"sha256": "caf09d99dd22f40b6a2b9f2d2ae93322b8018eb519751f2528aa31f78060187c",
+				"bytes": 10000
+			},
+			{
+				"file": "young-normal-half.ktx2",
+				"sha256": "20d61f68b24bf4bd274dbd60c299ab319696737aeba6ffae4ebb42403655bc64",
+				"bytes": 11929
+			}
+		]
+	},
+	full: {
+		leafColor: new URL('./leaf-color.ktx2', import.meta.url),
+		leafNormal: new URL('./leaf-normal.ktx2', import.meta.url),
+		barkColor: new URL('./bark-color.ktx2', import.meta.url),
+		barkNormal: new URL('./bark-normal.ktx2', import.meta.url),
+		youngColor: new URL('./young-color.ktx2', import.meta.url),
+		youngNormal: new URL('./young-normal.ktx2', import.meta.url),
+	},
+	half: {
+		leafColor: new URL('./leaf-color-half.ktx2', import.meta.url),
+		leafNormal: new URL('./leaf-normal-half.ktx2', import.meta.url),
+		barkColor: new URL('./bark-color-half.ktx2', import.meta.url),
+		barkNormal: new URL('./bark-normal-half.ktx2', import.meta.url),
+		youngColor: new URL('./young-color-half.ktx2', import.meta.url),
+		youngNormal: new URL('./young-normal-half.ktx2', import.meta.url),
+	},
+};

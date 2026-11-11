@@ -44,8 +44,45 @@ export function rowAngle(row: number, fov: number): number {
 	return Math.atan((0.5 - row) * 2 * half);
 }
 
-/** The least height a camera stands at, in metres: one that would stand lower is raised to it. */
-const LOWEST_EYE = 0.3;
+/** A cut piece's frame, sized in leaf lengths: its height, the camera's distance, and its turn. */
+export interface LeafFrame {
+	/** The frame's height in metres. */
+	readonly tall: number;
+	/** The piece's run across the frame in metres, which a rolled frame lengthens. */
+	readonly run: number;
+	/** The camera's distance from the piece in metres. */
+	readonly distance: number;
+	/** The camera's roll about its line of sight, in radians. */
+	readonly roll: number;
+}
+
+/**
+ * The frame that a cut piece takes when its photograph was measured in leaf lengths: the frame's
+ * height is that many leaves of the length the photograph was measured in, and a roll lays the
+ * piece across the frame. A blade far longer than the photographed leaf frames at the photograph's
+ * scale only when its length is named, since the frame counts leaves, not the plant's own size.
+ */
+export function leafFrame(
+	leaves: number,
+	length: number,
+	rollDegrees: number,
+	aspect: number,
+	fov: number,
+): LeafFrame {
+	const roll = (rollDegrees * Math.PI) / 180;
+	const tall = leaves * length;
+	const run = Math.abs(Math.sin(roll)) > Math.SQRT1_2 ? tall * aspect : tall;
+	return { tall, run, distance: tall / 2 / Math.tan((fov * Math.PI) / 360), roll };
+}
+
+/**
+ * The least height a camera stands at, in metres: one that would stand lower is raised to it. A
+ * photograph of a low plant such as a sedge or a hosta is taken from a few decimetres up, so the
+ * floor clears the ground without refusing the picture's own viewpoint. A plant a hand's width tall
+ * asks for a camera near its own foot, so the floor sits at a decimetre and the solve frames a herb
+ * or a low shrub as its photograph framed it.
+ */
+const LOWEST_EYE = 0.1;
 
 /**
  * The camera that puts a plant `height` metres tall where a framing asks: the horizon's row sets
@@ -115,6 +152,16 @@ export interface CutRows {
 export interface CutCamera {
 	readonly distance: number;
 	readonly lift: number;
+}
+
+/**
+ * The distance at which a part's span fills the frame across it: a photograph of a part of a piece,
+ * such as one pinna of a frond, frames that part rather than the whole piece, and the span names the
+ * metres it shows across the frame.
+ */
+export function spanDistance(span: number, fov: number, aspect: number): number {
+	const half = Math.tan((fov * Math.PI) / 360);
+	return span / 2 / Math.max(half * aspect, 0.0001);
 }
 
 /**

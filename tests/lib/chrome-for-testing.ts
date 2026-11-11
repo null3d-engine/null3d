@@ -35,10 +35,38 @@ export function chromeForTesting(): { executablePath: string } {
 	return { executablePath };
 }
 
+/**
+ * The pinned build's launch options, resolved once when a browser starts.
+ *
+ * Resolution must not happen where this module is imported. Every test file that times a cost
+ * imports it, and CI installs only Playwright's Chromium, so a check at import refuses the run while
+ * Playwright plans its shards, before any test starts. The check belongs at the launch that asks for
+ * the pinned build.
+ */
+let pinnedBrowser: { executablePath: string } | undefined;
+
+function pinnedBrowserOptions(): { executablePath: string } {
+	if (!pinnedBrowser) pinnedBrowser = chromeForTesting();
+	return pinnedBrowser;
+}
+
 /** How Playwright starts an environment's browser in the repository's own runs. */
-export function repoBrowserOptions(environment: Environment): ReturnType<typeof browserOptions> {
-	if (environment === 'chrome-real-gpu') chromeForTesting();
-	return browserOptions(environment, 'testing');
+export function repoBrowserOptions(
+	environment: Environment,
+	args: readonly string[] = [],
+): ReturnType<typeof browserOptions> {
+	if (environment !== 'chrome-real-gpu') {
+		const options = browserOptions(environment, 'testing');
+		return { args: [...(options.args ?? []), ...args] };
+	}
+	// A getter, because Playwright reads the executable when it starts the browser, not when it
+	// loads the test file. Resolving it here would refuse a run that never starts this browser.
+	return {
+		get executablePath() {
+			return pinnedBrowserOptions().executablePath;
+		},
+		args: [...args],
+	};
 }
 
 /** Starts an environment's browser, headless, for the repository's own runs. */

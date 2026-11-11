@@ -25,7 +25,7 @@ import { REFERENCE_VIEW } from '../lod/levels';
 import { TEXTURE_UV_STEPS } from '../lod/quantise';
 import { HEADER, HEADER_ROWS, RECORDS_WIDTH } from '../render/records';
 import type { CardAtlas, CrownLight, DressInput, FarBake, GrowInput, MeshInput } from '../stages';
-import { VARIANT_RECORDS, WIND_RECORD_FLOATS, windSway } from '../wind/records';
+import { flutterAmplitudeAt, VARIANT_RECORDS, WIND_RECORD_FLOATS, windSway } from '../wind/records';
 import type { SpeciesBox } from './box';
 import {
 	AXIS_LIMB,
@@ -658,6 +658,7 @@ export function placeholderWind(input: DressInput): WindTable {
 	let deepest = 1;
 	for (let a = 0; a < axes.count; a++) deepest = Math.max(deepest, axes.order[a] as number);
 	const base = variant * VARIANT_RECORDS;
+	const plantHeight = Math.max(1e-6, skeleton.height);
 	for (let a = 0; a < axes.count; a++) {
 		const first = axes.first[a] as number;
 		const last = axes.last[a] as number;
@@ -678,7 +679,10 @@ export function placeholderWind(input: DressInput): WindTable {
 				length > 0 ? dy / length : 1,
 				length > 0 ? dz / length : 0,
 				curveAt(record.wind.stiffness, order / deepest),
-				record.wind.flutter.amplitude,
+				flutterAmplitudeAt(
+					record.wind.flutter,
+					((p[first * 3 + 1] as number) + (p[last * 3 + 1] as number)) / 2 / plantHeight,
+				),
 				record.wind.flutter.frequency,
 				order,
 				length,

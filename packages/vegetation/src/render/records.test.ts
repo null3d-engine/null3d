@@ -124,17 +124,53 @@ describe('the species header', () => {
 		expect(texel(header, HEADER.upperReflectance)[3]).toBeCloseTo(0.3, 6);
 	});
 
+	test('a species with no leaf texture shows its reflectance over the white texel', () => {
+		const plain = speciesHeader(record, noTextureFiles('records-test').manifest, box);
+		const transmittance: Rgb = [0.07, 0.12, 0.025];
+		const faces = [
+			{ at: HEADER.upper, mean: HEADER.upperMean, reflectance: [0.05, 0.09, 0.02] as Rgb },
+			{ at: HEADER.lower, mean: HEADER.lowerMean, reflectance: [0.2, 0.25, 0.2] as Rgb },
+		];
+		for (const face of faces) {
+			for (const k of [0, 1, 2]) expect(texel(plain, face.mean)[k] as number).toBeCloseTo(1, 6);
+			const terms = faceTerms(face.reflectance, transmittance, [1, 1, 1]);
+			const written = texel(plain, face.at);
+			for (const k of [0, 1, 2]) {
+				expect(written[k] as number).toBeCloseTo(terms.scale[k] as number, 6);
+				// The placeholder texel is white, so a front-lit face shows the record's own colour.
+				expect((written[k] as number) * (1 - terms.share)).toBeCloseTo(
+					face.reflectance[k] as number,
+					6,
+				);
+			}
+		}
+	});
+
 	test("writes the least width a card's stalk draws, or nothing where the record gives none", () => {
 		expect(texel(header, HEADER.cardStalk)[0]).toBe(0);
 		const stalked: Species = { ...record, lod: { ...record.lod, cardStalk: 1.5 } };
 		expect(texel(speciesHeader(stalked, manifest, box), HEADER.cardStalk)[0]).toBeCloseTo(1.5, 6);
 	});
-
 	test('gives the whole plant its species sway, in metres at its top and cycles a second', () => {
 		const sway = record.wind.sway;
 		const written = texel(header, HEADER.sway);
 		expect(written[0]).toBeCloseTo(sway?.amplitude as number, 6);
 		expect(written[1]).toBeCloseTo(sway?.frequency as number, 6);
+		// The power its share of the top's motion rises with, the cantilever's square by default.
+		expect(written[2]).toBeCloseTo(sway?.power ?? 2, 6);
+	});
+
+	test('gives a stiffer stem its own power on the sway', () => {
+		const still = texel(header, HEADER.sway);
+		expect(still[2]).toBeCloseTo(2, 6);
+		const stiff: Species = {
+			...record,
+			wind: { ...record.wind, sway: { ...record.wind.sway, power: 3 } as never },
+		};
+		expect(texel(speciesHeader(stiff, manifest, speciesBox(stiff)), HEADER.sway)[2]).toBeCloseTo(
+			3,
+			6,
+		);
 	});
 
 	test("writes each extra's body and band colour with their roughness", () => {
@@ -185,12 +221,56 @@ describe('the species header', () => {
 		expect(HEADER.extraScales + MAX_EXTRAS).toBeLessThanOrEqual(RECORDS_WIDTH);
 	});
 
+	test('writes the bark tint of each season the record names, and nothing for a season it leaves out', () => {
+		// A record that names none multiplies the bark by nothing: the two texels carry no flag.
+		expect(texel(header, HEADER.autumnBark)).toEqual([0, 0, 0, 0]);
+		expect(texel(header, HEADER.winterBark)).toEqual([0, 0, 0, 0]);
+		const turning: Species = {
+			...record,
+			seasons: { ...record.seasons, bark: { autumn: [2.1, 0.8, 0.4] } },
+		};
+		const written = speciesHeader(turning, manifest, speciesBox(turning));
+		const autumn = texel(written, HEADER.autumnBark);
+		expect(autumn.slice(0, 3).map((v) => toHalf(v as number))).toEqual([
+			toHalf(2.1),
+			toHalf(0.8),
+			toHalf(0.4),
+		]);
+		expect(autumn[3]).toBe(1);
+		expect(texel(written, HEADER.winterBark)).toEqual([0, 0, 0, 0]);
+	});
+
+	test('writes a winter stand its own leaf colours, and nothing where the record leaves them out', () => {
+		expect(texel(header, HEADER.winterReflectance)).toEqual([0, 0, 0, 0]);
+		const standing: Species = {
+			...record,
+			seasons: {
+				...record.seasons,
+				leaves: { winter: { reflectance: [0.24, 0.12, 0.07], transmittance: [0.26, 0.16, 0.1] } },
+			},
+		};
+		const written = speciesHeader(standing, manifest, speciesBox(standing));
+		const reflectance = texel(written, HEADER.winterReflectance);
+		expect(reflectance.slice(0, 3).map((v) => toHalf(v as number))).toEqual([
+			toHalf(0.24),
+			toHalf(0.12),
+			toHalf(0.07),
+		]);
+		expect(reflectance[3]).toBe(1);
+		expect(
+			texel(written, HEADER.winterTransmittance)
+				.slice(0, 3)
+				.map((v) => toHalf(v as number)),
+		).toEqual([toHalf(0.26), toHalf(0.16), toHalf(0.1)]);
+	});
+
 	test('gives a species that names no sway the stated default', () => {
 		// A missing sway must never leave the plant still.
 		const bare: Species = { ...record, wind: { ...record.wind, sway: undefined } };
 		const written = texel(speciesHeader(bare, manifest, speciesBox(bare)), HEADER.sway);
 		expect(written[0]).toBeCloseTo(DEFAULT_WIND_SWAY.amplitude, 6);
 		expect(written[1]).toBeCloseTo(DEFAULT_WIND_SWAY.frequency, 6);
+		expect(written[2]).toBeCloseTo(DEFAULT_WIND_SWAY.power, 6);
 	});
 
 	test('keeps the species box to a hundredth of a millimetre through half floats', () => {
@@ -215,6 +295,23 @@ describe('the species header', () => {
 		expect(texel(header, HEADER.youngTile)[2]).toBe(1);
 	});
 
+	test("writes a bark zone's second band, and leaves it empty where the record names none", () => {
+		const near = (a: readonly number[], b: readonly number[]) => {
+			for (const [k, v] of a.entries()) expect(v).toBeCloseTo(b[k] as number, 6);
+		};
+		const bark = record.bark as NonNullable<Species['bark']>;
+		const zoned = {
+			...record,
+			bark: { ...bark, zones: [{ ...bark.zones[0], second: { from: 0, to: 1.5, blend: 0.2 } }] },
+		} as Species;
+		const written = speciesHeader(zoned, manifest, speciesBox(zoned));
+		near(texel(written, HEADER.barkSeconds), [0, 1.5, 0.2, 1]);
+		near(
+			texel(speciesHeader(record, manifest, speciesBox(record)), HEADER.barkSeconds),
+			[0, 0, 0, 0],
+		);
+	});
+
 	test('writes the lichen colour, amount and heights', () => {
 		const bark = record.bark;
 		if (!bark) throw new Error('the stand-in has no bark');
@@ -230,6 +327,19 @@ describe('the species header', () => {
 		near(texel(lichenHeader, HEADER.lichen).slice(0, 3), colour);
 		expect(texel(lichenHeader, HEADER.lichen)[3]).toBeCloseTo(0.85, 5);
 		near(texel(lichenHeader, HEADER.lichenReach).slice(0, 2), [1.4, 1000]);
+	});
+
+	test('writes the young bark tint, and lays its own colour where the record gives none', () => {
+		const bark = record.bark;
+		if (!bark) throw new Error('the stand-in has no bark');
+		const near = (a: readonly number[], b: readonly number[]) => {
+			for (const [k, v] of a.entries()) expect(v).toBeCloseTo(b[k] as number, 5);
+		};
+		near(texel(header, HEADER.youngTint).slice(0, 3), [1, 1, 1]);
+		const tint: Rgb = [0.9, 0.95, 0.7];
+		const tinted: Species = { ...record, bark: { ...bark, youngTint: tint } };
+		const tintHeader = speciesHeader(tinted, manifest, speciesBox(tinted));
+		near(texel(tintHeader, HEADER.youngTint).slice(0, 3), tint);
 	});
 });
 
@@ -260,14 +370,21 @@ describe('the plant shader', () => {
 			HEADER_BOX_SPAN_REST: HEADER.boxSpanRest,
 			HEADER_YOUNG: HEADER.young,
 			HEADER_YOUNG_TILE: HEADER.youngTile,
+			HEADER_YOUNG_TINT: HEADER.youngTint,
+			HEADER_COLLAR: HEADER.collar,
 			HEADER_MOSS: HEADER.moss,
 			HEADER_MOSS_REACH: HEADER.mossReach,
 			HEADER_EXTRAS: HEADER.extras,
 			HEADER_BUD: HEADER.bud,
 			HEADER_BARK_ZONES: HEADER.barkZones,
+			HEADER_BARK_SECONDS: HEADER.barkSeconds,
 			HEADER_LICHEN: HEADER.lichen,
 			HEADER_LICHEN_REACH: HEADER.lichenReach,
 			HEADER_SWAY: HEADER.sway,
+			HEADER_AUTUMN_BARK: HEADER.autumnBark,
+			HEADER_WINTER_BARK: HEADER.winterBark,
+			HEADER_WINTER_REFLECTANCE: HEADER.winterReflectance,
+			HEADER_WINTER_TRANSMITTANCE: HEADER.winterTransmittance,
 			HEADER_EXTRA_BANDS: HEADER.extraBands,
 			HEADER_CARD_STALK: HEADER.cardStalk,
 			BARK_ZONE_TEXELS,

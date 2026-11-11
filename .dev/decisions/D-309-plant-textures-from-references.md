@@ -73,6 +73,21 @@ Rejected:
 - Height in the bark color's alpha. The apple's bark measured 384 KB with it and 208 KB without it.
 - Painting textures in the browser, which the owner ruled against.
 
+## A lenticel's grain is stretched by the build
+
+Measured on the common alder's young bark, slot 28 and the built tile. The photograph's lenticels run
+14.7 pixels across the branch and 9.5 pixels down it, a ratio of 1.55. The built tile carries 13.3
+across and 4.6 down, a ratio of 2.92. The build therefore nearly doubles the elongation of the grain
+before any species' tiling touches it, and a bark whose lenticels are its figure, as an alder's and a
+birch's are, reads as long diagonal streaks on a limb where the photograph shows short dashes.
+
+The relief pass sharpens the picture's horizontal edges and its `smooth` blur drops the fine vertical
+detail, which is the likeliest cause. Nothing here is fixed: the figure is recorded so that a species
+with lenticels knows the build, and not its tiling alone, sets the grain. The alder's tiling halves
+the span round the stem, which takes its edge-direction mix from 0.401 to 0.309 and costs 0.32 of a
+colour step; that trade is the species' own and is recorded in
+[D-335](D-335-common-alder-follows-its-whole-views.md).
+
 ## Consequences
 
 - `bun run plants:textures` writes a species' folder, and `--verify` checks it. The textures package's test checks every committed file against its manifest, without the references.

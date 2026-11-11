@@ -16,7 +16,7 @@
 import type { InstanceBatch, Material, MeshGeometry, SketchContext, Texture } from '@null3d/engine';
 import type { ImpostorBatch } from '@null3d/impostors';
 import type { PlantAsset, PlantPart } from '../asset';
-import { DETAILS, spreadMax } from '../core/types';
+import { DETAILS, type Season, spreadMax } from '../core/types';
 import { REFERENCE_VIEW } from '../lod/levels';
 import { EDGE_BAND, handOverToCards } from './hand-over';
 import {
@@ -30,6 +30,14 @@ import { type PlacedPlants, type PlaceOptions, type PlantCopies, switchScale } f
 import { toHalf, writeShootRow } from './records';
 import { farCards } from './stand-in';
 import { NEAR_SLOT_TEXELS, NEAR_SLOTS, type SpeciesKit, writePlantWind } from './textures';
+
+/** The number the shader knows each season by. */
+const SEASON_KIND: Readonly<Record<Season, number>> = {
+	summer: 0,
+	autumn: 1,
+	winter: 2,
+	blossom: 3,
+};
 
 /** How far past the switch distance a shoot row draws, and how far inside it a card gives way. */
 const SHOOT_REACH = 1.04;
@@ -153,8 +161,12 @@ export function placeStaticPlants(
 	const near = shootSwitchDistance(kit, options.view) * bias;
 	writePlantWind(kit, assets);
 	setPlacedUniforms([materials.cards], { nearDistance: near });
-	setPlacedUniforms([materials.shoots, materials.cards, materials.foliage], {
+	// The season the copies stand in, which a stem whose colour turns reads for its bark, and the
+	// autumn share the leaves take.
+	const season = assets[0]?.season ?? 'summer';
+	setPlacedUniforms([materials.wood, materials.shoots, materials.cards, materials.foliage], {
 		season: assets.some((asset) => asset.season === 'autumn') ? 1 : 0,
+		seasonKind: SEASON_KIND[season],
 	});
 	const batches: InstanceBatch[] = [];
 	const cards: ImpostorBatch[] = [];

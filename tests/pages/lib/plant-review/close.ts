@@ -43,6 +43,8 @@ export interface ClosePlant {
 	readonly prototypes: readonly ShootPrototype[];
 	/** A leaf's length in metres, when the species' leaves are blades, which sets a twig's frame. */
 	readonly leafLength?: number;
+	/** 3 per point: the places the plant's foliage cards draw, for a view that frames a fringe. */
+	readonly foliage?: Float32Array;
 }
 
 /** A close view's camera and what it framed. */
@@ -66,6 +68,15 @@ const DEG = Math.PI / 180;
 const EYE = 1.6;
 /** Metres a camera that looks up the stem stands from the bark: a step back, as a person stands. */
 const BELOW_STANDOFF = 1;
+/** The lowest a view up a plant shorter than a person drops its lens, in metres above the ground. */
+const BELOW_LOWEST_EYE = 0.2;
+/**
+ * The highest a camera that looks up a stemless plant stands, as a share of the plant's height: a
+ * tuft or a rosette has no stem at eye height, so its photograph is taken from near its foot.
+ */
+const STEMLESS_EYE = 0.3;
+/** How far beyond its widest radius a stemless plant's camera stands, as a multiple of that radius. */
+const STEMLESS_STAND = 1.05;
 /**
  * The least height of a crown's base, in a person's eye heights, at which a view up the stem
  * frames the bole from its foot to the crown's base; under it, the bole is too short for that.
@@ -108,6 +119,16 @@ const JUNCTION_LEVEL = 3;
 const LEADER_ANGLE = 45;
 /** The share of the frame's height that the limb below a fork fills with its thickness. */
 const FORK_LIMB_SHARE = 0.28;
+/**
+ * How many times the reach of a fork's arms the frame's height spans: the photograph shows both arms
+ * and the twigs they carry, with the limb coming up to the joint from below.
+ */
+const FORK_ARM_SPAN = 2.2;
+/**
+ * The limb's diameters that the arms' reach may pull the frame out to, so a fork inside a crown does
+ * not frame the crown above it. The photograph's frame spans about twenty of them.
+ */
+const FORK_REACH_DIAMETERS = 20;
 /** The least radius of an arm, against its limb's radius at the fork, for a division to be a fork. */
 const FORK_ARM = 0.5;
 /** The radius a fork's limb is sought at, against the stem's radius at breast height. */
@@ -441,16 +462,34 @@ export function belowView(
 			);
 		else bole = boleStand(skeleton.crownBase, lens, crownRow, footRow);
 	}
-	const eye = bole?.eye ?? EYE;
-	const radius = stemAt(skeleton, eye)?.radius ?? stemAt(skeleton, 1)?.radius ?? 0.1;
+
+	// A plant taller than a person is looked up at from a person's eye height. A shorter plant
+	// stands under the eye entirely, so the camera drops to a height within it: a few steps back
+	// at that height the crown still stands above the lens and the view reads up through the plant.
+	const eye = bole?.eye ?? Math.min(EYE, Math.max(BELOW_LOWEST_EYE, skeleton.height * 0.35));
+	// A plant with no stem at eye height, such as a tuft or a rosette, has no bark to look up: its
+	// camera stands low at the rim of its own spread and looks up through the leaves, as a photograph
+	// taken from the plant's foot does. A stem's radius would put it inside the plant.
+	// A short plant has no stem at a person's eye height whatever kind it is, so the test looks for
+	// one within the plant: a fern's stipes are a stem to look up, a tuft has none at any height.
+	const stemless = stemAt(skeleton, Math.min(EYE, skeleton.height * 0.5)) === undefined;
+	const spread =
+		Math.max(
+			(skeleton.bounds.max[0] as number) - (skeleton.bounds.min[0] as number),
+			(skeleton.bounds.max[2] as number) - (skeleton.bounds.min[2] as number),
+		) / 2;
+	const height = stemless ? Math.max(0.1, Math.min(EYE, skeleton.height * STEMLESS_EYE)) : eye;
+	const radius = stemAt(skeleton, height)?.radius ?? stemAt(skeleton, 1)?.radius ?? 0.1;
 	const reach = bole
 		? bole.bark + radius
-		: stand !== undefined
-			? stand * radius
-			: radius + BELOW_STANDOFF;
+		: stemless
+			? spread * STEMLESS_STAND
+			: stand !== undefined
+				? stand * radius
+				: radius + BELOW_STANDOFF;
 	const standAt = (t: number): V3 => {
 		const o = facing(t);
-		return [foot[0] + o[0] * reach, eye, foot[2] + o[2] * reach];
+		return [foot[0] + o[0] * reach, height, foot[2] + o[2] * reach];
 	};
 	// A low branch or its leaves may stand where the photographer would: the camera walks round the
 	// stem, a step to either side in turn, to the nearest stand clear of the plant.
@@ -466,10 +505,10 @@ export function belowView(
 	const out = facing(turn + (walked ?? 0) * DEG);
 	const position = standAt(turn + (walked ?? 0) * DEG);
 	let pitch = bole ? bole.pitch / DEG : Math.min(STEEPEST, elevation);
-	if (!bole && forkRow !== undefined && fork !== undefined && fork > EYE) {
+	if (!bole && forkRow !== undefined && fork !== undefined && fork > height) {
 		// The fork shows where the bark nearest the camera divides, a radius nearer than the axis.
 		const near = reach - (stemAt(skeleton, fork)?.radius ?? 0);
-		const forkAngle = Math.atan2(fork - EYE, Math.max(0.1, near)) / DEG;
+		const forkAngle = Math.atan2(fork - height, Math.max(0.1, near)) / DEG;
 		pitch = Math.max(0, Math.min(pitch, forkAngle - rowAngle(forkRow, lens.fov) / DEG));
 	}
 	const level = yawed([-out[0], 0, -out[2]], -aside * DEG);
@@ -482,9 +521,9 @@ export function belowView(
 		position,
 		target: step(position, look, 1),
 		subject: {
-			kind: 'the stem from its foot',
+			kind: stemless ? 'the plant from its foot' : 'the stem from its foot',
 			...(bole && { crownBase: skeleton.crownBase }),
-			standoff: reach - radius,
+			standoff: stemless ? reach : reach - radius,
 			stemRadius: radius,
 			fork: fork ?? null,
 			pitch,
@@ -935,14 +974,56 @@ function planeNormal(fork: Fork): V3 {
 }
 
 /**
+ * How far a fork's arms run from its joint, their twigs included: the farthest node of the two
+ * subtrees the joint divides into. The photograph frames both arms and the twigs they carry, so the
+ * frame follows this reach rather than the limb's thickness alone.
+ */
+function armsReach(skeleton: MacroSkeleton, fork: Fork): number {
+	const { axes, position } = skeleton;
+	// Every axis that descends from the two arms, by walking each one's parents.
+	const inside = new Set<number>([fork.arm, fork.limb]);
+	for (let a = 0; a < axes.count; a++) {
+		let parent = axes.parent[a] as number;
+		for (let guard = 0; parent >= 0 && guard <= axes.count; guard++) {
+			if (inside.has(parent)) {
+				inside.add(a);
+				break;
+			}
+			parent = axes.parent[parent] as number;
+		}
+	}
+	let reach = 0;
+	for (const axis of inside)
+		for (let n = axes.first[axis] as number; n <= (axes.last[axis] as number); n++) {
+			const at = skeleton.position;
+			reach = Math.max(
+				reach,
+				Math.hypot(
+					(at[n * 3] as number) - fork.at[0],
+					(at[n * 3 + 1] as number) - fork.at[1],
+					(at[n * 3 + 2] as number) - fork.at[2],
+				),
+			);
+		}
+	return reach;
+}
+
+/**
  * The view of a limb dividing into two. It takes the forks whose limb is nearest `thin` metres of
  * radius, or a share of the stem's own radius, away from the stem, seen square to the plane of the
- * two arms so the fork opens at its true angle, framed so the limb below it fills the share of the
- * frame that the photograph gives it, from the side where the least of the rest of the plant stands
- * in front of the fork or behind it. Arms nearer the limb's own size, and a fork that stands upright
- * so a level camera sees it square, make the likelier subject.
+ * two arms so the fork opens at its true angle, from the side where the least of the rest of the
+ * plant stands in front of the fork or behind it. The frame spans both arms and the twigs they
+ * carry, at least as far as the limb below the joint fills the share of it that the photograph
+ * gives, and never out into the crown above them; `span` asks for a frame height in metres instead,
+ * as it does for a limb. Arms nearer the limb's own size, and a fork that stands upright so a level
+ * camera sees it square, make the likelier subject.
  */
-export function forkView(plant: ClosePlant, lens: Lens, thin?: number): CloseView | undefined {
+export function forkView(
+	plant: ClosePlant,
+	lens: Lens,
+	thin?: number,
+	span?: number,
+): CloseView | undefined {
 	const { skeleton } = plant;
 	const stemRadius = stemAt(skeleton, 1.3)?.radius ?? stemAt(skeleton, 0.3)?.radius ?? 0.1;
 	const sought = thin ?? FORK_STEM_SHARE * stemRadius;
@@ -962,7 +1043,10 @@ export function forkView(plant: ClosePlant, lens: Lens, thin?: number): CloseVie
 		.sort((a, b) => Math.abs(Math.log(a.radius / sought)) - Math.abs(Math.log(b.radius / sought)))
 		.slice(0, MOST_SUBJECTS)
 		.map((fork) => {
-			const height = (2 * fork.radius) / FORK_LIMB_SHARE;
+			// The photograph frames both arms and their twigs with the limb coming up to the joint from
+			// below. The frame never runs past the arms' own reach into the crown above them.
+			const reach = Math.min(armsReach(skeleton, fork), FORK_REACH_DIAMETERS * 2 * fork.radius);
+			const height = span ?? Math.max((2 * fork.radius) / FORK_LIMB_SHARE, FORK_ARM_SPAN * reach);
 			const normal = planeNormal(fork);
 			const size = Math.max(0, 1 - Math.abs(Math.log(fork.radius / sought)));
 			// The photograph's fork opens wide: arms that part at a right angle show it best.
@@ -1230,6 +1314,125 @@ export function twigView(plant: ClosePlant, lens: Lens): CloseView | undefined {
 			row: found.subject.facts.row,
 			length: found.subject.facts.length,
 			frame: height,
+		},
+	};
+}
+
+/** The frame's height that the strands view covers, in metres: a stretch of drooping shoots. */
+const STRANDS_SPAN = 1.4;
+/** Metres the carrying limb stands above the frame's middle: the top quarter's lower edge. */
+const STRANDS_LIMB_ABOVE = STRANDS_SPAN / 4;
+/** The mid-crown band, as shares of the crown's own height above its base. */
+const STRANDS_BAND = [0.18, 0.45] as const;
+/** The fewest hanging shoots a stretch must carry to be the subject. */
+const STRANDS_LEAST = 3;
+/** Metres about the carrying limb within which a shoot counts as hanging from the stretch. */
+const STRANDS_REACH = 0.3;
+/** The most metres below the limb a hanging shoot may stand and still be in the frame. */
+const STRANDS_BELOW = 1.0;
+/** The shares of a carrying limb that the view weighs as the stretch's middle. */
+const STRANDS_SHARES = [0.2, 0.35, 0.5, 0.65, 0.8] as const;
+/** What one shoot in the sight line beyond the strand costs a stretch's score. */
+const STRANDS_OCCLUDED = 1.5;
+
+/** A stretch of limb that carries hanging shoots, as the strands view finds it. */
+interface StrandStretch {
+	readonly axis: number;
+	readonly point: AxisPoint;
+	/** Shoots hanging below the limb within the frame. */
+	readonly hanging: number;
+	/** Shoots standing in the frame's sight line, before or beyond the strand. */
+	readonly occluded: number;
+}
+
+/**
+ * The view of a limb's hanging shoots: a level camera at mid-crown height at the crown's outer rim,
+ * framing about a metre and a half of strand with the carrying limb across the top quarter and the
+ * sky behind it, as a drooping-twig photograph shows them. It takes the stretches of limb from
+ * which several shoots hang free below the limb and along which the least of the crown stands in
+ * the frame, and looks outward from just inside the rim, so the strands hang against the sky.
+ */
+export function strandsView(plant: ClosePlant, lens: Lens): CloseView | undefined {
+	const { skeleton } = plant;
+	const tall = skeleton.height - skeleton.crownBase;
+	if (tall <= 0) return undefined;
+	const low = skeleton.crownBase + tall * STRANDS_BAND[0];
+	const high = skeleton.crownBase + tall * STRANDS_BAND[1];
+	const p = skeleton.position;
+	let radius = 0;
+	for (let n = 0; n < skeleton.nodeCount; n++) {
+		const y = p[n * 3 + 1] as number;
+		if (y < low || y > high) continue;
+		radius = Math.max(radius, Math.hypot(p[n * 3] as number, p[n * 3 + 2] as number));
+	}
+	if (radius <= 0) return undefined;
+	const rows = plant.shoots;
+	const distance = distanceFor(STRANDS_SPAN, lens.fov);
+	const halfHeight = Math.tan((lens.fov * DEG) / 2);
+	const halfWidth = halfHeight * lens.aspect;
+	// The shoots a frame of this stretch would hold: below the limb as its fringe, and in the sight
+	// line either side of the strand, which should stand against the sky.
+	const weigh = (point: AxisPoint): { hanging: number; occluded: number } | undefined => {
+		const outward = normalize([point.at[0], 0, point.at[2]]);
+		if (!Number.isFinite(outward[0])) return undefined;
+		const cards = plant.foliage;
+		const count = cards ? cards.length / 3 : rows.count;
+		const stride = cards ? 12 : 1;
+		const at = (i: number, k: number) =>
+			(cards ? (cards[i * 3 + k] as number) : (rows.position[i * 3 + k] as number)) -
+			(point.at[k] as number);
+		let hanging = 0;
+		let occluded = 0;
+		for (let i = 0; i < count; i += stride) {
+			const dx = at(i, 0);
+			const dy = at(i, 1);
+			const dz = at(i, 2);
+			const along = dx * outward[0] + dz * outward[2];
+			const lateral = Math.abs(dx * outward[2] - dz * outward[0]);
+			if (lateral <= STRANDS_REACH && -dy > 0.05 && -dy <= STRANDS_BELOW) hanging++;
+			if (along + distance <= 0) continue;
+			const span = along + distance;
+			if (Math.abs(dy) > span * halfHeight || lateral > span * halfWidth) continue;
+			occluded++;
+		}
+		return { hanging, occluded };
+	};
+	let best: StrandStretch | undefined;
+	for (let axis = 0; axis < skeleton.axes.count; axis++) {
+		for (const share of STRANDS_SHARES) {
+			const point = pointAlong(skeleton, axis, share);
+			if (point.at[1] < low || point.at[1] > high) continue;
+			if (Math.hypot(point.at[0], point.at[2]) < radius * 0.82) continue;
+			if (Math.abs(point.direction[1]) > 0.45) continue;
+			const weighed = weigh(point);
+			if (!weighed || weighed.hanging < STRANDS_LEAST) continue;
+			if (
+				!best ||
+				weighed.hanging - weighed.occluded * STRANDS_OCCLUDED >
+					best.hanging - best.occluded * STRANDS_OCCLUDED
+			)
+				best = { axis, point, hanging: weighed.hanging, occluded: weighed.occluded };
+		}
+	}
+	if (!best) return undefined;
+	const outward = normalize([best.point.at[0], 0, best.point.at[2]]);
+	if (!Number.isFinite(outward[0])) return undefined;
+	const target: V3 = [best.point.at[0], best.point.at[1] - STRANDS_LIMB_ABOVE, best.point.at[2]];
+	// The camera stands level at the rim, looking outward past the strand to the sky.
+	const position: V3 = [
+		target[0] - outward[0] * distance,
+		target[1],
+		target[2] - outward[2] * distance,
+	];
+	return {
+		position,
+		target,
+		subject: {
+			kind: 'a limb stretch with hanging shoots',
+			hanging: best.hanging,
+			occluded: best.occluded,
+			height: best.point.at[1],
+			frame: STRANDS_SPAN,
 		},
 	};
 }

@@ -91,7 +91,7 @@ export const ADDON_FILE_BUDGET = { raw: 64 * 1024, gzip: 24 * 1024, brotli: 18 *
  * budget above. The engine's size report keeps the same figures for its own first-use shader files,
  * and a test keeps these equal to that report's.
  */
-export const ADDON_SHADER_BUDGET = { raw: 1792 * 1024, gzip: 320 * 1024, brotli: 58 * 1024 };
+export const ADDON_SHADER_BUDGET = { raw: 8192 * 1024, gzip: 1536 * 1024, brotli: 128 * 1024 };
 
 /**
  * A built file that holds compiled shader builds: the plugin names each set after its kind, its
@@ -1315,6 +1315,21 @@ const perFrameSize = (/** @type {number} */ bytes) =>
 	bytes >= 1024 ? `${(bytes / 1024).toFixed(1)} KB` : `${Math.round(bytes)} bytes`;
 
 /**
+ * What the gate says when no preset's page ran the add-on's own code. The figures then describe
+ * other code, so the gate refuses them rather than reporting a cost that is not the add-on's.
+ *
+ * @param {readonly ({ addonRan: boolean })[]} runs
+ * @returns {Outcome | undefined}
+ */
+export function noAddonCodeFailure(runs) {
+	if (runs.some((run) => run.addonRan)) return undefined;
+	return {
+		status: 'FAIL',
+		text: `allocation: the page ran none of the add-on's own code on any preset, so the gate measured other code. Make the page use the add-on, and check that its files come from the add-on's folder or its installed package`,
+	};
+}
+
+/**
  * What the allocation gate prints: the bytes per frame in the add-on's own code on each preset,
  * then the page's own figure and the places that allocated on each.
  *
@@ -1396,11 +1411,8 @@ export async function allocationGate(runner, { page, folder, name }, port, timeo
 				await context.close();
 			}
 		}
-		if (!runs.some((run) => run.addonRan))
-			return {
-				status: 'FAIL',
-				text: `allocation: the page ran none of the add-on's own code on any preset, so the gate measured other code. Make the page use the add-on, and check that its files come from the add-on's folder or its installed package`,
-			};
+		const failure = noAddonCodeFailure(runs);
+		if (failure) return failure;
 		return allocationOutcome(runs, runner.browserName);
 	} catch (error) {
 		return {

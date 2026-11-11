@@ -175,6 +175,13 @@ that first one had run. It has no High or Ultra row at any path, because those p
 WebGPU only, and at that run the tablet offered no WebGPU adapter. A later run reports a WebGPU
 adapter and plays every path, so the fault no longer repeated
 ([run](tested-devices/galaxy-tab-a9-plus-sm-x216b-chrome/20261101-030741-wind-field-cost.md)).
+The adapter is present and the top presets still draw no row: its vegetation run
+reports a WebGPU adapter and fails Creek at High while building one custom material's pipeline with
+E1404 and VK_ERROR_UNKNOWN, on the current build and on the commit before the reflection landing
+([record](tested-devices/galaxy-tab-a9-plus-sm-x216b-chrome/20261111-081454-vegetation.md)). Its
+grass pages draw all four presets on the same adapter. That failure is
+[an Adreno 619 driver fault](driver-bugs.md#adreno-619-a-pipeline-fails-to-build-with-vkerrorunknown-at-creeks-density),
+so its High and Ultra rows wait on the fault rather than on a slower frame.
 The page then reported 3 frames in 5.5 s, so the runner counted a pass with no triangles and no
 texture bytes. Its figures are in no table here and must not be read. The device's own fault is in
 [Driver bug reports](driver-bugs.md).
@@ -317,8 +324,9 @@ species, so 78 variants for a preset.
 | High | 78 | 156.9 | 2.01 | 409,182 | 20.0 |
 | Ultra | 78 | 148.9 | 1.91 | 409,182 | 20.0 |
 
-The phone stands in for the S24 class. D-241's generation budget allows a whole variant set to build
-in 200 ms on the slowest measured device, and every preset sits inside it. The cost per variant is
+The phone stands in for the S24 class. D-241's generation budget then allowed a whole variant set to
+build in 200 ms on the slowest measured device, and every preset sits inside it; the line is now
+250 ms a variant on the reference Mac. The cost per variant is
 about 1.7 times the iPad's, whose rows are below. Its byte column counts the arrays before the leaf
 parts carried the morph data, so it is lower than the iPad's.
 
@@ -336,12 +344,31 @@ preset.
 | High | 78 | 93.3 | 1.20 | 409,182 | 24.5 |
 | Ultra | 78 | 80.6 | 1.03 | 409,182 | 24.5 |
 
-D-241 allows the set 200 ms on the slowest measured device and 150 ms on the iPad. Every preset sits
-inside both lines, and the slowest is Low at 105.2 ms, 70 per cent of the iPad's line.
+D-241 then allowed the set 200 ms on the slowest measured device and 150 ms on the iPad. Every preset
+sits inside both lines, and the slowest is Low at 105.2 ms, 70 per cent of the iPad's line. The line
+is now 250 ms a variant on the reference Mac.
 
 The arrays take 20.5 MB at Low and Medium and 24.5 MB at High and Ultra, which is inside the 25 and 30 MB
 that D-241 sets. The leaf parts carry the next level's place for each vertex, which the material's morph
 reads.
+
+### Tree generation on this Mac with the catalogue species
+
+The plan ran on this Mac's Chrome 156.0.8078.81 at `75b1e59f2`, after the batch's twelve catalogue
+species landed ([its run](tested-devices/macbook-pro-m3-max-chrome/20261109-075455-tree-generation.md)).
+The package ships twelve species, so a preset's set is 72 variants.
+
+| Preset | Variants | Total (ms) | Per variant (ms) | Triangles | Bytes (MB) |
+| --- | --- | --- | --- | --- | --- |
+| Low | 72 | 12,440.8 | 172.79 | 15,274,350 | 382.2 |
+| Medium | 72 | 12,261.9 | 170.30 | 15,863,454 | 393.5 |
+| High | 72 | 12,472.2 | 173.22 | 16,299,114 | 402.3 |
+| Ultra | 72 | 12,878.1 | 178.86 | 17,721,942 | 428.4 |
+
+The catalogue species are far heavier than the thirteen procedural stand-ins the earlier figures
+measured: 50,718 to 887,750 triangles a variant against about 4,300, and the set takes 12.3 to 12.9 s
+against the old 200 ms whole-set line, about sixty times it. The owner restated the line at 250 ms a
+variant on the reference Mac, and the set's 170 to 179 ms a variant meets it.
 
 ### Tree generation on the Galaxy S25 with the leaf morph data
 
@@ -357,8 +384,9 @@ generated 78 variants for each preset.
 | High | 78 | 161.9 | 2.08 | 409,182 | 24.5 |
 | Ultra | 78 | 172.4 | 2.21 | 409,182 | 24.5 |
 
-D-241 allows the set 200 ms on the slowest measured device. Low is inside it at 198.6 ms, by 0.7
-per cent, and the other presets sit inside it. Both runs drew on a 30 Hz display, and the runner
+D-241 then allowed the set 200 ms on the slowest measured device. Low is inside it at 198.6 ms, by
+0.7 per cent, and the other presets sit inside it. The line is now 250 ms a variant on the reference
+Mac. Both runs drew on a 30 Hz display, and the runner
 names the phone's heat or the display setting, so the figure carries that caveat.
 
 The first run

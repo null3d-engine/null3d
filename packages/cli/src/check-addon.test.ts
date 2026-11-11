@@ -21,6 +21,7 @@ import {
 	interfaceResult,
 	MAX_ALLOCATION_SAMPLES,
 	nameProfile,
+	noAddonCodeFailure,
 	pageOf,
 	parseCheckAddonArgs,
 	publicApiProblems,
@@ -492,8 +493,8 @@ describe('sizeProblems', () => {
 
 	it('holds the shader data inlined in a file to the shader budget', () => {
 		// The code keeps its budget, so a gate that stopped counting the inlined data would pass.
-		expect(sizeProblems([split(14 * KB, 2000 * KB)])).toEqual([
-			'addon.js is 2000.0 KB raw of shader data, over its 1792.0 KB budget',
+		expect(sizeProblems([split(14 * KB, 9000 * KB)])).toEqual([
+			'addon.js is 9000.0 KB raw of shader data, over its 8192.0 KB budget',
 		]);
 	});
 
@@ -720,6 +721,19 @@ describe('samplingIntervalFor', () => {
 
 	it('stops at the coarsest interval, above about a terabyte a second', () => {
 		expect(samplingIntervalFor(10 * 1024 ** 4)).toBe(16 * 1024 * 1024);
+	});
+});
+
+describe('noAddonCodeFailure', () => {
+	it("refuses the figures when no preset ran the add-on's own code", () => {
+		expect(noAddonCodeFailure([{ addonRan: false }, { addonRan: false }])).toEqual({
+			status: 'FAIL',
+			text: "allocation: the page ran none of the add-on's own code on any preset, so the gate measured other code. Make the page use the add-on, and check that its files come from the add-on's folder or its installed package",
+		});
+	});
+
+	it('keeps the figures when one preset ran it', () => {
+		expect(noAddonCodeFailure([{ addonRan: false }, { addonRan: true }])).toBeUndefined();
 	});
 });
 

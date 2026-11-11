@@ -7,6 +7,7 @@
 // contract lives in `../lib/plant-review/`, which the review tools share. The page posts what it
 // measured and where its cameras stood as the `plant-review` message, so a tool records the facts
 // beside the pixels.
+
 import { type Camera, defineSketch, quat, type SketchContext } from '@null3d/engine';
 import {
 	BUD_TERMINAL,
@@ -25,6 +26,7 @@ import {
 	prepareSpecies,
 	type SpeciesKit,
 	setWindLayer,
+	swayDistanceFor,
 } from '@null3d/vegetation';
 import { createWind, type Wind } from '@null3d/wind';
 import {
@@ -36,6 +38,7 @@ import {
 	pointAlong,
 	stemAt,
 	stemFoot,
+	stemSurfaceAt,
 	sunlitTip,
 	turnedAbout,
 	type V3,
@@ -49,6 +52,7 @@ import {
 	insideView,
 	junctionView,
 	limbView,
+	strandsView,
 	surfaceView,
 	trunkView,
 	twigView,
@@ -57,7 +61,9 @@ import {
 import {
 	type CutRows,
 	cutCamera,
+	leafFrame,
 	type ScreenFraming,
+	spanDistance,
 	standCamera,
 } from '../lib/plant-review/framing';
 import { measurePlant, partPositions, shootPositions } from '../lib/plant-review/measure';
@@ -68,6 +74,11 @@ import { BACKGROUND_COLOURS, type PlantView, VIEW_SPECS } from '../lib/plant-rev
 const QUERY = readPlantReviewQuery(new URL(import.meta.url).searchParams);
 const VIEW: PlantView = QUERY.view ?? 'whole';
 const SPEC = VIEW_SPECS[VIEW];
+/**
+ * Whether the view draws the wood alone: a wood view does, unless the slot asks for the foliage too,
+ * which a bark photograph taken among leaves needs before its colour can be compared with like.
+ */
+const WOOD_ONLY = SPEC.woodOnly === true && QUERY.foliage !== true;
 const SIZE = QUERY.size ?? SPEC.size;
 const FOV = QUERY.fov ?? SPEC.fov;
 const BACKGROUND = QUERY.background ?? SPEC.background;
@@ -84,7 +95,7 @@ const MATTE = VIEW === 'silhouette' || QUERY.matte === true;
  * fruit takes the nearest too: a plant's cones, keys and flowers stand on the grown plant's extras,
  * and only the nearest level carries them, so a farther level frames leaves where the fruit is.
  */
-const LOD = QUERY.lod ?? (SPEC.woodOnly || QUERY.fruit ? 0 : undefined);
+const LOD = QUERY.lod ?? (WOOD_ONLY || QUERY.fruit ? 0 : undefined);
 const DEG = Math.PI / 180;
 /**
  * A colour scaled by another colour's channels, which is how a picture's own white balance tints a
@@ -378,10 +389,18 @@ const CUT_ROWS: CutRows | undefined =
 			? { top: QUERY.top, base: 1 }
 			: undefined;
 
+/** Whether an asset draws any wood at all: a ground plant draws its whole body as merged foliage. */
+function hasWood(asset: PlantAsset): boolean {
+	return asset.levels.some((level) => level.parts.some((part) => part.name === 'wood'));
+}
+
 /** The asset as a view draws it: the wood alone, or one level at every distance. */
 function shaped(asset: PlantAsset, woodOnly: boolean): PlantAsset {
+	// A view of the wood alone has no wood to draw on a ground plant. Its crown, sheaths and blades
+	// are that plant's body, so the view keeps them rather than drawing an empty picture.
+	const bare = woodOnly && hasWood(asset);
 	const keep = (parts: readonly PlantPart[]) =>
-		woodOnly ? parts.filter((part) => part.name === 'wood') : parts;
+		bare ? parts.filter((part) => part.name === 'wood') : parts;
 	const levelAt = (index: 0 | 1 | 2, from: number, source = asset.levels[index]) => ({
 		...source,
 		level: index,
@@ -391,7 +410,7 @@ function shaped(asset: PlantAsset, woodOnly: boolean): PlantAsset {
 	const empty = { parts: [], triangles: 0, bytes: 0 };
 	const lod = LOD;
 	const rows =
-		woodOnly || (lod !== undefined && lod !== 0) ? { ...asset.shoots, count: 0 } : asset.shoots;
+		bare || (lod !== undefined && lod !== 0) ? { ...asset.shoots, count: 0 } : asset.shoots;
 	if (lod === undefined || lod === 3)
 		return {
 			...asset,
@@ -457,13 +476,27 @@ export default defineSketch(async (ctx) => {
 	// A review picture is laid beside a reference that carries no display curve; a tone curve
 	// would crush and saturate the sky and the foliage that the reference shows as they are.
 	post.set({ toneMapping: 'none' });
+	if (QUERY.motion) debug.view('motion');
 	const notes: string[] = [];
 	// A registered species grows through its own stages, with a stand-in only for each stage that is
 	// not built yet; any other id, or the query's `placeholders`, grows the stand-in of every stage.
 	const placeholders: boolean | 'missing' =
 		QUERY.placeholders ?? (isSpeciesId(QUERY.species) ? 'missing' : true);
-	const module = await loadSpeciesOrStandIn(QUERY.species);
-	const record = module.record;
+	const loadedModule = await loadSpeciesOrStandIn(QUERY.species);
+	// A tuft's soil — its rhizome and roots — belongs to the picture that frames the lifted base;
+	// every other view grows the plant above the soil, which is what the ground shows of it.
+	const record =
+		VIEW !== 'soil' &&
+		loadedModule.record.growth.model === 'tuft' &&
+		loadedModule.record.growth.soil !== undefined
+			? (() => {
+					const growth = loadedModule.record.growth;
+					if (growth.model !== 'tuft') return loadedModule.record;
+					const { soil: _soil, ...above } = growth;
+					return { ...loadedModule.record, growth: above };
+				})()
+			: loadedModule.record;
+	const module = { ...loadedModule, record };
 	// The query's form, another habit or the young plant, grows when the record has it. A record
 	// without that form grows as it stands, with a note, so a still of another habit is still drawn.
 	const form =
@@ -483,6 +516,7 @@ export default defineSketch(async (ctx) => {
 		variant: QUERY.variant ?? 0,
 		near: true,
 		...(QUERY.season && { season: QUERY.season }),
+		...(QUERY.sparse !== undefined && { sparse: QUERY.sparse }),
 	};
 	const turn0 = (QUERY.turn ?? 0) * DEG;
 	const cuttingPart = VIEW === 'panels' ? 'cluster' : SPEC.cutting;
@@ -493,6 +527,8 @@ export default defineSketch(async (ctx) => {
 		orient: 'upright' as const,
 		...(VIEW === 'leaf-under' ? { face: 'lower' as const } : {}),
 		...(QUERY.pressed !== undefined && { pressed: QUERY.pressed }),
+		...(QUERY.age !== undefined && { age: QUERY.age }),
+		...(QUERY.young !== undefined && { young: QUERY.young }),
 	};
 	const needsWhole = !SPEC.cutting;
 	// A piece whose record hint names one of the species' cutting classes grows from a kit of its
@@ -540,21 +576,48 @@ export default defineSketch(async (ctx) => {
 	let facts: Record<string, unknown> = {};
 	const foliage = record.foliage;
 	/**
-	 * A leaf's length in metres: one blade, or a compound leaf's stalk, rachis and terminal leaflet,
-	 * which is the piece a cutting's frame and the close views measure in.
+	 * A leaf's length in metres: one blade (broadleaf or grass), or a compound leaf's stalk, rachis
+	 * and terminal leaflet, which is the piece a cutting's frame and the close views measure in.
 	 */
 	const leafLength =
-		foliage.kind !== 'blade'
-			? undefined
-			: (typeof foliage.leaf.length === 'number' ? foliage.leaf.length : foliage.leaf.length.mean) *
+		foliage.kind === 'blade'
+			? (typeof foliage.leaf.length === 'number' ? foliage.leaf.length : foliage.leaf.length.mean) *
 					(foliage.compound ? foliage.compound.rachis + 1 : 1) +
-				(foliage.compound ? foliage.leaf.petiole.length : 0);
+				(foliage.compound ? foliage.leaf.petiole.length : 0)
+			: undefined;
+	/**
+	 * A grass blade's length in metres. A cutting of several blades is framed in the leaf length its
+	 * photograph was measured in, which a blade a metre long would over-scale tenfold, so only a
+	 * picture of one leaf takes its frame from this.
+	 */
+	const bladeLength =
+		foliage.kind === 'grass-blade'
+			? typeof foliage.blade.length === 'number'
+				? foliage.blade.length
+				: foliage.blade.length.mean
+			: undefined;
+	/** The foliage cards' places, which a view of the crown's fringe weighs its sight line with. */
+	const foliagePoints = ((): Float32Array | undefined => {
+		const parts = (main.levels[0]?.parts ?? []).filter(
+			(part) => part.name === 'foliage' || part.name === 'cards',
+		);
+		if (parts.length === 0) return undefined;
+		const lists = parts.map((part) => partPositions(part, kit.box));
+		const out = new Float32Array(lists.reduce((n, list) => n + list.length, 0));
+		let at = 0;
+		for (const list of lists) {
+			out.set(list, at);
+			at += list.length;
+		}
+		return out;
+	})();
 	/** What the close views read of the plant: its wood alone for a view that draws the wood alone. */
 	const closePlant = (woodOnly: boolean): ClosePlant => ({
 		skeleton,
 		shoots: woodOnly ? { ...main.shoots, count: 0 } : main.shoots,
 		prototypes: mainKit.prototypes,
 		...(leafLength !== undefined && { leafLength }),
+		...(foliagePoints !== undefined && { foliage: foliagePoints }),
 	});
 	/** Each close view's camera, found once and walked round its subject for a sheet's turns. */
 	const closeViews = new Map<string, CloseView | undefined>();
@@ -613,8 +676,20 @@ export default defineSketch(async (ctx) => {
 						);
 					}
 				}
-				const surface = add(add(foot, scale(out, reach)), [0, middle, 0]);
-				return orbit(surface, Math.max(0.5, 0.6 * main.crown.radius), e, turn, fov);
+				// A tree's crown is its outer surface, which its close photographs look along; a plant
+				// whose crown is its whole body, such as a rosette, is framed at its own centre.
+				const surface = stemAt(skeleton, 1.3)
+					? add(add(foot, scale(out, reach)), [0, middle, 0])
+					: add(foot, [0, middle, 0]);
+				// A crown wider than the frame needs the camera further back than a limb's own reach:
+				// a slot names the distance where its photograph shows the whole crown.
+				return orbit(
+					surface,
+					QUERY.distance ?? Math.max(0.5, 0.6 * main.crown.radius),
+					e,
+					turn,
+					fov,
+				);
 			}
 			case 'below': {
 				const below = belowView(closePlant(false), turn, lens, {
@@ -629,6 +704,23 @@ export default defineSketch(async (ctx) => {
 				return { position: below.position, target: below.target, fov, near: 0.1 };
 			}
 			case 'inside': {
+				// A plant with no wood keeps its stalks at the crown's own centre, so its inside photograph
+				// is of the stalk bundle: the camera stands just outside it at the crown's height and
+				// looks at the bundle. A woody plant is framed beside its most level great limb.
+				if (!stemAt(skeleton, 1.3)) {
+					const middle = Math.max(0.05, 0.45 * main.crown.top);
+					plainSubjects.set(view, {
+						kind: 'the stalk bundle at the crown',
+						warning: 'the plant has no wood, so the inside view frames its own crown',
+					});
+					return orbit(
+						add(foot, [0, middle, 0]),
+						QUERY.distance ?? Math.max(0.3, 1.6 * main.crown.radius),
+						e,
+						turn,
+						fov,
+					);
+				}
 				// Beside the most level great limb, under it, looking up along it into the crown.
 				const found = closeAt(view, () => insideView(closePlant(false), lens), turn, fov, 0.05);
 				if (found) return found;
@@ -648,7 +740,7 @@ export default defineSketch(async (ctx) => {
 				// A great limb leaving the stem, seen side on from where no other limb hides it.
 				const found = closeAt(
 					view,
-					() => junctionView(closePlant(spec.woodOnly === true), lens),
+					() => junctionView(closePlant(WOOD_ONLY), lens),
 					turn,
 					fov,
 					0.05,
@@ -660,7 +752,7 @@ export default defineSketch(async (ctx) => {
 				// A limb dividing into two, seen square to its arms against the least of the crown.
 				const found = closeAt(
 					view,
-					() => forkView(closePlant(spec.woodOnly === true), lens, QUERY.thin),
+					() => forkView(closePlant(WOOD_ONLY), lens, QUERY.thin, QUERY.span),
 					turn,
 					fov,
 					0.05,
@@ -791,6 +883,13 @@ export default defineSketch(async (ctx) => {
 				// plain backdrop, so the camera sits close and the shoot's own length is not the subject.
 				return { ...orbit(target, 0.28 + shoot / 4, e, back, fov), near: 0.02 };
 			}
+			case 'strands': {
+				// A limb's hanging shoots at the crown's rim, seen level against the sky as a
+				// drooping-twig photograph shows them.
+				const found = closeAt(view, () => strandsView(closePlant(false), lens), turn, fov, 0.05);
+				if (found) return found;
+				break;
+			}
 			case 'limb': {
 				// One branch with its side branches seen across its run, from the side where the least of
 				// the plant stands in front of it; or, for the crown's outside, its lower rim seen from
@@ -814,6 +913,22 @@ export default defineSketch(async (ctx) => {
 				if (found) return found;
 				break;
 			}
+			case 'soil': {
+				// The crown lifted from the soil: the rhizome and the roots that leave it, close enough
+				// that their widths read, seen a little from above as a washed base is photographed.
+				const wide = Math.max(
+					(skeleton.bounds.max[0] as number) - (skeleton.bounds.min[0] as number),
+					(skeleton.bounds.max[2] as number) - (skeleton.bounds.min[2] as number),
+				);
+				const reach = Math.max(0.1, Math.min(wide, 0.6) / 2);
+				return orbit(
+					[foot[0], 0.03, foot[2]],
+					(reach * 0.8) / Math.tan((fov * DEG) / 2),
+					e,
+					turn,
+					fov,
+				);
+			}
 			case 'bark-base': {
 				const r = stemAt(skeleton, 0.3)?.radius ?? 0.1;
 				// The foot and its flare, with the ground it stands on. The stand-off is measured from
@@ -822,8 +937,16 @@ export default defineSketch(async (ctx) => {
 				return orbit([foot[0], 0.9, foot[2]], 1.5 + 3.5 * r, e, turn, fov);
 			}
 			case 'bark-mid': {
-				const y = Math.min(1.5, skeleton.height * 0.3);
-				const stem = stemAt(skeleton, y);
+				// A bark zone of its own: the camera stands where that zone covers the wood, so the
+				// surface is the one the zone's texture source shows.
+				const zone = QUERY.barkZone === undefined ? undefined : record.bark?.zones[QUERY.barkZone];
+				const y =
+					zone?.by === 'height'
+						? Math.min(skeleton.height * 0.9, (zone.from + zone.to) / 2)
+						: Math.min(1.5, skeleton.height * 0.3);
+				// A plant with no single trunk, such as a tuft of culms, shows the thickest stem
+				// surface that crosses the height the picture frames.
+				const stem = stemAt(skeleton, y) ?? stemSurfaceAt(skeleton, y)?.at;
 				if (!stem) break;
 				const span = QUERY.span ?? 0.6;
 				const surface = add(stem.at, scale(out, stem.radius));
@@ -836,7 +959,7 @@ export default defineSketch(async (ctx) => {
 					const share = QUERY.along ?? 0.3;
 					const found = closeAt(
 						view,
-						() => barkLimbView(closePlant(spec.woodOnly === true), lens, girth, share),
+						() => barkLimbView(closePlant(WOOD_ONLY), lens, girth, share),
 						turn,
 						fov,
 						0.02,
@@ -869,7 +992,7 @@ export default defineSketch(async (ctx) => {
 				// further turns walk round it from there.
 				const bole = closeAt(
 					view,
-					() => trunkView(closePlant(spec.woodOnly === true), lens, turn0),
+					() => trunkView(closePlant(WOOD_ONLY), lens, turn0),
 					turn - turn0,
 					fov,
 					0.05,
@@ -882,15 +1005,38 @@ export default defineSketch(async (ctx) => {
 			case 'cluster':
 			case 'leaf-upper':
 			case 'leaf-under': {
+				// A span frames a part of the piece rather than the whole of it: the frame's middle
+				// stands on the piece at the share the query names, halfway up by default, and the
+				// span is the width it shows there.
+				if (QUERY.span !== undefined && piece) {
+					const part = boundsOf(piece as PlantAsset, pieceKit);
+					const low = part.min[1] as number;
+					const high = part.max[1] as number;
+					const at = low + (high - low) * (QUERY.along ?? 0.5);
+					return orbit(
+						[
+							((part.min[0] as number) + (part.max[0] as number)) / 2,
+							at,
+							((part.min[2] as number) + (part.max[2] as number)) / 2,
+						],
+						spanDistance(QUERY.span, fov, aspect),
+						e,
+						turn,
+						fov,
+					);
+				}
 				// A piece framed at the scale its photograph shows, in leaf lengths, stands on its cut:
 				// the cut on the frame's lower edge, the piece running up across it and off its far edge
 				// where it is longer, as a cut branch runs off its photograph. A roll lays it across.
-				if (QUERY.leaves !== undefined && leafLength !== undefined) {
-					const roll = (QUERY.roll ?? 0) * DEG;
-					const tall = QUERY.leaves * leafLength;
-					const run = Math.abs(Math.sin(roll)) > Math.SQRT1_2 ? tall * aspect : tall;
-					const distance = tall / 2 / Math.tan((fov * DEG) / 2);
-					return { ...orbit([0, run / 2, 0], distance, e, turn, fov), roll, near: 0.01 };
+				const oneLeaf = view === 'leaf-upper' || view === 'leaf-under';
+				const length = QUERY.leafLength ?? leafLength ?? (oneLeaf ? bladeLength : undefined);
+				if (QUERY.leaves !== undefined && length !== undefined) {
+					const frame = leafFrame(QUERY.leaves, length, QUERY.roll ?? 0, aspect, fov);
+					return {
+						...orbit([0, frame.run / 2, 0], frame.distance, e, turn, fov),
+						roll: frame.roll,
+						near: 0.01,
+					};
 				}
 				// A cutting fills the frame with its own points, as its reference's piece does, on the
 				// rows its reference shows it on when the query measured them.
@@ -1013,7 +1159,7 @@ export default defineSketch(async (ctx) => {
 	const colours = BACKGROUND_COLOURS[BACKGROUND];
 	scene.setBackground(MATTE ? '#ffffff' : (QUERY.sky ?? colours.sky));
 	const groundColour = QUERY.ground ?? colours.ground;
-	if (groundColour && !MATTE && !SPEC.cutting) {
+	if (groundColour && !MATTE && !SPEC.cutting && !QUERY.lifted) {
 		// The meadow is unlit and casts nothing back, so it shows its measured colour everywhere and a
 		// mask can tell it from the plant by colour alone.
 		scene.createMesh({
@@ -1022,7 +1168,7 @@ export default defineSketch(async (ctx) => {
 			rotation: FLAT,
 		});
 	}
-	if (MATTE && SPEC.whole && !SPEC.cutting) {
+	if (MATTE && SPEC.whole && !SPEC.cutting && !QUERY.lifted) {
 		// A whole plant's matte stands on a white ground, so what grows below the ground, such as the
 		// buried part of a root flare, stays hidden as the meadow hides it in the picture.
 		scene.createMesh({
@@ -1121,8 +1267,11 @@ export default defineSketch(async (ctx) => {
 							: SUN === 'overhead'
 								? [0.02, -1, 0.01]
 								: [-0.45, -1, -0.35];
+			// The sun takes the photograph's own white balance too, so a picture lit by a warm or a
+			// cool sun can be matched where its fill alone cannot reach.
 			scene.createDirectionalLight({
 				direction,
+				color: tinted('#ffffff', lamp),
 				intensity: sunLight * sunScale,
 				castShadows: true,
 				shadow,
@@ -1142,11 +1291,19 @@ export default defineSketch(async (ctx) => {
 				})
 			: undefined;
 	// A stand-in kit's matte is plain black materials; a real kit's is the plant shader's own, which
-	// keeps its quantised parts, cut-outs and sway.
+	// keeps its quantised parts, cut-outs and sway. A plant under the wind sways out to its preset's
+	// distance, or to the query's own, so a far cascade that only this plant reaches keeps the layer
+	// it holds, and a plant past the distance stands still under the same field.
 	const plantLook =
 		MATTE && kit.placeholders === true
 			? matteMaterials(ctx, kit)
-			: plantMaterials(ctx, kit, { ...(wind && { wind: wind.field }), matte: MATTE });
+			: plantMaterials(ctx, kit, {
+					...(wind && {
+						wind: wind.field,
+						swayDistance: QUERY.sway ?? swayDistanceFor(ctx.quality.preset),
+					}),
+					matte: MATTE,
+				});
 	// A stand-in kit draws through the stand-in near pool. A real kit's one plant stands at a fixed
 	// place, so its placement composes its shoot rows once, with no pool.
 	const near: NearPool | undefined =
@@ -1181,12 +1338,12 @@ export default defineSketch(async (ctx) => {
 				castShadows: !MATTE,
 			},
 		);
-	const drawn = shaped(main, SPEC.woodOnly === true);
+	const drawn = shaped(main, WOOD_ONLY);
 	const far = LOD === 3 && whole ? [await bakeFarPlant(kit, whole)] : undefined;
 	place(drawn, [0, 0, 0], mainKit, far);
 	if (VIEW === 'panels' && piece) place(shaped(piece, false), AWAY, pieceKit);
 	if (
-		!SPEC.woodOnly &&
+		!WOOD_ONLY &&
 		(LOD === undefined || LOD === 0) &&
 		main.levels[0].parts.every((part) => part.name === 'wood') &&
 		main.shoots.count > 0 &&
@@ -1224,6 +1381,13 @@ export default defineSketch(async (ctx) => {
 	const subject = close
 		? { ...close.subject, ...(close.clutter && { clutter: close.clutter }) }
 		: plainSubjects.get(VIEW);
+	// The plant as the view draws it: the level's filled silhouette, not every level's part bounds,
+	// so a vertex or a part outside the drawn cells cannot inflate the posted width and height.
+	const drawnBox = cells[0] ? measurePlant(main, kit.box, cells[0].turn).plantBox : null;
+	// A cut piece is drawn from its own kit, and its posted size is the box its own level draws, not
+	// the union of every part's bounds.
+	const pieceTurn = cells.find((cell) => cell.piece === 'away')?.turn ?? cells[0]?.turn ?? 0;
+	const pieceBox = piece ? measurePlant(piece, pieceKit.box, pieceTurn).plantBox : null;
 	facts = {
 		species: record.id,
 		name: record.name,
@@ -1236,8 +1400,8 @@ export default defineSketch(async (ctx) => {
 		size: SIZE,
 		grid: [columns, rows],
 		plant: {
-			height,
-			width: bounds.max[0] - bounds.min[0],
+			height: drawnBox ? drawnBox.top : height,
+			width: drawnBox ? drawnBox.width : bounds.max[0] - bounds.min[0],
 			depth: bounds.max[2] - bounds.min[2],
 			crownBase: main.crown.base,
 			trunkRadius: trunk?.radius ?? null,
@@ -1249,7 +1413,9 @@ export default defineSketch(async (ctx) => {
 				...piece.cutting,
 				size: (() => {
 					const b = boundsOf(piece, pieceKit);
-					return sub(b.max, b.min);
+					return pieceBox
+						? [pieceBox.width, pieceBox.top, (b.max[2] as number) - (b.min[2] as number)]
+						: sub(b.max, b.min);
 				})(),
 				axes: piece.skeleton.axes.count,
 			},

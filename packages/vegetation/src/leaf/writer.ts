@@ -58,6 +58,11 @@ export class MeshWriter {
 		this.indices.push(a, b, c, a, c, d);
 	}
 
+	/** One triangle over the vertices a, b, c, counter-clockwise. */
+	tri(a: number, b: number, c: number): void {
+		this.indices.push(a, b, c);
+	}
+
 	/** The finished arrays, with 16-bit indices: a prototype or a leaf. */
 	finishPrototype(): PrototypeArrays {
 		if (this.vertices > 0xffff)
@@ -139,13 +144,15 @@ export interface TubePoint {
 
 /**
  * A tube along a path, a ring of `sides` faces at each point, square to the path, its frame carried
- * from ring to ring without twist. UVs are metres of bark: around, then along.
+ * from ring to ring without twist. UVs are metres of bark: around, then along, unless `uv` gives a
+ * texture coordinate for each ring's around index and ring.
  *
  * @param mesh The writer.
  * @param path The path's points, two at least.
  * @param sides Faces around, three at least.
  * @param colour The colour bytes of each ring, by its index.
  * @param closeTip Whether to close the last ring to a point.
+ * @param uv The texture coordinate of a vertex, from its around index and ring.
  */
 export function tube(
 	mesh: MeshWriter,
@@ -153,6 +160,7 @@ export function tube(
 	sides: number,
 	colour: (ring: number) => ArrayLike<number>,
 	closeTip = false,
+	uv?: (around: number, ring: number) => readonly [number, number],
 ): void {
 	if (path.length < 2) return;
 	let previous = -1;
@@ -182,7 +190,7 @@ export function tube(
 					point.at[2] + n[2] * point.radius,
 				],
 				n,
-				[(j / sides) * around, point.along],
+				uv ? uv(j, r) : [(j / sides) * around, point.along],
 				[0, 0],
 				colour(r),
 			);

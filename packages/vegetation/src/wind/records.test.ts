@@ -33,9 +33,10 @@ function input(
 	skeleton: MeshInput['skeleton'],
 	rows: ShootRows = noRows(),
 	variant = 2,
+	record: typeof oak = oak,
 ): MeshInput {
 	return {
-		record: oak,
+		record,
 		seed: 11,
 		variant,
 		season: 'summer',
@@ -129,6 +130,30 @@ describe('the wind records', () => {
 			expect(record[9]).toBe(oak.wind.flutter.frequency);
 			expect(record[10]).toBe(order);
 		});
+	});
+
+	it('weighs the flutter by the axis height only where the record names a curve', () => {
+		// The fixture's stems span 0 to 4 m, so an axis's middle reads its own share of the height.
+		const byHeight: readonly (readonly [number, number])[] = [
+			[0, 2],
+			[1, 0.5],
+		];
+		const weighed = {
+			...oak,
+			wind: { ...oak.wind, flutter: { ...oak.wind.flutter, byHeight } },
+		} as typeof oak;
+		const middles = [2, 2.5, 3];
+		const table = windRecords(input(skeleton, noRows(), 2, weighed));
+		middles.forEach((middle, r) => {
+			expect(recordAt(table, r)[8]).toBeCloseTo(
+				oak.wind.flutter.amplitude * curveAt(byHeight, middle / 4),
+				6,
+			);
+		});
+		// Without the curve, every axis keeps the record's own amplitude, as it always has.
+		const plain = windRecords(input(skeleton));
+		for (let r = 0; r < plain.count; r++)
+			expect(recordAt(plain, r)[8]).toBe(oak.wind.flutter.amplitude);
 	});
 
 	it('gives each axis a sway phase of its own, from the seed and the variant', () => {

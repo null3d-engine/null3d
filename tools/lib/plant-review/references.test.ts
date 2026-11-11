@@ -1,17 +1,24 @@
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import {
 	plantReviewQuery,
 	readPlantReviewQuery,
 } from '../../../tests/pages/lib/plant-review/query.ts';
+import { type PlantView, VIEW_SPECS } from '../../../tests/pages/lib/plant-review/views.ts';
 import { blank, labImage, labOf, type Rgba } from './image.ts';
 import {
+	anyPlantMask,
 	boxOf,
 	classifySlot,
 	classifyTurn,
 	crownStartRow,
 	findHorizon,
 	greenLeaves,
+	matteMask,
 	measurePlant,
+	type PlantMask,
+	pieceCount,
 	plantMask,
 	readIndex,
 	rowSpans,
@@ -249,6 +256,80 @@ describe('the width profile', () => {
 		expect(crownStartRow(rowSpans(mask, width, height), box)).toBe(44);
 	});
 
+	test('finds a crown whose lowest boughs are thin above a flared foot', () => {
+		const width = 220;
+		const height = 180;
+		const mask = new Uint8Array(width * height);
+		// A crown of 100, its lowest boughs 70, over a stem of 40, over a foot that widens to 200 in the
+		// plant's last rows. The foot is the plant's widest row, so a limit taken from it sits above the
+		// lowest boughs, which then read as stem and the crown's base lands at the foot.
+		for (let y = 2; y < 30; y++) for (let x = 60; x < 160; x++) mask[y * width + x] = 1;
+		for (let y = 30; y < 60; y++) for (let x = 75; x < 145; x++) mask[y * width + x] = 1;
+		for (let y = 60; y < 161; y++) for (let x = 90; x < 130; x++) mask[y * width + x] = 1;
+		for (let y = 161; y < 172; y++) {
+			const half = Math.round(22 + 78 * ((y - 161) / 11));
+			for (let x = 110 - half; x < 110 + half; x++) mask[y * width + x] = 1;
+		}
+		const box = boxOf(mask, width, height) as NonNullable<ReturnType<typeof boxOf>>;
+		// The boughs' own bottom row is where the crown starts.
+		expect(crownStartRow(rowSpans(mask, width, height), box)).toBe(59);
+	});
+
+	test('finds a thin crown foot above a thick flared stem', () => {
+		// The giant sequoia's profile photograph, its plant outline row by row. The crown widens to 210
+		// pixels at its foot and the stem flares below it; before the fix its crown box held 320 of the
+		// plant's 549 rows, its base at row 376, because the flare set the width limit and the thin
+		// crown's lowest boughs read as stem.
+		const profile = JSON.parse(
+			readFileSync(join(import.meta.dirname, 'fixtures/giant-sequoia-profile.json'), 'utf8'),
+		) as {
+			readonly width: number;
+			readonly height: number;
+			readonly top: number;
+			readonly spans: readonly (readonly [number, number])[];
+		};
+		const mask = new Uint8Array(profile.width * profile.height);
+		profile.spans.forEach(([left, right], index) => {
+			if (left < 0) return;
+			for (let x = left; x <= right; x++) mask[(profile.top + index) * profile.width + x] = 1;
+		});
+		const box = boxOf(mask, profile.width, profile.height) as NonNullable<ReturnType<typeof boxOf>>;
+		// The crown's own lowest boughs, where the thin crown's rows first widen past the stem.
+		expect(crownStartRow(rowSpans(mask, profile.width, profile.height), box)).toBe(454);
+	});
+
+	test("moves a crown's foot smoothly as a plant's foot widens", () => {
+		const width = 120;
+		const height = 100;
+		// A crown of 100 over a stem of 10, its lowest rows a foot of the given width. At 0.8 of the
+		// crown's width a plant stood on the mark: the rule counted its whole box as crown above the
+		// mark and not below it, so two plants a pixel apart in the foot could differ by half a box.
+		const startAt = (footHalf: number) => {
+			const mask = new Uint8Array(width * height);
+			for (let y = 0; y < 40; y++) for (let x = 10; x < 110; x++) mask[y * width + x] = 1;
+			for (let y = 40; y < 60; y++) for (let x = 55; x < 65; x++) mask[y * width + x] = 1;
+			for (let y = 60; y < height; y++)
+				for (let x = 60 - footHalf; x < 60 + footHalf; x++) mask[y * width + x] = 1;
+			const box = boxOf(mask, width, height) as NonNullable<ReturnType<typeof boxOf>>;
+			return crownStartRow(rowSpans(mask, width, height), box);
+		};
+		const atTheMark = startAt(40);
+		const above = startAt(42);
+		// A fifth of the box: wide enough for the blend's own slope, far short of the old step.
+		expect(Math.abs(above - atTheMark)).toBeLessThan(height / 5);
+	});
+
+	test('starts a mound with no bare stem at its foot', () => {
+		const width = 100;
+		const height = 100;
+		const mask = new Uint8Array(width * height);
+		// A tuft that runs as wide at the ground as at its widest: its crown is the whole plant.
+		for (let y = 0; y < 30; y++) for (let x = 20; x < 80; x++) mask[y * width + x] = 1;
+		for (let y = 30; y < 100; y++) for (let x = 4; x < 96; x++) mask[y * width + x] = 1;
+		const box = boxOf(mask, width, height) as NonNullable<ReturnType<typeof boxOf>>;
+		expect(crownStartRow(rowSpans(mask, width, height), box)).toBe(99);
+	});
+
 	test('finds where a crown starts over a narrow trunk', () => {
 		const width = 60;
 		const height = 60;
@@ -475,7 +556,7 @@ describe('the slots', () => {
 		expect(classifySlot('28-young-bark.png')).toMatchObject({
 			kind: 'texture',
 			view: 'bark-limb',
-			query: { along: 0.85, thin: 0.05, span: 0.07 },
+			query: { along: 0.85, thin: 0.015, span: 0.1, barkMask: true },
 		});
 	});
 
@@ -554,5 +635,134 @@ describe('the index', () => {
 		expect(rows[3]?.supersededBy).toBeUndefined();
 		expect(rows[4]?.supersededBy).toBe('alder-turntable-c.mp4');
 		expect(rows[5]?.supersededBy).toBeUndefined();
+	});
+});
+
+describe('the strands view', () => {
+	test('a slot names it, and no standard picture takes it', () => {
+		// A slot file's own fields go over the query, so a species names the view itself.
+		const named = withSlot({ species: 'silver-birch', view: 'whole' }, { view: 'strands' });
+		expect(named.view).toBe('strands');
+		// It is off every slot number: no standard picture takes it, so no other render moves.
+		expect(VIEW_SPECS.strands.slots).toEqual([]);
+		// The standard names keep the views they had before the view was added. The birch's
+		// `19-drooping-twig-ends` name reads as `subbranch` by the twig rule today; the species
+		// names the view it wants in its own slot entry.
+		const standard: readonly (readonly [string, PlantView])[] = [
+			['01-whole-distant.png', 'whole'],
+			['02-whole-profile.png', 'whole'],
+			['03-whole-from-below.png', 'below'],
+			['04-crown-outside.png', 'limb'],
+			['05-crown-underside.png', 'below'],
+			['06-inside-crown.png', 'inside'],
+			['07-limb-leaving-trunk.png', 'junction'],
+			['08-limb-fork.png', 'fork'],
+			['09-secondary-branching.png', 'branch'],
+			['10-fine-twigs.png', 'subbranch'],
+			['11-leaf-cluster.png', 'cluster'],
+			['12-single-leaf-upper.png', 'leaf-upper'],
+			['13-single-leaf-underside.png', 'leaf-under'],
+			['14-bark-base.png', 'bark-base'],
+			['15-bark-mid-trunk.png', 'bark-mid'],
+			['16-bark-on-limb.png', 'bark-limb'],
+			['17-trunk-taper.png', 'trunk'],
+			['18-silhouette.png', 'silhouette'],
+			['19-drooping-twig-ends.png', 'subbranch'],
+			['20-winter-held-leaves.png', 'limb'],
+			['21-branch-studio.png', 'branch'],
+			['22-subbranch-studio.png', 'subbranch'],
+			['23-leaf-cluster-studio.png', 'cluster'],
+			['24-leaf-texture-upper.png', 'leaf-upper'],
+			['25-leaf-texture-underside.png', 'leaf-under'],
+			['26-bark-texture.png', 'bark-mid'],
+			['28-young-bark.png', 'bark-limb'],
+		];
+		for (const [file, view] of standard) expect(classifySlot(file)?.view, file).toBe(view);
+	});
+});
+
+/** A plant's mask on the matte's plain white background. */
+function mattePlant(
+	width: number,
+	height: number,
+	mask: Uint8Array,
+	coverage?: Uint8Array,
+): PlantMask {
+	const flat = {
+		coefficients: [
+			[100, 0, 0, 0, 0, 0],
+			[0, 0, 0, 0, 0, 0],
+			[0, 0, 0, 0, 0, 0],
+		],
+		noise: 0.5,
+		fit: 1,
+	};
+	return {
+		width,
+		height,
+		mask,
+		...(coverage && { coverage }),
+		background: { horizon: null, sky: flat, plain: true },
+	};
+}
+
+describe('the coverage matte', () => {
+	test("keeps a texel's own coverage beside the half-black mask", () => {
+		const image = blank(4, 1, [255, 255, 255]);
+		put(image, 1, 0, [0, 0, 0]);
+		put(image, 2, 0, [128, 128, 128]);
+		put(image, 3, 0, [254, 254, 254]);
+		const plant = matteMask(image);
+		expect([...plant.mask]).toEqual([0, 1, 0, 0]);
+		expect([...(plant.coverage as Uint8Array)]).toEqual([0, 255, 127, 0]);
+	});
+
+	test('reads any coverage for the piece test, and a plain mask as it stands', () => {
+		const plain = mattePlant(2, 1, Uint8Array.from([1, 0]));
+		expect([...anyPlantMask(plain)]).toEqual([1, 0]);
+		const covered = mattePlant(2, 1, Uint8Array.from([0, 0]), Uint8Array.from([0, 3]));
+		expect([...anyPlantMask(covered)]).toEqual([0, 1]);
+	});
+
+	test('joins two runs through a texel that a leaf only partly covers', () => {
+		const width = 20;
+		const height = 8;
+		const mask = new Uint8Array(width * height);
+		for (let y = 1; y <= 6; y++)
+			for (const x of [2, 3, 4, 5, 6, 9, 10, 11, 12, 13]) mask[y * width + x] = 1;
+		const coverage = new Uint8Array(width * height);
+		for (let at = 0; at < coverage.length; at++) coverage[at] = mask[at] ? 255 : 0;
+		for (let y = 1; y <= 6; y++) coverage[y * width + 7] = 100;
+		const plant = mattePlant(width, height, mask, coverage);
+		// The blocks stand two background texels apart, so the plain mask reads two pieces. The
+		// partly covered texel closes the gap to the one the piece rule already bridges.
+		expect(pieceCount(mask, width, height, 24)).toBe(2);
+		expect(pieceCount(anyPlantMask(plant), width, height, 24)).toBe(1);
+	});
+
+	test('counts a partly covered texel as the sky it leaves in the gap', () => {
+		const width = 20;
+		const height = 20;
+		const mask = new Uint8Array(width * height);
+		for (let y = 5; y <= 14; y++) for (let x = 5; x <= 14; x++) mask[y * width + x] = 1;
+		const hole = [8, 9, 10, 11].map((x) => 10 * width + x);
+		for (const at of hole) mask[at] = 0;
+		const coverage = new Uint8Array(width * height);
+		for (let at = 0; at < coverage.length; at++) coverage[at] = mask[at] ? 255 : 0;
+		for (const at of hole.slice(0, 2)) coverage[at] = 128;
+		const image = blank(width, height, [0, 0, 0]);
+		const binary = measurePlant(image, mattePlant(width, height, mask));
+		const fractional = measurePlant(image, mattePlant(width, height, mask, coverage));
+		// The hole is four texels of the crown's hundred; two are half covered, so the fractional
+		// gap gives back the half texel each of them leaves. The measure rounds the share to four
+		// places, which is where three per cent sits.
+		expect(binary.gapFraction).toBeCloseTo(4 / 100, 4);
+		expect(fractional.gapFraction).toBeCloseTo(3 / 100, 4);
+		// The crown's own box holds the same hole as the outline, so its gap agrees; the frame keeps
+		// the empty sky around the plant and reads far larger.
+		expect(binary.crownBoxGap).toBeCloseTo(4 / 100, 4);
+		expect(fractional.crownBoxGap).toBeCloseTo(3 / 100, 4);
+		expect(binary.frameGap).toBeCloseTo(304 / 400, 4);
+		expect(fractional.frameGap).toBeCloseTo((300 + 2 + 2 * (1 - 128 / 255)) / 400, 4);
 	});
 });

@@ -100,7 +100,10 @@ export const HEADER = {
 	lichen: 40,
 	/** Lichen: its lowest and highest height in metres. */
 	lichenReach: 41,
-	/** The whole plant's sway: metres at its top at the field's base speed, then cycles a second. */
+	/**
+	 * The whole plant's sway: metres at its top at the field's base speed, cycles a second, then
+	 * the power its share of that motion rises with along a stem.
+	 */
 	sway: 42,
 	/**
 	 * The first extra's band colour, then the band's roughness, as `extras` holds its body's; the
@@ -120,6 +123,25 @@ export const HEADER = {
 	extraStalks: 51,
 	/** The least width in pixels that a card's stalk draws, or 0 where the record gives none. */
 	cardStalk: 55,
+	/** Young bark: the tint its thin wood takes, where the record gives one. */
+	youngTint: 56,
+	/**
+	 * The first bark zone's band on the other axis: its start, end, blend and whether the record
+	 * gives one; the next `MAX_BARK_ZONES - 1` texels hold the other zones' in order.
+	 */
+	barkSeconds: 57,
+	/** The autumn bark's linear tint, and 1 when the record gives one. */
+	autumnBark: 61,
+	/** The winter bark's linear tint, and 1 when the record gives one. */
+	winterBark: 62,
+	/** The winter leaves' linear reflectance, and 1 when the record gives them. */
+	winterReflectance: 63,
+	/** The winter leaves' linear transmittance. */
+	winterTransmittance: 64,
+	/** A tuft's basal sheath colour, then its roughness, where the record names one. */
+	sheath: 65,
+	/** A grass blade's collar: its colour, then the share of the blade's base it takes. */
+	collar: 66,
 } as const;
 
 /**
@@ -129,7 +151,7 @@ export const HEADER = {
 export const BARK_ZONE_TEXELS = 4;
 
 /** The header's texels that hold anything. */
-export const HEADER_TEXELS = HEADER.cardStalk + 1;
+export const HEADER_TEXELS = HEADER.collar + 1;
 
 /** An extra's roughness where its record names none. */
 export const EXTRA_ROUGHNESS = 0.6;
@@ -265,8 +287,10 @@ export function speciesHeader(
 	const optics = foliageOptics(record);
 	const leaf = manifest.leaf;
 	if (optics) {
-		const upperMean = leaf?.mean.upper ?? optics.reflectance;
-		const lowerMean = leaf?.mean.lower ?? optics.reflectanceBack;
+		// A species with no leaf texture samples a white texel, so its mean is white: the texel times
+		// the scale then shows the record's own reflectance rather than a washed-out face.
+		const upperMean = leaf?.mean.upper ?? ([1, 1, 1] as const);
+		const lowerMean = leaf?.mean.lower ?? ([1, 1, 1] as const);
 		const upper = faceTerms(optics.reflectance, optics.transmittance, upperMean);
 		const lower = faceTerms(optics.reflectanceBack, optics.transmittance, lowerMean);
 		texel(header, HEADER.upper, [...upper.scale, optics.roughness[0]]);
@@ -288,6 +312,9 @@ export function speciesHeader(
 			0,
 		]);
 	}
+	const foliage = record.foliage;
+	if (foliage.kind === 'grass-blade' && foliage.blade.collar)
+		texel(header, HEADER.collar, [...foliage.blade.collar.colour, foliage.blade.collar.share]);
 	const minParts = box.min.map(split);
 	const spanParts = box.max.map((max, k) => split(max - (box.min[k] as number)));
 	texel(header, HEADER.boxMin, [...minParts.map((p) => p[0]), 0]);
@@ -299,6 +326,7 @@ export function speciesHeader(
 	if (bark) {
 		const young = barkManifest?.young;
 		texel(header, HEADER.young, [...(young?.mean ?? STAND_IN_BARK), bark.youngRadius]);
+		texel(header, HEADER.youngTint, [...(bark.youngTint ?? [1, 1, 1]), 0]);
 		const zones = bark.zones.slice(0, MAX_BARK_ZONES);
 		texel(header, HEADER.youngTile, [
 			young?.tile[0] ?? 0.12,
@@ -329,6 +357,13 @@ export function speciesHeader(
 				layer?.height.depth ?? 0,
 			]);
 			texel(header, at + 3, [...(layer?.mean ?? STAND_IN_BARK), 0]);
+			const second = zone.second;
+			texel(header, HEADER.barkSeconds + index, [
+				second?.from ?? 0,
+				second?.to ?? 0,
+				second?.blend ?? 0,
+				second ? 1 : 0,
+			]);
 		});
 	}
 	(record.extras ?? []).slice(0, MAX_EXTRAS).forEach((extra, index) => {
@@ -351,7 +386,15 @@ export function speciesHeader(
 	const bud = record.shoots?.bud.colour;
 	if (bud) texel(header, HEADER.bud, [...bud, 1]);
 	const sway = windSway(record);
-	texel(header, HEADER.sway, [sway.amplitude, sway.frequency, 0, 0]);
+	texel(header, HEADER.sway, [sway.amplitude, sway.frequency, sway.power, 0]);
+	const seasonBark = record.seasons.bark;
+	if (seasonBark?.autumn) texel(header, HEADER.autumnBark, [...seasonBark.autumn, 1]);
+	if (seasonBark?.winter) texel(header, HEADER.winterBark, [...seasonBark.winter, 1]);
+	const winterLeaves = record.seasons.leaves?.winter;
+	if (winterLeaves) {
+		texel(header, HEADER.winterReflectance, [...winterLeaves.reflectance, 1]);
+		texel(header, HEADER.winterTransmittance, [...winterLeaves.transmittance, 0]);
+	}
 	texel(header, HEADER.cardStalk, [record.lod.cardStalk ?? 0, 0, 0, 0]);
 	return header;
 }

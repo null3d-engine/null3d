@@ -158,11 +158,9 @@ export function mainStem(skeleton: MacroSkeleton): number {
 	return best;
 }
 
-/** The main stem's centre and radius at a height, or undefined when the stem does not reach it. */
-export function stemAt(skeleton: MacroSkeleton, y: number): AxisPoint | undefined {
-	const stem = mainStem(skeleton);
-	if (stem < 0) return undefined;
-	const chain = chainOf(skeleton, stem);
+/** A point at a height along one axis, or undefined when the axis does not cross that height. */
+function pointAtHeight(skeleton: MacroSkeleton, axis: number, y: number): AxisPoint | undefined {
+	const chain = chainOf(skeleton, axis);
 	for (let k = 1; k < chain.length; k++) {
 		const i = chain[k - 1] as number;
 		const j = chain[k] as number;
@@ -179,6 +177,32 @@ export function stemAt(skeleton: MacroSkeleton, y: number): AxisPoint | undefine
 		};
 	}
 	return undefined;
+}
+
+/** The main stem's centre and radius at a height, or undefined when the stem does not reach it. */
+export function stemAt(skeleton: MacroSkeleton, y: number): AxisPoint | undefined {
+	const stem = mainStem(skeleton);
+	return stem < 0 ? undefined : pointAtHeight(skeleton, stem, y);
+}
+
+/**
+ * The thickest stem surface at a height, for a plant with no single trunk: the axis crossing that
+ * height with the largest radius there, such as a tuft's culm or a sheath column. Undefined when
+ * no axis crosses it.
+ */
+export function stemSurfaceAt(
+	skeleton: MacroSkeleton,
+	y: number,
+): { readonly at: AxisPoint; readonly axis: number } | undefined {
+	const { axes } = skeleton;
+	let best: { readonly at: AxisPoint; readonly axis: number } | undefined;
+	for (let a = 0; a < axes.count; a++) {
+		if ((axes.parent[a] as number) < 0) continue;
+		const at = pointAtHeight(skeleton, a, y);
+		if (!at) continue;
+		if (!best || at.radius > best.at.radius) best = { at, axis: a };
+	}
+	return best;
 }
 
 /** The main stem's base, on the ground. */

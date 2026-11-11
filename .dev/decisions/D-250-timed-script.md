@@ -2,7 +2,7 @@
 
 Status: decided by the helper of M3-R14, for the owner's review. Built: the engine performs a
 script in hold mode, the `shot` command draws each of its shot steps, and a `test` entry takes a
-script. A script drives the night town showcase's image tests. Task: M3-R14.
+script. A script drives the island showcase's image tests. Task: M3-R14.
 
 Summary: A text script lists steps at sketch times: key presses, pointer events, property writes,
 dumps and shots. Hold mode performs the input and property steps on the sketch thread, and the
@@ -75,14 +75,14 @@ step, so a state that a script names is the same state on any machine and at any
 references therefore show the state that their steps name, not whatever the machine happened to be
 doing when the picture was taken.
 
-The Mac's Chrome 156 drew the night town script twice on the real GPU, 46 minutes apart. The
+The Mac's Chrome 156 drew the island script twice on the real GPU, 46 minutes apart. The
 second drawing came from the image test's own run of the command line tool, which compares each
 image with its reference. The first ran the command below at the High preset:
 
 ```text
-bun packages/cli/bin/null3d.js shot --script tests/image/showcase-night-town.script --page
-'/tests/pages/image.html?sketch=/examples/showcase/night-town/sketch.ts&size=320x180&preset=high'
---size 320x180 --gpu webgl2 --out target/night-town.png
+bun packages/cli/bin/null3d.js shot --script tests/image/showcase-island.script --page
+'/tests/pages/image.html?sketch=/examples/showcase/island/sketch.ts&size=320x180&preset=high'
+--size 320x180 --gpu webgl2 --out target/island.png
 ```
 
 The two runs wrote byte-identical images for all three states. The SHA-256 values were
@@ -104,8 +104,8 @@ The two runs wrote byte-identical images for all three states. The SHA-256 value
 
 ## The showcase and the image tests
 
-The task's Done-when names a showcase. `tests/image/showcase-night-town.script` drives the night
-town showcase through three states on WebGL2. They are `turned` at 2 s, `walked` at 3.5 s and
+The task's Done-when names a showcase. `tests/image/showcase-island.script` drives the island showcase
+through three states on WebGL2. They are `turned` at 2 s, `walked` at 3.5 s and
 `closer` at 5 s. The `c` key takes the camera off its route at the opening view, where it holds
 still. A left pointer drag then turns it around the square, the `w` key walks it toward the town,
 and the wheel brings it closer. Every state therefore comes from a key or pointer step that the
@@ -118,19 +118,20 @@ drives a key, the pointer, a property write and a dump. That test checks that ea
 images differs from the other two, and those images have no references. In the repository the
 spec draws the showcase script at 320 by 180 pixels and compares each of the three images with its
 reference. On this Mac the spec passed four of four on Chrome's real GPU in 10.0 seconds, and all
-three images matched their references. The runs are `script-demo-night-town-turned`, `-walked` and `-closer` in
+three images matched their references. The runs are `script-demo-island-turned`, `-walked` and `-closer` in
 `tests/image/script-runs.ts`, and each keeps its own references. The real GPU draws at the High
 preset, and the software GPU at Low, as the image manifest's showcase tests do.
 
-The real GPU's three references are in the repository, drawn on this Mac. The software GPU's
-references are drawn on CI's SwiftShader: the spec saves each new picture as a candidate, and
+The real GPU's three references are in the repository, drawn on this Mac. A software GPU's
+reference comes from a SwiftShader drawing: the spec saves each new picture as a candidate, and
 accepting one makes it a reference. CI run `40445667147` drew the three and saved them as
 candidates, and it failed only because those references did not exist yet, as a run that draws new
-references does. A local run with `CI=1` then compared the accepted references and passed four of
+references does. The redraw replaced those three with drawings made on this Mac at the landed head,
+because a push to a milestone branch runs no image job; `local-references.json` records them. A local run with `CI=1` then compared the accepted references and passed four of
 four in 1.4 minutes.
 
 The rejected option drove `examples/input`, a basic demo, for its input steps. The showcase reads
-its own camera keys and the pointer, so the night town script drives those. The fixture project
+its own camera keys and the pointer, so the island script drives those. The fixture project
 still shows a property write and a dump.
 
 The engine's unit tests run in CI's `docs-and-tools` job, which runs `bun run test`. A run of the

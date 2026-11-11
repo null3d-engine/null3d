@@ -290,7 +290,9 @@ const TEXTURE_BY_NUMBER: Readonly<Record<number, SlotRule>> = {
 	27: { view: 'bark-mid', framed: false, note: "the second bark zone, at the zone's own height" },
 	28: {
 		view: 'bark-limb',
-		query: { along: 0.85, thin: 0.05, span: 0.07 },
+		// Young bark is two to three centimetres thick, so the view asks for that wood rather than a
+		// great limb, and masks the backdrop so the crown behind it does not enter the figure.
+		query: { along: 0.85, thin: 0.015, span: 0.1, barkMask: true },
 		framed: false,
 		note: 'young bark: thin wood far out on a limb',
 	},
@@ -844,6 +846,12 @@ export interface PlantMask {
 	readonly height: number;
 	/** One byte per pixel: 1 where the plant is. */
 	readonly mask: Uint8Array;
+	/**
+	 * One byte per pixel of the plant's coverage, from 0 for clear sky to 255 for a whole texel,
+	 * where the picture gives it: a render's matte carries each texel's own coverage, where a
+	 * photograph's colour mask carries only whether it is plant.
+	 */
+	readonly coverage?: Uint8Array;
 	readonly background: Background;
 }
 
@@ -1203,12 +1211,16 @@ export function matteMask(image: Rgba): PlantMask {
 	const work = image.width > WORK_WIDTH ? resizeToWidth(image, WORK_WIDTH) : image;
 	const { width, height } = work;
 	const mask = new Uint8Array(width * height);
+	const coverage = new Uint8Array(width * height);
 	for (let at = 0; at < mask.length; at++) {
 		const luma =
 			0.2126 * (work.data[at * 4] as number) +
 			0.7152 * (work.data[at * 4 + 1] as number) +
 			0.0722 * (work.data[at * 4 + 2] as number);
 		mask[at] = luma < 128 ? 1 : 0;
+		// The clear sky reads white, and the matte's frame edge reads one step below it. A texel at
+		// that step or above is clear, so the frame's own edge is not taken for a faint leaf.
+		coverage[at] = luma >= 254 ? 0 : Math.round(255 - luma);
 	}
 	const flat: ColourSurface = {
 		coefficients: [
@@ -1219,7 +1231,20 @@ export function matteMask(image: Rgba): PlantMask {
 		noise: 0.5,
 		fit: 1,
 	};
-	return { width, height, mask, background: { horizon: null, sky: flat, plain: true } };
+	return { width, height, mask, coverage, background: { horizon: null, sky: flat, plain: true } };
+}
+
+/**
+ * The outline that the piece test reads: every texel that a leaf covers at all, however little,
+ * since a part joins the mass through the one texel between them. A picture without coverage
+ * gives its mask unchanged.
+ */
+export function anyPlantMask(plant: PlantMask): Uint8Array {
+	const coverage = plant.coverage;
+	if (!coverage) return plant.mask;
+	const mask = new Uint8Array(coverage.length);
+	for (let at = 0; at < coverage.length; at++) mask[at] = coverage[at] ? 1 : 0;
+	return mask;
 }
 
 /** A box of pixels, edges included. */
@@ -1254,6 +1279,14 @@ export interface PlantMeasures {
 	readonly crownBox: { readonly width: number; readonly height: number };
 	/** The share of the crown's outline that shows background: the sky or ground through it. */
 	readonly gapFraction: number;
+	/** The share of the crown's box that shows background: the figure the plant is judged on. */
+	readonly crownBoxGap: number;
+	/**
+	 * The share of the whole picture that shows background. It widens with the empty sky a
+	 * photograph keeps around its plant, so it is reported beside the crown-box figure rather
+	 * than in place of it.
+	 */
+	readonly frameGap: number;
 	/** The share of the plant's box that the plant covers. */
 	readonly solidity: number;
 	/** The mean CIELAB colour of the crown's foliage, and its sRGB hex. */
@@ -1326,9 +1359,25 @@ export function widthProfile(spans: Int32Array, box: Box, bands = PROFILE_BANDS)
 }
 
 /**
+ * The range over which a plant's foot starts to read as a mound: a tuft, a rosette or a mound runs
+ * nearly as wide at its foot as through its crown, and a tree's foot is a small share of its crown.
+ * The share below is the least width of the plant's lowest tenth against its widest row. The range
+ * is wide on purpose, so a plant near the mark moves its crown's foot by inches, not by a step.
+ */
+const MOUND_FROM = 0.7;
+const MOUND_TO = 0.95;
+
+/** A value that rises smoothly from 0 at `from` to 1 at `to`, and stays at the ends. */
+function smoothstep(from: number, to: number, value: number): number {
+	const t = Math.min(1, Math.max(0, (value - from) / (to - from)));
+	return t * t * (3 - 2 * t);
+}
+
+/**
  * The row where the crown starts: going up from the plant's base, the first row from which the
  * plant stays wider than its trunk by a clear margin. The trunk's width is the median width of the
- * lowest rows.
+ * lowest rows. A plant with no bare stem runs as wide at its foot as at its widest, and its crown
+ * starts at its foot; its whole box is its crown, which is what its openness is measured over.
  */
 export function crownStartRow(spans: Int32Array, box: Box): number {
 	const tall = box.bottom - box.top + 1;
@@ -1356,25 +1405,62 @@ export function crownStartRow(spans: Int32Array, box: Box): number {
 	if (!Number.isFinite(trunk)) trunk = 0;
 	let widest = 0;
 	for (let y = box.top; y <= box.bottom; y++) widest = Math.max(widest, width(y));
+	// The foot's flare: the widening where the stem meets the ground, or a strip of ground that the
+	// mask keeps at the plant's base. It is not the crown, and it can be the plant's widest row, so
+	// the limit below is taken from the crown's own widest row above it. A flare is a wide run at the
+	// foot with the narrower stem continuing above it; a plant wide from its base has none.
+	const crownWidest = ((): number => {
+		const band = Math.max(2, Math.round(tall * 0.15));
+		const stemRun = Math.max(2, Math.round(tall * 0.02));
+		const top = Math.max(box.top, box.bottom - band);
+		let y = box.bottom;
+		let widestCrown = 0;
+		while (y > top && width(y) <= trunk * 1.5) y--;
+		if (y > top && width(y) > trunk * 1.5) {
+			while (y > top && width(y) > trunk * 1.5) y--;
+			let narrow = 0;
+			for (let z = y; z > Math.max(box.top, y - stemRun); z--)
+				if (width(z) <= trunk * 1.5) narrow++;
+			if (narrow < Math.round(stemRun * 0.8)) y = box.bottom;
+		} else y = box.bottom;
+		for (let z = box.top; z <= y; z++) widestCrown = Math.max(widestCrown, width(z));
+		return widestCrown > 0 ? widestCrown : widest;
+	})();
+	// A plant that runs nearly as wide at its foot as at its widest has no bare stem below its
+	// crown: a tuft, a rosette or a mound. Its crown starts at its foot, so its whole box is the
+	// crown's and its openness is measured over the plant rather than a slice above the mound. A
+	// ground line that reaches both frame edges below the plant is not the plant's foot.
+	let frame = 0;
+	for (let y = box.top; y <= box.bottom; y++)
+		frame = Math.max(frame, (spans[y * 2 + 1] as number) + 1);
+	let foot = box.bottom;
+	while (
+		foot > box.top &&
+		(spans[foot * 2] as number) <= 0 &&
+		(spans[foot * 2 + 1] as number) >= frame - 1
+	)
+		foot--;
+	const low: number[] = [];
+	for (let y = foot; y > foot - Math.max(2, Math.round(tall * 0.1)); y--) low.push(width(y));
+	low.sort((a, b) => a - b);
+	// How much of a mound the plant is: a foot as wide as the plant's widest row leaves no bare stem,
+	// so its crown starts at its foot. The share rises smoothly rather than stepping at a mark, since
+	// the crown's box, its openness and every figure read from them would jump as a plant crossed it.
+	const footShare = widest > 0 ? (low[low.length >> 1] as number) / widest : 0;
+	const mound = smoothstep(MOUND_FROM, MOUND_TO, footShare);
 	// A stem's own width plus a clear margin, but never so much of the plant's width that a thick
 	// bole reads as foliage: on a low-crowned tree whose trunk is a third of its height across, an
 	// uncapped margin swallows the crown and the foot lands wherever the first wide run begins.
-	const limit = Math.min(Math.max(trunk * 2.5, widest * 0.12), widest * 0.55);
-	const run = Math.max(2, Math.round(tall * 0.03));
-	// A ground line in frame runs wider than the plant's stem, so skip those rows first: they are
-	// not the crown, and their width would let the scan below find the ground as a crown.
-	let floor = box.bottom;
-	while (floor > box.top && width(floor) > limit) floor--;
-	for (let y = floor; y >= box.top; y--) {
-		let wide = true;
-		for (let k = 0; k < run && y - k >= box.top; k++) if (width(y - k) <= limit) wide = false;
-		if (wide) return y;
-	}
-	// No wide run from the bottom means the lowest bands hold a ground line: a lake or a grassy
-	// slope wider than the crown makes the trunk estimate the ground's width, and its limit clears
-	// nothing. The crown's own rows still say where it starts, so find the first narrow run below
-	// its wide top. A photograph whose start the scan above finds never reaches this.
-	return crownStartFromTop(spans, box, limit);
+	// The limit is taken from the crown's own widest row, not the plant's: a flare at the foot, or a
+	// strip of ground the mask keeps at its base, is often the plant's widest row of all, and a limit
+	// near the crown's own width leaves the crown's lowest boughs below it as if they were stem.
+	const limit = Math.min(Math.max(trunk * 2.5, crownWidest * 0.12), crownWidest * 0.55);
+	// The crown's own rows say where it starts: its wide stretch runs from the top down, and the
+	// first narrow stretch below it that the stem continues below is its base. A scan from the foot's
+	// end cannot be trusted, because a flare or a ground strip is a wide stretch of its own there.
+	const found = crownStartFromTop(spans, box, limit);
+	// The more the plant is a mound, the further its crown's foot moves towards its own foot.
+	return Math.round(found + mound * (box.bottom - found));
 }
 
 /**
@@ -1433,7 +1519,7 @@ function meanColour(
 
 /** Measures a plant from its outline in a picture. */
 export function measurePlant(image: Rgba, plant: PlantMask): PlantMeasures {
-	const { width, height, mask, background } = plant;
+	const { width, height, mask, coverage, background } = plant;
 	const work = image.width === width ? image : resizeToWidth(image, width);
 	const lab = labImage(work);
 	const horizon = background.horizon;
@@ -1459,6 +1545,8 @@ export function measurePlant(image: Rgba, plant: PlantMask): PlantMeasures {
 			crownStart: 0,
 			crownBox: { width: 0, height: 0 },
 			gapFraction: 0,
+			crownBoxGap: 0,
+			frameGap: 0,
 			solidity: 0,
 			foliage: null,
 			bark: null,
@@ -1471,18 +1559,36 @@ export function measurePlant(image: Rgba, plant: PlantMask): PlantMeasures {
 	let hull = 0;
 	let gaps = 0;
 	let crownWidth = 0;
+	let crownLeft = width;
+	let crownRight = -1;
 	const inCrown = new Uint8Array(width * height);
 	for (let y = box.top; y <= start; y++) {
 		const left = spans[y * 2] as number;
 		if (left < 0) continue;
 		const right = spans[y * 2 + 1] as number;
 		crownWidth = Math.max(crownWidth, right - left + 1);
+		crownLeft = Math.min(crownLeft, left);
+		crownRight = Math.max(crownRight, right);
 		for (let x = left; x <= right; x++) {
 			hull++;
-			if (!mask[y * width + x]) gaps++;
-			else inCrown[y * width + x] = 1;
+			if (!mask[y * width + x]) {
+				// A render's matte carries how much of the texel a leaf covers, so the sky between
+				// thin leaves weighs as the part of the texel it holds rather than a whole one.
+				const at = y * width + x;
+				gaps += coverage ? 1 - (coverage[at] as number) / 255 : 1;
+			} else inCrown[y * width + x] = 1;
 		}
 	}
+	const sky = (at: number): number =>
+		coverage ? 1 - (coverage[at] as number) / 255 : mask[at] ? 0 : 1;
+	let crownBoxSky = 0;
+	const crownBoxHeight = start - box.top + 1;
+	if (crownRight >= crownLeft)
+		for (let y = box.top; y <= start; y++)
+			for (let x = crownLeft; x <= crownRight; x++) crownBoxSky += sky(y * width + x);
+	const crownBoxArea = crownRight >= crownLeft ? (crownRight - crownLeft + 1) * crownBoxHeight : 0;
+	let frameSky = 0;
+	for (let at = 0; at < mask.length; at++) frameSky += sky(at);
 	let covered = 0;
 	for (let y = box.top; y <= box.bottom; y++)
 		for (let x = box.left; x <= box.right; x++) covered += mask[y * width + x] as number;
@@ -1499,6 +1605,8 @@ export function measurePlant(image: Rgba, plant: PlantMask): PlantMeasures {
 		crownStart: Number(((box.bottom - start) / tall).toFixed(4)),
 		crownBox: { width: crownWidth, height: start - box.top + 1 },
 		gapFraction: hull > 0 ? Number((gaps / hull).toFixed(4)) : 0,
+		crownBoxGap: crownBoxArea > 0 ? Number((crownBoxSky / crownBoxArea).toFixed(4)) : 0,
+		frameGap: Number((frameSky / (width * height)).toFixed(4)),
 		solidity: Number((covered / ((box.right - box.left + 1) * tall)).toFixed(4)),
 		foliage: meanColour(lab, width * height, (at) => inCrown[at] === 1),
 		bark:

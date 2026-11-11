@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import type { ShootRows } from '../../../packages/vegetation/src/asset.ts';
 import {
 	AXIS_LIMB,
+	AXIS_ROOT,
 	AXIS_STEM,
 	type MacroSkeleton,
 	SkeletonBuilder,
@@ -16,6 +17,7 @@ import {
 	firstForkHeight,
 	normalize,
 	stemAt,
+	stemSurfaceAt,
 	turnedAbout,
 	type V3,
 } from '../../../tests/pages/lib/plant-review/anatomy.ts';
@@ -31,7 +33,7 @@ import {
 	trunkView,
 	walkedRound,
 } from '../../../tests/pages/lib/plant-review/close.ts';
-import { rowAngle } from '../../../tests/pages/lib/plant-review/framing.ts';
+import { rowAngle, spanDistance } from '../../../tests/pages/lib/plant-review/framing.ts';
 import {
 	clutterOf,
 	lensAxes,
@@ -113,6 +115,15 @@ function oakLike(): MacroSkeleton {
 	return b.finish(1);
 }
 
+describe('a part of a piece framed at its own span', () => {
+	test('stands back far enough that the span fills the frame across it', () => {
+		// A square frame of 40 degrees shows a span equal to twice the distance times the tangent.
+		expect(spanDistance(0.5, 40, 1)).toBeCloseTo(0.25 / Math.tan((20 * Math.PI) / 180), 6);
+		// A taller frame is narrower across, so the camera stands further back for the same span.
+		expect(spanDistance(0.5, 40, 0.75)).toBeGreaterThan(spanDistance(0.5, 40, 1));
+	});
+});
+
 describe('the view up the stem', () => {
 	const skeleton = oakLike();
 	const plant = { skeleton, shoots: NO_ROWS, prototypes: [] };
@@ -126,6 +137,18 @@ describe('the view up the stem', () => {
 		expect(reach).toBeGreaterThan(0.6);
 		expect(reach).toBeLessThan(0.8 + 1.01);
 		expect(view.position[2]).toBeGreaterThan(0);
+		expect(view.subject.pitch).toBe(70);
+	});
+
+	test('drops its lens into a plant shorter than a person, so the crown stands above it', () => {
+		const b = new SkeletonBuilder();
+		const stem = b.addAxis({ parent: -1, parentNode: -1, order: 0, kind: AXIS_STEM });
+		run(b, stem, -1, [0, 0, 0], [0, 0.1, 0], 11, 0.02, 0.3);
+		const short = { skeleton: b.finish(1), shoots: NO_ROWS, prototypes: [] };
+		expect(short.skeleton.height).toBeCloseTo(1, 6);
+		const view = belowView(short, 0, lens, { elevation: 70 });
+		// A third of the way up the plant, and still above the ground.
+		expect(view.position[1]).toBeCloseTo(0.35, 6);
 		expect(view.subject.pitch).toBe(70);
 	});
 
@@ -187,6 +210,23 @@ describe('the view up the stem', () => {
 		);
 		expect(near.subject.warning).toContain("crown's row");
 		expect(Math.hypot(near.position[0], near.position[2])).toBeLessThan(5);
+	});
+
+	test("stands low at a stemless plant's rim and looks up through its leaves", () => {
+		const b = new SkeletonBuilder();
+		const crown = b.addAxis({ parent: -1, parentNode: -1, order: 0, kind: AXIS_ROOT });
+		const foot = b.addNode({ x: 0, y: 0, z: 0, radius: 0.11, parent: -1, axis: crown });
+		const top = b.addNode({ x: 0, y: 0.03, z: 0, radius: 0.11, parent: foot, axis: crown });
+		const shoot = b.addAxis({ parent: crown, parentNode: top, order: 1, kind: AXIS_LIMB });
+		run(b, shoot, top, [0.2, 0, 0], [0.2, 0.28, 0], 6, 0.02, 0.5);
+		const skeleton = b.finish(1);
+		const view = belowView({ skeleton, shoots: NO_ROWS, prototypes: [] }, 0, lens, {
+			elevation: 70,
+		});
+		expect(view.position[1]).toBeLessThan(0.6);
+		expect(Math.hypot(view.position[0], view.position[2])).toBeGreaterThan(0.5);
+		expect(view.subject.kind).toBe('the plant from its foot');
+		expect(view.subject.pitch).toBe(70);
 	});
 
 	test("stands as far from the stem's axis as the photograph, in stem radii", () => {
@@ -335,6 +375,27 @@ describe('a limb dividing into two', () => {
 		const back = [0, 1, 2].map((k) => (view.position[k] as number) - (view.target[k] as number));
 		expect(Math.abs((back[2] as number) / Math.hypot(...back))).toBeGreaterThan(0.8);
 		expect(view.target[1]).toBeGreaterThan(upright?.at[1] ?? 0);
+	});
+
+	/** The height in metres that a view's frame covers at its target. */
+	const frameHeight = (view: { position: number[]; target: number[] }): number =>
+		2 *
+		Math.hypot(...[0, 1, 2].map((k) => (view.position[k] as number) - (view.target[k] as number))) *
+		Math.tan((50 * Math.PI) / 360);
+
+	test("frames the arms' run, and takes the span a picture asks for", () => {
+		const plant = { skeleton, shoots: NO_ROWS, prototypes: [] };
+		const plain = forkView(plant, { fov: 50, aspect: 1 });
+		if (!plain) throw new Error('the fork view found no fork');
+		const fork = forks(skeleton).find((f) => f.node === plain.subject.node);
+		if (!fork) throw new Error('the framed fork is not a fork');
+		// The photograph frames both arms and their twigs, so the frame runs well past the limb's own
+		// thickness.
+		expect(frameHeight(plain)).toBeGreaterThan(4 * 2 * fork.radius);
+		// A picture that asks for a span gets it, as the limb view does.
+		const asked = forkView(plant, { fov: 50, aspect: 1 }, undefined, 3);
+		if (!asked) throw new Error('the fork view found no fork');
+		expect(frameHeight(asked)).toBeCloseTo(3, 5);
 	});
 
 	test("takes a great limb's fork over a branch's fork nearer the sought size", () => {
@@ -609,6 +670,36 @@ describe('the clutter of a frame', () => {
 			band: 2,
 		});
 		expect(clutter.inside).toBe(true);
+	});
+});
+
+describe('the stem surface of a plant with no single trunk', () => {
+	const b = new SkeletonBuilder();
+	// A crown a few centimetres across, with two culms rising from it past the sampled height.
+	const crown = b.addAxis({ parent: -1, parentNode: -1, order: 0, kind: AXIS_STEM });
+	const crownBase = b.addNode({ x: 0, y: -0.03, z: 0, radius: 0.045, parent: -1, axis: crown });
+	const crownTop = b.addNode({ x: 0, y: 0, z: 0, radius: 0.045, parent: crownBase, axis: crown });
+	for (const [x, z, radius] of [
+		[0.02, 0, 0.0018],
+		[-0.02, 0.01, 0.0014],
+	] as const) {
+		const culm = b.addAxis({ parent: crown, parentNode: crownTop, order: 1, kind: AXIS_LIMB });
+		run(b, culm, crownTop, [x, 0, z], [0, 0.05, 0], 10, radius, 0.3);
+	}
+	const skeleton = b.finish(0);
+
+	test('the main stem does not reach the height the picture samples', () => {
+		expect(stemAt(skeleton, 0.16)).toBeUndefined();
+	});
+
+	test('the thickest culm crossing that height is the surface', () => {
+		const found = stemSurfaceAt(skeleton, 0.16);
+		expect(found?.at.at[1]).toBeCloseTo(0.16, 6);
+		expect(found?.at.radius).toBeCloseTo(0.001608, 6);
+	});
+
+	test('no axis reaches a height above the plant', () => {
+		expect(stemSurfaceAt(skeleton, 2)).toBeUndefined();
 	});
 });
 

@@ -76,6 +76,8 @@ const Purpose = {
 	Head: 6,
 	Branch: 7,
 	Spike: 8,
+	Rhizome: 9,
+	Root: 10,
 } as const;
 
 /** A unit draw for one purpose of one variant. */
@@ -236,7 +238,10 @@ function growHeads(
 				order: 3,
 				kind: AXIS_LIMB,
 			});
-			const radius = heads.radius * 0.35 * (1 + 0.02 * draw(input, Purpose.Spike, index, j, 4));
+			const radius =
+				heads.radius *
+				(heads.stalkShare ?? 0.35) *
+				(1 + 0.02 * draw(input, Purpose.Spike, index, j, 4));
 			const points: Vector3[] = [
 				from,
 				[
@@ -414,6 +419,7 @@ export function growTuft(input: GrowInput): MacroSkeleton {
 		axis: crown,
 		light: 1,
 	});
+	growSoil(input, builder, crown, crownTop);
 	const shoots = Math.max(1, Math.round(spreadAt(growth.shoots, draw(input, Purpose.Shoots))));
 	const meanLength = spreadMean(blade.length);
 	const turn = draw(input, Purpose.Shoots, 1) * 2 * PI;
@@ -544,7 +550,115 @@ export function growTuft(input: GrowInput): MacroSkeleton {
 			growHeads(input, builder, growth, stem, height, heading, h);
 		}
 	}
-	return builder.finish(0);
+	const finished = builder.finish(0);
+	if (growth.soil === undefined) return finished;
+	// What grows below the soil does not extend the plant's box: the ground hides it, and every
+	// picture frames the plant above the ground. The crown's own nodes set the lowest point.
+	let lowest = finished.bounds.max[1] as number;
+	for (let n = finished.axes.first[0] as number; n <= (finished.axes.last[0] as number); n++)
+		lowest = Math.min(lowest, finished.position[n * 3 + 1] as number);
+	if ((finished.bounds.min[1] as number) >= lowest) return finished;
+	return {
+		...finished,
+		bounds: {
+			min: [finished.bounds.min[0], lowest, finished.bounds.min[2]],
+			max: finished.bounds.max,
+		},
+	};
+}
+
+/**
+ * The crown's hold in the soil: a rhizome along the ground and the roots that leave it and the
+ * crown. A root runs below the soil, where the blades' own path never goes, so it takes its own
+ * node run rather than the arching one.
+ */
+function growSoil(
+	input: GrowInput,
+	builder: SkeletonBuilder,
+	crown: number,
+	crownNode: number,
+): void {
+	const { growth } = tuftOf(input.record);
+	const soil = growth.soil;
+	if (!soil) return;
+	const roots = Math.max(0, Math.round(spreadAt(soil.roots, draw(input, Purpose.Root))));
+	const heading = draw(input, Purpose.Rhizome, 2) * 2 * PI;
+	let host = crown;
+	let hostNode = crownNode;
+	if (soil.rhizome !== undefined) {
+		const half = spreadAt(soil.rhizome, draw(input, Purpose.Rhizome));
+		const radius = soil.rhizomeRadius ?? 0.01;
+		const along: [number, number] = [cos(heading), sin(heading)];
+		const axis = builder.addAxis({ parent: -1, parentNode: -1, order: 0, kind: AXIS_ROOT });
+		const nodes = 5;
+		let previous = -1;
+		for (let i = 0; i < nodes; i++) {
+			const share = i / (nodes - 1);
+			const reach = -half + 2 * half * share;
+			const end = Math.abs(2 * share - 1);
+			const node = builder.addNode({
+				x: along[0] * reach,
+				y: -radius * (0.4 + 0.35 * end),
+				z: along[1] * reach,
+				radius: radius * (0.55 + 0.45 * (1 - end)),
+				parent: previous < 0 ? -1 : previous,
+				axis,
+				light: 1,
+			});
+			previous = node;
+		}
+		host = axis;
+		hostNode = previous;
+	}
+	for (let r = 0; r < roots; r++) {
+		const unit = (k: number) => draw(input, Purpose.Root, r, k);
+		const out = heading + (r / Math.max(1, roots)) * 2 * PI + (unit(0) - 0.5) * 0.8;
+		const droop = radians(spreadAt(soil.droop, unit(1)));
+		const length = spreadAt(soil.rootLength, unit(2));
+		const start = host === crown ? -0.02 : -0.01;
+		const margin = host === crown ? growth.base : 0.01;
+		const from: Vector3 = [cos(out) * margin * unit(3), start, sin(out) * margin * unit(3)];
+		rootPath(builder, host, hostNode, from, out, -droop, length, soil.rootRadius);
+	}
+}
+
+/**
+ * Adds a root's axis: nodes running out from the crown and down below the soil, its radius closing
+ * to a point at the end.
+ */
+function rootPath(
+	builder: SkeletonBuilder,
+	parent: number,
+	parentNode: number,
+	start: Readonly<Vector3>,
+	heading: number,
+	elevation: number,
+	length: number,
+	radius: number,
+): void {
+	const axis = builder.addAxis({ parent, parentNode, parentT: 1, order: 1, kind: AXIS_ROOT });
+	const nodes = 4;
+	const p: Vector3 = [start[0], start[1], start[2]];
+	const step = length / (nodes - 1);
+	let previous = parentNode;
+	for (let i = 0; i < nodes; i++) {
+		const share = i / (nodes - 1);
+		if (i > 0) {
+			const d = inPlane(heading, elevation - radians(25) * share);
+			p[0] += d[0] * step;
+			p[1] += d[1] * step;
+			p[2] += d[2] * step;
+		}
+		previous = builder.addNode({
+			x: p[0],
+			y: p[1],
+			z: p[2],
+			radius: radius * (1 - 0.85 * share),
+			parent: i === 0 ? parentNode : previous,
+			axis,
+			light: 1,
+		});
+	}
 }
 
 /** The signed angle from one heading to another, from -π to π. */
@@ -595,6 +709,13 @@ export function meshTuft(input: MeshInput, level: MeshLevel): MeshArrays {
 	const stems = stalkRange(strip);
 	const buds = terminalBuds(skeleton);
 	const meanLength = spreadMean(blade.length);
+	// A ligule stands at the blade's collar only at the nearest and finest detail, where a close
+	// view can read it; the farther levels and the kit's pressed leaf draw none.
+	const ligule =
+		blade.ligule && (input.detail === 'high' || input.detail === 'ultra')
+			? { length: spreadMean(blade.ligule.length), width: blade.ligule.width }
+			: undefined;
+	const liguleShare = blade.ligule?.share ?? 1;
 	const mesh = new MeshWriter();
 	const season = input.season;
 	const browning =
@@ -605,8 +726,35 @@ export function meshTuft(input: MeshInput, level: MeshLevel): MeshArrays {
 				: 0;
 	for (let a = 0; a < axes.count; a++) {
 		const kind = axes.kind[a] as number;
-		if (kind === AXIS_ROOT) continue;
 		const bytes = axisBytes(input, a);
+		if (kind === AXIS_ROOT) {
+			// The crown's own axis holds the shoots and draws nothing itself; a rhizome and the
+			// roots lie along its soil and draw as tubes, the roots closing to a point. They stand
+			// only at the nearest level: a farther view sees them under the crown, not beside it.
+			if (a === 0 || level > 0) continue;
+			const path = wholePath(skeleton, a, [0, 1, 0]);
+			if (!path || path.length < 1e-4) continue;
+			const first = axes.first[a] as number;
+			const last = axes.last[a] as number;
+			const r0 = skeleton.radius[first] as number;
+			const r1 = skeleton.radius[last] as number;
+			writeStem(mesh, {
+				path,
+				from: 0,
+				to: path.length,
+				rings: Math.max(2, last - first + 1),
+				radius: (share) => r0 + (r1 - r0) * share,
+				section: { sides: level === 0 ? 4 : 3 },
+				v: stems,
+				uHalf: strip.stalkHalf,
+				bytes,
+				crown,
+				along: [0, 0.05],
+				browning: 0.3,
+				closeTip: true,
+			});
+			continue;
+		}
 		if (kind === AXIS_LEAF) {
 			const bud = buds[a] as number;
 			const face: [number, number, number] = [0, 1, 0];
@@ -636,6 +784,7 @@ export function meshTuft(input: MeshInput, level: MeshLevel): MeshArrays {
 						(unitAt(input.seed, key, 2) < 0.5 ? -1 : 1),
 					browning,
 					dry: 0.35 + 0.65 * age * age,
+					...(ligule && unitAt(input.seed, key, 7) < liguleShare ? { ligule } : {}),
 				},
 				{ rows, across: tiers.blade.across },
 				texture,
@@ -670,7 +819,9 @@ export function meshTuft(input: MeshInput, level: MeshLevel): MeshArrays {
 			bytes,
 			crown,
 			along: isStem ? [0, 1] : fine ? [0.85, 1] : [0, 0.05],
-			browning: Math.max(browning, isStem ? 0.15 : 0.3),
+			// A sheath column carries a sentinel browning value, which the plant material reads as
+			// the record's sheath colour; every other stalk browns as the season gives.
+			browning: isStem ? Math.max(browning, 0.15) : Math.max(browning, 0.3),
 			closeTip: isStem || fine,
 		});
 	}

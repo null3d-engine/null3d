@@ -2,25 +2,43 @@
 // their errors, and the pieces of each level.
 import { glTFIO } from '../../../../packages/cli/src/assets/pipeline.js';
 
+/** The parts of a primitive this script reads. */
+interface Primitive {
+	getIndices(): { getCount(): number } | null;
+	getExtension(name: string): { getTriangles?(): readonly unknown[] } | null;
+	listExtensions(): { extensionName: string }[];
+}
+
+/** The parts of a mesh this script reads. */
+interface Mesh {
+	listPrimitives(): Primitive[];
+}
+
+/** A node's level-of-detail extension, as the optimizer writes it. */
+interface Levels {
+	listLevels(): { getMesh(): unknown }[];
+}
+
 const io = await glTFIO();
-const tri = (m: any) =>
-	m.listPrimitives().reduce((s: number, p: any) => s + (p.getIndices()?.getCount() ?? 0) / 3, 0);
-const pcs = (m: any) =>
+const meshOf = (node: { getMesh(): unknown }): Mesh | null => node.getMesh() as Mesh | null;
+const tri = (m: Mesh) =>
+	m.listPrimitives().reduce((s, p) => s + (p.getIndices()?.getCount() ?? 0) / 3, 0);
+const pcs = (m: Mesh) =>
 	m
 		.listPrimitives()
-		.map((p: any) => (p.getExtension('NULL3D_pieces') as any)?.getTriangles()?.length ?? 0)
+		.map((p) => p.getExtension('NULL3D_pieces')?.getTriangles()?.length ?? 0)
 		.join('/');
 for (const path of process.argv.slice(2)) {
 	const doc = await io.read(path);
-	const levelNodes = new Set<any>();
+	const levelNodes = new Set<unknown>();
 	for (const node of doc.getRoot().listNodes()) {
-		const lod = node.getExtension('MSFT_lod') as any;
+		const lod = node.getExtension('MSFT_lod') as Levels | null;
 		if (lod) for (const n of lod.listLevels()) levelNodes.add(n);
 	}
 	for (const node of doc.getRoot().listNodes()) {
-		const mesh = node.getMesh();
+		const mesh = meshOf(node);
 		if (!mesh || levelNodes.has(node)) continue;
-		const lod = node.getExtension('MSFT_lod') as any;
+		const lod = node.getExtension('MSFT_lod') as Levels | null;
 		console.log(
 			node.getName(),
 			'T',
@@ -47,10 +65,10 @@ for (const path of process.argv.slice(2)) {
 			'ext',
 			mesh
 				.listPrimitives()
-				.map((p: any) =>
+				.map((p) =>
 					p
 						.listExtensions()
-						.map((e: any) => e.extensionName)
+						.map((e) => e.extensionName)
 						.join('+'),
 				)
 				.join(' '),
@@ -61,10 +79,10 @@ for (const path of process.argv.slice(2)) {
 				'   levels',
 				lod
 					.listLevels()
-					.map(
-						(n: any, j: number) =>
-							`${tri(n.getMesh())}[${pcs(n.getMesh())}]e${errs?.[j]?.toPrecision(3)}`,
-					)
+					.map((n, j) => {
+						const m = meshOf(n);
+						return `${m ? tri(m) : 0}[${m ? pcs(m) : 0}]e${errs?.[j]?.toPrecision(3)}`;
+					})
 					.join(' '),
 			);
 		}

@@ -30,6 +30,7 @@ import {
 	videoFrames,
 } from './image.ts';
 import {
+	anyPlantMask,
 	type Box,
 	boxOf,
 	matteMask,
@@ -55,6 +56,9 @@ const EDGE_FLOOR = 6;
  * own speckle rather than a part of the plant.
  */
 const PIECE_AREA = 24;
+
+/** The views that photograph the bark close up, whatever words a species puts in its file names. */
+const BARK_VIEWS: ReadonlySet<string> = new Set(['bark-base', 'bark-mid', 'bark-limb']);
 
 /** The camera's framing of a reference, in screen shares, as the review page takes it. */
 export interface ReferenceFraming {
@@ -474,6 +478,8 @@ interface PairMetrics {
 	readonly frameIou: number | null;
 	readonly profileError: number | null;
 	readonly gap: { readonly reference: number; readonly render: number } | null;
+	readonly crownBoxGap: { readonly reference: number; readonly render: number } | null;
+	readonly frameGap: { readonly reference: number; readonly render: number } | null;
 	readonly foliageDeltaE: number | null;
 	readonly barkDeltaE: number | null;
 	readonly crownBox: {
@@ -503,6 +509,12 @@ function pairMetrics(reference: Side, render: Side): PairMetrics {
 			: null,
 		gap: both
 			? { reference: reference.measures.gapFraction, render: render.measures.gapFraction }
+			: null,
+		crownBoxGap: both
+			? { reference: reference.measures.crownBoxGap, render: render.measures.crownBoxGap }
+			: null,
+		frameGap: both
+			? { reference: reference.measures.frameGap, render: render.measures.frameGap }
 			: null,
 		foliageDeltaE: colour(reference.measures.foliage, render.measures.foliage),
 		barkDeltaE: colour(reference.measures.bark, render.measures.bark),
@@ -668,6 +680,26 @@ export function fixed(value: number | null | undefined, digits = 2): string {
 	return value === null || value === undefined ? '-' : value.toFixed(digits);
 }
 
+/**
+ * A note when a crown's box holds only a small share of its plant's own, which is the sign that the
+ * crown's foot was found inside the foliage: a kit-cut piece has no bare stem below its leaves, and a
+ * thick bole can fill the whole margin the finder looks for. The gap and crown figures then measure a
+ * slice of the plant rather than its crown, so the run says so instead of letting a reader trust them.
+ */
+function crownNote(reference: PlantMeasures, render: PlantMeasures): string | undefined {
+	const share = (measure: PlantMeasures): number => {
+		const box = measure.box;
+		if (!box) return 1;
+		const tall = box.bottom - box.top + 1;
+		return tall > 0 ? measure.crownBox.height / tall : 1;
+	};
+	const least = Math.min(share(reference), share(render));
+	// A view of the wood alone has no crown to measure, so nothing is being read from it.
+	if (least >= 0.4 || least <= 0.05) return undefined;
+	const percent = (least * 100).toFixed(0);
+	return `the crown's box holds ${percent} per cent of the plant's height, so its foot sits inside the foliage and its gap and crown figures measure a slice`;
+}
+
 /** A CIELAB triple as three rounded figures, in the order light, red to green, blue to yellow. */
 function labTriple(lab: readonly number[]): string {
 	return lab.map((v) => v.toFixed(1)).join(' ');
@@ -680,7 +712,8 @@ function pairLines(head: readonly string[], pair: PairMetrics): string[] {
 		`SHAPE IOU ${fixed(pair.shapeIou)}`,
 		`FRAME IOU ${fixed(pair.frameIou)}`,
 		`WIDTH ERR ${fixed(pair.profileError, 3)}`,
-		`GAP ${fixed(pair.gap?.reference)} / ${fixed(pair.gap?.render)}`,
+		`GAP BOX ${fixed(pair.crownBoxGap?.reference)} / ${fixed(pair.crownBoxGap?.render)}`,
+		`GAP FRAME ${fixed(pair.frameGap?.reference)} / ${fixed(pair.frameGap?.render)}`,
 		`LEAF DE ${fixed(pair.foliageDeltaE, 1)}`,
 		`BARK DE ${fixed(pair.barkDeltaE, 1)}`,
 		pair.crownBox
@@ -1205,6 +1238,15 @@ export function patchLab(image: Rgba, onPlant = false): number[] {
 	return sum.map((v) => v / Math.max(1, n));
 }
 
+/**
+ * The colour difference between two pictures' nine-patch means, read on the plant alone when asked.
+ * A texture source and its render are cut out on different colours, so asking for the plant drops
+ * both backdrops and compares the material.
+ */
+export function patchDifference(reference: Rgba, render: Rgba, onPlant = false): number {
+	return Number(deltaE2000(patchLab(reference, onPlant), patchLab(render, onPlant)).toFixed(2));
+}
+
 /** A still or texture source as the comparison reads it: a cut-out laid on white. */
 function referencePicture(path: string): Rgba {
 	return onColour(readImage(path), [255, 255, 255]);
@@ -1233,6 +1275,8 @@ export function compareStills(
 			frameIou: null,
 			profileError: null,
 			gap: null,
+			crownBoxGap: null,
+			frameGap: null,
 			foliageDeltaE: null,
 			barkDeltaE: null,
 			crownBox: null,
@@ -1261,15 +1305,23 @@ export function compareStills(
 		const masked = refPlant.background.plain && frame.matte !== undefined;
 		const pair = pairMetrics(masked ? refSide : { ...refSide, normal: undefined }, render);
 		const bark = slot.kind === 'texture' && !slot.view.startsWith('leaf');
-		const surfaceDeltaE = bark
-			? Number(deltaE2000(patchLab(refImage), patchLab(render.image)).toFixed(2))
-			: null;
-		// A bark close view photographs the bark against the bark, so neither picture separates
-		// from its own background and neither draws a matte. The patches compare the material.
-		const barkClose = slot.kind !== 'texture' && /bark/i.test(slot.file);
 		// The shot carries the query the page was asked for, which is where a species' slot file
 		// reaches; the reference rule's own query is a different thing and is often empty.
 		const barkMaskOn = frame.query?.barkMask === true;
+		// A texture source is a cut-out laid on one colour and the render stands on another, so an
+		// unmasked average lifts both sides and the lifts nearly cancel. With the flag set, the
+		// material is read on the bark alone.
+		const surfaceDeltaE = bark ? patchDifference(refImage, render.image, barkMaskOn) : null;
+		// A bark close view photographs the bark against the bark, so neither picture separates
+		// from its own background and neither draws a matte. The patches compare the material.
+		// A close view of the bark is named by the view it draws, not by the words in its file name: a
+		// species whose photographs are called roots or petiole-section still draws the trunk close up,
+		// and its colour is read the same way as any other bark's.
+		// The view the picture was drawn at, from the shot's own query, is what decides whether its
+		// colour is a bark colour: a species that names a picture's view draws that view, and the
+		// reference's number must not overrule it.
+		const drawn = frame.query?.view ?? slot.view;
+		const barkClose = slot.kind !== 'texture' && BARK_VIEWS.has(drawn);
 		const barkColour = barkClose
 			? { reference: patchLab(refImage, barkMaskOn), render: patchLab(render.image, barkMaskOn) }
 			: null;
@@ -1284,10 +1336,10 @@ export function compareStills(
 			frame.matte !== undefined
 				? {
 						reference: refPlant.background.plain
-							? pieceCount(refPlant.mask, refPlant.width, refPlant.height, PIECE_AREA)
+							? pieceCount(anyPlantMask(refPlant), refPlant.width, refPlant.height, PIECE_AREA)
 							: null,
 						render: pieceCount(
-							render.plant.mask,
+							anyPlantMask(render.plant),
 							render.plant.width,
 							render.plant.height,
 							PIECE_AREA,
@@ -1302,11 +1354,14 @@ export function compareStills(
 					frameIou: null,
 					profileError: null,
 					gap: null,
+					crownBoxGap: null,
+					frameGap: null,
 					barkDeltaE: null,
 					crownBox: null,
 					foliageDeltaE: refPlant.background.plain ? pair.foliageDeltaE : null,
 				};
 		const framing = closeFraming(frame.facts);
+		const note = crownNote(refSide.measures, render.measures) ?? slot.note;
 		results.push({
 			...shown,
 			file: slot.file,
@@ -1325,7 +1380,7 @@ export function compareStills(
 			edgeDifference: edges,
 			pieces,
 			...(framing ? { framing } : {}),
-			...(slot.note ? { note: slot.note } : {}),
+			...(note ? { note } : {}),
 		});
 		rows.push({
 			reference: refImage,

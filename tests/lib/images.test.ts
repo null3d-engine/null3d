@@ -22,6 +22,7 @@ import {
 	imageRuns,
 	manifestProblems,
 	type Place,
+	pageFactsOf,
 	readPng,
 	referenceFileProblems,
 	referenceOf,
@@ -568,6 +569,40 @@ describe('comparing an image with its reference', () => {
 		expect(readPng(`${saved}.png`)).toEqual(image([10, 20, 30]));
 	});
 
+	it('keeps the device facts that the page reported with a candidate', () => {
+		const page = pageFactsOf({
+			ok: true,
+			tier: 'webgpu',
+			hdr: true,
+			halfPrecision: true,
+			multiDraw: false,
+			mode: { build: 'threaded', pipelined: true },
+			depth: 'reversed',
+			clipControl: false,
+			drewAsked: true,
+			pixels: 'AAAA',
+			sketch: { noise: 1 },
+		});
+		compareWithReference(boxes(), REAL, image([10, 20, 30]), dirs, page);
+		const saved = base('chrome-real-gpu', 'webgpu', 'boxes');
+		expect(facts(`${saved}.json`)).toMatchObject({
+			page: {
+				tier: 'webgpu',
+				hdr: true,
+				halfPrecision: true,
+				multiDraw: false,
+				mode: { build: 'threaded', pipelined: true },
+				depth: 'reversed',
+				clipControl: false,
+				drewAsked: true,
+			},
+		});
+		// The pixels and the sketch's messages stay out of the facts.
+		const written = JSON.stringify(facts(`${saved}.json`));
+		expect(written).not.toContain('pixels');
+		expect(written).not.toContain('noise');
+	});
+
 	it('names the CI run that drew an image only inside GitHub Actions, not in a local CI=1 run', () => {
 		expect(ciRunOf({ GITHUB_ACTIONS: 'true', GITHUB_RUN_ID: '40109903483' })).toBe('40109903483');
 		expect(ciRunOf({ CI: '1' })).toBeUndefined();
@@ -644,7 +679,7 @@ describe('comparing an image with its reference', () => {
 		expect(readPng(`${saved}.png`)).toEqual(image([10, 20, 30]));
 	});
 
-	it('keeps a drawing that differs from its reference, and none that cannot become one', () => {
+	it('keeps a drawing that differs from its reference, and one that cannot become a reference, with the reason', () => {
 		writePng(join(dirs.references, 'chrome-real-gpu/webgpu/boxes.png'), image([10, 20, 30]));
 		const drawn = image([10, 20, 30], { at: 5, rgb: [250, 20, 30] });
 		asking(() => {
@@ -653,8 +688,30 @@ describe('comparing an image with its reference', () => {
 			compareWithReference(borrowedRun(boxes(), 'boxes-copied'), REAL, drawn, dirs);
 		});
 		const saved = join(dirs.drawn as string, 'chrome-real-gpu', 'webgpu');
-		expect(readdirSync(saved).sort()).toEqual(['boxes.json', 'boxes.png']);
+		expect(readdirSync(saved).sort()).toEqual([
+			'boxes-copied.json',
+			'boxes-copied.png',
+			'boxes.json',
+			'boxes.png',
+		]);
 		expect(facts(join(saved, 'boxes.json'))).toMatchObject({ status: 'drawn', share: 0.125 });
+		expect(facts(join(saved, 'boxes-copied.json'))).toMatchObject({
+			status: 'drawn',
+			reference: 'chrome-real-gpu/webgpu/boxes.png',
+			fixed: expect.stringContaining('must draw the image of boxes'),
+		});
+	});
+
+	it('keeps the drawing of a tier that must draw another tier, with the reason', () => {
+		// The grid test's later tiers draw the first tier's picture, so only the first owns a reference.
+		asking(() => compareWithReference(run('grid-compat'), REAL, image([10, 20, 30]), dirs));
+		const saved = join(dirs.drawn as string, 'chrome-real-gpu', 'compat', 'grid.json');
+		expect(facts(saved)).toMatchObject({
+			status: 'drawn',
+			tier: 'compat',
+			reference: 'chrome-real-gpu/webgpu/grid.png',
+			fixed: expect.stringContaining('every tier must draw the image of webgpu'),
+		});
 	});
 
 	it('keeps the candidate of the first mode that differs, until the test runs again', () => {

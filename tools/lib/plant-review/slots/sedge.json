@@ -1,0 +1,56 @@
+{
+	"04-tuft-from-above.png": {
+		"elevation": 88,
+		"view": "crown"
+	},
+	"08-leaf-leaving-sheath.png": {
+		"distance": 0.25,
+		"elevation": 0,
+		"view": "junction"
+	},
+	"09-new-shoots.png": {
+		"background": "studio-grey",
+		"lifted": 1,
+		"view": "soil"
+	},
+	"12-single-leaf-upper.png": {
+		"leaves": 1.0,
+		"roll": -40
+	},
+	"13-single-leaf-underside.png": {
+		"leaves": 1.0,
+		"roll": -40
+	},
+	"24-leaf-texture-upper.png": {
+		"leaves": 1.0,
+		"roll": -40
+	},
+	"25-leaf-texture-underside.png": {
+		"leaves": 1.0,
+		"roll": -40
+	},
+	"15-sheath-and-ligule.png": {
+		"distance": 0.25,
+		"elevation": 0,
+		"view": "junction"
+	},
+	"20-hanging-spikes-habit.png": {
+		"eye": null,
+		"fill": null,
+		"targetY": null,
+		"top": null,
+		"view": "whole"
+	},
+	"21-branch-studio.png": {
+		"background": "studio-grey",
+		"view": "whole"
+	},
+	"10-fine-leaf-tips.png": {
+		"leafLength": 0.1
+	},
+	"14-roots-and-rhizome.png": {
+		"background": "studio-grey",
+		"lifted": 1,
+		"view": "soil"
+	}
+}

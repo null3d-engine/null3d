@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import {
 	type CutCamera,
 	cutCamera,
+	leafFrame,
 	projectRow,
 	standCamera,
 } from '../../../tests/pages/lib/plant-review/framing.ts';
@@ -17,6 +18,7 @@ import {
 	NORMAL_HEIGHT,
 	NORMAL_WIDTH,
 	normalise,
+	patchDifference,
 	patchLab,
 	profileError,
 	rubricBand,
@@ -291,6 +293,18 @@ describe("the page's stand camera", () => {
 		expect(camera.yaw).toBeLessThan(0);
 	});
 
+	test('stands a low camera for a short plant photographed from near the ground', () => {
+		const fov = 38;
+		const camera = standCamera(
+			{ fov, aspect: 1024 / 688, horizon: 0.8116, top: 0.193, base: 0.8814, targetX: 0.48 },
+			1.52,
+		);
+		expect(camera.warning).toBeUndefined();
+		expect(camera.height).toBeGreaterThan(0);
+		expect(projectRow(camera, 1.52, fov)).toBeCloseTo(0.193, 3);
+		expect(projectRow(camera, 0, fov)).toBeCloseTo(0.8814, 3);
+	});
+
 	test('says what it gave up when the base would put the camera under the ground', () => {
 		const camera = standCamera(
 			{ fov: 30, aspect: 1, horizon: 0.9, top: 0.1, base: 0.5, targetX: 0.5 },
@@ -428,6 +442,29 @@ describe('the patch colour of a texture source', () => {
 		expect(plain).toBeLessThan(50);
 		expect(onPlant).toBeGreaterThan(75);
 	});
+
+	test('compares a texture source on its material when the mask is asked for', () => {
+		// One bark down the middle of two pictures cut out on opposite colours: the plain means move
+		// apart with the backdrops while the masked ones read the same bark and agree.
+		const barkOn = (backdrop: number) => {
+			const size = 1000;
+			const data = new Uint8Array(size * size * 4);
+			for (let y = 0; y < size; y++)
+				for (let x = 0; x < size; x++) {
+					const value = x >= 300 && x < 700 ? 100 : backdrop;
+					const at = (y * size + x) * 4;
+					data[at] = value;
+					data[at + 1] = value;
+					data[at + 2] = value;
+					data[at + 3] = 255;
+				}
+			return { width: size, height: size, data };
+		};
+		const reference = barkOn(255);
+		const render = barkOn(0);
+		expect(patchDifference(reference, render, true)).toBeLessThan(0.5);
+		expect(patchDifference(reference, render, false)).toBeGreaterThan(10);
+	});
 });
 
 describe('the pieces a plant is drawn as', () => {
@@ -500,5 +537,28 @@ describe('the pieces a plant is drawn as', () => {
 				24,
 			),
 		).toBe(1);
+	});
+});
+
+describe('a cut piece framed in leaf lengths', () => {
+	test('gives two photographs of different leaf sizes two different frames', () => {
+		const young = leafFrame(7.4, 0.1, 0, 1, 20);
+		const mature = leafFrame(7.4, 1.0, 0, 1, 20);
+		expect(young.tall).toBeCloseTo(0.74, 6);
+		expect(mature.tall).toBeCloseTo(7.4, 6);
+		expect(young.distance).not.toBeCloseTo(mature.distance, 2);
+	});
+
+	test('frames as many leaves of the named length as the photograph counts', () => {
+		expect(leafFrame(4.5, 0.1, 0, 1, 20).tall).toBeCloseTo(0.45, 6);
+		expect(leafFrame(7.4, 0.1, 0, 1, 20).distance).not.toBeCloseTo(
+			leafFrame(4.5, 0.1, 0, 1, 20).distance,
+			2,
+		);
+	});
+
+	test('lengthens the run only when the roll lays the piece across the frame', () => {
+		expect(leafFrame(2, 0.5, 0, 2, 20).run).toBeCloseTo(1, 6);
+		expect(leafFrame(2, 0.5, 90, 2, 20).run).toBeCloseTo(2, 6);
 	});
 });
