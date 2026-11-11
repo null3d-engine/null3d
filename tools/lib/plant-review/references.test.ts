@@ -500,6 +500,14 @@ describe('the slots', () => {
 				query,
 			);
 		}
+		// A cutting's layout and its span read back, so a probe can fan one picture's piece.
+		const cutting = (query: Parameters<typeof plantReviewQuery>[0]) =>
+			readPlantReviewQuery(new URLSearchParams(plantReviewQuery(query)));
+		expect(cutting({ species: 'stub', view: 'branch', layout: 'fan', spread: 1.2 })).toMatchObject({
+			layout: 'fan',
+			spread: 1.2,
+		});
+		expect(() => cutting({ species: 'stub', view: 'branch', layout: 'fan' })).not.toThrow();
 		// A single-leaf still's pressed choice reads back either way, and is absent when not named.
 		const pressed = (value?: boolean) =>
 			readPlantReviewQuery(

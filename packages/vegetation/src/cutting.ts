@@ -116,12 +116,15 @@ export interface CuttingOptions {
 	/**
 	 * For 'branch' and 'subbranch': how the fanned shoots are placed. 'ring' stands them round the
 	 * piece's axis; 'spray' roots them along one lateral line at rising heights, as a close picture
-	 * of a twig spray shows. 'ring' by default.
+	 * of a twig spray shows; 'fan' roots every shoot at one base and tilts each row across the
+	 * prototype's own leaf plane, so the piece opens like a hand of cards and every row keeps its
+	 * leaf faces turned the same way. 'ring' by default.
 	 */
-	readonly layout?: 'ring' | 'spray';
+	readonly layout?: 'ring' | 'spray' | 'fan';
 	/**
-	 * For a 'spray' layout: the width of the lateral line the shoots are rooted along, as a share of
-	 * the piece's height. A wider line draws separate thin twigs.
+	 * For a 'spray' or 'fan' layout: the width the shoots span, as a share of the piece's height.
+	 * A spray spreads its lateral line this wide; a fan opens its arc until its tips stand this far
+	 * apart. A wider span draws separate thin twigs or a broader fan.
 	 */
 	readonly spread?: number;
 	/**
@@ -792,8 +795,8 @@ export function clusterRow(
 	const fan = hint && 'shoot' in hint ? hint : undefined;
 	const ring = Math.min(1, Math.max(0, cutting.ring ?? fan?.fanRing ?? 0.18));
 	const lean = Math.min(90, Math.max(-90, cutting.lean ?? fan?.fanLean ?? 0));
-	const layout = cutting.layout ?? 'ring';
-	const spread = Math.min(4, Math.max(0, cutting.spread ?? 0));
+	const layout = cutting.layout ?? fan?.layout ?? 'ring';
+	const spread = Math.min(4, Math.max(0, cutting.spread ?? fan?.spread ?? 0));
 	const spinShare = Math.min(1, Math.max(0, fan?.fanSpin ?? 1));
 	const yaw = Math.min(180, Math.max(-180, fan?.fanYaw ?? 0));
 	// The whole piece turns about its upright axis once, before any row's own fan, so a branch whose
@@ -847,46 +850,64 @@ export function clusterRow(
 		high = Math.max(high, turned[1] as number);
 	}
 	const tall = Number.isFinite(high - low) ? high - low : 0;
+	// A fan opens across the prototype's own leaf plane, whose normal is its thin horizontal axis, so
+	// every row keeps its leaf faces turned alike. The tilt is taken about that axis once the piece's
+	// own turn has placed it, so the fan always opens upright however the prototype lies.
+	const fanTurned: Vector3 = [0, 0, 0];
+	quatRotate(turnQ, 0, [1, 0, 0], fanTurned);
+	const flat = length3(fanTurned[0], 0, fanTurned[2]);
+	const fanAxis: [number, number, number] =
+		flat > 1e-6 ? [fanTurned[0] / flat, 0, fanTurned[2] / flat] : [1, 0, 0];
 	const position = new Float32Array(3 * shoots);
 	const rotation = new Float32Array(4 * shoots);
 	const min = [Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY];
 	const max = [Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY];
 	const placed: Vector3 = [0, 0, 0];
 	for (let row = 0; row < shoots; row++) {
-		const angle = (row * 2 * Math.PI) / shoots;
 		// A spray roots its shoots along one lateral line at rising heights, each turned a little
 		// outward, rather than round a ring.
 		const along = shoots === 1 ? 0.5 : row / (shoots - 1);
-		const spin = [0, 0, 0, 1];
-		quatAxisAngle(
-			UP,
-			layout === 'spray' ? (along - 0.5) * 2 * ((lean * Math.PI) / 180) : angle * spinShare,
-			spin,
-		);
-		const q = [0, 0, 0, 1];
-		quatMultiply(spin, 0, turnQ, 0, q);
-		// Each row leans about the horizontal tangent at its own side of the ring, so a positive
-		// lean opens the row away from the axis and a small ring keeps every base at one point.
 		const r = [0, 0, 0, 1];
-		if (lean !== 0) {
-			const tangent: [number, number, number] = [-sin(angle), 0, cos(angle)];
-			const leanQ = [0, 0, 0, 1];
-			quatAxisAngle(tangent, (-lean * Math.PI) / 180, leanQ);
-			quatMultiply(leanQ, 0, q, 0, r);
+		if (layout === 'fan') {
+			// Every row leaves the same foot at its own angle across the leaf plane, so the fan opens
+			// as one joined piece; the turn then shows that plane to the camera. The half-angle is
+			// chosen so the tips stand the requested share of the height apart.
+			const half = Math.asin(Math.min(1, spread / 2));
+			const tilt = [0, 0, 0, 1];
+			quatAxisAngle(fanAxis, (along - 0.5) * 2 * half, tilt);
+			quatMultiply(tilt, 0, turnQ, 0, r);
 		} else {
-			r[0] = q[0] as number;
-			r[1] = q[1] as number;
-			r[2] = q[2] as number;
-			r[3] = q[3] as number;
-		}
-		if (layout === 'spray') {
-			position[row * 3] = (along - 0.5) * spread * tall;
-			position[row * 3 + 1] = (row * 0.7 * tall) / shoots;
-			position[row * 3 + 2] = 0;
-		} else {
-			position[row * 3] = ring * tall * cos(angle);
-			position[row * 3 + 1] = (row * 0.55 * tall) / shoots;
-			position[row * 3 + 2] = ring * tall * sin(angle);
+			const angle = (row * 2 * Math.PI) / shoots;
+			const spin = [0, 0, 0, 1];
+			quatAxisAngle(
+				UP,
+				layout === 'spray' ? (along - 0.5) * 2 * ((lean * Math.PI) / 180) : angle * spinShare,
+				spin,
+			);
+			const q = [0, 0, 0, 1];
+			quatMultiply(spin, 0, turnQ, 0, q);
+			// Each row leans about the horizontal tangent at its own side of the ring, so a positive
+			// lean opens the row away from the axis and a small ring keeps every base at one point.
+			if (lean !== 0) {
+				const tangent: [number, number, number] = [-sin(angle), 0, cos(angle)];
+				const leanQ = [0, 0, 0, 1];
+				quatAxisAngle(tangent, (-lean * Math.PI) / 180, leanQ);
+				quatMultiply(leanQ, 0, q, 0, r);
+			} else {
+				r[0] = q[0] as number;
+				r[1] = q[1] as number;
+				r[2] = q[2] as number;
+				r[3] = q[3] as number;
+			}
+			if (layout === 'spray') {
+				position[row * 3] = (along - 0.5) * spread * tall;
+				position[row * 3 + 1] = (row * 0.7 * tall) / shoots;
+				position[row * 3 + 2] = 0;
+			} else {
+				position[row * 3] = ring * tall * cos(angle);
+				position[row * 3 + 1] = (row * 0.55 * tall) / shoots;
+				position[row * 3 + 2] = ring * tall * sin(angle);
+			}
 		}
 		rotation.set(r, row * 4);
 		for (let i = 0; i < p.length; i += 3) {

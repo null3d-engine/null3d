@@ -546,6 +546,15 @@ function cuttingProblems(record: Species, out: string[]): void {
 				out.push(`cuttings.${part}.fanSpin is ${hint.fanSpin}; it is a share from 0 to 1`);
 			if (hint.fanYaw !== undefined && !Number.isFinite(hint.fanYaw))
 				out.push(`cuttings.${part}.fanYaw is ${hint.fanYaw}; it is degrees about the axis`);
+			if (
+				hint.layout !== undefined &&
+				hint.layout !== 'ring' &&
+				hint.layout !== 'spray' &&
+				hint.layout !== 'fan'
+			)
+				out.push(`cuttings.${part}.layout '${hint.layout}' is not 'ring', 'spray' or 'fan'`);
+			if (hint.spread !== undefined && !(hint.spread >= 0 && hint.spread <= 4))
+				out.push(`cuttings.${part}.spread is ${hint.spread}; it is a share from 0 to 4`);
 		} else {
 			if (hint.length <= 0)
 				out.push(`cuttings.${part}.length is ${hint.length}; it must be above 0`);
