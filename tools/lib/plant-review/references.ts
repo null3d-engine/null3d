@@ -160,6 +160,12 @@ const SLOT_RULES: readonly { readonly test: (name: string) => boolean; readonly 
 			slot: { view: 'leaf-upper', framed: false },
 		},
 		{
+			// A ground plant's flowering heads: one stem's hanging spikes, seen close and level, where
+			// a twig view has no woody stem to frame and falls back to the whole plant.
+			test: (n) => /flower.*spike/.test(n),
+			slot: { view: 'spike', framed: false },
+		},
+		{
 			// Looking up the whole height from the foot: the stem's first fork stands a little above the
 			// middle of the frame, with the first limbs running out from it, and the camera stands as
 			// far from the stem as the photograph's, measured in stem radii from its share of the frame.
