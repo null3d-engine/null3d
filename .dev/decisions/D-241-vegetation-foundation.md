@@ -1141,3 +1141,22 @@ have the owner's answer beside them: the translucency garden, the impostor fores
 glade and the battle demo. The forest is not one of them. Its own generator stays only until the
 sparse tree lands, and then it draws through the add-on, so the task does not close on these
 rulings. It closes when the forest swaps.
+
+## Addendum: the owner's completeness ruling
+
+The owner ruled: "We're going to take the current state of the vegetation add-on as complete so that
+we can go ahead and complete all the milestone tasks." The add-on as it stands on the milestone is
+what the milestone ships, and the species batch's remaining rows are not a gate on anything here.
+
+What the ruling closes, by task:
+- M3-V4: its generation clause closes on the shipped set. The measured figures are an upper bound for
+  the form shipped now, because the floors are the ruling's and the shared coarseness and the species
+  work since make the sparse mesh cheaper, never dearer.
+- M3-V5: the bake-time clause closes on the shipped path. The files ship; there is no runtime bake to
+  measure.
+- M3-V12: the forest's own generator closes the task, as the paragraph above says, and the ruling's
+  line is drawn at the add-on's current state rather than at the sparse tree.
+
+What it does not do: it does not settle any species' pictures, which follow the shipped records and
+are redrawn when a record moves; and it does not open the milestone to the vegetation session's
+branches, which wait for the owner's word before they merge.
