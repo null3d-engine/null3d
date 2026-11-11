@@ -389,7 +389,9 @@ export const record: Species = {
 		mature: {
 			form: 'broad rounded dome, its bole short and its limbs open',
 			size: { aspect: 1.2 },
-			growth: { floor: 0.2 },
+			// Stills 01 and 30: the references show this much sky through the mature crown, so its buds
+			// shed about a tenth of their number at the apex and a tenth along the sides.
+			growth: { floor: 0.2, buds: { extinction: [0.09, 0.11] } },
 			envelope: matureEnvelope,
 		},
 		narrow: {
