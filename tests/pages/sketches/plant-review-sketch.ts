@@ -1044,8 +1044,24 @@ export default defineSketch(async (ctx) => {
 				const length = QUERY.leafLength ?? leafLength ?? (oneLeaf ? bladeLength : undefined);
 				if (QUERY.leaves !== undefined && length !== undefined) {
 					const frame = leafFrame(QUERY.leaves, length, QUERY.roll ?? 0, aspect, fov);
+					// The cut stands on the frame's lower edge, at the piece's own foot. A cutting of a
+					// ground plant keeps the plant's crown base, so the ground under it is below the cut.
+					const part = piece ? boundsOf(piece as PlantAsset, pieceKit) : undefined;
+					const foot = part ? (part.min[1] as number) : 0;
+					const middle = part
+						? [
+								((part.min[0] as number) + (part.max[0] as number)) / 2,
+								((part.min[2] as number) + (part.max[2] as number)) / 2,
+							]
+						: [0, 0];
 					return {
-						...orbit([0, frame.run / 2, 0], frame.distance, e, turn, fov),
+						...orbit(
+							[middle[0] as number, foot + frame.run / 2, middle[1] as number],
+							frame.distance,
+							e,
+							turn,
+							fov,
+						),
 						roll: frame.roll,
 						near: 0.01,
 					};
