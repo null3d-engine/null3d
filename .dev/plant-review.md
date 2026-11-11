@@ -341,7 +341,9 @@ than turning a fault of the measure into a pass or a fail.
 
 A row's central run is the stem where its boughs stand apart from it. The crown start reads that run where the row's outer span is wider than half the plant's widest row. A reference whose boughs sweep beside the stem moves; a reference whose outer span is the stem does not. The change is `3972fd3cc`.
 
-The in-use references that move, by species, their number and the start before and after:
+The mound guard is `36fe37843`. A species the record grows as a tuft or a rosette keeps the outer span, and its crown starts at its foot. The sedge's 25 in-use stills, the hosta's 26 and the meadow grass's 25 are byte-identical before and after the guard. The oak's 30 are byte-identical too.
+
+The in-use references that still move, by species, their number and the start before and after:
 
 | Species | References that move |
 | --- | --- |
@@ -368,7 +370,6 @@ The in-use references that move, by species, their number and the start before a
 | hawthorn-shrub | 04 0 to 0.1096 |
 | holm-oak | 20 0 to 0.0254 |
 | horse-chestnut | 04 0 to 0.0179, 08 0 to 0.0537, 14 0 to 0.0027, 15 0 to 0.0078, 17 0 to 0.0224, 19 0 to 0.0153, 28 0.0769 to 0.1538 |
-| hosta | 15 0 to 0.1739, 17 0 to 0.3564, 18 0 to 0.0634 |
 | italian-cypress | 09 0 to 0.0141 |
 | japanese-maple | 04 0 to 0.008, 15 0 to 0.0094 |
 | lavender | 10 0 to 0.0575 |
@@ -383,7 +384,6 @@ The in-use references that move, by species, their number and the start before a
 | rush | 05 0 to 0.2984 |
 | saguaro | 25 0.0078 to 0.013 |
 | scots-pine | 04 0 to 0.0506, 17 0 to 0.0352 |
-| sedge | 01 0 to 0.0279, 02 0 to 0.0946, 03 0 to 0.0613, 05 0.1377 to 0.3043, 16 0 to 0.0806, 17 0.0012 to 0.0393, 20 0 to 0.0179 |
 | silver-birch | 14 0 to 0.0216, 34 0 to 0.0453 |
 | small-leaved-lime | 15 0 to 0.0187 |
 | stone-pine | 14 0 to 0.0128 |
@@ -391,8 +391,7 @@ The in-use references that move, by species, their number and the start before a
 | weeping-willow | 01 0.0034 to 0.055, 09 0 to 0.0156, 18 0.0033 to 0.32, 31 0 to 0.0289 |
 | winter-oak-bare | 14 0 to 0.0918 |
 
-The tuft and mound forms among them (the sedge, hosta, rush and lavender) need the first look: the mound rule puts their crown at the foot, and the central-run rule now reaches them. The beech and the alder have been told.
-
+The affected owners are told. The beech and the alder were told first; the oak keeps its figures.
 ## The rows a species still owes
 
 **M3-V4 is ticked, and it carries 67 of the 78 owed rows: the 17 engine items and 50 of the limits.
