@@ -184,6 +184,7 @@ export const record: Species = {
 		cuttingClasses: [
 			{
 				name: 'cut',
+				cutOnly: true,
 				vigor: [0, 1],
 				share: 0,
 				years: 2,
@@ -246,6 +247,7 @@ export const record: Species = {
 			},
 			{
 				name: 'spray',
+				cutOnly: true,
 				vigor: [0, 1],
 				share: 0,
 				years: 2,
@@ -274,6 +276,7 @@ export const record: Species = {
 			},
 			{
 				name: 'spur',
+				cutOnly: true,
 				vigor: [0, 1],
 				share: 0,
 				years: 1,
