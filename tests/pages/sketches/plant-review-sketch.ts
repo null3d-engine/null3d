@@ -830,7 +830,7 @@ export default defineSketch(async (ctx) => {
 					fov,
 					0.05,
 				);
-				if (found) return found;
+				if (found) return atDistance(found);
 				// A tuft whose crown axis leaves no main stem has no limb to stand at. Its picture is
 				// its crown's foot, where the sheaths that the row judges stand.
 				if (record.growth.model === 'tuft' && departures(skeleton).limbs.length === 0) {
@@ -854,7 +854,7 @@ export default defineSketch(async (ctx) => {
 					fov,
 					0.05,
 				);
-				if (found) return found;
+				if (found) return atDistance(found);
 				break;
 			}
 			case 'twigs': {

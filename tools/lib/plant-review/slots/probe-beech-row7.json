@@ -1,0 +1,19 @@
+{
+	"07-limb-leaving-trunk.png": {
+		"distance": 4.4
+	},
+	"14-bark-base.png": {
+		"barkMask": true
+	},
+	"15-bark-mid-trunk.png": {
+		"barkMask": true
+	},
+	"16-bark-on-limb.png": {
+		"barkMask": true
+	},
+	"28-young-bark.png": {
+		"thin": 0.015,
+		"span": 0.1,
+		"barkMask": true
+	}
+}
