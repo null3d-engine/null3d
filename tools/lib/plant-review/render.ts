@@ -88,6 +88,15 @@ export interface RunFrame {
 }
 
 /**
+ * The factor a whole view's stand takes to bring its plant to the reference's width share. A
+ * fraction of one takes the whole correction; a smaller fraction keeps the picture nearer its own
+ * framing, for a species whose crown's openness passes its band between the two stands.
+ */
+export function correctedScale(measuredShare: number, target: number, fraction = 1): number {
+	return 1 + (measuredShare / target - 1) * fraction;
+}
+
+/**
  * The grid of a sheet of `n` cells: as few rows as the columns allow, each as full as the cells
  * allow, so the canvas holds few empty cells.
  */
