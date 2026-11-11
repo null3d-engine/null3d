@@ -291,8 +291,6 @@ function shootProblems(shoots: ShootSpec, out: string[]): void {
 				`shoots.placement.limbMass.reach is ${mass.reach}; it is metres and must be above hold (${mass.hold})`,
 			);
 		shareProblem(mass.depth, 'shoots.placement.limbMass.depth', out);
-		if (mass.tipShare !== undefined)
-			shareProblem(mass.tipShare, 'shoots.placement.limbMass.tipShare', out);
 	}
 }
 

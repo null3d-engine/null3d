@@ -126,7 +126,7 @@ describe('the record check', () => {
 					bareTrim: 0.5,
 					lift: 45,
 					tipPrune: 1.5,
-					limbMass: { order: 9, hold: -1, reach: -2, depth: 1.5, tipShare: 1.5 },
+					limbMass: { order: 9, hold: -1, reach: -2, depth: 1.5 },
 				},
 			},
 		} as Species;
@@ -144,9 +144,6 @@ describe('the record check', () => {
 		expect(problems.some((p) => p.startsWith('shoots.placement.limbMass.hold is -1'))).toBe(true);
 		expect(problems.some((p) => p.startsWith('shoots.placement.limbMass.reach is -2'))).toBe(true);
 		expect(problems.some((p) => p.startsWith('shoots.placement.limbMass.depth is 1.5'))).toBe(true);
-		expect(problems.some((p) => p.startsWith('shoots.placement.limbMass.tipShare is 1.5'))).toBe(
-			true,
-		);
 		const within = {
 			...template,
 			growth: { ...growth, floor: 0.15, turning: 30 },
@@ -159,7 +156,7 @@ describe('the record check', () => {
 					bareTrim: 0.03,
 					lift: -30,
 					tipPrune: 0.05,
-					limbMass: { order: 2, hold: 1.5, reach: 3.5, depth: 1, tipShare: 0.65 },
+					limbMass: { order: 2, hold: 1.5, reach: 3.5, depth: 1 },
 				},
 			},
 		} as Species;
