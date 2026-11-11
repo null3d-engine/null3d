@@ -52,6 +52,7 @@ import {
 	insideView,
 	junctionView,
 	limbView,
+	spikeView,
 	strandsView,
 	surfaceView,
 	trunkView,
@@ -966,6 +967,13 @@ export default defineSketch(async (ctx) => {
 				// The twig and its rosettes fill the frame: the reference stands a single twig against a
 				// plain backdrop, so the camera sits close and the shoot's own length is not the subject.
 				return { ...orbit(target, 0.28 + shoot / 4, e, back, fov), near: 0.02 };
+			}
+			case 'spike': {
+				// A ground plant's flowering heads: one stem's hanging spikes, seen close and level
+				// against the plain ground as their photograph frames them.
+				const found = closeAt(view, () => spikeView(closePlant(false), lens), turn, fov, 0.05);
+				if (found) return found;
+				break;
 			}
 			case 'strands': {
 				// A limb's hanging shoots at the crown's rim, seen level against the sky as a

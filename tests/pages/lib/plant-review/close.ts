@@ -7,6 +7,7 @@
 // shows clear as the photograph shows it. It reads only the skeleton, the shoot rows and the shoot
 // prototypes, so it holds for every species.
 
+import { BUD_FLOWER } from '../../../../packages/vegetation/src/core/graph';
 import {
 	type AxisPoint,
 	chainOf,
@@ -1434,6 +1435,59 @@ export function strandsView(plant: ClosePlant, lens: Lens): CloseView | undefine
 			height: best.point.at[1],
 			frame: STRANDS_SPAN,
 		},
+	};
+}
+
+/** Metres the frame of a spike view spans: one stem's hanging heads, as their photograph frames them. */
+const SPIKE_SPAN = 0.42;
+
+/**
+ * One flowering stem's hanging heads, seen close and level against the plain ground: the cluster of
+ * the plant's flower buds nearest its top. A ground plant's spikes hang below their stems' feet, so
+ * the frame's middle sits a little under the buds. Undefined when the plant carries no flower.
+ */
+export function spikeView(plant: ClosePlant, lens: Lens): CloseView | undefined {
+	const { skeleton } = plant;
+	const { buds, axes } = skeleton;
+	// Group the flower buds by the stem they hang from: a spike hangs on a stalk whose parent axis
+	// is the flowering stem, so the stalk's parent names the group.
+	const groups = new Map<number, { x: number; y: number; z: number; n: number }>();
+	for (let b = 0; b < buds.count; b++) {
+		if (buds.kind[b] !== BUD_FLOWER) continue;
+		const stalk = buds.axis[b] as number;
+		const stem = axes.parent[stalk] as number;
+		const key = stem >= 0 ? stem : stalk;
+		const group = groups.get(key) ?? { x: 0, y: 0, z: 0, n: 0 };
+		group.x += buds.position[b * 3] as number;
+		group.y += buds.position[b * 3 + 1] as number;
+		group.z += buds.position[b * 3 + 2] as number;
+		group.n += 1;
+		groups.set(key, group);
+	}
+	// The highest cluster is the one the photograph frames, seen against the sky in its habit.
+	let subject: V3 | undefined;
+	let top = -Infinity;
+	for (const group of groups.values()) {
+		const y = group.y / group.n;
+		if (y > top) {
+			top = y;
+			subject = [group.x / group.n, y, group.z / group.n];
+		}
+	}
+	if (!subject) return undefined;
+	const target: V3 = [subject[0], subject[1] - SPIKE_SPAN * 0.18, subject[2]];
+	const distance = distanceFor(SPIKE_SPAN, lens.fov);
+	const outward = normalize([target[0], 0, target[2]]);
+	if (!Number.isFinite(outward[0])) return undefined;
+	const position: V3 = [
+		target[0] + outward[0] * distance,
+		target[1],
+		target[2] + outward[2] * distance,
+	];
+	return {
+		position,
+		target,
+		subject: { kind: "a flowering stem's hanging heads", at: subject, frame: SPIKE_SPAN },
 	};
 }
 
