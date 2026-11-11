@@ -1464,6 +1464,12 @@ const MOUND_TO = 0.95;
 const MOUND_BOLE_FROM = 0.5;
 /** How many trunk widths a row may stand before it belongs to the crown rather than the bole. */
 const BOLE_MULTIPLE = 2.5;
+/**
+ * The share of the plant's widest row at which a trunk stops reading as a stem. A row's outermost
+ * span joins a stem to the boughs that sweep beside it and can stand as wide as the crown; above
+ * this share the bole rule reads the stem from its own central run.
+ */
+const CORRUPT_TRUNK_SHARE = 0.5;
 
 /** A value that rises smoothly from 0 at `from` to 1 at `to`, and stays at the ends. */
 function smoothstep(from: number, to: number, value: number): number {
@@ -1472,20 +1478,10 @@ function smoothstep(from: number, to: number, value: number): number {
 }
 
 /**
- * The row where the crown starts: going up from the plant's base, the first row from which the
- * plant stays wider than its trunk by a clear margin. The trunk's width is the median width of the
- * lowest rows. A plant with no bare stem runs as wide at its foot as at its widest, and its crown
- * starts at its foot; its whole box is its crown, which is what its openness is measured over.
+ * The narrowest median of the lowest bands: a stem's own width, clear of a buttressed foot and a low
+ * crown, whose widths lie above it.
  */
-export function crownStartRow(spans: Int32Array, box: Box): number {
-	const tall = box.bottom - box.top + 1;
-	const width = (y: number) => {
-		const left = spans[y * 2] as number;
-		return left < 0 ? 0 : (spans[y * 2 + 1] as number) - left + 1;
-	};
-	// The trunk's width is the narrowest median of the lowest bands: a buttressed foot widens the
-	// rows at the ground, and a low crown widens the rows above it, so the stem's own width lies in
-	// the band between the two.
+function lowestMedian(width: (y: number) => number, box: Box, tall: number): number {
 	let trunk = Number.POSITIVE_INFINITY;
 	for (const [from, to] of [
 		[0, 0.06],
@@ -1500,7 +1496,52 @@ export function crownStartRow(spans: Int32Array, box: Box): number {
 		const median = low[low.length >> 1];
 		if (median !== undefined) trunk = Math.min(trunk, median);
 	}
-	if (!Number.isFinite(trunk)) trunk = 0;
+	return Number.isFinite(trunk) ? trunk : 0;
+}
+
+/**
+ * Each row's central plant run: the width of the contiguous run nearest the plant's centre column,
+ * or 0 for a row with no plant. A row's outermost span joins a stem to the boughs that sweep beside
+ * it and reads as wide as the crown, where the central run is the stem the boughs stand apart from.
+ */
+function centralRuns(mask: Uint8Array, width: number, box: Box): Int32Array {
+	const runs = new Int32Array(box.bottom + 1);
+	const centre = (box.left + box.right) / 2;
+	for (let y = box.top; y <= box.bottom; y++) {
+		let start = -1;
+		let nearest = Number.POSITIVE_INFINITY;
+		for (let x = 0; x <= width; x++) {
+			const on = x < width && mask[y * width + x] !== 0;
+			if (on && start < 0) start = x;
+			if (!on && start >= 0) {
+				const distance = centre < start ? start - centre : centre > x - 1 ? centre - (x - 1) : 0;
+				if (distance < nearest) {
+					nearest = distance;
+					runs[y] = x - start;
+				}
+				start = -1;
+			}
+		}
+	}
+	return runs;
+}
+
+/**
+ * The row where the crown starts: going up from the plant's base, the first row from which the
+ * plant stays wider than its trunk by a clear margin. The trunk's width is the median width of the
+ * lowest rows. A plant with no bare stem runs as wide at its foot as at its widest, and its crown
+ * starts at its foot; its whole box is its crown, which is what its openness is measured over.
+ */
+export function crownStartRow(spans: Int32Array, box: Box, central?: Int32Array): number {
+	const tall = box.bottom - box.top + 1;
+	const width = (y: number) => {
+		const left = spans[y * 2] as number;
+		return left < 0 ? 0 : (spans[y * 2 + 1] as number) - left + 1;
+	};
+	// The trunk's width is the narrowest median of the lowest bands: a buttressed foot widens the
+	// rows at the ground, and a low crown widens the rows above it, so the stem's own width lies in
+	// the band between the two.
+	const trunk = lowestMedian(width, box, tall);
 	let widest = 0;
 	for (let y = box.top; y <= box.bottom; y++) widest = Math.max(widest, width(y));
 	// The foot's flare: the widening where the stem meets the ground, or a strip of ground that the
@@ -1568,15 +1609,37 @@ export function crownStartRow(spans: Int32Array, box: Box): number {
 	// starts well above its foot, so its start is untouched.
 	const footStart = box.bottom - fromMound <= Math.max(1, Math.round(tall * 0.01));
 	if (mound <= MOUND_BOLE_FROM && !footStart) return fromMound;
-	const boleLimit = trunk * BOLE_MULTIPLE;
-	// The scan starts above the strip of ground the mask keeps at the plant's foot, which is often
-	// the widest run of all and is not the bole.
+	// A low crown whose boughs sweep beside the stem makes a row's outermost span as wide as the
+	// crown, so a trunk read from it stands as wide as the plant and the bole cap never fires. Where
+	// that shows, the stem is the row's own central run: scan that, past the frame's bottom sliver
+	// and the foot's flare, for the first row above the stem that stands wider than the bole limit.
+	const stem =
+		central !== undefined && widest > 0 && trunk > widest * CORRUPT_TRUNK_SHARE
+			? central
+			: undefined;
+	const boleLimit =
+		(stem === undefined ? trunk : lowestMedian((y) => stem[y] as number, box, tall)) *
+		BOLE_MULTIPLE;
 	let bole = foot;
-	for (let y = foot; y > box.top; y--) {
-		if (width(y) > boleLimit) {
-			bole = y;
-			break;
+	if (stem === undefined) {
+		// The scan starts above the strip of ground the mask keeps at the plant's foot, which is often
+		// the widest run of all and is not the bole.
+		for (let y = foot; y > box.top; y--) {
+			if (width(y) > boleLimit) {
+				bole = y;
+				break;
+			}
 		}
+	} else {
+		const at = (y: number) => stem[y] as number;
+		let y = foot;
+		while (y > box.top && at(y) <= 2) y--;
+		while (y > box.top && at(y) > boleLimit) y--;
+		for (; y > box.top; y--)
+			if (at(y) > boleLimit) {
+				bole = y;
+				break;
+			}
 	}
 	return Math.min(fromMound, bole);
 }
@@ -1674,7 +1737,7 @@ export function measurePlant(image: Rgba, plant: PlantMask): PlantMeasures {
 			light: null,
 		};
 	const spans = rowSpans(mask, width, height);
-	const start = crownStartRow(spans, box);
+	const start = crownStartRow(spans, box, centralRuns(mask, width, box));
 	const tall = box.bottom - box.top + 1;
 	// The crown's outline: in each crown row, everything between the row's outermost plant pixels.
 	let hull = 0;

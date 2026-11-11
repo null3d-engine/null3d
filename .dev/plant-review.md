@@ -53,7 +53,9 @@ states that instead of passing.
 
 Row 6 is read from the sky gap: the share of the crown's own box that shows background, measured on
 both pictures at each whole view. A plant with no bare stem below its foliage, such as a sedge or a
-hosta, runs as wide at its foot as through its mound, so its crown's box is its whole box. The
+hosta, runs as wide at its foot as through its mound, so its crown's box is its whole box. A
+photograph whose lowest boughs sweep beside the stem can read as such a plant. Where the row's outer
+span hides the stem, the tool reads the stem's own central run and puts the crown's foot above it. The
 reviewer writes the render's figure beside the reference's for
 every whole view. The row passes when the render's sky gap is no more than five hundredths above its
 reference's and no more than two hundredths below it. The small allowance below covers the measure:
