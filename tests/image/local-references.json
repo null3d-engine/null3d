@@ -29,6 +29,24 @@
 		"date": "2026-11-03",
 		"reason": "drawn on the Mac's SwiftShader because the branch is not pushed for a CI run; a CI drawing replaces it"
 	},
+	"chromium-swiftshader/compat/creek-render-scale-opening.png": {
+		"test": "creek-render-scale-opening",
+		"tier": "compat",
+		"date": "2026-11-11",
+		"reason": "drawn here at the head after the species rework moved the plants; the references these replace were drawn on 4 and 5 November, and a CI drawing replaces them"
+	},
+	"chromium-swiftshader/compat/creek-render-scale-route.png": {
+		"test": "creek-render-scale-route",
+		"tier": "compat",
+		"date": "2026-11-11",
+		"reason": "drawn here at the head after the species rework moved the plants; the references these replace were drawn on 4 and 5 November, and a CI drawing replaces them"
+	},
+	"chromium-swiftshader/compat/creek-water-close.png": {
+		"test": "creek-water-close",
+		"tier": "compat",
+		"date": "2026-11-11",
+		"reason": "drawn here at the head after the species rework moved the plants; the references these replace were drawn on 4 and 5 November, and a CI drawing replaces them"
+	},
 	"chromium-swiftshader/compat/custom-cutout-motion.png": {
 		"test": "custom-cutout-motion",
 		"tier": "compat",
@@ -412,6 +430,24 @@
 		"tier": "webgl2",
 		"date": "2026-11-03",
 		"reason": "drawn on the Mac's SwiftShader because the branch is not pushed for a CI run; a CI drawing replaces it"
+	},
+	"chromium-swiftshader/webgl2/creek-render-scale-opening.png": {
+		"test": "creek-render-scale-opening",
+		"tier": "webgl2",
+		"date": "2026-11-11",
+		"reason": "drawn here at the head after the species rework moved the plants; the references these replace were drawn on 4 and 5 November, and a CI drawing replaces them"
+	},
+	"chromium-swiftshader/webgl2/creek-render-scale-route.png": {
+		"test": "creek-render-scale-route",
+		"tier": "webgl2",
+		"date": "2026-11-11",
+		"reason": "drawn here at the head after the species rework moved the plants; the references these replace were drawn on 4 and 5 November, and a CI drawing replaces them"
+	},
+	"chromium-swiftshader/webgl2/creek-water-close.png": {
+		"test": "creek-water-close",
+		"tier": "webgl2",
+		"date": "2026-11-11",
+		"reason": "drawn here at the head after the species rework moved the plants; the references these replace were drawn on 4 and 5 November, and a CI drawing replaces them"
 	},
 	"chromium-swiftshader/webgl2/custom-cutout-motion.png": {
 		"test": "custom-cutout-motion",
@@ -832,6 +868,24 @@
 		"tier": "webgpu",
 		"date": "2026-11-03",
 		"reason": "drawn on the Mac's SwiftShader because the branch is not pushed for a CI run; a CI drawing replaces it"
+	},
+	"chromium-swiftshader/webgpu/creek-render-scale-opening.png": {
+		"test": "creek-render-scale-opening",
+		"tier": "webgpu",
+		"date": "2026-11-11",
+		"reason": "drawn here at the head after the species rework moved the plants; the references these replace were drawn on 4 and 5 November, and a CI drawing replaces them"
+	},
+	"chromium-swiftshader/webgpu/creek-render-scale-route.png": {
+		"test": "creek-render-scale-route",
+		"tier": "webgpu",
+		"date": "2026-11-11",
+		"reason": "drawn here at the head after the species rework moved the plants; the references these replace were drawn on 4 and 5 November, and a CI drawing replaces them"
+	},
+	"chromium-swiftshader/webgpu/creek-water-close.png": {
+		"test": "creek-water-close",
+		"tier": "webgpu",
+		"date": "2026-11-11",
+		"reason": "drawn here at the head after the species rework moved the plants; the references these replace were drawn on 4 and 5 November, and a CI drawing replaces them"
 	},
 	"chromium-swiftshader/webgpu/custom-cutout-motion.png": {
 		"test": "custom-cutout-motion",

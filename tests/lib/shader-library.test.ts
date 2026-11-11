@@ -8,8 +8,10 @@ import { join } from 'node:path';
 import { readLibrary } from '../../tools/lib/shader-library.ts';
 import {
 	allCases,
+	drawnRows,
 	FUNCTIONS,
 	probeFault,
+	recordFailure,
 	TARGET_PROBE,
 } from '../pages/lib/shader-library-cases.ts';
 import { judge, NONE_MISSING } from './plans.ts';
@@ -72,6 +74,20 @@ describe('the shader library test', () => {
 			return module === 'reflection_glsl' ? [module, base, 'WEBGL2'] : [module, base];
 		});
 		expect(variants).toEqual(expected);
+	});
+
+	it("keys a split variant's failure by the module whose rows it draws", () => {
+		const failures = new Map<string, string>();
+		recordFailure(failures, 'reflection_glsl', 'the GLSL did not compile');
+		expect([...failures]).toEqual([['reflection', 'the GLSL did not compile']]);
+
+		const cases = allCases();
+		const reflectionRow = cases.findIndex((c) =>
+			FUNCTIONS[c.function]?.name.startsWith('reflection::'),
+		);
+		expect(reflectionRow).toBeGreaterThanOrEqual(0);
+		expect(drawnRows(cases, failures)).not.toContain(reflectionRow);
+		expect(drawnRows(cases, new Map())).toContain(reflectionRow);
 	});
 
 	it('tests every function of every public library module on the GPU', () => {
