@@ -69,6 +69,8 @@ export interface PlacedUniforms {
 	readonly nearDistance?: number;
 	/** How far into autumn the leaves stand, from 0 for summer to 1 for turned. */
 	readonly season?: number;
+	/** The season the plant stands in: 0 summer, 1 autumn, 2 winter, 3 blossom. */
+	readonly seasonKind?: number;
 }
 
 /** What each material reads beyond its own textures: its kit's records and its wind state. */
@@ -76,6 +78,8 @@ interface Bound {
 	readonly records: Texture;
 	/** Sets the field's newest layer on the material. */
 	readonly setLayer: (layer: number) => void;
+	/** Sets the base wind's speed and heading, which a page's controls change. */
+	readonly setBase: (speed: number, heading: number) => void;
 	/** Sets the uniforms that a placement chooses. */
 	readonly setPlaced: (uniforms: PlacedUniforms) => void;
 	sentBorn: number;
@@ -139,29 +143,44 @@ export function plantMaterials(
 			metalness: 0,
 			specularIntensity: matte ? 0 : LEAF_SPECULAR,
 			doubleSided: leafy,
-			alphaMode: 'mask',
+			// A matte carries each texel's own coverage, so it blends that coverage over the white
+			// ground. A cut at the leaf's cutoff would turn a partly covered texel whole or clear,
+			// and the review could not weigh the part. Every colour role keeps the cut that draws
+			// its blade solid to its edge. The matte keeps the cutoff for its shadow caster, and
+			// writes no depth so that every leaf over a texel adds its coverage to the matte's own.
+			alphaMode: matte ? 'blend' : 'mask',
 			alphaCutoff: ALPHA_CUTOFF,
+			...(matte ? { depthWrite: false } : {}),
 			...(leafy && share > 0 && { diffuseTransmission: share }),
 			...(swayDistance > 0 && { swayDistance }),
 			uniforms: {
 				windBox: field?.size ?? 0,
 				windStrength: field ? 1 : 0,
+				windSpeed: field?.air.base[0] ?? 0,
+				windHeading: field?.air.base[1] ?? 0,
 				windLayer: field?.texture.layer ?? 0,
 				swayDistance,
 				mode: MODE[role],
 				nearDistance: 0,
 				displacement: 0,
 				season: 0,
+				seasonKind: 0,
 				matte: matte ? 1 : 0,
 			},
 		});
 		BOUND.set(material, {
 			records: t.records,
 			setLayer: (layer) => material.setUniform('windLayer', layer),
+			setBase: (speed, heading) => {
+				material.setUniform('windSpeed', speed);
+				material.setUniform('windHeading', heading);
+			},
 			setPlaced: (uniforms) => {
 				if (uniforms.nearDistance !== undefined)
 					material.setUniform('nearDistance', uniforms.nearDistance);
 				if (uniforms.season !== undefined) material.setUniform('season', uniforms.season);
+				if (uniforms.seasonKind !== undefined)
+					material.setUniform('seasonKind', uniforms.seasonKind);
 			},
 			sentBorn: field?.air.sent[3] ?? Number.NaN,
 		});
@@ -185,8 +204,9 @@ export function plantMaterials(
 }
 
 /**
- * Gives each frame's newest wind state to the plant materials. The field's settings, which the
- * materials read beyond its box, go up again only when a page has sent a gust.
+ * Gives each frame's newest wind state to the plant materials. The newest layer and the base wind
+ * go up every frame, so a page's controls reach the plants at once. The rest of the field's
+ * settings, which the materials read beyond its box, go up again only when a page has sent a gust.
  *
  * @param materials The materials that read the field.
  * @param field The wind field.
@@ -195,10 +215,13 @@ export function plantMaterials(
 export function setWindLayer(materials: readonly PlantMaterial[], field: WindField): void {
 	const layer = field.texture.layer;
 	const born = field.air.sent[3];
+	const speed = field.air.base[0];
+	const heading = field.air.base[1];
 	for (const material of materials) {
 		const bound = BOUND.get(material);
 		if (!bound) continue;
 		bound.setLayer(layer);
+		bound.setBase(speed, heading);
 		if (bound.sentBorn !== born) {
 			bound.sentBorn = born;
 			writeFieldSettings(bound.records, field.air);

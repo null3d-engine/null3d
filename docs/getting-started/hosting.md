@@ -282,7 +282,7 @@ The engine keeps its [cache of derived data](../api/assets.md#the-cache-of-deriv
 
 The null3D Vite plugin sends both isolation headers on every response from `vite` and `vite preview`. That includes the `.wasm` files and the worker scripts. `vite preview` also lets the browser keep the hashed files in `assets/`, as a well-set host does.
 
-Shared memory and WebGPU also need a secure context: HTTPS, or `localhost`. An Android phone connected by USB can reach your computer's `localhost` through `adb reverse tcp:5173 tcp:5173`.
+Shared memory and WebGPU also need a secure context: HTTPS, or `localhost`. WebGPU, and so the High and Ultra presets, only exist there. A page served over plain HTTP on a network address silently falls back to WebGL2 at Medium. An Android phone connected by USB can reach your computer's `localhost` through `adb reverse tcp:5173 tcp:5173`.
 
 To test on a phone or tablet over your local network, serve HTTPS with a local certificate. Make one with [mkcert](https://github.com/FiloSottile/mkcert), for `localhost` and your computer's network name:
 
@@ -300,7 +300,7 @@ export default defineConfig({ plugins: [null3d({ https: true, certDir: 'certs' }
 
 The plugin serves this HTTPS over HTTP/1.1. Over HTTP/2, Safari on an iPad sometimes stops while a worker loads its modules. The dev server sends each module as its own file, and every engine thread loads its own copy of each.
 
-The device must trust mkcert's root certificate. `mkcert -CAROOT` prints its folder. Copy `rootCA.pem` to the device and install it. On an iPhone or iPad, also turn on full trust in Settings > General > About > Certificate Trust Settings.
+The device must trust mkcert's root certificate. `mkcert -CAROOT` prints its folder. Copy `rootCA.pem` to the device and install it. On an iPhone or iPad, also turn on full trust in Settings > General > About > Certificate Trust Settings. A browser that has not been given the root certificate shows a warning: open the address over HTTPS and accept the certificate warning to continue.
 
 ## What isolation changes
 

@@ -8,6 +8,7 @@ import { messageOf } from '../errors/message';
 import { TEXTURE_USAGE_TRANSIENT_ATTACHMENT } from '../generated/gpu';
 import type { DrawPathReason } from '../gpu/webgpu/draw-path-probe';
 import type { DeviceHints } from '../quality/chooser';
+import { readDeviceHints } from '../quality/device-hints';
 import { spawnWorker, watchWorkerError } from '../shared/worker-start';
 import type { ProbeMessage, WorkerProbe } from '../workers/probe-worker';
 
@@ -546,20 +547,6 @@ function probeWorkerOnce(timeoutMs: number): Promise<WorkerProbe | WorkerProbeFa
  * it, the browser chooses.
  */
 export type PowerPreference = 'high-performance' | 'low-power';
-
-/**
- * Reads the device hints on the page's main thread, which workers cannot: they have no media
- * queries and no screen.
- */
-export function readDeviceHints(): DeviceHints {
-	const screen = globalThis.screen;
-	const memory = (globalThis.navigator as { deviceMemory?: unknown } | undefined)?.deviceMemory;
-	return {
-		coarsePointer: globalThis.matchMedia?.('(pointer: coarse)').matches ?? false,
-		screenMinEdge: screen ? Math.min(screen.width, screen.height) : 0,
-		deviceMemoryGB: typeof memory === 'number' ? memory : null,
-	};
-}
 
 /**
  * Probes the browser and device, on the GPU that `powerPreference` picks. Runs on the page's main

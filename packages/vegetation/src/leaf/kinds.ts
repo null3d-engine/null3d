@@ -13,8 +13,17 @@ import type { Detail } from '../core/types';
  * @category api/vegetation
  */
 export interface FoliageBuilder {
-	/** The species' leaf meshes at one tier: a blade, a needle, a fascicle, a spray, a frond's leaflet. */
-	leaves(record: Species, manifest: TextureManifest, detail: Detail): readonly PrototypeArrays[];
+	/**
+	 * The species' leaf meshes at one tier: a blade, a needle, a fascicle, a spray or a frond. `age`
+	 * names how far the leaf has opened, for the kinds that grow through a shape a picture can show;
+	 * absent, the leaf is drawn as it stands on a mature plant.
+	 */
+	leaves(
+		record: Species,
+		manifest: TextureManifest,
+		detail: Detail,
+		age?: number,
+	): readonly PrototypeArrays[];
 }
 
 /** A plant with no leaves, such as a bare saguaro, builds none. */

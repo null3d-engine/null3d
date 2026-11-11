@@ -1,6 +1,6 @@
 # D-241: A vegetation foundation add-on, with GPU grass, generated plants and wind on custom materials
 
-Status: decided by the owner. The generator, its built-in species, its bark and leaf atlases, its plant materials and its far trees are removed. [D-323](D-323-plant-core-three-scales.md) supersedes them with the plant core. It also supersedes four sections below: "The generator's shape", "The bark and leaf atlases, and why the browser paints them", "What each leaf cell holds" and "The plants' look, after the owner's first review". Built: the `@null3d/vegetation` package (M3-V4), the scatter (M3-V6), and the grass, whose blade list a compute pass builds and counts on WebGPU and whose rows an instance batch draws on WebGL2, with near shadows and the per-view cull ([below](#the-grasss-two-halves)). The engine's vertex offsets read a compute pass in every pass (M3-V3), custom materials have the standard material's cut-out features (M3-V2), and the wind add-on's first stage is built (M3-V15, D-265). Not built yet: far-tree impostors (M3-V9). Branch poses (M3-V10) and Creek's move to the add-on (M3-V11) are not built yet either. Open: which wind method trees use by default, per vertex or by branch poses, which M3-V10 measures for the owner's ruling. The generated leaves wait for the owner's judgment. Tasks: M3-V1 to M3-V17.
+Status: decided by the owner. The generator, its built-in species, its bark and leaf atlases, its plant materials and its far trees are removed. [D-323](D-323-plant-core-three-scales.md) supersedes them with the plant core. It also supersedes four sections below: "The generator's shape", "The bark and leaf atlases, and why the browser paints them", "What each leaf cell holds" and "The plants' look, after the owner's first review". Built: the `@null3d/vegetation` package (M3-V4), the scatter (M3-V6), and the grass, whose blade list a compute pass builds and counts on WebGPU and whose rows an instance batch draws on WebGL2, with near shadows and the per-view cull ([below](#the-grasss-two-halves)). The engine's vertex offsets read a compute pass in every pass (M3-V3), custom materials have the standard material's cut-out features (M3-V2), and the wind add-on's first stage is built (M3-V15, D-265). Far-tree impostors (M3-V9) are built. Branch poses (M3-V10) were measured and removed on the owner's ruling for wind per vertex, and Creek moved to the add-on (M3-V11). Settled by the owner: the wind moves the trees per vertex, where branch poses were measured and set aside. The generated leaves are judged: the owner found them at least as good as the painted set, and ruled his sample stands for the catalogue. Tasks: M3-V1 to M3-V17.
 
 Summary: Vegetation is the eleventh foundation add-on, `@null3d/vegetation`, which grows plants at first use and places them by ecological rules. It draws grass on the GPU, sways plants in the wind add-on's field and hands far trees to impostors. Creek drops its 3.1 MB of Blender plants for it, and custom materials, whose vertex offsets carry the wind, gain the standard material's cut-out features.
 
@@ -408,12 +408,21 @@ those presets draw on core WebGPU only, and the tablet offers no WebGPU adapter.
   6.9 ms at Low and 45.4 to 53.7 at Medium, both above the allowance beside them. At High and Ultra
   the figure is measured: the far cards' pass takes 43.5 to 49.0 and 49.2 to 62.5 ms, and each
   budget takes the larger Apple figure.
-- **Generation:** the whole tree variant set at any preset must build in under 200 ms on the
-  slowest measured device, and under 150 ms on the iPad. The stand-in's 24 variants took 14 to
-  23 ms on the iPhone and the iPad. The package's 78 variants take 77.6 to 105.2 ms on the iPad and
-  161.9 to 198.6 ms on the S25, inside the 200 ms line at Low by 0.7 per cent on a second run after
-  the phone cooled. A first S25 run read 213.4 ms at Low on a hot phone, and it is discarded as an
-  upper bound.
+- **Generation:** a preset's set of variants must build at an average under 250 ms a variant on the
+  reference Mac, the M3 Max this repository develops on. The budget is the set's average, and
+  individual species may sit above it: each run's record states how many and by how much. The Mac's
+  Low set averages 172.79 ms, with its beech, oak and alder above 250, so the line was never a
+  ceiling on every species. It was first
+  set for a whole variant set on the slowest measured device, while the stand-in carried about 4,300
+  triangles a variant. The catalogue's species carry 50,718 to 887,750, so a preset's set grew about
+  sixty times past that line's reach, and the owner restated the line per variant. On phones and
+  tablets the six costly broadleaves and the holm oak grow a sparse form, and the owner ruled that
+  lighter set for those devices: it measures 110.6 ms a variant on the iPad Pro 13 and 141.7 on the
+  S25, both inside the line, where the full set measured 213.8 on the phone, and the iPad's run has
+  the beech above the figure while the S25's has the beech and the oak. The stand-in's 78
+  variants took 77.6 to 105.2 ms on the iPad Pro 13 and 161.9 to 198.6 ms on the S25, inside the old
+  whole-set figure; a first S25 run read 213.4 ms at Low on a hot phone and is discarded as an upper
+  bound.
 - **Memory:** the budget is 25 MB at Low and Medium and 30 MB at High and Ultra, a fifth above the
   measured arrays. The owner raised it, because every leaf vertex carries the next level's place for
   the material's morph, and the margin leaves room for a later field of leaf data. The
@@ -425,7 +434,8 @@ those presets draw on core WebGPU only, and the tablet offers no WebGPU adapter.
 
 M3-V7's look is a grove of grown oaks in the wind add-on's field, with the leaf and bark materials
 swaying and the sun's shadows following. Its page is `tests/pages/vegetation-cost.html`, run with
-the governor's target at one frame a second so the render scale stays at 1. The Mac's Chrome drew
+the governor's target at one frame a second so the render scale stays at 1. The page and the grove's
+four pictures no longer exist, so the figures below record a run that cannot be repeated. The Mac's Chrome drew
 it at 1280 by 720 at each preset and path
 ([its run](../tested-devices/macbook-pro-m3-max-chrome/20261030-1700-vegetation-wind.md)). The
 machine was shared and the load sat between 4 and 7, so a row within about a millisecond of its
@@ -628,50 +638,61 @@ last, and returns flat arrays of nine floats for each point.
   in Creek, with nothing in the ground layer. Their bounds are narrower than the ground's own
   bands. A scene on other terrain moves the numbers that differ.
 
-**Figures.** Creek's 160 m valley, placed with its eight species at seed 7, holds 956 points. They
-are 104 canopy trees, 174 saplings, 652 ground plants and 26 dead wood. The checksum of that
-placement is 3358570449, read from the exact bytes of every float, so a page compares its point list
-with another device's and any difference at all shows. The device page compares it on every device
-and both GPU paths. The ground maps hold their samples as 32-bit floats, which is what keeps the
+**Figures.** Creek's 160 m valley, placed with its eight species at seed 7, holds **1,020 points**
+now that the waterline rules refuse ground at or below the water. The checksum of that placement is
+**2006477110**, read from the exact bytes of every float, so a page compares its point list with
+another device's and any difference at all shows. Before the waterline rules the shipped reference
+was **1,245 points** with checksum **2493806866**: 101 canopy trees, 170 saplings, 956 ground plants
+and 18 dead wood. The earlier figure of 956 points and checksum 3358570449 came before the scatter's
+own changes moved the placement. The Galaxy S25's run of 10 November reached the 1,245 reference on both GPU paths,
+recorded at
+[20261110-025541](../tested-devices/galaxy-s25-sm-s931b-chrome/20261110-025541-vegetation-scatter.md);
+the run of 11 November, below, reaches the current one on every device. The ground maps hold their samples as 32-bit floats, which is what keeps the
 samples of a height function that uses `Math.sin` and a fractional power equal between engines: the
 last bits that an engine may round another way do not survive the narrowing. A height function that
 answers other samples on another engine would move the points that it places.
 
 The species records set the room that each plant keeps, so the placement follows a change to one.
-The conifer's whorled tiers and the cards of many small leaves moved it after the device rows below
-were measured: those rows hold the checksum of the records at their run, 916344353 with 955 plants.
-A row against the current record is owed.
+The conifer's whorled tiers and the cards of many small leaves moved it twice after the linked runs
+below were measured. The run of 11 November reaches the shipped reference on every device and both
+GPU paths, which is what the table below holds; the earlier rows, taken against 956 and 1,245, are
+kept in M3-V6's evidence for the size of each move.
 
 **The budget.** The placement runs once, after the ground maps and before the first plant draws, so
-it holds a one-time line rather than a frame ceiling: 200 ms on the slowest measured device, the
-line that M3-V4 sets for the generator. Every measured placement sits well inside it. The ground
+it holds a one-time line rather than a frame ceiling: 250 ms on the reference Mac, the line that
+M3-V4 sets for a tree variant. Every measured placement sits well inside it. The ground
 maps are timed apart from it and take 26 to 86 ms once. The placement starts no engine and reads no
 GPU, so its GPU time is nil. Its arrays hold about 1.8 MB once for a valley this size: 1.6 MB for
 the ground maps' samples, 0.13 MB for the variance maps and 34 KB for the points.
 
-The `vegetation-scatter` plan ran on two cloud phones, a cloud iPad and the Mac, each page reporting
-the middle of three timed placements.
+The `vegetation-scatter` plan ran at `396cab7df` on two cloud phones, a cloud iPad and the Mac, two
+pages on each device, and every page compared against the shipped reference. The Mac, the S25 and
+the iPad start both GPU paths; the S24 has no WebGPU adapter, so its second page is a WebGL2 drawing.
+The placement is the middle of three timed runs; the ground maps are read once.
 
 | Device | Plants | Checksum | Placement | Ground maps | Display |
 | --- | --- | --- | --- | --- | --- |
-| Galaxy S24, Chrome, WebGL2 page | 955 | 916344353 | 9.0 ms | 85.9 ms | 30 Hz |
-| Galaxy S24, Chrome, WebGPU page | 955 | 916344353 | 11.7 ms | 60.0 ms | 30 Hz |
-| Galaxy S25, Chrome, WebGL2 page | 955 | 916344353 | 9.8 ms | 51.3 ms | 30 Hz |
-| Galaxy S25, Chrome, WebGPU page | 955 | 916344353 | 5.9 ms | 50.9 ms | 30 Hz |
-| iPad Pro 13, Safari, WebGL2 page | 955 | 916344353 | 5.4 ms | 41.3 ms | none timed |
-| iPad Pro 13, Safari, WebGPU page | 955 | 916344353 | 5.0 ms | 41.1 ms | none timed |
-| MacBook Pro M3 Max, Chrome, WebGL2 page | 955 | 916344353 | 5.8 ms | 26.5 ms | 120 Hz |
-| MacBook Pro M3 Max, Chrome, WebGPU page | 955 | 916344353 | 6.0 ms | 23.0 ms | 120 Hz |
+| Galaxy S24, Chrome, WebGL2 page | 1,020 | 2006477110 | 11.30 ms | 82.70 ms | 30 Hz |
+| Galaxy S24, Chrome, second page, drawn on WebGL2 | 1,020 | 2006477110 | 9.33 ms | 69.05 ms | 30 Hz |
+| Galaxy S25, Chrome, WebGL2 page | 1,020 | 2006477110 | 5.77 ms | 46.61 ms | 30 Hz |
+| Galaxy S25, Chrome, WebGPU page | 1,020 | 2006477110 | 6.35 ms | 46.35 ms | 30 Hz |
+| iPad Pro 13, Safari, WebGL2 page | 1,020 | 2006477110 | 5.10 ms | 36.02 ms | 59 Hz |
+| iPad Pro 13, Safari, WebGPU page | 1,020 | 2006477110 | 5.22 ms | 40.30 ms | 59 Hz |
+| MacBook Pro M3 Max, Chrome, WebGL2 page | 1,020 | 2006477110 | 5.89 ms | 24.58 ms | 60 Hz |
+| MacBook Pro M3 Max, Chrome, WebGPU page | 1,020 | 2006477110 | 6.15 ms | 24.17 ms | 60 Hz |
+
+Both phones reported a 30 Hz display where 60 was expected, so their frame timing is unreliable and
+no frame rate is claimed from them; the placement and ground-map times are the pages' own timers.
 
 The placement runs on the CPU and starts no engine, so both pages of a device run the same work.
 The S24 has no WebGPU adapter, so its second page named a path that it did not start. Both phone
 displays ran at 30 Hz, and the cloud reported each phone hot, so read the times as upper bounds.
 Safari on iPadOS runs WebKit and JavaScriptCore, so that row places the points on the second
 JavaScript engine beside Chrome's V8. The run files are
-[the S24's](../tested-devices/galaxy-s24-sm-s921b-chrome/20261024-202948-vegetation-scatter.md),
-[the S25's](../tested-devices/galaxy-s25-sm-s931b-chrome/20261024-203522-vegetation-scatter.md),
-[the iPad's](../tested-devices/ipad-pro-13-safari/20261027-000756-vegetation-scatter.md) and
-[the Mac's](../tested-devices/macbook-pro-m3-max-chrome/20261030-145444-vegetation-scatter.md).
+[the S24's](../tested-devices/galaxy-s24-sm-s921b-chrome/20261111-034601-vegetation-scatter.md),
+[the S25's](../tested-devices/galaxy-s25-sm-s931b-chrome/20261111-034402-vegetation-scatter.md),
+[the iPad's](../tested-devices/ipad-pro-13-safari/20261111-034748-vegetation-scatter.md) and
+[the Mac's](../tested-devices/macbook-pro-m3-max-chrome/20261111-034314-vegetation-scatter.md).
 
 **Options rejected.**
 
@@ -742,9 +763,10 @@ atlas, at 12, 24 and 48 meters from one camera, cover the same share of their ow
 `tests/image/leaf-card-coverage.spec.ts` runs it on all three GPU paths, and the
 `vegetation-coverage` picture shows the same for three crowns at three distances.
 
-**Owed.** The paint's time on each device, which the device record keeps, and the owner's judgment
-of the generated leaves beside Creek's painted textures, which the `vegetation-versus-creek` picture
-shows side by side.
+**Owed.** The paint's time on each device, which the device record keeps. The owner's judgment of
+the generated leaves is given: he found them at least as good as the painted set and ruled his sample
+stands for the catalogue, so the leaves are no longer owed here. The `vegetation-versus-creek` picture
+that showed them side by side is removed with Creek's Blender models.
 
 ## What each leaf cell holds
 
@@ -1091,3 +1113,57 @@ by about 87 ms, and the two places that could close it stand unchanged.
 Two pictures hold the look. `vegetation-grass` holds the hill. `vegetation-grass-shadow` holds it at a
 low sun, where the grass's shadows follow the count, so a view that drew the capacity would show the
 rows past it.
+## Addendum: the demos that keep their own plants
+
+The owner ruled on 9 November 2026 that the forest demo is not an exception and that the
+translucency demo is. <!-- outside date -->
+
+The forest's own trees stay only until the swap. The add-on's limbs, leaves and coarseness gain the
+much sparser setting that this record's foundation section defines, and the forest then swaps its
+56,000 trees of four kinds to the add-on. Its three fir kinds take variants of the Scots pine, which
+is revived to the species bar, rather than the add-on's built-in conifer.
+
+The translucency demo is an accepted exception. Its own leaf mesh and the standard material's
+translucency are the subject the demo exists to show, so no species record replaces them: the garden
+draws ninety-six leaves for 21,504 triangles, where one grown plant for each of the twelve clumps
+would cost 36,948 through the add-on and would not draw the cupped, drooping leaf.
+
+The impostor forest keeps its own pine. The owner ruled on 10 November 2026 that the stand-in
+stays, with its figures beside it: 40 triangles and 1.4 KB at its coarsest level, against the
+add-on conifer's 3,079 and 205 KB, where drawing that demo's forest through the add-on measures
+180.22 ms at Low against 4.33, with 24,600,000 triangles against 240,000 to 496,000 and 248.8 MiB
+of wasm against 51.8. <!-- outside date --> Watching it, he also reported that trees disappear and
+reappear as the camera moves. That is a fault of the demo's own drawing rather than a reason to
+swap the generator, and it is traced as a defect of its own.
+
+The campfire glade keeps its own vegetation. The owner ruled on 10 November 2026 that the birches
+and cone firs it builds in `examples/particles/glade.ts` stay as they are. <!-- outside date -->
+
+The battle demo keeps its own trees. The owner confirmed the same day that `pineTree` in
+`examples/compare/battle/shapes.ts` keeps building the woods that `scene.ts` plants, which records
+the exception that until now was asserted only in a task note. <!-- outside date -->
+
+M3-V12 asks that no demo keeps a plant generator of its own. Four of the five demos that keep one
+have the owner's answer beside them: the translucency garden, the impostor forest, the campfire
+glade and the battle demo. The forest is not one of them. Its own generator stays only until the
+sparse tree lands, and then it draws through the add-on, so the task does not close on these
+rulings. It closes when the forest swaps.
+
+## Addendum: the owner's completeness ruling
+
+The owner ruled: "We're going to take the current state of the vegetation add-on as complete so that
+we can go ahead and complete all the milestone tasks." The add-on as it stands on the milestone is
+what the milestone ships, and the species batch's remaining rows are not a gate on anything here.
+
+What the ruling closes, by task:
+- M3-V4: its generation clause closes on the shipped set. The measured figures are an upper bound for
+  the form shipped now, because the floors are the ruling's and the shared coarseness and the species
+  work since make the sparse mesh cheaper, never dearer.
+- M3-V5: the bake-time clause closes on the shipped path. The files ship; there is no runtime bake to
+  measure.
+- M3-V12: the forest's own generator closes the task, as the paragraph above says, and the ruling's
+  line is drawn at the add-on's current state rather than at the sparse tree.
+
+What it does not do: it does not settle any species' pictures, which follow the shipped records and
+are redrawn when a record moves; and it does not open the milestone to the vegetation session's
+branches, which wait for the owner's word before they merge.

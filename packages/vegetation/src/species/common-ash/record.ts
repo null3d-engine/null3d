@@ -267,9 +267,11 @@ export const record: Species = {
 			// carries leafy twigs along every limb, so the dial keeps the curve's own count.
 			density: 1,
 			shadePrune: 0,
-			// Stills 01, 03 and 05: sky shows through the crown's middle and under it, where its own
-			// leaves leave a shoot under this share of the sky, and the lit outer masses stay.
-			skyPrune: 0.45,
+			// Stills 01, 03 and 05: a shoot whose leaves see less sky than this share goes, so the
+			// crown's shaded middle stays open and the lit outer masses stay. The share sits low
+			// enough that the middle keeps its own shoots, since the leaflet's tapered tips leave
+			// more sky between them than a rounded blade does.
+			skyPrune: 0.35,
 			skyPruneLayer: 1,
 			// Stills 01 and 18: no bare twigs hang outside the foliage.
 			bareTrim: 0.03,
@@ -321,7 +323,15 @@ export const record: Species = {
 		// Stills 26 and 15 under the copy-stand lamps: a pale, cool grey, so the measured colour stands
 		// as it is. A lighter layer over a drawn trunk reads three steps further from its photograph,
 		// so the tint stays at one.
-		zones: [{ layer: 0, by: 'height', from: 0, to: 40, blend: 0, tint: [1, 1, 1] }],
+		zones: [
+			// Stills 14 and 15: the foot stands a shade lighter than the bole above it, and the bole
+			// reads lighter and yellower than its photograph, so each takes its own measured tone.
+			{ layer: 0, by: 'height', from: 0, to: 1.2, blend: 0.3, tint: [1.2, 1.15, 1] },
+			{ layer: 0, by: 'height', from: 1.2, to: 40, blend: 0.3, tint: [0.79, 0.79, 0.66] },
+			// Still 16: a great limb's bark reads darker than the limb in its photograph, so wood
+			// thinner than the bole takes a lighter tone of its own.
+			{ layer: 0, by: 'radius', from: 0, to: 0.3, blend: 0.05, tint: [1.38, 1.4, 1.22] },
+		],
 		young: 0,
 		// Still 16: the diamond net fades to smooth pale grey on wood thinner than about six
 		// centimetres across.
@@ -416,8 +426,8 @@ export const record: Species = {
 	lod: {
 		nearFoliage: 'instanced',
 		switchPixels: [240, 12, 160],
-		// The cards stand half again larger than the shoots they picture, so a gap between one shoot's
-		// leaves falls on a neighbour's leaves rather than on sky, and the far crown's rim reads solid.
+		// The cards stand larger than the shoots they picture, so a gap between one shoot's leaves
+		// falls on a neighbour's leaves rather than on sky, and the far crown's rim reads solid.
 		cardGrow: 1.55,
 		// Stills 01 and 02: a card's twig is thinner than a pixel at a whole view, so a card's leaves
 		// read as a piece in air. Each draws its twig as a line, and the join shows.
@@ -426,16 +436,16 @@ export const record: Species = {
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
-			// The kit measures 2.60, 2.96, 4.91 and 9.07 MB, the leaf's nine sessile leaflets and the
+			// The kit measures 2.63, 3.03, 5.25 and 9.92 MB, the leaf's nine sessile leaflets and the
 			// cutting class among them; each cap sits above its figure, and the low tier's just under
 			// the owner's cap for a tree.
 			kitBytes: { low: 2_680_000, medium: 3_150_000, high: 5_900_000, ultra: 11_600_000 },
-			// The largest of seed 11's six variants measures 5.87, 5.94, 6.02 and 6.11 MB, the keys'
+			// The largest of seed 11's six variants measures 5.84, 5.92, 6.00 and 6.09 MB, the keys'
 			// bunches of 34 taking close to half of it.
 			variantBytes: { low: 5_970_000, medium: 6_040_000, high: 6_120_000, ultra: 6_210_000 },
 			lod0Triangles: 2_500_000,
-			// The heaviest variant's first card level draws 25,728, 28,645, 32,025 and 36,735
-			// triangles from the coarsest tier up, and its second 10,920, 11,797, 12,659 and 13,492.
+			// The heaviest variant's first card level draws 20,704, 23,700, 26,754 and 30,594
+			// triangles from the coarsest tier up, and its second 8,521, 9,181, 10,092 and 10,932.
 			lod1Triangles: 38_000,
 			lod2Triangles: 14_000,
 			downloadBytes: 1_000_000,
@@ -447,6 +457,9 @@ export const record: Species = {
 	textures: 'own',
 	variants: 6,
 	seedSalt: 20221107,
+	// A first pass at the floors a phone's lighter form keeps, set from the species' form and to
+	// be measured on the phone set before they are trusted.
+	sparse: { limbs: 0.45, leaves: 0.5, coarseness: 0.55 },
 	roundBand,
 	cuttings: {
 		// Stills 20, 21 and 22: a cut piece is a bare stem that forks once into two leafy shoots, far

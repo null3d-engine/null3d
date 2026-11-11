@@ -8,7 +8,7 @@
 // A button's tip describes what it does alone, with no input device named. The tip shows on hover,
 // keyboard focus and a press, and hides on a leave, a blur, a tap elsewhere, a scroll or after a
 // few seconds. It lives outside the scrolling panel, so it is never clipped.
-import type { HudModel, HudSlider } from './controls';
+import type { HudButton, HudGroup, HudModel, HudSlider } from './controls';
 
 export type { HudButton, HudGroup, HudModel } from './controls';
 
@@ -376,6 +376,46 @@ export function createHud(
 	/** The selected tab's group name. Camera, the first group, until a tab picks another. */
 	let active = 'camera';
 	let signature = '';
+	/**
+	 * Adds one button to a group. A disabled button stays in the tab order, so a keyboard user can
+	 * reach it and read its reason; it announces that reason as its description, and it posts
+	 * nothing when pressed. The reason shows in the same tooltip on focus and on hover.
+	 */
+	const appendButton = (
+		parent: HTMLElement,
+		group: HudGroup,
+		button: HudButton,
+		extra: boolean,
+	): void => {
+		const el = node('button', `hud__btn${group.radio && !extra ? '' : ' hud__btn--toggle'}`);
+		el.type = 'button';
+		// A disabled button still says what it does, and then why it cannot be used.
+		const tip =
+			button.disabled && button.reason !== undefined
+				? `${button.tip} ${button.reason}`
+				: button.tip;
+		el.dataset.tip = tip;
+		el.append(
+			document.createTextNode(button.label),
+			...(button.key ? [node('kbd', undefined, button.key)] : []),
+		);
+		if (button.disabled) {
+			el.setAttribute('aria-disabled', 'true');
+			if (button.reason !== undefined) {
+				// The tip and the reason sit beside the button, so they are announced as the button's
+				// description and not as part of its name.
+				const why = node('span', 'hud__why', tip);
+				why.id = `hud-why-${group.name}-${extra ? 'extra-' : ''}${button.id}`;
+				el.setAttribute('aria-describedby', why.id);
+				parent.append(why);
+			}
+		} else {
+			el.addEventListener('click', () => post(button.name ?? group.name, button.id));
+		}
+		bindTip(el);
+		parent.append(el);
+		drawn.set(`${group.name}\u0000${extra ? 'extra:' : ''}${button.id}`, el);
+	};
 	/** Shows one group: its tab is selected and only its panel is visible. */
 	const selectTab = (name: string, focus = false): void => {
 		active = name;
@@ -403,7 +443,7 @@ export function createHud(
 		const next = model.groups
 			.map(
 				(group) =>
-					`${group.name}|${group.title}|${group.radio}|${group.slider ? `${group.slider.min}~${group.slider.max}~${group.slider.step}~${group.slider.tip}~${group.slider.dial ? 'dial' : ''}~${group.slider.marks.map((m) => `${m.at}~${m.label}`).join(',')}` : ''}|${group.buttons.map((b) => `${b.id}~${b.label}~${b.key ?? ''}~${b.tip}`).join(';')}|${(group.extras ?? []).map((b) => `${b.id}~${b.label}~${b.tip}`).join(';')}`,
+					`${group.name}|${group.title}|${group.radio}|${group.slider ? `${group.slider.min}~${group.slider.max}~${group.slider.step}~${group.slider.tip}~${group.slider.dial ? 'dial' : ''}~${group.slider.marks.map((m) => `${m.at}~${m.label}`).join(',')}` : ''}|${group.buttons.map((b) => `${b.id}~${b.label}~${b.key ?? ''}~${b.tip}~${b.disabled ? '1' : ''}~${b.reason ?? ''}`).join(';')}|${(group.extras ?? []).map((b) => `${b.id}~${b.label}~${b.tip}~${b.disabled ? '1' : ''}~${b.reason ?? ''}`).join(';')}`,
 			)
 			.join('||');
 		if (next !== signature) {
@@ -482,33 +522,12 @@ export function createHud(
 						sliders.set(group.name, range);
 					}
 					const buttons = holder === section ? node('div', 'hud__buttons') : holder;
-					for (const button of group.buttons) {
-						const el = node('button', `hud__btn${group.radio ? '' : ' hud__btn--toggle'}`);
-						el.type = 'button';
-						el.dataset.tip = button.tip;
-						el.append(
-							document.createTextNode(button.label),
-							...(button.key ? [node('kbd', undefined, button.key)] : []),
-						);
-						el.addEventListener('click', () => post(button.name ?? group.name, button.id));
-						bindTip(el);
-						buttons.append(el);
-						drawn.set(`${group.name}\u0000${button.id}`, el);
-					}
+					for (const button of group.buttons) appendButton(buttons, group, button, false);
 					if (group.extras?.length) {
 						// A group may also carry switches, such as the level of detail under Quality. They
 						// follow the row's choice after a separator, so the row stays one line.
 						buttons.append(node('span', 'hud__sep'));
-						for (const button of group.extras) {
-							const el = node('button', 'hud__btn hud__btn--toggle');
-							el.type = 'button';
-							el.dataset.tip = button.tip;
-							el.append(document.createTextNode(button.label));
-							el.addEventListener('click', () => post(button.name ?? group.name, button.id));
-							bindTip(el);
-							buttons.append(el);
-							drawn.set(`${group.name}\u0000extra:${button.id}`, el);
-						}
+						for (const button of group.extras) appendButton(buttons, group, button, true);
 					}
 					if (buttons !== holder) section.append(buttons);
 					tabPanels.set(group.name, section);

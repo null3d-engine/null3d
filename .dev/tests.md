@@ -7,7 +7,7 @@ The unit tests run in a few processes, one for each group of them, so what each 
 - `bun run test` builds the shaders, then runs `bun test` over the tools, the packages, the benchmark scenes and pages, `tests/lib` and the demos.
 - That is a group for each package, and one each for the tools, the benchmark's scenes and pages, `tests/lib` and the demos (`tests/unit.ts`).
 - The demos' group names every top-level folder under `examples/` that holds a test file, at any depth. A demo folder that arrives with a test then joins the run without an edit (`tests/lib/unit-groups.ts`).
-- Each group is a `bun test` of its own. One invocation holds everything it finds in one process, so a group's peak is what its files hold together. The run's peak is the largest group's rather than the sum of them all.
+- Each group is a `bun test` of its own. One invocation holds everything it finds in one process, so a group's peak is what its files hold together. Two groups run at once, so the run's peak is those two together rather than one group's. The run lasts as long as its groups take, split across the two lanes. The ceiling applies to each group, so a full pair may reach twice it.
 - The generated shader set is the largest thing a test can hold: 1,343 modules and 850 MB of JavaScript source on disk. Git does not keep it; the build writes it. A project takes it from the release asset or builds it; `NULL3D_ENGINE_SHADERS` names a folder to use instead, such as a checkout's `packages/engine/src/generated`. CI's package test sets it, and the fresh-project test passes that folder to each of its steps when the caller has not named one. Without the folder it would build 1,353 modules with the single-threaded wasm compiler, which takes longer than any job on a runner.
 - A single file that imports the whole set makes the process large on its own. The same file that reads the set's text costs a fraction of that.
 - A generated set is not the only thing a test holds for good. The WebAssembly texture transcoder's heap grows when a check feeds it hostile files, and it does not shrink, so a check that does that holds every growth it has made. The malformed-file checks reach 1.7 GB of memory that way, from a handful of changed files, each of them a few kilobytes on disk.
@@ -48,7 +48,8 @@ Several helper agents that each run such a unit run on one machine push it past 
 
 | Work | Peak memory | Time |
 | --- | --- | --- |
-| The whole unit run | 2.9 GB | 176 s |
+| The whole unit run, one group at a time | 2.5 GB | 312 s |
+| The whole unit run, two groups at a time | 4.0 GB | 168 s |
 | `tests/lib/runs.test.ts` | 422 MB | 4 s |
 | `tests/lib/jitter.test.ts` | 291 MB | 9 s |
 | Importing the checks plan alone | 267 MB | 5 s |
@@ -62,7 +63,8 @@ Several helper agents that each run such a unit run on one machine push it past 
 The checks that hold gigabytes run one process at a time, each under a ceiling set from its own
 figure. The bundler builds cost the most, because the engine's 890 MB of shader code is in
 the bundle they read and in the bundler's copy of it. What a group of the unit run holds is bounded
-by the group, and the run's peak is its largest group rather than the sum of every file's memory.
+by the group, and the run's peak is the two groups that ran together rather than the sum of every
+file's memory.
 
 ## Rules
 
@@ -76,6 +78,8 @@ by the group, and the run's peak is its largest group rather than the sum of eve
 8. A check, a setup or teardown hook (`beforeAll`, `beforeEach`, `afterAll`, `afterEach` or `onTestFinished`), or a file that states its own budget writes it as `scaledBudget(ms)`, or as a constant of the same file that holds such a call. The helper multiplies the budget by the run's factor. The run hands that factor to each group's process in the environment, so both budgets grow from one reading. A file that `bun test` runs alone reads the load itself. A stated budget wins over the run's, so a fixed one can be the smaller of the two on a loaded machine. A file that sets 60 seconds can then time out at 60 seconds while the run gives 120. A child process that a check starts takes its time limit from `scaledBudget` too, or it dies before the check's budget ends. The check in `tests/lib/bare-budgets.test.ts` fails on any other form of stated budget, such as a number or a constant that holds one. It reads only calls of the names that the file imports from `bun:test`. A local name that hides one of them, such as a `test` that holds a helper, is no check.
 9. A page or a run that proves something by a picture must prove it read the change first. It can miss the change in two ways. Settings that a page puts on a sketch's address are lost if the sketch never sees the query. The sketch then draws its own defaults, and every variant is one picture. Have the sketch post back the values it built, and report them beside the frame. And a dev server answers a sketch address whose query carries a `v=` value with `Cache-Control: max-age=31536000, immutable`. Any other address, with or without a query, answers `no-cache`. A browser may then keep the first module it fetched. The test that settles freshness is a marker: open the page twice with two markers and have the sketch report the one it read. Run it before drawing the frame that decides something, not after.
 10. Hand `bun test` each path with `./` in front (`exactTestPath` in `tests/lib/test-paths.ts`). Without it, `bun test` reads the path as a filter. It searches every folder of the checkout for test files, and runs every file whose path contains the text. In a checkout whose `target` folder holds 86 GB, the search takes 2.8 s for one file. Under a load near 88, the build log test then timed out in 10 of 20 runs. With `./` it timed out in 0 of 20, at a load of 72 to 86. The filter also makes the `tools` group run `packages/cli/src/devtools.test.ts` a second time, because its path contains the text. The `./` cures only a single file's run. In the whole `tools` group, the build log test can still stop at 90 s with `./` paths, for a cause not yet found.
+
+11. A local server that a person opens, or that another machine reaches, serves HTTPS by default. A secure origin is what makes WebGPU, and so the High and Ultra presets, available. The browser tests and the other loopback-only harnesses opt out with `NULL3D_HTTPS=0`: the loopback is a secure origin already, and CI has no local certificate. `startServer` serves HTTPS unless its caller passes `false`. `startServerAt` and `startPreview` opt out because their callers reach them over the loopback.
 
 ## The ceiling
 

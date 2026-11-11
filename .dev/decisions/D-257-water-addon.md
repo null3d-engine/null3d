@@ -360,7 +360,7 @@ vertex's world place is the origin with its place in the mesh.
 
 ## Consequences
 
-- The add-on's largest material sets are over D-14's first-use shader figure of 58 KB. The water's
+- The add-on's largest material sets were over D-14's first-use shader figure of 58 KB when this was written, and the figure has since risen to 128 KB. The water's
   is 79.9 KB after Brotli; the landing head without this branch measures 79.5 KB, so the branch
   adds at most 0.6 KB. The ocean's was 74.8 KB as this branch measured it, before the landing's
   shader keying changed the build. The growth past the 55.9 KB recorded here earlier is the builds

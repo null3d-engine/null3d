@@ -212,7 +212,11 @@ async function main(): Promise<void> {
 		args: [`--remote-debugging-port=${DEBUG_PORT}`],
 	});
 	try {
-		const page = await browser.newPage({ viewport: { width: 1400, height: 800 } });
+		// The dev server serves the local certificate, which this browser has not been told to trust.
+		const page = await browser.newPage({
+			viewport: { width: 1400, height: 800 },
+			ignoreHTTPSErrors: true,
+		});
 		const pageErrors: string[] = [];
 		page.on('pageerror', (error) => pageErrors.push(error.message));
 		page.on('console', (message) => {

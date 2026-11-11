@@ -202,11 +202,17 @@ export function variantBytesOf(asset: PlantAsset): number {
 /**
  * The species whose second bark zone the owner allows a larger download, with those caps.
  *
+ * The bracken's entry is measured, not a second zone: a stipe's own bark texture beside its leaf
+ * set reads 731 KB with the full set and 220 KB with the half, against the ground class's 350 and
+ * 120. Its leaf set is 310.0 KB and 97.7 KB, and one stipe zone 421 KB and 123 KB.
+ *
  * @category api/vegetation
  */
 export const TWO_ZONE_DOWNLOADS: Readonly<
 	Record<string, { readonly downloadBytes: number; readonly downloadHalfBytes: number }>
 > = {
+	// The bracken's stipe zone, measured from its own texture set.
+	bracken: { downloadBytes: 0.75 * MB, downloadHalfBytes: 0.23 * MB },
 	'silver-birch': { downloadBytes: 1.3 * MB, downloadHalfBytes: 0.4 * MB },
 	'scots-pine': { downloadBytes: 1.3 * MB, downloadHalfBytes: 0.4 * MB },
 	'quaking-aspen': { downloadBytes: 1.3 * MB, downloadHalfBytes: 0.4 * MB },

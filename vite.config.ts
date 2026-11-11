@@ -8,6 +8,7 @@ import { checkoutServer, HTTP_PORT, HTTPS_PORT } from './tests/lib/server.ts';
 import { splatStreamServer } from './tests/lib/splat-stream.ts';
 import { tunnelServer } from './tests/lib/tunnel-server.ts';
 import { coreSourcesServer } from './tools/lib/core-sources.ts';
+import { DEV_CERT_DIR, requireDevCertificate, servesHttps } from './tools/lib/dev-https.ts';
 import { sampleEnvironmentsServer } from './tools/lib/sample-environments.ts';
 import { sampleTexturesServer } from './tools/lib/sample-textures.ts';
 import { samplesServer } from './tools/lib/samples.ts';
@@ -17,10 +18,13 @@ import { watchIgnored } from './tools/lib/watch-ignored.ts';
 
 // One dev server for every browser page in the repository: the test pages under tests/pages, the
 // benchmark pages under bench/pages and the demos under examples, with the isolation headers.
-// Plain HTTP binds every interface, so a demo is reachable from outside this machine as well as from
-// a phone over USB, whose forwarding rule reaches the loopback that such a server also answers.
-// NULL3D_HTTPS=1 serves HTTPS on its own port, for tablets and phones that reach the Mac by its
-// .local name. The dev server and `vite preview` also serve the startup build of the engine test page, one
+// The server serves HTTPS by default, because a secure origin is what makes WebGPU, and so the High
+// and Ultra presets, available; a demo served over plain HTTP on a network address silently falls
+// back to WebGL2 at Medium. Both schemes bind every interface, so a demo is reachable from outside
+// this machine as well as from a phone over USB, whose forwarding rule reaches the loopback that
+// such a server also answers. NULL3D_HTTPS=0 opts out, for a server that only this machine reaches
+// over the loopback, which is a secure origin already.
+// The dev server and `vite preview` also serve the startup build of the engine test page, one
 // address prefix per load, and the pinned sample content under /samples/ from the shared cache,
 // with the environment maps of its HDR files under /sample-environments/ and the KTX2 files of its
 // images under /sample-textures/, S6's model files, built from the sample content's city
@@ -29,8 +33,6 @@ import { watchIgnored } from './tools/lib/watch-ignored.ts';
 // cache times and compression. The dev server gives the engine the stamp of the core's Rust
 // sources, so a page whose WebAssembly core is older than the checkout fails with E1402. It also
 // names the checkout it serves, so a test run that finds it on its port refuses another checkout's.
-
-const https = process.env.NULL3D_HTTPS === '1';
 
 /**
  * Files the server refuses, besides Vite's defaults: private notes, build output and agent state
@@ -69,64 +71,69 @@ const indexRedirect: Plugin = {
 	},
 };
 
-const config: UserConfig = {
-	root: import.meta.dirname,
-	// The HTTP and HTTPS servers can run at once, so each keeps its own prebundled dependencies.
-	cacheDir: https ? 'node_modules/.vite-https' : 'node_modules/.vite',
-	plugins: [
-		tunnelServer(),
-		null3d({ https, certDir: 'target/dev-cert', urlSwitches: true }),
-		reportCollector(),
-		loadServer(),
-		samplesServer(import.meta.dirname),
-		sampleEnvironmentsServer(import.meta.dirname),
-		sampleTexturesServer(import.meta.dirname),
-		coreSourcesServer(import.meta.dirname),
-		cityServer(import.meta.dirname),
-		desertServer(import.meta.dirname),
-		splatStreamServer(),
-		checkoutServer(import.meta.dirname),
-		indexRedirect,
-	],
-	// The pages take the packages' source, not the files that their pack step builds.
-	resolve: sourceResolve,
-	server: {
-		// Both servers bind every interface, so a demo is reachable from outside this machine. A phone
-		// over USB reaches the loopback, which such a server answers too.
-		host: true,
-		port: https ? HTTPS_PORT : HTTP_PORT,
-		strictPort: true,
-		fs: { strict: true, allow: [searchForWorkspaceRoot(import.meta.dirname)], deny: DENIED },
-		watch: {
-			ignored: watchIgnored(import.meta.dirname),
-		},
-	},
-	// The scan for dependencies to prebundle starts at the pages, and it does not follow a page into
-	// its workers. The comparisons' three.js workers are entries of their own, so the scan finds
-	// their imports before any page loads. A dependency found later makes the dev server bundle
-	// again and reload every open page, the pages of other tests among them.
-	optimizeDeps: {
-		entries: [
-			'tests/pages/**/*.html',
-			'bench/pages/**/*.html',
-			'examples/**/*.html',
-			'examples/compare/*/three.ts',
+/** The dev server's config, with HTTPS on when the command that serves pages asks for it. */
+function devConfig(https: boolean): UserConfig {
+	return {
+		root: import.meta.dirname,
+		// The HTTP and HTTPS servers can run at once, so each keeps its own prebundled dependencies.
+		cacheDir: https ? 'node_modules/.vite-https' : 'node_modules/.vite',
+		plugins: [
+			tunnelServer(),
+			null3d({ https, certDir: DEV_CERT_DIR, urlSwitches: true }),
+			reportCollector(),
+			loadServer(),
+			samplesServer(import.meta.dirname),
+			sampleEnvironmentsServer(import.meta.dirname),
+			sampleTexturesServer(import.meta.dirname),
+			coreSourcesServer(import.meta.dirname),
+			cityServer(import.meta.dirname),
+			desertServer(import.meta.dirname),
+			splatStreamServer(),
+			checkoutServer(import.meta.dirname),
+			indexRedirect,
 		],
-	},
-	// The production builds of the test pages, which the production browser tests serve.
-	build: {
-		outDir: 'target/production-pages',
-		emptyOutDir: enginePage,
-		assetsDir: enginePage ? 'assets' : `assets/${builtPage}`,
-		rollupOptions: {
-			input: { [builtPage]: `${import.meta.dirname}/tests/pages/${builtPage}.html` },
+		// The pages take the packages' source, not the files that their pack step builds.
+		resolve: sourceResolve,
+		server: {
+			// Both servers bind every interface, so a demo is reachable from outside this machine. A phone
+			// over USB reaches the loopback, which such a server answers too.
+			host: true,
+			port: https ? HTTPS_PORT : HTTP_PORT,
+			strictPort: true,
+			fs: { strict: true, allow: [searchForWorkspaceRoot(import.meta.dirname)], deny: DENIED },
+			watch: {
+				ignored: watchIgnored(import.meta.dirname),
+			},
 		},
-	},
-};
+		// The scan for dependencies to prebundle starts at the pages, and it does not follow a page into
+		// its workers. The comparisons' three.js workers are entries of their own, so the scan finds
+		// their imports before any page loads. A dependency found later makes the dev server bundle
+		// again and reload every open page, the pages of other tests among them.
+		optimizeDeps: {
+			entries: [
+				'tests/pages/**/*.html',
+				'bench/pages/**/*.html',
+				'examples/**/*.html',
+				'examples/compare/*/three.ts',
+			],
+		},
+		// The production builds of the test pages, which the production browser tests serve.
+		build: {
+			outDir: 'target/production-pages',
+			emptyOutDir: enginePage,
+			assetsDir: enginePage ? 'assets' : `assets/${builtPage}`,
+			rollupOptions: {
+				input: { [builtPage]: `${import.meta.dirname}/tests/pages/${builtPage}.html` },
+			},
+		},
+	};
+}
 
-export default defineConfig(({ isPreview }) => {
+export default defineConfig(({ command, isPreview }) => {
+	const https = servesHttps(command);
+	if (https) requireDevCertificate(import.meta.dirname);
 	// The pages import the shader modules, which git does not keep. `vite preview` serves builds
 	// that already hold them, so it runs without the Rust toolchain that builds them.
 	if (!isPreview) ensureShaderModules(import.meta.dirname);
-	return config;
+	return devConfig(https);
 });

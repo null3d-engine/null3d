@@ -22,6 +22,7 @@ import {
 	textureMemoryCap,
 	withinTier,
 } from '../quality/chooser';
+import { readDeviceHints } from '../quality/device-hints';
 import {
 	capTextureMemory,
 	checkedSettings,
@@ -74,7 +75,6 @@ import {
 	forgetWorkerProbe,
 	type PowerPreference,
 	probeCapabilities,
-	readDeviceHints,
 	type WorkerProbeFailure,
 } from './capabilities';
 import { CheckStore, checkConditions } from './check-store';

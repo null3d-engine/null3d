@@ -1145,12 +1145,17 @@ function overBudget(what: string, size: SizeEntry, budget: Budget): string[] {
  * largest files share 7.1 per cent of their text, because each variant is a separate compilation and
  * there is no base to extract; and the moment layer and the particle work fit under the old figure
  * on their own. The cost is the number of variants the family emits, not waste inside one. The next
- * feature that needs room here is a decision about which variants to emit, and not a further raise.
+ * feature that needs room here is a decision about which variants to emit, not a further raise.
+ *
+ * The owner then raised all three figures for the vegetation add-on's compiled material files: its
+ * largest reaches 115.9 KB after Brotli, 1,366.9 KB after gzip and 7,227.5 KB uncompressed, and the
+ * figures of 128 KB, 1,536 KB and 8,192 KB hold it with about thirteen per cent of headroom. The
+ * add-on check warns rather than refuses over a figure (D-225).
  */
 export const FIRST_USE_SHADER_BUDGET: Budget = {
-	raw: 1_792 * 1024,
-	gzip: 320 * 1024,
-	brotli: 58 * 1024,
+	raw: 8_192 * 1024,
+	gzip: 1_536 * 1024,
+	brotli: 128 * 1024,
 };
 
 /**

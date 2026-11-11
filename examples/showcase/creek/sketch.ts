@@ -319,7 +319,6 @@ export default defineSketch(async (ctx) => {
 	const flora = await createFlora(ctx, wind);
 	const plants = await createPlants(ctx, wind.field, {
 		rocks: (x, z) => stones.clear(x, z),
-		mountainHeight: (x, z) => mountains.heightAt(x, z),
 	});
 	const air = await createAir(ctx, camera, wind.field);
 	const shafts = createShafts(ctx, camera);

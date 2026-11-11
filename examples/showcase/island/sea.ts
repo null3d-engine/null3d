@@ -297,6 +297,8 @@ export function createSea(ctx: SketchContext): { update(): void } {
 		ripple: 0.45,
 		// The reflection is soft on rippled water, so a coarser one shows no less. It draws every frame at
 		// High and Ultra, since a crisp mast steps visibly at a slower cadence while the camera moves.
+		// Low keeps the add-on's default of every second frame: a cadence of four still draws a dark
+		// sea on the software WebGL2 path, with the held-frame fix in place.
 		reflectionScale: 0.5,
 		layers: 1,
 		reflectionEvery: { high: 1, ultra: 1 },

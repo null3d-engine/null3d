@@ -1,8 +1,9 @@
 # D-331: the common ash, its opposite branching and its pinned, winged keys
 
 Status: decided and built in the ash's record, the two record fields it needed and its textures. The
-review measures the species against its reference set and fails it; the figures and the faults that
-remain are under [Consequences](#consequences). Task: none.
+review measures the species against its reference set. It stood at three of twelve rows when this
+record was written. It stands at eleven at run `ash-123`: row 10's crown colour is the one open
+limit. The figures and the faults that remain are under [Consequences](#consequences). Task: none.
 
 Summary: the plant core grows the common ash, a tall open dome on a long clean bole, with every axis
 carrying opposite decussate pairs of shoots, a pinnate leaf of eleven leaflets, and bunches of
@@ -493,6 +494,102 @@ leaflets sessile, and the largest of seed 11's six variants 3.18, 3.25, 3.33 and
 of the same variants draws 24,855 to 35,382 triangles and the second 10,594 to 13,325. A variant
 grows in about 290 to 300 ms with the machine in other hands.
 
+### Row 8's bark colour takes three zones of its own
+
+The bark's colour was read as a limit at the ninth review, at 6.38, 5.38 and 3.72 steps against a
+band of 3. It is a record value after all. The three close views do not fail alike. A marker tint on
+each range showed where each view draws. The base and the mid-trunk take the foot range, below about
+a metre. The limb, at a radius of about a quarter of a metre, takes both the upper height range and
+the thin-wood radius range.
+
+Three zones carry the three tones. They were first measured on a diluted figure, then re-tuned once
+the tool's measure was fixed. The final settings, measured at run `ash-121-retune`:
+
+| Zone | Range | Tint | Base | Mid-trunk | Limb |
+| --- | --- | --- | --- | --- | --- |
+| Foot | height 0 to 1.2 m | [1.2, 1.15, 1] | 2.77 | | |
+| Bole | height 1.2 to 40 m | [0.79, 0.79, 0.66] | | 1.47 | |
+| Limb | radius 0 to 0.3 m | [1.38, 1.4, 1.22] | | | 2.08 |
+
+All three stand inside the band of 3. The base slot also carries a `daylight` of 1.0, which brings
+the foot's lightness onto its photograph's.
+
+The count is twelve of twelve. The reviewer confirmed row 8 on run `ash-123` at `dbe7eebda`, 769
+of 769 frames and all 32 reference files.
+
+Row 10 passes on the owner's acceptance under D-334, not on its figure. Its only fault is the shared
+review lighting: the far-crown shading under the scene's light. The owner ruled that such a row
+passes, and the engine change becomes a task of its own. Its figures stay recorded beside the
+acceptance, 12.9, 11.9 and 4.4 against the band of 3. Nobody then mistakes a dark crown for a fixed
+one. Scored on the stated limit alone, the ash would read eleven.
+
+Re-read on the land head at `31e48922f`, which brought the thin-wood tint, the limb stood at 1.87.
+That tint is reverted at `038dac7cc`, so on the settled land tip the limb reads 2.08 again.
+
+Re-read at `fbdcbcd83`, which merges `9da5a94d0`, the three close views read 2.77, 1.33 and 1.97,
+with the mask set per picture:
+
+| View | Masked | Unmasked | Corners of the photograph | Kept |
+| --- | --- | --- | --- | --- |
+| Base 14 | 2.77 | 6.93 | grey sky above, olive meadow below | masked |
+| Mid-trunk 15 | 1.47 | 1.33 | four grey bark tones | unmasked |
+| Limb 16 | 2.08 | 1.97 | pale grey and grey bark | unmasked |
+
+The mask helps where the corners are the backdrop. It hurts where they are the bark itself, because
+it then drops bark as backdrop. The base draws 47.7, -1.0, 7.4 against the photograph's 46.0, -1.6,
+10.4. The mid-trunk draws 48.5, -0.2, 6.8 against 49.0, 0.4, 5.7, and the limb 60.5, -0.1, 5.9
+against 62.8, -0.3, 5.4.
+
+The batch re-read was drawn at `980498366`, which merges `6e44d5063`'s strands camera and the land
+head. The whole views read 0.2512, 0.2244 and 0.2442, against 0.2608, 0.1869 and 0.2147.
+Their crown aspects are 1.157, 1.096 and 1.157. The photographs give 1.250, 1.227 and 0.900. The
+young bark reads 12.03 at the shared frame, `thin` 0.015 with a `span` of 0.1 and the mask, landed
+at `b40edf899`, drawn at `b62625f07`. The ash's own entry for that picture now carries the same
+pair rather than a thin alone. It read 6.68 with the narrower frame, and the rise is the frame's:
+the wider span takes in the branches behind the shoot, which no mask separates from it. That is a
+texture-source note, expected to stand out under the masked measure as the oak's 11.28 and the
+beech's 7.33 do. The ash has no strands reference, so that view has no
+picture.
+
+The measure came first, because it was wrong. A slot's `barkMask` drops every patch pixel as close
+to the picture's corners as the backdrop is. Its first version read the backdrop as one colour: the
+mean of all four corners. A base view lays a stem on sky above the horizon and meadow below, so that
+mean matches neither and the mask dropped nothing. Masked and unmasked both read 5.98.
+
+The shared head now reads each corner on its own and drops a pixel that matches any of them. With
+that the foot's draw stands at Lab 46.9, 0.0, 4.5 against the photograph's 46.0, -1.6, 10.4 at a
+`daylight` of 1.0. The green was the meadow, and the drawn bark is neutral and six steps less yellow
+than its photograph.
+
+The tint tuning before the fix moved a diluted number. A lamp sweep on the same view read 5.35,
+4.42, 4.89 and 5.05 against 6.26 for no lamp. The exposures that reached the band drew the foot pale
+lavender. Those figures belong to the old measure and are kept as a record of the search.
+
+Nothing in the shading was the cause. Moss set to zero moved the albedo draw from 5.82 to 5.41, and
+young bark and lichen changed nothing. The base drawn as albedo read 5.82 against the lit 5.98, so
+the light path contributes 0.16 and the moss 0.41. Neither is the yellow the old figure showed.
+
+The reference set disagrees about the bark's colour as much as the render did. The flat texture
+source, still 26, stands 5.9, 6.8 and 7.8 steps from the photographs of the base, the mid-trunk and
+the limb. It stands 11.9 from the young bark. So the swatch's old figure of 1.7 measured the render
+against a patch its own close views do not agree with. With the zones in place still 26 reads 6.31,
+which is where the photographs themselves stand from it.
+
+A lower young radius, 0.015 in place of 0.03, moves the limb by three hundredths. The limb draws the
+mature bark either way, so that lever is not this row's.
+
+Still 28 now frames the thin wood it is a photograph of. Its slot asks for the thinnest five per cent
+of the wood rather than the view's default. The picture shows a smooth olive shoot with lenticels,
+where it showed a furrowed limb. Its figure falls from 9.53 to 6.53, and that figure is
+now a young bark measure. The draw stands 5.8 lighter, 2.1 greener and 3.8 yellower than the
+photograph, which is the green shift the crown's own shoots asked for.
+
+Three zones have one side effect worth naming. The silhouette view's bark measure rose from 6.50 to
+6.69 steps. That measure is the bark's tone seen beside the whole plant. It belongs to row 8's bark,
+not to the crown's colour. It is the bole's tone as the whole view shows it. It rose because the bole zone
+darkens the trunk the whole view mostly shows. Row 8's verdict rests on the three close views,
+where the same tint reads 5.98, 0.58 and 2.33. The whole view's small rise therefore changes no row.
+
 ### The row 6 band through the cards, and the young bark's tint
 
 The crown's lower third carries less sky than view 01's photograph at every density and shape the
@@ -502,13 +599,21 @@ record offers. Two changes to the cards bring the three whole views inside their
 and 0.240 against the photographs' 0.261, 0.187 and 0.215. The cut views hold at 0.52, 0.39 and
 0.39.
 
-The card size was then measured twice, because the landing branch's card coverage fix draws each
-card at its mip level's true coverage and opens the far crown. At the fitted 1.38 the views read
+The card size was then measured twice. The landing branch's card coverage fix draws each card at its
+mip level's true coverage, which opens the far crown. At the fitted 1.38 the views read
 0.2998, 0.2708 and 0.2887 against 0.2608, 0.1869 and 0.2147. So 02 and 18 fall outside. The cards
 stand at 1.55 at that base: 01 reads 0.2509, 02 0.2225 and 18 0.2437, all inside. 1.50 leaves 02
 two thousandths from its open side, and 1.60 puts 01 twenty-four thousandths under its closed one.
 The helper's model of about 1.33 held for the older base, where 1.38 read 0.2458, 0.2309 and
 0.2449. At that base 1.33 read 0.2401 at 02, three thousandths past its open side.
+
+The card size has been measured a third time. The landing branch's leaf back-face change grows the
+ash's crown denser: 472 limbs over 296,452 triangles, where it carried 458 over 284,391. The whole
+views closed by about two hundredths. Row 6 was read again on that base. The cards stand at 1.46,
+where 01 reads 0.2512, 02 0.2244 and 18 0.2442 against the photographs' 0.2608, 0.1869 and 0.2147.
+1.48 leaves 01 four and a half thousandths from its closed side, and 1.50 puts it a thousandth past
+it. The value belongs to this base. A shading change that alters the shoot count moves the whole
+views, so the cards are read again on any base that changes the plant.
 
 The young bark takes a colour from the texture build. The young tile is made from still 28, the
 older green-grey bark of a young branch. The crown's shoots in still 10 are greener. The two
@@ -578,9 +683,12 @@ Rejected:
      distant crown's colour would fight the texture that measures the leaf, and the leaf's own
      views, which stand at 2.2 and 1.5 steps, would be wrong. A future species with the same leaf
      meets the same limit, and should state it the same way.
-  5. The bark's colour at mid-trunk reads 5.38 steps through the bark-mid view where the texture
-     itself measures under 2, and the young bark reads 9.53. The close views' light does not move
-     either figure, so the residue is the material's own shading and the view's own scene.
+  5. The bark's colour stands inside its band at the mid-trunk and the limb, at 0.58 and 2.33 steps.
+     It stands at 6.26 at the base. The base's residue is a hue: its render reads 4.4 greener and 5.0
+     yellower than its photograph. The blue factor that answers the figure draws the foot pale
+     lavender. The reference set disagrees about the bark's own colour, so a swatch figure cannot
+     decide the row. The flat texture source stands 5.9, 6.8 and 7.8 steps from the photographs of
+     the base, the mid-trunk and the limb. It stands 11.9 from the young bark.
   6. The whole plant's outline matches its turning video at 0.507 on average. The reference's own
      hull overlaps its views by only 0.57 to 0.80, so the fitted envelope cannot be closer than the
      reference's own drift allows.

@@ -198,3 +198,23 @@ Options rejected:
 - The tangent frame is a port of three.js's `getTangentFrame`, so `@null3d/vegetation` ships a
   `THIRD-PARTY-NOTICES.txt` with three.js's MIT licence. The notices guard refuses a package whose
   shipped code names three.js without one (`tools/lib/notices.ts`).
+
+## Addendum: the crown's shade on bark
+
+The wood role takes the crown's baked sky visibility as its occlusion. That occlusion darkens the
+ambient, hemisphere and environment light, but not the sun. The bake keeps a mean of 0.31 of the sky
+on the holm oak's nearest wood. It keeps 0.37 on the weeping willow's and 0.52 on the common
+alder's. So a bark view drawn in daylight loses most of its sky light under the crown.
+
+The holm oak's base view drew 24.36 L against its photograph's 37.27. The copy-stand bark views take
+no ambient light, so the term did not reach them. Their flat bark source read 2.65 and their mid
+trunk 0.93, both inside the band. The shader now mixes the wood's occlusion toward full by
+`WOOD_SHADE` (0.35). Bark therefore keeps about a third of the crown's shade.
+
+Two runs at `4ad6bff87`, `dirty: true`, measure it. `holm-shade35` moves the holm oak's base from
+11.26 to 7.28 steps. `alder-shade35` moves the common alder's base from 8.64 to 7.39. The willow's
+limb stays at 16.91. Every mid-trunk keeps its figure, and the copy-stand frames are byte-identical.
+A third run, `holm-shade0`, switches the term off and reads 6.11. The remaining 3.7 L and 3.9 a are
+the base zone tint's green, which the species record owns. A tint must not answer it, because the
+record's two tint attempts split the stool. The meshes are unchanged: the holm oak and the willow
+hash the same before and after through `tools/plant-mesh-hash.ts`.

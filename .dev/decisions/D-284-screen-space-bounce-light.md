@@ -167,3 +167,11 @@ quality. The screen disk gives the surfaces beside a texel more of its samples t
 angle would. The intensity of three quarters then trades that reach for the bleed's strength. The
 gather's reach is how far a wall's color lands, and the tighter disk keeps the color near the wall
 that sends it.
+
+## Addendum: the probe's sky weight moves the gaps
+
+The run at `af1ffe477` weighed the probe's sky share by the surface's tilt toward it, which moved the
+bake. The bounce-to-bake gap moved from 10.06 levels to 3.06 at the left floor box and from 2.64 to
+0.01 at the right, on both WebGPU and WebGL2, inside the four-level limit. The figures above stand
+as the run that led to the owner's amendment; this addendum records the later state and does not
+change the ruling.

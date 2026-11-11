@@ -846,6 +846,12 @@ export interface PlantMask {
 	readonly height: number;
 	/** One byte per pixel: 1 where the plant is. */
 	readonly mask: Uint8Array;
+	/**
+	 * One byte per pixel of the plant's coverage, from 0 for clear sky to 255 for a whole texel,
+	 * where the picture gives it: a render's matte carries each texel's own coverage, where a
+	 * photograph's colour mask carries only whether it is plant.
+	 */
+	readonly coverage?: Uint8Array;
 	readonly background: Background;
 }
 
@@ -1205,12 +1211,16 @@ export function matteMask(image: Rgba): PlantMask {
 	const work = image.width > WORK_WIDTH ? resizeToWidth(image, WORK_WIDTH) : image;
 	const { width, height } = work;
 	const mask = new Uint8Array(width * height);
+	const coverage = new Uint8Array(width * height);
 	for (let at = 0; at < mask.length; at++) {
 		const luma =
 			0.2126 * (work.data[at * 4] as number) +
 			0.7152 * (work.data[at * 4 + 1] as number) +
 			0.0722 * (work.data[at * 4 + 2] as number);
 		mask[at] = luma < 128 ? 1 : 0;
+		// The clear sky reads white, and the matte's frame edge reads one step below it. A texel at
+		// that step or above is clear, so the frame's own edge is not taken for a faint leaf.
+		coverage[at] = luma >= 254 ? 0 : Math.round(255 - luma);
 	}
 	const flat: ColourSurface = {
 		coefficients: [
@@ -1221,7 +1231,20 @@ export function matteMask(image: Rgba): PlantMask {
 		noise: 0.5,
 		fit: 1,
 	};
-	return { width, height, mask, background: { horizon: null, sky: flat, plain: true } };
+	return { width, height, mask, coverage, background: { horizon: null, sky: flat, plain: true } };
+}
+
+/**
+ * The outline that the piece test reads: every texel that a leaf covers at all, however little,
+ * since a part joins the mass through the one texel between them. A picture without coverage
+ * gives its mask unchanged.
+ */
+export function anyPlantMask(plant: PlantMask): Uint8Array {
+	const coverage = plant.coverage;
+	if (!coverage) return plant.mask;
+	const mask = new Uint8Array(coverage.length);
+	for (let at = 0; at < coverage.length; at++) mask[at] = coverage[at] ? 1 : 0;
+	return mask;
 }
 
 /** A box of pixels, edges included. */
@@ -1256,6 +1279,14 @@ export interface PlantMeasures {
 	readonly crownBox: { readonly width: number; readonly height: number };
 	/** The share of the crown's outline that shows background: the sky or ground through it. */
 	readonly gapFraction: number;
+	/** The share of the crown's box that shows background: the figure the plant is judged on. */
+	readonly crownBoxGap: number;
+	/**
+	 * The share of the whole picture that shows background. It widens with the empty sky a
+	 * photograph keeps around its plant, so it is reported beside the crown-box figure rather
+	 * than in place of it.
+	 */
+	readonly frameGap: number;
 	/** The share of the plant's box that the plant covers. */
 	readonly solidity: number;
 	/** The mean CIELAB colour of the crown's foliage, and its sRGB hex. */
@@ -1488,7 +1519,7 @@ function meanColour(
 
 /** Measures a plant from its outline in a picture. */
 export function measurePlant(image: Rgba, plant: PlantMask): PlantMeasures {
-	const { width, height, mask, background } = plant;
+	const { width, height, mask, coverage, background } = plant;
 	const work = image.width === width ? image : resizeToWidth(image, width);
 	const lab = labImage(work);
 	const horizon = background.horizon;
@@ -1514,6 +1545,8 @@ export function measurePlant(image: Rgba, plant: PlantMask): PlantMeasures {
 			crownStart: 0,
 			crownBox: { width: 0, height: 0 },
 			gapFraction: 0,
+			crownBoxGap: 0,
+			frameGap: 0,
 			solidity: 0,
 			foliage: null,
 			bark: null,
@@ -1526,18 +1559,36 @@ export function measurePlant(image: Rgba, plant: PlantMask): PlantMeasures {
 	let hull = 0;
 	let gaps = 0;
 	let crownWidth = 0;
+	let crownLeft = width;
+	let crownRight = -1;
 	const inCrown = new Uint8Array(width * height);
 	for (let y = box.top; y <= start; y++) {
 		const left = spans[y * 2] as number;
 		if (left < 0) continue;
 		const right = spans[y * 2 + 1] as number;
 		crownWidth = Math.max(crownWidth, right - left + 1);
+		crownLeft = Math.min(crownLeft, left);
+		crownRight = Math.max(crownRight, right);
 		for (let x = left; x <= right; x++) {
 			hull++;
-			if (!mask[y * width + x]) gaps++;
-			else inCrown[y * width + x] = 1;
+			if (!mask[y * width + x]) {
+				// A render's matte carries how much of the texel a leaf covers, so the sky between
+				// thin leaves weighs as the part of the texel it holds rather than a whole one.
+				const at = y * width + x;
+				gaps += coverage ? 1 - (coverage[at] as number) / 255 : 1;
+			} else inCrown[y * width + x] = 1;
 		}
 	}
+	const sky = (at: number): number =>
+		coverage ? 1 - (coverage[at] as number) / 255 : mask[at] ? 0 : 1;
+	let crownBoxSky = 0;
+	const crownBoxHeight = start - box.top + 1;
+	if (crownRight >= crownLeft)
+		for (let y = box.top; y <= start; y++)
+			for (let x = crownLeft; x <= crownRight; x++) crownBoxSky += sky(y * width + x);
+	const crownBoxArea = crownRight >= crownLeft ? (crownRight - crownLeft + 1) * crownBoxHeight : 0;
+	let frameSky = 0;
+	for (let at = 0; at < mask.length; at++) frameSky += sky(at);
 	let covered = 0;
 	for (let y = box.top; y <= box.bottom; y++)
 		for (let x = box.left; x <= box.right; x++) covered += mask[y * width + x] as number;
@@ -1554,6 +1605,8 @@ export function measurePlant(image: Rgba, plant: PlantMask): PlantMeasures {
 		crownStart: Number(((box.bottom - start) / tall).toFixed(4)),
 		crownBox: { width: crownWidth, height: start - box.top + 1 },
 		gapFraction: hull > 0 ? Number((gaps / hull).toFixed(4)) : 0,
+		crownBoxGap: crownBoxArea > 0 ? Number((crownBoxSky / crownBoxArea).toFixed(4)) : 0,
+		frameGap: Number((frameSky / (width * height)).toFixed(4)),
 		solidity: Number((covered / ((box.right - box.left + 1) * tall)).toFixed(4)),
 		foliage: meanColour(lab, width * height, (at) => inCrown[at] === 1),
 		bark:

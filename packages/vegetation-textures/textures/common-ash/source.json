@@ -3,7 +3,15 @@
 	"leaf": {
 		"upper": 24,
 		"lower": 25,
-		"crop": [125, 755, 380, 175]
+		"crop": [125, 755, 380, 175],
+		"frame": {
+			"petiole": [373, 91],
+			"tip": [0, 108]
+		},
+		"lowerFrame": {
+			"petiole": [368, 129],
+			"tip": [30, 146]
+		}
 	},
 	"bark": {
 		"zones": [

@@ -5,8 +5,9 @@ sets it. The pedunculate oak and the common ash leave it unset, so they draw as 
 
 Summary: A card's plane stands ahead of the row that draws it. The card's twig line ran only
 backwards, so a card could float clear of its wood. The beech's planes stand 0.64 to 1.44 meters
-ahead of their rows. Its whole views break into 5 to 10 pieces, each 2 to 4 work pixels from the
-crown. The oak's planes stand 0.14 to 0.27 meters ahead, and its line closes its crown.
+ahead of their rows. Its whole views broke into 5 to 10 pieces, each 2 to 4 work pixels from the
+crown. With the line to the plane's center the beech's whole views draw 2, 3 and 3 pieces. The oak's
+planes stand 0.14 to 0.27 meters ahead, and its line closes its crown.
 
 ## Question
 
@@ -25,8 +26,9 @@ beech's pieces without moving the oak's or the ash's judged figures?
 ## Data
 
 Measured at the beech's `e36065039` (run `beech-r40`, seed 11, variant 0, preset high). The oak's
-columns come from `873f6f393` (run `round9`). A Bun script read each kit's card planes and placement
-scales.
+columns come from `873f6f393` (run `round9`). The lines headed "with the line" come from
+`4a757b4ed` (run `beech-r41`, same seed and variant, stills only). A Bun script read each kit's card
+planes and placement scales.
 
 | Measure | European beech | Pedunculate oak |
 | --- | --- | --- |
@@ -38,7 +40,13 @@ scales.
 | The reference's pieces, 01 / 02 / 18 | 1 / 1 / 1 | 1 |
 | Piece size in the work picture | 24 to 144 pixels (one leaf to a small card) | none |
 | Nearest foliage from a piece | 2 to 4 work pixels (0.14 to 0.28 m) | none |
+| Whole view pieces, 01 / 02 / 18, with the line | 2 / 3 / 3 | not measured |
+| Sky gap, 01 / 02 / 18, with the line | 0.085 / 0.075 / 0.084 | not measured |
 | Far card level triangles | 42,687 | 15,613 |
+
+The sky gaps with the line stand against the reference's 0.069, 0.044 and 0.107. The line closed
+each gap by 0.013 to 0.021. The gaps at 01 and 02 sit inside the row's band. The gap at 18 stands
+0.023 below its reference, which is 0.003 past the 0.02 allowance on the closed side.
 
 How the data was produced: `bun tools/plant-review.ts european-beech --views whole,silhouette`,
 then `matteMask` and `components` over the run's mattes. Each piece's size and its distance to the
@@ -68,3 +76,8 @@ and every judged picture.
 - `packages/vegetation/src/lod/cards.test.ts` holds the absent case end for end. It also holds the
   present case's reach and that both draw the same triangles.
 - The beech's record sets the field beside its two-pixel width. The oak and the ash do not.
+- A stated fault remains at the whole view's scale. The line joined the first wave: the beech's whole
+  views fell from 8, 5 and 10 pieces to 2, 3 and 3. Edge density then took the silhouette from 9 to 7
+  and the default view to 1. The rest are the card tips' own outer leaves, standing 2 to 8 pixels
+  beyond the point the line reaches. That is a fault of the card level at that scale, not of the
+  crown, and it is recorded beside the look-up views' limit.
