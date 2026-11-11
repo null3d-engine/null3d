@@ -869,7 +869,10 @@ export const DEMOS: readonly Demo[] = [
 			"The vegetation add-on's meadow: every species the catalogue registers, each grown from its own record through the add-on's public functions and planted across a field. The pedunculate oak stands there today with the species that follow it, so the page fills as records land. Drag to turn round the meadow and use the wheel to step in, and press R to grow it all again from another seed.",
 		controls: [{ keys: ['R'], does: 'Grow the meadow again from another seed' }],
 		hold: 2,
-		timeoutSeconds: 240,
+		// The meadow grows every registered species at medium detail with shadows, and its held
+		// capture needs more than 240 s on CI's software GPU. The wait takes the 600 s ceiling that
+		// the island and the timed script use.
+		timeoutSeconds: 600,
 	},
 	{
 		name: 'vegetation-wind',
@@ -882,7 +885,9 @@ export const DEMOS: readonly Demo[] = [
 			"The same plants under the wind add-on's field: set the wind's strength and its bearing on the sliders, and the crowns lift and settle as it passes. The Hold button stops the air, so a still frame can be compared with a moving one.",
 		controls: [],
 		hold: 2,
-		timeoutSeconds: 240,
+		// The same meadow under the wind's field costs at least as much as the still meadow, and its
+		// held capture needs more than 240 s on CI's software GPU.
+		timeoutSeconds: 600,
 	},
 	{
 		name: 'forest',
@@ -898,7 +903,9 @@ export const DEMOS: readonly Demo[] = [
 			{ keys: ['L'], does: 'Levels of detail on or off' },
 		],
 		hold: 2,
-		timeoutSeconds: 300,
+		// The 56,000 trees and the understory need more than 300 s to draw and capture on CI's
+		// software GPU, so the wait takes the 600 s ceiling that the other large scenes use.
+		timeoutSeconds: 600,
 	},
 	{
 		name: 'impostors',

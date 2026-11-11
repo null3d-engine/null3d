@@ -5,6 +5,12 @@ import { expect, type Page, test } from '@playwright/test';
 
 /** How long the page runs before the test reads its warnings, in milliseconds. */
 const RUN_TIME = 6_000;
+/**
+ * How long the instances page may take to start. It makes 100,000 columns and tens of thousands of
+ * cars, and CI's software GPU needs more than two minutes to start it. The demo's own held image
+ * allows 180 s, and the page here runs at the full window, so the start takes a longer wait.
+ */
+const START_MS = 300_000;
 
 /** Runs the page on the GPU culling path and returns its warnings of dropped copies. */
 async function droppedWarnings(page: Page, forced: boolean) {
@@ -22,19 +28,19 @@ async function droppedWarnings(page: Page, forced: boolean) {
 		if (message.text().includes('the culling shader dropped')) warnings.push(message.text());
 	});
 	await page.goto('/examples/index.html?demo=instances&gpu=webgpu&direct=off');
-	await page.locator('.loader').waitFor({ state: 'detached', timeout: 120_000 });
+	await page.locator('.loader').waitFor({ state: 'detached', timeout: START_MS });
 	await page.waitForTimeout(RUN_TIME);
 	return warnings;
 }
 
 test('a copy that the culling shader drops warns once on a normal page', async ({ page }) => {
-	test.setTimeout(180_000);
+	test.setTimeout(START_MS + RUN_TIME + 60_000);
 	const warnings = await droppedWarnings(page, true);
 	expect(warnings.length).toBe(1);
 	expect(warnings[0]).toContain('?direct=on');
 });
 
 test('the real culling shader drops no copy', async ({ page }) => {
-	test.setTimeout(180_000);
+	test.setTimeout(START_MS + RUN_TIME + 60_000);
 	expect(await droppedWarnings(page, false)).toEqual([]);
 });
