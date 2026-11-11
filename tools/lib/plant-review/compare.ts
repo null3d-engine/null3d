@@ -493,10 +493,11 @@ function renderSide(
 	bottomCut: boolean,
 	piece = false,
 	subject?: number,
+	moundForm = false,
 ): Side {
 	const image = readImage(file);
 	const plant = matte && existsSync(matte) ? matteMask(readImage(matte)) : plantMask(image);
-	return side(label, image, plant, bottomCut, piece, subject);
+	return side(label, image, plant, bottomCut, piece, subject, moundForm);
 }
 
 /** A side of a comparison from a picture and its outline. */
@@ -507,8 +508,9 @@ function side(
 	bottomCut: boolean,
 	piece = false,
 	subject?: number,
+	moundForm = false,
 ): Side {
-	const measures = measurePlant(image, plant, piece, subject);
+	const measures = measurePlant(image, plant, piece, subject, moundForm);
 	const box = measures.box;
 	if (!box) return { label, image, plant, measures };
 	const bottom = bottomCut ? plant.height - 1 : box.bottom;
@@ -952,6 +954,7 @@ function renderSideOf(
 	bottomCut: boolean,
 	piece = false,
 	subject?: number,
+	moundForm = false,
 ): Side {
 	return renderSide(
 		label,
@@ -960,6 +963,7 @@ function renderSideOf(
 		bottomCut,
 		piece,
 		subject,
+		moundForm,
 	);
 }
 
@@ -987,6 +991,7 @@ export function compareTurn(
 	video: TurnVideo,
 	frames: readonly RunFrame[],
 	title: string,
+	moundForm = false,
 ): TurnResult {
 	const facts = probeVideo(video.path);
 	const references = videoFrames(video.path, facts, WORK_WIDTH);
@@ -1020,7 +1025,9 @@ export function compareTurn(
 	// of the turn bounds the same part of the piece.
 	const piece = video.piece !== 'whole';
 	const refMasks = references.map((image) => plantMask(image));
-	const refMeasures = refMasks.map((mask, k) => measurePlant(references[k] as Rgba, mask));
+	const refMeasures = refMasks.map((mask, k) =>
+		measurePlant(references[k] as Rgba, mask, false, undefined, moundForm),
+	);
 	const firstBox = refMeasures[0]?.box;
 	const subject =
 		piece && firstBox
@@ -1035,10 +1042,19 @@ export function compareTurn(
 			bottomCut,
 			piece,
 			subject,
+			moundForm,
 		),
 	);
 	const renderSides = usable.map((frame) =>
-		renderSideOf(runDir, frame, `RENDER ${frame.turn.toFixed(1)}`, bottomCut, piece, subject),
+		renderSideOf(
+			runDir,
+			frame,
+			`RENDER ${frame.turn.toFixed(1)}`,
+			bottomCut,
+			piece,
+			subject,
+			moundForm,
+		),
 	);
 	const checks = usable.flatMap((frame, j) => {
 		if (!frame.matte) return [];
@@ -1385,6 +1401,7 @@ export function compareStills(
 	set: ReferenceSet,
 	frames: readonly RunFrame[],
 	title: string,
+	moundForm = false,
 ): { readonly pairs: readonly StillResult[]; readonly sheets: readonly string[] } {
 	const byReference = new Map(
 		frames.flatMap((frame) => (frame.reference ? [[frame.reference, frame]] : [])),
@@ -1432,8 +1449,8 @@ export function compareStills(
 		const piece = VIEW_SPECS[drawnEarly]?.cutting !== undefined;
 		const subject = piece ? subjectFile?.[slot.file]?.bottom : undefined;
 		const refPlant = plantMask(refImage);
-		const refSide = side(slot.file, refImage, refPlant, false, piece, subject);
-		const render = renderSideOf(runDir, frame, frame.file, false, piece, subject);
+		const refSide = side(slot.file, refImage, refPlant, false, piece, subject, moundForm);
+		const render = renderSideOf(runDir, frame, frame.file, false, piece, subject, moundForm);
 		const fittedKind = refPlant.background.plain
 			? null
 			: skyMaskable(refPlant.background)
