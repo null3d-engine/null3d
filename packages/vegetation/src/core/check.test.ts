@@ -295,6 +295,29 @@ describe('the record check', () => {
 		expect(
 			problems.some((p) => p.startsWith('extras[2].shape.stalkSides is 2.5; it must be a whole')),
 		).toBe(true);
+		const spikes: Species = {
+			...template,
+			extras: [
+				{ ...acorn, shape: { catkin: { length: 0.05, radius: 0.002, spikelets: { count: 1 } } } },
+				{
+					...acorn,
+					shape: { catkin: { length: 0.05, radius: 0.002, spikelets: { count: 6, bulge: 1.5 } } },
+				},
+			],
+		};
+		const spikeProblems = speciesProblems(spikes);
+		expect(
+			spikeProblems.some((p) =>
+				p.startsWith(
+					'extras[0].shape.catkin.spikelets.count is 1; it must be a whole number from 2 to 16',
+				),
+			),
+		).toBe(true);
+		expect(
+			spikeProblems.some((p) =>
+				p.startsWith('extras[1].shape.catkin.spikelets.bulge is 1.5; a share lies from 0 to 1'),
+			),
+		).toBe(true);
 		expect(speciesProblems({ ...template, extras: [{ ...acorn, group: 3 }] })).toEqual([]);
 		expect(
 			speciesProblems({ ...template, extras: [{ ...acorn, group: 2.5 }] }).some((p) =>
