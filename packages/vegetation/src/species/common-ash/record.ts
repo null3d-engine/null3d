@@ -326,7 +326,7 @@ export const record: Species = {
 		zones: [
 			// Stills 14 and 15: the foot stands a shade lighter than the bole above it, and the bole
 			// reads lighter and yellower than its photograph, so each takes its own measured tone.
-			{ layer: 0, by: 'height', from: 0, to: 1.2, blend: 0.3, tint: [1.2, 1.15, 1] },
+			{ layer: 0, by: 'height', from: 0, to: 1.2, blend: 0.3, tint: [1.03, 0.98, 0.78] },
 			{ layer: 0, by: 'height', from: 1.2, to: 40, blend: 0.3, tint: [0.79, 0.79, 0.66] },
 			// Still 16: a great limb's bark reads darker than the limb in its photograph, so wood
 			// thinner than the bole takes a lighter tone of its own.
