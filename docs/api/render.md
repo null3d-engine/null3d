@@ -134,7 +134,7 @@ export default defineSketch(({ scene, materials, geometry, textures, render }) =
 | `clearAlpha` | The alpha that the texture clears to with `clearColor`, from 0 to 1. | 1 |
 
 - The pass follows the active camera, its lens and the canvas's shape, so it needs no camera of its own. Its texture follows the render size: `RenderPass.width` and `height` are 0.
-- The texture holds the mirrored image, turned around across x and upright. `reflection_uv` from `null3d::reflection` finds where a surface point lies in it. It takes the point's clip position, and an offset that moves the place. A normal that ripples then bends the reflection.
+- The texture holds the mirrored image, turned around across x. `reflection_uv` from `null3d::reflection` finds the upright place of a surface point in it on every GPU path. It takes the point's clip position, and an offset that moves the place. A normal that ripples then bends the reflection.
 - The pass clips the scene at the plane with the projection's near plane, so the clip costs nothing in any shader. An object that crosses the plane shows only its part above the plane.
 - When the camera stands on the plane or below it, the pass draws nothing, and its texture keeps its last image.
 - A material that shows the pass's texture never draws in the pass, so the water does not reflect itself.

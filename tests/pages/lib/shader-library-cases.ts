@@ -70,13 +70,19 @@ export interface Expected {
 }
 
 /** A library function, the inputs of its cases, and its reference. */
+/** How the GPU path that draws a case starts the rows of a view's target. */
+export interface TargetRows {
+	/** True when the first row is the top of the image, as WebGPU draws it. */
+	fromTop: boolean;
+}
+
 export interface LibraryFunction {
 	/** The function's path in the library, such as `math::square`. */
 	name: string;
 	/** Each case's inputs, from a random number generator that the test seeds. */
 	cases(random: () => number): Inputs[];
 	/** The results the function must give for a case's inputs. */
-	expected(i: Inputs): Expected;
+	expected(i: Inputs, rows: TargetRows): Expected;
 	/**
 	 * The largest difference allowed, relative to the expected value or to 1, whichever is larger.
 	 * Whole numbers must match exactly.
@@ -1685,10 +1691,13 @@ export const FUNCTIONS: readonly LibraryFunction[] = [
 				.setF(0, [...values(random, 3, -4, 4), between(random, 0.5, 8)])
 				.setF(1, values(random, 2, -0.1, 0.1)),
 		),
-		expected: (i) => {
+		expected: (i, rows) => {
 			const [x, y, , w] = i.f(0);
 			const [u, v] = i.f(1);
-			return floats([0.5 - (0.5 * x) / w + u, 0.5 + (0.5 * y) / w + v]);
+			// WebGPU draws a view's rows from the top, so the lookup turns them. WebGL2 draws them
+			// from the bottom, as the texture coordinates count.
+			const down = rows.fromTop ? 0.5 - (0.5 * y) / w : 0.5 + (0.5 * y) / w;
+			return floats([0.5 - (0.5 * x) / w + u, down + v]);
 		},
 	},
 	// A unit normal, the ambient light, and the colors that hemisphere lights add along x, y and z,
@@ -2149,14 +2158,18 @@ export interface Mismatch {
 
 /**
  * Compares the bits the GPU wrote for each case with the references. `bits` holds sixteen values
- * per case, in the order of `cases`.
+ * per case, in the order of `cases`. `rows` says how the path that drew them starts a view's rows.
  */
-export function compareResults(cases: readonly Case[], bits: Uint32Array): Mismatch[] {
+export function compareResults(
+	cases: readonly Case[],
+	bits: Uint32Array,
+	rows: TargetRows,
+): Mismatch[] {
 	const asFloats = new Float32Array(bits.buffer, bits.byteOffset, bits.length);
 	const mismatches: Mismatch[] = [];
 	cases.forEach(({ function: index, inputs }, k) => {
 		const fn = FUNCTIONS[index]!;
-		const { values: expected, whole: isWhole } = fn.expected(inputs);
+		const { values: expected, whole: isWhole } = fn.expected(inputs, rows);
 		const at = k * RESULT_VALUES;
 		const got = Array.from(
 			isWhole ? bits.subarray(at, at + RESULT_VALUES) : asFloats.subarray(at, at + RESULT_VALUES),
