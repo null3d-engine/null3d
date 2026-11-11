@@ -53,7 +53,8 @@
 	"21-branch-studio.png": {
 		"background": "studio-grey",
 		"view": "whole",
-		"lifted": 1
+		"lifted": 1,
+		"lod": 0
 	},
 	"10-fine-leaf-tips.png": {
 		"leafLength": 0.1

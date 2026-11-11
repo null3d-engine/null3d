@@ -578,8 +578,16 @@ export default defineSketch(async (ctx) => {
 	const mainKit = whole ? kit : pieceKit;
 	const bounds = boundsOf(main, mainKit);
 	const skeleton = main.skeleton;
-	const foot = stemFoot(skeleton);
-	const height = Math.max(0.05, bounds.max[1]);
+	const stemFootPoint = stemFoot(skeleton);
+	// A lifted plant stands on its lowest root: the whole picture then includes the root ball,
+	// which grows below the crown's foot and so sits outside the plant's above-ground box.
+	let baseY = 0;
+	if (QUERY.lifted) {
+		const p = skeleton.position;
+		for (let n = 0; n < skeleton.nodeCount; n++) baseY = Math.min(baseY, p[n * 3 + 1] as number);
+	}
+	const foot: V3 = [stemFootPoint[0], Math.min(stemFootPoint[1], baseY), stemFootPoint[2]];
+	const height = Math.max(0.05, (bounds.max[1] as number) - foot[1]);
 
 	// The turns a sheet draws, each in a cell of its own.
 	const turns = VIEW === 'turntable' ? (QUERY.turns ?? 8) : (QUERY.turns ?? 1);
