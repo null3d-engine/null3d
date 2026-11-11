@@ -13,7 +13,15 @@ import type { Demo } from '../demos';
 import type { HudGroup } from './controls';
 import { createDrivePad } from './drive-pad';
 import { createHud } from './hud';
-import { bytesOf, LoadMeter, type LoadPhase } from './progress';
+import {
+	bytesOf,
+	LOAD_LANES,
+	type LoadLane,
+	LoadMeter,
+	type LoadPhase,
+	LoadPhases,
+	StartMeter,
+} from './progress';
 
 /** The message that a demo posts to show a label, or to change its text. */
 interface LabelMessage {
@@ -265,18 +273,22 @@ interface LoadingMessage {
 	detail?: string;
 	/** How far the load has gone, from 0 to 1, for the bar. Without it, the bar keeps moving. */
 	value?: number;
+	/**
+	 * `'files'` keeps the message in the downloads' lane, so it runs beside the scene's own
+	 * milestones. Without it, the message names the scene's current phase.
+	 */
+	kind?: 'files';
 }
 
 /** The loading overlay of a starting demo. */
 export interface Loader {
-	/** Shows the engine's start stage and the stage's figures, when it has some. */
+	/** Shows the engine's start stage as the engine's phase under the main bar. */
 	stage(stage: StartupStage, progress?: StartupProgress): void;
-	/** Shows the progress that a scene posts while it loads its files. */
+	/** Shows the progress that a scene posts while it loads, as the scene's phase. */
 	note(data: unknown): void;
 	/**
-	 * Shows work that a scene does as part of starting itself, such as growing its first plants. The
-	 * card keeps the starting stage's own words and counts this work on the same bar, so a scene's
-	 * first build reads as one start rather than as a second one appearing under it.
+	 * Shows work that a scene does as part of starting itself, such as growing its first plants, as
+	 * the scene's counted phase under the main bar.
 	 */
 	work(done: number, total: number): void;
 	/** Fades the overlay out; the first frame is drawn. */
@@ -285,11 +297,25 @@ export interface Loader {
 	fail(text: string): void;
 }
 
+/** The text that the main bar names while the sketch starts. */
+const START_TEXT = 'Starting the sketch';
+
+/** The parts of a phase's row that the overlay updates. */
+interface PhaseRow {
+	root: HTMLElement;
+	text: HTMLElement;
+	detail: HTMLElement;
+	fill: HTMLElement;
+}
+
 /**
- * Makes the loading overlay over the canvas: a glass card that names the start's stage and any
- * progress a scene posts, in the style of the showcase HUD. A stage whose work is counted shows its
- * percentage over the bar, and one without a total leaves the bar moving. It fades out when the
- * first frame is drawn, and shows the error instead when the start fails.
+ * Makes the loading overlay over the canvas: a glass card whose main bar shows the overall progress
+ * of the start under the words "Starting the sketch". Below it, one temporary bar names each piece
+ * of work as it happens — the engine's download, the engine and its workers starting, the scene's
+ * files and its build. Each phase appears in its lane when its work begins and gives way when the
+ * next phase of that lane begins, so a finished phase never keeps a bar. A phase whose work is
+ * counted shows its percentage, and one without a total leaves its bar moving. The overlay fades
+ * out when the first frame is drawn, and shows the error instead when the start fails.
  */
 export function createLoader(canvas: HTMLCanvasElement): Loader {
 	const host = canvas.parentElement ?? document.body;
@@ -303,97 +329,151 @@ export function createLoader(canvas: HTMLCanvasElement): Loader {
 	head.className = 'loader__head';
 	const label = document.createElement('p');
 	label.className = 'loader__label';
-	label.textContent = 'Loading the engine';
+	label.textContent = START_TEXT;
 	// The visuals stay out of the live region: the hidden line below carries the text that a screen
 	// reader announces, so a percentage that moves with every chunk never queues an announcement.
 	label.setAttribute('aria-hidden', 'true');
 	const percent = document.createElement('span');
 	percent.className = 'loader__percent';
-	percent.hidden = true;
+	percent.textContent = '0%';
 	percent.setAttribute('aria-hidden', 'true');
 	head.append(label, percent);
 	const bar = document.createElement('div');
 	bar.className = 'loader__bar';
 	bar.setAttribute('aria-hidden', 'true');
 	const fill = document.createElement('div');
-	fill.className = 'loader__fill';
+	fill.className = 'loader__fill loader__fill--set';
+	fill.style.width = '0%';
 	bar.append(fill);
-	const detail = document.createElement('p');
-	detail.className = 'loader__detail';
-	detail.setAttribute('aria-hidden', 'true');
+	const tasks = document.createElement('div');
+	tasks.className = 'loader__tasks';
+	tasks.setAttribute('aria-hidden', 'true');
 	const say = document.createElement('p');
 	say.className = 'loader__say';
-	say.textContent = 'Loading the engine';
-	box.append(head, bar, detail, say);
+	say.textContent = START_TEXT;
+	box.append(head, bar, tasks, say);
 	overlay.append(box);
 	host.append(overlay);
-	const meter = new LoadMeter();
-	let shown: LoadPhase | undefined;
-	/**
-	 * The share an estimate without a total eases toward. It stops short of a whole bar, which only
-	 * the first frame can earn.
-	 */
-	const ESTIMATE_CEILING = 0.97;
 
-	/** The phase that the engine's start named last, which a finished scene phase falls back to. */
-	let enginePhase: LoadPhase = { key: 'loading', text: 'Loading the engine' };
+	const phases = new LoadPhases();
+	/** Each lane's percentage measure, which holds while its phase keeps its key. */
+	const meters = Object.fromEntries(LOAD_LANES.map((lane) => [lane, new LoadMeter()])) as Record<
+		LoadLane,
+		LoadMeter
+	>;
+	const rows = new Map<LoadLane, PhaseRow>();
+	const main = new StartMeter();
+	/** Each lane's current phase key, so a repeated message does not start its phase again. */
+	const laneKeys: Record<LoadLane, string> = { engine: '', files: '', scene: '' };
+	/** True once the sketch posts its own messages, which only a running engine can send. */
+	let sceneStarted = false;
 	let painted = 0;
 	let hidden = false;
-	/**
-	 * A stage that reports no total, and the share it eases from toward a ceiling it never quite
-	 * reaches, over a time constant. It approaches the ceiling rather than stopping at it, so a
-	 * slow start keeps moving instead of sitting on one number until the frame arrives.
-	 */
-	let estimate: { readonly from: number; readonly tau: number } | undefined;
-	let estimateAt = 0;
-	/** How far a stage without a total has got, from the time it has taken. */
-	const estimatedShare = (): number | undefined => {
-		if (!estimate) return undefined;
-		const eased = 1 - Math.exp(-(performance.now() - estimateAt) / estimate.tau);
-		return estimate.from + (ESTIMATE_CEILING - estimate.from) * eased;
+	let said = '';
+
+	/** The row for a lane's phase, made on first use and kept in lane order. */
+	const rowFor = (lane: LoadLane): PhaseRow => {
+		const existing = rows.get(lane);
+		if (existing) return existing;
+		const root = document.createElement('div');
+		root.className = 'loader__task';
+		const line = document.createElement('div');
+		line.className = 'loader__task-head';
+		const text = document.createElement('p');
+		text.className = 'loader__task-text';
+		const detail = document.createElement('span');
+		detail.className = 'loader__task-detail';
+		line.append(text, detail);
+		const taskBar = document.createElement('div');
+		taskBar.className = 'loader__task-bar';
+		const taskFill = document.createElement('div');
+		taskFill.className = 'loader__fill';
+		taskBar.append(taskFill);
+		root.append(line, taskBar);
+		// A lane's row goes above the rows of the lanes that follow it, however late it appears.
+		const later = LOAD_LANES.slice(LOAD_LANES.indexOf(lane) + 1)
+			.map((other) => rows.get(other)?.root)
+			.find((root) => root !== undefined);
+		tasks.insertBefore(root, later ?? null);
+		const row = { root, text, detail, fill: taskFill };
+		rows.set(lane, row);
+		return row;
 	};
-	/** The last text that the live region holds, and the tenth of the percentage it names. */
-	let said = 'Loading the engine';
-	let saidTenth = -1;
+
+	/**
+	 * Draws the main bar and the lanes' phases. The main bar eases while uncounted work runs, so a
+	 * frame follows each paint until the estimate settles.
+	 */
 	const paint = (): void => {
 		painted = 0;
-		const phase = shown;
-		if (!phase || hidden) return;
-		label.textContent = phase.text;
-		detail.textContent = phase.detail ?? '';
-		// The core and the sketch report no total of their own, so their share is estimated from the
-		// time they have taken, against a typical start on the reference machine. It stops short of
-		// its stage's end, which only the engine's next stage can name.
-		const value = phase.value ?? estimatedShare();
-		// A moving estimate needs a frame of its own until it is within a point of its ceiling.
-		if (
-			phase.value === undefined &&
-			estimate !== undefined &&
-			(value ?? 0) < ESTIMATE_CEILING - 0.01
-		)
-			painted = requestAnimationFrame(paint);
-		const whole = value === undefined ? undefined : Math.round(value * 100);
-		percent.textContent = whole === undefined ? '' : `${whole}%`;
-		percent.hidden = whole === undefined;
-		fill.classList.toggle('loader__fill--set', whole !== undefined);
-		// A width of none leaves the bar its travelling band, which a phase without a total shows.
-		fill.style.width = whole === undefined ? '' : `${whole}%`;
-		const tenth = whole === undefined ? -1 : Math.floor(whole / 10);
-		if (phase.text !== said || tenth !== saidTenth) {
-			said = phase.text;
-			saidTenth = tenth;
-			say.textContent = tenth < 0 ? phase.text : `${phase.text}, ${tenth * 10} per cent`;
+		if (hidden) return;
+		const now = performance.now();
+		const overall = Math.round(main.value(now) * 100);
+		percent.textContent = `${overall}%`;
+		fill.style.width = `${overall}%`;
+		const active = phases.list();
+		for (const row of rows.values()) row.root.hidden = true;
+		for (const { lane, phase } of active) {
+			const row = rows.get(lane);
+			if (!row) continue;
+			row.root.hidden = false;
+			row.text.textContent = phase.text;
+			row.detail.textContent = phase.detail ?? '';
+			if (phase.value === undefined) {
+				row.fill.classList.remove('loader__fill--set');
+				row.fill.style.width = '';
+			} else {
+				const value = Math.round(Math.min(1, Math.max(0, phase.value)) * 100);
+				row.fill.classList.add('loader__fill--set');
+				row.fill.style.width = `${value}%`;
+			}
 		}
+		const spoken = active.map(({ phase }) => phase.text);
+		const next = `${START_TEXT}, ${Math.floor(overall / 10) * 10} per cent${
+			spoken.length ? `. ${spoken.join('. ')}` : ''
+		}`;
+		if (next !== said) {
+			said = next;
+			say.textContent = next;
+		}
+		if (main.moving(now)) painted = requestAnimationFrame(paint);
 	};
-	const show = (phase: LoadPhase): void => {
-		shown = meter.show(phase);
+
+	/** Draws at most once per frame, however many messages a scene posts. */
+	const schedulePaint = (): void => {
 		if (!painted && !hidden) painted = requestAnimationFrame(paint);
 	};
-	/** True when a figure is whole, as the card's whole-percent measure shows it. */
-	const atEnd = (value?: number): boolean =>
-		value !== undefined && Math.round(Math.min(1, Math.max(0, value)) * 100) >= 100;
+
+	/** Shows a lane's phase with its meter's figure, replacing the lane's previous phase. */
+	const showPhase = (lane: LoadLane, phase: LoadPhase): void => {
+		rowFor(lane);
+		phases.show(lane, meters[lane].show(phase));
+		schedulePaint();
+	};
+
+	/** Ends a lane's phase, so its finished bar stops showing on the next paint. */
+	const clearPhase = (lane: LoadLane): void => {
+		phases.clear(lane);
+		schedulePaint();
+	};
+
+	/**
+	 * Marks the sketch as running. Its own first message ends the engine's start phase: only an
+	 * engine that has started can send it, so its row would otherwise keep a moving bar through the
+	 * whole scene build.
+	 */
+	const beginScene = (): void => {
+		if (sceneStarted) return;
+		sceneStarted = true;
+		clearPhase('engine');
+	};
+
 	const hide = (): void => {
 		if (hidden) return;
+		// The first frame earns the whole bar, which the fade then carries out.
+		main.finish();
+		percent.textContent = '100%';
+		fill.style.width = '100%';
 		hidden = true;
 		if (painted) cancelAnimationFrame(painted);
 		painted = 0;
@@ -402,68 +482,91 @@ export function createLoader(canvas: HTMLCanvasElement): Loader {
 		if (matchMedia('(prefers-reduced-motion: reduce)').matches) remove();
 		else setTimeout(remove, 320);
 	};
+
+	// The overlay shows before the engine reports anything: the main bar begins its first stretch.
+	main.begin();
+	schedulePaint();
+
 	return {
 		work(done, total) {
 			if (hidden || !(total > 0) || done < 0) return;
-			// The scene's own start-up work sits inside the stage that is already running, so the
-			// card keeps its words and its bar counts this work instead of moving on its own. It
-			// stops short of a whole bar, which only the first frame earns.
-			show({
-				key: 'core',
-				text: 'Starting the sketch',
-				value: Math.min(0.99, done / total),
+			beginScene();
+			const value = Math.min(1, done / total);
+			laneKeys.scene = 'build';
+			showPhase('scene', {
+				key: 'build',
+				text: 'Building the scene',
+				detail: `${done} of ${total}`,
+				value,
 			});
+			main.build(value);
 		},
 		stage(stage, progress) {
 			if (stage === 'first-frame') {
 				hide();
 				return;
 			}
-			let phase: LoadPhase;
-			if (stage === 'memory-wait') phase = { key: stage, text: 'Waiting for the engine memory' };
-			else if (stage === 'core') {
-				phase = { key: stage, text: 'Starting the sketch' };
-				estimate = { from: 0, tau: 2600 };
-				estimateAt = performance.now();
-			} else if (stage === 'sketch') {
-				// The sketch's first frame is the end of starting it, not a stage of its own: the same
-				// line and the same estimate carry through, so the loader does not change its words
-				// while it is still working.
-				phase = { key: 'core', text: 'Starting the sketch' };
-			} else {
-				estimate = undefined;
+			const now = performance.now();
+			if (stage === 'core-download') {
 				const done = progress?.done ?? 0;
 				const total = progress?.total ?? 0;
 				// A body that arrives larger than its announced length, as a compressed response can,
 				// leaves no fraction to show: the bytes that arrived still count.
 				const measured = total > 0 && done <= total;
-				phase = {
-					key: stage,
-					text: 'Downloading the engine',
-					detail: measured ? `${bytesOf(done)} of ${bytesOf(total)}` : bytesOf(done),
-					value: measured ? done / total : undefined,
-				};
+				if (!sceneStarted)
+					showPhase('engine', {
+						key: 'engine-download',
+						text: 'Downloading the engine',
+						detail: measured ? `${bytesOf(done)} of ${bytesOf(total)}` : bytesOf(done),
+						value: measured ? done / total : undefined,
+					});
+				main.engine(measured ? done / total : undefined, now);
+				return;
 			}
-			enginePhase = phase;
-			show(phase);
+			if (stage === 'memory-wait') {
+				if (!sceneStarted)
+					showPhase('engine', { key: 'memory-wait', text: 'Waiting for the engine memory' });
+				main.waitForMemory(now);
+				return;
+			}
+			if (stage === 'core') {
+				if (!sceneStarted) showPhase('engine', { key: 'core', text: 'Starting the engine' });
+				main.core(now);
+				return;
+			}
+			// The sketch's own messages may arrive before this stage; the scene is then already
+			// running, and a workers phase would put a finished bar back on the card.
+			if (sceneStarted) return;
+			showPhase('engine', { key: 'workers', text: 'Starting the workers' });
+			main.workers(now);
 		},
 		note(data) {
+			if (hidden) return;
 			if (typeof data === 'string') {
-				show({ key: `note:${data}`, text: data });
+				beginScene();
+				const key = `text:${data}`;
+				if (key !== laneKeys.scene) {
+					laneKeys.scene = key;
+					main.scene();
+				}
+				showPhase('scene', { key, text: data });
 				return;
 			}
 			const message = data as Partial<LoadingMessage> | null;
 			if (!message || typeof message.text !== 'string') return;
-			const phase: LoadPhase = {
-				key: `note:${message.text}`,
+			beginScene();
+			const lane: LoadLane = message.kind === 'files' ? 'files' : 'scene';
+			const counted = typeof message.value === 'number' && Number.isFinite(message.value);
+			const key = `${lane}:${message.text}`;
+			if (counted) main.files(message.value as number);
+			else if (key !== laneKeys[lane]) main.scene();
+			laneKeys[lane] = key;
+			showPhase(lane, {
+				key,
 				text: message.text,
 				detail: typeof message.detail === 'string' ? message.detail : undefined,
-				value: typeof message.value === 'number' ? message.value : undefined,
-			};
-			// A counted scene phase that reaches its total names its own end. The start then waits for
-			// the scene to build, which the engine's own stage names, so a full bar never sits over a
-			// scene that is still starting.
-			show(atEnd(phase.value) ? enginePhase : phase);
+				value: counted ? (message.value as number) : undefined,
+			});
 		},
 		hide,
 		fail(text) {
@@ -474,7 +577,7 @@ export function createLoader(canvas: HTMLCanvasElement): Loader {
 			label.textContent = text;
 			label.classList.add('loader__label--error');
 			percent.hidden = true;
-			detail.hidden = true;
+			tasks.hidden = true;
 			bar.hidden = true;
 			say.textContent = text;
 		},
