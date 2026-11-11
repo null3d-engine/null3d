@@ -505,7 +505,7 @@ function stampStrand(
 			for (let k = 1; k < chain.length; k++) {
 				const a = chain[k - 1] as StrandPoint;
 				const b = chain[k] as StrandPoint;
-				const steps = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y)));
+				const steps = Math.max(1, Math.ceil(length3(b.x - a.x, b.y - a.y, 0)));
 				for (let s = 0; s <= steps; s++) {
 					const t = s / steps;
 					stamp(
