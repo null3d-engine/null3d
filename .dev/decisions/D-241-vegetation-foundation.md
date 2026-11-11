@@ -668,7 +668,7 @@ the ground maps' samples, 0.13 MB for the variance maps and 34 KB for the points
 The `vegetation-scatter` plan ran on two cloud phones, a cloud iPad and the Mac. The Galaxy S25's
 rows are its later run; every other row is an earlier run.
 
-| Device | Plants | Checksum | Placement | Ground maps | Display | At the shipped reference then |
+| Device | Plants | Checksum | Placement | Ground maps | Display | At the reference of its day |
 | --- | --- | --- | --- | --- | --- | --- |
 | Galaxy S24, Chrome, WebGL2 page | 956 | 3358570449 | 7.35 ms | 71.54 ms | 30 Hz | no |
 | Galaxy S24, Chrome, WebGPU page | 956 | 3358570449 | 7.19 ms | 55.19 ms | 30 Hz | no |
