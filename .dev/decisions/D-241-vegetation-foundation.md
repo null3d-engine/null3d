@@ -644,9 +644,10 @@ now that the waterline rules refuse ground at or below the water. The checksum o
 another device's and any difference at all shows. Before the waterline rules the shipped reference
 was **1,245 points** with checksum **2493806866**: 101 canopy trees, 170 saplings, 956 ground plants
 and 18 dead wood. The earlier figure of 956 points and checksum 3358570449 came before the scatter's
-own changes moved the placement. No device row reaches the current reference: the Galaxy S25's
-latest run reaches the 1,245 one on both GPU paths, recorded at
-[20261110-025541](../tested-devices/galaxy-s25-sm-s931b-chrome/20261110-025541-vegetation-scatter.md). The ground maps hold their samples as 32-bit floats, which is what keeps the
+own changes moved the placement. The Galaxy S25's run of 10 November reached the 1,245 reference on both GPU paths,
+recorded at
+[20261110-025541](../tested-devices/galaxy-s25-sm-s931b-chrome/20261110-025541-vegetation-scatter.md);
+the run of 11 November, below, reaches the current one on every device. The ground maps hold their samples as 32-bit floats, which is what keeps the
 samples of a height function that uses `Math.sin` and a fractional power equal between engines: the
 last bits that an engine may round another way do not survive the narrowing. A height function that
 answers other samples on another engine would move the points that it places.
