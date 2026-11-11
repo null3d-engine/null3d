@@ -80,6 +80,8 @@ const NOTES: Readonly<Record<string, string>> = {
  * because both describe the same task and only one of them can be true.
  */
 const AUDIT_GAPS: Readonly<Record<string, string>> = {
+	'M3-A7':
+		'its own image spec fails at the landed head: full run 43068174679 at `7f4ec6c26` fails `tests/image/hdr-limit.spec.ts` at the highlight at 158,90, which draws 0 where at least 250 is expected, on WebGPU and WebGL2. The colour limit maps a NaN to black, so a NaN reaching the tone mapping is the likely cause rather than an unclamped infinity, and the f32 half-vector change did not remove it. The whole spec must pass on all three tiers before the tick returns',
 	'M3-C2':
 		"the showroom draws and drives, its wheels turn forward on both sides with a contact-point test that fails on the inverted sign, the lamps are recorded honestly as one capture on one path with the sparkle traced to the paint, and both reference sets hold its pictures. The rate clause closed on his answer: asked whether the iPad Pro 13's 47.6 to 47.8 frames a second against the 60 target stands as the close, he answered that it is ok, and an ordinary-Low run measures the gap directly at a 20.8 ms median against the 16.7 of 60 frames. What keeps the task open is the look's record: the approval the note claims dates from 2 November and nothing openable carries it, so the tick waits on the owner saying again that the look stands, and his answer then goes beside the claim in the decision record",
 	'M3-V11':
