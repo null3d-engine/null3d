@@ -4,9 +4,7 @@ enable f16;
 #import null3d::color::{AGX_PUNCHY_POWER, AGX_PUNCHY_SATURATION, agx_contrast, luminance}
 #import null3d::color::{LINEAR_REC2020_TO_LINEAR_SRGB, LINEAR_SRGB_TO_LINEAR_REC2020}
 #import null3d::lighting::{PbrMaterial, Reflected}
-#ifdef COAT_SHEEN
 #import null3d::math::{half_vector}
-#endif
 #ifdef COAT_SHEEN
 #import null3d::lighting::{d_ggx_anisotropic, v_ggx_smith_correlated_anisotropic}
 #endif
@@ -86,12 +84,10 @@ fn direct_light(
     let n = vec3h(normal);
     let v = vec3h(to_view);
     let l = vec3h(to_light);
-    let sum = l + v;
-    let cancelled = dot(sum, sum) == 0.0h;
-    var half_dir = vec3h(0.0);
-    if !cancelled {
-        half_dir = normalize(sum);
-    }
+    // The cancel test runs at full precision: a 16-bit sum rounds a near-cancel to zero in
+    // scattered pixels, which would zero their lobe and draw blocks at a highlight.
+    let half_dir = vec3h(half_vector(to_light, to_view));
+    let cancelled = dot(half_dir, half_dir) == 0.0h;
     let n_dot_l = saturate(dot(n, l));
     let n_dot_v = saturate(dot(n, v));
     let n_dot_h = saturate(dot(n, half_dir));

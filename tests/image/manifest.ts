@@ -1626,6 +1626,20 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		// Firefox on Linux rounds the fine lines of the lit floor another way: it draws 0.538% of
 		// the pixels apart from Chrome's picture, past the device tolerance. It keeps its own.
 		devices: ['linux'],
+		// A tile rim at z=-3.5 projects onto render row 67.5 of 135, exactly a sample centre, so
+		// llvmpipe's coverage of that row is a last-bit tie. Linux Firefox draws either side of it,
+		// and each side repeats byte for byte. The second picture is the other side: CI run
+		// 43068174679's drawing, from the failed real-browsers Firefox job.
+		otherDrawings: [
+			{
+				place: 'linux',
+				tier: 'webgl2',
+				file: 'linux/webgl2/render-scale-75-fxaa.2.png',
+				sha256: 'b5ffd9a9b60fed696d5f98b361505f23a1166443daf6b3a32c1c3ba84305e708',
+				reason:
+					'a tile rim lies on a render sample row, so the software GPU draws the floor two ways and each way repeats',
+			},
+		],
 	},
 	{
 		name: 'render-scale-50',
