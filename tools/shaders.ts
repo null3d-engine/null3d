@@ -1,6 +1,10 @@
 // Builds the shader modules unless they match their inputs (tools/lib/shader-modules.ts). Run from
 // anywhere in the repository:
 //   bun tools/shaders.ts
+// `--check` builds nothing. It answers whether a build would change anything and exits 0 when it
+// would not and 1 when it would, so a caller can tell a build that has work to do from one that has
+// none. It takes no lock and refuses no quiet window, because a question that compiles nothing loads
+// nothing: a job queue or a gate may ask it mid-window and start its next step at once.
 // `--cache-keys` builds nothing. It prints the two shared shader caches' folders and the key that a
 // build of this checkout keeps them under in CI, as name=value lines. `inputs` is the hash of every
 // source that the build reads, which a CI cache key names, so a run reads it without a compiler;
@@ -48,6 +52,7 @@ import {
 	MODULE_DIR,
 	moduleSetFolder,
 	modulesCacheDir,
+	shaderModulesFresh,
 } from './lib/shader-modules';
 
 const root = join(import.meta.dirname, '..');
@@ -64,7 +69,15 @@ function option(name: string): string | undefined {
 try {
 	const shard = option('--entries-shard');
 	const out = option('--entries-out');
-	if (process.argv.includes('--cache-keys')) {
+	if (process.argv.includes('--check')) {
+		const fresh = shaderModulesFresh(root);
+		console.log(
+			fresh
+				? `The shader modules in ${MODULE_DIR} are up to date.`
+				: `The shader modules in ${MODULE_DIR} need a build.`,
+		);
+		process.exitCode = fresh ? 0 : 1;
+	} else if (process.argv.includes('--cache-keys')) {
 		const inputs = inputHash(root);
 		const stamp = compilerStamp(root);
 		const branch = process.env.GITHUB_REF_NAME ?? '';

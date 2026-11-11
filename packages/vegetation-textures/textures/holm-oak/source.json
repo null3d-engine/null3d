@@ -2,7 +2,15 @@
 	"caps": "tree",
 	"leaf": {
 		"upper": 24,
-		"lower": 25
+		"lower": 25,
+		"frame": {
+			"petiole": [519, 1013],
+			"tip": [512, 6]
+		},
+		"lowerFrame": {
+			"petiole": [520, 1010],
+			"tip": [520, 11]
+		}
 	},
 	"bark": {
 		"zones": [

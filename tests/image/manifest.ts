@@ -3171,6 +3171,29 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		size: [480, 270],
 		timeoutSeconds: 180,
 	},
+	// A plant of the vegetation add-on held at one time under the wind add-on's field. The plant's
+	// own materials move its wood, shoots, leaves and cards by a vertex offset that fades to nothing
+	// at its preset's sway distance, so the test that holds this page at two times measures a plant
+	// that sways, and the twin below measures the same plant under the same field, past a one
+	// millimetre sway distance, standing still.
+	{
+		name: 'plant-wind-sway',
+		sketch:
+			'tests/pages/sketches/plant-review-sketch.ts?species=hawthorn-shrub&view=whole&wind=2&size=480x270',
+		hold: 1,
+		size: [480, 270],
+		// The first compile of the instanced plant material and its shadow casters is the cost that
+		// overran the removed wind pages' 180-second limit on CI, so each page takes room for it.
+		timeoutSeconds: 360,
+	},
+	{
+		name: 'plant-wind-still',
+		sketch:
+			'tests/pages/sketches/plant-review-sketch.ts?species=hawthorn-shrub&view=whole&wind=2&sway=0.001&size=480x270',
+		hold: 1,
+		size: [480, 270],
+		timeoutSeconds: 360,
+	},
 	// Impostors of the impostors add-on: cards far from the world's origin, each blending the three
 	// atlas views nearest its direction to the eye and lit by the sun from the normal the surface
 	// atlas stores, and a merged row of a plain, a turned and a mirrored panel, which draws only
@@ -4026,6 +4049,15 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 	...HALF_PRECISION_TESTS.map((name) => copyWithSwitch(name, 'half', 'half=on')),
 	...INDEX_INSTANCE_TESTS.map(withIndexInstances),
 	...plantSpeciesTests(),
+	// One oak crown at three distances from one camera: two copies in the first band of the plant
+	// core's card levels and one in the second, so the plant coverage test can read the share of
+	// each crown's own box.
+	{
+		name: 'plant-coverage',
+		page: 'tests/pages/plant-coverage.html',
+		size: [1280, 720],
+		timeoutSeconds: 180,
+	},
 	...sparseFormTests(),
 ];
 

@@ -43,7 +43,7 @@ describe('the unit groups', () => {
 			.filter((name) => holdsTest(join(ROOT, 'examples', name)))
 			.sort();
 		expect(expected.length).toBeGreaterThan(0);
-		const dispatched = [...new Set(UNIT_GROUPS.flat())]
+		const dispatched = [...new Set(UNIT_GROUPS.flatMap((group) => group.paths))]
 			.filter((path) => path.startsWith('examples/'))
 			.sort();
 		expect(dispatched).toEqual(expected.map((name) => `examples/${name}`));

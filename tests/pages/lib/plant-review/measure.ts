@@ -168,6 +168,16 @@ export interface PlantMeasures {
 	readonly crownBox: { readonly width: number; readonly height: number } | null;
 	/** The share of the silhouette's cells that foliage covers. */
 	readonly foliageShare: number;
+	/**
+	 * The plant's filled cells, in metres: the drawn width, the drawn height and the top above the
+	 * ground. Unlike the asset's part bounds, this holds only what the level draws, so a vertex or a
+	 * part outside the drawn silhouette cannot inflate it.
+	 */
+	readonly plantBox: {
+		readonly width: number;
+		readonly height: number;
+		readonly top: number;
+	} | null;
 	/** The silhouette, its rows bottom first, as base64 of one byte a cell (1 wood, 2 foliage). */
 	readonly silhouette: {
 		readonly columns: number;
@@ -203,18 +213,29 @@ export function measurePlant(asset: PlantAsset, box: SpeciesBox, turn: number): 
 	const parts = asset.levels[level].parts;
 	const shape = silhouette(parts, box, turn);
 	let crownBox: PlantMeasures['crownBox'] = null;
+	let plantBox: PlantMeasures['plantBox'] = null;
 	let foliage = 0;
 	let filled = 0;
 	if (shape) {
 		let widest = 0;
 		let low = -1;
 		let high = -1;
+		let leftmost = shape.columns;
+		let rightmost = -1;
+		let bottom = shape.rows;
+		let top = -1;
 		for (let y = 0; y < shape.rows; y++) {
 			let left = -1;
 			let right = -1;
 			for (let x = 0; x < shape.columns; x++) {
 				const c = shape.cells[y * shape.columns + x] as number;
-				if (c !== 0) filled++;
+				if (c !== 0) {
+					filled++;
+					if (x < leftmost) leftmost = x;
+					if (x > rightmost) rightmost = x;
+					if (y < bottom) bottom = y;
+					if (y > top) top = y;
+				}
 				if ((c & 2) === 0) continue;
 				foliage++;
 				if (left < 0) left = x;
@@ -226,11 +247,18 @@ export function measurePlant(asset: PlantAsset, box: SpeciesBox, turn: number): 
 			high = y;
 		}
 		if (low >= 0) crownBox = { width: widest * shape.cell, height: (high - low + 1) * shape.cell };
+		if (rightmost >= 0)
+			plantBox = {
+				width: (rightmost - leftmost + 1) * shape.cell,
+				height: (top - bottom + 1) * shape.cell,
+				top: (shape.origin[1] as number) + (top + 1) * shape.cell,
+			};
 	}
 	const stem = stemAt(asset.skeleton, 1.3);
 	return {
 		level,
 		crownBox,
+		plantBox,
 		foliageShare: filled > 0 ? foliage / filled : 0,
 		silhouette: shape
 			? {

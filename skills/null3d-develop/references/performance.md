@@ -157,7 +157,7 @@ The preset sets the pixel ratio, the render scale, textures, shadows, effects, o
 
 The preset tables mark some rows as planned, such as the light caps. A light's own `cascades` and `mapSize`, in its `shadow` options, replace the preset's. The `concepts/quality-presets` page gives the GPU memory that each preset's shadow map and shadow atlas take.
 
-- The sketch reads the preset in `quality.preset`, and the page in `engine.mode.preset`. Only `quality.setPreset` changes it during play, and it waits for the new preset's pipelines. Call it from a menu or a loading screen.
+- The sketch reads the preset in `quality.preset`, the heaviest that the GPU path allows in `quality.highest`, and the page in `engine.mode.preset`. Only `quality.setPreset` changes it during play, and it waits for the new preset's pipelines. Call it from a menu or a loading screen. A menu shows the presets above `quality.highest` as unavailable, with the reason.
 - `quality.set({ ... })` changes any setting that changes during play, for example from a settings menu, such as `quality.set({ maxPixelRatio: 1.5, fogSlices: 32 })`. A setting fixed at the start, or a value out of range, throws E1213. `createEngine` options set the ones fixed at the start, such as `antialias`, `shadowCascades`, `depthPrepass`, `gpuOcclusion` and `keepTextureCopies`.
 - Do not raise the preset of a phone. Check each preset that your users can get with `?preset=low` to `?preset=ultra`.
 
