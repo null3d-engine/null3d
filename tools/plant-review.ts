@@ -424,6 +424,9 @@ const CLOSE_CROP_MAX = 1.25;
  * is that fault, so the picture keeps the framing's own stand and the refusal is reported.
  */
 const WHOLE_SCALE_MIN = 0.4;
+
+/** How long a width correction waits for a draw slot before it keeps the framing's own stand. */
+const CORRECTION_WAIT_MS = 300_000;
 const WHOLE_SCALE_MAX = 2.5;
 
 /**
@@ -560,7 +563,17 @@ async function correctWidths(
 				return { ...shot, query: { ...shot.query, standScale: fix?.scale ?? 1 } };
 			});
 		if (redraws.length === 0) break;
-		const release = await takeDrawSlot();
+		// A correction waits a short spell for a slot, never an hour: a run that has drawn every
+		// picture must not lose its manifest, and its figures, behind runs that are still drawing.
+		let release: () => void;
+		try {
+			release = await takeDrawSlot(CORRECTION_WAIT_MS);
+		} catch {
+			console.warn(
+				`width: ${redraws.length} picture(s) keep the framing's stand: no draw slot freed for the correction`,
+			);
+			break;
+		}
 		let again: RunFrame[];
 		try {
 			again = await drawShots(dir, redraws, { ...(gpu && { gpu }) });
@@ -603,9 +616,10 @@ async function correctWidths(
 	return frames;
 }
 
-async function takeDrawSlot(): Promise<() => void> {
+async function takeDrawSlot(waitMs = 3_600_000): Promise<() => void> {
 	if (flag('no-slot')) return () => {};
-	for (let attempt = 0; attempt < 720; attempt++) {
+	const tries = Math.max(1, Math.ceil(waitMs / 5000));
+	for (let attempt = 0; attempt < tries; attempt++) {
 		for (let slot = 1; slot <= DRAW_SLOTS; slot++) {
 			const path = `${DRAW_SLOT}${slot}`;
 			try {
@@ -632,7 +646,9 @@ async function takeDrawSlot(): Promise<() => void> {
 		}
 		await new Promise((done) => setTimeout(done, 5000));
 	}
-	throw new Error('no draw slot freed in an hour: another run is holding the machine');
+	throw new Error(
+		`no draw slot freed in ${Math.round(waitMs / 60_000)} minute(s): another run is holding the machine`,
+	);
 }
 
 /** The parts of the review that `--only` keeps: stills, turns and wind, all by default. */
