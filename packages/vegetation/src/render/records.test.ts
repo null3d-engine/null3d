@@ -151,6 +151,16 @@ describe('the species header', () => {
 		const stalked: Species = { ...record, lod: { ...record.lod, cardStalk: 1.5 } };
 		expect(texel(speciesHeader(stalked, manifest, box), HEADER.cardStalk)[0]).toBeCloseTo(1.5, 6);
 	});
+	test('draws the armpit creases only where the record names them', () => {
+		expect(texel(header, HEADER.armpit)[0]).toBe(0);
+		const bark = record.bark;
+		if (!bark) throw new Error('the stand-in has no bark');
+		const creased: Species = {
+			...record,
+			bark: { ...bark, collar: { ...bark.collar, creases: 0.75 } },
+		};
+		expect(texel(speciesHeader(creased, manifest, box), HEADER.armpit)[0]).toBeCloseTo(0.75, 6);
+	});
 	test('gives the whole plant its species sway, in metres at its top and cycles a second', () => {
 		const sway = record.wind.sway;
 		const written = texel(header, HEADER.sway);
@@ -374,6 +384,7 @@ describe('the plant shader', () => {
 			HEADER_COLLAR: HEADER.collar,
 			HEADER_MOSS: HEADER.moss,
 			HEADER_MOSS_REACH: HEADER.mossReach,
+			HEADER_ARMPIT: HEADER.armpit,
 			HEADER_EXTRAS: HEADER.extras,
 			HEADER_BUD: HEADER.bud,
 			HEADER_BARK_ZONES: HEADER.barkZones,

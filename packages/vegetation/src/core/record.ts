@@ -1622,6 +1622,12 @@ export interface BarkSpec {
 		readonly length: number;
 		/** Dark bark ridge in the upper crotch, 0 to 1. */
 		readonly ridge: number;
+		/**
+		 * The share of the armpit's tight parallel creases that draw, 0 to 1, where the species'
+		 * photographs show them. Absent, 0: the bark draws smooth, and every species that names none
+		 * keeps the bark it drew before.
+		 */
+		readonly creases?: number;
 	};
 	/**
 	 * The joint where an axis divides into a fork's leaders. `bend` is the least radius of the elbow
