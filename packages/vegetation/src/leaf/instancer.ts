@@ -567,6 +567,9 @@ function placedRows(input: DressInput, bySky = true): Row[] {
 		// leaves. The patches are spaced in space, not along the axes, so a mass is the same size
 		// whatever the axis it sits on.
 		let patch = 1;
+		// The limb mass's share at this bud, used to decide whether a tip keeps its rosette at the
+		// twig's end or moves back to the wood where the mass is.
+		let massShare = 1;
 		if (clump) {
 			const depth = Math.min(1, Math.max(0, clump.depth));
 			const spacing = Math.max(1e-3, clump.spacing);
@@ -607,6 +610,7 @@ function placedRows(input: DressInput, bySky = true): Row[] {
 			const share = 1 - Math.min(1, Math.max(0, mass.depth)) * apart * apart * (3 - 2 * apart);
 			expected *= share;
 			patch = Math.min(patch, share);
+			massShare = share;
 		}
 		// The outermost bud of an axis carries a rosette even where its vigor and stretch give none,
 		// whether it is the axis's terminal bud or the live shoot that replaced a lost one: a twig
@@ -617,8 +621,20 @@ function placedRows(input: DressInput, bySky = true): Row[] {
 		// nothing, so the limbs between the foliage show instead of a rosette standing on every twig
 		// in the crown's whole volume.
 		const lit = tipPrune === undefined || (buds.light[b] as number) >= tipPrune;
-		const keep = (kind === BUD_TERMINAL || atTip) && lit && patch > BARE_PATCH;
-		const count = Math.max(keep ? 1 : 0, Math.floor(expected + draw(Purpose.Count, b)));
+		// A tip in a thin part of the limb mass carries its rosette back to the previous bud, so the
+		// bare twig between the mass and the tip goes rather than standing against the sky. With no
+		// previous bud there is nowhere to carry it, so the tip bears nothing.
+		const tipFloor = mass?.tipShare;
+		const edgeTip = mass !== undefined && atTip && tipFloor !== undefined && massShare < tipFloor;
+		const keep =
+			(kind === BUD_TERMINAL || atTip) &&
+			lit &&
+			patch > BARE_PATCH &&
+			!(edgeTip && before === undefined);
+		const placedCount = Math.max(keep ? 1 : 0, Math.floor(expected + draw(Purpose.Count, b)));
+		// An edge tip carries one rosette at most, back on the wood; it never gains foliage in the
+		// thin space the mass leaves open.
+		const count = edgeTip ? (before === undefined ? 0 : Math.min(1, placedCount)) : placedCount;
 		if (count === 0) continue;
 		// The axis's direction at the bud.
 		const tangent: Vector3 =
@@ -636,6 +652,7 @@ function placedRows(input: DressInput, bySky = true): Row[] {
 		const woodRadius = buds.woodRadius[b] as number;
 		const record16 = skeleton.axes.record[axis] as number;
 		const azimuth0 = draw(Purpose.Azimuth, b) * 360;
+		const firstRow = rows.length;
 		for (let k = 0; k < count; k++) {
 			let direction: Vector3;
 			let place: Vector3;
@@ -700,6 +717,15 @@ function placedRows(input: DressInput, bySky = true): Row[] {
 				axis,
 				back: [from[0] - place[0], from[1] - place[1], from[2] - place[2]],
 			});
+		}
+		if (edgeTip && before !== undefined) {
+			// The rosette stands on the last wood inside the mass, and the trim keeps the skeleton to
+			// that node, so no bare twig runs from the mass to the old tip. The stretch behind the row
+			// is now empty, so a card stalk draws no line back through the open space.
+			const row = rows[firstRow] as Row;
+			row.position = [...from];
+			row.node = buds.node[before] as number;
+			row.back = [0, 0, 0];
 		}
 	}
 	return bySky ? skyPruned(input, rows, shoots.placement.skyPrune ?? 0) : rows;
