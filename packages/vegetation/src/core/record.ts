@@ -2084,6 +2084,12 @@ export interface CutFromShoots {
 	 * class and still be different pieces, as a sub-branch and a leaf cluster are.
 	 */
 	readonly pick?: number;
+	/**
+	 * How many shoots the piece carries, fanned about its own upright axis, where a branch photograph
+	 * shows a divided, hanging branch: one shoot is a class prototype, and a branch needs more. 1 by
+	 * default, and a cluster or a leaf keeps one whatever it names.
+	 */
+	readonly shoots?: number;
 }
 
 /**

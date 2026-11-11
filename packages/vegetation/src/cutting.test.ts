@@ -12,7 +12,14 @@ import { AXIS_LIMB, AXIS_STEM, BUD_TERMINAL, SkeletonBuilder } from './core/grap
 import { quatRotate } from './core/math';
 import type { Species } from './core/record';
 import { standInSpecies } from './core/stand-in';
-import { CUTTING_LENGTH, clusterRank, cutBranch, cutFoliage, cutsShoot } from './cutting';
+import {
+	CUTTING_LENGTH,
+	clusterRank,
+	clusterRow,
+	cutBranch,
+	cutFoliage,
+	cutsShoot,
+} from './cutting';
 import { buildKitNow, growPlantNow, loadPlantCode } from './generate';
 import type { PlantTaskInput } from './generate-task';
 import { oakRecord } from './grow/oak.fixture';
@@ -498,6 +505,26 @@ describe('cuttings', () => {
 		const leaf = growPlantNow(kit, { seed: 11, variant: 0, cutting: { part: 'leaf' } });
 		expect(leaf.levels[0].parts.map((part) => part.name)).toEqual(['foliage']);
 		expect(leaf.skeleton.height).toBeGreaterThan(0);
+	});
+
+	it('fans the shoots a branch hint names, and keeps one without it', () => {
+		const className = kit.record.shoots?.classes?.[0]?.name ?? 'cut';
+		const hinted = {
+			...kit,
+			record: {
+				...kit.record,
+				cuttings: { branch: { shoot: className, shoots: 3 } },
+			},
+		} as SpeciesKitData;
+		const single = clusterRow(kit, { part: 'branch' }, kit.detail);
+		const fanned = clusterRow(hinted, { part: 'branch' }, kit.detail);
+		expect(single?.rows.count).toBe(1);
+		expect(fanned?.rows.count).toBe(3);
+		// The shoots stand apart: the second row's place differs from the first's.
+		expect(fanned?.rows.position[3]).not.toBe(fanned?.rows.position[0]);
+		// A cluster keeps one shoot whatever its hint names.
+		const clusterHinted = clusterRow(hinted, { part: 'cluster' }, kit.detail);
+		expect(clusterHinted?.rows.count).toBe(1);
 	});
 
 	it('grows the same bytes twice, and in a worker that runs the job-worker task', async () => {
