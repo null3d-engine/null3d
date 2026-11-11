@@ -163,6 +163,20 @@ describe('the plant mask', () => {
 		expect(plantMask(wide).mask[60 * W + 2]).toBe(1);
 	});
 
+	test('refuses a fitted background that finds only a few specks', () => {
+		// A textured backdrop that a smooth surface still models, with a dark subject under a
+		// fiftieth of the frame: the surface marks the subject's specks, not a plant.
+		const frame = blank(200, 200, [0, 0, 0]);
+		for (let y = 0; y < 200; y++)
+			for (let x = 0; x < 200; x++)
+				put(frame, x, y, (x + y) % 2 === 0 ? [170, 170, 170] : [230, 230, 230]);
+		for (let y = 90; y < 110; y++) for (let x = 90; x < 110; x++) put(frame, x, y, [20, 60, 20]);
+		const speck = plantMask(frame);
+		expect(speck.background.plain).toBe(false);
+		expect(skyMaskable(speck.background)).toBe(true);
+		expect(speck.mask.reduce((sum, value) => sum + value, 0)).toBe(0);
+	});
+
 	test('reads the meadow in shade as shadow and the trunk as plant', () => {
 		const meadow = labOf(150, 160, 95);
 		expect(shadowLike(labOf(80, 88, 48), meadow)).toBe(true);

@@ -15,6 +15,7 @@ import {
 	edgeProfile,
 	fittedMaskClause,
 	framingQuery,
+	hasSeparableOutline,
 	iou,
 	motionProfile,
 	NORMAL_HEIGHT,
@@ -78,6 +79,25 @@ describe('the outline overlap', () => {
 		const b = normalOf(large);
 		expect(a.length).toBe(NORMAL_WIDTH * NORMAL_HEIGHT);
 		expect(iou(a, b)).toBeGreaterThan(0.97);
+	});
+});
+
+describe('whether a picture carries a plant outline', () => {
+	test('is false for a bark view, which photographs bark against bark', () => {
+		for (const view of ['bark-base', 'bark-mid', 'bark-limb'])
+			expect(hasSeparableOutline(view, 'still')).toBe(false);
+	});
+
+	test('is false for a bark texture, which is the material alone', () => {
+		expect(hasSeparableOutline('bark-mid', 'texture')).toBe(false);
+	});
+
+	test('is true for a leaf texture, which is a cut-out on a plain ground', () => {
+		expect(hasSeparableOutline('leaf-upper', 'texture')).toBe(true);
+	});
+
+	test('is true for a whole plant against a plain background', () => {
+		expect(hasSeparableOutline('whole', 'still')).toBe(true);
 	});
 });
 
