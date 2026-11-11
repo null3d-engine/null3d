@@ -1,9 +1,11 @@
 // Creek's valley, placed by the vegetation add-on's ecological rules: rushes and sedges at the
-// waterline, willows and alders on the banks, then oaks, beeches and birches over the flat and up
-// the slopes, with spruces at the valley's rim, bracken in the shade, wildflower clumps in the open
-// patches and hawthorns at the wood's edge. The points come from the ground's own maps and one integer hash, so every device and both
-// GPU paths place the same valley. A plant that the camera's route would fly into is left out, so
-// the river pass never crosses a crown.
+// waterline, willows and alders on the banks, oaks, beeches and birches over the flat and up the
+// slopes, spruces at the valley's rim, bracken in the shade, wildflower clumps in the open patches
+// and hawthorns at the wood's edge. The points come from the ground's own maps and one integer
+// hash, so every device and both GPU paths place the same valley. The scene then keeps only the
+// four trees nearest the water: the slopes and the hillsides above stand as ground cover, with no
+// tree dotted over them. A plant that the camera's route would fly into is left out, so the river
+// pass never crosses a crown.
 import {
 	type EcoRule,
 	groundMaps,
@@ -12,7 +14,7 @@ import {
 	scatterVegetation,
 } from '@null3d/vegetation';
 import { routePosition, routeTimeline } from '../../lib/cinematic';
-import { groundHeight, LAND, WATER } from './land';
+import { fromStream, groundHeight, LAND, WATER } from './land';
 import { SHOTS } from './route';
 
 /** The seed that places the valley, so a build gives the same plants on every device. */
@@ -31,13 +33,13 @@ export interface CreekSpecies {
 	/** Linear colour of its leaves and of its bark. */
 	readonly leaf: readonly [number, number, number];
 	readonly bark: readonly [number, number, number];
-	/** True for a tree of the canopy, which hands over to far cards and stands on the mountain ring. */
+	/** True for a tree of the canopy, which hands over to far cards. */
 	readonly canopy: boolean;
 }
 
 /**
- * The species that dress the valley. Each draws as the plant core's stand-in, at its size and in its
- * colours, until its species lands in the add-on.
+ * The species that the valley's rules place. Each draws as the plant core's stand-in, at its size
+ * and in its colours, until its species lands in the add-on.
  */
 export const SPECIES: readonly CreekSpecies[] = [
 	{
@@ -502,9 +504,48 @@ function clearOfRoute(
 	};
 }
 
+/** How many trees stand beside the water. */
+const CANAL_TREES = 4;
+
+/** The ground layers that dress the valley below the trees, and the dead wood that lies on it. */
+const CANAL_LAYERS: readonly string[] = ['ground', 'shrub', 'understory', 'deadwood'];
+
 /**
- * Places the valley's plants: the ground read once into maps, the rules scored over it, and the
- * plants that the camera's route would fly into left out.
+ * Keeps the canal's four trees and the layers that dress the ground beneath them. The four canopy
+ * trees nearest the stream stay; every other canopy tree and every young tree goes, so no tree dots
+ * the slopes or the hillsides above.
+ */
+function thinValley(points: ScatterPoints): ScatterPoints {
+	const kept = new Float32Array(points.data.length);
+	let count = 0;
+	const canopy: { index: number; stream: number }[] = [];
+	for (let index = 0; index < points.count; index++) {
+		const at = index * points.stride;
+		const layer = points.rules[points.data[at + 3] as number]?.layer;
+		if (layer === 'canopy') {
+			canopy.push({
+				index,
+				stream: fromStream(points.data[at] as number, points.data[at + 2] as number),
+			});
+			continue;
+		}
+		if (!layer || !CANAL_LAYERS.includes(layer)) continue;
+		kept.set(points.data.subarray(at, at + points.stride), count * points.stride);
+		count++;
+	}
+	canopy.sort((a, b) => a.stream - b.stream);
+	for (const { index } of canopy.slice(0, CANAL_TREES)) {
+		const at = index * points.stride;
+		kept.set(points.data.subarray(at, at + points.stride), count * points.stride);
+		count++;
+	}
+	return { data: kept, stride: points.stride, count, rules: points.rules, size: points.size };
+}
+
+/**
+ * Places the valley's plants: the ground read once into maps, the rules scored over it, the plants
+ * that the camera's route would fly into left out, and the planting thinned to the canal's four
+ * trees and the ground cover.
  *
  * @param options Where the stones stand.
  * @returns The placed plants, as the scatter's flat rows.
@@ -517,5 +558,5 @@ export function placeValley(options: ValleyOptions = {}): ScatterPoints {
 		...(options.rocks && { rocks: (x: number, z: number) => (options.rocks?.(x, z) ? 1 : 0) }),
 	});
 	const placed = scatterVegetation({ seed: SEED, ground, rules: RULES });
-	return clearOfRoute(placed, routeSamples());
+	return thinValley(clearOfRoute(placed, routeSamples()));
 }
