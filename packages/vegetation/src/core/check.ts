@@ -473,6 +473,14 @@ function extraProblems(record: Species, out: string[]): void {
 				out.push(`${path}.offset[${k}] is ${value}; it is metres from -0.5 to 0.5`);
 		});
 		if (extra.group !== undefined) wholeProblem(extra.group, `${path}.group`, 0, 15, out);
+		const spikelets = 'catkin' in extra.shape ? extra.shape.catkin.spikelets : undefined;
+		if (spikelets !== undefined) {
+			wholeProblem(spikelets.count, `${path}.shape.catkin.spikelets.count`, 2, 16, out);
+			if (spikelets.bulge !== undefined && !(spikelets.bulge >= 0 && spikelets.bulge <= 1))
+				out.push(
+					`${path}.shape.catkin.spikelets.bulge is ${spikelets.bulge}; a share lies from 0 to 1`,
+				);
+		}
 		const bristles = 'lathe' in extra.shape ? extra.shape.bristles : undefined;
 		if (bristles !== undefined) {
 			if (!(bristles.rows >= 1 && bristles.rows <= 16))

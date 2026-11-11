@@ -1883,7 +1883,22 @@ export type ExtraShape =
 			readonly stalk?: number;
 	  }
 	| { readonly spines: number; readonly length: number; readonly spread: number }
-	| { readonly catkin: { readonly length: number; readonly radius: number } };
+	| {
+			readonly catkin: {
+				readonly length: number;
+				readonly radius: number;
+				/**
+				 * Rows of short spikelets that stand along the body, so a spike reads as a
+				 * cluster of them rather than one smooth pendant. Absent, the body is smooth.
+				 */
+				readonly spikelets?: {
+					/** Rows along the body, 2 to 16. */
+					readonly count: number;
+					/** Share of the body's radius each row adds, from 0 to 1; absent, 0.35. */
+					readonly bulge?: number;
+				};
+			};
+	  };
 
 /**
  * The seasons a species shows.

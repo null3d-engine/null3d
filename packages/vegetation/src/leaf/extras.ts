@@ -758,15 +758,33 @@ function writeExtra(
 				profile = fine;
 			}
 		} else {
-			const { length, radius } = shape.catkin;
-			profile = [
-				// The foot takes the body's width at the stalk, so a thin hanging spike keeps its
-				// join through a silhouette's half-cover cutoff instead of pinching to nothing.
-				[radius, 0],
-				[radius, length * 0.15],
-				[radius, length * 0.8],
-				[0, length],
-			];
+			const { length, radius, spikelets } = shape.catkin;
+			const rows = spikelets?.count ?? 0;
+			if (rows > 0) {
+				// A sedge's spike is a cluster of short spikelets: a ring of swellings for each
+				// row along the body, so the silhouette carries the cluster's own edge.
+				const bulge = spikelets?.bulge ?? 0.35;
+				const from = 0.12;
+				const to = 0.88;
+				const rings = rows * 2;
+				profile = [[radius, 0]];
+				for (let k = 0; k <= rings; k++) {
+					const t = from + ((to - from) * k) / rings;
+					const swell = k % 2 === 0 ? 1 + bulge : 1 - bulge * 0.45;
+					profile.push([radius * swell, length * t]);
+				}
+				profile.push([radius * 0.55, length * 0.95]);
+				profile.push([0, length]);
+			} else {
+				profile = [
+					// The foot takes the body's width at the stalk, so a thin hanging spike keeps its
+					// join through a silhouette's half-cover cutoff instead of pinching to nothing.
+					[radius, 0],
+					[radius, length * 0.15],
+					[radius, length * 0.8],
+					[0, length],
+				];
+			}
 		}
 		// A band colour meets the body at a sharp edge, so each end of the band stands twice.
 		const banded =
