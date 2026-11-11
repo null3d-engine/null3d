@@ -206,8 +206,8 @@ export const record: Species = {
 		shadowLevel: 1,
 		budget: {
 			// The budget check grows variant 0 alone, so these caps are not proved by it; they were
-			// measured at seed 11 against every variant, whose largest holds 1.67, 1.93, 2.30 and
-			// 3.56 MB from Low to Ultra with the packed blade keel. The kit holds 33 to 37 KB.
+			// measured at seed 11 against every variant, whose largest holds 1.53, 1.79, 2.16 and
+			// 3.42 MB from Low to Ultra. The kit holds 33 to 37 KB.
 			kitBytes: { low: 100_000, medium: 100_000, high: 100_000, ultra: 100_000 },
 			variantBytes: { low: 1_673_928, medium: 2_300_000, high: 2_400_000, ultra: 3_800_000 },
 			lod0Triangles: 140_000,

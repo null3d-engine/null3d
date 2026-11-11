@@ -48,6 +48,26 @@ export interface BladeDetail {
 }
 
 /**
+ * The width of a blade at a share of its length: the profile's share of the widest width, closed
+ * over the tip. A cover of grass takes the same shape, so its blades read as the species' own
+ * where the two meet.
+ *
+ * @param width The blade's width in metres at its widest.
+ * @param blade The record's blade, whose profile and tip shape it.
+ * @param t The share along it, 0 at the collar.
+ * @returns The width in metres.
+ */
+export function bladeWidth(width: number, blade: GrassBlade, t: number): number {
+	const at = width * curveAt(blade.profile, t);
+	const start = 1 - blade.tipLength;
+	if (t <= start) return at;
+	const u = Math.min(1, (t - start) / Math.max(1e-6, blade.tipLength));
+	// A hood closes round, as a quarter ellipse; a point narrows nearly straight to nothing.
+	const close = blade.tip === 'hooded' ? Math.sqrt(Math.max(0, 1 - u * u)) : pow(1 - u, 0.85);
+	return at * close;
+}
+
+/**
  * The blade's half-width in metres at a share of its length: the profile, closed by the tip.
  *
  * @param form The blade.
@@ -55,14 +75,7 @@ export interface BladeDetail {
  * @returns The half-width.
  */
 export function bladeHalf(form: BladeForm, t: number): number {
-	const { blade } = form;
-	const half = 0.5 * form.width * curveAt(blade.profile, t);
-	const start = 1 - blade.tipLength;
-	if (t <= start) return half;
-	const u = Math.min(1, (t - start) / Math.max(1e-6, blade.tipLength));
-	// A hood closes round, as a quarter ellipse; a point narrows nearly straight to nothing.
-	const close = blade.tip === 'hooded' ? Math.sqrt(Math.max(0, 1 - u * u)) : pow(1 - u, 0.85);
-	return half * close;
+	return 0.5 * bladeWidth(form.width, form.blade, t);
 }
 
 /** The fold in degrees at a share along the blade: the record's, rising into a hood at the tip. */

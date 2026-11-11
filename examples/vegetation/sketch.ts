@@ -6,8 +6,9 @@
 // The plants are the game's own assets, grown through the package's public functions. Drag to turn
 // round the meadow and use the wheel to step in. Press R to grow it all again from another seed.
 import { defineSketch, timeOfDay } from '@null3d/engine';
-import { createGrass } from '@null3d/vegetation';
+import { createGrass, grassCover, loadSpecies } from '@null3d/vegetation';
 import { interact } from '../lib/interact';
+import { DEMO_SPARSENESS } from '../lib/plants';
 import { type MeadowControls, postHud } from './hud';
 import { createMeadow } from './meadow';
 
@@ -20,16 +21,6 @@ export default defineSketch(async (ctx) => {
 	post.set({ exposure: day.exposure });
 	scene.createDirectionalLight({ ...day.light, castShadows: true, shadow: { distance: 60 } });
 	scene.createAmbientLight(day.ambient);
-
-	// The meadow's grass, grown by the add-on over the same field, so the ground reads as pasture.
-	createGrass(ctx, {
-		height: () => 0,
-		area: { x: 0, z: 0, size: 200 },
-		count: 60_000,
-		seed: 11,
-		blades: 12,
-		color: '#59732f',
-	});
 
 	// The ground: a wide field, so a row of several species reads as a meadow rather than a plinth.
 	scene.createMesh({
@@ -46,11 +37,25 @@ export default defineSketch(async (ctx) => {
 	// small change in metres, and the shadows reach only as far as the meadow the camera can see.
 	const view = interact(ctx, camera, { target: [0, 11, 0], groundY: 1.7, zoomSpeed: 1.5 });
 
+	// The meadow's grass, grown by the add-on over the field that the camera frames, so the ground
+	// reads as pasture rather than as one flat colour. The cover takes the meadow grass's own blade,
+	// its keel and its colour, so a plant of that species stands in it without a seam.
+	const meadow = await loadSpecies('meadow-grass');
+	createGrass(ctx, {
+		height: () => 0,
+		area: { x: 0, z: 0, size: 140 },
+		count: 140_000,
+		seed: 11,
+		blades: 14,
+		...grassCover(meadow.record),
+	});
+
 	// The season: every record declares what its own does, so the same meadow grows bare in winter,
-	// turns in autumn and flowers in blossom. Summer is the record's default. One sparse slider moves a
-	// species' limbs, leaves and coarseness together toward the least it still reads as itself, the
-	// form a phone or a tablet asks for.
-	const controls: MeadowControls = { season: 'summer', sparse: 0 };
+	// turns in autumn and flowers in blossom. Summer is the record's default. One sparse slider moves
+	// a species' limbs, leaves and coarseness together toward the least it still reads as itself. The
+	// meadow opens at the sparsest form, as every demo that grows plants through the add-on does by
+	// the owner's ruling, and a hand that drags the slider to the left adds density.
+	const controls: MeadowControls = { season: 'summer', sparse: DEMO_SPARSENESS };
 
 	let seed = 11;
 	const growMeadow = createMeadow(ctx, page, { controls: () => controls });
