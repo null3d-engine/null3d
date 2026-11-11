@@ -89,9 +89,10 @@ export const record: Species = {
 			// Still 09: the rhizome reads 2 to 2.5 cm thick.
 			rhizomeRadius: 0.011,
 			// Still 14: dense brown roots, about fifteen of them, spread round the crown.
-			roots: { mean: 18, spread: 3 },
+			// Still 14 and the lifted studio piece: a dense brown root ball, not a sparse fringe.
+			roots: { mean: 32, spread: 5 },
 			rootLength: { mean: 0.18, spread: 0.05 },
-			rootRadius: 0.003,
+			rootRadius: 0.0045,
 			// Still 14: the roots dip below the rhizome as they leave it.
 			droop: { mean: 40, spread: 15 },
 		},
