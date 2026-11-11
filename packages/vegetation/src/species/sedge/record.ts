@@ -78,9 +78,9 @@ export const record: Species = {
 				// Still 19: four or five female spikes hang one below another.
 				count: { mean: 4, spread: 0.8 },
 				// Still 19: the spikes hang in a drooping cluster near the stem's tip.
-				spacing: { mean: 0.03, spread: 0.008 },
+				spacing: { mean: 0.045, spread: 0.01 },
 				// Still 19: the spikes hang on short stalks of 2 to 5 cm.
-				stalk: { mean: 0.03, spread: 0.008 },
+				stalk: { mean: 0.04, spread: 0.008 },
 			},
 		},
 		soil: {
@@ -158,8 +158,9 @@ export const record: Species = {
 			share: 1,
 			seasons: ['blossom', 'summer'],
 			// Still 19: each spike is a dense cluster of short spikelets, so its silhouette carries
-			// the rows' swellings rather than a smooth pendant.
-			shape: { catkin: { length: 0.11, radius: 0.004, spikelets: { count: 8, bulge: 0.3 } } },
+			// the rows' swellings rather than a smooth pendant. The photograph's heads run about a
+			// third of the visible stem, so the body is longer than a catkin and its rows follow.
+			shape: { catkin: { length: 0.17, radius: 0.0036, spikelets: { count: 12, bulge: 0.28 } } },
 			colour: [0.13, 0.2, 0.06],
 			hang: 180,
 		},
@@ -169,7 +170,7 @@ export const record: Species = {
 			at: 'flower',
 			share: 1,
 			seasons: ['autumn', 'winter'],
-			shape: { catkin: { length: 0.11, radius: 0.004, spikelets: { count: 8, bulge: 0.3 } } },
+			shape: { catkin: { length: 0.17, radius: 0.0036, spikelets: { count: 12, bulge: 0.28 } } },
 			colour: [0.17, 0.11, 0.05],
 			hang: 180,
 		},
@@ -179,8 +180,8 @@ export const record: Species = {
 			at: 'stem-tip',
 			share: 1,
 			seasons: ['blossom', 'summer', 'autumn', 'winter'],
-			shape: { catkin: { length: 0.04, radius: 0.0028, spikelets: { count: 5, bulge: 0.2 } } },
-			colour: [0.23, 0.14, 0.07],
+			shape: { catkin: { length: 0.03, radius: 0.0018, spikelets: { count: 4, bulge: 0.15 } } },
+			colour: [0.19, 0.11, 0.05],
 			hang: 0,
 		},
 	],

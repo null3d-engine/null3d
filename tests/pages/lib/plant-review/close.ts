@@ -1439,7 +1439,7 @@ export function strandsView(plant: ClosePlant, lens: Lens): CloseView | undefine
 }
 
 /** Metres the frame of a spike view spans: one stem's hanging heads, as their photograph frames them. */
-const SPIKE_SPAN = 0.42;
+const SPIKE_SPAN = 0.36;
 
 /**
  * One flowering stem's hanging heads, seen close and level against the plain ground: the cluster of
@@ -1475,7 +1475,7 @@ export function spikeView(plant: ClosePlant, lens: Lens): CloseView | undefined 
 		}
 	}
 	if (!subject) return undefined;
-	const target: V3 = [subject[0], subject[1] - SPIKE_SPAN * 0.18, subject[2]];
+	const target: V3 = [subject[0], subject[1] - SPIKE_SPAN * 0.28, subject[2]];
 	const distance = distanceFor(SPIKE_SPAN, lens.fov);
 	const outward = normalize([target[0], 0, target[2]]);
 	if (!Number.isFinite(outward[0])) return undefined;

@@ -447,7 +447,7 @@ describe('the pendulous sedge', () => {
 		// The plant's bytes with the soil block stripped, at this record: a plant that names no
 		// soil grows exactly these. A deliberate record change re-records the figure, and the
 		// growth path that reads no soil must not move it.
-		expect(plantAssetDigest(growPlantNow(kit, OPTIONS))).toBe('d83d5b160cc395bf');
+		expect(plantAssetDigest(growPlantNow(kit, OPTIONS))).toBe('ca339b020e835218');
 	});
 
 	it('ends its blades in long fine points', () => {
