@@ -429,6 +429,11 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 	const inset = plantInset(record, outline.reach);
 	const volume: EnvelopeVolume = insetVolume(outline, inset);
 	const radial = record.envelope.kind === 'radial';
+	// A record that asks for it makes each bud's light follow the room the envelope leaves at its
+	// azimuth, so the crown's mass gathers on the wide side. Absent, the shadow grid's light stands
+	// exactly as it did before the field existed.
+	const roomBias = g.light.roomBias ?? 0;
+	const room = roomBias > 0 ? roomLightTable(volume, roomBias) : undefined;
 
 	// The shadow grid: its cell is the first year's internode, or larger where the plant needs more
 	// than the record's cells across its widest side.
@@ -678,6 +683,20 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 		return grid.light(x, y, z);
 	};
 
+	/**
+	 * A bud's light with the record's room bias, where it asks for one. The bias follows the room at
+	 * the bud's own azimuth. It is left off the terminal buds, whose flush carries the leader and
+	 * the branch tips.
+	 */
+	const biasLight = (light: number, b: number): number => {
+		if (room === undefined || plant.budTerminal[b]) return light;
+		const n = plant.budNode[b] as number;
+		if (n < 0) return light;
+		return (
+			light * room.factor(plant.y[n] as number, atan2(plant.z[n] as number, plant.x[n] as number))
+		);
+	};
+
 	/** Shadow of a bud at its node, cast or lifted. */
 	const shade = (b: number, sign: 1 | -1) => {
 		const n = plant.budNode[b] as number;
@@ -688,7 +707,7 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 	const readLight = () => {
 		for (let k = 0; k < plant.aliveCount; k++) {
 			const b = plant.alive[k] as number;
-			if (plant.budState[b] === ALIVE) plant.budLight[b] = budLight(b);
+			if (plant.budState[b] === ALIVE) plant.budLight[b] = biasLight(budLight(b), b);
 		}
 	};
 
@@ -1536,7 +1555,8 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 	if (g.light.surface === true)
 		for (let k = 0; k < plant.aliveCount; k++) {
 			const b = plant.alive[k] as number;
-			if (plant.budState[b] === ALIVE) plant.budLight[b] = siteLight(plant, grid, b, dark);
+			if (plant.budState[b] === ALIVE)
+				plant.budLight[b] = siteLight(plant, grid, b, dark, biasLight);
 		}
 	if (takes.length < plant.buds) takes = new Uint8Array(plant.buds);
 	takes.fill(1);
@@ -1551,16 +1571,78 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
  * light where none does, since the outermost shoots of a crown see the most sky. A bud whose node
  * stands under the crown, below the dark height given, sees none.
  */
-function siteLight(plant: Plant, grid: ShadowGrid, b: number, dark: number): number {
+function siteLight(
+	plant: Plant,
+	grid: ShadowGrid,
+	b: number,
+	dark: number,
+	bias?: (light: number, b: number) => number,
+): number {
 	if ((plant.y[plant.budNode[b] as number] as number) < dark) return 0;
 	for (let n = plant.budNode[b] as number, k = 0; n >= 0 && k < SITE_STEPS; k++) {
 		const x = plant.x[n] as number;
 		const y = plant.y[n] as number;
 		const z = plant.z[n] as number;
-		if (grid.inside(x, y, z)) return k === 0 ? (plant.budLight[b] as number) : grid.light(x, y, z);
+		if (grid.inside(x, y, z))
+			return k === 0
+				? (plant.budLight[b] as number)
+				: bias
+					? bias(grid.light(x, y, z), b)
+					: grid.light(x, y, z);
 		n = plant.parent[n] as number;
 	}
-	return 1;
+	return bias ? bias(1, b) : 1;
+}
+
+/**
+ * The room's share of the mean room at each height, as a multiplier on a bud's light: 1 at a
+ * height's mean azimuth, above 1 on the envelope's wide side and below 1 on its narrow side. The
+ * record's light reads the shadow grid alone unless it asks for this bias.
+ */
+function roomLightTable(
+	volume: EnvelopeVolume,
+	power: number,
+): { factor(y: number, azimuth: number): number } {
+	const taps = 16;
+	const base = volume.base;
+	const top = volume.top;
+	const rows: Float64Array[] = [];
+	const means: number[] = [];
+	for (let i = 0; i < taps; i++) {
+		const y = base + ((top - base) * i) / (taps - 1);
+		const row = new Float64Array(taps);
+		let sum = 0;
+		for (let k = 0; k < taps; k++) {
+			const r = volume.radius(y, (k * 2 * Math.PI) / taps);
+			row[k] = r;
+			sum += r;
+		}
+		rows.push(row);
+		means.push(sum / taps);
+	}
+	return {
+		factor(y, azimuth) {
+			const t = top > base ? Math.min(1, Math.max(0, (y - base) / (top - base))) : 0;
+			const at = t * (taps - 1);
+			const i0 = Math.floor(at);
+			const i1 = Math.min(taps - 1, i0 + 1);
+			const w = at - i0;
+			const turn = ((azimuth % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+			const ak = (turn / (2 * Math.PI)) * taps;
+			const a0 = Math.floor(ak) % taps;
+			const a1 = (a0 + 1) % taps;
+			const u = ak - Math.floor(ak);
+			const at0 = (rows[i0] as Float64Array)[a0] as number;
+			const at1 = (rows[i0] as Float64Array)[a1] as number;
+			const bt0 = (rows[i1] as Float64Array)[a0] as number;
+			const bt1 = (rows[i1] as Float64Array)[a1] as number;
+			const r0 = at0 * (1 - u) + at1 * u;
+			const r1 = bt0 * (1 - u) + bt1 * u;
+			const r = r0 * (1 - w) + r1 * w;
+			const mean = (means[i0] as number) * (1 - w) + (means[i1] as number) * w;
+			return mean > 0 ? pow(r / mean, power) : 1;
+		},
+	};
 }
 
 /**

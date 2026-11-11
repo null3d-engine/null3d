@@ -24,6 +24,9 @@ const ALTERNATE: readonly (readonly [number, number])[] = [
 
 /** The silver birch's record. */
 export const record: Species = {
+	// A first pass at the floors a phone's lighter form keeps, set from the species' form and to
+	// be measured on the phone set before they are trusted.
+	sparse: { limbs: 0.45, leaves: 0.55, coarseness: 0.5 },
 	id: 'silver-birch',
 	name: 'Silver birch',
 	latin: 'Betula pendula',
@@ -358,9 +361,13 @@ export const record: Species = {
 			{ layer: 1, by: 'height', from: 6, to: 40, blend: 0.2, tint: [1, 1, 1] },
 		],
 		young: 2,
-		// Still 16: the white bark fades to the young purple-brown layer on wood thinner than about
-		// four centimetres across.
-		youngRadius: 0.02,
+		// Stills 16 and 28: the white bark fades to the young purple-brown layer on wood thinner than
+		// about eight centimetres across, so the young view's limb draws its photograph's bark.
+		youngRadius: 0.04,
+		// Still 28: the photograph's young bark is warmer than the measured layer. The tint lifts all
+		// three channels for lightness and gives red the larger gain, which is the axis the colour
+		// distance is short on.
+		youngTint: [1.9, 1.29, 0.94],
 		girthScale: [
 			[0, 0.6],
 			[1, 1],
@@ -476,9 +483,6 @@ export const record: Species = {
 	textures: 'own',
 	variants: 6,
 	seedSalt: 20221108,
-	// A first pass at the floors a phone's lighter form keeps, set from the species' form and to
-	// be measured on the phone set before they are trusted.
-	sparse: { limbs: 0.45, leaves: 0.55, coarseness: 0.5 },
 	cuttings: {
 		// Still 21: a cut branch of about a metre, its twigs arching out and drooping; it draws 0.92 m.
 		branch: { shoot: 'whip', pick: 1 },
