@@ -539,6 +539,15 @@ describe('the slots', () => {
 			daylight: 2.7,
 		};
 		expect(readPlantReviewQuery(new URLSearchParams(plantReviewQuery(lit)))).toMatchObject(lit);
+		const composed = {
+			species: 'saguaro',
+			view: 'limb' as const,
+			composition: 'arms' as const,
+		};
+		expect(readPlantReviewQuery(new URLSearchParams(plantReviewQuery(composed)))).toMatchObject(
+			composed,
+		);
+		expect(read('composition=branches')).toThrow('composition');
 	});
 
 	test("draw a still that names one of the record's forms in that form", () => {

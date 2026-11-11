@@ -974,6 +974,19 @@ export default defineSketch(async (ctx) => {
 				break;
 			}
 			case 'limb': {
+				// A plant whose limbs leave one stem as a cluster, as a saguaro's arms do, is
+				// photographed as the stem's top with its limbs either side, or from between them,
+				// rather than as one limb's run. The query names that composition, and the camera
+				// stands on the stem at the share of its height the query gives.
+				if (QUERY.composition) {
+					const at = stemAt(skeleton, height * (QUERY.along ?? 0.78));
+					if (at) {
+						const span = QUERY.span ?? Math.max(1.5, height * 0.35);
+						const across = (span * 0.5) / (Math.tan((fov * DEG) / 2) * aspect);
+						const near = QUERY.composition === 'between' ? 0.45 : 1;
+						return orbit(at.at, across * near + at.radius, e, turn, fov);
+					}
+				}
 				// One branch with its side branches seen across its run, from the side where the least of
 				// the plant stands in front of it; or, for the crown's outside, its lower rim seen from
 				// under it, looking up past its edge.
