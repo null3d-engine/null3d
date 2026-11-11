@@ -307,6 +307,9 @@ function growthProblems(record: Species, out: string[]): void {
 				`growth.floor is ${growth.floor}; it is a share of the height from 0 to 0.5, a crown's underside`,
 			);
 		wholeProblem(growth.light.cells, 'growth.light.cells', 8, 96, out);
+		const roomBias = growth.light.roomBias;
+		if (roomBias !== undefined && !(roomBias >= 0 && roomBias <= 4))
+			out.push(`growth.light.roomBias is ${roomBias}; it is a power from 0 to 4, 0 for none`);
 		if (growth.internode.length <= 0)
 			out.push(`growth.internode.length is ${growth.internode.length}; it must be above 0`);
 		shareProblem(growth.internode.ageFactor, 'growth.internode.ageFactor', out);

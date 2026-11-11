@@ -12,6 +12,7 @@ import type {
 	SpeciesKitData,
 } from './asset';
 import {
+	AXIS_CULM,
 	AXIS_ROOT,
 	AXIS_STEM,
 	AXIS_STIPE,
@@ -257,6 +258,8 @@ interface Candidate {
 	/** Axes in its subtree, itself included, and the bud sites they carry in light enough for shoots. */
 	readonly axes: number;
 	readonly buds: number;
+	/** 1 when the axis is a flowering head: its shoots are the flowers, not the leaves. */
+	readonly head: number;
 	/** Its pipe radius at its first node, the thickness a piece's photograph shows. */
 	readonly thickness: number;
 	/** The mean age of its nodes, from 0 for a shoot still opening to 1 for a mature one. */
@@ -266,8 +269,9 @@ interface Candidate {
 /**
  * The axes a branch cut can start from, ranked: those of the wanted order (any order past the stems
  * when it is undefined): first those that carry bud sites in enough light to grow shoots (at or
- * above the record's shade line), then those whose subtree's extent is near `length`, then those
- * that divide, then by how near the extent is, then the sunniest.
+ * above the record's shade line), then those whose subtree's extent is near `length`, then a leafy
+ * shoot before a flowering head, then those that divide, then the thickest, then by how near the
+ * extent is, then the sunniest.
  */
 function candidates(
 	skeleton: MacroSkeleton,
@@ -339,22 +343,27 @@ function candidates(
 				light: (light[a] as number) / Math.max(1, nodes[a] as number),
 				axes: subtreeAxes[a] as number,
 				buds: subtreeBuds[a] as number,
+				head: (axes.kind[a] as number) === AXIS_CULM ? 1 : 0,
 				thickness: skeleton.radius[axes.first[a] as number] as number,
 				age: vigor[a] as number,
 			});
 	const match = (c: Candidate) => Math.round(Math.abs(log(c.extent / length)) / MATCH_STEP);
 	const near = (c: Candidate) => (match(c) <= NEAR_STEPS ? 1 : 0);
 	const leafy = (c: Candidate) => (c.buds > 0 ? 1 : 0);
+	const head = (c: Candidate) => c.head;
 	const divides = (c: Candidate) => (c.axes > 1 ? 1 : 0);
-	// A photograph of a piece shows a thick axis where it shows one at all, so a cut with no hinted
-	// order prefers the thickest axis among those near the asked length, before the closest match.
+	// A photograph of a piece shows a thick axis where it shows one at all. Among the pieces near the
+	// asked length, a leafy shoot ranks before a flowering head, and a piece that divides ranks before
+	// a single thick axis, so a cluster is a fan of leaves and not one blade or one panicle; then the
+	// thickest axis, then the closest match.
 	return out.sort(
 		(x, y) =>
 			(young ? x.age - y.age : 0) ||
 			leafy(y) - leafy(x) ||
 			near(y) - near(x) ||
-			y.thickness - x.thickness ||
+			head(x) - head(y) ||
 			divides(y) - divides(x) ||
+			y.thickness - x.thickness ||
 			match(x) - match(y) ||
 			y.light - x.light ||
 			x.axis - y.axis,
@@ -692,8 +701,7 @@ export function clusterRank(
 /**
  * A 'cluster' cutting from the kit alone: one shoot row of the prototype that `pick` names, standing
  * upright on its attach point at the origin unless the cutting keeps its pose, and the bounds of its
- * mesh at the tier. A named `length` scales the spray about its attach point, so a still can ask for
- * the piece's own size; absent, it draws at the prototype's size.
+ * mesh at the tier.
  *
  * @param kit The species' kit.
  * @param cutting The piece.
@@ -732,18 +740,13 @@ export function clusterRow(
 			max[k] = Math.max(max[k] as number, turned[k] as number);
 		}
 	}
-	// A still can name the spray's own length: the row then scales about its attach point so the
-	// piece runs that far from its cut. A piece that names no length draws at the prototype's size.
-	const own = Math.max(0, (max[1] as number) - (min[1] as number));
-	const length = cutting.length;
-	const scale = length !== undefined && own > 1e-6 ? length / own : 1;
 	return {
 		rows: {
 			count: 1,
 			prototype: new Uint8Array([prototype.index]),
 			position: new Float32Array(3),
 			rotation: new Float32Array(turn),
-			scale: new Float32Array([scale]),
+			scale: new Float32Array([1]),
 			record: new Uint16Array(1),
 			phase: new Uint8Array(1),
 			sky: new Uint8Array([250]),
@@ -751,8 +754,8 @@ export function clusterRow(
 			order: new Uint32Array(1),
 		},
 		bounds: {
-			min: [(min[0] as number) * scale, (min[1] as number) * scale, (min[2] as number) * scale],
-			max: [(max[0] as number) * scale, (max[1] as number) * scale, (max[2] as number) * scale],
+			min: [min[0] as number, min[1] as number, min[2] as number],
+			max: [max[0] as number, max[1] as number, max[2] as number],
 		},
 	};
 }

@@ -101,6 +101,10 @@ const REST_STEPS: f32 = 255.0;
 const HEADER_YOUNG: i32 = 15;
 const HEADER_YOUNG_TILE: i32 = 16;
 const HEADER_YOUNG_TINT: i32 = 56;
+// A tuft's basal sheath colour and roughness, for the merged foliage's sheath columns.
+const HEADER_SHEATH: i32 = 65;
+// A grass blade's collar: its colour, then the share of the blade's base it takes.
+const HEADER_COLLAR: i32 = 66;
 const HEADER_MOSS: i32 = 17;
 const HEADER_MOSS_REACH: i32 = 18;
 const HEADER_EXTRAS: i32 = 19;
@@ -118,8 +122,6 @@ const HEADER_AUTUMN_BARK: i32 = 61;
 const HEADER_WINTER_BARK: i32 = 62;
 const HEADER_WINTER_REFLECTANCE: i32 = 63;
 const HEADER_WINTER_TRANSMITTANCE: i32 = 64;
-// A tuft's sheath columns' linear colour, then 1 when the record gives one.
-const HEADER_SHEATH: i32 = 65;
 const HEADER_EXTRA_BANDS: i32 = 43;
 // An extra's scale pattern: its scale rows, the cells round its turn, and its band's share of the
 // profile's height at each end, per extra in record order.
@@ -163,6 +165,8 @@ const MAX_BRANCH_DEPTH: i32 = 8;
 const KIND_STEM: f32 = 85.0;
 // The surface kind byte of a shoot's bud, which draws as a stem in the record's bud colour.
 const KIND_BUD: f32 = 128.0;
+/// A merged ground plant's sheath column, marked in the colour's third byte.
+const KIND_SHEATH: f32 = 240.0;
 // Texels across the near table: two for each of its sixteen slots.
 const NEAR_TEXELS: f32 = 32.0;
 // A leaf's reflectance at normal incidence and at grazing, as the plant materials set them.
@@ -171,6 +175,10 @@ const LEAF_F90: f32 = 0.875;
 // How much a furrow's cavity darkens the bark's colour and raises its roughness.
 const CAVITY_DARK: f32 = 0.45;
 const CAVITY_ROUGH: f32 = 0.2;
+// How much of the crown's baked sky visibility darkens bark. A tree's own leaves shade its limbs,
+// but light scatters through the crown, so the wood keeps more of the sky than a leaf's density
+// alone would give it.
+const WOOD_SHADE: f32 = 0.35;
 
 /// One texel of the header row.
 /// A fixed value from two whole numbers, from 0 to 1: a scale's own shade, the same every frame.
@@ -652,21 +660,9 @@ fn plant_offset(input: VertexInput, mode: i32) -> vec3f {
                 let sideways = cross(downwind, vec3f(0.0, 1.0, 0.0));
                 let side = length(sideways);
                 if (side > 0.001) {
-                    // A tuft that gives its sheath columns a colour marks them in the top bit of
-                    // the phase byte, which those columns leave still. Every other foliage axis
-                    // then keeps its phase in the low seven bits.
-                    var phase = input.colors.b;
-                    var sheath = false;
-                    if (mode == MODE_FOLIAGE && header(HEADER_SHEATH).w > 0.5) {
-                        let raw = i32(round(input.colors.b * 255.0));
-                        sheath = (raw & 128) != 0;
-                        phase = f32(raw & 127) / 127.0;
-                    }
-                    if (!sheath) {
-                        let brisk = clamp(air.a / 10.0, 0.0, 1.5);
-                        let flap = sin(TURN * (frame.time * flutter.y + phase));
-                        swayed += (sideways / side) * (flutter.x * brisk * flap * input.uv1.x);
-                    }
+                    let brisk = clamp(air.a / 10.0, 0.0, 1.5);
+                    let flap = sin(TURN * (frame.time * flutter.y + input.colors.b));
+                    swayed += (sideways / side) * (flutter.x * brisk * flap * input.uv1.x);
                 }
             }
             moved = plant + (swayed - plant) * fade;
@@ -1037,7 +1033,7 @@ fn surface(input: SurfaceInput) -> Surface {
         roughness = saturate(0.82 + CAVITY_ROUGH * cavity);
         // A lichen patch is a flat, matte crust: it hides the furrows under it.
         mapped = normalize(mix(bark_normal, vec3f(0.0, 0.0, 1.0), lichen_mask * 0.35));
-        occlusion = input.vertexColor.a;
+        occlusion = mix(1.0, input.vertexColor.a, WOOD_SHADE);
     } else if (mode == MODE_CARDS) {
         // In the shell where a near copy draws its real shoots, its cards give way.
         let near_copy = object.values.x > 0.5;
@@ -1152,14 +1148,16 @@ fn surface(input: SurfaceInput) -> Surface {
                 base *= header(HEADER_YOUNG_TINT).rgb;
             }
             roughness = 0.8;
+        } else if (mode == MODE_FOLIAGE && abs(input.vertexColor.b * 255.0 - KIND_SHEATH) < 0.5) {
+            // A merged ground plant's sheath column draws in the record's sheath colour. Its kind
+            // marks the colour's third byte, since the asset clamps a negative coordinate to zero.
+            let body = header(HEADER_SHEATH);
+            base = body.rgb;
+            roughness = max(body.w, 0.5);
         } else {
             let layer = select(1, 0, upper);
             let texel = textureSampleGrad(colour, colourSampler, uv, layer, gx, gy);
             let relief_texel = textureSampleGrad(relief, reliefSampler, uv, 0, gx, gy).rgb;
-            // A shoot's sheath column carries the record's own colour rather than the leaf's: the
-            // top bit of its flutter byte marks it, in a species that gives a sheath colour.
-            let sheath = mode == MODE_FOLIAGE && header(HEADER_SHEATH).w > 0.5
-                && (i32(round(input.vertexColor.b * 255.0)) & 128) != 0;
             // A merged leaf browns on its own by its second coordinates' y, as a dying frond does.
             let browning = select(0.0, input.uv1.y, mode == MODE_FOLIAGE);
             let light = leaf_light(texel.rgb, upper, browning);
@@ -1179,18 +1177,13 @@ fn surface(input: SurfaceInput) -> Surface {
             let flatten = 1.0 / max(leaf_normal.z, 0.5);
             base = min(base * flatten, vec3f(1.0));
             through *= flatten;
-            sheen = select(header(HEADER_UPPER_REFLECTANCE).w, 0.0, upper);
-            if (sheath) {
-                // A sheath is a smooth, matte tube of the record's own colour: it holds no leaf
-                // relief and passes no light through.
-                base = header(HEADER_SHEATH).rgb;
-                share = 0.0;
-                through = vec3f(0.0);
-                roughness = 0.8;
-                alpha = 1.0;
-                mapped = vec3f(0.0, 0.0, 1.0);
-                sheen = 0.0;
+            // A pale collar marks where the blade leaves its sheath, over the share the record
+            // names at the blade's base.
+            let collar = header(HEADER_COLLAR);
+            if (collar.w > 0.0 && input.uv1.x < collar.w) {
+                base = mix(collar.rgb, base, smoothstep(collar.w * 0.6, collar.w, input.uv1.x));
             }
+            sheen = select(header(HEADER_UPPER_REFLECTANCE).w, 0.0, upper);
         }
         if (mode == MODE_SHOOTS) {
             let row = shoot_row(object.values);

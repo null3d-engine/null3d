@@ -273,12 +273,6 @@ export interface StemRun {
 	 * much light, so it does not read as black wood among them.
 	 */
 	readonly leastSky?: number;
-	/**
-	 * Whether the run is a shoot's sheath column. A sheath draws the record's own colour, and since
-	 * it does not flutter, the top bit of its flutter byte marks that byte as a sheath's rather than
-	 * a leaf's.
-	 */
-	readonly sheath?: boolean;
 }
 
 const frame: PathFrame = emptyFrame();
@@ -295,12 +289,7 @@ export function writeStem(mesh: MeshWriter, run: StemRun): void {
 	const sides = Math.max(3, section.sides);
 	const firstVertex = mesh.vertices;
 	const firstIndex = mesh.indices.length;
-	const colour = [
-		run.bytes.high,
-		run.bytes.low,
-		run.sheath === true ? run.bytes.phase | 0x80 : run.bytes.phase,
-		0,
-	];
+	const colour = [run.bytes.high, run.bytes.low, run.bytes.phase, 0];
 	const p = [0, 0, 0];
 	for (let r = 0; r < rings; r++) {
 		const share = r / (rings - 1);

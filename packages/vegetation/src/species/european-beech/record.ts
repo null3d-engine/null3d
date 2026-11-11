@@ -533,7 +533,7 @@ export const record: Species = {
 	seedSalt: 2357111317,
 	// A first pass at the floors a phone's lighter form keeps, set from the species' form and to
 	// be measured on the phone set before they are trusted.
-	sparse: { limbs: 0.32, leaves: 0.38, coarseness: 0.65 },
+	sparse: { limbs: 0.45, leaves: 0.5, coarseness: 0.55 },
 	roundBand,
 	cuttings: {
 		// The wide prototype suits the branch's three sprays; the tall one suits the sub-branch.
