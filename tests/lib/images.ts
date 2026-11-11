@@ -684,8 +684,9 @@ export function clearCandidates(place: Place, dirs = HARNESS_DIRS): void {
 /**
  * Saves the image that the renderer drew, with the facts that the review reads, under the folder
  * of drawings. A run asked for its drawings keeps one picture for each test and tier that it drew
- * in, whichever thread mode drew it first. A run whose image cannot become a reference keeps
- * nothing, since the artifact exists to hand references on.
+ * in, whichever thread mode drew it first. A picture that cannot become a reference is kept too,
+ * with the reason in its facts, so the artifact records every image that the shard drew and the
+ * review refuses to accept one that belongs to another test.
  */
 export function saveDrawnImage(
 	run: ImageRun,
@@ -696,7 +697,6 @@ export function saveDrawnImage(
 	page?: Record<string, unknown>,
 ): void {
 	const reference = referenceOf(run, place);
-	if (reference.fixed) return;
 	const base = join(dirs.drawn ?? DRAWN_IMAGES, drawnIn(place), run.tier, run.test);
 	if (existsSync(`${base}${CANDIDATE_FILES.facts}`)) return;
 	const facts: CandidateFacts = {
@@ -708,6 +708,7 @@ export function saveDrawnImage(
 		reference: reference.file,
 		...(share !== undefined && { share }),
 		tolerance: reference.tolerance,
+		...(reference.fixed && { fixed: reference.fixed }),
 		...(ciRunOf(process.env) && { ciRun: ciRunOf(process.env) }),
 		...(page && { page }),
 	};

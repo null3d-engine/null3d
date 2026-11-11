@@ -610,15 +610,6 @@
 				font-variant-numeric: tabular-nums;
 				color: rgb(207 228 255 / 0.86);
 			}
-			.loader__detail {
-				margin: 0;
-				/* The line keeps its place while a phase has no count, so the card never jumps. */
-				min-height: 1.4em;
-				font-size: 12px;
-				line-height: 1.4;
-				color: rgb(190 209 232 / 0.72);
-				font-variant-numeric: tabular-nums;
-			}
 			/* The text that a screen reader announces; the card's visuals are hidden from it. */
 			.loader__say {
 				position: absolute;
@@ -649,6 +640,47 @@
 			@keyframes loader-slide {
 				0% { margin-left: -40%; }
 				100% { margin-left: 100%; }
+			}
+			/* The temporary phases under the main bar: one line of text and a thin bar each. */
+			.loader__tasks {
+				display: flex;
+				flex-direction: column;
+				gap: 0.6rem;
+				width: 100%;
+			}
+			.loader__tasks:empty { display: none; }
+			/* A cleared lane's row keeps its place in the DOM, and a display rule would outrank the
+			   browser's own rule for a hidden element. */
+			.loader__tasks[hidden], .loader__task[hidden] { display: none; }
+			.loader__task {
+				display: flex;
+				flex-direction: column;
+				gap: 0.3rem;
+				animation: loader-task-in 220ms ease both;
+			}
+			.loader__task-head {
+				display: flex;
+				align-items: baseline;
+				justify-content: space-between;
+				gap: 0.75rem;
+				text-align: left;
+			}
+			.loader__task-text { margin: 0; max-width: 18rem; font-size: 12px; line-height: 1.35; }
+			.loader__task-detail {
+				flex: none;
+				font-size: 11px;
+				font-variant-numeric: tabular-nums;
+				color: rgb(190 209 232 / 0.7);
+			}
+			.loader__task-bar {
+				width: 100%;
+				height: 3px;
+				border-radius: 999px;
+				background: rgb(255 255 255 / 0.14);
+				overflow: hidden;
+			}
+			@keyframes loader-task-in {
+				from { opacity: 0; transform: translateY(3px); }
 			}
 			/* The comparison panel: title, engines, count and the ramp, with the scene's details
 			   behind one small button beside the title. */
