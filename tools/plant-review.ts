@@ -432,7 +432,7 @@ const CORRECTION_WAIT_MS = 300_000;
  * narrower than it draws asks for a stand beyond this, and the picture keeps the framing's own;
  * the bound sits above the largest accepted correction a crop has needed here.
  */
-const WHOLE_SCALE_MAX = 2.8;
+const WHOLE_SCALE_MAX = 2.9;
 
 /**
  * A drawn frame's camera stand and the plant's width in metres, as the page posted them: the

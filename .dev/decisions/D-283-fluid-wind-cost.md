@@ -592,9 +592,11 @@ the figure and the budget, not for the governor's input.
   and 72 bytes a frame in the add-on's own code, both on Chrome 156.0.8078.80. So the failure above
   was the tool's and is closed; the pages' own figures still stand as the look witness.
 - The same command passes all eight gates at the landed head `cdf1cb99f`: the
-  redraw ran `bun packages/cli/bin/null3d.js check-addon packages/wind` and read `8 passed`, with the
-  allocation readings beside it in the run's log. That is the head's own full pass, which the
-  addendum above could not name.
+  redraw ran `bun packages/cli/bin/null3d.js check-addon packages/wind` and read `8 passed`. That is
+  the head's own full pass, which the addendum above could not name. Its cost reads 5.07, 4.57, 8.28
+  and 6.16 ms of GPU time a frame from low to ultra, and its allocation 64, 61, 65 and 56 bytes a
+  frame in the add-on's own code. The two runs' figures answer the same question on different code,
+  so neither stands in for the other.
 
 ## Addendum: the leaves' two forms, and the flag and water readers
 

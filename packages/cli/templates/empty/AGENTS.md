@@ -62,7 +62,7 @@ Settle its state before you design the scene.
 | Rigid bodies, joints and character movement | the physics add-on | not built yet; run Rapier or cannon-es in the sketch worker |
 | Text in the scene | the MSDF text add-on | not built yet; use HTML labels |
 | A river or a lake, with waves, foam and soft shores | `@null3d/water` | built; see the docs page api/water |
-| Trees, shrubs, ferns, grass and their placement by ecological rules | `@null3d/vegetation` | built (scatter and grass; species are being rebuilt and draw as stand-ins) |
+| Trees, shrubs, ferns, grass and their placement by ecological rules | `@null3d/vegetation` | built (twelve species, the scatter and grass) |
 | Wind that plants, flags and smoke read, with travelling gusts and pushes | `@null3d/wind` | built (the field carries no state between frames yet; see the docs page api/wind) |
 | three.js look modes for a port | `@null3d/three-compat` | built |
 
