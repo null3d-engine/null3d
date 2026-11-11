@@ -780,8 +780,8 @@ export interface Tuft {
 	/** The sheath's radius in metres. */
 	readonly sheathRadius: number;
 	/**
-	 * The basal sheath's colour, in linear reflectance, where the photographs show red-brown
-	 * sheaths: a merged ground plant draws its sheath columns in it rather than the leaf's green.
+	 * The linear colour of each shoot's sheath column, where the species gives one. Absent, the
+	 * column draws the leaf material as the blades do.
 	 */
 	readonly sheathColour?: Rgb;
 	/** Degrees a blade leaves its shoot, by blade age (t = 0 the youngest, innermost, 1 the oldest). */
@@ -2121,6 +2121,12 @@ export interface CutFromShoots {
 	 * class and still be different pieces, as a sub-branch and a leaf cluster are.
 	 */
 	readonly pick?: number;
+	/**
+	 * How many shoots the piece carries, fanned about its own upright axis, where a branch photograph
+	 * shows a divided, hanging branch: one shoot is a class prototype, and a branch needs more. 1 by
+	 * default, and a cluster or a leaf keeps one whatever it names.
+	 */
+	readonly shoots?: number;
 }
 
 /**
