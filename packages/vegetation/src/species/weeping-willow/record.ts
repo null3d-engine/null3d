@@ -453,9 +453,9 @@ export const record: Species = {
 	roundBand,
 	cuttings: {
 		// Still 21: a metre of arching branch with its hanging shoots still on it.
-		branch: { shoot: 'cut' },
+		branch: { shoot: 'cut', shoots: 3 },
 		// Still 22: a short twig with two or three pliant shoots hanging from its end.
-		subbranch: { shoot: 'spray' },
+		subbranch: { shoot: 'spray', shoots: 3 },
 		// Still 23: the end of one shoot, its narrow leaves in alternate ranks.
 		cluster: { shoot: 'spur' },
 		// Stills 12, 13, 24 and 25 lay the leaf flat on a copy stand.
