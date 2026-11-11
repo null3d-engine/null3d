@@ -126,7 +126,8 @@ The real GPU's three references are in the repository, drawn on this Mac. The so
 references are drawn on CI's SwiftShader: the spec saves each new picture as a candidate, and
 accepting one makes it a reference. CI run `40445667147` drew the three and saved them as
 candidates, and it failed only because those references did not exist yet, as a run that draws new
-references does. A local run with `CI=1` then compared the accepted references and passed four of
+references does. The redraw replaced those three with drawings made on this Mac at the landed head,
+because a push to a milestone branch runs no image job; `local-references.json` records them. A local run with `CI=1` then compared the accepted references and passed four of
 four in 1.4 minutes.
 
 The rejected option drove `examples/input`, a basic demo, for its input steps. The showcase reads
