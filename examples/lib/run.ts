@@ -145,12 +145,15 @@ export async function startDemo({
 	// frame, so it fades once at the end of the build rather than twice over a drawn scene.
 	let firstFrame = false;
 	let firstFrameAt = 0;
+	/** When the last loading message arrived before the first frame, or 0 if none did. */
 	let lastLoadingAt = 0;
 	const hideWhenQuiet = (): void => {
 		if (!firstFrame) return;
-		// A scene that posts nothing hides at the first frame. One that reports its own stages waits
-		// for a quiet gap after the frame or its last message, so a stage that arrives late never
-		// changes a card that is already going.
+		// A scene that posts nothing hides at the first frame. One that reports stages before the
+		// frame waits for a quiet gap after the frame, so a stage that arrives late never changes a
+		// card that is already going. A message after the frame cannot hold the card open: the frame
+		// is what the card waited for, and work that follows it, such as trees that grow while the
+		// island draws, appears on the live scene instead.
 		const from = lastLoadingAt === 0 ? 0 : Math.max(lastLoadingAt, firstFrameAt);
 		const wait = from + LOADER_QUIET_MS - performance.now();
 		if (wait > 0) window.setTimeout(hideWhenQuiet, wait);
@@ -191,7 +194,7 @@ export async function startDemo({
 	// setup runs rather than all at once at the end: the overlay follows the scene's own progress.
 	const handleMessage = (type: string, data: unknown): void => {
 		if (type === 'loading') {
-			lastLoadingAt = performance.now();
+			if (!firstFrame) lastLoadingAt = performance.now();
 			loader.note(data);
 			hideWhenQuiet();
 			return;
@@ -202,7 +205,7 @@ export async function startDemo({
 			// overlay to the quiet timer while they are still building.
 			const at = data as { done?: unknown; total?: unknown } | undefined;
 			if (typeof at?.done === 'number' && typeof at?.total === 'number') {
-				lastLoadingAt = performance.now();
+				if (!firstFrame) lastLoadingAt = performance.now();
 				loader.work(at.done, at.total);
 				hideWhenQuiet();
 			}
