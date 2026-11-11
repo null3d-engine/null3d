@@ -218,7 +218,7 @@ export const record: Species = {
 				reflectanceBack: [0.1699, 0.257, 0.1894],
 				// The through-light carries more red than the reflected face, so a back-lit crown
 				// reads as the photographs' yellow-green rather than the sky's blue-green.
-				transmittance: [0.2, 0.26, 0.02],
+				transmittance: [0.12, 0.18, 0.02],
 				roughness: [0.42, 0.58],
 			},
 		},
