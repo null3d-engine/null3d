@@ -22,7 +22,8 @@
 		"barkMask": true
 	},
 	"16-bark-on-branch.png": {
-		"barkMask": true
+		"barkMask": true,
+		"leafyBark": true
 	},
 	"28-young-bark.png": {
 		"barkMask": true
