@@ -547,6 +547,8 @@ export default defineSketch(async (ctx) => {
 		...(QUERY.shoot !== undefined && { shoot: QUERY.shoot }),
 		...(QUERY.ring !== undefined && { ring: QUERY.ring }),
 		...(QUERY.lean !== undefined && { lean: QUERY.lean }),
+		...(QUERY.layout !== undefined && { layout: QUERY.layout }),
+		...(QUERY.spread !== undefined && { spread: QUERY.spread }),
 		orient: 'upright' as const,
 		...(VIEW === 'leaf-under' ? { face: 'lower' as const } : {}),
 		...(QUERY.pressed !== undefined && { pressed: QUERY.pressed }),

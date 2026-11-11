@@ -114,6 +114,17 @@ export interface CuttingOptions {
 	 */
 	readonly lean?: number;
 	/**
+	 * For 'branch' and 'subbranch': how the fanned shoots are placed. 'ring' stands them round the
+	 * piece's axis; 'spray' roots them along one lateral line at rising heights, as a close picture
+	 * of a twig spray shows. 'ring' by default.
+	 */
+	readonly layout?: 'ring' | 'spray';
+	/**
+	 * For a 'spray' layout: the width of the lateral line the shoots are rooted along, as a share of
+	 * the piece's height. A wider line draws separate thin twigs.
+	 */
+	readonly spread?: number;
+	/**
 	 * For 'branch' and 'subbranch': whether the candidates rank by how young they are rather than by
 	 * how well their length matches, so the piece draws a shoot that is still opening. Absent, a
 	 * cut ranks as it always has.
@@ -781,6 +792,8 @@ export function clusterRow(
 	const fan = hint && 'shoot' in hint ? hint : undefined;
 	const ring = Math.min(1, Math.max(0, cutting.ring ?? fan?.fanRing ?? 0.18));
 	const lean = Math.min(90, Math.max(-90, cutting.lean ?? fan?.fanLean ?? 0));
+	const layout = cutting.layout ?? 'ring';
+	const spread = Math.min(4, Math.max(0, cutting.spread ?? 0));
 	const spinShare = Math.min(1, Math.max(0, fan?.fanSpin ?? 1));
 	const yaw = Math.min(180, Math.max(-180, fan?.fanYaw ?? 0));
 	// The whole piece turns about its upright axis once, before any row's own fan, so a branch whose
@@ -841,8 +854,15 @@ export function clusterRow(
 	const placed: Vector3 = [0, 0, 0];
 	for (let row = 0; row < shoots; row++) {
 		const angle = (row * 2 * Math.PI) / shoots;
+		// A spray roots its shoots along one lateral line at rising heights, each turned a little
+		// outward, rather than round a ring.
+		const along = shoots === 1 ? 0.5 : row / (shoots - 1);
 		const spin = [0, 0, 0, 1];
-		quatAxisAngle(UP, angle * spinShare, spin);
+		quatAxisAngle(
+			UP,
+			layout === 'spray' ? (along - 0.5) * 2 * ((lean * Math.PI) / 180) : angle * spinShare,
+			spin,
+		);
 		const q = [0, 0, 0, 1];
 		quatMultiply(spin, 0, turnQ, 0, q);
 		// Each row leans about the horizontal tangent at its own side of the ring, so a positive
@@ -859,9 +879,15 @@ export function clusterRow(
 			r[2] = q[2] as number;
 			r[3] = q[3] as number;
 		}
-		position[row * 3] = ring * tall * cos(angle);
-		position[row * 3 + 1] = (row * 0.55 * tall) / shoots;
-		position[row * 3 + 2] = ring * tall * sin(angle);
+		if (layout === 'spray') {
+			position[row * 3] = (along - 0.5) * spread * tall;
+			position[row * 3 + 1] = (row * 0.7 * tall) / shoots;
+			position[row * 3 + 2] = 0;
+		} else {
+			position[row * 3] = ring * tall * cos(angle);
+			position[row * 3 + 1] = (row * 0.55 * tall) / shoots;
+			position[row * 3 + 2] = ring * tall * sin(angle);
+		}
 		rotation.set(r, row * 4);
 		for (let i = 0; i < p.length; i += 3) {
 			quatRotate(r, 0, [p[i] as number, p[i + 1] as number, p[i + 2] as number], placed);
