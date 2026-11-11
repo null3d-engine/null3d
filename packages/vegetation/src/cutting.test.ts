@@ -613,6 +613,23 @@ describe('cuttings', () => {
 		expect(clusterHinted?.rows.count).toBe(1);
 	});
 
+	it('lets a piece name its own shoot count and ring over the record hint', () => {
+		const className = kit.record.shoots?.classes?.[0]?.name ?? 'cut';
+		const hinted = {
+			...kit,
+			record: {
+				...kit.record,
+				cuttings: { branch: { shoot: className, shoots: 3, fanRing: 0.06, fanSpin: 0 } },
+			},
+		} as SpeciesKitData;
+		const single = clusterRow(hinted, { part: 'branch', shoots: 1 }, kit.detail);
+		const seven = clusterRow(hinted, { part: 'branch', shoots: 7, ring: 0.4 }, kit.detail);
+		expect(single?.rows.count).toBe(1);
+		expect(seven?.rows.count).toBe(7);
+		// The wider ring stands the rows further from the piece's axis than the hint's near-base ring.
+		expect(seven?.bounds.max[0]).toBeGreaterThan((single?.bounds.max[0] as number) + 1e-6);
+	});
+
 	it('turns a whole fanned piece a quarter about its axis', () => {
 		const className = kit.record.shoots?.classes?.[0]?.name ?? 'cut';
 		const hint = { shoot: className, shoots: 3, fanRing: 0.06, fanSpin: 0 };

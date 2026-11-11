@@ -90,6 +90,18 @@ export interface CuttingOptions {
 	 */
 	readonly age?: number;
 	/**
+	 * For 'branch' and 'subbranch': the shoots the piece carries, over the record's hint, so two
+	 * pictures of one species can show different numbers of side shoots. Absent, the hint's count
+	 * stands. A cluster or a leaf keeps one whatever it names.
+	 */
+	readonly shoots?: number;
+	/**
+	 * For 'branch' and 'subbranch': the radius of the ring the fanned shoots stand on, as a share of
+	 * the piece's height, over the record's hint. A wide ring draws the shoots as separate pieces;
+	 * a near-base ring joins them. Absent, the hint's ring stands.
+	 */
+	readonly ring?: number;
+	/**
 	 * For 'branch' and 'subbranch': whether the candidates rank by how young they are rather than by
 	 * how well their length matches, so the piece draws a shoot that is still opening. Absent, a
 	 * cut ranks as it always has.
@@ -748,13 +760,13 @@ export function clusterRow(
 	// each row takes, so a piece can share one base and still spread to its photograph's width. A
 	// cluster or a leaf keeps its one shoot, and a piece whose hint names none keeps the one shoot
 	// it always had.
-	const asked = hint && 'shoot' in hint ? (hint.shoots ?? 1) : 1;
+	const asked = cutting.shoots ?? (hint && 'shoot' in hint ? (hint.shoots ?? 1) : 1);
 	const shoots =
 		cutting.part === 'cluster' || cutting.part === 'leaf'
 			? 1
 			: Math.max(1, Math.min(CUT_SHOOTS_MOST, Math.round(asked)));
 	const fan = hint && 'shoot' in hint ? hint : undefined;
-	const ring = Math.min(1, Math.max(0, fan?.fanRing ?? 0.18));
+	const ring = Math.min(1, Math.max(0, cutting.ring ?? fan?.fanRing ?? 0.18));
 	const lean = Math.min(90, Math.max(-90, fan?.fanLean ?? 0));
 	const spinShare = Math.min(1, Math.max(0, fan?.fanSpin ?? 1));
 	const yaw = Math.min(180, Math.max(-180, fan?.fanYaw ?? 0));
