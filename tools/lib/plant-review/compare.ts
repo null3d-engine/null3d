@@ -490,15 +490,22 @@ function renderSide(
 	file: string,
 	matte: string | undefined,
 	bottomCut: boolean,
+	moundForm = false,
 ): Side {
 	const image = readImage(file);
 	const plant = matte && existsSync(matte) ? matteMask(readImage(matte)) : plantMask(image);
-	return side(label, image, plant, bottomCut);
+	return side(label, image, plant, bottomCut, moundForm);
 }
 
 /** A side of a comparison from a picture and its outline. */
-function side(label: string, image: Rgba, plant: PlantMask, bottomCut: boolean): Side {
-	const measures = measurePlant(image, plant);
+function side(
+	label: string,
+	image: Rgba,
+	plant: PlantMask,
+	bottomCut: boolean,
+	moundForm = false,
+): Side {
+	const measures = measurePlant(image, plant, moundForm);
 	const box = measures.box;
 	if (!box) return { label, image, plant, measures };
 	const bottom = bottomCut ? plant.height - 1 : box.bottom;
@@ -960,12 +967,19 @@ export interface TurnResult {
 }
 
 /** A render frame's side of a comparison. */
-function renderSideOf(runDir: string, frame: RunFrame, label: string, bottomCut: boolean): Side {
+function renderSideOf(
+	runDir: string,
+	frame: RunFrame,
+	label: string,
+	bottomCut: boolean,
+	moundForm = false,
+): Side {
 	return renderSide(
 		label,
 		join(runDir, frame.file),
 		frame.matte ? join(runDir, frame.matte) : undefined,
 		bottomCut,
+		moundForm,
 	);
 }
 
@@ -993,6 +1007,7 @@ export function compareTurn(
 	video: TurnVideo,
 	frames: readonly RunFrame[],
 	title: string,
+	moundForm = false,
 ): TurnResult {
 	const facts = probeVideo(video.path);
 	const references = videoFrames(video.path, facts, WORK_WIDTH);
@@ -1023,13 +1038,21 @@ export function compareTurn(
 	};
 	if (m === 0) return { ...empty, error: 'the run drew no frame of this turn' };
 	const refMasks = references.map((image) => plantMask(image));
-	const refMeasures = refMasks.map((mask, k) => measurePlant(references[k] as Rgba, mask));
+	const refMeasures = refMasks.map((mask, k) =>
+		measurePlant(references[k] as Rgba, mask, moundForm),
+	);
 	const bottomCut = refMeasures.filter((measure) => measure.clipped.bottom).length > n / 2;
 	const refSides = references.map((image, k) =>
-		side(`REF ${(k * frameStep).toFixed(1)}`, image, refMasks[k] as PlantMask, bottomCut),
+		side(
+			`REF ${(k * frameStep).toFixed(1)}`,
+			image,
+			refMasks[k] as PlantMask,
+			bottomCut,
+			moundForm,
+		),
 	);
 	const renderSides = usable.map((frame) =>
-		renderSideOf(runDir, frame, `RENDER ${frame.turn.toFixed(1)}`, bottomCut),
+		renderSideOf(runDir, frame, `RENDER ${frame.turn.toFixed(1)}`, bottomCut, moundForm),
 	);
 	const checks = usable.flatMap((frame, j) => {
 		if (!frame.matte) return [];
@@ -1362,6 +1385,7 @@ export function compareStills(
 	set: ReferenceSet,
 	frames: readonly RunFrame[],
 	title: string,
+	moundForm = false,
 ): { readonly pairs: readonly StillResult[]; readonly sheets: readonly string[] } {
 	const byReference = new Map(
 		frames.flatMap((frame) => (frame.reference ? [[frame.reference, frame]] : [])),
@@ -1404,8 +1428,8 @@ export function compareStills(
 			continue;
 		}
 		const refPlant = plantMask(refImage);
-		const refSide = side(slot.file, refImage, refPlant, false);
-		const render = renderSideOf(runDir, frame, frame.file, false);
+		const refSide = side(slot.file, refImage, refPlant, false, moundForm);
+		const render = renderSideOf(runDir, frame, frame.file, false, moundForm);
 		const fittedKind = refPlant.background.plain
 			? null
 			: skyMaskable(refPlant.background)
