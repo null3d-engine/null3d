@@ -204,8 +204,11 @@ function shootClassProblems(
 	if (shoot.skyward !== undefined) shareProblem(shoot.skyward, `${path}.skyward`, out);
 	if (shoot.phyllotaxis?.kind === 'spiral')
 		wholeProblem(shoot.phyllotaxis.divergence, `${path}.phyllotaxis.divergence`, 0, 360, out);
-	else if (shoot.phyllotaxis?.kind === 'distichous')
+	else if (shoot.phyllotaxis?.kind === 'distichous') {
 		shareProblem(shoot.phyllotaxis.flatten, `${path}.phyllotaxis.flatten`, out);
+		if (shoot.phyllotaxis.turn !== undefined)
+			wholeProblem(shoot.phyllotaxis.turn, `${path}.phyllotaxis.turn`, 0, 180, out);
+	}
 }
 
 function shootProblems(shoots: ShootSpec, out: string[]): void {
@@ -306,6 +309,9 @@ function growthProblems(record: Species, out: string[]): void {
 				`growth.floor is ${growth.floor}; it is a share of the height from 0 to 0.5, a crown's underside`,
 			);
 		wholeProblem(growth.light.cells, 'growth.light.cells', 8, 96, out);
+		const roomBias = growth.light.roomBias;
+		if (roomBias !== undefined && !(roomBias >= 0 && roomBias <= 4))
+			out.push(`growth.light.roomBias is ${roomBias}; it is a power from 0 to 4, 0 for none`);
 		if (growth.internode.length <= 0)
 			out.push(`growth.internode.length is ${growth.internode.length}; it must be above 0`);
 		shareProblem(growth.internode.ageFactor, 'growth.internode.ageFactor', out);
