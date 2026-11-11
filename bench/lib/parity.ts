@@ -535,7 +535,9 @@ export const FEATURE_SCENES: readonly FeatureScene[] = [
 	{
 		test: 'standard-grid',
 		twin: `${TWINS}/standard-grid.html`,
-		sketchSwitches: NO_TONE,
+		// Three.js has no screen-space bounce light, so the comparison draws only the terms both
+		// engines have; the light is what pushed this row past its October margin.
+		sketchSwitches: `${NO_TONE}&bounce=off`,
 		limit: SPECULAR_AA_LIMITS['standard-grid'],
 	},
 	// The grid lit by an environment alone, against three.js's scene.environment from

@@ -171,6 +171,8 @@ function fakeDevice() {
 			submit() {
 				log.push('submit');
 			},
+			// The backend frees a texture that a later creation replaced once this settles.
+			onSubmittedWorkDone: () => Promise.resolve(),
 		},
 	};
 	return { device: device as unknown as GPUDevice, log, buffers, passes, textures };
@@ -325,6 +327,51 @@ describe('WebGPUBackend', () => {
 		expect(textures[scene]?.destroyed).toBe(false);
 	});
 
+	it('makes a bind group again when a texture it names is made again on the same id', () => {
+		const { device } = fakeDevice();
+		const backend = new WebGPUBackend(device, undefined, 'rgba8unorm', SHADERS);
+		const made: GPUBindGroupDescriptor[] = [];
+		const groups: GPUBindGroup[] = [];
+		device.createBindGroup = (descriptor) => {
+			made.push(descriptor);
+			const group = {} as GPUBindGroup;
+			groups.push(group);
+			return group;
+		};
+		const usage = G.TEXTURE_USAGE_TEXTURE_BINDING;
+		replay(
+			backend,
+			drawList(
+				[G.OP_CREATE_TEXTURE, 1, 8, 8, 1, G.FORMAT_RGBA32_FLOAT, usage, 1, 1, G.VIEW_2D],
+				[G.OP_CREATE_BIND_GROUP, 1, G.LAYOUT_FRAME, 1, 0, G.RESOURCE_TEXTURE, 1, 0, 0],
+			),
+		);
+		expect(made).toHaveLength(1);
+		// The scene grows: a data texture is made again on its id, as its rows grow.
+		replay(
+			backend,
+			drawList([G.OP_CREATE_TEXTURE, 1, 16, 16, 1, G.FORMAT_RGBA32_FLOAT, usage, 1, 1, G.VIEW_2D]),
+		);
+		const set = (
+			backend as unknown as {
+				setBindGroup(
+					pass: { setBindGroup(...args: unknown[]): void },
+					words: Uint32Array,
+					at: number,
+				): void;
+			}
+		).setBindGroup.bind(backend);
+		const seen: unknown[] = [];
+		set(
+			{ setBindGroup: (_slot: unknown, group: unknown) => seen.push(group) },
+			Uint32Array.from([0, 1, 0]),
+			0,
+		);
+		// The group is made again from its words, with the texture's new view.
+		expect(made).toHaveLength(2);
+		expect(seen).toEqual([groups[1]]);
+	});
+
 	it('makes no layout with storage buffers in vertex shaders at the start, which compatibility mode refuses', () => {
 		const { device } = fakeDevice();
 		const made: string[] = [];
@@ -412,7 +459,7 @@ describe('WebGPUBackend', () => {
 		expect(backend.gpuMemory.bytes[1]).toBe(256 * 32);
 	});
 
-	it('keeps a running total of the GPU memory that its textures and buffers take', () => {
+	it('keeps a running total of the GPU memory that its textures and buffers take', async () => {
 		const { device, textures } = fakeDevice();
 		const canvas = device.createTexture({ size: [64, 64], format: 'rgba8unorm', usage: 0 });
 		const context = { getCurrentTexture: () => canvas } as unknown as GPUCanvasContext;
@@ -446,6 +493,8 @@ describe('WebGPUBackend', () => {
 				[G.OP_DESTROY_TEXTURE, 6],
 			),
 		);
+		// A texture's bytes leave the total once the GPU reports the work that named it done.
+		await settle();
 		expect([...backend.gpuMemory.bytes]).toEqual([layered + multisampled, 4000]);
 		// A capture's stand-in for a target that resolved into the canvas counts while it lasts.
 		const frame = drawList(
