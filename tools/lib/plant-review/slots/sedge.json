@@ -54,7 +54,12 @@
 		"background": "studio-grey",
 		"view": "whole",
 		"lifted": 1,
-		"lod": 0
+		"lod": 0,
+		"horizon": null,
+		"fill": null,
+		"targetY": null,
+		"targetX": null,
+		"elevation": -14
 	},
 	"10-fine-leaf-tips.png": {
 		"leafLength": 0.1

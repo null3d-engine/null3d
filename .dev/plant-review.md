@@ -184,7 +184,8 @@ own light they read 1.9, and the head's oak reads 2.2, so the light makes most o
   flowering heads are drawn as one stem's hanging spikes, seen close and level, because a twig view
   has no woody stem to frame and falls back to the whole plant. A picture that lifts the plant from
   the ground grows its soil and stands the plant on its lowest root, so a lifted whole plant shows
-  the root ball its photograph shows.
+  the root ball its photograph shows; a lifted whole picture may also look up from below, where the
+  crown's arch would otherwise hide the roots.
 
 ## What a reviewer must see for the picture-judged rows
 
