@@ -100,7 +100,8 @@
 		"thin": 0.153,
 		"span": 0.5,
 		"along": 0.3,
-		"barkMask": true
+		"barkMask": true,
+		"leafyBark": true
 	},
 	"28-young-bark.png": {
 		"thin": 0.015,
