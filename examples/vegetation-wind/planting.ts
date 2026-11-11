@@ -39,10 +39,14 @@ export async function plantWindClump(
 ): Promise<WindClump> {
 	const ids = speciesIds();
 	const across = Math.max(1, Math.ceil(Math.sqrt(ids.length)));
+	// Keep each species' kit and grown variant in the browser's store of derived data, so a later
+	// visit reads the same bytes back instead of growing them again.
+	const cache = ctx.assets.cache('vegetation-wind', 1);
+	const options = { detail: 'high', placeholders: 'missing', cache } as const;
 	const grown = await Promise.all(
 		ids.map(async (id, index) => {
 			const module = await loadSpecies(id);
-			const kit = await prepareSpecies(ctx, module, { detail: 'high', placeholders: 'missing' });
+			const kit = await prepareSpecies(ctx, module, options);
 			const asset = await growPlant(kit, {
 				seed,
 				variant: index % Math.max(1, kit.record.variants),
