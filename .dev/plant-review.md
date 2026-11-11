@@ -53,7 +53,9 @@ states that instead of passing.
 
 Row 6 is read from the sky gap: the share of the crown's own box that shows background, measured on
 both pictures at each whole view. A plant with no bare stem below its foliage, such as a sedge or a
-hosta, runs as wide at its foot as through its mound, so its crown's box is its whole box. The
+hosta, runs as wide at its foot as through its mound, so its crown's box is its whole box. A
+photograph whose lowest boughs sweep beside the stem can read as such a plant. Where the row's outer
+span hides the stem, the tool reads the stem's own central run and puts the crown's foot above it. The
 reviewer writes the render's figure beside the reference's for
 every whole view. The row passes when the render's sky gap is no more than five hundredths above its
 reference's and no more than two hundredths below it. The small allowance below covers the measure:
@@ -334,6 +336,62 @@ than turning a fault of the measure into a pass or a fail.
   piece count survive such a move, and they are what to quote. The fix is tool work in that file,
   not species data. M3-V4 carries the debt, because the review rows are its evidence, while the code
   lives under `tools/`.
+
+## The central-run crown start's reach
+
+A row's central run is the stem where its boughs stand apart from it. The crown start reads that run where the row's outer span is wider than half the plant's widest row. A reference whose boughs sweep beside the stem moves; a reference whose outer span is the stem does not. The change is `3972fd3cc`.
+
+The in-use references that move, by species, their number and the start before and after:
+
+| Species | References that move |
+| --- | --- |
+| agave | 02 0 to 0.0345, 09 0 to 0.019 |
+| apple-tree | 02 0 to 0.2607 |
+| bamboo | 17 0 to 0.0266, 26 0 to 0.0566 |
+| banyan | 02 0.0042 to 0.2881, 08 0 to 0.2857, 18 0.0041 to 0.0248 |
+| bracken | 01 0 to 0.1084, 18 0 to 0.033 |
+| cedar-of-lebanon | 14 0 to 0.0338, 24 0 to 0.0606 |
+| clipped-box-hedge | 17 0 to 0.0938, 19 0.0031 to 0.0453 |
+| coconut-palm | 09 0 to 0.0696, 14 0.0057 to 0.0324 |
+| common-alder | 01 0 to 0.0493, 09 0.0042 to 0.0063 |
+| common-ash | 10 0 to 0.1135, 14 0 to 0.0269, 15 0 to 0.0203 |
+| common-juniper | 04 0 to 0.0073, 10 0 to 0.0449, 18 0.0106 to 0.2624 |
+| douglas-fir | 10 0 to 0.0178, 14 0 to 0.0136, 17 0 to 0.0356 |
+| english-elm | 10 0 to 0.0247, 19 0 to 0.0456 |
+| english-yew | 18 0 to 0.0544 |
+| eucalyptus | 14 0 to 0.1024, 19 0 to 0.163 |
+| european-beech | 02 0 to 0.1086, 15 0 to 0.0266, 18 0.0028 to 0.1567 |
+| european-larch | 03 0 to 0.0769, 05 0 to 0.0191, 19 0 to 0.1212 |
+| fan-palm | 11 0.0102 to 0.0969 |
+| flowering-cherry | 04 0 to 0.0267, 17 0.0016 to 0.0125 |
+| giant-sequoia | 11 0.005 to 0.2137, 14 0.0029 to 0.0172 |
+| hawthorn-shrub | 04 0 to 0.1096 |
+| holm-oak | 20 0 to 0.0254 |
+| horse-chestnut | 04 0 to 0.0179, 08 0 to 0.0537, 14 0 to 0.0027, 15 0 to 0.0078, 17 0 to 0.0224, 19 0 to 0.0153, 28 0.0769 to 0.1538 |
+| hosta | 15 0 to 0.1739, 17 0 to 0.3564, 18 0 to 0.0634 |
+| italian-cypress | 09 0 to 0.0141 |
+| japanese-maple | 04 0 to 0.008, 15 0 to 0.0094 |
+| lavender | 10 0 to 0.0575 |
+| live-oak | 01 0 to 0.1524, 06 0 to 0.0068, 16 0 to 0.0103, 18 0 to 0.1481 |
+| lombardy-poplar | 04 0 to 0.0357, 07 0 to 0.0109, 14 0 to 0.0076, 15 0 to 0.0187, 16 0 to 0.0203, 17 0 to 0.0109, 19 0 to 0.25 |
+| london-plane | 20 0 to 0.0266 |
+| norway-maple | 14 0 to 0.0054, 15 0 to 0.0797 |
+| norway-spruce | 02 0 to 0.0673, 03 0 to 0.0782, 31 0 to 0.0459 |
+| oleander | 03 0 to 0.0043, 19 0 to 0.0607 |
+| olive | 14 0 to 0.0081 |
+| quaking-aspen | 16 0 to 0.0259, 30 0.0034 to 0.0952, 31 0 to 0.3284 |
+| rush | 05 0 to 0.2984 |
+| saguaro | 25 0.0078 to 0.013 |
+| scots-pine | 04 0 to 0.0506, 17 0 to 0.0352 |
+| sedge | 01 0 to 0.0279, 02 0 to 0.0946, 03 0 to 0.0613, 05 0.1377 to 0.3043, 16 0 to 0.0806, 17 0.0012 to 0.0393, 20 0 to 0.0179 |
+| silver-birch | 14 0 to 0.0216, 34 0 to 0.0453 |
+| small-leaved-lime | 15 0 to 0.0187 |
+| stone-pine | 14 0 to 0.0128 |
+| tree-fern | 07 0 to 0.0175 |
+| weeping-willow | 01 0.0034 to 0.055, 09 0 to 0.0156, 18 0.0033 to 0.32, 31 0 to 0.0289 |
+| winter-oak-bare | 14 0 to 0.0918 |
+
+The tuft and mound forms among them (the sedge, hosta, rush and lavender) need the first look: the mound rule puts their crown at the foot, and the central-run rule now reaches them. The beech and the alder have been told.
 
 ## The rows a species still owes
 
