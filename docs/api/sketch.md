@@ -92,6 +92,8 @@ An option out of its range fails the start with [E1214](../errors/E1214.md), bef
 
 `engine.capabilities` holds the values of `engine.capabilities` on the page: the GPU path, its optional features and limits, the depth mode, and the most objects the device draws. [Page API: createEngine](engine.md#what-the-engine-reports) describes them. Check a capability before you use an optional feature, and never check GPU or browser names.
 
+`engine.held` is true when the engine steps the sketch itself, as hold mode and a replay do. It is false when the sketch runs live. A sketch that returns before its scene is complete waits for it when this is true. A held frame or a replay then shows the finished scene. A live page starts the work without awaiting it, and the result appears as it lands.
+
 ```ts
 export default defineSketch(({ scene, engine }) => {
   // A portrait screen gets a wider view, so the scene still fits across it.

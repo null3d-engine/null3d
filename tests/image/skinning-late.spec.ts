@@ -4,6 +4,7 @@
 // frame before it shows the background alone. Once they draw, they stand in the pose that the same
 // scene shows when its characters stand from the first frame.
 import { expect, type Page, test } from '@playwright/test';
+import { REFERENCE_PRESET_SWITCH } from '../../bench/lib/parity.ts';
 import { differentShare } from '../lib/images.ts';
 import { pageResult } from '../lib/page-result.ts';
 
@@ -33,7 +34,10 @@ const MAX_DIFFERENT = 0.002;
 async function load(page: Page, query: string) {
 	const requests: string[] = [];
 	page.context().on('request', (request) => requests.push(new URL(request.url()).pathname));
-	await page.goto(`skinning-late.html?${query}`);
+	// Both pages must draw at the same quality. Left to the device, the start-up check measures each
+	// start and can settle two starts on different presets on a slow GPU, and the two frames then
+	// differ by that quality rather than by their skinning.
+	await page.goto(`skinning-late.html?${query}&${REFERENCE_PRESET_SWITCH}`);
 	const result = await pageResult<SkinningLateResult>(page, 60_000);
 	expect(result.error).toBeUndefined();
 	expect(result.failures).toEqual([]);
