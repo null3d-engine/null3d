@@ -17,4 +17,7 @@ The plan runs `vegetation-grass` at each preset and GPU path that the tier offer
 
 The WebGPU times come from the GPU's timer, over two samples at High and at Ultra, so their spread is thin. At High the passes read 0.00 ms of copies, 0.46 of compute, the wind add-on's field and the blade list together, 0.85 of feature-row conversion, 17.66 of prepass, 0.43, 0.56 and 271.61 of ambient occlusion, where the frame's tail is folded. The Android Chrome gives no WebGL2 GPU timer, so those rows give the CPU time of the busiest thread and the frames drawn.
 
-The High row, 292.29 ms, is past D-241's 208.3 ms High ceiling for this tablet. Its Medium row, 171.31 ms, is inside the 1,820.8 ms ceiling, its Ultra row, 344.49 ms, is inside 499.8, and its Low rows, 66.91 and 64.36 ms, are inside 1,268.5. The hill has no per-tile view cull or distance bands, so the High page draws every tuft in the preset's share.
+The High row, 292.29 ms, and the Ultra row, 344.49 ms, have no D-241 ceiling for this tablet, which
+sets a row at Low and Medium only; the 208.3 and 499.8 beside them are the S24 class's, and these rows
+were measured against them as targets. Its Medium row, 171.31 ms, is inside the 1,820.8 ms ceiling,
+and its Low rows, 66.91 and 64.36 ms, are inside 1,268.5. The hill has no per-tile view cull or distance bands, so the High page draws every tuft in the preset's share.

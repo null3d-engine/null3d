@@ -495,9 +495,13 @@ describe('SketchRunner', () => {
 
 	it("shows the canvas's size at the start of each frame, and the page's capabilities", async () => {
 		const { runner, control, context } = await start(() => ({}));
-		const { viewport, capabilities } = context.engine;
+		const { viewport, capabilities, held } = context.engine;
 		expect([viewport.width, viewport.height, viewport.pixelRatio]).toEqual([320, 180, 2]);
 		expect(capabilities).toEqual(CAPABILITIES);
+		// A live page runs the sketch itself; a held page steps it.
+		expect(held).toBe(false);
+		const holding = await start(() => ({}), undefined, { holdSeconds: 0 });
+		expect(holding.context.engine.held).toBe(true);
 		control.slotFloats[Slot.CanvasCssWidth] = 640.5;
 		control.slotFloats[Slot.PixelRatio] = 1.5;
 		runner.step(0);
