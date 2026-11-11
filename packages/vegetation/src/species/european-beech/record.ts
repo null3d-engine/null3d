@@ -177,6 +177,10 @@ export const record: Species = {
 				// more leaves than the crown's own shoots do. A dozen along each made the piece denser
 				// and narrower, so the sprays reach outward instead: the laterals leave wider.
 				nodes: { mean: 8, spread: 0.5 },
+				// A side spray runs about 1.6 growth units rather than the species' two to 2.4, so
+				// the cut piece keeps its breadth without the long sparse arms that stand the branch
+				// turn up on its edge.
+				arm: { mean: 1.6, spread: 0.2 },
 				internode: ALTERNATE,
 				stem: { radius: [0.006, 0.003] },
 				lateral: 60,
