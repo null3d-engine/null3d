@@ -119,6 +119,11 @@ start measured after an earlier visit says so. The loading overlay names each ph
 counted phase moves with the work. A start whose slow step is uncounted is instrumented until the
 step has a name.
 
+No gate times a start. The same unit suite on the same tree read 176 seconds and then 221 in runs one
+after the other. This machine's neighbour load alone moves a figure by a quarter. A change that adds a
+demo or moves one carries its measured figure in the commit body instead. The figure names the load
+average beside it, and a reader checks it.
+
 The wind demo's start is the case that set the rule. The owner's recording showed three costs. About
 twenty seconds passed before the first plant. The twelve species finished growing at thirty-three
 seconds. The first frame came at about sixty. Those stages are the model for every other demo: the
