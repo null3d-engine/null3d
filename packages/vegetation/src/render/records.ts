@@ -142,6 +142,8 @@ export const HEADER = {
 	sheath: 65,
 	/** A grass blade's collar: its colour, then the share of the blade's base it takes. */
 	collar: 66,
+	/** The share of the armpit's tight parallel creases that draw, 0 where the record names none. */
+	armpit: 67,
 } as const;
 
 /**
@@ -151,7 +153,7 @@ export const HEADER = {
 export const BARK_ZONE_TEXELS = 4;
 
 /** The header's texels that hold anything. */
-export const HEADER_TEXELS = HEADER.collar + 1;
+export const HEADER_TEXELS = HEADER.armpit + 1;
 
 /** An extra's roughness where its record names none. */
 export const EXTRA_ROUGHNESS = 0.6;
@@ -342,6 +344,7 @@ export function speciesHeader(
 			bark.collar.ridge,
 			bark.scars ?? 0,
 		]);
+		texel(header, HEADER.armpit, [bark.collar.creases ?? 0, 0, 0, 0]);
 		const lichen = bark.lichen;
 		texel(header, HEADER.lichen, [...(lichen?.colour ?? [0, 0, 0]), lichen?.amount ?? 0]);
 		texel(header, HEADER.lichenReach, [lichen?.from ?? 0, lichen?.to ?? HALF_MAX, 0, 0]);

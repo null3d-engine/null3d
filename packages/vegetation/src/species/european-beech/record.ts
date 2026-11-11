@@ -334,7 +334,7 @@ export const record: Species = {
 		],
 		displacement: 0.006,
 		// Still 7: the wrinkles gather in the armpit of a limb's joint.
-		collar: { swell: 0.45, length: 1.8, ridge: 0.7 },
+		collar: { swell: 0.45, length: 1.8, ridge: 0.7, creases: 1 },
 		// Still 16: the green sits on the limb's upper side, while the bole stays silver-grey; a film
 		// over the whole plant gives that, with the upper faces taking most of it. Still 14 keeps a
 		// little more on the buttress toes.

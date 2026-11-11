@@ -107,6 +107,8 @@ const HEADER_SHEATH: i32 = 65;
 const HEADER_COLLAR: i32 = 66;
 const HEADER_MOSS: i32 = 17;
 const HEADER_MOSS_REACH: i32 = 18;
+// The share of the armpit's tight parallel creases that draw, 0 where the record names none.
+const HEADER_ARMPIT: i32 = 67;
 const HEADER_EXTRAS: i32 = 19;
 const HEADER_BUD: i32 = 23;
 const MAX_EXTRAS: i32 = 4;
@@ -1037,9 +1039,9 @@ fn surface(input: SurfaceInput) -> Surface {
         // The collar's dark ridge where a branch joins its parent.
         bark *= 1.0 - 0.5 * moss_reach.z * junction;
         // The bark gathers in tight parallel creases where a limb joins its parent: rings across
-        // the limb's own grain, deepest in the armpit and fading with the collar's ridge. A
-        // species whose record names no ridge draws none, so its bark stays as it was.
-        let armpit = moss_reach.z * smoothstep(0.25, 0.9, junction);
+        // the limb's own grain, deepest in the armpit. A species whose record names none draws
+        // nothing here, so its bark stays as it was.
+        let armpit = header(HEADER_ARMPIT).x * smoothstep(0.25, 0.9, junction);
         if (armpit > 0.0) {
             let crease = sin(input.uv.y * CREASE_FREQUENCY);
             let trough = 0.5 - 0.5 * crease;
