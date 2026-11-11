@@ -476,6 +476,7 @@ export default defineSketch(async (ctx) => {
 	// A review picture is laid beside a reference that carries no display curve; a tone curve
 	// would crush and saturate the sky and the foliage that the reference shows as they are.
 	post.set({ toneMapping: 'none' });
+	if (QUERY.motion) debug.view('motion');
 	const notes: string[] = [];
 	// A registered species grows through its own stages, with a stand-in only for each stage that is
 	// not built yet; any other id, or the query's `placeholders`, grows the stand-in of every stage.
