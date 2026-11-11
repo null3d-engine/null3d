@@ -638,23 +638,25 @@ last, and returns flat arrays of nine floats for each point.
   in Creek, with nothing in the ground layer. Their bounds are narrower than the ground's own
   bands. A scene on other terrain moves the numbers that differ.
 
-**Figures.** Creek's 160 m valley, placed with its eight species at seed 7, holds **1,245 points**:
-101 canopy trees, 170 saplings, 956 ground plants and 18 dead wood. The checksum of that placement is
-**2493806866**, read from the exact bytes of every float, so a page compares its point list with
-another device's and any difference at all shows. The earlier figure of 956 points and checksum
-3358570449 was taken before the scatter's own changes moved the placement, and the page has shipped
-the later reference since; the Galaxy S25 reaches it on both GPU paths, recorded at
-[20261110-025541](../tested-devices/galaxy-s25-sm-s931b-chrome/20261110-025541-vegetation-scatter.md). The device page compares it on every device
-and both GPU paths. The ground maps hold their samples as 32-bit floats, which is what keeps the
+**Figures.** Creek's 160 m valley, placed with its eight species at seed 7, holds **1,020 points**
+now that the waterline rules refuse ground at or below the water. The checksum of that placement is
+**2006477110**, read from the exact bytes of every float, so a page compares its point list with
+another device's and any difference at all shows. Before the waterline rules the shipped reference
+was **1,245 points** with checksum **2493806866**: 101 canopy trees, 170 saplings, 956 ground plants
+and 18 dead wood. The earlier figure of 956 points and checksum 3358570449 came before the scatter's
+own changes moved the placement. No device row reaches the current reference: the Galaxy S25's
+latest run reaches the 1,245 one on both GPU paths, recorded at
+[20261110-025541](../tested-devices/galaxy-s25-sm-s931b-chrome/20261110-025541-vegetation-scatter.md). The ground maps hold their samples as 32-bit floats, which is what keeps the
 samples of a height function that uses `Math.sin` and a fractional power equal between engines: the
 last bits that an engine may round another way do not survive the narrowing. A height function that
 answers other samples on another engine would move the points that it places.
 
 The species records set the room that each plant keeps, so the placement follows a change to one.
 The conifer's whorled tiers and the cards of many small leaves moved it twice after the linked runs
-below were measured. Only the Galaxy S25's latest run reaches the shipped reference of
-1,245 plants and checksum 2493806866, on both GPU paths. No Mac or iPad row reaches it: those rows,
-and the Galaxy S24's, hold the earlier record of 956 plants and checksum 3358570449.
+below were measured. Only the Galaxy S25's latest run reaches the 1,245 reference
+of that day, on both GPU paths, and the waterline rules have replaced it since. No Mac or iPad row
+reaches it: those rows, and the Galaxy S24's, hold the earlier record of 956 plants and checksum
+3358570449.
 
 **The budget.** The placement runs once, after the ground maps and before the first plant draws, so
 it holds a one-time line rather than a frame ceiling: 250 ms on the reference Mac, the line that
@@ -666,7 +668,7 @@ the ground maps' samples, 0.13 MB for the variance maps and 34 KB for the points
 The `vegetation-scatter` plan ran on two cloud phones, a cloud iPad and the Mac. The Galaxy S25's
 rows are its later run; every other row is an earlier run.
 
-| Device | Plants | Checksum | Placement | Ground maps | Display | At the shipped reference |
+| Device | Plants | Checksum | Placement | Ground maps | Display | At the shipped reference then |
 | --- | --- | --- | --- | --- | --- | --- |
 | Galaxy S24, Chrome, WebGL2 page | 956 | 3358570449 | 7.35 ms | 71.54 ms | 30 Hz | no |
 | Galaxy S24, Chrome, WebGPU page | 956 | 3358570449 | 7.19 ms | 55.19 ms | 30 Hz | no |
