@@ -3,8 +3,22 @@
 	"11-blade-cluster.png": { "cut": 0.35, "pick": 1 },
 	"12-single-blade-upper.png": { "leaves": 0.72, "roll": -45 },
 	"13-single-blade-underside.png": { "leaves": 0.72, "roll": -45 },
-	"15-sheath-and-collar.png": { "span": 0.13, "barkMask": true },
-	"16-ligule-and-collar.png": { "span": 0.13, "barkMask": true },
+	"15-sheath-and-collar.png": {
+		"view": "branch",
+		"cut": 0.12,
+		"pick": 0,
+		"leaves": 1.3,
+		"leafLength": 0.1,
+		"roll": 0
+	},
+	"16-ligule-and-collar.png": {
+		"view": "branch",
+		"cut": 0.12,
+		"pick": 0,
+		"leaves": 1.3,
+		"leafLength": 0.1,
+		"roll": 0
+	},
 	"18-silhouette.png": { "horizon": 0.455 },
 	"19-seed-head.png": { "distance": 0.32, "fov": 30 },
 	"23-leaf-cluster-studio.png": { "cut": 0.35, "pick": 1 },
