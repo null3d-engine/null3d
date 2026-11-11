@@ -12,6 +12,7 @@ import type {
 	SpeciesKitData,
 } from './asset';
 import {
+	AXIS_CULM,
 	AXIS_ROOT,
 	AXIS_STEM,
 	AXIS_STIPE,
@@ -257,6 +258,8 @@ interface Candidate {
 	/** Axes in its subtree, itself included, and the bud sites they carry in light enough for shoots. */
 	readonly axes: number;
 	readonly buds: number;
+	/** 1 when the axis is a flowering head: its shoots are the flowers, not the leaves. */
+	readonly head: number;
 	/** Its pipe radius at its first node, the thickness a piece's photograph shows. */
 	readonly thickness: number;
 	/** The mean age of its nodes, from 0 for a shoot still opening to 1 for a mature one. */
@@ -266,8 +269,9 @@ interface Candidate {
 /**
  * The axes a branch cut can start from, ranked: those of the wanted order (any order past the stems
  * when it is undefined): first those that carry bud sites in enough light to grow shoots (at or
- * above the record's shade line), then those whose subtree's extent is near `length`, then those
- * that divide, then by how near the extent is, then the sunniest.
+ * above the record's shade line), then those whose subtree's extent is near `length`, then a leafy
+ * shoot before a flowering head, then those that divide, then the thickest, then by how near the
+ * extent is, then the sunniest.
  */
 function candidates(
 	skeleton: MacroSkeleton,
@@ -339,22 +343,27 @@ function candidates(
 				light: (light[a] as number) / Math.max(1, nodes[a] as number),
 				axes: subtreeAxes[a] as number,
 				buds: subtreeBuds[a] as number,
+				head: (axes.kind[a] as number) === AXIS_CULM ? 1 : 0,
 				thickness: skeleton.radius[axes.first[a] as number] as number,
 				age: vigor[a] as number,
 			});
 	const match = (c: Candidate) => Math.round(Math.abs(log(c.extent / length)) / MATCH_STEP);
 	const near = (c: Candidate) => (match(c) <= NEAR_STEPS ? 1 : 0);
 	const leafy = (c: Candidate) => (c.buds > 0 ? 1 : 0);
+	const head = (c: Candidate) => c.head;
 	const divides = (c: Candidate) => (c.axes > 1 ? 1 : 0);
-	// A photograph of a piece shows a thick axis where it shows one at all, so a cut with no hinted
-	// order prefers the thickest axis among those near the asked length, before the closest match.
+	// A photograph of a piece shows a thick axis where it shows one at all. Among the pieces near the
+	// asked length, a leafy shoot ranks before a flowering head, and a piece that divides ranks before
+	// a single thick axis, so a cluster is a fan of leaves and not one blade or one panicle; then the
+	// thickest axis, then the closest match.
 	return out.sort(
 		(x, y) =>
 			(young ? x.age - y.age : 0) ||
 			leafy(y) - leafy(x) ||
 			near(y) - near(x) ||
-			y.thickness - x.thickness ||
+			head(x) - head(y) ||
 			divides(y) - divides(x) ||
+			y.thickness - x.thickness ||
 			match(x) - match(y) ||
 			y.light - x.light ||
 			x.axis - y.axis,

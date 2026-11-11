@@ -24,6 +24,9 @@ const ALTERNATE: readonly (readonly [number, number])[] = [
 
 /** The silver birch's record. */
 export const record: Species = {
+	// A first pass at the floors a phone's lighter form keeps, set from the species' form and to
+	// be measured on the phone set before they are trusted.
+	sparse: { limbs: 0.45, leaves: 0.55, coarseness: 0.5 },
 	id: 'silver-birch',
 	name: 'Silver birch',
 	latin: 'Betula pendula',
@@ -480,9 +483,6 @@ export const record: Species = {
 	textures: 'own',
 	variants: 6,
 	seedSalt: 20221108,
-	// A first pass at the floors a phone's lighter form keeps, set from the species' form and to
-	// be measured on the phone set before they are trusted.
-	sparse: { limbs: 0.45, leaves: 0.55, coarseness: 0.5 },
 	cuttings: {
 		// Still 21: a cut branch of about a metre, its twigs arching out and drooping; it draws 0.92 m.
 		branch: { shoot: 'whip', pick: 1 },
