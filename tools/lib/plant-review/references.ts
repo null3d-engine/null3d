@@ -1105,6 +1105,12 @@ export function plantMask(image: Rgba): PlantMask {
 	if (!background.plain && !skyMaskable(background) && !soilMaskable(background, height))
 		return { width, height, mask, background };
 	const horizon = background.horizon ?? height;
+	// A fitted sky or ground is trusted only where it finds a plausible subject. A picture of
+	// something else against a natural backdrop, such as bark or foliage, still admits a smooth
+	// surface on its border, and the surface then marks a few textured specks as the plant. A
+	// subject that a fitted background finds under a fiftieth of the frame is that failure, not a
+	// plant: every real reference's subject fills more.
+	const MIN_FITTED_PLANT_SHARE = 0.02;
 	// A plain background's spread was tuned against studio paper; a fitted sky or ground carries a
 	// wider residual, so its limit takes fewer spreads or the plant itself falls inside it.
 	const skyLimit = threshold(background.sky, 8, background.plain ? 3.5 : 2);
@@ -1140,6 +1146,11 @@ export function plantMask(image: Rgba): PlantMask {
 			height - Math.max(2, Math.round(height * FOOT_SHARE)),
 		);
 	keepPlantParts(mask, width, height, horizon);
+	if (!background.plain) {
+		let kept = 0;
+		for (let at = 0; at < mask.length; at++) kept += mask[at] as number;
+		if (kept / (width * height) < MIN_FITTED_PLANT_SHARE) mask.fill(0);
+	}
 	let plantToGround: number | undefined;
 	if (background.ground) {
 		const groundAt = surfaceAt(background.ground, 0.5, (horizon / height + 1) / 2);
