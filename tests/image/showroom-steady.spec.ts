@@ -5,7 +5,11 @@
 // holds the demo's camera still and measures the floor on consecutive frames as the browser presents
 // them, not through the engine's own reader, which draws a frame again and hides the fault.
 import { expect, test } from '@playwright/test';
+import { defaultEnvironment } from '../../packages/cli/src/browser.js';
 import { decodePngRgba } from '../../packages/cli/src/png.js';
+
+/** True on the software GPU, where the page draws a smaller window. */
+const SOFTWARE_GPU = defaultEnvironment() === 'chromium-swiftshader';
 
 /** The share of the canvas to measure, of its width and height: the lit floor before the car. */
 const BOX = [0.3, 0.7, 0.6, 0.95] as const;
@@ -59,6 +63,10 @@ function meanOf(
 }
 
 test('the showroom floor holds still on a still camera', async ({ page, context }) => {
+	// A software GPU draws the full window's studio too slowly to publish the engine in time. The
+	// measure reads the floor's mean luminance over boxes that are shares of the canvas, so a
+	// smaller window keeps the same reading; a real GPU keeps the full window.
+	if (SOFTWARE_GPU) await page.setViewportSize({ width: 480, height: 320 });
 	test.setTimeout(READY_MS + CAPTURE_MS + 60_000);
 	await page.goto('/examples/?demo=showroom&bench');
 	await page.waitForFunction(
