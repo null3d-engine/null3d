@@ -693,8 +693,7 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 		const n = plant.budNode[b] as number;
 		if (n < 0) return light;
 		return (
-			light *
-			room.factor(plant.y[n] as number, Math.atan2(plant.z[n] as number, plant.x[n] as number))
+			light * room.factor(plant.y[n] as number, atan2(plant.z[n] as number, plant.x[n] as number))
 		);
 	};
 
@@ -1641,7 +1640,7 @@ function roomLightTable(
 			const r1 = bt0 * (1 - u) + bt1 * u;
 			const r = r0 * (1 - w) + r1 * w;
 			const mean = (means[i0] as number) * (1 - w) + (means[i1] as number) * w;
-			return mean > 0 ? (r / mean) ** power : 1;
+			return mean > 0 ? pow(r / mean, power) : 1;
 		},
 	};
 }

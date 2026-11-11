@@ -4,6 +4,10 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import type { QualityPreset, SketchContext } from '@null3d/engine';
 import type { WindField } from '@null3d/wind';
+import { type Species } from '../core/record';
+import { curveAt } from '../core/types';
+import { record as meadowRecord } from '../species/meadow-grass/record';
+import { grassCover } from './cover';
 import { createGrass, placeTufts, tuftMesh } from './grass';
 
 /** A place that accepts every tuft: a flat ground. */
@@ -75,6 +79,61 @@ describe('the tuft mesh', () => {
 	test('one seed grows the same tuft', () => {
 		expect(tuftMesh(7, 3, 3)).toEqual(tuftMesh(7, 3, 3));
 		expect(tuftMesh(7, 3, 3)).not.toEqual(tuftMesh(8, 3, 3));
+	});
+});
+
+describe('the cover that meets a species', () => {
+	if (meadowRecord.foliage.kind !== 'grass-blade') throw new Error('meadow grass lost its blade');
+	const blade = meadowRecord.foliage.blade;
+
+	test('the cover takes the meadow grass blade and the colour of its upper face', () => {
+		const cover = grassCover(meadowRecord);
+		expect(cover.blade).toBe(blade);
+		expect(cover.color).toMatch(/^#[0-9a-f]{6}$/);
+		expect(cover.color).toBe('#648e29');
+	});
+
+	test('a species blade gives the cover its width, its keel and its tip', () => {
+		const blades = 2;
+		const segments = 3;
+		const shaped = tuftMesh(7, blades, segments, blade);
+		// Three vertices across each row, one at the midrib, and one at the tip.
+		expect(shaped.positions.length).toBe(blades * (segments * 3 + 1) * 3);
+		expect(shaped.indices.length).toBe(blades * (2 * 2 * 6 + 2 * 3));
+		const at = (index: number) => shaped.positions[index] ?? Number.NaN;
+		// The collar's two sides span the record's profile of its own width.
+		const span = Math.hypot(at(0) - at(6), at(1) - at(7), at(2) - at(8));
+		expect(span).toBeCloseTo(blade.width * curveAt(blade.profile, 0), 5);
+		// The midrib sits between them and below, as the record's fold makes it.
+		expect(at(3)).toBeCloseTo((at(0) + at(6)) / 2, 5);
+		expect(at(4)).toBeLessThan(at(1));
+		expect(at(4)).toBeLessThan(at(7));
+		// The two halves light apart, since the fold turns each one's normal its own way.
+		const normal = (index: number) => shaped.normals[index] ?? Number.NaN;
+		expect(Math.abs(normal(0) - normal(6))).toBeGreaterThan(0.01);
+	});
+
+	test('a blade with no fold keeps the flat two-sided strip', () => {
+		const flat = { ...blade, fold: 0 };
+		const mesh = tuftMesh(7, 1, 3, flat);
+		expect(mesh.positions.length).toBe((3 * 2 + 1) * 3);
+		expect(mesh.indices.length).toBe(2 * 6 + 3);
+		// The collar still spans the record's profile of its own width, and its two sides stand level.
+		const at = (index: number) => mesh.positions[index] ?? Number.NaN;
+		const span = Math.hypot(at(0) - at(3), at(2) - at(5));
+		expect(span).toBeCloseTo(blade.width * curveAt(blade.profile, 0), 5);
+		expect(at(1)).toBeCloseTo(at(4), 6);
+	});
+
+	test('a cover with no species blade draws the strip it draws today', () => {
+		const mesh = tuftMesh(7, 2, 3);
+		expect(mesh.positions.length).toBe(2 * (3 * 2 + 1) * 3);
+		expect(mesh.indices.length).toBe(2 * (2 * 6 + 3));
+	});
+
+	test('a species without a grass blade is refused', () => {
+		const oak = { ...meadowRecord, id: 'oak', foliage: { kind: 'none' } } as Species;
+		expect(() => grassCover(oak)).toThrow('no grass blade');
 	});
 });
 

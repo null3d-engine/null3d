@@ -202,8 +202,11 @@ function shootClassProblems(
 	if (shoot.skyward !== undefined) shareProblem(shoot.skyward, `${path}.skyward`, out);
 	if (shoot.phyllotaxis?.kind === 'spiral')
 		wholeProblem(shoot.phyllotaxis.divergence, `${path}.phyllotaxis.divergence`, 0, 360, out);
-	else if (shoot.phyllotaxis?.kind === 'distichous')
+	else if (shoot.phyllotaxis?.kind === 'distichous') {
 		shareProblem(shoot.phyllotaxis.flatten, `${path}.phyllotaxis.flatten`, out);
+		if (shoot.phyllotaxis.turn !== undefined)
+			wholeProblem(shoot.phyllotaxis.turn, `${path}.phyllotaxis.turn`, 0, 180, out);
+	}
 }
 
 function shootProblems(shoots: ShootSpec, out: string[]): void {
