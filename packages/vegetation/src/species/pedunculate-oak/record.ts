@@ -271,6 +271,10 @@ export const record: Species = {
 			// rather than hanging under them.
 			lift: 15,
 			skyward: 0.65,
+			// Stills 01, 02 and 18: the crown is a set of leaf masses with sky between them, not an
+			// even fill. The shoots gather into plates a couple of metres across, and within a plate
+			// into rosette-sized tufts, while the runs between them stand bare.
+			clump: { spacing: 2, depth: 0.6, fine: { spacing: 0.6, depth: 0.5 } },
 			scale: { mean: 1.4, spread: 0.15 },
 		},
 	},
