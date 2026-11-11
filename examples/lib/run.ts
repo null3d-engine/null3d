@@ -275,9 +275,11 @@ interface LoadingMessage {
 	value?: number;
 	/**
 	 * `'files'` keeps the message in the downloads' lane, so it runs beside the scene's own
-	 * milestones. Without it, the message names the scene's current phase.
+	 * milestones. `'build'` counts the scene's own work, such as the plants it grows, so the bar
+	 * follows that work rather than a timer. Without either, the message names the scene's current
+	 * phase.
 	 */
-	kind?: 'files';
+	kind?: 'files' | 'build';
 }
 
 /** The loading overlay of a starting demo. */
@@ -558,7 +560,8 @@ export function createLoader(canvas: HTMLCanvasElement): Loader {
 			const lane: LoadLane = message.kind === 'files' ? 'files' : 'scene';
 			const counted = typeof message.value === 'number' && Number.isFinite(message.value);
 			const key = `${lane}:${message.text}`;
-			if (counted) main.files(message.value as number);
+			if (counted && message.kind === 'build') main.build(message.value as number);
+			else if (counted) main.files(message.value as number);
 			else if (key !== laneKeys[lane]) main.scene();
 			laneKeys[lane] = key;
 			showPhase(lane, {
