@@ -399,7 +399,9 @@ than its work. The class's Medium ceiling is the S25's, which is the only real f
 Two figures are owed by a device rather than left out by choice. No run gives Creek on WebGPU on
 the iPhone or the iPad, because its Low page stalls there, which is a recorded driver fault
 ([Driver bug reports](../driver-bugs.md)). The Galaxy Tab A9 Plus has no High or Ultra row, because
-those presets draw on core WebGPU only, and the tablet offers no WebGPU adapter.
+those presets draw on core WebGPU only, and the tablet offered no WebGPU adapter when the table was
+set. The tablet's own run reports the WebGPU tier at all four presets, so the reason no longer holds and a ceiling for its High and Ultra rows is owed; until then those figures have no
+budget to compare.
 
 - **Frame time:** the dressed Creek and forest must stay within the frame interval of the same
   preset, device and path. A preset that falls to a lower one at the same page fails.
@@ -1082,9 +1084,10 @@ the near shadows and 283.97 without. The rows that D-241's ceilings compare draw
 own density. On the same tablet, 2,312 tufts, its valley's 2.0 on each square meter, take 306.09 ms
 with the view cull and the far share and 318.77 without. 6,820 tufts, its bank strip's 5.9, take
 490.73 and 527.17. The cull takes 4.0 per cent back at the valley's density and 6.9 at the strip's.
-Neither row reached 208.3 before the far cover. The same page with the grass switched off measures 179.18 ms, which is
-29.12 ms inside the ceiling, so the base scene does not break it: the grass at the valley's density
-adds 126.91 ms and at the strip's 311.55. The frame's own cost sits mostly in its opaque pass: with
+Neither row reached 208.3, the S24 class's High ceiling, which these rows were measured against as a
+target because the tablet has no row above Medium. The same page with the grass switched off
+measures 179.18 ms, which is 29.12 ms inside that target, so the base scene does not break it: the
+grass at the valley's density adds 126.91 ms and at the strip's 311.55. The frame's own cost sits mostly in its opaque pass: with
 the sun's contact shadows and the bounce light off, the scene measures 143.49 ms and the timer names the
 opaque pass at 138.94. The timer times the frame's first seven passes one by one and adds every pass after them to
 the last of those, so the 176.36 ms that it gave ambient occlusion's denoise was the opaque pass
@@ -1092,14 +1095,14 @@ and the rest of the frame in that slot. The three ambient
 occlusion passes, which the contact shadows and the bounce light keep, cost about 43 ms: the same
 scene measures 186.25 with the contact shadows on. The pictures show that neither effect changes what
 the hill looks like: the four drawings, with either effect off and with both, are pixel for pixel the
-same. With both off the hill at Creek's density measures 235.41 ms, 27.11 ms past the ceiling, so the
-effects' 43 ms does not close the budget either. The grass's fixed cost, its shadow pass and draw
+same. With both off the hill at Creek's density measures 235.41 ms, 27.11 ms past the target, so the
+effects' 43 ms does not close the gap either. The grass's fixed cost, its shadow pass and draw
 setup, adds about 33 ms on top of the per-tuft cost. The owner ruled that the demo draws without the
 two effects: their pictures are the same at Low, Medium and High, and the Creek sketch pins the
 settings so a preset change does not bring them back. The far cover then closed the gap: at 24.31
 meters the row measures 209.72 and 196.02 ms, mean 202.87, while 25.59 meters gives 217.45 and
 216.60. The base page bracketed that block at 162.27 and 156.30, so the machine drifted about 6 ms
-within it, and 208.3 sits inside the row's spread at the chosen distance rather than outside it.
+within it, and the 208.3 target sits inside the row's spread at the chosen distance rather than outside it.
 The fit through two tuft counts first put the base at 211.9 ms and was read as the scene's own cost. A
 fitted intercept is not a base frame: it carries everything the removal would also take away, whether or
 not that cost varies with the count, and only switching the thing off gives the base. Every view culls the
@@ -1108,8 +1111,8 @@ cascade. It reads the frame's own matrix and the one count that the compute pass
 tablet the cull takes little back, because the cascades were never the large part: three runs at
 2,312 tufts measure 288.75, 294.98 and 298.22 ms against 306.09 before, 3 to 6 per cent, and at
 6,820 they straddle the earlier 490.73 at 466.35 to 497.68. The three cascade passes together time
-at 2.1 to 2.2 ms a frame at the valley's density and 6.3 at the strip's. The row still misses 208.3
-by about 87 ms, and the two places that could close it stand unchanged.
+at 2.1 to 2.2 ms a frame at the valley's density and 6.3 at the strip's. The row still misses that
+target by about 87 ms, and the two places that could close it stand unchanged.
 Two pictures hold the look. `vegetation-grass` holds the hill. `vegetation-grass-shadow` holds it at a
 low sun, where the grass's shadows follow the count, so a view that drew the capacity would show the
 rows past it.
