@@ -188,28 +188,31 @@ export const record: Species = {
 				share: 0,
 				years: 2,
 				length: { mean: 1, spread: 0.1 },
-				nodes: { mean: 7, spread: 1 },
+				nodes: { mean: 48, spread: 4 },
 				internode: [
 					[0, 1.6],
 					[0.5, 1],
 					[1, 0.8],
 				],
 				stem: { radius: [0.012, 0.006] },
-				laterals: { mean: 2.7, spread: 0.3 },
+				laterals: { mean: 3, spread: 0 },
 				lateralGap: 0.25,
 				bend: { length: 0.09, angle: 19 },
 				leafScale: [
-					[0, 0.85],
-					[1, 0.95],
+					[0, 1.25],
+					[1, 1.4],
 				],
 				leafAngle: [
-					[0, 38],
-					[1, 50],
+					[0, 22],
+					[1, 32],
 				],
 				leafAngleSpread: 10,
 				leafYears: 2,
-				skyward: 0.2,
-				droop: 55,
+				// The piece's leaves face across its two ranks rather than up, so a camera looking
+				// at the branch's plane sees the blades and not their edges.
+				phyllotaxis: { kind: 'distichous', flatten: 0.2 },
+				skyward: 0.05,
+				droop: 70,
 			},
 			{
 				name: 'spray',
@@ -217,7 +220,7 @@ export const record: Species = {
 				share: 0,
 				years: 2,
 				length: { mean: 0.35, spread: 0.04 },
-				nodes: { mean: 4, spread: 1 },
+				nodes: { mean: 8, spread: 1 },
 				internode: [
 					[0, 1.4],
 					[1, 0.9],
@@ -227,17 +230,17 @@ export const record: Species = {
 				lateralGap: 0.3,
 				bend: { length: 0.07, angle: 22 },
 				leafScale: [
-					[0, 0.85],
-					[1, 1],
+					[0, 1],
+					[1, 1.1],
 				],
 				leafAngle: [
-					[0, 38],
-					[1, 50],
+					[0, 30],
+					[1, 40],
 				],
 				leafAngleSpread: 12,
 				leafYears: 1,
 				skyward: 0.2,
-				droop: 45,
+				droop: 60,
 			},
 			{
 				name: 'spur',
@@ -452,10 +455,13 @@ export const record: Species = {
 	forms,
 	roundBand,
 	cuttings: {
-		// Still 21: a metre of arching branch with its hanging shoots still on it.
-		branch: { shoot: 'cut', shoots: 3 },
-		// Still 22: a short twig with two or three pliant shoots hanging from its end.
-		subbranch: { shoot: 'spray', shoots: 3 },
+		// Still 21: a metre of arching branch with its hanging shoots still on it. The shoots share
+		// one base and stay in one leaf plane, and the whole piece turns a quarter about its axis so
+		// that plane and its side shoots face the frame.
+		branch: { shoot: 'cut', shoots: 8, fanRing: 0.06, fanSpin: 0, fanYaw: 90 },
+		// Still 22: a short twig with two or three pliant shoots hanging from its end. Its photograph
+		// is narrower than the branch's, so the piece turns less about its axis.
+		subbranch: { shoot: 'spray', shoots: 3, fanRing: 0.06, fanSpin: 0, fanYaw: 38 },
 		// Still 23: the end of one shoot, its narrow leaves in alternate ranks.
 		cluster: { shoot: 'spur' },
 		// Stills 12, 13, 24 and 25 lay the leaf flat on a copy stand.
