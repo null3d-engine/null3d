@@ -22,6 +22,9 @@ const RANK: readonly (readonly [number, number])[] = [
 
 /** The weeping willow's record. */
 export const record: Species = {
+	// A first pass at the floors a phone's lighter form keeps, set from the species' form and to
+	// be measured on the phone set before they are trusted.
+	sparse: { limbs: 0.4, leaves: 0.5, coarseness: 0.55 },
 	id: 'weeping-willow',
 	name: 'Weeping willow',
 	latin: 'Salix babylonica',
@@ -446,9 +449,6 @@ export const record: Species = {
 	textures: 'own',
 	variants: 6,
 	seedSalt: 20261108,
-	// A first pass at the floors a phone's lighter form keeps, set from the species' form and to
-	// be measured on the phone set before they are trusted.
-	sparse: { limbs: 0.4, leaves: 0.5, coarseness: 0.55 },
 	forms,
 	roundBand,
 	cuttings: {
