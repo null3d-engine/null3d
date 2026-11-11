@@ -7,16 +7,16 @@
 		"view": "branch",
 		"cut": 0.12,
 		"pick": 0,
-		"leaves": 0.25,
-		"leafLength": 0.1,
+		"span": 0.03,
+		"along": 0.05,
 		"roll": 0
 	},
 	"16-ligule-and-collar.png": {
 		"view": "branch",
 		"cut": 0.12,
 		"pick": 0,
-		"leaves": 0.25,
-		"leafLength": 0.1,
+		"span": 0.03,
+		"along": 0.05,
 		"roll": 0
 	},
 	"18-silhouette.png": { "horizon": 0.455 },
