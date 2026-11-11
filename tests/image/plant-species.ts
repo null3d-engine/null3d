@@ -30,9 +30,13 @@ const PANELS_SECONDS = 120;
  * about the load the suite runs under. It is the second figure this species corrected after taking
  * it on the wrong load, the first being its young-bark color read against a picture that framed a
  * great limb rather than young wood.
+ *
+ * A tree fern's crown carries about two thousand pinnae, each a leaf of its own, and the software
+ * GPU drew three of the four panels within the shared limit and stopped before the last.
  */
 const PANELS_SECONDS_BY_SPECIES: Readonly<Record<string, number>> = {
 	'common-alder': 240,
+	'tree-fern': 180,
 };
 
 /** The picture test of each species folder. */

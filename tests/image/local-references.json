@@ -305,6 +305,12 @@
 		"date": "2026-11-10",
 		"reason": "M3-V7's sway picture: the branch is not pushed to CI, so this Mac's SwiftShader drew the software set; a CI drawing replaces it"
 	},
+	"chromium-swiftshader/compat/plant-tree-fern.png": {
+		"test": "plant-tree-fern",
+		"tier": "compat",
+		"date": "2026-11-09",
+		"reason": "the cut-piece curve fix moved the pieces the panels view draws; this Mac's SwiftShader redrew the set from the branch, and CI's own drawing judges it"
+	},
 	"chromium-swiftshader/compat/probe-grid-wall-night.png": {
 		"test": "probe-grid-wall-night",
 		"tier": "compat",
@@ -694,6 +700,12 @@
 		"tier": "webgl2",
 		"date": "2026-11-10",
 		"reason": "M3-V7's sway picture: the branch is not pushed to CI, so this Mac's SwiftShader drew the software set; a CI drawing replaces it"
+	},
+	"chromium-swiftshader/webgl2/plant-tree-fern.png": {
+		"test": "plant-tree-fern",
+		"tier": "webgl2",
+		"date": "2026-11-09",
+		"reason": "the cut-piece curve fix moved the pieces the panels view draws; this Mac's SwiftShader redrew the set from the branch, and CI's own drawing judges it"
 	},
 	"chromium-swiftshader/webgl2/probe-grid-wall-night.png": {
 		"test": "probe-grid-wall-night",
@@ -1132,6 +1144,12 @@
 		"tier": "webgpu",
 		"date": "2026-11-10",
 		"reason": "M3-V7's sway picture: the branch is not pushed to CI, so this Mac's SwiftShader drew the software set; a CI drawing replaces it"
+	},
+	"chromium-swiftshader/webgpu/plant-tree-fern.png": {
+		"test": "plant-tree-fern",
+		"tier": "webgpu",
+		"date": "2026-11-09",
+		"reason": "the cut-piece curve fix moved the pieces the panels view draws; this Mac's SwiftShader redrew the set from the branch, and CI's own drawing judges it"
 	},
 	"chromium-swiftshader/webgpu/probe-grid-wall-night.png": {
 		"test": "probe-grid-wall-night",

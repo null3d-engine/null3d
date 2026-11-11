@@ -34,7 +34,7 @@ export const record: Species = {
 		],
 		// Still 22 and the fact sheet: two to four blades on each tiller, set in two ranks. The
 		// whole-plant pictures carry four or five, so the crown takes the fuller end.
-		blades: { mean: 4, spread: 0.4 },
+		blades: { mean: 5, spread: 0.4 },
 		ranks: 2,
 		sheath: { mean: 0.035, spread: 0.01 },
 		sheathRadius: 0.0018,
@@ -82,11 +82,11 @@ export const record: Species = {
 		kind: 'grass-blade',
 		blade: {
 			// Stills 01, 02 and 12: blades of even width that close in a short blunt hood. The
-			// leaf picture draws its blade about 7.4 per cent as wide as it is long, and a 30 cm
-			// blade fills that proportion at 20 mm, the same broad blade the sedge's photographs
+			// leaf picture draws its blade about 7.4 per cent as wide as it is long, and a 36 cm
+			// blade fills that proportion at 24 mm, the same broad blade the sedge's photographs
 			// show. The record follows the picture rather than the fact sheet's narrower figure.
-			length: { mean: 0.3, spread: 0.02 },
-			width: 0.02,
+			length: { mean: 0.36, spread: 0.024 },
+			width: 0.024,
 			profile: [
 				[0, 0.85],
 				[0.1, 1],
@@ -96,16 +96,16 @@ export const record: Species = {
 			tipLength: 0.04,
 			fold: 18,
 			twist: 30,
-			arch: { mean: 18, spread: 8 },
+			arch: { mean: 34, spread: 8 },
 			// Stills 02 and 06: the old outer blades carry dry brown tips.
 			dryTip: 0.03,
-			// The texture source's two faces under flat light: the shader scales each face's picture
+			// The leaf pictures' two faces under flat light: the shader scales each face's picture
 			// by that face's mean, so these figures are the pictures' own means.
 			optics: {
 				reflectance: [0.1284, 0.272, 0.0218],
-				reflectanceBack: [0.0654, 0.158, 0.0104],
+				reflectanceBack: [0.318, 0.349, 0.24],
 				transmittance: [0.16, 0.33, 0.03],
-				roughness: [0.55, 0.35],
+				roughness: [0.55, 0.6],
 			},
 		},
 	},
@@ -219,7 +219,7 @@ export const record: Species = {
 						reflectance: [0.1284, 0.272, 0.0218],
 						reflectanceBack: [0.0654, 0.158, 0.0104],
 						transmittance: [0.16, 0.33, 0.03],
-						roughness: [0.55, 0.35],
+						roughness: [0.55, 0.6],
 					},
 				},
 			},

@@ -581,21 +581,37 @@ function partOf(
  * always did.
  */
 function cuttingLeaves(record: Species, cutting: CuttingOptions | undefined): Species {
+	if (!cutting || record.shoots) return record;
 	const growth = record.growth;
-	if (!cutting || record.shoots || growth.model !== 'rosette') return record;
 	const leaves = record.cuttings?.leaves;
-	const hint = record.cuttings?.[cutting.part as 'branch' | 'subbranch'];
+	const hint = record.cuttings?.[cutting.part];
 	const scale = hint && 'order' in hint ? hint.scale : undefined;
-	const leaf = record.foliage.kind === 'thick' ? record.foliage.leaf : undefined;
 	let out = record;
+	// A crown-rosette's piece keeps the fronds it was cut from and takes leaflets of its own size:
+	// the pinna length curve is the share of the frond's length each leaflet stands, so the share is
+	// scaled and the places, and with them the count, are left as they stand.
+	if (scale !== undefined && growth.model === 'crown-rosette' && 'frond' in growth) {
+		const frond = growth.frond;
+		const pinnae = frond.pinnae;
+		if (pinnae !== undefined)
+			out = {
+				...record,
+				growth: {
+					...growth,
+					frond: { ...frond, pinnae: { ...pinnae, length: scaledCurve(pinnae.length, scale) } },
+				},
+			};
+	}
+	const leaf =
+		growth.model === 'rosette' && record.foliage.kind === 'thick' ? record.foliage.leaf : undefined;
 	if (scale !== undefined && leaf) {
 		const sized: Spread =
 			typeof leaf.length === 'number'
 				? leaf.length * scale
 				: { mean: leaf.length.mean * scale, spread: leaf.length.spread * scale };
-		out = { ...record, foliage: { kind: 'thick', leaf: { ...leaf, length: sized } } };
+		out = { ...out, foliage: { kind: 'thick', leaf: { ...leaf, length: sized } } };
 	}
-	if (leaves === undefined) return out;
+	if (leaves === undefined || growth.model !== 'rosette') return out;
 	return { ...out, growth: { ...growth, leaves } };
 }
 

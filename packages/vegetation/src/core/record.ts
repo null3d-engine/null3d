@@ -573,10 +573,46 @@ export interface CrownRosette {
 		readonly divergence: number;
 		/** Degrees from vertical by frond age (t = 0 youngest, 1 oldest living). */
 		readonly tilt: Curve;
-		/** Dead fronds: count, how far they hang, and a skirt that hides the stem top (fan palm). */
-		readonly dead: { readonly count: Spread; readonly hang: number; readonly skirt: number };
-		/** Young fronds rolled in the centre (tree fern croziers). */
-		readonly croziers?: Spread;
+		/**
+		 * Metres of the stem over which the frond bases clasp it, newest lowest: a crown springing
+		 * from a band of the stem, or from a single growing point at 0. Absent, the model's own
+		 * depth, which suits a tall palm's crown.
+		 */
+		readonly depth?: number;
+		/**
+		 * Croziers: a fern's young fronds, still rolled at their tips. Their number, the length of
+		 * their stalk in metres, and the degrees their head coils through as it unrolls. Absent,
+		 * the crown carries none, as a palm's does.
+		 */
+		readonly croziers?: {
+			readonly count: Spread;
+			readonly length: Spread;
+			readonly coil?: number;
+			/**
+			 * Metres of radius at a crozier's foot: a fiddlehead is thick and fleshy, wider than the
+			 * stipe of the frond it will become. Absent, it takes the frond's own stipe width.
+			 */
+			readonly radius?: number;
+			/**
+			 * What a crozier's skin draws: `young`, the smooth young bark a thin shoot takes, or
+			 * `grown`, the species' grown bark layer with its zones, tint and hollows. A rolled
+			 * young frond is fleshy and hairy rather than smooth, so `grown` is what a fern's
+			 * fiddlehead takes. Absent, `young`, which changes no record that names no croziers.
+			 */
+			readonly bark?: 'young' | 'grown';
+		};
+		/**
+		 * Dead fronds: count, how far they hang, and a skirt that hides the stem top (fan palm).
+		 * `blades` keeps a dead frond's leaflets at the level's detail, as a tree fern's dead skirt
+		 * shows its pinnae; absent, a dead frond reads as a brown mass at the coarsest detail, as a
+		 * palm's skirt does.
+		 */
+		readonly dead: {
+			readonly count: Spread;
+			readonly hang: number;
+			readonly skirt: number;
+			readonly blades?: boolean;
+		};
 	};
 	/** One frond. */
 	readonly frond: FrondShape;
@@ -780,8 +816,8 @@ export interface Tuft {
 	/** The sheath's radius in metres. */
 	readonly sheathRadius: number;
 	/**
-	 * The basal sheath's colour, in linear reflectance, where the photographs show red-brown
-	 * sheaths: a merged ground plant draws its sheath columns in it rather than the leaf's green.
+	 * The linear colour of each shoot's sheath column, where the species gives one. Absent, the
+	 * column draws the leaf material as the blades do.
 	 */
 	readonly sheathColour?: Rgb;
 	/** Degrees a blade leaves its shoot, by blade age (t = 0 the youngest, innermost, 1 the oldest). */
@@ -1352,6 +1388,16 @@ export interface LeafShape {
 	readonly wave: readonly [amplitude: number, count: number];
 	/** How the leaf looks under light. */
 	readonly optics: LeafOptics;
+	/**
+	 * The spore cases a fern's leaf carries under its lobes: how many stand along the midrib, their
+	 * radius in metres, and the spot of the leaf texture they take their colour from, as u and v.
+	 * A leaf that names none carries none.
+	 */
+	readonly sori?: {
+		readonly count: number;
+		readonly size: number;
+		readonly at: readonly [number, number];
+	};
 }
 
 /**
@@ -2066,8 +2112,8 @@ export interface CuttingHints {
 	readonly branch?: CutFromPlant | CutFromShoots;
 	/** A sub-branch about 0.35 m long, in either form. */
 	readonly subbranch?: CutFromPlant | CutFromShoots;
-	/** A leaf cluster: the shoot class to cut. */
-	readonly cluster?: CutFromShoots;
+	/** A leaf cluster: the shoot class to cut, or a length of a frond's rachis. */
+	readonly cluster?: CutFromPlant | CutFromShoots;
 	/** A single leaf: how it lies. */
 	readonly leaf?: CutLeaf;
 }
@@ -2105,6 +2151,16 @@ export interface CutFromPlant {
 	readonly order: number;
 	/** Metres of wood from the cut to the farthest tip. */
 	readonly length: number;
+	/**
+	 * Metres of the axis that the piece keeps from its cut, for a plant whose pieces are lengths of
+	 * a single long axis, such as a palm's frond. Without it the piece keeps the whole axis.
+	 */
+	readonly span?: number;
+	/**
+	 * Metres along the axis where the piece starts, for a piece cut from the middle of one long
+	 * axis rather than its base. The cut face stands there. 0 by default.
+	 */
+	readonly from?: number;
 	/**
 	 * The piece's leaf size over the crown's, where a piece cut from the plant wants leaves of its
 	 * own. A rosette's piece carries the crown's leaves at the crown's size, so a piece that stands

@@ -171,11 +171,16 @@ export interface PlantReviewQuery {
 	 * picture itself measured, so the plant keeps the reference's margin.
 	 */
 	readonly standScale?: number;
+	/**
+	 * The share of a whole view's width correction that the review run takes, from 0 to 1. The
+	 * tool's own field: the page does not read it, so a redraw keeps the stand the correction gave.
+	 */
+	readonly widthFraction?: number;
 	/** The row share of the plant's top, for a frame whose plant base is cut off: give `eye` too. */
 	readonly top?: number;
 	/** The camera's height above the ground in metres, with `top`, when the base is out of frame. */
 	readonly eye?: number;
-	/** How far along a limb the limb view looks, as a share of the limb's length. */
+	/** How far along a limb the limb view looks, as a share of the limb's length; a bark view of a stem, as a share of its height. */
 	readonly along?: number;
 	/**
 	 * Metres of radius that a limb view frames: it picks the limb that carries that thickness.

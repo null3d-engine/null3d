@@ -187,6 +187,23 @@ const SLOT_RULES: readonly { readonly test: (name: string) => boolean; readonly 
 			slot: { view: 'limb', query: { span: 2.8, thin: 0.06, surface: true }, framed: false },
 		},
 		{
+			test: (n) => n.includes('frond-base-on-trunk'),
+			slot: { view: 'junction', framed: false },
+		},
+		{
+			// A palm's frond from its base, cut and laid on a plain ground as its photograph shows
+			// it: the whole frond, framed at the scale of some seven leaflets, not the clasp on the
+			// trunk that a woody species' limb picture shows.
+			test: (n) => n.includes('frond-base') || n.includes('frond-mid'),
+			slot: {
+				view: 'branch',
+				background: 'studio-grey',
+				elevation: 0,
+				query: { leaves: 7.4 },
+				framed: false,
+			},
+		},
+		{
 			test: (n) => n.includes('limb-leaving') || n.includes('culm-base'),
 			slot: { view: 'junction', framed: false },
 		},
