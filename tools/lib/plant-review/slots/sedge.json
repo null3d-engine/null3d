@@ -3,14 +3,6 @@
 		"daylight": 1.9,
 		"skyShare": 0.4
 	},
-	"02-whole-tuft-profile.png": {
-		"daylight": 0.92,
-		"skyShare": 0.4
-	},
-	"17-tuft-height-profile.png": {
-		"daylight": 1.09,
-		"skyShare": 0.4
-	},
 	"04-tuft-from-above.png": {
 		"elevation": 88,
 		"view": "crown"
@@ -31,19 +23,19 @@
 		"view": "soil"
 	},
 	"12-single-leaf-upper.png": {
-		"leaves": 1.0,
+		"leaves": 0.1,
 		"roll": -40
 	},
 	"13-single-leaf-underside.png": {
-		"leaves": 1.0,
+		"leaves": 0.1,
 		"roll": -40
 	},
 	"24-leaf-texture-upper.png": {
-		"leaves": 1.0,
+		"leaves": 0.2,
 		"roll": -40
 	},
 	"25-leaf-texture-underside.png": {
-		"leaves": 1.0,
+		"leaves": 0.2,
 		"roll": -40
 	},
 	"15-sheath-and-ligule.png": {
