@@ -546,6 +546,14 @@ function cuttingProblems(record: Species, out: string[]): void {
 		if ('shoot' in hint) {
 			if (!names.has(hint.shoot))
 				out.push(`cuttings.${part}.shoot '${hint.shoot}' names no class in shoots.classes`);
+			if (hint.fanRing !== undefined && !(hint.fanRing >= 0 && hint.fanRing <= 1))
+				out.push(`cuttings.${part}.fanRing is ${hint.fanRing}; it is a share from 0 to 1`);
+			if (hint.fanLean !== undefined && !(hint.fanLean >= -90 && hint.fanLean <= 90))
+				out.push(`cuttings.${part}.fanLean is ${hint.fanLean}; it is degrees from -90 to 90`);
+			if (hint.fanSpin !== undefined && !(hint.fanSpin >= 0 && hint.fanSpin <= 1))
+				out.push(`cuttings.${part}.fanSpin is ${hint.fanSpin}; it is a share from 0 to 1`);
+			if (hint.fanYaw !== undefined && !Number.isFinite(hint.fanYaw))
+				out.push(`cuttings.${part}.fanYaw is ${hint.fanYaw}; it is degrees about the axis`);
 		} else {
 			if (hint.length <= 0)
 				out.push(`cuttings.${part}.length is ${hint.length}; it must be above 0`);
