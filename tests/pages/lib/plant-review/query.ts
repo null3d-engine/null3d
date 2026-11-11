@@ -108,10 +108,20 @@ export interface PlantReviewQuery {
 	 */
 	readonly shoots?: number;
 	/**
+	 * The shoot class a branch or sub-branch cutting draws, in place of the record hint's class, so a
+	 * close view can draw a thin twig while the studio piece draws the whole branch.
+	 */
+	readonly shoot?: string;
+	/**
 	 * The radius of the ring a branch or sub-branch cutting's shoots stand on, as a share of the
 	 * piece's height, in place of the record hint's. A wide ring separates the shoots.
 	 */
 	readonly ring?: number;
+	/**
+	 * The degrees a branch or sub-branch cutting's shoots lean outward from its axis, in place of the
+	 * record hint's, so the tips separate while the bases stay together.
+	 */
+	readonly lean?: number;
 	/** Whether the page posts its measures of the plant beside the frame. */
 	readonly measure?: boolean;
 	/**
@@ -264,6 +274,7 @@ const NUMBER_FIELDS = [
 	'cut',
 	'shoots',
 	'ring',
+	'lean',
 	'horizon',
 	'fill',
 	'targetY',
@@ -332,6 +343,7 @@ function short(value: number): string {
 export function plantReviewQuery(query: PlantReviewQuery): string {
 	const params = new URLSearchParams({ species: query.species });
 	if (query.form) params.set('form', query.form);
+	if (query.shoot) params.set('shoot', query.shoot);
 	if (query.view) params.set('view', query.view);
 	for (const name of NUMBER_FIELDS) {
 		const value = query[name];
@@ -368,6 +380,9 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 	const form = params.get('form');
 	if (form !== null && !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(form))
 		throw new Error(`form=${form} is not a form's name: give a kebab-case word, such as young.`);
+	const shoot = params.get('shoot');
+	if (shoot !== null && !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(shoot))
+		throw new Error(`shoot=${shoot} is not a class name: give a kebab-case word, such as twig.`);
 	const view = oneOf('view', params.get('view'), PLANT_VIEWS) ?? 'whole';
 	const numbers: Partial<Record<(typeof NUMBER_FIELDS)[number], number>> = {};
 	for (const name of NUMBER_FIELDS) {
@@ -455,6 +470,7 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 	return {
 		species,
 		...(form !== null && { form }),
+		...(shoot !== null && { shoot }),
 		view,
 		...numbers,
 		...(background && { background }),

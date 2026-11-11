@@ -215,6 +215,36 @@ export const record: Species = {
 				droop: 70,
 			},
 			{
+				// Stills 09 and 10: a fine twig on its own, so a close view can draw the separate
+				// thin twigs the photographs show while the studio piece draws the whole branch.
+				name: 'twig',
+				cutOnly: true,
+				vigor: [0, 1],
+				share: 0,
+				years: 1,
+				length: { mean: 0.35, spread: 0.05 },
+				nodes: { mean: 14, spread: 1 },
+				internode: [
+					[0, 1.2],
+					[1, 0.8],
+				],
+				stem: { radius: [0.003, 0.0015] },
+				laterals: { mean: 0, spread: 0 },
+				bend: { length: 0.05, angle: 20 },
+				leafScale: [
+					[0, 0.9],
+					[1, 1],
+				],
+				leafAngle: [
+					[0, 30],
+					[1, 42],
+				],
+				leafAngleSpread: 12,
+				leafYears: 1,
+				skyward: 0.2,
+				droop: 55,
+			},
+			{
 				name: 'spray',
 				vigor: [0, 1],
 				share: 0,

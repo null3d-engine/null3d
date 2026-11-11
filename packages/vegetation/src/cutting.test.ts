@@ -613,6 +613,15 @@ describe('cuttings', () => {
 		expect(clusterHinted?.rows.count).toBe(1);
 	});
 
+	it('lets a piece name its own shoot class over the record hint', () => {
+		const hint = kit.record.shoots?.classes?.[0]?.name;
+		const other = kit.prototypes.map((p) => p.class).find((name) => name !== hint);
+		if (!other) return;
+		const row = clusterRow(kit, { part: 'subbranch', shoot: other }, kit.detail);
+		const drawn = kit.prototypes[row?.rows.prototype[0] as number]?.class;
+		expect(drawn).toBe(other);
+	});
+
 	it('lets a piece name its own shoot count and ring over the record hint', () => {
 		const className = kit.record.shoots?.classes?.[0]?.name ?? 'cut';
 		const hinted = {
