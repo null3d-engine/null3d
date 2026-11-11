@@ -179,6 +179,11 @@ const CAVITY_ROUGH: f32 = 0.2;
 // but light scatters through the crown, so the wood keeps more of the sky than a leaf's density
 // alone would give it.
 const WOOD_SHADE: f32 = 0.35;
+// The armpit's creases: rings about two centimetres apart along the limb, counted in bark uv
+// steps, with the trough's darkening and the normal's tilt across the grain.
+const CREASE_FREQUENCY: f32 = 0.31;
+const CREASE_DARK: f32 = 0.30;
+const CREASE_TILT: f32 = 0.35;
 
 /// One texel of the header row.
 /// A fixed value from two whole numbers, from 0 to 1: a scale's own shade, the same every frame.
@@ -1031,6 +1036,16 @@ fn surface(input: SurfaceInput) -> Surface {
         bark = mix(bark, lichen.rgb * (0.92 + 0.16 * grain), lichen_mask);
         // The collar's dark ridge where a branch joins its parent.
         bark *= 1.0 - 0.5 * moss_reach.z * junction;
+        // The bark gathers in tight parallel creases where a limb joins its parent: rings across
+        // the limb's own grain, deepest in the armpit and fading with the collar's ridge. A
+        // species whose record names no ridge draws none, so its bark stays as it was.
+        let armpit = moss_reach.z * smoothstep(0.25, 0.9, junction);
+        if (armpit > 0.0) {
+            let crease = sin(input.uv.y * CREASE_FREQUENCY);
+            let trough = 0.5 - 0.5 * crease;
+            bark *= 1.0 - CREASE_DARK * armpit * trough;
+            bark_normal = normalize(bark_normal + vec3f(0.0, CREASE_TILT * armpit * crease, 0.0));
+        }
         // A stem whose own colour turns with the year takes its season's tint, which multiplies the
         // bark it would otherwise draw. A season the record does not name multiplies by nothing.
         let autumn_bark = header(HEADER_AUTUMN_BARK);
