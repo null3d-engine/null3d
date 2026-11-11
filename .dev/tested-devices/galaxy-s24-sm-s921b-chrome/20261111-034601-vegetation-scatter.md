@@ -9,9 +9,11 @@ Result: 2 passed, 0 skipped, 0 failed.
 | Page | Seed | Plants | Checksum | Placement (ms) | Worst (ms) | Ground maps (ms) |
 | --- | --- | --- | --- | --- | --- | --- |
 | vegetation-scatter-webgl2 | 7 | 1,020 | 2,006,477,110 | 11.30 | 11.36 | 82.70 |
-| vegetation-scatter-webgpu | 7 | 1,020 | 2,006,477,110 | 9.33 | 11.17 | 69.05 |
+| vegetation-scatter-webgpu, drawn on WebGL2 | 7 | 1,020 | 2,006,477,110 | 9.33 | 11.17 | 69.05 |
 
-The 1,020 plants are 101 canopy, 170 young, 731 ground and 18 dead wood. The placement is the middle
+The device has no WebGPU adapter, so the second page named that path and drew on WebGL2; the page
+reports the same points either way. The 1,020 plants are 101 canopy, 170 young, 731 ground and 18 dead
+wood. The placement is the middle
 of three timed runs and the ground maps are read once, both from the page's own timers, for a
 placement that reads no GPU and starts no engine; the two paths place the same points, which is what
 the matching checksums show.
