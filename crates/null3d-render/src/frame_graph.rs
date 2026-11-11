@@ -3169,12 +3169,23 @@ impl FrameGraph {
         self.occlusion() && (index == ViewId::CAMERA.index() || full)
     }
 
+    /// True when a view draws straight into the texture that materials sample, so no copy turns its
+    /// rows: a reflection view on the HDR WebGPU path. The copy stays where a view's target needs
+    /// it, as on the 8-bit path, whose copy also decodes the display color.
+    fn view_direct(&self, view: &View) -> bool {
+        self.view_copies.is_some() && self.scene_color.is_hdr() && view.mirrored().is_some()
+    }
+
     /// The draw list's id of the texture that materials sample a view's target from, or `None`
     /// for the camera's view, or a target that the plan gives no texture. Valid once the frame's
     /// [`FrameGraph::prepare`] made the plan's textures.
     pub(crate) fn view_target(&self, view: ViewId) -> Option<u32> {
         let passes = (self.fullscreen_views | self.compute_views) & (1 << view.index()) != 0;
-        if self.view_copies.is_some() && !self.view_copy_built && !passes {
+        let direct = self
+            .declared_views
+            .get(view.index())
+            .is_some_and(|view| self.view_direct(view));
+        if !direct && self.view_copies.is_some() && !self.view_copy_built && !passes {
             // The target holds no image until the copies draw.
             return None;
         }
@@ -3295,7 +3306,9 @@ impl FrameGraph {
             .enumerate()
             .map(|(index, (view, names))| ViewPassNames::of(index, view, names))
             .collect();
-        // Where a pass copies each view's image into its target, the target has one sample.
+        // Where a pass copies each view's image into its target, the target has one sample. A
+        // reflection view on the HDR WebGPU path draws into its target instead, which then takes
+        // the scene's samples, as it does on WebGL2.
         let copies = self.view_copies.is_some();
         let kept = if copies {
             Target::color(self.view_target_format()).array()
@@ -3329,6 +3342,7 @@ impl FrameGraph {
             let size = view_size(view);
             let fullscreen = view.fullscreen_pass().is_some() && !view.is_removed();
             let compute = view.compute_pass().is_some() && !view.is_removed();
+            let direct = self.view_direct(view);
             self.fullscreen_views |= u32::from(fullscreen) << index;
             self.compute_views |= u32::from(compute) << index;
             // A material's vertex offset or surface function may sample the target of a compute
@@ -3385,6 +3399,8 @@ impl FrameGraph {
                     .copy_source(),
                     _ => one_sample,
                 }
+            } else if direct {
+                color.array()
             } else {
                 kept
             };
@@ -3470,7 +3486,7 @@ impl FrameGraph {
                 pass.creates(SCENE_COLOR, color)
             } else if canvas {
                 pass.writes(SCENE_COLOR)
-            } else if copies {
+            } else if copies && !self.view_direct(view) {
                 pass.creates(names.image.clone(), color)
             } else {
                 pass.writes(names.color.clone())
@@ -3637,7 +3653,7 @@ impl FrameGraph {
                 continue;
             }
             let names = &named[index];
-            let drawn = if copies && index != ViewId::CAMERA.index() {
+            let drawn = if copies && index != ViewId::CAMERA.index() && !self.view_direct(view) {
                 &names.image
             } else {
                 &names.color
@@ -3679,7 +3695,9 @@ impl FrameGraph {
             for (index, view) in views.iter().enumerate().skip(1) {
                 if (self.fullscreen_views | self.compute_views) & (1 << index) != 0
                     || view.canvas_rect().is_some()
+                    || self.view_direct(view)
                 {
+                    // The view draws into its target, or has no image to copy.
                     self.view_images.push(None);
                     continue;
                 }

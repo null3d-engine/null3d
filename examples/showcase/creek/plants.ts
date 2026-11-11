@@ -1,26 +1,17 @@
 // The creek's plants, grown by the vegetation add-on's plant core rather than loaded from files. The
 // valley's plants stand where the add-on's ecological rules place them (see `valley.ts`), each
 // species grown in the engine's job workers at the variants that Creek draws, with every level of
-// detail kept for the engine to switch by distance. The canopy hands over to far cards past the
-// distance where a tree spans a few pixels, and the same cards dress the mountain ring beyond the
-// valley. Fallen lengths of dead wood lie where the rules leave them. Each species draws as the
-// plant core's stand-in, at its size and in its colours, until the species lands in the add-on.
+// detail kept for the engine to switch by distance. The canal's four trees hand over to far cards
+// past the distance where a tree spans a few pixels; the hillsides carry ground cover and no trees.
+// Fallen lengths of dead wood lie where the rules leave them. Each species draws as the plant
+// core's stand-in, at its size and in its colours, until the species lands in the add-on.
 import { type MeshArrays, quat, type SketchContext } from '@null3d/engine';
 import { type PlantMaterial, setWindLayer } from '@null3d/vegetation';
 import type { WindField } from '@null3d/wind';
 import { type PlantSpot, plantSpecies } from '../../lib/plants';
 import { random } from '../../lib/procedural';
-import { type CreekSpecies, placeValley, SEED, SPECIES, VARIANTS } from './valley';
+import { placeValley, SEED, SPECIES, VARIANTS } from './valley';
 
-/** The far cards on the mountain ring: how many, the heights they cover and how far out they stand. */
-const CARDS = 3600;
-const CARD_LOW = 2;
-const CARD_HIGH = 50;
-const RING_INNER = 86;
-const RING_OUTER = 260;
-/** The range of a card's height, in meters: the trees that the ring's scale cannot show. */
-const CARD_SHORT = 9;
-const CARD_TALL = 17;
 /** The fallen lengths of dead wood: their longest and shortest length, and their girth, in meters. */
 const LOG_LONG = 4.5;
 const LOG_SHORT = 1.8;
@@ -30,8 +21,6 @@ const LOG_GIRTH = 0.22;
 export interface PlantOptions {
 	/** True where a stone covers the ground, which nothing grows through. */
 	readonly rocks?: (x: number, z: number) => boolean;
-	/** The mountain ring's height at a point, which the far cards stand on. Leave it out for none. */
-	readonly mountainHeight?: (x: number, z: number) => number;
 }
 
 /** The drawn plants, and what a frame changes on them. */
@@ -52,12 +41,16 @@ function groupBySpecies(points: ReturnType<typeof placeValley>): Map<string, Pla
 			spots = [];
 			grouped.set(rule.species, spots);
 		}
+		const x = points.data[at] as number;
+		const z = points.data[at + 2] as number;
 		spots.push({
-			x: points.data[at] as number,
+			x,
 			y: points.data[at + 1] as number,
-			z: points.data[at + 2] as number,
+			z,
 			scale: points.data[at + 5] as number,
 			turn: (points.data[at + 6] as number) * Math.PI * 2,
+			// Every copy keeps its own variant: the trees stand beside the water, where the camera
+			// passes close enough to read one from another.
 			variant: Math.min(VARIANTS - 1, Math.floor(points.data[at + 4] as number)),
 		});
 	}
@@ -92,37 +85,6 @@ function logMesh(): MeshArrays {
 			indices.push(a, a + sides, b, b, a + sides, b + sides);
 		}
 	return { positions, normals, uvs, indices };
-}
-
-/**
- * Spreads far copies of the canopy over the ring's wooded slopes, below the tree line and above the
- * valley. They are so far out that each draws as its far card. One variant stands for each species
- * there, where no card shows a single twig.
- */
-function ringSpots(
-	canopy: readonly CreekSpecies[],
-	mountainHeight: (x: number, z: number) => number,
-): Map<string, PlantSpot[]> {
-	const next = random(SEED + 1);
-	const spots = new Map<string, PlantSpot[]>();
-	let placed = 0;
-	while (placed < CARDS) {
-		const angle = next() * Math.PI * 2;
-		const reach = RING_INNER + (RING_OUTER - RING_INNER) * next();
-		const x = Math.cos(angle) * reach;
-		const z = Math.sin(angle) * reach;
-		const y = mountainHeight(x, z);
-		if (y < CARD_LOW || y > CARD_HIGH) continue;
-		const species = canopy[Math.floor(next() * canopy.length)];
-		if (!species) continue;
-		const tall = CARD_SHORT + (CARD_TALL - CARD_SHORT) * next();
-		const turn = next() * Math.PI * 2;
-		const list = spots.get(species.id) ?? [];
-		list.push({ x, y, z, turn, scale: tall / species.height, variant: 0 });
-		spots.set(species.id, list);
-		placed++;
-	}
-	return spots;
 }
 
 /** Lays the valley's dead wood: fallen lengths on the floor of the wood. */
@@ -165,9 +127,8 @@ function layDeadWood(ctx: SketchContext, points: ReturnType<typeof placeValley>)
 }
 
 /**
- * Grows and draws the creek's plants: every species that the valley's rules placed, at every
- * variant, in the scene's one wind field, with the canopy's far cards in the valley and on the
- * mountain ring, and the dead wood on the floor.
+ * Grows and draws the creek's plants: every species that the thinned valley placed, at every
+ * variant, in the scene's one wind field, with the canal's far cards and the dead wood on the floor.
  */
 export async function createPlants(
 	ctx: SketchContext,
@@ -176,16 +137,10 @@ export async function createPlants(
 ): Promise<Plants> {
 	const points = placeValley(options);
 	const grouped = groupBySpecies(points);
-	const ring = options.mountainHeight
-		? ringSpots(
-				SPECIES.filter((species) => species.canopy),
-				options.mountainHeight,
-			)
-		: new Map<string, PlantSpot[]>();
 	layDeadWood(ctx, points);
 	const planted = await Promise.all(
 		SPECIES.map((species) => {
-			const spots = [...(grouped.get(species.id) ?? []), ...(ring.get(species.id) ?? [])];
+			const spots = grouped.get(species.id) ?? [];
 			if (spots.length === 0) return undefined;
 			return plantSpecies(ctx, {
 				id: species.id,

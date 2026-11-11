@@ -532,9 +532,11 @@ export class Textures {
 	 * The texture that a render pass draws into, which materials and sprites take as a map, as
 	 * three.js's render target textures are. It holds linear color, after the exposure and before
 	 * the tone curve: high dynamic range color where the device draws it. The image stands upright
-	 * on a plane, with v = 0 at its bottom row. It samples as no texture until the pass first draws,
-	 * and keeps the last image while the pass is switched off. `render.removePass` destroys it.
-	 * Throws E1101 for a pass that was removed.
+	 * on a plane, with v = 0 at its bottom row, as three.js's render targets do. A reflection pass's
+	 * texture on the HDR WebGPU path is the one exception: its rows start at the top, so read it
+	 * with `reflection_uv`. It samples as no texture until the pass first draws, and keeps the last
+	 * image while the pass is switched off. `render.removePass` destroys it. Throws E1101 for a
+	 * pass that was removed.
 	 */
 	fromPass(pass: RenderPass): Texture {
 		const call = 'textures.fromPass';
