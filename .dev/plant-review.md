@@ -391,6 +391,8 @@ The in-use references that still move, by species, their number and the start be
 | weeping-willow | 01 0.0034 to 0.055, 09 0 to 0.0156, 18 0.0033 to 0.32, 31 0 to 0.0289 |
 | winter-oak-bare | 14 0 to 0.0918 |
 
+A cut piece's subject crop sets its crown bottom. The crown-start move does not reach such a picture: the sequoia's `11` keeps its box 506×596 and its figures, and the raw reading above is not its row figure.
+
 The affected owners are told. The beech and the alder were told first; the oak keeps its figures.
 ## The rows a species still owes
 
