@@ -180,7 +180,8 @@ own light they read 1.9, and the head's oak reads 2.2, so the light makes most o
   changed, and a tint measured against that frame took it to 2.3. Framing first, material second:
   a tint chosen before the frame is right measures the camera, not the plant. A ground plant's
   sheath, collar or ligule picture is drawn as one tiller's sheath column at the photograph's span,
-  because a bark view has no stem to frame and falls back to the crown's foot culms.
+  or as the species' own tiller cutting where the photograph shows a cut stalk, because a bark view
+  has no stem to frame and falls back to the crown's foot culms.
 
 ## What a reviewer must see for the picture-judged rows
 
