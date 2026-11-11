@@ -1191,12 +1191,6 @@ export interface ShootSpec {
 			readonly reach: number;
 			/** How far the foliage thins at the reach, 0 even and 1 bare. */
 			readonly depth: number;
-			/**
-			 * The share of the mass's density at or above which a twig's tip keeps its rosette where it
-			 * stands. Below it the rosette moves back to the previous bud and the bare twig goes.
-			 * Absent, the other fields place every tip as they placed it before.
-			 */
-			readonly tipShare?: number;
 		};
 	};
 }

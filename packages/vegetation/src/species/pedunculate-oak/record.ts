@@ -272,7 +272,7 @@ export const record: Species = {
 			lift: 15,
 			skyward: 0.65,
 			scale: { mean: 1.4, spread: 0.15 },
-			limbMass: { order: 2, hold: 1.68, reach: 3.85, depth: 0.93, tipShare: 0.65 },
+			limbMass: { order: 2, hold: 1.68, reach: 3.85, depth: 0.93 },
 		},
 	},
 	foliage: {
