@@ -76,7 +76,8 @@
 	"16-bark-on-branch.png": {
 		"view": "bark-limb",
 		"thin": 0.018,
-		"span": 0.08
+		"span": 0.08,
+		"leafyBark": true
 	},
 	"26-bark-texture.png": {
 		"span": 0.3
