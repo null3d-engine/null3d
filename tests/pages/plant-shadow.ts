@@ -1,13 +1,22 @@
 // The shadow redraw count: a live engine draws a still camera over a row of plants whose material
 // sways out to ?sway= metres, and measures the frame's draw calls. ?gpu= and ?preset= choose the GPU
-// path and the preset; ?seconds= the measured time and ?warmup= the seconds before it. The page
-// reports what the sketch built, so a run can tell a page that used its query from one that did not.
+// path and the preset, ?seconds= the first measured window and ?warmup= the seconds before it, and
+// ?frames= the fewest frames that the measurement must hold, which grows the window on a slow GPU.
+// The page reports what the sketch built, so a run can tell a page that used its query from one
+// that did not.
 import { createEngine, type QualityPreset } from '@null3d/engine';
 import { progress, run } from './lib/result';
 
 const params = new URLSearchParams(location.search);
-/** The seconds that the measurement runs for. */
+/** The seconds that the first measurement window runs for. */
 const SECONDS = Math.max(1, Number(params.get('seconds') ?? 3));
+/** The fewest frames that the measurement must hold. */
+const FRAMES = Math.max(1, Number(params.get('frames') ?? 1));
+/**
+ * The longest that the measurement window grows to, in seconds. A software WebGPU page drew three
+ * frames in twenty-four seconds, so the window keeps doubling past that to reach the four it needs.
+ */
+const MAX_SECONDS = 60;
 /** The seconds that the pipelines build before the measurement. */
 const WARMUP = Math.max(0, Number(params.get('warmup') ?? 2));
 
@@ -34,7 +43,15 @@ run('plant-shadow', async () => {
 	await engine.firstFrame;
 	progress('the first frame drew');
 	await new Promise((resolve) => setTimeout(resolve, WARMUP * 1000));
-	const stats = await engine.measure(SECONDS);
+	// A software GPU draws one heavy frame over a second or more, so a fixed window can hold too
+	// few frames for the far cascade's turns to show. The window doubles until the figures hold
+	// the frames that the caller asks for, up to the longest window.
+	let window = SECONDS;
+	let stats = await engine.measure(window);
+	while (stats.frames < FRAMES && window < MAX_SECONDS) {
+		window = Math.min(window * 2, MAX_SECONDS);
+		stats = await engine.measure(window);
+	}
 	const mode = { tier: engine.capabilities.tier, preset: engine.mode.preset };
 	await engine.destroy();
 	return {
