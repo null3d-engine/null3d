@@ -110,14 +110,14 @@
 	"chromium-swiftshader/compat/demo-vegetation-wind.png": {
 		"test": "demo-vegetation-wind",
 		"tier": "compat",
-		"date": "2026-11-10",
-		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head in the idle window; both drawings completed and were compared before acceptance, and a CI drawing on a pull request replaces them"
+		"date": "2026-11-11",
+		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head; both views completed and were compared before acceptance, and a CI drawing on a pull request replaces them"
 	},
 	"chromium-swiftshader/compat/demo-vegetation.png": {
 		"test": "demo-vegetation",
 		"tier": "compat",
-		"date": "2026-11-10",
-		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head; each drawing completed and was compared against its reference before the landing session judged it, and a CI drawing on a pull request replaces it"
+		"date": "2026-11-11",
+		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head; both views completed and were compared before acceptance, and a CI drawing on a pull request replaces them"
 	},
 	"chromium-swiftshader/compat/feature-instances-shadow.png": {
 		"test": "feature-instances-shadow",
