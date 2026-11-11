@@ -794,7 +794,9 @@ export function clusterRow(
 	for (let row = 0; row < shoots; row++) {
 		const angle = (row * 2 * Math.PI) / shoots;
 		const spin = [0, 0, 0, 1];
-		quatAxisAngle(UP, angle, spin);
+		// The rows fan by place; each keeps the piece's own leaf plane, so a two-ranked shoot's
+		// leaves stay face-on rather than turning edge-on with the ring.
+		quatAxisAngle(UP, 0, spin);
 		const q = [0, 0, 0, 1];
 		quatMultiply(spin, 0, turn, 0, q);
 		position[row * 3] = 0.18 * tall * Math.cos(angle);
