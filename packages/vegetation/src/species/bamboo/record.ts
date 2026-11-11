@@ -53,12 +53,12 @@ export const record: Species = {
 		// Still 15: the node is a raised ring of about a third of a centimetre over the culm's surface,
 		// with a wax band above it and the sheath's scar below.
 		node: { ridge: 0.007, waxBand: 0.02, sheathScar: 0.005 },
-		// Stills 08 and 09: the branch complement leaves above the lower three fifths of each culm,
-		// so the clump stands bare to about its middle. The two or three branches leave on opposite
+		// Stills 08 and 09: the branch complement leaves above the lower half of each culm, so the
+		// clump stands bare to about its middle. The two or three branches leave on opposite
 		// sides, steeply upward, and one takes the node's lead. Stills 01 and 02 show lower branches
 		// shorter and the longest near the top of the branching zone.
 		branches: {
-			from: 0.62,
+			from: 0.55,
 			perNode: { mean: 2, spread: 0.4 },
 			dominant: true,
 			length: [
