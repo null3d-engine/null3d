@@ -531,11 +531,12 @@ for (const kind of [
  * iPad runs it. On WebGPU the GPU culls, so the draw calls do not depend on the view: the camera's
  * opaque pass and each shadow cascade draw S4's buckets, and the final pass draws one triangle.
  * S4's cars drive through Low's far cascade, and far cascades follow moving casters on every
- * preset (D-16), so every frame draws both cascades. A new pass or draw in these frames costs
- * every phone that runs S4, so a change to this figure needs its reason in
- * .dev/implementation-notes.md.
+ * preset (D-16), so every frame draws both cascades. A mesh made in code plans its levels on its
+ * own, and the levels of S4's one such mesh, its ball, add a draw for each level bucket in each of
+ * the three scene passes. A new pass or draw in these frames costs every phone that runs S4, so a
+ * change to this figure needs its reason in .dev/implementation-notes.md.
  */
-const S4_LOW_DRAW_CALLS = 63;
+const S4_LOW_DRAW_CALLS = 84;
 /** The passes of S4's frames at Low: the culling, the cascades, the scene and the final pass. */
 const S4_LOW_PASSES = ['compute', 'shadow cascade 0', 'shadow cascade 1', 'opaque', 'final'];
 
