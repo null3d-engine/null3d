@@ -360,7 +360,7 @@ export const record: Species = {
 			},
 			bark: {
 				// Still 19: the spear's flesh shows dark brown between its pale sheaths.
-				zones: [{ layer: 0, by: 'height', from: 0, to: 2, blend: 0, tint: [0.5, 0.2, 0.3] }],
+				zones: [{ layer: 0, by: 'height', from: 0, to: 2, blend: 0, tint: [0.85, 0.21, 0.95] }],
 				young: 0,
 				youngRadius: 0.01,
 				girthScale: 1,
