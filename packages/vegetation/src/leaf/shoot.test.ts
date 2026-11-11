@@ -826,6 +826,51 @@ describe('the shoot rows', () => {
 		expect(Math.abs(flat.count - even.count)).toBeLessThan(even.count * 0.05);
 	});
 
+	it('stands the shoots on the limb masses when the record asks', () => {
+		const massed = (limbMass?: NonNullable<typeof OAK_SHOOTS.placement>['limbMass']) =>
+			placeShoots({
+				...input,
+				record: {
+					...record,
+					shoots: {
+						...OAK_SHOOTS,
+						placement: { ...OAK_SHOOTS.placement, limbMass },
+					},
+				},
+			});
+		const even = massed();
+		const gathered = massed({ order: 1, hold: 0.5, reach: 2, depth: 1 });
+		// The foliage keeps to the coarse wood, so the crown carries fewer rows.
+		expect(gathered.count).toBeLessThan(even.count);
+		// A row's distance to the nearest coarse node: the kept rows stand nearer that wood.
+		const distanceToCoarse = (rows: ReturnType<typeof placeShoots>) => {
+			const axes = skeleton.axes;
+			const coarse: number[] = [];
+			for (let a = 0; a < axes.count; a++) if ((axes.order[a] as number) <= 1) coarse.push(a);
+			const near = (r: number) => {
+				let best = Number.POSITIVE_INFINITY;
+				for (const a of coarse)
+					for (let n = axes.first[a] as number; n <= (axes.last[a] as number); n++) {
+						const dx = (rows.position[r * 3] as number) - (skeleton.position[n * 3] as number);
+						const dy =
+							(rows.position[r * 3 + 1] as number) - (skeleton.position[n * 3 + 1] as number);
+						const dz =
+							(rows.position[r * 3 + 2] as number) - (skeleton.position[n * 3 + 2] as number);
+						best = Math.min(best, Math.sqrt(dx * dx + dy * dy + dz * dz));
+					}
+				return best;
+			};
+			let sum = 0;
+			for (let r = 0; r < rows.count; r++) sum += near(r);
+			return sum / Math.max(1, rows.count);
+		};
+		expect(distanceToCoarse(gathered)).toBeLessThan(distanceToCoarse(even) * 0.9);
+		// Absent, the crown is the record's own, row for row; and no depth keeps it too.
+		expect(Array.from(even.position)).toEqual(Array.from(massed(undefined).position));
+		const flat = massed({ order: 1, hold: 0.5, reach: 2, depth: 0 });
+		expect(Math.abs(flat.count - even.count)).toBeLessThan(even.count * 0.05);
+	});
+
 	it('gathers the shoots of one bud into a tuft at its node when the record asks', () => {
 		// The mean distance from a row to the nearest bud site: a gather holds the rows at the sites
 		// and leaves the internode between them bare.

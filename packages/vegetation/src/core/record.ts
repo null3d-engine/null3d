@@ -1163,6 +1163,23 @@ export interface ShootSpec {
 				readonly depth: number;
 			};
 		};
+		/**
+		 * Places the crown's foliage on the plant's own limb masses, so the sky between them shows
+		 * through the crown. A shoot keeps its full density near wood of `order` or coarser, and
+		 * thins with its distance from that wood: the foliage stands on the great limbs and their
+		 * branches, and the space between one mass and the next stays open through the crown.
+		 * Absent, the shoots stand as `perMetre` and the other fields place them.
+		 */
+		readonly limbMass?: {
+			/** The botanical order at or below which an axis counts as a limb mass's wood. */
+			readonly order: number;
+			/** Metres from that wood at which the foliage stands at its full density. */
+			readonly hold: number;
+			/** Metres from that wood at which the foliage has thinned by `depth`. */
+			readonly reach: number;
+			/** How far the foliage thins at the reach, 0 even and 1 bare. */
+			readonly depth: number;
+		};
 	};
 }
 

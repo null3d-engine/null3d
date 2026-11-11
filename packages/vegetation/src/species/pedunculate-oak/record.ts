@@ -255,7 +255,7 @@ export const record: Species = {
 			// The reference's crown is denser than the curve alone gives: this is the dial, not a
 			// change of reach or part size. The low limbs now keep the foliage they carry below the
 			// bole's line, so the dial sits lower than it did when that foliage was missing.
-			density: 1,
+			density: 1.5,
 			// No shade line and no starved-tip line: the sky prune below takes the same wood, so one rule
 			// that can be read stands where three stood. A shade line is still there for a species that
 			// cannot prune by the sky its own leaves block.
@@ -272,6 +272,7 @@ export const record: Species = {
 			lift: 15,
 			skyward: 0.65,
 			scale: { mean: 1.4, spread: 0.15 },
+			limbMass: { order: 2, hold: 1.5, reach: 3.5, depth: 1 },
 		},
 	},
 	foliage: {

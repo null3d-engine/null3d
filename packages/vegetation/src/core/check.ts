@@ -276,6 +276,19 @@ function shootProblems(shoots: ShootSpec, out: string[]): void {
 			);
 		shareProblem(scale.depth, `shoots.placement.${name}.depth`, out);
 	}
+	const mass = shoots.placement.limbMass;
+	if (mass !== undefined) {
+		wholeProblem(mass.order, 'shoots.placement.limbMass.order', 0, 4, out);
+		if (!(mass.hold >= 0))
+			out.push(
+				`shoots.placement.limbMass.hold is ${mass.hold}; it is metres and must be 0 or above`,
+			);
+		if (!(mass.reach > mass.hold))
+			out.push(
+				`shoots.placement.limbMass.reach is ${mass.reach}; it is metres and must be above hold (${mass.hold})`,
+			);
+		shareProblem(mass.depth, 'shoots.placement.limbMass.depth', out);
+	}
 }
 
 function growthProblems(record: Species, out: string[]): void {
