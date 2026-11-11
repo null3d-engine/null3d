@@ -383,6 +383,24 @@ describe('cuttings', () => {
 		expect(cutsShoot(stub.record, 'leaf')).toBe(false);
 	});
 
+	it('cuts a cluster that names a plant cut from one long axis, not from the kit', async () => {
+		// A fern's leaf cluster is a section of a frond, which is a leaf axis of the grown plant.
+		// The cut must keep that axis rather than refuse it as a shoot-style cluster does.
+		const { species: fern } = await import('./species/tree-fern');
+		await loadPlantCode(fern.record);
+		const kit = buildKitNow(fern, { placeholders: 'missing', detail: 'low' });
+		const whole = growPlantNow(kit, { seed: 11, variant: 0, near: true });
+		const hint = fern.record.cuttings?.cluster;
+		if (!hint || !('order' in hint)) throw new Error('the fern names no plant cut for its cluster');
+		expect(cutsShoot(fern.record, 'cluster')).toBe(false);
+		const cut = cutBranch(whole.skeleton, fern.record, { part: 'cluster' });
+		if (!cut) throw new Error('the fern cluster cut found no axis');
+		expect(cut.order).toBe(hint.order);
+		// The piece is the span of one frond, not the whole plant.
+		expect(cut.skeleton.height).toBeLessThan(whole.skeleton.height * 0.5);
+		expect(cut.skeleton.height).toBeGreaterThan((hint.span ?? 0) * 0.5);
+	});
+
 	it("takes a plant cut's leaf scale from its record, and the crown's size when none is named", async () => {
 		const { species: fern } = await import('./species/tree-fern');
 		await loadPlantCode(fern.record);

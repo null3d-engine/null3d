@@ -145,7 +145,10 @@ function shootHint(record: Species, part: CuttingPart): ShootClass['name'] | und
  * @category api/vegetation
  */
 export function cutsShoot(record: Species, part: CuttingPart): boolean {
-	return part === 'cluster' || shootHint(record, part) !== undefined;
+	// A cluster that names a plant cut keeps a section of one long axis, as a fern's blade section
+	// does, rather than one shoot prototype from the kit.
+	const plantCluster = part === 'cluster' && plantHint(record, part) !== undefined;
+	return !plantCluster && (part === 'cluster' || shootHint(record, part) !== undefined);
 }
 
 /**
@@ -487,23 +490,12 @@ export function cutBranch(
 	const length = cuttingLength(record, cutting);
 	const hinted = plantHint(record, cutting.part)?.order;
 	const shade = record.shoots?.placement.shadePrune ?? 0;
-	let ranked = candidates(
-		skeleton,
-		hinted,
-		length,
-		shade,
-		cutting.young,
-		cutting.part === 'cluster',
-	);
+	// A shoot-style cluster refuses the leaf axes, which mesh no piece of their own. A cluster that
+	// is a plant cut keeps one long axis, so its leaf axes are the piece.
+	const shootCluster = cutting.part === 'cluster' && plantHint(record, cutting.part) === undefined;
+	let ranked = candidates(skeleton, hinted, length, shade, cutting.young, shootCluster);
 	if (ranked.length === 0 && hinted !== undefined)
-		ranked = candidates(
-			skeleton,
-			undefined,
-			length,
-			shade,
-			cutting.young,
-			cutting.part === 'cluster',
-		);
+		ranked = candidates(skeleton, undefined, length, shade, cutting.young, shootCluster);
 	if (ranked.length === 0) return undefined;
 	const chosen = ranked[(cutting.pick ?? 0) % ranked.length] as Candidate;
 	const { axes, buds } = skeleton;
