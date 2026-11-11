@@ -43,24 +43,29 @@ run('runtime-levels', async () => {
 	/**
 	 * The triangles that a frame draws, once the counts have caught up with the view. WebGPU takes
 	 * the triangles of the draws that it culled from the GPU, on one frame in eleven and a few
-	 * frames late, so a slow device still reports the count of the camera before this one. The page
-	 * waits until the count differs from the one that the view before gave and then repeats, or
-	 * until `SETTLE_WAITS` measures pass.
+	 * frames late, so a slow device still reports the count of the camera before this one. Two
+	 * reads that agree can both be that stale count, so a settled count must differ from the first
+	 * read of its own view, or from the view before once one has settled, and then repeat.
 	 */
 	let lastDrawn = -1;
 	const drawn = async () => {
 		let previous = -1;
-		let changed = false;
-		let triangles = previous;
+		let firstRead = -1;
+		let settled = -1;
 		for (let k = 0; k < SETTLE_WAITS; k++) {
 			await engine.measure(0.5);
-			triangles = (await engine.measure(1)).triangles.median;
-			if (triangles !== lastDrawn) changed = true;
-			if (changed && triangles === previous && triangles > 0) break;
+			const triangles = (await engine.measure(1)).triangles.median;
+			if (k === 0) firstRead = triangles;
+			const baseline = lastDrawn === -1 ? firstRead : lastDrawn;
+			if (triangles !== baseline && triangles > 0 && triangles === previous) {
+				settled = triangles;
+				break;
+			}
 			previous = triangles;
 		}
-		lastDrawn = triangles;
-		return triangles;
+		if (settled === -1) settled = previous > 0 ? previous : firstRead;
+		lastDrawn = settled;
+		return settled;
 	};
 	const triangles: Record<string, number> = {};
 	for (const distance of DISTANCES) {
