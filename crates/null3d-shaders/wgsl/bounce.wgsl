@@ -22,7 +22,7 @@
 // and weights it by the frame's `bounce` values (null3d::gtao).
 
 #import null3d::fullscreen::{triangle}
-#import null3d::color::{luminance}
+#import null3d::color::{limit_hdr, luminance}
 #import null3d::depth::{toward_camera, view_position}
 
 /// The steps' settings, which the frame builder writes once for both of them.
@@ -222,7 +222,11 @@ fn trace(@builtin(position) position: vec4f) -> @location(0) vec4f {
     }
     // The share is the part of the disk that found a surface above the texel's plane. The samples
     // that found none keep the environment's light.
-    return vec4f(PI * sum / weight, found / f32(samples) * inside);
+    // The light is an irradiance, the gathered radiance times pi, and the step's target holds
+    // 16-bit floats. A gather of a surface at the brightest color that the scene color holds passes
+    // the largest 16-bit float. Such an infinity would turn a metal's zero diffuse light into a
+    // NaN, and the scene color would write it black, so the light takes the target's limit.
+    return vec4f(limit_hdr(PI * sum / weight), found / f32(samples) * inside);
 }
 
 /// The denoise's taps on a disk of `rings` rings around the center, three.js's Poisson pattern.
