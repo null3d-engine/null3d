@@ -267,6 +267,18 @@ function shootProblems(shoots: ShootSpec, out: string[]): void {
 		wholeProblem(shoots.placement.reach, 'shoots.placement.reach', 0, 60, out);
 	shareProblem(shoots.placement.gather, 'shoots.placement.gather', out);
 	spreadProblems(shoots.placement.scale, 'shoots.placement.scale', true, out);
+	const byHeight = shoots.placement.scaleByHeight;
+	if (byHeight !== undefined) {
+		curveProblems(byHeight, 'shoots.placement.scaleByHeight', out);
+		if (typeof byHeight !== 'number')
+			for (let i = 0; i < byHeight.length; i++) {
+				const value = (byHeight[i] as readonly number[])[1] as number;
+				if (!(value > 0))
+					out.push(
+						`shoots.placement.scaleByHeight is ${value} at pair ${i}; a scale multiplier is above 0`,
+					);
+			}
+	}
 	const clump = shoots.placement.clump;
 	for (const [name, scale] of [
 		['clump', clump],
