@@ -180,7 +180,7 @@ reports a WebGPU adapter and fails Creek at High while building one custom mater
 E1404 and VK_ERROR_UNKNOWN, on the current build and on the commit before the reflection landing
 ([record](tested-devices/galaxy-tab-a9-plus-sm-x216b-chrome/20261111-081454-vegetation.md)). Its
 grass pages draw all four presets on the same adapter. That failure is
-[an Adreno 619 driver fault](driver-bugs.md#adreno-619-a-pipeline-fails-to-build-with-vk-error-unknown-at-creeks-density),
+[an Adreno 619 driver fault](driver-bugs.md#adreno-619-a-pipeline-fails-to-build-with-vkerrorunknown-at-creeks-density),
 so its High and Ultra rows wait on the fault rather than on a slower frame.
 The page then reported 3 frames in 5.5 s, so the runner counted a pass with no triangles and no
 texture bytes. Its figures are in no table here and must not be read. The device's own fault is in
