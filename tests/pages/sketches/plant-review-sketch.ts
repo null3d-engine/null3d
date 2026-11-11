@@ -543,6 +543,8 @@ export default defineSketch(async (ctx) => {
 		part: cuttingPart,
 		...(QUERY.cut !== undefined && { length: QUERY.cut }),
 		...(QUERY.pick !== undefined && { pick: QUERY.pick }),
+		...(QUERY.shoots !== undefined && { shoots: QUERY.shoots }),
+		...(QUERY.ring !== undefined && { ring: QUERY.ring }),
 		orient: 'upright' as const,
 		...(VIEW === 'leaf-under' ? { face: 'lower' as const } : {}),
 		...(QUERY.pressed !== undefined && { pressed: QUERY.pressed }),

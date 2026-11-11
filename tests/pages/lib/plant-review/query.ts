@@ -102,6 +102,16 @@ export interface PlantReviewQuery {
 	readonly pick?: number;
 	/** The cutting's length in metres. */
 	readonly cut?: number;
+	/**
+	 * The shoots a branch or sub-branch cutting carries, in place of the record hint's count, so two
+	 * pictures of one species can show different numbers of side shoots.
+	 */
+	readonly shoots?: number;
+	/**
+	 * The radius of the ring a branch or sub-branch cutting's shoots stand on, as a share of the
+	 * piece's height, in place of the record hint's. A wide ring separates the shoots.
+	 */
+	readonly ring?: number;
 	/** Whether the page posts its measures of the plant beside the frame. */
 	readonly measure?: boolean;
 	/**
@@ -252,6 +262,8 @@ const NUMBER_FIELDS = [
 	'time',
 	'pick',
 	'cut',
+	'shoots',
+	'ring',
 	'horizon',
 	'fill',
 	'targetY',
