@@ -122,6 +122,15 @@ export interface PlantReviewQuery {
 	 * record hint's, so the tips separate while the bases stay together.
 	 */
 	readonly lean?: number;
+	/**
+	 * How a fanned cutting places its shoots: 'ring' round the piece's axis, or 'spray' along one
+	 * lateral line, as a close picture of separate thin twigs shows.
+	 */
+	readonly layout?: 'ring' | 'spray';
+	/**
+	 * The width of a 'spray' layout's lateral line, as a share of the piece's height.
+	 */
+	readonly spread?: number;
 	/** Whether the page posts its measures of the plant beside the frame. */
 	readonly measure?: boolean;
 	/**
@@ -275,6 +284,7 @@ const NUMBER_FIELDS = [
 	'shoots',
 	'ring',
 	'lean',
+	'spread',
 	'horizon',
 	'fill',
 	'targetY',
@@ -380,6 +390,9 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 	const form = params.get('form');
 	if (form !== null && !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(form))
 		throw new Error(`form=${form} is not a form's name: give a kebab-case word, such as young.`);
+	const layoutText = params.get('layout');
+	if (layoutText !== null && layoutText !== 'ring' && layoutText !== 'spray')
+		throw new Error(`layout=${layoutText} is not a layout: use ring or spray.`);
 	const shoot = params.get('shoot');
 	if (shoot !== null && !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(shoot))
 		throw new Error(`shoot=${shoot} is not a class name: give a kebab-case word, such as twig.`);
@@ -471,6 +484,7 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 		species,
 		...(form !== null && { form }),
 		...(shoot !== null && { shoot }),
+		...(layoutText !== null && { layout: layoutText as 'ring' | 'spray' }),
 		view,
 		...numbers,
 		...(background && { background }),
