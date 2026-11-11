@@ -328,8 +328,8 @@ function addSori(
 		const first = mesh.vertices;
 		for (let k = 0; k <= SORUS_SIDES; k++) {
 			const angle = (2 * Math.PI * k) / SORUS_SIDES;
-			const dx = Math.cos(angle) * sori.size;
-			const dy = Math.sin(angle) * sori.size;
+			const dx = cos(angle) * sori.size;
+			const dy = sin(angle) * sori.size;
 			mesh.vertex(
 				[
 					(centre[0] as number) -
