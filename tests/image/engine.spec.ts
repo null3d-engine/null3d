@@ -497,6 +497,9 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 			page,
 		}, testInfo) => {
 			test.skip(testInfo.project.name === 'production build', 'no image test page');
+			// The project's own timeout is shorter than this test's patience, so a page that answers
+			// between the two would be killed with a bare timeout instead of its own error.
+			test.setTimeout(FIRST_USE_WAIT_MS + 60_000);
 			// A decal material with any map cannot build its pipeline on a WebGPU device: the
 			// pipeline layout asks for 17 sampled textures in the fragment stage, one over the device's
 			// default limit of 16 (E1305), so no decal draws there. The decals image tests fail with it
