@@ -273,7 +273,14 @@ function growHeads(
 				previous = end;
 			});
 			const at = points[3] as Vector3;
-			flowerBud(at, end, axis, [0, -1, 0]);
+			// A hanging body follows its stalk's last reach, so a spike droops at the angle its
+			// stalk leaves the stem rather than standing dead vertical.
+			const along = normalize3([
+				at[0] - (points[2] as Vector3)[0],
+				at[1] - (points[2] as Vector3)[1],
+				at[2] - (points[2] as Vector3)[2],
+			]);
+			flowerBud(at, end, axis, along);
 		}
 		return;
 	}
