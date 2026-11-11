@@ -317,11 +317,13 @@ describe('cuttings', () => {
 				{ placeholders: 'missing', detail: 'low' },
 			);
 		const grow = { seed: 11, variant: 0, cutting: { part: 'cluster' } } as const;
+		const own = hint.scale ?? 1;
 		const plain = growPlantNow(kitOf(), grow);
-		const one = growPlantNow(kitOf(1), grow);
-		const smaller = growPlantNow(kitOf(0.9), grow);
-		expect(plantAssetDigest(one)).toBe(plantAssetDigest(plain));
-		expect(smaller.levels[0].triangles).toBe(plain.levels[0].triangles);
+		const same = growPlantNow(kitOf(own), grow);
+		const smaller = growPlantNow(kitOf(own * 0.9), grow);
+		expect(plantAssetDigest(same)).toBe(plantAssetDigest(plain));
+		// The scale steers the leaflets' size alone: the cut's axes and nodes stay where they are.
+		expect(smaller.skeleton).toEqual(plain.skeleton);
 		expect(plantAssetDigest(smaller)).not.toBe(plantAssetDigest(plain));
 	});
 
