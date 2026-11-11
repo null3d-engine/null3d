@@ -689,6 +689,10 @@ describe('the sheath view', () => {
 		// The bark pictures keep the views they had: only the sheath words take the new view.
 		expect(classifySlot('15-bark-mid-trunk.png')?.view).toBe('bark-mid');
 		expect(classifySlot('16-bark-on-limb.png')?.view).toBe('bark-limb');
+		// A picture of a blade leaving its sheath, or of a culm sheath on a stem, is not one
+		// tiller's column, so it keeps the view its number gives.
+		expect(classifySlot('08-blade-leaving-sheath.png')?.view).toBe('fork');
+		expect(classifySlot('16-culm-sheath.png')?.view).toBe('bark-limb');
 	});
 });
 
