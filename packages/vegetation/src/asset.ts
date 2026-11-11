@@ -81,17 +81,18 @@ export interface ShootPrototype {
 	readonly leaves: number;
 	/** One mesh per tier: low, medium, high, ultra. */
 	readonly tiers: readonly [PrototypeArrays, PrototypeArrays, PrototypeArrays, PrototypeArrays];
-	/** Its six cells in the card atlas: three planes, two faces each. */
+	/** Its four cells in the card atlas: two planes, two faces each. */
 	readonly card: CardCell;
 }
 
 /**
- * A prototype's cells in the card atlas: three planes through its attach point, front and back.
+ * A prototype's cells in the card atlas: two crossed planes through its attach point, front and
+ * back.
  *
  * @category api/vegetation
  */
 export interface CardCell {
-	/** The three planes: two vertical and crossed, one horizontal. */
+	/** The two planes, crossed along the shoot's axis. */
 	readonly planes: readonly {
 		/** The plane's centre in prototype space. */
 		readonly centre: Vec3;

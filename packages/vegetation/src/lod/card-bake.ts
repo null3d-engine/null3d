@@ -1,4 +1,5 @@
-// The card bake: each shoot prototype drawn orthographically onto three planes through the middle
+// The card bake: each shoot prototype drawn orthographically onto two crossed planes through the
+// middle
 // of its bounds (two vertical and crossed, one horizontal), seen from the front and from behind,
 // into a card atlas on the CPU. The front views fill layer 0 and the views from behind fill layer 1
 // at the same place, each drawn so that one point of a card samples one point of the shoot from
@@ -72,7 +73,11 @@ function octahedral(x: number, y: number, z: number): [number, number] {
 	return [Math.round((u * 0.5 + 0.5) * 255), Math.round((v * 0.5 + 0.5) * 255)];
 }
 
-/** The three planes of a prototype: centre, right and up half-extents, normal. */
+/**
+ * The card planes of a prototype: each plane's centre, right and up half-extents and normal. Two
+ * planes cross along the shoot's axis; the cross-section plane they leave out showed the shoot
+ * end on, and its coverage filled the sky that the crown's interior should show through.
+ */
 function planesOf(
 	mesh: PrototypeArrays,
 ): { centre: number[]; right: number[]; up: number[]; normal: number[] }[] {
@@ -91,7 +96,6 @@ function planesOf(
 	return [
 		{ centre, right: [hx, 0, 0], up: [0, hy, 0], normal: [0, 0, 1] },
 		{ centre, right: [0, 0, -hz], up: [0, hy, 0], normal: [1, 0, 0] },
-		{ centre, right: [hx, 0, 0], up: [0, 0, -hz], normal: [0, 1, 0] },
 	];
 }
 

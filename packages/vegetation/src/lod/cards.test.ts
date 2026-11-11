@@ -59,10 +59,10 @@ function mip(pixels: Float64Array, size: number): { pixels: Float64Array; size: 
 describe('the card bake', () => {
 	const { kit, atlas } = bakedKit();
 
-	it('gives each prototype three planes whose cells lie apart inside the atlas', () => {
+	it('gives each prototype two planes whose cells lie apart inside the atlas', () => {
 		const taken = new Uint8Array(atlas.size * atlas.size);
 		for (const prototype of kit.prototypes) {
-			expect(prototype.card.planes).toHaveLength(3);
+			expect(prototype.card.planes).toHaveLength(2);
 			for (const plane of prototype.card.planes) {
 				const [x, y, w, h] = plane.front;
 				expect(plane.back).toEqual(plane.front);
@@ -195,9 +195,9 @@ describe('the card levels', () => {
 		detail: 'high' as const,
 	};
 
-	it("draws each row's three planes at the first level", () => {
+	it("draws each row's two planes at the first level", () => {
 		const first = cardMesh(mesh, 1);
-		expect(first.indices.length / 3).toBe(rows.count * 6);
+		expect(first.indices.length / 3).toBe(rows.count * 4);
 		for (let i = 0; i < first.uvs.length; i++) {
 			expect(first.uvs[i]).toBeGreaterThanOrEqual(0);
 			expect(first.uvs[i]).toBeLessThanOrEqual(1);
@@ -206,7 +206,7 @@ describe('the card levels', () => {
 
 	it("draws each card's stalk only where the record gives a least width", () => {
 		const plain = cardMesh(mesh, 1);
-		expect(plain.indices.length / 3).toBe(rows.count * 6);
+		expect(plain.indices.length / 3).toBe(rows.count * 4);
 		const stalked = cardMesh(
 			{ ...mesh, record: { ...record, lod: { ...record.lod, cardStalk: 1 } } },
 			1,
@@ -220,7 +220,7 @@ describe('the card levels', () => {
 		}
 		expect(stretched).toBeGreaterThan(0);
 		// Each stalk is one quad from either side, so it shows whichever way the view turns it.
-		expect(stalked.indices.length / 3).toBe(rows.count * 6 + stretched * 4);
+		expect(stalked.indices.length / 3).toBe(rows.count * 4 + stretched * 4);
 		let stalks = 0;
 		for (let v = 0; v < stalked.uvs1.length / 2; v++) {
 			if (Math.abs((stalked.uvs1[v * 2 + 1] as number) - 0.75) >= 1e-6) continue;
@@ -302,7 +302,7 @@ describe('the card levels', () => {
 	it('keeps every second card in the thinned level, each grown by the square root of two', () => {
 		const second = cardMesh(mesh, 2);
 		const kept = Array.from(rows.order).filter((order) => order % 2 === 0).length;
-		expect(second.indices.length / 3).toBe(kept * 6);
+		expect(second.indices.length / 3).toBe(kept * 4);
 		expect(cardKeep(4, 2)).toBeCloseTo(Math.SQRT2, 12);
 		expect(cardKeep(3, 2)).toBe(0);
 		expect(cardKeep(3, 1)).toBe(1);

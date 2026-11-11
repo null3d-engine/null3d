@@ -1,4 +1,4 @@
-// The card levels: each shoot row becomes its prototype's three card planes in the first card
+// The card levels: each shoot row becomes its prototype's two card planes in the first card
 // level, in plant space. The second level keeps every second card of the first in the rows'
 // space-filling order, and each kept card grows about its middle by the square root of that step,
 // so the thinned crown covers about as much as the full one (D-241's card rule).
@@ -21,7 +21,7 @@ const CORNERS = [
 	[-1, 1],
 ] as const;
 
-/** The second coordinate that marks a card's stalk, in a place that the three card planes leave free. */
+/** The second coordinate that marks a card's stalk, in a place that the card planes leave free. */
 const STALK_PLANE = 0.75;
 
 /**

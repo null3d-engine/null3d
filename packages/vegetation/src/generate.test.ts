@@ -37,6 +37,7 @@ describe('the plant core with stand-ins', () => {
 		expect(kit.prototypes.length).toBe(stub.record.shoots?.prototypes ?? -1);
 		for (const prototype of kit.prototypes) {
 			expect(prototype.tiers).toHaveLength(4);
+			// A stand-in kit keeps the three-placeholder cards; a real species draws two.
 			expect(prototype.card.planes).toHaveLength(3);
 			expect(prototype.length).toBeGreaterThan(0);
 		}
