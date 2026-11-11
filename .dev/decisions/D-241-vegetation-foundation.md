@@ -403,7 +403,7 @@ those presets draw on core WebGPU only, and the tablet offered no WebGPU adapter
 set. The tablet's own run reports the WebGPU tier at all four presets, so the reason no longer holds and a ceiling for its High and Ultra rows is owed; until then those figures have no
 budget to compare. The rows still do not draw: Creek at High fails one custom material's pipeline
 with E1404 and VK_ERROR_UNKNOWN on that device, on this build and on the commit before the reflection
-landing ([Driver bug reports](../driver-bugs.md#adreno-619-a-pipeline-fails-to-build-with-vk-error-unknown-at-creeks-density)), so the ceiling waits on that fault.
+landing ([Driver bug reports](../driver-bugs.md#adreno-619-a-pipeline-fails-to-build-with-vkerrorunknown-at-creeks-density)), so the ceiling waits on that fault.
 
 - **Frame time:** the dressed Creek and forest must stay within the frame interval of the same
   preset, device and path. A preset that falls to a lower one at the same page fails.
