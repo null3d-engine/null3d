@@ -591,12 +591,14 @@ the figure and the budget, not for the governor's input.
   0.49, 0.83, 2.63 and 2.97 ms of GPU time a frame from low to ultra, and the allocation 67, 60, 52
   and 72 bytes a frame in the add-on's own code, both on Chrome 156.0.8078.80. So the failure above
   was the tool's and is closed; the pages' own figures still stand as the look witness.
-- The same command passes all eight gates at the landed head `cdf1cb99f`: the
-  redraw ran `bun packages/cli/bin/null3d.js check-addon packages/wind` and read `8 passed`. That is
-  the head's own full pass, which the addendum above could not name. Its cost reads 5.07, 4.57, 8.28
+- The same command passes all eight gates at `188601c05`, the tree the redraw's range was built on:
+  the redraw ran `bun packages/cli/bin/null3d.js check-addon packages/wind` and read `8 passed`.
+  `cdf1cb99f` is that tree's formatting-only descendant, so the two are the same code for this run's
+  inputs. That is the range's own full pass, which the addendum above could not name. Its cost reads 5.07, 4.57, 8.28
   and 6.16 ms of GPU time a frame from low to ultra, and its allocation 64, 61, 65 and 56 bytes a
-  frame in the add-on's own code. The two runs' figures answer the same question on different code,
-  so neither stands in for the other.
+  frame in the add-on's own code. The add-on's code is byte-identical at the two heads, so the
+  difference between their readings is the machine's state rather than the code, and each reading
+  belongs to its own run.
 
 ## Addendum: the leaves' two forms, and the flag and water readers
 
