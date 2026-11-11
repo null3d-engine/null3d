@@ -1,4 +1,16 @@
 {
+	"01-whole-tuft-distant.png": {
+		"daylight": 1.9,
+		"skyShare": 0.4
+	},
+	"02-whole-tuft-profile.png": {
+		"daylight": 0.92,
+		"skyShare": 0.4
+	},
+	"17-tuft-height-profile.png": {
+		"daylight": 1.09,
+		"skyShare": 0.4
+	},
 	"04-tuft-from-above.png": {
 		"elevation": 88,
 		"view": "crown"
