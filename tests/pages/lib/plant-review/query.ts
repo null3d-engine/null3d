@@ -178,9 +178,9 @@ export interface PlantReviewQuery {
 	 */
 	readonly barkZone?: number;
 	/**
-	 * Metres that a close view covers: the bark or limb a bark or limb view frames, or the width a
-	 * cut view shows across the frame, where the reference is a picture of a part of the piece
-	 * rather than the whole of it.
+	 * Metres that a close view covers: the bark or limb a bark or limb view frames, the sheath a
+	 * ground plant's sheath view frames, or the width a cut view shows across the frame, where the
+	 * reference is a picture of a part of the piece rather than the whole of it.
 	 */
 	readonly span?: number;
 	/**

@@ -2,6 +2,7 @@
 // stem and its radius at a height, the largest first-order limb, the limb that carries a thickness,
 // where the stem first forks, and a sunlit shoot tip. They read only the skeleton's arrays, so they
 // hold for every growth model.
+import { AXIS_CULM, AXIS_LIMB } from '../../../../packages/vegetation/src/core/graph';
 import type { MacroSkeleton, ShootRows } from './plant-types';
 
 /** A point or direction in plant space. */
@@ -105,6 +106,33 @@ export function lengthOf(skeleton: MacroSkeleton, axis: number): number {
 		length += Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
 	}
 	return length;
+}
+
+/**
+ * The thickest short limb that carries a ground plant's sheaths, such as a tiller's column: a sheath
+ * column is short and thick where a flowering stem is long and thin. Undefined for a plant with a
+ * single trunk, and for one with no sheath-bearing limb.
+ */
+export function sheathColumn(skeleton: MacroSkeleton): number {
+	// A ground plant's crown axis looks like a stem at its base but reaches no height, so the test
+	// for a trunk is a stem that crosses a quarter of the plant's height.
+	if (stemAt(skeleton, skeleton.height * 0.25)) return -1;
+	const { axes } = skeleton;
+	let best = -1;
+	let thickest = 0;
+	const long = Math.max(0.25, skeleton.height * 0.4);
+	for (let a = 0; a < axes.count; a++) {
+		if ((axes.parent[a] as number) < 0) continue;
+		const kind = axes.kind[a] as number;
+		if (kind !== AXIS_LIMB && kind !== AXIS_CULM) continue;
+		if (lengthOf(skeleton, a) > long) continue;
+		const radius = skeleton.radius[axes.first[a] as number] as number;
+		if (radius > thickest) {
+			thickest = radius;
+			best = a;
+		}
+	}
+	return best;
 }
 
 /** A point on an axis: where it is, the axis's direction there and its radius. */
