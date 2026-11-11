@@ -33,14 +33,14 @@ export const record: Species = {
 			spacing: { mean: 0.55, spread: 0.1 },
 		},
 		// Still 02: the bare stipe is about as long as the blade it carries, and leans a little.
-		stipe: { length: { mean: 0.8, spread: 0.1 }, lean: { mean: 6, spread: 5 } },
+		stipe: { length: { mean: 0.76, spread: 0.16 }, lean: { mean: 6, spread: 5 } },
 		frond: {
 			// Stills 12 and 21: the blade is bipinnate and broadly triangular, about as long as
 			// its stipe, and the blades of a stand overlap into a continuous roof.
 			kind: 'bipinnate',
 			length: { mean: 1.05, spread: 0.15 },
 			// Stills 06 and 16: a stipe stout enough to carry the blade.
-			petiole: { length: 0, width: 0.013, teeth: 0 },
+			petiole: { length: 0, width: 0.014, teeth: 0 },
 			// Still 02: the rachis leaves the stipe's top rising, turns over through the blade's
 			// first third to near level, and lets the tip fall a little below it.
 			droop: [
@@ -109,7 +109,7 @@ export const record: Species = {
 		// stipe's own photograph carries the green, so the zone above the black takes it as it is.
 		zones: [
 			{ layer: 0, by: 'height', from: -1, to: 0.12, blend: 0.06, tint: [0.06, 0.06, 0.05] },
-			{ layer: 0, by: 'height', from: 0.12, to: 4, blend: 0.06, tint: [1, 1, 1] },
+			{ layer: 0, by: 'height', from: 0.12, to: 4, blend: 0.06, tint: [1.07, 1.1, 0.88] },
 		],
 		young: 0,
 		youngRadius: 0,

@@ -278,7 +278,7 @@ export const record: Species = {
 			optics: {
 				reflectance: [0.0404, 0.0849, 0.0116],
 				reflectanceBack: [0.1935, 0.2701, 0.1787],
-				transmittance: [0.08, 0.17, 0.02],
+				transmittance: [0.12, 0.084, 0.013],
 				roughness: [0.45, 0.6],
 			},
 		},
@@ -324,12 +324,12 @@ export const record: Species = {
 			// Stills 09, 10 and 19: a long straight woody spine stands out from almost every node of
 			// the twigs, red-brown when young and grey with age.
 			kind: 'thorn',
-			at: 'old-wood',
+			at: 'node',
 			share: 0.5,
 			seasons: ['blossom', 'summer', 'autumn', 'winter'],
 			shape: { spines: 1, length: 0.022, spread: 0 },
 			colour: [0.18, 0.06, 0.04],
-			hang: 0,
+			hang: 90,
 		},
 		{
 			// Stills 01, 02 and 19: dark red haws in twos and threes at the twigs' ends, each a small
@@ -358,16 +358,19 @@ export const record: Species = {
 			hang: 160,
 		},
 		{
-			// Still 20: flat corymbs of five-petalled cream flowers, carried on the crowded nodes at a
-			// spring spur's end, with the leaves out among them.
+			// Still 20: flat corymbs of five-petalled cream flowers at a spring spur's end, with the
+			// leaves out among them. The shoot-tip site stands each corymb at the shoot's wood tip,
+			// inside the terminal leaf rosette, so the leaves hide it; a petal cup takes no stalk or
+			// pedicel to stand clear of them.
 			kind: 'flower',
-			at: 'node',
+			at: 'shoot-tip',
 			share: 0.4,
 			count: { mean: 6, spread: 1.5 },
-			tipShare: 0.95,
+			tipShare: 1,
 			seasons: ['blossom'],
-			shape: { petals: 5, radius: 0.007, cup: 0.45 },
+			shape: { petals: 5, radius: 0.007, cup: 0.45, stalk: 0.03 },
 			colour: [0.85, 0.83, 0.76],
+			stalkColour: [0.1, 0.14, 0.04],
 			hang: 0,
 		},
 	],

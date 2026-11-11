@@ -38,7 +38,8 @@ describe('the sparse form', () => {
 		const grown = withSparse(record, { seed: 11, variant: 0, sparse: 1 });
 		expect(grown.leaves).toBeCloseTo(0.2, 10);
 		expect(grown.limbs).toBeCloseTo(0.3, 10);
-		expect(grown.coarseness).toBeCloseTo(0.6, 10);
+		// The shared constant raises every species' coarseness floor above its own.
+		expect(grown.coarseness).toBeCloseTo(0.85, 10);
 	});
 
 	it('moves the three shares halfway at level a half', async () => {
@@ -46,7 +47,7 @@ describe('the sparse form', () => {
 		const grown = withSparse(record, { seed: 11, variant: 0, sparse: 0.5 });
 		expect(grown.leaves).toBeCloseTo(0.6, 10);
 		expect(grown.limbs).toBeCloseTo(0.65, 10);
-		expect(grown.coarseness).toBeCloseTo(0.3, 10);
+		expect(grown.coarseness).toBeCloseTo(0.425, 10);
 	});
 
 	it('keeps a coarseness the page has already set above the level', async () => {
