@@ -2147,6 +2147,35 @@ export function allCases(seed = 1): Case[] {
 	);
 }
 
+/** The library module of a test shader variant: its name without the suffix that marks a build of
+ * one language only, such as the reflection's GLSL build. */
+export function moduleOfVariant(variant: string): string {
+	return variant.replace(/_glsl$/, '');
+}
+
+/** The library module of a case. */
+export function moduleOfCase(c: Case): string {
+	const name = FUNCTIONS[c.function]?.name ?? '';
+	return name.slice(0, name.indexOf('::'));
+}
+
+/**
+ * The rows that a comparison keeps: those of the modules whose variant drew. A module whose variant
+ * could not draw has no results, so its failure alone reports it, whichever of its builds failed.
+ */
+export function drawnRows(cases: readonly Case[], failures: ReadonlyMap<string, string>): number[] {
+	return cases.flatMap((c, row) => (failures.has(moduleOfCase(c)) ? [] : [row]));
+}
+
+/** Records a failed variant under the module whose rows it draws. */
+export function recordFailure(
+	failures: Map<string, string>,
+	variant: string,
+	reason: string,
+): void {
+	failures.set(moduleOfVariant(variant), reason);
+}
+
 /** A result that differs from its reference. */
 export interface Mismatch {
 	function: string;

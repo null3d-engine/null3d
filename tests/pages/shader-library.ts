@@ -17,10 +17,13 @@ import {
 	allCases,
 	type Case,
 	compareResults,
+	drawnRows,
 	FUNCTIONS,
 	INPUT_TEXELS,
+	moduleOfVariant,
 	probeFault,
 	RESULT_VALUES,
+	recordFailure,
 	TARGET_PROBE,
 } from './lib/shader-library-cases';
 
@@ -45,12 +48,6 @@ const VARIANTS: [string, ShaderVariant<'main'>][] = Object.entries(SHADERS.test_
 
 /** The library module of each function, by function number. */
 const MODULES = FUNCTIONS.map((fn) => fn.name.slice(0, fn.name.indexOf('::')));
-
-/**
- * The library module of a test variant: its name without the suffix that marks a build of one
- * language only, such as the reflection's GLSL build.
- */
-const moduleOf = (variant: string) => variant.replace(/_glsl$/, '');
 
 /** The input texture's texels: one row per case. */
 function inputTexels(cases: readonly Case[]): Uint32Array {
@@ -109,10 +106,11 @@ function message(error: unknown): string {
 }
 
 /** Notes a module whose variant could not draw, in the trail and in the failures. */
-function fail(failures: Map<string, string>, module: string, error: unknown): void {
+function fail(failures: Map<string, string>, variant: string, error: unknown): void {
 	const reason = message(error);
+	const module = moduleOfVariant(variant);
 	progress(`${module}: ${reason}`);
-	failures.set(module, reason);
+	recordFailure(failures, variant, reason);
 }
 
 /** The kinds of GPU error that a scope catches. A pipeline that a driver cannot build is internal. */
@@ -195,8 +193,9 @@ async function runWebGPU(cases: readonly Case[], input: Uint32Array): Promise<Dr
 	const pipelineLayout = device.createPipelineLayout({ bindGroupLayouts: [layout] });
 	const failures = new Map<string, string>();
 	const pipelines: [string, GPURenderPipeline][] = [];
-	for (const [module, variant] of VARIANTS) {
+	for (const [name, variant] of VARIANTS) {
 		if (!variant.wgsl) continue;
+		const module = moduleOfVariant(name);
 		try {
 			const wgsl = variant.wgsl;
 			pipelines.push([
@@ -204,7 +203,7 @@ async function runWebGPU(cases: readonly Case[], input: Uint32Array): Promise<Dr
 				await scoped(device, () => libraryPipeline(device, pipelineLayout, module, wgsl)),
 			]);
 		} catch (error) {
-			fail(failures, module, error);
+			fail(failures, name, error);
 		}
 	}
 
@@ -385,11 +384,12 @@ function runWebGL2(cases: readonly Case[], input: Uint32Array): Drawn {
 	// probe's whole numbers then take the library's own way through its shader to the target.
 	let echoed = deviceFault !== undefined;
 	let shaderFault: string | undefined;
-	for (const [module, variant] of VARIANTS) {
+	for (const [name, variant] of VARIANTS) {
 		if (!variant.glsl) continue;
+		const module = moduleOfVariant(name);
 		try {
 			useProgram(gl, variant.glsl.main);
-			for (const [first, count] of moduleRows(cases, moduleOf(module))) {
+			for (const [first, count] of moduleRows(cases, module)) {
 				gl.scissor(0, first, RESULT_TEXELS, count);
 				gl.drawArrays(gl.TRIANGLES, 0, 3);
 			}
@@ -406,7 +406,7 @@ function runWebGL2(cases: readonly Case[], input: Uint32Array): Drawn {
 			const error = gl.getError();
 			if (error !== gl.NO_ERROR) throw new Error(`WebGL2 error ${error} after the draws`);
 		} catch (error) {
-			fail(failures, module, error);
+			fail(failures, name, error);
 		}
 	}
 	const bits = new Uint32Array(rows * RESULT_VALUES);
@@ -624,7 +624,7 @@ run('shader-library', async () => {
 	const { bits, failures, target, deviceFault, shaderFault, precisionFault, structFault } =
 		tier === 'webgl2' ? runWebGL2(cases, input) : await runWebGPU(cases, input);
 	// The rows of a module that could not draw hold no results, so its failure alone reports it.
-	const drawn = cases.flatMap((c, row) => (failures.has(MODULES[c.function]!) ? [] : [row]));
+	const drawn = drawnRows(cases, failures);
 	const drawnBits = new Uint32Array(drawn.length * RESULT_VALUES);
 	drawn.forEach((row, k) => {
 		drawnBits.set(bits.subarray(row * RESULT_VALUES, (row + 1) * RESULT_VALUES), k * RESULT_VALUES);

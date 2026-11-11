@@ -5,11 +5,11 @@
 //! order, so the view draws into its target directly. WebGPU draws the top row first, so there a
 //! view draws into an image of its own, and one full-screen pass copies the image into the target
 //! with its rows turned around. A reflection view on the HDR WebGPU path draws into its target
-//! directly instead, and `reflection_uv` turns the rows of the lookups: that view's material is the
-//! only reader, and the copy costs a pass over the whole target. The 8-bit path keeps the copy,
-//! which also decodes the display color. Turning the rows around in every shader that samples a
-//! map would cost every material a test per sample, and drawing the view upside down would turn
-//! its triangles' winding around, which every pipeline that draws it fixes.
+//! directly instead, and `reflection_uv` turns the rows of the lookups. A material that shows the
+//! mirror is the usual reader, but a full-screen pass can read a reflection texture too. The 8-bit
+//! path keeps the copy, which also decodes the display color. Turning the rows around in every
+//! shader that samples a map would cost every material a test per sample, and drawing the view
+//! upside down would turn its triangles' winding around, which every pipeline that draws it fixes.
 
 use null3d_gpu::drawlist::template;
 use null3d_gpu::drawlist::{
