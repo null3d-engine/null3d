@@ -18,7 +18,7 @@ import { join } from 'node:path';
 import { HEAVY_CHECKS, ignorePatternOf } from './lib/heavy-checks.ts';
 import { budgetNote, checkTimeoutMs, LOAD_FACTOR_ENV, loadFactor } from './lib/run-budget.ts';
 import { exactTestPath } from './lib/test-paths.ts';
-import { UNIT_GROUPS } from './lib/unit-groups.ts';
+import { UNIT_GROUPS, type UnitGroup } from './lib/unit-groups.ts';
 
 /** The repository, which the groups' paths are relative to. */
 const ROOT = join(import.meta.dirname, '..');
@@ -35,11 +35,11 @@ let failed = 0;
 let next = 0;
 
 /**
- * Runs one group of paths and prints what it wrote and how long it took.
+ * Runs one group and prints what it wrote and how long it took.
  *
- * @param paths The group's folders.
+ * @param group The group's paths, and the paths a group of their own holds.
  */
-function runGroup(paths: readonly string[]): Promise<void> {
+function runGroup(group: UnitGroup): Promise<void> {
 	// `--isolate` is not used: it gives each file a global of its own, which shrank the engine's
 	// group from 2,908 MB to 2,054 MB, but grew the group of the runner's tests from 1,220 MB to
 	// 3,822 MB and made it three times slower, so the run's peak was higher with it.
@@ -55,7 +55,8 @@ function runGroup(paths: readonly string[]): Promise<void> {
 	// A check that runs in parts names its file more than once, and the run leaves that file out once.
 	for (const file of new Set(HEAVY_CHECKS.map((check) => check.file)))
 		args.push(`--path-ignore-patterns=${ignorePatternOf(file)}`);
-	args.push(...paths.map(exactTestPath));
+	for (const pattern of group.ignore ?? []) args.push(`--path-ignore-patterns=${pattern}`);
+	args.push(...group.paths.map(exactTestPath));
 	const started = Date.now();
 	return new Promise((done) => {
 		const child = spawn('bun', args, {
@@ -83,7 +84,7 @@ function runGroup(paths: readonly string[]): Promise<void> {
 			const outcome = code === 0 ? 'passed' : `failed with ${code}`;
 			process.stdout.write(written);
 			console.log(
-				`unit: ${paths.join(' ')} ${outcome} in ${seconds}s, under ${CEILING_MIB} MiB${budgetNote(timeout)}`,
+				`unit: ${group.paths.join(' ')} ${outcome} in ${seconds}s, under ${CEILING_MIB} MiB${budgetNote(timeout)}`,
 			);
 			if (code !== 0) failed += 1;
 			done();
@@ -93,9 +94,9 @@ function runGroup(paths: readonly string[]): Promise<void> {
 
 /** Takes the next group and runs it, until no group is left. */
 async function lane(): Promise<void> {
-	for (let paths = UNIT_GROUPS[next]; paths; paths = UNIT_GROUPS[next]) {
+	for (let group = UNIT_GROUPS[next]; group; group = UNIT_GROUPS[next]) {
 		next += 1;
-		await runGroup(paths);
+		await runGroup(group);
 	}
 }
 
