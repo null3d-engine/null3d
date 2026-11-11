@@ -1,7 +1,7 @@
 // The coverage row: one oak crown grown through the plant core and placed three times at three
-// distances, with a copy in each band of the core's card levels. The sketch posts where the crowns
-// lie on the picture once the first frame has drawn, since only then does the camera place points
-// where that frame draws them.
+// distances: two copies in the first band of the core's card levels and one in the second.
+// The sketch posts where the crowns lie on the picture once the first frame has drawn, since only
+// then does the camera place points where that frame draws them.
 import { defineSketch } from '@null3d/engine';
 import { addCoverageRow, projectCrown } from '../lib/plant-coverage';
 
