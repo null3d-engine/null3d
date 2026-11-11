@@ -63,13 +63,44 @@ export function foldersHoldingTests(parent: string): string[] {
 }
 
 /**
+ * A group of the run: the paths it takes, and any paths under one of them that another group owns and
+ * this one leaves out.
+ */
+export interface UnitGroup {
+	/** The paths the group runs. */
+	readonly paths: readonly string[];
+	/** Patterns under `paths` that the group leaves out, because a group of their own holds them. */
+	readonly ignore?: readonly string[];
+}
+
+/**
+ * The species walk's slices, which take a group each. The walk is the run's longest single piece of
+ * work, and the run starts a group only after the one before it has ended, so one group of it sets
+ * the run's floor whatever the lanes.
+ */
+const SPECIES_SLICES: readonly string[] = readdirSync(
+	join(REPO_ROOT, 'packages/vegetation/src/species'),
+)
+	.filter((name) => /^species-slice-\d+\.test\.ts$/.test(name))
+	.map((name) => `packages/vegetation/src/species/${name}`)
+	.sort();
+
+/** The groups one package folder takes: the folder, and a group per slice that the folder leaves out. */
+function groupsOfPackage(name: string): UnitGroup[] {
+	const paths = [`packages/${name}`];
+	if (name !== 'vegetation' || SPECIES_SLICES.length === 0) return [{ paths }];
+	const ignore = SPECIES_SLICES.map((slice) => `**/${slice.split('/').pop()}`);
+	return [{ paths, ignore }, ...SPECIES_SLICES.map((slice) => ({ paths: [slice] }))];
+}
+
+/**
  * The groups of the run: the tools, each package, the benchmark's scenes and pages, the test
  * helpers, and every demo folder that holds a test file.
  */
-export const UNIT_GROUPS: readonly (readonly string[])[] = [
-	['tools'],
-	...readdirSync(join(REPO_ROOT, 'packages')).map((name) => [`packages/${name}`]),
-	['bench/scenes', 'bench/pages', 'bench/lib'],
-	['tests/lib'],
-	foldersHoldingTests('examples').map((name) => `examples/${name}`),
+export const UNIT_GROUPS: readonly UnitGroup[] = [
+	{ paths: ['tools'] },
+	...readdirSync(join(REPO_ROOT, 'packages')).flatMap((name) => groupsOfPackage(name)),
+	{ paths: ['bench/scenes', 'bench/pages', 'bench/lib'] },
+	{ paths: ['tests/lib'] },
+	{ paths: foldersHoldingTests('examples').map((name) => `examples/${name}`) },
 ];

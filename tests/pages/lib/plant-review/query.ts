@@ -114,6 +114,12 @@ export interface PlantReviewQuery {
 	/** Whether the page draws a 1 m scale bar beside the view's target. */
 	readonly scale?: boolean;
 	/**
+	 * Whether the page draws the motion debug view in place of the plant: each pixel's motion since
+	 * the frame before, as a color. A held frame has the frame before it, so a plant that its vertex
+	 * offset sways shows its motion and a plant past its sway distance stays black.
+	 */
+	readonly motion?: boolean;
+	/**
 	 * Whether a close view's colour is measured on the plant alone, ignoring the backdrop. A stem
 	 * does not fill its frame, so the nine patches of a plain average reach sky and ground; a slot
 	 * naming this has those patches drop every pixel close to the picture's own background. A
@@ -458,6 +464,7 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 		barkMask: params.get('barkMask') === '1',
 		foliage: params.get('foliage') === '1',
 		scale: params.get('scale') === '1',
+		motion: params.get('motion') === '1',
 		matte: params.get('matte') === '1',
 		fruit: params.get('fruit') === '1',
 		surface: params.get('surface') === '1',
