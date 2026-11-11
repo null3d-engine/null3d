@@ -240,7 +240,7 @@ describe('FrameReplay', () => {
 		try {
 			const taken = replay.builtTaken();
 			now = BUILD_WAIT_LIMIT_MS;
-			await expect(taken).rejects.toThrow('still building after 30 s');
+			await expect(taken).rejects.toThrow(`still building after ${BUILD_WAIT_LIMIT_MS / 1000} s`);
 		} finally {
 			performance.now = clock;
 		}
