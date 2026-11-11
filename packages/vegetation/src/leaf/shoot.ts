@@ -297,7 +297,9 @@ function nodeAzimuths(
 		case 'fascicle':
 			return [start + node * GOLDEN];
 		case 'distichous':
-			return [start + node * 180];
+			// Each node's leaf stands past the opposite rank by the class's turn, so the two ranks
+			// advance round the stem rather than lying in one plane.
+			return [start + node * (180 + (phyllotaxis.turn ?? 0))];
 		case 'opposite': {
 			const a = start + (phyllotaxis.decussate ? node * 90 : 0);
 			return [a, a + 180];
