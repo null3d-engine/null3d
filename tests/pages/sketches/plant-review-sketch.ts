@@ -33,6 +33,7 @@ import {
 	facing,
 	largestLimb,
 	limbNear,
+	nodeAt,
 	normalize,
 	pointAlong,
 	stemAt,
@@ -51,6 +52,7 @@ import {
 	forkView,
 	insideView,
 	junctionView,
+	limbPieces,
 	limbView,
 	strandsView,
 	surfaceView,
@@ -979,6 +981,39 @@ export default defineSketch(async (ctx) => {
 				// rather than as one limb's run. The query names that composition, and the camera
 				// stands on the stem at the share of its height the query gives.
 				if (QUERY.composition) {
+					// A limb's elbow: the node where the limb turns most sharply from its run to its
+					// rise, seen across the turn with the run and the rise in frame.
+					if (QUERY.composition === 'elbow') {
+						const pieces = limbPieces(
+							skeleton,
+							QUERY.along ?? 0.5,
+							QUERY.thin ?? Math.max(0.02, height * 0.02),
+						);
+						const piece = pieces[0];
+						if (piece) {
+							const first = skeleton.axes.first[piece.axis] as number;
+							const last = skeleton.axes.last[piece.axis] as number;
+							let at = piece.point.at as V3;
+							let sharpest = 0;
+							for (let n = Math.max(first + 1, 0); n < last; n++) {
+								const a = nodeAt(skeleton, n - 1);
+								const b = nodeAt(skeleton, n);
+								const c = nodeAt(skeleton, n + 1);
+								const u = normalize(sub(b, a));
+								const v = normalize(sub(c, b));
+								const turnAt = Math.acos(
+									Math.max(-1, Math.min(1, u[0] * v[0] + u[1] * v[1] + u[2] * v[2])),
+								);
+								if (turnAt > sharpest) {
+									sharpest = turnAt;
+									at = b;
+								}
+							}
+							const span = QUERY.span ?? Math.max(1, height * 0.15);
+							const across = (span * 0.5) / (Math.tan((fov * DEG) / 2) * aspect);
+							return orbit(at, across + piece.point.radius, e, turn, fov);
+						}
+					}
 					const at = stemAt(skeleton, height * (QUERY.along ?? 0.78));
 					if (at) {
 						const span = QUERY.span ?? Math.max(1.5, height * 0.35);
