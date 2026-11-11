@@ -130,6 +130,13 @@ async function formsOf(species: string): Promise<readonly string[]> {
 	return Object.keys((await loadSpecies(species)).record.forms ?? {});
 }
 
+/** Whether a species grows as a mound of leaves from its foot, where the crown start stays at the foot. */
+async function moundFormOf(species: string): Promise<boolean> {
+	if (!isSpeciesId(species)) return false;
+	const model = (await loadSpecies(species)).record.growth.model;
+	return model === 'tuft' || model === 'rosette';
+}
+
 /** The metres a bark view frames, from the species' texture manifest when it has one. */
 function barkSpan(species: string): number | undefined {
 	const path = join(REPO_ROOT, 'packages/vegetation-textures/textures', species, 'manifest.json');
@@ -148,6 +155,7 @@ function stillShot(
 	matte: boolean,
 	span?: number,
 	extra?: Readonly<Record<string, unknown>>,
+	moundForm = false,
 ): Shot {
 	const image = onColour(readImage(join(set.folder, slot.file)), [255, 255, 255]);
 	const aspect = image.width / image.height;
@@ -166,7 +174,7 @@ function stillShot(
 		skyMaskable(plant.background) ||
 		soilMaskable(plant.background, plant.height)
 	) {
-		const measures = measurePlant(image, plant);
+		const measures = measurePlant(image, plant, moundForm);
 		// A plain background gives its own colour, which the render stands against. A silhouette
 		// draws black on white whatever its picture's colours and light, so it takes the framing alone.
 		if (slot.view !== 'silhouette') {
@@ -247,11 +255,12 @@ function videoQuery(
 	base: PlantReviewQuery,
 	view: PlantView,
 	background: PlantBackground,
+	moundForm = false,
 ): PlantReviewQuery {
 	const frames = sampleFrames(path, FRAMING_FRAMES);
 	const masks = frames.map((frame) => plantMask(frame));
 	const estimate = estimateFraming(
-		masks.map((mask, k) => measurePlant(frames[k] as Rgba, mask)),
+		masks.map((mask, k) => measurePlant(frames[k] as Rgba, mask, moundForm)),
 		masks,
 	);
 	return { ...base, view, background, ...framingQuery(estimate) };
@@ -270,6 +279,7 @@ function turnVideoShots(
 	matte: boolean,
 	step?: number,
 	extra?: Readonly<Record<string, unknown>>,
+	moundForm = false,
 ): Shot[] {
 	const facts = probeVideo(video.path);
 	const frames = Math.max(1, Math.round(facts.duration * facts.fps));
@@ -278,8 +288,8 @@ function turnVideoShots(
 	const view: PlantView = TURN_VIEW[video.piece];
 	const query: PlantReviewQuery = withSlot(
 		video.piece === 'whole'
-			? { ...videoQuery(video.path, base, view, 'sky-meadow'), measure: true }
-			: videoQuery(video.path, base, view, 'studio-grey'),
+			? { ...videoQuery(video.path, base, view, 'sky-meadow', moundForm), measure: true }
+			: videoQuery(video.path, base, view, 'studio-grey', moundForm),
 		extra,
 	);
 	const group = `turn-${video.file.replace(/\.mp4$/, '')}`;
@@ -309,10 +319,11 @@ function windShots(
 	cellWidth: number | undefined,
 	fps: number,
 	extra?: Readonly<Record<string, unknown>>,
+	moundForm = false,
 ): Shot[] {
 	const facts = probeVideo(path);
 	const query: PlantReviewQuery = withSlot(
-		{ ...videoQuery(path, base, 'whole', 'sky-meadow'), wind: 1 },
+		{ ...videoQuery(path, base, 'whole', 'sky-meadow', moundForm), wind: 1 },
 		extra,
 	);
 	const count = Math.floor((facts.duration - 1e-6) * fps) + 1;
@@ -733,6 +744,7 @@ function compareRun(
 	manifest: Manifest,
 	set: ReferenceSet | undefined,
 	windFps: number,
+	moundForm: boolean,
 ): boolean {
 	const byGroup = new Map<string, RunFrame[]>();
 	for (const frame of manifest.frames) {
@@ -771,6 +783,7 @@ function compareRun(
 			set,
 			byGroup.get('stills') ?? [],
 			`${label}  STILLS AND TEXTURE SOURCES`,
+			moundForm,
 		);
 		for (const pair of result.pairs) stills.set(pair.file, pair);
 		metrics.stills = result;
@@ -805,7 +818,14 @@ function compareRun(
 		const frames = byGroup.get(group);
 		if (!frames) continue;
 		console.log(`comparing ${video.file}`);
-		const result = compareTurn(dir, group, video, frames, `${label}  ${video.file.toUpperCase()}`);
+		const result = compareTurn(
+			dir,
+			group,
+			video,
+			frames,
+			`${label}  ${video.file.toUpperCase()}`,
+			moundForm,
+		);
 		turns.set(video.file, result);
 		summary.push(...turnSummary(result, limit));
 	}
@@ -930,7 +950,13 @@ async function main(): Promise<void> {
 		const set = manifest.references
 			? readReferenceSet(manifest.references, await formsOf(manifest.species))
 			: undefined;
-		const complete = compareRun(dir, manifest, set, manifest.windFps ?? windFps);
+		const complete = compareRun(
+			dir,
+			manifest,
+			set,
+			manifest.windFps ?? windFps,
+			await moundFormOf(manifest.species),
+		);
 		console.log(readFileSync(join(dir, 'summary.md'), 'utf8'));
 		if (!complete) process.exitCode = 1;
 		return;
@@ -991,6 +1017,7 @@ async function main(): Promise<void> {
 	const cell = flag('cell') ? Number(option('cell')) : undefined;
 	const step = flag('step') ? Number(option('step')) : undefined;
 	const wanted = parts();
+	const moundForm = await moundFormOf(species);
 	const shots: Shot[] = [];
 	for (const view of viewList()) {
 		const [w, h] = VIEW_SPECS[view].size;
@@ -1023,14 +1050,16 @@ async function main(): Promise<void> {
 			: {};
 		if (wanted.has('stills'))
 			for (const slot of stillList(set.stills))
-				shots.push(stillShot(set, slot, base, matte, span, slotQueries[slot.file]));
+				shots.push(stillShot(set, slot, base, matte, span, slotQueries[slot.file], moundForm));
 		if (wanted.has('turns'))
 			for (const video of set.turns)
-				shots.push(...turnVideoShots(video, base, cell, matte, step, slotQueries[video.file]));
+				shots.push(
+					...turnVideoShots(video, base, cell, matte, step, slotQueries[video.file], moundForm),
+				);
 		if (wanted.has('wind'))
 			for (const path of set.winds) {
 				const file = path.split('/').pop() as string;
-				shots.push(...windShots(path, file, base, cell, windFps, slotQueries[file]));
+				shots.push(...windShots(path, file, base, cell, windFps, slotQueries[file], moundForm));
 			}
 	}
 	if (shots.length === 0)
@@ -1069,7 +1098,7 @@ async function main(): Promise<void> {
 	console.log(
 		`${frames.length - failed} of ${frames.length} frames drawn in ${manifest.seconds} s`,
 	);
-	const complete = compareRun(dir, manifest, set, windFps);
+	const complete = compareRun(dir, manifest, set, windFps, await moundFormOf(manifest.species));
 	console.log(readFileSync(join(dir, 'summary.md'), 'utf8'));
 	if (failed > 0 || !complete) process.exitCode = 1;
 }
