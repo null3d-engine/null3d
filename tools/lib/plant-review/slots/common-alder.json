@@ -8,7 +8,7 @@
 		"sky": "#d0dff1",
 		"ground": "#707a47",
 		"fov": 30,
-		"fill": 0.934,
+		"fill": 0.7,
 		"targetY": 0.483
 	},
 	"02-whole-profile.png": {
