@@ -139,6 +139,7 @@ export class GpuTimer {
 			const base = slot * QUERIES;
 			this.readbacks.push(
 				device.createBuffer({
+					label: 'gpu timer readback',
 					size: QUERIES * TIMESTAMP_BYTES,
 					usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
 				}),

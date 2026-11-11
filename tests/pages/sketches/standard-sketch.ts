@@ -26,6 +26,7 @@ import {
 	type GridEnvironmentName,
 } from '../../../bench/scenes/standard-grid';
 import { sampleEnvironment } from '../../../tools/lib/sample-url';
+import { applySketchSwitches } from '../lib/sketch-switches';
 
 const params = new URL(import.meta.url).searchParams;
 const scene = params.get('scene') ?? 'grid';
@@ -40,7 +41,8 @@ const QUAD = {
 };
 
 export default defineSketch(async (ctx) => {
-	const { scene: world, post, assets } = ctx;
+	const { scene: world, post, assets, quality } = ctx;
+	applySketchSwitches(import.meta.url, quality);
 	if (params.get('tone') === 'none') post.set({ toneMapping: 'none' });
 	world.setBackground(GRID_BACKGROUND);
 	world.setActiveCamera(world.createPerspectiveCamera(GRID_CAMERA));
