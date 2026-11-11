@@ -11,6 +11,9 @@ const DISTANCES = [6, 400];
 /** Where the large grid with pieces draws, and the same grid without them, by name. */
 const CORNERS = { pieces: 500, whole: -500 };
 
+/** The most measures that a view takes while the counts of the drawn triangles catch up. */
+const SETTLE_WAITS = 8;
+
 run('runtime-levels', async () => {
 	const canvas = document.querySelector('canvas');
 	if (!canvas) throw new Error('the page has no canvas');
@@ -37,10 +40,27 @@ run('runtime-levels', async () => {
 			});
 			engine.postToSketch(type, place);
 		});
-	// WebGPU counts the triangles that the GPU culled on one frame in eleven, a few frames late.
+	/**
+	 * The triangles that a frame draws, once the counts have caught up with the view. WebGPU takes
+	 * the triangles of the draws that it culled from the GPU, on one frame in eleven and a few
+	 * frames late, so a slow device still reports the count of the camera before this one. The page
+	 * waits until the count differs from the one that the view before gave and then repeats, or
+	 * until `SETTLE_WAITS` measures pass.
+	 */
+	let lastDrawn = -1;
 	const drawn = async () => {
-		await engine.measure(0.5);
-		return (await engine.measure(1)).triangles.median;
+		let previous = -1;
+		let changed = false;
+		let triangles = previous;
+		for (let k = 0; k < SETTLE_WAITS; k++) {
+			await engine.measure(0.5);
+			triangles = (await engine.measure(1)).triangles.median;
+			if (triangles !== lastDrawn) changed = true;
+			if (changed && triangles === previous && triangles > 0) break;
+			previous = triangles;
+		}
+		lastDrawn = triangles;
+		return triangles;
 	};
 	const triangles: Record<string, number> = {};
 	for (const distance of DISTANCES) {
