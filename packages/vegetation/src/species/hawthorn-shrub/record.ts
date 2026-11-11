@@ -51,7 +51,10 @@ export const record: Species = {
 	// plant. Still 18 stands the thickest stem about two hundredths of the height across at breast
 	// height. Its height is read from the stems' own size in still 07; its spread and crown base are
 	// the fit's.
-	size: { height: { mean: 4, spread: 0.6 }, dbh: 0.08, aspect },
+	// Stills 07 and 18 stand the thickest stem at about two hundredths of the height across at
+	// breast height; the first setting drew it at 0.0156. The bend keeps its own girth below, so
+	// the thicker drawn wood does not stiffen the crown's sag.
+	size: { height: { mean: 4, spread: 0.6 }, dbh: 0.103, aspect },
 	growth: {
 		model: 'self-organizing',
 		years: 30,
@@ -114,8 +117,10 @@ export const record: Species = {
 			],
 		},
 		// Stills 01, 02 and 18: foliage stands almost to the grass, with only the stool itself bare,
-		// and no low shoot is lost to the shade of the crown above it.
-		shedding: { threshold: 0.03, cleanBole: 0, stubs: 0.1, underCrown: 0 },
+		// and no low shoot is lost to the shade of the crown above it. The drawn dome sits taller
+		// than the photographs' and keeps its mass too high, so the tender shoots in the crown's
+		// shade are shed a little more readily than the first setting allowed.
+		shedding: { threshold: 0.06, cleanBole: 0, stubs: 0.1, underCrown: 0 },
 		// The bend weighs the wood at the stem's own girth, so a thin stool sags a little and its
 		// tips right themselves.
 		bending: { strength: 0.2, upturn: 0.3, girth: 0.1 },
@@ -260,6 +265,15 @@ export const record: Species = {
 			lift: 6,
 			skyward: 0.55,
 			scale: { mean: 1.2, spread: 0.1 },
+			// Stills 01, 02 and 18: the dome is broad at its middle and flat across its top, so the
+			// mid-crown shoots reach a little further than the record's one scale and the top ones
+			// stand half as far past their twigs, which lowers the dome without raising its foot.
+			scaleByHeight: [
+				[0, 1],
+				[0.55, 1.1],
+				[0.8, 0.8],
+				[1, 0.32],
+			],
 		},
 	},
 	foliage: {
