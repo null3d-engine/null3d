@@ -690,9 +690,14 @@ export default defineSketch(async (ctx) => {
 			case 'whole':
 			case 'skeleton':
 			case 'silhouette': {
+				// A lifted plant's frame reaches its lowest root, so an unframed lifted picture keeps
+				// the root ball in view below the crown.
+				const reach = QUERY.lifted
+					? { min: [bounds.min[0], baseY, bounds.min[2]] as V3, max: bounds.max }
+					: bounds;
 				const view = FRAMED
 					? standView(height, foot, turn, aspect)
-					: fit(bounds, turn, e, aspect, fov);
+					: fit(reach, turn, e, aspect, fov);
 				return scaledStand(view, QUERY.standScale);
 			}
 			case 'crown-sky': {
