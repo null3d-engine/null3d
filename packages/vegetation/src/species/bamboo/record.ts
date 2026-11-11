@@ -274,7 +274,7 @@ export const record: Species = {
 			[1, 0.55],
 		],
 		sway: { frequency: 0.24, amplitude: 0.045 },
-		flutter: { kind: 'blade', amplitude: 0.22, frequency: 3 },
+		flutter: { kind: 'blade', amplitude: 0.16, frequency: 3 },
 	},
 	lod: {
 		nearFoliage: 'instanced',
