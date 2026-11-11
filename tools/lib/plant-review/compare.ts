@@ -73,6 +73,12 @@ export function hasSeparableOutline(view: string, kind: string): boolean {
 	return !(BARK_VIEWS.has(view) || (kind === 'texture' && !view.startsWith('leaf')));
 }
 
+/**
+ * The green of a leaf in CIELAB a*, below which a patch pixel is foliage rather than bark. Foliage
+ * over a bark close-up stands well below this; the barks measured across the corpus stay above it.
+ */
+const LEAF_GREEN = -5;
+
 /** The camera's framing of a reference, in screen shares, as the review page takes it. */
 export interface ReferenceFraming {
 	readonly horizon: number;
@@ -1259,8 +1265,13 @@ export function closeFraming(facts: unknown): CloseFraming | undefined {
  * picture a side, centred at a fifth, a half and four fifths each way, so the patches do not overlap
  * and together they cover different phases of a bark tile. Averaging them measures the material
  * rather than the one window the camera happens to frame.
+ *
+ * With `onPlant`, pixels as close to a corner colour as the backdrop are dropped. With `barkOnly`,
+ * leaf-green pixels are dropped as well: a limb close-up carries leaves across the bark, and the
+ * material the figure is about is the bark. A patch that is leaf from edge to edge has no bark to
+ * read, so it falls back to the plant-filtered mean.
  */
-export function patchLab(image: Rgba, onPlant = false): number[] {
+export function patchLab(image: Rgba, onPlant = false, barkOnly = false): number[] {
 	const lab = labImage(image);
 	// A picture's own background, read from its four corners: a close view lays a stem on sky or
 	// on a plain studio ground, so the corners are the backdrop wherever the stem does not reach.
@@ -1298,20 +1309,31 @@ export function patchLab(image: Rgba, onPlant = false): number[] {
 						);
 						if (backdrop) continue;
 					}
+					if (barkOnly && (lab[at + 1] as number) < LEAF_GREEN) continue;
 					for (let c = 0; c < 3; c++) sum[c] = (sum[c] as number) + (lab[at + c] as number);
 					n++;
 				}
 		}
+	if (n === 0 && barkOnly) return patchLab(image, onPlant);
 	return sum.map((v) => v / Math.max(1, n));
 }
 
 /**
  * The colour difference between two pictures' nine-patch means, read on the plant alone when asked.
  * A texture source and its render are cut out on different colours, so asking for the plant drops
- * both backdrops and compares the material.
+ * both backdrops and compares the material. With `barkOnly`, both sides drop their foliage too.
  */
-export function patchDifference(reference: Rgba, render: Rgba, onPlant = false): number {
-	return Number(deltaE2000(patchLab(reference, onPlant), patchLab(render, onPlant)).toFixed(2));
+export function patchDifference(
+	reference: Rgba,
+	render: Rgba,
+	onPlant = false,
+	barkOnly = false,
+): number {
+	return Number(
+		deltaE2000(patchLab(reference, onPlant, barkOnly), patchLab(render, onPlant, barkOnly)).toFixed(
+			2,
+		),
+	);
 }
 
 /** A still or texture source as the comparison reads it: a cut-out laid on white. */
@@ -1403,8 +1425,14 @@ export function compareStills(
 		// colour is a bark colour: a species that names a picture's view draws that view, and the
 		// reference's number must not overrule it.
 		const barkClose = slot.kind !== 'texture' && BARK_VIEWS.has(drawn);
+		// A limb close-up shows leaves over the bark, so a picture that names them reads the bark
+		// alone on both sides; the blend would otherwise be a leaf colour on one side of the pair.
+		const barkOnly = frame.query?.leafyBark === true;
 		const barkColour = barkClose
-			? { reference: patchLab(refImage, barkMaskOn), render: patchLab(render.image, barkMaskOn) }
+			? {
+					reference: patchLab(refImage, barkMaskOn, barkOnly),
+					render: patchLab(render.image, barkMaskOn, barkOnly),
+				}
 			: null;
 		const edges = Number(
 			edgeDifference(edgeProfile(refImage), edgeProfile(render.image)).toFixed(3),

@@ -126,6 +126,13 @@ export interface PlantReviewQuery {
 	 */
 	readonly barkMask?: boolean;
 	/**
+	 * Whether a bark close view's photograph shows leaves over the bark: the patches drop
+	 * leaf-green pixels on both pictures, so the figure reads the bark's own colour rather than a
+	 * blend with the foliage. A bark that is itself green leaves this off and keeps `barkMask`
+	 * alone, since that green is the material being measured.
+	 */
+	readonly leafyBark?: boolean;
+	/**
 	 * Whether a view that draws the wood alone draws the plant's foliage as well, which a bark
 	 * photograph taken among leaves needs if its colour is to be compared with like.
 	 */
@@ -302,6 +309,7 @@ const SWITCHES = [
 	'surface',
 	'lifted',
 	'barkMask',
+	'leafyBark',
 	'foliage',
 ] as const;
 
@@ -453,6 +461,7 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 		measure: params.get('measure') === '1',
 		lifted: params.get('lifted') === '1',
 		barkMask: params.get('barkMask') === '1',
+		leafyBark: params.get('leafyBark') === '1',
 		foliage: params.get('foliage') === '1',
 		scale: params.get('scale') === '1',
 		motion: params.get('motion') === '1',
