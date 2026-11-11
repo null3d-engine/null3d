@@ -427,7 +427,12 @@ const WHOLE_SCALE_MIN = 0.4;
 
 /** How long a width correction waits for a draw slot before it keeps the framing's own stand. */
 const CORRECTION_WAIT_MS = 300_000;
-const WHOLE_SCALE_MAX = 2.5;
+/**
+ * The most a whole view's stand may be scaled back to clear a crop. A mask that reports the plant
+ * narrower than it draws asks for a stand beyond this, and the picture keeps the framing's own;
+ * the bound sits above the largest accepted correction a crop has needed here.
+ */
+const WHOLE_SCALE_MAX = 2.8;
 
 /**
  * A drawn frame's camera stand and the plant's width in metres, as the page posted them: the
