@@ -106,6 +106,24 @@ Demos load sample files through `sampleUrl('<path>')` from `examples/lib/samples
 
 A mesh made in code gets the same levels of detail and culling as a mesh from a file ([AGENTS.md](../AGENTS.md#parity-with-threejs-and-add-on-modules), rule 15). A demo's meshes plan their levels on their own at their first draw, with the asset tool's planner, when a mesh holds 4,096 triangles or more or its copies hold 65,536 together ([D-310](decisions/D-310-runtime-levels.md)). A demo that sets levels by hand with `mesh.setLevels`, or opts a mesh out with `levels: false`, says why in a comment. A comparison scene opts its meshes out, because its three.js twin draws every mesh whole. A mesh that bends, moves its vertices in each frame, or draws lines or points keeps its full mesh. Content made in code is no reason to draw every triangle at every distance. In a desert benchmark, null3D drew 13.5 million triangles a frame where three.js's meshlet pipeline drew 1.8 million. Far copies that drew levels that were too fine caused most of the difference.
 
+## The start's ten seconds
+
+Every demo reaches its first frame within ten seconds of the page opening. The development machine
+is the reference, and the engine's download and the first draw sit inside that time (hard rule 43).
+Work that the first frame does not need arrives after it. A scene therefore fills in rather than holds
+a card.
+
+Measure a start with a cold browser profile at `localhost` on this machine. Record the load average
+with the figure. The module cache, the assets cache and the shader cache each change the result, so a
+start measured after an earlier visit says so. The loading overlay names each phase in its lane. A
+counted phase moves with the work. A start whose slow step is uncounted is instrumented until the
+step has a name.
+
+The wind demo's start is the case that set the rule. The owner's recording showed three costs. About
+twenty seconds passed before the first plant. The twelve species finished growing at thirty-three
+seconds. The first frame came at about sixty. Those stages are the model for every other demo: the
+engine's download, the engine's create, the workers, the scene's growth, then the first frame.
+
 ## A page backdrop under a demo
 
 A demo whose entry sets `backdrop: true` draws over a page. `startDemo` starts the engine on a see-through canvas. It puts a light page-like surface inside the canvas's parent. It moves the labels' layer there too, so the order is the backdrop, the labels, then the canvas. The sketch sets no background, so the page shows where no object draws. A page that lays out its own demos must keep the canvas's parent positioned.
