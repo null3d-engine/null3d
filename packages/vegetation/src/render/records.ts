@@ -138,11 +138,10 @@ export const HEADER = {
 	winterReflectance: 63,
 	/** The winter leaves' linear transmittance. */
 	winterTransmittance: 64,
-	/**
-	 * A tuft's sheath columns' linear colour, then 1 when the record gives one. Absent, the columns
-	 * draw the leaf material.
-	 */
+	/** A tuft's basal sheath colour, then its roughness, where the record names one. */
 	sheath: 65,
+	/** A grass blade's collar: its colour, then the share of the blade's base it takes. */
+	collar: 66,
 } as const;
 
 /**
@@ -152,7 +151,7 @@ export const HEADER = {
 export const BARK_ZONE_TEXELS = 4;
 
 /** The header's texels that hold anything. */
-export const HEADER_TEXELS = HEADER.sheath + 1;
+export const HEADER_TEXELS = HEADER.collar + 1;
 
 /** An extra's roughness where its record names none. */
 export const EXTRA_ROUGHNESS = 0.6;
@@ -313,6 +312,9 @@ export function speciesHeader(
 			0,
 		]);
 	}
+	const foliage = record.foliage;
+	if (foliage.kind === 'grass-blade' && foliage.blade.collar)
+		texel(header, HEADER.collar, [...foliage.blade.collar.colour, foliage.blade.collar.share]);
 	const minParts = box.min.map(split);
 	const spanParts = box.max.map((max, k) => split(max - (box.min[k] as number)));
 	texel(header, HEADER.boxMin, [...minParts.map((p) => p[0]), 0]);

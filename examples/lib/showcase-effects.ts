@@ -117,12 +117,13 @@ export function createShowcaseEffects(
 		shadows?.fit();
 	};
 	const on: Record<string, boolean> = { ...start };
-	// The level of detail starts off unless the scene's start list turns it on: every mesh then draws
-	// at its fullest until the Quality tab turns it on, as a threshold of 0 picks every mesh's base
-	// level. The switch turns it on again at the preset's own threshold, or at a default threshold
-	// when the page started with it off.
+	// The level of detail starts on, at the preset's own threshold, so every showcase draws its
+	// simpler levels in the distance without being asked. A scene that starts with it off names
+	// `lod: false` in its start list; every mesh then draws at its fullest until the Quality tab
+	// turns it on, as a threshold of 0 picks every mesh's base level.
 	let lodThreshold = quality.settings.lodThreshold || 1;
-	if (!start.lod && quality.settings.lodThreshold > 0) void quality.set({ lodThreshold: 0 });
+	if (start.lod === false && quality.settings.lodThreshold > 0)
+		void quality.set({ lodThreshold: 0 });
 	// The stage starts with every part on, so a part that the scene starts with off must be turned
 	// off now; the HUD state and the scene then agree, and the button reads the scene's real state.
 	for (const part of ['sky', 'fog', 'environment'] as const)
