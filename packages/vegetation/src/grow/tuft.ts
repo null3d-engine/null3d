@@ -736,6 +736,12 @@ export function meshTuft(input: MeshInput, level: MeshLevel): MeshArrays {
 			? { length: spreadMean(blade.ligule.length), width: blade.ligule.width }
 			: undefined;
 	const liguleShare = blade.ligule?.share ?? 1;
+	// The axes that carry a flower: their stems are kept at every tier, because the spike draws at
+	// the stem's own site and a spike whose stem is dropped hangs free.
+	const flowering = new Set<number>();
+	for (let b = 0; b < skeleton.buds.count; b++)
+		if ((skeleton.buds.kind[b] as number) === BUD_FLOWER)
+			flowering.add(skeleton.buds.axis[b] as number);
 	const mesh = new MeshWriter();
 	const season = input.season;
 	const browning =
@@ -816,8 +822,8 @@ export function meshTuft(input: MeshInput, level: MeshLevel): MeshArrays {
 			continue;
 		}
 		const fine = (axes.order[a] as number) >= 3;
-		if (fine && !tiers.fine) continue;
 		const isStem = kind === AXIS_CULM;
+		if (fine && !tiers.fine && !(isStem && flowering.has(a))) continue;
 		// A shoot's column of sheaths takes the record's colours, marked in its surface-kind byte.
 		const sheath = !isStem && !fine && growth.sheathColour !== undefined;
 		if (!isStem && !fine && level === 2) continue;
