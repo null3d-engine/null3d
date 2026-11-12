@@ -218,3 +218,16 @@ A third run, `holm-shade0`, switches the term off and reads 6.11. The remaining 
 the base zone tint's green, which the species record owns. A tint must not answer it, because the
 record's two tint attempts split the stool. The meshes are unchanged: the holm oak and the willow
 hash the same before and after through `tools/plant-mesh-hash.ts`.
+
+### The measure that read the crown's shade as foliage
+
+The plant coverage test counted a pixel as foliage only when its colour summed past 12. That count cut
+through the leaves' own dark range, so the crown shade above moved it: at `0436974e3`, the commit that
+agreed the bands, the crowns covered 0.350 to 0.403 and the test passed; at `63fddd5fa` they covered
+0.408 to 0.427 and it failed. The bisect found the change in this record's own commit, `1f06d15f7`: the
+two heads' crown boxes are identical to the pixel, and the dark pixels fell as the 41 to 120 band rose,
+so the pixels that crossed the count were made bright rather than drawn anew. A crossing's plane does
+not tell the bark from the leaves, so the count now takes every drawn pixel: the page clears to black,
+the background sums to 0 and the plant's darkest pixels sum to 1. The two heads then read within 0.3
+points of each other, and the test keeps its relative bound with the ceiling moved to 0.64. The look
+change itself stands and is the owner's to see: the crown's shade on bark is brighter than it was.
