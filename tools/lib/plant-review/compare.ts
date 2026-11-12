@@ -62,7 +62,20 @@ const EDGE_FLOOR = 6;
 const PIECE_AREA = 24;
 
 /** The views that photograph the bark close up, whatever words a species puts in its file names. */
-const BARK_VIEWS: ReadonlySet<string> = new Set(['bark-base', 'bark-mid', 'bark-limb']);
+const BARK_VIEWS: ReadonlySet<string> = new Set([
+	'bark-base',
+	'bark-mid',
+	'bark-limb',
+	// A ground plant's bark is its sheath, so the sheath close view reads the material as a bark
+	// close view does.
+	'sheath',
+]);
+
+/**
+ * The green of a leaf in CIELAB a*, below which a patch pixel is foliage rather than bark. Foliage
+ * over a bark close-up stands well below this; the barks measured across the corpus stay above it.
+ */
+const LEAF_GREEN = -5;
 
 /**
  * Whether a picture separates a plant from a plain background, so its outline can be read. A bark
@@ -76,12 +89,6 @@ const BARK_VIEWS: ReadonlySet<string> = new Set(['bark-base', 'bark-mid', 'bark-
 export function hasSeparableOutline(view: string, kind: string, noOutline = false): boolean {
 	return !noOutline && !(BARK_VIEWS.has(view) || (kind === 'texture' && !view.startsWith('leaf')));
 }
-
-/**
- * The green of a leaf in CIELAB a*, below which a patch pixel is foliage rather than bark. Foliage
- * over a bark close-up stands well below this; the barks measured across the corpus stay above it.
- */
-const LEAF_GREEN = -5;
 
 /** The camera's framing of a reference, in screen shares, as the review page takes it. */
 export interface ReferenceFraming {

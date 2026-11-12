@@ -6,6 +6,7 @@ import {
 	placePlants,
 	plantMaterials,
 	prepareSpecies,
+	type SpeciesId,
 	speciesIds,
 } from '@null3d/vegetation';
 import type { MeadowControls } from './hud';
@@ -15,6 +16,11 @@ import { plantSign } from './signage';
 export interface MeadowOptions {
 	/** The controls as they stand at the moment of a build. */
 	controls(): MeadowControls;
+	/**
+	 * The species to draw, when a held picture names a fixed subset; absent draws every registered
+	 * species, as the live page does.
+	 */
+	species?: readonly SpeciesId[];
 }
 
 /** A plant piece the meadow can take down again. */
@@ -78,7 +84,7 @@ export function createMeadow(
 		for (const piece of planted) piece.destroy();
 		planted = [];
 		const { season, sparse } = options.controls();
-		const ids = speciesIds();
+		const ids = options.species ?? speciesIds();
 		const across = Math.max(1, Math.ceil(Math.sqrt(ids.length)));
 		const step = 34;
 		const first = !grown;

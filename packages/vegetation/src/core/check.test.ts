@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { record as template } from '../species/_template/record';
+import { record as meadow } from '../species/meadow-grass/record';
 import { capProblems, capsFor, MODEL_CAPS } from './caps';
 import { checkSpecies, speciesProblems } from './check';
 import type { ShootSpec, Species } from './record';
@@ -309,7 +310,7 @@ describe('the record check', () => {
 		).toBe(true);
 	});
 
-	it('presses a blade, a thick leaf or a whole frond flat, and no other foliage', () => {
+	it('presses a blade, a thick leaf, a whole frond or a grass blade flat, and no other foliage', () => {
 		const pressed: Species = { ...template, cuttings: { leaf: { pressed: true } } };
 		const flat = template.foliage.kind === 'blade' || template.foliage.kind === 'thick';
 		expect(speciesProblems(pressed).some((p) => p.startsWith('cuttings.leaf.pressed'))).toBe(!flat);
@@ -325,6 +326,8 @@ describe('the record check', () => {
 			foliage: { kind: 'frond', optics: {} },
 		} as unknown as Species;
 		expect(speciesProblems(frond).some((p) => p.startsWith('cuttings.leaf.pressed'))).toBe(false);
+		const grass: Species = { ...meadow, cuttings: { leaf: { pressed: true } } };
+		expect(speciesProblems(grass).some((p) => p.startsWith('cuttings.leaf.pressed'))).toBe(false);
 	});
 
 	it('holds a pressed leaf own stalk to a length above zero', () => {
