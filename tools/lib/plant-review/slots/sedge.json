@@ -10,7 +10,9 @@
 	"07-basal-crown.png": {
 		"background": "studio-grey",
 		"ground": "#4a3b2c",
-		"view": "crown-foot"
+		"view": "crown-foot",
+		"daylight": 2.5,
+		"skyShare": 0.8
 	},
 	"08-leaf-leaving-sheath.png": {
 		"distance": 0.25,
