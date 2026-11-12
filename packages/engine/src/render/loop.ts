@@ -144,6 +144,15 @@ function wakeUp(): void {}
 export const CAPTURE_WAIT_CALLBACKS = 120;
 
 /**
+ * How long a capture waits for any animation frame callback before it fails by the stopped clock.
+ * A page that is hidden or throttled runs no callbacks at all, so the callback count alone never
+ * ends the wait. The slowest measured software frame was 2.2 seconds, the wind demo's 16 frames in
+ * 35 seconds on CI's software GPU, and this sits about 13 times above it, so a working slow page
+ * still ends its wait by taking a frame.
+ */
+export const CAPTURE_CLOCK_MS = 30_000;
+
+/**
  * Resolves once the frame loop on this thread has taken a frame after this call. It checks in this
  * thread's animation frame callbacks, which run after the loop's own, so the loop takes and draws
  * any frame that is ready before a capture replays the frame taken last. A thread that a blocking
@@ -152,19 +161,29 @@ export const CAPTURE_WAIT_CALLBACKS = 120;
  * and after `CAPTURE_WAIT_CALLBACKS` callbacks without one. A hidden page runs no callbacks, so the
  * wait goes on once the page shows again.
  */
-export function nextFrameTaken(slots: Int32Array): Promise<void> {
+export function nextFrameTaken(slots: Int32Array, clockMs = CAPTURE_CLOCK_MS): Promise<void> {
 	const taken = Atomics.load(slots, Slot.FramesTaken);
 	let callbacks = 0;
-	return new Promise((resolve) => {
+	return new Promise((resolve, reject) => {
+		// A page whose animation-frame clock stops runs no callbacks, so the count alone cannot end
+		// the wait. The timer ends it by naming the stopped clock rather than one day timing out.
+		const clock = setTimeout(() => {
+			reject(
+				new Error(
+					`the frame clock stopped: no animation frame callback came within ${(clockMs / 1000).toFixed(0)} seconds, so a capture cannot wait for a frame`,
+				),
+			);
+		}, clockMs);
 		const check = () => {
 			if (
 				Atomics.load(slots, Slot.Paused) !== 0 ||
 				Atomics.load(slots, Slot.Running) === 0 ||
 				Atomics.load(slots, Slot.FramesTaken) !== taken ||
 				callbacks++ === CAPTURE_WAIT_CALLBACKS
-			)
+			) {
+				clearTimeout(clock);
 				resolve();
-			else requestAnimationFrame(check);
+			} else requestAnimationFrame(check);
 		};
 		check();
 	});
