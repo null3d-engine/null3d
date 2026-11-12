@@ -251,19 +251,25 @@ function growHeads(
 				],
 				[
 					from[0] + out[0] * length * 0.55,
-					from[1] - length * 0.3,
+					from[1] - length * 0.32,
 					from[2] + out[2] * length * 0.55,
 				],
-				[from[0] + out[0] * length * 0.6, from[1] - length * 0.65, from[2] + out[2] * length * 0.6],
+				[
+					from[0] + out[0] * length * 0.68,
+					from[1] - length * 0.62,
+					from[2] + out[2] * length * 0.68,
+				],
 			];
 			let previous = node;
 			let end = node;
-			points.forEach((point, i) => {
+			points.forEach((point) => {
 				end = builder.addNode({
 					x: point[0],
 					y: point[1],
 					z: point[2],
-					radius: radius * (1 - 0.3 * (i / 3)),
+					// The stalk holds its width to the spike's foot: a taper there thins the join under
+					// the outline's half-cover cutoff, so the hanging spike draws as a piece of its own.
+					radius,
 					parent: previous,
 					axis,
 					light: 1,
@@ -271,7 +277,14 @@ function growHeads(
 				previous = end;
 			});
 			const at = points[3] as Vector3;
-			flowerBud(at, end, axis, [0, -1, 0]);
+			// A hanging body follows its stalk's last reach, so a spike droops at the angle its
+			// stalk leaves the stem rather than standing dead vertical.
+			const along = normalize3([
+				at[0] - (points[2] as Vector3)[0],
+				at[1] - (points[2] as Vector3)[1],
+				at[2] - (points[2] as Vector3)[2],
+			]);
+			flowerBud(at, end, axis, along);
 		}
 		return;
 	}
@@ -797,6 +810,7 @@ export function meshTuft(input: MeshInput, level: MeshLevel): MeshArrays {
 				texture,
 				bytes,
 				crown,
+				level === 0,
 			);
 			continue;
 		}
@@ -834,7 +848,7 @@ export function meshTuft(input: MeshInput, level: MeshLevel): MeshArrays {
 			browning: isStem ? Math.max(browning, 0.15) : Math.max(browning, 0.3),
 			closeTip: isStem || fine,
 			// The shoot's sheath column is the one merged-foliage run a sheath colour draws.
-			sheath: !isStem && !fine && sheathed,
+			sheath,
 		});
 	}
 	return mesh.finishMesh();

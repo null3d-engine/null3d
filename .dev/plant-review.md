@@ -227,6 +227,11 @@ own light they read 1.9, and the head's oak reads 2.2, so the light makes most o
   own branch size and its `span` to the photograph's width took it to 3.7 before any material
   changed, and a tint measured against that frame took it to 2.3. Framing first, material second:
   a tint chosen before the frame is right measures the camera, not the plant. A ground plant's
+  flowering heads are drawn as one stem's hanging spikes, seen close and level, because a twig view
+  has no woody stem to frame and falls back to the whole plant. A picture that lifts the plant from
+  the ground grows its soil and stands the plant on its lowest root, so a lifted whole plant shows
+  the root ball its photograph shows; a lifted whole picture may also look up from below, where the
+  crown's arch would otherwise hide the roots.
   sheath, collar or ligule picture is drawn as one tiller's sheath column at the photograph's span,
   or as the species' own tiller cutting where the photograph shows a cut stalk, because a bark view
   has no stem to frame and falls back to the crown's foot culms. A plant that flowers at its crown,

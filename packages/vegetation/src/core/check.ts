@@ -421,15 +421,13 @@ function growthProblems(record: Species, out: string[]): void {
 		spreadProblems(growth.sheath, 'growth.sheath', true, out);
 		const sheathColour = growth.sheathColour;
 		if (sheathColour) {
-			for (const [end, colour] of [
-				['foot', sheathColour.foot],
-				['collar', sheathColour.collar],
-			] as const)
-				for (const [channel, value] of colour.entries())
+			const colourProblems = (colour: readonly number[], path: string) => {
+				for (const [end, value] of colour.entries())
 					if (!(value >= 0 && value <= 1))
-						out.push(
-							`growth.sheathColour.${end}.${channel} is ${JSON.stringify(value)}; a colour lies from 0 to 1`,
-						);
+						out.push(`${path}.${end} is ${JSON.stringify(value)}; a colour lies from 0 to 1`);
+			};
+			colourProblems(sheathColour.foot, 'growth.sheathColour.foot');
+			colourProblems(sheathColour.collar, 'growth.sheathColour.collar');
 			shareProblem(sheathColour.reach, 'growth.sheathColour.reach', out);
 		}
 		wholeProblem(growth.ranks, 'growth.ranks', 1, 3, out);
@@ -537,6 +535,14 @@ function extraProblems(record: Species, out: string[]): void {
 				out.push(`${path}.offset[${k}] is ${value}; it is metres from -0.5 to 0.5`);
 		});
 		if (extra.group !== undefined) wholeProblem(extra.group, `${path}.group`, 0, 15, out);
+		const spikelets = 'catkin' in extra.shape ? extra.shape.catkin.spikelets : undefined;
+		if (spikelets !== undefined) {
+			wholeProblem(spikelets.count, `${path}.shape.catkin.spikelets.count`, 2, 16, out);
+			if (spikelets.bulge !== undefined && !(spikelets.bulge >= 0 && spikelets.bulge <= 1))
+				out.push(
+					`${path}.shape.catkin.spikelets.bulge is ${spikelets.bulge}; a share lies from 0 to 1`,
+				);
+		}
 		const bristles = 'lathe' in extra.shape ? extra.shape.bristles : undefined;
 		if (bristles !== undefined) {
 			if (!(bristles.rows >= 1 && bristles.rows <= 16))
@@ -603,6 +609,14 @@ function cuttingProblems(record: Species, out: string[]): void {
 		if ('shoot' in hint) {
 			if (!names.has(hint.shoot))
 				out.push(`cuttings.${part}.shoot '${hint.shoot}' names no class in shoots.classes`);
+			if (hint.fanRing !== undefined && !(hint.fanRing >= 0 && hint.fanRing <= 1))
+				out.push(`cuttings.${part}.fanRing is ${hint.fanRing}; it is a share from 0 to 1`);
+			if (hint.fanLean !== undefined && !(hint.fanLean >= -90 && hint.fanLean <= 90))
+				out.push(`cuttings.${part}.fanLean is ${hint.fanLean}; it is degrees from -90 to 90`);
+			if (hint.fanSpin !== undefined && !(hint.fanSpin >= 0 && hint.fanSpin <= 1))
+				out.push(`cuttings.${part}.fanSpin is ${hint.fanSpin}; it is a share from 0 to 1`);
+			if (hint.fanYaw !== undefined && !Number.isFinite(hint.fanYaw))
+				out.push(`cuttings.${part}.fanYaw is ${hint.fanYaw}; it is degrees about the axis`);
 		} else {
 			if (hint.length <= 0)
 				out.push(`cuttings.${part}.length is ${hint.length}; it must be above 0`);

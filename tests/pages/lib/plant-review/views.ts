@@ -15,6 +15,7 @@ export const PLANT_VIEWS = [
 	'junction',
 	'fork',
 	'twigs',
+	'spike',
 	'flowers',
 	'strands',
 	'limb',
@@ -178,6 +179,16 @@ export const VIEW_SPECS: Readonly<Record<PlantView, ViewSpec>> = {
 		sun: 'default',
 		elevation: 0,
 		size: [960, 720],
+	},
+	spike: {
+		// A tuft's flowering heads: one stem's hanging spikes seen close and level against the
+		// plain ground, as their photograph frames them.
+		slots: [],
+		fov: 40,
+		background: 'studio-grey',
+		sun: 'default',
+		elevation: 0,
+		size: [960, 960],
 	},
 	flowers: {
 		slots: [19],

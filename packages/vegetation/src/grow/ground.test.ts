@@ -215,7 +215,9 @@ describe('the tuft sheath marker', () => {
 		return growPlantNow(kit, OPTIONS);
 	};
 	const marked = grow(sheathed);
-	const plain = grow(meadowGrassRecord);
+	// The meadow's own record now names a colour, so the comparison strips it: the same plant
+	// without a sheath colour keeps every run's full phase byte.
+	const plain = grow({ ...meadowGrassRecord, growth: { ...growth, sheathColour: undefined } });
 
 	/** The merged foliage's colour bytes, part by part. */
 	const foliageColours = (asset: PlantAsset) =>
@@ -458,7 +460,7 @@ describe('the pendulous sedge', () => {
 		// The plant's bytes with the soil block stripped, at this record: a plant that names no
 		// soil grows exactly these. A deliberate record change re-records the figure, and the
 		// growth path that reads no soil must not move it.
-		expect(plantAssetDigest(growPlantNow(kit, OPTIONS))).toBe('8bf941dc30511c5c');
+		expect(plantAssetDigest(growPlantNow(kit, OPTIONS))).toBe('1581a58df495eb67');
 	});
 
 	it('ends its blades in long fine points', () => {
