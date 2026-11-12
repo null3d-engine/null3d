@@ -1915,7 +1915,9 @@ const VEGETATION_TIMEOUT_SECONDS = 900;
  * frame interval, CPU time per frame, GPU time per pass, the triangles drawn and the memory at a
  * fixed preset. Each page fixes its path and its preset, so the start-up check cannot lower either.
  * The whole dress of both demos ships at one preset, so the figures compare across presets, and a
- * page that a device cannot run is skipped by the capabilities page's report.
+ * page that a device cannot run is skipped by the capabilities page's report. One governed Creek
+ * Ultra page aims at the display's rate, so the governor steps its settings, and a settle lets the
+ * step land before the measure, which gives the S25-class ceiling a measured frame.
  */
 export function vegetationPlan(): PlanItem<Check>[] {
 	const items: PlanItem<Check>[] = [
@@ -1943,6 +1945,26 @@ export function vegetationPlan(): PlanItem<Check>[] {
 						},
 					),
 				);
+	items.push(
+		pageItem(
+			'vegetation-creek-ultra-webgpu-governed',
+			'demo-device',
+			{ kind: 'probe', tier: 'webgpu' },
+			{
+				switches: [
+					'gpu=webgpu',
+					'demo=creek',
+					'preset=ultra',
+					// The display's rate is the target, so the governor steps the preset's settings. A settle
+					// lets the step land before the measure, rather than measuring the frames before it.
+					'target-fps=display',
+					'settle=30',
+					'seconds=5',
+				],
+				timeoutSeconds: VEGETATION_TIMEOUT_SECONDS,
+			},
+		),
+	);
 	return items;
 }
 
