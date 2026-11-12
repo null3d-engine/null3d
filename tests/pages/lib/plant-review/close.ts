@@ -7,6 +7,7 @@
 // shows clear as the photograph shows it. It reads only the skeleton, the shoot rows and the shoot
 // prototypes, so it holds for every species.
 
+import { BUD_FLOWER } from '../../../../packages/vegetation/src/core/graph';
 import {
 	type AxisPoint,
 	chainOf,
@@ -107,14 +108,21 @@ const LOOK_DOWN = 12;
  * photograph stands close on the crotch, so the stem fills one side and the other limbs fall out.
  */
 const JUNCTION_LIMB_SHARE = 0.55;
+/** The share of the frame's width the stem's own surface takes when a picture gives no box. */
+const JUNCTION_STEM_SHARE = 0.3;
 /** The least radius, against the thickest limb that leaves the stem, of a limb a junction view takes. */
 const JUNCTION_THICK = 0.5;
 /**
- * Degrees short of the most level of the thick limbs within which a junction view still takes a
- * limb: the photograph's limb leaves nearly level, so the most level limbs give its angle its best
- * chance.
+ * The share of the thickest limb's radius down to which a thinner limb still joins the candidates,
+ * so a crown-rosette's dead skirt, whose stipes leave the trunk below the living crown, can give a
+ * junction whose crotch stands clear of the fronds. The thickness bonus ranks it below a thick limb.
+ *
+ * The premise that a thin limb means a dead skirt fails where a species' dead fronds leave at the
+ * stem top: the tree fern has no stipe below its crown, and its only clear thin crotch is a living
+ * frond this rule excludes. Its picture 07 is a stated subject limit with three measured attempts,
+ * and no per-species admission. A species whose thin living limb should stand needs its own record.
  */
-const JUNCTION_LEVEL = 3;
+const JUNCTION_SKIRT_THICK = 0.2;
 /** Degrees within which a limb that leaves the stem carries the stem's own line on. */
 const LEADER_ANGLE = 45;
 /** The share of the frame's height that the limb below a fork fills with its thickness. */
@@ -607,56 +615,103 @@ export function departures(skeleton: MacroSkeleton): {
 	};
 }
 
+/** The share of its picture's frame that a close view's subject box takes across and down. */
+export interface SubjectBoxShare {
+	readonly width: number;
+	readonly height: number;
+}
+
+/**
+ * The frame's height that a junction view takes: the limb's thickness must not outgrow the
+ * photograph's subject box height share, and the stem's width must not outgrow its width share, so
+ * the frame takes whichever need is the larger. Without the shares, the frame keeps the limb at its
+ * own share and puts the stem's surface across the width, so the join and both limbs it joins stand
+ * in the picture rather than a wall of bark.
+ */
+export function junctionFrameHeight(
+	limbDiameter: number,
+	stemDiameter: number,
+	shares: SubjectBoxShare | undefined,
+	aspect: number,
+): number {
+	if (!shares)
+		return Math.max(
+			limbDiameter / JUNCTION_LIMB_SHARE,
+			stemDiameter / (JUNCTION_STEM_SHARE * aspect),
+		);
+	return Math.max(limbDiameter / shares.height, stemDiameter / (shares.width * aspect));
+}
+
+/**
+ * The limbs a junction view takes as its candidates: a great limb, or a thinner stipe of the dead
+ * skirt whose crotch stands below the living crown, and each running out of the frame as the
+ * photograph's limb does.
+ */
+export function junctionCandidates(
+	limbs: readonly Departure[],
+	thickest: number,
+	lens: Lens,
+	crownBase: number,
+): readonly Departure[] {
+	return limbs.filter(
+		(d) =>
+			(d.radius >= JUNCTION_THICK * thickest ||
+				(d.radius >= JUNCTION_SKIRT_THICK * thickest && d.at[1] < crownBase)) &&
+			d.length >= ((2 * d.radius) / JUNCTION_LIMB_SHARE) * lens.aspect,
+	);
+}
+
 /**
  * The view of a great limb leaving the stem. It takes the thick limbs that leave the stem and run
  * on past the frame, each seen side on across the plane of the stem and the limb so its angle of
- * departure shows at its true size, framed so the limb's thickness fills the share of the frame
- * that the photograph gives it, and stands where the fewest other limbs come between the lens and
- * the junction. The stem and the limb that carries it on stand in as the photograph's trunk.
+ * departure shows at its true size, framed so the limb's thickness and the stem's width take the
+ * shares of the frame that the photograph's subject box gives them, and stands where the fewest
+ * other limbs come between the lens and the junction. The stem and the limb that carries it on
+ * stand in as the photograph's trunk.
  */
-export function junctionView(plant: ClosePlant, lens: Lens): CloseView | undefined {
+export function junctionView(
+	plant: ClosePlant,
+	lens: Lens,
+	shares?: SubjectBoxShare,
+): CloseView | undefined {
 	const { skeleton } = plant;
 	const { limbs, leader } = departures(skeleton);
 	const thickest = limbs[0]?.radius ?? 0;
 	const stem = mainStem(skeleton);
 	// A thick limb that runs out of the frame, as the photograph's does, rather than ending in it.
-	const thick = limbs.filter(
-		(d) =>
-			d.radius >= JUNCTION_THICK * thickest &&
-			d.length >= ((2 * d.radius) / JUNCTION_LIMB_SHARE) * lens.aspect,
-	);
-	// A limb leaves level where it stands square to the stem's line, rising or drooping alike.
+	const thick = junctionCandidates(limbs, thickest, lens, skeleton.crownBase);
+	// A limb leaves level where it stands square to the stem's line, rising or drooping alike. Every
+	// thick limb is a candidate: the near-level departure is a bonus, so a crotch that stands clear
+	// of the crown can win over a level one buried behind it.
 	const off = (d: Departure) => Math.abs(90 - d.angle);
-	const level = thick.reduce((least, d) => Math.min(least, off(d)), 90);
-	const subjects: Subject<Departure>[] = thick
-		.filter((d) => off(d) <= level + JUNCTION_LEVEL)
-		.flatMap((limb) => {
-			const height = (2 * limb.radius) / JUNCTION_LIMB_SHARE;
-			return [
-				{
-					// The crotch: where the limb's underside leaves the stem's surface.
-					target: step(
-						step(limb.at, limb.direction, limb.stem.radius),
-						[0, -1, 0],
-						limb.radius * 0.5,
-					),
-					normal: normalize(cross(limb.stem.direction, limb.direction)),
-					spin: limb.stem.direction,
-					distance: distanceFor(height, lens.fov),
-					mark: {
-						axes: markAxes(skeleton, [stem, leader?.axis ?? -1], [limb.axis]),
-						band: limb.stem.radius + height / 2,
-					},
-					// A thick limb and a wide departure are what the photograph shows, and a limb
-					// running to the right reads as its limb does.
-					bonus: (shot: Shot) =>
-						0.1 * (limb.radius / thickest) +
-						0.1 * Math.sin(Math.min(90, limb.angle) * DEG) +
-						(dot(limb.direction, lensAxes(shot).right) > 0 ? 0.03 : 0),
-					facts: limb,
+	const subjects: Subject<Departure>[] = thick.flatMap((limb) => {
+		const height = junctionFrameHeight(2 * limb.radius, 2 * limb.stem.radius, shares, lens.aspect);
+		return [
+			{
+				// The crotch: where the limb's underside leaves the stem's surface.
+				target: step(
+					step(limb.at, limb.direction, limb.stem.radius),
+					[0, -1, 0],
+					limb.radius * 0.5,
+				),
+				normal: normalize(cross(limb.stem.direction, limb.direction)),
+				spin: limb.stem.direction,
+				distance: distanceFor(height, lens.fov),
+				mark: {
+					axes: markAxes(skeleton, [stem, leader?.axis ?? -1], [limb.axis]),
+					band: limb.stem.radius + height / 2,
 				},
-			];
-		});
+				// A thick limb and a wide departure are what the photograph shows, and a limb
+				// running to the right reads as its limb does.
+				bonus: (shot: Shot) =>
+					0.1 * (limb.radius / thickest) +
+					0.1 * Math.sin(Math.min(90, limb.angle) * DEG) +
+					0.1 * (1 - Math.min(off(limb), 90) / 90) +
+					(dot(limb.direction, lensAxes(shot).right) > 0 ? 0.03 : 0),
+				facts: limb,
+			},
+		];
+	});
 	// The limbs of a whorl stand round the junction, so its cameras walk further round the stem.
 	const found = bestOf(
 		plant,
@@ -1018,6 +1073,41 @@ function armsReach(skeleton: MacroSkeleton, fork: Fork): number {
  * as it does for a limb. Arms nearer the limb's own size, and a fork that stands upright so a level
  * camera sees it square, make the likelier subject.
  */
+/**
+ * What the fork view's wishes keep of a plant's divisions, each count among those left by the wish
+ * before it, so a fork view that draws no fork can say which wish emptied it. A count above zero
+ * with no subject means the divisions exist but no camera sees one clear.
+ */
+export function forkCandidates(
+	skeleton: MacroSkeleton,
+	thin?: number,
+): {
+	readonly total: number;
+	readonly counts: readonly number[];
+	readonly kept: number;
+	readonly sought: number;
+} {
+	const stemRadius = stemAt(skeleton, 1.3)?.radius ?? stemAt(skeleton, 0.3)?.radius ?? 0.1;
+	const sought = thin ?? FORK_STEM_SHARE * stemRadius;
+	const stem = mainStem(skeleton);
+	const all = forks(skeleton);
+	const outside = all.filter((f) => f.reach > stemRadius + 2 * f.radius);
+	const wishes = [
+		(f: Fork) => (skeleton.axes.parent[f.limb] as number) === stem,
+		(f: Fork) => Math.abs(Math.log(f.radius / sought)) <= Math.log(FORK_SIZE),
+		(f: Fork) => f.armRadius >= FORK_EVEN * f.radius,
+		(f: Fork) => Math.hypot(...cross(f.on, f.out)) >= FORK_OPEN,
+	];
+	let kept = outside;
+	const counts: number[] = [outside.length];
+	for (const wish of wishes) {
+		const passing = kept.filter(wish);
+		if (passing.length > 0) kept = passing;
+		counts.push(passing.length);
+	}
+	return { total: all.length, counts, kept: kept.length, sought };
+}
+
 export function forkView(
 	plant: ClosePlant,
 	lens: Lens,
@@ -1434,6 +1524,59 @@ export function strandsView(plant: ClosePlant, lens: Lens): CloseView | undefine
 			height: best.point.at[1],
 			frame: STRANDS_SPAN,
 		},
+	};
+}
+
+/** Metres the frame of a spike view spans: one stem's hanging heads, as their photograph frames them. */
+const SPIKE_SPAN = 0.36;
+
+/**
+ * One flowering stem's hanging heads, seen close and level against the plain ground: the cluster of
+ * the plant's flower buds nearest its top. A ground plant's spikes hang below their stems' feet, so
+ * the frame's middle sits a little under the buds. Undefined when the plant carries no flower.
+ */
+export function spikeView(plant: ClosePlant, lens: Lens): CloseView | undefined {
+	const { skeleton } = plant;
+	const { buds, axes } = skeleton;
+	// Group the flower buds by the stem they hang from: a spike hangs on a stalk whose parent axis
+	// is the flowering stem, so the stalk's parent names the group.
+	const groups = new Map<number, { x: number; y: number; z: number; n: number }>();
+	for (let b = 0; b < buds.count; b++) {
+		if (buds.kind[b] !== BUD_FLOWER) continue;
+		const stalk = buds.axis[b] as number;
+		const stem = axes.parent[stalk] as number;
+		const key = stem >= 0 ? stem : stalk;
+		const group = groups.get(key) ?? { x: 0, y: 0, z: 0, n: 0 };
+		group.x += buds.position[b * 3] as number;
+		group.y += buds.position[b * 3 + 1] as number;
+		group.z += buds.position[b * 3 + 2] as number;
+		group.n += 1;
+		groups.set(key, group);
+	}
+	// The highest cluster is the one the photograph frames, seen against the sky in its habit.
+	let subject: V3 | undefined;
+	let top = -Infinity;
+	for (const group of groups.values()) {
+		const y = group.y / group.n;
+		if (y > top) {
+			top = y;
+			subject = [group.x / group.n, y, group.z / group.n];
+		}
+	}
+	if (!subject) return undefined;
+	const target: V3 = [subject[0], subject[1] - SPIKE_SPAN * 0.28, subject[2]];
+	const distance = distanceFor(SPIKE_SPAN, lens.fov);
+	const outward = normalize([target[0], 0, target[2]]);
+	if (!Number.isFinite(outward[0])) return undefined;
+	const position: V3 = [
+		target[0] + outward[0] * distance,
+		target[1],
+		target[2] + outward[2] * distance,
+	];
+	return {
+		position,
+		target,
+		subject: { kind: "a flowering stem's hanging heads", at: subject, frame: SPIKE_SPAN },
 	};
 }
 

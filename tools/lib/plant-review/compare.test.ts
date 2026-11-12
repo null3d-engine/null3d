@@ -9,10 +9,13 @@ import {
 import {
 	alignTurn,
 	anchorColumn,
+	cameraWidthShare,
 	crownBoxSpread,
 	edgeDifference,
 	edgeProfile,
+	fittedMaskClause,
 	framingQuery,
+	hasSeparableOutline,
 	iou,
 	motionProfile,
 	NORMAL_HEIGHT,
@@ -23,6 +26,7 @@ import {
 	profileError,
 	rubricBand,
 	rubricFrames,
+	sheathDifference,
 	spread,
 } from './compare.ts';
 import { blank, deltaE2000, labImage } from './image.ts';
@@ -76,6 +80,29 @@ describe('the outline overlap', () => {
 		const b = normalOf(large);
 		expect(a.length).toBe(NORMAL_WIDTH * NORMAL_HEIGHT);
 		expect(iou(a, b)).toBeGreaterThan(0.97);
+	});
+});
+
+describe('whether a picture carries a plant outline', () => {
+	test('is false for a bark view, which photographs bark against bark', () => {
+		for (const view of ['bark-base', 'bark-mid', 'bark-limb'])
+			expect(hasSeparableOutline(view, 'still')).toBe(false);
+	});
+
+	test('is false for a bark texture, which is the material alone', () => {
+		expect(hasSeparableOutline('bark-mid', 'texture')).toBe(false);
+	});
+
+	test('is true for a leaf texture, which is a cut-out on a plain ground', () => {
+		expect(hasSeparableOutline('leaf-upper', 'texture')).toBe(true);
+	});
+
+	test('is true for a whole plant against a plain background', () => {
+		expect(hasSeparableOutline('whole', 'still')).toBe(true);
+	});
+
+	test('is false for a picture whose own background is the subject, which a slot names', () => {
+		expect(hasSeparableOutline('whole', 'still', true)).toBe(false);
 	});
 });
 
@@ -254,6 +281,7 @@ describe('the framing a render takes from a reference', () => {
 			horizon: 0.76,
 			top: 0.18,
 			targetX: 0.49,
+			widthShare: 0.9,
 			aspect: 16 / 9,
 			sky: '#d9dad5',
 			frames: 8,
@@ -263,8 +291,22 @@ describe('the framing a render takes from a reference', () => {
 			fill: 0.79 - 0.18,
 			targetY: (0.79 + 0.18) / 2,
 			horizon: 0.76,
+			widthShare: 0.9,
 		});
 		expect(framingQuery(shared)).toMatchObject({ top: 0.18, eye: 1.6 });
+	});
+
+	test("reads a clipped plant's width from the camera stand, so it responds and may exceed the frame", () => {
+		const stand = { distance: 1.862, fov: 38 };
+		const share = cameraWidthShare(2.416, stand, 768 / 516) as number;
+		expect(share).toBeCloseTo(1.2658, 3);
+		expect(cameraWidthShare(2.416, { ...stand, distance: 3.724 }, 768 / 516) as number).toBeCloseTo(
+			share / 2,
+			3,
+		);
+		expect(cameraWidthShare(0, stand, 1.5)).toBeNull();
+		expect(cameraWidthShare(2, { distance: 0, fov: 38 }, 1.5)).toBeNull();
+		expect(cameraWidthShare(2, { distance: 1, fov: 0 }, 1.5)).toBeNull();
 	});
 });
 
@@ -465,6 +507,48 @@ describe('the patch colour of a texture source', () => {
 		expect(patchDifference(reference, render, true)).toBeLessThan(0.5);
 		expect(patchDifference(reference, render, false)).toBeGreaterThan(10);
 	});
+
+	test('reads the bark alone across a limb picture that carries leaves', () => {
+		// A brown limb across the middle of a pale backdrop, with a band of leaves over it. The
+		// plant-filtered mean takes the leaves' green; the bark-only mean keeps the limb's own a*.
+		const size = 1000;
+		const data = new Uint8Array(size * size * 4);
+		for (let y = 0; y < size; y++)
+			for (let x = 0; x < size; x++) {
+				const leaf = y >= 420 && y < 580;
+				const limb = y >= 300 && y < 700;
+				const [r, g, b] = leaf ? [60, 140, 60] : limb ? [110, 100, 90] : [200, 220, 240];
+				const at = (y * size + x) * 4;
+				data[at] = r as number;
+				data[at + 1] = g as number;
+				data[at + 2] = b as number;
+				data[at + 3] = 255;
+			}
+		const image = { width: size, height: size, data };
+		const blended = patchLab(image, true)[1] as number;
+		const bark = patchLab(image, true, true)[1] as number;
+		expect(blended).toBeLessThan(-5);
+		expect(Math.abs(bark)).toBeLessThan(5);
+	});
+
+	test('falls back to the plant mean where the whole frame is leaf', () => {
+		// A picture with no bark surface has no bark mean to read. The bark-only request returns the
+		// plant-filtered mean rather than an empty average.
+		const size = 400;
+		const data = new Uint8Array(size * size * 4);
+		for (let y = 0; y < size; y++)
+			for (let x = 0; x < size; x++) {
+				const band = x >= 160 && x < 240;
+				const [r, g, b] = band ? [30, 100, 30] : [60, 140, 60];
+				const at = (y * size + x) * 4;
+				data[at] = r as number;
+				data[at + 1] = g as number;
+				data[at + 2] = b as number;
+				data[at + 3] = 255;
+			}
+		const image = { width: size, height: size, data };
+		expect(patchLab(image, true, true)).toEqual(patchLab(image, true));
+	});
 });
 
 describe('the pieces a plant is drawn as', () => {
@@ -560,5 +644,162 @@ describe('a cut piece framed in leaf lengths', () => {
 	test('lengthens the run only when the roll lays the piece across the frame', () => {
 		expect(leafFrame(2, 0.5, 0, 2, 20).run).toBeCloseTo(1, 6);
 		expect(leafFrame(2, 0.5, 90, 2, 20).run).toBeCloseTo(2, 6);
+	});
+});
+
+describe('a fitted-background outline', () => {
+	test('reports the sky fit and residual beside the figure', () => {
+		expect(
+			fittedMaskClause({
+				fittedMask: { kind: 'sky', skyFit: 0.9999, skyNoise: 17.1 },
+			}),
+		).toContain('fit 0.9999, residual 17.1');
+		expect(fittedMaskClause({})).toBe('');
+	});
+
+	test('reports the ground fit, residual and horizon share for a soil', () => {
+		const clause = fittedMaskClause({
+			fittedMask: {
+				kind: 'ground',
+				skyFit: 1,
+				skyNoise: 24.19,
+				groundFit: 1,
+				groundNoise: 18.55,
+				horizonShare: 0.291,
+				plantToGround: 14.22,
+			},
+		});
+		expect(clause).toContain('fitted ground at horizon share 0.291, ground region 0.709');
+		expect(clause).toContain("the plant's median colour sits 14.2 CIEDE2000 steps from the ground");
+		expect(clause).toContain('ground fit 1.0000, residual 18.6');
+		expect(clause).toContain('sky fit 1.0000, residual 24.2');
+		expect(clause).toContain('the ground region holds 0.709 of the frame');
+		const meadow = fittedMaskClause({
+			fittedMask: {
+				kind: 'ground',
+				skyFit: 1,
+				skyNoise: 26.41,
+				groundFit: 1,
+				groundNoise: 19.9,
+				horizonShare: 0.931,
+			},
+		});
+		expect(meadow).toContain('ground region 0.069');
+		expect(meadow).toContain('the ground region holds 0.069 of the frame');
+		const band = fittedMaskClause({
+			fittedMask: {
+				kind: 'ground',
+				skyFit: 1,
+				skyNoise: 12,
+				groundFit: 1,
+				groundNoise: 10,
+				horizonShare: 0.7,
+			},
+		});
+		expect(band).not.toContain('outside a soil band');
+	});
+});
+
+describe('the sheath surface figure', () => {
+	const target = {
+		foot: [0.15, 0.08, 0.03] as const,
+		collar: [0.4, 0.4, 0.32] as const,
+		reach: 0.5,
+	};
+	// The record's linear colours as the sRGB bytes a copy stand shows.
+	const footSrgb = [108, 80, 48];
+	const collarSrgb = [170, 170, 153];
+
+	/** A square picture: the collar band above, the foot band below, leaf green between. */
+	function picture(size: number, foot: readonly number[], collar: readonly number[]) {
+		const image = blank(size, size, [70, 110, 40]);
+		const paint = (from: number, to: number, colour: readonly number[]) => {
+			for (let y = from; y <= to; y++)
+				for (let x = 0; x < size; x++) {
+					const at = (y * size + x) * 4;
+					for (let k = 0; k < 3; k++) image.data[at + k] = colour[k] as number;
+				}
+		};
+		const band = Math.round(size * 0.2) - 1;
+		paint(0, band, collar);
+		paint(size - 1 - band, size - 1, foot);
+		return image;
+	}
+
+	const whole = rectangle(100, 100, { left: 0, top: 0, right: 99, bottom: 99 });
+	const box = { left: 0, top: 0, right: 99, bottom: 99 };
+	const side = (image: ReturnType<typeof picture>, plant: PlantMask = whole) => ({
+		image,
+		box,
+		plant,
+	});
+
+	test('reads both ends against the photograph and the record', () => {
+		const pictureAt = picture(100, footSrgb, collarSrgb);
+		const figure = sheathDifference(side(pictureAt), side(pictureAt), target);
+		expect(figure?.photograph?.foot ?? 99).toBeLessThan(0.5);
+		expect(figure?.photograph?.collar ?? 99).toBeLessThan(0.5);
+		expect(figure?.record.foot ?? 99).toBeLessThan(0.5);
+	});
+
+	test('separates a shaded sheath from the record', () => {
+		// A shade moves both pictures alike, so the photograph figure passes where the record cannot.
+		const shaded = [60, 45, 30];
+		const shadedCollar = [110, 110, 105];
+		const pictureAt = picture(100, shaded, shadedCollar);
+		const figure = sheathDifference(side(pictureAt), side(pictureAt), target);
+		expect(figure?.photograph?.foot ?? 99).toBeLessThan(0.5);
+		expect(figure?.record.foot ?? 0).toBeGreaterThan(5);
+	});
+
+	test('reports a moved patch against both sides', () => {
+		const figure = sheathDifference(
+			side(picture(100, footSrgb, collarSrgb)),
+			side(picture(100, [255, 255, 255], collarSrgb)),
+			target,
+		);
+		expect(figure?.photograph?.foot ?? 0).toBeGreaterThan(20);
+		expect(figure?.record.foot ?? 0).toBeGreaterThan(20);
+		expect(figure?.photograph?.collar ?? 99).toBeLessThan(0.5);
+	});
+
+	test('gives no photograph figure when its box cannot be isolated', () => {
+		const pictureAt = picture(100, footSrgb, collarSrgb);
+		const figure = sheathDifference(
+			{ image: pictureAt, box: null, plant: whole },
+			side(pictureAt),
+			target,
+		);
+		expect(figure?.photograph).toBeNull();
+		expect(figure?.record.foot ?? 99).toBeLessThan(0.5);
+	});
+
+	test('finds the surface below the blades', () => {
+		const image = blank(100, 100, [70, 110, 40]);
+		const paint = (from: number, to: number, colour: readonly number[]) => {
+			for (let y = from; y <= to; y++)
+				for (let x = 0; x < 100; x++) {
+					const at = (y * 100 + x) * 4;
+					for (let k = 0; k < 3; k++) image.data[at + k] = colour[k] as number;
+				}
+		};
+		paint(50, 69, collarSrgb);
+		paint(70, 99, footSrgb);
+		const figure = sheathDifference(side(image), side(image), target);
+		expect(figure?.record.foot ?? 99).toBeLessThan(0.5);
+		expect(figure?.record.collar ?? 99).toBeLessThan(0.5);
+	});
+
+	test('maps a larger picture onto the mask it was measured on', () => {
+		const pictureAt = picture(200, footSrgb, collarSrgb);
+		const figure = sheathDifference(side(pictureAt), side(pictureAt), target);
+		expect(figure?.record.foot ?? 99).toBeLessThan(0.5);
+		expect(figure?.record.collar ?? 99).toBeLessThan(0.5);
+	});
+
+	test('gives no figure when the render holds no plant', () => {
+		const bare: PlantMask = { ...whole, mask: new Uint8Array(100 * 100) };
+		const pictureAt = picture(100, footSrgb, collarSrgb);
+		expect(sheathDifference(side(pictureAt), side(pictureAt, bare), target)).toBeNull();
 	});
 });

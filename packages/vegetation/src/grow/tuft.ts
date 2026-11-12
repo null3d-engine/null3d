@@ -251,19 +251,25 @@ function growHeads(
 				],
 				[
 					from[0] + out[0] * length * 0.55,
-					from[1] - length * 0.3,
+					from[1] - length * 0.32,
 					from[2] + out[2] * length * 0.55,
 				],
-				[from[0] + out[0] * length * 0.6, from[1] - length * 0.65, from[2] + out[2] * length * 0.6],
+				[
+					from[0] + out[0] * length * 0.68,
+					from[1] - length * 0.62,
+					from[2] + out[2] * length * 0.68,
+				],
 			];
 			let previous = node;
 			let end = node;
-			points.forEach((point, i) => {
+			points.forEach((point) => {
 				end = builder.addNode({
 					x: point[0],
 					y: point[1],
 					z: point[2],
-					radius: radius * (1 - 0.3 * (i / 3)),
+					// The stalk holds its width to the spike's foot: a taper there thins the join under
+					// the outline's half-cover cutoff, so the hanging spike draws as a piece of its own.
+					radius,
 					parent: previous,
 					axis,
 					light: 1,
@@ -271,7 +277,14 @@ function growHeads(
 				previous = end;
 			});
 			const at = points[3] as Vector3;
-			flowerBud(at, end, axis, [0, -1, 0]);
+			// A hanging body follows its stalk's last reach, so a spike droops at the angle its
+			// stalk leaves the stem rather than standing dead vertical.
+			const along = normalize3([
+				at[0] - (points[2] as Vector3)[0],
+				at[1] - (points[2] as Vector3)[1],
+				at[2] - (points[2] as Vector3)[2],
+			]);
+			flowerBud(at, end, axis, along);
 		}
 		return;
 	}
@@ -319,7 +332,9 @@ function growHeads(
 				kind: AXIS_LIMB,
 			});
 			const radius =
-				heads.radius * 0.18 * (1 + 0.02 * draw(input, Purpose.Branch, index, w * 16 + b, 5));
+				heads.radius *
+				(panicle.branchShare ?? 0.18) *
+				(1 + 0.02 * draw(input, Purpose.Branch, index, w * 16 + b, 5));
 			let previous = node;
 			const steps = 4;
 			let direction = normalize3([
@@ -701,6 +716,10 @@ function levelOf(detail: Detail, level: MeshLevel): TuftLevel {
  */
 export function meshTuft(input: MeshInput, level: MeshLevel): MeshArrays {
 	const { blade, growth } = tuftOf(input.record);
+	// A species that gives its sheath columns a colour reserves a marked byte value for them, so
+	// every other foliage axis keeps its phase in the low seven bits. A species without the colour
+	// leaves every byte as it was.
+	const sheathed = growth.sheathColour !== undefined;
 	const { skeleton, crown, kit } = input;
 	const axes = skeleton.axes;
 	const tiers = levelOf(input.detail, level);
@@ -726,7 +745,8 @@ export function meshTuft(input: MeshInput, level: MeshLevel): MeshArrays {
 				: 0;
 	for (let a = 0; a < axes.count; a++) {
 		const kind = axes.kind[a] as number;
-		const bytes = axisBytes(input, a);
+		const raw = axisBytes(input, a);
+		const bytes = sheathed ? { ...raw, phase: raw.phase >> 1 } : raw;
 		if (kind === AXIS_ROOT) {
 			// The crown's own axis holds the shoots and draws nothing itself; a rhizome and the
 			// roots lie along its soil and draw as tubes, the roots closing to a point. They stand
@@ -790,12 +810,15 @@ export function meshTuft(input: MeshInput, level: MeshLevel): MeshArrays {
 				texture,
 				bytes,
 				crown,
+				level === 0,
 			);
 			continue;
 		}
 		const fine = (axes.order[a] as number) >= 3;
 		if (fine && !tiers.fine) continue;
 		const isStem = kind === AXIS_CULM;
+		// A shoot's column of sheaths takes the record's colours, marked in its surface-kind byte.
+		const sheath = !isStem && !fine && growth.sheathColour !== undefined;
 		if (!isStem && !fine && level === 2) continue;
 		const path = wholePath(skeleton, a, [0, 1, 0]);
 		if (!path) continue;
@@ -818,11 +841,14 @@ export function meshTuft(input: MeshInput, level: MeshLevel): MeshArrays {
 			uHalf: strip.stalkHalf,
 			bytes,
 			crown,
-			along: isStem ? [0, 1] : fine ? [0.85, 1] : [0, 0.05],
-			// A sheath column carries a sentinel browning value, which the plant material reads as
-			// the record's sheath colour; every other stalk browns as the season gives.
+			// A sheath column's second coordinates run from its foot to its collar, so the record's
+			// two colours read the column's own height.
+			along: sheath || isStem ? [0, 1] : fine ? [0.85, 1] : [0, 0.05],
+			// Stalks brown as the season gives; a stalk under its leaves keeps a share of its green.
 			browning: isStem ? Math.max(browning, 0.15) : Math.max(browning, 0.3),
 			closeTip: isStem || fine,
+			// The shoot's sheath column is the one merged-foliage run a sheath colour draws.
+			sheath,
 		});
 	}
 	return mesh.finishMesh();
