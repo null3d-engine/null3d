@@ -186,7 +186,7 @@ const WOOD_SHADE: f32 = 0.35;
 // phase taken from it draws arcs about the joint, as the photograph's fan does, rather than the
 // parent's own rings round its girth. The count is the rings the drawn band holds.
 const CREASE_RINGS: f32 = 50.265482;
-const CREASE_DARK: f32 = 0.45;
+const CREASE_DARK: f32 = 0.70;
 const CREASE_TILT: f32 = 0.35;
 
 /// One texel of the header row.
@@ -1031,7 +1031,7 @@ fn surface(input: SurfaceInput) -> Surface {
         // The bark gathers in tight parallel creases where a limb joins its parent: rings across
         // the limb's own grain, deepest in the armpit. A species whose record names none draws
         // nothing here, so its bark stays as it was.
-        let armpit = header(HEADER_ARMPIT).x * smoothstep(0.12, 0.7, junction);
+        let armpit = header(HEADER_ARMPIT).x * smoothstep(0.08, 0.65, junction);
         if (armpit > 0.0) {
             let crease = sin(junction * CREASE_RINGS);
             let trough = 0.5 - 0.5 * crease;
