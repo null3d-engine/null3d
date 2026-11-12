@@ -618,7 +618,7 @@ export function planShoot(
 		let sky = square(start.sky, direction, [0, 0, 1]);
 		let along = start.along;
 		let node = 0;
-		const azimuthStart = draw(Purpose.Start, axis) * 360;
+		const azimuthStart = shootClass.azimuth ?? draw(Purpose.Start, axis) * 360;
 		const axisLength = start.unitLength * start.units;
 		// A plate run holds one face; it starts at the run's first crowded node and ends when the
 		// internodes open out again. A new growth unit starts a new run.
@@ -1100,14 +1100,18 @@ export function shootPrototypes(
 		planShoot(record, index, leafMeshes),
 	);
 	const classes = plans.map((_, index) => classOf(shoots.classes, index, shoots.prototypes));
-	const out = plans.map((plan, index) =>
-		prototypeOf(
-			leafMeshes > 0 ? plan : { ...plan, leaves: [] },
-			leaves,
-			index,
-			classes[index] as ShootClass,
-		),
-	);
+	// A cutting's kit holds only the classes a cut piece draws, so the plant's own prototypes stay
+	// out of it: a kit carrying both roughly doubles, and the cap it must fit is the cut piece's own.
+	const out = cutting
+		? []
+		: plans.map((plan, index) =>
+				prototypeOf(
+					leafMeshes > 0 ? plan : { ...plan, leaves: [] },
+					leaves,
+					index,
+					classes[index] as ShootClass,
+				),
+			);
 	if (!cutting && leafMeshes > 0 && hasBareTwins(record))
 		for (const [index, plan] of plans.entries())
 			out.push(
@@ -1117,7 +1121,8 @@ export function shootPrototypes(
 	// its variants fall. It keeps a leafless twin beside it where the species has them, so a winter
 	// cutting of it still finds a piece. A kit of a kind holds only the classes of its kind: the
 	// plant's kit the crown's and the cutting classes both are drawn from, the cutting kit the classes
-	// that only a cut piece draws.
+	// that only a cut piece draws. Each prototype's seed is its place in this list, so the classes
+	// after a new one are redrawn: a new class belongs after every existing class.
 	for (const shootClass of (shoots.cuttingClasses ?? []).filter(
 		(shoot) => (shoot.cutOnly === true) === cutting,
 	))

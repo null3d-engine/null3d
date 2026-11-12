@@ -104,9 +104,9 @@ describe('the plant core with stand-ins', () => {
 		expect(wood[0]?.arrays.positions).toEqual(atOnce?.arrays.positions as Uint16Array);
 	});
 
-	it('bakes the far cards and cuts the review pieces', () => {
+	it('bakes the far cards and cuts the review pieces', async () => {
 		const asset = growPlantNow(kit, { seed: 11, variant: 0, near: true });
-		const far = bakeFarNow(kit, asset);
+		const far = await bakeFarNow(kit, asset);
 		expect(far.views).toBe(stub.record.lod.impostor.views);
 		expect(far.color.length).toBe((far.views * far.texels) ** 2 * 4);
 		for (const part of ['leaf', 'cluster', 'subbranch', 'branch'] as const) {

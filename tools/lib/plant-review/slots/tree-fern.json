@@ -9,6 +9,9 @@
 		"elevation": 45,
 		"distance": 1.6
 	},
+	"07-frond-leaving-trunk.png": {
+		"noOutline": true
+	},
 	"08-frond-division.png": {
 		"view": "branch",
 		"turn": 270

@@ -1,0 +1,188 @@
+{
+	"01-whole-distant.png": {
+		"sunAzimuth": -40,
+		"sunRise": 42,
+		"skyShare": 0.4,
+		"fov": 30,
+		"daylight": 3.0
+	},
+	"02-whole-profile.png": {
+		"sunAzimuth": -60,
+		"sunRise": 44,
+		"skyShare": 0.42,
+		"fov": 30,
+		"fill": null,
+		"targetY": null,
+		"top": 0.06,
+		"eye": 0.3,
+		"daylight": 2.9
+	},
+	"03-whole-from-below.png": {
+		"view": "whole",
+		"sunAzimuth": -30,
+		"sunRise": 62,
+		"skyShare": 0.45,
+		"sky": "#7fb0e6",
+		"daylight": 2.6,
+		"horizon": 0.9,
+		"fill": null,
+		"targetY": null,
+		"top": 0.02,
+		"eye": 0.3,
+		"fov": 65
+	},
+	"04-crown-outside.png": {
+		"sunAzimuth": -40,
+		"sunRise": 55,
+		"skyShare": 0.45,
+		"daylight": 2.5
+	},
+	"05-crown-underneath.png": {
+		"sunAzimuth": -30,
+		"sunRise": 65,
+		"skyShare": 0.5,
+		"sky": "#8bb8ea",
+		"daylight": 2.4
+	},
+	"06-inside-crown.png": {
+		"sunAzimuth": -30,
+		"sunRise": 60,
+		"skyShare": 0.4,
+		"daylight": 2.2
+	},
+	"07-limb-leaving-trunk.png": {
+		"sunAzimuth": -50,
+		"sunRise": 48,
+		"skyShare": 0.4,
+		"daylight": 2.3
+	},
+	"08-limb-fork.png": {
+		"sunAzimuth": -60,
+		"sunRise": 50,
+		"skyShare": 0.42,
+		"background": "studio-grey",
+		"sky": "#b9c2c6"
+	},
+	"09-secondary-branching.png": {
+		"sunAzimuth": -50,
+		"sunRise": 50,
+		"skyShare": 0.42,
+		"background": "studio-grey",
+		"sky": "#b9c2c6"
+	},
+	"10-fine-twigs.png": {
+		"sunAzimuth": -50,
+		"sunRise": 52,
+		"skyShare": 0.42,
+		"background": "studio-grey",
+		"sky": "#b9c2c6"
+	},
+	"11-needle-bundles.png": {
+		"skyShare": 0.5,
+		"background": "studio-grey",
+		"sky": "#c8ccce"
+	},
+	"12-single-needle-upper.png": {
+		"skyShare": 0.5,
+		"background": "studio-grey",
+		"sky": "#e2e4e5"
+	},
+	"13-needle-underside.png": {
+		"skyShare": 0.5,
+		"background": "studio-grey",
+		"sky": "#e2e4e5"
+	},
+	"17-trunk-taper.png": {
+		"skyShare": 0.45,
+		"daylight": 2.1
+	},
+	"18-silhouette.png": {
+		"fov": 30,
+		"fill": null,
+		"targetY": null,
+		"top": 0.17,
+		"eye": 0.3
+	},
+	"19-cones.png": {
+		"sunAzimuth": -50,
+		"sunRise": 52,
+		"skyShare": 0.42,
+		"background": "studio-grey",
+		"sky": "#b9c2c6"
+	},
+	"20-flat-crown-top.png": {
+		"sunAzimuth": -40,
+		"sunRise": 58,
+		"skyShare": 0.45,
+		"sky": "#8bb8ea",
+		"daylight": 2.4
+	},
+	"21-branch-studio.png": {
+		"sunAzimuth": -40,
+		"sunRise": 50,
+		"skyShare": 0.42,
+		"background": "studio-grey",
+		"sky": "#c4c8ca"
+	},
+	"22-subbranch-studio.png": {
+		"sunAzimuth": -40,
+		"sunRise": 50,
+		"skyShare": 0.42,
+		"background": "studio-grey",
+		"sky": "#c4c8ca"
+	},
+	"23-leaf-cluster-studio.png": {
+		"sunAzimuth": -40,
+		"sunRise": 52,
+		"skyShare": 0.42,
+		"background": "studio-grey",
+		"sky": "#c4c8ca"
+	},
+	"24-leaf-texture-upper.png": {
+		"background": "studio-grey",
+		"sky": "#a9c0c8"
+	},
+	"25-leaf-texture-underside.png": {
+		"background": "studio-grey",
+		"sky": "#a9c0c8"
+	},
+	"30-young-conical-whole.png": {
+		"sunAzimuth": -40,
+		"sunRise": 44,
+		"skyShare": 0.42,
+		"fov": 30,
+		"daylight": 2.5
+	},
+	"31-young-low-branching.png": {
+		"sunAzimuth": -50,
+		"sunRise": 48,
+		"skyShare": 0.42,
+		"daylight": 2.4
+	},
+	"32-young-crown-close.png": {
+		"sunAzimuth": -40,
+		"sunRise": 52,
+		"skyShare": 0.42,
+		"daylight": 2.4
+	},
+	"pine-turntable.mp4": {
+		"skyShare": 0.4,
+		"daylight": 2.4
+	},
+	"pine-wind-motion.mp4": {
+		"skyShare": 0.4,
+		"daylight": 2.4
+	},
+	"26-bark-texture.png": {
+		"barkZone": 1,
+		"span": 0.8
+	},
+	"16-bark-upper-trunk.png": {
+		"barkZone": 1,
+		"span": 0.8
+	},
+	"27-bark-texture-zone2.png": {
+		"barkZone": 0,
+		"span": 0.8
+	}
+}

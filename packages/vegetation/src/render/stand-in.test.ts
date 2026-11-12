@@ -139,7 +139,12 @@ describe('the stand-ins on the page', () => {
 		const data = buildKitNow(species, { detail: 'high', placeholders: true });
 		const kit = { ...data, textures: {} } as never;
 		const assets = [0, 1].map((variant) => growPlantNow(data, { seed: 17, variant, near: true }));
-		const far = assets.map((asset) => ({ variant: asset.variant, bake: bakeFarNow(data, asset) }));
+		const far = await Promise.all(
+			assets.map(async (asset) => ({
+				variant: asset.variant,
+				bake: await bakeFarNow(data, asset),
+			})),
+		);
 		const copies = {
 			count: 5,
 			position: new Float32Array([0, 0, 0, 30, 1, -4, -60, 2, 9, 200, 0, 200, -400, 5, 120]),
@@ -154,6 +159,7 @@ describe('the stand-ins on the page', () => {
 				shoots: material('shoots'),
 				cards: material('cards'),
 				foliage: material('foliage'),
+				foliageFar: material('foliage'),
 				extras: material('extras'),
 			},
 			far,

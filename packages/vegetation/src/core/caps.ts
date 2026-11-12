@@ -105,7 +105,9 @@ export const MODEL_CAPS: Readonly<Record<CapClass, ModelCaps>> = {
 		// The beech's second card level once each card draws its supporting twig: 27,666 triangles
 		// without the twig line and about 42,700 with one, which is above the holm oak's 37,723. A
 		// card that draws no twig floats free of the wood, so this cap follows the reading with it.
-		lod2Triangles: 43_000,
+		// The saguaro's areole cards, one at every rib crest, measure 50,452 triangles at the ultra
+		// tier, so the cap rises above them rather than leave the column thin of its spine clusters.
+		lod2Triangles: 52_000,
 		downloadBytes: 1 * MB,
 		downloadHalfBytes: 0.35 * MB,
 		growMilliseconds: 600,
@@ -131,14 +133,29 @@ export const MODEL_CAPS: Readonly<Record<CapClass, ModelCaps>> = {
 		// The largest of hosta, pendulous sedge and meadow grass once measured 1.35, 1.39, 1.44 and
 		// 3.30 MB, with about 15 per cent to spare, so Hosta's ribs at the finest tier fit. The sedge's
 		// tussock needs more blades than the old figures held, so the batch raised the medium and high
-		// tiers in proportion: a species grows at every preset and may spend its blades at each.
-		variantBytes: { low: 1.6 * MB, medium: 2.3 * MB, high: 2.4 * MB, ultra: 3.8 * MB },
+		// tiers in proportion: a species grows at every preset and may spend its blades at each. The
+		// owner then raised the low tier by the packed blade keel's 73,928 bytes, so a grass blade can
+		// turn its width to the view at the lowest memory tier too. On 12 November 2026 the owner ruled
+		// that the sedge keeps its spikelets, ligule and shoots, and raised this high tier and the two
+		// card levels from the newer grower's measured 3,042,793 bytes and 35,843 and 19,505 triangles.
+		// On 12 November 2026 the owner then raised the high variant and the first two card levels so
+		// the sedge could draw the photographs' twenty-two flowering stems: the measured twenty-two
+		// read 3,375,625 bytes and 78,833, 40,987 and 23,409 triangles.
+		// On 13 November 2026 the byte caps were re-recorded to govern every variant the species
+		// shows, not one drawn variant: the sedge's record had flagged the lower tiers as measured
+		// before the newer grower and awaiting a later read. At seed 11 the largest of its six
+		// variants (variant 3) reads 3,327,959, 3,658,322, 4,099,334 and 5,611,850 bytes against the
+		// old 1,673,928, 2,300,000, 3,600,000 and 3,800,000, so the caps take the class's 15 per cent
+		// spare at 3,830,000, 4,210,000, 4,710,000 and 6,450,000. The sedge's largest variant therefore
+		// sets this class's byte ceiling: the meadow grass and the hosta inherit headroom they did not
+		// need, and their own figures did not grow.
+		variantBytes: { low: 3_830_000, medium: 4_210_000, high: 4_710_000, ultra: 6_450_000 },
 		// A frond colony's stipes and rachises are wood: the bracken test colony's largest of sixteen
 		// variants and seasons, with about 15 per cent to spare: 52, 58, 61 and 64 KB.
 		lod0WoodBytes: { low: 0.06 * MB, medium: 0.066 * MB, high: 0.07 * MB, ultra: 0.074 * MB },
 		lod0Triangles: 200_000,
-		lod1Triangles: 30_000,
-		lod2Triangles: 8_000,
+		lod1Triangles: 80_000,
+		lod2Triangles: 25_000,
 		downloadBytes: 0.35 * MB,
 		downloadHalfBytes: 0.12 * MB,
 		growMilliseconds: 150,
@@ -158,7 +175,7 @@ export const MODEL_CLASS: Readonly<Record<GrowthModel, CapClass>> = {
 	rosette: 'ground',
 	'frond-colony': 'ground',
 	tuft: 'ground',
-	column: 'ground',
+	column: 'tree',
 };
 
 /**
