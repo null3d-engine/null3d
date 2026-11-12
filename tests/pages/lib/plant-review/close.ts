@@ -107,6 +107,8 @@ const LOOK_DOWN = 12;
  * photograph stands close on the crotch, so the stem fills one side and the other limbs fall out.
  */
 const JUNCTION_LIMB_SHARE = 0.55;
+/** The share of the frame's width the stem's own surface takes when a picture gives no box. */
+const JUNCTION_STEM_SHARE = 0.3;
 /** The least radius, against the thickest limb that leaves the stem, of a limb a junction view takes. */
 const JUNCTION_THICK = 0.5;
 /**
@@ -621,8 +623,9 @@ export interface SubjectBoxShare {
 /**
  * The frame's height that a junction view takes: the limb's thickness must not outgrow the
  * photograph's subject box height share, and the stem's width must not outgrow its width share, so
- * the frame takes whichever need is the larger. Without the shares, the limb's diameter fills its
- * own share of the frame, as the view did before a picture's box was measured.
+ * the frame takes whichever need is the larger. Without the shares, the frame keeps the limb at its
+ * own share and puts the stem's surface across the width, so the join and both limbs it joins stand
+ * in the picture rather than a wall of bark.
  */
 export function junctionFrameHeight(
 	limbDiameter: number,
@@ -630,7 +633,11 @@ export function junctionFrameHeight(
 	shares: SubjectBoxShare | undefined,
 	aspect: number,
 ): number {
-	if (!shares) return limbDiameter / JUNCTION_LIMB_SHARE;
+	if (!shares)
+		return Math.max(
+			limbDiameter / JUNCTION_LIMB_SHARE,
+			stemDiameter / (JUNCTION_STEM_SHARE * aspect),
+		);
 	return Math.max(limbDiameter / shares.height, stemDiameter / (shares.width * aspect));
 }
 

@@ -421,8 +421,11 @@ describe("the junction frame from a picture's subject box", () => {
 			0.3 / 0.167,
 			6,
 		);
-		// Without a measured box the view keeps the limb's own share of the frame.
-		expect(junctionFrameHeight(0.286, 1.014, undefined, 1)).toBeCloseTo(0.286 / 0.55, 6);
+		// Without a measured box the frame keeps the limb's share and puts the stem's surface across
+		// the width, so the join shows rather than a wall of bark.
+		expect(junctionFrameHeight(0.286, 1.014, undefined, 1)).toBeCloseTo(1.014 / 0.3, 6);
+		// The stem's own width asks the further camera when the two are the same size.
+		expect(junctionFrameHeight(0.5, 0.5, undefined, 1)).toBeCloseTo(0.5 / 0.3, 6);
 	});
 });
 
