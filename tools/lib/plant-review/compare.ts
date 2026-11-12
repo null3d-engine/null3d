@@ -941,6 +941,9 @@ export interface TurnResult {
 	/** The gate the turn's background takes, and whether its check falls below the gate. */
 	readonly maskCheckThreshold: number | null;
 	readonly maskCheckFailed: boolean;
+	/** Whether the subject is too small for the figure to judge, so the check only reports. */
+	readonly maskCheckSmall: boolean;
+	readonly maskCheckSubject: number | null;
 	readonly sheets: readonly string[];
 	readonly error?: string;
 }
@@ -965,24 +968,59 @@ export interface MaskCheck {
 	readonly unreadable: number;
 	readonly threshold: number | null;
 	readonly failed: boolean;
+	/** Whether the subject is too small for the figure to judge, and only reports. */
+	readonly small: boolean;
+	/** The matte's share of the frame, averaged over the readable frames. */
+	readonly subject: number | null;
 }
+
+/**
+ * A plain background's subject under this share of the frame reports rather than fails: the overlap
+ * is dominated by the boundary band at that size, so a one-pixel edge costs a large share of it. The
+ * holm oak's subbranch turn reads 0.846 with its colour outline at 2.7 to 4.0 per cent and its matte
+ * at 2 to 3, where a one-pixel band costs about 0.15 of the overlap.
+ */
+export const MASK_SMALL_SUBJECT = 0.05;
 
 /**
  * The mask check a turning video's frames give. A null check is a frame whose colour outline covers
  * under the subject floor, which the fitted background cannot see the plant in.
  *
- * @param checks Each frame's overlap, or null where the frame is unreadable.
+ * @param checks Each frame's overlap and its matte's share of the frame, or null where unreadable.
  * @param plain Whether the turn drew on a plain background, as a cut piece does.
  * @returns The readable frames' mean overlap and the gate it is judged against.
  */
-export function maskCheckOf(checks: readonly (number | null)[], plain: boolean): MaskCheck {
-	const readable = checks.filter((check): check is number => check !== null);
+export function maskCheckOf(
+	checks: readonly ({ readonly iou: number; readonly subject: number } | null)[],
+	plain: boolean,
+): MaskCheck {
+	const readable = checks.filter(
+		(check): check is { readonly iou: number; readonly subject: number } => check !== null,
+	);
 	const unreadable = checks.length - readable.length;
 	if (readable.length === 0)
-		return { value: null, frames: 0, unreadable, threshold: null, failed: false };
-	const value = Number(mean(readable).toFixed(4));
+		return {
+			value: null,
+			frames: 0,
+			unreadable,
+			threshold: null,
+			failed: false,
+			small: false,
+			subject: null,
+		};
+	const value = Number(mean(readable.map((check) => check.iou)).toFixed(4));
+	const subject = mean(readable.map((check) => check.subject));
+	const small = plain && subject < MASK_SMALL_SUBJECT;
 	const threshold = plain ? MASK_GATE_PLAIN : MASK_GATE_NATURAL;
-	return { value, frames: readable.length, unreadable, threshold, failed: value < threshold };
+	return {
+		value,
+		frames: readable.length,
+		unreadable,
+		threshold,
+		failed: !small && value < threshold,
+		small,
+		subject: Number(subject.toFixed(4)),
+	};
 }
 
 /** Whether a turn's frames drew a plain background, as a cut piece does, rather than sky and ground. */
@@ -1054,6 +1092,8 @@ export function compareTurn(
 		maskCheckUnreadable: 0,
 		maskCheckThreshold: null,
 		maskCheckFailed: false,
+		maskCheckSmall: false,
+		maskCheckSubject: null,
 		sheets: [],
 	};
 	if (m === 0) return { ...empty, error: 'the run drew no frame of this turn' };
@@ -1071,7 +1111,9 @@ export function compareTurn(
 		const coloured = plantMask((renderSides[j] as Side).image);
 		const share = coloured.mask.reduce((sum, value) => sum + value, 0) / coloured.mask.length;
 		if (share < MASK_SUBJECT_FLOOR) return [null];
-		return [frameIou(coloured, (renderSides[j] as Side).plant)];
+		const matte = (renderSides[j] as Side).plant.mask;
+		const subject = matte.reduce((sum, value) => sum + value, 0) / matte.length;
+		return [{ iou: frameIou(coloured, (renderSides[j] as Side).plant), subject }];
 	});
 	const mask = maskCheckOf(checks, plainTurnOf((usable[0] as RunFrame).query?.background));
 	const refCoarse = refSides.map((s) => (s.normal ? coarse(s.normal) : undefined));
@@ -1146,6 +1188,8 @@ export function compareTurn(
 		maskCheckUnreadable: mask.unreadable,
 		maskCheckThreshold: mask.threshold,
 		maskCheckFailed: mask.failed,
+		maskCheckSmall: mask.small,
+		maskCheckSubject: mask.subject,
 		sheets: writeSheets(runDir, group, pages),
 	};
 }

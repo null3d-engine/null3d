@@ -72,6 +72,8 @@ const turn = (covered: number): TurnResult => ({
 	maskCheckUnreadable: 0,
 	maskCheckThreshold: null,
 	maskCheckFailed: false,
+	maskCheckSmall: false,
+	maskCheckSubject: null,
 	sheets: [],
 });
 

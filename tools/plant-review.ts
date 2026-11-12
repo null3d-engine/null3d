@@ -513,7 +513,11 @@ function turnSummary(result: TurnResult, limit: number): string[] {
 			: []),
 		...(result.maskCheck !== null
 			? [
-					`- Mask check: the colour outline of the render frames overlaps their matte by ${result.maskCheck.toFixed(3)} IoU over ${result.maskCheckFrames} frame${result.maskCheckFrames === 1 ? '' : 's'}${result.maskCheckUnreadable > 0 ? `, ${result.maskCheckUnreadable} unreadable` : ''}. The gate for ${result.maskCheckThreshold === MASK_GATE_PLAIN ? 'a plain background' : 'a natural background'} is ${result.maskCheckThreshold}, so the turn ${result.maskCheckFailed ? 'fails coverage' : 'stands'}.`,
+					`- Mask check: the colour outline of the render frames overlaps their matte by ${result.maskCheck.toFixed(3)} IoU over ${result.maskCheckFrames} frame${result.maskCheckFrames === 1 ? '' : 's'}${result.maskCheckUnreadable > 0 ? `, ${result.maskCheckUnreadable} unreadable` : ''}. ${
+						result.maskCheckSmall
+							? `The subject fills ${((result.maskCheckSubject ?? 0) * 100).toFixed(1)} per cent of the frame, so the figure reports rather than judges: at that size a one-pixel edge band costs a large share of the overlap.`
+							: `The gate for ${result.maskCheckThreshold === MASK_GATE_PLAIN ? 'a plain background' : 'a natural background'} is ${result.maskCheckThreshold}, so the turn ${result.maskCheckFailed ? 'fails coverage' : 'stands'}.`
+					}`,
 				]
 			: result.maskCheckUnreadable > 0
 				? [
