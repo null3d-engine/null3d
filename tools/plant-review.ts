@@ -60,6 +60,7 @@ import {
 	type Slot,
 	skyMaskable,
 	soilMaskable,
+	subjectShares,
 	TURN_VIEW,
 	type TurnVideo,
 	withSlot,
@@ -186,13 +187,15 @@ function stillShot(
 				};
 		}
 		// A junction view frames its subject so the limb's thickness and the stem's width take the
-		// shares of the frame that the picture's own subject box gives them, so the picture's box
-		// measures both axes rather than one.
-		if (slot.view === 'junction' && measures.box)
+		// shares of the frame that the picture's own subject box gives them. The box comes only from a
+		// picture whose outline separates; a picture whose reference set names no separable outline
+		// adds that to the flag, and a void box passes no shares, so the view keeps its own frame.
+		const shares = subjectShares(image.width, image.height, measures.box, plant.background.plain);
+		if (slot.view === 'junction' && shares)
 			query = {
 				...query,
-				subjectWidth: (measures.box.right - measures.box.left) / image.width,
-				subjectHeight: (measures.box.bottom - measures.box.top) / image.height,
+				subjectWidth: shares.width,
+				subjectHeight: shares.height,
 			};
 		if (slot.framed && measures.box) {
 			const {
