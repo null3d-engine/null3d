@@ -95,6 +95,26 @@ describe('the plant core with stand-ins', () => {
 		expect(variantKey(kit, options)).not.toBe(variantKey(kit, { ...options, variant: 2 }));
 	});
 
+	it('names merged foliage that its model does not build, and stands in where a kit asks', () => {
+		// A species whose nearest foliage is merged asks its growth model for that mesh, and the
+		// self-organizing model builds none. The kit with stand-ins turns that into the placeholder,
+		// and a kit without them reports the stage that is not built.
+		const merged = {
+			...stub,
+			record: { ...stub.record, lod: { ...stub.record.lod, nearFoliage: 'merged' as const } },
+		};
+		expect(() =>
+			growPlantNow(buildKitNow(merged, { placeholders: false }), { seed: 11, variant: 0 }),
+		).toThrow(NotBuiltError);
+		const stood = growPlantNow(buildKitNow(merged, { placeholders: 'missing' }), {
+			seed: 11,
+			variant: 0,
+		});
+		expect(stood.levels.some((level) => level.parts.some((part) => part.name === 'foliage'))).toBe(
+			true,
+		);
+	});
+
 	it('meshes the nearest wood later as it would have at once', () => {
 		const later = growPlantNow(kit, { seed: 11, variant: 0 });
 		expect(later.levels[0].parts).toHaveLength(0);
