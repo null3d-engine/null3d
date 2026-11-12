@@ -2157,14 +2157,14 @@ export interface CutFromShoots {
 	 */
 	readonly fanYaw?: number;
 	/**
-	 * How the fanned shoots are placed: round a ring about the axis, along one lateral spray, or
-	 * across the prototype's own leaf plane from one shared base. A fan keeps every row's leaf faces
-	 * turned alike, so a species whose leaves are two-ranked can spread the piece and still show its
-	 * blades. 'ring' by default.
+	 * How the fanned shoots are placed: round a ring about the axis, along one lateral spray, across
+	 * the prototype's own leaf plane from one shared base, or as a bunch whose rows stand at their
+	 * own places through the piece's depth. A fan keeps every row's leaf faces turned alike, and a
+	 * bunch draws its rows as separate twigs. 'ring' by default.
 	 */
-	readonly layout?: 'ring' | 'spray' | 'fan';
+	readonly layout?: 'ring' | 'spray' | 'fan' | 'bunch';
 	/**
-	 * The width a spray or fan spans, as a share of the piece's height. 0 by default.
+	 * The width a spray, fan or bunch spans, as a share of the piece's height. 0 by default.
 	 */
 	readonly spread?: number;
 }

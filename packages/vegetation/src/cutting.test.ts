@@ -700,6 +700,33 @@ describe('cuttings', () => {
 		expect(recorded?.bounds.max[2]).toBeCloseTo(fan.bounds.max[2] as number, 5);
 	});
 
+	it('stands a bunch of rows at their own places through the piece', () => {
+		const className = kit.record.shoots?.classes?.[0]?.name ?? 'cut';
+		const hinted = {
+			...kit,
+			record: {
+				...kit.record,
+				cuttings: { branch: { shoot: className, shoots: 4 } },
+			},
+		} as SpeciesKitData;
+		const bunch = clusterRow(hinted, { part: 'branch', layout: 'bunch', spread: 1 }, kit.detail);
+		if (!bunch) throw new Error('the kit grew no piece to bunch');
+		// Every row roots at its own place, so no two rows share a foot.
+		const roots = new Set<string>();
+		for (let row = 0; row < bunch.rows.count; row++)
+			roots.add(
+				[...bunch.rows.position.subarray(row * 3, row * 3 + 3)].map((v) => v.toFixed(4)).join(','),
+			);
+		expect(roots.size).toBe(bunch.rows.count);
+		// The rows stand apart through the piece's depth, not only at their tips.
+		const depth = Array.from(
+			{ length: bunch.rows.count },
+			(_, row) => bunch.rows.position[row * 3 + 2] as number,
+		);
+		const height = (bunch.bounds.max[1] as number) - (bunch.bounds.min[1] as number);
+		expect(Math.max(...depth) - Math.min(...depth)).toBeGreaterThan(0.5 * height);
+	});
+
 	it('grows the same bytes twice, and in a worker that runs the job-worker task', async () => {
 		const options = { seed: 11, variant: 0, cutting: { part: 'subbranch' as const } };
 		const here = plantAssetDigest(growPlantNow(kit, options));
