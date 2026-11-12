@@ -618,7 +618,7 @@ export function planShoot(
 		let sky = square(start.sky, direction, [0, 0, 1]);
 		let along = start.along;
 		let node = 0;
-		const azimuthStart = draw(Purpose.Start, axis) * 360;
+		const azimuthStart = shootClass.azimuth ?? draw(Purpose.Start, axis) * 360;
 		const axisLength = start.unitLength * start.units;
 		// A plate run holds one face; it starts at the run's first crowded node and ends when the
 		// internodes open out again. A new growth unit starts a new run.

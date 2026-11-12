@@ -92,8 +92,14 @@ export interface SparseFloors {
 	readonly limbs: number;
 	/** The least leaf-area share, from 0.05 to 1: how much of the record's leaf it keeps. */
 	readonly leaves: number;
-	/** The most coarsening, from 0 to 1: how far the sparse form thins twigs and coarsens wood. */
+	/** The most coarsening, from 0 to 1: how far the sparse form smooths the wood's mesh. */
 	readonly coarseness: number;
+	/**
+	 * The most section sparsity, from 0 to 1: how far the sparse form may thin the wood's own
+	 * sections, from the level's rings and sides to a few flat-sided runs with square ends. Absent,
+	 * the sparse form keeps the sections its coarseness gives.
+	 */
+	readonly sections?: number;
 }
 
 /**
@@ -964,14 +970,23 @@ export interface Column {
 	readonly arms: {
 		/** Arms per plant. */
 		readonly count: Spread;
-		/** Share of height where arms leave. */
-		readonly from: number;
-		/** Metres out from the column where an arm turns upward. */
-		readonly elbow: number;
+		/**
+		 * Share of height where arms leave: one share for every arm, or one share per tier of arms,
+		 * lowest first. The grower deals the arms among the tiers in turn.
+		 */
+		readonly from: number | readonly number[];
+		/**
+		 * Metres out from the column where an arm turns upward: one distance for every arm, or one
+		 * distance per tier of arms, lowest first.
+		 */
+		readonly elbow: number | readonly number[];
 		/** An arm's radius in metres. */
 		readonly radius: number;
-		/** Metres an arm rises after its elbow. */
-		readonly rise: Spread;
+		/**
+		 * Metres an arm rises after its elbow: one spread for every arm, or one spread per tier of
+		 * arms, lowest first.
+		 */
+		readonly rise: Spread | readonly Spread[];
 	};
 	/** Metres between areoles on a rib crest; each carries a spine-cluster prototype. */
 	readonly areoles: number;
@@ -1328,6 +1343,12 @@ export interface ShootClass {
 	 * round from every side.
 	 */
 	readonly leafAngleSpread?: number;
+	/**
+	 * Degrees about the shoot where its first leaf stands, where every shoot of the class must show
+	 * its leaf the same way up: a cactus areole's spine cluster lies with its longest spine pointing
+	 * down the stem. Absent, each shoot takes a turn of its own from the hash.
+	 */
+	readonly azimuth?: number;
 	/** Degrees the shoot hangs over its length (willow whips, birch). */
 	readonly droop: number;
 	/**
