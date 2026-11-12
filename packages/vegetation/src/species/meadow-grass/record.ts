@@ -227,5 +227,8 @@ export const record: Species = {
 		// on its own against the copy stand.
 		branch: { order: 1, length: 0.5 },
 		subbranch: { order: 1, length: 0.35 },
+		// Stills 12, 13 and the two texture sources: a picked blade lies pressed on the copy stand,
+		// so its fold, twist and arch straighten and the pictures show the blade's own width.
+		leaf: { pressed: true },
 	},
 };
