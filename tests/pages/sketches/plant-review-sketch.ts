@@ -251,6 +251,26 @@ function boundsOf(asset: PlantAsset, kit: SpeciesKit): Bounds {
 }
 
 /**
+ * Refuses a camera that came out non-finite, naming the picture and the numbers behind it. A
+ * framing solve can leave a distance or an axis non-finite while the plant's box is sound, and the
+ * camera's near plane then reaches the scene as a NaN; the picture fails here, where the fault is,
+ * instead of inside the renderer.
+ */
+function refuseNonFiniteCamera(fov: number, span: number, position: V3, target: V3): void {
+	if (
+		Number.isFinite(fov) &&
+		Number.isFinite(span) &&
+		span > 0 &&
+		[...position, ...target].every(Number.isFinite)
+	)
+		return;
+	const frame = `${QUERY.view ?? 'whole'} view, season ${QUERY.season ?? 'default'}, seed ${QUERY.seed ?? 0}, variant ${QUERY.variant ?? 0}`;
+	throw new Error(
+		`the ${frame} camera came out non-finite (fov ${fov}, span ${span}, position ${position.join(', ')}, target ${target.join(', ')}); the framing solve cannot stand a camera on this plant`,
+	);
+}
+
+/**
  * Refuses a box a camera cannot be framed on: one with a non-finite corner or with no extent at
  * all. A frame framed on such a box has no finite distance, and its near plane reaches the scene as
  * a NaN, so the picture fails where the fault is instead of inside the renderer.
@@ -1449,6 +1469,7 @@ export default defineSketch(async (ctx) => {
 	const cameras: Camera[] = cells.map((cell) => {
 		const { position, target, roll } = cell.view;
 		const span = Math.hypot(...sub(target, position));
+		refuseNonFiniteCamera(cell.view.fov, span, position, target);
 		return scene.createPerspectiveCamera({
 			fov: cell.view.fov,
 			near: cell.view.near ?? Math.max(0.005, Math.min(0.5, span * 0.02)),
