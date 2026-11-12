@@ -386,27 +386,38 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Four jobs share the workspace's tests through nextest's own partition, which splits
-          # them by a stable hash of their names.
-          - part: every test but the whole shader build (1 of 4)
+          # Six jobs share the workspace's tests through nextest's own partition, which splits
+          # them by a stable hash of their names. Four parts left each one over four minutes on
+          # the tests alone once the build was cached: 4m18s to 4m54s in run 43141954539.
+          - part: every test but the whole shader build (1 of 6)
             id: ci-1
             tests: --workspace --profile ci
-            partition: count:1/4
+            partition: count:1/6
             limit: 35
-          - part: every test but the whole shader build (2 of 4)
+          - part: every test but the whole shader build (2 of 6)
             id: ci-2
             tests: --workspace --profile ci
-            partition: count:2/4
+            partition: count:2/6
             limit: 35
-          - part: every test but the whole shader build (3 of 4)
+          - part: every test but the whole shader build (3 of 6)
             id: ci-3
             tests: --workspace --profile ci
-            partition: count:3/4
+            partition: count:3/6
             limit: 35
-          - part: every test but the whole shader build (4 of 4)
+          - part: every test but the whole shader build (4 of 6)
             id: ci-4
             tests: --workspace --profile ci
-            partition: count:4/4
+            partition: count:4/6
+            limit: 35
+          - part: every test but the whole shader build (5 of 6)
+            id: ci-5
+            tests: --workspace --profile ci
+            partition: count:5/6
+            limit: 35
+          - part: every test but the whole shader build (6 of 6)
+            id: ci-6
+            tests: --workspace --profile ci
+            partition: count:6/6
             limit: 35
           # The determinism check builds a few entries twice and compares the two builds, in a job
           # of its own.
@@ -440,6 +451,7 @@ jobs:
           save-if: ${{ env.SAVE_CACHES == 'true' }}
           cache-targets: false
       - name: Restore the built test binaries
+        id: target
         if: steps.passed.outputs.cache-hit != 'true'
         uses: actions/cache/restore@v4
         with:
@@ -451,6 +463,17 @@ jobs:
           restore-keys: |
             rust-test-target-${{ needs.passes.outputs.rust-workspace }}-
             rust-test-target-
+      # A restored tree carries the file times of the run that built it, and a fresh checkout gives
+      # every source the time of the checkout, which is newer. Cargo trusts file times, so it would
+      # rebuild every crate against that cache. A tree under this workspace's hash was built from
+      # exactly these sources, whichever part saved it, so their times go behind it and the build is
+      # reused. The bare prefix can restore a tree of older sources, which must rebuild what
+      # changed, so that fallback keeps its times.
+      - name: Trust the restored tree's file times
+        if: >-
+          steps.passed.outputs.cache-hit != 'true' &&
+          startsWith(steps.target.outputs.cache-matched-key, format('rust-test-target-{0}-', needs.passes.outputs.rust-workspace))
+        run: find crates packages tests examples tools bench Cargo.toml Cargo.lock rust-toolchain.toml .config -type f -exec touch -d '2000-01-01T00:00:00Z' {} +
       - uses: taiki-e/install-action@v2
         if: steps.passed.outputs.cache-hit != 'true'
         with:
