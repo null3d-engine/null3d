@@ -287,7 +287,7 @@ export const record: Species = {
 			scale: { mean: 1.4, spread: 0.15 },
 			// Fewer branches each carry no more foliage than this, so the crown opens with the branch
 			// count rather than the leaves filling the places the lost branches held.
-			rowsPerAxis: 8,
+			rowsPerAxis: 6,
 		},
 	},
 	foliage: {
