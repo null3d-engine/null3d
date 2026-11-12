@@ -64,6 +64,63 @@ fn only_problem(source: &str) -> Problem {
     error.problems[0].clone()
 }
 
+/// The one problem of a build that should fail, read from the base build of each path alone. A
+/// fault in the material's own WGSL appears in every build of it, so a test that does not read a
+/// build list asks for no more.
+fn only_problem_of_the_base(source: &str) -> Problem {
+    let error = compile_with(source, None, &[0]).expect_err("the build should fail");
+    assert_eq!(error.problems.len(), 1, "{error}");
+    error.problems[0].clone()
+}
+
+/// Builds a custom material into the template's variant `variant_name` alone. The compiler builds
+/// every variant that a listed word reaches, so without this a test that checks one path's builds
+/// pays for the other path's too.
+fn compile_variant(
+    variant_name: &str,
+    source: &str,
+    only: &[u32],
+) -> Result<MaterialOutput, BuildError> {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let mut inputs = Inputs::read(&root).expect("the repository's shaders");
+    let mut manifest: toml::Table = toml::from_str(&inputs.manifest).expect("the shader manifest");
+    let shaders = manifest
+        .get_mut("shaders")
+        .and_then(toml::Value::as_table_mut)
+        .expect("the shader manifest's shaders");
+    let template = shaders
+        .iter_mut()
+        .map(|(_, shader)| shader)
+        .find(|shader| {
+            shader
+                .get("custom_materials")
+                .and_then(toml::Value::as_bool)
+                == Some(true)
+        })
+        .expect("the template that custom materials build with");
+    let variants = template
+        .get_mut("variants")
+        .and_then(toml::Value::as_table_mut)
+        .expect("the template's variants");
+    variants.retain(|name, _| name == variant_name);
+    // The first-use tables name the builds that a page loads only when it asks for a feature, and
+    // a material build reads none of them. They also name variant bits that the one kept variant
+    // may not offer, which the manifest refuses.
+    manifest.remove("first_use");
+    inputs.manifest = toml::to_string(&manifest).expect("the narrowed manifest");
+    let template = MaterialTemplate::load(&inputs).expect("the template of custom materials");
+    let mut compiler = Compiler::new(&inputs.files).expect("the shader library");
+    compiler.build_only(only.iter().copied());
+    compiler.compile_material(
+        &template,
+        &MaterialSource {
+            path: PATH.to_owned(),
+            source: source.to_owned(),
+            share: None,
+        },
+    )
+}
+
 /// The permutation words of every shading build that a custom material can make, on both paths.
 /// A shading build shades a surface. The shadow, motion and pick builds add their pass's bit, so
 /// no word here makes one of them, and a test that reads only shading builds compiles these.
@@ -255,7 +312,7 @@ fn a_directive_is_refused_at_its_line() {
 
 #[test]
 fn a_name_that_the_template_declares_clashes_at_the_line_of_the_wgsl() {
-    let problem = only_problem(&format!(
+    let problem = only_problem_of_the_base(&format!(
         "{STRIPES}\nfn shade(x: f32) -> f32 {{\n    return x;\n}}\n"
     ));
     assert_eq!(problem.line, Some(9));
@@ -467,7 +524,20 @@ const CARD: &str = "fn coverage(input: SurfaceInput) -> f32 {
 
 #[test]
 fn a_coverage_function_builds_its_shadow_casters_and_no_motion_or_pick_builds() {
-    let built = compile(CARD).expect("the coverage function builds");
+    // The motion and pick words stay in the list: if the compiler made either variant for a
+    // material without a vertex offset, its build would appear and fail the assertion below.
+    let built = compile_with(
+        CARD,
+        None,
+        &[
+            0,
+            permutation::CASTER,
+            permutation::ALPHA_MASK | permutation::CASTER,
+            permutation::MOTION,
+            permutation::PICK,
+        ],
+    )
+    .expect("the coverage function builds");
     assert_eq!(built.functions, ["coverage"]);
     // The caster draws a fragment stage that tests the coverage, in the twins that a masked
     // material picks and in the plain builds that another material does.
@@ -715,7 +785,7 @@ fn a_custom_material_that_breaks_a_portable_rule_fails_at_its_line_with_a_fix() 
         "    return s;",
         "    let h: f16 = 1.0h;\n    s.metalness = f32(h);\n    return s;",
     );
-    let problem = only_problem(&half);
+    let problem = only_problem_of_the_base(&half);
     assert_eq!(problem.file.as_deref(), Some(PATH));
     assert_eq!(problem.line, Some(6));
     assert!(problem.message.contains("`shader-f16`"), "{problem}");
@@ -727,7 +797,7 @@ fn a_custom_material_that_breaks_a_portable_rule_fails_at_its_line_with_a_fix() 
         "    return s;",
         "    s.baseColor.xy = vec2f(1.0);\n    return s;",
     );
-    let problem = only_problem(&swizzle);
+    let problem = only_problem_of_the_base(&swizzle);
     assert_eq!(problem.line, Some(6));
     assert!(problem.feature.is_some(), "{problem}");
 }
@@ -1021,7 +1091,9 @@ const NESTED_ARRAYS: &str = "fn surface(input: SurfaceInput) -> Surface {
 
 #[test]
 fn a_glsl_refusal_of_the_materials_own_form_is_not_blamed_on_the_template() {
-    let error = compile(NESTED_ARRAYS).expect_err("GLSL ES 3.00 has no arrays of arrays");
+    // The base build of each path compiles the material's own WGSL, and the refusal names it.
+    let error =
+        compile_with(NESTED_ARRAYS, None, &[0]).expect_err("GLSL ES 3.00 has no arrays of arrays");
     assert!(!error.problems.is_empty());
     for problem in &error.problems {
         assert!(
@@ -1078,7 +1150,18 @@ fn vertexOffset(input: VertexInput) -> vec3f {
 
 #[test]
 fn a_surface_function_that_reads_the_depth_binds_its_copy_alone_in_the_shading_builds() {
-    let built = compile(DEPTH).expect("the surface function builds");
+    let built = compile_with(
+        DEPTH,
+        None,
+        &[
+            0,
+            permutation::SKIN,
+            permutation::CASTER,
+            permutation::MOTION,
+            permutation::PICK,
+        ],
+    )
+    .expect("the surface function builds");
     assert!(built.scene_depth);
     let mut shaded = 0;
     for (name, variant) in &built.variants {
@@ -1113,7 +1196,11 @@ fn a_surface_function_that_reads_the_depth_binds_its_copy_alone_in_the_shading_b
         }
     }
     assert!(shaded > 0);
-    assert!(!compile(STRIPES).expect("the material builds").scene_depth);
+    assert!(
+        !compile_with(STRIPES, None, &[0])
+            .expect("the material builds")
+            .scene_depth
+    );
 }
 
 /// A material whose own lobe adds part of the base specular for the main light, from the four
@@ -1273,7 +1360,18 @@ fn surface(input: SurfaceInput) -> Surface {
 /// no surface and drop the depth's group, so the joint texture follows the maps' group alone.
 #[test]
 fn textures_beside_the_scene_depth_push_the_joint_texture_after_both_groups() {
-    let built = compile(DEEP_TEXTURED).expect("the textured material that reads the depth builds");
+    // The test reads the skinned shading build and the skinned caster, whose joint texture sits
+    // after a different group on each, so it builds those words.
+    let built = compile_with(
+        DEEP_TEXTURED,
+        None,
+        &[
+            0,
+            permutation::SKIN,
+            permutation::SKIN | permutation::CASTER,
+        ],
+    )
+    .expect("the textured material that reads the depth builds");
     assert!(built.scene_depth);
     let mut seen = 0;
     for (name, variant) in &built.variants {
@@ -1444,7 +1542,19 @@ const TRANSLUCENT_INSTANCES: &str = "fn surface(input: SurfaceInput) -> Surface 
 
 #[test]
 fn a_translucent_material_that_reads_its_instance_builds_its_fading_levels() {
-    let built = compile(TRANSLUCENT_INSTANCES).expect("the translucent material builds");
+    // The test reads a fading build and the one build that also lets light through, so it asks
+    // those words.
+    let built = compile_with(
+        TRANSLUCENT_INSTANCES,
+        None,
+        &[
+            0,
+            permutation::LOD_FADE,
+            permutation::TRANSLUCENCY,
+            permutation::TRANSLUCENCY | permutation::LOD_FADE,
+        ],
+    )
+    .expect("the translucent material builds");
     let fades = built
         .variants
         .iter()
@@ -1628,7 +1738,7 @@ fn every_buildable_permutation_of(variant_name: &str) {
         "{variant_name}: the template expands no combination that is no build"
     );
     let wanted: Vec<u32> = expected.iter().copied().collect();
-    let built = compile_with(EVERY_HOOK, None, &wanted)
+    let built = compile_variant(variant_name, EVERY_HOOK, &wanted)
         .expect("the full custom material builds every variant");
     let words: BTreeSet<u32> = built.variants.values().map(|v| v.permutation).collect();
     for word in &expected {
@@ -1688,13 +1798,15 @@ fn the_diffuse_normal_reaches_only_the_builds_that_name_it() {
     // A material that names the field lights its diffuse and ambient by it. The template's split
     // appears in every one of its builds, and a material that never names the field keeps the
     // template's single-normal path unchanged.
-    let named = compile(CROWN_LIT).expect("the surface with a normal of its own builds");
+    let named = compile_with(CROWN_LIT, None, &[0, permutation::SKIN])
+        .expect("the surface with a normal of its own builds");
     let mut wgsl = named
         .variants
         .values()
         .filter_map(|variant| variant.wgsl.as_ref());
     assert!(wgsl.all(|build| build.source.contains("dot(diffuse_normal, to_sun)")));
-    let plain = compile(STRIPES).expect("the plain surface builds");
+    let plain =
+        compile_with(STRIPES, None, &[0, permutation::SKIN]).expect("the plain surface builds");
     let mut wgsl = plain
         .variants
         .values()
@@ -1879,7 +1991,21 @@ fn the_light_hooks_build_with_a_sway_and_a_cut_shape() {
 fn an_unlit_surface_shows_its_own_color_and_skips_the_lighting() {
     // Every shading build finishes the material's own color, and none of them calls the lighting:
     // the template's lit path is left out of the builds that the material draws with.
-    let built = compile(GLOW).expect("the unlit surface builds");
+    let built = compile_with(
+        GLOW,
+        None,
+        &[
+            0,
+            permutation::ALPHA_MASK,
+            permutation::CASTER,
+            permutation::ALPHA_MASK | permutation::CASTER,
+            permutation::MOTION,
+            permutation::ALPHA_MASK | permutation::MOTION,
+            permutation::PICK,
+            permutation::ALPHA_MASK | permutation::PICK,
+        ],
+    )
+    .expect("the unlit surface builds");
     assert_eq!(built.functions, ["unlit"]);
     assert!(
         built.alpha,
@@ -1906,7 +2032,7 @@ fn an_unlit_surface_shows_its_own_color_and_skips_the_lighting() {
     }
     assert!(shading > 0);
     // A material that lights its surface keeps the lit path, and has no unlit one.
-    let lit = compile(STRIPES).expect("the plain surface builds");
+    let lit = compile_with(STRIPES, None, &[0]).expect("the plain surface builds");
     let mut wgsl = lit
         .variants
         .values()
