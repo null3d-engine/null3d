@@ -228,16 +228,18 @@ export const record: Species = {
 			// The owner's 12 November 2026 ruling, after the standing authority: the sedge draws the
 			// photographs' twenty-two flowering stems, measured at 3,375,625 variant bytes and
 			// 78,833, 40,987 and 23,409 triangles, and the caps take a stated margin above each.
-			// 13 November 2026: the low, medium and ultra caps were re-recorded, as the note above
-			// asked. The later read at seed 11, variant 0 gives 2,860,705, 3,156,121 and 4,956,731
-			// bytes against the old 1,673,928, 2,300,000 and 3,800,000, so the new caps keep the
-			// class's 15 per cent spare at 3,290,000, 3,630,000 and 5,700,000. The high cap stays at
-			// 3,600,000, which the same read clears at 3,553,303, leaving 46,697 bytes. The largest
-			// variant at that seed reaches further at every tier (3,456,215, 3,786,578, 4,227,590 and
-			// 5,740,106 for variant 3) and its second card level draws 31,665 triangles against the
-			// 25,000 cap, 29,811 before the far tier's flower stalks joined it; those figures are
-			// recorded here for the next read rather than folded into the caps.
-			variantBytes: { low: 3_290_000, medium: 3_630_000, high: 3_600_000, ultra: 5_700_000 },
+			// 13 November 2026: the caps govern every variant the species shows, all six at seed 11,
+			// not one drawn variant. The largest is variant 3, which reads 3,327,959, 3,658,322,
+			// 4,099,334 and 5,611,850 bytes at the four tiers (old caps 1,673,928, 2,300,000,
+			// 3,600,000 and 3,800,000), so each new cap keeps the class's 15 per cent spare at
+			// 3,830,000, 4,210,000, 4,710,000 and 6,450,000. The far tier was coarsened so that same
+			// variant clears the 25,000-triangle second card level: its extras draw three faces rather
+			// than four, and a flower stalk two rings rather than four. The stalks add 618 triangles
+			// there (1,854 at the old ring count), and the level reads 24,317 against the cap, 29,811
+			// before the stalks joined it and 31,665 with them at the old cost. That variant's three
+			// levels read 98,819, 51,409 and 24,317 at the high tier against 140,000, 80,000 and
+			// 25,000.
+			variantBytes: { low: 3_830_000, medium: 4_210_000, high: 4_710_000, ultra: 6_450_000 },
 			lod0Triangles: 140_000,
 			lod1Triangles: 80_000,
 			lod2Triangles: 25_000,

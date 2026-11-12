@@ -830,6 +830,9 @@ export function meshTuft(input: MeshInput, level: MeshLevel): MeshArrays {
 		const path = wholePath(skeleton, a, [0, 1, 0]);
 		if (!path) continue;
 		const sides = isStem ? (growth.heads?.sides ?? 5) : fine ? 3 : 6;
+		// A flower stalk at the far tier is a single run of two rings: that tier's cap carries the
+		// stalks with their spikes, and the polygon dial draws them coarser there than near.
+		const rings = isStem ? (level === 0 ? 12 : 5) : level === 2 ? 2 : 4;
 		const first = axes.first[a] as number;
 		const last = axes.last[a] as number;
 		const r0 = skeleton.radius[first] as number;
@@ -838,7 +841,7 @@ export function meshTuft(input: MeshInput, level: MeshLevel): MeshArrays {
 			path,
 			from: 0,
 			to: path.length,
-			rings: Math.max(2, Math.min(last - first + 1, isStem ? (level === 0 ? 12 : 5) : 4)),
+			rings: Math.max(2, Math.min(last - first + 1, rings)),
 			radius: (share) => r0 + (r1 - r0) * share,
 			section: {
 				sides: tiers.stemSides(sides),
