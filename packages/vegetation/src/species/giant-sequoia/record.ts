@@ -29,6 +29,12 @@ export const record: Species = {
 	// The whole-tree stills stand the bole a fifth of the tree's height across at breast height
 	// (0.21 in 01, 0.19 in 18), where the buttressed taper still widens it. The pipe radius is the
 	// column's own width there, and the base taper adds the flare the photographs show.
+	//
+	// The height is the growth target, not the drawn height: at this target the architectural grower
+	// draws 61.565 m at variant 0 and seed 11, 0.435 m under the reference's 62 m band top, with the
+	// crown base at 19.230 m of it (a share of 0.312). Read 56.0 as the target the grower aims at,
+	// never as the species' height. The figure is provisional until a full round at the head that
+	// carries this target.
 	size: { height: { mean: 56.0, spread: 4 }, dbh: 6.6, aspect },
 	growth: {
 		model: 'architectural',
