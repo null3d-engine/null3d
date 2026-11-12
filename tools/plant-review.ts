@@ -36,9 +36,12 @@ import {
 	fittedMaskClause,
 	fixed,
 	framingQuery,
+	MASK_GATE_PLAIN,
+	MASK_SUBJECT_FLOOR,
 	rubricBand,
 	SHEATH_VIEWS,
 	type StillResult,
+	sweepMeasures,
 	type TurnResult,
 	viewSheets,
 	type WindResult,
@@ -111,6 +114,8 @@ interface Manifest {
 	readonly windFps: number;
 	readonly started: string;
 	readonly seconds: number;
+	/** The species record's height band, so a sweep picture's height is read against it. */
+	readonly sizeBand?: { readonly mean: number; readonly spread: number };
 	readonly frames: readonly RunFrame[];
 }
 
@@ -746,9 +751,17 @@ function turnSummary(result: TurnResult, limit: number): string[] {
 			: []),
 		...(result.maskCheck !== null
 			? [
-					`- Mask check: the colour outline of the render frames overlaps their matte by ${result.maskCheck.toFixed(3)} IoU.`,
+					`- Mask check: the colour outline of the render frames overlaps their matte by ${result.maskCheck.toFixed(3)} IoU over ${result.maskCheckFrames} frame${result.maskCheckFrames === 1 ? '' : 's'}${result.maskCheckUnreadable > 0 ? `, ${result.maskCheckUnreadable} unreadable` : ''}. ${
+						result.maskCheckSmall
+							? `The subject fills ${((result.maskCheckSubject ?? 0) * 100).toFixed(1)} per cent of the frame, so the figure reports rather than judges: at that size a one-pixel edge band costs a large share of the overlap.`
+							: `The gate for ${result.maskCheckThreshold === MASK_GATE_PLAIN ? 'a plain background' : 'a natural background'} is ${result.maskCheckThreshold}, so the turn ${result.maskCheckFailed ? 'fails coverage' : 'stands'}.`
+					}`,
 				]
-			: []),
+			: result.maskCheckUnreadable > 0
+				? [
+						`- Mask check: not measurable. The colour outline is under the ${MASK_SUBJECT_FLOOR * 100} per cent subject floor on all ${result.maskCheckUnreadable} frames with a matte, so the turn is neither passed nor failed on the check.`,
+					]
+				: []),
 		`- Sheets: ${result.sheets.join(', ')}.`,
 		'',
 	];
@@ -856,6 +869,7 @@ function compareRun(
 			...edgeLines(result.pairs),
 			...framingLines(result.pairs),
 			...pieceLines(result.pairs),
+			...connectivityLines(result.pairs),
 			...result.pairs.flatMap((pair) => (pair.note ? [`- ${pair.file}: ${pair.note}.`] : [])),
 			`- Sheets: ${result.sheets.join(', ')}.`,
 			'',
@@ -899,14 +913,73 @@ function compareRun(
 		summary.push(...windSummary(result));
 	}
 	metrics.winds = Object.fromEntries(winds);
+	// The owner's two-dial sweep: connectedness first, then the height against the record's band,
+	// then the row's own density figure — the crown-box gap — at every setting.
+	const sweeps = manifest.frames.filter((frame) => frame.group === 'sweeps' && !frame.error);
+	const sweepFloating: string[] = [];
+	if (sweeps.length > 0) {
+		const band = manifest.sizeBand;
+		summary.push('### Sweeps', '');
+		summary.push(
+			"- The whole view at sparseness 0, 0.5 and 1 by the record's preset and a coarse one: every setting reads its connectedness, its height against the record's band and its crown-box gap. The heights are the species' drawn heights at this head; a species whose height calibration lands later will move them, and the sweep is not a species judgement.",
+		);
+		for (const frame of sweeps) {
+			const read = sweepMeasures(dir, frame);
+			const parts = { length: read.components };
+			const floating = read.floating;
+			if (floating.length > 0) sweepFloating.push(frame.file);
+			const facts = frame.facts as { plant?: { height?: number } } | undefined;
+			const height = facts?.plant?.height;
+			const sparse = frame.query.sparse ?? 0;
+			const preset = frame.query.preset ?? '?';
+			const gap = read.crownBoxGap;
+			const inside =
+				band && height !== undefined
+					? height >= band.mean - band.spread && height <= band.mean + band.spread
+					: null;
+			summary.push(
+				`- sparse ${sparse}, preset ${preset}: ${parts.length} component${parts.length === 1 ? '' : 's'}${
+					floating.length > 0
+						? `, ${floating.length} floating (${floating.map((part) => `${part.area} px ${part.box}`).join(', ')})`
+						: ', none floating'
+				}; height ${height === undefined ? '-' : `${height.toFixed(2)} m`}${
+					inside === null
+						? ''
+						: inside
+							? ', inside the band'
+							: `, outside the ${(band?.mean ?? 0) - (band?.spread ?? 0)} to ${(band?.mean ?? 0) + (band?.spread ?? 0)} m band`
+				}; crown-box gap ${gap === null ? '-' : gap.toFixed(4)}.`,
+			);
+		}
+		summary.push('');
+	}
 	const coverage = coverageOf(set, { stills, turns, winds }, 1 / windFps);
 	metrics.coverage = coverage;
+	const maskFailures = [...turns.values()].filter((turn) => turn.maskCheckFailed);
+	const floating = [...stills.values()].filter(
+		(pair) => (pair.connectivity?.floating.length ?? 0) > 0,
+	);
 	summary.push(
 		'### Coverage',
 		'',
 		coverage.complete
 			? `- Every one of the ${coverage.inUse} reference files in use was compared. coverage.md lists each with its render.`
 			: `- ${coverage.compared} of ${coverage.inUse} reference files in use were compared in full, so the species cannot pass. coverage.md lists each file and what it lacks.`,
+		...(maskFailures.length > 0
+			? [
+					`- The mask check fails on ${maskFailures.length} turn${maskFailures.length === 1 ? '' : 's'}: ${maskFailures.map((turn) => turn.video).join(', ')}. A matte that the colour outline cannot follow is not a matte a row can be judged on.`,
+				]
+			: []),
+		...(sweeps.length > 0
+			? [
+					`- Sweeps: ${sweeps.length} whole-view pictures, sparseness 0, 0.5 and 1 by the record's preset and a coarse one.`,
+				]
+			: []),
+		...(floating.length + sweepFloating.length > 0
+			? [
+					`- ${floating.length + sweepFloating.length} picture${floating.length + sweepFloating.length === 1 ? '' : 's'} draw${floating.length + sweepFloating.length === 1 ? 's' : ''} a piece hanging free: ${[...floating.map((pair) => pair.file), ...sweepFloating].join(', ')}. The owner's rule is that no piece hangs free at any level or sparseness, so the fault is the generator's and the run fails.`,
+				]
+			: []),
 		'',
 		'### Limits of the measures',
 		'',
@@ -920,7 +993,12 @@ function compareRun(
 	writeFileSync(join(dir, 'coverage.json'), `${JSON.stringify(coverage, null, '\t')}\n`);
 	writeFileSync(join(dir, 'coverage.md'), coverageMarkdown(manifest.species, set.slug, coverage));
 	writeFileSync(join(dir, 'summary.md'), `${summary.join('\n')}\n`);
-	return coverage.complete;
+	return (
+		coverage.complete &&
+		maskFailures.length === 0 &&
+		floating.length === 0 &&
+		sweepFloating.length === 0
+	);
 }
 
 /** The edge-direction lines for the stills that give no outline, so a close-up still has a figure. */
@@ -976,6 +1054,25 @@ function barkLine(pair: StillResult): string | null {
 	if (!pair.barkColour) return null;
 	const steps = deltaE2000(pair.barkColour.reference, pair.barkColour.render);
 	return `- ${pair.file}: no plain outline${barkClause(pair)}, ${steps.toFixed(2)} steps apart.`;
+}
+
+/**
+ * The connectivity gate: the owner's rule is that no piece hangs free at any level or sparseness, so
+ * a component that meets nothing inside the frame fails the picture as a generator fault, whatever
+ * the piece count says. A component the frame's border carries may run on outside the picture and is
+ * not a fault.
+ */
+function connectivityLines(pairs: readonly StillResult[]): string[] {
+	const lines: string[] = [];
+	for (const pair of pairs) {
+		const check = pair.connectivity;
+		if (!check || check.floating.length === 0) continue;
+		const sparse = pair.sparse === undefined ? '' : ` at sparse ${pair.sparse}`;
+		lines.push(
+			`- ${pair.file}${sparse}: ${check.components} components, ${check.floating.length} floating — ${check.floating.map((part) => `${part.area} px ${part.box}`).join(', ')}. A piece that meets nothing is a generator fault, not this row's.`,
+		);
+	}
+	return lines;
 }
 
 /** Where the render is drawn as more or fewer separate pieces than its reference. */
@@ -1076,6 +1173,32 @@ async function main(): Promise<void> {
 		if (wanted.has('stills'))
 			for (const slot of stillList(set.stills))
 				shots.push(stillShot(set, slot, base, matte, span, slotQueries[slot.file], moundForm));
+		// The owner's two-dial sweep: a full round draws the whole view at the record's density and
+		// toward the sparse form, at the record's coarseness and a coarse one, so connectedness,
+		// height and the row's own density figure are read at every setting rather than only the
+		// record's. `--sweeps` draws them alone for a quick check.
+		const fullRound =
+			wanted.has('stills') &&
+			wanted.has('turns') &&
+			wanted.has('wind') &&
+			!flag('stills') &&
+			!flag('views');
+		if (fullRound || flag('sweeps')) {
+			const record = (base.preset ?? 'high') as NonNullable<PlantReviewQuery['preset']>;
+			const presets: readonly NonNullable<PlantReviewQuery['preset']>[] =
+				record === 'low' ? ['low', 'high'] : [record, 'low'];
+			for (const sparse of [0, 0.5, 1])
+				for (const preset of presets)
+					shots.push(
+						singleShot(
+							'sweeps',
+							`whole-sparse-${sparse}-${preset}.png`,
+							{ ...base, preset, view: 'whole', sparse, measure: true },
+							VIEW_SPECS.whole.size,
+							matte,
+						),
+					);
+		}
 		if (wanted.has('turns'))
 			for (const video of set.turns)
 				shots.push(
@@ -1102,12 +1225,21 @@ async function main(): Promise<void> {
 		release();
 	}
 	frames = await correctWidths(dir, frames, shots, flag('gpu') ? option('gpu') : undefined);
+	const height = isSpeciesId(species) ? (await loadSpecies(species)).record.size.height : undefined;
+	const band =
+		height === undefined
+			? undefined
+			: {
+					mean: typeof height === 'number' ? height : height.mean,
+					spread: typeof height === 'number' ? 0 : height.spread,
+				};
 	const manifest: Manifest = {
 		tool: 'tools/plant-review.ts',
 		species,
 		run,
 		commit,
 		dirty,
+		...(band ? { sizeBand: band } : {}),
 		...(set && { references: set.folder }),
 		seed: base.seed ?? 11,
 		variant: base.variant ?? 0,

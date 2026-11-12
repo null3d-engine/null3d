@@ -33,6 +33,7 @@ const still = (file: string): StillResult => ({
 	frameIou: 0.7,
 	edgeDifference: 0.2,
 	pieces: null,
+	connectivity: null,
 	profileError: 0.05,
 	gap: null,
 	crownBoxGap: null,
@@ -68,6 +69,12 @@ const turn = (covered: number): TurnResult => ({
 		metres: [],
 	},
 	maskCheck: null,
+	maskCheckFrames: 0,
+	maskCheckUnreadable: 0,
+	maskCheckThreshold: null,
+	maskCheckFailed: false,
+	maskCheckSmall: false,
+	maskCheckSubject: null,
 	sheets: [],
 });
 
