@@ -223,6 +223,15 @@ export interface PlantReviewQuery {
 	 */
 	readonly span?: number;
 	/**
+	 * The share of its picture's frame that a close view's subject box takes across and down, as the
+	 * reference's own measure gives it. A junction view frames its subject so neither the limb's
+	 * thickness nor the stem's width outgrows its share, instead of sizing the frame from the limb's
+	 * diameter alone. Absent, the view keeps its own limb-diameter share.
+	 */
+	readonly subjectWidth?: number;
+	/** The subject box's share of the picture's height, with `subjectWidth`. */
+	readonly subjectHeight?: number;
+	/**
 	 * The row share on which a view up the stem puts the stem's first fork: the camera pitches up
 	 * until the fork lands there, no steeper than the view's elevation.
 	 */
@@ -297,6 +306,8 @@ const NUMBER_FIELDS = [
 	'thin',
 	'barkZone',
 	'span',
+	'subjectWidth',
+	'subjectHeight',
 	'forkRow',
 	'footRow',
 	'crownRow',
@@ -451,6 +462,14 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 		throw new Error(
 			`barkZone=${numbers.barkZone} is an index into the record's bark zones: give a whole number of 0 or more.`,
 		);
+	for (const [name, value] of [
+		['subjectWidth', numbers.subjectWidth],
+		['subjectHeight', numbers.subjectHeight],
+	] as const)
+		if (value !== undefined && !(value > 0 && value <= 1))
+			throw new Error(
+				`${name}=${value} is a share of the frame: give a number above 0 and up to 1.`,
+			);
 	if (numbers.leafLength !== undefined && numbers.leafLength <= 0)
 		throw new Error(
 			`leafLength=${numbers.leafLength} is a leaf's length in metres: give a number above 0.`,
