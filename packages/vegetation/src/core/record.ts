@@ -92,8 +92,14 @@ export interface SparseFloors {
 	readonly limbs: number;
 	/** The least leaf-area share, from 0.05 to 1: how much of the record's leaf it keeps. */
 	readonly leaves: number;
-	/** The most coarsening, from 0 to 1: how far the sparse form thins twigs and coarsens wood. */
+	/** The most coarsening, from 0 to 1: how far the sparse form smooths the wood's mesh. */
 	readonly coarseness: number;
+	/**
+	 * The most section sparsity, from 0 to 1: how far the sparse form may thin the wood's own
+	 * sections, from the level's rings and sides to a few flat-sided runs with square ends. Absent,
+	 * the sparse form keeps the sections its coarseness gives.
+	 */
+	readonly sections?: number;
 }
 
 /**
@@ -126,6 +132,7 @@ export type FormField =
 	| 'base'
 	| 'extras'
 	| 'wind'
+	| 'lod'
 	| 'roundBand'
 	| 'lopsided'
 	| 'cuttings';
@@ -1102,7 +1109,10 @@ export interface ShootSpec {
 	 * Shoots the cuttings draw and the crown never does, each with one prototype of its own. A close
 	 * picture of a cut twig wants shorter, denser twigs than the crown can carry on the same class, and
 	 * a class of its own settles the two without either paying for the other. A name here must not also
-	 * be one of `classes`.
+	 * be one of `classes`. The list's order sets each class's prototypes, because a shoot's growth seed
+	 * is its place in the kit, so a new class goes after every existing one: adding one before them
+	 * redraws theirs, and a species' cluster piece moved from 86x283 to 177x287 when a class was added
+	 * at the top.
 	 */
 	readonly cuttingClasses?: readonly ShootClass[];
 	/**
@@ -1326,7 +1336,16 @@ export interface ShootSpec {
  */
 export interface ShootClass {
 	/** The class's name. */
-	readonly name: 'long' | 'short' | 'spur' | 'whip' | 'spray' | 'cut';
+	readonly name:
+		| 'long'
+		| 'short'
+		| 'spur'
+		| 'whip'
+		| 'spray'
+		| 'cut'
+		| 'twig'
+		| 'twig-big'
+		| 'whip-stem';
 	/** Bud vigor this class serves, 0 weak to 1 strong. */
 	readonly vigor: readonly [number, number];
 	/** Share of the species' prototypes in this class. */
@@ -2195,6 +2214,12 @@ export interface LodSpec {
 	 * wood it grows from. Absent, the line spans only the stretch behind the row, as it always has.
 	 */
 	readonly cardStalkToFoliage?: boolean;
+	/**
+	 * The width, in texels, of a card's guaranteed strand: the shoot's own axis drawn as one
+	 * connected line down the card, so a card whose leaves scatter into separate islands still joins
+	 * the shoot it pictures. 0 or absent, a card draws no strand.
+	 */
+	readonly cardStrand?: number;
 	/** The impostor's views across and texels per view. */
 	readonly impostor: { readonly views: number; readonly texels: number };
 	/** The level that casts shadows. */
@@ -2350,6 +2375,52 @@ export interface CutFromShoots {
 	 * species whose photograph lays the branch across the frame turns it by a quarter. 0 by default.
 	 */
 	readonly fanYaw?: number;
+	/**
+	 * How the fanned shoots are placed: round a ring about the axis, along one lateral spray, or
+	 * across the prototype's own leaf plane from one shared base. A fan keeps every row's leaf faces
+	 * turned alike, so a species whose leaves are two-ranked can spread the piece and still show its
+	 * blades. 'ring' by default.
+	 */
+	readonly layout?: 'ring' | 'spray' | 'fan';
+	/**
+	 * The width a spray or fan spans, as a share of the piece's height. 0 by default.
+	 */
+	readonly spread?: number;
+	/**
+	 * The shoot class of the piece's main stem. Naming it builds the stem-and-laterals assembly: the
+	 * stem stands upright on its cut and full hanging shoots of the hint's own class join it at
+	 * heights along it, so a photograph of a branch with hanging side shoots draws as one joined
+	 * piece. Absent, the piece keeps the one class and its fan.
+	 */
+	readonly stem?: ShootClass['name'];
+	/**
+	 * How many lateral shoots hang from the stem, from 1 to the cutting's most. 6 by default.
+	 */
+	readonly laterals?: number;
+	/**
+	 * The share of the stem's height where the first lateral leaves, from 0 at the stem's foot to 1
+	 * at its tip. 0.45 by default.
+	 */
+	readonly lateralFrom?: number;
+	/**
+	 * The share of the stem's height where the last lateral leaves, from 0 at the stem's foot to 1
+	 * at its tip. 0.92 by default.
+	 */
+	readonly lateralTo?: number;
+	/**
+	 * Degrees each lateral leans outward from the stem's line, so a positive value opens the hanging
+	 * shoots away from the stem. 20 by default.
+	 */
+	readonly lateralAngle?: number;
+	/**
+	 * The laterals' length over their class's, so one stem class serves a long branch and a short
+	 * twig: 0.5 hangs half-length shoots, 1.5 hangs longer ones. 1 by default.
+	 */
+	readonly lateralScale?: number;
+	/**
+	 * Which of the stem class's prototypes to take, 0 for the first. 0 by default.
+	 */
+	readonly stemPick?: number;
 }
 
 /**

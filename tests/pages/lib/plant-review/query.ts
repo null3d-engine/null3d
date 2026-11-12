@@ -102,6 +102,51 @@ export interface PlantReviewQuery {
 	readonly pick?: number;
 	/** The cutting's length in metres. */
 	readonly cut?: number;
+	/**
+	 * The shoots a branch or sub-branch cutting carries, in place of the record hint's count, so two
+	 * pictures of one species can show different numbers of side shoots.
+	 */
+	readonly shoots?: number;
+	/**
+	 * The shoot class a branch or sub-branch cutting draws, in place of the record hint's class, so a
+	 * close view can draw a thin twig while the studio piece draws the whole branch.
+	 */
+	readonly shoot?: string;
+	/**
+	 * The radius of the ring a branch or sub-branch cutting's shoots stand on, as a share of the
+	 * piece's height, in place of the record hint's. A wide ring separates the shoots.
+	 */
+	readonly ring?: number;
+	/**
+	 * The degrees a branch or sub-branch cutting's shoots lean outward from its axis, in place of the
+	 * record hint's, so the tips separate while the bases stay together.
+	 */
+	readonly lean?: number;
+	/**
+	 * How a fanned cutting places its shoots: 'ring' round the piece's axis, 'spray' along one
+	 * lateral line, or 'fan' across the piece's own leaf plane from one shared base.
+	 */
+	readonly layout?: 'ring' | 'spray' | 'fan';
+	/**
+	 * The width a 'spray' or 'fan' layout spans, as a share of the piece's height.
+	 */
+	readonly spread?: number;
+	/**
+	 * The shoot class of the piece's main stem. Naming it builds the stem-and-laterals assembly: the
+	 * stem stands upright and the piece's own class hangs from it.
+	 */
+	readonly stem?: string;
+	/** How many laterals hang from the stem, from 1 to the cutting's most. */
+	readonly laterals?: number;
+	/** The share of the stem's height where the first lateral leaves, and where the last leaves. */
+	readonly lateralFrom?: number;
+	readonly lateralTo?: number;
+	/** Degrees each lateral leans outward from the stem's line. */
+	readonly lateralAngle?: number;
+	/** The laterals' length over their class's. */
+	readonly lateralScale?: number;
+	/** Which of the stem class's prototypes to take. */
+	readonly stemPick?: number;
 	/** Whether the page posts its measures of the plant beside the frame. */
 	readonly measure?: boolean;
 	/**
@@ -242,6 +287,22 @@ export interface PlantReviewQuery {
 	 */
 	readonly sparse?: number;
 	/**
+	 * How far the wood's own sections are thinned, from 0 to 1: a review redraw reads the same plant
+	 * with fewer rings and sides, to measure what the section level costs and what it breaks. Absent
+	 * draws the level's own sections.
+	 */
+	readonly sections?: number;
+	/**
+	 * The share of a card level's own card rows to keep, from 0.05 to 1: a review redraw thins the
+	 * cards to measure what they buy, the kept cards growing by the level's rule. Absent keeps them.
+	 */
+	readonly cards?: number;
+	/**
+	 * How a card joins the plant when a level does not draw its branch: `remove` drops it, `branch`
+	 * draws the branch it stands on, and `twig` gives it a line to the nearest drawn branch.
+	 */
+	readonly cardJoin?: 'remove' | 'branch' | 'twig';
+	/**
 	 * Metres of one leaf that a photographed cutting was measured in, for the `leaves` frame. A
 	 * blade or a cluster whose own leaf is far longer than the photographed one frames at the
 	 * photograph's scale only when the length the photograph was measured in is named.
@@ -275,6 +336,16 @@ const NUMBER_FIELDS = [
 	'time',
 	'pick',
 	'cut',
+	'shoots',
+	'ring',
+	'lean',
+	'spread',
+	'laterals',
+	'lateralFrom',
+	'lateralTo',
+	'lateralAngle',
+	'lateralScale',
+	'stemPick',
 	'horizon',
 	'fill',
 	'targetY',
@@ -297,6 +368,9 @@ const NUMBER_FIELDS = [
 	'leaves',
 	'leafLength',
 	'sparse',
+	'sections',
+	'cards',
+	'age',
 	'roll',
 	'girth',
 	'turns',
@@ -319,6 +393,9 @@ const SHARE_FIELDS = new Set([
 	'along',
 	'skyShare',
 	'sparse',
+	'sections',
+	'cards',
+	'age',
 ]);
 
 /** The fields that are whole numbers of at least one. */
@@ -336,6 +413,8 @@ const SWITCHES = [
 	'leafyBark',
 	'noOutline',
 	'foliage',
+	'motion',
+	'young',
 ] as const;
 
 /** A short form of a number for a query, so a query reads well and keeps its precision. */
@@ -347,6 +426,9 @@ function short(value: number): string {
 export function plantReviewQuery(query: PlantReviewQuery): string {
 	const params = new URLSearchParams({ species: query.species });
 	if (query.form) params.set('form', query.form);
+	if (query.shoot) params.set('shoot', query.shoot);
+	if (query.layout) params.set('layout', query.layout);
+	if (query.stem) params.set('stem', query.stem);
 	if (query.view) params.set('view', query.view);
 	for (const name of NUMBER_FIELDS) {
 		const value = query[name];
@@ -357,6 +439,7 @@ export function plantReviewQuery(query: PlantReviewQuery): string {
 		if (value) params.set(name, value);
 	}
 	if (query.lod !== undefined) params.set('lod', String(query.lod));
+	if (query.cardJoin !== undefined) params.set('cardJoin', query.cardJoin);
 	if (query.size) params.set('size', `${query.size[0]}x${query.size[1]}`);
 	for (const name of SWITCHES) if (query[name]) params.set(name, '1');
 	if (query.placeholders !== undefined) params.set('placeholders', query.placeholders ? '1' : '0');
@@ -383,6 +466,20 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 	const form = params.get('form');
 	if (form !== null && !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(form))
 		throw new Error(`form=${form} is not a form's name: give a kebab-case word, such as young.`);
+	const layoutText = params.get('layout');
+	if (
+		layoutText !== null &&
+		layoutText !== 'ring' &&
+		layoutText !== 'spray' &&
+		layoutText !== 'fan'
+	)
+		throw new Error(`layout=${layoutText} is not a layout: use ring, spray or fan.`);
+	const shoot = params.get('shoot');
+	if (shoot !== null && !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(shoot))
+		throw new Error(`shoot=${shoot} is not a class name: give a kebab-case word, such as twig.`);
+	const stem = params.get('stem');
+	if (stem !== null && !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(stem))
+		throw new Error(`stem=${stem} is not a class name: give a kebab-case word, such as cut.`);
 	const view = oneOf('view', params.get('view'), PLANT_VIEWS) ?? 'whole';
 	const numbers: Partial<Record<(typeof NUMBER_FIELDS)[number], number>> = {};
 	for (const name of NUMBER_FIELDS) {
@@ -472,12 +569,22 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 	const background = oneOf('background', params.get('background'), PLANT_BACKGROUNDS);
 	const season = oneOf('season', params.get('season'), PLANT_SEASONS);
 	const preset = oneOf('preset', params.get('preset'), PLANT_PRESETS);
+	const joinText = params.get('cardJoin');
+	let cardJoin: 'remove' | 'branch' | 'twig' | undefined;
+	if (joinText !== null) {
+		if (joinText !== 'remove' && joinText !== 'branch' && joinText !== 'twig')
+			throw new Error(`cardJoin=${joinText} is not a join: use remove, branch or twig.`);
+		cardJoin = joinText;
+	}
 	const sun = oneOf('sun', params.get('sun'), PLANT_SUNS);
 	const placeholders = params.get('placeholders');
 	const pressed = params.get('pressed');
 	return {
 		species,
 		...(form !== null && { form }),
+		...(shoot !== null && { shoot }),
+		...(stem !== null && { stem }),
+		...(layoutText !== null && { layout: layoutText as 'ring' | 'spray' | 'fan' }),
 		view,
 		...numbers,
 		...(background && { background }),
@@ -488,6 +595,7 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 		...(preset && { preset }),
 		...(sun && { sun }),
 		...(lod !== undefined && { lod }),
+		...(cardJoin !== undefined && { cardJoin }),
 		...(size && { size }),
 		...(placeholders !== null && { placeholders: placeholders === '1' }),
 		...(pressed !== null && { pressed: pressed === '1' }),
@@ -499,6 +607,7 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 		foliage: params.get('foliage') === '1',
 		scale: params.get('scale') === '1',
 		motion: params.get('motion') === '1',
+		young: params.get('young') === '1',
 		matte: params.get('matte') === '1',
 		fruit: params.get('fruit') === '1',
 		surface: params.get('surface') === '1',

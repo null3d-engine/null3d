@@ -13,7 +13,7 @@ import { placeShoots } from '../leaf/instancer';
 import { OAK_MANIFEST, oakRecord, testKit } from '../leaf/oak.test-support';
 import { record as oak } from '../species/pedunculate-oak/record';
 import { bakeCards, paletteOf } from './card-bake';
-import { cardKeep, cardMesh } from './cards';
+import { cardKeep, cardMesh, connectedCards } from './cards';
 
 /** sRGB byte to linear. */
 const linear = (byte: number) => {
@@ -195,9 +195,16 @@ describe('the card levels', () => {
 		detail: 'high' as const,
 	};
 
+	const drawnRows = (level: 1 | 2): number[] => {
+		const flags = connectedCards(mesh, level);
+		const out: number[] = [];
+		for (let r = 0; r < rows.count; r++) if (flags[r] === 1) out.push(r);
+		return out;
+	};
+
 	it("draws each row's three planes at the first level", () => {
 		const first = cardMesh(mesh, 1);
-		expect(first.indices.length / 3).toBe(rows.count * 6);
+		expect(first.indices.length / 3).toBe(drawnRows(1).length * 6);
 		for (let i = 0; i < first.uvs.length; i++) {
 			expect(first.uvs[i]).toBeGreaterThanOrEqual(0);
 			expect(first.uvs[i]).toBeLessThanOrEqual(1);
@@ -206,13 +213,14 @@ describe('the card levels', () => {
 
 	it("draws each card's stalk only where the record gives a least width", () => {
 		const plain = cardMesh(mesh, 1);
-		expect(plain.indices.length / 3).toBe(rows.count * 6);
+		expect(plain.indices.length / 3).toBe(drawnRows(1).length * 6);
 		const stalked = cardMesh(
 			{ ...mesh, record: { ...record, lod: { ...record.lod, cardStalk: 1 } } },
 			1,
 		);
+		const drawn = drawnRows(1);
 		let stretched = 0;
-		for (let r = 0; r < rows.count; r++) {
+		for (const r of drawn) {
 			const bx = (rows.back?.[r * 3] as number) ?? 0;
 			const by = (rows.back?.[r * 3 + 1] as number) ?? 0;
 			const bz = (rows.back?.[r * 3 + 2] as number) ?? 0;
@@ -220,7 +228,7 @@ describe('the card levels', () => {
 		}
 		expect(stretched).toBeGreaterThan(0);
 		// Each stalk is one quad from either side, so it shows whichever way the view turns it.
-		expect(stalked.indices.length / 3).toBe(rows.count * 6 + stretched * 4);
+		expect(stalked.indices.length / 3).toBe(drawn.length * 6 + stretched * 4);
 		let stalks = 0;
 		for (let v = 0; v < stalked.uvs1.length / 2; v++) {
 			if (Math.abs((stalked.uvs1[v * 2 + 1] as number) - 0.75) >= 1e-6) continue;
@@ -254,6 +262,7 @@ describe('the card levels', () => {
 			if (cardKeep(rows.order[r] as number, 1) === 0) continue;
 			const prototype = kit.prototypes[rows.prototype[r] as number];
 			if (!prototype) continue;
+			if (connectedCards(mesh, 1)[r] !== 1) continue;
 			const planes = prototype.card.planes.length;
 			const at = vertex + planes * 4;
 			vertex = at + 4;
@@ -301,11 +310,25 @@ describe('the card levels', () => {
 
 	it('keeps every second card in the thinned level, each grown by the square root of two', () => {
 		const second = cardMesh(mesh, 2);
-		const kept = Array.from(rows.order).filter((order) => order % 2 === 0).length;
+		const kept = drawnRows(2).filter((r) => (rows.order[r] as number) % 2 === 0).length;
 		expect(second.indices.length / 3).toBe(kept * 6);
 		expect(cardKeep(4, 2)).toBeCloseTo(Math.SQRT2, 12);
 		expect(cardKeep(3, 2)).toBe(0);
 		expect(cardKeep(3, 1)).toBe(1);
+	});
+
+	it('thins a card level further by the same rule, the kept cards growing to hold the crown', () => {
+		const half = cardMesh({ ...mesh, cards: 0.5 }, 2);
+		const everyFour = drawnRows(2).filter((r) => (rows.order[r] as number) % 4 === 0).length;
+		expect(half.indices.length / 3).toBe(everyFour * 6);
+		expect(cardKeep(0, 2, 0.5)).toBe(2);
+		expect(cardKeep(2, 2, 0.5)).toBe(0);
+		const quarter = cardMesh({ ...mesh, cards: 0.25 }, 2);
+		const everyEight = drawnRows(2).filter((r) => (rows.order[r] as number) % 8 === 0).length;
+		expect(quarter.indices.length / 3).toBe(everyEight * 6);
+		expect(cardKeep(0, 2, 0.25)).toBeCloseTo(2 * Math.SQRT2, 12);
+		// A share of one keeps the level's own cards and their size.
+		expect(cardKeep(0, 2, 1)).toBeCloseTo(Math.SQRT2, 12);
 	});
 });
 

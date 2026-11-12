@@ -1117,7 +1117,8 @@ export function shootPrototypes(
 	// its variants fall. It keeps a leafless twin beside it where the species has them, so a winter
 	// cutting of it still finds a piece. A kit of a kind holds only the classes of its kind: the
 	// plant's kit the crown's and the cutting classes both are drawn from, the cutting kit the classes
-	// that only a cut piece draws.
+	// that only a cut piece draws. Each prototype's seed is its place in this list, so the classes
+	// after a new one are redrawn: a new class belongs after every existing class.
 	for (const shootClass of (shoots.cuttingClasses ?? []).filter(
 		(shoot) => (shoot.cutOnly === true) === cutting,
 	))
