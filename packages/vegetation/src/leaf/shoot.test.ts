@@ -879,6 +879,25 @@ describe('the shoot rows', () => {
 		expect(Array.from(even.position)).toEqual(Array.from(massed(undefined).position));
 		const flat = massed({ order: 1, hold: 0.5, reach: 2, depth: 0 });
 		expect(Math.abs(flat.count - even.count)).toBeLessThan(even.count * 0.05);
+		// A part of the mass thin enough bears nothing at all, so the trim takes its wood with it:
+		// the crown keeps its rows nearer the coarse wood and the skeleton loses the bare stretches.
+		const trimmed = (limbMass: NonNullable<typeof OAK_SHOOTS.placement>['limbMass']) =>
+			dressShoots({
+				...input,
+				record: {
+					...record,
+					shoots: {
+						...OAK_SHOOTS,
+						placement: { ...OAK_SHOOTS.placement, bareTrim: 0.1, limbMass },
+					},
+				},
+			});
+		const setting = { order: 1, hold: 0.5, reach: 2, depth: 1 } as const;
+		const solid = trimmed(setting);
+		const gated = trimmed({ ...setting, bare: 0.5 });
+		expect(gated.rows.count).toBeLessThan(solid.rows.count);
+		expect(gated.skeleton.axes.count).toBeLessThan(solid.skeleton.axes.count);
+		expect(distanceToCoarse(gated.rows)).toBeLessThanOrEqual(distanceToCoarse(solid.rows));
 	});
 
 	it('gathers the shoots of one bud into a tuft at its node when the record asks', () => {

@@ -605,6 +605,10 @@ function placedRows(input: DressInput, bySky = true): Row[] {
 			const span = Math.max(1e-6, mass.reach - mass.hold);
 			const apart = Math.min(1, Math.max(0, ((massDistance[b] as number) - mass.hold) / span));
 			const share = 1 - Math.min(1, Math.max(0, mass.depth)) * apart * apart * (3 - 2 * apart);
+			// Thin enough a part of the mass bears nothing at all: a bud here keeps no shoot by
+			// chance, so the wood that carried it stands bare, the trim takes it, and the crown parts
+			// into masses rather than unravels into whiskers.
+			if (mass.bare !== undefined && share <= mass.bare) continue;
 			expected *= share;
 			patch = Math.min(patch, share);
 		}
