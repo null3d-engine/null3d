@@ -31,6 +31,39 @@ structure, leaf clusters at the end of a shoot, single leaves on both faces, bar
 mid-trunk and on a limb, the trunk's taper and root flare, and the silhouette. The set also carries
 turning videos and usually a wind clip.
 
+## The branch structure
+
+The silhouette is judged on how the branches fill the space, not only on the outline they trace.
+The owner's ruling sets five points, and they bind every tree and every species in the catalogue,
+including any species added later:
+
+- **The sky is spread evenly through the silhouette.** Openings sit throughout the crown, in the
+  share the species' own reference shows. Sky gathered into a few large holes in one place fails,
+  and so does a crown with an open rim and a solid middle.
+- **No branch ends bare.** A branch carries foliage at its end, or it is pruned away. A thin bare
+  tip against the sky fails at any view, even when the recorded figures are inside their bands.
+- **Bends are gentle and progress upward.** A branch curves as it grows, and each bend carries it
+  up and out from the trunk. An odd kink, a bend back toward the trunk, or a zigzag between joints
+  fails.
+- **The branch count fits the species.** Too many branches and subbranches fill the crown with wood
+  the plant does not have; too few leave it thin. The reviewer counts the visible limbs at the
+  skeleton view against the reference, and the subbranch orders at the crown close-up.
+- **The structure is balanced through 360 degrees.** Branches and subbranches are spread around the
+  trunk in every direction, so the tree reads balanced from above and from the side. One heavy side
+  and one thin side fails, even when the foliage's outline is regular.
+
+The rows carry the points:
+
+| Point | Judged on |
+| --- | --- |
+| even sky through the crown | row 6, with row 12's plausibility |
+| no bare termination | row 12, subdivision and no strays |
+| gentle upward bends | row 7, with row 1's limb angles |
+| branch count | row 2 |
+| balance through 360 degrees | the coverage rule below |
+
+A species that fails a point fails the row that carries it.
+
 ## The twelve rows
 
 | # | Row | What is judged | Evidence |
@@ -60,7 +93,9 @@ reference's and no more than two hundredths below it. The small allowance below 
 a reference outline comes from color against a plain background and can lose its thinnest foliage.
 Anything more closed than that fails, and so does anything more open than the species. A crown
 denser than its reference is as much a fail as a thin one. The eye is the judge and the figure is
-the check: when the two disagree the reviewer says so and names which it followed.
+the check: when the two disagree the reviewer says so and names which it followed. The figure
+measures the share of sky, not where it sits: a crown whose openings gather in a few large holes
+fails under the branch structure section, whatever the share reads.
 
 Row 12 carries a checklist, and one entry on it fails the row. The reviewer writes the entry's
 picture beside it:
@@ -70,7 +105,8 @@ picture beside it:
   from the middle of another without a join is the same fault.
 - **Subdivision.** A branch of one order divides into smaller orders. Those divide again, down to
   the twigs that carry the leaves. A limb that ends in a stub fails. So does a twig that carries
-  nothing, or a jump from a thick limb straight to a leaf cluster.
+  nothing, or a jump from a thick limb straight to a leaf cluster. A branch that ends bare fails
+  wherever it shows, inside the crown as well as outside it.
 - **Neatness.** The wood runs as limbs, then branches, then twigs, each clearing the last. A tangle
   of parts crossing at odd angles is not a plant. It is the meshes laid over each other. It fails
   however well the silhouette scores.
@@ -92,7 +128,9 @@ picture beside it:
 ## Coverage
 
 A plant's appendages are spread around its three dimensions in equal proportion, so that turning
-around it never shows a lopsided tree. A crown that is full from the front and thin from the side, or
+around it never shows a lopsided tree. Its branches are spread the same way: branching and
+subbranching run through 360 degrees around the trunk, so the tree reads balanced from above and
+from the side, not only in outline. A crown that is full from the front and thin from the side, or
 a set of limbs that all leave in one plane, fails even when every other row passes, because a viewer
 walks round it.
 
