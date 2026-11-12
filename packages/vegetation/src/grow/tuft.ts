@@ -846,12 +846,9 @@ export function meshTuft(input: MeshInput, level: MeshLevel): MeshArrays {
 			along: sheath || isStem ? [0, 1] : fine ? [0.85, 1] : [0, 0.05],
 			// Stalks brown as the season gives; a stalk under its leaves keeps a share of its green.
 			browning: isStem ? Math.max(browning, 0.15) : Math.max(browning, 0.3),
-			// The shoot's basal column is its sheath, which the material draws in the record's
-			// sheath colours where the record gives them.
-			...(sheath ? { sheath: true } : {}),
 			closeTip: isStem || fine,
 			// The shoot's sheath column is the one merged-foliage run a sheath colour draws.
-			sheath: !isStem && !fine && sheathed,
+			sheath,
 		});
 	}
 	return mesh.finishMesh();

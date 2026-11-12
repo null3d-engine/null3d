@@ -133,6 +133,13 @@ export interface PlantReviewQuery {
 	 */
 	readonly leafyBark?: boolean;
 	/**
+	 * Whether a picture's own background cannot be separated from the plant, so the picture carries
+	 * no outline: its shape, width, pieces, frame gap, crown box and crown-box gap read null, while
+	 * the colour comparison stays. A species' slot names a picture whose background is the subject,
+	 * such as a far scrub band that the fitted sky and ground admit.
+	 */
+	readonly noOutline?: boolean;
+	/**
 	 * Whether a view that draws the wood alone draws the plant's foliage as well, which a bark
 	 * photograph taken among leaves needs if its colour is to be compared with like.
 	 */
@@ -327,6 +334,7 @@ const SWITCHES = [
 	'lifted',
 	'barkMask',
 	'leafyBark',
+	'noOutline',
 	'foliage',
 ] as const;
 
@@ -487,6 +495,7 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 		lifted: params.get('lifted') === '1',
 		barkMask: params.get('barkMask') === '1',
 		leafyBark: params.get('leafyBark') === '1',
+		noOutline: params.get('noOutline') === '1',
 		foliage: params.get('foliage') === '1',
 		scale: params.get('scale') === '1',
 		motion: params.get('motion') === '1',
