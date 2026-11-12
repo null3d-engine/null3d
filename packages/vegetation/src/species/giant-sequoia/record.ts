@@ -314,10 +314,10 @@ export const record: Species = {
 		// side, which the review turns to the camera for the picture.
 		scar: {
 			from: 0,
-			to: 4.2,
+			to: 8.5,
 			angle: 90,
-			width: 46,
-			depth: 0.8,
+			width: 72,
+			depth: 1.2,
 			colour: [0.012, 0.011, 0.009],
 			shade: 0.92,
 		},
