@@ -1010,7 +1010,10 @@ export interface ShootSpec {
 	 * Shoots the cuttings draw and the crown never does, each with one prototype of its own. A close
 	 * picture of a cut twig wants shorter, denser twigs than the crown can carry on the same class, and
 	 * a class of its own settles the two without either paying for the other. A name here must not also
-	 * be one of `classes`.
+	 * be one of `classes`. The list's order sets each class's prototypes, because a shoot's growth seed
+	 * is its place in the kit, so a new class goes after every existing one: adding one before them
+	 * redraws theirs, and a species' cluster piece moved from 86x283 to 177x287 when a class was added
+	 * at the top.
 	 */
 	readonly cuttingClasses?: readonly ShootClass[];
 	/**
