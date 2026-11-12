@@ -215,14 +215,17 @@ export const record: Species = {
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
-			// The budget check grows variant 0 alone, so these caps are not proved by it; they were
-			// measured at seed 11 against every variant, whose largest holds 1.53, 1.79, 2.16 and
-			// 3.42 MB from Low to Ultra. The kit holds 33 to 37 KB.
+			// The owner's ruling of 12 November 2026: the sedge keeps its spikelet rows, its ligule and
+			// its 170 shoots, and its caps are raised to what the newer grower costs rather than the
+			// plant being cut. Measured at seed 11, variant 0, high detail it draws 3,042,793 variant
+			// bytes and 35,843 and 19,505 triangles at the two card levels; the caps take a stated
+			// margin above each. The medium, low and ultra byte caps are unchanged and were measured
+			// before the newer grower, so a later read should confirm them. The kit holds 33 to 37 KB.
 			kitBytes: { low: 100_000, medium: 100_000, high: 100_000, ultra: 100_000 },
-			variantBytes: { low: 1_673_928, medium: 2_300_000, high: 2_400_000, ultra: 3_800_000 },
+			variantBytes: { low: 1_673_928, medium: 2_300_000, high: 3_100_000, ultra: 3_800_000 },
 			lod0Triangles: 140_000,
-			lod1Triangles: 25_000,
-			lod2Triangles: 8_000,
+			lod1Triangles: 36_000,
+			lod2Triangles: 19_600,
 			downloadBytes: 350_000,
 			downloadHalfBytes: 120_000,
 			growMilliseconds: 150,
