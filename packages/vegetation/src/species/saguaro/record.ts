@@ -46,10 +46,10 @@ export const record: Species = {
 		arms: {
 			count: { mean: 5, spread: 1 },
 			from: [0.33, 0.56],
-			elbow: [0.45, 0.85],
+			elbow: [0.23, 0.63],
 			// Still 18: an arm reads about three quarters of the trunk's width, so the radius takes
 			// that share of the trunk's girth.
-			radius: 0.26,
+			radius: 0.3,
 			rise: [
 				{ mean: 1.6, spread: 0.35 },
 				{ mean: 2.8, spread: 0.4 },
@@ -155,7 +155,7 @@ export const record: Species = {
 		// Still 16: an arm's skin is fresher green than the old stem's. The arms are the wood below the
 		// stem's girth, so the young layer carries their skin.
 		young: 2,
-		youngRadius: 0.27,
+		youngRadius: 0.32,
 		girthScale: [
 			[0, 1],
 			[1, 1],
