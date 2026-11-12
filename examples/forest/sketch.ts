@@ -10,12 +10,22 @@
 import { defineSketch, timeOfDay } from '@null3d/engine';
 import { createWind } from '@null3d/wind';
 import { interact } from '../lib/interact';
+import { plantAddon } from './addon';
 import { plantForest, RADIUS } from './planting';
 import { createSway } from './sway';
 import { cardTexture, ground, KINDS, landArrays, litterTexture, woodTexture } from './woods';
 
 export default defineSketch(async (ctx) => {
 	const { scene, assets, geometry, materials, textures, post, quality, input, time } = ctx;
+	// The add-on route: `?route=addon` draws the near trees through the plant core at its sparse
+	// form, and `?budget=<triangles>` draws them at that level budget instead. Without the route the
+	// demo draws its own trees. The far rows keep the demo's own cards either way, so the add-on's
+	// far band stays out until its far cards land.
+	const params = new URLSearchParams(location.search);
+	const route = params.get('route') === 'addon';
+	const asked = Number(params.get('budget') ?? 0);
+	const budgets =
+		route && Number.isFinite(asked) && asked > 0 ? ([0, asked, asked] as const) : undefined;
 	// Golden hour: the sky lights the trees, and a thin amber haze lies over the far ridges.
 	const day = timeOfDay('goldenHour', { heading: -2.2 });
 	const sky = { intensity: day.skyIntensity };
@@ -55,7 +65,10 @@ export default defineSketch(async (ctx) => {
 		doubleSided: true,
 	});
 
-	const forest = plantForest(ctx, { bark, card });
+	const forest = plantForest(ctx, { bark, card, route });
+	const addon = route
+		? await plantAddon(ctx, { wind: wind.field, ...(budgets && { budgets }) })
+		: undefined;
 	quality.onChange(forest.fit);
 	// L draws every tree's base level, and the preset's threshold again on the next press.
 	let threshold = quality.settings.lodThreshold;
@@ -64,8 +77,9 @@ export default defineSketch(async (ctx) => {
 		onUpdate(dt) {
 			// The field's box follows the camera, so it steps before the trees read it.
 			wind.update();
+			addon?.setWindLayer(wind.field);
 			sway.update();
-			if (input.wasPressed('KeyB')) forest.hero.setBias();
+			if (input.wasPressed('KeyB')) forest.hero?.setBias();
 
 			if (input.wasPressed('KeyL')) {
 				const levels = quality.settings.lodThreshold > 0;

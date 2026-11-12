@@ -52,6 +52,13 @@ export interface PlantSpeciesOptions {
 	readonly far?: boolean;
 	/** Whether the copies cast shadows; true by default. */
 	readonly castShadows?: boolean;
+	/**
+	 * A triangle budget for each level of the grown plants, from the nearest to the second card
+	 * level. Absent, the plants grow their sparse form.
+	 */
+	readonly budgets?: readonly [number, number, number];
+	/** The most of a level's budget its extras may take, in place of the plant core's default. */
+	readonly extrasShare?: number;
 	/** The camera's vertical field of view in degrees, which sets the switch distances. */
 	readonly fov?: number;
 	/**
@@ -143,7 +150,14 @@ export async function plantSpecies(
 	const grown = (async () => {
 		const assets = await Promise.all(
 			Array.from({ length: variants }, (_, variant) =>
-				growPlant(kit, { seed: options.seed, variant, near: true, sparse: DEMO_SPARSENESS }),
+				growPlant(kit, {
+					seed: options.seed,
+					variant,
+					near: true,
+					sparse: DEMO_SPARSENESS,
+					...(options.budgets && { budgets: options.budgets }),
+					...(options.extrasShare !== undefined && { extrasShare: options.extrasShare }),
+				}),
 			),
 		);
 		const far = options.far

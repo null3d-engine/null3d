@@ -36,6 +36,7 @@
 //   bun tests/real-browsers.ts --plan occlusion-s6 --android chrome --lan ipad-safari
 //   bun tests/real-browsers.ts --plan smoke --allow-no-webgpu --lan bsgalaxys25-samsung
 //   bun tests/real-browsers.ts --plan smoke --cloud bsiphone17-safari,bspixel10-chrome --parallel 2
+//   bun tests/real-browsers.ts --plan forest-budget --cloud bsgalaxytaba9plus-chrome --only forest-budget-low-webgl2
 // Options:
 //   --plan <name>       the plan to run: checks (the default), smoke, a tenth of the checks for a
 //                       device in a cloud session of limited time, parity, bench, memory, which loads
@@ -89,7 +90,7 @@
 //                       splats, which draws a large splat
 //                       cloud on each GPU path and reports how much of it draws against the
 //                       preset's budget, with the frame rate, the first-frame time and the bytes
-//                       the page downloaded, or vegetation, which times Creek and the forest demo
+//                       the page downloaded, or forest-budget, which times the forest's budget route at the tablet's Low row and the Ultra memory, or vegetation, which times Creek and the forest demo
 //                       at every preset on each GPU path with the triangles and the memory, or
 //                       terrain, which times the terrain demo at each preset that a GPU path draws,
 //                       the same way, and beside each page a held-camera pair with the morph on and
@@ -1169,6 +1170,7 @@ export const TIMED_PLANS: ReadonlySet<string> = new Set([
 	'showroom-shadow',
 	'showroom-fps',
 	'vegetation',
+	'forest-budget',
 	'terrain',
 	'terrain-shadow',
 	'island-phones',

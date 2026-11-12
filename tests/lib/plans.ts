@@ -1947,6 +1947,42 @@ export function vegetationPlan(): PlanItem<Check>[] {
 }
 
 /**
+ * The forest's budget route at the cells whose rows the forest note owes: the tablet at Low on
+ * WebGL2, and the Ultra preset on a device whose row records the memory. Each page draws the near
+ * trees through the vegetation add-on at a 300-triangle level budget, with the sparse form as the
+ * route's default; the far rows keep the demo's own cards.
+ */
+export function forestBudgetPlan(): PlanItem<Check>[] {
+	const items: PlanItem<Check>[] = [
+		pageItem(CAPABILITIES, 'capabilities', { kind: 'capabilities' }),
+	];
+	for (const [preset, path, tier] of [
+		['low', 'webgl2', 'webgl2'],
+		['ultra', 'webgpu', 'webgpu'],
+	] as const)
+		items.push(
+			pageItem(
+				`forest-budget-${preset}-${path}`,
+				'demo-device',
+				{ kind: 'probe', tier },
+				{
+					switches: [
+						`gpu=${path}`,
+						'demo=forest',
+						`preset=${preset}`,
+						'target-fps=1',
+						'seconds=5',
+						'route=addon',
+						'budget=300',
+					],
+					timeoutSeconds: VEGETATION_TIMEOUT_SECONDS,
+				},
+			),
+		);
+	return items;
+}
+
+/**
  * The GPU paths of the grass plan's pages, with the presets that each one draws. WebGL2 and
  * compatibility mode cap the preset at Medium, so a page above the cap would draw Medium again
  * under another name.
@@ -3354,6 +3390,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	'skyway-stall': skywayStallPlan,
 	splats: splatsPlan,
 	vegetation: vegetationPlan,
+	'forest-budget': forestBudgetPlan,
 	'wind-field-cost': windFieldCostPlan,
 	'wind-reader-cost': windReaderCostPlan,
 	'leaves-wind-cost': leavesWindCostPlan,

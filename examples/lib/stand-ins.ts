@@ -54,6 +54,16 @@ export const CONTACT_SHADOWS_GRASS: PagePlantStandIn = {
 	id: 'meadow-grass',
 	standIn: { height: 0.5, aspect: 0.4, leaf: [0.24, 0.4, 0.1], bark: [0.2, 0.18, 0.1] },
 };
+/** The forest's fir: a Scots pine, whose first three variants stand for the demo's three firs. */
+export const FOREST_PINE: PagePlantStandIn = {
+	id: 'scots-pine',
+	standIn: { height: 16, aspect: 0.4, leaf: [0.07, 0.12, 0.05], bark: [0.24, 0.17, 0.12] },
+};
+/** The forest's broadleaf tree: a European beech, the demo's one broadleaf kind. */
+export const FOREST_BROADLEAF: PagePlantStandIn = {
+	id: 'european-beech',
+	standIn: { height: 10, aspect: 0.9, leaf: [0.1, 0.2, 0.05], bark: [0.22, 0.2, 0.17] },
+};
 /** The light shafts wood's pine: a tall Norway spruce on a bare trunk. */
 export const LIGHT_SHAFTS_SPRUCE: PagePlantStandIn = {
 	id: 'norway-spruce',
@@ -112,4 +122,5 @@ export const PAGE_STAND_INS: readonly PageStandIns[] = [
 	},
 	{ page: 'island', seed: 23, plants: [ISLAND_OLEANDER] },
 	{ page: 'creek', seed: CREEK_SEED, variants: CREEK_VARIANTS, plants: CREEK_STAND_INS },
+	{ page: 'forest', seed: 11, variants: 3, plants: [FOREST_PINE, FOREST_BROADLEAF] },
 ];

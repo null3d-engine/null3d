@@ -28,8 +28,10 @@ export const UNDERSTORY_EDGE = 300;
 
 /** What one kind of tree draws: its base mesh, its full and card rows, and their counts. */
 export interface PlantedKind {
-	readonly mesh: ReturnType<typeof meshOf>;
-	readonly trees: InstanceBatch;
+	/** The demo's own base mesh, absent when the add-on draws the rows. */
+	readonly mesh?: ReturnType<typeof meshOf>;
+	/** The near rows, absent when the add-on draws them. */
+	readonly trees?: InstanceBatch;
 	readonly cards: InstanceBatch;
 	readonly count: number;
 	readonly near: number;
@@ -38,15 +40,15 @@ export interface PlantedKind {
 /** The forest's batches, its hero fir and the count fitting that each preset runs. */
 export function plantForest(
 	ctx: SketchContext,
-	options: { readonly bark: Material; readonly card: Material },
+	options: { readonly bark: Material; readonly card: Material; readonly route?: boolean },
 ): {
 	readonly kinds: readonly PlantedKind[];
 	readonly undergrowth: InstanceBatch;
-	readonly hero: ReturnType<typeof addHero>;
+	readonly hero?: ReturnType<typeof addHero>;
 	readonly fit: () => void;
 } {
 	const { scene, geometry, quality } = ctx;
-	const { bark, card } = options;
+	const { bark, card, route = false } = options;
 	// One batch per kind of tree, whose base mesh names its coarser levels: each row picks its own
 	// level in every frame. A second batch per kind holds the far rows as cards, for Low.
 	const rows = plantRows(TREES, RADIUS);
@@ -54,14 +56,18 @@ export function plantForest(
 	const kinds = KINDS.map((kind, n) => {
 		const count = all[n] as number;
 		const near = before[n] as number;
-		const mesh = meshOf(geometry, kind);
-		const trees = scene.createInstances(mesh, count, {
-			material: bark,
-			castShadows: true,
-			receiveShadows: true,
-			colors: true,
-		});
-		fillRows(trees, rows, n);
+		// The add-on route draws the near rows as its own trees, so the demo's near batch and mesh
+		// are left out; the far rows keep the demo's cards on every preset.
+		const mesh = route ? undefined : meshOf(geometry, kind);
+		const trees = route
+			? undefined
+			: scene.createInstances(mesh as ReturnType<typeof meshOf>, count, {
+					material: bark,
+					castShadows: true,
+					receiveShadows: true,
+					colors: true,
+				});
+		if (trees) fillRows(trees, rows, n);
 		const cards = scene.createInstances(
 			geometry.fromArrays(cardArrays(kind, n, KINDS.length)),
 			count - near,
@@ -86,9 +92,16 @@ export function plantForest(
 	undergrowth.setDrawRange(0, UNDERSTORY_EDGE);
 	// One hero fir stands beside the flight: a bias keeps its finer levels where the trees around
 	// it turn coarse, and B gives it the threshold of the rest.
-	const hero = addHero(scene, kinds[0] as PlantedKind, bark, ground);
+	const heroMesh = kinds[0]?.mesh;
+	const hero = route || !heroMesh ? undefined : addHero(scene, { mesh: heroMesh }, bark, ground);
 	const fit = () =>
-		fitCounts(kinds, undergrowth, quality.preset === 'low', { all: BUSHES, near: BUSH_NEAR });
+		fitCounts(
+			kinds,
+			undergrowth,
+			quality.preset === 'low',
+			{ all: BUSHES, near: BUSH_NEAR },
+			route,
+		);
 	fit();
 	return { kinds, undergrowth, hero, fit };
 }

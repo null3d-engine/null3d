@@ -112,6 +112,8 @@ run('demo-frames', async () => {
 		'governor',
 		'render-scale',
 		'without',
+		'route',
+		'budget',
 	])
 		if (params.has(id)) sketch.searchParams.set(id, params.get(id) ?? '');
 	const runDemo = { ...demo, sketch };

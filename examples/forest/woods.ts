@@ -524,16 +524,23 @@ export const KINDS: readonly Kind[] = [
 
 /** The forest's counts for a preset: the near trees in full and the rest as cards on Low. */
 export function fitCounts(
-	kinds: readonly { trees: InstanceBatch; cards: InstanceBatch; count: number; near: number }[],
+	kinds: readonly { trees?: InstanceBatch; cards: InstanceBatch; count: number; near: number }[],
 	undergrowth: InstanceBatch,
 	low: boolean,
 	bushes: { all: number; near: number },
+	route = false,
 ): void {
 	for (const { trees, cards, count, near } of kinds) {
-		trees.setActiveCount(low ? near : count);
+		if (route) {
+			// The add-on draws the near rows, and the demo's cards keep the far rows on every preset.
+			trees?.setActiveCount(0);
+			cards.setActiveCount(count - near);
+			continue;
+		}
+		trees?.setActiveCount(low ? near : count);
 		cards.setActiveCount(low ? count - near : 0);
 	}
-	undergrowth.setActiveCount(low ? bushes.near : bushes.all);
+	undergrowth.setActiveCount(route || low ? bushes.near : bushes.all);
 }
 
 /**
