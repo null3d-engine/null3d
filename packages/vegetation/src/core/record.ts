@@ -265,6 +265,12 @@ export interface SelfOrganizing {
 		 * tree's limbs run out unbranched from its stem with 1. Absent, every order grows side axes.
 		 */
 		readonly sideOrders?: number;
+		/**
+		 * The share of a great limb's lateral buds that stay buds rather than growing into side
+		 * axes, so the limb's own length carries shoots instead of running bare between its
+		 * branches. The limbs are the stem's first-order axes. Absent, none stay.
+		 */
+		readonly limbBuds?: number;
 	};
 	/** How strongly the leader leads. */
 	readonly apical: {
