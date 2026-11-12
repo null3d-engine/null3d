@@ -106,10 +106,8 @@ export const record: Species = {
 	foliage: {
 		kind: 'grass-blade',
 		blade: {
-			// The fact sheet's 0.5 to 1 m blade, as stills 11 and 21 show it. The plant's width stands
-			// at 2.6 times the photograph's ratio at a metre, so the length alone drops to 0.7 m; the
-			// spread and the shoot count stay, so the figure that moves is attributable.
-			length: { mean: 0.7, spread: 0.06 },
+			// The fact sheet's 0.5 to 1 m blade, as stills 11 and 21 show it.
+			length: { mean: 1, spread: 0.08 },
 			// The fact sheet's 1.5 to 2 cm width.
 			width: 0.02,
 			// Still 12: the blade is widest in its lower third and narrows toward the long tip.
