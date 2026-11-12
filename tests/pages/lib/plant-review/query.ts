@@ -253,6 +253,11 @@ export interface PlantReviewQuery {
 	 */
 	readonly cards?: number;
 	/**
+	 * How a card joins the plant when a level does not draw its branch: `remove` drops it, `branch`
+	 * draws the branch it stands on, and `twig` gives it a line to the nearest drawn branch.
+	 */
+	readonly cardJoin?: 'remove' | 'branch' | 'twig';
+	/**
 	 * Metres of one leaf that a photographed cutting was measured in, for the `leaves` frame. A
 	 * blade or a cluster whose own leaf is far longer than the photographed one frames at the
 	 * photograph's scale only when the length the photograph was measured in is named.
@@ -487,6 +492,13 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 	const background = oneOf('background', params.get('background'), PLANT_BACKGROUNDS);
 	const season = oneOf('season', params.get('season'), PLANT_SEASONS);
 	const preset = oneOf('preset', params.get('preset'), PLANT_PRESETS);
+	const joinText = params.get('cardJoin');
+	let cardJoin: 'remove' | 'branch' | 'twig' | undefined;
+	if (joinText !== null) {
+		if (joinText !== 'remove' && joinText !== 'branch' && joinText !== 'twig')
+			throw new Error(`cardJoin=${joinText} is not a join: use remove, branch or twig.`);
+		cardJoin = joinText;
+	}
 	const sun = oneOf('sun', params.get('sun'), PLANT_SUNS);
 	const placeholders = params.get('placeholders');
 	const pressed = params.get('pressed');

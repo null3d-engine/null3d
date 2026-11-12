@@ -164,10 +164,13 @@ export function placeStaticPlants(
 	// The season the copies stand in, which a stem whose colour turns reads for its bark, and the
 	// autumn share the leaves take.
 	const season = assets[0]?.season ?? 'summer';
-	setPlacedUniforms([materials.wood, materials.shoots, materials.cards, materials.foliage], {
-		season: assets.some((asset) => asset.season === 'autumn') ? 1 : 0,
-		seasonKind: SEASON_KIND[season],
-	});
+	setPlacedUniforms(
+		[materials.wood, materials.shoots, materials.cards, materials.foliage, materials.foliageFar],
+		{
+			season: assets.some((asset) => asset.season === 'autumn') ? 1 : 0,
+			seasonKind: SEASON_KIND[season],
+		},
+	);
 	const batches: InstanceBatch[] = [];
 	const cards: ImpostorBatch[] = [];
 	const meshes: MeshGeometry[] = [];
@@ -187,7 +190,11 @@ export function placeStaticPlants(
 		for (const band of bands) {
 			if (!(band.to > band.from)) continue;
 			for (const part of band.parts) {
-				const material = materialOf(materials, part.name);
+				const material = materialOf(
+					materials,
+					part.name,
+					asset.cutting !== undefined || band !== bands[0],
+				);
 				const mesh = plantGeometry(ctx, part.arrays);
 				meshes.push(mesh);
 				// The first card level of a copy with real shoots draws from the copy out: its shader
@@ -236,14 +243,18 @@ export function placeStaticPlants(
 }
 
 /** The material a part draws with. */
-function materialOf(materials: PlantMaterials, name: PlantPart['name']): Material {
+/**
+ * The material that a part draws with. A foliage part beyond the nearest band, or one of a cut
+ * piece, draws with the far foliage material, whose shader pays no blade keel.
+ */
+function materialOf(materials: PlantMaterials, name: PlantPart['name'], far = false): Material {
 	switch (name) {
 		case 'wood':
 			return materials.wood;
 		case 'cards':
 			return materials.cards;
 		case 'foliage':
-			return materials.foliage;
+			return far ? materials.foliageFar : materials.foliage;
 		case 'extras':
 			return materials.extras;
 	}

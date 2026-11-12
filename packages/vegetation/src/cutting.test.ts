@@ -640,6 +640,28 @@ describe('cuttings', () => {
 		expect(clusterHinted?.rows.count).toBe(1);
 	});
 
+	it('turns a whole fanned piece a quarter about its axis', () => {
+		const className = kit.record.shoots?.classes?.[0]?.name ?? 'cut';
+		const hint = { shoot: className, shoots: 3, fanRing: 0.06, fanSpin: 0 };
+		const withHint = (extra: object): SpeciesKitData =>
+			({
+				...kit,
+				record: { ...kit.record, cuttings: { branch: { ...hint, ...extra } } },
+			}) as SpeciesKitData;
+		const plain = clusterRow(withHint({}), { part: 'branch' }, kit.detail);
+		const turned = clusterRow(withHint({ fanYaw: 90 }), { part: 'branch' }, kit.detail);
+		if (!plain || !turned) throw new Error('the kit grew no piece to turn');
+		const span = (row: typeof plain) => [
+			(row.bounds.max[0] as number) - (row.bounds.min[0] as number),
+			(row.bounds.max[2] as number) - (row.bounds.min[2] as number),
+		];
+		const [px, pz] = span(plain) as [number, number];
+		const [tx, tz] = span(turned) as [number, number];
+		// A quarter turn about the upright axis swaps the piece's width and its depth.
+		expect(Math.abs(tx - pz)).toBeLessThan(0.05 * Math.max(1, pz));
+		expect(Math.abs(tz - px)).toBeLessThan(0.05 * Math.max(1, px));
+	});
+
 	it('grows the same bytes twice, and in a worker that runs the job-worker task', async () => {
 		const options = { seed: 11, variant: 0, cutting: { part: 'subbranch' as const } };
 		const here = plantAssetDigest(growPlantNow(kit, options));

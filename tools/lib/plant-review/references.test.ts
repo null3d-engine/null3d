@@ -640,6 +640,9 @@ describe('the slots', () => {
 		expect(classifySlot('19-hips-on-the-cane.png')?.query?.season).toBe('autumn');
 		expect(classifySlot('19-flowers.png')?.query?.season).toBe('blossom');
 		expect(classifySlot('19-cones-on-a-branch.png')?.query?.season).toBeUndefined();
+		// A ground plant's flowering heads are framed on one stem's hanging spikes, since a twig
+		// view has no woody stem to find.
+		expect(classifySlot('19-flower-spikes.png')?.view).toBe('spike');
 		expect(
 			classifySlot('19-hanging-clusters.png', 'The tree in full flower, white clusters')?.query
 				?.season,
@@ -821,9 +824,10 @@ describe('the shares a subject box gives a view', () => {
 describe('the flowers view', () => {
 	test('takes a picture of flowers on the crown, and leaves other flower pictures alone', () => {
 		expect(classifySlot('19-flowers-on-crown.png')?.view).toBe('flowers');
-		// A flower detail, a flower spike or a flowering whole picture keeps the view its number gives.
+		// A flower detail or a flowering whole picture keeps the view its number gives; a picture
+		// whose name says a spike takes the spike view that frames a tuft's flowering heads.
 		expect(classifySlot('19-flower-detail.png')?.view).toBe('twigs');
-		expect(classifySlot('19-flower-spikes.png')?.view).toBe('twigs');
+		expect(classifySlot('19-flower-spikes.png')?.view).toBe('spike');
 		expect(classifySlot('20-flowers-spring.png')?.view).toBe('limb');
 		// A crown picture that names no flowers keeps the crown view.
 		expect(classifySlot('09-crown-close.png')?.view).toBe('crown');

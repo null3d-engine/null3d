@@ -146,6 +146,22 @@ describe('the extras', () => {
 		expect(byEntry(extrasMesh(dressed(record, 'blossom'), 0))[1]).toBeGreaterThan(0);
 	});
 
+	it('stands a catkin in rows of spikelets when the record asks', () => {
+		const smooth = oakRecord({ extras: [OTHERS[2] as ExtraSpec] });
+		const clustered = oakRecord({
+			extras: [
+				{
+					...(OTHERS[2] as ExtraSpec),
+					shape: { catkin: { length: 0.05, radius: 0.004, spikelets: { count: 6, bulge: 0.4 } } },
+				},
+			],
+		});
+		const plain = byEntry(extrasMesh(dressed(smooth, 'winter'), 0))[0] as number;
+		const bumpy = byEntry(extrasMesh(dressed(clustered, 'winter'), 0))[0] as number;
+		// The foot, a ring for each row either side of a spikelet, the tip's taper and its point.
+		expect(bumpy).toBeGreaterThan(plain);
+	});
+
 	it('puts one on about the record share of the matching sites', () => {
 		const input = dressed(oakRecord({ extras: [ACORN] }), 'summer');
 		const mesh = extrasMesh(input, 0);
