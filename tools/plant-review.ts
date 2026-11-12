@@ -948,7 +948,11 @@ function compareRun(
 						: inside
 							? ', inside the band'
 							: `, outside the ${(band?.mean ?? 0) - (band?.spread ?? 0)} to ${(band?.mean ?? 0) + (band?.spread ?? 0)} m band`
-				}; crown-box gap ${gap === null ? '-' : gap.toFixed(4)}.`,
+				}; crown-box gap ${gap === null ? '-' : gap.toFixed(4)}.${
+					read.workWidth && read.workWidth.floating.length !== floating.length
+						? ` At the tool's work width it reads ${read.workWidth.components} components, ${read.workWidth.floating.length} floating.`
+						: ''
+				}`,
 			);
 		}
 		summary.push('');
@@ -1066,11 +1070,18 @@ function connectivityLines(pairs: readonly StillResult[]): string[] {
 	const lines: string[] = [];
 	for (const pair of pairs) {
 		const check = pair.connectivity;
-		if (!check || check.floating.length === 0) continue;
+		if (!check) continue;
 		const sparse = pair.sparse === undefined ? '' : ` at sparse ${pair.sparse}`;
-		lines.push(
-			`- ${pair.file}${sparse}: ${check.components} components, ${check.floating.length} floating — ${check.floating.map((part) => `${part.area} px ${part.box}`).join(', ')}. A piece that meets nothing is a generator fault, not this row's.`,
-		);
+		if (check.floating.length > 0)
+			lines.push(
+				`- ${pair.file}${sparse}: ${check.components} components, ${check.floating.length} floating — ${check.floating.map((part) => `${part.area} px ${part.box}`).join(', ')}. A piece that meets nothing is a generator fault, not this row's.`,
+			);
+		// The work-width read is context only: a downscale can drop a hairline join the picture
+		// keeps, so a piece floats only when it floats at the picture's own width.
+		if (check.workWidth && check.workWidth.floating.length !== check.floating.length)
+			lines.push(
+				`- ${pair.file}${sparse}: at the tool's work width it reads ${check.workWidth.components} components with ${check.workWidth.floating.length} floating${check.workWidth.floating.length > 0 ? ` (${check.workWidth.floating.map((part) => `${part.area} px ${part.box}`).join(', ')})` : ''}, where the picture's own width reads ${check.components} and ${check.floating.length}. The picture's own width decides.`,
+			);
 	}
 	return lines;
 }

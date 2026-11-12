@@ -1092,6 +1092,7 @@ export function pieceParts(
 	width: number,
 	height: number,
 	minArea: number,
+	bridge = PIECE_BRIDGE,
 ): PlantPart[] {
 	const { labels, sizes } = components(mask, width, height);
 	const parent = new Int32Array(sizes.length);
@@ -1116,8 +1117,8 @@ export function pieceParts(
 		for (let x = 0; x < width; x++) {
 			if (labels[y * width + x]) continue;
 			let near = 0;
-			for (let dy = -PIECE_BRIDGE; dy <= PIECE_BRIDGE; dy++)
-				for (let dx = -PIECE_BRIDGE; dx <= PIECE_BRIDGE; dx++) {
+			for (let dy = -bridge; dy <= bridge; dy++)
+				for (let dx = -bridge; dx <= bridge; dx++) {
 					const nx = x + dx;
 					const ny = y + dy;
 					if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
@@ -1511,6 +1512,31 @@ export function anyPlantMask(plant: PlantMask): Uint8Array {
 	const mask = new Uint8Array(coverage.length);
 	for (let at = 0; at < coverage.length; at++) mask[at] = coverage[at] ? 1 : 0;
 	return mask;
+}
+
+/**
+ * A matte's own coverage mask at the picture's width, read by the same any-coverage rule the piece
+ * test uses. The gate reads this mask, because a downscale to the work width can drop a hairline
+ * shoot that the picture itself keeps, and so invent a piece that hangs free.
+ *
+ * @param image The matte picture, at the size the run drew it.
+ * @returns The picture's width and height with one byte per texel, 1 where any leaf covers it.
+ */
+export function matteOwnMask(image: Rgba): {
+	readonly width: number;
+	readonly height: number;
+	readonly mask: Uint8Array;
+} {
+	const { width, height } = image;
+	const mask = new Uint8Array(width * height);
+	for (let at = 0; at < mask.length; at++) {
+		const luma =
+			0.2126 * (image.data[at * 4] as number) +
+			0.7152 * (image.data[at * 4 + 1] as number) +
+			0.0722 * (image.data[at * 4 + 2] as number);
+		mask[at] = luma < 254 ? 1 : 0;
+	}
+	return { width, height, mask };
 }
 
 /** A box of pixels, edges included. */

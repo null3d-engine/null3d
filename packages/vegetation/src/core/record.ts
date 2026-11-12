@@ -923,6 +923,13 @@ export interface TuftHeads {
 	/** Degrees the stem's top bows over from vertical. */
 	readonly bow: Spread;
 	/**
+	 * The share of its shoot's outward lean that a flowering stem takes, from 0 to 3: the stem
+	 * leaves the shoot's top along the shoot's own lean, so a tussock whose outer shoots lean away
+	 * spreads its flowering stems with them. 1.2 by default. A species whose photographs show the
+	 * stems rising upright from a leaning tussock names a smaller share.
+	 */
+	readonly leanShare?: number;
+	/**
 	 * The radius of a hanging spike's stalk, as a share of the stem's radius, from 0 to 1; absent,
 	 * 0.35. A stalk under a pixel wide drops from a silhouette's matte, so the spike then stands as
 	 * a piece apart from its stem.
@@ -2305,6 +2312,12 @@ export interface CutLeaf {
 	 * the leaf keeps the shape it has on the plant.
 	 */
 	readonly pressed?: boolean;
+	/**
+	 * Metres of blade the piece draws, where the pictures show a young blade shorter than the
+	 * record's: the blade's width and profile are unchanged, so the piece takes the young blade's
+	 * proportions. Absent, the record's length.
+	 */
+	readonly length?: number;
 	/**
 	 * Metres of stalk a pressed leaf keeps under its blade, for a species whose leaves rise on long
 	 * stalks: the piece shows the short piece of stalk a picked leaf does. A share of the blade's
