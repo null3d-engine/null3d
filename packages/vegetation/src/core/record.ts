@@ -1191,6 +1191,12 @@ export interface ShootSpec {
 			readonly reach: number;
 			/** How far the foliage thins at the reach, 0 even and 1 bare. */
 			readonly depth: number;
+			/**
+			 * The share of the full density at or below which a bud bears nothing at all, so the wood
+			 * that carried it dies and the bare trim takes it. Absent, a thinned bud keeps the odd
+			 * shoot, and that shoot holds its length of wood in the picture.
+			 */
+			readonly bare?: number;
 		};
 	};
 }
