@@ -101,12 +101,6 @@
 		"date": "2026-10-27",
 		"reason": "the software GPU's drawing of the terrain's per-pixel normals and height-blended layers; drawn on this Mac because the shared queue blocked a CI image run"
 	},
-	"chromium-swiftshader/compat/demo-vegetation-wind.png": {
-		"test": "demo-vegetation-wind",
-		"tier": "compat",
-		"date": "2026-11-11",
-		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head; both views completed and were compared before acceptance, and a CI drawing on a pull request replaces them"
-	},
 	"chromium-swiftshader/compat/feature-instances-shadow.png": {
 		"test": "feature-instances-shadow",
 		"tier": "compat",
@@ -814,12 +808,6 @@
 		"tier": "webgpu",
 		"date": "2026-10-27",
 		"reason": "the software GPU's drawing of the terrain's per-pixel normals and height-blended layers; drawn on this Mac because the shared queue blocked a CI image run"
-	},
-	"chromium-swiftshader/webgpu/demo-vegetation-wind.png": {
-		"test": "demo-vegetation-wind",
-		"tier": "webgpu",
-		"date": "2026-11-10",
-		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head; this view completed at the machine's idlest moment and was compared before acceptance, and a CI drawing on a pull request replaces it"
 	},
 	"chromium-swiftshader/webgpu/gltf-clearcoat-car-paint.png": {
 		"test": "gltf-clearcoat-car-paint",
