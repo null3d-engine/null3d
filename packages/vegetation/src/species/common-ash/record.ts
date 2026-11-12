@@ -215,7 +215,7 @@ export const record: Species = {
 				name: 'cut',
 				vigor: [0, 1],
 				share: 0,
-				years: 1,
+				years: 2,
 				length: { mean: 0.42, spread: 0.06 },
 				nodes: { mean: 2, spread: 0.4 },
 				internode: PAIR,
