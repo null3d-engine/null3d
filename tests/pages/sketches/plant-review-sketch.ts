@@ -246,7 +246,23 @@ function boundsOf(asset: PlantAsset, kit: SpeciesKit): Bounds {
 				max[k] = Math.max(max[k] as number, p[i] as number);
 			}
 		}
+	refuseEmptyBox(min, max);
 	return { min, max };
+}
+
+/**
+ * Refuses a box a camera cannot be framed on: one with a non-finite corner or with no extent at
+ * all. A frame framed on such a box has no finite distance, and its near plane reaches the scene as
+ * a NaN, so the picture fails where the fault is instead of inside the renderer.
+ */
+function refuseEmptyBox(min: V3, max: V3): void {
+	const extent = [max[0] - min[0], max[1] - min[1], max[2] - min[2]];
+	const finite = extent.every(Number.isFinite);
+	if (finite && extent.some((value) => Math.abs(value) > 1e-9)) return;
+	const frame = `${QUERY.view ?? 'whole'} view, season ${QUERY.season ?? 'default'}, seed ${QUERY.seed ?? 0}, variant ${QUERY.variant ?? 0}`;
+	throw new Error(
+		`the drawn box has no usable extent (${extent.map((value) => value.toFixed(3)).join(', ')} m) on the ${frame} picture; a camera cannot be framed on it`,
+	);
 }
 
 /**
