@@ -51,10 +51,28 @@ export interface DressInput extends GrowInput {
 	/** The grown skeleton. */
 	readonly skeleton: MacroSkeleton;
 	/**
-	 * How much simpler than grown the plant is, from 0 to 1: fewer and larger shoot rows, and wood
-	 * of fewer rings and sides. 0 when not given. The skeleton is already pruned for it.
+	 * How finely the wood is drawn, from 0 to 1: it takes longer edges, so fewer rings and sides.
+	 * The skeleton and the shoot rows stay as grown. 0 when not given.
 	 */
 	readonly coarseness?: number;
+	/**
+	 * How far the wood's own sections are thinned, from 0 to 1: 0 is the level's own rings and
+	 * sides, and 1 a few flat-sided runs with square ends. Absent or 0 meshes as the level does.
+	 * It changes no vertex's place along its axis, only how many rings and sides the axis draws.
+	 */
+	readonly sections?: number;
+	/**
+	 * The share of a card level's own card rows to keep, from 0.05 to 1: 1 keeps the level's own
+	 * rows and the cards' own size, and below 1 thins the rows by the level's rule, so the kept
+	 * cards grow to hold the crown. A review redraw uses it to measure what the cards buy.
+	 */
+	readonly cards?: number;
+	/**
+	 * How a card joins the plant when its branch is not drawn at the level: `remove` drops the card,
+	 * `branch` draws the branch the card stands on, and `twig` keeps the card and draws it a twig to
+	 * the nearest drawn branch. `remove` by default.
+	 */
+	readonly cardJoin?: 'remove' | 'branch' | 'twig';
 	/**
 	 * The light of the crown as grown, which a sky-prune line reads at every coarseness, so a
 	 * coarser plant prunes the shoots its full crown leaves in the dark and the light is found once.
