@@ -874,6 +874,12 @@ export interface TuftHeads {
 		readonly droop: number;
 		/** Flowers (spikelets) per branch, on its outer part. */
 		readonly flowers: Spread;
+		/**
+		 * The share of the flowering stem's radius that a branch takes, from 0 to 1; absent, 0.18. A
+		 * branch thinner than a pixel drops from a silhouette's matte and splits the spray into
+		 * pieces, while a thicker one closes the gaps the see-through reads.
+		 */
+		readonly branchShare?: number;
 	};
 	/** Spikes hanging one below another from the stem's bowed top. */
 	readonly spikes?: {

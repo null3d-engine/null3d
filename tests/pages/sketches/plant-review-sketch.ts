@@ -31,10 +31,12 @@ import { createWind, type Wind } from '@null3d/wind';
 import {
 	chainOf,
 	facing,
+	flowerSites,
 	largestLimb,
 	limbNear,
 	normalize,
 	pointAlong,
+	sheathColumn,
 	stemAt,
 	stemFoot,
 	stemSurfaceAt,
@@ -826,10 +828,16 @@ export default defineSketch(async (ctx) => {
 				return { position, target: add(position, look), fov, near: 0.05 };
 			}
 			case 'junction': {
-				// A great limb leaving the stem, seen side on from where no other limb hides it.
+				// A great limb leaving the stem, seen side on from where no other limb hides it. The
+				// picture's own subject box, when the tool measured one, gives the frame its width and
+				// height shares; without it the view frames the limb's thickness alone.
+				const shares =
+					QUERY.subjectWidth !== undefined && QUERY.subjectHeight !== undefined
+						? { width: QUERY.subjectWidth, height: QUERY.subjectHeight }
+						: undefined;
 				const found = closeAt(
 					view,
-					() => junctionView(closePlant(WOOD_ONLY), lens),
+					() => junctionView(closePlant(WOOD_ONLY), lens, shares),
 					turn,
 					fov,
 					0.05,
@@ -860,6 +868,22 @@ export default defineSketch(async (ctx) => {
 				);
 				if (found) return found;
 				break;
+			}
+			case 'flowers': {
+				// A ring of flowers at a crown's top: the flower sites the plant carries, framed as the
+				// photograph frames the crown's top. The ring takes about three fifths of the frame's
+				// width, and the crop sits a little above the ring so the stem's top fills the foot
+				// rather than the height, as the pictures show it.
+				const ring = flowerSites(skeleton);
+				if (!ring) break;
+				const fill = 0.42;
+				const distance = Math.max(0.2, ring.radius / (fill * Math.tan((fov * DEG) / 2)));
+				const target: V3 = [
+					ring.centre[0],
+					ring.centre[1] + 0.15 * Math.max(ring.radius, 0.05),
+					ring.centre[2],
+				];
+				return orbit(target, distance, e, turn, fov);
 			}
 			case 'twigs': {
 				// A view of the fruit goes to a fruit the plant carries rather than to a tip that
@@ -1094,6 +1118,17 @@ export default defineSketch(async (ctx) => {
 				const reach = QUERY.span !== undefined ? QUERY.span / 2 / Math.tan((fov * DEG) / 2) : 0.8;
 				return orbit(at.at, reach + at.radius, e, Math.atan2(across[0], across[2]), fov);
 			}
+			case 'sheath': {
+				// A ground plant's sheath column, seen side on as its photograph frames it: one
+				// tiller's sheaths stand on the frame's foot with the blade leaving the collar above,
+				// at the span the picture covers.
+				const axis = sheathColumn(skeleton);
+				if (axis < 0) break;
+				const base = pointAlong(skeleton, axis, 0).at;
+				const span = QUERY.span ?? 0.13;
+				const reach = span / 2 / Math.tan((fov * DEG) / 2);
+				return orbit([base[0], base[1] + span / 2, base[2]], reach, e, turn, fov);
+			}
 			case 'trunk': {
 				// The bole from its foot to where it first divides, seen from a person's eye height on
 				// the side where the fewest branches and leaves cross it near the asked turn; a sheet's
@@ -1140,8 +1175,24 @@ export default defineSketch(async (ctx) => {
 				const length = QUERY.leafLength ?? leafLength ?? (oneLeaf ? bladeLength : undefined);
 				if (QUERY.leaves !== undefined && length !== undefined) {
 					const frame = leafFrame(QUERY.leaves, length, QUERY.roll ?? 0, aspect, fov);
+					// The cut stands on the frame's lower edge, at the piece's own foot. A cutting of a
+					// ground plant keeps the plant's crown base, so the ground under it is below the cut.
+					const part = piece ? boundsOf(piece as PlantAsset, pieceKit) : undefined;
+					const foot = part ? (part.min[1] as number) : 0;
+					const middle = part
+						? [
+								((part.min[0] as number) + (part.max[0] as number)) / 2,
+								((part.min[2] as number) + (part.max[2] as number)) / 2,
+							]
+						: [0, 0];
 					return {
-						...orbit([0, frame.run / 2, 0], frame.distance, e, turn, fov),
+						...orbit(
+							[middle[0] as number, foot + frame.run / 2, middle[1] as number],
+							frame.distance,
+							e,
+							turn,
+							fov,
+						),
 						roll: frame.roll,
 						near: 0.01,
 					};
@@ -1489,9 +1540,24 @@ export default defineSketch(async (ctx) => {
 		);
 	const trunk = stemAt(skeleton, 1.3);
 	const close = closeViews.get(VIEW);
-	const subject = close
+	// A slot that names a distance stands in for whatever stand the view fitted, so the facts say so:
+	// an old slot entry can otherwise hold a view off its own subject without a trace.
+	const override =
+		QUERY.distance === undefined
+			? undefined
+			: "the slot names a distance, which stands in for the view's own fitted stand";
+	const foundSubject = close
 		? { ...close.subject, ...(close.clutter && { clutter: close.clutter }) }
 		: plainSubjects.get(VIEW);
+	const prior = (foundSubject as { warning?: string } | undefined)?.warning;
+	const subject = foundSubject
+		? {
+				...foundSubject,
+				...(override && { warning: [prior, override].filter(Boolean).join('; ') }),
+			}
+		: override
+			? { kind: 'the camera the slot placed', warning: override }
+			: undefined;
 	// The plant as the view draws it: the level's filled silhouette, not every level's part bounds,
 	// so a vertex or a part outside the drawn cells cannot inflate the posted width and height.
 	const drawnBox = cells[0] ? measurePlant(main, kit.box, cells[0].turn).plantBox : null;

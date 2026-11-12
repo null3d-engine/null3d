@@ -1083,6 +1083,24 @@ const DEPTH_MODES: readonly DepthMode[] = ['standard', 'reversed-gl', 'reversed'
 /** The sketch of the room scene's tests. */
 const ROOM_SKETCH = 'tests/pages/sketches/room-sketch.ts';
 
+// The species the held vegetation pictures draw, one per growth model present on the milestone:
+// great-limb broadleaf (oak), fine-twig broadleaf (silver birch), pinnate broadleaf (ash), weeping
+// broadleaf (willow), shrub (hawthorn), fern (bracken), ground grass (meadow grass) and herb
+// (hosta). The fixed list bounds the pictures' cost as the catalogue grows, and every other species
+// keeps its own four-panel picture. The plan's eight models included six species that exist only
+// on unmerged branches; those cannot be drawn at the milestone, so these eight stand in and the
+// substitution is recorded in the batch plan.
+const HELD_VEGETATION_SPECIES = [
+	'pedunculate-oak',
+	'silver-birch',
+	'common-ash',
+	'weeping-willow',
+	'hawthorn-shrub',
+	'bracken',
+	'meadow-grass',
+	'hosta',
+] as const;
+
 /** The tests of every feature, before the depth prepass and half precision draw some again. */
 const FEATURE_TESTS: readonly ImageTest[] = [
 	// A clear color, read back through the engine's readback on each GPU interface.
@@ -3752,6 +3770,14 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	// Each demo in examples/, held at the demo's time. A showcase scene draws its Low preset on
 	// SwiftShader, which keeps the software GPU's run short, and its full look everywhere else.
 	...DEMOS.map((demo): ImageTest => {
+		// The held vegetation pictures draw the fixed documented subset, so their cost does not
+		// grow with the catalogue; the live pages draw every registered species. The subset rides
+		// on the sketch's own address, which the image page passes to the scene, not on a page
+		// switch, which stops at the page.
+		const heldSpecies =
+			demo.name === 'vegetation' || demo.name === 'vegetation-wind'
+				? `?species=${HELD_VEGETATION_SPECIES.join(',')}`
+				: '';
 		const switches = [
 			...(demo.largeWorld ? ['largeWorld'] : []),
 			// A demo with a backdrop draws over a page, so the image page starts the engine on the
@@ -3764,11 +3790,19 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		];
 		return {
 			name: `demo-${demo.name}`,
-			sketch: `examples/${sketchPath(demo)}`,
+			sketch: `examples/${sketchPath(demo)}${heldSpecies}`,
 			hold: demo.hold,
 			...(switches.length > 0 && { switches }),
 			...(demo.hdr === false && { expect: { hdr: false } }),
 			...(demo.timeoutSeconds !== undefined && { timeoutSeconds: demo.timeoutSeconds }),
+			// The held picture's eight-species subset fills more of the frame than the whole
+			// catalogue did, and Firefox on CI's software GPU rounds its grass and card edges a
+			// little further apart: it drew 0.535 per cent of the pixels differently from the Mac's
+			// picture, against the device's 0.5. The limit sits above that figure, and it applies
+			// only where a browser or a device compares with the Mac's pictures.
+			...(demo.name === 'vegetation' && {
+				deviceTolerance: { threshold: 0.1, maxDiffRatio: 0.006 },
+			}),
 			// The screens draw their readings into a 2D canvas, and each browser rasterises that
 			// text its own way. The readings, the bars, the chart and the layout match
 			// everywhere, while the glyphs of the digits differ. Firefox drew 2.615 per cent of

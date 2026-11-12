@@ -332,7 +332,9 @@ function growHeads(
 				kind: AXIS_LIMB,
 			});
 			const radius =
-				heads.radius * 0.18 * (1 + 0.02 * draw(input, Purpose.Branch, index, w * 16 + b, 5));
+				heads.radius *
+				(panicle.branchShare ?? 0.18) *
+				(1 + 0.02 * draw(input, Purpose.Branch, index, w * 16 + b, 5));
 			let previous = node;
 			const steps = 4;
 			let direction = normalize3([
