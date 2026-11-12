@@ -90,3 +90,19 @@ long bare bole and the flat separate plates.
 - The Scots pine's record, envelope, textures and review slot live under its species folder, the
   textures package and `tools/lib/plant-review/slots/`. Its leaf is the fascicle: stills 11 and 12
   frame the pair, and row 4 reads the bundle's width and shape against the single needle.
+
+## Addendum: the demo stand-ins and the guard's gap
+
+The demo loader draws a landed species as itself. When the Scots pine landed, the
+contact-shadows page, which names a 15 m stand-in at 0.45 aspect, began drawing the real 20 m pine
+at 1.12. Its approved picture moved by 13.6 per cent of the pixels on WebGL2, and CI's software draw
+agreed. The shared grower is not the cause. The demo pages' stand-ins hash byte-identical at the
+range's base and at its head, and so do the twelve species.
+
+The guard covered the twelve species and no demo stand-in, so a plant drawn through the stand-in
+path had no hash to prove it inert. The close is `tools/plant-mesh-hash.ts --standins`: every
+page's stand-ins built from one table the pages import, with the page's own size, colors, seed and
+sparseness. The table gives the same twenty hashes at the base and at the narrowed tip. A page can
+also keep its stand-in explicitly with `keepStandIn`. The contact-shadows page sets it for its pine,
+so its approved picture stays comparable until the page moves to the species. The pine's own drawn
+look does not change.
