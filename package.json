@@ -44,6 +44,7 @@
 		"test:browser-weights": "bun tools/shard-weights.ts",
 		"images:review": "bun tests/review-images.ts",
 		"plants:review": "bun tools/plant-review.ts",
+		"plants:budget-review": "bun tools/plant-budget-review.ts",
 		"plants:fit": "bun tools/plant-fit/main.ts",
 		"test:packages": "bun tests/fresh-project.ts",
 		"test:shader-compiler": "bun run test:shader-compiler:build && bun tools/shaders.ts && bun run test:shader-compiler:plugin && bun run test:shader-compiler:pack",

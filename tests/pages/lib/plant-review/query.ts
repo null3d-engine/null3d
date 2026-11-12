@@ -209,6 +209,16 @@ export interface PlantReviewQuery {
 	 */
 	readonly sparse?: number;
 	/**
+	 * A triangle budget for each level, from the nearest to the second card level, as the plant's
+	 * grow options take it. Zero or absent leaves that level as the form meshes it.
+	 */
+	readonly budgets?: readonly [number, number, number];
+	/**
+	 * The most of a level's budget that its extras may take, from 0 to 1, in place of the plant
+	 * core's default. A raised share keeps a species' catkins or cones at a level.
+	 */
+	readonly extrasShare?: number;
+	/**
 	 * Metres of one leaf that a photographed cutting was measured in, for the `leaves` frame. A
 	 * blade or a cluster whose own leaf is far longer than the photographed one frames at the
 	 * photograph's scale only when the length the photograph was measured in is named.
@@ -269,6 +279,7 @@ const NUMBER_FIELDS = [
 	'sunRise',
 	'skyShare',
 	'daylight',
+	'extrasShare',
 ] as const;
 
 /** The fields that are shares, of the frame or of the light, which must lie from 0 to 1. */
@@ -281,6 +292,7 @@ const SHARE_FIELDS = new Set([
 	'along',
 	'skyShare',
 	'sparse',
+	'extrasShare',
 ]);
 
 /** The fields that are whole numbers of at least one. */
@@ -318,6 +330,7 @@ export function plantReviewQuery(query: PlantReviewQuery): string {
 	}
 	if (query.lod !== undefined) params.set('lod', String(query.lod));
 	if (query.size) params.set('size', `${query.size[0]}x${query.size[1]}`);
+	if (query.budgets) params.set('budgets', query.budgets.join(','));
 	for (const name of SWITCHES) if (query[name]) params.set(name, '1');
 	if (query.placeholders !== undefined) params.set('placeholders', query.placeholders ? '1' : '0');
 	if (query.pressed !== undefined) params.set('pressed', query.pressed ? '1' : '0');
@@ -413,6 +426,14 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 			throw new Error(`lod=${lodText} is not a level: use auto, 0, 1, 2 or 3.`);
 		lod = level as ForcedLevel;
 	}
+	const budgetsText = params.get('budgets');
+	let budgets: readonly [number, number, number] | undefined;
+	if (budgetsText !== null) {
+		const parts = budgetsText.split(',').map(Number);
+		if (parts.length !== 3 || parts.some((value) => !Number.isFinite(value) || value < 0))
+			throw new Error(`budgets=${budgetsText} is not three counts: give one such as 0,300,300.`);
+		budgets = [parts[0] as number, parts[1] as number, parts[2] as number];
+	}
 	const sizeText = params.get('size');
 	let size: [number, number] | undefined;
 	if (sizeText !== null) {
@@ -440,6 +461,7 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 		...(preset && { preset }),
 		...(sun && { sun }),
 		...(lod !== undefined && { lod }),
+		...(budgets && { budgets }),
 		...(size && { size }),
 		...(placeholders !== null && { placeholders: placeholders === '1' }),
 		...(pressed !== null && { pressed: pressed === '1' }),

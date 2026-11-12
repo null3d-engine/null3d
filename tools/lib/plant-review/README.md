@@ -33,6 +33,10 @@ The run folder holds:
 
 Look at the sheets first. In an outline overlay, the reference is magenta and the render green, and grey is where both have plant.
 
+## The budget review page
+
+`bun run plants:budget-review` draws the level triangle budget beside each species' approved whole picture. It draws the four forest species at 30, 300 and 1,000 triangles, at the closest whole view of 23 m and the near-band distances of 30, 70 and 117 m, on the sparse form at the high tier. Each species gets a sheet with its approved picture, a grid of the budgets by the distances, and its silhouette divergence against the approved form at every budget. The beech also has its base at the closest view, where a trunk the side outline hides shows, and the birch and pine have their extras cells with and without the extras at the closest view. The run writes a summary sheet of the three budgets at 23 m. Every sheet names the commit, the distances, the form and the tier. The page uses the same draw slot and browser as `plants:review`. `--refs` names the reference root, `--out` and `--run` name the folder, `--gpu` picks the path, and `--no-slot` skips the wait. The sheets go to `.internal/coordination/tree-renders/budget-<commit>/` by default.
+
 ## Options
 
 | Option | Use |
@@ -81,6 +85,8 @@ The command ends with status 1 when a frame failed or when the coverage is not c
 | `sunAzimuth`, `sunRise`, `skyShare`, `daylight` | A sunlit view's light as its reference was lit: the sun's degrees to the camera's right and above the horizon, the sky's share of the light, and the light's strength, sky, sun and ground bounce together, as a multiple of the page's soft daylight (1 by default, up to 8). A clear sky lights a plant more brightly than the soft daylight does against the same sky colour. A review measures the strength from each photograph's own sky: a calibration to the picture, not a derivation from physics, since a photograph's tone curve squeezes a bright sky more than the plant. |
 | `wind`, `time` | The wind's strength from 0 to 3, and the wind clock's time, at which the tool holds the frame. |
 | `season`, `lod`, `preset` | The season, a level forced at every distance (0 to 3), and the mesh tier. |
+| `budgets` | A triangle budget for each level, from the nearest to the second card level: three counts, such as `0,300,300`. The plant keeps the form it grew and spends each level's target across its cards and wood; the extras draw by their visible share. |
+| `extrasShare` | The most of a level's budget its extras may take, from 0 to 1, in place of the plant core's small default. A raised share keeps a species' catkins or cones at a level. |
 | `pick`, `cut` | The cutting candidate and its length in metres. |
 | `measure`, `scale`, `matte` | Post the measures; draw a 1 m bar; draw the plant black on white. |
 | `placeholders` | Grow stand-ins; on by default for an id that is not registered. |
