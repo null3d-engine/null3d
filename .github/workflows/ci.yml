@@ -1256,7 +1256,11 @@ jobs:
     # and that shard spent the whole room and was cancelled at 27.9. If that gap moves again, the
     # model's absolute reading is what to revisit, not the split. In run 39306888159 a shard
     # modelled at 11 minutes ran 71 of its 74 tests in 19.6.
-    timeout-minutes: 27
+    # A run asked for its drawings writes every picture it draws, which the weights do not model,
+    # and the drawings that a late test draws matter most: a shard that ends at its limit before
+    # them has drawn nothing. So a drawing run takes the same room again, and an ordinary run keeps
+    # the tighter limit that ends a hang early.
+    timeout-minutes: ${{ inputs['drawn-images'] && 40 || 27 }}
     strategy:
       fail-fast: false
       matrix:
@@ -1396,11 +1400,13 @@ jobs:
     # run 40080490543). These weights come from the same five full runs as the browser job's, and
     # their times model the slowest heavy shard at 13.8 minutes, against 16.4 for the ones before
     # them.
+    # A picture test sits late in its shard, so a drawing run takes the room that the pictures it
+    # keeps add; an ordinary run keeps the tighter limit.
     name: browser (heavy tests, ${{ matrix.shard }} of ${{ strategy.job-total }})
     needs: [build, sketch-shaders]
     if: *full-run
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: ${{ inputs['drawn-images'] && 35 || 25 }}
     strategy:
       fail-fast: false
       matrix:
