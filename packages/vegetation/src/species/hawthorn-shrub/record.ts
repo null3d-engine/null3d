@@ -431,11 +431,12 @@ export const record: Species = {
 			// The six variants measure 5.1 to 9.1 MB in leaf, and the blossom season reaches 13.93 MB
 			// with the flowers' own mesh; each cap sits above the largest, under the class's own ceiling.
 			variantBytes: { low: 14_000_000, medium: 14_000_000, high: 14_000_000, ultra: 14_000_000 },
-			// The near band, at the worse of its two standing eyes, measures 464,078 triangles; the cap
-			// stands 17,728 above it for the crown's other variants. The first card level measures at
-			// most 152,498 and the second at most 22,761 over the variants and seasons, under the
-			// class's shared card caps.
-			lod0Triangles: 481_806,
+			// The near band measures 483,068 triangles once the height calibration's scale is applied
+			// before the light grid, so the cap keeps its 17,728-triangle spare above that read, 3.67
+			// per cent of it; the earlier 481,806 stood the same spare, 3.82 per cent, above the
+			// pre-calibration 464,078. The first card level measures at most 152,498 and the second at
+			// most 22,761 over the variants and seasons, under the class's shared card caps.
+			lod0Triangles: 500_796,
 			lod1Triangles: 155_000,
 			lod2Triangles: 25_000,
 			downloadBytes: 1_000_000,

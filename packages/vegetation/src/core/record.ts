@@ -132,6 +132,7 @@ export type FormField =
 	| 'base'
 	| 'extras'
 	| 'wind'
+	| 'lod'
 	| 'roundBand'
 	| 'lopsided'
 	| 'cuttings';
@@ -560,6 +561,20 @@ export interface Architectural {
 	readonly orders: readonly ArchitecturalOrder[];
 	/** Hanging second-order curtains (Norway spruce comb, larch). */
 	readonly pendulous?: { readonly order: number; readonly length: Curve; readonly share: number };
+	/**
+	 * The pipe model that gives the wood its thickness: a parent's diameter to the exponent is the
+	 * sum of its children's, and a terminal twig's radius in metres. The wood is then fitted to the
+	 * species' diameter at 1.3 m. Absent, an exponent of 2.3 and a 5 mm twig are used.
+	 */
+	readonly pipe?: {
+		readonly exponent: number;
+		readonly tipRadius: number;
+		/**
+		 * The least share of its girth a stem keeps from one node to the next, from 0.5 to 1.
+		 * Absent, 0.7, so a leader that carries the crown to the top is not outgrown by a whorl.
+		 */
+		readonly leader?: number;
+	};
 }
 
 /**
@@ -897,6 +912,13 @@ export interface TuftHeads {
 	/** Degrees the stem's top bows over from vertical. */
 	readonly bow: Spread;
 	/**
+	 * The share of its shoot's outward lean that a flowering stem takes, from 0 to 3: the stem
+	 * leaves the shoot's top along the shoot's own lean, so a tussock whose outer shoots lean away
+	 * spreads its flowering stems with them. 1.2 by default. A species whose photographs show the
+	 * stems rising upright from a leaning tussock names a smaller share.
+	 */
+	readonly leanShare?: number;
+	/**
 	 * The radius of a hanging spike's stalk, as a share of the stem's radius, from 0 to 1; absent,
 	 * 0.35. A stalk under a pixel wide drops from a silhouette's matte, so the spike then stands as
 	 * a piece apart from its stem.
@@ -956,14 +978,23 @@ export interface Column {
 	readonly arms: {
 		/** Arms per plant. */
 		readonly count: Spread;
-		/** Share of height where arms leave. */
-		readonly from: number;
-		/** Metres out from the column where an arm turns upward. */
-		readonly elbow: number;
+		/**
+		 * Share of height where arms leave: one share for every arm, or one share per tier of arms,
+		 * lowest first. The grower deals the arms among the tiers in turn.
+		 */
+		readonly from: number | readonly number[];
+		/**
+		 * Metres out from the column where an arm turns upward: one distance for every arm, or one
+		 * distance per tier of arms, lowest first.
+		 */
+		readonly elbow: number | readonly number[];
 		/** An arm's radius in metres. */
 		readonly radius: number;
-		/** Metres an arm rises after its elbow. */
-		readonly rise: Spread;
+		/**
+		 * Metres an arm rises after its elbow: one spread for every arm, or one spread per tier of
+		 * arms, lowest first.
+		 */
+		readonly rise: Spread | readonly Spread[];
 	};
 	/** Metres between areoles on a rib crest; each carries a spine-cluster prototype. */
 	readonly areoles: number;
@@ -1074,7 +1105,10 @@ export interface ShootSpec {
 	 * Shoots the cuttings draw and the crown never does, each with one prototype of its own. A close
 	 * picture of a cut twig wants shorter, denser twigs than the crown can carry on the same class, and
 	 * a class of its own settles the two without either paying for the other. A name here must not also
-	 * be one of `classes`.
+	 * be one of `classes`. The list's order sets each class's prototypes, because a shoot's growth seed
+	 * is its place in the kit, so a new class goes after every existing one: adding one before them
+	 * redraws theirs, and a species' cluster piece moved from 86x283 to 177x287 when a class was added
+	 * at the top.
 	 */
 	readonly cuttingClasses?: readonly ShootClass[];
 	/**
@@ -1298,7 +1332,16 @@ export interface ShootSpec {
  */
 export interface ShootClass {
 	/** The class's name. */
-	readonly name: 'long' | 'short' | 'spur' | 'whip' | 'spray' | 'cut';
+	readonly name:
+		| 'long'
+		| 'short'
+		| 'spur'
+		| 'whip'
+		| 'spray'
+		| 'cut'
+		| 'twig'
+		| 'twig-big'
+		| 'whip-stem';
 	/** Bud vigor this class serves, 0 weak to 1 strong. */
 	readonly vigor: readonly [number, number];
 	/** Share of the species' prototypes in this class. */
@@ -1320,6 +1363,12 @@ export interface ShootClass {
 	 * round from every side.
 	 */
 	readonly leafAngleSpread?: number;
+	/**
+	 * Degrees about the shoot where its first leaf stands, where every shoot of the class must show
+	 * its leaf the same way up: a cactus areole's spine cluster lies with its longest spine pointing
+	 * down the stem. Absent, each shoot takes a turn of its own from the hash.
+	 */
+	readonly azimuth?: number;
 	/** Degrees the shoot hangs over its length (willow whips, birch). */
 	readonly droop: number;
 	/**
@@ -1806,6 +1855,37 @@ export interface BaseSpec {
 	 * ground (from 0) and the height in metres they fade out by (above 0).
 	 */
 	readonly flutes?: { readonly count: Spread; readonly depth: number; readonly height: number };
+	/**
+	 * An old fire scar on the first stem's foot: the strong trees carry one where a ground fire
+	 * burned through the bark and the wood closed over it for a century. It cuts a hollow into the
+	 * stem between two heights and darkens the bark there, so the scar faces one side of the tree
+	 * while healthy bark closes round it. Absent, the foot has no scar.
+	 */
+	readonly scar?: ScarSpec;
+}
+
+/**
+ * A fire scar's hollow: a notch out of one side of the foot, charred. The angles run about the
+ * first stem from its frame's normal, which for an upright stem is the plant's +X axis, so a page
+ * can turn the plant to face the scar.
+ *
+ * @category api/vegetation
+ */
+export interface ScarSpec {
+	/** Metres above the ground where the scar's foot stands. */
+	readonly from: number;
+	/** Metres above the ground where the scar's head stands, above `from`. */
+	readonly to: number;
+	/** Degrees about the stem where the hollow's centre faces. */
+	readonly angle: number;
+	/** Degrees of the hollow's full angular width. */
+	readonly width: number;
+	/** Metres the hollow cuts into the stem at its deepest, in the middle of its height. */
+	readonly depth: number;
+	/** The charred colour, linear from 0 to 1. */
+	readonly colour: Rgb;
+	/** The share of the charred colour the hollow takes, from 0 to 1; 0.9 by default. */
+	readonly shade?: number;
 }
 
 /**
@@ -2107,6 +2187,14 @@ export interface LodSpec {
 	 */
 	readonly cardGrow?: number;
 	/**
+	 * Texels a side of one cell of the card atlas, at each tier, where the species' leaves are
+	 * thinner than the default cell can hold: each entry is a power of two from 64 to 256, and 64
+	 * by default. A needle a millimetre and a half across is under one texel of a 64 cell, so its
+	 * card would draw only the bare twig; a cell of 128 holds it while the crown still reads green.
+	 * Each doubling costs four times the atlas memory.
+	 */
+	readonly cardCell?: Readonly<Record<Detail, number>>;
+	/**
 	 * The least width, in pixels, that a card's own stalk draws at any distance, from 0 to 8. A card
 	 * stands on its axis's twig, whose wood may be thinner than a pixel at a whole view, so the
 	 * card's leaves read as a piece in air where the twig does not draw. At 1 or more the card
@@ -2122,6 +2210,12 @@ export interface LodSpec {
 	 * wood it grows from. Absent, the line spans only the stretch behind the row, as it always has.
 	 */
 	readonly cardStalkToFoliage?: boolean;
+	/**
+	 * The width, in texels, of a card's guaranteed strand: the shoot's own axis drawn as one
+	 * connected line down the card, so a card whose leaves scatter into separate islands still joins
+	 * the shoot it pictures. 0 or absent, a card draws no strand.
+	 */
+	readonly cardStrand?: number;
 	/** The impostor's views across and texels per view. */
 	readonly impostor: { readonly views: number; readonly texels: number };
 	/** The level that casts shadows. */
@@ -2208,6 +2302,12 @@ export interface CutLeaf {
 	 */
 	readonly pressed?: boolean;
 	/**
+	 * Metres of blade the piece draws, where the pictures show a young blade shorter than the
+	 * record's: the blade's width and profile are unchanged, so the piece takes the young blade's
+	 * proportions. Absent, the record's length.
+	 */
+	readonly length?: number;
+	/**
 	 * Metres of stalk a pressed leaf keeps under its blade, for a species whose leaves rise on long
 	 * stalks: the piece shows the short piece of stalk a picked leaf does. A share of the blade's
 	 * length by default.
@@ -2277,6 +2377,52 @@ export interface CutFromShoots {
 	 * species whose photograph lays the branch across the frame turns it by a quarter. 0 by default.
 	 */
 	readonly fanYaw?: number;
+	/**
+	 * How the fanned shoots are placed: round a ring about the axis, along one lateral spray, or
+	 * across the prototype's own leaf plane from one shared base. A fan keeps every row's leaf faces
+	 * turned alike, so a species whose leaves are two-ranked can spread the piece and still show its
+	 * blades. 'ring' by default.
+	 */
+	readonly layout?: 'ring' | 'spray' | 'fan';
+	/**
+	 * The width a spray or fan spans, as a share of the piece's height. 0 by default.
+	 */
+	readonly spread?: number;
+	/**
+	 * The shoot class of the piece's main stem. Naming it builds the stem-and-laterals assembly: the
+	 * stem stands upright on its cut and full hanging shoots of the hint's own class join it at
+	 * heights along it, so a photograph of a branch with hanging side shoots draws as one joined
+	 * piece. Absent, the piece keeps the one class and its fan.
+	 */
+	readonly stem?: ShootClass['name'];
+	/**
+	 * How many lateral shoots hang from the stem, from 1 to the cutting's most. 6 by default.
+	 */
+	readonly laterals?: number;
+	/**
+	 * The share of the stem's height where the first lateral leaves, from 0 at the stem's foot to 1
+	 * at its tip. 0.45 by default.
+	 */
+	readonly lateralFrom?: number;
+	/**
+	 * The share of the stem's height where the last lateral leaves, from 0 at the stem's foot to 1
+	 * at its tip. 0.92 by default.
+	 */
+	readonly lateralTo?: number;
+	/**
+	 * Degrees each lateral leans outward from the stem's line, so a positive value opens the hanging
+	 * shoots away from the stem. 20 by default.
+	 */
+	readonly lateralAngle?: number;
+	/**
+	 * The laterals' length over their class's, so one stem class serves a long branch and a short
+	 * twig: 0.5 hangs half-length shoots, 1.5 hangs longer ones. 1 by default.
+	 */
+	readonly lateralScale?: number;
+	/**
+	 * Which of the stem class's prototypes to take, 0 for the first. 0 by default.
+	 */
+	readonly stemPick?: number;
 }
 
 /**

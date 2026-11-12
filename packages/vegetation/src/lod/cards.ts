@@ -14,7 +14,7 @@ import type { MeshInput } from '../stages';
 import { VARIANT_RECORDS } from '../wind/records';
 
 /** A card's corners: signs of its right and up half-extents. */
-const CORNERS = [
+export const CARD_CORNERS = [
 	[-1, -1],
 	[1, -1],
 	[1, 1],
@@ -275,7 +275,7 @@ export function cardMesh(input: MeshInput, level: 1 | 2): MeshArrays {
 			const normal = quatRotate(rows.rotation, r * 4, n, [0, 0, 0]);
 			const first = mesh.vertices;
 			const [rx, ry, rw, rh] = plane.front;
-			for (const [sx, sy] of CORNERS) {
+			for (const [sx, sy] of CARD_CORNERS) {
 				for (let c = 0; c < 3; c++)
 					local[c] =
 						((plane.centre[c] as number) +

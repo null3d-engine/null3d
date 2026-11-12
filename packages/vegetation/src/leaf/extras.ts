@@ -42,7 +42,7 @@ import { VARIANT_RECORDS } from '../wind/records';
 import { lathe, MeshWriter, SURFACE_STEM, sideAxes } from './writer';
 
 /** Faces round an extra by level; the thinned level draws the fewest. */
-const SIDES: Readonly<Record<MeshLevel, number>> = { 0: 8, 1: 5, 2: 4 };
+const SIDES: Readonly<Record<MeshLevel, number>> = { 0: 8, 1: 5, 2: 3 };
 /**
  * Extras smaller than this, in metres, are left out of the thinned level of a plant without shoots,
  * where they cover no pixel.

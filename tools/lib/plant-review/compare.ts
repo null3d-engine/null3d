@@ -34,10 +34,14 @@ import {
 	type Box,
 	boxOf,
 	matteMask,
+	matteOwnMask,
 	measurePlant,
+	PIECE_BRIDGE,
 	type PlantMask,
 	type PlantMeasures,
+	type PlantPart,
 	pieceCount,
+	pieceParts,
 	plantMask,
 	type ReferenceSet,
 	SOIL_MASK_GROUND_SHARE,
@@ -964,8 +968,169 @@ export interface TurnResult {
 		readonly metres: readonly ({ readonly width: number; readonly height: number } | null)[];
 	};
 	readonly maskCheck: number | null;
+	/** The frames the check read, and the frames whose colour outline saw no plant to read. */
+	readonly maskCheckFrames: number;
+	readonly maskCheckUnreadable: number;
+	/** The gate the turn's background takes, and whether its check falls below the gate. */
+	readonly maskCheckThreshold: number | null;
+	readonly maskCheckFailed: boolean;
+	/** Whether the subject is too small for the figure to judge, so the check only reports. */
+	readonly maskCheckSmall: boolean;
+	readonly maskCheckSubject: number | null;
 	readonly sheets: readonly string[];
 	readonly error?: string;
+}
+
+/**
+ * The mask check's gates, measured over every turn check in the tree on 12 November 2026. A frame's
+ * colour outline can only be read against its matte when the outline is a plant outline, so the
+ * gates are set from the corpus of sound turns and give a margin under each kind's lowest reading.
+ * A turn on a natural background reads a frame as low as 0.717 and a sound turn as low as 0.750, so
+ * its gate sits 0.15 under that. A plain-background cut piece reads 0.941 to 0.978 a frame, so its
+ * gate sits 0.045 under. A colour outline under the plant mask's own fitted-subject floor cannot see
+ * the plant at all, so that frame is reported as unreadable rather than scored.
+ */
+export const MASK_GATE_NATURAL = 0.6;
+export const MASK_GATE_PLAIN = 0.9;
+export const MASK_SUBJECT_FLOOR = 0.02;
+
+/** A turning video's mask check: the readable frames' mean overlap, or none when no frame is read. */
+export interface MaskCheck {
+	readonly value: number | null;
+	readonly frames: number;
+	readonly unreadable: number;
+	readonly threshold: number | null;
+	readonly failed: boolean;
+	/** Whether the subject is too small for the figure to judge, and only reports. */
+	readonly small: boolean;
+	/** The matte's share of the frame, averaged over the readable frames. */
+	readonly subject: number | null;
+}
+
+/**
+ * A plain background's subject under this share of the frame reports rather than fails: the overlap
+ * is dominated by the boundary band at that size, so a one-pixel edge costs a large share of it. The
+ * holm oak's subbranch turn reads 0.846 with its colour outline at 2.7 to 4.0 per cent and its matte
+ * at 2 to 3, where a one-pixel band costs about 0.15 of the overlap.
+ */
+export const MASK_SMALL_SUBJECT = 0.05;
+
+/**
+ * The mask check a turning video's frames give. A null check is a frame whose colour outline covers
+ * under the subject floor, which the fitted background cannot see the plant in.
+ *
+ * @param checks Each frame's overlap and its matte's share of the frame, or null where unreadable.
+ * @param plain Whether the turn drew on a plain background, as a cut piece does.
+ * @returns The readable frames' mean overlap and the gate it is judged against.
+ */
+export function maskCheckOf(
+	checks: readonly ({ readonly iou: number; readonly subject: number } | null)[],
+	plain: boolean,
+): MaskCheck {
+	const readable = checks.filter(
+		(check): check is { readonly iou: number; readonly subject: number } => check !== null,
+	);
+	const unreadable = checks.length - readable.length;
+	if (readable.length === 0)
+		return {
+			value: null,
+			frames: 0,
+			unreadable,
+			threshold: null,
+			failed: false,
+			small: false,
+			subject: null,
+		};
+	const value = Number(mean(readable.map((check) => check.iou)).toFixed(4));
+	const subject = mean(readable.map((check) => check.subject));
+	const small = plain && subject < MASK_SMALL_SUBJECT;
+	const threshold = plain ? MASK_GATE_PLAIN : MASK_GATE_NATURAL;
+	return {
+		value,
+		frames: readable.length,
+		unreadable,
+		threshold,
+		failed: !small && value < threshold,
+		small,
+		subject: Number(subject.toFixed(4)),
+	};
+}
+
+/** Whether a turn's frames drew a plain background, as a cut piece does, rather than sky and ground. */
+export function plainTurnOf(background: string | undefined): boolean {
+	return background !== undefined && background !== 'sky-meadow';
+}
+
+/** The parts a picture draws that meet nothing inside its frame, as the gate reports them. */
+export function floatingParts(
+	list: readonly PlantPart[],
+): readonly { readonly area: number; readonly box: string }[] {
+	return list
+		.slice(1)
+		.filter((part) => !part.border)
+		.map((part) => ({
+			area: part.area,
+			box: `${part.right - part.left + 1}x${part.bottom - part.top + 1}@${part.left},${part.top}`,
+		}));
+}
+
+/**
+ * The piece test at a picture's own width: the work width's area and gap tolerance scaled to the
+ * picture, so its finer pixels neither add a part nor lose a join the work-width read keeps.
+ */
+export function piecePartsAtOwnWidth(mask: Uint8Array, width: number, height: number): PlantPart[] {
+	const scale = width / WORK_WIDTH;
+	return pieceParts(
+		mask,
+		width,
+		height,
+		Math.max(1, Math.round(PIECE_AREA * scale * scale)),
+		Math.max(PIECE_BRIDGE, Math.ceil(PIECE_BRIDGE * scale)),
+	);
+}
+
+/** A sweep picture's readings: its components and floating pieces, and the render's crown-box gap. */
+export interface SweepMeasures {
+	readonly components: number;
+	readonly floating: readonly { readonly area: number; readonly box: string }[];
+	/**
+	 * The same read at the tool's work width, kept beside the picture's own: a downscale can drop a
+	 * hairline join the picture keeps. Only the picture's own read decides whether a piece floats.
+	 */
+	readonly workWidth: {
+		readonly components: number;
+		readonly floating: readonly { readonly area: number; readonly box: string }[];
+	} | null;
+	readonly crownBoxGap: number | null;
+}
+
+/**
+ * Reads one sweep picture: the matte's components and any piece that meets nothing inside the frame,
+ * read at the picture's own width, and the crown box's gap. The picture has no reference, so its
+ * figures stand alone and are read against the record's band and each other.
+ */
+export function sweepMeasures(runDir: string, frame: RunFrame): SweepMeasures {
+	const render = renderSideOf(runDir, frame, `SWEEP ${frame.file}`, false);
+	const parts = pieceParts(
+		anyPlantMask(render.plant),
+		render.plant.width,
+		render.plant.height,
+		PIECE_AREA,
+	);
+	const own =
+		frame.matte === undefined
+			? null
+			: (() => {
+					const mask = matteOwnMask(readImage(join(runDir, frame.matte as string)));
+					return piecePartsAtOwnWidth(mask.mask, mask.width, mask.height);
+				})();
+	const read = own ?? parts;
+	return {
+		components: read.length,
+		floating: floatingParts(read),
+		workWidth: own ? { components: parts.length, floating: floatingParts(parts) } : null,
+		crownBoxGap: render.measures.crownBoxGap ?? null,
+	};
 }
 
 /** A render frame's side of a comparison. */
@@ -1036,6 +1201,12 @@ export function compareTurn(
 			metres: [],
 		},
 		maskCheck: null,
+		maskCheckFrames: 0,
+		maskCheckUnreadable: 0,
+		maskCheckThreshold: null,
+		maskCheckFailed: false,
+		maskCheckSmall: false,
+		maskCheckSubject: null,
 		sheets: [],
 	};
 	if (m === 0) return { ...empty, error: 'the run drew no frame of this turn' };
@@ -1059,8 +1230,13 @@ export function compareTurn(
 	const checks = usable.flatMap((frame, j) => {
 		if (!frame.matte) return [];
 		const coloured = plantMask((renderSides[j] as Side).image);
-		return [frameIou(coloured, (renderSides[j] as Side).plant)];
+		const share = coloured.mask.reduce((sum, value) => sum + value, 0) / coloured.mask.length;
+		if (share < MASK_SUBJECT_FLOOR) return [null];
+		const matte = (renderSides[j] as Side).plant.mask;
+		const subject = matte.reduce((sum, value) => sum + value, 0) / matte.length;
+		return [{ iou: frameIou(coloured, (renderSides[j] as Side).plant), subject }];
 	});
+	const mask = maskCheckOf(checks, plainTurnOf((usable[0] as RunFrame).query?.background));
 	const refCoarse = refSides.map((s) => (s.normal ? coarse(s.normal) : undefined));
 	const renderCoarse = renderSides.map((s) => (s.normal ? coarse(s.normal) : undefined));
 	const scores = refCoarse.map((r) => renderCoarse.map((s) => (r && s ? iou(r, s) : 0)));
@@ -1128,7 +1304,13 @@ export function compareTurn(
 			render: spreadOf(renderAt),
 			metres: atAngle.map((k) => metresOf(usable[alignment.pairs[k] as number])),
 		},
-		maskCheck: checks.length > 0 ? Number(mean(checks).toFixed(4)) : null,
+		maskCheck: mask.value,
+		maskCheckFrames: mask.frames,
+		maskCheckUnreadable: mask.unreadable,
+		maskCheckThreshold: mask.threshold,
+		maskCheckFailed: mask.failed,
+		maskCheckSmall: mask.small,
+		maskCheckSubject: mask.subject,
 		sheets: writeSheets(runDir, group, pages),
 	};
 }
@@ -1307,6 +1489,26 @@ export interface StillResult extends PairMetrics {
 	 * A plant hangs together, so a part that meets nothing shows here as an extra piece.
 	 */
 	readonly pieces: { readonly reference: number | null; readonly render: number } | null;
+	/**
+	 * The render matte's components and any piece that meets nothing inside the frame, read at the
+	 * picture's own width. A piece that touches the frame's border may run on outside the picture,
+	 * so it is not counted as floating.
+	 */
+	readonly connectivity: {
+		readonly components: number;
+		readonly floating: readonly { readonly area: number; readonly box: string }[];
+		/**
+		 * The same read at the tool's work width, kept beside the picture's own: a downscale can drop
+		 * a hairline join the picture keeps, and so show a piece hanging free that the picture does
+		 * not. Only the picture's own read decides whether a piece floats.
+		 */
+		readonly workWidth: {
+			readonly components: number;
+			readonly floating: readonly { readonly area: number; readonly box: string }[];
+		} | null;
+	} | null;
+	/** The sparseness the picture was drawn at, where its query names one above the record. */
+	readonly sparse?: number;
 	/** What a close view's camera framed, and how clear it found its subject, as the page posted it. */
 	readonly framing?: CloseFraming;
 	/**
@@ -1598,6 +1800,7 @@ export function compareStills(
 				barkColour: null,
 				edgeDifference: null,
 				pieces: null,
+				connectivity: null,
 				error,
 			});
 			rows.push({ reference: refImage, lines: [...head, 'NO RENDER', error.slice(0, 18)] });
@@ -1666,25 +1869,46 @@ export function compareStills(
 		// reference's. A part that meets nothing, such as a fruit on a stalk, adds a piece here
 		// while every other figure stays sound. The render's own outline is exact wherever the run
 		// drew a matte, so the render's count stands on its own when the reference does not separate.
-		const pieces = noOutline
-			? null
-			: frame.matte !== undefined
-				? {
-						reference:
-							refSide.measures.box !== null &&
-							(refPlant.background.plain ||
-								skyMaskable(refPlant.background) ||
-								soilMaskable(refPlant.background, refPlant.height))
-								? pieceCount(anyPlantMask(refPlant), refPlant.width, refPlant.height, PIECE_AREA)
-								: null,
-						render: pieceCount(
-							anyPlantMask(render.plant),
-							render.plant.width,
-							render.plant.height,
-							PIECE_AREA,
-						),
-					}
-				: null;
+		const parts =
+			noOutline || frame.matte === undefined
+				? null
+				: pieceParts(
+						anyPlantMask(render.plant),
+						render.plant.width,
+						render.plant.height,
+						PIECE_AREA,
+					);
+		// The connectivity gate reads the matte at the picture's own width: a downscale to the work
+		// width can drop a hairline shoot the picture keeps and so invent a piece hanging free. The
+		// work-width read is kept beside it as a second figure.
+		const ownParts =
+			frame.matte === undefined
+				? null
+				: (() => {
+						const own = matteOwnMask(readImage(join(runDir, frame.matte)));
+						return piecePartsAtOwnWidth(own.mask, own.width, own.height);
+					})();
+		const pieces = parts
+			? {
+					reference:
+						refSide.measures.box !== null &&
+						(refPlant.background.plain ||
+							skyMaskable(refPlant.background) ||
+							soilMaskable(refPlant.background, refPlant.height))
+							? pieceCount(anyPlantMask(refPlant), refPlant.width, refPlant.height, PIECE_AREA)
+							: null,
+					render: parts.length,
+				}
+			: null;
+		// The largest run is the plant's body; any other run that the frame's border does not carry
+		// meets nothing inside the picture, which is a generator fault rather than a row's fault.
+		const connectivity = ownParts
+			? {
+					components: ownParts.length,
+					floating: floatingParts(ownParts),
+					workWidth: parts ? { components: parts.length, floating: floatingParts(parts) } : null,
+				}
+			: null;
 		const shown: PairMetrics = masked
 			? pair
 			: {
@@ -1737,6 +1961,8 @@ export function compareStills(
 					: shown.barkDeltaE,
 			edgeDifference: edges,
 			pieces,
+			connectivity,
+			...(frame.query?.sparse !== undefined ? { sparse: frame.query.sparse } : {}),
 			...(sheathFigure ? { sheath: sheathFigure } : {}),
 			...(framing ? { framing } : {}),
 			...(note ? { note } : {}),
