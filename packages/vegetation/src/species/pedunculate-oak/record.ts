@@ -264,15 +264,15 @@ export const record: Species = {
 			// leave a shoot under this share of the sky; the lit outer masses stay.
 			skyPrune: 0.43,
 			skyPruneLayer: 1,
-			// Stills 01 and 18: no bare twigs hang under the crown; a thin branch left with no shoot
-			// has died and goes.
-			bareTrim: 0.03,
+			// Stills 01 and 18: no bare wood hangs under the crown; a branch left with no shoot has
+			// died and goes, up to the thickness the trim names.
+			bareTrim: 0.1,
 			// Stills 02 and 03: the shoots stand up off their wood, so the foliage rides on the limbs
 			// rather than hanging under them.
 			lift: 15,
 			skyward: 0.65,
 			scale: { mean: 1.4, spread: 0.15 },
-			limbMass: { order: 2, hold: 1.68, reach: 3.85, depth: 0.93 },
+			limbMass: { order: 2, hold: 1.68, reach: 3.85, depth: 0.93, bare: 0.5 },
 		},
 	},
 	foliage: {
