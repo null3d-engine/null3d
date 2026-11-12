@@ -96,7 +96,8 @@
 		"sunAzimuth": -24,
 		"sunRise": 56,
 		"skyShare": 0.32,
-		"daylight": 1.5
+		"daylight": 1.5,
+		"noOutline": true
 	},
 	"02-whole-profile.png": {
 		"sunAzimuth": -18,

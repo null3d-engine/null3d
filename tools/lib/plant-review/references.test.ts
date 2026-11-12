@@ -512,6 +512,11 @@ describe('the slots', () => {
 				),
 			).pressed;
 		expect([pressed(true), pressed(false), pressed()]).toEqual([true, false, undefined]);
+		// A picture whose own background is the subject keeps its no-outline flag through the query.
+		const flagged = { species: 'stub', view: 'whole' as const, noOutline: true };
+		expect(readPlantReviewQuery(new URLSearchParams(plantReviewQuery(flagged))).noOutline).toBe(
+			true,
+		);
 		const read = (text: string) => () =>
 			readPlantReviewQuery(new URLSearchParams(`species=stub&view=bark-limb&${text}`));
 		// A limb that fills none of the frame gives no distance to see it from.
