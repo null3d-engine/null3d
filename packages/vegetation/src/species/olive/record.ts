@@ -421,14 +421,14 @@ export const record: Species = {
 		winter: 'evergreen',
 	},
 	wind: {
-		// The wind clip's bands: an olive's wood is stiff and its motion faint, so the crown moves
-		// little at every order.
+		// The wood stays stiff at every order, and the sway carries the crown at the photographs'
+		// measured motion rather than standing still.
 		stiffness: [
 			[0, 0.98],
 			[0.5, 0.95],
 			[1, 0.92],
 		],
-		sway: { frequency: 0.22, amplitude: 0.012 },
+		sway: { frequency: 0.22, amplitude: 0.2 },
 		flutter: { kind: 'blade', amplitude: 0.1, frequency: 2.4 },
 	},
 	lod: {
