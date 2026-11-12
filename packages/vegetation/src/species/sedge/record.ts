@@ -50,12 +50,10 @@ export const record: Species = {
 		// its collar, or the stem, where it is; the row 8 colour differences fall toward 3 only
 		// where the shoot's column stands in frame.
 		// Still 02: the youngest blades stand nearly upright and the oldest arch out and over.
-		// Still 03, from below: at 26 degrees the oldest blades stand apart as five pieces against
-		// the photograph's two, so the outermost arch closes to twenty degrees.
 		spread: [
 			[0, 2],
-			[0.5, 12],
-			[1, 20],
+			[0.5, 14],
+			[1, 26],
 		],
 		// Still 11: the innermost young blade is shorter than the outer ones.
 		size: [
