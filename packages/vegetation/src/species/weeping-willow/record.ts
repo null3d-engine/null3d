@@ -189,7 +189,7 @@ export const record: Species = {
 				share: 0,
 				years: 2,
 				length: { mean: 1, spread: 0.1 },
-				nodes: { mean: 48, spread: 4 },
+				nodes: { mean: 36, spread: 4 },
 				internode: [
 					[0, 1.6],
 					[0.5, 1],
