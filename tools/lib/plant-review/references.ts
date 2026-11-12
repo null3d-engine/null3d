@@ -1366,6 +1366,25 @@ export interface Box {
 	readonly bottom: number;
 }
 
+/**
+ * The shares of its picture's frame that a plant's subject box takes, for a view that frames by the
+ * box, or undefined where the picture's outline does not separate: a void box, or an outline the
+ * reference set names as not separable (a fitted ground that is the subject itself, or the band
+ * behind it). A view that receives no shares keeps its own frame, so a void outline never moves it.
+ */
+export function subjectShares(
+	width: number,
+	height: number,
+	box: Box | null | undefined,
+	separable: boolean,
+): { readonly width: number; readonly height: number } | undefined {
+	if (!separable || !box || width <= 0 || height <= 0) return undefined;
+	const across = (box.right - box.left) / width;
+	const down = (box.bottom - box.top) / height;
+	if (!(across > 0 && across <= 1 && down > 0 && down <= 1)) return undefined;
+	return { width: across, height: down };
+}
+
 /** The measures a reviewer reads from a plant's outline. Rows count down, shares run 0 to 1. */
 export interface PlantMeasures {
 	/** The work picture's size. */
