@@ -971,6 +971,36 @@ describe('the shoot rows', () => {
 		expect(distanceToCoarse(gated.rows)).toBeLessThanOrEqual(distanceToCoarse(solid.rows));
 	});
 
+	it('caps the rows one axis carries when the record asks', () => {
+		const capped = (rowsPerAxis?: number) =>
+			dressShoots({
+				...input,
+				record: {
+					...record,
+					shoots: {
+						...OAK_SHOOTS,
+						placement: { ...OAK_SHOOTS.placement, rowsPerAxis },
+					},
+				},
+			});
+		// Absent, the crown is the record's own, row for row.
+		const plain = capped(undefined);
+		expect(Array.from(plain.rows.position)).toEqual(Array.from(capped(undefined).rows.position));
+		// The budget holds on every axis, and the rows it drops are spread along the axes.
+		const perAxis = (rows: ReturnType<typeof capped>['rows']) => {
+			const counts = new Map<number, number>();
+			for (let r = 0; r < rows.count; r++)
+				counts.set(rows.record[r] as number, (counts.get(rows.record[r] as number) ?? 0) + 1);
+			return [...counts.values()];
+		};
+		const tight = capped(1);
+		expect(Math.max(...perAxis(tight.rows))).toBe(1);
+		expect(tight.rows.count).toBeLessThan(plain.rows.count);
+		const loose = capped(3);
+		expect(Math.max(...perAxis(loose.rows))).toBeLessThanOrEqual(3);
+		expect(loose.rows.count).toBeGreaterThanOrEqual(tight.rows.count);
+	});
+
 	it('gathers the shoots of one bud into a tuft at its node when the record asks', () => {
 		// The mean distance from a row to the nearest bud site: a gather holds the rows at the sites
 		// and leaves the internode between them bare.

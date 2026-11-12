@@ -6,6 +6,7 @@ import { defineSketch, timeOfDay } from '@null3d/engine';
 import {
 	createGrass,
 	grassCover,
+	isSpeciesId,
 	loadSpecies,
 	type PlantMaterial,
 	setWindLayer,
@@ -14,6 +15,14 @@ import { createWind } from '@null3d/wind';
 import { interact } from '../lib/interact';
 import { applyWindControl, postWindHud, type WindControls } from './hud';
 import { plantWindClump } from './planting';
+
+/**
+ * The species a held picture draws, named in its switch by folder id; the live page names none and
+ * draws every registered species.
+ */
+const HELD_SPECIES = (new URL(import.meta.url).searchParams.get('species') ?? '')
+	.split(',')
+	.filter(isSpeciesId);
 
 /** Metres a second at the field's top, at the strongest of the sweep. */
 const GUST = 7;
@@ -71,7 +80,12 @@ export default defineSketch(async (ctx) => {
 	const seed = 11;
 	const plant = async () => {
 		for (const piece of planted) piece.destroy();
-		const clump = await plantWindClump(ctx, wind.field, seed);
+		const clump = await plantWindClump(
+			ctx,
+			wind.field,
+			seed,
+			HELD_SPECIES.length > 0 ? HELD_SPECIES : undefined,
+		);
 		planted = clump.planted;
 		plantMats = clump.materials;
 	};

@@ -26,6 +26,7 @@ import {
 } from '../core/graph';
 import { unitAt } from '../core/hash';
 import {
+	acos,
 	atan2,
 	cos,
 	exp,
@@ -933,7 +934,7 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 			// record allows, so the wood bends in small steps rather than kinking at an odd joint.
 			if (maxTurn !== undefined) {
 				const dot = Math.min(1, Math.max(-1, d[0] * nx + d[1] * ny + d[2] * nz));
-				const turn = Math.acos(dot);
+				const turn = acos(dot);
 				if (turn > maxTurn) {
 					// The component of the new direction across the old one gives the plane it turned in.
 					let px = nx - d[0] * dot;
@@ -944,8 +945,8 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 						px /= pl;
 						py /= pl;
 						pz /= pl;
-						const c = Math.cos(maxTurn);
-						const s = Math.sin(maxTurn);
+						const c = cos(maxTurn);
+						const s = sin(maxTurn);
 						nx = d[0] * c + px * s;
 						ny = d[1] * c + py * s;
 						nz = d[2] * c + pz * s;
@@ -971,14 +972,14 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 				// The axis's own bud is the one that left the fork, not the bud this step grows from.
 				const start = plant.axisBud[axis] as number;
 				const from = start >= 0 ? start : b;
-				const base = Math.atan2(plant.budDx[from] as number, plant.budDz[from] as number);
-				const current = Math.atan2(nx, nz);
+				const base = atan2(plant.budDx[from] as number, plant.budDz[from] as number);
+				const current = atan2(nx, nz);
 				let delta = base - current;
-				delta = Math.atan2(Math.sin(delta), Math.cos(delta));
+				delta = atan2(sin(delta), cos(delta));
 				const turned = current + delta * limbAzimuth;
 				const flat = Math.sqrt(nx * nx + nz * nz);
-				nx = Math.sin(turned) * flat;
-				nz = Math.cos(turned) * flat;
+				nx = sin(turned) * flat;
+				nz = cos(turned) * flat;
 			}
 			// The envelope holds the only light: a shoot stops at it, with a last short internode where
 			// part of a step still fits, so the crown reaches its outline.
@@ -1587,7 +1588,7 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 				let previous = -1;
 				for (let n = plant.axisFirst[a] as number; n >= 0; n = plant.next[n] as number) {
 					if (previous >= 0)
-						along += Math.hypot(
+						along += length3(
 							(plant.x[n] as number) - (plant.x[previous] as number),
 							(plant.y[n] as number) - (plant.y[previous] as number),
 							(plant.z[n] as number) - (plant.z[previous] as number),

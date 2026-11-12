@@ -453,6 +453,33 @@ describe('cuttings', () => {
 		scaledBudget(20_000),
 	);
 
+	it('presses a cut grass blade flat in its frame', async () => {
+		const { species } = await import('./species/sedge');
+		const { record } = species;
+		await loadPlantCode(record);
+		const pressedKit = buildKitNow(species, { placeholders: 'missing', detail: 'low' });
+		const grown = { ...record, cuttings: { ...record.cuttings, leaf: undefined } };
+		const grownKit = buildKitNow(
+			{ ...species, record: grown },
+			{ placeholders: 'missing', detail: 'low' },
+		);
+		const pressed = cutFoliage(pressedKit, { part: 'leaf' }, 'low');
+		const plain = cutFoliage(grownKit, { part: 'leaf' }, 'low');
+		if (!pressed || !plain) throw new Error('the sedge has no leaf');
+		// A picked blade lies in the plane of its frame; the plant's blade folds and twists out of it.
+		const depth = (mesh: { readonly positions: Float32Array }): number => {
+			let far = 0;
+			for (let i = 2; i < mesh.positions.length; i += 3)
+				far = Math.max(far, Math.abs(mesh.positions[i] as number));
+			return far;
+		};
+		expect(depth(pressed)).toBeLessThan(1e-6);
+		expect(depth(plain)).toBeGreaterThan(0.002);
+		expect(Array.from(plain.positions)).toEqual(Array.from(grownKit.leaves[0]?.positions ?? []));
+		const flattenOfGrown = cutFoliage(grownKit, { part: 'leaf', pressed: true }, 'low');
+		expect(Array.from(flattenOfGrown?.positions ?? [])).toEqual(Array.from(pressed.positions));
+	});
+
 	it('presses a cut frond flat in its own plane', async () => {
 		const { brackenRecord } = await import('./grow/bracken.fixture');
 		const { noTextureFiles } = await import('./core/textures');
@@ -611,6 +638,28 @@ describe('cuttings', () => {
 		// A cluster keeps one shoot whatever its hint names.
 		const clusterHinted = clusterRow(hinted, { part: 'cluster' }, kit.detail);
 		expect(clusterHinted?.rows.count).toBe(1);
+	});
+
+	it('turns a whole fanned piece a quarter about its axis', () => {
+		const className = kit.record.shoots?.classes?.[0]?.name ?? 'cut';
+		const hint = { shoot: className, shoots: 3, fanRing: 0.06, fanSpin: 0 };
+		const withHint = (extra: object): SpeciesKitData =>
+			({
+				...kit,
+				record: { ...kit.record, cuttings: { branch: { ...hint, ...extra } } },
+			}) as SpeciesKitData;
+		const plain = clusterRow(withHint({}), { part: 'branch' }, kit.detail);
+		const turned = clusterRow(withHint({ fanYaw: 90 }), { part: 'branch' }, kit.detail);
+		if (!plain || !turned) throw new Error('the kit grew no piece to turn');
+		const span = (row: typeof plain) => [
+			(row.bounds.max[0] as number) - (row.bounds.min[0] as number),
+			(row.bounds.max[2] as number) - (row.bounds.min[2] as number),
+		];
+		const [px, pz] = span(plain) as [number, number];
+		const [tx, tz] = span(turned) as [number, number];
+		// A quarter turn about the upright axis swaps the piece's width and its depth.
+		expect(Math.abs(tx - pz)).toBeLessThan(0.05 * Math.max(1, pz));
+		expect(Math.abs(tz - px)).toBeLessThan(0.05 * Math.max(1, px));
 	});
 
 	it('grows the same bytes twice, and in a worker that runs the job-worker task', async () => {

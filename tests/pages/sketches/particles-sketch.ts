@@ -2,18 +2,26 @@
 // and fade over life, and smoke from a flipbook made in code that drifts in the wind, billows with
 // turbulence and fades where it meets the floor. Sparks lie along their velocity, and leaves of
 // four shapes tumble down. The emitters seed their random numbers, so the held frame is the same on
-// every run.
+// every run. The `wind` switch adds a row of dust that only the wind field's steady air moves: the
+// field keeps no grid, so the held frame is the analytic air on every device.
 import { defineSketch } from '@null3d/engine';
 import { createParticles, particleTextures } from '@null3d/particles';
+import { createWind } from '@null3d/wind';
 import { applySketchSwitches } from '../lib/sketch-switches';
+
+/** True on the picture that turns the wind field on. */
+const WIND = new URL(import.meta.url).searchParams.has('wind');
 
 export default defineSketch(async (ctx) => {
 	const { scene, materials, geometry, textures, quality } = ctx;
 	applySketchSwitches(import.meta.url, quality);
 	scene.setBackground('#1d2330');
-	scene.setActiveCamera(
-		scene.createPerspectiveCamera({ fov: 50, position: [0, 2.4, 7], target: [0, 1.2, 0] }),
-	);
+	const camera = scene.createPerspectiveCamera({
+		fov: 50,
+		position: [0, 2.4, 7],
+		target: [0, 1.2, 0],
+	});
+	scene.setActiveCamera(camera);
 	scene.createDirectionalLight({ direction: [-0.4, -1, -0.3], intensity: 2.5 });
 	scene.createAmbientLight({ intensity: 0.4 });
 	scene.createMesh({
@@ -98,9 +106,38 @@ export default defineSketch(async (ctx) => {
 		alphaOverLife: [0, 1, 1, 0],
 		seed: 4,
 	});
-	const systems = [fountain, smoke, sparks, leaves];
+	// The field picture: a row of dust whose only sideways motion is the field's steady air. With
+	// the field off, drag would stop it near its emitter and gravity would drop it there.
+	const wind = WIND
+		? createWind(ctx, {
+				camera,
+				box: 128,
+				grid: 0,
+				air: { speed: 4, heading: 0, gustStrength: 0, swirl: 0 },
+			})
+		: undefined;
+	const dust = wind
+		? await createParticles(ctx, {
+				position: [-3, 0.6, 1.2],
+				rate: 160,
+				lifetime: 2.2,
+				shape: { type: 'box', size: [0.15, 0.8, 0.15] },
+				direction: [1, 0, 0],
+				speed: [0.2, 0.5],
+				gravity: [0, -0.5, 0],
+				drag: 2,
+				windField: wind.field,
+				size: [0.045, 0.075],
+				colors: ['#ffe6b0', '#ffb060'],
+				intensity: 2,
+				alphaOverLife: [1, 1, 0],
+				seed: 5,
+			})
+		: undefined;
+	const systems = [fountain, smoke, sparks, leaves, ...(dust ? [dust] : [])];
 	return {
 		onLateUpdate() {
+			wind?.update();
 			for (const system of systems) system.update();
 		},
 	};
