@@ -1197,6 +1197,12 @@ export interface ShootSpec {
 		 */
 		readonly gather?: number;
 		/**
+		 * The most shoot rows one axis carries. Above it the rows thin evenly along the axis, so a
+		 * crown with fewer branches opens rather than giving the leaves their places. Absent, an axis
+		 * carries every row its buds place.
+		 */
+		readonly rowsPerAxis?: number;
+		/**
 		 * Gathers the shoots into masses along each axis, with a thinner run between them, so the
 		 * crown is built of clumps with sky and wood between rather than an even mesh of leaves.
 		 * Absent, the shoots stand evenly spaced. The masses of neighbouring axes do not line up,

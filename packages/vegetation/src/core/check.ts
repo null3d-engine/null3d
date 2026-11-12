@@ -266,6 +266,11 @@ function shootProblems(shoots: ShootSpec, out: string[]): void {
 	if (shoots.placement.reach !== undefined)
 		wholeProblem(shoots.placement.reach, 'shoots.placement.reach', 0, 60, out);
 	shareProblem(shoots.placement.gather, 'shoots.placement.gather', out);
+	const rowsPerAxis = shoots.placement.rowsPerAxis;
+	if (rowsPerAxis !== undefined && !(Number.isInteger(rowsPerAxis) && rowsPerAxis >= 1))
+		out.push(
+			`shoots.placement.rowsPerAxis is ${rowsPerAxis}; it is a whole number of rows and must be 1 or above`,
+		);
 	spreadProblems(shoots.placement.scale, 'shoots.placement.scale', true, out);
 	const byHeight = shoots.placement.scaleByHeight;
 	if (byHeight !== undefined) {
