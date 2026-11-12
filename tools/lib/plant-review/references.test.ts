@@ -528,6 +528,11 @@ describe('the slots', () => {
 				),
 			).pressed;
 		expect([pressed(true), pressed(false), pressed()]).toEqual([true, false, undefined]);
+		// The join a redraw asks for reads back, so a joined card level draws as asked.
+		const joined = { species: 'stub', view: 'whole' as const, cardJoin: 'twig' as const };
+		expect(readPlantReviewQuery(new URLSearchParams(plantReviewQuery(joined))).cardJoin).toBe(
+			'twig',
+		);
 		// A picture whose own background is the subject keeps its no-outline flag through the query.
 		const flagged = { species: 'stub', view: 'whole' as const, noOutline: true };
 		expect(readPlantReviewQuery(new URLSearchParams(plantReviewQuery(flagged))).noOutline).toBe(

@@ -357,6 +357,7 @@ export function plantReviewQuery(query: PlantReviewQuery): string {
 		if (value) params.set(name, value);
 	}
 	if (query.lod !== undefined) params.set('lod', String(query.lod));
+	if (query.cardJoin !== undefined) params.set('cardJoin', query.cardJoin);
 	if (query.size) params.set('size', `${query.size[0]}x${query.size[1]}`);
 	for (const name of SWITCHES) if (query[name]) params.set(name, '1');
 	if (query.placeholders !== undefined) params.set('placeholders', query.placeholders ? '1' : '0');
@@ -488,6 +489,7 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 		...(preset && { preset }),
 		...(sun && { sun }),
 		...(lod !== undefined && { lod }),
+		...(cardJoin !== undefined && { cardJoin }),
 		...(size && { size }),
 		...(placeholders !== null && { placeholders: placeholders === '1' }),
 		...(pressed !== null && { pressed: pressed === '1' }),
