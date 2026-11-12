@@ -62,6 +62,9 @@ export const record: Species = {
 			],
 			angleSpread: 8,
 			extinction: [0.02, 0.03],
+			// The great limbs keep half their lateral buds as buds, so their own length carries
+			// shoots and they do not run bare between their branches.
+			limbBuds: 0.5,
 		},
 		apical: {
 			control: [
@@ -272,7 +275,7 @@ export const record: Species = {
 			lift: 15,
 			skyward: 0.65,
 			scale: { mean: 1.4, spread: 0.15 },
-			limbMass: { order: 2, hold: 1.68, reach: 3.85, depth: 0.93, bare: 0.5 },
+			limbMass: { order: 2, hold: 1.5, reach: 3.5, depth: 1, bare: 0.5 },
 		},
 	},
 	foliage: {
