@@ -9,11 +9,11 @@
 // sky-prune line, the finished crown is lit once and every row its leaves leave in less sky than
 // that goes. Where the record trims bare wood, the twigs that then bear no row go from the
 // skeleton. Rows then take a space-filling order, which the thinned card level keeps every second
-// of. A coarser plant keeps a share of the rows, spread evenly along that order, and grows each
-// kept row so that the leaf area holds.
+// of. The coarseness leaves every row in place: it changes how smoothly the plant is drawn, not how
+// many leaves the plant grows.
 import type { ShootPrototype, ShootRows } from '../asset';
 import type { MacroSkeleton } from '../core/graph';
-import { BUD_DORMANT, BUD_TERMINAL } from '../core/graph';
+import { BUD_AREOLE, BUD_DORMANT, BUD_TERMINAL } from '../core/graph';
 import { hashAt, unitAt } from '../core/hash';
 import {
 	cos,
@@ -62,24 +62,6 @@ const Purpose = {
 	Season: 8,
 	Clump: 9,
 } as const;
-
-/** The share of shoot rows that the coarsest plant drops. */
-export const THIN_MOST = 0.8;
-
-/** The most that a coarser plant's kept rows grow by. */
-export const GROW_MOST = 2.25;
-
-/**
- * The share of shoot rows a plant of a coarseness keeps, and the scale that the kept rows grow by:
- * enough to keep the leaf area, whose share is the scale squared, up to the most they grow by.
- *
- * @param coarseness From 0 to 1.
- * @returns The share and the scale.
- */
-export function rowThinning(coarseness: number): { keep: number; grow: number } {
-	const keep = 1 - THIN_MOST * Math.min(1, Math.max(0, coarseness));
-	return { keep, grow: Math.min(GROW_MOST, 1 / Math.sqrt(keep)) };
-}
 
 /**
  * The prototypes a bud of this vigor may draw: those whose class's range holds it, or those of the
@@ -372,7 +354,7 @@ export function dressShoots(input: DressInput): DressedShoots {
 			pruned && lowest !== input.skeleton.crownBase
 				? { ...input.skeleton, crownBase: lowest }
 				: input.skeleton;
-		return { rows: finishedRows(input, rows, skeleton), skeleton };
+		return { rows: finishedRows(rows, skeleton), skeleton };
 	}
 	const { skeleton, axisOut } = trimmed;
 	for (const row of rows) {
@@ -380,13 +362,14 @@ export function dressShoots(input: DressInput): DressedShoots {
 		row.axis = axis;
 		row.record = skeleton.axes.record[axis] as number;
 	}
-	return { rows: finishedRows(input, rows, skeleton), skeleton };
+	return { rows: finishedRows(rows, skeleton), skeleton };
 }
 
-/** The rows as the table, thinned for a coarser plant, in the space-filling order of a skeleton's bounds. */
-function finishedRows(input: DressInput, rows: Row[], skeleton: MacroSkeleton): ShootRows {
-	const coarse = (input.coarseness ?? 0) > 0;
-	const kept = coarse ? thinned(rows, skeleton.bounds, rowThinning(input.coarseness ?? 0)) : rows;
+/** The rows as the table, in the space-filling order of a skeleton's bounds. */
+function finishedRows(rows: Row[], skeleton: MacroSkeleton): ShootRows {
+	// The coarseness dial keeps every shoot row: it changes how smoothly the plant is drawn, not how
+	// many leaves the plant grows.
+	const kept = rows;
 	return packRows(kept, skeleton.bounds);
 }
 
@@ -650,7 +633,12 @@ function placedRows(input: DressInput, bySky = true): Row[] {
 		// in the crown's whole volume.
 		const lit = tipPrune === undefined || (buds.light[b] as number) >= tipPrune;
 		const keep = (kind === BUD_TERMINAL || atTip) && lit && patch > BARE_PATCH;
-		const count = Math.max(keep ? 1 : 0, Math.floor(expected + draw(Purpose.Count, b)));
+		// A cactus areole carries one spine cluster. The growth places every areole itself, so its site
+		// gives one shoot whatever stretch of axis lies behind it.
+		const count =
+			kind === BUD_AREOLE
+				? 1
+				: Math.max(keep ? 1 : 0, Math.floor(expected + draw(Purpose.Count, b)));
 		if (count === 0) continue;
 		// The axis's direction at the bud.
 		const tangent: Vector3 =
@@ -741,28 +729,6 @@ function placedRows(input: DressInput, bySky = true): Row[] {
 		}
 	}
 	return bySky ? skyPruned(input, rows, shoots.placement.skyPrune ?? 0) : rows;
-}
-
-/**
- * The share of rows that a coarser plant keeps, spread evenly through the crown: every row whose
- * step along the space-filling curve crosses a whole share, each grown by the thinning's scale; in
- * their order.
- */
-function thinned(
-	rows: readonly Row[],
-	bounds: DressInput['skeleton']['bounds'],
-	thinning: { keep: number; grow: number },
-): Row[] {
-	const ranked = spaceRanks(rows, bounds);
-	const kept = new Uint8Array(rows.length);
-	for (let k = 0; k < ranked.length; k++)
-		if (Math.floor((k + 1) * thinning.keep) > Math.floor(k * thinning.keep))
-			kept[ranked[k] as number] = 1;
-	const out: Row[] = [];
-	rows.forEach((row, r) => {
-		if (kept[r]) out.push({ ...row, scale: row.scale * thinning.grow });
-	});
-	return out;
 }
 
 /** The rows' indices along the space-filling curve through the plant's bounds. */

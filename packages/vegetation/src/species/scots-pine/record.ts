@@ -31,9 +31,9 @@ export const record: Species = {
 			// where the crown's plates lie closest.
 			kind: 'whorl',
 			spacing: [
-				[0, 1.7],
-				[0.5, 1.4],
-				[1, 0.95],
+				[0, 2.9],
+				[0.5, 2.3],
+				[1, 1.45],
 			],
 			perWhorl: { mean: 3, spread: 1 },
 			between: 0,
@@ -61,7 +61,7 @@ export const record: Species = {
 					[0.85, 86],
 					[1, 78],
 				],
-				density: 0.4,
+				density: 1,
 				arrangement: { kind: 'spiral', divergence: 137.5 },
 				flatten: 0,
 				sag: 0,
@@ -89,7 +89,8 @@ export const record: Species = {
 			},
 			{
 				// Stills 10 and 21: the last twigs are short, stiff and open, and carry the needle
-				// brushes at their ends.
+				// brushes at their ends. The boughs and branches carry their own shoots along their
+				// length, so these twigs stand wider apart than they would on a bare limb.
 				length: [
 					[0, 0.5],
 					[1, 1],
@@ -98,7 +99,7 @@ export const record: Species = {
 					[0, 62],
 					[1, 45],
 				],
-				density: 4.5,
+				density: 2,
 				arrangement: { kind: 'spiral', divergence: 137.5 },
 				flatten: 0.5,
 				sag: 2,
@@ -122,7 +123,7 @@ export const record: Species = {
 				share: 0.62,
 				years: 2,
 				length: { mean: 0.12, spread: 0.015 },
-				nodes: { mean: 50, spread: 2 },
+				nodes: { mean: 21, spread: 2 },
 				internode: [
 					[0, 1.2],
 					[1, 0.8],
@@ -185,33 +186,33 @@ export const record: Species = {
 			colour: [0.34, 0.13, 0.05],
 		},
 		placement: {
-			// Stills 01, 04 and 20: the needle brushes stand at the ends of the finest twigs, with
-			// bare orange twig between them, and gather into dense plates at the crown's rim.
+			// Stills 01, 04 and 20: the needle brushes stand in a thin run along the limbs and thicken
+			// toward the finest twigs' ends, gathering into dense plates at the crown's rim.
 			perMetre: [
-				[0, 18],
-				[0.5, 68],
-				[1, 125],
+				[0, 8],
+				[0.5, 29],
+				[1, 51],
 			],
 			density: 1.1,
 			tipBias: 0.75,
 			shadePrune: 0.08,
-			tipPrune: 0.18,
+			tipPrune: 0.32,
 			// Stills 03 and 05: sky and bare limb show through the crown's middle and under it,
 			// while the lit outer plates stay.
-			skyPrune: 0.3,
+			skyPrune: 0.33,
 			skyPruneLayer: 1.2,
 			// Stills 01 and 18: no bare whisker stands outside the crown; a twig left with no shoot
 			// has died and goes.
 			bareTrim: 0.018,
-			lift: 20,
+			lift: 30,
 			reach: 12,
 			skyward: 0.35,
 			// The brushes gather at the nodes, so the internode between them shows bare.
 			gather: 0.2,
-			scale: { mean: 1.55, spread: 0.12 },
+			scale: { mean: 1.8, spread: 0.15 },
 			// Still 20: the crown's top is built of separate plates at different heights, so the
 			// foliage gathers into tufts with wood and sky between them.
-			clump: { spacing: 1.2, depth: 0.15, fine: { spacing: 0.4, depth: 0.2 } },
+			clump: { spacing: 1.2, depth: 0.28, fine: { spacing: 0.4, depth: 0.3 } },
 		},
 	},
 	// Stills 11 and 12: a pine has no single leaf. The leaf is the fascicle, two needles in one
@@ -222,7 +223,7 @@ export const record: Species = {
 		needle: {
 			// Stills 11, 12 and 13: 4 to 7 cm long, about a millimetre and a half wide, stiff and
 			// twisted, blue-green above and paler grey-blue below.
-			length: { mean: 0.055, spread: 0.008 },
+			length: { mean: 0.06, spread: 0.008 },
 			width: 0.0016,
 			section: 'half-round',
 			density: 4,
@@ -231,9 +232,9 @@ export const record: Species = {
 			optics: {
 				// The blue-green cast of stills 12, 13 and 24: less yellow than the broadleaves, with
 				// the blue channel close to the green.
-				reflectance: [0.075, 0.13, 0.08],
-				reflectanceBack: [0.19, 0.23, 0.2],
-				transmittance: [0.09, 0.16, 0.08],
+				reflectance: [0.16, 0.17, 0.1],
+				reflectanceBack: [0.28, 0.27, 0.17],
+				transmittance: [0.09, 0.16, 0.1],
 				roughness: [0.5, 0.6],
 			},
 		},
@@ -246,8 +247,8 @@ export const record: Species = {
 		// Still 15: the grey-brown plated bark of the lower trunk changes to warm flaking scales at
 		// mid-trunk; stills 14 and 16 give each zone's figure.
 		zones: [
-			{ layer: 0, by: 'height', from: 0, to: 6.5, blend: 1.5 },
-			{ layer: 1, by: 'height', from: 6.5, to: 24, blend: 1.5 },
+			{ layer: 0, by: 'height', from: 0, to: 9.5, blend: 1.5 },
+			{ layer: 1, by: 'height', from: 9.5, to: 24, blend: 1.5 },
 		],
 		young: 0,
 		// Still 28: thin wood carries the orange-brown flaking bark of young branches.
@@ -337,7 +338,7 @@ export const record: Species = {
 		woodOrders: [2, 1],
 		// A brush's card stands a little larger than the shoots it pictures, so gaps between
 		// neighbouring brushes fall on needles rather than on sky.
-		cardGrow: 3.8,
+		cardGrow: 5.5,
 		// A card's twig is thinner than a pixel at a whole view, so the card draws a two-pixel stalk
 		// to the wood it grows from and runs it on to the foliage's centre.
 		cardStalk: 3,
@@ -368,7 +369,8 @@ export const record: Species = {
 		branch: { order: 1, length: 1 },
 		// Still 22: a shoot forking into three, drawn by the kit's longer class.
 		subbranch: { shoot: 'long', pick: 0 },
-		// Still 23: the tip of one shoot with its buds and paired needles.
+		// Still 23: the tip of one shoot with its buds and paired needles, drawn by the crown's own
+		// short class, whose brush the photograph shows at a shoot tip.
 		cluster: { shoot: 'short', pick: 0 },
 	},
 	forms,

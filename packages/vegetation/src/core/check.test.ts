@@ -261,6 +261,15 @@ describe('the record check', () => {
 					ridge: 1.2,
 				},
 				flutes: { count: 6, depth: 0.05, height: 0 },
+				scar: {
+					from: 1,
+					to: 0,
+					angle: 0,
+					width: 0,
+					depth: -0.1,
+					colour: [1.2, 0, 0],
+					shade: 1.5,
+				},
 			},
 		} as Species;
 		const problems = speciesProblems(bent);
@@ -277,6 +286,11 @@ describe('the record check', () => {
 			'base.roots.radius is -0.1',
 			'base.roots.ridge is 1.2',
 			'base.flutes.height is 0',
+			'base.scar.to is 0',
+			'base.scar.width is 0',
+			'base.scar.depth is -0.1',
+			'base.scar.colour[0] is 1.2',
+			'base.scar.shade is 1.5',
 		])
 			expect(problems.some((p) => p.startsWith(path))).toBe(true);
 		const bark = template.bark as NonNullable<Species['bark']>;
