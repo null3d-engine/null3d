@@ -531,6 +531,7 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 	const branching = Math.max(0, g.branching ?? 1);
 	const sideOrders = g.buds.sideOrders ?? Number.POSITIVE_INFINITY;
 	const limbBuds = g.buds.limbBuds ?? 0;
+	const sidePerMetre = g.sideBranchesPerMetre;
 	const wander = tan(radians(Math.min(80, Math.max(0, g.apical.wander))));
 	// The height at which the leader divides into its great limbs, if the record gives one.
 	const divideAt = g.divide === undefined ? Number.POSITIVE_INFINITY : height * g.divide.at;
@@ -1458,7 +1459,14 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 
 	const years = Math.max(1, Math.round(g.years));
 	let takes = new Uint8Array(0);
+	// The side axes grown on each axis so far, for the record's branch budget.
+	let sideAxes = new Int32Array(1024);
 	for (let year = 0; year < years; year++) {
+		if (sideAxes.length < plant.axes * 2) {
+			const next = new Int32Array(plant.axes * 2);
+			next.set(sideAxes);
+			sideAxes = next;
+		}
 		const lambda = curveAt(g.apical.control, year / years);
 		const length = g.internode.length * pow(g.internode.ageFactor, year);
 		plant.compact();
@@ -1494,6 +1502,32 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 					suppression += 1;
 				}
 			}
+			// The axis's length so far, so the record's branch budget is a count of branches per
+			// metre of the wood that carries them. The budget holds for the branch and subbranch
+			// orders: the trunk's own laterals are the great limbs, and the finest axes carry leaves.
+			const axisOrder = plant.axisOrder[a] as number;
+			let axisLength = 0;
+			if (sidePerMetre !== undefined && axisOrder >= 1 && axisOrder <= 2) {
+				for (
+					let n = plant.axisTip[a] as number;
+					n >= 0 && plant.axisOf[n] === a;
+					n = plant.parent[n] as number
+				) {
+					const p = plant.parent[n] as number;
+					if (p < 0 || plant.axisOf[p] !== a) break;
+					axisLength += Math.hypot(
+						(plant.x[n] as number) - (plant.x[p] as number),
+						(plant.y[n] as number) - (plant.y[p] as number),
+						(plant.z[n] as number) - (plant.z[p] as number),
+					);
+				}
+				// A shorter axis than its length may still carry its first branch.
+				axisLength = Math.max(axisLength, 0.5);
+			}
+			const budget =
+				sidePerMetre === undefined || axisOrder < 1 || axisOrder > 2
+					? Number.POSITIVE_INFINITY
+					: sidePerMetre * axisLength;
 			for (
 				let n = plant.axisTip[a] as number;
 				n >= 0 && plant.axisOf[n] === a;
@@ -1520,10 +1554,16 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 						limbBuds > 0 &&
 						(plant.axisOrder[a] as number) === 1 &&
 						unit(Purpose.LimbBuds, 0, b) < limbBuds;
-					if (sides && !kept && unit(Purpose.Flush, year, b) < chance) {
+					if (
+						sides &&
+						!kept &&
+						(sideAxes[a] as number) < budget &&
+						unit(Purpose.Flush, year, b) < chance
+					) {
 						flushing.push(b);
 						takes[b] = 1;
 						flushed++;
+						sideAxes[a] = (sideAxes[a] as number) + 1;
 					}
 				}
 				suppression = suppression * dominanceDistance + flushed;
