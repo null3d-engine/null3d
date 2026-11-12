@@ -32,6 +32,7 @@ import {
 	chainOf,
 	facing,
 	largestLimb,
+	limbGapTurn,
 	limbNear,
 	nodeAt,
 	normalize,
@@ -1018,8 +1019,12 @@ export default defineSketch(async (ctx) => {
 					if (at) {
 						const span = QUERY.span ?? Math.max(1.5, height * 0.35);
 						const across = (span * 0.5) / (Math.tan((fov * DEG) / 2) * aspect);
+						// Between the limbs, the camera stands close to the stem, in the widest gap between
+						// two limbs, so the picture holds the stem with one limb's turn at its edge, as a
+						// photograph of the cluster's gap shows.
 						const near = QUERY.composition === 'between' ? 0.45 : 1;
-						return orbit(at.at, across * near + at.radius, e, turn, fov);
+						const atTurn = QUERY.composition === 'between' ? (limbGapTurn(skeleton) ?? turn) : turn;
+						return orbit(at.at, across * near + at.radius, e, atTurn, fov);
 					}
 				}
 				// One branch with its side branches seen across its run, from the side where the least of

@@ -109,6 +109,8 @@ export interface PlantReviewQuery {
 	 * A limb view's composition: the stem's top with its limb cluster, or between the limbs. A plant
 	 * whose limbs run along a branch leaves it absent and frames one limb. With it, `along` is the
 	 * share of the plant's height where the camera stands and `span` the metres it frames across.
+	 * Between the limbs, the camera stands close to the stem in the widest gap between two limbs, and
+	 * an elbow composition stands across the limb's sharpest turn.
 	 */
 	readonly composition?: (typeof PLANT_COMPOSITIONS)[number];
 	/** The cutting candidate, 0 for the best. */
