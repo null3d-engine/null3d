@@ -64,10 +64,7 @@ export const record: Species = {
 		heads: {
 			// Stills 01 and 02: a big tussock rises about eighteen flowering stems.
 			count: { mean: 18, spread: 4 },
-			// Stills 02 and 17: the flowering stems rise from the tussock's middle rather than
-			// following their outer shoots' lean; at the default share the drawn plant stands 2.68 m
-			// wide for 1.28 m tall against the photographs' narrow mounds.
-			leanShare: 0.3,
+
 			kind: 'spike',
 			// Still 17: the stems stand about 30 cm above the leaf mound at their highest point.
 			height: { mean: 1.6, spread: 0.18 },
