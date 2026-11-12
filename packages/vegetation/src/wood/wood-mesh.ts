@@ -14,6 +14,7 @@ import { AXIS_LIMB, AXIS_STEM, AXIS_STIPE, type MacroSkeleton, NODE_STUB } from 
 import { acos, cos, PI, sin, tan } from '../core/math';
 import type { Species } from '../core/record';
 import { crownSkyAt } from '../crown/visibility';
+import { supportAxes } from '../lod/cards';
 import type { CrownLight, MeshInput, MeshLevel } from '../stages';
 import { VARIANT_RECORDS } from '../wind/records';
 import { peelFins } from './fins';
@@ -163,13 +164,18 @@ function woodAxes(input: MeshInput, keep: number, level: MeshLevel): WoodAxis[] 
 	const lastKept = keptNodes(skeleton);
 	// The thinnest sections draw an axis as one run: its wood does not divide at a codominant child.
 	const single = (input.sections ?? 0) >= 1;
+	// A card join of `branch` draws the branches the cards stand on, so no card is dropped.
+	const support =
+		level > 0 && input.cardJoin === 'branch'
+			? supportAxes(input as MeshInput, level as 1 | 2)
+			: undefined;
 	// Axes rooted at the ground, stems and a frond colony's stipes, take the stem base's flare,
 	// lobes and roots. A limb without a parent is the cut end of a piece, such as a cut branch, and
 	// starts plain. Any other axis without a parent, such as a ground plant's crown, carries no wood.
 	const rooted = (a: number) =>
 		(axes.kind[a] as number) === AXIS_STEM || (axes.kind[a] as number) === AXIS_STIPE;
 	const meshed = (a: number) =>
-		(axes.order[a] as number) <= keep &&
+		((axes.order[a] as number) <= keep || support?.[a] === 1) &&
 		(lastKept[a] as number) >= (axes.first[a] as number) &&
 		((axes.parent[a] as number) >= 0 || rooted(a) || (axes.kind[a] as number) === AXIS_LIMB);
 	// Where each axis divides: the nodes short of its end where a codominant side child leaves.

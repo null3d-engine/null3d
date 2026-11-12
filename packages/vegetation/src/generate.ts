@@ -66,6 +66,15 @@ import {
 	mergeShoots,
 } from './cutting';
 import { coarsenSkeleton } from './grow/coarsen';
+import {
+	crownReach,
+	foliageTop,
+	HEIGHT_RESIDUAL,
+	scaledPlacement,
+	scaledRows,
+	scaledSkeleton,
+	targetHeight,
+} from './grow/height';
 import { leadOnThickest } from './grow/leaders';
 import { grower, loadGrower } from './grow/models';
 import { extrasMesh } from './leaf/extras';
@@ -184,6 +193,8 @@ export interface GrowOptions extends CoarsenessOptions {
 	 * A review redraw sets it to measure what the cards buy; a page rarely does.
 	 */
 	readonly cards?: number;
+	/** How a card joins the plant when its branch is not drawn: `remove`, `branch` or `twig`. */
+	readonly cardJoin?: 'remove' | 'branch' | 'twig';
 }
 
 /** The least and the most share of leaves or limbs a growth may ask for. */
@@ -486,6 +497,10 @@ export function variantKey(kit: SpeciesKitData, options: GrowOptions): string {
 	const sections =
 		options.sections === undefined || options.sections === 0 ? '' : `:sections=${options.sections}`;
 	const cards = options.cards === undefined || options.cards === 1 ? '' : `:cards=${options.cards}`;
+	const join =
+		options.cardJoin === undefined || options.cardJoin === 'remove'
+			? ''
+			: `:join=${options.cardJoin}`;
 	return `${kit.key}:${options.seed >>> 0}:${options.variant}:${season}:${options.detail ?? kit.detail}:${cutting}${coarsenessKey(kit, options)}${leaves}${limbs}${sections}${cards}`;
 }
 
@@ -698,6 +713,27 @@ function dress(kit: SpeciesKitData, options: GrowOptions): MeshInput {
 		() => placeholderSkeleton(growInput),
 	);
 	speciesHooks(record.id)?.afterGrow?.(grown, record, growInput.seed);
+	// The record's height means the drawn plant's top: the grown skeleton and the shoot placement are
+	// scaled together before the light, so the foliage's highest point aims at the sampled target. A
+	// cut piece keeps its own size, and a merged foliage has no instanced rows for this measure.
+	const target =
+		!options.cutting &&
+		placeholders !== true &&
+		record.lod.nearFoliage === 'instanced' &&
+		kit.prototypes.length > 0
+			? targetHeight(record, options.seed, options.variant)
+			: 0;
+	let calibrated = grown;
+	let calibratedRecord = record;
+	if (target > 0) {
+		const aim = grown.height + crownReach(kit, record);
+		if (aim > 0) {
+			const factor = target / aim;
+			calibrated = scaledSkeleton(grown, factor);
+			calibratedRecord = scaledPlacement(record, factor);
+		}
+	}
+	const calibratedInput: GrowInput = { ...growInput, record: calibratedRecord };
 	// The crown's light as grown, which a sky prune reads at every coarseness the search tries and
 	// at the one it settles on, so it is found once. A cut piece lights its own rows.
 	const light =
@@ -706,21 +742,22 @@ function dress(kit: SpeciesKitData, options: GrowOptions): MeshInput {
 		record.lod.nearFoliage !== 'instanced' ||
 		kit.prototypes.length === 0
 			? undefined
-			: pruneLight({ ...growInput, kit, skeleton: grown });
+			: pruneLight({ ...calibratedInput, kit, skeleton: calibrated });
 	const lit = light ? { pruneLight: light } : {};
 	// A stand-in grows as it is at any coarseness. A real species that falls back to a stand-in for a
 	// stage it does not build is still a real plant, so it takes the coarseness it is asked for.
 	const coarseness =
 		placeholders === true
 			? 0
-			: coarsenessFor(kit, { ...growInput, skeleton: grown, ...lit }, detail, options);
+			: coarsenessFor(kit, { ...calibratedInput, skeleton: calibrated, ...lit }, detail, options);
 	const dressInput: DressInput = {
-		...growInput,
+		...calibratedInput,
 		kit,
-		skeleton: cutSkeleton(kit, coarsenSkeleton(grown, coarseness), options.cutting),
+		skeleton: cutSkeleton(kit, coarsenSkeleton(calibrated, coarseness), options.cutting),
 		coarseness,
 		sections: options.sections,
 		cards: options.cards,
+		cardJoin: options.cardJoin,
 		...lit,
 	};
 	// The shoots stand on the skeleton, which loses the bare twigs the record trims once they stand.
@@ -732,8 +769,20 @@ function dress(kit: SpeciesKitData, options: GrowOptions): MeshInput {
 					() => ({ rows: placeholderRows(dressInput), skeleton: dressInput.skeleton }),
 				)
 			: { rows: emptyRows(), skeleton: dressInput.skeleton };
-	const { rows } = dressed;
-	const input: DressInput = { ...dressInput, skeleton: dressed.skeleton };
+	let rows = dressed.rows;
+	let skeleton = dressed.skeleton;
+	// The reach is an estimate from the kit, so the drawn top is measured once the shoots stand. A
+	// residual over the accepted share is taken out by one scale of the already-placed geometry: a
+	// matrix scale, not a second growth.
+	if (target > 0 && rows.count > 0) {
+		const top = Math.max(skeleton.height, foliageTop(kit, rows));
+		if (top > 0 && Math.abs(top - target) / target > HEIGHT_RESIDUAL) {
+			const corrective = target / top;
+			skeleton = scaledSkeleton(skeleton, corrective);
+			rows = scaledRows(rows, corrective);
+		}
+	}
+	const input: DressInput = { ...dressInput, skeleton };
 	const crown = stage(
 		placeholders,
 		() => lightCrown(input, rows),
@@ -1050,10 +1099,7 @@ export function growNearWoodNow(kit: SpeciesKitData, options: GrowOptions): read
  * @returns The atlases.
  * @category api/vegetation
  */
-export function bakeFarNow(kit: SpeciesKitData, asset: PlantAsset): FarBake {
-	return stage(
-		kit.placeholders,
-		() => bakeFar(kit, asset),
-		() => placeholderFar(kit, asset),
-	);
+export async function bakeFarNow(kit: SpeciesKitData, asset: PlantAsset): Promise<FarBake> {
+	if (kit.placeholders) return placeholderFar(kit, asset);
+	return bakeFar(kit, asset);
 }

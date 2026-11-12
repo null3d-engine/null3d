@@ -68,6 +68,12 @@ export interface DressInput extends GrowInput {
 	 */
 	readonly cards?: number;
 	/**
+	 * How a card joins the plant when its branch is not drawn at the level: `remove` drops the card,
+	 * `branch` draws the branch the card stands on, and `twig` keeps the card and draws it a twig to
+	 * the nearest drawn branch. `remove` by default.
+	 */
+	readonly cardJoin?: 'remove' | 'branch' | 'twig';
+	/**
 	 * The light of the crown as grown, which a sky-prune line reads at every coarseness, so a
 	 * coarser plant prunes the shoots its full crown leaves in the dark and the light is found once.
 	 * Absent, the prune lights the crown of the rows it is given.

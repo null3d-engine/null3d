@@ -45,3 +45,53 @@ export function connectedBody(input: MeshInput, level: MeshLevel): ConnectedBody
 	}
 	return { components, reachesRoot, cards };
 }
+
+/**
+ * The connected components of a mesh's triangles: vertices at the same place (to a tenth of a
+ * millimetre) are welded, and triangles that share a welded vertex join. A plant drawn as one body
+ * has one component, and a piece that hangs free has its own.
+ *
+ * @param mesh The mesh's positions and triangle indices.
+ * @returns The number of components.
+ * @category api/vegetation
+ */
+export function geometryComponents(mesh: {
+	readonly positions: ArrayLike<number>;
+	readonly indices: ArrayLike<number>;
+}): number {
+	const count = mesh.positions.length / 3;
+	const parent = new Int32Array(count);
+	for (let i = 0; i < count; i++) parent[i] = i;
+	const find = (i: number): number => {
+		let root = i;
+		while ((parent[root] as number) !== root) root = parent[root] as number;
+		while ((parent[i] as number) !== root) {
+			const next = parent[i] as number;
+			parent[i] = root;
+			i = next;
+		}
+		return root;
+	};
+	const union = (a: number, b: number): void => {
+		const ra = find(a);
+		const rb = find(b);
+		if (ra !== rb) parent[rb] = ra;
+	};
+	const welded = new Map<string, number>();
+	for (let i = 0; i < count; i++) {
+		const key = `${Math.round((mesh.positions[i * 3] as number) * 1e4)},${Math.round((mesh.positions[i * 3 + 1] as number) * 1e4)},${Math.round((mesh.positions[i * 3 + 2] as number) * 1e4)}`;
+		const first = welded.get(key);
+		if (first === undefined) welded.set(key, i);
+		else union(first, i);
+	}
+	for (let t = 0; t < mesh.indices.length; t += 3) {
+		const a = mesh.indices[t] as number;
+		const b = mesh.indices[t + 1] as number;
+		const c = mesh.indices[t + 2] as number;
+		union(a, b);
+		union(b, c);
+	}
+	const roots = new Set<number>();
+	for (let t = 0; t < mesh.indices.length; t += 3) roots.add(find(mesh.indices[t] as number));
+	return roots.size;
+}

@@ -50,10 +50,12 @@ import {
 	type ClosePlant,
 	type CloseView,
 	departures,
+	forkCandidates,
 	forkView,
 	insideView,
 	junctionView,
 	limbView,
+	spikeView,
 	strandsView,
 	surfaceView,
 	trunkView,
@@ -600,6 +602,7 @@ function matteMaterials(ctx: SketchContext, kit: SpeciesKit): PlantMaterials {
 			alphaCutoff: 0.5,
 		}),
 		foliage: ctx.materials.unlit(black),
+		foliageFar: ctx.materials.unlit(black),
 		extras: ctx.materials.unlit(black),
 	};
 }
@@ -634,10 +637,13 @@ export default defineSketch(async (ctx) => {
 	const placeholders: boolean | 'missing' =
 		QUERY.placeholders ?? (isSpeciesId(QUERY.species) ? 'missing' : true);
 	const loadedModule = await loadSpeciesOrStandIn(QUERY.species);
-	// A tuft's soil — its rhizome and roots — belongs to the picture that frames the lifted base;
-	// every other view grows the plant above the soil, which is what the ground shows of it.
+	// A tuft's soil — its rhizome and roots — belongs to the picture that frames the lifted base:
+	// the soil view, or any view that lifts the plant from the ground, so a lifted whole plant
+	// shows the root ball its photograph shows. Every other view grows the plant above the soil,
+	// which is what the ground shows of it.
 	const record =
 		VIEW !== 'soil' &&
+		!QUERY.lifted &&
 		loadedModule.record.growth.model === 'tuft' &&
 		loadedModule.record.growth.soil !== undefined
 			? (() => {
@@ -670,6 +676,7 @@ export default defineSketch(async (ctx) => {
 		...(QUERY.sparse !== undefined && { sparse: QUERY.sparse }),
 		...(QUERY.sections !== undefined && { sections: QUERY.sections }),
 		...(QUERY.cards !== undefined && { cards: QUERY.cards }),
+		...(QUERY.cardJoin !== undefined && { cardJoin: QUERY.cardJoin }),
 	};
 	const turn0 = (QUERY.turn ?? 0) * DEG;
 	const cuttingPart = VIEW === 'panels' ? 'cluster' : SPEC.cutting;
@@ -707,8 +714,16 @@ export default defineSketch(async (ctx) => {
 	const mainKit = whole ? kit : pieceKit;
 	const bounds = boundsOf(main, mainKit);
 	const skeleton = main.skeleton;
-	const foot = stemFoot(skeleton);
-	const height = Math.max(0.05, bounds.max[1]);
+	const stemFootPoint = stemFoot(skeleton);
+	// A lifted plant stands on its lowest root: the whole picture then includes the root ball,
+	// which grows below the crown's foot and so sits outside the plant's above-ground box.
+	let baseY = 0;
+	if (QUERY.lifted) {
+		const p = skeleton.position;
+		for (let n = 0; n < skeleton.nodeCount; n++) baseY = Math.min(baseY, p[n * 3 + 1] as number);
+	}
+	const foot: V3 = [stemFootPoint[0], Math.min(stemFootPoint[1], baseY), stemFootPoint[2]];
+	const height = Math.max(0.05, (bounds.max[1] as number) - foot[1]);
 
 	// The turns a sheet draws, each in a cell of its own.
 	const turns = VIEW === 'turntable' ? (QUERY.turns ?? 8) : (QUERY.turns ?? 1);
@@ -824,9 +839,14 @@ export default defineSketch(async (ctx) => {
 			case 'whole':
 			case 'skeleton':
 			case 'silhouette': {
+				// A lifted plant's frame reaches its lowest root, so an unframed lifted picture keeps
+				// the root ball in view below the crown.
+				const reach = QUERY.lifted
+					? { min: [bounds.min[0], baseY, bounds.min[2]] as V3, max: bounds.max }
+					: bounds;
 				const view = FRAMED
 					? standView(height, bounds, plantPoints, foot, turn, aspect)
-					: fit(bounds, turn, e, aspect, fov);
+					: fit(reach, turn, e, aspect, fov);
 				// A whole view may be stood at a named distance, as a far level is judged at its switch.
 				return atDistance(scaledStand(view, QUERY.standScale));
 			}
@@ -995,6 +1015,10 @@ export default defineSketch(async (ctx) => {
 					0.05,
 				);
 				if (found) return found;
+				const counts = forkCandidates(skeleton, QUERY.thin);
+				notes.push(
+					`the fork view found no division: ${counts.total} divisions, then ${counts.counts.join(', ')} through its wishes, ${counts.kept} kept near ${counts.sought.toFixed(3)} m`,
+				);
 				break;
 			}
 			case 'flowers': {
@@ -1135,6 +1159,13 @@ export default defineSketch(async (ctx) => {
 				// The twig and its rosettes fill the frame: the reference stands a single twig against a
 				// plain backdrop, so the camera sits close and the shoot's own length is not the subject.
 				return { ...orbit(target, 0.28 + shoot / 4, e, back, fov), near: 0.02 };
+			}
+			case 'spike': {
+				// A ground plant's flowering heads: one stem's hanging spikes, seen close and level
+				// against the plain ground as their photograph frames them.
+				const found = closeAt(view, () => spikeView(closePlant(false), lens), turn, fov, 0.05);
+				if (found) return found;
+				break;
 			}
 			case 'strands': {
 				// A limb's hanging shoots at the crown's rim, seen level against the sky as a

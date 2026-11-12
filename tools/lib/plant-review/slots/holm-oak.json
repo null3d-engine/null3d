@@ -25,5 +25,8 @@
 	},
 	"28-young-bark.png": {
 		"background": "studio-grey"
+	},
+	"07-stems-leaving-base.png": {
+		"view": "bark-base"
 	}
 }
