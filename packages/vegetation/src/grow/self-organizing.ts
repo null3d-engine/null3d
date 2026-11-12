@@ -528,6 +528,8 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 	const lightLateral = g.light.lateral;
 	const [extinctApical, extinctLateral] = g.buds.extinction;
 	const branching = Math.max(0, g.branching ?? 1);
+	const branchingByOrder = g.branchingByOrder;
+	const macroOrders = Math.max(1, g.macroOrders);
 	const sideOrders = g.buds.sideOrders ?? Number.POSITIVE_INFINITY;
 	const wander = tan(radians(Math.min(80, Math.max(0, g.apical.wander))));
 	// The height at which the leader divides into its great limbs, if the record gives one.
@@ -1471,8 +1473,15 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 		const axisCount = plant.axes;
 		for (let a = 0; a < axisCount; a++) {
 			let suppression = 0;
+			const order = plant.axisOrder[a] as number;
 			// An axis past the record's side orders keeps its lateral buds as buds for its shoots.
-			const sides = (plant.axisOrder[a] as number) < sideOrders;
+			const sides = order < sideOrders;
+			// The record's branching curve thins the side axes of an order, so a crown can carry fewer
+			// branches and subbranches without thinning every order alike.
+			const share =
+				branchingByOrder === undefined
+					? branching
+					: branching * curveAt(branchingByOrder, order / macroOrders);
 			const tb = plant.axisBud[a] as number;
 			if (tb >= 0 && plant.budState[tb] === ALIVE) {
 				// With the relay, a stem's leader below the open height is spared the chance loss that
@@ -1510,7 +1519,7 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 					// wood's density, which the crown's foliage thins or fills.
 					const chance = Math.min(
 						1,
-						pow(q, lightLateral) * exp(-ageDominance * suppression) * branching,
+						pow(q, lightLateral) * exp(-ageDominance * suppression) * share,
 					);
 					if (sides && unit(Purpose.Flush, year, b) < chance) {
 						flushing.push(b);
