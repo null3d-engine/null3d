@@ -101,8 +101,12 @@ const REST_STEPS: f32 = 255.0;
 const HEADER_YOUNG: i32 = 15;
 const HEADER_YOUNG_TILE: i32 = 16;
 const HEADER_YOUNG_TINT: i32 = 56;
+// A tuft's sheath colour at the column's foot, and its roughness.
+const HEADER_SHEATH: i32 = 65;
 // A grass blade's collar: its colour, then the share of the blade's base it takes.
 const HEADER_COLLAR: i32 = 66;
+// A tuft's sheath colour at the column's collar, then the share of the column it takes.
+const HEADER_SHEATH_COLLAR: i32 = 67;
 const HEADER_MOSS: i32 = 17;
 const HEADER_MOSS_REACH: i32 = 18;
 const HEADER_EXTRAS: i32 = 19;
@@ -163,6 +167,8 @@ const MAX_BRANCH_DEPTH: i32 = 8;
 const KIND_STEM: f32 = 85.0;
 // The surface kind byte of a shoot's bud, which draws as a stem in the record's bud colour.
 const KIND_BUD: f32 = 128.0;
+/// A merged ground plant's sheath column, marked in the colour's third byte.
+const KIND_SHEATH: f32 = 240.0;
 // Texels across the near table: two for each of its sixteen slots.
 const NEAR_TEXELS: f32 = 32.0;
 // A leaf's reflectance at normal incidence and at grazing, as the plant materials set them.
@@ -1187,6 +1193,22 @@ fn surface(input: SurfaceInput) -> Surface {
                 base *= header(HEADER_YOUNG_TINT).rgb;
             }
             roughness = 0.8;
+        } else if (mode == MODE_FOLIAGE && abs(input.vertexColor.b * 255.0 - KIND_SHEATH) < 0.5) {
+            // A merged ground plant's sheath column draws in the record's sheath colours. Its kind
+            // marks the colour's third byte, since the asset clamps a negative coordinate to zero.
+            // Its second coordinates' x runs from the column's foot to its collar, so the record's
+            // two colours mix up the height; the leaf texture's stalk strip lies over them, divided
+            // by the face's mean, so the sheath shows the blade's ribbing and the record's colour
+            // stays the material's own.
+            let foot = header(HEADER_SHEATH);
+            let top = header(HEADER_SHEATH_COLLAR);
+            let up = saturate(input.uv1.x);
+            let reach = clamp(top.w, 0.05, 1.0);
+            let sheath_colour = mix(foot.rgb, top.rgb, smoothstep(1.0 - reach, 1.0, up));
+            let strip = textureSampleGrad(colour, colourSampler, uv, 0, gx, gy).rgb;
+            let face = max(header(HEADER_UPPER_MEAN).rgb, vec3f(0.0001));
+            base = sheath_colour * clamp(strip / face, vec3f(0.55), vec3f(1.45));
+            roughness = max(foot.w, 0.5);
         } else {
             let layer = select(1, 0, upper);
             let texel = textureSampleGrad(colour, colourSampler, uv, layer, gx, gy);
