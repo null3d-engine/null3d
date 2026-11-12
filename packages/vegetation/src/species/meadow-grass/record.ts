@@ -34,19 +34,19 @@ export const record: Species = {
 		],
 		// Still 22 and the fact sheet: two to four blades on each tiller, set in two ranks. The
 		// whole-plant pictures carry four or five, so the crown takes the fuller end.
-		blades: { mean: 4, spread: 0.4 },
+		blades: { mean: 5, spread: 0.4 },
 		ranks: 2,
 		sheath: { mean: 0.035, spread: 0.01 },
 		sheathRadius: 0.0018,
-		// Still 15's sheath surface, read as linear reflectance: a pale straw sheath, not the
-		// blade's green.
-		sheathColour: [0.366, 0.38, 0.309],
+		// Stills 15 and 16: the basal sheath is pale cream, not the blade's green, and it stays that
+		// pale from the soil to the collar, so both ends of the column take the same measured colour.
+		sheathColour: { foot: [0.366, 0.38, 0.309], collar: [0.366, 0.38, 0.309], reach: 0.85 },
 		// Still 21: the youngest inner blades stand tall and almost straight, arching only near
 		// their tips, while the oldest outer ones leave their collars wide and arch toward the
 		// ground. The young blades hold the leaf mass's height; the old ones its width.
 		spread: [
-			[0, 4],
-			[1, 18],
+			[0, 2],
+			[1, 12],
 		],
 		size: [
 			[0, 0.8],
@@ -75,6 +75,9 @@ export const record: Species = {
 				],
 				droop: 12,
 				flowers: { mean: 5, spread: 1 },
+				// Still 18: the spray's branches read on the silhouette, so a branch at 0.30 of the
+				// stem's radius joins it into one piece where 0.18 split the height profile.
+				branchShare: 0.3,
 			},
 		},
 	},
@@ -82,11 +85,11 @@ export const record: Species = {
 		kind: 'grass-blade',
 		blade: {
 			// Stills 01, 02 and 12: blades of even width that close in a short blunt hood. The
-			// leaf picture draws its blade about 7.4 per cent as wide as it is long, and a 30 cm
-			// blade fills that proportion at 20 mm, the same broad blade the sedge's photographs
+			// leaf picture draws its blade about 7.4 per cent as wide as it is long, and a 36 cm
+			// blade fills that proportion at 24 mm, the same broad blade the sedge's photographs
 			// show. The record follows the picture rather than the fact sheet's narrower figure.
-			length: { mean: 0.3, spread: 0.02 },
-			width: 0.02,
+			length: { mean: 0.36, spread: 0.024 },
+			width: 0.024,
 			profile: [
 				[0, 0.85],
 				[0.1, 1],
@@ -96,16 +99,21 @@ export const record: Species = {
 			tipLength: 0.04,
 			fold: 18,
 			twist: 30,
-			arch: { mean: 18, spread: 8 },
+			arch: { mean: 34, spread: 8 },
 			// Stills 02 and 06: the old outer blades carry dry brown tips.
 			dryTip: 0.03,
-			// The texture source's two faces under flat light: the shader scales each face's picture
+			// Stills 15 and 16: the ribbed pale sheath ends in a pale collar with a small papery
+			// ligule in the V where the blade leaves it. Both are the sheath's own pale cream, and
+			// the collar takes the lowest fiftieth of the blade.
+			collar: { colour: [0.366, 0.38, 0.309], share: 0.02 },
+			ligule: { length: { mean: 0.006, spread: 0.002 }, width: 0.004, share: 0.5 },
+			// The leaf pictures' two faces under flat light: the shader scales each face's picture
 			// by that face's mean, so these figures are the pictures' own means.
 			optics: {
 				reflectance: [0.1284, 0.272, 0.0218],
-				reflectanceBack: [0.0654, 0.158, 0.0104],
+				reflectanceBack: [0.318, 0.349, 0.24],
 				transmittance: [0.16, 0.33, 0.03],
-				roughness: [0.55, 0.35],
+				roughness: [0.55, 0.6],
 			},
 		},
 	},
@@ -219,7 +227,7 @@ export const record: Species = {
 						reflectance: [0.1284, 0.272, 0.0218],
 						reflectanceBack: [0.0654, 0.158, 0.0104],
 						transmittance: [0.16, 0.33, 0.03],
-						roughness: [0.55, 0.35],
+						roughness: [0.55, 0.6],
 					},
 				},
 			},
@@ -230,5 +238,8 @@ export const record: Species = {
 		// on its own against the copy stand.
 		branch: { order: 1, length: 0.5 },
 		subbranch: { order: 1, length: 0.35 },
+		// Stills 12, 13 and the two texture sources: a picked blade lies pressed on the copy stand,
+		// so its fold, twist and arch straighten and the pictures show the blade's own width.
+		leaf: { pressed: true },
 	},
 };

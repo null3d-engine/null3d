@@ -14,10 +14,15 @@ run('retain', async () => {
 	const second = document.getElementById('second');
 	const canvas = first?.querySelector('canvas');
 	if (!first || !second || !canvas) throw new Error('the page is missing its elements');
+	// The reference is drawn in hold mode at the references' preset, whose edges are multisampled.
+	// A slow device's start-up preset check lowers the preset, and Low smooths edges with FXAA, so
+	// the retained picture then differs from the reference at its edges. Pinning the multisampled
+	// mode keeps the reference's edges whatever preset the check reaches.
 	const engine = await createEngine({
 		canvas,
 		sketch: new URL('./sketches/boxes-sketch.ts', import.meta.url),
 		maxPixelRatio: 1,
+		antialias: 'msaa',
 	});
 	const failures: string[] = [];
 	engine.onFailure((error) => failures.push(error.code));

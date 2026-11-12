@@ -21,7 +21,7 @@ import { groundHeight } from './plan';
 import { createSea } from './sea';
 import { SHADOW_DISTANCE, SHADOW_REACH } from './shadow';
 import { createTown } from './town';
-import { CASTER_LAYER, createTrees } from './trees';
+import { CASTER_LAYER, createCypressSpires, createTrees } from './trees';
 
 /** The camera's vertical field of view in degrees, and the DSLR lens's focal length in millimetres. */
 const FOV = 45;
@@ -201,14 +201,35 @@ export default defineSketch(async (ctx) => {
 	const land = createLand(ctx);
 	const sea = createSea(ctx);
 	createTown(ctx);
+	// The cypresses need no species assets, so a live page places them before the first frame.
+	if (!ctx.engine.held) createCypressSpires(ctx);
 	page.post('loading', 'Growing the trees');
-	const trees = await createTrees(ctx, camera);
-	// The stage writes the light its maps give before the first frame draws.
-	await Promise.all([sky, room]);
+	// The species and the lawns take seconds to grow. A live page draws the island without them and
+	// lets them appear as they land; a held picture waits, so its frame shows the finished scene.
+	let trees: { update(): void } | undefined;
+	let growing = false;
+	const grow = (): void => {
+		if (growing) return;
+		growing = true;
+		void createTrees(ctx, camera, { spires: false }).then(
+			(grown) => {
+				trees = grown;
+			},
+			(error: unknown) => console.error(error),
+		);
+	};
+	if (ctx.engine.held) {
+		trees = await createTrees(ctx, camera);
+		// The stage writes the light its maps give before the first frame draws.
+		await Promise.all([sky, room]);
+	}
 
 	const eye: [number, number, number] = [0, 0, 0];
 	return {
 		onUpdate(dt) {
+			// The forest grows once the first frame has drawn, so its species and lawns cost nothing
+			// before it and appear as they land.
+			if (!ctx.engine.held && time.frame >= 2) grow();
 			const t = time.now;
 			stage.update(dt);
 			controls.update(t);
@@ -218,7 +239,7 @@ export default defineSketch(async (ctx) => {
 			camera.getPosition(eye);
 			land.update(eye);
 			sea.update();
-			trees.update();
+			trees?.update();
 		},
 	};
 });

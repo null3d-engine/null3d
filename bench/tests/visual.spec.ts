@@ -19,8 +19,14 @@ import { SHADOW_SCENES, visualPagePath } from '../lib/visual';
 const extraSwitches =
 	process.env.NULL3D_SWITCHES && readSwitches(process.env.NULL3D_SWITCHES, 'NULL3D_SWITCHES');
 
-/** How long a visual page may take: twelve starts of a scene, which take longest for S4 in CI. */
-const VISUAL_TIMEOUT_MS = 240_000;
+/**
+ * How long a visual page may take: twelve starts of a scene, which take longest for S4 in CI. On
+ * CI's software GPU the first start and its growth took 236 seconds, before any of the twelve
+ * starts ran, so the wait takes seven minutes and the test's own limit, thirty seconds longer,
+ * contains it. A shard runs three of these tests on one GPU path, so its worst case is twenty-two
+ * and a half minutes of waits inside the shard's twenty-eight.
+ */
+const VISUAL_TIMEOUT_MS = 420_000;
 
 for (const { scene, shadows, n } of SHADOW_SCENES)
 	for (const gpu of ['webgpu', 'webgl2'] as const)

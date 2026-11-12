@@ -42,7 +42,7 @@ import {
 	UNREFLECTED_LAYER,
 	WATER,
 } from './land';
-import { createPlants } from './plants';
+import { createPlants, type Plants } from './plants';
 import { SHOTS, WIDE, WIDE_LOOK } from './route';
 import { createShafts } from './shafts';
 import { createStones, type Obstacle } from './stones';
@@ -139,6 +139,14 @@ const RENDER_SCALE = Number(params.get('render-scale')) || undefined;
  * pictures with and without them are the same at Low, Medium and High.
  */
 const EFFECTS = params.get('effects') === 'on';
+/**
+ * The strength of a gust that the address sends, and the sketch time when it sends it. The demo's
+ * own gust answers the G key, and a held frame presses no key, so a picture test names the send in
+ * its address. The place is the camera's, as the key's is, and the route is a function of the
+ * sketch time, so both hold still.
+ */
+const GUST_STRENGTH = Number(params.get('gust')) || 0;
+const GUST_SEND_AT = Number(params.get('gust-at')) || 0;
 /**
  * True draws the scene from just above the stream, looking along it, so the picture shows the
  * water's surface close up. The picture tests ask for it; the demo and its route never do.
@@ -317,10 +325,17 @@ export default defineSketch(async (ctx) => {
 			);
 	const underwater = water && createUnderwater(ctx, camera, water);
 	const flora = await createFlora(ctx, wind);
-	const plants = await createPlants(ctx, wind.field, {
-		rocks: (x, z) => stones.clear(x, z),
-		mountainHeight: (x, z) => mountains.heightAt(x, z),
-	});
+	// The plants grow while the valley draws, so a live start shows its first frame without waiting
+	// for every species and the plants appear as the growth finishes. A held picture waits for the
+	// whole growth, so its frame shows the finished scene.
+	let plants: Plants | undefined;
+	const growPlants = async (): Promise<void> => {
+		plants = await createPlants(ctx, wind.field, {
+			rocks: (x, z) => stones.clear(x, z),
+		});
+	};
+	if (ctx.engine.held) await growPlants();
+	else growPlants().catch((error: unknown) => console.error(error));
 	const air = await createAir(ctx, camera, wind.field);
 	const shafts = createShafts(ctx, camera);
 	// The grass covers the valley: denser along the banks that the camera flies past, thinner over
@@ -498,15 +513,29 @@ export default defineSketch(async (ctx) => {
 	});
 	// The camera stands at the route's opening pose now, so the shadows reach as far as it needs.
 	controls.fitShadows();
+	/** True once the address's gust has been sent, so one send reaches the field. */
+	let gustSent = false;
 
 	return {
 		onUpdate(dt) {
 			const t = time.now;
+			// The address's gust goes in before the field steps, so the frame that draws carries it
+			// and the readers see its settings at once.
+			if (GUST_STRENGTH > 0 && !gustSent && t >= GUST_SEND_AT) {
+				gustSent = true;
+				camera.getPosition(here);
+				wind.gust([here[0] as number, here[2] as number], GUST_STRENGTH);
+				page.post('gust', {
+					at: t,
+					strength: GUST_STRENGTH,
+					place: [here[0] as number, here[2] as number],
+				});
+			}
 			// The field's box follows the camera, so it steps before anything reads it.
 			wind.update();
 			// The field keeps two states, so the plants and the grass read this frame's one.
 			for (const field of grass) field.setWindLayer(wind.field);
-			plants.setWindLayer(wind.field);
+			plants?.setWindLayer(wind.field);
 			stage.update(dt);
 			for (const haze of hazes) haze.update(stage.airColor, stage.light);
 			controls.update(t);
