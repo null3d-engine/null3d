@@ -498,6 +498,10 @@ function growthProblems(record: Species, out: string[]): void {
 			spreadProblems(heads.height, 'growth.heads.height', true, out);
 			wholeProblem(heads.sides, 'growth.heads.sides', 3, 12, out);
 			shareProblem(heads.stalkShare, 'growth.heads.stalkShare', out);
+			if (heads.leanShare !== undefined && !(heads.leanShare >= 0 && heads.leanShare <= 3))
+				out.push(
+					`growth.heads.leanShare is ${heads.leanShare}; a share of a shoot's lean lies from 0 to 3`,
+				);
 			if (heads.kind === 'panicle' && !heads.panicle)
 				out.push("growth.heads is a 'panicle' and needs its panicle");
 			if (heads.kind === 'spike' && !heads.spikes)
@@ -691,6 +695,8 @@ function cuttingProblems(record: Species, out: string[]): void {
 		out.push(`cuttings.leaf.pressed lays a leaf flat, and the foliage is '${record.foliage.kind}'`);
 	if (leaf?.petiole !== undefined && !(leaf.petiole > 0))
 		out.push(`cuttings.leaf.petiole is ${leaf.petiole}; it is metres and must be above 0`);
+	if (leaf?.length !== undefined && !(leaf.length > 0))
+		out.push(`cuttings.leaf.length is ${leaf.length}; it is metres and must be above 0`);
 	const density = record.cuttings?.density;
 	if (density !== undefined && !(density >= 0.25 && density <= 8))
 		out.push(`cuttings.density is ${density}; it is a share from 0.25 to 8`);
@@ -712,6 +718,44 @@ function cuttingProblems(record: Species, out: string[]): void {
 				out.push(`cuttings.${part}.fanSpin is ${hint.fanSpin}; it is a share from 0 to 1`);
 			if (hint.fanYaw !== undefined && !Number.isFinite(hint.fanYaw))
 				out.push(`cuttings.${part}.fanYaw is ${hint.fanYaw}; it is degrees about the axis`);
+			if (
+				hint.layout !== undefined &&
+				hint.layout !== 'ring' &&
+				hint.layout !== 'spray' &&
+				hint.layout !== 'fan'
+			)
+				out.push(`cuttings.${part}.layout '${hint.layout}' is not 'ring', 'spray' or 'fan'`);
+			if (hint.spread !== undefined && !(hint.spread >= 0 && hint.spread <= 4))
+				out.push(`cuttings.${part}.spread is ${hint.spread}; it is a share from 0 to 4`);
+			if (hint.stem !== undefined && !names.has(hint.stem))
+				out.push(`cuttings.${part}.stem '${hint.stem}' names no class in shoots.classes`);
+			if (
+				hint.laterals !== undefined &&
+				!(Number.isInteger(hint.laterals) && hint.laterals >= 1 && hint.laterals <= 8)
+			)
+				out.push(`cuttings.${part}.laterals is ${hint.laterals}; it is a count from 1 to 8`);
+			if (hint.lateralFrom !== undefined && !(hint.lateralFrom >= 0 && hint.lateralFrom <= 1))
+				out.push(`cuttings.${part}.lateralFrom is ${hint.lateralFrom}; it is a share from 0 to 1`);
+			if (hint.lateralTo !== undefined && !(hint.lateralTo >= 0 && hint.lateralTo <= 1))
+				out.push(`cuttings.${part}.lateralTo is ${hint.lateralTo}; it is a share from 0 to 1`);
+			if (
+				hint.lateralFrom !== undefined &&
+				hint.lateralTo !== undefined &&
+				hint.lateralTo < hint.lateralFrom
+			)
+				out.push(
+					`cuttings.${part}.lateralTo is below lateralFrom; the laterals would stand upside down`,
+				);
+			if (hint.lateralAngle !== undefined && !(hint.lateralAngle >= -90 && hint.lateralAngle <= 90))
+				out.push(
+					`cuttings.${part}.lateralAngle is ${hint.lateralAngle}; it is degrees from -90 to 90`,
+				);
+			if (hint.lateralScale !== undefined && !(hint.lateralScale > 0 && hint.lateralScale <= 3))
+				out.push(
+					`cuttings.${part}.lateralScale is ${hint.lateralScale}; it is a multiple above 0 and at most 3`,
+				);
+			if (hint.stemPick !== undefined && !(Number.isInteger(hint.stemPick) && hint.stemPick >= 0))
+				out.push(`cuttings.${part}.stemPick is ${hint.stemPick}; it is a whole number from 0`);
 		} else {
 			if (hint.length <= 0)
 				out.push(`cuttings.${part}.length is ${hint.length}; it must be above 0`);
@@ -856,6 +900,8 @@ export function speciesProblems(record: Species): string[] {
 		out.push('lod.woodOrders keeps more orders at the second card level than at the first');
 	if (lod.cardStalk !== undefined && !(lod.cardStalk >= 0 && lod.cardStalk <= 8))
 		out.push(`lod.cardStalk is ${lod.cardStalk}; it is pixels from 0 to 8`);
+	if (lod.cardStrand !== undefined && !(lod.cardStrand >= 0 && lod.cardStrand <= 4))
+		out.push(`lod.cardStrand is ${lod.cardStrand}; it is texels from 0 to 4`);
 	const cardCell = lod.cardCell;
 	if (cardCell)
 		for (const detail of ['low', 'medium', 'high', 'ultra'] as const) {

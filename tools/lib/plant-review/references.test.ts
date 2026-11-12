@@ -16,6 +16,7 @@ import {
 	findHorizon,
 	greenLeaves,
 	matteMask,
+	matteOwnMask,
 	measurePlant,
 	type PlantMask,
 	pieceCount,
@@ -516,6 +517,36 @@ describe('the slots', () => {
 				query,
 			);
 		}
+		// A cutting's layout and its span read back, so a probe can fan one picture's piece.
+		const cutting = (query: Parameters<typeof plantReviewQuery>[0]) =>
+			readPlantReviewQuery(new URLSearchParams(plantReviewQuery(query)));
+		expect(cutting({ species: 'stub', view: 'branch', layout: 'fan', spread: 1.2 })).toMatchObject({
+			layout: 'fan',
+			spread: 1.2,
+		});
+		expect(() => cutting({ species: 'stub', view: 'branch', layout: 'fan' })).not.toThrow();
+		// A stem-and-laterals piece reads back its stem, its lateral count and its span.
+		expect(
+			cutting({
+				species: 'stub',
+				view: 'branch',
+				stem: 'cut',
+				laterals: 6,
+				lateralFrom: 0.4,
+				lateralTo: 0.9,
+				lateralAngle: 20,
+				lateralScale: 0.6,
+				stemPick: 1,
+			}),
+		).toMatchObject({
+			stem: 'cut',
+			laterals: 6,
+			lateralFrom: 0.4,
+			lateralTo: 0.9,
+			lateralAngle: 20,
+			lateralScale: 0.6,
+			stemPick: 1,
+		});
 		// A single-leaf still's pressed choice reads back either way, and is absent when not named.
 		const pressed = (value?: boolean) =>
 			readPlantReviewQuery(
@@ -989,6 +1020,25 @@ describe('the coverage matte', () => {
 		// partly covered texel closes the gap to the one the piece rule already bridges.
 		expect(pieceCount(mask, width, height, 24)).toBe(2);
 		expect(pieceCount(anyPlantMask(plant), width, height, 24)).toBe(1);
+	});
+
+	test("keeps a hairline join at the picture's width that the work width drops", () => {
+		// Two bodies, and one row of near-white between them: coverage the picture keeps and the
+		// half-size downscale rounds away. The gate reads the picture's own width, because a join it
+		// keeps is a real part of the plant.
+		const width = 1280;
+		const height = 64;
+		const image = blank(width, height, [255, 255, 255]);
+		for (let y = 10; y < 55; y++) {
+			for (let x = 100; x < 500; x++) put(image, x, y, [0, 0, 0]);
+			for (let x = 600; x < 1000; x++) put(image, x, y, [0, 0, 0]);
+		}
+		for (let x = 500; x < 600; x++) put(image, x, 32, [253, 253, 253]);
+		const own = matteOwnMask(image);
+		expect(pieceParts(own.mask, own.width, own.height, 24).length).toBe(1);
+		const work = matteMask(image);
+		expect(work.width).toBe(640);
+		expect(pieceParts(anyPlantMask(work), work.width, work.height, 24).length).toBe(2);
 	});
 
 	test('names a piece that meets nothing, and spares one the frame carries', () => {
