@@ -5,7 +5,7 @@
 //
 //   bun run plants:review <species> [--refs <folder or slug>] [--out <folder>] [--run <name>]
 //     [--views a,b | all] [--step <degrees>] [--wind-fps 8] [--cell <pixels>] [--only stills,turns,wind]
-//     [--stills 01,02,18] [--seed 11] [--variant 0] [--preset high] [--lod 0|1|2] [--gpu webgpu]
+//     [--stills 01,02,18] [--seed 11] [--variant 0] [--preset high] [--sparse 0..1] [--lod 0|1|2] [--gpu webgpu]
 //     [--no-matte] [--compare <run folder>]
 //
 // The species is any registered species id, or any other id, which draws as a stand-in. The dev
@@ -1130,6 +1130,8 @@ async function main(): Promise<void> {
 		seed: Number(option('seed', '11')),
 		variant: Number(option('variant', '0')),
 		preset: option('preset', 'high') as PlantReviewQuery['preset'],
+		// A view drawn at a named sparseness reads the sparse form as a page would draw it.
+		...(flag('sparse') && { sparse: Number(option('sparse')) }),
 		...(flag('lod') && { lod: Number(option('lod')) as PlantReviewQuery['lod'] }),
 	};
 	const matte = !flag('no-matte');
