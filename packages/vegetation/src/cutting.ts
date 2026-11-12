@@ -21,6 +21,7 @@ import {
 } from './core/graph';
 import {
 	acos,
+	asin,
 	cos,
 	cross3,
 	length3,
@@ -872,7 +873,7 @@ export function clusterRow(
 			// Every row leaves the same foot at its own angle across the leaf plane, so the fan opens
 			// as one joined piece; the turn then shows that plane to the camera. The half-angle is
 			// chosen so the tips stand the requested share of the height apart.
-			const half = Math.asin(Math.min(1, spread / 2));
+			const half = asin(Math.min(1, spread / 2));
 			const tilt = [0, 0, 0, 1];
 			quatAxisAngle(fanAxis, (along - 0.5) * 2 * half, tilt);
 			quatMultiply(tilt, 0, turnQ, 0, r);
