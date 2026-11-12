@@ -821,12 +821,6 @@
 		"date": "2026-11-10",
 		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head; this view completed at the machine's idlest moment and was compared before acceptance, and a CI drawing on a pull request replaces it"
 	},
-	"chromium-swiftshader/webgpu/demo-vegetation.png": {
-		"test": "demo-vegetation",
-		"tier": "webgpu",
-		"date": "2026-11-10",
-		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head; the drawing completed at a load of 5 and was compared against its reference before the landing session judged it, and a CI drawing on a pull request replaces it"
-	},
 	"chromium-swiftshader/webgpu/gltf-clearcoat-car-paint.png": {
 		"test": "gltf-clearcoat-car-paint",
 		"tier": "webgpu",
