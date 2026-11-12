@@ -55,6 +55,7 @@ const NO_ROWS: ShootRows = {
 	sky: new Uint8Array(0),
 	bent: new Uint8Array(0),
 	order: new Uint32Array(0),
+	axisOrder: new Uint8Array(0),
 };
 
 /** A straight run of nodes on an axis from `from`, `count` steps of `step`, its radius tapering. */

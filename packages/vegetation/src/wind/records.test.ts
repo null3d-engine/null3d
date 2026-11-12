@@ -22,6 +22,7 @@ function noRows(): ShootRows {
 		sky: new Uint8Array(0),
 		bent: new Uint8Array(0),
 		order: new Uint32Array(0),
+		axisOrder: new Uint8Array(0),
 	};
 }
 

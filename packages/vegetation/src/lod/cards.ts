@@ -55,7 +55,11 @@ export function cardMesh(input: MeshInput, level: 1 | 2): MeshArrays {
 	const base = input.variant * VARIANT_RECORDS;
 	const local: Vector3 = [0, 0, 0];
 	const world: Vector3 = [0, 0, 0];
+	// A card level draws the wood of the orders the record keeps there. A row on a finer axis has
+	// no twig to join at that level, so it is dropped rather than drawn standing free.
+	const drawnOrder = input.record.lod.woodOrders[level - 1] ?? 255;
 	for (let r = 0; r < rows.count; r++) {
+		if ((rows.axisOrder[r] as number) > drawnOrder) continue;
 		const grow = cardKeep(rows.order[r] as number, level);
 		if (grow === 0) continue;
 		const prototype = kit.prototypes[rows.prototype[r] as number];

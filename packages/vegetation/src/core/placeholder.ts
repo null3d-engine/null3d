@@ -605,6 +605,7 @@ export function emptyRows(): ShootRows {
 		phase: new Uint8Array(0),
 		sky: new Uint8Array(0),
 		bent: new Uint8Array(0),
+		axisOrder: new Uint8Array(0),
 		order: new Uint32Array(0),
 	};
 }
@@ -625,6 +626,7 @@ export function placeholderRows(input: DressInput): ShootRows {
 		phase: new Uint8Array(count),
 		sky: new Uint8Array(count),
 		bent: new Uint8Array(count),
+		axisOrder: new Uint8Array(count),
 		order: new Uint32Array(count),
 	};
 	const scale = record.shoots?.placement.scale ?? 1;

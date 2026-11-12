@@ -316,7 +316,7 @@ export function dressShoots(input: DressInput): DressedShoots {
 function finishedRows(input: DressInput, rows: Row[], skeleton: MacroSkeleton): ShootRows {
 	const coarse = (input.coarseness ?? 0) > 0;
 	const kept = coarse ? thinned(rows, skeleton.bounds, rowThinning(input.coarseness ?? 0)) : rows;
-	return packRows(kept, skeleton.bounds);
+	return packRows(kept, skeleton.bounds, skeleton.axes.order);
 }
 
 /**
@@ -331,7 +331,7 @@ export function pruneLight(input: DressInput): CrownLight | undefined {
 	if (!((input.record.shoots?.placement.skyPrune ?? 0) > 0)) return undefined;
 	const rows = placedRows(input, false);
 	if (rows.length === 0) return undefined;
-	return lightCrown(input, packRows(rows, input.skeleton.bounds));
+	return lightCrown(input, packRows(rows, input.skeleton.bounds, input.skeleton.axes.order));
 }
 
 /**
@@ -341,7 +341,7 @@ export function pruneLight(input: DressInput): CrownLight | undefined {
  */
 function skyPruned(input: DressInput, rows: Row[], line: number): Row[] {
 	if (!(line > 0) || rows.length === 0) return rows;
-	const packed = packRows(rows, input.skeleton.bounds);
+	const packed = packRows(rows, input.skeleton.bounds, input.skeleton.axes.order);
 	const light = input.pruneLight;
 	if (!light) lightCrown(input, packed);
 	const prototypes = input.kit.prototypes;
@@ -683,7 +683,11 @@ function spaceRanks(rows: readonly Row[], bounds: DressInput['skeleton']['bounds
 }
 
 /** The rows as the table's typed arrays, with their space-filling order. */
-function packRows(rows: readonly Row[], bounds: DressInput['skeleton']['bounds']): ShootRows {
+function packRows(
+	rows: readonly Row[],
+	bounds: DressInput['skeleton']['bounds'],
+	axisOrder: Uint8Array,
+): ShootRows {
 	const count = rows.length;
 	const out = {
 		count,
@@ -696,6 +700,7 @@ function packRows(rows: readonly Row[], bounds: DressInput['skeleton']['bounds']
 		sky: new Uint8Array(count).fill(OPEN_SKY),
 		bent: new Uint8Array(count).fill(BENT_UP),
 		order: new Uint32Array(count),
+		axisOrder: new Uint8Array(count),
 		back: new Float32Array(count * 3),
 	};
 	rows.forEach((row, r) => {
@@ -705,6 +710,7 @@ function packRows(rows: readonly Row[], bounds: DressInput['skeleton']['bounds']
 		out.scale[r] = row.scale;
 		out.record[r] = row.record;
 		out.phase[r] = row.phase;
+		out.axisOrder[r] = axisOrder[row.axis] ?? 0;
 		out.back.set(row.back, r * 3);
 	});
 	const ranked = spaceRanks(rows, bounds);

@@ -195,9 +195,17 @@ describe('the card levels', () => {
 		detail: 'high' as const,
 	};
 
-	it("draws each row's three planes at the first level", () => {
+	/** Whether the level draws a row: its axis's order is within the level's drawn wood, and the
+	 * level's thinning keeps it. */
+	const drawnKeep = (level: 1 | 2, r: number): boolean =>
+		(rows.axisOrder[r] as number) <= (record.lod.woodOrders[level - 1] as number) &&
+		cardKeep(rows.order[r] as number, level) > 0;
+	const keptRows = (level: 1 | 2): number =>
+		Array.from({ length: rows.count }, (_, r) => r).filter((r) => drawnKeep(level, r)).length;
+
+	it("draws each kept row's three planes at the first level", () => {
 		const first = cardMesh(mesh, 1);
-		expect(first.indices.length / 3).toBe(rows.count * 6);
+		expect(first.indices.length / 3).toBe(keptRows(1) * 6);
 		for (let i = 0; i < first.uvs.length; i++) {
 			expect(first.uvs[i]).toBeGreaterThanOrEqual(0);
 			expect(first.uvs[i]).toBeLessThanOrEqual(1);
@@ -206,13 +214,14 @@ describe('the card levels', () => {
 
 	it("draws each card's stalk only where the record gives a least width", () => {
 		const plain = cardMesh(mesh, 1);
-		expect(plain.indices.length / 3).toBe(rows.count * 6);
+		expect(plain.indices.length / 3).toBe(keptRows(1) * 6);
 		const stalked = cardMesh(
 			{ ...mesh, record: { ...record, lod: { ...record.lod, cardStalk: 1 } } },
 			1,
 		);
 		let stretched = 0;
 		for (let r = 0; r < rows.count; r++) {
+			if (!drawnKeep(1, r)) continue;
 			const bx = (rows.back?.[r * 3] as number) ?? 0;
 			const by = (rows.back?.[r * 3 + 1] as number) ?? 0;
 			const bz = (rows.back?.[r * 3 + 2] as number) ?? 0;
@@ -220,7 +229,7 @@ describe('the card levels', () => {
 		}
 		expect(stretched).toBeGreaterThan(0);
 		// Each stalk is one quad from either side, so it shows whichever way the view turns it.
-		expect(stalked.indices.length / 3).toBe(rows.count * 6 + stretched * 4);
+		expect(stalked.indices.length / 3).toBe(keptRows(1) * 6 + stretched * 4);
 		let stalks = 0;
 		for (let v = 0; v < stalked.uvs1.length / 2; v++) {
 			if (Math.abs((stalked.uvs1[v * 2 + 1] as number) - 0.75) >= 1e-6) continue;
@@ -251,7 +260,7 @@ describe('the card levels', () => {
 			for (let c = 0; c < 3; c++) expect(actual[c] as number).toBeCloseTo(expected[c] as number, 5);
 		};
 		for (let r = 0; r < rows.count; r++) {
-			if (cardKeep(rows.order[r] as number, 1) === 0) continue;
+			if (!drawnKeep(1, r)) continue;
 			const prototype = kit.prototypes[rows.prototype[r] as number];
 			if (!prototype) continue;
 			const planes = prototype.card.planes.length;
@@ -299,10 +308,27 @@ describe('the card levels', () => {
 		expect(reached).toBeGreaterThan(0);
 	});
 
+	it('drops a card whose axis the level does not draw, and keeps one it does', () => {
+		const [first, second] = record.lod.woodOrders;
+		const axisOrder = new Uint8Array(rows.count);
+		axisOrder.fill(first + 1);
+		expect(cardMesh({ ...mesh, rows: { ...rows, axisOrder } }, 1).indices.length).toBe(0);
+		axisOrder.fill(first);
+		expect(cardMesh({ ...mesh, rows: { ...rows, axisOrder } }, 1).indices.length / 3).toBe(
+			rows.count * 6,
+		);
+		axisOrder.fill(second + 1);
+		expect(cardMesh({ ...mesh, rows: { ...rows, axisOrder } }, 2).indices.length).toBe(0);
+		axisOrder.fill(second);
+		const kept = Array.from(rows.order).filter((order) => order % 2 === 0).length;
+		expect(cardMesh({ ...mesh, rows: { ...rows, axisOrder } }, 2).indices.length / 3).toBe(
+			kept * 6,
+		);
+	});
+
 	it('keeps every second card in the thinned level, each grown by the square root of two', () => {
 		const second = cardMesh(mesh, 2);
-		const kept = Array.from(rows.order).filter((order) => order % 2 === 0).length;
-		expect(second.indices.length / 3).toBe(kept * 6);
+		expect(second.indices.length / 3).toBe(keptRows(2) * 6);
 		expect(cardKeep(4, 2)).toBeCloseTo(Math.SQRT2, 12);
 		expect(cardKeep(3, 2)).toBe(0);
 		expect(cardKeep(3, 1)).toBe(1);

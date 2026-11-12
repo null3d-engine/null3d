@@ -751,6 +751,7 @@ export function clusterRow(
 			phase: new Uint8Array(1),
 			sky: new Uint8Array([250]),
 			bent: new Uint8Array([0x88]),
+			axisOrder: new Uint8Array([0]),
 			order: new Uint32Array(1),
 		},
 		bounds: {

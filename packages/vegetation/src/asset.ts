@@ -133,6 +133,11 @@ export interface ShootRows {
 	/** Space-filling order, which the second card level thins by. */
 	readonly order: Uint32Array;
 	/**
+	 * The order of the axis each row stands on. A card level draws the wood only of the orders the
+	 * record keeps at that level, so a row on a finer axis has no parent to join and is dropped.
+	 */
+	readonly axisOrder: Uint8Array;
+	/**
 	 * 3 per row: the vector from the row's place back along its axis to the stretch's far end, the
 	 * previous bud or the parent node. Absent, a card draws no stalk.
 	 */

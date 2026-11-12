@@ -30,6 +30,7 @@ function rowsAt(points: readonly (readonly [number, number, number])[]): ShootRo
 		sky: new Uint8Array(count),
 		bent: new Uint8Array(count),
 		order: new Uint32Array(count),
+		axisOrder: new Uint8Array(count),
 	};
 }
 
