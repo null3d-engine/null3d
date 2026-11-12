@@ -301,6 +301,8 @@ jobs:
       keys: ${{ steps.passes.outputs.keys }}
       passed: ${{ steps.passes.outputs.passed }}
       modules: ${{ steps.passes.outputs.modules }}
+      # The hash of the files that every Rust part reads, which the parts' build cache keys on.
+      rust-workspace: ${{ steps.hashes.outputs.rust-workspace }}
     env:
       HUSKY: "0"
     steps:
@@ -429,11 +431,26 @@ jobs:
         run: rustup toolchain install
       - uses: ./.github/actions/optimized-shader-crates
         if: steps.passed.outputs.cache-hit != 'true'
+      # The registry and the downloaded crates, which a commit's changes do not touch. The built
+      # test binaries are the part's own cache below, keyed on the workspace hash.
       - uses: Swatinem/rust-cache@v2
         if: steps.passed.outputs.cache-hit != 'true'
         with:
           key: ${{ hashFiles('Cargo.toml') }}-${{ matrix.id }}
           save-if: ${{ env.SAVE_CACHES == 'true' }}
+          cache-targets: false
+      - name: Restore the built test binaries
+        if: steps.passed.outputs.cache-hit != 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: target
+          # A part's build is keyed on the workspace hash, so this commit's tree is saved under its
+          # own key. A changed hash restores the part's nearest older tree instead of nothing, and
+          # cargo then rebuilds only the crates that this commit changed.
+          key: rust-test-target-${{ needs.passes.outputs.rust-workspace }}-${{ matrix.id }}
+          restore-keys: |
+            rust-test-target-${{ needs.passes.outputs.rust-workspace }}-
+            rust-test-target-
       - uses: taiki-e/install-action@v2
         if: steps.passed.outputs.cache-hit != 'true'
         with:
@@ -443,6 +460,12 @@ jobs:
       # nextest runs no documentation tests. One job splits the tests, so the doc tests run in it.
       - if: matrix.id == 'ci-1' && steps.passed.outputs.cache-hit != 'true'
         run: cargo test --workspace --doc --no-fail-fast
+      - name: Save the built test binaries
+        if: steps.passed.outputs.cache-hit != 'true' && env.SAVE_CACHES == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: target
+          key: rust-test-target-${{ needs.passes.outputs.rust-workspace }}-${{ matrix.id }}
       - name: Record this part's pass of these inputs
         if: steps.passed.outputs.cache-hit != 'true'
         run: |
