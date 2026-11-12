@@ -97,6 +97,7 @@ export function coarsenSkeleton(skeleton: MacroSkeleton, coarseness: number): Ma
  * @param axes The axis of each row's bud, which keeps the row's wind record.
  * @param limit The thickest radius trimmed, in metres.
  * @param crownBase The height the trimmed skeleton's crown stands on, in metres.
+ * @param full Whether every branch end is cut at its last shoot, whatever the wood's girth there.
  * @returns The trimmed skeleton and each axis's index in it, -1 for an axis that went; undefined
  *   when no wood goes.
  */
@@ -106,6 +107,7 @@ export function bareTrimmed(
 	axes: readonly number[],
 	limit: number,
 	crownBase: number,
+	full = false,
 ): { skeleton: MacroSkeleton; axisOut: Int32Array } | undefined {
 	const { axisOf, radius, flags } = skeleton;
 	const table = skeleton.axes;
@@ -125,10 +127,15 @@ export function bareTrimmed(
 		let keep = keepTo[a] as number;
 		if (parent < 0 || ((flags[first] as number) & NODE_STUB) !== 0) keep = last;
 		else {
-			// The radius falls along an axis, so its thick wood is a run from its base.
-			let thick = first - 1;
-			while (thick < last && (radius[thick + 1] as number) > limit) thick++;
-			keep = Math.max(keep, thick);
+			if (full) {
+				// The branch ends at its last shoot, whatever the wood's girth there, so no end stands bare.
+				keep = keepTo[a] as number;
+			} else {
+				// The radius falls along an axis, so its thick wood is a run from its base.
+				let thick = first - 1;
+				while (thick < last && (radius[thick + 1] as number) > limit) thick++;
+				keep = Math.max(keep, thick);
+			}
 			if (keep < first) keep = -1;
 		}
 		if (keep !== last) trimmed = true;

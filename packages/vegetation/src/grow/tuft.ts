@@ -716,9 +716,9 @@ function levelOf(detail: Detail, level: MeshLevel): TuftLevel {
  */
 export function meshTuft(input: MeshInput, level: MeshLevel): MeshArrays {
 	const { blade, growth } = tuftOf(input.record);
-	// A species that gives its sheath columns a colour reserves the flutter byte's top bit for the
-	// sheath mark, so every other foliage axis keeps its phase in the low seven bits. A species
-	// without the colour leaves every byte as it was.
+	// A species that gives its sheath columns a colour reserves a marked byte value for them, so
+	// every other foliage axis keeps its phase in the low seven bits. A species without the colour
+	// leaves every byte as it was.
 	const sheathed = growth.sheathColour !== undefined;
 	const { skeleton, crown, kit } = input;
 	const axes = skeleton.axes;

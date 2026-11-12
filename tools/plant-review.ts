@@ -1129,7 +1129,7 @@ async function main(): Promise<void> {
 		set,
 		windFps,
 		await moundFormOf(manifest.species),
-		sheathTargetOfSpecies(manifest.species),
+		sheath,
 	);
 	console.log(readFileSync(join(dir, 'summary.md'), 'utf8'));
 	if (failed > 0 || !complete) process.exitCode = 1;

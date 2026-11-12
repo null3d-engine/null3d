@@ -200,7 +200,11 @@ describe('the tuft sheath marker', () => {
 		...meadowGrassRecord,
 		growth: {
 			...growth,
-			sheathColour: { foot: [0.366, 0.38, 0.309], collar: [0.366, 0.38, 0.309], reach: 0.85 },
+			sheathColour: {
+				foot: [0.366, 0.38, 0.309],
+				collar: [0.366, 0.38, 0.309],
+				reach: 0.85,
+			},
 		},
 	};
 	const grow = (record: Species) => {
@@ -236,10 +240,13 @@ describe('the tuft sheath marker', () => {
 			for (let i = 0; i < one.length; i += 4) {
 				// The wind record and the sky visibility are the same plant's.
 				expect([one[i], one[i + 1], one[i + 3]]).toEqual([other[i], other[i + 1], other[i + 3]]);
-				// A sheath column takes the material's own marker; every other run keeps its
-				// phase in the seven low bits.
-				if ((one[i + 2] as number) === SHEATH_KIND) sheathVertices++;
-				else expect(one[i + 2]).toBe((other[i + 2] as number) >> 1);
+				// The phase keeps its seven low bits, and only the sheath's own byte takes the mark.
+				const byte = one[i + 2] as number;
+				if (byte === SHEATH_KIND) {
+					sheathVertices++;
+				} else {
+					expect(byte).toBe((other[i + 2] as number) >> 1);
+				}
 				vertices++;
 			}
 		}

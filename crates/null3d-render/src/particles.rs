@@ -27,10 +27,19 @@
 //!
 //! The sorted pass draws a system's object with one draw of six vertices for each record it reads,
 //! from the system's own vertex buffer of records. Its bind groups are the view's frame group, the
-//! system's group of its values and of a block for each view, the view's group of its depth copy for
-//! soft particles, and the map's group of the material's maps, a flipbook among them. Each view's
-//! block holds the object's world matrix moved by its cell's offset from that view's camera, so
-//! particles keep their precision far from the world's origin as objects do.
+//! system's group of its values, of a block for each view and of its wind field, the view's group
+//! of its depth copy for soft particles, and the map's group of the material's maps, a flipbook
+//! among them. Each view's block holds the object's world matrix moved by its cell's offset from
+//! that view's camera, so particles keep their precision far from the world's origin as objects do.
+//!
+//! # Wind
+//!
+//! A system may name a field of air, as the wind add-on's field is. The sketch writes the field's
+//! texture, box and steady settings among the system's values each frame, and the vertex shader
+//! samples the field once for each particle. The field's air replaces the fixed wind: the flight
+//! runs in still air, and the air where the particle passes adds its own displacement and velocity.
+//! A system without a field binds one texel and takes no read. The events' closed form samples the
+//! analytic field instead of the grid, as a reader does on a device that keeps no grid.
 //!
 //! # Soft particles
 //!
@@ -48,8 +57,8 @@ use null3d_core::scene::SceneStorage;
 use null3d_core::world::MATRIX_FLOATS;
 use null3d_gpu::caps::OFFSET_ALIGNMENT;
 use null3d_gpu::drawlist::{
-    DrawList, Op, buffer_usage as usage, format, layout as bind_layout, resource_kind, state_flags,
-    template, texture_usage, view as view_dimension,
+    DrawList, Op, address, buffer_usage as usage, compare, filter, format, layout as bind_layout,
+    resource_kind, state_flags, template, texture_usage, view as view_dimension,
 };
 
 use crate::frame::{RecordError, SceneSettings, UploadArena};
@@ -65,11 +74,14 @@ pub const RECORD_WORDS: usize = (RECORD_BYTES / 4) as usize;
 /// the birth time, the velocity, the lifetime and the seed.
 pub const BIRTH_FLOATS: usize = 9;
 /// Floats of a system's values, which its shader reads as a uniform block.
-pub const PARAM_FLOATS: usize = 128;
+pub const PARAM_FLOATS: usize = 152;
 /// Floats that the sketch writes in every frame, after the values: the system's time in seconds,
 /// the number of records the draw reads, the first record whose birth time still counts from the
-/// old time base, and the seconds that the shader takes off such birth times.
-pub const FRAME_FLOATS: usize = 4;
+/// old time base, the seconds that the shader takes off such birth times, and the number of the
+/// system's wind texture, 0 for none, which only the engine reads.
+pub const FRAME_FLOATS: usize = 5;
+/// The place of the wind texture's number among the frame's values.
+const FRAME_WIND_TEXTURE: usize = 4;
 /// Bytes of a view's block of a system, at an aligned place for its dynamic offset.
 pub const VIEW_BLOCK_BYTES: u32 = OFFSET_ALIGNMENT;
 /// Bytes of a view's block that a frame writes: the object's three matrix rows, then the clock.
@@ -95,7 +107,7 @@ pub const EMITTER_HEADER_FLOATS: usize = 88;
 /// Floats of one burst's or one sub-emitter's row.
 pub const EMITTER_ROW_FLOATS: usize = 4;
 /// Floats of the emitter's fixed settings, after the rows.
-pub const EMITTER_FIXED_FLOATS: usize = 48;
+pub const EMITTER_FIXED_FLOATS: usize = 72;
 /// Floats of one sub-emitter's inverse world matrix.
 pub const EMITTER_SUB_MATRIX_FLOATS: usize = 16;
 /// The births per second of the frame.
@@ -148,6 +160,16 @@ const F_DURATION: usize = 26;
 const F_LOOP: usize = 27;
 const F_FOLLOW: usize = 28;
 const F_MOTION: usize = 29;
+/// The field's numbers in the emitter's fixed settings: the sketch time, the box's near corner in
+/// world meters and its width, 1 for a system with a field, then the air's four vectors. The events'
+/// analytic field needs the time and the air; the box is kept beside them for the sketch.
+const F_WIND: usize = 48;
+const E_WIND_TIME: usize = 0;
+const E_WIND_STRENGTH: usize = 4;
+const E_WIND_BASE: usize = 5;
+const E_WIND_GUST: usize = 9;
+const E_WIND_SWIRL: usize = 13;
+const E_WIND_SENT: usize = 17;
 /// The shape codes that the sketch writes.
 const SHAPE_SPHERE: u32 = 1;
 const SHAPE_CONE: u32 = 2;
@@ -236,6 +258,16 @@ impl ParticleSystem {
     /// The system's time in seconds, which the sketch writes in each frame.
     fn time(&self) -> f32 {
         self.values[PARAM_FLOATS]
+    }
+
+    /// The number of the wind field's texture that the sketch wrote, or 0 for a system without one.
+    fn wind_texture(&self) -> u32 {
+        let value = self.values[PARAM_FLOATS + FRAME_WIND_TEXTURE];
+        if value.is_finite() && value > 0.0 {
+            value as u32
+        } else {
+            0
+        }
     }
 
     /// The rebase, which the sketch writes in each frame: the first record whose birth time still
@@ -535,9 +567,24 @@ impl ParticleTable {
             let mut state = ParticleState::default();
             state_at(&motion, &input, &mut state);
             // From this system's space to the world, then into the sub-emitter's space.
-            let px = world[0] * state.px + world[4] * state.py + world[8] * state.pz + world[12];
-            let py = world[1] * state.px + world[5] * state.py + world[9] * state.pz + world[13];
-            let pz = world[2] * state.px + world[6] * state.py + world[10] * state.pz + world[14];
+            let mut px =
+                world[0] * state.px + world[4] * state.py + world[8] * state.pz + world[12];
+            let mut py =
+                world[1] * state.px + world[5] * state.py + world[9] * state.pz + world[13];
+            let mut pz =
+                world[2] * state.px + world[6] * state.py + world[10] * state.pz + world[14];
+            let (mut vx, mut vy, mut vz) = (state.vx, state.vy, state.vz);
+            // The air where the particle ends pushes it as it pushes the drawn particle.
+            if motion.wind.strength > 0.0 {
+                let air = wind_steady(&motion.wind, [px, WIND_FULL_HEIGHT, pz]);
+                let (shift, gained) = wind_shift(air, motion.drag, input[PARTICLE_AGE]);
+                px += shift[0];
+                py += shift[1];
+                pz += shift[2];
+                vx += gained[0];
+                vy += gained[1];
+                vz += gained[2];
+            }
             let place = [
                 local[12] + local[0] * px + local[4] * py + local[8] * pz,
                 local[13] + local[1] * px + local[5] * py + local[9] * pz,
@@ -547,7 +594,7 @@ impl ParticleTable {
             let velocity = if inherit == 0.0 {
                 None
             } else {
-                Some([state.vx * inherit, state.vy * inherit, state.vz * inherit])
+                Some([vx * inherit, vy * inherit, vz * inherit])
             };
             self.burst_with(sub.system, sub.count, Some(place), velocity);
             // The last event takes the fired one's place, and the walk looks at this place again.
@@ -724,6 +771,21 @@ struct Motion {
     ground_mode: u32,
     restitution: f64,
     friction: f64,
+    /// The field of air that the particles sample, or a field of no strength.
+    wind: WindField,
+}
+
+/// The field that a system samples: the sketch time, 1 for a system with a field, and the steady
+/// settings that a reader works out beyond the box. The events' closed form samples this field
+/// where a particle ends.
+#[derive(Clone, Copy, Debug, Default)]
+struct WindField {
+    time: f64,
+    strength: f64,
+    base: [f64; 4],
+    gust: [f64; 4],
+    swirl: [f64; 4],
+    sent: [f64; 4],
 }
 
 /// A particle's place and velocity at an event.
@@ -1018,14 +1080,25 @@ impl Emitter {
     /// The motion numbers of the block, as f64, for the events' closed form.
     fn motion(&self) -> Motion {
         let f = self.fixed + F_MOTION;
+        let w = self.fixed + F_WIND;
+        let wind = WindField {
+            time: self.block[w + E_WIND_TIME],
+            strength: self.block[w + E_WIND_STRENGTH],
+            base: std::array::from_fn(|k| self.block[w + E_WIND_BASE + k]),
+            gust: std::array::from_fn(|k| self.block[w + E_WIND_GUST + k]),
+            swirl: std::array::from_fn(|k| self.block[w + E_WIND_SWIRL + k]),
+            sent: std::array::from_fn(|k| self.block[w + E_WIND_SENT + k]),
+        };
+        // The field's air replaces the fixed wind, as the shader's flight does.
+        let held = wind.strength > 0.0;
         Motion {
             gx: self.block[f],
             gy: self.block[f + 1],
             gz: self.block[f + 2],
             drag: self.block[f + 3],
-            wx: self.block[f + 4],
-            wy: self.block[f + 5],
-            wz: self.block[f + 6],
+            wx: if held { 0.0 } else { self.block[f + 4] },
+            wy: if held { 0.0 } else { self.block[f + 5] },
+            wz: if held { 0.0 } else { self.block[f + 6] },
             turbulence: self.block[f + 7],
             turbulence_scale: self.block[f + 8],
             turbulence_speed: self.block[f + 9],
@@ -1033,6 +1106,7 @@ impl Emitter {
             ground_mode: self.block[f + 11] as u32,
             restitution: self.block[f + 12],
             friction: self.block[f + 13],
+            wind,
         }
     }
 
@@ -1577,6 +1651,183 @@ fn place_followed(record: &mut [f64; 8], follow: &Follow, share: f64) {
     }
 }
 
+/// The height over which the air slows to the ground, in meters.
+const WIND_GROUND_HEIGHT: f64 = 2.0;
+/// The distance over which the noise's curl is measured, in noise cells.
+const WIND_CURL_STEP: f64 = 0.02;
+/// How long a gust that a page sends keeps its strength, in seconds.
+const WIND_SENT_LIFE: f64 = 8.0;
+/// The height that the grid samples at, where the air moves at its full speed.
+const WIND_FULL_HEIGHT: f64 = 100.0;
+
+/// The first value of the engine's `pcg3d` hash as a signed whole number, which value noise reads.
+fn wind_lattice(x: i32, y: i32, z: i32) -> i32 {
+    let mut px = x.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+    let mut py = y.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+    let mut pz = z.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+    px = px.wrapping_add(py.wrapping_mul(pz));
+    py = py.wrapping_add(pz.wrapping_mul(px));
+    pz = pz.wrapping_add(px.wrapping_mul(py));
+    px ^= (px as u32 >> 16) as i32;
+    py ^= (py as u32 >> 16) as i32;
+    pz ^= (pz as u32 >> 16) as i32;
+    px = px.wrapping_add(py.wrapping_mul(pz));
+    px
+}
+
+/// A number from 0 up to 1 made from the top 24 bits of a hash.
+fn wind_unit(hash: i32) -> f64 {
+    ((hash as u32 >> 8) as f64) / 16_777_216.0
+}
+
+/// Perlin's fade curve, flat at both ends.
+fn wind_fade(t: f64) -> f64 {
+    t * t * t * (t * (t * 6.0 - 15.0) + 10.0)
+}
+
+/// A blend of two numbers.
+fn wind_blend(a: f64, b: f64, t: f64) -> f64 {
+    a + (b - a) * t
+}
+
+/// A value noise corner's number, from 0 up to 1.
+fn wind_corner(x: i32, y: i32, z: i32) -> f64 {
+    wind_unit(wind_lattice(x, y, z))
+}
+
+/// The engine library's value noise in 3D, from 0 to 1.
+fn wind_value3(px: f64, py: f64, pz: f64) -> f64 {
+    let fx = px.floor();
+    let fy = py.floor();
+    let fz = pz.floor();
+    let u = wind_fade(px - fx);
+    let v = wind_fade(py - fy);
+    let w = wind_fade(pz - fz);
+    let (ix, iy, iz) = (fx as i32, fy as i32, fz as i32);
+    wind_blend(
+        wind_blend(
+            wind_blend(wind_corner(ix, iy, iz), wind_corner(ix + 1, iy, iz), u),
+            wind_blend(
+                wind_corner(ix, iy + 1, iz),
+                wind_corner(ix + 1, iy + 1, iz),
+                u,
+            ),
+            v,
+        ),
+        wind_blend(
+            wind_blend(
+                wind_corner(ix, iy, iz + 1),
+                wind_corner(ix + 1, iy, iz + 1),
+                u,
+            ),
+            wind_blend(
+                wind_corner(ix, iy + 1, iz + 1),
+                wind_corner(ix + 1, iy + 1, iz + 1),
+                u,
+            ),
+            v,
+        ),
+        w,
+    )
+}
+
+/// The height's factor of the wind: one at the top, and one less the ground's share at the ground.
+fn wind_profile(wind: &WindField, y: f64) -> f64 {
+    1.0 - wind.base[2] * (-(y.max(0.0)) / WIND_GROUND_HEIGHT).exp()
+}
+
+/// The stream function of the swirl, in noise cells, at a place and a time.
+fn wind_stream(wind: &WindField, p: [f64; 3]) -> f64 {
+    let drift = wind.swirl[2] * wind.time;
+    wind_value3(
+        p[0] * wind.swirl[1] + drift + wind.base[3],
+        p[1] * wind.swirl[1],
+        p[2] * wind.swirl[1] + drift * 0.5,
+    )
+}
+
+/// The turn that one gust gives the air at a place, in meters a second.
+fn wind_gust_wave(
+    wind: &WindField,
+    center: [f64; 2],
+    strength: f64,
+    p: [f64; 3],
+    height: f64,
+) -> [f64; 3] {
+    let g = [p[0] - center[0], p[2] - center[1]];
+    let distance = (g[0] * g[0] + g[1] * g[1]).sqrt() / wind.gust[1];
+    let reach = distance * distance;
+    if reach >= 9.0 {
+        return [0.0; 3];
+    }
+    let envelope = (-reach).exp() * (distance * wind.gust[2]).cos() * strength * height;
+    [
+        (g[1] / wind.gust[1]) * envelope,
+        0.0,
+        -(g[0] / wind.gust[1]) * envelope,
+    ]
+}
+
+/// The wind's steady velocity at a world place, in meters a second: the base wind, the gust that
+/// travels through it, the swirl, and the gust that a page sent. It matches the shaders' sampling
+/// beyond the grid, so the events land where the picture shows the particle.
+fn wind_steady(wind: &WindField, p: [f64; 3]) -> [f64; 3] {
+    let height = wind_profile(wind, p[1]);
+    let cos = wind.base[1].cos();
+    let sin = wind.base[1].sin();
+    let mut v = [
+        cos * wind.base[0] * height,
+        0.0,
+        sin * wind.base[0] * height,
+    ];
+
+    let travel = wind.gust[3] * wind.time;
+    let wave = wind_gust_wave(wind, [cos * travel, sin * travel], wind.gust[0], p, height);
+    v[0] += wave[0];
+    v[2] += wave[2];
+
+    if wind.sent[2] != 0.0 {
+        let age = wind.time - wind.sent[3];
+        if (0.0..WIND_SENT_LIFE).contains(&age) {
+            let sent = [
+                wind.sent[0] + cos * wind.gust[3] * age,
+                wind.sent[1] + sin * wind.gust[3] * age,
+            ];
+            let wane = 1.0 - age / WIND_SENT_LIFE;
+            let wave = wind_gust_wave(wind, sent, wind.sent[2] * wane, p, height);
+            v[0] += wave[0];
+            v[2] += wave[2];
+        }
+    }
+
+    // The swirl: the curl of one stream function in the ground plane.
+    let step = WIND_CURL_STEP / wind.swirl[1];
+    let front = wind_stream(wind, [p[0], p[1], p[2] + step]);
+    let back = wind_stream(wind, [p[0], p[1], p[2] - step]);
+    let right = wind_stream(wind, [p[0] + step, p[1], p[2]]);
+    let left = wind_stream(wind, [p[0] - step, p[1], p[2]]);
+    let scale = wind.swirl[0] * height / (2.0 * step);
+    v[0] += (front - back) * scale;
+    v[2] -= (right - left) * scale;
+    v
+}
+
+/// The share of the air's velocity that carries a particle `t` seconds into its flight under drag
+/// `k`, and the share that its velocity gains. They match the shader's closed-form difference, so
+/// the events' place matches the particle that the picture draws.
+fn wind_shift(w: [f64; 3], k: f64, t: f64) -> ([f64; 3], [f64; 3]) {
+    let (reach, gained) = if k < LITTLE_DRAG {
+        (t, 1.0)
+    } else {
+        let decay = (-k * t).exp();
+        (t - (1.0 - decay) / k, 1.0 - decay)
+    };
+    (
+        [w[0] * reach, w[1] * reach, w[2] * reach],
+        [w[0] * gained, w[1] * gained, w[2] * gained],
+    )
+}
+
 /// Where a flight that `io` describes ends after its time, written into `io`.
 fn flight(motion: &Motion, io: &mut [f64; FLIGHT_FLOATS]) {
     let t = io[FLIGHT_T];
@@ -1829,6 +2080,10 @@ pub(crate) struct ParticleIds {
     pub depth_groups: u32,
     /// The texture that stands in for a view's depth copy: one texel at the far plane.
     pub blank_depth: u32,
+    /// The texture that stands in for a wind field: one texel that a system without a field binds.
+    pub blank_wind: u32,
+    /// The sampler of that texel.
+    pub blank_wind_sampler: u32,
 }
 
 impl ParticleIds {
@@ -1869,6 +2124,8 @@ struct Made {
     values: bool,
     /// The frame's draw: the records it reads and the map's layer, or none.
     drawn: u32,
+    /// The array and sampler of the system's wind field, or of the blank texel.
+    wind_pair: (u32, u32),
 }
 
 /// A builder's GPU objects of the particle systems, and each system's draw in the frame.
@@ -1882,6 +2139,8 @@ pub(crate) struct ParticlePass {
     camera_depth: u32,
     /// True once the blank depth texture exists.
     blank: bool,
+    /// True once the blank wind texture and its bind group exist.
+    blank_wind: bool,
 }
 
 impl ParticlePass {
@@ -1892,6 +2151,7 @@ impl ParticlePass {
             depth_views: 0,
             camera_depth: 0,
             blank: false,
+            blank_wind: false,
         }
     }
 
@@ -1951,6 +2211,40 @@ impl ParticlePass {
             )?;
             self.blank = true;
         }
+        // A system without a wind field binds one texel, which its shader never reads.
+        if !self.blank_wind && !table.is_empty() {
+            list.push(
+                Op::CreateTexture,
+                &[
+                    self.ids.blank_wind,
+                    1,
+                    1,
+                    1,
+                    format::RGBA16_FLOAT,
+                    texture_usage::TEXTURE_BINDING,
+                    1,
+                    1,
+                    view_dimension::D2_ARRAY,
+                ],
+            )?;
+            list.push(
+                Op::CreateSampler,
+                &[
+                    self.ids.blank_wind_sampler,
+                    address::CLAMP_TO_EDGE,
+                    address::CLAMP_TO_EDGE,
+                    address::CLAMP_TO_EDGE,
+                    filter::LINEAR,
+                    filter::LINEAR,
+                    filter::NEAREST,
+                    0f32.to_bits(),
+                    32f32.to_bits(),
+                    compare::NONE,
+                    1,
+                ],
+            )?;
+            self.blank_wind = true;
+        }
         if self.blank {
             let camera = depth.unwrap_or(self.ids.blank_depth);
             let first = if camera != self.camera_depth || textures_made {
@@ -1997,9 +2291,22 @@ impl ParticlePass {
             let index = id as usize - 1;
             let ids = self.ids;
             let made = &mut self.made[index];
+            let wind = system.wind_texture();
+            let pair = if wind == 0 {
+                (ids.blank_wind, ids.blank_wind_sampler)
+            } else {
+                settings
+                    .textures()
+                    .pair(Handle::from_raw(wind))
+                    .unwrap_or((ids.blank_wind, ids.blank_wind_sampler))
+            };
             let bytes = system.capacity * RECORD_BYTES;
             let mut group_changed = false;
             let mut all_records = false;
+            if made.wind_pair != pair {
+                made.wind_pair = pair;
+                group_changed = true;
+            }
             if made.records < bytes {
                 list.push(
                     Op::CreateBuffer,
@@ -2038,7 +2345,7 @@ impl ParticlePass {
                     &[
                         ids.group(index),
                         bind_layout::PARTICLE,
-                        2,
+                        4,
                         0,
                         resource_kind::BUFFER,
                         ids.values(index),
@@ -2049,6 +2356,16 @@ impl ParticlePass {
                         ids.views(index),
                         0,
                         VIEW_WRITTEN_BYTES as u32,
+                        2,
+                        resource_kind::TEXTURE,
+                        made.wind_pair.0,
+                        0,
+                        0,
+                        3,
+                        resource_kind::SAMPLER,
+                        made.wind_pair.1,
+                        0,
+                        0,
                     ],
                 )?;
             }
@@ -2195,6 +2512,7 @@ impl ParticlePass {
         self.depth_views = 0;
         self.camera_depth = 0;
         self.blank = false;
+        self.blank_wind = false;
     }
 }
 
@@ -2299,6 +2617,84 @@ impl ParticleDepthCopy {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_analytic_wind_noise_matches_the_field_addons() {
+        // The wind add-on's test holds this number for the engine library's value noise.
+        assert!((wind_value3(0.0, 0.0, 0.0) - 0.608_151_853_1).abs() < 1e-9);
+    }
+
+    #[test]
+    fn a_field_replaces_the_fixed_wind_and_reads_its_steady_air() {
+        let (mut table, id) = emitter(4, 0, 0);
+        let system = table.get_mut(id).unwrap();
+        {
+            let block = &mut system.emitter.block;
+            let f = system.emitter.fixed + F_MOTION;
+            block[f + 4] = 3.0;
+            let w = system.emitter.fixed + F_WIND;
+            block[w + 1] = 10.0;
+            block[w + 2] = 20.0;
+            block[w + 3] = 64.0;
+            block[w + 4] = 1.0;
+            // The base wind speed, with no heading or ground share.
+            block[w + E_WIND_BASE] = 4.0;
+            // The swirl's scale, which keeps its curl's step finite.
+            block[w + E_WIND_SWIRL + 1] = 1.0;
+            block[w + E_WIND_GUST + 1] = 8.0;
+        }
+        let motion = system.emitter.motion();
+        assert_eq!([motion.wx, motion.wy, motion.wz], [0.0; 3]);
+        assert_eq!(motion.wind.strength, 1.0);
+        let air = wind_steady(&motion.wind, [11.0, WIND_FULL_HEIGHT, 20.0]);
+        assert!((air[0] - 4.0).abs() < 1e-9);
+        assert!(air[1].abs() < 1e-12);
+        assert!(air[2].abs() < 1e-9);
+    }
+
+    #[test]
+    fn a_field_moves_a_particle_that_a_still_field_leaves_on_its_path() {
+        let (moved, gained) = wind_shift([2.0, 0.0, 0.0], 0.5, 3.0);
+        let (calm, still) = wind_shift([0.0; 3], 0.5, 3.0);
+        assert!(moved[0] > 0.5);
+        assert!(gained[0] > 0.0);
+        assert_eq!(calm, [0.0; 3]);
+        assert_eq!(still, [0.0; 3]);
+    }
+
+    #[test]
+    fn the_wind_shift_is_what_a_flight_with_drag_leaves_out() {
+        let w = [1.5, -0.5, 2.0];
+        let t = 0.9;
+        let mut held = Motion {
+            drag: 0.7,
+            gx: 0.3,
+            gy: -9.8,
+            gz: 0.0,
+            ..Default::default()
+        };
+        held.wx = w[0];
+        held.wy = w[1];
+        held.wz = w[2];
+        let still = Motion {
+            wx: 0.0,
+            wy: 0.0,
+            wz: 0.0,
+            ..held
+        };
+        let mut a = [0.0f64; FLIGHT_FLOATS];
+        a[FLIGHT_P..FLIGHT_P + 3].copy_from_slice(&[1.0, 2.0, 3.0]);
+        a[FLIGHT_V..FLIGHT_V + 3].copy_from_slice(&[0.5, 1.0, -0.5]);
+        a[FLIGHT_T] = t;
+        let mut b = a;
+        flight(&held, &mut a);
+        flight(&still, &mut b);
+        let (shift, gained) = wind_shift(w, held.drag, t);
+        for c in 0..3 {
+            assert!((a[FLIGHT_OUT_P + c] - b[FLIGHT_OUT_P + c] - shift[c]).abs() < 1e-12);
+            assert!((a[FLIGHT_OUT_V + c] - b[FLIGHT_OUT_V + c] - gained[c]).abs() < 1e-12);
+        }
+    }
 
     #[test]
     fn systems_take_ids_and_give_them_back() {
