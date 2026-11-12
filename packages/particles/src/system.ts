@@ -221,7 +221,9 @@ export class ParticleSystem {
 	 * Moves the system on by the frame's step, or by `dt` seconds: emits the particles born in that
 	 * time, fires the sub-emitters of particles that died or met the ground, and gives the buffer
 	 * its time. The core writes the records in one call, so `update` runs no loop over the births.
-	 * Call it once per frame in `onLateUpdate`. It allocates nothing.
+	 * Call it once per frame in `onLateUpdate`. It allocates nothing. A system with a `windField`
+	 * also gives the core the field's current box and layer, so call the wind's `update()` before
+	 * this call.
 	 */
 	update(dt?: number): void {
 		let prewarm = false;
@@ -243,6 +245,9 @@ export class ParticleSystem {
 		this.time = frame[1] as number;
 		this.readFollow();
 		this.readEvents();
+		// The field's box follows the camera and its newest layer moves, so the core gets the field
+		// in every frame, before the births whose events it places.
+		if (this.options.windField) this.buffer.setWind(this.options.windField, this.clock.now);
 		this.buffer.emitFrame(frame);
 	}
 
