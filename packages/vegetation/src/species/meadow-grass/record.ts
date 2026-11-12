@@ -38,9 +38,9 @@ export const record: Species = {
 		ranks: 2,
 		sheath: { mean: 0.035, spread: 0.01 },
 		sheathRadius: 0.0018,
-		// Still 15's sheath surface, read as linear reflectance: a pale straw sheath, not the
-		// blade's green.
-		sheathColour: [0.366, 0.38, 0.309],
+		// Stills 15 and 16: the basal sheath is pale cream, not the blade's green, and it stays that
+		// pale from the soil to the collar, so both ends of the column take the same measured colour.
+		sheathColour: { foot: [0.366, 0.38, 0.309], collar: [0.366, 0.38, 0.309], reach: 0.85 },
 		// Still 21: the youngest inner blades stand tall and almost straight, arching only near
 		// their tips, while the oldest outer ones leave their collars wide and arch toward the
 		// ground. The young blades hold the leaf mass's height; the old ones its width.

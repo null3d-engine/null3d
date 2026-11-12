@@ -757,6 +757,21 @@ export interface FrondColony {
 }
 
 /**
+ * A tuft sheath column's colours: the colour at its foot and the colour where the blades leave,
+ * mixed up the column, so a crown draws its own colour at the soil and the collar's colour above.
+ *
+ * @category api/vegetation
+ */
+export interface SheathColour {
+	/** The colour at the column's foot, in linear reflectance. */
+	readonly foot: Rgb;
+	/** The colour at the column's collar, in linear reflectance. */
+	readonly collar: Rgb;
+	/** The share of the column's height below its collar over which the collar's colour takes over. */
+	readonly reach: number;
+}
+
+/**
  * A tuft of shoots from one crown, each shoot a column of sheaths with blades in two or three ranks,
  * and flowering stems in season: grasses and sedges.
  *
@@ -780,10 +795,10 @@ export interface Tuft {
 	/** The sheath's radius in metres. */
 	readonly sheathRadius: number;
 	/**
-	 * The basal sheath's colour, in linear reflectance, where the photographs show red-brown
-	 * sheaths: a merged ground plant draws its sheath columns in it rather than the leaf's green.
+	 * The sheath column's colours, where the photographs show the plant's own sheaths rather than the
+	 * leaf's green: a merged ground plant draws its columns in them, from the foot up to the collar.
 	 */
-	readonly sheathColour?: Rgb;
+	readonly sheathColour?: SheathColour;
 	/** Degrees a blade leaves its shoot, by blade age (t = 0 the youngest, innermost, 1 the oldest). */
 	readonly spread: Curve;
 	/** Blade length over the foliage's blade length, by blade age. */

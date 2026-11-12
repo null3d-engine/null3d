@@ -539,18 +539,37 @@ describe('the record check', () => {
 });
 
 describe('a tuft sheath colour', () => {
-	const withColour = (sheathColour: readonly [number, number, number]): Species => {
+	const withColour = (foot: readonly [number, number, number]): Species => {
 		const growth = meadowGrassRecord.growth;
 		if (growth.model !== 'tuft') throw new Error('the meadow grass is a tuft');
-		return { ...meadowGrassRecord, growth: { ...growth, sheathColour } };
+		return {
+			...meadowGrassRecord,
+			growth: { ...growth, sheathColour: { foot, collar: [0.4, 0.4, 0.32], reach: 0.85 } },
+		};
 	};
 
-	it('reads a colour as three shares from 0 to 1', () => {
+	it('reads its two colours as three shares from 0 to 1, and its reach as a share', () => {
 		expect(speciesProblems(meadowGrassRecord)).toEqual([]);
 		expect(speciesProblems(withColour([0.366, 0.38, 0.309]))).toEqual([]);
 		const problems = speciesProblems(withColour([0.366, 1.38, -0.1]));
-		expect(problems.some((p) => p.startsWith('growth.sheathColour.1'))).toBe(true);
-		expect(problems.some((p) => p.startsWith('growth.sheathColour.2'))).toBe(true);
-		expect(problems.some((p) => p.startsWith('growth.sheathColour.0'))).toBe(false);
+		expect(problems.some((p) => p.startsWith('growth.sheathColour.foot.1'))).toBe(true);
+		expect(problems.some((p) => p.startsWith('growth.sheathColour.foot.2'))).toBe(true);
+		expect(problems.some((p) => p.startsWith('growth.sheathColour.foot.0'))).toBe(false);
+		const growth = meadowGrassRecord.growth;
+		if (growth.model !== 'tuft') throw new Error('the meadow grass is a tuft');
+		const overReach = {
+			...meadowGrassRecord,
+			growth: {
+				...growth,
+				sheathColour: {
+					foot: [0.2, 0.1, 0.05] as const,
+					collar: [0.4, 0.4, 0.3] as const,
+					reach: 1.5,
+				},
+			},
+		};
+		expect(speciesProblems(overReach).some((p) => p.startsWith('growth.sheathColour.reach'))).toBe(
+			true,
+		);
 	});
 });
