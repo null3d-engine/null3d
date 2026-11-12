@@ -1100,14 +1100,18 @@ export function shootPrototypes(
 		planShoot(record, index, leafMeshes),
 	);
 	const classes = plans.map((_, index) => classOf(shoots.classes, index, shoots.prototypes));
-	const out = plans.map((plan, index) =>
-		prototypeOf(
-			leafMeshes > 0 ? plan : { ...plan, leaves: [] },
-			leaves,
-			index,
-			classes[index] as ShootClass,
-		),
-	);
+	// A cutting's kit holds only the classes a cut piece draws, so the plant's own prototypes stay
+	// out of it: a kit carrying both roughly doubles, and the cap it must fit is the cut piece's own.
+	const out = cutting
+		? []
+		: plans.map((plan, index) =>
+				prototypeOf(
+					leafMeshes > 0 ? plan : { ...plan, leaves: [] },
+					leaves,
+					index,
+					classes[index] as ShootClass,
+				),
+			);
 	if (!cutting && leafMeshes > 0 && hasBareTwins(record))
 		for (const [index, plan] of plans.entries())
 			out.push(

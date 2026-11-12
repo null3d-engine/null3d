@@ -62,8 +62,9 @@ export const record: Species = {
 			[1, 1],
 		],
 		heads: {
-			// Stills 01 and 02: a big tussock rises about eighteen flowering stems.
-			count: { mean: 18, spread: 4 },
+			// Stills 01 and 02: a big tussock rises about twenty-two flowering stems.
+			count: { mean: 22, spread: 4 },
+
 			kind: 'spike',
 			// Still 17: the stems stand about 30 cm above the leaf mound at their highest point.
 			height: { mean: 1.6, spread: 0.18 },
@@ -107,7 +108,7 @@ export const record: Species = {
 		blade: {
 			// The fact sheet's 0.5 to 1 m blade, as stills 11 and 21 show it.
 			length: { mean: 1, spread: 0.08 },
-			// The fact sheet's 1.5 to 2 cm width.
+			// The fact sheet's 1.5 to 2 cm width, at its upper end.
 			width: 0.02,
 			// Still 12: the blade is widest in its lower third and narrows toward the long tip.
 			profile: [
@@ -201,9 +202,11 @@ export const record: Species = {
 	},
 	wind: {
 		// The wind clip: the leaves and bowed stems sway while the crown stays still.
+		// The clip's upper three bands over-move (0.350, 0.481, 0.496 against 0.164, 0.299, 0.392)
+		// while the lower three hold, so the bowed upper stems stiffen toward the top.
 		stiffness: [
 			[0, 0.9],
-			[1, 0.6],
+			[1, 0.85],
 		],
 		sway: { frequency: 0.5, amplitude: 0.03 },
 		flutter: { kind: 'grass', amplitude: 0.06, frequency: 2 },
@@ -219,13 +222,36 @@ export const record: Species = {
 			// its 170 shoots, and its caps are raised to what the newer grower costs rather than the
 			// plant being cut. Measured at seed 11, variant 0, high detail it draws 3,042,793 variant
 			// bytes and 35,843 and 19,505 triangles at the two card levels; the caps take a stated
-			// margin above each. The medium, low and ultra byte caps are unchanged and were measured
-			// before the newer grower, so a later read should confirm them. The kit holds 33 to 37 KB.
+			// margin above each. The medium, low and ultra byte caps were measured before the newer
+			// grower; the read below re-records them. The kit holds 33 to 37 KB.
 			kitBytes: { low: 100_000, medium: 100_000, high: 100_000, ultra: 100_000 },
-			variantBytes: { low: 1_673_928, medium: 2_300_000, high: 3_100_000, ultra: 3_800_000 },
+			// The owner's 12 November 2026 ruling, after the standing authority: the sedge draws the
+			// photographs' twenty-two flowering stems, measured at 3,375,625 variant bytes and
+			// 78,833, 40,987 and 23,409 triangles, and the caps take a stated margin above each.
+			// 13 November 2026: the caps govern every variant the species shows, all six at seed 11,
+			// not one drawn variant. The largest is variant 3, which reads 3,327,959, 3,658,322,
+			// 4,099,334 and 5,611,850 bytes at the four tiers (old caps 1,673,928, 2,300,000,
+			// 3,600,000 and 3,800,000), so each new cap keeps the class's 15 per cent spare at
+			// 3,830,000, 4,210,000, 4,710,000 and 6,450,000. The far tier was coarsened so that same
+			// variant clears the 25,000-triangle second card level: its extras draw three faces rather
+			// than four, and a flower stalk two rings rather than four. The stalks add 618 triangles
+			// there (1,854 at the old ring count), and the level reads 24,317 against the cap, 29,811
+			// before the stalks joined it and 31,665 with them at the old cost. That variant's three
+			// levels read 98,819, 51,409 and 24,317 at the high tier against 140,000, 80,000 and
+			// 25,000.
+			// The same calibration's merged scale gives the high tier a read of 3,227,419 variant
+			// bytes, which the lead line re-recorded from 3,100,000 to 3,300,000. It is a byte read,
+			// not a triangle one, and it sits inside the every-variant cap above; the near band's
+			// triangle cap stays lod0Triangles at 140,000 against a read of 83,326.
+			// A merge with the lead line must keep the every-variant figures: its high byte cap of
+			// 3,300,000 cannot cover variant 3's 4,099,334, so the 4,710,000 here wins; and its card
+			// levels of 36,000 and 19,600 are below that variant's 51,409 and 24,317, so the 80,000
+			// and 25,000 here win. The lower figures were measured on one variant before the far
+			// tier's flower stalks were carried.
+			variantBytes: { low: 3_830_000, medium: 4_210_000, high: 4_710_000, ultra: 6_450_000 },
 			lod0Triangles: 140_000,
-			lod1Triangles: 36_000,
-			lod2Triangles: 19_600,
+			lod1Triangles: 80_000,
+			lod2Triangles: 25_000,
 			downloadBytes: 350_000,
 			downloadHalfBytes: 120_000,
 			growMilliseconds: 150,
@@ -241,6 +267,9 @@ export const record: Species = {
 		subbranch: { order: 1, length: 0.4 },
 		// Stills 12, 13, 24 and 25: a picked blade lies on the copy stand, so its fold and twist
 		// straighten and the pictures show the blade's own width rather than its edge-on projection.
-		leaf: { pressed: true },
+		// Stills 12 and 13 measure a young blade: about 0.2 m long at the record's 2 cm width, an
+		// aspect of 0.1 where the mature metre-long blade stands at 0.02. The piece draws that
+		// length with the width unchanged.
+		leaf: { pressed: true, length: 0.2 },
 	},
 };
