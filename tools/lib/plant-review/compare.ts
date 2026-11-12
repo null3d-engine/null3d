@@ -1029,6 +1029,39 @@ export function plainTurnOf(background: string | undefined): boolean {
 	return background !== undefined && background !== 'sky-meadow';
 }
 
+/** A sweep picture's readings: its components and floating pieces, and the render's crown-box gap. */
+export interface SweepMeasures {
+	readonly components: number;
+	readonly floating: readonly { readonly area: number; readonly box: string }[];
+	readonly crownBoxGap: number | null;
+}
+
+/**
+ * Reads one sweep picture: the matte's components and any piece that meets nothing inside the frame,
+ * and the crown box's gap. The picture has no reference, so its figures stand alone and are read
+ * against the record's band and each other.
+ */
+export function sweepMeasures(runDir: string, frame: RunFrame): SweepMeasures {
+	const render = renderSideOf(runDir, frame, `SWEEP ${frame.file}`, false);
+	const parts = pieceParts(
+		anyPlantMask(render.plant),
+		render.plant.width,
+		render.plant.height,
+		PIECE_AREA,
+	);
+	return {
+		components: parts.length,
+		floating: parts
+			.slice(1)
+			.filter((part) => !part.border)
+			.map((part) => ({
+				area: part.area,
+				box: `${part.right - part.left + 1}x${part.bottom - part.top + 1}@${part.left},${part.top}`,
+			})),
+		crownBoxGap: render.measures.crownBoxGap ?? null,
+	};
+}
+
 /** A render frame's side of a comparison. */
 function renderSideOf(runDir: string, frame: RunFrame, label: string, bottomCut: boolean): Side {
 	return renderSide(
