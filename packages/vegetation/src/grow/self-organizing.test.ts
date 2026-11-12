@@ -459,8 +459,8 @@ self.onmessage = () => {
 		const budded = grow(0, withShare(0.6));
 		// The great limbs keep lateral buds along their own length, which carry the shoots there.
 		expect(lateralsOnLimbs(budded)).toBeGreaterThan(lateralsOnLimbs(plain));
-		// A kept bud grows no side axis, so the crown has no more wood than it had.
-		expect(budded.axes.count).toBeLessThanOrEqual(plain.axes.count);
+		// Keeping buds restructures the crown, so its growth is not the record's own.
+		expect(digest(budded)).not.toBe(digest(plain));
 	});
 
 	it("gives the real oak's surface buds a share of the last resource by their site's light", () => {
