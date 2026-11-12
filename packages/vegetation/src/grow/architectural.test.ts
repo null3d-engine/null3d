@@ -6,7 +6,7 @@ import { AXIS_STEM, BUD_LATERAL } from '../core/graph';
 import { hashBytes, unitAt } from '../core/hash';
 import { spreadAt } from '../core/types';
 import { record } from '../species/scots-pine/record';
-import { growArchitectural } from './architectural';
+import { ENVELOPE_ROUND, growArchitectural } from './architectural';
 import { envelopeVolume, insetVolume, smoothedVolume } from './envelope';
 import { shootReach } from './self-organizing';
 
@@ -115,7 +115,7 @@ describe('the architectural grower', () => {
 				envelopeVolume(record.envelope as NonNullable<typeof record.envelope>, drawn, turn),
 				shootReach(record) * 0.6,
 			),
-			0.5,
+			ENVELOPE_ROUND,
 		);
 		for (let n = 0; n < skeleton.nodeCount; n++) {
 			const axis = skeleton.axisOf[n] as number;

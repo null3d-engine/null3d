@@ -67,7 +67,7 @@ const LIMB_BARE = 0.3;
 const LIMB_VIGOUR = 0.06;
 const LIMB_VIGOUR_RISE = 0.2;
 /** The share of the way each measured height is rounded toward its azimuthal mean. */
-const ENVELOPE_ROUND = 0.35;
+export const ENVELOPE_ROUND = 0.35;
 
 /** The choices an axis makes, each its own hash purpose. */
 const Purpose = {
