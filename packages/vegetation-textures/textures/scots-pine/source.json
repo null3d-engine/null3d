@@ -3,7 +3,9 @@
 	"leaf": {
 		"upper": 24,
 		"lower": 25,
-		"crop": [536, 56, 52, 140],
+		"crop": [168, 462, 60, 110],
+		"lowerCrop": [792, 462, 60, 110],
+		"frame": { "petiole": [34, 109], "tip": [9, 15] },
 		"alpha": { "floor": 16, "solid": 240 },
 		"erode": 1,
 		"margin": 0.04,
