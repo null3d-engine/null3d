@@ -364,6 +364,13 @@ function growthProblems(record: Species, out: string[]): void {
 		if (growth.buds.limbBuds !== undefined)
 			shareProblem(growth.buds.limbBuds, 'growth.buds.limbBuds', out);
 		curveProblems(growth.apical.control, 'growth.apical.control', out);
+		if (growth.maxTurn !== undefined) wholeProblem(growth.maxTurn, 'growth.maxTurn', 0, 90, out);
+		if (growth.limbAzimuth !== undefined)
+			shareProblem(growth.limbAzimuth, 'growth.limbAzimuth', out);
+		if (growth.lateralSpacing !== undefined && !(growth.lateralSpacing >= 0))
+			out.push(
+				`growth.lateralSpacing is ${growth.lateralSpacing}; it is metres and must be 0 or above`,
+			);
 		curveProblems(growth.tropism.photo, 'growth.tropism.photo', out);
 		curveProblems(growth.tropism.gravi, 'growth.tropism.gravi', out);
 		shareProblem(growth.shedding.cleanBole, 'growth.shedding.cleanBole', out);
