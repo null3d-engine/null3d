@@ -108,7 +108,7 @@ export const record: Species = {
 		blade: {
 			// The fact sheet's 0.5 to 1 m blade, as stills 11 and 21 show it.
 			length: { mean: 1, spread: 0.08 },
-			// The fact sheet's 1.5 to 2 cm width.
+			// The fact sheet's 1.5 to 2 cm width, at its upper end.
 			width: 0.02,
 			// Still 12: the blade is widest in its lower third and narrows toward the long tip.
 			profile: [
