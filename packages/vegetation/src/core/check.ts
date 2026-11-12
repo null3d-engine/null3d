@@ -521,14 +521,15 @@ function extraProblems(record: Species, out: string[]): void {
  * foliage that cannot lie flat.
  */
 function cuttingProblems(record: Species, out: string[]): void {
-	// A blade, a thick leaf or a whole frond can lie pressed flat in its frame's plane.
+	// A blade, a thick leaf, a whole frond or a grass blade can lie pressed flat in its frame's plane.
 	const leaf = record.cuttings?.leaf;
 	if (record.cuttings?.leaves) spreadProblems(record.cuttings.leaves, 'cuttings.leaves', true, out);
 	if (
 		leaf?.pressed &&
 		record.foliage.kind !== 'blade' &&
 		record.foliage.kind !== 'thick' &&
-		record.foliage.kind !== 'frond'
+		record.foliage.kind !== 'frond' &&
+		record.foliage.kind !== 'grass-blade'
 	)
 		out.push(`cuttings.leaf.pressed lays a leaf flat, and the foliage is '${record.foliage.kind}'`);
 	if (leaf?.petiole !== undefined && !(leaf.petiole > 0))
