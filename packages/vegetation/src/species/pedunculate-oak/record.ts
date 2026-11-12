@@ -62,9 +62,6 @@ export const record: Species = {
 			],
 			angleSpread: 8,
 			extinction: [0.02, 0.03],
-			// The great limbs keep half their lateral buds as buds, so their own length carries
-			// shoots and they do not run bare between their branches.
-			limbBuds: 0.5,
 		},
 		apical: {
 			control: [
@@ -91,7 +88,7 @@ export const record: Species = {
 		},
 		// Stills 01, 02, 17 and 18 show sky under the crown's base: a shoot the righting carried below
 		// it stands in the crown's shade and dies back.
-		shedding: { threshold: 0.1, cleanBole: 0.2, stubs: 0.2, underCrown: 1 },
+		shedding: { threshold: 0.1, cleanBole: 0.2, stubs: 0, underCrown: 1 },
 		// The crown's sag was fitted with the wood weighed at a 3.5 m bole; the bend keeps weighing it
 		// so, whatever width the trunk is drawn at.
 		bending: { strength: 0.5, upturn: 0.2, girth: 3.5 },
@@ -258,7 +255,7 @@ export const record: Species = {
 			// The reference's crown is denser than the curve alone gives: this is the dial, not a
 			// change of reach or part size. The low limbs now keep the foliage they carry below the
 			// bole's line, so the dial sits lower than it did when that foliage was missing.
-			density: 1.55,
+			density: 1,
 			// No shade line and no starved-tip line: the sky prune below takes the same wood, so one rule
 			// that can be read stands where three stood. A shade line is still there for a species that
 			// cannot prune by the sky its own leaves block.
@@ -267,15 +264,14 @@ export const record: Species = {
 			// leave a shoot under this share of the sky; the lit outer masses stay.
 			skyPrune: 0.43,
 			skyPruneLayer: 1,
-			// Stills 01 and 18: no bare wood hangs under the crown; a branch left with no shoot has
-			// died and goes, up to the thickness the trim names.
-			bareTrim: 0.1,
+			// Stills 01 and 18: no bare twigs hang under the crown; a thin branch left with no shoot
+			// has died and goes.
+			bareTrim: 0.03,
 			// Stills 02 and 03: the shoots stand up off their wood, so the foliage rides on the limbs
 			// rather than hanging under them.
 			lift: 15,
 			skyward: 0.65,
 			scale: { mean: 1.4, spread: 0.15 },
-			limbMass: { order: 2, hold: 1.5, reach: 3.5, depth: 1, bare: 0.5 },
 		},
 	},
 	foliage: {
