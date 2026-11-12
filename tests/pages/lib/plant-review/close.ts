@@ -1065,6 +1065,41 @@ function armsReach(skeleton: MacroSkeleton, fork: Fork): number {
  * as it does for a limb. Arms nearer the limb's own size, and a fork that stands upright so a level
  * camera sees it square, make the likelier subject.
  */
+/**
+ * What the fork view's wishes keep of a plant's divisions, each count among those left by the wish
+ * before it, so a fork view that draws no fork can say which wish emptied it. A count above zero
+ * with no subject means the divisions exist but no camera sees one clear.
+ */
+export function forkCandidates(
+	skeleton: MacroSkeleton,
+	thin?: number,
+): {
+	readonly total: number;
+	readonly counts: readonly number[];
+	readonly kept: number;
+	readonly sought: number;
+} {
+	const stemRadius = stemAt(skeleton, 1.3)?.radius ?? stemAt(skeleton, 0.3)?.radius ?? 0.1;
+	const sought = thin ?? FORK_STEM_SHARE * stemRadius;
+	const stem = mainStem(skeleton);
+	const all = forks(skeleton);
+	const outside = all.filter((f) => f.reach > stemRadius + 2 * f.radius);
+	const wishes = [
+		(f: Fork) => (skeleton.axes.parent[f.limb] as number) === stem,
+		(f: Fork) => Math.abs(Math.log(f.radius / sought)) <= Math.log(FORK_SIZE),
+		(f: Fork) => f.armRadius >= FORK_EVEN * f.radius,
+		(f: Fork) => Math.hypot(...cross(f.on, f.out)) >= FORK_OPEN,
+	];
+	let kept = outside;
+	const counts: number[] = [outside.length];
+	for (const wish of wishes) {
+		const passing = kept.filter(wish);
+		if (passing.length > 0) kept = passing;
+		counts.push(passing.length);
+	}
+	return { total: all.length, counts, kept: kept.length, sought };
+}
+
 export function forkView(
 	plant: ClosePlant,
 	lens: Lens,

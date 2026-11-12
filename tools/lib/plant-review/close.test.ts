@@ -30,6 +30,7 @@ import {
 	barkLimbView,
 	belowView,
 	departures,
+	forkCandidates,
 	forks,
 	forkView,
 	insideView,
@@ -450,6 +451,23 @@ describe('a limb dividing into two', () => {
 		const found = forks(skeleton);
 		expect(found.map((f) => f.arm)).toEqual([5, 6]);
 		for (const f of found) expect(f.armRadius).toBeGreaterThan(0.5 * f.radius);
+	});
+
+	test("reports the divisions and each wish a fork view reaches, keeping the finder's own set", () => {
+		const counts = forkCandidates(skeleton);
+		expect(counts.total).toBe(forks(skeleton).length);
+		// The clear-of-the-stem filter, then the four wishes in the finder's order.
+		expect(counts.counts.length).toBe(5);
+		expect(counts.kept).toBeGreaterThan(0);
+	});
+
+	test('reports no division on a stem that never divides', () => {
+		const b = new SkeletonBuilder();
+		const stem = b.addAxis({ parent: -1, parentNode: -1, order: 0, kind: AXIS_STEM });
+		run(b, stem, -1, [0, 0, 0], [0, 1, 0], 6, 0.8, 0.3);
+		const counts = forkCandidates(b.finish(1));
+		expect(counts.total).toBe(0);
+		expect(counts.kept).toBe(0);
 	});
 
 	test('is the fork whose arms part upright, seen square to them, its joint under the middle', () => {

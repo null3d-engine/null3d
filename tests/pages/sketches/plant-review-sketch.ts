@@ -50,6 +50,7 @@ import {
 	belowView,
 	type ClosePlant,
 	type CloseView,
+	forkCandidates,
 	forkView,
 	insideView,
 	junctionView,
@@ -766,6 +767,10 @@ export default defineSketch(async (ctx) => {
 					0.05,
 				);
 				if (found) return found;
+				const counts = forkCandidates(skeleton, QUERY.thin);
+				notes.push(
+					`the fork view found no division: ${counts.total} divisions, then ${counts.counts.join(', ')} through its wishes, ${counts.kept} kept near ${counts.sought.toFixed(3)} m`,
+				);
 				break;
 			}
 			case 'flowers': {
