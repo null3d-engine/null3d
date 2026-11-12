@@ -339,7 +339,7 @@ The add-on declares its work to the engine as one feature. The preset gives its 
 | `windSpringTrees`, the trees that keep branch springs | 0 | 8 | 32 | 64 | `scale` |
 | `windGrid`, the grid's texels across each way | 0, no grid | 64 | 128 | 256 | `none` |
 
-Low keeps no grid: every reader works the air out from the steady field. A page that gives `grid` keeps it, whatever the preset says. At Low, that page still gets a field, at the add-on's own step and pressure count. WebGL2 takes its own step row, 66 ms at Medium and above, because a step costs far more there.
+Low keeps no grid: every reader works the air out from the steady field. A page that gives `grid` keeps it, whatever the preset says. At Low, that page still gets a field, at the add-on's own step and pressure count. WebGL2 takes its own step row, 100 ms at Medium and above, because a step costs far more there. The governor doubles the interval from that row, up to 133 ms.
 
 The grid is one flat slice at the crown's height. The layered and volume grids that the wind cost study measured are not built yet, so High and Ultra use the flat 128 and 256 grids.
 

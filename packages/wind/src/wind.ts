@@ -143,8 +143,8 @@ export interface Wind {
 const PRESETS = ['low', 'medium', 'high', 'ultra'] as const;
 /** The time between field steps at each preset, in ms. Low keeps the analytic field. */
 const STEP_MS = [0, 33, 33, 16] as const;
-/** The same on WebGL2, where a run costs far more. */
-const STEP_MS_WEBGL2 = [0, 66, 66, 66] as const;
+/** The same on WebGL2, where a run costs far more: ten steps a second at Medium and above. */
+const STEP_MS_WEBGL2 = [0, 100, 100, 100] as const;
 /** The pressure iterations of one cycle at each preset. */
 const PRESSURE_ROW = [0, 16, 24, 40] as const;
 /** The trees that keep branch springs at each preset. The vegetation add-on reads it. */

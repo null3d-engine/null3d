@@ -198,12 +198,26 @@ describe('the presets', () => {
 		// A run of the fragment form costs far more than a compute dispatch, so the field steps
 		// less often there. The other settings keep their rows.
 		expect(settingsOf(context)).toEqual({
-			windStepMs: 66,
+			windStepMs: 100,
 			windPressureSteps: 16,
 			windSpringTrees: 8,
 			windGrid: 64,
 		});
 		wind.destroy();
+	});
+
+	test('keeps the WebGL2 field at ten cycles a second or fewer', () => {
+		// Each run of the fragment form costs the same whatever its cells, so a phone's frame pays
+		// for the runs that one frame owes. The row starts at the rate that the phone's Medium row
+		// holds, and the governor doubles the interval from there.
+		for (const preset of ['medium', 'high', 'ultra'] as const) {
+			const context = fakeContext(preset, 'webgl2');
+			const wind = windOn(context);
+			const interval = settingsOf(context).windStepMs as number;
+			expect(1000 / interval).toBeLessThanOrEqual(10);
+			expect(interval).toBe(100);
+			wind.destroy();
+		}
 	});
 });
 
