@@ -75,6 +75,9 @@ export const record: Species = {
 				],
 				droop: 12,
 				flowers: { mean: 5, spread: 1 },
+				// Still 18: the spray's branches read on the silhouette, so a branch at 0.30 of the
+				// stem's radius joins it into one piece where 0.18 split the height profile.
+				branchShare: 0.3,
 			},
 		},
 	},
