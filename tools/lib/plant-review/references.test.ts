@@ -24,6 +24,8 @@ import {
 	rowSpans,
 	seasonFromPicture,
 	shadowLike,
+	skyMaskable,
+	soilMaskable,
 	widthProfile,
 	withSlot,
 } from './references.ts';
@@ -341,10 +343,107 @@ describe('the width profile', () => {
 	});
 });
 
+describe('a bole hidden by the boughs beside it', () => {
+	// The plant mask lies, so the measure can read the central run: a plain sky over the mask.
+	const plantOf = (width: number, height: number, mask: Uint8Array): PlantMask => ({
+		width,
+		height,
+		mask,
+		background: {
+			horizon: null,
+			sky: {
+				coefficients: [
+					[100, 0, 0, 0, 0, 0],
+					[0, 0, 0, 0, 0, 0],
+					[0, 0, 0, 0, 0, 0],
+				],
+				noise: 0.5,
+				fit: 1,
+			},
+			plain: true,
+		},
+	});
+	const beech = (name: string) => {
+		const profile = JSON.parse(
+			readFileSync(join(import.meta.dirname, `fixtures/${name}.json`), 'utf8'),
+		) as {
+			readonly width: number;
+			readonly height: number;
+			readonly top: number;
+			readonly rows: readonly (readonly (readonly [number, number])[])[];
+		};
+		const mask = new Uint8Array(profile.width * profile.height);
+		profile.rows.forEach((runs, index) => {
+			for (const [left, right] of runs)
+				for (let x = left; x <= right; x++) mask[(profile.top + index) * profile.width + x] = 1;
+		});
+		const box = boxOf(mask, profile.width, profile.height) as NonNullable<ReturnType<typeof boxOf>>;
+		return { mask, box, width: profile.width, height: profile.height };
+	};
+
+	test("finds the profile's crown above the stem its boughs hide", () => {
+		// The beech's whole-profile photograph: its boughs sweep beside the stem, so the outermost
+		// span reads nearly the crown's width at the foot and the plain rule leaves the start there.
+		const { mask, box, width, height } = beech('european-beech-profile');
+		const plain = crownStartRow(rowSpans(mask, width, height), box);
+		expect((box.bottom - plain) / (box.bottom - box.top + 1)).toBeCloseTo(0, 3);
+		const measured = measurePlant(
+			blank(width, height, [255, 255, 255]),
+			plantOf(width, height, mask),
+		);
+		expect(measured.crownStart).toBeCloseTo(0.1086, 3);
+	});
+
+	test("finds the silhouette's crown above its stem", () => {
+		const { mask, box, width, height } = beech('european-beech-silhouette');
+		const plain = crownStartRow(rowSpans(mask, width, height), box);
+		expect((box.bottom - plain) / (box.bottom - box.top + 1)).toBeCloseTo(0.0028, 3);
+		const measured = measurePlant(
+			blank(width, height, [255, 255, 255]),
+			plantOf(width, height, mask),
+		);
+		expect(measured.crownStart).toBeCloseTo(0.1567, 3);
+	});
+
+	test('keeps a mound form at its foot when a central run exists', () => {
+		// The same beech mask, read as a species the record grows as a mound of leaves: the central
+		// run is a leaf, not a stem, so the crown start stays at the foot.
+		const { mask, box, width, height } = beech('european-beech-profile');
+		const plain = crownStartRow(rowSpans(mask, width, height), box);
+		const measured = measurePlant(
+			blank(width, height, [255, 255, 255]),
+			plantOf(width, height, mask),
+			true,
+		);
+		expect(measured.crownStart).toBeCloseTo((box.bottom - plain) / (box.bottom - box.top + 1), 3);
+	});
+
+	test('leaves an ordinary bole untouched by the central run', () => {
+		// A crown of 80 over a trunk of 20 and a foot of 50: the outer span is the stem itself, so
+		// the corruption guard does not fire and the central run changes no figure.
+		const width = 100;
+		const height = 100;
+		const mask = new Uint8Array(width * height);
+		for (let y = 0; y < 50; y++) for (let x = 10; x < 90; x++) mask[y * width + x] = 1;
+		for (let y = 50; y < 92; y++) for (let x = 40; x < 60; x++) mask[y * width + x] = 1;
+		for (let y = 92; y < 100; y++) for (let x = 25; x < 75; x++) mask[y * width + x] = 1;
+		const box = boxOf(mask, width, height) as NonNullable<ReturnType<typeof boxOf>>;
+		const plain = crownStartRow(rowSpans(mask, width, height), box);
+		const measured = measurePlant(
+			blank(width, height, [255, 255, 255]),
+			plantOf(width, height, mask),
+		);
+		expect(measured.crownStart).toBeCloseTo((box.bottom - plain) / (box.bottom - box.top + 1), 3);
+	});
+});
+
 describe('the slots', () => {
 	test('sort stills by the words in their names before their numbers', () => {
 		expect(classifySlot('13-single-needle-underside.png')?.view).toBe('leaf-under');
-		expect(classifySlot('05-crown-underneath.png')?.view).toBe('below');
+		// The whole-from-below and crown-underside photographs take their own views: one frames the
+		// plant from its foot, the other the crown's underside from under it.
+		expect(classifySlot('03-whole-from-below.png')?.view).toBe('below');
+		expect(classifySlot('05-crown-underneath.png')?.view).toBe('crown-underside');
 		expect(classifySlot('02-whole-profile-b.png')).toMatchObject({
 			view: 'whole',
 			turn: 90,
@@ -645,15 +744,15 @@ describe('the strands view', () => {
 		expect(named.view).toBe('strands');
 		// It is off every slot number: no standard picture takes it, so no other render moves.
 		expect(VIEW_SPECS.strands.slots).toEqual([]);
-		// The standard names keep the views they had before the view was added. The birch's
-		// `19-drooping-twig-ends` name reads as `subbranch` by the twig rule today; the species
-		// names the view it wants in its own slot entry.
+		// The standard names keep their views, except the `05` underside class, which the new view
+		// takes. The birch's `19-drooping-twig-ends` name reads as `subbranch` by the twig rule
+		// today; the species names the view it wants in its own slot entry.
 		const standard: readonly (readonly [string, PlantView])[] = [
 			['01-whole-distant.png', 'whole'],
 			['02-whole-profile.png', 'whole'],
 			['03-whole-from-below.png', 'below'],
 			['04-crown-outside.png', 'limb'],
-			['05-crown-underside.png', 'below'],
+			['05-crown-underside.png', 'crown-underside'],
 			['06-inside-crown.png', 'inside'],
 			['07-limb-leaving-trunk.png', 'junction'],
 			['08-limb-fork.png', 'fork'],
@@ -764,5 +863,53 @@ describe('the coverage matte', () => {
 		expect(fractional.crownBoxGap).toBeCloseTo(3 / 100, 4);
 		expect(binary.frameGap).toBeCloseTo(304 / 400, 4);
 		expect(fractional.frameGap).toBeCloseTo((300 + 2 + 2 * (1 - 128 / 255)) / 400, 4);
+	});
+});
+
+describe('a fitted sky', () => {
+	const surface = (fit: number, noise: number) =>
+		({
+			coefficients: [
+				[0, 0, 0, 0, 0, 0],
+				[0, 0, 0, 0, 0, 0],
+				[0, 0, 0, 0, 0, 0],
+			],
+			noise,
+			fit,
+		}) as never;
+
+	test('is maskable only when the fit is strong, the residual bounded and no horizon stands', () => {
+		expect(skyMaskable({ horizon: null, sky: surface(0.9999, 17.1), plain: false })).toBe(true);
+		expect(skyMaskable({ horizon: null, sky: surface(0.9, 5), plain: false })).toBe(false);
+		expect(skyMaskable({ horizon: null, sky: surface(0.9999, 40), plain: false })).toBe(false);
+		expect(skyMaskable({ horizon: 100, sky: surface(0.9999, 5), plain: false })).toBe(false);
+	});
+
+	test('a fitted soil is maskable only with a real region each side of a strong ground fit', () => {
+		// The sedge's 07: horizon at 186 of 640, sky 1 / 24.19, ground 1 / 18.55.
+		expect(
+			soilMaskable(
+				{ horizon: 186, sky: surface(1, 24.19), ground: surface(1, 18.55), plain: false },
+				640,
+			),
+		).toBe(true);
+		// The meadow's 07: horizon at 596 of 640, sky 1 / 26.41, ground 1 / 19.90.
+		expect(
+			soilMaskable(
+				{ horizon: 596, sky: surface(1, 26.41), ground: surface(1, 19.9), plain: false },
+				640,
+			),
+		).toBe(true);
+		// A ramp that does not fit, a horizon at the frame's edge, and a background with no horizon.
+		expect(
+			soilMaskable(
+				{ horizon: 300, sky: surface(1, 20), ground: surface(1, 40), plain: false },
+				640,
+			),
+		).toBe(false);
+		expect(
+			soilMaskable({ horizon: 10, sky: surface(1, 20), ground: surface(1, 18), plain: false }, 640),
+		).toBe(false);
+		expect(soilMaskable({ horizon: null, sky: surface(1, 18), plain: false }, 640)).toBe(false);
 	});
 });

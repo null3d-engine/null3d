@@ -26,7 +26,6 @@ import {
 	prepareSpecies,
 	type SpeciesKit,
 	setWindLayer,
-	swayDistanceFor,
 } from '@null3d/vegetation';
 import { createWind, type Wind } from '@null3d/wind';
 import {
@@ -48,6 +47,7 @@ import {
 	belowView,
 	type ClosePlant,
 	type CloseView,
+	departures,
 	forkView,
 	insideView,
 	junctionView,
@@ -367,6 +367,25 @@ function standView(height: number, foot: V3, turn: number, aspect: number): View
 	return { position, target: add(position, scale(look, stand.distance)), fov: FOV };
 }
 
+/**
+ * A view whose camera moves along its own line to the target by a scale: a review redraw corrects
+ * a picture's margin from the width the picture itself measured.
+ */
+function scaledStand<T extends { readonly position: V3; readonly target: V3 }>(
+	view: T,
+	scale: number | undefined,
+): T {
+	if (scale === undefined || scale === 1 || !(scale > 0)) return view;
+	return {
+		...view,
+		position: [
+			view.target[0] + (view.position[0] - view.target[0]) * scale,
+			view.target[1] + (view.position[1] - view.target[1]) * scale,
+			view.target[2] + (view.position[2] - view.target[2]) * scale,
+		],
+	};
+}
+
 /** Whether the query frames a whole plant in screen shares. */
 const FRAMED =
 	QUERY.horizon !== undefined ||
@@ -657,8 +676,28 @@ export default defineSketch(async (ctx) => {
 			case 'turntable':
 			case 'whole':
 			case 'skeleton':
-			case 'silhouette':
-				return FRAMED ? standView(height, foot, turn, aspect) : fit(bounds, turn, e, aspect, fov);
+			case 'silhouette': {
+				const view = FRAMED
+					? standView(height, foot, turn, aspect)
+					: fit(bounds, turn, e, aspect, fov);
+				return scaledStand(view, QUERY.standScale);
+			}
+			case 'crown-sky': {
+				// The crown against the sky from outside the plant: the eye near a person's height, a
+				// stand far enough that the crown's height fills the frame and the whole crown stands
+				// in it, looking up so the sky is behind. The gap inside its box then reads the sky
+				// between the foliage rather than the outline's ragged edge.
+				const base = main.crown.base;
+				const top = main.crown.top;
+				const middle = base + (top - base) * 0.55;
+				const span = 2 * Math.tan((fov * DEG) / 2);
+				const away = ((top - base) / span) * 1.15;
+				const eyeHeight = 1.7;
+				const lift = middle - eyeHeight;
+				const distance = Math.hypot(away, lift);
+				const elevation = (Math.atan2(eyeHeight - middle, away) * 180) / Math.PI;
+				return orbit([foot[0], middle, foot[2]], distance, elevation, turn, fov);
+			}
 			case 'crown': {
 				const top = main.crown.top;
 				const middle = (main.crown.base + top) / 2;
@@ -691,6 +730,19 @@ export default defineSketch(async (ctx) => {
 					fov,
 				);
 			}
+			case 'crown-foot': {
+				// The crown at soil level: its shoots' lower length seen side on, standing on the
+				// ground the slot names, with the studio behind. The camera looks at the foot just
+				// above the soil, close enough for the sheath's colour to read.
+				const aim = Math.max(0.05, 0.06 * height);
+				return orbit(
+					[foot[0], aim, foot[2]],
+					QUERY.distance ?? Math.max(0.3, 5 * aim),
+					e,
+					turn,
+					fov,
+				);
+			}
 			case 'below': {
 				const below = belowView(closePlant(false), turn, lens, {
 					elevation: e,
@@ -702,6 +754,25 @@ export default defineSketch(async (ctx) => {
 				});
 				closeViews.set(view, below);
 				return { position: below.position, target: below.target, fov, near: 0.1 };
+			}
+			case 'crown-underside': {
+				// The camera stands under the crown, the eye as far below its base as the underside
+				// photographs keep it, and looks up at the crown's top: the crown's box fills most of
+				// the frame, its leaves overhead and the trunk below.
+				const top = main.crown.top;
+				const base = main.crown.base;
+				const half = Math.max(0.3, (top - base) / 2);
+				const distance = QUERY.distance ?? Math.max(0.6, half / Math.tan((fov * 0.78 * DEG) / 2));
+				// A plant shorter than the eye stand has no room for a person's eye below its crown:
+				// the eye goes as low as the ground allows, under the crown rather than level with
+				// it, which is where its photograph was taken.
+				const eye = Math.max(0.05, base - 1.6);
+				return {
+					position: [foot[0] + out[0] * distance, eye, foot[2] + out[2] * distance],
+					target: [foot[0], top, foot[2]],
+					fov,
+					near: 0.1,
+				};
 			}
 			case 'inside': {
 				// A plant with no wood keeps its stalks at the crown's own centre, so its inside photograph
@@ -746,6 +817,18 @@ export default defineSketch(async (ctx) => {
 					0.05,
 				);
 				if (found) return found;
+				// A tuft whose crown axis leaves no main stem has no limb to stand at. Its picture is
+				// its crown's foot, where the sheaths that the row judges stand.
+				if (record.growth.model === 'tuft' && departures(skeleton).limbs.length === 0) {
+					const aim = Math.max(0.05, 0.06 * height);
+					return orbit(
+						[foot[0], aim, foot[2]],
+						QUERY.distance ?? Math.max(0.3, 5 * aim),
+						e,
+						turn,
+						fov,
+					);
+				}
 				break;
 			}
 			case 'fork': {
@@ -910,7 +993,7 @@ export default defineSketch(async (ctx) => {
 					fov,
 					0.02,
 				);
-				if (found) return found;
+				if (found) return scaledStand(found, QUERY.standScale);
 				break;
 			}
 			case 'soil': {
@@ -1291,16 +1374,19 @@ export default defineSketch(async (ctx) => {
 				})
 			: undefined;
 	// A stand-in kit's matte is plain black materials; a real kit's is the plant shader's own, which
-	// keeps its quantised parts, cut-outs and sway. A plant under the wind sways out to its preset's
-	// distance, or to the query's own, so a far cascade that only this plant reaches keeps the layer
-	// it holds, and a plant past the distance stands still under the same field.
+	// keeps its quantised parts, cut-outs and sway. The review frames one plant with a camera of its
+	// own, so the sway reach follows that camera's distance: four times the distance keeps every
+	// vertex of the framed plant inside the fade, whatever the governor's live preset is. A slot may
+	// name a shorter reach to show the fade itself.
+	const windCamera = cells[0]?.view.position ?? [0, 0, 0];
+	const swayReach = Math.hypot(windCamera[0], windCamera[1], windCamera[2]) * 4;
 	const plantLook =
 		MATTE && kit.placeholders === true
 			? matteMaterials(ctx, kit)
 			: plantMaterials(ctx, kit, {
 					...(wind && {
 						wind: wind.field,
-						swayDistance: QUERY.sway ?? swayDistanceFor(ctx.quality.preset),
+						swayDistance: QUERY.sway ?? swayReach,
 					}),
 					matte: MATTE,
 				});

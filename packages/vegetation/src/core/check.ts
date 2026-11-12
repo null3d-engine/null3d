@@ -267,6 +267,18 @@ function shootProblems(shoots: ShootSpec, out: string[]): void {
 		wholeProblem(shoots.placement.reach, 'shoots.placement.reach', 0, 60, out);
 	shareProblem(shoots.placement.gather, 'shoots.placement.gather', out);
 	spreadProblems(shoots.placement.scale, 'shoots.placement.scale', true, out);
+	const byHeight = shoots.placement.scaleByHeight;
+	if (byHeight !== undefined) {
+		curveProblems(byHeight, 'shoots.placement.scaleByHeight', out);
+		if (typeof byHeight !== 'number')
+			for (let i = 0; i < byHeight.length; i++) {
+				const value = (byHeight[i] as readonly number[])[1] as number;
+				if (!(value > 0))
+					out.push(
+						`shoots.placement.scaleByHeight is ${value} at pair ${i}; a scale multiplier is above 0`,
+					);
+			}
+	}
 	const clump = shoots.placement.clump;
 	for (const [name, scale] of [
 		['clump', clump],
@@ -278,6 +290,20 @@ function shootProblems(shoots: ShootSpec, out: string[]): void {
 				`shoots.placement.${name}.spacing is ${scale.spacing}; it is metres and must be above 0`,
 			);
 		shareProblem(scale.depth, `shoots.placement.${name}.depth`, out);
+	}
+	const mass = shoots.placement.limbMass;
+	if (mass !== undefined) {
+		wholeProblem(mass.order, 'shoots.placement.limbMass.order', 0, 4, out);
+		if (!(mass.hold >= 0))
+			out.push(
+				`shoots.placement.limbMass.hold is ${mass.hold}; it is metres and must be 0 or above`,
+			);
+		if (!(mass.reach > mass.hold))
+			out.push(
+				`shoots.placement.limbMass.reach is ${mass.reach}; it is metres and must be above hold (${mass.hold})`,
+			);
+		shareProblem(mass.depth, 'shoots.placement.limbMass.depth', out);
+		if (mass.bare !== undefined) shareProblem(mass.bare, 'shoots.placement.limbMass.bare', out);
 	}
 }
 
@@ -295,6 +321,23 @@ function growthProblems(record: Species, out: string[]): void {
 			out.push(
 				`growth.branching is ${growth.branching}; it multiplies a chance and cannot be below 0`,
 			);
+		const byOrder = growth.branchingByOrder;
+		if (byOrder !== undefined) {
+			curveProblems(byOrder, 'growth.branchingByOrder', out);
+			if (typeof byOrder === 'number') {
+				if (!(byOrder >= 0))
+					out.push(
+						`growth.branchingByOrder is ${byOrder}; it multiplies a chance and cannot be below 0`,
+					);
+			} else
+				for (let i = 0; i < byOrder.length; i++) {
+					const value = (byOrder[i] as readonly number[])[1] as number;
+					if (!(value >= 0))
+						out.push(
+							`growth.branchingByOrder is ${value} at pair ${i}; it multiplies a chance and cannot be below 0`,
+						);
+				}
+		}
 		if (growth.clearance !== undefined && !(growth.clearance >= 0 && growth.clearance <= 2))
 			out.push(`growth.clearance is ${growth.clearance}; it is metres of clear air from 0 to 2`);
 		if (growth.turning !== undefined && !(growth.turning >= 0 && growth.turning <= 90))
@@ -318,7 +361,16 @@ function growthProblems(record: Species, out: string[]): void {
 		curveProblems(growth.buds.angle, 'growth.buds.angle', out);
 		if (growth.buds.sideOrders !== undefined)
 			wholeProblem(growth.buds.sideOrders, 'growth.buds.sideOrders', 1, growth.macroOrders, out);
+		if (growth.buds.limbBuds !== undefined)
+			shareProblem(growth.buds.limbBuds, 'growth.buds.limbBuds', out);
 		curveProblems(growth.apical.control, 'growth.apical.control', out);
+		if (growth.maxTurn !== undefined) wholeProblem(growth.maxTurn, 'growth.maxTurn', 0, 90, out);
+		if (growth.limbAzimuth !== undefined)
+			shareProblem(growth.limbAzimuth, 'growth.limbAzimuth', out);
+		if (growth.lateralSpacing !== undefined && !(growth.lateralSpacing >= 0))
+			out.push(
+				`growth.lateralSpacing is ${growth.lateralSpacing}; it is metres and must be 0 or above`,
+			);
 		curveProblems(growth.tropism.photo, 'growth.tropism.photo', out);
 		curveProblems(growth.tropism.gravi, 'growth.tropism.gravi', out);
 		shareProblem(growth.shedding.cleanBole, 'growth.shedding.cleanBole', out);
@@ -360,6 +412,14 @@ function growthProblems(record: Species, out: string[]): void {
 		spreadProblems(growth.shoots, 'growth.shoots', true, out);
 		spreadProblems(growth.blades, 'growth.blades', true, out);
 		spreadProblems(growth.sheath, 'growth.sheath', true, out);
+		const sheathColour = growth.sheathColour;
+		if (sheathColour) {
+			for (const [end, value] of sheathColour.entries())
+				if (!(value >= 0 && value <= 1))
+					out.push(
+						`growth.sheathColour.${end} is ${JSON.stringify(value)}; a colour lies from 0 to 1`,
+					);
+		}
 		wholeProblem(growth.ranks, 'growth.ranks', 1, 3, out);
 		for (const key of ['lean', 'spread', 'size'] as const)
 			curveProblems(growth[key], `growth.${key}`, out);

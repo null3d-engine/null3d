@@ -767,10 +767,21 @@ atlas, at 12, 24 and 48 meters from one camera, cover the same share of their ow
 `tests/image/leaf-card-coverage.spec.ts` runs it on all three GPU paths, and the
 `vegetation-coverage` picture shows the same for three crowns at three distances.
 
-**Owed.** The paint's time on each device, which the device record keeps. The owner's judgment of
-the generated leaves is given: he found them at least as good as the painted set and ruled his sample
-stands for the catalogue, so the leaves are no longer owed here. The `vegetation-versus-creek` picture
-that showed them side by side is removed with Creek's Blender models.
+**The owner's judgment is given.** On 10 November 2026 he judged the generated leaf and bark files
+of the pedunculate oak and the common ash, from review sheets that write both faces of the leaf, its
+relief, the mature bark tiled and one corner at full size, and the young wood, each beside a note of
+what a wrong one would look like. He judged them at least as good as the painted set they replace.
+Asked in two parts, he answered yes that those two species' sheets stand as the sample for every
+species the add-on generates, and yes that he wants the other species shown as well. <!-- outside date -->
+
+The ruling's scope is the approach, not each file. It answers whether the generated atlases are at
+least as good as the painted set they replace; it does not certify that any one species' files are
+right. A fault found in a species' sheet is a finding against that species' work, the painter's when
+the fault is shared and that species' record when it is local, and this ruling never dissolves one.
+Showing him the remaining species' sheets is an obligation this record carries until they are drawn
+and read.
+
+**Owed.** The paint's time on each device, which the device record keeps.
 
 ## What each leaf cell holds
 
@@ -1125,7 +1136,11 @@ translucency demo is. <!-- outside date -->
 
 The forest's own trees stay only until the swap. The add-on's limbs, leaves and coarseness gain the
 much sparser setting that this record's foundation section defines, and the forest then swaps its
-56,000 trees of four kinds to the add-on. Its three fir kinds take variants of the Scots pine, which
+56,000 trees of four kinds to the add-on. The owner confirmed the swap on 10 November 2026, when the
+sparse setting existed and the choice was between swapping and keeping a measured stand-in. His own
+stand costs 240,000 to 496,000 triangles at the demo's count, against 24,600,000 through the add-on,
+which is why the swap waits for the sparse form rather than happening at the dense one.
+<!-- outside date --> Its three fir kinds take variants of the Scots pine, which
 is revived to the species bar, rather than the add-on's built-in conifer.
 
 The translucency demo is an accepted exception. Its own leaf mesh and the standard material's
