@@ -53,7 +53,7 @@ function referenceRow(): Row {
 		state: problems.length === 0 ? 'within' : 'past',
 		detail:
 			problems.length === 0
-				? `${files} files, one for each test in each place`
+				? `${files} files, one for each picture in each place`
 				: `${problems.length} problems, the first is: ${problems[0]}`,
 	};
 }

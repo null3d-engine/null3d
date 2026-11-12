@@ -7,7 +7,7 @@ The unit tests run in a few processes, one for each group of them, so what each 
 - `bun run test` builds the shaders, then runs `bun test` over the tools, the packages, the benchmark scenes and pages, `tests/lib` and the demos.
 - That is a group for each package, and one each for the tools, the benchmark's scenes and pages, `tests/lib` and the demos (`tests/unit.ts`).
 - The demos' group names every top-level folder under `examples/` that holds a test file, at any depth. A demo folder that arrives with a test then joins the run without an edit (`tests/lib/unit-groups.ts`).
-- Each group is a `bun test` of its own. One invocation holds everything it finds in one process, so a group's peak is what its files hold together. The run's peak is the largest group's rather than the sum of them all.
+- Each group is a `bun test` of its own. One invocation holds everything it finds in one process, so a group's peak is what its files hold together. Two groups run at once, so the run's peak is those two together rather than one group's. The run lasts as long as its groups take, split across the two lanes. The ceiling applies to each group, so a full pair may reach twice it.
 - The generated shader set is the largest thing a test can hold: 1,343 modules and 850 MB of JavaScript source on disk. Git does not keep it; the build writes it. A project takes it from the release asset or builds it; `NULL3D_ENGINE_SHADERS` names a folder to use instead, such as a checkout's `packages/engine/src/generated`. CI's package test sets it, and the fresh-project test passes that folder to each of its steps when the caller has not named one. Without the folder it would build 1,353 modules with the single-threaded wasm compiler, which takes longer than any job on a runner.
 - A single file that imports the whole set makes the process large on its own. The same file that reads the set's text costs a fraction of that.
 - A generated set is not the only thing a test holds for good. The WebAssembly texture transcoder's heap grows when a check feeds it hostile files, and it does not shrink, so a check that does that holds every growth it has made. The malformed-file checks reach 1.7 GB of memory that way, from a handful of changed files, each of them a few kilobytes on disk.
@@ -48,7 +48,8 @@ Several helper agents that each run such a unit run on one machine push it past 
 
 | Work | Peak memory | Time |
 | --- | --- | --- |
-| The whole unit run | 2.9 GB | 176 s |
+| The whole unit run, one group at a time | 2.5 GB | 312 s |
+| The whole unit run, two groups at a time | 4.0 GB | 168 s |
 | `tests/lib/runs.test.ts` | 422 MB | 4 s |
 | `tests/lib/jitter.test.ts` | 291 MB | 9 s |
 | Importing the checks plan alone | 267 MB | 5 s |
@@ -62,7 +63,8 @@ Several helper agents that each run such a unit run on one machine push it past 
 The checks that hold gigabytes run one process at a time, each under a ceiling set from its own
 figure. The bundler builds cost the most, because the engine's 890 MB of shader code is in
 the bundle they read and in the bundler's copy of it. What a group of the unit run holds is bounded
-by the group, and the run's peak is its largest group rather than the sum of every file's memory.
+by the group, and the run's peak is the two groups that ran together rather than the sum of every
+file's memory.
 
 ## Rules
 

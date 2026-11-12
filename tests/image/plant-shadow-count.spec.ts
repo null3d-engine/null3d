@@ -29,11 +29,19 @@ interface Result {
 }
 
 /** The longest that one page may take to draw and measure. */
-const PAGE_MS = 120_000;
+const PAGE_MS = 300_000;
 
 /** The row and the wind, which both pages share. */
 const PLANTS = 12;
 const WIND = 2;
+
+/**
+ * Frames that the measurement must hold. The far cascade draws its row every second frame at High,
+ * so four frames sample two of its turns without depending on which frame the window starts on. A
+ * software GPU drew three frames in its first twenty-four seconds, so the page grows its window to
+ * sixty, and the wait covers the start plus every window the page tries before that.
+ */
+const REQUIRED_FRAMES = 4;
 
 /** Opens the page at one sway distance and reads what it measured and built. */
 async function measured(page: Page, gpu: string, sway: number): Promise<Result> {
@@ -43,6 +51,7 @@ async function measured(page: Page, gpu: string, sway: number): Promise<Result> 
 		wind: String(WIND),
 		plants: String(PLANTS),
 		seconds: '3',
+		frames: String(REQUIRED_FRAMES),
 	});
 	await page.goto(`plant-shadow.html?${query}`);
 	const result = await pageResult<Result>(page, PAGE_MS);
@@ -50,7 +59,10 @@ async function measured(page: Page, gpu: string, sway: number): Promise<Result> 
 	expect(result.built, 'the sketch reports what it built').not.toBeNull();
 	expect(result.built?.sway, 'the sketch used the distance it was given').toBe(sway);
 	expect(result.built?.plants, 'the sketch placed the row it was given').toBe(PLANTS);
-	expect(result.frames, 'the measurement drew frames').toBeGreaterThan(30);
+	expect(
+		result.frames,
+		'the measurement drew enough frames for the far cascade turns',
+	).toBeGreaterThanOrEqual(REQUIRED_FRAMES);
 	return result;
 }
 

@@ -756,7 +756,11 @@ export class SketchRunner {
 		const holdsFrames = this.holdsFrames;
 		this.context = {
 			time: this.time,
-			engine: { viewport: this.viewport, capabilities: sketch.capabilities },
+			engine: {
+				viewport: this.viewport,
+				capabilities: sketch.capabilities,
+				held: this.holdsFrames,
+			},
 			scene,
 			materials,
 			geometry,
