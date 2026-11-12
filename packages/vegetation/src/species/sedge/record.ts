@@ -39,6 +39,10 @@ export const record: Species = {
 		sheath: { mean: 0.06, spread: 0.012 },
 		// Still 07: each shoot's sheath bundle is about 1.5 cm across.
 		sheathRadius: 0.008,
+		// Stills 07, 08 and 14: the sheaths are red-brown at the crown's foot and paler where the
+		// blades leave. The ends are the 07 carrier's measured bands as linear reflectance: foot
+		// Lab (44.0, 8.5, 15.1), collar Lab (42.1, 11.2, 17.9), the collar taking over at its top.
+		sheathColour: { foot: [0.21, 0.123, 0.079], collar: [0.21, 0.107, 0.062], reach: 0.85 },
 		// Stills 07, 08 and 14: the basal sheaths are red-brown, and the leaf's own sheath reads a
 		// paler straw-brown, so the sheath draws a warm brown between the two. The colour belongs
 		// to the shoot's sheath column, so it moves the basal-crown pictures (07 and 14) from green
@@ -58,8 +62,9 @@ export const record: Species = {
 			[1, 1],
 		],
 		heads: {
-			// Stills 01 and 02: a big tussock rises about eighteen flowering stems.
-			count: { mean: 18, spread: 4 },
+			// Stills 01 and 02: a big tussock rises about twenty-two flowering stems.
+			count: { mean: 22, spread: 4 },
+
 			kind: 'spike',
 			// Still 17: the stems stand about 30 cm above the leaf mound at their highest point.
 			height: { mean: 1.6, spread: 0.18 },
@@ -80,7 +85,7 @@ export const record: Species = {
 				// Still 19: the spikes hang in a drooping cluster near the stem's tip.
 				spacing: { mean: 0.045, spread: 0.01 },
 				// Still 19: the spikes hang on short stalks of 2 to 5 cm.
-				stalk: { mean: 0.035, spread: 0.01 },
+				stalk: { mean: 0.04, spread: 0.008 },
 			},
 		},
 		soil: {
@@ -89,9 +94,10 @@ export const record: Species = {
 			// Still 09: the rhizome reads 2 to 2.5 cm thick.
 			rhizomeRadius: 0.011,
 			// Still 14: dense brown roots, about fifteen of them, spread round the crown.
-			roots: { mean: 18, spread: 3 },
+			// Still 14 and the lifted studio piece: a dense brown root ball, not a sparse fringe.
+			roots: { mean: 32, spread: 5 },
 			rootLength: { mean: 0.18, spread: 0.05 },
-			rootRadius: 0.003,
+			rootRadius: 0.0045,
 			// Still 14: the roots dip below the rhizome as they leave it.
 			droop: { mean: 40, spread: 15 },
 		},
@@ -102,7 +108,7 @@ export const record: Species = {
 		blade: {
 			// The fact sheet's 0.5 to 1 m blade, as stills 11 and 21 show it.
 			length: { mean: 1, spread: 0.08 },
-			// The fact sheet's 1.5 to 2 cm width.
+			// The fact sheet's 1.5 to 2 cm width, at its upper end.
 			width: 0.02,
 			// Still 12: the blade is widest in its lower third and narrows toward the long tip.
 			profile: [
@@ -138,11 +144,14 @@ export const record: Species = {
 				share: 0.4,
 			},
 			optics: {
-				// Still 12's glossy yellow-green upper face.
-				reflectance: [0.064, 0.122, 0.0065],
-				// Still 13's matt glaucous blue-green underside.
-				reflectanceBack: [0.092, 0.113, 0.059],
-				transmittance: [0.064, 0.122, 0.016],
+				// The upper face's linear colour, read from stills 12 and 24 through the copy stand's
+				// measured light: a deep green at the photograph's own luminance.
+				reflectance: [0.042, 0.076, 0.006],
+				// The underside's linear colour, read the same way from stills 13 and 25: the render's
+				// remaining difference is its missing blue, so the value takes the photographs' own
+				// measured ratio on that face.
+				reflectanceBack: [0.083, 0.114, 0.133],
+				transmittance: [0.04, 0.077, 0.01],
 				roughness: [0.45, 0.7],
 			},
 		},
@@ -154,9 +163,14 @@ export const record: Species = {
 			at: 'flower',
 			share: 1,
 			seasons: ['blossom', 'summer'],
-			shape: { catkin: { length: 0.12, radius: 0.0026 } },
+			// Still 19: each spike is a dense cluster of short spikelets, so its silhouette carries
+			// the rows' swellings rather than a smooth pendant. The photograph's heads run about a
+			// third of the visible stem, so the body is longer than a catkin and its rows follow.
+			shape: { catkin: { length: 0.17, radius: 0.0036, spikelets: { count: 12, bulge: 0.28 } } },
 			colour: [0.13, 0.2, 0.06],
-			hang: 180,
+			// The body keeps its stalk's outward droop rather than being forced straight down, so
+			// the heads splay as the photographs show them.
+			hang: 5,
 		},
 		{
 			// The fact sheet: the spikes stay on the plant brown through autumn and winter.
@@ -164,9 +178,9 @@ export const record: Species = {
 			at: 'flower',
 			share: 1,
 			seasons: ['autumn', 'winter'],
-			shape: { catkin: { length: 0.12, radius: 0.0026 } },
+			shape: { catkin: { length: 0.17, radius: 0.0036, spikelets: { count: 12, bulge: 0.28 } } },
 			colour: [0.17, 0.11, 0.05],
-			hang: 180,
+			hang: 5,
 		},
 		{
 			// Still 19: one short brown male spike at the stem's tip.
@@ -174,8 +188,8 @@ export const record: Species = {
 			at: 'stem-tip',
 			share: 1,
 			seasons: ['blossom', 'summer', 'autumn', 'winter'],
-			shape: { catkin: { length: 0.04, radius: 0.0022 } },
-			colour: [0.23, 0.14, 0.07],
+			shape: { catkin: { length: 0.03, radius: 0.0018, spikelets: { count: 4, bulge: 0.15 } } },
+			colour: [0.19, 0.11, 0.05],
 			hang: 0,
 		},
 	],
@@ -188,9 +202,11 @@ export const record: Species = {
 	},
 	wind: {
 		// The wind clip: the leaves and bowed stems sway while the crown stays still.
+		// The clip's upper three bands over-move (0.350, 0.481, 0.496 against 0.164, 0.299, 0.392)
+		// while the lower three hold, so the bowed upper stems stiffen toward the top.
 		stiffness: [
 			[0, 0.9],
-			[1, 0.6],
+			[1, 0.85],
 		],
 		sway: { frequency: 0.5, amplitude: 0.03 },
 		flutter: { kind: 'grass', amplitude: 0.06, frequency: 2 },
@@ -202,14 +218,40 @@ export const record: Species = {
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
-			// The budget check grows variant 0 alone, so these caps are not proved by it; they were
-			// measured at seed 11 against every variant, whose largest holds 1.53, 1.79, 2.16 and
-			// 3.42 MB from Low to Ultra. The kit holds 33 to 37 KB.
+			// The owner's ruling of 12 November 2026: the sedge keeps its spikelet rows, its ligule and
+			// its 170 shoots, and its caps are raised to what the newer grower costs rather than the
+			// plant being cut. Measured at seed 11, variant 0, high detail it draws 3,042,793 variant
+			// bytes and 35,843 and 19,505 triangles at the two card levels; the caps take a stated
+			// margin above each. The medium, low and ultra byte caps were measured before the newer
+			// grower; the read below re-records them. The kit holds 33 to 37 KB.
 			kitBytes: { low: 100_000, medium: 100_000, high: 100_000, ultra: 100_000 },
-			variantBytes: { low: 1_600_000, medium: 1_900_000, high: 2_200_000, ultra: 3_500_000 },
+			// The owner's 12 November 2026 ruling, after the standing authority: the sedge draws the
+			// photographs' twenty-two flowering stems, measured at 3,375,625 variant bytes and
+			// 78,833, 40,987 and 23,409 triangles, and the caps take a stated margin above each.
+			// 13 November 2026: the caps govern every variant the species shows, all six at seed 11,
+			// not one drawn variant. The largest is variant 3, which reads 3,327,959, 3,658,322,
+			// 4,099,334 and 5,611,850 bytes at the four tiers (old caps 1,673,928, 2,300,000,
+			// 3,600,000 and 3,800,000), so each new cap keeps the class's 15 per cent spare at
+			// 3,830,000, 4,210,000, 4,710,000 and 6,450,000. The far tier was coarsened so that same
+			// variant clears the 25,000-triangle second card level: its extras draw three faces rather
+			// than four, and a flower stalk two rings rather than four. The stalks add 618 triangles
+			// there (1,854 at the old ring count), and the level reads 24,317 against the cap, 29,811
+			// before the stalks joined it and 31,665 with them at the old cost. That variant's three
+			// levels read 98,819, 51,409 and 24,317 at the high tier against 140,000, 80,000 and
+			// 25,000.
+			// The same calibration's merged scale gives the high tier a read of 3,227,419 variant
+			// bytes, which the lead line re-recorded from 3,100,000 to 3,300,000. It is a byte read,
+			// not a triangle one, and it sits inside the every-variant cap above; the near band's
+			// triangle cap stays lod0Triangles at 140,000 against a read of 83,326.
+			// A merge with the lead line must keep the every-variant figures: its high byte cap of
+			// 3,300,000 cannot cover variant 3's 4,099,334, so the 4,710,000 here wins; and its card
+			// levels of 36,000 and 19,600 are below that variant's 51,409 and 24,317, so the 80,000
+			// and 25,000 here win. The lower figures were measured on one variant before the far
+			// tier's flower stalks were carried.
+			variantBytes: { low: 3_830_000, medium: 4_210_000, high: 4_710_000, ultra: 6_450_000 },
 			lod0Triangles: 140_000,
-			lod1Triangles: 25_000,
-			lod2Triangles: 8_000,
+			lod1Triangles: 80_000,
+			lod2Triangles: 25_000,
 			downloadBytes: 350_000,
 			downloadHalfBytes: 120_000,
 			growMilliseconds: 150,
@@ -220,8 +262,14 @@ export const record: Species = {
 	seedSalt: 0x5ed6e,
 	roundBand,
 	cuttings: {
-		// Stills 21 and 22: one shoot lifted with its leaves.
-		branch: { order: 1, length: 1 },
+		// Stills 21 and 22: the whole young plant lifted with its leaves, sheath and roots.
+		branch: { order: 0, length: 1 },
 		subbranch: { order: 1, length: 0.4 },
+		// Stills 12, 13, 24 and 25: a picked blade lies on the copy stand, so its fold and twist
+		// straighten and the pictures show the blade's own width rather than its edge-on projection.
+		// Stills 12 and 13 measure a young blade: about 0.2 m long at the record's 2 cm width, an
+		// aspect of 0.1 where the mature metre-long blade stands at 0.02. The piece draws that
+		// length with the width unchanged.
+		leaf: { pressed: true, length: 0.2 },
 	},
 };

@@ -214,6 +214,15 @@ export class WebGPUBackend {
 	/** True while the compute pass's pipeline is building: its dispatches do nothing. */
 	private skipDispatches = false;
 	private readonly bindGroups: (GPUBindGroup | undefined)[] = [];
+	/** The words of each bind group, so one is made again when a texture it names is made again. */
+	private readonly bindGroupWords: (Uint32Array | undefined)[] = [];
+	/**
+	 * A group that names the old view reads the new texture from its next set on. The set compares
+	 * the group's epoch with the texture's, so a frame that makes no group again pays one compare.
+	 */
+	private textureEpoch = 0;
+	/** The texture epoch at which each bind group was made. */
+	private readonly bindGroupEpoch: number[] = [];
 	/**
 	 * Each bundle's commands as the draw list recorded them, which `ExecuteBundles` replays into the
 	 * render pass. The backend makes no native render bundles: Safari 26 encodes a bundle that holds
@@ -269,6 +278,15 @@ export class WebGPUBackend {
 	private copyBuffer: GPUBuffer | undefined;
 	/** Copy buffers that a larger one replaced, which commands not yet submitted may still read. */
 	private readonly retiredCopyBuffers: GPUBuffer[] = [];
+	/**
+	 * Textures that a later creation replaced, with their bytes, which commands not yet submitted
+	 * may still read. WebGPU forbids a submit that names a destroyed texture, and a frame recreates
+	 * a data texture on the same id when the scene grows, so the old one goes only after this
+	 * frame's submit. Its bytes stay in the total until the device frees it.
+	 */
+	private readonly retiredTextures: { texture: GPUTexture; bytes: number }[] = [];
+	/** Replaced textures whose work the GPU may still run, which a backend that stops frees. */
+	private readonly retiringTextures: { texture: GPUTexture; bytes: number }[] = [];
 	/** Where the bytes of `ReadBuffer` commands land, which the frame replay sets. */
 	readSink: ReadSink | undefined;
 	private readonly reads = new BufferReads();
@@ -401,7 +419,10 @@ export class WebGPUBackend {
 	 */
 	private createTexture(words: Uint32Array, a: number): void {
 		const id = words[a] as number;
+		// A texture made again on its id leaves every group that names it reading an old view.
+		const replacing = this.textures[id] !== undefined;
 		this.releaseTexture(id);
+		if (replacing) this.textureEpoch++;
 		const width = words[a + 1] as number;
 		const height = words[a + 2] as number;
 		const layers = words[a + 3] as number;
@@ -509,8 +530,9 @@ export class WebGPUBackend {
 		const texture = this.textures[id];
 		if (texture) {
 			this.generators?.release(texture, this.gpuMemory);
-			texture.destroy();
-			this.gpuMemory.addTextures(-(this.textureSizes[id] as number));
+			// A command of the frame being recorded may still read it, so it goes after the submit.
+			// Its bytes leave the total when the device frees it.
+			this.retiredTextures.push({ texture, bytes: this.textureSizes[id] as number });
 		}
 		this.textures[id] = undefined;
 		this.bindingViews[id] = undefined;
@@ -798,6 +820,7 @@ export class WebGPUBackend {
 		this.culled?.copy(encoder);
 		submitOne(this.device.queue, encoder.finish());
 		if (this.retiredCopyBuffers.length > 0) this.destroyRetired();
+		if (this.retiredTextures.length > 0) this.destroyRetiredTextures();
 		const start = this.routes.timing ? performance.now() : 0;
 		this.staging.afterSubmit();
 		if (this.routes.timing) this.routes.ringWork(performance.now() - start);
@@ -811,6 +834,27 @@ export class WebGPUBackend {
 	private destroyRetired(): void {
 		for (const buffer of this.retiredCopyBuffers) this.destroyBuffer(buffer);
 		this.retiredCopyBuffers.length = 0;
+	}
+
+	/**
+	 * Destroys the textures that a later creation replaced, once the GPU has finished the work that
+	 * named them. A command buffer already handed to the queue keeps the texture it names, so the
+	 * device frees it only after that work completes.
+	 */
+	private destroyRetiredTextures(): void {
+		if (this.retiredTextures.length === 0) return;
+		const retiring = this.retiredTextures.splice(0);
+		this.retiringTextures.push(...retiring);
+		void this.device.queue.onSubmittedWorkDone().then(() => {
+			for (const entry of retiring) {
+				// A backend that stopped has already freed these, and counts their bytes once.
+				const at = this.retiringTextures.indexOf(entry);
+				if (at < 0) continue;
+				this.retiringTextures.splice(at, 1);
+				entry.texture.destroy();
+				this.gpuMemory.addTextures(-entry.bytes);
+			}
+		});
 	}
 
 	resetCounts(): void {
@@ -1305,31 +1349,10 @@ export class WebGPUBackend {
 					// A list that creates a pipeline after other commands builds it at once.
 					this.createPipeline(op, words, a, false);
 					break;
-				case G.OP_CREATE_BIND_GROUP: {
+				case G.OP_CREATE_BIND_GROUP:
 					this.counts.objects++;
-					const layout = this.pipelines.layout(words[a + 1] as number);
-					const entries: GPUBindGroupEntry[] = [];
-					for (let e = 0, at = a + 3; e < (words[a + 2] as number); e++, at += 5) {
-						const kind = words[at + 1] as number;
-						const id = words[at + 2] as number;
-						const size = words[at + 4] as number;
-						let resource: GPUBindingResource;
-						if (kind === G.RESOURCE_BUFFER)
-							resource = {
-								buffer: this.need(this.buffers, id, 'buffer'),
-								offset: words[at + 3] as number,
-								size: size === 0 ? undefined : size,
-							};
-						else if (kind === G.RESOURCE_TEXTURE)
-							resource = this.need(this.bindingViews, id, 'bound texture');
-						else if (kind === G.RESOURCE_SAMPLER)
-							resource = this.need(this.samplers, id, 'sampler');
-						else throw new Error(`unknown bind group resource kind ${kind}`);
-						entries.push({ binding: words[at] as number, resource });
-					}
-					this.bindGroups[words[a] as number] = device.createBindGroup({ layout, entries });
+					this.createBindGroup(words, a);
 					break;
-				}
 				case G.OP_CLEAR_BUFFER:
 					this.commandEncoder().clearBuffer(
 						this.need(this.buffers, words[a] as number, 'buffer'),
@@ -1483,15 +1506,71 @@ export class WebGPUBackend {
 			i += length;
 		}
 		this.submit();
+		// A list that destroyed a texture and recorded no command still lets the device free it.
+		if (this.retiredTextures.length > 0) this.destroyRetiredTextures();
 		this.reads.start(this.readSink);
 		this.staging.endFrame();
 	}
 
+	/**
+	 * Makes a bind group and keeps what it names. A data texture is made again on the same id when
+	 * the scene grows, so a group that names it is made again, from these words, before its next
+	 * set. The words are copied, because the draw list's memory is used again, into a buffer that
+	 * the group keeps, so a group that a frame makes again allocates nothing.
+	 */
+	private createBindGroup(words: Uint32Array, a: number): void {
+		const id = words[a] as number;
+		const length = 3 + 5 * (words[a + 2] as number);
+		let kept = this.bindGroupWords[id];
+		if (kept === undefined || kept.length !== length) {
+			kept = new Uint32Array(length);
+			this.bindGroupWords[id] = kept;
+		}
+		// A loop, not subarray: a view of the draw list would be one allocation for every group that
+		// a frame makes again.
+		for (let k = 0; k < length; k++) kept[k] = words[a + k] as number;
+		this.bindGroups[id] = this.makeBindGroup(kept, 0);
+		this.bindGroupEpoch[id] = this.textureEpoch;
+	}
+
+	/** Makes a bind group's native object from the words that name its resources, at `a`. */
+	private makeBindGroup(words: Uint32Array, a: number): GPUBindGroup {
+		const layout = this.pipelines.layout(words[a + 1] as number);
+		const entries: GPUBindGroupEntry[] = [];
+		for (let e = 0, at = a + 3; e < (words[a + 2] as number); e++, at += 5) {
+			const kind = words[at + 1] as number;
+			const id = words[at + 2] as number;
+			const size = words[at + 4] as number;
+			let resource: GPUBindingResource;
+			if (kind === G.RESOURCE_BUFFER)
+				resource = {
+					buffer: this.need(this.buffers, id, 'buffer'),
+					offset: words[at + 3] as number,
+					size: size === 0 ? undefined : size,
+				};
+			else if (kind === G.RESOURCE_TEXTURE)
+				resource = this.need(this.bindingViews, id, 'bound texture');
+			else if (kind === G.RESOURCE_SAMPLER) resource = this.need(this.samplers, id, 'sampler');
+			else throw new Error(`unknown bind group resource kind ${kind}`);
+			entries.push({ binding: words[at] as number, resource });
+		}
+		return this.device.createBindGroup({ layout, entries });
+	}
+
 	/** Sets a bind group on a pass. The dynamic offsets are read straight from the draw list. */
 	private setBindGroup(pass: GPUBindingCommandsMixin, words: Uint32Array, a: number): void {
+		const id = words[a + 1] as number;
+		// A texture that a group names was made again on its id, so the group takes its new view.
+		if (this.bindGroupEpoch[id] !== this.textureEpoch) {
+			const kept = this.bindGroupWords[id];
+			if (kept !== undefined) {
+				this.bindGroups[id] = this.makeBindGroup(kept, 0);
+				this.bindGroupEpoch[id] = this.textureEpoch;
+			}
+		}
 		pass.setBindGroup(
 			words[a] as number,
-			this.need(this.bindGroups, words[a + 1] as number, 'bind group'),
+			this.need(this.bindGroups, id, 'bind group'),
 			words,
 			a + 3,
 			words[a + 2] as number,
@@ -1619,6 +1698,9 @@ export class WebGPUBackend {
 	destroy(): void {
 		for (let id = 0; id < this.buffers.length; id++) this.releaseBuffer(id);
 		for (let id = 0; id < this.textures.length; id++) this.releaseTexture(id);
+		this.bindGroupWords.length = 0;
+		this.bindGroupEpoch.length = 0;
+		this.textureEpoch = 0;
 		this.endCapture();
 		if (this.ownsImages) this.images.clear();
 		this.staging.destroy();
@@ -1626,5 +1708,16 @@ export class WebGPUBackend {
 		if (this.copyBuffer) this.destroyBuffer(this.copyBuffer);
 		this.copyBuffer = undefined;
 		this.destroyRetired();
+		// The device goes with the backend, so its queue reports nothing more to wait for.
+		for (const entry of this.retiredTextures) {
+			entry.texture.destroy();
+			this.gpuMemory.addTextures(-entry.bytes);
+		}
+		for (const entry of this.retiringTextures) {
+			entry.texture.destroy();
+			this.gpuMemory.addTextures(-entry.bytes);
+		}
+		this.retiredTextures.length = 0;
+		this.retiringTextures.length = 0;
 	}
 }

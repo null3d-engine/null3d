@@ -113,6 +113,12 @@ export interface SketchEngine {
 	readonly viewport: SketchViewport;
 	/** The GPU path the engine chose, and what it offers: the values of `engine.capabilities` on the page. */
 	readonly capabilities: EngineCapabilities;
+	/**
+	 * True when the engine steps the sketch itself, as hold mode and a replay do, rather than
+	 * running it live. A sketch that returns before its scene is complete waits for the scene when
+	 * this is true, so a held frame or a replay shows the finished scene.
+	 */
+	readonly held: boolean;
 }
 
 /**

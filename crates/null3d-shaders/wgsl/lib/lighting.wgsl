@@ -1,4 +1,5 @@
 #define_import_path null3d::lighting
+#import null3d::color::{limit_hdr}
 #import null3d::math
 #import null3d::tables::{DFG_SIZE, dfg_entry}
 
@@ -423,7 +424,9 @@ fn indirect_diffuse(m: PbrMaterial, irradiance: vec3f, dfg: vec2f) -> vec3f {
     let f0 = m.specular;
 #endif
     let s = multiscattering(f0, m.specular_grazing, dfg);
-    return irradiance * brdf_lambert(m.diffuse) * (1.0 - s.single - s.multi);
+    // A surface whose diffuse color is zero reflects no light from around it, and an infinite or
+    // NaN irradiance would multiply that zero into a NaN. The limit keeps the product finite.
+    return limit_hdr(irradiance) * brdf_lambert(m.diffuse) * (1.0 - s.single - s.multi);
 }
 
 /// The light that a PBR surface reflects from an environment map, as three.js's
