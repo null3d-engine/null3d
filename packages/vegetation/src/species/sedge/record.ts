@@ -39,6 +39,10 @@ export const record: Species = {
 		sheath: { mean: 0.06, spread: 0.012 },
 		// Still 07: each shoot's sheath bundle is about 1.5 cm across.
 		sheathRadius: 0.008,
+		// Stills 07, 08 and 14: the sheaths are red-brown at the crown's foot and paler where the
+		// blades leave. One measured colour serves both ends for this read: the 07 carrier's
+		// non-green band (Lab 39.0, 11.2, 18.6) as linear reflectance.
+		sheathColour: { foot: [0.183, 0.09, 0.049], collar: [0.183, 0.09, 0.049], reach: 0.85 },
 		// Stills 07, 08 and 14: the basal sheaths are red-brown, and the leaf's own sheath reads a
 		// paler straw-brown, so the sheath draws a warm brown between the two. The colour belongs
 		// to the shoot's sheath column, so it moves the basal-crown pictures (07 and 14) from green

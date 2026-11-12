@@ -68,5 +68,6 @@
 		"background": "studio-grey",
 		"lifted": 1,
 		"view": "soil"
-	}
+	},
+	"_sheath": [0.183, 0.09, 0.049]
 }
