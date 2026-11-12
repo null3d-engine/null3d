@@ -438,6 +438,10 @@ function growthProblems(record: Species, out: string[]): void {
 			spreadProblems(heads.height, 'growth.heads.height', true, out);
 			wholeProblem(heads.sides, 'growth.heads.sides', 3, 12, out);
 			shareProblem(heads.stalkShare, 'growth.heads.stalkShare', out);
+			if (heads.leanShare !== undefined && !(heads.leanShare >= 0 && heads.leanShare <= 3))
+				out.push(
+					`growth.heads.leanShare is ${heads.leanShare}; a share of a shoot's lean lies from 0 to 3`,
+				);
 			if (heads.kind === 'panicle' && !heads.panicle)
 				out.push("growth.heads is a 'panicle' and needs its panicle");
 			if (heads.kind === 'spike' && !heads.spikes)
