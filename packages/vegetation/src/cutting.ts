@@ -155,6 +155,11 @@ export interface CuttingOptions {
 	 */
 	readonly lateralAngle?: number;
 	/**
+	 * The laterals' length over their class's, so one stem class serves a long branch and a short
+	 * twig: 0.5 hangs half-length shoots, 1.5 hangs longer ones. 1 by default.
+	 */
+	readonly lateralScale?: number;
+	/**
 	 * Which of the stem class's prototypes to take, 0 for the first. 0 by default.
 	 */
 	readonly stemPick?: number;
@@ -793,6 +798,7 @@ export function clusterRank(
  * @param from The share of the stem's height where the first lateral leaves.
  * @param to The share where the last leaves.
  * @param angle Degrees each lateral leans outward from the stem's line.
+ * @param scaleOfLateral The laterals' length over their class's.
  * @param yaw Degrees the whole piece turns about its upright axis.
  * @returns The rows and their bounds, or undefined for a prototype without a mesh.
  * @category api/vegetation
@@ -807,6 +813,7 @@ function stemRows(
 	from: number,
 	to: number,
 	angle: number,
+	scaleOfLateral: number,
 	yaw: number,
 ):
 	| { readonly rows: ShootRows; readonly bounds: { readonly min: Vec3; readonly max: Vec3 } }
@@ -857,11 +864,11 @@ function stemRows(
 	const prototype = new Uint8Array(rows);
 	const min = [Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY];
 	const max = [Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY];
-	const add = (p: Float32Array, q: ArrayLike<number>, at: readonly number[]) => {
+	const add = (p: Float32Array, q: ArrayLike<number>, at: readonly number[], scale: number) => {
 		for (let i = 0; i < p.length; i += 3) {
 			quatRotate(q, 0, [p[i] as number, p[i + 1] as number, p[i + 2] as number], turned);
 			for (let k = 0; k < 3; k++) {
-				const v = (turned[k] as number) + (at[k] as number);
+				const v = (turned[k] as number) * scale + (at[k] as number);
 				min[k] = Math.min(min[k] as number, v);
 				max[k] = Math.max(max[k] as number, v);
 			}
@@ -870,7 +877,7 @@ function stemRows(
 	const origin: readonly number[] = [0, 0, 0];
 	rotation.set(stemQ, 0);
 	prototype[0] = stemPrototype.index;
-	add(stemP, stemQ, origin);
+	add(stemP, stemQ, origin, 1);
 	const lateralP = lateralTier.positions;
 	for (let row = 1; row < rows; row++) {
 		const index = row - 1;
@@ -890,19 +897,21 @@ function stemRows(
 		position[row * 3 + 1] = y;
 		position[row * 3 + 2] = best.z;
 		prototype[row] = lateralPrototype.index;
-		add(lateralP, q, [best.x, y, best.z]);
+		add(lateralP, q, [best.x, y, best.z], scaleOfLateral);
 	}
 	for (let k = 0; k < 3; k++) {
 		if (!Number.isFinite(min[k])) min[k] = 0;
 		if (!Number.isFinite(max[k])) max[k] = 0;
 	}
+	const rowScale = new Float32Array(rows).fill(1);
+	for (let row = 1; row < rows; row++) rowScale[row] = scaleOfLateral;
 	return {
 		rows: {
 			count: rows,
 			prototype,
 			position,
 			rotation,
-			scale: new Float32Array(rows).fill(1),
+			scale: rowScale,
 			record: new Uint16Array(rows),
 			phase: new Uint8Array(rows),
 			sky: new Uint8Array(rows).fill(250),
@@ -991,6 +1000,7 @@ export function clusterRow(
 		const from = Math.min(1, Math.max(0, cutting.lateralFrom ?? fan?.lateralFrom ?? 0.45));
 		const to = Math.min(1, Math.max(from, cutting.lateralTo ?? fan?.lateralTo ?? 0.92));
 		const angle = Math.min(90, Math.max(-90, cutting.lateralAngle ?? fan?.lateralAngle ?? 20));
+		const lateralScale = Math.min(3, Math.max(0.1, cutting.lateralScale ?? fan?.lateralScale ?? 1));
 		const assembly = stemRows(
 			kit,
 			cutting,
@@ -1001,6 +1011,7 @@ export function clusterRow(
 			from,
 			to,
 			angle,
+			lateralScale,
 			yaw,
 		);
 		if (assembly) return assembly;

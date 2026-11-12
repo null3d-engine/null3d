@@ -2194,6 +2194,11 @@ export interface CutFromShoots {
 	 */
 	readonly lateralAngle?: number;
 	/**
+	 * The laterals' length over their class's, so one stem class serves a long branch and a short
+	 * twig: 0.5 hangs half-length shoots, 1.5 hangs longer ones. 1 by default.
+	 */
+	readonly lateralScale?: number;
+	/**
 	 * Which of the stem class's prototypes to take, 0 for the first. 0 by default.
 	 */
 	readonly stemPick?: number;

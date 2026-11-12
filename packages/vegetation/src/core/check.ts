@@ -578,6 +578,10 @@ function cuttingProblems(record: Species, out: string[]): void {
 				out.push(
 					`cuttings.${part}.lateralAngle is ${hint.lateralAngle}; it is degrees from -90 to 90`,
 				);
+			if (hint.lateralScale !== undefined && !(hint.lateralScale > 0 && hint.lateralScale <= 3))
+				out.push(
+					`cuttings.${part}.lateralScale is ${hint.lateralScale}; it is a multiple above 0 and at most 3`,
+				);
 			if (hint.stemPick !== undefined && !(Number.isInteger(hint.stemPick) && hint.stemPick >= 0))
 				out.push(`cuttings.${part}.stemPick is ${hint.stemPick}; it is a whole number from 0`);
 		} else {
