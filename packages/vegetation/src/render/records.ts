@@ -386,7 +386,7 @@ export function speciesHeader(
 	const bud = record.shoots?.bud.colour;
 	if (bud) texel(header, HEADER.bud, [...bud, 1]);
 	const sway = windSway(record);
-	texel(header, HEADER.sway, [sway.amplitude, sway.frequency, sway.power, 0]);
+	texel(header, HEADER.sway, [sway.amplitude, sway.frequency, sway.power, record.skyToLeaf ?? 0]);
 	const seasonBark = record.seasons.bark;
 	if (seasonBark?.autumn) texel(header, HEADER.autumnBark, [...seasonBark.autumn, 1]);
 	if (seasonBark?.winter) texel(header, HEADER.winterBark, [...seasonBark.winter, 1]);

@@ -863,6 +863,9 @@ fn coverage(input: SurfaceInput) -> f32 {
 fn surface(input: SurfaceInput) -> Surface {
     var s = defaultSurface(input);
     let mode = plant_mode();
+    // The share of the open sky added to the leaf and card faces, the record's own extinction; 0
+    // where it names none, so the faces draw as before.
+    let leaf_sky = header(HEADER_SWAY).w;
     let upper = input.frontFacing;
     let facing = select(-1.0, 1.0, upper);
     // Derivatives first, in uniform control flow; the roles sample with explicit gradients.
@@ -1071,6 +1074,7 @@ fn surface(input: SurfaceInput) -> Surface {
             // The card's normal is toward the viewer of the face it shows; the frame's normal is too.
             mapped = card_normal;
             occlusion = input.vertexColor.a * saturate(self_shade);
+            occlusion = mix(occlusion, 1.0, leaf_sky);
         }
     } else if (mode == MODE_EXTRAS) {
         // An extra takes its kind's colour and roughness from the header, by the index in its
@@ -1189,6 +1193,7 @@ fn surface(input: SurfaceInput) -> Surface {
             let row = shoot_row(object.values);
             let turn = near_texel(row.slot * 2).w;
             occlusion = saturate(row.sky / 250.0) * input.vertexColor.a;
+            occlusion = mix(occlusion, 1.0, leaf_sky);
             sky_normal = out_of_turn(bent_normal(row.bent), turn);
         } else {
             occlusion = input.vertexColor.a;
