@@ -244,6 +244,9 @@ export const record: Species = {
 		subbranch: { order: 1, length: 0.4 },
 		// Stills 12, 13, 24 and 25: a picked blade lies on the copy stand, so its fold and twist
 		// straighten and the pictures show the blade's own width rather than its edge-on projection.
-		leaf: { pressed: true },
+		// Stills 12 and 13 measure a young blade: about 0.2 m long at the record's 2 cm width, an
+		// aspect of 0.1 where the mature metre-long blade stands at 0.02. The piece draws that
+		// length with the width unchanged.
+		leaf: { pressed: true, length: 0.2 },
 	},
 };

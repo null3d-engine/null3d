@@ -2209,6 +2209,12 @@ export interface CutLeaf {
 	 */
 	readonly pressed?: boolean;
 	/**
+	 * Metres of blade the piece draws, where the pictures show a young blade shorter than the
+	 * record's: the blade's width and profile are unchanged, so the piece takes the young blade's
+	 * proportions. Absent, the record's length.
+	 */
+	readonly length?: number;
+	/**
 	 * Metres of stalk a pressed leaf keeps under its blade, for a species whose leaves rise on long
 	 * stalks: the piece shows the short piece of stalk a picked leaf does. A share of the blade's
 	 * length by default.
