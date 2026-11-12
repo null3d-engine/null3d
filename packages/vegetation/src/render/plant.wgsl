@@ -148,6 +148,10 @@ const WOOD_UV_STEPS: f32 = 1024.0;
 const TEXTURE_UV_STEPS: f32 = 65535.0;
 // The radius that the wood's second coordinates count from 0 to 1.
 const WOOD_RADIUS_SPAN: f32 = 4.0;
+// The least width, in the drawn frame's pixels, that the wood draws: one pixel at the review's work
+// width, where the matte is measured, in a frame drawn at the stills' width. A twig thinner than
+// this rasterises as dots, and the piece measure then reads its join as a gap.
+const WOOD_LEAST_PIXELS: f32 = 1.2;
 // The coverage at which a texel counts as leaf, the materials' alpha cutoff.
 const CUTOFF: f32 = 0.5;
 // How much a card's alpha rises for each mip level its sample reads. A mip level's alpha is already
@@ -632,6 +636,41 @@ fn stalk_widen(input: VertexInput, plant: vec3f) -> vec3f {
     return transpose(linear) * world_offset / squared;
 }
 
+/// The plant-space offset that widens wood thinner than the least drawn width: each side vertex
+/// moves out along its normal's screen direction until the tube's projected width reaches the
+/// figure. The conversion back to the plant's space is the card stalk's, since both offsets are a
+/// screen-space widening of a line.
+fn wood_widen(input: VertexInput, plant: vec3f) -> vec3f {
+    if (frame.resolution.x <= 0.0 || frame.resolution.y <= 0.0) {
+        return vec3f(0.0);
+    }
+    let model = object.worldMatrix;
+    let clip = camera.viewProjection * (model * vec4f(plant, 1.0));
+    if (clip.w <= 0.0001) {
+        return vec3f(0.0);
+    }
+    let radius = max(input.uv1.x * WOOD_RADIUS_SPAN, 0.00001);
+    let normal = normalize(input.normal);
+    let clip_out = camera.viewProjection * (model * vec4f(plant + normal * radius, 1.0));
+    if (clip_out.w <= 0.0001) {
+        return vec3f(0.0);
+    }
+    // The tube's radius on the screen, in pixels, and the half-width the figure asks for.
+    let step = clip_out.xy / clip_out.w - clip.xy / clip.w;
+    let half_now = length(step * frame.resolution * 0.5);
+    let half_least = WOOD_LEAST_PIXELS * 0.5;
+    if (half_now >= half_least || length(step) <= 0.000001) {
+        return vec3f(0.0);
+    }
+    let across = normalize(step) * (half_least - half_now) * 2.0 / frame.resolution;
+    let projection = camera.projection;
+    let view = vec3f(across.x * clip.w / projection[0][0], across.y * clip.w / projection[1][1], 0.0);
+    let world_offset = (transpose(camera.view) * vec4f(view, 0.0)).xyz;
+    let linear = mat3x3f(model[0].xyz, model[1].xyz, model[2].xyz);
+    let squared = max(dot(linear[0], linear[0]), 0.000001);
+    return transpose(linear) * world_offset / squared;
+}
+
 /// Wood, cards, merged foliage and extras: the 16-bit position into the plant's metres, lifted by
 /// the bark's height on the nearest wood, and moved by the wind in the plant's own space. The
 /// position comes as a fraction of the box, so the offset back from it keeps the plant's own
@@ -674,6 +713,9 @@ fn plant_offset(input: VertexInput, mode: i32) -> vec3f {
     }
     if (mode == MODE_CARDS && abs(input.uv1.y - STALK_PLANE) < 0.1) {
         moved += stalk_widen(input, plant);
+    }
+    if (mode == MODE_WOOD) {
+        moved += wood_widen(input, moved);
     }
     return moved - input.position;
 }
