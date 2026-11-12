@@ -55,12 +55,25 @@
 		"skyShare": 0.62,
 		"daylight": 2.4
 	},
+	"22-subbranch-studio.png": {
+		"stem": "whip-stem",
+		"shoot": "cut",
+		"laterals": 3,
+		"lateralFrom": 0.45,
+		"lateralTo": 0.95,
+		"lateralAngle": 20,
+		"lateralScale": 0.7
+	},
 	"09-secondary-branching.png": {
-		"leaves": 3.4,
-		"roll": -90
+		"leaves": 4.5,
+		"roll": -90,
+		"shoot": "twig-big",
+		"shoots": 3,
+		"layout": "spray",
+		"spread": 1.2
 	},
 	"10-fine-twigs.png": {
-		"leaves": 1.3
+		"leaves": 7.46
 	},
 	"19-hanging-shoot.png": {
 		"view": "strands",
@@ -94,6 +107,14 @@
 	"31-young-willow-crown.png": {
 		"skyShare": 0.55,
 		"daylight": 2.0
+	},
+	"16-bark-on-limb.png": {
+		"girth": null,
+		"thin": 0.153,
+		"span": 0.5,
+		"along": 0.3,
+		"barkMask": true,
+		"leafyBark": true
 	},
 	"28-young-bark.png": {
 		"thin": 0.015,

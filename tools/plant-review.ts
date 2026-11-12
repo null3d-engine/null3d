@@ -36,14 +36,19 @@ import {
 	fittedMaskClause,
 	fixed,
 	framingQuery,
+	MASK_GATE_PLAIN,
+	MASK_SUBJECT_FLOOR,
 	rubricBand,
+	SHEATH_VIEWS,
 	type StillResult,
+	sweepMeasures,
 	type TurnResult,
 	viewSheets,
 	type WindResult,
 } from './lib/plant-review/compare.ts';
 import { coverageMarkdown, coverageOf } from './lib/plant-review/coverage.ts';
 import {
+	deltaE2000,
 	onColour,
 	probeVideo,
 	type Rgba,
@@ -60,6 +65,7 @@ import {
 	type Slot,
 	skyMaskable,
 	soilMaskable,
+	subjectShares,
 	TURN_VIEW,
 	type TurnVideo,
 	withSlot,
@@ -71,6 +77,7 @@ import {
 	singleShot,
 	turnShots,
 } from './lib/plant-review/render.ts';
+import { type SheathTarget, sheathTargetOf } from './lib/plant-review/sheath.ts';
 
 /** Where the reference folders are when `--refs` names a slug. */
 const REFERENCES =
@@ -107,6 +114,8 @@ interface Manifest {
 	readonly windFps: number;
 	readonly started: string;
 	readonly seconds: number;
+	/** The species record's height band, so a sweep picture's height is read against it. */
+	readonly sizeBand?: { readonly mean: number; readonly spread: number };
 	readonly frames: readonly RunFrame[];
 }
 
@@ -135,6 +144,17 @@ async function moundFormOf(species: string): Promise<boolean> {
 	if (!isSpeciesId(species)) return false;
 	const model = (await loadSpecies(species)).record.growth.model;
 	return model === 'tuft' || model === 'rosette';
+}
+
+/**
+ * The sheath target a species' review data names, if any. The target is the authored foot and
+ * collar the measure compares against; the plant record's own colour draws the surface and is not
+ * read here.
+ */
+function sheathTargetOfSpecies(species: string): SheathTarget | undefined {
+	const path = join(REPO_ROOT, 'tools/lib/plant-review/slots', `${species}.json`);
+	if (!existsSync(path)) return undefined;
+	return sheathTargetOf(JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>);
 }
 
 /** The metres a bark view frames, from the species' texture manifest when it has one. */
@@ -193,13 +213,15 @@ function stillShot(
 				};
 		}
 		// A junction view frames its subject so the limb's thickness and the stem's width take the
-		// shares of the frame that the picture's own subject box gives them, so the picture's box
-		// measures both axes rather than one.
-		if (slot.view === 'junction' && measures.box)
+		// shares of the frame that the picture's own subject box gives them. The box comes only from a
+		// picture whose outline separates; a picture whose reference set names no separable outline
+		// adds that to the flag, and a void box passes no shares, so the view keeps its own frame.
+		const shares = subjectShares(image.width, image.height, measures.box, plant.background.plain);
+		if (slot.view === 'junction' && shares)
 			query = {
 				...query,
-				subjectWidth: (measures.box.right - measures.box.left) / image.width,
-				subjectHeight: (measures.box.bottom - measures.box.top) / image.height,
+				subjectWidth: shares.width,
+				subjectHeight: shares.height,
 			};
 		if (slot.framed && measures.box) {
 			const {
@@ -212,14 +234,6 @@ function stillShot(
 		// A close view of the crown's outside keeps the same margin its whole views do, so the run
 		// measures its render against the photograph's width share too and redraws it if it crops.
 		if (!slot.framed && slot.view === 'limb' && slot.query?.surface === true && measures.box) {
-			query = {
-				...query,
-				widthShare: estimateFraming([measures], [plant]).widthShare,
-			};
-		}
-		// A trunk view stands at a person's eye height on a bole whose size the plant sets, so a
-		// bole drawn larger than its photograph needs the photograph's width share to stand it back.
-		if (!slot.framed && slot.view === 'trunk' && measures.box) {
 			query = {
 				...query,
 				widthShare: estimateFraming([measures], [plant]).widthShare,
@@ -242,7 +256,10 @@ function stillShot(
 			slot.view !== 'silhouette') ||
 		slot.framed ||
 		slot.query?.fruit === true ||
-		CUTTING_VIEWS.includes(slot.view);
+		CUTTING_VIEWS.includes(slot.view) ||
+		// A sheath picture reads its own surface off the plant alone, so its outline must be exact
+		// even where the photograph does not separate from its soil.
+		SHEATH_VIEWS.has(slot.view);
 	return singleShot(
 		'stills',
 		`${slot.file.replace(/\.\w+$/, '')}.png`,
@@ -455,13 +472,7 @@ const WHOLE_SCALE_MIN = 0.4;
 
 /** How long a width correction waits for a draw slot before it keeps the framing's own stand. */
 const CORRECTION_WAIT_MS = 300_000;
-/**
- * The most a whole view's or a trunk view's stand may be scaled back to clear a crop. A mask that
- * reports the plant narrower than it draws asks for a stand beyond this, and the picture keeps the
- * framing's own; the bound sits above the largest accepted correction a crop has needed here: 2.978
- * for the saguaro's trunk picture 17, whose bole a person's eye height fills the frame with.
- */
-const WHOLE_SCALE_MAX = 3;
+const WHOLE_SCALE_MAX = 2.5;
 
 /**
  * A drawn frame's camera stand and the plant's width in metres, as the page posted them: the
@@ -574,11 +585,7 @@ async function correctWidths(
 		const cropped = measured.clipped && target < 1;
 		if (!off && !cropped) continue;
 		const close = shot.query.view === 'limb' && shot.query.surface === true;
-		// A whole view's framing already fits the plant's height, so a width share that would stand it
-		// closer crops that height: the picture keeps the further of the two distances, as the framing
-		// asks. A close view keeps its own crop bound.
-		const raw = measured.share / target;
-		const scale = close ? raw : Math.max(1, raw);
+		const scale = measured.share / target;
 		if (close && scale > CLOSE_CROP_MAX) continue;
 		if (!close && (scale < WHOLE_SCALE_MIN || scale > WHOLE_SCALE_MAX)) {
 			console.warn(
@@ -638,8 +645,7 @@ async function correctWidths(
 			if (measured === null) continue;
 			const off = Math.abs(measured.share - fix.target) > WIDTH_BAND;
 			const cropped = measured.clipped && fix.target < 1;
-			const raw = fix.scale * (measured.share / fix.target);
-			const scale = fix.close ? raw : Math.max(1, raw);
+			const scale = fix.scale * (measured.share / fix.target);
 			if (fix.close && scale > CLOSE_CROP_MAX) continue;
 			if (!fix.close && (scale < WHOLE_SCALE_MIN || scale > WHOLE_SCALE_MAX)) {
 				console.warn(
@@ -745,9 +751,17 @@ function turnSummary(result: TurnResult, limit: number): string[] {
 			: []),
 		...(result.maskCheck !== null
 			? [
-					`- Mask check: the colour outline of the render frames overlaps their matte by ${result.maskCheck.toFixed(3)} IoU.`,
+					`- Mask check: the colour outline of the render frames overlaps their matte by ${result.maskCheck.toFixed(3)} IoU over ${result.maskCheckFrames} frame${result.maskCheckFrames === 1 ? '' : 's'}${result.maskCheckUnreadable > 0 ? `, ${result.maskCheckUnreadable} unreadable` : ''}. ${
+						result.maskCheckSmall
+							? `The subject fills ${((result.maskCheckSubject ?? 0) * 100).toFixed(1)} per cent of the frame, so the figure reports rather than judges: at that size a one-pixel edge band costs a large share of the overlap.`
+							: `The gate for ${result.maskCheckThreshold === MASK_GATE_PLAIN ? 'a plain background' : 'a natural background'} is ${result.maskCheckThreshold}, so the turn ${result.maskCheckFailed ? 'fails coverage' : 'stands'}.`
+					}`,
 				]
-			: []),
+			: result.maskCheckUnreadable > 0
+				? [
+						`- Mask check: not measurable. The colour outline is under the ${MASK_SUBJECT_FLOOR * 100} per cent subject floor on all ${result.maskCheckUnreadable} frames with a matte, so the turn is neither passed nor failed on the check.`,
+					]
+				: []),
 		`- Sheets: ${result.sheets.join(', ')}.`,
 		'',
 	];
@@ -773,6 +787,7 @@ function compareRun(
 	set: ReferenceSet | undefined,
 	windFps: number,
 	moundForm: boolean,
+	sheath: SheathTarget | undefined,
 ): boolean {
 	const byGroup = new Map<string, RunFrame[]>();
 	for (const frame of manifest.frames) {
@@ -812,6 +827,7 @@ function compareRun(
 			byGroup.get('stills') ?? [],
 			`${label}  STILLS AND TEXTURE SOURCES`,
 			moundForm,
+			sheath,
 		);
 		for (const pair of result.pairs) stills.set(pair.file, pair);
 		metrics.stills = result;
@@ -829,11 +845,31 @@ function compareRun(
 					? [`- ${pair.file}: surface colour difference ${fixed(pair.surfaceDeltaE, 1)}.`]
 					: [],
 			),
+			...result.pairs.flatMap((pair) => {
+				if (!pair.sheath) return [];
+				const { photograph, record } = pair.sheath;
+				const material = `against the record, foot ${fixed(record.foot, 1)} and collar ${fixed(record.collar, 1)} (the material check)`;
+				const patches = `from ${pair.sheath.footPixels} and ${pair.sheath.collarPixels} render pixels`;
+				return photograph
+					? [
+							`- ${pair.file}: sheath against the photograph, foot ${fixed(photograph.foot, 1)} and collar ${fixed(photograph.collar, 1)} (the row's figure); ${material}, ${patches}.`,
+						]
+					: [
+							`- ${pair.file}: the photograph's sheath cannot be isolated on this view, so the row has no photograph figure (the carrier's limit); ${material}, ${patches}.`,
+						];
+			}),
+			// A bark close view photographs the bark against bark, so it has no outline. Its row is
+			// its material, and the pair below names each side's colour and the distance between.
+			...result.pairs.flatMap((pair) => {
+				const line = masked.includes(pair) ? null : barkLine(pair);
+				return line ? [line] : [];
+			}),
 			// A picture whose backdrop the tool cannot separate still has edges, and its edges say
 			// where its parts run. It gets that figure instead of an outline it cannot trust.
 			...edgeLines(result.pairs),
 			...framingLines(result.pairs),
 			...pieceLines(result.pairs),
+			...connectivityLines(result.pairs),
 			...result.pairs.flatMap((pair) => (pair.note ? [`- ${pair.file}: ${pair.note}.`] : [])),
 			`- Sheets: ${result.sheets.join(', ')}.`,
 			'',
@@ -877,14 +913,77 @@ function compareRun(
 		summary.push(...windSummary(result));
 	}
 	metrics.winds = Object.fromEntries(winds);
+	// The owner's two-dial sweep: connectedness first, then the height against the record's band,
+	// then the row's own density figure — the crown-box gap — at every setting.
+	const sweeps = manifest.frames.filter((frame) => frame.group === 'sweeps' && !frame.error);
+	const sweepFloating: string[] = [];
+	if (sweeps.length > 0) {
+		const band = manifest.sizeBand;
+		summary.push('### Sweeps', '');
+		summary.push(
+			"- The whole view at sparseness 0, 0.5 and 1 by the record's preset and a coarse one: every setting reads its connectedness, its height against the record's band and its crown-box gap. The heights are the species' drawn heights at this head; a species whose height calibration lands later will move them, and the sweep is not a species judgement.",
+		);
+		for (const frame of sweeps) {
+			const read = sweepMeasures(dir, frame);
+			const parts = { length: read.components };
+			const floating = read.floating;
+			if (floating.length > 0) sweepFloating.push(frame.file);
+			const facts = frame.facts as { plant?: { height?: number } } | undefined;
+			const height = facts?.plant?.height;
+			const sparse = frame.query.sparse ?? 0;
+			const preset = frame.query.preset ?? '?';
+			const gap = read.crownBoxGap;
+			const inside =
+				band && height !== undefined
+					? height >= band.mean - band.spread && height <= band.mean + band.spread
+					: null;
+			summary.push(
+				`- sparse ${sparse}, preset ${preset}: ${parts.length} component${parts.length === 1 ? '' : 's'}${
+					floating.length > 0
+						? `, ${floating.length} floating (${floating.map((part) => `${part.area} px ${part.box}`).join(', ')})`
+						: ', none floating'
+				}; height ${height === undefined ? '-' : `${height.toFixed(2)} m`}${
+					inside === null
+						? ''
+						: inside
+							? ', inside the band'
+							: `, outside the ${(band?.mean ?? 0) - (band?.spread ?? 0)} to ${(band?.mean ?? 0) + (band?.spread ?? 0)} m band`
+				}; crown-box gap ${gap === null ? '-' : gap.toFixed(4)}.${
+					read.workWidth && read.workWidth.floating.length !== floating.length
+						? ` At the tool's work width it reads ${read.workWidth.components} components, ${read.workWidth.floating.length} floating.`
+						: ''
+				}`,
+			);
+		}
+		summary.push('');
+	}
 	const coverage = coverageOf(set, { stills, turns, winds }, 1 / windFps);
 	metrics.coverage = coverage;
+	const maskFailures = [...turns.values()].filter((turn) => turn.maskCheckFailed);
+	const floating = [...stills.values()].filter(
+		(pair) => (pair.connectivity?.floating.length ?? 0) > 0,
+	);
 	summary.push(
 		'### Coverage',
 		'',
 		coverage.complete
 			? `- Every one of the ${coverage.inUse} reference files in use was compared. coverage.md lists each with its render.`
 			: `- ${coverage.compared} of ${coverage.inUse} reference files in use were compared in full, so the species cannot pass. coverage.md lists each file and what it lacks.`,
+		...(maskFailures.length > 0
+			? [
+					`- The mask check fails on ${maskFailures.length} turn${maskFailures.length === 1 ? '' : 's'}: ${maskFailures.map((turn) => turn.video).join(', ')}. A matte that the colour outline cannot follow is not a matte a row can be judged on.`,
+				]
+			: []),
+		...(sweeps.length > 0
+			? [
+					`- Sweeps: ${sweeps.length} whole-view pictures, sparseness 0, 0.5 and 1 by the record's preset and a coarse one.`,
+				]
+			: []),
+		...(floating.length + sweepFloating.length > 0
+			? [
+					`- ${floating.length + sweepFloating.length} picture${floating.length + sweepFloating.length === 1 ? '' : 's'} draw${floating.length + sweepFloating.length === 1 ? 's' : ''} a piece hanging free: ${[...floating.map((pair) => pair.file), ...sweepFloating].join(', ')}. The owner's rule is that no piece hangs free at any level or sparseness, so the fault is the generator's and the run fails.`,
+				]
+			: []),
 		'',
 		'### Limits of the measures',
 		'',
@@ -898,7 +997,12 @@ function compareRun(
 	writeFileSync(join(dir, 'coverage.json'), `${JSON.stringify(coverage, null, '\t')}\n`);
 	writeFileSync(join(dir, 'coverage.md'), coverageMarkdown(manifest.species, set.slug, coverage));
 	writeFileSync(join(dir, 'summary.md'), `${summary.join('\n')}\n`);
-	return coverage.complete;
+	return (
+		coverage.complete &&
+		maskFailures.length === 0 &&
+		floating.length === 0 &&
+		sweepFloating.length === 0
+	);
 }
 
 /** The edge-direction lines for the stills that give no outline, so a close-up still has a figure. */
@@ -949,6 +1053,39 @@ function barkClause(pair: StillResult): string {
 	return `, bark photographs ${show(reference)} and draws ${show(render)}`;
 }
 
+/** A bark close view's colour pair for a picture that has no outline to carry it. */
+function barkLine(pair: StillResult): string | null {
+	if (!pair.barkColour) return null;
+	const steps = deltaE2000(pair.barkColour.reference, pair.barkColour.render);
+	return `- ${pair.file}: no plain outline${barkClause(pair)}, ${steps.toFixed(2)} steps apart.`;
+}
+
+/**
+ * The connectivity gate: the owner's rule is that no piece hangs free at any level or sparseness, so
+ * a component that meets nothing inside the frame fails the picture as a generator fault, whatever
+ * the piece count says. A component the frame's border carries may run on outside the picture and is
+ * not a fault.
+ */
+function connectivityLines(pairs: readonly StillResult[]): string[] {
+	const lines: string[] = [];
+	for (const pair of pairs) {
+		const check = pair.connectivity;
+		if (!check) continue;
+		const sparse = pair.sparse === undefined ? '' : ` at sparse ${pair.sparse}`;
+		if (check.floating.length > 0)
+			lines.push(
+				`- ${pair.file}${sparse}: ${check.components} components, ${check.floating.length} floating — ${check.floating.map((part) => `${part.area} px ${part.box}`).join(', ')}. A piece that meets nothing is a generator fault, not this row's.`,
+			);
+		// The work-width read is context only: a downscale can drop a hairline join the picture
+		// keeps, so a piece floats only when it floats at the picture's own width.
+		if (check.workWidth && check.workWidth.floating.length !== check.floating.length)
+			lines.push(
+				`- ${pair.file}${sparse}: at the tool's work width it reads ${check.workWidth.components} components with ${check.workWidth.floating.length} floating${check.workWidth.floating.length > 0 ? ` (${check.workWidth.floating.map((part) => `${part.area} px ${part.box}`).join(', ')})` : ''}, where the picture's own width reads ${check.components} and ${check.floating.length}. The picture's own width decides.`,
+			);
+	}
+	return lines;
+}
+
 /** Where the render is drawn as more or fewer separate pieces than its reference. */
 function pieceLines(pairs: readonly StillResult[]): string[] {
 	const lines: string[] = [];
@@ -984,6 +1121,7 @@ async function main(): Promise<void> {
 			set,
 			manifest.windFps ?? windFps,
 			await moundFormOf(manifest.species),
+			sheathTargetOfSpecies(manifest.species),
 		);
 		console.log(readFileSync(join(dir, 'summary.md'), 'utf8'));
 		if (!complete) process.exitCode = 1;
@@ -992,6 +1130,7 @@ async function main(): Promise<void> {
 	const species = positional(0) ?? option('species');
 	const folder = referenceFolder(species);
 	const set = folder ? readReferenceSet(folder, await formsOf(species)) : undefined;
+	const sheath = sheathTargetOfSpecies(species);
 	const { commit, dirty } = commitOf();
 	const stamp = new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 13);
 	const run = option('run', `${species}-${stamp}`);
@@ -1045,6 +1184,32 @@ async function main(): Promise<void> {
 		if (wanted.has('stills'))
 			for (const slot of stillList(set.stills))
 				shots.push(stillShot(set, slot, base, matte, span, slotQueries[slot.file], moundForm));
+		// The owner's two-dial sweep: a full round draws the whole view at the record's density and
+		// toward the sparse form, at the record's coarseness and a coarse one, so connectedness,
+		// height and the row's own density figure are read at every setting rather than only the
+		// record's. `--sweeps` draws them alone for a quick check.
+		const fullRound =
+			wanted.has('stills') &&
+			wanted.has('turns') &&
+			wanted.has('wind') &&
+			!flag('stills') &&
+			!flag('views');
+		if (fullRound || flag('sweeps')) {
+			const record = (base.preset ?? 'high') as NonNullable<PlantReviewQuery['preset']>;
+			const presets: readonly NonNullable<PlantReviewQuery['preset']>[] =
+				record === 'low' ? ['low', 'high'] : [record, 'low'];
+			for (const sparse of [0, 0.5, 1])
+				for (const preset of presets)
+					shots.push(
+						singleShot(
+							'sweeps',
+							`whole-sparse-${sparse}-${preset}.png`,
+							{ ...base, preset, view: 'whole', sparse, measure: true },
+							VIEW_SPECS.whole.size,
+							matte,
+						),
+					);
+		}
 		if (wanted.has('turns'))
 			for (const video of set.turns)
 				shots.push(
@@ -1071,12 +1236,21 @@ async function main(): Promise<void> {
 		release();
 	}
 	frames = await correctWidths(dir, frames, shots, flag('gpu') ? option('gpu') : undefined);
+	const height = isSpeciesId(species) ? (await loadSpecies(species)).record.size.height : undefined;
+	const band =
+		height === undefined
+			? undefined
+			: {
+					mean: typeof height === 'number' ? height : height.mean,
+					spread: typeof height === 'number' ? 0 : height.spread,
+				};
 	const manifest: Manifest = {
 		tool: 'tools/plant-review.ts',
 		species,
 		run,
 		commit,
 		dirty,
+		...(band ? { sizeBand: band } : {}),
 		...(set && { references: set.folder }),
 		seed: base.seed ?? 11,
 		variant: base.variant ?? 0,
@@ -1092,7 +1266,14 @@ async function main(): Promise<void> {
 	console.log(
 		`${frames.length - failed} of ${frames.length} frames drawn in ${manifest.seconds} s`,
 	);
-	const complete = compareRun(dir, manifest, set, windFps, await moundFormOf(manifest.species));
+	const complete = compareRun(
+		dir,
+		manifest,
+		set,
+		windFps,
+		await moundFormOf(manifest.species),
+		sheath,
+	);
 	console.log(readFileSync(join(dir, 'summary.md'), 'utf8'));
 	if (failed > 0 || !complete) process.exitCode = 1;
 }

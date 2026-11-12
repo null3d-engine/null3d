@@ -8,6 +8,7 @@ import type { WindField } from '@null3d/wind';
 import type { PrototypeArrays, QuantisedArrays } from '../asset';
 import type { SpeciesBox } from '../core/box';
 import plantShader from './plant.wgsl';
+import viewFaceShader from './plant-viewface.wgsl';
 import { foliageOptics, transmissionShare } from './records';
 import { standInMaterials } from './stand-in';
 import { type SpeciesKit, writeFieldSettings } from './textures';
@@ -33,6 +34,11 @@ export interface PlantMaterials {
 	readonly cards: PlantMaterial;
 	/** Merged fronds, blades and rosette leaves. */
 	readonly foliage: PlantMaterial;
+	/**
+	 * The card levels' foliage, drawn with the plain plant shader: its mesh carries no blade keel,
+	 * so those levels pay nothing for the nearest level's view-facing width.
+	 */
+	readonly foliageFar: PlantMaterial;
 	/** Cones, fruit, flowers, catkins, thorns and spines. */
 	readonly extras: PlantMaterial;
 }
@@ -130,9 +136,10 @@ export function plantMaterials(
 		role: keyof typeof MODE,
 		textures: { colour: Texture; relief: Texture; second?: Texture; third?: Texture },
 		leafy: boolean,
+		wgsl = plantShader,
 	) => {
 		const material = ctx.materials.shader({
-			wgsl: plantShader,
+			wgsl,
 			textures: {
 				wind: field?.texture ?? stillWind(ctx.textures),
 				records: t.records,
@@ -198,7 +205,13 @@ export function plantMaterials(
 			true,
 		),
 		cards: make('cards', { colour: t.cardColor, relief: t.cardSurface }, true),
-		foliage: make('foliage', { colour: t.leafColor, relief: t.leafNormal }, true),
+		foliage: make(
+			'foliage',
+			{ colour: t.leafColor, relief: t.leafNormal },
+			true,
+			kit.record.foliage.kind === 'grass-blade' ? viewFaceShader : plantShader,
+		),
+		foliageFar: make('foliage', { colour: t.leafColor, relief: t.leafNormal }, true),
 		extras: make('extras', { colour: t.leafColor, relief: t.leafNormal }, true),
 	};
 }
@@ -264,6 +277,8 @@ export function plantGeometry(ctx: SketchContext, arrays: QuantisedArrays): Mesh
 		uvs: arrays.uvs,
 		uvs1: { array: arrays.uvs1, normalized: true },
 		colors: arrays.colors,
+		// The foliage's blade keels ride the tangent attribute, four packed bytes a vertex.
+		...(arrays.tangents && { tangents: arrays.tangents }),
 		indices: arrays.indices,
 		// The plant core grows its own levels, tiers and far cards from the skeleton, and the plant
 		// shader sways every vertex, so the engine plans no levels of its own for the mesh.
@@ -285,6 +300,7 @@ export function prototypeGeometry(ctx: SketchContext, arrays: PrototypeArrays): 
 		uvs: arrays.uvs,
 		uvs1: arrays.uvs1,
 		colors: arrays.colors,
+		...(arrays.tangents && { tangents: arrays.tangents }),
 		indices: arrays.indices,
 		// A prototype has a mesh for each tier, which the plant core picks, and the plant shader
 		// sways every vertex, so the engine plans no levels of its own for the mesh.

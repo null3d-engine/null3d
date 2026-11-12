@@ -6,7 +6,9 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { ShootRows } from '../../../packages/vegetation/src/asset.ts';
 import {
+	AXIS_CULM,
 	AXIS_LIMB,
+	AXIS_RACHIS,
 	AXIS_ROOT,
 	AXIS_STEM,
 	BUD_FLOWER,
@@ -18,6 +20,7 @@ import {
 	firstForkHeight,
 	flowerSites,
 	normalize,
+	sheathColumn,
 	stemAt,
 	stemSurfaceAt,
 	turnedAbout,
@@ -27,6 +30,7 @@ import {
 	barkLimbView,
 	belowView,
 	departures,
+	forkCandidates,
 	forks,
 	forkView,
 	insideView,
@@ -417,8 +421,11 @@ describe("the junction frame from a picture's subject box", () => {
 			0.3 / 0.167,
 			6,
 		);
-		// Without a measured box the view keeps the limb's own share of the frame.
-		expect(junctionFrameHeight(0.286, 1.014, undefined, 1)).toBeCloseTo(0.286 / 0.55, 6);
+		// Without a measured box the frame keeps the limb's share and puts the stem's surface across
+		// the width, so the join shows rather than a wall of bark.
+		expect(junctionFrameHeight(0.286, 1.014, undefined, 1)).toBeCloseTo(1.014 / 0.3, 6);
+		// The stem's own width asks the further camera when the two are the same size.
+		expect(junctionFrameHeight(0.5, 0.5, undefined, 1)).toBeCloseTo(0.5 / 0.3, 6);
 	});
 });
 
@@ -447,6 +454,23 @@ describe('a limb dividing into two', () => {
 		const found = forks(skeleton);
 		expect(found.map((f) => f.arm)).toEqual([5, 6]);
 		for (const f of found) expect(f.armRadius).toBeGreaterThan(0.5 * f.radius);
+	});
+
+	test("reports the divisions and each wish a fork view reaches, keeping the finder's own set", () => {
+		const counts = forkCandidates(skeleton);
+		expect(counts.total).toBe(forks(skeleton).length);
+		// The clear-of-the-stem filter, then the four wishes in the finder's order.
+		expect(counts.counts.length).toBe(5);
+		expect(counts.kept).toBeGreaterThan(0);
+	});
+
+	test('reports no division on a stem that never divides', () => {
+		const b = new SkeletonBuilder();
+		const stem = b.addAxis({ parent: -1, parentNode: -1, order: 0, kind: AXIS_STEM });
+		run(b, stem, -1, [0, 0, 0], [0, 1, 0], 6, 0.8, 0.3);
+		const counts = forkCandidates(b.finish(1));
+		expect(counts.total).toBe(0);
+		expect(counts.kept).toBe(0);
 	});
 
 	test('is the fork whose arms part upright, seen square to them, its joint under the middle', () => {
@@ -783,6 +807,51 @@ describe('the stem surface of a plant with no single trunk', () => {
 
 	test('no axis reaches a height above the plant', () => {
 		expect(stemSurfaceAt(skeleton, 2)).toBeUndefined();
+	});
+});
+
+describe('the sheath column of a ground plant', () => {
+	test('takes the thickest short limb, not a blade or a flowering stem', () => {
+		const b = new SkeletonBuilder();
+		const crown = b.addAxis({ parent: -1, parentNode: -1, order: 0, kind: AXIS_ROOT });
+		const crownBase = b.addNode({ x: 0, y: -0.03, z: 0, radius: 0.05, parent: -1, axis: crown });
+		const crownTop = b.addNode({ x: 0, y: 0, z: 0, radius: 0.05, parent: crownBase, axis: crown });
+		const thick = b.addAxis({ parent: crown, parentNode: crownTop, order: 1, kind: AXIS_LIMB });
+		const thickNodes = run(b, thick, crownTop, [0.01, 0, 0], [0, 0.02, 0], 3, 0.0018, 0.2);
+		const thin = b.addAxis({ parent: crown, parentNode: crownTop, order: 1, kind: AXIS_LIMB });
+		run(b, thin, crownTop, [-0.01, 0, 0], [0, 0.02, 0], 3, 0.0009, 0.2);
+		// A flowering stem and a blade both rise past the sheaths; neither is the sheath column.
+		const culm = b.addAxis({
+			parent: thick,
+			parentNode: thickNodes[thickNodes.length - 1] as number,
+			order: 2,
+			kind: AXIS_CULM,
+		});
+		run(
+			b,
+			culm,
+			thickNodes[thickNodes.length - 1] as number,
+			[0.01, 0.06, 0],
+			[0, 0.1, 0],
+			5,
+			0.0008,
+			0.3,
+		);
+		const blade = b.addAxis({
+			parent: thick,
+			parentNode: thickNodes[0] as number,
+			order: 2,
+			kind: AXIS_RACHIS,
+		});
+		run(b, blade, thickNodes[0] as number, [0.01, 0.02, 0], [0.02, 0.1, 0], 4, 0.003, 0.5);
+		expect(sheathColumn(b.finish(0))).toBe(thick);
+	});
+
+	test('finds none on a plant with a trunk', () => {
+		const b = new SkeletonBuilder();
+		const stem = b.addAxis({ parent: -1, parentNode: -1, order: 0, kind: AXIS_STEM });
+		run(b, stem, -1, [0, 0, 0], [0, 1, 0], 6, 0.2, 0.3);
+		expect(sheathColumn(b.finish(0))).toBe(-1);
 	});
 });
 

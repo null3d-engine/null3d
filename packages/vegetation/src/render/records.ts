@@ -10,6 +10,7 @@
 // import.
 import type { WindTable } from '../asset';
 import type { SpeciesBox } from '../core/box';
+import { radians } from '../core/math';
 import type { BarkZone, LeafOptics, Species } from '../core/record';
 import { STAND_IN_BARK, type TextureManifest } from '../core/textures';
 import { type Rgb, spreadMean } from '../core/types';
@@ -138,10 +139,21 @@ export const HEADER = {
 	winterReflectance: 63,
 	/** The winter leaves' linear transmittance. */
 	winterTransmittance: 64,
-	/** A tuft's basal sheath colour, then its roughness, where the record names one. */
+	/** A tuft's sheath colour at the column's foot, and its roughness, where the record names one. */
 	sheath: 65,
 	/** A grass blade's collar: its colour, then the share of the blade's base it takes. */
 	collar: 66,
+	/** A tuft's sheath colour at the column's collar, then the share of the column it takes. */
+	sheathCollar: 67,
+	/** The share of a card's leaf groups that stays; 1, or absent, draws the card whole. */
+	cardCoverage: 68,
+	/**
+	 * A fire scar's hollow: its foot and head in metres, its centre's angle in radians about the
+	 * first stem and its half-width. Zeroed where the record gives no scar.
+	 */
+	scar: 69,
+	/** The scar's charred colour, then the share of it the hollow takes. */
+	scarColour: 70,
 } as const;
 
 /**
@@ -151,7 +163,7 @@ export const HEADER = {
 export const BARK_ZONE_TEXELS = 4;
 
 /** The header's texels that hold anything. */
-export const HEADER_TEXELS = HEADER.collar + 1;
+export const HEADER_TEXELS = HEADER.scarColour + 1;
 
 /** An extra's roughness where its record names none. */
 export const EXTRA_ROUGHNESS = 0.6;
@@ -315,6 +327,13 @@ export function speciesHeader(
 	const foliage = record.foliage;
 	if (foliage.kind === 'grass-blade' && foliage.blade.collar)
 		texel(header, HEADER.collar, [...foliage.blade.collar.colour, foliage.blade.collar.share]);
+	// A tuft's basal sheath column draws in the record's own colour where it names one; the
+	// roughness keeps the sheath from reading as polished wood beside the matt leaf.
+	const growth = record.growth;
+	if (growth.model === 'tuft' && growth.sheathColour) {
+		texel(header, HEADER.sheath, [...growth.sheathColour.foot, 0.7]);
+		texel(header, HEADER.sheathCollar, [...growth.sheathColour.collar, growth.sheathColour.reach]);
+	}
 	const minParts = box.min.map(split);
 	const spanParts = box.max.map((max, k) => split(max - (box.min[k] as number)));
 	texel(header, HEADER.boxMin, [...minParts.map((p) => p[0]), 0]);
@@ -386,7 +405,7 @@ export function speciesHeader(
 	const bud = record.shoots?.bud.colour;
 	if (bud) texel(header, HEADER.bud, [...bud, 1]);
 	const sway = windSway(record);
-	texel(header, HEADER.sway, [sway.amplitude, sway.frequency, sway.power, 0]);
+	texel(header, HEADER.sway, [sway.amplitude, sway.frequency, sway.power, record.skyToLeaf ?? 0]);
 	const seasonBark = record.seasons.bark;
 	if (seasonBark?.autumn) texel(header, HEADER.autumnBark, [...seasonBark.autumn, 1]);
 	if (seasonBark?.winter) texel(header, HEADER.winterBark, [...seasonBark.winter, 1]);
@@ -395,10 +414,15 @@ export function speciesHeader(
 		texel(header, HEADER.winterReflectance, [...winterLeaves.reflectance, 1]);
 		texel(header, HEADER.winterTransmittance, [...winterLeaves.transmittance, 0]);
 	}
-	const growth = record.growth;
-	if (growth.model === 'tuft' && growth.sheathColour)
-		texel(header, HEADER.sheath, [...growth.sheathColour, 1]);
 	texel(header, HEADER.cardStalk, [record.lod.cardStalk ?? 0, 0, 0, 0]);
+	texel(header, HEADER.cardCoverage, [record.shoots?.placement.cardCoverage ?? 1, 0, 0, 0]);
+	const scar = record.base?.scar;
+	texel(
+		header,
+		HEADER.scar,
+		scar ? [scar.from, scar.to, radians(scar.angle), radians(scar.width) * 0.5] : [0, 0, 0, 0],
+	);
+	texel(header, HEADER.scarColour, scar ? [...scar.colour, scar.shade ?? 0.9] : [0, 0, 0, 0]);
 	return header;
 }
 

@@ -101,12 +101,6 @@
 		"date": "2026-10-27",
 		"reason": "the software GPU's drawing of the terrain's per-pixel normals and height-blended layers; drawn on this Mac because the shared queue blocked a CI image run"
 	},
-	"chromium-swiftshader/compat/demo-vegetation-wind.png": {
-		"test": "demo-vegetation-wind",
-		"tier": "compat",
-		"date": "2026-11-11",
-		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head; both views completed and were compared before acceptance, and a CI drawing on a pull request replaces them"
-	},
 	"chromium-swiftshader/compat/feature-instances-shadow.png": {
 		"test": "feature-instances-shadow",
 		"tier": "compat",
@@ -178,6 +172,12 @@
 		"tier": "compat",
 		"date": "2026-10-29",
 		"reason": "the card's stored normal no longer turns with the camera's bearing, so the pictures whose eye lies off the tree's forward moved; drawn on the software renderer"
+	},
+	"chromium-swiftshader/compat/particles-wind.png": {
+		"test": "particles-wind",
+		"tier": "compat",
+		"date": "2026-11-12",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the change that added the picture; CI has not drawn its own reference yet, and its next drawing replaces this one"
 	},
 	"chromium-swiftshader/compat/plant-bracken.png": {
 		"test": "plant-bracken",
@@ -262,6 +262,12 @@
 		"tier": "compat",
 		"date": "2026-11-10",
 		"reason": "M3-V7's sway picture: the branch is not pushed to CI, so this Mac's SwiftShader drew the software set; a CI drawing replaces it"
+	},
+	"chromium-swiftshader/compat/plant-scots-pine.png": {
+		"test": "plant-scots-pine",
+		"tier": "compat",
+		"date": "2026-11-08",
+		"reason": "the two software rasterisers agree byte for byte, and this branch draws the first reference before CI can"
 	},
 	"chromium-swiftshader/compat/probe-grid-wall-night.png": {
 		"test": "probe-grid-wall-night",
@@ -376,6 +382,12 @@
 		"tier": "webgl2",
 		"date": "2026-11-03",
 		"reason": "drawn on the Mac's SwiftShader because the branch is not pushed for a CI run; a CI drawing replaces it"
+	},
+	"chromium-swiftshader/webgl2/creek-gust.png": {
+		"test": "creek-gust",
+		"tier": "webgl2",
+		"date": "2026-11-12",
+		"reason": "the held Creek gust picture: the branch had not been pushed when this Mac drew the software set, so no CI run could draw it; CI's own SwiftShader drawing replaces this file (D-238)"
 	},
 	"chromium-swiftshader/webgl2/creek-water-close.png": {
 		"test": "creek-water-close",
@@ -515,6 +527,12 @@
 		"date": "2026-10-31",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that fixes the look review's faults; CI's own drawing replaces the set when the branch runs there"
 	},
+	"chromium-swiftshader/webgl2/particles-wind.png": {
+		"test": "particles-wind",
+		"tier": "webgl2",
+		"date": "2026-11-12",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the change that added the picture; CI has not drawn its own reference yet, and its next drawing replaces this one"
+	},
 	"chromium-swiftshader/webgl2/plant-bracken.png": {
 		"test": "plant-bracken",
 		"tier": "webgl2",
@@ -598,6 +616,12 @@
 		"tier": "webgl2",
 		"date": "2026-11-10",
 		"reason": "M3-V7's sway picture: the branch is not pushed to CI, so this Mac's SwiftShader drew the software set; a CI drawing replaces it"
+	},
+	"chromium-swiftshader/webgl2/plant-scots-pine.png": {
+		"test": "plant-scots-pine",
+		"tier": "webgl2",
+		"date": "2026-11-08",
+		"reason": "the two software rasterisers agree byte for byte, and this branch draws the first reference before CI can"
 	},
 	"chromium-swiftshader/webgl2/probe-grid-wall-night.png": {
 		"test": "probe-grid-wall-night",
@@ -815,18 +839,6 @@
 		"date": "2026-10-27",
 		"reason": "the software GPU's drawing of the terrain's per-pixel normals and height-blended layers; drawn on this Mac because the shared queue blocked a CI image run"
 	},
-	"chromium-swiftshader/webgpu/demo-vegetation-wind.png": {
-		"test": "demo-vegetation-wind",
-		"tier": "webgpu",
-		"date": "2026-11-10",
-		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head; this view completed at the machine's idlest moment and was compared before acceptance, and a CI drawing on a pull request replaces it"
-	},
-	"chromium-swiftshader/webgpu/demo-vegetation.png": {
-		"test": "demo-vegetation",
-		"tier": "webgpu",
-		"date": "2026-11-10",
-		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head; the drawing completed at a load of 5 and was compared against its reference before the landing session judged it, and a CI drawing on a pull request replaces it"
-	},
 	"chromium-swiftshader/webgpu/gltf-clearcoat-car-paint.png": {
 		"test": "gltf-clearcoat-car-paint",
 		"tier": "webgpu",
@@ -898,6 +910,12 @@
 		"tier": "webgpu",
 		"date": "2026-10-31",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that fixes the look review's faults; CI's own drawing replaces the set when the branch runs there"
+	},
+	"chromium-swiftshader/webgpu/particles-wind.png": {
+		"test": "particles-wind",
+		"tier": "webgpu",
+		"date": "2026-11-12",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the change that added the picture; CI has not drawn its own reference yet, and its next drawing replaces this one"
 	},
 	"chromium-swiftshader/webgpu/plant-bracken.png": {
 		"test": "plant-bracken",

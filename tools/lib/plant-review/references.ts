@@ -182,6 +182,9 @@ const SLOT_RULES: readonly { readonly test: (name: string) => boolean; readonly 
 		// Its ribs and areole rows are the skin's own close view: the species has no leaf or twig for
 		// the leaf and twig views to cut, and its body is one ribbed surface.
 		{ test: (n) => /rib|areoles/.test(n), slot: SKIN_CLOSE },
+		// A cactus's ribs, areoles and spine clusters are the skin's own close view: the species has no
+		// leaf or twig for the leaf and twig views to cut, and its body is one ribbed surface.
+		{ test: (n) => /rib|areole|spine/.test(n), slot: SKIN_CLOSE },
 		{ test: (n) => /\bnest|\bholes?\b/.test(n), slot: NEST_HOLES },
 		// A cactus's arms are its limbs: the whole arm, its underside and its elbow are limb views,
 		// and the crownless plant has no fork for the fork view to find.
@@ -215,6 +218,12 @@ const SLOT_RULES: readonly { readonly test: (name: string) => boolean; readonly 
 		{
 			test: (n) => /(leaf|needle|frond|blade).*upper/.test(n),
 			slot: { view: 'leaf-upper', framed: false },
+		},
+		{
+			// A ground plant's flowering heads: one stem's hanging spikes, seen close and level, where
+			// a twig view has no woody stem to frame and falls back to the whole plant.
+			test: (n) => /flower.*spike/.test(n),
+			slot: { view: 'spike', framed: false },
 		},
 		{
 			// Looking up the whole height from the foot: the stem's first fork stands a little above the
@@ -284,6 +293,13 @@ const SLOT_RULES: readonly { readonly test: (name: string) => boolean; readonly 
 			// the frame that the photograph gives it.
 			test: (n) => /bark.*limb|limb.*bark/.test(n),
 			slot: { view: 'bark-limb', query: { girth: 0.38, along: 0.3 }, framed: false },
+		},
+		{
+			// A ground plant's sheath, collar or ligule: one tiller's column, seen side on at the
+			// scale the photograph frames it, since such a plant has no woody stem to show. The
+			// name must begin with the part, so a blade leaving its sheath keeps its fork picture.
+			test: (n) => /^(sheath|ligule|collar)/.test(n),
+			slot: { view: 'sheath', framed: false },
 		},
 		{
 			// A winter picture of a branch shows one branch on its own against the sky, as its
@@ -469,6 +485,8 @@ function formOf(name: string, forms: readonly string[]): string | undefined {
 
 /** The texture rule of a texture source that its number does not name. */
 function textureRule(number: number, name: string): SlotRule {
+	// A cactus's texture sources hold its spine clusters, not leaves: its surface is the ribbed stem.
+	if (/rib|areole|spine/.test(name)) return SKIN_CLOSE;
 	const known = TEXTURE_BY_NUMBER[number];
 	if (known) return known;
 	if (/leaf|needle|frond|blade/.test(name))
@@ -1041,12 +1059,37 @@ export const PIECE_BRIDGE = 1;
  * falls to the outline's cutoff. Two runs a pixel apart are therefore one piece. The reference and
  * the render both come through this function, so the rule counts the two sides alike.
  */
-export function pieceCount(
+/** One piece of a plant's outline: its area, its box, and whether it reaches the frame's border. */
+export interface PlantPart {
+	readonly area: number;
+	readonly left: number;
+	readonly top: number;
+	readonly right: number;
+	readonly bottom: number;
+	/** Whether the piece reaches the frame's border, where the part may run on outside the picture. */
+	readonly border: boolean;
+}
+
+/**
+ * The separate pieces a plant is drawn as: runs of at least `minArea` pixels, with two runs one
+ * background pixel apart counted as one. A plant hangs together: every fruit meets its twig, every
+ * twig meets its limb. A part that meets nothing is drawn as an island, and this returns it with its
+ * box so a reader can name it. A single background pixel between two runs is the mask's resolution
+ * rather than a drawn gap, so two runs a pixel apart are one piece.
+ *
+ * @param mask The picture's plant mask, one byte a pixel.
+ * @param width The mask's width in pixels.
+ * @param height The mask's height in pixels.
+ * @param minArea The smallest run that counts, so an outline's speckle is not a piece.
+ * @returns Every piece's area and box.
+ */
+export function pieceParts(
 	mask: Uint8Array,
 	width: number,
 	height: number,
 	minArea: number,
-): number {
+	bridge = PIECE_BRIDGE,
+): PlantPart[] {
 	const { labels, sizes } = components(mask, width, height);
 	const parent = new Int32Array(sizes.length);
 	for (let label = 0; label < parent.length; label++) parent[label] = label;
@@ -1070,8 +1113,8 @@ export function pieceCount(
 		for (let x = 0; x < width; x++) {
 			if (labels[y * width + x]) continue;
 			let near = 0;
-			for (let dy = -PIECE_BRIDGE; dy <= PIECE_BRIDGE; dy++)
-				for (let dx = -PIECE_BRIDGE; dx <= PIECE_BRIDGE; dx++) {
+			for (let dy = -bridge; dy <= bridge; dy++)
+				for (let dx = -bridge; dx <= bridge; dx++) {
 					const nx = x + dx;
 					const ny = y + dy;
 					if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
@@ -1081,14 +1124,64 @@ export function pieceCount(
 					else join(near, label);
 				}
 		}
-	const areas = new Map<number, number>();
-	for (let label = 1; label < sizes.length; label++) {
-		const root = find(label);
-		areas.set(root, (areas.get(root) ?? 0) + (sizes[label] as number));
-	}
-	let count = 0;
-	for (const area of areas.values()) if (area >= minArea) count++;
-	return count;
+	const boxes = new Map<
+		number,
+		{ area: number; left: number; top: number; right: number; bottom: number; border: boolean }
+	>();
+	for (let y = 0; y < height; y++)
+		for (let x = 0; x < width; x++) {
+			const label = labels[y * width + x] as number;
+			if (!label) continue;
+			const root = find(label);
+			const box = boxes.get(root) ?? {
+				area: 0,
+				left: x,
+				top: y,
+				right: x,
+				bottom: y,
+				border: false,
+			};
+			box.area++;
+			box.left = Math.min(box.left, x);
+			box.top = Math.min(box.top, y);
+			box.right = Math.max(box.right, x);
+			box.bottom = Math.max(box.bottom, y);
+			if (x === 0 || y === 0 || x === width - 1 || y === height - 1) box.border = true;
+			boxes.set(root, box);
+		}
+	return [...boxes.values()]
+		.filter((box) => box.area >= minArea)
+		.map(({ area, left, top, right, bottom, border }) => ({
+			area,
+			left,
+			top,
+			right,
+			bottom,
+			border,
+		}))
+		.sort((a, b) => b.area - a.area);
+}
+
+/**
+ * The number of separate pieces a plant is drawn as, where a piece is a connected run of at least
+ * `minArea` pixels and two runs one background pixel apart count as one.
+ *
+ * A plant hangs together: every fruit meets its twig, every twig meets its limb. A part that meets
+ * nothing is drawn as an island, and this counts it. Pieces smaller than `minArea` are ignored so
+ * that a speck of background left by the outline's threshold is not read as a floating part.
+ *
+ * A single background pixel between two runs is the mask's resolution rather than a drawn gap: at
+ * the work width a shoot's supporting twig is thinner than a pixel, so the pixel that would join it
+ * falls to the outline's cutoff. Two runs a pixel apart are therefore one piece. The reference and
+ * the render both come through this function, so the rule counts the two sides alike.
+ */
+export function pieceCount(
+	mask: Uint8Array,
+	width: number,
+	height: number,
+	minArea: number,
+): number {
+	return pieceParts(mask, width, height, minArea).length;
 }
 
 /** The CIELAB distance from a colour to the nearest blend of two others. */ export function distanceToSegment(
@@ -1176,6 +1269,12 @@ export function plantMask(image: Rgba): PlantMask {
 	if (!background.plain && !skyMaskable(background) && !soilMaskable(background, height))
 		return { width, height, mask, background };
 	const horizon = background.horizon ?? height;
+	// A fitted sky or ground is trusted only where it finds a plausible subject. A picture of
+	// something else against a natural backdrop, such as bark or foliage, still admits a smooth
+	// surface on its border, and the surface then marks a few textured specks as the plant. A
+	// subject that a fitted background finds under a fiftieth of the frame is that failure, not a
+	// plant: every real reference's subject fills more.
+	const MIN_FITTED_PLANT_SHARE = 0.02;
 	// A plain background's spread was tuned against studio paper; a fitted sky or ground carries a
 	// wider residual, so its limit takes fewer spreads or the plant itself falls inside it.
 	const skyLimit = threshold(background.sky, 8, background.plain ? 3.5 : 2);
@@ -1211,6 +1310,11 @@ export function plantMask(image: Rgba): PlantMask {
 			height - Math.max(2, Math.round(height * FOOT_SHARE)),
 		);
 	keepPlantParts(mask, width, height, horizon);
+	if (!background.plain) {
+		let kept = 0;
+		for (let at = 0; at < mask.length; at++) kept += mask[at] as number;
+		if (kept / (width * height) < MIN_FITTED_PLANT_SHARE) mask.fill(0);
+	}
 	let plantToGround: number | undefined;
 	if (background.ground) {
 		const groundAt = surfaceAt(background.ground, 0.5, (horizon / height + 1) / 2);
@@ -1406,12 +1510,56 @@ export function anyPlantMask(plant: PlantMask): Uint8Array {
 	return mask;
 }
 
+/**
+ * A matte's own coverage mask at the picture's width, read by the same any-coverage rule the piece
+ * test uses. The gate reads this mask, because a downscale to the work width can drop a hairline
+ * shoot that the picture itself keeps, and so invent a piece that hangs free.
+ *
+ * @param image The matte picture, at the size the run drew it.
+ * @returns The picture's width and height with one byte per texel, 1 where any leaf covers it.
+ */
+export function matteOwnMask(image: Rgba): {
+	readonly width: number;
+	readonly height: number;
+	readonly mask: Uint8Array;
+} {
+	const { width, height } = image;
+	const mask = new Uint8Array(width * height);
+	for (let at = 0; at < mask.length; at++) {
+		const luma =
+			0.2126 * (image.data[at * 4] as number) +
+			0.7152 * (image.data[at * 4 + 1] as number) +
+			0.0722 * (image.data[at * 4 + 2] as number);
+		mask[at] = luma < 254 ? 1 : 0;
+	}
+	return { width, height, mask };
+}
+
 /** A box of pixels, edges included. */
 export interface Box {
 	readonly left: number;
 	readonly top: number;
 	readonly right: number;
 	readonly bottom: number;
+}
+
+/**
+ * The shares of its picture's frame that a plant's subject box takes, for a view that frames by the
+ * box, or undefined where the picture's outline does not separate: a void box, or an outline the
+ * reference set names as not separable (a fitted ground that is the subject itself, or the band
+ * behind it). A view that receives no shares keeps its own frame, so a void outline never moves it.
+ */
+export function subjectShares(
+	width: number,
+	height: number,
+	box: Box | null | undefined,
+	separable: boolean,
+): { readonly width: number; readonly height: number } | undefined {
+	if (!separable || !box || width <= 0 || height <= 0) return undefined;
+	const across = (box.right - box.left) / width;
+	const down = (box.bottom - box.top) / height;
+	if (!(across > 0 && across <= 1 && down > 0 && down <= 1)) return undefined;
+	return { width: across, height: down };
 }
 
 /** The measures a reviewer reads from a plant's outline. Rows count down, shares run 0 to 1. */

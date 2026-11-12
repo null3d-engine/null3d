@@ -79,6 +79,33 @@ describe('the stem base', () => {
 		}
 	});
 
+	it('cuts a fire scar into one side of the first stem alone, deepest at its middle', () => {
+		const plain: BaseSpec = { flare: { amount: 0.3, height: 0.5 } };
+		const scarred: BaseSpec = {
+			...plain,
+			scar: {
+				from: 0,
+				to: 4,
+				angle: 90,
+				width: 40,
+				depth: 0.2,
+				colour: [0.012, 0.011, 0.009],
+			},
+		};
+		const a = stemSection(plain, 11, 7, 0, 0);
+		const b = stemSection(scarred, 11, 7, 0, 0);
+		if (!a || !b) throw new Error('no section');
+		const centre = Math.PI / 2;
+		// The hollow is the record's depth at its middle, and the healthy bark round it is untouched.
+		expect(a.radius(2, centre, 1) - b.radius(2, centre, 1)).toBeCloseTo(0.2, 6);
+		expect(b.radius(2, -Math.PI / 2, 1)).toBeCloseTo(a.radius(2, -Math.PI / 2, 1), 6);
+		expect(b.radius(5, centre, 1)).toBeCloseTo(a.radius(5, centre, 1), 6);
+		// A plant's later stems carry no scar.
+		const other = stemSection(scarred, 11, 7, 0, 1);
+		if (!other) throw new Error('no second section');
+		expect(other.radius(2, centre, 1)).toBeCloseTo(a.radius(2, centre, 1), 6);
+	});
+
 	it('widens a tapered bole evenly toward the ground, and leaves it plain above the taper', () => {
 		const plain: BaseSpec = { flare: { amount: 0.3, height: 0.5 } };
 		const tapered: BaseSpec = { ...plain, taper: { amount: 0.2, height: 4 } };
