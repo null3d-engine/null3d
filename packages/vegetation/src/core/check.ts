@@ -335,10 +335,6 @@ function growthProblems(record: Species, out: string[]): void {
 		if (growth.buds.limbBuds !== undefined)
 			shareProblem(growth.buds.limbBuds, 'growth.buds.limbBuds', out);
 		curveProblems(growth.apical.control, 'growth.apical.control', out);
-		if (growth.sideBranchesPerMetre !== undefined && !(growth.sideBranchesPerMetre >= 0))
-			out.push(
-				`growth.sideBranchesPerMetre is ${growth.sideBranchesPerMetre}; it is branches per metre and must be 0 or above`,
-			);
 		curveProblems(growth.tropism.photo, 'growth.tropism.photo', out);
 		curveProblems(growth.tropism.gravi, 'growth.tropism.gravi', out);
 		shareProblem(growth.shedding.cleanBole, 'growth.shedding.cleanBole', out);

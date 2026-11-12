@@ -224,12 +224,6 @@ export interface SelfOrganizing {
 	 */
 	readonly branching?: number;
 	/**
-	 * The most side axes an axis grows per metre of its own length. The flush chance still decides
-	 * which buds branch; this caps how many may, so a long limb carries a few subbranches rather than
-	 * a crowded run of them. Absent, the chance alone decides.
-	 */
-	readonly sideBranchesPerMetre?: number;
-	/**
 	 * Metres of clear air a shoot keeps from another axis's wood, so two limbs do not pass through
 	 * one another as a real tree's do not. 0 by default, which lets shoots meet as they may. Without
 	 * `turning`, a shoot that would come nearer stops there.
