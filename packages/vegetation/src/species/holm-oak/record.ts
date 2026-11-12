@@ -157,7 +157,9 @@ export const record: Species = {
 		years: 3,
 		leafYears: 1,
 		stem: { radius: [0.01, 0.006], zigzag: 14 },
-		bud: { length: 0.01, width: 0.007, tipCluster: 7, colour: [0.28, 0.2, 0.12] },
+		// The leaf photographs' terminal cluster: seven buds about 1.4 cm long, where the drawn
+		// 1 cm buds read as one speck at the studio cluster's scale. The size moves no kit byte.
+		bud: { length: 0.014, width: 0.01, tipCluster: 7, colour: [0.28, 0.2, 0.12] },
 		placement: {
 			perMetre: [
 				[0, 4],
