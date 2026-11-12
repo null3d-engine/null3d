@@ -14,6 +14,13 @@ import { plantForest, RADIUS } from './planting';
 import { createSway } from './sway';
 import { cardTexture, ground, KINDS, landArrays, litterTexture, woodTexture } from './woods';
 
+/**
+ * The address's switches. ?wind=off draws the forest with no field, so a measurement splits the
+ * field's cost from the rest of the frame.
+ */
+const params = new URL(import.meta.url).searchParams;
+const WIND_OFF = params.get('wind') === 'off';
+
 export default defineSketch(async (ctx) => {
 	const { scene, assets, geometry, materials, textures, post, quality, input, time } = ctx;
 	// Golden hour: the sky lights the trees, and a thin amber haze lies over the far ridges.
@@ -45,7 +52,7 @@ export default defineSketch(async (ctx) => {
 	// The forest's one wind field. The trees bend in it, read at each tree's root, and the offset
 	// fades out by the sway distance so the far trees and their cached shadow cascades stand still.
 	const wind = createWind(ctx, { camera, box: 256 });
-	const sway = createSway(ctx, { wood, wind });
+	const sway = createSway(ctx, { wood, wind, live: !WIND_OFF });
 	const bark = sway.material;
 	const card = materials.standard({
 		map: pictures,
@@ -62,9 +69,12 @@ export default defineSketch(async (ctx) => {
 
 	return {
 		onUpdate(dt) {
-			// The field's box follows the camera, so it steps before the trees read it.
-			wind.update();
-			sway.update();
+			// The field's box follows the camera, so it steps before the trees read it. A run with the
+			// field off skips the field's pass and the trees' read of it.
+			if (!WIND_OFF) {
+				wind.update();
+				sway.update();
+			}
 			if (input.wasPressed('KeyB')) forest.hero.setBias();
 
 			if (input.wasPressed('KeyL')) {
