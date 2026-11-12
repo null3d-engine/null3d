@@ -307,6 +307,23 @@ function growthProblems(record: Species, out: string[]): void {
 			out.push(
 				`growth.branching is ${growth.branching}; it multiplies a chance and cannot be below 0`,
 			);
+		const byOrder = growth.branchingByOrder;
+		if (byOrder !== undefined) {
+			curveProblems(byOrder, 'growth.branchingByOrder', out);
+			if (typeof byOrder === 'number') {
+				if (!(byOrder >= 0))
+					out.push(
+						`growth.branchingByOrder is ${byOrder}; it multiplies a chance and cannot be below 0`,
+					);
+			} else
+				for (let i = 0; i < byOrder.length; i++) {
+					const value = (byOrder[i] as readonly number[])[1] as number;
+					if (!(value >= 0))
+						out.push(
+							`growth.branchingByOrder is ${value} at pair ${i}; it multiplies a chance and cannot be below 0`,
+						);
+				}
+		}
 		if (growth.clearance !== undefined && !(growth.clearance >= 0 && growth.clearance <= 2))
 			out.push(`growth.clearance is ${growth.clearance}; it is metres of clear air from 0 to 2`);
 		if (growth.turning !== undefined && !(growth.turning >= 0 && growth.turning <= 90))

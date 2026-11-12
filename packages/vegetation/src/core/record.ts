@@ -224,6 +224,12 @@ export interface SelfOrganizing {
 	 */
 	readonly branching?: number;
 	/**
+	 * How readily a lateral bud puts out a branch at each order, as a multiplier on `branching`: t is
+	 * the axis's order over the macro orders, below 1 keeps fewer side axes and 0 keeps its buds as
+	 * shoots. Absent, every order takes `branching` alone.
+	 */
+	readonly branchingByOrder?: Curve;
+	/**
 	 * Metres of clear air a shoot keeps from another axis's wood, so two limbs do not pass through
 	 * one another as a real tree's do not. 0 by default, which lets shoots meet as they may. Without
 	 * `turning`, a shoot that would come nearer stops there.
