@@ -172,9 +172,7 @@ export const record: Species = {
 				share: 0,
 				years: 2,
 				leafYears: 1,
-				// The reference's piece is 1.12 times the drawn one in both crown-box axes, so the
-				// class's length rises by the same share at the same leaf scale.
-				length: { mean: 1.06, spread: 0.08 },
+				length: { mean: 0.95, spread: 0.08 },
 				// Stills 21 and 22 hold about forty leaves over their three sprays, so a spray carries
 				// more leaves than the crown's own shoots do. A dozen along each made the piece denser
 				// and narrower, so the sprays reach outward instead: the laterals leave wider.
