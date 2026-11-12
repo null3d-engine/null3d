@@ -103,6 +103,8 @@ const HEADER_YOUNG_TILE: i32 = 16;
 const HEADER_YOUNG_TINT: i32 = 56;
 // A tuft's sheath colour at the column's foot, and its roughness, for the merged foliage.
 const HEADER_SHEATH: i32 = 65;
+// The share of a card's leaf groups that stays, where the record names one.
+const HEADER_CARD_COVERAGE: i32 = 68;
 // A grass blade's collar: its colour, then the share of the blade's base it takes.
 const HEADER_COLLAR: i32 = 66;
 // A tuft's sheath colour at the column's collar, then the share of the column it takes.
@@ -124,7 +126,6 @@ const HEADER_AUTUMN_BARK: i32 = 61;
 const HEADER_WINTER_BARK: i32 = 62;
 const HEADER_WINTER_REFLECTANCE: i32 = 63;
 const HEADER_WINTER_TRANSMITTANCE: i32 = 64;
-// A tuft's sheath columns' linear colour, then 1 when the record gives one.
 const HEADER_EXTRA_BANDS: i32 = 43;
 // An extra's scale pattern: its scale rows, the cells round its turn, and its band's share of the
 // profile's height at each end, per extra in record order.
@@ -1081,6 +1082,15 @@ fn surface(input: SurfaceInput) -> Surface {
                 base = texel.rgb;
             }
             alpha = card_alpha(texel.a, gx, gy);
+            // A card's coverage: a hashed share of the crown's leaf groups gives way, so the crown
+            // shows sky between them while the leaves of the rest keep their mass. At 1, or when the
+            // record names none, the card draws whole.
+            let card_cover = header(HEADER_CARD_COVERAGE).x;
+            if (card_cover < 0.999) {
+                if (value3(input.relativePosition * 5.0) > card_cover) {
+                    alpha = 0.0;
+                }
+            }
             if (near_copy && length(input.relativePosition) < material.nearDistance * 0.96) {
                 alpha = 0.0;
             }
@@ -1187,10 +1197,6 @@ fn surface(input: SurfaceInput) -> Surface {
             let layer = select(1, 0, upper);
             let texel = textureSampleGrad(colour, colourSampler, uv, layer, gx, gy);
             let relief_texel = textureSampleGrad(relief, reliefSampler, uv, 0, gx, gy).rgb;
-            // A shoot's sheath column carries the record's own colour rather than the leaf's: the
-            // top bit of its flutter byte marks it, in a species that gives a sheath colour.
-            let sheath = mode == MODE_FOLIAGE && header(HEADER_SHEATH).w > 0.5
-                && (i32(round(input.vertexColor.b * 255.0)) & 128) != 0;
             // A merged leaf browns on its own by its second coordinates' y, as a dying frond does.
             let browning = select(0.0, input.uv1.y, mode == MODE_FOLIAGE);
             let light = leaf_light(texel.rgb, upper, browning);
@@ -1217,17 +1223,6 @@ fn surface(input: SurfaceInput) -> Surface {
                 base = mix(collar.rgb, base, smoothstep(collar.w * 0.6, collar.w, input.uv1.x));
             }
             sheen = select(header(HEADER_UPPER_REFLECTANCE).w, 0.0, upper);
-            if (sheath) {
-                // A sheath is a smooth, matte tube of the record's own colour: it holds no leaf
-                // relief and passes no light through.
-                base = header(HEADER_SHEATH).rgb;
-                share = 0.0;
-                through = vec3f(0.0);
-                roughness = 0.8;
-                alpha = 1.0;
-                mapped = vec3f(0.0, 0.0, 1.0);
-                sheen = 0.0;
-            }
         }
         if (mode == MODE_SHOOTS) {
             let row = shoot_row(object.values);
