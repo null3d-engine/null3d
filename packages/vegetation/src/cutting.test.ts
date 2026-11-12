@@ -514,6 +514,28 @@ describe('cuttings', () => {
 		);
 	});
 
+	it('cuts a cluster from a frond colony rather than the whole plant', async () => {
+		const { brackenRecord } = await import('./grow/bracken.fixture');
+		const { noTextureFiles } = await import('./core/textures');
+		await loadPlantCode(brackenRecord);
+		const species = { record: brackenRecord, textures: noTextureFiles(brackenRecord.id) };
+		const frondKit = buildKitNow(species, { placeholders: 'missing', detail: 'low' });
+		const grown = growPlantNow(frondKit, { seed: 11, variant: 0, near: true });
+		// The colony's fronds stand on stipes that are each a root of their own, so cut the cluster
+		// without a hint leaves no candidate under the cluster rule, which refuses a rachis. The
+		// fallback takes the rachis: the piece is one blade hanging from its cut, not the colony.
+		const piece = cutBranch(grown.skeleton, brackenRecord, { part: 'cluster' });
+		expect(piece).toBeDefined();
+		const baked = (piece as NonNullable<typeof piece>).skeleton;
+		expect(baked.axes.count).toBeGreaterThan(0);
+		expect(baked.axes.count).toBeLessThan(grown.skeleton.axes.count);
+		// One root node, the cut face: every other node hangs from it.
+		let roots = 0;
+		for (let node = 0; node < baked.nodeCount; node++)
+			if ((baked.parent[node] as number) < 0) roots++;
+		expect(roots).toBe(1);
+	});
+
 	it('gives a rosette piece the leaf count its cutting hint names', async () => {
 		const { hostaRecord } = await import('./grow/ground.fixture');
 		const { noTextureFiles } = await import('./core/textures');
