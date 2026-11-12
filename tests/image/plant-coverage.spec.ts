@@ -1,20 +1,22 @@
 // The plant core's far cards must keep a crown's density as it recedes. One oak is drawn three
 // times from one camera, at three distances: two copies in the first band of the core's card
-// levels and one in the second. The measure is the share of each crown's own box that its foliage
-// covers: a card level that thinned without growing its cards leaves holes, and its share falls
-// below the near copy's.
+// levels and one in the second. The measure is the share of each crown's own box that the plant
+// draws: a card level that thinned without growing its cards leaves holes, and its share falls below
+// the near copy's. Every drawn pixel counts, however dark it is. A count that left the dark pixels
+// out cut through the leaves' own range, so a change to the plant's light moved the measure as
+// though the cards had thinned: the bark's crown shade (1f06d15f7) did exactly that.
 //
-// The tolerance is set by the gap to the forced cut, not by the nearest honest reading. With the
-// cards' coverage cutoff forced, the far crown loses 16.0 to 20.7 per cent of the near share, while
-// the honest far crown loses 7.3 to 9.3 per cent. Fourteen per cent sits between them with room on
-// both sides: the honest frame keeps about five points of margin, and the cut frame still fails.
-// The old leaf card coverage test's ten per cent sat within a point of the honest reading here, so a
-// device that rasterises an edge differently would have failed it as though the cards had holes.
+// The tolerance is set by the gap to the sparse frame, not by the nearest honest reading. With the
+// plant forced toward its sparse form, the far crown loses 33.6 per cent of the near share, while
+// the honest far crown loses 6.6 to 8.8 per cent at the landed head. Fourteen per cent sits between
+// them with room on both sides: the honest frame keeps 5.2 points of margin, and the sparse frame
+// still fails by 19.6 points. A device that rasterises an edge differently would have failed a
+// tighter bound as though the cards had holes.
 //
 // The relative bound alone cannot see every level's cards breaking together: if the cut-outs failed
 // on all levels at once, each crown would cover more of its box and still sit close to the near one.
 // An absolute ceiling on every crown catches that frame.
-import { expect, test } from '@playwright/test';
+import { expect, type Page, test } from '@playwright/test';
 import { environmentNamed, type ImageRun, runIn } from '../lib/images.ts';
 import { loadResult } from '../lib/page-result.ts';
 import { failureText } from '../lib/runs.ts';
@@ -27,8 +29,8 @@ const NAME = 'plant-coverage';
 
 /**
  * How far a crown's covered share may stray from the near crown's, as a share of that near share.
- * The honest reading reaches 9.3 per cent below the near crown, and the forced cut 16.0 per cent,
- * so this sits between them rather than at the honest edge.
+ * The honest reading reaches 8.8 per cent below the near crown at the landed head, and the sparse
+ * frame 33.6 per cent, so this sits between them rather than at the honest edge.
  */
 const RELATIVE = 0.14;
 
@@ -36,17 +38,17 @@ const RELATIVE = 0.14;
 const FLOOR = 0.1;
 
 /**
- * The most of its box that any crown may cover. The honest crowns cover 0.311 to 0.392. Forcing the
- * cards solid, with the coverage cutoff at 0, raises them to 0.400 to 0.499, since a full card quad
- * fills only part of the crown's three-dimensional box and not all of it. This sits between the two:
- * it leaves 4.8 points above the honest maximum and fails the solid frame's middle crown on every
- * tier by at least 3.8 points.
+ * The most of its box that any crown may cover. The honest crowns cover 0.475 to 0.615 at the landed
+ * head. Forcing the cards solid, with the coverage cutoff at 0, raises them to 0.576 to 0.663, since
+ * a full card quad fills only part of the crown's three-dimensional box and not all of it. This sits
+ * between the two: it leaves 2.5 points above the honest maximum and fails the solid frame's middle
+ * crown by 2.3 points.
  *
  * A fault confined to the far crown alone can stay under it, since that crown's honest reading is
  * the lowest. The ceiling catches a fault that fills every crown; the reference picture covers a
  * change it cannot, so it is not proof that no crown is solid.
  */
-const CEILING = 0.44;
+const CEILING = 0.64;
 
 /** The least pixels that one box may hold. */
 const BOX_FLOOR = 20_000;
@@ -74,10 +76,38 @@ function coverage(
 				const at = (y * width + x) * 4;
 				total += 1;
 				const lit = (pixels[at] ?? 0) + (pixels[at + 1] ?? 0) + (pixels[at + 2] ?? 0);
-				if (lit > 12) drawn += 1;
+				// Any drawn pixel counts: the page clears to black, so the background reads a sum
+				// of zero, and the plant's darkest pixels read one in every box and on every tier.
+				if (lit > 0) drawn += 1;
 			}
 		return total > 0 ? drawn / total : 0;
 	});
+}
+
+/** The shares of a control frame. */
+async function controlShares(
+	page: Page,
+	environment: ReturnType<typeof environmentNamed>,
+	label: string,
+	query: string,
+) {
+	const run = IMAGE_RUNS.find(
+		(candidate) => candidate.test === NAME && candidate.tier === 'webgpu',
+	);
+	if (!run) throw new Error(`the manifest has no webgpu run of ${NAME}`);
+	const result = await loadResult(
+		page,
+		`${runIn(run, environment).path}${query}`,
+		run.timeoutSeconds * 1000,
+	);
+	expect(result.ok ? [] : [failureText(result)]).toEqual([]);
+	const pixels = new Uint8Array(Buffer.from(result.pixels as string, 'base64'));
+	const width = result.width as number;
+	const height = result.height as number;
+	const boxes = result.boxes as readonly Box[];
+	const shares = coverage(pixels, width, height, boxes);
+	console.log(`${label}: ${shares.map((share) => share.toFixed(3)).join(', ')}`);
+	return shares;
 }
 
 /** Whether two boxes share a pixel. */
@@ -137,3 +167,23 @@ for (const run of IMAGE_RUNS.filter((candidate) => candidate.test === NAME))
 			near * (1 + RELATIVE),
 		);
 	});
+
+test(`${NAME} on webgpu: the sparse frame fails the far bound`, async ({ page }, testInfo) => {
+	const [near = 0, , far = 0] = await controlShares(
+		page,
+		environmentNamed(testInfo.project.name),
+		'sparse',
+		'&sparse=1',
+	);
+	expect(far).toBeLessThan(near * (1 - RELATIVE));
+});
+
+test(`${NAME} on webgpu: the solid frame exceeds the ceiling`, async ({ page }, testInfo) => {
+	const shares = await controlShares(
+		page,
+		environmentNamed(testInfo.project.name),
+		'solid',
+		'&cardCutoff=0',
+	);
+	expect(Math.max(...shares)).toBeGreaterThan(CEILING);
+});
