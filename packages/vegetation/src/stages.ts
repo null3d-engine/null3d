@@ -67,6 +67,12 @@ export interface DressInput extends GrowInput {
 	 * Zero or absent leaves that level as the form meshes it.
 	 */
 	readonly budgets?: readonly [number, number, number];
+	/**
+	 * The most of a level's budget that its extras may take, from 0 to 1: the default when absent.
+	 * A page raises it to keep a species' extras, such as catkins or cones, at a level where their
+	 * visible share would drop them.
+	 */
+	readonly extrasShare?: number;
 }
 
 /**

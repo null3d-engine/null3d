@@ -73,7 +73,7 @@ import { dressShoots, pruneLight } from './leaf/instancer';
 import { foliage, loadFoliage } from './leaf/kinds';
 import { inLeaf } from './leaf/season';
 import { shootPrototypes } from './leaf/shoot';
-import { budgetLevel, checkBudgets } from './lod/budget';
+import { budgetLevel, checkBudgets, checkExtrasShare } from './lod/budget';
 import { bakeCards } from './lod/card-bake';
 import { cardMesh } from './lod/cards';
 import { bakeFar } from './lod/impostor';
@@ -180,6 +180,12 @@ export interface GrowOptions extends CoarsenessOptions {
 	 * form's own mesh, and a stand-in or a merged-foliage species keeps its own.
 	 */
 	readonly budgets?: readonly [number, number, number];
+	/**
+	 * The most of a level's budget that its extras may take, from 0 to 1. The default spends a small
+	 * share, so a level with catkins or cones drops them once their cost passes it. A page raises
+	 * the share to keep them, which spends more of the level's triangles on them.
+	 */
+	readonly extrasShare?: number;
 }
 
 /** The least and the most share of leaves or limbs a growth may ask for. */
@@ -479,7 +485,8 @@ export function variantKey(kit: SpeciesKitData, options: GrowOptions): string {
 		options.leaves === undefined || options.leaves === 1 ? '' : `:leaves=${options.leaves}`;
 	const limbs = options.limbs === undefined || options.limbs === 1 ? '' : `:limbs=${options.limbs}`;
 	const budgets = options.budgets ? `:budgets=${options.budgets.join(',')}` : '';
-	return `${kit.key}:${options.seed >>> 0}:${options.variant}:${season}:${options.detail ?? kit.detail}:${cutting}${coarsenessKey(kit, options)}${leaves}${limbs}${budgets}`;
+	const extras = options.extrasShare === undefined ? '' : `:extras=${options.extrasShare}`;
+	return `${kit.key}:${options.seed >>> 0}:${options.variant}:${season}:${options.detail ?? kit.detail}:${cutting}${coarsenessKey(kit, options)}${leaves}${limbs}${budgets}${extras}`;
 }
 
 /**
@@ -707,6 +714,7 @@ function dress(kit: SpeciesKitData, options: GrowOptions): MeshInput {
 		skeleton: cutSkeleton(kit, coarsenSkeleton(grown, coarseness), options.cutting),
 		coarseness,
 		...(options.budgets ? { budgets: options.budgets } : {}),
+		...(options.extrasShare !== undefined ? { extrasShare: options.extrasShare } : {}),
 		...lit,
 	};
 	// The shoots stand on the skeleton, which loses the bare twigs the record trims once they stand.
@@ -968,6 +976,7 @@ const now = () => (typeof performance === 'undefined' ? Date.now() : performance
  */
 export function growPlantNow(kit: SpeciesKitData, options: GrowOptions): PlantAsset {
 	checkBudgets(options.budgets);
+	checkExtrasShare(options.extrasShare);
 	options = withSparse(kit.record, options);
 	if (options.cutting) return growCutting(kit, options, options.cutting);
 	const started = now();

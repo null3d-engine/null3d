@@ -249,7 +249,8 @@ export function budgetLevel(
 	const parts: BudgetPart[] = [];
 	const extrasMeshBuilt = extrasMesh(input, level);
 	const extrasCost = extrasMeshBuilt ? extrasMeshBuilt.indices.length / 3 : 0;
-	const extras = level > 0 && extrasCost > 0 && extrasCost <= budget * EXTRAS_SHARE;
+	const extrasShare = input.extrasShare ?? EXTRAS_SHARE;
+	const extras = level > 0 && extrasCost > 0 && extrasCost <= budget * extrasShare;
 	const rest = Math.max(0, budget - (extras ? extrasCost : 0));
 	let wood: WoodPlan | undefined;
 	let cards: CardPlan | undefined;
@@ -298,4 +299,16 @@ export function checkBudgets(budgets: readonly number[] | undefined): void {
 		if (!(Number.isFinite(budget) && budget >= 0))
 			throw new Error(`@null3d/vegetation: a level budget of ${budget} is not a count.`);
 	}
+}
+
+/**
+ * Checks the extras' share of a level budget: a share from 0 to 1, or none for the default.
+ *
+ * @param share The share the page gave.
+ * @throws When the share is not a share.
+ * @category api/vegetation
+ */
+export function checkExtrasShare(share: number | undefined): void {
+	if (share !== undefined && !(Number.isFinite(share) && share >= 0 && share <= 1))
+		throw new Error(`@null3d/vegetation: an extras share of ${share} is not a share from 0 to 1.`);
 }

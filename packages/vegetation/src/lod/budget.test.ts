@@ -5,7 +5,7 @@ import { describe, expect, it } from 'bun:test';
 import { loadSpecies } from '../core/registry';
 import { buildKitNow, growPlantNow, loadPlantCode, variantKey } from '../generate';
 import type { MeshInput } from '../stages';
-import { cardPlan, checkBudgets, partShares } from './budget';
+import { cardPlan, checkBudgets, checkExtrasShare, partShares } from './budget';
 import { cardKeep, cardRowTriangles } from './cards';
 
 const SEED = 11;
@@ -97,8 +97,48 @@ describe('a level triangle budget', () => {
 		const b = variantKey(kit, { seed: SEED, variant: 0, sparse: 1, budgets: [0, 100, 100] });
 		expect(a).not.toBe(b);
 		expect(variantKey(kit, { seed: SEED, variant: 0, sparse: 1 })).not.toBe(a);
+		expect(
+			variantKey(kit, {
+				seed: SEED,
+				variant: 0,
+				sparse: 1,
+				budgets: [0, 300, 300],
+				extrasShare: 1,
+			}),
+		).not.toBe(a);
 		expect(() => checkBudgets([0, -1, 300])).toThrow(/not a count/);
 		expect(() => checkBudgets([0, Number.NaN, 300])).toThrow(/not a count/);
 		expect(() => checkBudgets([0, 30, 300])).not.toThrow();
+		expect(() => checkExtrasShare(1.2)).toThrow(/not a share/);
+		expect(() => checkExtrasShare(-0.1)).toThrow(/not a share/);
+		expect(() => checkExtrasShare(Number.NaN)).toThrow(/not a share/);
+		expect(() => checkExtrasShare(1)).not.toThrow();
+		expect(() => checkExtrasShare(undefined)).not.toThrow();
+	});
+
+	it('draws a species extras when the page gives them a share that holds them', async () => {
+		const module = await loadSpecies('silver-birch');
+		await loadPlantCode(module.record);
+		const kit = buildKitNow(module, { placeholders: 'missing', detail: 'low' });
+		const extrasOf = (asset: ReturnType<typeof growPlantNow>) =>
+			(asset.levels[1]?.parts ?? [])
+				.filter((part) => part.name === 'extras')
+				.reduce((sum, part) => sum + part.arrays.indices.length / 3, 0);
+		const dropped = growPlantNow(kit, {
+			seed: SEED,
+			variant: 0,
+			sparse: 1,
+			budgets: [0, 2000, 2000],
+		});
+		const kept = growPlantNow(kit, {
+			seed: SEED,
+			variant: 0,
+			sparse: 1,
+			budgets: [0, 2000, 2000],
+			extrasShare: 1,
+		});
+		expect(extrasOf(dropped)).toBe(0);
+		expect(extrasOf(kept)).toBeGreaterThan(0);
+		expect(kept.levels[1]?.triangles).toBeLessThanOrEqual(2000);
 	});
 });
