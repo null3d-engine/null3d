@@ -31,6 +31,22 @@ structure, leaf clusters at the end of a shoot, single leaves on both faces, bar
 mid-trunk and on a limb, the trunk's taper and root flare, and the silhouette. The set also carries
 turning videos and usually a wind clip.
 
+## No piece hangs free
+
+At every level and at every sparseness setting, every drawn piece is connected to the plant's body.
+A leaf, twig, card or bough that loses its parent when a level thins or a share drops is either joined
+back to the piece it belonged to or removed; nothing is left standing in the air.
+
+This binds the generator and the reading. A level that thins its wood, drops its axes or thins its
+cards must prune whatever loses its parent, so the drawn plant stays one connected body at that level.
+The reading counts the pieces as the row requires, and where a picture shows a piece standing free,
+the shader and the generator are at fault whichever row is being read; the picture fails and the fault
+is a generator fault, not a row to judge.
+
+Sparseness is where this shows first, because thinning is when parents are lost. A sparse picture that
+scatters leaf clumps through air is a failed picture even where its density figure sits inside its
+band.
+
 ## The branch structure
 
 The silhouette is judged on how the branches fill the space, not only on the outline they trace.
