@@ -24,6 +24,7 @@ import {
 	rowSpans,
 	seasonFromPicture,
 	shadowLike,
+	subjectShares,
 	widthProfile,
 	withSlot,
 } from './references.ts';
@@ -678,6 +679,24 @@ describe('the strands view', () => {
 			['28-young-bark.png', 'bark-limb'],
 		];
 		for (const [file, view] of standard) expect(classifySlot(file)?.view, file).toBe(view);
+	});
+});
+
+describe('the shares a subject box gives a view', () => {
+	test('reads a separable box, and refuses a void one or a picture whose outline does not separate', () => {
+		const box = { left: 100, top: 200, right: 300, bottom: 500 };
+		expect(subjectShares(1000, 1000, box, true)).toEqual({ width: 0.2, height: 0.3 });
+		// A picture whose outline the reference set does not separate gives no shares, so the view
+		// that asks for them keeps its own frame.
+		expect(subjectShares(1000, 1000, box, false)).toBeUndefined();
+		// A void box, and a box reaching past the frame, give none either.
+		expect(
+			subjectShares(1000, 1000, { left: 100, top: 200, right: 100, bottom: 500 }, true),
+		).toBeUndefined();
+		expect(
+			subjectShares(1000, 1000, { left: 100, top: 200, right: 1300, bottom: 500 }, true),
+		).toBeUndefined();
+		expect(subjectShares(1000, 1000, undefined, true)).toBeUndefined();
 	});
 });
 
