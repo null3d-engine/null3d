@@ -942,7 +942,7 @@ function compareRun(
 					floating.length > 0
 						? `, ${floating.length} floating (${floating.map((part) => `${part.area} px ${part.box}`).join(', ')})`
 						: ', none floating'
-				}; height ${height === undefined ? '-' : `${height.toFixed(2)} m`}${
+				}; foot row ${read.footRow}; height ${height === undefined ? '-' : `${height.toFixed(2)} m`}${
 					inside === null
 						? ''
 						: inside
@@ -977,7 +977,7 @@ function compareRun(
 			: []),
 		...(floating.length + sweepFloating.length > 0
 			? [
-					`- ${floating.length + sweepFloating.length} picture${floating.length + sweepFloating.length === 1 ? '' : 's'} draw${floating.length + sweepFloating.length === 1 ? 's' : ''} a piece hanging free: ${[...floating.map((pair) => pair.file), ...sweepFloating].join(', ')}. The owner's rule is that no piece hangs free at any level or sparseness, so the fault is the generator's and the run fails.`,
+					`- ${floating.length + sweepFloating.length} picture${floating.length + sweepFloating.length === 1 ? '' : 's'} draw${floating.length + sweepFloating.length === 1 ? 's' : ''} a piece hanging free: ${[...floating.map((pair) => `${pair.file} (foot row ${pair.connectivity?.footRow ?? '-'})`), ...sweepFloating].join(', ')}. A piece meeting the foot row where the plant stands is rooted in the soil and is not counted; the rest meet nothing inside the picture. The owner's rule is that no piece hangs free at any level or sparseness, so the fault is the generator's and the run fails.`,
 				]
 			: []),
 		'',

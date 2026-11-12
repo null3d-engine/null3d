@@ -1051,6 +1051,30 @@ export interface PlantPart {
 }
 
 /**
+ * The pieces that hang free, and the foot row the reading used.
+ *
+ * A plant that grows as a colony, such as a bracken patch, draws its fronds standing in the soil,
+ * and the matte draws the plant alone against a plain ground: the join from a frond's foot into the
+ * ground is one the picture can never show. A piece that meets the foot row where the plant stands
+ * is therefore rooted in the soil and is not floating. Any other piece that the frame's border does
+ * not carry meets nothing inside the picture.
+ *
+ * @param parts The pieces the matte carries, the largest run first.
+ * @returns The foot row, and the pieces that hang free.
+ */
+export function hangingParts(parts: readonly PlantPart[]): {
+	readonly footRow: number;
+	readonly parts: readonly PlantPart[];
+} {
+	let footRow = 0;
+	for (const part of parts) footRow = Math.max(footRow, part.bottom);
+	return {
+		footRow,
+		parts: parts.slice(1).filter((part) => !part.border && part.bottom < footRow - PIECE_BRIDGE),
+	};
+}
+
+/**
  * The separate pieces a plant is drawn as: runs of at least `minArea` pixels, with two runs one
  * background pixel apart counted as one. A plant hangs together: every fruit meets its twig, every
  * twig meets its limb. A part that meets nothing is drawn as an island, and this returns it with its

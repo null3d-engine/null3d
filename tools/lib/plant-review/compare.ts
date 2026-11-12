@@ -33,6 +33,7 @@ import {
 	anyPlantMask,
 	type Box,
 	boxOf,
+	hangingParts,
 	matteMask,
 	measurePlant,
 	type PlantMask,
@@ -1061,6 +1062,8 @@ export function plainTurnOf(background: string | undefined): boolean {
 /** A sweep picture's readings: its components and floating pieces, and the render's crown-box gap. */
 export interface SweepMeasures {
 	readonly components: number;
+	/** The row where the plant stands: a piece meeting it is rooted in the soil, not floating. */
+	readonly footRow: number;
 	readonly floating: readonly { readonly area: number; readonly box: string }[];
 	readonly crownBoxGap: number | null;
 }
@@ -1078,15 +1081,14 @@ export function sweepMeasures(runDir: string, frame: RunFrame): SweepMeasures {
 		render.plant.height,
 		PIECE_AREA,
 	);
+	const hanging = hangingParts(parts);
 	return {
 		components: parts.length,
-		floating: parts
-			.slice(1)
-			.filter((part) => !part.border)
-			.map((part) => ({
-				area: part.area,
-				box: `${part.right - part.left + 1}x${part.bottom - part.top + 1}@${part.left},${part.top}`,
-			})),
+		footRow: hanging.footRow,
+		floating: hanging.parts.map((part) => ({
+			area: part.area,
+			box: `${part.right - part.left + 1}x${part.bottom - part.top + 1}@${part.left},${part.top}`,
+		})),
 		crownBoxGap: render.measures.crownBoxGap ?? null,
 	};
 }
@@ -1453,6 +1455,8 @@ export interface StillResult extends PairMetrics {
 	 */
 	readonly connectivity: {
 		readonly components: number;
+		/** The row where the plant stands: a piece meeting it is rooted in the soil, not floating. */
+		readonly footRow: number;
 		readonly floating: readonly { readonly area: number; readonly box: string }[];
 	} | null;
 	/** The sparseness the picture was drawn at, where its query names one above the record. */
@@ -1841,16 +1845,17 @@ export function compareStills(
 		// The largest run is the plant's body; any other run that the frame's border does not carry
 		// meets nothing inside the picture, which is a generator fault rather than a row's fault.
 		const connectivity = parts
-			? {
-					components: parts.length,
-					floating: parts
-						.slice(1)
-						.filter((part) => !part.border)
-						.map((part) => ({
+			? (() => {
+					const hanging = hangingParts(parts);
+					return {
+						components: parts.length,
+						footRow: hanging.footRow,
+						floating: hanging.parts.map((part) => ({
 							area: part.area,
 							box: `${part.right - part.left + 1}x${part.bottom - part.top + 1}@${part.left},${part.top}`,
 						})),
-				}
+					};
+				})()
 			: null;
 		const shown: PairMetrics = masked
 			? pair
