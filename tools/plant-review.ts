@@ -36,7 +36,6 @@ import {
 	framingQuery,
 	rubricBand,
 	SHEATH_VIEWS,
-	type SheathTarget,
 	type StillResult,
 	type TurnResult,
 	viewSheets,
@@ -69,6 +68,7 @@ import {
 	singleShot,
 	turnShots,
 } from './lib/plant-review/render.ts';
+import { type SheathTarget, sheathTargetOf } from './lib/plant-review/sheath.ts';
 
 /** Where the reference folders are when `--refs` names a slug. */
 const REFERENCES =
@@ -129,24 +129,14 @@ async function formsOf(species: string): Promise<readonly string[]> {
 }
 
 /**
- * The sheath colours a tuft's record asks its surface to show, when the record names them. The
- * field is read structurally: a species that grows on another model, or names no sheath colour,
- * gives no figure.
+ * The sheath target a species' review data names, if any. The target is the authored foot and
+ * collar the measure compares against; the plant record's own colour draws the surface and is not
+ * read here.
  */
-async function sheathOf(species: string): Promise<SheathTarget | undefined> {
-	if (!isSpeciesId(species)) return undefined;
-	const growth = (await loadSpecies(species)).record.growth;
-	if (growth.model !== 'tuft') return undefined;
-	const named = (
-		growth as {
-			sheathColour?: {
-				readonly foot: readonly [number, number, number];
-				readonly collar: readonly [number, number, number];
-				readonly reach: number;
-			};
-		}
-	).sheathColour;
-	return named;
+function sheathTargetOfSpecies(species: string): SheathTarget | undefined {
+	const path = join(REPO_ROOT, 'tools/lib/plant-review/slots', `${species}.json`);
+	if (!existsSync(path)) return undefined;
+	return sheathTargetOf(JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>);
 }
 
 /** The metres a bark view frames, from the species' texture manifest when it has one. */
@@ -752,7 +742,7 @@ async function main(): Promise<void> {
 			manifest,
 			set,
 			manifest.windFps ?? windFps,
-			await sheathOf(manifest.species),
+			sheathTargetOfSpecies(manifest.species),
 		);
 		console.log(readFileSync(join(dir, 'summary.md'), 'utf8'));
 		if (!complete) process.exitCode = 1;
@@ -761,7 +751,7 @@ async function main(): Promise<void> {
 	const species = positional(0) ?? option('species');
 	const folder = referenceFolder(species);
 	const set = folder ? readReferenceSet(folder, await formsOf(species)) : undefined;
-	const sheath = await sheathOf(species);
+	const sheath = sheathTargetOfSpecies(species);
 	const { commit, dirty } = commitOf();
 	const stamp = new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 13);
 	const run = option('run', `${species}-${stamp}`);
