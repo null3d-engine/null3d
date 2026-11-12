@@ -65,7 +65,6 @@ import {
 	cutsShoot,
 	mergeShoots,
 } from './cutting';
-import { coarsenSkeleton } from './grow/coarsen';
 import {
 	cardTop,
 	crownReach,
@@ -180,6 +179,21 @@ export interface GrowOptions extends CoarsenessOptions {
 	 * grows the light form and a desktop the full one.
 	 */
 	readonly sparse?: number;
+	/**
+	 * How far the wood's own sections are thinned, from 0 to 1: 0 is the level's own rings and
+	 * sides, and 1 the fewest that still draws a closed run, with square ends and no rounded joins.
+	 * A page rarely sets it; a sparse level raises it to the species' floor, if the record names
+	 * one. Every growth model answers it the same way, since one wood mesher builds them all.
+	 */
+	readonly sections?: number;
+	/**
+	 * The share of a card level's own card rows to keep, from 0.05 to 1: 1 keeps the level's own
+	 * cards and their size, and below 1 thins the rows by the level's rule, so the kept cards grow.
+	 * A review redraw sets it to measure what the cards buy; a page rarely does.
+	 */
+	readonly cards?: number;
+	/** How a card joins the plant when its branch is not drawn: `remove`, `branch` or `twig`. */
+	readonly cardJoin?: 'remove' | 'branch' | 'twig';
 }
 
 /** The least and the most share of leaves or limbs a growth may ask for. */
@@ -196,11 +210,8 @@ export const SPARSE_LEAST = 0.05;
 
 /**
  * The coarseness every species reaches at the full sparse level, whatever its record asks for. The
- * coarseness is the only share that reliably moves the triangle count down: it decides how finely
- * each limb is meshed, where the limb and leaf shares decide how the plant grows. Measured on the
- * oak, the beech and the willow, the level sets 11 to 29 per cent fewer triangles at every level and
- * up to 37 per cent at the farthest, in the same direction for all three. Lowering the other two
- * shares instead raised the count on the oak and the beech by up to eighty per cent.
+ * coarseness decides how finely each limb is meshed, so it moves the triangle count down without
+ * changing what the plant grows: the twigs, the shoot rows and the leaves stay.
  *
  * @category api/vegetation
  */
@@ -474,11 +485,19 @@ export function kitKey(
 export function variantKey(kit: SpeciesKitData, options: GrowOptions): string {
 	const season = options.season ?? kit.record.seasons.default;
 	const cutting = options.cutting ? JSON.stringify(options.cutting) : '';
-	// A share of leaves or limbs grows a different plant, so it keys a different asset.
+	// A share of leaves or limbs grows a different plant, so it keys a different asset. Section
+	// sparsity meshes the same plant coarser, which is a different asset too.
 	const leaves =
 		options.leaves === undefined || options.leaves === 1 ? '' : `:leaves=${options.leaves}`;
 	const limbs = options.limbs === undefined || options.limbs === 1 ? '' : `:limbs=${options.limbs}`;
-	return `${kit.key}:${options.seed >>> 0}:${options.variant}:${season}:${options.detail ?? kit.detail}:${cutting}${coarsenessKey(kit, options)}${leaves}${limbs}`;
+	const sections =
+		options.sections === undefined || options.sections === 0 ? '' : `:sections=${options.sections}`;
+	const cards = options.cards === undefined || options.cards === 1 ? '' : `:cards=${options.cards}`;
+	const join =
+		options.cardJoin === undefined || options.cardJoin === 'remove'
+			? ''
+			: `:join=${options.cardJoin}`;
+	return `${kit.key}:${options.seed >>> 0}:${options.variant}:${season}:${options.detail ?? kit.detail}:${cutting}${coarsenessKey(kit, options)}${leaves}${limbs}${sections}${cards}${join}`;
 }
 
 /**
@@ -609,10 +628,11 @@ function cuttingLeaves(record: Species, cutting: CuttingOptions | undefined): Sp
 }
 
 /**
- * The grow options a sparse level asks for: the leaves, limbs and coarseness moved toward the
- * record's floors by the level, from 0, the record's own form, to 1, the sparsest the species
- * allows. A record with no floors, or a level of 0, leaves the options as they stand. The level is
- * kept in the options so the shares it sets are taken at the sparse bound rather than a page's own.
+ * The grow options a sparse level asks for: the leaves, limbs, coarseness and section sparsity
+ * moved toward the record's floors by the level, from 0, the record's own form, to 1, the sparsest
+ * the species allows. A record with no floors, or a level of 0, leaves the options as they stand.
+ * The level is kept in the options so the shares it sets are taken at the sparse bound rather than
+ * a page's own.
  *
  * @param record The species record.
  * @param options The options as the page gave them.
@@ -620,6 +640,10 @@ function cuttingLeaves(record: Species, cutting: CuttingOptions | undefined): Sp
  * @category api/vegetation
  */
 export function withSparse<T extends GrowOptions>(record: Species, options: T): GrowOptions {
+	if (options.sections !== undefined && !(options.sections >= 0 && options.sections <= 1))
+		throw new Error(`sections is ${options.sections}; a section sparsity lies from 0 to 1`);
+	if (options.cards !== undefined && !(options.cards >= 0.05 && options.cards <= 1))
+		throw new Error(`cards is ${options.cards}; a share of the card rows lies from 0.05 to 1`);
 	const floors = record.sparse;
 	const asked = options.sparse;
 	if (!floors || asked === undefined || asked <= 0) return options;
@@ -634,6 +658,7 @@ export function withSparse<T extends GrowOptions>(record: Species, options: T): 
 			options.coarseness ?? 0,
 			level * Math.max(floors.coarseness, SPARSE_COARSENESS),
 		),
+		sections: Math.max(options.sections ?? 0, level * (floors.sections ?? 0)),
 	};
 }
 
@@ -724,8 +749,12 @@ function dress(kit: SpeciesKitData, options: GrowOptions): MeshInput {
 	const dressInput: DressInput = {
 		...calibratedInput,
 		kit,
-		skeleton: cutSkeleton(kit, coarsenSkeleton(calibrated, coarseness), options.cutting),
+		// The coarseness dial changes how smoothly the wood is meshed, never what the plant grows.
+		skeleton: cutSkeleton(kit, calibrated, options.cutting),
 		coarseness,
+		sections: options.sections,
+		cards: options.cards,
+		cardJoin: options.cardJoin,
 		...lit,
 	};
 	// The shoots stand on the skeleton, which loses the bare twigs the record trims once they stand.
