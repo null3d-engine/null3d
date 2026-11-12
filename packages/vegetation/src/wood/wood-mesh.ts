@@ -10,10 +10,18 @@
 // displacement on thin wood; `uv1.y` the junction mask; colour bytes R and G the wind record, B the
 // bend weight along the axis and A the crown's sky visibility.
 import type { MeshArrays } from '../asset';
-import { AXIS_LIMB, AXIS_STEM, AXIS_STIPE, type MacroSkeleton, NODE_STUB } from '../core/graph';
+import {
+	AXIS_ARM,
+	AXIS_LIMB,
+	AXIS_STEM,
+	AXIS_STIPE,
+	type MacroSkeleton,
+	NODE_STUB,
+} from '../core/graph';
 import { acos, cos, PI, sin, tan } from '../core/math';
 import type { Species } from '../core/record';
 import { crownSkyAt } from '../crown/visibility';
+import { supportAxes } from '../lod/cards';
 import type { CrownLight, MeshInput, MeshLevel } from '../stages';
 import { VARIANT_RECORDS } from '../wind/records';
 import { peelFins } from './fins';
@@ -36,6 +44,7 @@ import {
 	type SurfaceHit,
 	type SurfacePlace,
 } from './junction';
+import { ribPlan, ribSection } from './ribs';
 import {
 	AxisRings,
 	bendRings,
@@ -51,7 +60,6 @@ import {
 	tubeDetail,
 } from './tube';
 import { type BarkScale, barkScale, tilesRound, uSpan } from './uv';
-
 /**
  * Metres of pipe radius that `uv1.x` spans from 0 to 1 on wood.
  *
@@ -154,32 +162,40 @@ function keptNodes(skeleton: MacroSkeleton): Int32Array {
  * fork's leaders: each takes the piece's last ring as its own first ring, so the piece needs no
  * rounded end. A thinner child at that end hangs on the thickest leader instead.
  */
-function woodAxes(input: MeshInput, keep: number): WoodAxis[] {
+function woodAxes(input: MeshInput, keep: number, level: MeshLevel): WoodAxis[] {
 	const { skeleton } = input;
 	const axes = skeleton.axes;
 	const p = skeleton.position;
 	const radius = skeleton.radius;
 	const base = input.variant * VARIANT_RECORDS;
 	const lastKept = keptNodes(skeleton);
+	// The thinnest sections draw an axis as one run: its wood does not divide at a codominant child.
+	const single = (input.sections ?? 0) >= 1;
+	// A card join of `branch` draws the branches the cards stand on, so no card is dropped.
+	const support =
+		level > 0 && input.cardJoin === 'branch'
+			? supportAxes(input as MeshInput, level as 1 | 2)
+			: undefined;
 	// Axes rooted at the ground, stems and a frond colony's stipes, take the stem base's flare,
 	// lobes and roots. A limb without a parent is the cut end of a piece, such as a cut branch, and
 	// starts plain. Any other axis without a parent, such as a ground plant's crown, carries no wood.
 	const rooted = (a: number) =>
 		(axes.kind[a] as number) === AXIS_STEM || (axes.kind[a] as number) === AXIS_STIPE;
 	const meshed = (a: number) =>
-		(axes.order[a] as number) <= keep &&
+		((axes.order[a] as number) <= keep || support?.[a] === 1) &&
 		(lastKept[a] as number) >= (axes.first[a] as number) &&
 		((axes.parent[a] as number) >= 0 || rooted(a) || (axes.kind[a] as number) === AXIS_LIMB);
 	// Where each axis divides: the nodes short of its end where a codominant side child leaves.
 	const divides = new Uint8Array(skeleton.nodeCount);
-	for (let a = 0; a < axes.count; a++) {
-		const parent = axes.parent[a] as number;
-		const node = axes.parentNode[a] as number;
-		if (parent < 0 || !meshed(a) || (axes.parentT[a] as number) > 1e-6) continue;
-		if (node < (axes.first[parent] as number) || node >= (lastKept[parent] as number)) continue;
-		if ((radius[axes.first[a] as number] as number) >= CODOMINANT * (radius[node] as number))
-			divides[node] = 1;
-	}
+	if (!single)
+		for (let a = 0; a < axes.count; a++) {
+			const parent = axes.parent[a] as number;
+			const node = axes.parentNode[a] as number;
+			if (parent < 0 || !meshed(a) || (axes.parentT[a] as number) > 1e-6) continue;
+			if (node < (axes.first[parent] as number) || node >= (lastKept[parent] as number)) continue;
+			if ((radius[axes.first[a] as number] as number) >= CODOMINANT * (radius[node] as number))
+				divides[node] = 1;
+		}
 	// The pieces: each axis's runs of nodes between the nodes where it divides.
 	const pieceAxis: number[] = [];
 	const pieceFirst: number[] = [];
@@ -345,7 +361,9 @@ function woodAxes(input: MeshInput, keep: number): WoodAxis[] {
 			stub: ((skeleton.flags[first] as number) & NODE_STUB) !== 0,
 			cut: parent < 0 && (axes.kind[a] as number) === AXIS_LIMB,
 		});
-		if (stem) addRoots(input, list, list.length - 1, base + (axes.record[a] as number));
+		// Roots lie in the soil, below the ground the far views stand on, so only the nearest level draws them.
+		if (stem && level === 0)
+			addRoots(input, list, list.length - 1, base + (axes.record[a] as number));
 		for (const child of children[k] ?? []) queue.push(child);
 	}
 	return list;
@@ -634,6 +652,7 @@ class Mesher {
 	private readonly seed: number;
 	private readonly variant: number;
 	private readonly crown: CrownLight;
+	private readonly kinds: Uint8Array;
 	private readonly writer = new WoodWriter();
 	private readonly built: (AxisRings | undefined)[] = [];
 	private readonly contexts: (AxisContext | undefined)[] = [];
@@ -652,8 +671,9 @@ class Mesher {
 		this.seed = input.seed;
 		this.variant = input.variant;
 		this.crown = input.crown;
+		this.kinds = input.skeleton.axes.kind;
 		this.bark = barkScale(input.record, input.kit.manifest, largestRadius(input.skeleton));
-		this.tube = tubeDetail(level, input.detail, input.coarseness ?? 0);
+		this.tube = tubeDetail(level, input.detail, input.coarseness ?? 0, input.sections ?? 0);
 		this.rings = report
 			? {
 					axis: [],
@@ -861,8 +881,22 @@ class Mesher {
 			const b = 1 / this.bark.scale(path.radius[i] as number);
 			barkV[i] = (barkV[i - 1] as number) + (step * (a + b)) / 2;
 		}
-		const section =
-			wood.stem >= 0
+		const ribs =
+			this.record.growth.model === 'column' &&
+			wood.axis >= 0 &&
+			(wood.stem >= 0 || (this.kinds[wood.axis] as number) === AXIS_ARM)
+				? ribPlan(
+						this.record.growth,
+						this.seed,
+						this.record.seedSalt,
+						variant,
+						wood.axis,
+						path.radius[0] as number,
+					)
+				: undefined;
+		const section = ribs
+			? ribSection(ribs, path.radius[0] as number)
+			: wood.stem >= 0
 				? stemSection(this.record.base, this.seed, this.record.seedSalt, variant, wood.stem)
 				: undefined;
 		let context: AxisContext = {
@@ -1125,13 +1159,16 @@ class Mesher {
 		}
 		// The blend holds the whole fillet and collar, so the plain rings after it are the child's own.
 		const end = Math.min(path.length, highest + Math.max(BLEND_RADII * rc, collarLength));
-		// Blend rings follow the girth: a thin child's fillet is too small to need many.
-		const blend =
+		// Blend rings follow the girth: a thin child's fillet is too small to need many. Thinned
+		// sections keep one ring to meet the parent and take the whole fillet on it.
+		const full =
 			rc < THIN
 				? 2
 				: rc < 2.5 * THIN
 					? 3
 					: Math.max(3, Math.min(BLEND_RINGS[this.tube.level], Math.ceil((end - lowest) / rc) + 1));
+		const blend =
+			this.tube.sections >= 1 ? 0 : Math.max(1, Math.round(full - (full - 1) * this.tube.sections));
 		// One context per side, its fillet and collar easing from its own seam.
 		const columns: AxisContext[] = [];
 		for (let j = 0; j < sides; j++) columns.push({ ...seeking, collarFrom: seamS[j] as number });
@@ -1673,6 +1710,8 @@ class Mesher {
 
 	/** The rounded end of an axis: a dome of rings and an apex ring of no radius. */
 	private tip(context: AxisContext, rings: AxisRings, fork: boolean): void {
+		// The thinnest sections leave an axis open at its end: the crown's surface hides the tip.
+		if (this.tube.sections >= 1) return;
 		const path = context.path;
 		const last = rings.count - 1;
 		if (last < 0) return;
@@ -1683,7 +1722,8 @@ class Mesher {
 		for (let j = 0; j < sides; j++) mean += rings.rho[first + j] as number;
 		mean /= sides;
 		const height = fork ? FORK_DOME : 0.55;
-		const domes = mean < THIN ? 0 : this.tube.level === 0 && mean > 0.01 ? 2 : 1;
+		const domes =
+			this.tube.sections >= 0.5 || mean < THIN ? 0 : this.tube.level === 0 && mean > 0.01 ? 2 : 1;
 		const scale = this.bark.scale(f.radius);
 		const v0 = rings.v[last] as number;
 		const centre = new Float64Array(3);
@@ -2005,7 +2045,7 @@ function ordersKept(input: MeshInput, level: MeshLevel): number {
  * @returns The mesh and the reports.
  */
 export function meshWoodReport(input: MeshInput, level: MeshLevel): WoodReport {
-	const axes = woodAxes(input, ordersKept(input, level));
+	const axes = woodAxes(input, ordersKept(input, level), level);
 	const mesher = new Mesher(input, level, true);
 	const mesh = mesher.run(axes, input.variant);
 	const parents = new Map<number, number>();
@@ -2039,7 +2079,7 @@ export function meshWoodReport(input: MeshInput, level: MeshLevel): WoodReport {
  */
 export function meshWood(input: MeshInput, level: MeshLevel): MeshArrays {
 	return new Mesher(input, level, false).run(
-		woodAxes(input, ordersKept(input, level)),
+		woodAxes(input, ordersKept(input, level), level),
 		input.variant,
 	);
 }
