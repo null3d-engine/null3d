@@ -19,10 +19,11 @@ const MOST_LATE = 0.25;
  * frames and no jump at all. The capture keeps the frames whose image differs from the one before,
  * which are the drawn frames, and waits until it has 40 of them. A capture that reaches the time
  * limit first still measures, and the missing jump fails the test, which names the fault rather
- * than hiding it.
+ * than hiding it. CI's software GPU drew 27 frames in 180 seconds, about 0.15 a second, so forty
+ * need about 267; the budget holds them at that rate with margin.
  */
 const WANTED_FRAMES = 40;
-const CAPTURE_MS = 180_000;
+const CAPTURE_MS = 360_000;
 /** The longest that the page may take to start, which on a software GPU builds every pipeline first. */
 const READY_MS = 180_000;
 
