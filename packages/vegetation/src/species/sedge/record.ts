@@ -243,6 +243,11 @@ export const record: Species = {
 			// bytes, which the lead line re-recorded from 3,100,000 to 3,300,000. It is a byte read,
 			// not a triangle one, and it sits inside the every-variant cap above; the near band's
 			// triangle cap stays lod0Triangles at 140,000 against a read of 83,326.
+			// A merge with the lead line must keep the every-variant figures: its high byte cap of
+			// 3,300,000 cannot cover variant 3's 4,099,334, so the 4,710,000 here wins; and its card
+			// levels of 36,000 and 19,600 are below that variant's 51,409 and 24,317, so the 80,000
+			// and 25,000 here win. The lower figures were measured on one variant before the far
+			// tier's flower stalks were carried.
 			variantBytes: { low: 3_830_000, medium: 4_210_000, high: 4_710_000, ultra: 6_450_000 },
 			lod0Triangles: 140_000,
 			lod1Triangles: 80_000,
