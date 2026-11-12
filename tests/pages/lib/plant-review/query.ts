@@ -131,6 +131,20 @@ export interface PlantReviewQuery {
 	 * The width a 'spray' or 'fan' layout spans, as a share of the piece's height.
 	 */
 	readonly spread?: number;
+	/**
+	 * The shoot class of the piece's main stem. Naming it builds the stem-and-laterals assembly: the
+	 * stem stands upright and the piece's own class hangs from it.
+	 */
+	readonly stem?: string;
+	/** How many laterals hang from the stem, from 1 to the cutting's most. */
+	readonly laterals?: number;
+	/** The share of the stem's height where the first lateral leaves, and where the last leaves. */
+	readonly lateralFrom?: number;
+	readonly lateralTo?: number;
+	/** Degrees each lateral leans outward from the stem's line. */
+	readonly lateralAngle?: number;
+	/** Which of the stem class's prototypes to take. */
+	readonly stemPick?: number;
 	/** Whether the page posts its measures of the plant beside the frame. */
 	readonly measure?: boolean;
 	/**
@@ -294,6 +308,11 @@ const NUMBER_FIELDS = [
 	'ring',
 	'lean',
 	'spread',
+	'laterals',
+	'lateralFrom',
+	'lateralTo',
+	'lateralAngle',
+	'stemPick',
 	'horizon',
 	'fill',
 	'targetY',
@@ -366,6 +385,7 @@ export function plantReviewQuery(query: PlantReviewQuery): string {
 	if (query.form) params.set('form', query.form);
 	if (query.shoot) params.set('shoot', query.shoot);
 	if (query.layout) params.set('layout', query.layout);
+	if (query.stem) params.set('stem', query.stem);
 	if (query.view) params.set('view', query.view);
 	for (const name of NUMBER_FIELDS) {
 		const value = query[name];
@@ -413,6 +433,9 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 	const shoot = params.get('shoot');
 	if (shoot !== null && !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(shoot))
 		throw new Error(`shoot=${shoot} is not a class name: give a kebab-case word, such as twig.`);
+	const stem = params.get('stem');
+	if (stem !== null && !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(stem))
+		throw new Error(`stem=${stem} is not a class name: give a kebab-case word, such as cut.`);
 	const view = oneOf('view', params.get('view'), PLANT_VIEWS) ?? 'whole';
 	const numbers: Partial<Record<(typeof NUMBER_FIELDS)[number], number>> = {};
 	for (const name of NUMBER_FIELDS) {
@@ -509,6 +532,7 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 		species,
 		...(form !== null && { form }),
 		...(shoot !== null && { shoot }),
+		...(stem !== null && { stem }),
 		...(layoutText !== null && { layout: layoutText as 'ring' | 'spray' | 'fan' }),
 		view,
 		...numbers,

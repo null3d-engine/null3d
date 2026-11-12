@@ -508,6 +508,26 @@ describe('the slots', () => {
 			spread: 1.2,
 		});
 		expect(() => cutting({ species: 'stub', view: 'branch', layout: 'fan' })).not.toThrow();
+		// A stem-and-laterals piece reads back its stem, its lateral count and its span.
+		expect(
+			cutting({
+				species: 'stub',
+				view: 'branch',
+				stem: 'cut',
+				laterals: 6,
+				lateralFrom: 0.4,
+				lateralTo: 0.9,
+				lateralAngle: 20,
+				stemPick: 1,
+			}),
+		).toMatchObject({
+			stem: 'cut',
+			laterals: 6,
+			lateralFrom: 0.4,
+			lateralTo: 0.9,
+			lateralAngle: 20,
+			stemPick: 1,
+		});
 		// A single-leaf still's pressed choice reads back either way, and is absent when not named.
 		const pressed = (value?: boolean) =>
 			readPlantReviewQuery(

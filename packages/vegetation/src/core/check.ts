@@ -555,6 +555,31 @@ function cuttingProblems(record: Species, out: string[]): void {
 				out.push(`cuttings.${part}.layout '${hint.layout}' is not 'ring', 'spray' or 'fan'`);
 			if (hint.spread !== undefined && !(hint.spread >= 0 && hint.spread <= 4))
 				out.push(`cuttings.${part}.spread is ${hint.spread}; it is a share from 0 to 4`);
+			if (hint.stem !== undefined && !names.has(hint.stem))
+				out.push(`cuttings.${part}.stem '${hint.stem}' names no class in shoots.classes`);
+			if (
+				hint.laterals !== undefined &&
+				!(Number.isInteger(hint.laterals) && hint.laterals >= 1 && hint.laterals <= 8)
+			)
+				out.push(`cuttings.${part}.laterals is ${hint.laterals}; it is a count from 1 to 8`);
+			if (hint.lateralFrom !== undefined && !(hint.lateralFrom >= 0 && hint.lateralFrom <= 1))
+				out.push(`cuttings.${part}.lateralFrom is ${hint.lateralFrom}; it is a share from 0 to 1`);
+			if (hint.lateralTo !== undefined && !(hint.lateralTo >= 0 && hint.lateralTo <= 1))
+				out.push(`cuttings.${part}.lateralTo is ${hint.lateralTo}; it is a share from 0 to 1`);
+			if (
+				hint.lateralFrom !== undefined &&
+				hint.lateralTo !== undefined &&
+				hint.lateralTo < hint.lateralFrom
+			)
+				out.push(
+					`cuttings.${part}.lateralTo is below lateralFrom; the laterals would stand upside down`,
+				);
+			if (hint.lateralAngle !== undefined && !(hint.lateralAngle >= -90 && hint.lateralAngle <= 90))
+				out.push(
+					`cuttings.${part}.lateralAngle is ${hint.lateralAngle}; it is degrees from -90 to 90`,
+				);
+			if (hint.stemPick !== undefined && !(Number.isInteger(hint.stemPick) && hint.stemPick >= 0))
+				out.push(`cuttings.${part}.stemPick is ${hint.stemPick}; it is a whole number from 0`);
 		} else {
 			if (hint.length <= 0)
 				out.push(`cuttings.${part}.length is ${hint.length}; it must be above 0`);

@@ -700,6 +700,36 @@ describe('cuttings', () => {
 		expect(recorded?.bounds.max[2]).toBeCloseTo(fan.bounds.max[2] as number, 5);
 	});
 
+	it('joins hanging laterals to one upright stem', () => {
+		const lateralClass = kit.record.shoots?.classes?.[0]?.name ?? 'cut';
+		const stemClass = kit.record.shoots?.cuttingClasses?.[0]?.name ?? lateralClass;
+		const hinted = {
+			...kit,
+			record: {
+				...kit.record,
+				cuttings: {
+					branch: { shoot: lateralClass, stem: stemClass, laterals: 3 },
+				},
+			},
+		} as SpeciesKitData;
+		const piece = clusterRow(hinted, { part: 'branch' }, kit.detail);
+		if (!piece) throw new Error('the kit grew no stem piece');
+		expect(piece.rows.count).toBe(4);
+		// The stem stands on its cut at the foot, and every lateral roots above it.
+		expect([...piece.rows.position.subarray(0, 3)]).toEqual([0, 0, 0]);
+		for (let row = 1; row < piece.rows.count; row++) {
+			const y = piece.rows.position[row * 3 + 1] as number;
+			expect(y).toBeGreaterThan(0);
+			expect(y).toBeLessThan(piece.bounds.max[1] as number);
+		}
+		// The stem draws the stem's class and the laterals the piece's own.
+		const drawn = [...piece.rows.prototype].map((index) => kit.prototypes[index]?.class);
+		expect(drawn[0]).toBe(stemClass);
+		expect(drawn[1]).toBe(lateralClass);
+		// A cluster keeps one shoot, whatever its hint names.
+		expect(clusterRow(hinted, { part: 'cluster' }, kit.detail)?.rows.count).toBe(1);
+	});
+
 	it('grows the same bytes twice, and in a worker that runs the job-worker task', async () => {
 		const options = { seed: 11, variant: 0, cutting: { part: 'subbranch' as const } };
 		const here = plantAssetDigest(growPlantNow(kit, options));

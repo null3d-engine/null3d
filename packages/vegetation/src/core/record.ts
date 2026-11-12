@@ -2167,6 +2167,36 @@ export interface CutFromShoots {
 	 * The width a spray or fan spans, as a share of the piece's height. 0 by default.
 	 */
 	readonly spread?: number;
+	/**
+	 * The shoot class of the piece's main stem. Naming it builds the stem-and-laterals assembly: the
+	 * stem stands upright on its cut and full hanging shoots of the hint's own class join it at
+	 * heights along it, so a photograph of a branch with hanging side shoots draws as one joined
+	 * piece. Absent, the piece keeps the one class and its fan.
+	 */
+	readonly stem?: ShootClass['name'];
+	/**
+	 * How many lateral shoots hang from the stem, from 1 to the cutting's most. 6 by default.
+	 */
+	readonly laterals?: number;
+	/**
+	 * The share of the stem's height where the first lateral leaves, from 0 at the stem's foot to 1
+	 * at its tip. 0.45 by default.
+	 */
+	readonly lateralFrom?: number;
+	/**
+	 * The share of the stem's height where the last lateral leaves, from 0 at the stem's foot to 1
+	 * at its tip. 0.92 by default.
+	 */
+	readonly lateralTo?: number;
+	/**
+	 * Degrees each lateral leans outward from the stem's line, so a positive value opens the hanging
+	 * shoots away from the stem. 20 by default.
+	 */
+	readonly lateralAngle?: number;
+	/**
+	 * Which of the stem class's prototypes to take, 0 for the first. 0 by default.
+	 */
+	readonly stemPick?: number;
 }
 
 /**
