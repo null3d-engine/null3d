@@ -274,9 +274,11 @@ describe('the self-organizing oak', () => {
 			const growth = record.growth as Extract<Species['growth'], { model: 'self-organizing' }>;
 			// The rule alone is judged here, without the probe record's great-limb bud share.
 			const buds = { ...growth.buds, limbBuds: undefined };
+			// The record's adopted stub rule is off here: this test judges the clearance alone.
+			const shedding = { ...growth.shedding, stubs: 0.2 };
 			const shaped = (clearanceThickness: number): Species => ({
 				...record,
-				growth: { ...growth, buds, clearance: 0.3, turning: 30, clearanceThickness },
+				growth: { ...growth, buds, shedding, clearance: 0.3, turning: 30, clearanceThickness },
 			});
 			// A floor above the great limbs' share leaves no other wood thick enough to block, so the
 			// plant grows exactly as a record without the rule does.
@@ -285,6 +287,7 @@ describe('the self-organizing oak', () => {
 				growth: {
 					...growth,
 					buds,
+					shedding,
 					clearance: undefined,
 					turning: undefined,
 					clearanceThickness: undefined,
