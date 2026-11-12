@@ -1337,6 +1337,31 @@ class Mesher {
 	}
 
 	/**
+	 * Marks the parent's written bark round a fork's end, where the leaders part: the creases gather
+	 * over one and a half parent radii up the parent from the fork. Only a record that names creases
+	 * calls this, so every other species' bark coordinates stay as they were.
+	 */
+	private markParentFork(key: number, rings: AxisRings, arc: number, radius: number): void {
+		const ends = this.outputRingFirst.get(key);
+		if (!ends) return;
+		const reach = Math.max(radius * 1.5, 1e-3);
+		const uvs1 = this.writer.uvs1;
+		for (let r = 0; r < rings.count; r++) {
+			const out = ends[r] as number;
+			if (out < 0) continue;
+			const distance = Math.abs((rings.arc[r] as number) - arc);
+			if (distance >= reach) continue;
+			const fade = 1 - distance / reach;
+			const mask = fade * fade;
+			const count = rings.sides[r] as number;
+			for (let j = 0; j <= count; j++) {
+				const to = (out + j) * 2 + 1;
+				if ((uvs1[to] as number) < mask) uvs1[to] = mask;
+			}
+		}
+	}
+
+	/**
 	 * Marks the parent's written bark round a child's seam, so the crease fan reaches the crotch on
 	 * the parent as the photograph shows it. Only a record that names creases calls this, so every
 	 * other species' bark coordinates stay as they were.
@@ -1490,6 +1515,10 @@ class Mesher {
 		rings.welded = 1;
 		rings.shared = true;
 		mean /= sides;
+		// A fork's leaders part from the parent's end, and the armpit's creases gather on the
+		// parent's bark round the fork, where the photograph puts them.
+		if ((this.record.bark?.collar.creases ?? 0) > 0)
+			this.markParentFork(parentContext.wood.key, parentRings, parentContext.path.length, mean);
 		const rc = path.radius[0] as number;
 		const pt = Float64Array.from(
 			frameAt(parentContext.path, parentContext.path.length, this.frame).tangent,
