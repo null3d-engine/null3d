@@ -1062,15 +1062,27 @@ export interface PlantPart {
  * @param parts The pieces the matte carries, the largest run first.
  * @returns The foot row, and the pieces that hang free.
  */
-export function hangingParts(parts: readonly PlantPart[]): {
+export function hangingParts(
+	parts: readonly PlantPart[],
+	band?: { readonly top: number; readonly base: number },
+): {
 	readonly footRow: number;
 	readonly parts: readonly PlantPart[];
 } {
 	let footRow = 0;
 	for (const part of parts) footRow = Math.max(footRow, part.bottom);
+	// The ground band is where the plant's own feet land: a colony's groups stand at different
+	// depths, so one row would call the further groups floating.
+	const low = band ? Math.min(band.top, band.base) : footRow;
+	const high = band ? Math.max(band.top, band.base) : footRow;
 	return {
 		footRow,
-		parts: parts.slice(1).filter((part) => !part.border && part.bottom < footRow - PIECE_BRIDGE),
+		parts: parts
+			.slice(1)
+			.filter(
+				(part) =>
+					!part.border && (part.bottom < low - PIECE_BRIDGE || part.bottom > high + PIECE_BRIDGE),
+			),
 	};
 }
 

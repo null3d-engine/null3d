@@ -1063,10 +1063,28 @@ export function plainTurnOf(background: string | undefined): boolean {
 }
 
 /** The parts a picture draws that meet nothing inside its frame, as the gate reports them. */
+/** The rows the plant's feet land on, as the page posted them, in the picture's pixels. */
+export function groundBandOf(
+	frame: RunFrame,
+	height: number,
+): { top: number; base: number } | null {
+	const rows = (
+		frame.facts as { plant?: { groundRows?: { top: number; base: number } } } | undefined
+	)?.plant?.groundRows;
+	if (!rows || !Number.isFinite(rows.top) || !Number.isFinite(rows.base)) return null;
+	return { top: Math.round(rows.top * height), base: Math.round(rows.base * height) };
+}
+
+/** The band a read's pieces are grounded against, where the page named it. */
+function bandFor(frame: RunFrame, height: number): { top: number; base: number } | undefined {
+	return groundBandOf(frame, height) ?? undefined;
+}
+
 export function floatingParts(
 	list: readonly PlantPart[],
+	band?: { readonly top: number; readonly base: number },
 ): readonly { readonly area: number; readonly box: string }[] {
-	return hangingParts(list).parts.map((part) => ({
+	return hangingParts(list, band).parts.map((part) => ({
 		area: part.area,
 		box: `${part.right - part.left + 1}x${part.bottom - part.top + 1}@${part.left},${part.top}`,
 	}));
@@ -1097,6 +1115,8 @@ export interface SweepMeasures {
 	readonly components: number;
 	/** The row where the plant stands: a piece meeting it is rooted in the soil, not floating. */
 	readonly footRow: number;
+	/** The rows the plant's own feet land on, where the page named them: a piece inside it stands. */
+	readonly groundBand: { readonly top: number; readonly base: number } | null;
 	readonly floating: readonly { readonly area: number; readonly box: string }[];
 	/**
 	 * The same read at the tool's work width, kept beside the picture's own: a downscale can drop a
@@ -1130,11 +1150,13 @@ export function sweepMeasures(runDir: string, frame: RunFrame): SweepMeasures {
 					return piecePartsAtOwnWidth(mask.mask, mask.width, mask.height);
 				})();
 	const read = own ?? parts;
+	const band = bandFor(frame, render.plant.height);
 	return {
 		components: read.length,
 		footRow: footRowOf(read),
-		floating: floatingParts(read),
-		workWidth: own ? { components: parts.length, floating: floatingParts(parts) } : null,
+		groundBand: band ?? null,
+		floating: floatingParts(read, band),
+		workWidth: own ? { components: parts.length, floating: floatingParts(parts, band) } : null,
 		crownBoxGap: render.measures.crownBoxGap ?? null,
 	};
 }
@@ -1504,6 +1526,8 @@ export interface StillResult extends PairMetrics {
 		readonly components: number;
 		/** The row where the plant stands: a piece meeting it is rooted in the soil, not floating. */
 		readonly footRow: number;
+		/** The rows the plant's own feet land on, where the page named them: a piece inside it stands. */
+		readonly groundBand: { readonly top: number; readonly base: number } | null;
 		readonly floating: readonly { readonly area: number; readonly box: string }[];
 		/**
 		 * The same read at the tool's work width, kept beside the picture's own: a downscale can drop
@@ -1910,12 +1934,16 @@ export function compareStills(
 			: null;
 		// The largest run is the plant's body; any other run that the frame's border does not carry
 		// meets nothing inside the picture, which is a generator fault rather than a row's fault.
+		const band = bandFor(frame, render.plant.height);
 		const connectivity = ownParts
 			? {
 					components: ownParts.length,
 					footRow: footRowOf(ownParts),
-					floating: floatingParts(ownParts),
-					workWidth: parts ? { components: parts.length, floating: floatingParts(parts) } : null,
+					groundBand: band ?? null,
+					floating: floatingParts(ownParts, band),
+					workWidth: parts
+						? { components: parts.length, floating: floatingParts(parts, band) }
+						: null,
 				}
 			: null;
 		const shown: PairMetrics = masked

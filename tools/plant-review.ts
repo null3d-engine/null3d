@@ -942,7 +942,9 @@ function compareRun(
 					floating.length > 0
 						? `, ${floating.length} floating (${floating.map((part) => `${part.area} px ${part.box}`).join(', ')})`
 						: ', none floating'
-				}; foot row ${read.footRow}; height ${height === undefined ? '-' : `${height.toFixed(2)} m`}${
+				}; foot row ${read.footRow}; ground band ${
+					read.groundBand ? `${read.groundBand.top} to ${read.groundBand.base}` : 'not named'
+				}; height ${height === undefined ? '-' : `${height.toFixed(2)} m`}${
 					inside === null
 						? ''
 						: inside
@@ -981,7 +983,7 @@ function compareRun(
 			: []),
 		...(floating.length + sweepFloating.length > 0
 			? [
-					`- ${floating.length + sweepFloating.length} picture${floating.length + sweepFloating.length === 1 ? '' : 's'} draw${floating.length + sweepFloating.length === 1 ? 's' : ''} a piece hanging free: ${[...floating.map((pair) => `${pair.file} (foot row ${pair.connectivity?.footRow ?? '-'})`), ...sweepFloating].join(', ')}. A piece meeting the foot row where the plant stands is rooted in the soil and is not counted; the rest meet nothing inside the picture. The owner's rule is that no piece hangs free at any level or sparseness, so the fault is the generator's and the run fails.`,
+					`- ${floating.length + sweepFloating.length} picture${floating.length + sweepFloating.length === 1 ? '' : 's'} draw${floating.length + sweepFloating.length === 1 ? 's' : ''} a piece hanging free: ${[...floating.map((pair) => `${pair.file} (foot row ${pair.connectivity?.footRow ?? '-'}, ground band ${pair.connectivity?.groundBand ? `${pair.connectivity.groundBand.top} to ${pair.connectivity.groundBand.base}` : 'not named'})`), ...sweepFloating].join(', ')}. A piece standing on the ground band the plant's feet span is rooted in the soil and is not counted; the rest meet nothing inside the picture. The owner's rule is that no piece hangs free at any level or sparseness, so the fault is the generator's and the run fails.`,
 				]
 			: []),
 		'',
