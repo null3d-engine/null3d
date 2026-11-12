@@ -15,6 +15,7 @@ import {
 	crownStartRow,
 	findHorizon,
 	greenLeaves,
+	hangingParts,
 	matteMask,
 	matteOwnMask,
 	measurePlant,
@@ -1060,6 +1061,20 @@ describe('the coverage matte', () => {
 			floating.map((part) => [part.area, part.left, part.top, part.right, part.bottom]),
 		).toEqual([[25, 25, 25, 29, 29]]);
 		expect(parts.filter((part) => part.border).length).toBe(1);
+	});
+
+	test("roots a piece that stands inside the ground band the plant's feet span", () => {
+		// A colony's groups stand at different depths: the front group's feet reach row 29 and a
+		// further group's row 20, and one piece hangs in the air above them.
+		const front = { area: 100, left: 0, top: 10, right: 9, bottom: 29, border: false };
+		const further = { area: 100, left: 20, top: 8, right: 29, bottom: 20, border: false };
+		const air = { area: 100, left: 40, top: 2, right: 49, bottom: 6, border: false };
+		// One row calls the further group floating.
+		expect(hangingParts([front, further, air]).parts.map((part) => part.top)).toEqual([8, 2]);
+		// The ground band the feet span roots both standing groups.
+		expect(
+			hangingParts([front, further, air], { top: 20, base: 29 }).parts.map((part) => part.top),
+		).toEqual([2]);
 	});
 
 	test('counts a partly covered texel as the sky it leaves in the gap', () => {

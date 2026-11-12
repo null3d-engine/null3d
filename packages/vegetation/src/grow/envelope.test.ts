@@ -9,6 +9,7 @@ import {
 	insetVolume,
 	silhouetteFrame,
 	silhouetteIoU,
+	smoothedVolume,
 } from './envelope';
 
 const source = { method: 'hand', from: 'a test' } as const;
@@ -71,6 +72,32 @@ describe('the envelope', () => {
 		// A floor at or under the base leaves the volume as it is.
 		expect(flooredVolume(volume, 1)).toBe(volume);
 		expect(flooredVolume(volume, 0)).toBe(volume);
+	});
+
+	it('rounds an irregular outline toward its mean by a share, keeping the mean radius', () => {
+		const envelope: RadialEnvelope = {
+			kind: 'radial',
+			heights: [0.5, 1],
+			radii: [
+				[2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+				[2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+			],
+			source,
+		};
+		const volume = envelopeVolume(envelope, 10, 0);
+		const mean = (v: typeof volume): number => {
+			let total = 0;
+			for (let k = 0; k < 16; k++) total += v.radius(7, (k / 16) * Math.PI * 2);
+			return total / 16;
+		};
+		const before = mean(volume);
+		const rounded = smoothedVolume(volume, 0.5);
+		expect(rounded.radius(7, 0)).toBeLessThan(volume.radius(7, 0));
+		expect(rounded.radius(7, Math.PI)).toBeGreaterThan(volume.radius(7, Math.PI));
+		// The mean is the fixed point of the blend, so it keeps its figure.
+		expect(mean(rounded)).toBeCloseTo(before, 10);
+		// A share of 0 leaves the outline as it is.
+		expect(smoothedVolume(volume, 0)).toBe(volume);
 	});
 
 	it('measures solids standing on the ground', () => {

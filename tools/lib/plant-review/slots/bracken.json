@@ -7,14 +7,13 @@
 		"targetY": 0.45
 	},
 	"02-whole-plant-profile.png": {
-		"view": "leaf-upper",
 		"background": "sky-meadow",
 		"skyShare": 0.357,
 		"daylight": 1.524,
-		"fill": 0.84,
-		"targetY": 0.49,
-		"turn": 0,
-		"pressed": true
+		"fov": 24,
+		"fill": 0.55,
+		"targetY": 0.45,
+		"turn": 0
 	},
 	"03-whole-from-below.png": {
 		"skyShare": 0.357,
@@ -39,7 +38,6 @@
 		"daylight": 1.459
 	},
 	"08-stipe-forks-into-pinnae.png": {
-		"view": "leaf-upper",
 		"background": "studio-grey",
 		"sunAzimuth": null,
 		"sunRise": null,
@@ -74,13 +72,14 @@
 	"15-stipe-lower-black.png": {
 		"view": "bark-base",
 		"skyShare": 0.357,
-		"daylight": 1.459
+		"daylight": 1.459,
+		"barkMask": true
 	},
 	"16-stipe-mid.png": {
 		"view": "bark-mid",
 		"skyShare": 0.357,
-		"daylight": 1.459,
-		"span": 0.09
+		"span": 0.09,
+		"barkMask": true
 	},
 	"17-rhizome.png": {
 		"skyShare": 0.357,
@@ -89,8 +88,10 @@
 	"18-silhouette.png": {
 		"skyShare": 0.357,
 		"daylight": 1.959,
-		"fill": 0.73,
-		"targetY": 0.45
+		"fill": null,
+		"targetY": null,
+		"top": 0.425,
+		"eye": 0.1
 	},
 	"19-autumn-colour.png": {
 		"view": "whole",
@@ -109,19 +110,16 @@
 		"fov": 40
 	},
 	"21-branch-studio.png": {
-		"view": "leaf-upper",
 		"background": "studio-grey",
 		"sunAzimuth": null,
 		"sunRise": null
 	},
 	"22-subbranch-studio.png": {
-		"view": "leaf-upper",
 		"background": "studio-grey",
 		"sunAzimuth": null,
 		"sunRise": null
 	},
 	"23-leaf-cluster-studio.png": {
-		"view": "leaf-upper",
 		"background": "studio-grey",
 		"sunAzimuth": null,
 		"sunRise": null
