@@ -28,7 +28,7 @@ import type { PlantTaskInput } from '../generate-task';
 import { bladeHalf } from '../leaf/grass-blade';
 import { builder as thickBuilder } from '../leaf/thick-leaf';
 import { dequantisePosition } from '../lod/quantise';
-import { AXIS_LEAF } from './ground';
+import { AXIS_LEAF, SHEATH_KIND } from './ground';
 import { GROUND_TEST_SPECIES, hostaRecord, meadowGrassRecord, sedgeRecord } from './ground.fixture';
 
 for (const species of GROUND_TEST_SPECIES) await loadPlantCode(species.record);
@@ -211,7 +211,9 @@ describe('the tuft sheath marker', () => {
 		return growPlantNow(kit, OPTIONS);
 	};
 	const marked = grow(sheathed);
-	const plain = grow(meadowGrassRecord);
+	// The meadow's own record now names a colour, so the comparison strips it: the same plant
+	// without a sheath colour keeps every run's full phase byte.
+	const plain = grow({ ...meadowGrassRecord, growth: { ...growth, sheathColour: undefined } });
 
 	/** The merged foliage's colour bytes, part by part. */
 	const foliageColours = (asset: PlantAsset) =>
@@ -234,9 +236,10 @@ describe('the tuft sheath marker', () => {
 			for (let i = 0; i < one.length; i += 4) {
 				// The wind record and the sky visibility are the same plant's.
 				expect([one[i], one[i + 1], one[i + 3]]).toEqual([other[i], other[i + 1], other[i + 3]]);
-				// The phase keeps its seven low bits, and only the sheath's byte takes the mark.
-				expect((one[i + 2] as number) & 0x7f).toBe((other[i + 2] as number) >> 1);
-				if (((one[i + 2] as number) & 0x80) !== 0) sheathVertices++;
+				// A sheath column takes the material's own marker; every other run keeps its
+				// phase in the seven low bits.
+				if ((one[i + 2] as number) === SHEATH_KIND) sheathVertices++;
+				else expect(one[i + 2]).toBe((other[i + 2] as number) >> 1);
 				vertices++;
 			}
 		}
@@ -450,7 +453,7 @@ describe('the pendulous sedge', () => {
 		// The plant's bytes with the soil block stripped, at this record: a plant that names no
 		// soil grows exactly these. A deliberate record change re-records the figure, and the
 		// growth path that reads no soil must not move it.
-		expect(plantAssetDigest(growPlantNow(kit, OPTIONS))).toBe('c4d4d25b52529196');
+		expect(plantAssetDigest(growPlantNow(kit, OPTIONS))).toBe('1581a58df495eb67');
 	});
 
 	it('ends its blades in long fine points', () => {
