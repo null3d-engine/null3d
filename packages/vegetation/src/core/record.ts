@@ -231,6 +231,12 @@ export interface SelfOrganizing {
 	 */
 	readonly branching?: number;
 	/**
+	 * How readily a lateral bud puts out a branch at each order, as a multiplier on `branching`: t is
+	 * the axis's order over the macro orders, below 1 keeps fewer side axes and 0 keeps its buds as
+	 * shoots. Absent, every order takes `branching` alone.
+	 */
+	readonly branchingByOrder?: Curve;
+	/**
 	 * Metres of clear air a shoot keeps from another axis's wood, so two limbs do not pass through
 	 * one another as a real tree's do not. 0 by default, which lets shoots meet as they may. Without
 	 * `turning`, a shoot that would come nearer stops there.
@@ -272,6 +278,12 @@ export interface SelfOrganizing {
 		 * tree's limbs run out unbranched from its stem with 1. Absent, every order grows side axes.
 		 */
 		readonly sideOrders?: number;
+		/**
+		 * The share of a great limb's lateral buds that stay buds rather than growing into side
+		 * axes, so the limb's own length carries shoots instead of running bare between its
+		 * branches. The limbs are the stem's first-order axes. Absent, none stay.
+		 */
+		readonly limbBuds?: number;
 	};
 	/** How strongly the leader leads. */
 	readonly apical: {
@@ -390,6 +402,25 @@ export interface SelfOrganizing {
 	 * itself, and a long shoot drifts as a random walk.
 	 */
 	readonly kinks?: boolean;
+	/**
+	 * The most a step may turn from the axis's last direction, in degrees. Small, the wood bends in
+	 * gentle steps that follow its line instead of kinking at odd joints. Absent, the wander turns
+	 * the heading without a limit.
+	 */
+	readonly maxTurn?: number;
+	/**
+	 * How strongly a first-order limb holds the azimuth its fork gave it, 0 to 1: each step pulls its
+	 * sideways direction back toward that azimuth by this share, so the great limbs stay apart round
+	 * the stem while the light steers their branches above. Absent, the light steers them freely.
+	 */
+	readonly limbAzimuth?: number;
+	/**
+	 * Metres along a parent axis between two neighbouring laterals it grows. A lateral whose node
+	 * stands closer than this to the last one accepted keeps its bud, so the branches leave the wood
+	 * at separate points rather than as a crowd within one internode. Absent, the chance alone parts
+	 * them.
+	 */
+	readonly lateralSpacing?: number;
 	/**
 	 * The leader's relay: an axis whose leader bud dies hands the lead to the lateral bud at its tip,
 	 * turned in toward the axis's line, and a stem's leader below the crown is spared chance loss, so
@@ -1155,6 +1186,12 @@ export interface ShootSpec {
 		 */
 		readonly bareTrim?: number;
 		/**
+		 * Whether a branch end with no shoot is cut back to its last shoot, so no branch ends bare:
+		 * it ends in foliage or is pruned away. On when absent. A stem's own top and a dead stub
+		 * stay; false keeps only `bareTrim`'s radius-limited trim.
+		 */
+		readonly bareEnds?: boolean;
+		/**
 		 * A bare column round each stem below a share of the plant's height: no shoot stands on wood
 		 * within `radius` metres of a stem's own axis below `height` times the plant's height. An
 		 * open-grown tree leaves its lower trunk and the bases of its great limbs clear, so the bole
@@ -1198,11 +1235,30 @@ export interface ShootSpec {
 		/** A shoot's scale. */
 		readonly scale: Spread;
 		/**
+		 * A multiplier on each shoot's scale by the shoot's height in the crown, 0 at the crown's
+		 * base and 1 at the plant's top: a limb carries its own shoot length, so a crown may widen
+		 * its skirt and shorten its top without moving the crown's foot. Absent, every shoot takes
+		 * the species' one scale.
+		 */
+		readonly scaleByHeight?: Curve;
+		/**
 		 * The share of the internode back from a bud that its shoots may stand in, 0 to 1. Small,
 		 * they gather into a tuft at the node and the internode between nodes stands bare; 1, they
 		 * spread over the whole internode and the axes carry leaves the length of their run.
 		 */
 		readonly gather?: number;
+		/**
+		 * The most shoot rows one axis carries. Above it the rows thin evenly along the axis, so a
+		 * crown with fewer branches opens rather than giving the leaves their places. Absent, an axis
+		 * carries every row its buds place.
+		 */
+		readonly rowsPerAxis?: number;
+		/**
+		 * The share of a card's leaf groups that stays, 0 to 1. Below 1 a hashed share of the crown's
+		 * leaf groups gives way, so the crown shows sky between them while the leaves of the rest keep
+		 * their mass. Absent or 1, the card draws whole.
+		 */
+		readonly cardCoverage?: number;
 		/**
 		 * Gathers the shoots into masses along each axis, with a thinner run between them, so the
 		 * crown is built of clumps with sky and wood between rather than an even mesh of leaves.
@@ -1225,6 +1281,29 @@ export interface ShootSpec {
 				/** How far the shoots thin between tufts, 0 even and 1 bare. */
 				readonly depth: number;
 			};
+		};
+		/**
+		 * Places the crown's foliage on the plant's own limb masses, so the sky between them shows
+		 * through the crown. A shoot keeps its full density near wood of `order` or coarser, and
+		 * thins with its distance from that wood: the foliage stands on the great limbs and their
+		 * branches, and the space between one mass and the next stays open through the crown.
+		 * Absent, the shoots stand as `perMetre` and the other fields place them.
+		 */
+		readonly limbMass?: {
+			/** The botanical order at or below which an axis counts as a limb mass's wood. */
+			readonly order: number;
+			/** Metres from that wood at which the foliage stands at its full density. */
+			readonly hold: number;
+			/** Metres from that wood at which the foliage has thinned by `depth`. */
+			readonly reach: number;
+			/** How far the foliage thins at the reach, 0 even and 1 bare. */
+			readonly depth: number;
+			/**
+			 * The share of the full density at or below which a bud bears nothing at all, so the wood
+			 * that carried it dies and the bare trim takes it. Absent, a thinned bud keeps the odd
+			 * shoot, and that shoot holds its length of wood in the picture.
+			 */
+			readonly bare?: number;
 		};
 	};
 }
@@ -1971,7 +2050,22 @@ export type ExtraShape =
 			readonly stalk?: number;
 	  }
 	| { readonly spines: number; readonly length: number; readonly spread: number }
-	| { readonly catkin: { readonly length: number; readonly radius: number } };
+	| {
+			readonly catkin: {
+				readonly length: number;
+				readonly radius: number;
+				/**
+				 * Rows of short spikelets that stand along the body, so a spike reads as a
+				 * cluster of them rather than one smooth pendant. Absent, the body is smooth.
+				 */
+				readonly spikelets?: {
+					/** Rows along the body, 2 to 16. */
+					readonly count: number;
+					/** Share of the body's radius each row adds, from 0 to 1; absent, 0.35. */
+					readonly bulge?: number;
+				};
+			};
+	  };
 
 /**
  * The seasons a species shows.
@@ -2217,6 +2311,34 @@ export interface CutFromShoots {
 	 * class and still be different pieces, as a sub-branch and a leaf cluster are.
 	 */
 	readonly pick?: number;
+	/**
+	 * How many shoots the piece carries, fanned about its own upright axis, where a branch photograph
+	 * shows a divided, hanging branch: one shoot is a class prototype, and a branch needs more. 1 by
+	 * default, and a cluster or a leaf keeps one whatever it names.
+	 */
+	readonly shoots?: number;
+	/**
+	 * The radius of the ring the fanned shoots stand on, as a share of the piece's height. A small
+	 * ring joins the shoots at the base; a wide one spreads them. Applies only where `shoots` names
+	 * more than one. 0.18 by default.
+	 */
+	readonly fanRing?: number;
+	/**
+	 * The degrees each fanned shoot leans outward from the piece's upright axis, so the shoots share
+	 * a base and diverge above it. Negative values lean them inward. 0 by default.
+	 */
+	readonly fanLean?: number;
+	/**
+	 * The share of a full turn each fanned shoot takes about the piece's axis, from 0 for every
+	 * shoot keeping the prototype's own leaf plane to 1 for an even fan. 1 by default.
+	 */
+	readonly fanSpin?: number;
+	/**
+	 * The degrees the whole piece turns about its upright axis before it is framed. A branch whose
+	 * side shoots lie in one plane shows that plane from the camera the pieces are drawn from, so a
+	 * species whose photograph lays the branch across the frame turns it by a quarter. 0 by default.
+	 */
+	readonly fanYaw?: number;
 }
 
 /**

@@ -176,10 +176,15 @@ export interface PlantReviewQuery {
 	/** The column share where the plant's axis sits. */
 	readonly targetX?: number;
 	/**
-	 * The share of the frame's width that the reference's plant fills. A whole view stands its camera
-	 * back until the render's plant keeps that margin, so a wide plant is not cropped at the sides.
+	 * The share of the frame's width that the reference's plant fills. A review run measures the
+	 * render against it and redraws a whole view whose plant is over the band.
 	 */
 	readonly widthShare?: number;
+	/**
+	 * A multiplier on a whole view's stand from its framing. A redraw sets it from the width the
+	 * picture itself measured, so the plant keeps the reference's margin.
+	 */
+	readonly standScale?: number;
 	/** The row share of the plant's top, for a frame whose plant base is cut off: give `eye` too. */
 	readonly top?: number;
 	/** The camera's height above the ground in metres, with `top`, when the base is out of frame. */
@@ -275,6 +280,7 @@ const NUMBER_FIELDS = [
 	'targetY',
 	'targetX',
 	'widthShare',
+	'standScale',
 	'top',
 	'eye',
 	'along',

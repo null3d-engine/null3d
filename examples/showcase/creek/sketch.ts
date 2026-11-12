@@ -140,6 +140,14 @@ const RENDER_SCALE = Number(params.get('render-scale')) || undefined;
  */
 const EFFECTS = params.get('effects') === 'on';
 /**
+ * The strength of a gust that the address sends, and the sketch time when it sends it. The demo's
+ * own gust answers the G key, and a held frame presses no key, so a picture test names the send in
+ * its address. The place is the camera's, as the key's is, and the route is a function of the
+ * sketch time, so both hold still.
+ */
+const GUST_STRENGTH = Number(params.get('gust')) || 0;
+const GUST_SEND_AT = Number(params.get('gust-at')) || 0;
+/**
  * True draws the scene from just above the stream, looking along it, so the picture shows the
  * water's surface close up. The picture tests ask for it; the demo and its route never do.
  */
@@ -505,10 +513,24 @@ export default defineSketch(async (ctx) => {
 	});
 	// The camera stands at the route's opening pose now, so the shadows reach as far as it needs.
 	controls.fitShadows();
+	/** True once the address's gust has been sent, so one send reaches the field. */
+	let gustSent = false;
 
 	return {
 		onUpdate(dt) {
 			const t = time.now;
+			// The address's gust goes in before the field steps, so the frame that draws carries it
+			// and the readers see its settings at once.
+			if (GUST_STRENGTH > 0 && !gustSent && t >= GUST_SEND_AT) {
+				gustSent = true;
+				camera.getPosition(here);
+				wind.gust([here[0] as number, here[2] as number], GUST_STRENGTH);
+				page.post('gust', {
+					at: t,
+					strength: GUST_STRENGTH,
+					place: [here[0] as number, here[2] as number],
+				});
+			}
 			// The field's box follows the camera, so it steps before anything reads it.
 			wind.update();
 			// The field keeps two states, so the plants and the grass read this frame's one.

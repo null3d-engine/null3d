@@ -31,7 +31,10 @@ export interface ParticleMotion {
 	 * most of the difference in about a second. The default is 0.
 	 */
 	drag?: number;
-	/** The velocity that drag pulls the particles toward, in meters per second. The default is still air. */
+	/**
+	 * The velocity that drag pulls the particles toward, in meters per second. The default is still
+	 * air. A buffer with a `windField` uses the field's local air instead.
+	 */
 	wind?: Vec3Like;
 	/**
 	 * How far simplex noise moves each particle from its path, in meters. Each particle starts on its
@@ -163,6 +166,29 @@ export interface ParticleLook {
 export interface ParticleValues extends ParticleMotion, ParticleLook {}
 
 /**
+ * A field of air that a buffer's particles sample: a texture of the air, the box that it covers,
+ * and the steady settings that a reader works out beyond the box. The wind add-on's field is one,
+ * and a page connects the two without either add-on importing the other.
+ *
+ * @category api/particles
+ */
+export interface ParticleWindField {
+	/** The field's texture, whose `layer` names the newest state. */
+	readonly texture: Texture;
+	/** The box's near corner across the ground, in meters: x and z. */
+	readonly origin: readonly [number, number];
+	/** The box's width across the ground, in meters, or 0 for the steady field everywhere. */
+	readonly size: number;
+	/** The air's steady settings: the base wind, the gust, the swirl and the gust a page sent. */
+	readonly air: {
+		readonly base: readonly number[];
+		readonly gust: readonly number[];
+		readonly swirl: readonly number[];
+		readonly sent: readonly number[];
+	};
+}
+
+/**
  * Options of `scene.createParticleBuffer`.
  *
  * @category api/particles
@@ -182,6 +208,12 @@ export interface ParticleBufferOptions extends ParticleValues {
 	map?: Texture;
 	/** The layers the particles draw on. The default is the default layer. */
 	layers?: number;
+	/**
+	 * A field of air that moves the particles. Its local air replaces the fixed `wind`, so dust,
+	 * motes, smoke and rain ride the same gusts as the plants around them. Give it again with
+	 * `setWind` in each frame, because its box follows the camera.
+	 */
+	windField?: ParticleWindField;
 }
 
 /**
@@ -312,6 +344,14 @@ const F = {
 	loop: 27,
 	follow: 28,
 	motion: 29,
+	windTime: 48,
+	windOrigin: 49,
+	windSize: 51,
+	windStrength: 52,
+	windBase: 53,
+	windGust: 57,
+	windSwirl: 61,
+	windSent: 65,
 } as const;
 
 /** The shape codes that the core reads. */
@@ -339,6 +379,8 @@ interface MotionValues {
 	groundMode: number;
 	restitution: number;
 	friction: number;
+	/** The fastest air that a field adds, in meters a second, for the bounds' reach. */
+	windSpeed: number;
 }
 
 /** A new motion at rest. */
@@ -358,6 +400,7 @@ function stillMotion(): MotionValues {
 		groundMode: 0,
 		restitution: 0.4,
 		friction: 0.2,
+		windSpeed: 0,
 	};
 }
 
@@ -365,13 +408,16 @@ function stillMotion(): MotionValues {
 function reach(m: MotionValues, speed: number, lifetime: number): number {
 	const g = Math.sqrt(m.gx * m.gx + m.gy * m.gy + m.gz * m.gz);
 	const turbulence = 2 * m.turbulence;
-	if (m.drag < LITTLE_DRAG) return speed * lifetime + 0.5 * g * lifetime * lifetime + turbulence;
+	// The air carries a particle at most this fast, so its bounds grow by that much over its life.
+	const blown = m.windSpeed * lifetime;
+	if (m.drag < LITTLE_DRAG)
+		return speed * lifetime + 0.5 * g * lifetime * lifetime + turbulence + blown;
 	const tx = m.wx + m.gx / m.drag;
 	const ty = m.wy + m.gy / m.drag;
 	const tz = m.wz + m.gz / m.drag;
 	const end = Math.sqrt(tx * tx + ty * ty + tz * tz);
 	const settle = Math.min(lifetime, 1 / m.drag);
-	return end * lifetime + (speed + end) * settle + turbulence;
+	return end * lifetime + (speed + end) * settle + turbulence + blown;
 }
 
 /** The places of the values in a buffer's block of values, which the particle shaders read. */
@@ -406,7 +452,16 @@ const V = {
 	holdFrame: 43,
 	colorOverLife: 48,
 	sizeOverLife: 112,
+	airBase: 128,
+	airGust: 132,
+	airSwirl: 136,
+	airSent: 140,
+	windField: 144,
+	windBox: 148,
 } as const;
+
+/** The place of the wind texture's number among the frame's values. */
+const FRAME_WIND_TEXTURE = 4;
 
 /** The steps of a curve over life. */
 const CURVE_STEPS = 16;
@@ -1007,8 +1062,61 @@ export class ParticleBuffer implements ViewHolder {
 		this.core.glue.markParticleValues(this.id);
 	}
 
+	/**
+	 * Gives the buffer the field of air that moves its particles, or removes it, from the next frame
+	 * on. Call it once per frame for a field, because the box follows the camera and the texture's
+	 * newest layer moves. `time` is the sketch time, which the field's gust and swirl read.
+	 */
+	setWind(field: ParticleWindField | undefined, time: number): void {
+		this.views();
+		const b = this.block;
+		const e = this.emitterView;
+		// The emitter's block holds the field for its events' closed form, when the buffer has one.
+		const held = e.length >= F.windTime + 21;
+		if (!field) {
+			b.fill(0, V.airBase, V.windBox + 4);
+			this.frameValues[FRAME_WIND_TEXTURE] = 0;
+			if (held) e.fill(0, F.windTime, F.windTime + 21);
+			this.motion.windSpeed = 0;
+			this.updateGrow(this.lastValues.size?.[1], this.lastValues.aspect);
+			this.core.glue.markParticleValues(this.id);
+			return;
+		}
+		const { texture, origin, size, air } = field;
+		const vectors = [air.base, air.gust, air.swirl, air.sent];
+		for (let k = 0; k < 4; k++) {
+			const v = vectors[k] as readonly number[];
+			for (let c = 0; c < 4; c++) {
+				b[V.airBase + k * 4 + c] = (v[c] ?? 0) as number;
+				if (held) e[F.windBase + k * 4 + c] = (v[c] ?? 0) as number;
+			}
+		}
+		b[V.windField] = texture.layer;
+		b[V.windField + 1] = 1;
+		b[V.windBox] = origin[0];
+		b[V.windBox + 1] = origin[1];
+		b[V.windBox + 2] = size;
+		b[V.windBox + 3] = 0;
+		this.frameValues[FRAME_WIND_TEXTURE] = texture.handle;
+		if (held) {
+			e[F.windTime] = time;
+			e[F.windOrigin] = origin[0];
+			e[F.windOrigin + 1] = origin[1];
+			e[F.windSize] = size;
+			e[F.windStrength] = 1;
+		}
+		// The fastest air that the field holds, for the bounds that the culling sphere grows by.
+		this.motion.windSpeed =
+			Math.abs(air.base[0] ?? 0) +
+			Math.abs(air.gust[0] ?? 0) +
+			Math.abs(air.swirl[0] ?? 0) +
+			Math.abs(air.sent[2] ?? 0);
+		this.updateGrow(this.lastValues.size?.[1], this.lastValues.aspect);
+		this.core.glue.markParticleValues(this.id);
+	}
+
 	/** @internal Writes every value's default, then `values`. */
-	reset(values: ParticleValues): void {
+	reset(values: ParticleValues & { windField?: ParticleWindField }): void {
 		this.views();
 		this.initial = values;
 		this.motion = stillMotion();
@@ -1029,6 +1137,7 @@ export class ParticleBuffer implements ViewHolder {
 		b.fill(1, V.colorOverLife, V.sizeOverLife + CURVE_STEPS);
 		b[V.additive] = this.additive ? 1 : 0;
 		this.set(values);
+		this.setWind(values.windField, 0);
 	}
 
 	/**

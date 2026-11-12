@@ -128,14 +128,18 @@ export const MODEL_CAPS: Readonly<Record<CapClass, ModelCaps>> = {
 		// The largest of hosta, pendulous sedge and meadow grass once measured 1.35, 1.39, 1.44 and
 		// 3.30 MB, with about 15 per cent to spare, so Hosta's ribs at the finest tier fit. The sedge's
 		// tussock needs more blades than the old figures held, so the batch raised the medium and high
-		// tiers in proportion: a species grows at every preset and may spend its blades at each.
-		variantBytes: { low: 1.6 * MB, medium: 2.3 * MB, high: 2.4 * MB, ultra: 3.8 * MB },
+		// tiers in proportion: a species grows at every preset and may spend its blades at each. The
+		// owner then raised the low tier by the packed blade keel's 73,928 bytes, so a grass blade can
+		// turn its width to the view at the lowest memory tier too. On 12 November 2026 the owner ruled
+		// that the sedge keeps its spikelets, ligule and shoots, and raised this high tier and the two
+		// card levels from the newer grower's measured 3,042,793 bytes and 35,843 and 19,505 triangles.
+		variantBytes: { low: 1_673_928, medium: 2.3 * MB, high: 3.1 * MB, ultra: 3.8 * MB },
 		// A frond colony's stipes and rachises are wood: the bracken test colony's largest of sixteen
 		// variants and seasons, with about 15 per cent to spare: 52, 58, 61 and 64 KB.
 		lod0WoodBytes: { low: 0.06 * MB, medium: 0.066 * MB, high: 0.07 * MB, ultra: 0.074 * MB },
 		lod0Triangles: 200_000,
-		lod1Triangles: 30_000,
-		lod2Triangles: 8_000,
+		lod1Triangles: 36_000,
+		lod2Triangles: 19_600,
 		downloadBytes: 0.35 * MB,
 		downloadHalfBytes: 0.12 * MB,
 		growMilliseconds: 150,

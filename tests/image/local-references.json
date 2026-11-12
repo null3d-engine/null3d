@@ -173,6 +173,12 @@
 		"date": "2026-10-29",
 		"reason": "the card's stored normal no longer turns with the camera's bearing, so the pictures whose eye lies off the tree's forward moved; drawn on the software renderer"
 	},
+	"chromium-swiftshader/compat/particles-wind.png": {
+		"test": "particles-wind",
+		"tier": "compat",
+		"date": "2026-11-12",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the change that added the picture; CI has not drawn its own reference yet, and its next drawing replaces this one"
+	},
 	"chromium-swiftshader/compat/plant-bracken.png": {
 		"test": "plant-bracken",
 		"tier": "compat",
@@ -377,6 +383,12 @@
 		"date": "2026-11-03",
 		"reason": "drawn on the Mac's SwiftShader because the branch is not pushed for a CI run; a CI drawing replaces it"
 	},
+	"chromium-swiftshader/webgl2/creek-gust.png": {
+		"test": "creek-gust",
+		"tier": "webgl2",
+		"date": "2026-11-12",
+		"reason": "the held Creek gust picture: the branch had not been pushed when this Mac drew the software set, so no CI run could draw it; CI's own SwiftShader drawing replaces this file (D-238)"
+	},
 	"chromium-swiftshader/webgl2/creek-water-close.png": {
 		"test": "creek-water-close",
 		"tier": "webgl2",
@@ -514,6 +526,12 @@
 		"tier": "webgl2",
 		"date": "2026-10-31",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that fixes the look review's faults; CI's own drawing replaces the set when the branch runs there"
+	},
+	"chromium-swiftshader/webgl2/particles-wind.png": {
+		"test": "particles-wind",
+		"tier": "webgl2",
+		"date": "2026-11-12",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the change that added the picture; CI has not drawn its own reference yet, and its next drawing replaces this one"
 	},
 	"chromium-swiftshader/webgl2/plant-bracken.png": {
 		"test": "plant-bracken",
@@ -892,6 +910,12 @@
 		"tier": "webgpu",
 		"date": "2026-10-31",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that fixes the look review's faults; CI's own drawing replaces the set when the branch runs there"
+	},
+	"chromium-swiftshader/webgpu/particles-wind.png": {
+		"test": "particles-wind",
+		"tier": "webgpu",
+		"date": "2026-11-12",
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the change that added the picture; CI has not drawn its own reference yet, and its next drawing replaces this one"
 	},
 	"chromium-swiftshader/webgpu/plant-bracken.png": {
 		"test": "plant-bracken",

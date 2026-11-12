@@ -145,13 +145,15 @@ export const HEADER = {
 	collar: 66,
 	/** A tuft's sheath colour at the column's collar, then the share of the column it takes. */
 	sheathCollar: 67,
+	/** The share of a card's leaf groups that stays; 1, or absent, draws the card whole. */
+	cardCoverage: 68,
 	/**
 	 * A fire scar's hollow: its foot and head in metres, its centre's angle in radians about the
 	 * first stem and its half-width. Zeroed where the record gives no scar.
 	 */
-	scar: 68,
+	scar: 69,
 	/** The scar's charred colour, then the share of it the hollow takes. */
-	scarColour: 69,
+	scarColour: 70,
 } as const;
 
 /**
@@ -413,6 +415,7 @@ export function speciesHeader(
 		texel(header, HEADER.winterTransmittance, [...winterLeaves.transmittance, 0]);
 	}
 	texel(header, HEADER.cardStalk, [record.lod.cardStalk ?? 0, 0, 0, 0]);
+	texel(header, HEADER.cardCoverage, [record.shoots?.placement.cardCoverage ?? 1, 0, 0, 0]);
 	const scar = record.base?.scar;
 	texel(
 		header,

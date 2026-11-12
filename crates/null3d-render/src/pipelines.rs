@@ -1390,12 +1390,13 @@ mod tests {
         found.sort();
         // The physical sky draws with its own template; the frame values that custom materials
         // read come from the builtins. A sky layer moves its clouds with the clock, so the layer
-        // shader reads it too.
+        // shader reads it too. A particle's field gust travels on the clock, so its shader reads it.
         assert_eq!(
             found,
             [
                 "background_layer.wgsl",
                 "builtins.wgsl",
+                "particle.wgsl",
                 "sky_physical.wgsl"
             ]
         );
