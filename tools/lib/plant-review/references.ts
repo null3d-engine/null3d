@@ -4,13 +4,17 @@
 // the wind videos, and the plant's outline separated from a plain background with the measures a
 // reviewer reads from it.
 //
-// The outline (the mask) works on pictures whose background is plain: an open sky, a seamless grey
-// or white, and a meadow below the horizon. It fits a smooth colour surface to the frame's border,
-// above and below the horizon separately, calls a pixel background when its CIELAB distance to the
-// surface is small next to the border's own noise, and keeps the foreground that joins the plant.
-// Its limits, which a reviewer must keep in mind:
-// - A picture with no plain border (bark, the inside of a crown, a twig against foliage) has no
-//   mask; `plain` is false and the measures are left out.
+// The outline (the mask) works on pictures whose background is plain — an open sky, a seamless grey
+// or white, and a meadow below the horizon — or whose sky the surface fit models closely with no
+// horizon. It fits a smooth colour surface to the frame's border, above and below the horizon
+// separately, calls a pixel background when its CIELAB distance to the surface is small next to the
+// border's own noise, and keeps the foreground that joins the plant. Its limits, which a reviewer
+// must keep in mind:
+// - A picture with neither a plain border nor a fitted sky (bark, the inside of a crown, a twig
+//   against foliage) has no mask; `plain` is false and the measures are left out.
+// - A clear sky grades across the frame, so its border residual is larger than a studio's paper; a
+//   sky is masked only where the fit itself is strong and the residual bounded, and the residual is
+//   reported, so a badly fitting sky is refused rather than masked on a guess.
 // - Below the horizon the meadow is textured and green, so dark foliage that touches the ground and
 //   a ground shadow that joins the trunk can both be counted as plant, and pale foliage against the
 //   meadow can be lost. The plant's base is reliable; its outline below the horizon is not.
@@ -29,6 +33,7 @@ import {
 import {
 	blank,
 	deltaE76,
+	deltaE2000,
 	hexOf,
 	labImage,
 	type Rgba,
@@ -99,11 +104,11 @@ const FROM_BELOW: SlotRule = {
 	framed: false,
 };
 
-/** Looking up into the crown's underside from beside the stem. */
+/** Looking up into the crown's underside from under it: the crown's box fills most of the frame, the trunk below. */
 const UNDERNEATH: SlotRule = {
-	view: 'below',
-	elevation: 80,
-	query: { aside: 40, stand: STAND },
+	view: 'crown-underside',
+	elevation: 60,
+	query: { aside: 40 },
 	framed: false,
 };
 
@@ -166,6 +171,12 @@ const SLOT_RULES: readonly { readonly test: (name: string) => boolean; readonly 
 			// from where the photograph that looks up the whole height stands.
 			test: (n) => /(crown|canopy).*(underside|underneath)/.test(n),
 			slot: UNDERNEATH,
+		},
+		{
+			// The crown at soil level, its shoot sheaths against a plain ground: a view of the foot
+			// from the side, aimed where the columns leave the soil.
+			test: (n) => n.includes('basal-crown'),
+			slot: { view: 'crown-foot', framed: false },
 		},
 		{ test: (n) => n.includes('inside'), slot: { view: 'inside', framed: false } },
 		{
@@ -855,6 +866,57 @@ export function backgroundOf(lab: Float32Array, width: number, height: number): 
 	};
 }
 
+/**
+ * The surface fit above which a sky counts as modelled rather than guessed, and the residual within
+ * which it still separates a plant from the sky. A clear sky grades across the frame, so its border
+ * residual is larger than a studio's plain paper and the old plain gate refused it; the fit itself
+ * says whether the grade is a model or noise. A sky whose fit is weak, or whose residual is wide,
+ * stays refused rather than masked on a guess.
+ */
+export const SKY_MASK_FIT = 0.99;
+export const SKY_MASK_NOISE = 24;
+
+/**
+ * Whether a background that is not plain can still mask a plant: a fitted sky with no horizon. The
+ * mask's own sky threshold scales by the fit's residual, so a badly fitting sky cannot pass it; this
+ * gate only admits a sky the surface fit models closely.
+ */
+export function skyMaskable(background: Background): boolean {
+	return (
+		background.horizon === null &&
+		background.sky.fit >= SKY_MASK_FIT &&
+		background.sky.noise <= SKY_MASK_NOISE
+	);
+}
+
+/** The least share of the frame each of the sky and the ground keeps for a horizon to stand between them. */
+export const SOIL_MASK_EDGE = 0.05;
+
+/**
+ * The share of the frame a soil band under a backdrop usually holds. Outside it a fit whose ground
+ * region is smaller or larger is flagged rather than trusted: the line is likely misplaced or the
+ * plant's own material is inside the ground model.
+ */
+export const SOIL_MASK_GROUND_SHARE: readonly [number, number] = [0.1, 0.6];
+
+/**
+ * Whether a background with a horizon can still mask a plant: the ground surface models the soil
+ * below the horizon, and the horizon leaves a real region to each side. The mask's ground threshold
+ * scales by the ground's residual, so a badly fitting ramp cannot pass it. The horizon's share is
+ * what a reviewer reads beside the fit, because a model whose ground region swallows the plant, or
+ * whose sky region leaves almost no ground, is a misplaced line even when its fit is strong.
+ */
+export function soilMaskable(background: Background, height: number): boolean {
+	if (background.horizon === null || background.ground === undefined) return false;
+	const share = background.horizon / height;
+	return (
+		background.ground.fit >= SKY_MASK_FIT &&
+		background.ground.noise <= SKY_MASK_NOISE &&
+		share >= SOIL_MASK_EDGE &&
+		share <= 1 - SOIL_MASK_EDGE
+	);
+}
+
 /** A plant's outline in a picture, and the background it was taken from. */
 export interface PlantMask {
 	readonly width: number;
@@ -868,6 +930,12 @@ export interface PlantMask {
 	 */
 	readonly coverage?: Uint8Array;
 	readonly background: Background;
+	/**
+	 * For a fitted ground: the CIEDE2000 distance between the plant's median colour and the soil's,
+	 * so a reviewer sees how close the plant's own material stands to the ground model before
+	 * trusting a mask that may merge them.
+	 */
+	readonly plantToGround?: number;
 }
 
 /** The pixels of the foreground's connected parts, 8-connected, labelled from 1; 0 is background. */
@@ -1045,9 +1113,9 @@ export function keepHangingParts(
 const FOOT_SHARE = 0.03;
 
 /**
- * The plant's outline in a picture with a plain background, in the work picture's pixels. The
- * picture is first shrunk to the work width. Returns a mask with no plant when the border is not
- * plain.
+ * The plant's outline in a picture with a plain background or a fitted sky, in the work picture's
+ * pixels. The picture is first shrunk to the work width. Returns a mask with no plant when the
+ * border is neither plain nor a sky the surface fit models (see `skyMaskable`).
  */
 export function plantMask(image: Rgba): PlantMask {
 	const work = image.width > WORK_WIDTH ? resizeToWidth(image, WORK_WIDTH) : image;
@@ -1055,10 +1123,21 @@ export function plantMask(image: Rgba): PlantMask {
 	const lab = labImage(work);
 	const background = backgroundOf(lab, width, height);
 	const mask = new Uint8Array(width * height);
-	if (!background.plain) return { width, height, mask, background };
+	if (!background.plain && !skyMaskable(background) && !soilMaskable(background, height))
+		return { width, height, mask, background };
 	const horizon = background.horizon ?? height;
-	const skyLimit = threshold(background.sky, 8, 3.5);
-	const groundLimit = background.ground ? threshold(background.ground, 10, 3) : skyLimit;
+	// A fitted sky or ground is trusted only where it finds a plausible subject. A picture of
+	// something else against a natural backdrop, such as bark or foliage, still admits a smooth
+	// surface on its border, and the surface then marks a few textured specks as the plant. A
+	// subject that a fitted background finds under a fiftieth of the frame is that failure, not a
+	// plant: every real reference's subject fills more.
+	const MIN_FITTED_PLANT_SHARE = 0.02;
+	// A plain background's spread was tuned against studio paper; a fitted sky or ground carries a
+	// wider residual, so its limit takes fewer spreads or the plant itself falls inside it.
+	const skyLimit = threshold(background.sky, 8, background.plain ? 3.5 : 2);
+	const groundLimit = background.ground
+		? threshold(background.ground, 10, background.plain ? 3 : 2)
+		: skyLimit;
 	// The rows at the horizon blend the sky with the meadow, so there a pixel is background when it
 	// lies near any blend of the two.
 	const band = Math.max(1, Math.round(height * 0.006));
@@ -1088,7 +1167,33 @@ export function plantMask(image: Rgba): PlantMask {
 			height - Math.max(2, Math.round(height * FOOT_SHARE)),
 		);
 	keepPlantParts(mask, width, height, horizon);
-	return { width, height, mask, background };
+	if (!background.plain) {
+		let kept = 0;
+		for (let at = 0; at < mask.length; at++) kept += mask[at] as number;
+		if (kept / (width * height) < MIN_FITTED_PLANT_SHARE) mask.fill(0);
+	}
+	let plantToGround: number | undefined;
+	if (background.ground) {
+		const groundAt = surfaceAt(background.ground, 0.5, (horizon / height + 1) / 2);
+		const channels: number[][] = [[], [], []];
+		for (let at = 0; at < width * height; at++)
+			if (mask[at])
+				for (let c = 0; c < 3; c++) (channels[c] as number[]).push(lab[at * 3 + c] as number);
+		if ((channels[0] as number[]).length > 0) {
+			const median = channels.map((values) => {
+				values.sort((a, b) => a - b);
+				return values[values.length >> 1] ?? 0;
+			});
+			plantToGround = Number(deltaE2000(median, groundAt).toFixed(2));
+		}
+	}
+	return {
+		width,
+		height,
+		mask,
+		background,
+		...(plantToGround !== undefined ? { plantToGround } : {}),
+	};
 }
 
 /** How far above the horizon, as a share of the frame's height, a background band may lie. */
@@ -1400,6 +1505,16 @@ export function widthProfile(spans: Int32Array, box: Box, bands = PROFILE_BANDS)
  */
 const MOUND_FROM = 0.7;
 const MOUND_TO = 0.95;
+/** How much of a mound a plant must be before the bole rule reaches its crown start. */
+const MOUND_BOLE_FROM = 0.5;
+/** How many trunk widths a row may stand before it belongs to the crown rather than the bole. */
+const BOLE_MULTIPLE = 2.5;
+/**
+ * The share of the plant's widest row at which a trunk stops reading as a stem. A row's outermost
+ * span joins a stem to the boughs that sweep beside it and can stand as wide as the crown; above
+ * this share the bole rule reads the stem from its own central run.
+ */
+const CORRUPT_TRUNK_SHARE = 0.5;
 
 /** A value that rises smoothly from 0 at `from` to 1 at `to`, and stays at the ends. */
 function smoothstep(from: number, to: number, value: number): number {
@@ -1408,20 +1523,10 @@ function smoothstep(from: number, to: number, value: number): number {
 }
 
 /**
- * The row where the crown starts: going up from the plant's base, the first row from which the
- * plant stays wider than its trunk by a clear margin. The trunk's width is the median width of the
- * lowest rows. A plant with no bare stem runs as wide at its foot as at its widest, and its crown
- * starts at its foot; its whole box is its crown, which is what its openness is measured over.
+ * The narrowest median of the lowest bands: a stem's own width, clear of a buttressed foot and a low
+ * crown, whose widths lie above it.
  */
-export function crownStartRow(spans: Int32Array, box: Box): number {
-	const tall = box.bottom - box.top + 1;
-	const width = (y: number) => {
-		const left = spans[y * 2] as number;
-		return left < 0 ? 0 : (spans[y * 2 + 1] as number) - left + 1;
-	};
-	// The trunk's width is the narrowest median of the lowest bands: a buttressed foot widens the
-	// rows at the ground, and a low crown widens the rows above it, so the stem's own width lies in
-	// the band between the two.
+function lowestMedian(width: (y: number) => number, box: Box, tall: number): number {
 	let trunk = Number.POSITIVE_INFINITY;
 	for (const [from, to] of [
 		[0, 0.06],
@@ -1436,7 +1541,57 @@ export function crownStartRow(spans: Int32Array, box: Box): number {
 		const median = low[low.length >> 1];
 		if (median !== undefined) trunk = Math.min(trunk, median);
 	}
-	if (!Number.isFinite(trunk)) trunk = 0;
+	return Number.isFinite(trunk) ? trunk : 0;
+}
+
+/**
+ * Each row's central plant run: the width of the contiguous run nearest the plant's centre column,
+ * or 0 for a row with no plant. A row's outermost span joins a stem to the boughs that sweep beside
+ * it and reads as wide as the crown, where the central run is the stem the boughs stand apart from.
+ */
+function centralRuns(mask: Uint8Array, width: number, box: Box): Int32Array {
+	const runs = new Int32Array(box.bottom + 1);
+	const centre = (box.left + box.right) / 2;
+	for (let y = box.top; y <= box.bottom; y++) {
+		let start = -1;
+		let nearest = Number.POSITIVE_INFINITY;
+		for (let x = 0; x <= width; x++) {
+			const on = x < width && mask[y * width + x] !== 0;
+			if (on && start < 0) start = x;
+			if (!on && start >= 0) {
+				const distance = centre < start ? start - centre : centre > x - 1 ? centre - (x - 1) : 0;
+				if (distance < nearest) {
+					nearest = distance;
+					runs[y] = x - start;
+				}
+				start = -1;
+			}
+		}
+	}
+	return runs;
+}
+
+/**
+ * The row where the crown starts: going up from the plant's base, the first row from which the
+ * plant stays wider than its trunk by a clear margin. The trunk's width is the median width of the
+ * lowest rows. A plant with no bare stem runs as wide at its foot as at its widest, and its crown
+ * starts at its foot; its whole box is its crown, which is what its openness is measured over.
+ */
+export function crownStartRow(
+	spans: Int32Array,
+	box: Box,
+	central?: Int32Array,
+	moundForm = false,
+): number {
+	const tall = box.bottom - box.top + 1;
+	const width = (y: number) => {
+		const left = spans[y * 2] as number;
+		return left < 0 ? 0 : (spans[y * 2 + 1] as number) - left + 1;
+	};
+	// The trunk's width is the narrowest median of the lowest bands: a buttressed foot widens the
+	// rows at the ground, and a low crown widens the rows above it, so the stem's own width lies in
+	// the band between the two.
+	const trunk = lowestMedian(width, box, tall);
 	let widest = 0;
 	for (let y = box.top; y <= box.bottom; y++) widest = Math.max(widest, width(y));
 	// The foot's flare: the widening where the stem meets the ground, or a strip of ground that the
@@ -1493,8 +1648,50 @@ export function crownStartRow(spans: Int32Array, box: Box): number {
 	// first narrow stretch below it that the stem continues below is its base. A scan from the foot's
 	// end cannot be trusted, because a flare or a ground strip is a wide stretch of its own there.
 	const found = crownStartFromTop(spans, box, limit);
-	// The more the plant is a mound, the further its crown's foot moves towards its own foot.
-	return Math.round(found + mound * (box.bottom - found));
+	const fromMound = Math.round(found + mound * (box.bottom - found));
+	// A photograph of a whole plant can read its bole as crown: when the stem is wide the mound rule
+	// pulls the start to the foot, and the crown's box then holds the whole plant. The stem below the
+	// first row standing wider than a set multiple of the trunk's own width is not crown, so on a
+	// plant the mound rule reaches, the start never falls below that row's top. A tuft is wide at its
+	// own foot, so its first wide row is its foot and its start is unchanged.
+	// The rule reaches two cases: a plant the mound rule pulls to its foot, and any start the finder
+	// itself leaves at the foot, where a photograph's bole reads as crown. A close view's crown
+	// starts well above its foot, so its start is untouched.
+	const footStart = box.bottom - fromMound <= Math.max(1, Math.round(tall * 0.01));
+	if (mound <= MOUND_BOLE_FROM && !footStart) return fromMound;
+	// A low crown whose boughs sweep beside the stem makes a row's outermost span as wide as the
+	// crown, so a trunk read from it stands as wide as the plant and the bole cap never fires. Where
+	// that shows, the stem is the row's own central run: scan that, past the frame's bottom sliver
+	// and the foot's flare, for the first row above the stem that stands wider than the bole limit.
+	const stem =
+		central !== undefined && !moundForm && widest > 0 && trunk > widest * CORRUPT_TRUNK_SHARE
+			? central
+			: undefined;
+	const boleLimit =
+		(stem === undefined ? trunk : lowestMedian((y) => stem[y] as number, box, tall)) *
+		BOLE_MULTIPLE;
+	let bole = foot;
+	if (stem === undefined) {
+		// The scan starts above the strip of ground the mask keeps at the plant's foot, which is often
+		// the widest run of all and is not the bole.
+		for (let y = foot; y > box.top; y--) {
+			if (width(y) > boleLimit) {
+				bole = y;
+				break;
+			}
+		}
+	} else {
+		const at = (y: number) => stem[y] as number;
+		let y = foot;
+		while (y > box.top && at(y) <= 2) y--;
+		while (y > box.top && at(y) > boleLimit) y--;
+		for (; y > box.top; y--)
+			if (at(y) > boleLimit) {
+				bole = y;
+				break;
+			}
+	}
+	return Math.min(fromMound, bole);
 }
 
 /**
@@ -1552,7 +1749,7 @@ function meanColour(
 }
 
 /** Measures a plant from its outline in a picture. */
-export function measurePlant(image: Rgba, plant: PlantMask): PlantMeasures {
+export function measurePlant(image: Rgba, plant: PlantMask, moundForm = false): PlantMeasures {
 	const { width, height, mask, coverage, background } = plant;
 	const work = image.width === width ? image : resizeToWidth(image, width);
 	const lab = labImage(work);
@@ -1569,7 +1766,10 @@ export function measurePlant(image: Rgba, plant: PlantMask): PlantMeasures {
 		sky: hexOf(srgbOf(skyAt)),
 		ground: groundAt ? hexOf(srgbOf(groundAt)) : null,
 	};
-	const box = background.plain ? boxOf(mask, width, height) : null;
+	const box =
+		background.plain || skyMaskable(background) || soilMaskable(background, height)
+			? boxOf(mask, width, height)
+			: null;
 	if (!box)
 		return {
 			...base,
@@ -1587,7 +1787,7 @@ export function measurePlant(image: Rgba, plant: PlantMask): PlantMeasures {
 			light: null,
 		};
 	const spans = rowSpans(mask, width, height);
-	const start = crownStartRow(spans, box);
+	const start = crownStartRow(spans, box, centralRuns(mask, width, box), moundForm);
 	const tall = box.bottom - box.top + 1;
 	// The crown's outline: in each crown row, everything between the row's outermost plant pixels.
 	let hull = 0;

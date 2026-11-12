@@ -103,6 +103,8 @@ const HEADER_YOUNG_TILE: i32 = 16;
 const HEADER_YOUNG_TINT: i32 = 56;
 // A tuft's sheath colour at the column's foot, and its roughness, for the merged foliage.
 const HEADER_SHEATH: i32 = 65;
+// The share of a card's leaf groups that stays, where the record names one.
+const HEADER_CARD_COVERAGE: i32 = 68;
 // A grass blade's collar: its colour, then the share of the blade's base it takes.
 const HEADER_COLLAR: i32 = 66;
 // A tuft's sheath colour at the column's collar, then the share of the column it takes.
@@ -662,9 +664,21 @@ fn plant_offset(input: VertexInput, mode: i32) -> vec3f {
                 let sideways = cross(downwind, vec3f(0.0, 1.0, 0.0));
                 let side = length(sideways);
                 if (side > 0.001) {
-                    let brisk = clamp(air.a / 10.0, 0.0, 1.5);
-                    let flap = sin(TURN * (frame.time * flutter.y + input.colors.b));
-                    swayed += (sideways / side) * (flutter.x * brisk * flap * input.uv1.x);
+                    // A tuft that gives its sheath columns a colour marks them in the top bit of
+                    // the phase byte, which those columns leave still. Every other foliage axis
+                    // then keeps its phase in the low seven bits.
+                    var phase = input.colors.b;
+                    var sheath = false;
+                    if (mode == MODE_FOLIAGE && header(HEADER_SHEATH).w > 0.5) {
+                        let raw = i32(round(input.colors.b * 255.0));
+                        sheath = (raw & 128) != 0;
+                        phase = f32(raw & 127) / 127.0;
+                    }
+                    if (!sheath) {
+                        let brisk = clamp(air.a / 10.0, 0.0, 1.5);
+                        let flap = sin(TURN * (frame.time * flutter.y + phase));
+                        swayed += (sideways / side) * (flutter.x * brisk * flap * input.uv1.x);
+                    }
                 }
             }
             moved = plant + (swayed - plant) * fade;
@@ -865,6 +879,9 @@ fn coverage(input: SurfaceInput) -> f32 {
 fn surface(input: SurfaceInput) -> Surface {
     var s = defaultSurface(input);
     let mode = plant_mode();
+    // The share of the open sky added to the leaf and card faces, the record's own extinction; 0
+    // where it names none, so the faces draw as before.
+    let leaf_sky = header(HEADER_SWAY).w;
     let upper = input.frontFacing;
     let facing = select(-1.0, 1.0, upper);
     // Derivatives first, in uniform control flow; the roles sample with explicit gradients.
@@ -1065,6 +1082,15 @@ fn surface(input: SurfaceInput) -> Surface {
                 base = texel.rgb;
             }
             alpha = card_alpha(texel.a, gx, gy);
+            // A card's coverage: a hashed share of the crown's leaf groups gives way, so the crown
+            // shows sky between them while the leaves of the rest keep their mass. At 1, or when the
+            // record names none, the card draws whole.
+            let card_cover = header(HEADER_CARD_COVERAGE).x;
+            if (card_cover < 0.999) {
+                if (value3(input.relativePosition * 5.0) > card_cover) {
+                    alpha = 0.0;
+                }
+            }
             if (near_copy && length(input.relativePosition) < material.nearDistance * 0.96) {
                 alpha = 0.0;
             }
@@ -1073,6 +1099,7 @@ fn surface(input: SurfaceInput) -> Surface {
             // The card's normal is toward the viewer of the face it shows; the frame's normal is too.
             mapped = card_normal;
             occlusion = input.vertexColor.a * saturate(self_shade);
+            occlusion = mix(occlusion, 1.0, leaf_sky);
         }
     } else if (mode == MODE_EXTRAS) {
         // An extra takes its kind's colour and roughness from the header, by the index in its
@@ -1201,6 +1228,7 @@ fn surface(input: SurfaceInput) -> Surface {
             let row = shoot_row(object.values);
             let turn = near_texel(row.slot * 2).w;
             occlusion = saturate(row.sky / 250.0) * input.vertexColor.a;
+            occlusion = mix(occlusion, 1.0, leaf_sky);
             sky_normal = out_of_turn(bent_normal(row.bent), turn);
         } else {
             occlusion = input.vertexColor.a;

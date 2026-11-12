@@ -110,9 +110,39 @@ The GPU moves each particle in closed form. Every vector is in the space of the 
 | Option | What it does |
 | --- | --- |
 | `gravity` | An acceleration, in meters per second squared. |
-| `drag`, `wind` | How fast, per second, particles take on the wind's velocity. Smoke and leaves drift with it. `wind` is one velocity for the whole system; the fluid wind's field is not an input yet. |
+| `drag`, `wind` | How fast, per second, particles take on the wind's velocity. Smoke and leaves drift with it. `wind` is one velocity for the whole system; `windField` gives the fluid wind instead. |
 | `turbulence` | How far simplex noise moves each particle from its path, in meters. `turbulenceScale` sets the swirls' size, and `turbulenceSpeed` how fast they change. |
 | `groundHeight`, `groundMode` | A ground plane where particles `bounce` (up to twice, with `restitution` and `friction`), `stick` or `kill`. |
+
+### Wind
+
+A system can read the wind add-on's field, so dust, motes, smoke and rain move with the same gusts as the plants around them. Give the field as `windField`, and call the wind's `update()` before the system's `update()` in each frame.
+
+```ts
+import { createWind } from '@null3d/wind';
+
+const camera = scene.createPerspectiveCamera({ position: [0, 2, 6], target: [0, 1, 0] });
+scene.setActiveCamera(camera);
+const wind = createWind(ctx, { camera });
+const smoke = await createParticles(ctx, {
+  ...particleTextures.smoke(textures),
+  rate: 30,
+  lifetime: 4,
+  drag: 0.6,
+  windField: wind.field,
+});
+
+return {
+  onLateUpdate() {
+    wind.update();
+    smoke.update();
+  },
+};
+```
+
+The particle shader samples the field once for each particle at the place where the particle passes. That air replaces `wind`, so the system's fixed wind stands aside while a field is given. A particle takes the air's own displacement over its age, which costs one texture read in the vertex shader. It cannot ride a gust along its path, because it keeps no speed of its own; the field's air pushes it where it is. A system without a field costs no read.
+
+The field's box follows the camera. Its newest state changes in every frame. So the add-on gives the field to the core in every frame. A page that drives a particle buffer itself calls `buffer.setWind(field, time.now)` after `wind.update()`, and `buffer.setWind(undefined, time.now)` to remove the field. Give the sketch time, which the field's gust and swirl read.
 
 ## Look
 

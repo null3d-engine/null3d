@@ -144,6 +144,8 @@ export const HEADER = {
 	collar: 66,
 	/** A tuft's sheath colour at the column's collar, then the share of the column it takes. */
 	sheathCollar: 67,
+	/** The share of a card's leaf groups that stays; 1, or absent, draws the card whole. */
+	cardCoverage: 68,
 } as const;
 
 /**
@@ -153,7 +155,7 @@ export const HEADER = {
 export const BARK_ZONE_TEXELS = 4;
 
 /** The header's texels that hold anything. */
-export const HEADER_TEXELS = HEADER.sheathCollar + 1;
+export const HEADER_TEXELS = HEADER.cardCoverage + 1;
 
 /** An extra's roughness where its record names none. */
 export const EXTRA_ROUGHNESS = 0.6;
@@ -395,7 +397,7 @@ export function speciesHeader(
 	const bud = record.shoots?.bud.colour;
 	if (bud) texel(header, HEADER.bud, [...bud, 1]);
 	const sway = windSway(record);
-	texel(header, HEADER.sway, [sway.amplitude, sway.frequency, sway.power, 0]);
+	texel(header, HEADER.sway, [sway.amplitude, sway.frequency, sway.power, record.skyToLeaf ?? 0]);
 	const seasonBark = record.seasons.bark;
 	if (seasonBark?.autumn) texel(header, HEADER.autumnBark, [...seasonBark.autumn, 1]);
 	if (seasonBark?.winter) texel(header, HEADER.winterBark, [...seasonBark.winter, 1]);
@@ -405,6 +407,7 @@ export function speciesHeader(
 		texel(header, HEADER.winterTransmittance, [...winterLeaves.transmittance, 0]);
 	}
 	texel(header, HEADER.cardStalk, [record.lod.cardStalk ?? 0, 0, 0, 0]);
+	texel(header, HEADER.cardCoverage, [record.shoots?.placement.cardCoverage ?? 1, 0, 0, 0]);
 	return header;
 }
 
