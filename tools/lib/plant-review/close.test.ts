@@ -12,14 +12,13 @@ import {
 	AXIS_ROOT,
 	AXIS_STEM,
 	BUD_FLOWER,
-	BUD_TERMINAL,
 	type MacroSkeleton,
 	SkeletonBuilder,
 } from '../../../packages/vegetation/src/core/graph.ts';
 import {
-	crownTopSites,
 	dot,
 	firstForkHeight,
+	flowerSites,
 	normalize,
 	sheathColumn,
 	stemAt,
@@ -130,43 +129,38 @@ describe('a part of a piece framed at its own span', () => {
 	});
 });
 
-describe('the crown-top sites', () => {
-	test('finds the terminal buds above 0.85 of the height, and no other site', () => {
+describe('the flower sites', () => {
+	test('finds the flowers and the ring they make, and none where the plant carries none', () => {
 		const b = new SkeletonBuilder();
 		const stem = b.addAxis({ parent: -1, parentNode: -1, order: 0, kind: AXIS_STEM });
 		const nodes = run(b, stem, -1, [0, 0, 0], [0, 0.4, 0], 6, 0.2, 0.3);
 		const node = nodes[nodes.length - 1] as number;
-		const bud = (x: number, y: number, z: number, kind: number) =>
-			b.addBud({
-				node,
-				x,
-				y,
-				z,
-				frame: [0, 0, 0, 1],
-				kind,
-				vigor: 0.5,
-				light: 1,
-				axis: stem,
-				woodRadius: 0.2,
-			});
 		for (const [x, z] of [
 			[0.3, 0],
 			[-0.3, 0],
 			[0, 0.3],
 			[0, -0.3],
 		])
-			bud(x as number, 2.4, z as number, BUD_TERMINAL);
-		// A terminal bud below the crown's band, and a flower-kind bud, are not crown-top sites.
-		bud(0.31, 1.6, 0, BUD_TERMINAL);
-		bud(0.32, 2.4, 0, BUD_FLOWER);
-		const ring = crownTopSites(b.finish(0));
+			b.addBud({
+				node,
+				x: x as number,
+				y: 2.4,
+				z: z as number,
+				frame: [0, 0, 0, 1],
+				kind: BUD_FLOWER,
+				vigor: 0.5,
+				light: 1,
+				axis: stem,
+				woodRadius: 0.2,
+			});
+		const ring = flowerSites(b.finish(0));
 		expect(ring?.sites.length).toBe(4);
 		expect(ring?.radius as number).toBeCloseTo(0.3, 5);
 		expect(ring?.centre[1] as number).toBeCloseTo(2.4, 5);
-		// A plant with no crown-top site has no ring.
+		// A plant with no flower site has no ring.
 		const bare = new SkeletonBuilder();
 		bare.addAxis({ parent: -1, parentNode: -1, order: 0, kind: AXIS_STEM });
-		expect(crownTopSites(bare.finish(0))).toBeUndefined();
+		expect(flowerSites(bare.finish(0))).toBeUndefined();
 	});
 });
 
