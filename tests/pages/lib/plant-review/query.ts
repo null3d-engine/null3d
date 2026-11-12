@@ -124,12 +124,11 @@ export interface PlantReviewQuery {
 	readonly lean?: number;
 	/**
 	 * How a fanned cutting places its shoots: 'ring' round the piece's axis, 'spray' along one
-	 * lateral line, 'fan' across the piece's own leaf plane from one shared base, or 'bunch' with the
-	 * rows at their own places through the piece's depth.
+	 * lateral line, or 'fan' across the piece's own leaf plane from one shared base.
 	 */
-	readonly layout?: 'ring' | 'spray' | 'fan' | 'bunch';
+	readonly layout?: 'ring' | 'spray' | 'fan';
 	/**
-	 * The width a 'spray', 'fan' or 'bunch' layout spans, as a share of the piece's height.
+	 * The width a 'spray' or 'fan' layout spans, as a share of the piece's height.
 	 */
 	readonly spread?: number;
 	/** Whether the page posts its measures of the plant beside the frame. */
@@ -408,10 +407,9 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 		layoutText !== null &&
 		layoutText !== 'ring' &&
 		layoutText !== 'spray' &&
-		layoutText !== 'fan' &&
-		layoutText !== 'bunch'
+		layoutText !== 'fan'
 	)
-		throw new Error(`layout=${layoutText} is not a layout: use ring, spray, fan or bunch.`);
+		throw new Error(`layout=${layoutText} is not a layout: use ring, spray or fan.`);
 	const shoot = params.get('shoot');
 	if (shoot !== null && !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(shoot))
 		throw new Error(`shoot=${shoot} is not a class name: give a kebab-case word, such as twig.`);
@@ -511,7 +509,7 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 		species,
 		...(form !== null && { form }),
 		...(shoot !== null && { shoot }),
-		...(layoutText !== null && { layout: layoutText as 'ring' | 'spray' | 'fan' | 'bunch' }),
+		...(layoutText !== null && { layout: layoutText as 'ring' | 'spray' | 'fan' }),
 		view,
 		...numbers,
 		...(background && { background }),
