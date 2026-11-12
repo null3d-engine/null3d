@@ -13,7 +13,7 @@
 // kept row so that the leaf area holds.
 import type { ShootPrototype, ShootRows } from '../asset';
 import type { MacroSkeleton } from '../core/graph';
-import { BUD_DORMANT, BUD_TERMINAL } from '../core/graph';
+import { BUD_AREOLE, BUD_DORMANT, BUD_TERMINAL } from '../core/graph';
 import { hashAt, unitAt } from '../core/hash';
 import {
 	cos,
@@ -650,7 +650,12 @@ function placedRows(input: DressInput, bySky = true): Row[] {
 		// in the crown's whole volume.
 		const lit = tipPrune === undefined || (buds.light[b] as number) >= tipPrune;
 		const keep = (kind === BUD_TERMINAL || atTip) && lit && patch > BARE_PATCH;
-		const count = Math.max(keep ? 1 : 0, Math.floor(expected + draw(Purpose.Count, b)));
+		// A cactus areole carries one spine cluster. The growth places every areole itself, so its site
+		// gives one shoot whatever stretch of axis lies behind it.
+		const count =
+			kind === BUD_AREOLE
+				? 1
+				: Math.max(keep ? 1 : 0, Math.floor(expected + draw(Purpose.Count, b)));
 		if (count === 0) continue;
 		// The axis's direction at the bud.
 		const tangent: Vector3 =

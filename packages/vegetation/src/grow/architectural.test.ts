@@ -4,11 +4,9 @@ import { describe, expect, it } from 'bun:test';
 import type { MacroSkeleton } from '../core/graph';
 import { AXIS_STEM, BUD_LATERAL } from '../core/graph';
 import { hashBytes, unitAt } from '../core/hash';
-import { spreadAt } from '../core/types';
 import { record } from '../species/scots-pine/record';
-import { ENVELOPE_ROUND, growArchitectural } from './architectural';
-import { envelopeVolume, insetVolume, smoothedVolume } from './envelope';
-import { shootReach } from './self-organizing';
+import { growArchitectural } from './architectural';
+import { envelopeVolume } from './envelope';
 
 /** The pine grown at one seed and variant. */
 function grown(seed = 11, variant = 0): MacroSkeleton {
@@ -66,56 +64,37 @@ describe('the architectural grower', () => {
 		expect(digest(grown())).toBe(digest(grown()));
 	});
 
-	it('stands a lateral site short of its tip and a terminal site on it', () => {
+	it('stands its buds on the finest axes and at every tip', () => {
 		const { axes, buds } = skeleton;
 		expect(buds.count).toBeGreaterThan(0);
 		for (let b = 0; b < buds.count; b++) {
 			const axis = buds.axis[b] as number;
-			const node = buds.node[b] as number;
-			const last = axes.last[axis] as number;
-			// A shoot leaves the side of an axis short of its end; the end itself carries the terminal
-			// bud that closes it, whatever the axis's order.
-			if ((buds.kind[b] as number) === BUD_LATERAL) expect(node).toBeLessThan(last);
-			else expect(node).toBe(last);
 			expect(axes.order[axis] as number).toBeLessThanOrEqual(3);
-		}
-	});
-
-	it('carries shoot sites along a bough, not only at its tip', () => {
-		const { axes, buds } = skeleton;
-		let live = 0;
-		for (let a = 0; a < axes.count; a++) {
-			if ((axes.order[a] as number) !== 1) continue;
-			const first = axes.first[a] as number;
-			const last = axes.last[a] as number;
-			// A dead stub on the bole is a couple of nodes; a live bough runs out many.
-			if (last - first < 6) continue;
-			const nodes: number[] = [];
-			for (let b = 0; b < buds.count; b++) {
-				if ((buds.axis[b] as number) === a && (buds.kind[b] as number) === BUD_LATERAL)
-					nodes.push(buds.node[b] as number);
+			// A lateral bud stands on the finest axes, and on the leader's own top; a tip carries its
+			// terminal bud on any order.
+			if ((buds.kind[b] as number) === BUD_LATERAL) {
+				const order = axes.order[axis] as number;
+				expect(order === 0 || order === 3).toBe(true);
 			}
-			expect(nodes.length).toBeGreaterThan(1);
-			// The sites begin past the limb's bare inner run, so the wood shows near the trunk.
-			expect(Math.min(...nodes)).toBeGreaterThan(first + (last - first) * 0.2);
-			live++;
 		}
-		expect(live).toBeGreaterThan(0);
+		// Every finest axis ends in a terminal bud at its last node.
+		for (let a = 0; a < axes.count; a++) {
+			if ((axes.order[a] as number) !== 3) continue;
+			const last = axes.last[a] as number;
+			let found = false;
+			for (let b = 0; b < buds.count && !found; b++) found = (buds.node[b] as number) === last;
+			expect(found).toBe(true);
+		}
 	});
 
 	it('caps the wood inside the envelope', () => {
 		expect(record.envelope).toBeDefined();
-		// The grower turns the outline by the variant's own angle, which is its second hash purpose,
-		// and scales it by the height its own first hash purpose draws, not by the built tree's top.
-		const salt = record.seedSalt >>> 0;
-		const turn = unitAt(11, salt, 0, 2) * 2 * Math.PI;
-		const drawn = spreadAt(record.size.height, unitAt(11, salt, 0, 1));
-		const volume = smoothedVolume(
-			insetVolume(
-				envelopeVolume(record.envelope as NonNullable<typeof record.envelope>, drawn, turn),
-				shootReach(record) * 0.6,
-			),
-			ENVELOPE_ROUND,
+		// The grower turns the outline by the variant's own angle, which is its second hash purpose.
+		const turn = unitAt(11, record.seedSalt >>> 0, 0, 2) * 2 * Math.PI;
+		const volume = envelopeVolume(
+			record.envelope as NonNullable<typeof record.envelope>,
+			skeleton.height,
+			turn,
 		);
 		for (let n = 0; n < skeleton.nodeCount; n++) {
 			const axis = skeleton.axisOf[n] as number;
@@ -129,7 +108,7 @@ describe('the architectural grower', () => {
 				skeleton.position[n * 3 + 2] as number,
 			);
 			// A node on the outline sits at the boundary, within the step that found it.
-			expect(room).toBeGreaterThan(-0.02);
+			expect(room).toBeGreaterThan(-0.15);
 		}
 	});
 

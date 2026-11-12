@@ -19,6 +19,7 @@ import {
 	measurePlant,
 	type PlantMask,
 	pieceCount,
+	pieceParts,
 	plantMask,
 	readIndex,
 	rowSpans,
@@ -906,6 +907,27 @@ describe('the coverage matte', () => {
 		// partly covered texel closes the gap to the one the piece rule already bridges.
 		expect(pieceCount(mask, width, height, 24)).toBe(2);
 		expect(pieceCount(anyPlantMask(plant), width, height, 24)).toBe(1);
+	});
+
+	test('names a piece that meets nothing, and spares one the frame carries', () => {
+		const width = 40;
+		const height = 40;
+		const mask = new Uint8Array(width * height);
+		// The body.
+		for (let y = 10; y < 20; y++) for (let x = 10; x < 20; x++) mask[y * width + x] = 1;
+		// A blob that meets nothing inside the frame: 25 pixels, five by five.
+		for (let y = 25; y < 30; y++) for (let x = 25; x < 30; x++) mask[y * width + x] = 1;
+		// A piece the frame's right edge carries, so its part may run on outside the picture.
+		for (let y = 30; y < 36; y++) for (let x = 36; x < 40; x++) mask[y * width + x] = 1;
+		const parts = pieceParts(mask, width, height, 24);
+		expect(parts.length).toBe(3);
+		expect(parts[0]?.area).toBe(100);
+		// The largest run is the body; any other run the border does not carry meets nothing.
+		const floating = parts.slice(1).filter((part) => !part.border);
+		expect(
+			floating.map((part) => [part.area, part.left, part.top, part.right, part.bottom]),
+		).toEqual([[25, 25, 25, 29, 29]]);
+		expect(parts.filter((part) => part.border).length).toBe(1);
 	});
 
 	test('counts a partly covered texel as the sky it leaves in the gap', () => {

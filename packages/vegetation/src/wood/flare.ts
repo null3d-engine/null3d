@@ -4,7 +4,7 @@
 // the stem. Lobes stand at uneven angles with uneven sizes, as an old oak's foot does, so no two
 // variants share a ground line.
 import { hashAt, unitAt } from '../core/hash';
-import { cos, exp, PI, pow, sin } from '../core/math';
+import { cos, exp, PI, pow, radians, sin } from '../core/math';
 import type { BaseSpec } from '../core/record';
 import { spreadAt } from '../core/types';
 
@@ -132,6 +132,15 @@ export function stemSection(
 			)
 		: 0;
 	const flutePhase = (hashAt(seed, salt, variant, Purpose.Flutes, stem + 1) / 0x100000000) * 2 * PI;
+	// A fire scar carves the first stem alone: the strong trees carry one, and a multi-stemmed plant
+	// would not show the same hollow on every stem.
+	const scar = stem === 0 ? base.scar : undefined;
+	const scarAngle = scar ? radians(scar.angle) : 0;
+	const scarHalf = scar ? radians(scar.width) * 0.5 : 0;
+	const scarCos = scar ? cos(scarHalf) : 1;
+	const scarDepth = scar?.depth ?? 0;
+	const scarFrom = scar?.from ?? 0;
+	const scarSpan = scar ? scar.to - scar.from : 1;
 	const taper =
 		base.taper && base.taper.amount > 0 && base.taper.height > 0 ? base.taper : undefined;
 	let reach = flare.amount > 0 ? flare.height * 7 : 0;
@@ -160,6 +169,16 @@ export function stemSection(
 				const fade = 1 - height / flutes.height;
 				const groove = 0.5 + 0.5 * cos(fluteCount * theta + flutePhase);
 				radius -= flutes.depth * groove * groove * fade * fade;
+			}
+			if (scar && scarDepth > 0) {
+				// The hollow stands widest and deepest about its centre, and closes to the healthy
+				// bark at both its angular edges and at its foot and head.
+				const turn = (cos(angleBetween(theta, scarAngle)) - scarCos) / Math.max(1e-6, 1 - scarCos);
+				const across = Math.max(0, Math.min(1, turn));
+				const angular = across * across * (3 - 2 * across);
+				const up = (height - scarFrom) / scarSpan;
+				const vertical = up > 0 && up < 1 ? sin(PI * up) ** 2 : 0;
+				radius -= scarDepth * angular * vertical;
 			}
 			return Math.max(radius, r * 0.5);
 		},
