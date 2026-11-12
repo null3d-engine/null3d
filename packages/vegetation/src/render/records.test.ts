@@ -388,6 +388,7 @@ describe('the plant shader', () => {
 			HEADER_SHEATH: HEADER.sheath,
 			HEADER_EXTRA_BANDS: HEADER.extraBands,
 			HEADER_CARD_STALK: HEADER.cardStalk,
+			HEADER_CARD_COVERAGE: HEADER.cardCoverage,
 			BARK_ZONE_TEXELS,
 			MAX_BARK_ZONES,
 			MAX_EXTRAS,
