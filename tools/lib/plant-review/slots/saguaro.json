@@ -18,7 +18,7 @@
 		"sunRise": 50,
 		"skyShare": 0.3,
 		"daylight": 2.2,
-		"composition": "arms",
+		"composition": "elbow",
 		"elevation": -55
 	},
 	"06-between-arms.png": {
@@ -30,14 +30,14 @@
 		"skyShare": 0.3,
 		"daylight": 2.3,
 		"composition": "between",
-		"elevation": 0
+		"elevation": -14
 	},
 	"08-arm-elbow.png": {
 		"span": 2,
 		"thin": 0.22,
 		"along": 0.5,
 		"composition": "elbow",
-		"elevation": 0
+		"elevation": -14
 	},
 	"09-rib-pattern.png": {
 		"span": 0.24,
