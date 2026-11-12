@@ -134,7 +134,12 @@ export const record: Species = {
 	bark: {
 		// Stills 15 and 26: the whole trunk is packed roots and cut frond bases, one surface, a warm
 		// red-brown mat whose drawn colour loses chroma under the review's light.
-		zones: [{ layer: 0, by: 'height', from: -1, to: 4, blend: 0.2, tint: [1.27, 0.9, 0.72] }],
+		// The photograph's base is less red than the trunk above it: a neutral zone grades the
+		// orange in over the bare trunk's first quarter, and the orange zone holds above it.
+		zones: [
+			{ layer: 0, by: 'height', from: -1, to: 0.25, blend: 0.25, tint: [0.85, 1.0, 1.05] },
+			{ layer: 0, by: 'height', from: 0.2, to: 4, blend: 0.3, tint: [1.27, 0.9, 0.72] },
+		],
 		young: 0,
 		// The stipes, rachises and pinna midribs take the fine tile, so they read as hairy brown
 		// stalks rather than as the trunk's coarse mat.
