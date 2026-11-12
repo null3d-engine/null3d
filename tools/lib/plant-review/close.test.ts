@@ -28,6 +28,7 @@ import {
 	forks,
 	forkView,
 	insideView,
+	junctionFrameHeight,
 	junctionView,
 	surfaceView,
 	trunkView,
@@ -336,6 +337,24 @@ describe('the limb a junction view takes', () => {
 			{ fov: 50, aspect: 1 },
 		);
 		expect(view?.subject.axis).toBe(level);
+	});
+});
+
+describe("the junction frame from a picture's subject box", () => {
+	test('takes the larger of the height share and the width share, and the limb share without one', () => {
+		// The saguaro's box: the limb's thick diameter at the height share, the stem's width at the
+		// width share, and the stem's width needs the further camera.
+		expect(junctionFrameHeight(0.286, 1.014, { width: 0.441, height: 0.383 }, 1)).toBeCloseTo(
+			1.014 / 0.441,
+			6,
+		);
+		// The tree fern's box: the wide, shallow subject puts the limb's thickness first.
+		expect(junctionFrameHeight(0.3, 0.44, { width: 0.546, height: 0.167 }, 1)).toBeCloseTo(
+			0.3 / 0.167,
+			6,
+		);
+		// Without a measured box the view keeps the limb's own share of the frame.
+		expect(junctionFrameHeight(0.286, 1.014, undefined, 1)).toBeCloseTo(0.286 / 0.55, 6);
 	});
 });
 
