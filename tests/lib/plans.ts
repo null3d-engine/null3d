@@ -2652,6 +2652,84 @@ export function showroomShadowPlan(): PlanItem<Check>[] {
 }
 
 /**
+ * Where the Showroom's frame time at Low goes, for M3-C2: the same page run several ways in one
+ * session. The governor on and off separates its render-scale steps from the scene's work; the whole
+ * and half render scales separate the scene's own pixels from the frame's fixed cost; a scene with
+ * every part left out gives the floor that the engine and the device pay without drawing much; and a
+ * light demo on the same path checks that floor independently. The repeated pages show the session's
+ * own drift, so a difference between two pages can be told from the device's heat.
+ */
+export function showroomFpsPlan(): PlanItem<Check>[] {
+	const showroom = (id: string, extra: readonly string[] = []) =>
+		pageItem(
+			id,
+			'demo-frames',
+			{ kind: 'probe', tier: 'webgpu' },
+			{
+				switches: [
+					'gpu=webgpu',
+					'demo=showroom',
+					// A page that names its own measure's length keeps that one.
+					...(extra.some((entry) => entry.startsWith('seconds=')) ? [] : ['seconds=5']),
+					'preset=low',
+					...extra,
+				],
+				timeoutSeconds: 300,
+			},
+		);
+	// Every part that the sketch can leave out, so the scene draws almost nothing but keeps the
+	// canvas, the post chain and the whole frame path.
+	const WITHOUT_ALL = [
+		'reflection',
+		'arealights',
+		'probe',
+		'lamps',
+		'shadows',
+		'bloom',
+		'ao',
+		'environment',
+		'sky',
+		'fog',
+		'street',
+		'studio',
+		'tablet',
+		'car',
+	].join(',');
+	return [
+		pageItem(CAPABILITIES, 'capabilities', { kind: 'capabilities' }),
+		showroom('demo-showroom-fps-warm'),
+		showroom('demo-showroom-fps-base'),
+		showroom('demo-showroom-fps-settled', ['settle=15']),
+		showroom('demo-showroom-fps-long', ['seconds=25']),
+		showroom('demo-showroom-fps-nogov-1', ['governor=off', 'render-scale=1']),
+		showroom('demo-showroom-fps-nogov-3q', ['governor=off', 'render-scale=0.75']),
+		showroom('demo-showroom-fps-nogov-half', ['governor=off', 'render-scale=0.5']),
+		showroom('demo-showroom-fps-nogov-1b', ['governor=off', 'render-scale=1']),
+		showroom('demo-showroom-fps-nogov-1-settled', ['governor=off', 'render-scale=1', 'settle=15']),
+		showroom('demo-showroom-fps-nogov-half-settled', [
+			'governor=off',
+			'render-scale=0.5',
+			'settle=15',
+		]),
+		showroom('demo-showroom-fps-empty', [
+			'governor=off',
+			'render-scale=1',
+			`without=${WITHOUT_ALL}`,
+		]),
+		pageItem(
+			'demo-showroom-fps-light',
+			'demo-frames',
+			{ kind: 'probe', tier: 'webgpu' },
+			{
+				switches: ['gpu=webgpu', 'demo=objects', 'seconds=5', 'preset=low'],
+				timeoutSeconds: 300,
+			},
+		),
+		showroom('demo-showroom-fps-base-b'),
+	];
+}
+
+/**
  * What the levels of a dense forest save: the lod-cost page's 40,000 pines, four levels each, timed
  * with every tree at its base mesh and with each at its own level in turns, at the lowest and the
  * highest preset. The two presets carry different thresholds and shadow settings, so the saving
@@ -3269,6 +3347,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	sky: skyPlan,
 	demos: demosPlan,
 	'showroom-shadow': showroomShadowPlan,
+	'showroom-fps': showroomFpsPlan,
 	skyway: skywayPlan,
 	'skyway-cost': skywayCostPlan,
 	'skyway-soak': skywaySoakPlan,

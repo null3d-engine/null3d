@@ -352,7 +352,12 @@ describe("CI's workflow", () => {
 	it('restores a Rust cache in every job that runs cargo or rustup', () => {
 		for (const [name, job] of Object.entries(jobs)) {
 			if (!commandsOf(job).some(({ text }) => /\b(?:cargo|rustup)\b/.test(text))) continue;
-			const cached = (job.steps ?? []).some(({ uses }) => uses?.startsWith('Swatinem/rust-cache@'));
+			const cached = (job.steps ?? []).some(
+				({ uses, with: inputs }) =>
+					uses?.startsWith('Swatinem/rust-cache@') ||
+					// A job that keeps its own target tree restores it under a key of its inputs.
+					(uses?.startsWith('actions/cache/restore@') && String(inputs?.path) === 'target'),
+			);
 			expect(cached, name).toBe(true);
 		}
 	});
