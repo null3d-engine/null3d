@@ -13,6 +13,7 @@ export const PLANT_VIEWS = [
 	'junction',
 	'fork',
 	'twigs',
+	'flowers',
 	'strands',
 	'limb',
 	'branch',
@@ -156,6 +157,14 @@ export const VIEW_SPECS: Readonly<Record<PlantView, ViewSpec>> = {
 		sun: 'default',
 		elevation: 0,
 		size: [960, 720],
+	},
+	flowers: {
+		slots: [19],
+		fov: 40,
+		background: 'studio-grey',
+		sun: 'default',
+		elevation: 12,
+		size: [960, 960],
 	},
 	strands: {
 		slots: [],

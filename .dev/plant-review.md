@@ -181,7 +181,9 @@ own light they read 1.9, and the head's oak reads 2.2, so the light makes most o
   a tint chosen before the frame is right measures the camera, not the plant. A ground plant's
   sheath, collar or ligule picture is drawn as one tiller's sheath column at the photograph's span,
   or as the species' own tiller cutting where the photograph shows a cut stalk, because a bark view
-  has no stem to frame and falls back to the crown's foot culms.
+  has no stem to frame and falls back to the crown's foot culms. A plant that flowers at its crown,
+  such as a cactus, is framed on the ring of flower sites at its stem's top, not on a single shoot
+  tip and not on the plant's middle.
 
 ## What a reviewer must see for the picture-judged rows
 

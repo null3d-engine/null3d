@@ -11,12 +11,14 @@ import {
 	AXIS_RACHIS,
 	AXIS_ROOT,
 	AXIS_STEM,
+	BUD_FLOWER,
 	type MacroSkeleton,
 	SkeletonBuilder,
 } from '../../../packages/vegetation/src/core/graph.ts';
 import {
 	dot,
 	firstForkHeight,
+	flowerSites,
 	normalize,
 	sheathColumn,
 	stemAt,
@@ -124,6 +126,41 @@ describe('a part of a piece framed at its own span', () => {
 		expect(spanDistance(0.5, 40, 1)).toBeCloseTo(0.25 / Math.tan((20 * Math.PI) / 180), 6);
 		// A taller frame is narrower across, so the camera stands further back for the same span.
 		expect(spanDistance(0.5, 40, 0.75)).toBeGreaterThan(spanDistance(0.5, 40, 1));
+	});
+});
+
+describe('the flower sites', () => {
+	test('finds the flowers and the ring they make, and none where the plant carries none', () => {
+		const b = new SkeletonBuilder();
+		const stem = b.addAxis({ parent: -1, parentNode: -1, order: 0, kind: AXIS_STEM });
+		const nodes = run(b, stem, -1, [0, 0, 0], [0, 0.4, 0], 6, 0.2, 0.3);
+		const node = nodes[nodes.length - 1] as number;
+		for (const [x, z] of [
+			[0.3, 0],
+			[-0.3, 0],
+			[0, 0.3],
+			[0, -0.3],
+		])
+			b.addBud({
+				node,
+				x: x as number,
+				y: 2.4,
+				z: z as number,
+				frame: [0, 0, 0, 1],
+				kind: BUD_FLOWER,
+				vigor: 0.5,
+				light: 1,
+				axis: stem,
+				woodRadius: 0.2,
+			});
+		const ring = flowerSites(b.finish(0));
+		expect(ring?.sites.length).toBe(4);
+		expect(ring?.radius as number).toBeCloseTo(0.3, 5);
+		expect(ring?.centre[1] as number).toBeCloseTo(2.4, 5);
+		// A plant with no flower site has no ring.
+		const bare = new SkeletonBuilder();
+		bare.addAxis({ parent: -1, parentNode: -1, order: 0, kind: AXIS_STEM });
+		expect(flowerSites(bare.finish(0))).toBeUndefined();
 	});
 });
 
