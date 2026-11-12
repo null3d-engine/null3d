@@ -1,7 +1,7 @@
-# D-345: The showroom's tablet rate is held by dynamic resolution
+# D-345: The showroom's tablet rate and its look
 
-Status: decided by the owner. The rate clause is met: steady play at the governor's lowered scale
-holds 60 frames a second on the iPad Pro 13. Pending: the owner's answer on the look. Task: M3-C2.
+Status: decided by the owner. Both clauses are met: the rate by dynamic resolution and the look by
+the owner's approval. Task: M3-C2.
 
 Summary: the Showroom to street demo's rate clause asks for 60 frames a second on the tablet. Its
 studio view is the heavy one, and the engine's quality governor lowers the render scale until the
@@ -24,6 +24,10 @@ or by accepting the recorded rate?
 - The time outside the engine's passes is the browser's presentation of the canvas. It is on a page
   that draws one triangle, so no change to the demo removes it.
 - No picture moves for this ruling, and no engine or demo code changes with it.
+
+## The look
+The owner ruled that the showroom's look stands. The car, its paint's flakes and its clear coat are
+approved as the demo draws them, so the look clause is met. The approval joins the rate ruling here.
 
 ## Data
 
@@ -48,4 +52,4 @@ stand as the evidence records them. Both sessions are in
   made.
 - Cutting the studio view's draw would meet 60 at the whole scale but move its pictures. The owner
   chose this route over that one.
-- The look's answer is M3-C2's own and joins this record when the owner gives it.
+- The look's answer is recorded above; C2's two clauses are both met.
