@@ -146,73 +146,6 @@ function keptNodes(skeleton: MacroSkeleton): Int32Array {
 	return kept;
 }
 
-/** The most axes a far level draws at the sparsest sections: the stem and the two that carry most. */
-export const SECTION_AXES = 3;
-
-/**
- * The axes a far level leaves out at thinned sections: with the axis count scaled by the section
- * share toward three, the axes that carry the least wood go, and any axis goes with its parent.
- * The stem or a rooted stipe is ranked like any other axis by the wood it carries, so a plant with
- * several stems keeps the thickest of them. Undefined at the nearest level, or when no axis goes.
- *
- * @param skeleton The plant's skeleton.
- * @param keep The highest order the level draws.
- * @param level The level.
- * @param sections How far the sections are thinned, from 0 to 1.
- * @returns One flag per axis, 1 for an axis that goes, or undefined when every axis stays.
- */
-export function cappedAxes(
-	skeleton: MacroSkeleton,
-	keep: number,
-	level: MeshLevel,
-	sections: number,
-): Uint8Array | undefined {
-	if (level === 0 || sections <= 0) return undefined;
-	const { axes } = skeleton;
-	const order = (a: number) => axes.order[a] as number;
-	const candidates: number[] = [];
-	for (let a = 0; a < axes.count; a++) {
-		if (order(a) > keep) continue;
-		const parent = axes.parent[a] as number;
-		const kind = axes.kind[a] as number;
-		// A root axis that carries no wood is not drawn, so it cannot be kept or ranked.
-		if (parent < 0 && kind !== AXIS_STEM && kind !== AXIS_STIPE && kind !== AXIS_LIMB) continue;
-		candidates.push(a);
-	}
-	if (candidates.length <= SECTION_AXES) return undefined;
-	// The nodes an axis carries: its own and every axis below it, whatever order the level draws,
-	// since the crown the axis would hold is what a far level keeps.
-	const carried = new Int32Array(axes.count);
-	for (let a = axes.count - 1; a >= 0; a--) {
-		carried[a] = (carried[a] as number) + (axes.last[a] as number) - (axes.first[a] as number) + 1;
-		const parent = axes.parent[a] as number;
-		if (parent >= 0) carried[parent] = (carried[parent] as number) + (carried[a] as number);
-	}
-	// The share moves the count toward three; the axes that carry the most crown wood stay.
-	const toward = Math.min(1, sections);
-	const cap = Math.max(
-		SECTION_AXES,
-		Math.round(candidates.length - (candidates.length - SECTION_AXES) * toward),
-	);
-	const ranked = [...candidates].sort(
-		(x, y) => (carried[y] as number) - (carried[x] as number) || x - y,
-	);
-	const kept = new Uint8Array(axes.count);
-	for (const a of ranked.slice(0, cap)) kept[a] = 1;
-	let any = false;
-	const dropped = new Uint8Array(axes.count);
-	for (const a of candidates) {
-		const parent = axes.parent[a] as number;
-		// An axis whose parent goes cannot weld to it, so it goes with it.
-		if (parent >= 0 && order(parent) <= keep && !kept[parent]) kept[a] = 0;
-		if (!kept[a]) {
-			dropped[a] = 1;
-			any = true;
-		}
-	}
-	return any ? dropped : undefined;
-}
-
 /**
  * The axes to mesh at a level, parents before children, as pieces of wood. An axis is one piece,
  * divided where a codominant side child leaves short of its end: its wood ends there as a fork and
@@ -228,27 +161,28 @@ function woodAxes(input: MeshInput, keep: number, level: MeshLevel): WoodAxis[] 
 	const radius = skeleton.radius;
 	const base = input.variant * VARIANT_RECORDS;
 	const lastKept = keptNodes(skeleton);
-	const capped = cappedAxes(skeleton, keep, level, input.sections ?? 0);
+	// The thinnest sections draw an axis as one run: its wood does not divide at a codominant child.
+	const single = (input.sections ?? 0) >= 1;
 	// Axes rooted at the ground, stems and a frond colony's stipes, take the stem base's flare,
 	// lobes and roots. A limb without a parent is the cut end of a piece, such as a cut branch, and
 	// starts plain. Any other axis without a parent, such as a ground plant's crown, carries no wood.
 	const rooted = (a: number) =>
 		(axes.kind[a] as number) === AXIS_STEM || (axes.kind[a] as number) === AXIS_STIPE;
 	const meshed = (a: number) =>
-		capped?.[a] !== 1 &&
 		(axes.order[a] as number) <= keep &&
 		(lastKept[a] as number) >= (axes.first[a] as number) &&
 		((axes.parent[a] as number) >= 0 || rooted(a) || (axes.kind[a] as number) === AXIS_LIMB);
 	// Where each axis divides: the nodes short of its end where a codominant side child leaves.
 	const divides = new Uint8Array(skeleton.nodeCount);
-	for (let a = 0; a < axes.count; a++) {
-		const parent = axes.parent[a] as number;
-		const node = axes.parentNode[a] as number;
-		if (parent < 0 || !meshed(a) || (axes.parentT[a] as number) > 1e-6) continue;
-		if (node < (axes.first[parent] as number) || node >= (lastKept[parent] as number)) continue;
-		if ((radius[axes.first[a] as number] as number) >= CODOMINANT * (radius[node] as number))
-			divides[node] = 1;
-	}
+	if (!single)
+		for (let a = 0; a < axes.count; a++) {
+			const parent = axes.parent[a] as number;
+			const node = axes.parentNode[a] as number;
+			if (parent < 0 || !meshed(a) || (axes.parentT[a] as number) > 1e-6) continue;
+			if (node < (axes.first[parent] as number) || node >= (lastKept[parent] as number)) continue;
+			if ((radius[axes.first[a] as number] as number) >= CODOMINANT * (radius[node] as number))
+				divides[node] = 1;
+		}
 	// The pieces: each axis's runs of nodes between the nodes where it divides.
 	const pieceAxis: number[] = [];
 	const pieceFirst: number[] = [];
@@ -414,7 +348,9 @@ function woodAxes(input: MeshInput, keep: number, level: MeshLevel): WoodAxis[] 
 			stub: ((skeleton.flags[first] as number) & NODE_STUB) !== 0,
 			cut: parent < 0 && (axes.kind[a] as number) === AXIS_LIMB,
 		});
-		if (stem) addRoots(input, list, list.length - 1, base + (axes.record[a] as number));
+		// Roots lie in the soil, below the ground the far views stand on, so only the nearest level draws them.
+		if (stem && level === 0)
+			addRoots(input, list, list.length - 1, base + (axes.record[a] as number));
 		for (const child of children[k] ?? []) queue.push(child);
 	}
 	return list;
@@ -1202,7 +1138,8 @@ class Mesher {
 				: rc < 2.5 * THIN
 					? 3
 					: Math.max(3, Math.min(BLEND_RINGS[this.tube.level], Math.ceil((end - lowest) / rc) + 1));
-		const blend = Math.max(1, Math.round(full - (full - 1) * this.tube.sections));
+		const blend =
+			this.tube.sections >= 1 ? 0 : Math.max(1, Math.round(full - (full - 1) * this.tube.sections));
 		// One context per side, its fillet and collar easing from its own seam.
 		const columns: AxisContext[] = [];
 		for (let j = 0; j < sides; j++) columns.push({ ...seeking, collarFrom: seamS[j] as number });
@@ -1744,6 +1681,8 @@ class Mesher {
 
 	/** The rounded end of an axis: a dome of rings and an apex ring of no radius. */
 	private tip(context: AxisContext, rings: AxisRings, fork: boolean): void {
+		// The thinnest sections leave an axis open at its end: the crown's surface hides the tip.
+		if (this.tube.sections >= 1) return;
 		const path = context.path;
 		const last = rings.count - 1;
 		if (last < 0) return;

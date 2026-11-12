@@ -669,6 +669,7 @@ export default defineSketch(async (ctx) => {
 		...(QUERY.season && { season: QUERY.season }),
 		...(QUERY.sparse !== undefined && { sparse: QUERY.sparse }),
 		...(QUERY.sections !== undefined && { sections: QUERY.sections }),
+		...(QUERY.cards !== undefined && { cards: QUERY.cards }),
 	};
 	const turn0 = (QUERY.turn ?? 0) * DEG;
 	const cuttingPart = VIEW === 'panels' ? 'cluster' : SPEC.cutting;
@@ -826,7 +827,8 @@ export default defineSketch(async (ctx) => {
 				const view = FRAMED
 					? standView(height, bounds, plantPoints, foot, turn, aspect)
 					: fit(bounds, turn, e, aspect, fov);
-				return scaledStand(view, QUERY.standScale);
+				// A whole view may be stood at a named distance, as a far level is judged at its switch.
+				return atDistance(scaledStand(view, QUERY.standScale));
 			}
 			case 'crown-sky': {
 				// The crown against the sky from outside the plant: the eye near a person's height, a

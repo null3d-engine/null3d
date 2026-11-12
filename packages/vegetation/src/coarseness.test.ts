@@ -32,7 +32,7 @@ import { cardMesh } from './lod/cards';
 import { quantiseParts, TEXTURE_UV_STEPS, WOOD_UV_STEPS } from './lod/quantise';
 import type { DressInput, MeshInput, MeshLevel } from './stages';
 import { woodTriangles } from './wood/estimate';
-import { cappedAxes, meshWood } from './wood/wood-mesh';
+import { meshWood } from './wood/wood-mesh';
 import { testRecord } from './wood/wood-test-tree';
 
 const DETAIL: Detail = 'high';
@@ -284,35 +284,20 @@ describe('the section sparsity', () => {
 		expect(digest(meshViews(meshWood(zero, 2)))).toBe(digest(meshViews(meshWood(plain, 2))));
 	});
 
-	it('draws the far level of the oak in a quarter of its triangles or fewer', () => {
-		// The oak's far level keeps its stem and six great limbs, so its floor is their prisms.
+	it('draws the far level of the oak as one segment an axis, in a few triangles', () => {
+		// The far level keeps three axes at most, each one segment of three sides, with no joins,
+		// tips or roots, so its whole wood is a handful of triangles.
 		const full = wood(0, 2).triangles;
 		const fewest = wood(1, 2).triangles;
 		expect(fewest).toBeLessThan(full / 4);
-		expect(fewest).toBeGreaterThan(20);
+		expect(fewest).toBeGreaterThan(0);
+		expect(fewest).toBeLessThanOrEqual(30);
 	});
 
-	it('holds its quick count of the nearest level within ten per cent at the sparsest sections', () => {
-		const one = wood(1, 0);
+	it('holds its quick count of the nearest level within ten per cent at half the sections', () => {
+		// The one-segment mode at the sparsest is a far level's shape, not the target's count.
+		const one = wood(0.5, 0);
 		expect(Math.abs(one.estimate / one.triangles - 1)).toBeLessThan(0.1);
-	});
-
-	it('caps a far level at three axes, and keeps the ones that carry the most crown', () => {
-		const { input } = dressed(0, 0);
-		const keep = record.lod.woodOrders[1] ?? 255;
-		const dropped = cappedAxes(input.skeleton, keep, 2, 1);
-		const axes = input.skeleton.axes;
-		let keptCount = 0;
-		for (let a = 0; a < axes.count; a++)
-			if ((axes.order[a] as number) <= keep && dropped?.[a] !== 1) keptCount++;
-		expect(keptCount).toBeLessThanOrEqual(3);
-		// The sparsest level keeps fewer axes than the half level, and the full level keeps all.
-		const half = cappedAxes(input.skeleton, keep, 2, 0.5);
-		let halfCount = 0;
-		for (let a = 0; a < axes.count; a++)
-			if ((axes.order[a] as number) <= keep && half?.[a] !== 1) halfCount++;
-		expect(halfCount).toBeGreaterThanOrEqual(keptCount);
-		expect(cappedAxes(input.skeleton, keep, 2, 0)).toBeUndefined();
 	});
 
 	it('keys a variant by its sections, and the plant as grown as before', () => {

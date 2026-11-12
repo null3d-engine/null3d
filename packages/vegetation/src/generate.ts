@@ -178,6 +178,12 @@ export interface GrowOptions extends CoarsenessOptions {
 	 * one. Every growth model answers it the same way, since one wood mesher builds them all.
 	 */
 	readonly sections?: number;
+	/**
+	 * The share of a card level's own card rows to keep, from 0.05 to 1: 1 keeps the level's own
+	 * cards and their size, and below 1 thins the rows by the level's rule, so the kept cards grow.
+	 * A review redraw sets it to measure what the cards buy; a page rarely does.
+	 */
+	readonly cards?: number;
 }
 
 /** The least and the most share of leaves or limbs a growth may ask for. */
@@ -479,7 +485,8 @@ export function variantKey(kit: SpeciesKitData, options: GrowOptions): string {
 	const limbs = options.limbs === undefined || options.limbs === 1 ? '' : `:limbs=${options.limbs}`;
 	const sections =
 		options.sections === undefined || options.sections === 0 ? '' : `:sections=${options.sections}`;
-	return `${kit.key}:${options.seed >>> 0}:${options.variant}:${season}:${options.detail ?? kit.detail}:${cutting}${coarsenessKey(kit, options)}${leaves}${limbs}${sections}`;
+	const cards = options.cards === undefined || options.cards === 1 ? '' : `:cards=${options.cards}`;
+	return `${kit.key}:${options.seed >>> 0}:${options.variant}:${season}:${options.detail ?? kit.detail}:${cutting}${coarsenessKey(kit, options)}${leaves}${limbs}${sections}${cards}`;
 }
 
 /**
@@ -624,6 +631,8 @@ function cuttingLeaves(record: Species, cutting: CuttingOptions | undefined): Sp
 export function withSparse<T extends GrowOptions>(record: Species, options: T): GrowOptions {
 	if (options.sections !== undefined && !(options.sections >= 0 && options.sections <= 1))
 		throw new Error(`sections is ${options.sections}; a section sparsity lies from 0 to 1`);
+	if (options.cards !== undefined && !(options.cards >= 0.05 && options.cards <= 1))
+		throw new Error(`cards is ${options.cards}; a share of the card rows lies from 0.05 to 1`);
 	const floors = record.sparse;
 	const asked = options.sparse;
 	if (!floors || asked === undefined || asked <= 0) return options;
@@ -711,6 +720,7 @@ function dress(kit: SpeciesKitData, options: GrowOptions): MeshInput {
 		skeleton: cutSkeleton(kit, coarsenSkeleton(grown, coarseness), options.cutting),
 		coarseness,
 		sections: options.sections,
+		cards: options.cards,
 		...lit,
 	};
 	// The shoots stand on the skeleton, which loses the bare twigs the record trims once they stand.

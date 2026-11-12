@@ -259,6 +259,11 @@ export function ringArcs(
 	const arcs = [start];
 	const end = path.length;
 	if (end - start <= 1e-6) return arcs;
+	// The thinnest sections draw an axis as one segment, with no ring where it bends or tapers.
+	if (tube.sections >= 1) {
+		arcs.push(end);
+		return arcs;
+	}
 	const scale = tube.edge / EDGE.high;
 	let s = start;
 	let first = 0;
