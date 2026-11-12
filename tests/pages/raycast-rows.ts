@@ -2,9 +2,11 @@
 // casts the same rays through null3D and three.js against sprites, points and lines, and posts how
 // their hits differ. Then the page reads a frame back and checks it against a ray through each
 // pixel: where the frame draws a row, the ray hits that row, and where it draws none, the ray hits
-// nothing. Pixels at a row's edge, where rays close to the center disagree, are left out. Then it
-// offers `rowRaycast(message)` on the window, which asks the sketch for its click targets
-// ('targets') or the clicks its handlers saw ('clicks').
+// nothing. Pixels at a row's edge are left out. Two kinds are edges: pixels where rays close to the
+// center disagree, and pixels that anti-aliasing blends between a row and the background or another
+// row, so they show no row's color and no background. Then it offers `rowRaycast(message)` on the
+// window, which asks the sketch for its click targets ('targets') or the clicks its handlers saw
+// ('clicks').
 import { createEngine } from '@null3d/engine';
 import {
 	ROW_BATCHES,
@@ -23,22 +25,21 @@ declare global {
 	}
 }
 
-/** A pixel this dark shows the background. */
-const DARK = 60;
-/** A pixel farther than this from every batch's color shows none of them, as at a blended edge. */
-const FAR_COLOR = 60 * 60 * 3;
+/** A pixel whose largest channel is at most this shows the background alone, not a blend. */
+const DARK = 4;
+/** A fully covered pixel rounds a batch's color by at most this many levels per channel. */
+const COLOR_STEP = 4;
 
-/** The batch whose color a pixel shows, `ROW_PIXEL_NONE` for the background, or -1 for neither. */
+/**
+ * The batch whose color a pixel shows, `ROW_PIXEL_NONE` for the background, or -1 for neither. A
+ * blended pixel shows neither: anti-aliasing mixes a row's edge with the background or another row.
+ */
 function shownAt(pixels: Uint8Array, at: number): number {
 	const rgb = [pixels[at] as number, pixels[at + 1] as number, pixels[at + 2] as number];
-	if (Math.max(...rgb) < DARK) return ROW_PIXEL_NONE;
-	let best = -1;
-	let bestDistance = FAR_COLOR;
-	ROW_COLORS.forEach((color, k) => {
-		const d = color.reduce((sum, c, i) => sum + (c - (rgb[i] as number)) ** 2, 0);
-		if (d < bestDistance) [best, bestDistance] = [k, d];
-	});
-	return best;
+	if (Math.max(...rgb) <= DARK) return ROW_PIXEL_NONE;
+	return ROW_COLORS.findIndex((color) =>
+		color.every((c, i) => Math.abs(c - (rgb[i] as number)) <= COLOR_STEP),
+	);
 }
 
 run('raycast-rows', async () => {
@@ -81,7 +82,11 @@ run('raycast-rows', async () => {
 			continue;
 		}
 		const shown = shownAt(frame.pixels, i * 4);
-		if (shown < 0) continue;
+		// A blended pixel shows no row's color and no background, so it lies at an edge.
+		if (shown < 0) {
+			picture.edges++;
+			continue;
+		}
 		picture.judged++;
 		if (shown !== ROW_PIXEL_NONE) picture.drawn++;
 		const name = (k: number) => (k === ROW_PIXEL_NONE ? 'nothing' : ROW_BATCHES[k]);

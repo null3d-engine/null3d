@@ -6,11 +6,19 @@
 // The plants are the game's own assets, grown through the package's public functions. Drag to turn
 // round the meadow and use the wheel to step in. Press R to grow it all again from another seed.
 import { defineSketch, timeOfDay } from '@null3d/engine';
-import { createGrass, grassCover, loadSpecies } from '@null3d/vegetation';
+import { createGrass, grassCover, isSpeciesId, loadSpecies } from '@null3d/vegetation';
 import { interact } from '../lib/interact';
 import { DEMO_SPARSENESS } from '../lib/plants';
 import { type MeadowControls, postHud } from './hud';
 import { createMeadow } from './meadow';
+
+/**
+ * The species a held picture draws, named in its switch by folder id; the live page names none and
+ * draws every registered species.
+ */
+const HELD_SPECIES = (new URL(import.meta.url).searchParams.get('species') ?? '')
+	.split(',')
+	.filter(isSpeciesId);
 
 export default defineSketch(async (ctx) => {
 	const { scene, assets, post, input, page } = ctx;
@@ -58,7 +66,10 @@ export default defineSketch(async (ctx) => {
 	const controls: MeadowControls = { season: 'summer', sparse: DEMO_SPARSENESS };
 
 	let seed = 11;
-	const growMeadow = createMeadow(ctx, page, { controls: () => controls });
+	const growMeadow = createMeadow(ctx, page, {
+		controls: () => controls,
+		...(HELD_SPECIES.length > 0 && { species: HELD_SPECIES }),
+	});
 	const showHud = () => postHud(page, controls);
 
 	/**
@@ -88,7 +99,14 @@ export default defineSketch(async (ctx) => {
 		settleThenGrow();
 	});
 
-	await growMeadow(seed);
+	// The meadow grows while the field draws, so a live start shows its first frame without waiting
+	// for every species and the plants appear when the last one finishes. A held picture waits for
+	// the whole meadow, so its frame shows the finished scene.
+	if (ctx.engine.held) await growMeadow(seed);
+	else
+		growMeadow(seed).catch((error: unknown) => {
+			console.error(error);
+		});
 
 	let regrowing = false;
 	let announced = false;

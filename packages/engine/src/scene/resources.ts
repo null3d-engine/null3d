@@ -864,7 +864,10 @@ export class MeshGeometry {
 			this.piecesOnly = false;
 			this.planPiecesQuietly(true, call);
 		}
-		if (counted && !material.facesBoth) this.facingPiecesFor(call);
+		// A file's held pieces wait only for the copies: the view's frustum test culls them however
+		// the material draws. A material that draws both faces plans none of its own, since a cone
+		// would drop none of them.
+		if (counted) this.facingPiecesFor(call, !material.facesBoth);
 		if (this.automaticOff) return;
 		if (material.shapesVertices) {
 			this.automaticOff = true;
@@ -884,21 +887,25 @@ export class MeshGeometry {
 	}
 
 	/**
-	 * Gives the mesh and its levels the facing pieces that pay once its copies hold enough
-	 * triangles together, as a town's copies of a house's walls do. The pieces that a file holds of
-	 * a smaller list wait for that, so few copies draw the list whole with no draw more. A mesh whose
+	 * Gives the mesh and its levels the pieces that pay once its copies hold enough triangles
+	 * together: those that a file holds of a smaller list, and the facing pieces that a mesh sorts
+	 * for itself, as a town's copies of a house's walls have. The pieces that a file holds of a
+	 * smaller list wait for that, so few copies draw the list whole with no draw more. A mesh whose
 	 * levels come from a file, or were set by hand, plans no levels, and its copies draw its base
 	 * list out to where its lower levels switch in: where the file holds no pieces of that list, it
 	 * plans them on the job workers, over a sorted copy of its indices. A mesh with joints, morph
-	 * targets or a vertex record plans none, and neither does one with `levels: false`.
+	 * targets or a vertex record plans none, and neither does one with `levels: false`. A material
+	 * that draws both faces takes the pieces that a file holds, which the view's frustum test culls;
+	 * it plans none of its own, which a cone would not drop.
 	 */
-	private facingPiecesFor(call: string): void {
+	private facingPiecesFor(call: string, planFacing: boolean): void {
 		for (const mesh of [this, ...this.lowerLevels.map((level) => level.mesh)]) {
 			const held = mesh.heldPieces;
 			if (!held || !mesh.live || !facingCopiesPay(piecesTriangles(held), this.copies)) continue;
 			mesh.heldPieces = undefined;
 			setMeshPieces(this.core, mesh.id, held, call);
 		}
+		if (!planFacing) return;
 		const handSet = this.lowerLevels.length > 0 && this.built.length === 0;
 		const own = this.fromFile ? !this.filePieces : handSet && !this.automaticOff;
 		if (
