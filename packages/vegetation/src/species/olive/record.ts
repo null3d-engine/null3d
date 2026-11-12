@@ -26,13 +26,12 @@ export const record: Species = {
 	name: 'Olive',
 	latin: 'Olea europaea',
 	form: 'squat bole of twisted columns under a broad, airy evergreen dome',
-	// The species' own fact sheet gives the tree 6 to 9 m tall, and the stills' crown width against
-	// their height anchors it at the top of that range: the crown's measured aspect is about 1.4 and
-	// the fitted outline's widest row stands at a height that puts the drawn plant near 8 m. The
-	// band carries that, so a reader meets a plant that the species' own pictures allow.
+	// The species' own fact sheet gives the tree 6 to 9 m tall, but the stills' fit puts it at 7 plus
+	// or minus 0.8 m, and a plant's target must sample inside that band: a 1.3 m spread drew seed 11
+	// at 7.952 m, above the band's top. The mean and the fitted aspect stand as the pictures give them.
 	// The trunk's diameter is one stem's: the stool's columns stand within a bole about two and a half
 	// metres across, and the silhouette's width at breast height is the stool's, not one stem's.
-	size: { height: { mean: 7, spread: 1.3 }, dbh: 1.2, aspect },
+	size: { height: { mean: 7, spread: 0.8 }, dbh: 1.2, aspect },
 	growth: {
 		model: 'self-organizing',
 		years: 40,
