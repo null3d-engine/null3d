@@ -180,5 +180,9 @@
 	"16-bark-upper-trunk.png": {
 		"barkZone": 1,
 		"span": 0.8
+	},
+	"27-bark-texture-zone2.png": {
+		"barkZone": 0,
+		"span": 0.8
 	}
 }
