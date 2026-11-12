@@ -458,7 +458,12 @@ describe('cuttings', () => {
 		const { record } = species;
 		await loadPlantCode(record);
 		const pressedKit = buildKitNow(species, { placeholders: 'missing', detail: 'low' });
-		const grown = { ...record, cuttings: { ...record.cuttings, leaf: undefined } };
+		// The grown kit keeps the record's leaf length but not its press, so the explicit press
+		// below is the same piece the record's own hint draws.
+		const grown = {
+			...record,
+			cuttings: { ...record.cuttings, leaf: { ...record.cuttings?.leaf, pressed: false } },
+		};
 		const grownKit = buildKitNow(
 			{ ...species, record: grown },
 			{ placeholders: 'missing', detail: 'low' },
