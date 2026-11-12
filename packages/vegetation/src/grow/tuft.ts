@@ -539,7 +539,8 @@ export function growTuft(input: GrowInput): MacroSkeleton {
 			const unit = (k: number) => draw(input, Purpose.Head, h, k);
 			const height = spreadAt(heads.height, unit(0));
 			const heading = tiller.heading + (unit(1) - 0.5) * 0.6;
-			const lean = tiller.lean * 1.2 + radians(3 + unit(2) * 12);
+			const leanShare = heads.leanShare ?? 1.2;
+			const lean = tiller.lean * leanShare + radians(3 + unit(2) * 12);
 			const bow = radians(spreadAt(heads.bow, unit(3)));
 			const at: Vector3 = [
 				builder.position[tiller.top * 3] as number,
