@@ -11,20 +11,21 @@ import { type PlantMaterial, setWindLayer } from '@null3d/vegetation';
 import { createWind } from '@null3d/wind';
 import { type PlantSpot, plantSpecies } from '../lib/plants';
 import { random } from '../lib/procedural';
+import { CONTACT_SHADOWS_GRASS, CONTACT_SHADOWS_PINE } from '../lib/stand-ins';
 
 /**
  * The garden's pines: Scots pines, whose crowns show above the wall as a dark skyline. Their
  * needles stay dark, as a backlit conifer's do.
  */
 const PINE = {
-	id: 'scots-pine',
+	id: CONTACT_SHADOWS_PINE.id,
 	height: 15,
-	standIn: { height: 15, aspect: 0.45, leaf: [0.06, 0.17, 0.07], bark: [0.26, 0.18, 0.13] },
+	standIn: CONTACT_SHADOWS_PINE.standIn,
 } as const;
 /** The tufts of grass at the rocks and the lantern: meadow grass, about a hand high at scale 1. */
 const GRASS = {
-	id: 'meadow-grass',
-	standIn: { height: 0.5, aspect: 0.4, leaf: [0.24, 0.4, 0.1], bark: [0.2, 0.18, 0.1] },
+	id: CONTACT_SHADOWS_GRASS.id,
+	standIn: CONTACT_SHADOWS_GRASS.standIn,
 } as const;
 
 /** A full turn of the circle, in radians, which the scene's own scattering works in. */
@@ -203,6 +204,10 @@ export async function garden(ctx: SketchContext, camera: Camera): Promise<{ upda
 		id: PINE.id,
 		standIn: PINE.standIn,
 		seed: 5,
+		// The garden's approved picture shows the pine's stand-in above the wall, so this page keeps
+		// the stand-in even after the species lands. This is the page's own hold on the picture, not
+		// a wait for the species.
+		keepStandIn: true,
 		spots: PINES.map(([x, z, height], i) => ({
 			x,
 			y: 0,
