@@ -109,16 +109,22 @@ describe('the species header', () => {
 		expect(header.length).toBe(HEADER_ROWS * RECORDS_WIDTH * 4);
 	});
 
-	test('packs a tuft sheath colour for the material, and none where the record gives none', () => {
+	test('packs the two colours of a tuft sheath, and none where the record gives none', () => {
 		const tuft = {
 			...record,
-			growth: { model: 'tuft', sheathColour: [0.3, 0.4, 0.2] },
+			growth: {
+				model: 'tuft',
+				sheathColour: { foot: [0.3, 0.4, 0.2], collar: [0.5, 0.6, 0.7], reach: 0.85 },
+			},
 		} as unknown as Species;
-		const sheathed = texel(speciesHeader(tuft, manifest, box), HEADER.sheath);
+		const sheathed = speciesHeader(tuft, manifest, box);
 		for (const [k, v] of [0.3, 0.4, 0.2, 0.7].entries())
-			expect(sheathed[k] as number).toBeCloseTo(v, 5);
-		// The blade-leaved record names no tuft, so its sheath texel stays empty.
+			expect(texel(sheathed, HEADER.sheath)[k] as number).toBeCloseTo(v, 5);
+		for (const [k, v] of [0.5, 0.6, 0.7, 0.85].entries())
+			expect(texel(sheathed, HEADER.sheathCollar)[k] as number).toBeCloseTo(v, 5);
+		// The blade-leaved record names no tuft, so both sheath texels stay empty.
 		expect(texel(header, HEADER.sheath)).toEqual([0, 0, 0, 0]);
+		expect(texel(header, HEADER.sheathCollar)).toEqual([0, 0, 0, 0]);
 	});
 
 	test('holds each face its own scale, share and roughness from its own mean', () => {

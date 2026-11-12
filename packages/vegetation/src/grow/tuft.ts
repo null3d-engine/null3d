@@ -796,6 +796,8 @@ export function meshTuft(input: MeshInput, level: MeshLevel): MeshArrays {
 		const fine = (axes.order[a] as number) >= 3;
 		if (fine && !tiers.fine) continue;
 		const isStem = kind === AXIS_CULM;
+		// A shoot's column of sheaths takes the record's colours, marked in its surface-kind byte.
+		const sheath = !isStem && !fine && growth.sheathColour !== undefined;
 		if (!isStem && !fine && level === 2) continue;
 		const path = wholePath(skeleton, a, [0, 1, 0]);
 		if (!path) continue;
@@ -818,12 +820,14 @@ export function meshTuft(input: MeshInput, level: MeshLevel): MeshArrays {
 			uHalf: strip.stalkHalf,
 			bytes,
 			crown,
-			along: isStem ? [0, 1] : fine ? [0.85, 1] : [0, 0.05],
+			// A sheath column's second coordinates run from its foot to its collar, so the record's
+			// two colours read the column's own height.
+			along: sheath || isStem ? [0, 1] : fine ? [0.85, 1] : [0, 0.05],
 			// Stalks brown as the season gives; a stalk under its leaves keeps a share of its green.
 			browning: isStem ? Math.max(browning, 0.15) : Math.max(browning, 0.3),
 			// The shoot's basal column is its sheath, which the material draws in the record's
-			// sheath colour where the record gives one.
-			...(growth.sheathColour && !isStem && !fine ? { sheath: true } : {}),
+			// sheath colours where the record gives them.
+			...(sheath ? { sheath: true } : {}),
 			closeTip: isStem || fine,
 		});
 	}

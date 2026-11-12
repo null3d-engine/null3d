@@ -138,10 +138,12 @@ export const HEADER = {
 	winterReflectance: 63,
 	/** The winter leaves' linear transmittance. */
 	winterTransmittance: 64,
-	/** A tuft's basal sheath colour, then its roughness, where the record names one. */
+	/** A tuft's sheath colour at the column's foot, and its roughness, where the record names one. */
 	sheath: 65,
 	/** A grass blade's collar: its colour, then the share of the blade's base it takes. */
 	collar: 66,
+	/** A tuft's sheath colour at the column's collar, then the share of the column it takes. */
+	sheathCollar: 67,
 } as const;
 
 /**
@@ -151,7 +153,7 @@ export const HEADER = {
 export const BARK_ZONE_TEXELS = 4;
 
 /** The header's texels that hold anything. */
-export const HEADER_TEXELS = HEADER.collar + 1;
+export const HEADER_TEXELS = HEADER.sheathCollar + 1;
 
 /** An extra's roughness where its record names none. */
 export const EXTRA_ROUGHNESS = 0.6;
@@ -318,8 +320,10 @@ export function speciesHeader(
 	// A tuft's basal sheath column draws in the record's own colour where it names one; the
 	// roughness keeps the sheath from reading as polished wood beside the matt leaf.
 	const growth = record.growth;
-	if (growth.model === 'tuft' && growth.sheathColour)
-		texel(header, HEADER.sheath, [...growth.sheathColour, 0.7]);
+	if (growth.model === 'tuft' && growth.sheathColour) {
+		texel(header, HEADER.sheath, [...growth.sheathColour.foot, 0.7]);
+		texel(header, HEADER.sheathCollar, [...growth.sheathColour.collar, growth.sheathColour.reach]);
+	}
 	const minParts = box.min.map(split);
 	const spanParts = box.max.map((max, k) => split(max - (box.min[k] as number)));
 	texel(header, HEADER.boxMin, [...minParts.map((p) => p[0]), 0]);
