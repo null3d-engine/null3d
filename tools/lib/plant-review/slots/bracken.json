@@ -38,7 +38,6 @@
 		"daylight": 1.459
 	},
 	"08-stipe-forks-into-pinnae.png": {
-		"view": "leaf-upper",
 		"background": "studio-grey",
 		"sunAzimuth": null,
 		"sunRise": null,
@@ -111,19 +110,16 @@
 		"fov": 40
 	},
 	"21-branch-studio.png": {
-		"view": "leaf-upper",
 		"background": "studio-grey",
 		"sunAzimuth": null,
 		"sunRise": null
 	},
 	"22-subbranch-studio.png": {
-		"view": "leaf-upper",
 		"background": "studio-grey",
 		"sunAzimuth": null,
 		"sunRise": null
 	},
 	"23-leaf-cluster-studio.png": {
-		"view": "leaf-upper",
 		"background": "studio-grey",
 		"sunAzimuth": null,
 		"sunRise": null
