@@ -269,6 +269,12 @@
 		"date": "2026-11-10",
 		"reason": "M3-V7's sway picture: the branch is not pushed to CI, so this Mac's SwiftShader drew the software set; a CI drawing replaces it"
 	},
+	"chromium-swiftshader/compat/plant-scots-pine.png": {
+		"test": "plant-scots-pine",
+		"tier": "compat",
+		"date": "2026-11-08",
+		"reason": "the two software rasterisers agree byte for byte, and this branch draws the first reference before CI can"
+	},
 	"chromium-swiftshader/compat/probe-grid-wall-night.png": {
 		"test": "probe-grid-wall-night",
 		"tier": "compat",
@@ -622,6 +628,12 @@
 		"tier": "webgl2",
 		"date": "2026-11-10",
 		"reason": "M3-V7's sway picture: the branch is not pushed to CI, so this Mac's SwiftShader drew the software set; a CI drawing replaces it"
+	},
+	"chromium-swiftshader/webgl2/plant-scots-pine.png": {
+		"test": "plant-scots-pine",
+		"tier": "webgl2",
+		"date": "2026-11-08",
+		"reason": "the two software rasterisers agree byte for byte, and this branch draws the first reference before CI can"
 	},
 	"chromium-swiftshader/webgl2/probe-grid-wall-night.png": {
 		"test": "probe-grid-wall-night",

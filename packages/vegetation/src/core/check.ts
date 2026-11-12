@@ -61,7 +61,7 @@ function spreadProblems(spread: Spread, path: string, positive: boolean, out: st
 		out.push(`${path} can draw ${mean - half}; it must stay above 0`);
 }
 
-/** A species' sparse floors' problems: each share from 0.05 to 1, and the coarsening from 0 to 1. */
+/** A species' sparse floors' problems: each share from 0.05 to 1, and the coarsenings from 0 to 1. */
 function sparseProblems(record: Species, out: string[]): void {
 	const sparse = record.sparse;
 	if (!sparse) return;
@@ -72,12 +72,58 @@ function sparseProblems(record: Species, out: string[]): void {
 	}
 	if (sparse.coarseness < 0 || sparse.coarseness > 1)
 		out.push(`sparse.coarseness is ${sparse.coarseness}; it lies from 0 to 1`);
+	shareProblem(sparse.sections, 'sparse.sections', out);
 }
 
 /** A share's problems: it lies from 0 to 1. */
 function shareProblem(value: number | undefined, path: string, out: string[]): void {
 	if (value === undefined) return;
 	if (value < 0 || value > 1) out.push(`${path} is ${value}; a share lies from 0 to 1`);
+}
+
+/** One share's problems, or each share's in a list of tiers. */
+function sharesProblem(value: number | readonly number[], path: string, out: string[]): void {
+	if (typeof value === 'number') {
+		shareProblem(value, path, out);
+		return;
+	}
+	if (value.length === 0) out.push(`${path} names no shares`);
+	for (let i = 0; i < value.length; i++)
+		shareProblem(value[i], i === 0 ? path : `${path}[${i}]`, out);
+}
+
+/** One spread's problems, or each spread's in a list of tiers. */
+function spreadsProblem(
+	value: Spread | readonly Spread[],
+	path: string,
+	positive: boolean,
+	out: string[],
+): void {
+	if (!Array.isArray(value)) {
+		spreadProblems(value as Spread, path, positive, out);
+		return;
+	}
+	if (value.length === 0) out.push(`${path} names no spreads`);
+	for (let i = 0; i < value.length; i++)
+		spreadProblems(value[i] as Spread, i === 0 ? path : `${path}[${i}]`, positive, out);
+}
+
+/** One length's problems, or each length's in a list of tiers: it is metres and above zero. */
+function lengthsProblem(value: number | readonly number[], path: string, out: string[]): void {
+	const lengths: readonly number[] = typeof value === 'number' ? [value] : value;
+	if (lengths.length === 0) out.push(`${path} names no lengths`);
+	for (let i = 0; i < lengths.length; i++) {
+		const length = lengths[i] as number;
+		if (!(length > 0))
+			out.push(
+				`${i === 0 ? path : `${path}[${i}]`} is ${length}; it is metres and must be above 0`,
+			);
+	}
+}
+
+/** The number of tiers a value names: one for a single value, else its length. */
+function tierCount(value: number | Spread | readonly unknown[]): number {
+	return Array.isArray(value) ? value.length : 1;
 }
 
 /** A whole number's problems: it is whole and within its range. */
@@ -149,6 +195,20 @@ function baseProblems(base: BaseSpec, out: string[]): void {
 		notNegative(flutes.depth, 'base.flutes.depth', out);
 		if (!(flutes.height > 0))
 			out.push(`base.flutes.height is ${flutes.height}; it is metres and must be above 0`);
+	}
+	const scar = base.scar;
+	if (scar) {
+		notNegative(scar.from, 'base.scar.from', out);
+		notNegative(scar.to, 'base.scar.to', out);
+		if (!(scar.to > scar.from))
+			out.push(`base.scar.to is ${scar.to}; it must stand above base.scar.from`);
+		if (!(scar.width > 0 && scar.width <= 360))
+			out.push(`base.scar.width is ${scar.width}; it is degrees from 0 to 360`);
+		notNegative(scar.depth, 'base.scar.depth', out);
+		scar.colour.forEach((channel, k) => {
+			shareProblem(channel, `base.scar.colour[${k}]`, out);
+		});
+		shareProblem(scar.shade, 'base.scar.shade', out);
 	}
 }
 
@@ -463,6 +523,32 @@ function growthProblems(record: Species, out: string[]): void {
 			}
 		}
 	}
+	if (growth.model === 'column') {
+		if (record.foliage.kind !== 'blade' && record.foliage.kind !== 'none')
+			out.push("a column's foliage is 'blade', for its areole cards, or 'none'");
+		spreadProblems(growth.height, 'growth.height', true, out);
+		curveProblems(growth.radius, 'growth.radius', out);
+		spreadProblems(growth.ribs, 'growth.ribs', true, out);
+		wholeProblem(Math.round(spreadMean(growth.ribs)), 'growth.ribs', 3, 40, out);
+		if (!(growth.ribDepth >= 0))
+			out.push(`growth.ribDepth is ${growth.ribDepth}; a depth is not negative`);
+		spreadProblems(growth.arms.count, 'growth.arms.count', false, out);
+		wholeProblem(Math.round(spreadMean(growth.arms.count)), 'growth.arms.count', 0, 12, out);
+		sharesProblem(growth.arms.from, 'growth.arms.from', out);
+		lengthsProblem(growth.arms.elbow, 'growth.arms.elbow', out);
+		if (!(growth.arms.radius > 0))
+			out.push(`growth.arms.radius is ${growth.arms.radius}; it is metres and must be above 0`);
+		spreadsProblem(growth.arms.rise, 'growth.arms.rise', true, out);
+		const fromTiers = tierCount(growth.arms.from);
+		const elbowTiers = tierCount(growth.arms.elbow);
+		const riseTiers = tierCount(growth.arms.rise);
+		if (fromTiers !== elbowTiers || fromTiers !== riseTiers)
+			out.push(
+				`growth.arms.from, growth.arms.elbow and growth.arms.rise name ${fromTiers}, ${elbowTiers} and ${riseTiers} tiers; each tier needs one share, one elbow and one rise`,
+			);
+		if (!(growth.areoles > 0))
+			out.push(`growth.areoles is ${growth.areoles}; it is metres and must be above 0`);
+	}
 	if (record.foliage.kind === 'blade' && record.foliage.compound) {
 		const compound = record.foliage.compound;
 		spreadProblems(compound.leaflets, 'foliage.compound.leaflets', true, out);
@@ -499,6 +585,15 @@ function growthProblems(record: Species, out: string[]): void {
 			curveProblems(order.density, `growth.orders[${i}].density`, out);
 			shareProblem(order.flatten, `growth.orders[${i}].flatten`, out);
 		});
+		if (growth.pipe) {
+			if (!(growth.pipe.exponent > 0) || !(growth.pipe.tipRadius > 0))
+				out.push('growth.pipe needs an exponent and a tip radius above 0');
+			const leader = growth.pipe.leader;
+			if (leader !== undefined && !(leader >= 0.5 && leader <= 1))
+				out.push(
+					`growth.pipe.leader is ${leader}; a stem keeps a share of its girth from 0.5 to 1 from node to node`,
+				);
+		}
 	}
 }
 
@@ -761,6 +856,15 @@ export function speciesProblems(record: Species): string[] {
 		out.push('lod.woodOrders keeps more orders at the second card level than at the first');
 	if (lod.cardStalk !== undefined && !(lod.cardStalk >= 0 && lod.cardStalk <= 8))
 		out.push(`lod.cardStalk is ${lod.cardStalk}; it is pixels from 0 to 8`);
+	const cardCell = lod.cardCell;
+	if (cardCell)
+		for (const detail of ['low', 'medium', 'high', 'ultra'] as const) {
+			const side = cardCell[detail];
+			if (!Number.isInteger(side) || side < 64 || side > 256 || (side & (side - 1)) !== 0)
+				out.push(
+					`lod.cardCell.${detail} is ${side}; a card cell is a power of two from 64 to 256 texels`,
+				);
+		}
 	if (lod.impostor.views < 2 || lod.impostor.texels < 8)
 		out.push('lod.impostor needs at least 2 views across and 8 texels a view');
 	for (const [key, value] of Object.entries(lod.budget))

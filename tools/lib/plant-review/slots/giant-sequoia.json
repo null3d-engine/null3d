@@ -1,0 +1,74 @@
+{
+	"01-whole-distant.png": {
+		"skyShare": 0.19,
+		"daylight": 2.11
+	},
+	"02-whole-profile.png": {
+		"skyShare": 0.19,
+		"daylight": 2.21
+	},
+	"03-whole-from-below.png": {
+		"skyShare": 0.2,
+		"daylight": 2.17,
+		"footRow": 0.98,
+		"crownRow": 0.4
+	},
+	"04-crown-outside.png": {
+		"skyShare": 0.22,
+		"daylight": 2.41
+	},
+	"05-crown-underside.png": {
+		"skyShare": 0.22,
+		"daylight": 2.36,
+		"footRow": 0.99,
+		"crownRow": 0.5
+	},
+	"06-inside-crown.png": {
+		"skyShare": 0.22,
+		"daylight": 2.24
+	},
+	"17-trunk-taper.png": {
+		"skyShare": 0.19,
+		"daylight": 2.49,
+		"footRow": 0.98,
+		"crownRow": 0.12
+	},
+	"12-single-leaf-upper.png": {
+		"view": "subbranch"
+	},
+	"13-single-leaf-underside.png": {
+		"view": "subbranch"
+	},
+	"11-leaf-cluster.png": {
+		"view": "subbranch",
+		"cut": 0.55,
+		"span": 0.95
+	},
+	"23-leaf-cluster-studio.png": {
+		"span": 0.85,
+		"along": 0.5
+	},
+	"14-bark-base.png": {
+		"distance": 24
+	},
+	"15-bark-mid-trunk.png": {
+		"span": 3,
+		"distance": 5.5
+	},
+	"20-fire-scar.png": {
+		"view": "bark-base",
+		"distance": 12,
+		"season": null,
+		"span": null,
+		"thin": null,
+		"elevation": 0
+	},
+	"26-bark-texture.png": {
+		"span": 3,
+		"distance": 5.5
+	},
+	"28-young-bark.png": {
+		"thin": 0.03,
+		"along": 0.7
+	}
+}

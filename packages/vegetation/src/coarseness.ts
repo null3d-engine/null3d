@@ -1,15 +1,13 @@
-// Coarseness: a genuinely simpler plant, not only a coarser mesh of the same plant. One number from
-// 0, the plant as grown, to 1, the coarsest, acts in three stages: the grown skeleton loses a share
-// of its finest twigs, the deepest inside the crown first (grow/coarsen.ts); the instancer keeps a
-// share of the shoot rows, spread evenly through the crown, and grows each kept row (leaf/instancer.ts);
-// and the wood mesher takes longer edges, so fewer rings and sides (wood/tube.ts). A page may give a
-// triangle target instead: the coarseness that brings one copy's nearest level to it is found by
-// counting the shoot rows and the wood quickly at a few coarseness values, before anything is meshed.
+// Coarseness: how finely the plant is drawn, never what it grows. One number from 0, the plant as
+// grown, to 1, the coarsest, reaches the wood mesher, which takes longer edges, so fewer rings and
+// sides (wood/tube.ts). Every twig, shoot row and leaf stays, whatever the number, so the crown and
+// the drawn height hold (grow/coarsen.ts keeps only the bare-wood trim). A page may give a triangle
+// target instead: the coarseness that brings one copy's nearest level to it is found by counting the
+// shoot rows and the wood quickly at a few coarseness values, before anything is meshed.
 import type { PlantAsset, ShootRows, SpeciesKitData } from './asset';
 import type { MacroSkeleton } from './core/graph';
 import { log } from './core/math';
 import { DETAILS, type Detail } from './core/types';
-import { coarsenSkeleton } from './grow/coarsen';
 import { dressShoots } from './leaf/instancer';
 import type { CrownLight, DressInput, GrowInput } from './stages';
 import { woodTriangles } from './wood/estimate';
@@ -21,14 +19,14 @@ import { woodTriangles } from './wood/estimate';
  */
 export interface CoarsenessOptions {
 	/**
-	 * From 0, the plant as grown, to 1, the coarsest: fewer of the finest twigs and their buds, fewer
-	 * and larger shoots, and wood of fewer rings and sides. 0 by default.
+	 * From 0, the plant as grown, to 1, the coarsest: wood of fewer rings and sides, and so fewer
+	 * triangles. The twigs, the shoot rows and the leaves stay as grown. 0 by default.
 	 */
 	readonly coarseness?: number;
 	/**
 	 * The triangles that one copy's nearest level should hold: its wood, its shoot rows at the
 	 * variant's tier and its extras. The variant grows at the coarseness that comes nearest. A target
-	 * above the plant as grown gives the plant as grown, and one below the coarsest plant gives the
+	 * above the plant as grown gives the plant as grown; one below the coarsest wood mesh gives the
 	 * coarsest. Give either this or `coarseness`, not both.
 	 */
 	readonly triangles?: number;
@@ -138,7 +136,7 @@ export function coarsenessFor(
 	kit: SpeciesKitData,
 	grown: GrowInput & { readonly skeleton: MacroSkeleton; readonly pruneLight?: CrownLight },
 	detail: Detail,
-	options: CoarsenessOptions,
+	options: CoarsenessOptions & { readonly sections?: number },
 ): number {
 	const { coarseness, triangles: target } = chosen(kit, options);
 	if (target === undefined) return coarseness ?? 0;
@@ -146,8 +144,9 @@ export function coarsenessFor(
 		const dress: DressInput = {
 			...grown,
 			kit,
-			skeleton: coarsenSkeleton(grown.skeleton, c),
+			skeleton: grown.skeleton,
 			coarseness: c,
+			sections: options.sections,
 		};
 		// The rows and the wood the dressing keeps, its bare twigs trimmed as the record asks.
 		if (kit.record.lod.nearFoliage !== 'instanced' || kit.prototypes.length === 0)
