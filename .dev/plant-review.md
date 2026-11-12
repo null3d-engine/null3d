@@ -48,6 +48,13 @@ including any species added later:
 - **The branch count fits the species.** Too many branches and subbranches fill the crown with wood
   the plant does not have; too few leave it thin. The reviewer counts the visible limbs at the
   skeleton view against the reference, and the subbranch orders at the crown close-up.
+- **Laterals are spaced along their parent.** Subbranches leave the parent at separate points, with
+  a clear gap between one and the next. Several laterals from one point, or a crowd of them within
+  one internode, fails unless the species shows that clustering. Most trees carry one lateral at a
+  node in a spiral, or a pair at opposite nodes, and do not bunch their subbranches; a tiered whorl
+  is natural in a conifer, and clustered shoots in some shrubs. Even spacing carries the crown's
+  foliage with less wood, so a crown that reaches its density by crowding laterals fails this point
+  as well as the row 6 reading.
 - **The structure is balanced through 360 degrees.** Branches and subbranches are spread around the
   trunk in every direction, so the tree reads balanced from above and from the side. One heavy side
   and one thin side fails, even when the foliage's outline is regular.
@@ -60,6 +67,7 @@ The rows carry the points:
 | no bare termination | row 12, subdivision and no strays |
 | gentle upward bends | row 7, with row 1's limb angles |
 | branch count | row 2 |
+| lateral spacing along the parent | row 2, with row 12's neatness |
 | balance through 360 degrees | the coverage rule below |
 
 A species that fails a point fails the row that carries it.
@@ -69,7 +77,7 @@ A species that fails a point fails the row that carries it.
 | # | Row | What is judged | Evidence |
 | --- | --- | --- | --- |
 | 1 | Structure | The skeleton: one stem or many, where the first limbs leave, the angles they leave at, how they fork, where the crown begins, and whether the silhouette is one solid shape or a set of pieces | The whole view against its reference, plus the skeleton view |
-| 2 | Branch density | How many branches there are, how they are spaced along the trunk, and whether the spacing follows the species: whorled tiers for a conifer, alternate for a broadleaf, a fan for a palm | The skeleton view, counting the visible limbs |
+| 2 | Branch density | How many branches there are, how they are spaced along the trunk and along each parent branch, and whether the spacing follows the species: whorled tiers for a conifer, alternate for a broadleaf, a fan for a palm | The skeleton view, counting the visible limbs and their gaps along each parent |
 | 3 | Branch length and taper | Whether a branch reaches far enough before it forks, and whether it thins along its length | The skeleton view and a close view of a limb |
 | 4 | Leaf shape | The painted silhouette of one leaf: entire, toothed or lobed, its proportion, its tip and its base | The leaf close-up against the reference leaf picture |
 | 5 | Leaf cluster density | How many leaves a cluster carries, how tightly they sit, and how a cluster meets its shoot | The leaf close-up and the crown close-up |
