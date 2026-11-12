@@ -795,9 +795,12 @@ describe('the strands view', () => {
 });
 
 describe('the flowers view', () => {
-	test('a picture whose name begins with flowers takes it, and the crown rule keeps the rest', () => {
+	test('takes a picture of flowers on the crown, and leaves other flower pictures alone', () => {
 		expect(classifySlot('19-flowers-on-crown.png')?.view).toBe('flowers');
-		expect(classifySlot('20-flowers-spring.png')?.view).toBe('flowers');
+		// A flower detail, a flower spike or a flowering whole picture keeps the view its number gives.
+		expect(classifySlot('19-flower-detail.png')?.view).toBe('twigs');
+		expect(classifySlot('19-flower-spikes.png')?.view).toBe('twigs');
+		expect(classifySlot('20-flowers-spring.png')?.view).toBe('limb');
 		// A crown picture that names no flowers keeps the crown view.
 		expect(classifySlot('09-crown-close.png')?.view).toBe('crown');
 	});

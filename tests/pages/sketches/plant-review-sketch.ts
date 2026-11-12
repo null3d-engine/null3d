@@ -30,8 +30,8 @@ import {
 import { createWind, type Wind } from '@null3d/wind';
 import {
 	chainOf,
-	crownTopSites,
 	facing,
+	flowerSites,
 	largestLimb,
 	limbGapTurn,
 	limbNear,
@@ -848,13 +848,20 @@ export default defineSketch(async (ctx) => {
 				break;
 			}
 			case 'flowers': {
-				// A ring of flowers at a crown's top: the flower sites the plant carries, framed at the
-				// ring's own scale from a little above, as a cactus's crown flowers are photographed.
-				const ring = crownTopSites(skeleton);
+				// A ring of flowers at a crown's top: the flower sites the plant carries, framed as the
+				// photograph frames the crown's top. The ring takes about three fifths of the frame's
+				// width, and the crop sits a little above the ring so the stem's top fills the foot
+				// rather than the height, as the pictures show it.
+				const ring = flowerSites(skeleton);
 				if (!ring) break;
-				const fill = 0.62;
+				const fill = 0.42;
 				const distance = Math.max(0.2, ring.radius / (fill * Math.tan((fov * DEG) / 2)));
-				return orbit(ring.centre, distance, e, turn, fov);
+				const target: V3 = [
+					ring.centre[0],
+					ring.centre[1] + 0.15 * Math.max(ring.radius, 0.05),
+					ring.centre[2],
+				];
+				return orbit(target, distance, e, turn, fov);
 			}
 			case 'twigs': {
 				// A view of the fruit goes to a fruit the plant carries rather than to a tip that
