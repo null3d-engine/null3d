@@ -171,16 +171,25 @@ export function cardPlan(input: MeshInput, level: 1 | 2, budget: number): CardPl
 			orders: new Set(own.map((r) => rows.order[r] as number)),
 		};
 	const sorted = [...own].sort((a, b) => (rows.order[a] as number) - (rows.order[b] as number));
-	let kept = 0;
-	let spent = 0;
-	for (const r of sorted) {
-		const row = cardRowTriangles(input, rows.prototype[r] as number);
-		if (kept > 0 && spent + row > budget) break;
-		spent += row;
-		kept++;
+	const costOf = (r: number) => cardRowTriangles(input, rows.prototype[r] as number);
+	// Keep the rows spread evenly through the space-filling order, not the first rows of it: a run
+	// of rows stands together in one part of the crown, so the kept cards would gather there.
+	const spread = (n: number) =>
+		Array.from(
+			{ length: n },
+			(_, k) => sorted[Math.min(sorted.length - 1, Math.floor((k * sorted.length) / n))] as number,
+		);
+	const average = cost / Math.max(1, own.length);
+	let kept = Math.min(own.length, Math.max(1, Math.floor(budget / Math.max(1, average))));
+	let chosen = spread(kept);
+	let spent = chosen.reduce((total, r) => total + costOf(r), 0);
+	while (kept > 1 && spent > budget) {
+		kept--;
+		chosen = spread(kept);
+		spent = chosen.reduce((total, r) => total + costOf(r), 0);
 	}
 	const grow = ownGrow * Math.sqrt(own.length / kept);
-	const orders = new Set(sorted.slice(0, kept).map((r) => rows.order[r] as number));
+	const orders = new Set(chosen.map((r) => rows.order[r] as number));
 	return { kept, of: own.length, grow, triangles: spent, orders };
 }
 

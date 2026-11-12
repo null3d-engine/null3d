@@ -74,8 +74,12 @@ describe('a level triangle budget', () => {
 				.reduce((sum, part) => sum + part.arrays.indices.length / 3, 0);
 			const kept = Math.round(triangles / perRow);
 			expect(kept).toBeLessThan(own);
-			const plan = cardPlan(input, level, Math.max(0, 300 - triangles));
+			const plan = cardPlan(input, level, triangles);
 			expect(plan.grow).toBeCloseTo((level === 2 ? Math.SQRT2 : 1) * Math.sqrt(own / plan.kept), 6);
+			// The kept rows spread through the space-filling order, so their cards do not gather in
+			// one part of the crown.
+			const span = Math.max(...plan.orders) - Math.min(...plan.orders);
+			expect(span).toBeGreaterThan(own * 0.5);
 			const formCards = (form.levels[level]?.parts ?? [])
 				.filter((part) => part.name === 'cards')
 				.reduce((sum, part) => sum + part.arrays.indices.length / 3, 0);
