@@ -65,6 +65,9 @@ export interface Shot {
 }
 
 /** One picture the run drew, as the run's manifest records it. */
+/** The sketch module a run's pages import, which a starting server must serve before the first frame. */
+const SKETCH_MODULE = '/tests/pages/sketches/plant-review-sketch.ts';
+
 export interface RunFrame {
 	readonly group: string;
 	readonly file: string;
@@ -325,7 +328,9 @@ export async function drawShots(
 	const log = options.log ?? console.log;
 	// A checkout without a development certificate draws over plain HTTP on the loopback, as the
 	// server asks: the environment's choice reaches the server instead of being forced to HTTPS.
-	const server = await startServer(process.env.NULL3D_HTTPS !== '0');
+	// A dev server can answer its index page before it can serve the sketch module the page imports,
+	// and a run whose first frame finds the module missing fails every frame: the probe is the module.
+	const server = await startServer(process.env.NULL3D_HTTPS !== '0', SKETCH_MODULE);
 	const browser = await launchRepoBrowser(defaultEnvironment());
 	const frames: RunFrame[] = [];
 	try {

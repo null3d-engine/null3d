@@ -3,6 +3,11 @@
 		"elevation": 88,
 		"view": "crown"
 	},
+	"07-basal-crown.png": {
+		"background": "studio-grey",
+		"ground": "#4a3b2c",
+		"view": "crown-foot"
+	},
 	"08-leaf-leaving-sheath.png": {
 		"distance": 0.25,
 		"elevation": 0,
