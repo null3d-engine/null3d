@@ -461,7 +461,10 @@ jobs:
       - if: matrix.id == 'ci-1' && steps.passed.outputs.cache-hit != 'true'
         run: cargo test --workspace --doc --no-fail-fast
       - name: Save the built test binaries
-        if: steps.passed.outputs.cache-hit != 'true' && env.SAVE_CACHES == 'true'
+        # One part saves the tree; the four parts build the same workspace, so the others restore
+        # this one by the key's prefix. Four trees of about 1.2 GB would fill the repository's cache
+        # limit in six commits.
+        if: steps.passed.outputs.cache-hit != 'true' && env.SAVE_CACHES == 'true' && matrix.id == 'ci-1'
         uses: actions/cache/save@v4
         with:
           path: target
