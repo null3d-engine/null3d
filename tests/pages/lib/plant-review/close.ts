@@ -607,14 +607,41 @@ export function departures(skeleton: MacroSkeleton): {
 	};
 }
 
+/** The share of its picture's frame that a close view's subject box takes across and down. */
+export interface SubjectBoxShare {
+	readonly width: number;
+	readonly height: number;
+}
+
+/**
+ * The frame's height that a junction view takes: the limb's thickness must not outgrow the
+ * photograph's subject box height share, and the stem's width must not outgrow its width share, so
+ * the frame takes whichever need is the larger. Without the shares, the limb's diameter fills its
+ * own share of the frame, as the view did before a picture's box was measured.
+ */
+export function junctionFrameHeight(
+	limbDiameter: number,
+	stemDiameter: number,
+	shares: SubjectBoxShare | undefined,
+	aspect: number,
+): number {
+	if (!shares) return limbDiameter / JUNCTION_LIMB_SHARE;
+	return Math.max(limbDiameter / shares.height, stemDiameter / (shares.width * aspect));
+}
+
 /**
  * The view of a great limb leaving the stem. It takes the thick limbs that leave the stem and run
  * on past the frame, each seen side on across the plane of the stem and the limb so its angle of
- * departure shows at its true size, framed so the limb's thickness fills the share of the frame
- * that the photograph gives it, and stands where the fewest other limbs come between the lens and
- * the junction. The stem and the limb that carries it on stand in as the photograph's trunk.
+ * departure shows at its true size, framed so the limb's thickness and the stem's width take the
+ * shares of the frame that the photograph's subject box gives them, and stands where the fewest
+ * other limbs come between the lens and the junction. The stem and the limb that carries it on
+ * stand in as the photograph's trunk.
  */
-export function junctionView(plant: ClosePlant, lens: Lens): CloseView | undefined {
+export function junctionView(
+	plant: ClosePlant,
+	lens: Lens,
+	shares?: SubjectBoxShare,
+): CloseView | undefined {
 	const { skeleton } = plant;
 	const { limbs, leader } = departures(skeleton);
 	const thickest = limbs[0]?.radius ?? 0;
@@ -631,7 +658,12 @@ export function junctionView(plant: ClosePlant, lens: Lens): CloseView | undefin
 	const subjects: Subject<Departure>[] = thick
 		.filter((d) => off(d) <= level + JUNCTION_LEVEL)
 		.flatMap((limb) => {
-			const height = (2 * limb.radius) / JUNCTION_LIMB_SHARE;
+			const height = junctionFrameHeight(
+				2 * limb.radius,
+				2 * limb.stem.radius,
+				shares,
+				lens.aspect,
+			);
 			return [
 				{
 					// The crotch: where the limb's underside leaves the stem's surface.
