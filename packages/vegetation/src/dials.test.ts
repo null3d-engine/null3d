@@ -99,19 +99,23 @@ describe('the sparse dial', () => {
 		LONG,
 	);
 
-	it('keeps the crown top in the record height band at every sparse level', () => {
-		const size = record.size.height;
-		const band = typeof size === 'number' ? { mean: size, spread: 0 } : size;
-		for (const sparse of [0, 0.5, 1]) {
-			const asset = growPlantNow(kit, { seed: 11, variant: 0, near: true, sparse });
-			const input = meshInput(asset);
-			const top = topOf(cardMesh(input, 1));
-			expect([sparse, top >= band.mean - band.spread && top <= band.mean + band.spread]).toEqual([
-				sparse,
-				true,
-			]);
-		}
-	});
+	it(
+		'keeps the crown top in the record height band at every sparse level',
+		() => {
+			const size = record.size.height;
+			const band = typeof size === 'number' ? { mean: size, spread: 0 } : size;
+			for (const sparse of [0, 0.5, 1]) {
+				const asset = growPlantNow(kit, { seed: 11, variant: 0, near: true, sparse });
+				const input = meshInput(asset);
+				const top = topOf(cardMesh(input, 1));
+				expect([sparse, top >= band.mean - band.spread && top <= band.mean + band.spread]).toEqual([
+					sparse,
+					true,
+				]);
+			}
+		},
+		LONG,
+	);
 });
 
 describe('the polygon dial', () => {
@@ -129,33 +133,37 @@ describe('the polygon dial', () => {
 		LONG,
 	);
 
-	it.skip('keeps the card count, the leaf count and the crown box (GAP: coarseness thins the crown, 3,131 cards at 0.2 to 1,176 at 0.8)', () => {
-		let first: { cards: number; leaves: number; box: ReturnType<typeof boxOf> } | undefined;
-		for (const coarseness of [0.2, 0.5, 0.8]) {
-			const asset = growPlantNow(kit, { seed: 11, variant: 0, near: true, coarseness });
-			const input = meshInput(asset);
-			const cards = drawnCards(input, 1);
-			const leaves = asset.shoots.count;
-			const box = boxOf(meshWood(input, 0), cardMesh(input, 1));
-			if (!first) {
-				first = { cards, leaves, box };
-				continue;
+	it(
+		'keeps the card count, the leaf count and the crown box as it coarsens the wood',
+		() => {
+			let first: { cards: number; leaves: number; box: ReturnType<typeof boxOf> } | undefined;
+			for (const coarseness of [0.2, 0.5, 0.8]) {
+				const asset = growPlantNow(kit, { seed: 11, variant: 0, near: true, coarseness });
+				const input = meshInput(asset);
+				const cards = drawnCards(input, 1);
+				const leaves = asset.shoots.count;
+				const box = boxOf(meshWood(input, 0), cardMesh(input, 1));
+				if (!first) {
+					first = { cards, leaves, box };
+					continue;
+				}
+				const close = (a: number, b: number) => Math.abs(a - b) <= Math.max(1, 0.02 * b);
+				expect([coarseness, close(cards, first.cards)]).toEqual([coarseness, true]);
+				expect([coarseness, close(leaves, first.leaves)]).toEqual([coarseness, true]);
+				for (let k = 0; k < 3; k++) {
+					expect([coarseness, close(box.min[k] as number, first.box.min[k] as number)]).toEqual([
+						coarseness,
+						true,
+					]);
+					expect([coarseness, close(box.max[k] as number, first.box.max[k] as number)]).toEqual([
+						coarseness,
+						true,
+					]);
+				}
 			}
-			const close = (a: number, b: number) => Math.abs(a - b) <= Math.max(1, 0.02 * b);
-			expect([coarseness, close(cards, first.cards)]).toEqual([coarseness, true]);
-			expect([coarseness, close(leaves, first.leaves)]).toEqual([coarseness, true]);
-			for (let k = 0; k < 3; k++) {
-				expect([coarseness, close(box.min[k] as number, first.box.min[k] as number)]).toEqual([
-					coarseness,
-					true,
-				]);
-				expect([coarseness, close(box.max[k] as number, first.box.max[k] as number)]).toEqual([
-					coarseness,
-					true,
-				]);
-			}
-		}
-	});
+		},
+		LONG,
+	);
 });
 
 describe('the connectivity helper', () => {

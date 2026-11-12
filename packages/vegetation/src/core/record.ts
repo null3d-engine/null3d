@@ -92,7 +92,7 @@ export interface SparseFloors {
 	readonly limbs: number;
 	/** The least leaf-area share, from 0.05 to 1: how much of the record's leaf it keeps. */
 	readonly leaves: number;
-	/** The most coarsening, from 0 to 1: how far the sparse form thins twigs and coarsens wood. */
+	/** The most coarsening, from 0 to 1: how far the sparse form smooths the wood's mesh. */
 	readonly coarseness: number;
 	/**
 	 * The most section sparsity, from 0 to 1: how far the sparse form may thin the wood's own
