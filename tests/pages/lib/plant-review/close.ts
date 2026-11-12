@@ -636,17 +636,20 @@ export function junctionFrameHeight(
 }
 
 /**
- * The limbs a junction view takes as its candidates: thick enough to be a great limb or the dead
- * skirt's stipe, and running out of the frame as the photograph's limb does.
+ * The limbs a junction view takes as its candidates: a great limb, or a thinner stipe of the dead
+ * skirt whose crotch stands below the living crown, and each running out of the frame as the
+ * photograph's limb does.
  */
 export function junctionCandidates(
 	limbs: readonly Departure[],
 	thickest: number,
 	lens: Lens,
+	crownBase: number,
 ): readonly Departure[] {
 	return limbs.filter(
 		(d) =>
-			d.radius >= JUNCTION_SKIRT_THICK * thickest &&
+			(d.radius >= JUNCTION_THICK * thickest ||
+				(d.radius >= JUNCTION_SKIRT_THICK * thickest && d.at[1] < crownBase)) &&
 			d.length >= ((2 * d.radius) / JUNCTION_LIMB_SHARE) * lens.aspect,
 	);
 }
@@ -669,7 +672,7 @@ export function junctionView(
 	const thickest = limbs[0]?.radius ?? 0;
 	const stem = mainStem(skeleton);
 	// A thick limb that runs out of the frame, as the photograph's does, rather than ending in it.
-	const thick = junctionCandidates(limbs, thickest, lens);
+	const thick = junctionCandidates(limbs, thickest, lens, skeleton.crownBase);
 	// A limb leaves level where it stands square to the stem's line, rising or drooping alike. Every
 	// thick limb is a candidate: the near-level departure is a bonus, so a crotch that stands clear
 	// of the crown can win over a level one buried behind it.
