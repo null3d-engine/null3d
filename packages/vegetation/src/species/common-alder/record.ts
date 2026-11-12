@@ -23,6 +23,18 @@ import { roundBand } from './fit';
  * drifts between the video's frames and each frame's reach is kept. The whole views are the frames
  * that rows 1, 6, 9 and 11 are judged on, so the crown follows them; `fit.ts` keeps the tool's own
  * measurement beside it.
+ *
+ * The hull's shape round the stem is far more lopsided than this table: at mid-height it reads 1.71
+ * broad to narrow against the record's 1.07, which is why the crown reads round. The record keeps
+ * the narrow stills' mean width; the review records that stills 18 (0.750), 01 (1.227) and 30
+ * (1.192) all draw at turn 0 and do not agree, with the turntable's turn-0 frame at 1.191.
+ *
+ * Laying the hull's shape on the record's mean width should widen the turn-0 side (stills 01 and 30)
+ * toward 1.227 and 1.192 and narrow the turn-90 side (still 02) toward 0.658, while still 18, also
+ * at turn 0, rises away from its 0.750, the outlier. The measured attempt at this commit,
+ * `alder-env-shape-2`, moved 01 from 0.736 to 0.860, 30 from 0.767 to 0.883, 18 from 0.768 to 0.887
+ * and 02 from 0.833 to 0.829, and widened the plant from 14.89 m to 17.26 m, so the shape is not
+ * kept.
  */
 const envelope: RadialEnvelope = {
 	kind: 'radial',
@@ -181,6 +193,13 @@ export const record: Species = {
 			wander: 8,
 		},
 		// Stills 01 and 02: the crown's lit top and rim carry its fullest shoots.
+		// No earlier record value put more buds on one side: the arrangement is a constant spiral
+		// and the light is an isotropic shadow grid, so the room bias is the species' first
+		// per-azimuth control. The fitting tool's hull reads 1.71 broad to narrow at mid-height
+		// against the record's 1.07. A room bias of 1 was drawn at f4cd557ac: it narrowed still 02
+		// from 0.833 to 0.687 toward its 0.658 and still 18 from 0.768 to 0.744, but it narrowed
+		// stills 01 and 30 (0.736 to 0.720 and 0.767 to 0.743) instead of widening them, and moved
+		// row 9's aspect from 0.677 to 0.705, so the alder does not set it.
 		light: { apical: 1, lateral: 1, shadow: [5, 0.15, 2], cells: 96, surface: true },
 		// Stills 03 and 05: a branch runs out almost level and turns up a little at its end, where its
 		// last year's wood reaches for the light.

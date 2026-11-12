@@ -7,7 +7,7 @@
 // face toward +Z, its colour bytes those a cutting copies (flutter phase first, full sky last) and its
 // second coordinate the share along it and its browning, as the plant's own blades carry them.
 import type { PrototypeArrays } from '../asset';
-import { cos, pow, radians, sin } from '../core/math';
+import { cos, cross3, normalize3, pow, radians, sin, type Vector3 } from '../core/math';
 import type { GrassBlade, Species } from '../core/record';
 import type { TextureManifest } from '../core/textures';
 import { curveAt, type Detail, spreadMean } from '../core/types';
@@ -19,6 +19,9 @@ import { MeshWriter } from './writer';
 
 /** Degrees each half of a hooded tip rises at its very end, closing over the keel. */
 const HOOD_FOLD = 72;
+
+/** Steps a metre of a blade's keel offset is packed in, within a signed byte's range. */
+export const KEEL_STEPS = 8192;
 
 /** One blade as written: its length and the record's blade shape. */
 export interface BladeForm {
@@ -33,6 +36,8 @@ export interface BladeForm {
 	/** How far the blade has browned overall, 0 to 1, and how much its dry tip browns. */
 	readonly browning: number;
 	readonly dry: number;
+	/** The ligule's length and width in metres, where this detail draws one. */
+	readonly ligule?: { readonly length: number; readonly width: number };
 }
 
 /** How finely a blade is written: rows along it, and points a side of the keel across it. */
@@ -43,6 +48,26 @@ export interface BladeDetail {
 }
 
 /**
+ * The width of a blade at a share of its length: the profile's share of the widest width, closed
+ * over the tip. A cover of grass takes the same shape, so its blades read as the species' own
+ * where the two meet.
+ *
+ * @param width The blade's width in metres at its widest.
+ * @param blade The record's blade, whose profile and tip shape it.
+ * @param t The share along it, 0 at the collar.
+ * @returns The width in metres.
+ */
+export function bladeWidth(width: number, blade: GrassBlade, t: number): number {
+	const at = width * curveAt(blade.profile, t);
+	const start = 1 - blade.tipLength;
+	if (t <= start) return at;
+	const u = Math.min(1, (t - start) / Math.max(1e-6, blade.tipLength));
+	// A hood closes round, as a quarter ellipse; a point narrows nearly straight to nothing.
+	const close = blade.tip === 'hooded' ? Math.sqrt(Math.max(0, 1 - u * u)) : pow(1 - u, 0.85);
+	return at * close;
+}
+
+/**
  * The blade's half-width in metres at a share of its length: the profile, closed by the tip.
  *
  * @param form The blade.
@@ -50,14 +75,7 @@ export interface BladeDetail {
  * @returns The half-width.
  */
 export function bladeHalf(form: BladeForm, t: number): number {
-	const { blade } = form;
-	const half = 0.5 * form.width * curveAt(blade.profile, t);
-	const start = 1 - blade.tipLength;
-	if (t <= start) return half;
-	const u = Math.min(1, (t - start) / Math.max(1e-6, blade.tipLength));
-	// A hood closes round, as a quarter ellipse; a point narrows nearly straight to nothing.
-	const close = blade.tip === 'hooded' ? Math.sqrt(Math.max(0, 1 - u * u)) : pow(1 - u, 0.85);
-	return half * close;
+	return 0.5 * bladeWidth(form.width, form.blade, t);
 }
 
 /** The fold in degrees at a share along the blade: the record's, rising into a hood at the tip. */
@@ -115,6 +133,7 @@ export function writeBlade(
 	texture: BladeTexture,
 	bytes: AxisBytes,
 	crown: CrownLight | undefined,
+	keel = false,
 ): void {
 	const firstVertex = mesh.vertices;
 	const firstIndex = mesh.indices.length;
@@ -124,6 +143,7 @@ export function writeBlade(
 	const rows = Math.max(2, detail.rows);
 	const colour = [bytes.high, bytes.low, bytes.phase, 255];
 	const p = [0, 0, 0];
+	const packed = [0, 0, 0, 127];
 	const dryStart = 1 - form.blade.dryTip;
 	for (let r = 0; r <= rows; r++) {
 		// Rows crowd toward the tip, where the blade closes and arches most.
@@ -153,12 +173,22 @@ export function writeBlade(
 					(frame.binormal[k] as number) * x +
 					(frame.normal[k] as number) * z;
 			if (crown) colour[3] = skyByte(crown, p);
+			if (keel)
+				for (let k = 0; k < 3; k++)
+					packed[k] = Math.max(
+						-127,
+						Math.min(
+							127,
+							Math.round(((p[k] as number) - (frame.position[k] as number)) * KEEL_STEPS),
+						),
+					);
 			mesh.vertex(
 				p,
 				[frame.normal[0] as number, frame.normal[1] as number, frame.normal[2] as number],
 				[0.5 + c * texture.half * Math.min(1, half / Math.max(1e-6, 0.5 * form.width)), v],
 				[t, brown],
 				colour,
+				keel ? packed : undefined,
 			);
 		}
 		if (r > 0) {
@@ -168,6 +198,59 @@ export function writeBlade(
 		}
 	}
 	smoothNormals(mesh, firstVertex, firstIndex);
+	if (form.ligule) writeLigule(mesh, path, form.ligule, bytes, firstVertex);
+}
+
+/**
+ * Writes a ligule: a pale triangular flap standing in the V where the blade leaves its sheath. Its
+ * base spans the record's width at the collar and its point rises up the blade's direction and out
+ * of its face, so it shows against the blade rather than lying in it.
+ */
+function writeLigule(
+	mesh: MeshWriter,
+	path: AxisPath,
+	ligule: { readonly length: number; readonly width: number },
+	bytes: AxisBytes,
+	collar: number,
+): void {
+	frameAt(path, 0, frame);
+	const binormal: Vector3 = [
+		frame.binormal[0] as number,
+		frame.binormal[1] as number,
+		frame.binormal[2] as number,
+	];
+	const tangent: Vector3 = [
+		frame.tangent[0] as number,
+		frame.tangent[1] as number,
+		frame.tangent[2] as number,
+	];
+	const normalUp: Vector3 = [
+		frame.normal[0] as number,
+		frame.normal[1] as number,
+		frame.normal[2] as number,
+	];
+	// The flap samples the leaf's own painted texel at the collar, since an empty atlas corner would
+	// leave every fragment of it under the material's alpha cutoff and so undrawn.
+	const uv: [number, number] = [mesh.uvs[collar * 2] as number, mesh.uvs[collar * 2 + 1] as number];
+	const half = ligule.width * 0.5;
+	// The point stands out of the blade's face, away from the sheath that the positive normal enters.
+	const rise = -ligule.length * 0.7;
+	const at = (across: number, up: number, out: number): [number, number, number] => [
+		(frame.position[0] as number) + binormal[0] * across + tangent[0] * up + normalUp[0] * out,
+		(frame.position[1] as number) + binormal[1] * across + tangent[1] * up + normalUp[1] * out,
+		(frame.position[2] as number) + binormal[2] * across + tangent[2] * up + normalUp[2] * out,
+	];
+	const left = at(-half, 0, 0);
+	const right = at(half, 0, 0);
+	const point = at(0, ligule.length, rise);
+	const edge: Vector3 = [right[0] - left[0], right[1] - left[1], right[2] - left[2]];
+	const climb: Vector3 = [point[0] - left[0], point[1] - left[1], point[2] - left[2]];
+	const normal = normalize3(cross3(edge, climb, [0, 0, 0]));
+	const colour = [bytes.high, bytes.low, bytes.phase, 255];
+	const a = mesh.vertex(left, normal, uv, [0, 0], colour);
+	const b = mesh.vertex(right, normal, uv, [0, 0], colour);
+	const c = mesh.vertex(point, normal, uv, [0, 0], colour);
+	mesh.indices.push(a, b, c);
 }
 
 /**

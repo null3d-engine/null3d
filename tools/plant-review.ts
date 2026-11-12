@@ -27,13 +27,17 @@ import {
 } from '../tests/pages/lib/plant-review/views.ts';
 import { flag, option, positional } from './lib/plant-review/cli.ts';
 import {
+	type CameraStand,
+	cameraWidthShare,
 	compareStills,
 	compareTurn,
 	compareWind,
 	estimateFraming,
+	fittedMaskClause,
 	fixed,
 	framingQuery,
 	rubricBand,
+	SHEATH_VIEWS,
 	type StillResult,
 	type TurnResult,
 	viewSheets,
@@ -41,6 +45,7 @@ import {
 } from './lib/plant-review/compare.ts';
 import { coverageMarkdown, coverageOf } from './lib/plant-review/coverage.ts';
 import {
+	deltaE2000,
 	onColour,
 	probeVideo,
 	type Rgba,
@@ -48,11 +53,16 @@ import {
 	videoFrame,
 } from './lib/plant-review/image.ts';
 import {
+	boxOf,
+	matteMask,
 	measurePlant,
 	plantMask,
 	type ReferenceSet,
 	readReferenceSet,
 	type Slot,
+	skyMaskable,
+	soilMaskable,
+	subjectShares,
 	TURN_VIEW,
 	type TurnVideo,
 	withSlot,
@@ -64,6 +74,7 @@ import {
 	singleShot,
 	turnShots,
 } from './lib/plant-review/render.ts';
+import { type SheathTarget, sheathTargetOf } from './lib/plant-review/sheath.ts';
 
 /** Where the reference folders are when `--refs` names a slug. */
 const REFERENCES =
@@ -123,6 +134,24 @@ async function formsOf(species: string): Promise<readonly string[]> {
 	return Object.keys((await loadSpecies(species)).record.forms ?? {});
 }
 
+/** Whether a species grows as a mound of leaves from its foot, where the crown start stays at the foot. */
+async function moundFormOf(species: string): Promise<boolean> {
+	if (!isSpeciesId(species)) return false;
+	const model = (await loadSpecies(species)).record.growth.model;
+	return model === 'tuft' || model === 'rosette';
+}
+
+/**
+ * The sheath target a species' review data names, if any. The target is the authored foot and
+ * collar the measure compares against; the plant record's own colour draws the surface and is not
+ * read here.
+ */
+function sheathTargetOfSpecies(species: string): SheathTarget | undefined {
+	const path = join(REPO_ROOT, 'tools/lib/plant-review/slots', `${species}.json`);
+	if (!existsSync(path)) return undefined;
+	return sheathTargetOf(JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>);
+}
+
 /** The metres a bark view frames, from the species' texture manifest when it has one. */
 function barkSpan(species: string): number | undefined {
 	const path = join(REPO_ROOT, 'packages/vegetation-textures/textures', species, 'manifest.json');
@@ -141,6 +170,7 @@ function stillShot(
 	matte: boolean,
 	span?: number,
 	extra?: Readonly<Record<string, unknown>>,
+	moundForm = false,
 ): Shot {
 	const image = onColour(readImage(join(set.folder, slot.file)), [255, 255, 255]);
 	const aspect = image.width / image.height;
@@ -154,8 +184,12 @@ function stillShot(
 		...slot.query,
 	};
 	const plant = plantMask(image);
-	if (plant.background.plain) {
-		const measures = measurePlant(image, plant);
+	if (
+		plant.background.plain ||
+		skyMaskable(plant.background) ||
+		soilMaskable(plant.background, plant.height)
+	) {
+		const measures = measurePlant(image, plant, moundForm);
 		// A plain background gives its own colour, which the render stands against. A silhouette
 		// draws black on white whatever its picture's colours and light, so it takes the framing alone.
 		if (slot.view !== 'silhouette') {
@@ -173,6 +207,17 @@ function stillShot(
 					sunRise: measures.light.rise,
 				};
 		}
+		// A junction view frames its subject so the limb's thickness and the stem's width take the
+		// shares of the frame that the picture's own subject box gives them. The box comes only from a
+		// picture whose outline separates; a picture whose reference set names no separable outline
+		// adds that to the flag, and a void box passes no shares, so the view keeps its own frame.
+		const shares = subjectShares(image.width, image.height, measures.box, plant.background.plain);
+		if (slot.view === 'junction' && shares)
+			query = {
+				...query,
+				subjectWidth: shares.width,
+				subjectHeight: shares.height,
+			};
 		if (slot.framed && measures.box) {
 			const {
 				sky: _sky,
@@ -180,6 +225,14 @@ function stillShot(
 				...framing
 			} = framingQuery(estimateFraming([measures], [plant]));
 			query = { ...query, ...framing };
+		}
+		// A close view of the crown's outside keeps the same margin its whole views do, so the run
+		// measures its render against the photograph's width share too and redraws it if it crops.
+		if (!slot.framed && slot.view === 'limb' && slot.query?.surface === true && measures.box) {
+			query = {
+				...query,
+				widthShare: estimateFraming([measures], [plant]).widthShare,
+			};
 		}
 	}
 	// A still's own query fields, such as a camera its picture needs, go over the rest, and a field
@@ -191,10 +244,17 @@ function stillShot(
 	// its outline whether or not the photograph separates, because a part that hangs from nothing
 	// shows only as a piece, and a piece needs the matte.
 	const outline =
-		(slot.kind !== 'texture' && plant.background.plain && slot.view !== 'silhouette') ||
+		(slot.kind !== 'texture' &&
+			(plant.background.plain ||
+				skyMaskable(plant.background) ||
+				soilMaskable(plant.background, plant.height)) &&
+			slot.view !== 'silhouette') ||
 		slot.framed ||
 		slot.query?.fruit === true ||
-		CUTTING_VIEWS.includes(slot.view);
+		CUTTING_VIEWS.includes(slot.view) ||
+		// A sheath picture reads its own surface off the plant alone, so its outline must be exact
+		// even where the photograph does not separate from its soil.
+		SHEATH_VIEWS.has(slot.view);
 	return singleShot(
 		'stills',
 		`${slot.file.replace(/\.\w+$/, '')}.png`,
@@ -224,11 +284,12 @@ function videoQuery(
 	base: PlantReviewQuery,
 	view: PlantView,
 	background: PlantBackground,
+	moundForm = false,
 ): PlantReviewQuery {
 	const frames = sampleFrames(path, FRAMING_FRAMES);
 	const masks = frames.map((frame) => plantMask(frame));
 	const estimate = estimateFraming(
-		masks.map((mask, k) => measurePlant(frames[k] as Rgba, mask)),
+		masks.map((mask, k) => measurePlant(frames[k] as Rgba, mask, moundForm)),
 		masks,
 	);
 	return { ...base, view, background, ...framingQuery(estimate) };
@@ -247,6 +308,7 @@ function turnVideoShots(
 	matte: boolean,
 	step?: number,
 	extra?: Readonly<Record<string, unknown>>,
+	moundForm = false,
 ): Shot[] {
 	const facts = probeVideo(video.path);
 	const frames = Math.max(1, Math.round(facts.duration * facts.fps));
@@ -255,8 +317,8 @@ function turnVideoShots(
 	const view: PlantView = TURN_VIEW[video.piece];
 	const query: PlantReviewQuery = withSlot(
 		video.piece === 'whole'
-			? { ...videoQuery(video.path, base, view, 'sky-meadow'), measure: true }
-			: videoQuery(video.path, base, view, 'studio-grey'),
+			? { ...videoQuery(video.path, base, view, 'sky-meadow', moundForm), measure: true }
+			: videoQuery(video.path, base, view, 'studio-grey', moundForm),
 		extra,
 	);
 	const group = `turn-${video.file.replace(/\.mp4$/, '')}`;
@@ -286,10 +348,11 @@ function windShots(
 	cellWidth: number | undefined,
 	fps: number,
 	extra?: Readonly<Record<string, unknown>>,
+	moundForm = false,
 ): Shot[] {
 	const facts = probeVideo(path);
 	const query: PlantReviewQuery = withSlot(
-		{ ...videoQuery(path, base, 'whole', 'sky-meadow'), wind: 1 },
+		{ ...videoQuery(path, base, 'whole', 'sky-meadow', moundForm), wind: 1 },
 		extra,
 	);
 	const count = Math.floor((facts.duration - 1e-6) * fps) + 1;
@@ -384,9 +447,219 @@ function slotHeld(path: string): boolean {
 }
 
 /** Takes the first free draw slot, waiting until one frees, and returns the way to give it back. */
-async function takeDrawSlot(): Promise<() => void> {
+/** The band, as a share of the frame's width, inside which a render's width counts as its reference's. */
+const WIDTH_BAND = 0.05;
+
+/**
+ * The most a close view's stand may be scaled to keep a margin. A close view's subject is its span,
+ * so a large scale frames a different part of the plant rather than the same part with its margin:
+ * a picture that needs more than this is a subject mismatch, not a crop, and its crop stays named.
+ */
+const CLOSE_CROP_MAX = 1.25;
+
+/**
+ * The band a whole view's stand may be scaled by. A reference whose mask holds background reports
+ * its plant wider than it draws, and a redraw that chases that share stands so close that the
+ * subject no longer matches the distant picture. A correction that needs a stand outside this band
+ * is that fault, so the picture keeps the framing's own stand and the refusal is reported.
+ */
+const WHOLE_SCALE_MIN = 0.4;
+
+/** How long a width correction waits for a draw slot before it keeps the framing's own stand. */
+const CORRECTION_WAIT_MS = 300_000;
+const WHOLE_SCALE_MAX = 2.5;
+
+/**
+ * A drawn frame's camera stand and the plant's width in metres, as the page posted them: the
+ * geometry that gives a clipped mask's share when the mask itself cannot report a width.
+ */
+function framePlacement(
+	frame: RunFrame | undefined,
+): { readonly plantWidth: number; readonly camera: CameraStand } | null {
+	const facts = frame?.facts as { plant?: { width?: number } } | undefined;
+	const cell = frame?.cell as
+		| { camera?: { position?: number[]; target?: number[]; fov?: number } }
+		| undefined;
+	const plantWidth = facts?.plant?.width;
+	const position = cell?.camera?.position;
+	const target = cell?.camera?.target;
+	const fov = cell?.camera?.fov;
+	if (
+		typeof plantWidth !== 'number' ||
+		typeof fov !== 'number' ||
+		!Array.isArray(position) ||
+		!Array.isArray(target) ||
+		position.length < 3 ||
+		target.length < 3
+	)
+		return null;
+	const distance = Math.hypot(
+		(position[0] as number) - (target[0] as number),
+		(position[1] as number) - (target[1] as number),
+		(position[2] as number) - (target[2] as number),
+	);
+	return { plantWidth, camera: { distance, fov } };
+}
+
+/**
+ * The share of the picture's width that the drawn plant fills: from the still's matte when it drew
+ * one, which is the exact outline whatever the background, or from the mask the view draws. A
+ * silhouette's black shape and a studio background can both defeat the colour mask, so the matte
+ * is the figure whenever it exists. A mask that runs off both side edges holds the frame's width at
+ * most, so it cannot report the plant's own width: the frame's camera stand gives the figure then,
+ * and the share responds to a redraw instead of saturating at the frame's edge.
+ */
+function drawnShare(
+	path: string,
+	silhouette: boolean,
+	matte?: string,
+	frame?: RunFrame,
+): { share: number; clipped: boolean } | null {
+	const image = readImage(matte ?? path);
+	const plant = matte !== undefined || silhouette ? matteMask(image) : plantMask(image);
+	if (
+		matte === undefined &&
+		!silhouette &&
+		!(
+			plant.background.plain ||
+			skyMaskable(plant.background) ||
+			soilMaskable(plant.background, plant.height)
+		)
+	)
+		return null;
+	const box = boxOf(plant.mask, plant.width, plant.height);
+	if (!box) return null;
+	if (box.left <= 0 && box.right >= plant.width - 1) {
+		const placement = framePlacement(frame);
+		const share = placement
+			? cameraWidthShare(placement.plantWidth, placement.camera, image.width / image.height)
+			: null;
+		if (share !== null) return { share, clipped: true };
+	}
+	return {
+		share: (box.right - box.left + 1) / plant.width,
+		clipped: box.left <= 0 || box.right >= plant.width - 1,
+	};
+}
+
+/**
+ * Redraws a whole view whose drawn width is outside the band from its reference's, at a stand
+ * corrected by the width the picture itself measured, and once more if the residual stays outside.
+ * A picture inside the band keeps the framing's own stand.
+ */
+async function correctWidths(
+	dir: string,
+	frames: RunFrame[],
+	shots: readonly Shot[],
+	gpu?: string,
+): Promise<RunFrame[]> {
+	const stills = shots.filter((shot) => shot.group === 'stills' && shot.cells.length === 1);
+	const frameOf = (file: string): RunFrame | undefined =>
+		frames.find((frame) => frame.file === file);
+	const matteOf = (file: string): string | undefined => frameOf(file)?.matte;
+	const fixes = new Map<
+		string,
+		{ target: number; silhouette: boolean; scale: number; close: boolean }
+	>();
+	for (const shot of stills) {
+		const target = shot.query.widthShare;
+		if (target === undefined || target >= 1) continue;
+		const file = shot.cells[0]?.file;
+		if (!file) continue;
+		const matte = matteOf(file);
+		const measured = drawnShare(
+			join(dir, file),
+			shot.query.view === 'silhouette',
+			matte ? join(dir, matte) : undefined,
+			frameOf(file),
+		);
+		if (measured === null) continue;
+		// A box that touches the frame's sides is a crop whatever its share reads, so it is redrawn
+		// even inside the band: a cropped frame cannot judge its subject.
+		const off = Math.abs(measured.share - target) > WIDTH_BAND;
+		const cropped = measured.clipped && target < 1;
+		if (!off && !cropped) continue;
+		const close = shot.query.view === 'limb' && shot.query.surface === true;
+		const scale = measured.share / target;
+		if (close && scale > CLOSE_CROP_MAX) continue;
+		if (!close && (scale < WHOLE_SCALE_MIN || scale > WHOLE_SCALE_MAX)) {
+			console.warn(
+				`width: ${file} keeps its stand: the target needs a scale of ${scale.toFixed(3)}, outside ${WHOLE_SCALE_MIN} to ${WHOLE_SCALE_MAX}`,
+			);
+			continue;
+		}
+		fixes.set(file, {
+			target,
+			silhouette: shot.query.view === 'silhouette',
+			scale,
+			close,
+		});
+	}
+	for (let pass = 0; pass < 2 && fixes.size > 0; pass++) {
+		const redraws = stills
+			.filter((shot) => fixes.has(shot.cells[0]?.file ?? ''))
+			.map((shot) => {
+				const fix = fixes.get(shot.cells[0]?.file ?? '');
+				return { ...shot, query: { ...shot.query, standScale: fix?.scale ?? 1 } };
+			});
+		if (redraws.length === 0) break;
+		// A correction waits a short spell for a slot, never an hour: a run that has drawn every
+		// picture must not lose its manifest, and its figures, behind runs that are still drawing.
+		let release: () => void;
+		try {
+			release = await takeDrawSlot(CORRECTION_WAIT_MS);
+		} catch {
+			console.warn(
+				`width: ${redraws.length} picture(s) keep the framing's stand: no draw slot freed for the correction`,
+			);
+			break;
+		}
+		let again: RunFrame[];
+		try {
+			again = await drawShots(dir, redraws, { ...(gpu && { gpu }) });
+		} finally {
+			release();
+		}
+		for (const frame of again) {
+			const at = frames.findIndex((f) => f.file === frame.file);
+			if (at >= 0) frames[at] = frame;
+			else frames.push(frame);
+		}
+		const next = new Map<
+			string,
+			{ target: number; silhouette: boolean; scale: number; close: boolean }
+		>();
+		for (const [file, fix] of fixes) {
+			const matte = matteOf(file);
+			const measured = drawnShare(
+				join(dir, file),
+				fix.silhouette,
+				matte ? join(dir, matte) : undefined,
+				frameOf(file),
+			);
+			if (measured === null) continue;
+			const off = Math.abs(measured.share - fix.target) > WIDTH_BAND;
+			const cropped = measured.clipped && fix.target < 1;
+			const scale = fix.scale * (measured.share / fix.target);
+			if (fix.close && scale > CLOSE_CROP_MAX) continue;
+			if (!fix.close && (scale < WHOLE_SCALE_MIN || scale > WHOLE_SCALE_MAX)) {
+				console.warn(
+					`width: ${file} keeps its stand: the target needs a scale of ${scale.toFixed(3)}, outside ${WHOLE_SCALE_MIN} to ${WHOLE_SCALE_MAX}`,
+				);
+				continue;
+			}
+			if (off || cropped) next.set(file, { ...fix, scale });
+		}
+		fixes.clear();
+		for (const [file, fix] of next) fixes.set(file, fix);
+	}
+	return frames;
+}
+
+async function takeDrawSlot(waitMs = 3_600_000): Promise<() => void> {
 	if (flag('no-slot')) return () => {};
-	for (let attempt = 0; attempt < 720; attempt++) {
+	const tries = Math.max(1, Math.ceil(waitMs / 5000));
+	for (let attempt = 0; attempt < tries; attempt++) {
 		for (let slot = 1; slot <= DRAW_SLOTS; slot++) {
 			const path = `${DRAW_SLOT}${slot}`;
 			try {
@@ -413,7 +686,9 @@ async function takeDrawSlot(): Promise<() => void> {
 		}
 		await new Promise((done) => setTimeout(done, 5000));
 	}
-	throw new Error('no draw slot freed in an hour: another run is holding the machine');
+	throw new Error(
+		`no draw slot freed in ${Math.round(waitMs / 60_000)} minute(s): another run is holding the machine`,
+	);
 }
 
 /** The parts of the review that `--only` keeps: stills, turns and wind, all by default. */
@@ -498,6 +773,8 @@ function compareRun(
 	manifest: Manifest,
 	set: ReferenceSet | undefined,
 	windFps: number,
+	moundForm: boolean,
+	sheath: SheathTarget | undefined,
 ): boolean {
 	const byGroup = new Map<string, RunFrame[]>();
 	for (const frame of manifest.frames) {
@@ -536,6 +813,8 @@ function compareRun(
 			set,
 			byGroup.get('stills') ?? [],
 			`${label}  STILLS AND TEXTURE SOURCES`,
+			moundForm,
+			sheath,
 		);
 		for (const pair of result.pairs) stills.set(pair.file, pair);
 		metrics.stills = result;
@@ -546,13 +825,32 @@ function compareRun(
 			`- ${result.pairs.length} files beside a render of their view; ${masked.length} give an outline on a plain background in both pictures.`,
 			...masked.map(
 				(pair) =>
-					`- ${pair.file}: shape IoU ${fixed(pair.shapeIou)}, width error ${fixed(pair.profileError, 3)}, gap ${fixed(pair.crownBoxGap?.reference)} against ${fixed(pair.crownBoxGap?.render)} in the crown box, frame ${fixed(pair.frameGap?.reference)} against ${fixed(pair.frameGap?.render)}, leaf colour difference ${fixed(pair.foliageDeltaE, 1)}${barkClause(pair)}${pieceClause(pair)}.`,
+					`- ${pair.file}: shape IoU ${fixed(pair.shapeIou)}, width error ${fixed(pair.profileError, 3)}, gap ${fixed(pair.crownBoxGap?.reference)} against ${fixed(pair.crownBoxGap?.render)} in the crown box, enclosed ${fixed(pair.gap?.reference)} against ${fixed(pair.gap?.render)}, frame ${fixed(pair.frameGap?.reference)} against ${fixed(pair.frameGap?.render)}, leaf colour difference ${fixed(pair.foliageDeltaE, 1)}${barkClause(pair)}${pieceClause(pair)}${fittedMaskClause(pair)}.`,
 			),
 			...result.pairs.flatMap((pair) =>
 				pair.surfaceDeltaE !== null
 					? [`- ${pair.file}: surface colour difference ${fixed(pair.surfaceDeltaE, 1)}.`]
 					: [],
 			),
+			...result.pairs.flatMap((pair) => {
+				if (!pair.sheath) return [];
+				const { photograph, record } = pair.sheath;
+				const material = `against the record, foot ${fixed(record.foot, 1)} and collar ${fixed(record.collar, 1)} (the material check)`;
+				const patches = `from ${pair.sheath.footPixels} and ${pair.sheath.collarPixels} render pixels`;
+				return photograph
+					? [
+							`- ${pair.file}: sheath against the photograph, foot ${fixed(photograph.foot, 1)} and collar ${fixed(photograph.collar, 1)} (the row's figure); ${material}, ${patches}.`,
+						]
+					: [
+							`- ${pair.file}: the photograph's sheath cannot be isolated on this view, so the row has no photograph figure (the carrier's limit); ${material}, ${patches}.`,
+						];
+			}),
+			// A bark close view photographs the bark against bark, so it has no outline. Its row is
+			// its material, and the pair below names each side's colour and the distance between.
+			...result.pairs.flatMap((pair) => {
+				const line = masked.includes(pair) ? null : barkLine(pair);
+				return line ? [line] : [];
+			}),
 			// A picture whose backdrop the tool cannot separate still has edges, and its edges say
 			// where its parts run. It gets that figure instead of an outline it cannot trust.
 			...edgeLines(result.pairs),
@@ -570,7 +868,14 @@ function compareRun(
 		const frames = byGroup.get(group);
 		if (!frames) continue;
 		console.log(`comparing ${video.file}`);
-		const result = compareTurn(dir, group, video, frames, `${label}  ${video.file.toUpperCase()}`);
+		const result = compareTurn(
+			dir,
+			group,
+			video,
+			frames,
+			`${label}  ${video.file.toUpperCase()}`,
+			moundForm,
+		);
 		turns.set(video.file, result);
 		summary.push(...turnSummary(result, limit));
 	}
@@ -666,6 +971,13 @@ function barkClause(pair: StillResult): string {
 	return `, bark photographs ${show(reference)} and draws ${show(render)}`;
 }
 
+/** A bark close view's colour pair for a picture that has no outline to carry it. */
+function barkLine(pair: StillResult): string | null {
+	if (!pair.barkColour) return null;
+	const steps = deltaE2000(pair.barkColour.reference, pair.barkColour.render);
+	return `- ${pair.file}: no plain outline${barkClause(pair)}, ${steps.toFixed(2)} steps apart.`;
+}
+
 /** Where the render is drawn as more or fewer separate pieces than its reference. */
 function pieceLines(pairs: readonly StillResult[]): string[] {
 	const lines: string[] = [];
@@ -695,7 +1007,14 @@ async function main(): Promise<void> {
 		const set = manifest.references
 			? readReferenceSet(manifest.references, await formsOf(manifest.species))
 			: undefined;
-		const complete = compareRun(dir, manifest, set, manifest.windFps ?? windFps);
+		const complete = compareRun(
+			dir,
+			manifest,
+			set,
+			manifest.windFps ?? windFps,
+			await moundFormOf(manifest.species),
+			sheathTargetOfSpecies(manifest.species),
+		);
 		console.log(readFileSync(join(dir, 'summary.md'), 'utf8'));
 		if (!complete) process.exitCode = 1;
 		return;
@@ -703,6 +1022,7 @@ async function main(): Promise<void> {
 	const species = positional(0) ?? option('species');
 	const folder = referenceFolder(species);
 	const set = folder ? readReferenceSet(folder, await formsOf(species)) : undefined;
+	const sheath = sheathTargetOfSpecies(species);
 	const { commit, dirty } = commitOf();
 	const stamp = new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 13);
 	const run = option('run', `${species}-${stamp}`);
@@ -722,6 +1042,7 @@ async function main(): Promise<void> {
 	const cell = flag('cell') ? Number(option('cell')) : undefined;
 	const step = flag('step') ? Number(option('step')) : undefined;
 	const wanted = parts();
+	const moundForm = await moundFormOf(species);
 	const shots: Shot[] = [];
 	for (const view of viewList()) {
 		const [w, h] = VIEW_SPECS[view].size;
@@ -754,14 +1075,16 @@ async function main(): Promise<void> {
 			: {};
 		if (wanted.has('stills'))
 			for (const slot of stillList(set.stills))
-				shots.push(stillShot(set, slot, base, matte, span, slotQueries[slot.file]));
+				shots.push(stillShot(set, slot, base, matte, span, slotQueries[slot.file], moundForm));
 		if (wanted.has('turns'))
 			for (const video of set.turns)
-				shots.push(...turnVideoShots(video, base, cell, matte, step, slotQueries[video.file]));
+				shots.push(
+					...turnVideoShots(video, base, cell, matte, step, slotQueries[video.file], moundForm),
+				);
 		if (wanted.has('wind'))
 			for (const path of set.winds) {
 				const file = path.split('/').pop() as string;
-				shots.push(...windShots(path, file, base, cell, windFps, slotQueries[file]));
+				shots.push(...windShots(path, file, base, cell, windFps, slotQueries[file], moundForm));
 			}
 	}
 	if (shots.length === 0)
@@ -772,12 +1095,13 @@ async function main(): Promise<void> {
 	);
 	const started = Date.now();
 	const release = await takeDrawSlot();
-	let frames: readonly RunFrame[];
+	let frames: RunFrame[];
 	try {
 		frames = await drawShots(dir, shots, { ...(flag('gpu') && { gpu: option('gpu') }) });
 	} finally {
 		release();
 	}
+	frames = await correctWidths(dir, frames, shots, flag('gpu') ? option('gpu') : undefined);
 	const manifest: Manifest = {
 		tool: 'tools/plant-review.ts',
 		species,
@@ -799,7 +1123,14 @@ async function main(): Promise<void> {
 	console.log(
 		`${frames.length - failed} of ${frames.length} frames drawn in ${manifest.seconds} s`,
 	);
-	const complete = compareRun(dir, manifest, set, windFps);
+	const complete = compareRun(
+		dir,
+		manifest,
+		set,
+		windFps,
+		await moundFormOf(manifest.species),
+		sheath,
+	);
 	console.log(readFileSync(join(dir, 'summary.md'), 'utf8'));
 	if (failed > 0 || !complete) process.exitCode = 1;
 }

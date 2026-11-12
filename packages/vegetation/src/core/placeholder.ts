@@ -942,6 +942,7 @@ export function levelOf(level: 0 | 1 | 2, parts: readonly PlantPart[], from: num
 			a.uvs.byteLength +
 			a.uvs1.byteLength +
 			a.colors.byteLength +
+			(a.tangents?.byteLength ?? 0) +
 			a.indices.byteLength;
 	}
 	return { level, parts, from, triangles, bytes };

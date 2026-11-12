@@ -72,4 +72,30 @@ describe("the crown's light", () => {
 		expect(packBent(-1, 0, 0) >> 4).toBe(0);
 		expect(packBent(0, 0, 1) & 15).toBe(15);
 	});
+
+	it('takes a species sky-to-leaf value as the crown extinction, the constant where none', () => {
+		// A layer over the whole grid but its +z edge; a shoot sits under it.
+		const layer: [number, number, number][] = [];
+		for (let x = -3.5; x <= 3.5; x += 0.25)
+			for (let z = -3.5; z <= 0.5; z += 0.25) layer.push([x, 6, z]);
+		const at = () => rowsAt([...layer, [0, 5.4, 0]]);
+		const under = at().count - 1;
+		const withValue = (skyToLeaf?: number): DressInput => {
+			const base = input();
+			return {
+				...base,
+				record: { ...base.record, ...(skyToLeaf !== undefined && { skyToLeaf }) },
+			};
+		};
+		const baseRows = at();
+		lightCrown(withValue(), baseRows);
+		// Naming the default's own value leaves the bake exactly as the constant does.
+		const sameRows = at();
+		lightCrown(withValue(0.3), sameRows);
+		expect(sameRows.sky[under]).toBe(baseRows.sky[under] as number);
+		// A denser extinction leaves the shoot less sky.
+		const denserRows = at();
+		lightCrown(withValue(0.8), denserRows);
+		expect(denserRows.sky[under]).toBeLessThan(baseRows.sky[under] as number);
+	});
 });

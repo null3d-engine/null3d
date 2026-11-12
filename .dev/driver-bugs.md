@@ -76,6 +76,18 @@ Smallest known case: any compute shader with one `atomicCompareExchangeWeak` cal
 
 Workaround in the engine: no engine shader calls it, and the engine's shader build fails on it. Users' shaders build with a warning ([D-100](decisions/D-100-workgroup-counters.md), [Browser faults](implementation-notes.md#browser-faults)).
 
+## Adreno 619: a pipeline fails to build with VK_ERROR_UNKNOWN at Creek's density
+
+Status: not reported yet.
+
+- Device: Samsung Galaxy Tab A9+ (SM-X216B), Qualcomm Adreno 619, Android 14, in BrowserStack's device cloud.
+- Browser: Chrome 152.0.7977.54, core WebGPU through Dawn's Vulkan backend. The device reports an adapter, vendor qualcomm and architecture adreno-6xx.
+- Seen in: Creek at High on WebGPU, in the vegetation run at `d822a8cc2` ([tested devices](tested-devices/galaxy-tab-a9-plus-sm-x216b-chrome/20261111-081454-vegetation.md)), and again on the same page at `7140063b5`, the commit before the reflection landing. Both builds fail identically, so the fault is older than that change.
+- What happens: the sketch and render workers start and the probe answers; then the first frame never draws. The render worker reports E1404, "a pipeline failed to build: CreateGraphicsPipelines failed with VK_ERROR_UNKNOWN", while initializing "custom material 131". The page gives up after 600 s.
+- What runs: the same device draws its thirteen vegetation-grass pages at all four presets, and Creek at Low and the forest at Low and Medium on WebGL2.
+- Not tried: whether the failure follows the number of custom materials, the textures' memory or one shader; whether the same page passes in compatibility mode; whether the forest at High fails too, because the run ended before that page. A memory cause is likely on a device with 4 GB of memory, but no figure measures it.
+- Workaround: none. The engine's start-up check cannot lower the page's preset, so a page that names High meets the fault.
+
 ## Adreno 619: a program whose vertex shader reads a uniform array at the draw index fails to link
 
 Status: not reported yet.

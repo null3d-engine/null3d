@@ -1,0 +1,114 @@
+{
+	"01-whole-distant.png": {
+		"sunAzimuth": 40,
+		"sunRise": 48,
+		"skyShare": 0.5,
+		"daylight": 2.3,
+		"fov": 30
+	},
+	"02-whole-profile.png": {
+		"sunAzimuth": 20,
+		"sunRise": 52,
+		"skyShare": 0.5,
+		"daylight": 2.5,
+		"fov": 30
+	},
+	"03-whole-from-below.png": {
+		"sunAzimuth": 30,
+		"sunRise": 68,
+		"skyShare": 0.55,
+		"daylight": 1.8
+	},
+	"04-crown-outside.png": {
+		"skyShare": 0.5,
+		"daylight": 1.7,
+		"distance": 4
+	},
+	"05-crown-underneath.png": {
+		"skyShare": 0.68,
+		"daylight": 1.1
+	},
+	"06-inside-crown.png": {
+		"skyShare": 0.6,
+		"daylight": 1.0
+	},
+	"17-trunk-taper.png": {
+		"skyShare": 0.62,
+		"daylight": 1.0
+	},
+	"18-silhouette.png": {
+		"fov": 30,
+		"fill": null,
+		"targetY": null,
+		"top": 0.12,
+		"eye": 0.3
+	},
+	"08-limb-fork.png": {
+		"background": "studio-grey",
+		"sky": "#c8c4be"
+	},
+	"willow-turntable.mp4": {
+		"skyShare": 0.62,
+		"daylight": 2.4
+	},
+	"willow-wind-motion.mp4": {
+		"skyShare": 0.62,
+		"daylight": 2.4
+	},
+	"09-secondary-branching.png": {
+		"leaves": 19.5,
+		"roll": -90
+	},
+	"10-fine-twigs.png": {
+		"leaves": 7.46
+	},
+	"19-hanging-shoot.png": {
+		"view": "strands",
+		"fov": 10,
+		"distance": 8
+	},
+	"20-spring-catkins.png": {
+		"view": "crown",
+		"background": "sky",
+		"fov": 45,
+		"distance": 2.5,
+		"season": "blossom",
+		"thin": null,
+		"span": null
+	},
+	"12-single-leaf-upper.png": {
+		"leaves": 1.25,
+		"roll": -45.0
+	},
+	"13-single-leaf-underside.png": {
+		"leaves": 1.25,
+		"roll": -45.0
+	},
+	"16-bark-on-limb.png": {
+		"girth": null,
+		"thin": 0.153,
+		"span": 0.5,
+		"along": 0.3,
+		"barkMask": true,
+		"daylight": 2.66
+	},
+	"30-young-willow-whole.png": {
+		"sunAzimuth": 40,
+		"sunRise": 48,
+		"skyShare": 0.5,
+		"daylight": 2.3,
+		"fov": 30
+	},
+	"31-young-willow-crown.png": {
+		"skyShare": 0.55,
+		"daylight": 2.0
+	},
+	"28-young-bark.png": {
+		"thin": 0.015,
+		"span": 0.1,
+		"barkMask": true
+	},
+	"15-bark-mid-trunk.png": {
+		"daylight": 1.0
+	}
+}

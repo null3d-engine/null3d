@@ -318,9 +318,11 @@ mod ids {
     pub const BLANK_PARTICLE_DEPTH: u32 = BLANK_PROBES + 1;
     /// The texel that custom materials bind in place of the copy of the camera's opaque depth.
     pub const BLANK_SCENE_DEPTH: u32 = BLANK_PARTICLE_DEPTH + 1;
+    /// The texel that particle systems without a wind field bind in its place.
+    pub const BLANK_PARTICLE_WIND: u32 = BLANK_SCENE_DEPTH + 1;
     /// The texture of one texel that the motion debug view reads in place of the motion target
     /// where the device draws none.
-    pub const BLANK_MOTION: u32 = BLANK_SCENE_DEPTH + 1;
+    pub const BLANK_MOTION: u32 = BLANK_PARTICLE_WIND + 1;
     /// The moment layer's two lookup tables, which it makes at its first use.
     pub const MOMENT_AREA: u32 = BLANK_MOTION + 1;
     pub const MOMENT_SEARCH: u32 = MOMENT_AREA + 1;
@@ -422,8 +424,10 @@ mod ids {
     pub const MOMENT_SAMPLER: u32 = TAA_SAMPLER + 1;
     /// The repeating linear sampler of the volumetric cloud tier's noise field.
     pub const CLOUD_SAMPLER: u32 = MOMENT_SAMPLER + 1;
+    /// The sampler of the texel that particle systems without a wind field bind.
+    pub const PARTICLE_WIND_SAMPLER: u32 = CLOUD_SAMPLER + 1;
     /// The samplers of materials' maps.
-    pub const SAMPLERS: u32 = CLOUD_SAMPLER + 1;
+    pub const SAMPLERS: u32 = PARTICLE_WIND_SAMPLER + 1;
 
     /// Each view's bind groups: a frame group per slot of the light textures' ring, the draw
     /// record group, then the groups of its instance textures, one per pair of ring slots.
@@ -997,6 +1001,8 @@ impl CpuCulledRenderer {
                 groups: ids::PARTICLE_GROUPS,
                 depth_groups: ids::PARTICLE_DEPTH_GROUPS,
                 blank_depth: ids::BLANK_PARTICLE_DEPTH,
+                blank_wind: ids::BLANK_PARTICLE_WIND,
+                blank_wind_sampler: ids::PARTICLE_WIND_SAMPLER,
             }),
             physical_sky: PhysicalSkyPass::new(PhysicalSkyIds {
                 buffer: ids::PHYSICAL_SKY,

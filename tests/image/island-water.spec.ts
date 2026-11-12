@@ -19,6 +19,13 @@ const WATER_ROWS = 50;
 const CHANNEL = 24;
 /** The share of the water's pixels that may change: about 1 per cent do, and 2 did with the fine ripples. */
 const MAX_CHANGED = 0.015;
+/**
+ * The longest that one held frame may take. The island's first frame builds the pipelines of its
+ * town, trees and water before it draws, and CI's software GPU did not draw the demo's first frame
+ * within 300 s: the demo holds 600 s for that reason. This page draws at 640 x 360 at the High
+ * preset, so its capture takes the same ceiling.
+ */
+const HOLD_MS = 600_000;
 
 /** The water's rows of the harbour's held frame at a time. */
 async function water(page: Page, query: string, hold: number): Promise<Uint8Array> {
@@ -26,7 +33,7 @@ async function water(page: Page, query: string, hold: number): Promise<Uint8Arra
 		`image.html?${query}&hold=${hold}&preset=high&size=${WIDTH}x${HEIGHT}&moments=on&sketch=/examples/showcase/island/sketch.ts`,
 	);
 	await page.waitForFunction('globalThis.__null3dHold !== undefined', undefined, {
-		timeout: 120_000,
+		timeout: HOLD_MS,
 	});
 	const rows = await page.evaluate(
 		([width, height, count]) => {
@@ -48,8 +55,8 @@ for (const [path, query] of [
 	['WebGL2', 'gpu=webgl2'],
 ] as const)
 	test(`the harbour's reflections hold still from frame to frame on ${path}`, async ({ page }) => {
-		// Each of the two held frames may take its own wait on a software GPU.
-		test.setTimeout(300_000);
+		// Each of the two held frames takes its own wait on a software GPU.
+		test.setTimeout(2 * HOLD_MS + 60_000);
 		const [a, b] = [
 			await water(page, query, HOLDS[0] as number),
 			await water(page, query, HOLDS[1] as number),

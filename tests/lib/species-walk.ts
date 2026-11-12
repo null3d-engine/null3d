@@ -2,39 +2,64 @@
 // line here. The stand-in species joins them, so the walk proves itself before the first species
 // lands. Each species' record must pass the record check and the owner's caps, name its own texture
 // folder, grow the same bytes twice, and stay within its own budget.
+//
+// The walk is this module, and the slices beside it call it: the run starts a group only after the
+// group before it has ended, so the walk's length is the run's floor unless it divides. A slice takes
+// every nth species rather than a run of them, so the species that take longest land in different
+// slices rather than in one.
 import { describe, expect, it } from 'bun:test';
-import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
-import type { PlantAsset, SpeciesKitData } from '../asset';
-import { plantAssetDigest } from '../asset';
-import { capsFor, kitBytesOf, NEAR_CAPS, variantBytesOf } from '../core/caps';
-import { speciesProblems } from '../core/check';
-import { radians, tan } from '../core/math';
-import type { SpeciesModule } from '../core/record';
-import { isSpeciesId, loadSpecies, speciesIds } from '../core/registry';
-import { standInSpecies } from '../core/stand-in';
-import { DETAILS, type Detail, spreadMax } from '../core/types';
-import { buildKitNow, growPlantNow, loadPlantCode } from '../generate';
-import { kitBuffers } from '../generate-task';
-import { REFERENCE_VIEW } from '../lod/levels';
+import type { PlantAsset, SpeciesKitData } from '../../packages/vegetation/src/asset';
+import { plantAssetDigest } from '../../packages/vegetation/src/asset';
+import {
+	capsFor,
+	kitBytesOf,
+	NEAR_CAPS,
+	variantBytesOf,
+} from '../../packages/vegetation/src/core/caps';
+import { speciesProblems } from '../../packages/vegetation/src/core/check';
+import { radians, tan } from '../../packages/vegetation/src/core/math';
+import type { SpeciesModule } from '../../packages/vegetation/src/core/record';
+import { isSpeciesId, loadSpecies, speciesIds } from '../../packages/vegetation/src/core/registry';
+import { standInSpecies } from '../../packages/vegetation/src/core/stand-in';
+import { DETAILS, type Detail, spreadMax } from '../../packages/vegetation/src/core/types';
+import { buildKitNow, growPlantNow, loadPlantCode } from '../../packages/vegetation/src/generate';
+import { kitBuffers } from '../../packages/vegetation/src/generate-task';
+import { REFERENCE_VIEW } from '../../packages/vegetation/src/lod/levels';
+import { scaledBudget } from './run-budget.ts';
 
 /**
  * One species to walk: its folder's name, its module, and which of its stages grow as stand-ins:
  * every stage, or only those not built yet.
  */
-interface Walked {
+export interface Walked {
 	readonly folder: string;
 	readonly load: () => Promise<SpeciesModule>;
 	readonly placeholders: true | 'missing';
 }
 
-const WALKED: readonly Walked[] = [
-	...speciesIds().map((id) => ({
-		folder: id,
-		load: () => loadSpecies(id),
-		placeholders: 'missing' as const,
-	})),
-	{ folder: 'stub', load: async () => standInSpecies('stub'), placeholders: true as const },
-];
+/** Every species the registry holds, then the stand-in that proves the walk. */
+export function walkedSpecies(): readonly Walked[] {
+	return [
+		...speciesIds().map((id) => ({
+			folder: id,
+			load: () => loadSpecies(id),
+			placeholders: 'missing' as const,
+		})),
+		{ folder: 'stub', load: async () => standInSpecies('stub'), placeholders: true as const },
+	];
+}
+
+/**
+ * The walk's `index`th slice, of `count` slices: every `count`th species, starting at `index`.
+ *
+ * @param all Every species the walk takes.
+ * @param index Which slice this is, from zero.
+ * @param count How many slices the walk divides into.
+ * @returns This slice's species.
+ */
+export function sliceOf(all: readonly Walked[], index: number, count: number): readonly Walked[] {
+	return all.filter((_, i) => i % count === index);
+}
 
 /** The near band's leaf tiers out from the camera, as shares of the split distance. */
 const NEAR_BANDS: readonly (readonly [share: number, detail: Detail])[] = [
@@ -113,7 +138,12 @@ function growsWithinBudget(kit: SpeciesKitData): void {
 	}
 }
 
-for (const walked of WALKED) {
+/**
+ * Registers the checks one species must pass.
+ *
+ * @param walked The species to walk.
+ */
+export function walkSpecies(walked: Walked): void {
 	describe(`the species ${walked.folder}`, async () => {
 		const module = await walked.load();
 		const { record } = module;
