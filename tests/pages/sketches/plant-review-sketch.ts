@@ -1429,9 +1429,24 @@ export default defineSketch(async (ctx) => {
 		);
 	const trunk = stemAt(skeleton, 1.3);
 	const close = closeViews.get(VIEW);
-	const subject = close
+	// A slot that names a distance stands in for whatever stand the view fitted, so the facts say so:
+	// an old slot entry can otherwise hold a view off its own subject without a trace.
+	const override =
+		QUERY.distance === undefined
+			? undefined
+			: "the slot names a distance, which stands in for the view's own fitted stand";
+	const foundSubject = close
 		? { ...close.subject, ...(close.clutter && { clutter: close.clutter }) }
 		: plainSubjects.get(VIEW);
+	const prior = (foundSubject as { warning?: string } | undefined)?.warning;
+	const subject = foundSubject
+		? {
+				...foundSubject,
+				...(override && { warning: [prior, override].filter(Boolean).join('; ') }),
+			}
+		: override
+			? { kind: 'the camera the slot placed', warning: override }
+			: undefined;
 	// The plant as the view draws it: the level's filled silhouette, not every level's part bounds,
 	// so a vertex or a part outside the drawn cells cannot inflate the posted width and height.
 	const drawnBox = cells[0] ? measurePlant(main, kit.box, cells[0].turn).plantBox : null;
