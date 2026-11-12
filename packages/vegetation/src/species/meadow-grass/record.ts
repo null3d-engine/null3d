@@ -45,8 +45,8 @@ export const record: Species = {
 		// their tips, while the oldest outer ones leave their collars wide and arch toward the
 		// ground. The young blades hold the leaf mass's height; the old ones its width.
 		spread: [
-			[0, 4],
-			[1, 18],
+			[0, 2],
+			[1, 12],
 		],
 		size: [
 			[0, 0.8],
@@ -75,6 +75,9 @@ export const record: Species = {
 				],
 				droop: 12,
 				flowers: { mean: 5, spread: 1 },
+				// Still 18: the spray's branches read on the silhouette, so a branch at 0.30 of the
+				// stem's radius joins it into one piece where 0.18 split the height profile.
+				branchShare: 0.3,
 			},
 		},
 	},
@@ -110,7 +113,7 @@ export const record: Species = {
 				reflectance: [0.1284, 0.272, 0.0218],
 				reflectanceBack: [0.0654, 0.158, 0.0104],
 				transmittance: [0.16, 0.33, 0.03],
-				roughness: [0.55, 0.35],
+				roughness: [0.55, 0.6],
 			},
 		},
 	},
@@ -224,7 +227,7 @@ export const record: Species = {
 						reflectance: [0.1284, 0.272, 0.0218],
 						reflectanceBack: [0.0654, 0.158, 0.0104],
 						transmittance: [0.16, 0.33, 0.03],
-						roughness: [0.55, 0.35],
+						roughness: [0.55, 0.6],
 					},
 				},
 			},
@@ -235,5 +238,8 @@ export const record: Species = {
 		// on its own against the copy stand.
 		branch: { order: 1, length: 0.5 },
 		subbranch: { order: 1, length: 0.35 },
+		// Stills 12, 13 and the two texture sources: a picked blade lies pressed on the copy stand,
+		// so its fold, twist and arch straighten and the pictures show the blade's own width.
+		leaf: { pressed: true },
 	},
 };

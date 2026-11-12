@@ -281,7 +281,6 @@ export interface StemRun {
 	 */
 	readonly leastSky?: number;
 	/**
-	/**
 	 * Whether this run is a tuft's basal sheath column, which the plant material draws in the
 	 * record's sheath colour. Absent, the run draws as the leaf does.
 	 */
