@@ -108,6 +108,8 @@ const LOOK_DOWN = 12;
  * photograph stands close on the crotch, so the stem fills one side and the other limbs fall out.
  */
 const JUNCTION_LIMB_SHARE = 0.55;
+/** The share of the frame's width the stem's own surface takes when a picture gives no box. */
+const JUNCTION_STEM_SHARE = 0.3;
 /** The least radius, against the thickest limb that leaves the stem, of a limb a junction view takes. */
 const JUNCTION_THICK = 0.5;
 /**
@@ -622,8 +624,9 @@ export interface SubjectBoxShare {
 /**
  * The frame's height that a junction view takes: the limb's thickness must not outgrow the
  * photograph's subject box height share, and the stem's width must not outgrow its width share, so
- * the frame takes whichever need is the larger. Without the shares, the limb's diameter fills its
- * own share of the frame, as the view did before a picture's box was measured.
+ * the frame takes whichever need is the larger. Without the shares, the frame keeps the limb at its
+ * own share and puts the stem's surface across the width, so the join and both limbs it joins stand
+ * in the picture rather than a wall of bark.
  */
 export function junctionFrameHeight(
 	limbDiameter: number,
@@ -631,7 +634,11 @@ export function junctionFrameHeight(
 	shares: SubjectBoxShare | undefined,
 	aspect: number,
 ): number {
-	if (!shares) return limbDiameter / JUNCTION_LIMB_SHARE;
+	if (!shares)
+		return Math.max(
+			limbDiameter / JUNCTION_LIMB_SHARE,
+			stemDiameter / (JUNCTION_STEM_SHARE * aspect),
+		);
 	return Math.max(limbDiameter / shares.height, stemDiameter / (shares.width * aspect));
 }
 
@@ -1066,6 +1073,41 @@ function armsReach(skeleton: MacroSkeleton, fork: Fork): number {
  * as it does for a limb. Arms nearer the limb's own size, and a fork that stands upright so a level
  * camera sees it square, make the likelier subject.
  */
+/**
+ * What the fork view's wishes keep of a plant's divisions, each count among those left by the wish
+ * before it, so a fork view that draws no fork can say which wish emptied it. A count above zero
+ * with no subject means the divisions exist but no camera sees one clear.
+ */
+export function forkCandidates(
+	skeleton: MacroSkeleton,
+	thin?: number,
+): {
+	readonly total: number;
+	readonly counts: readonly number[];
+	readonly kept: number;
+	readonly sought: number;
+} {
+	const stemRadius = stemAt(skeleton, 1.3)?.radius ?? stemAt(skeleton, 0.3)?.radius ?? 0.1;
+	const sought = thin ?? FORK_STEM_SHARE * stemRadius;
+	const stem = mainStem(skeleton);
+	const all = forks(skeleton);
+	const outside = all.filter((f) => f.reach > stemRadius + 2 * f.radius);
+	const wishes = [
+		(f: Fork) => (skeleton.axes.parent[f.limb] as number) === stem,
+		(f: Fork) => Math.abs(Math.log(f.radius / sought)) <= Math.log(FORK_SIZE),
+		(f: Fork) => f.armRadius >= FORK_EVEN * f.radius,
+		(f: Fork) => Math.hypot(...cross(f.on, f.out)) >= FORK_OPEN,
+	];
+	let kept = outside;
+	const counts: number[] = [outside.length];
+	for (const wish of wishes) {
+		const passing = kept.filter(wish);
+		if (passing.length > 0) kept = passing;
+		counts.push(passing.length);
+	}
+	return { total: all.length, counts, kept: kept.length, sought };
+}
+
 export function forkView(
 	plant: ClosePlant,
 	lens: Lens,
