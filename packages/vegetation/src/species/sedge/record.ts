@@ -62,8 +62,8 @@ export const record: Species = {
 			[1, 1],
 		],
 		heads: {
-			// Stills 01 and 02: a big tussock rises about eighteen flowering stems.
-			count: { mean: 18, spread: 4 },
+			// Stills 01 and 02: a big tussock rises about twenty-two flowering stems.
+			count: { mean: 22, spread: 4 },
 
 			kind: 'spike',
 			// Still 17: the stems stand about 30 cm above the leaf mound at their highest point.
@@ -225,10 +225,13 @@ export const record: Species = {
 			// margin above each. The medium, low and ultra byte caps are unchanged and were measured
 			// before the newer grower, so a later read should confirm them. The kit holds 33 to 37 KB.
 			kitBytes: { low: 100_000, medium: 100_000, high: 100_000, ultra: 100_000 },
-			variantBytes: { low: 1_673_928, medium: 2_300_000, high: 3_100_000, ultra: 3_800_000 },
+			// The owner's 12 November 2026 ruling, after the standing authority: the sedge draws the
+			// photographs' twenty-two flowering stems, measured at 3,375,625 variant bytes and
+			// 78,833, 40,987 and 23,409 triangles, and the caps take a stated margin above each.
+			variantBytes: { low: 1_673_928, medium: 2_300_000, high: 3_600_000, ultra: 3_800_000 },
 			lod0Triangles: 140_000,
-			lod1Triangles: 36_000,
-			lod2Triangles: 19_600,
+			lod1Triangles: 80_000,
+			lod2Triangles: 25_000,
 			downloadBytes: 350_000,
 			downloadHalfBytes: 120_000,
 			growMilliseconds: 150,
