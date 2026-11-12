@@ -274,8 +274,6 @@ export const record: Species = {
 			scale: { mean: 1.4, spread: 0.15 },
 		},
 	},
-	// The probe: the far-card extinction as an extra sky term on the leaf and card faces.
-	skyToLeaf: 0.3,
 	foliage: {
 		kind: 'blade',
 		leaf: {
