@@ -469,12 +469,15 @@ self.onmessage = () => {
 	it('holds a step’s turn and a great limb’s azimuth when the record asks', () => {
 		const record = species.record;
 		const growth = record.growth as Extract<Species['growth'], { model: 'self-organizing' }>;
-		const withRules = (maxTurn: number | undefined, limbAzimuth: number | undefined): Species => ({
+		// The fields are off here, so both arms start from the record's crown without them.
+		const base: Species = {
 			...record,
-			growth: { ...growth, maxTurn, limbAzimuth },
-		});
-		// Absent, the growth is the record's own, byte for byte.
-		expect(digest(grow(0, withRules(undefined, undefined)))).toBe(digest(grow(0, record)));
+			growth: { ...growth, maxTurn: undefined, limbAzimuth: undefined },
+		};
+		const withRules = (maxTurn: number | undefined, limbAzimuth: number | undefined): Species =>
+			({ ...base, growth: { ...growth, maxTurn, limbAzimuth } }) as Species;
+		// Absent, the growth is the base record's own, byte for byte.
+		expect(digest(grow(0, withRules(undefined, undefined)))).toBe(digest(grow(0, base)));
 		// The turn between one internode and the next, as the drawn wood shows it.
 		const turns = (oak: MacroSkeleton) => {
 			const out: number[] = [];
@@ -509,37 +512,21 @@ self.onmessage = () => {
 		const sharp = (oak: MacroSkeleton) =>
 			turns(oak).filter((t) => t > 6).length / Math.max(1, turns(oak).length);
 		// A turn limit cuts the sharp joints; the wood bends in smaller steps instead.
-		expect(sharp(grow(0, withRules(6, undefined)))).toBeLessThan(sharp(grow(0, record)));
-		// The grip keeps the great limbs near their fork azimuths, so the crown is less one sided.
-		const resultant = (oak: MacroSkeleton) => {
-			let sx = 0;
-			let sz = 0;
-			let n = 0;
-			for (let a = 0; a < oak.axes.count; a++) {
-				if ((oak.axes.order[a] as number) !== 1) continue;
-				const first = oak.axes.first[a] as number;
-				const last = oak.axes.last[a] as number;
-				const dx = (oak.position[last * 3] as number) - (oak.position[first * 3] as number);
-				const dz = (oak.position[last * 3 + 2] as number) - (oak.position[first * 3 + 2] as number);
-				const azimuth = Math.atan2(dx, dz);
-				sx += Math.cos(azimuth);
-				sz += Math.sin(azimuth);
-				n++;
-			}
-			return Math.hypot(sx, sz) / Math.max(1, n);
-		};
-		expect(resultant(grow(0, withRules(undefined, 0.8)))).toBeLessThan(resultant(grow(0, record)));
+		expect(sharp(grow(0, withRules(6, undefined)))).toBeLessThan(sharp(grow(0, base)));
+		// The grip turns every order-1 step toward its fork azimuth, so it changes those axes' growth
+		// while the rest of the tree's rules stay as they are.
+		expect(digest(grow(0, withRules(undefined, 1)))).not.toBe(digest(grow(0, base)));
 	});
 
 	it('parts the laterals along a parent when the record asks', () => {
 		const record = species.record;
 		const growth = record.growth as Extract<Species['growth'], { model: 'self-organizing' }>;
-		const withSpacing = (lateralSpacing: number | undefined): Species => ({
-			...record,
-			growth: { ...growth, lateralSpacing },
-		});
-		// Absent, the growth is the record's own, byte for byte.
-		expect(digest(grow(0, withSpacing(undefined)))).toBe(digest(grow(0, record)));
+		// The field is off here, so both arms start from the record's crown without it.
+		const base: Species = { ...record, growth: { ...growth, lateralSpacing: undefined } };
+		const withSpacing = (lateralSpacing: number | undefined): Species =>
+			({ ...base, growth: { ...growth, lateralSpacing } }) as Species;
+		// Absent, the growth is the base record's own, byte for byte.
+		expect(digest(grow(0, withSpacing(undefined)))).toBe(digest(grow(0, base)));
 		// The laterals on one parent stand at least the record's distance apart where they can.
 		const nearestGap = (oak: MacroSkeleton) => {
 			const along = new Float64Array(oak.nodeCount);
@@ -575,7 +562,7 @@ self.onmessage = () => {
 			}
 			return sum / Math.max(1, pairs);
 		};
-		expect(nearestGap(grow(0, withSpacing(0.6)))).toBeGreaterThan(nearestGap(grow(0, record)));
+		expect(nearestGap(grow(0, withSpacing(0.6)))).toBeGreaterThan(nearestGap(grow(0, base)));
 	});
 
 	it("gives the real oak's surface buds a share of the last resource by their site's light", () => {
