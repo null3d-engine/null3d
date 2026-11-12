@@ -809,21 +809,33 @@ describe('the sheath surface figure', () => {
 });
 
 describe('the mask check gate', () => {
+	const frame = (iou: number, subject = 0.2) => ({ iou, subject });
 	test('reads a turn on a natural background against its own gate', () => {
-		const sound = maskCheckOf([0.75, 0.82, 0.71], false);
+		const sound = maskCheckOf([frame(0.75), frame(0.82), frame(0.71)], false);
 		expect(sound.value).toBeCloseTo(0.76, 2);
 		expect(sound.threshold).toBe(MASK_GATE_NATURAL);
 		expect(sound.failed).toBe(false);
-		const broken = maskCheckOf([0.21, 0.34], false);
+		const broken = maskCheckOf([frame(0.21), frame(0.34)], false);
 		expect(broken.threshold).toBe(MASK_GATE_NATURAL);
 		expect(broken.failed).toBe(true);
 	});
 
 	test('reads a plain-background cut piece against the higher gate', () => {
-		expect(maskCheckOf([0.94, 0.96], true).failed).toBe(false);
-		const below = maskCheckOf([0.88, 0.9], true);
+		expect(maskCheckOf([frame(0.94), frame(0.96)], true).failed).toBe(false);
+		const below = maskCheckOf([frame(0.88), frame(0.9)], true);
 		expect(below.threshold).toBe(MASK_GATE_PLAIN);
 		expect(below.failed).toBe(true);
+	});
+
+	test('reports a plain-background subject that is too small to judge', () => {
+		// The holm oak's subbranch turn: 0.846 with the subject filling 3 per cent of the frame.
+		const small = maskCheckOf([frame(0.848, 0.03), frame(0.83, 0.02), frame(0.827, 0.02)], true);
+		expect(small.threshold).toBe(MASK_GATE_PLAIN);
+		expect(small.small).toBe(true);
+		expect(small.failed).toBe(false);
+		expect(small.subject).toBeCloseTo(0.023, 3);
+		// The same figure on a natural background is judged, since its gate is lower.
+		expect(maskCheckOf([frame(0.848, 0.03)], false).small).toBe(false);
 	});
 
 	test('reports a turn whose frames cannot be read as unmeasurable, not as a pass or a fail', () => {
@@ -832,8 +844,9 @@ describe('the mask check gate', () => {
 		expect(unreadable.frames).toBe(0);
 		expect(unreadable.unreadable).toBe(3);
 		expect(unreadable.failed).toBe(false);
+		expect(unreadable.small).toBe(false);
 		// A partly read turn keeps the readable frames and counts the rest.
-		const mixed = maskCheckOf([0.95, null], true);
+		const mixed = maskCheckOf([frame(0.95), null], true);
 		expect(mixed.value).toBeCloseTo(0.95, 2);
 		expect(mixed.frames).toBe(1);
 		expect(mixed.unreadable).toBe(1);
