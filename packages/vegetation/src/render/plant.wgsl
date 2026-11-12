@@ -154,6 +154,12 @@ const WOOD_RADIUS_SPAN: f32 = 4.0;
 // width, where the matte is measured, in a frame drawn at the stills' width. A twig thinner than
 // this rasterises as dots, and the piece measure then reads its join as a gap.
 const WOOD_LEAST_PIXELS: f32 = 1.2;
+// The least width, in the drawn frame's pixels, that a fine foliage edge draws in the matte: the
+// same figure as the wood's, for the same reason. A blade or a stem seen nearly edge-on is a line
+// thinner than a pixel, which rasterises as dots, and the piece measure then reads its join as a
+// gap. The colour image keeps the edge it draws; only the matte, whose outline the review reads,
+// widens the edge.
+const FOLIAGE_LEAST_PIXELS: f32 = 1.2;
 // The coverage at which a texel counts as leaf, the materials' alpha cutoff.
 const CUTOFF: f32 = 0.5;
 // How much a card's alpha rises for each mip level its sample reads. A mip level's alpha is already
@@ -673,6 +679,48 @@ fn wood_widen(input: VertexInput, plant: vec3f) -> vec3f {
     return transpose(linear) * world_offset / squared;
 }
 
+/// The plant-space offset that widens a fine foliage edge seen nearly edge-on in the matte: each
+/// vertex moves along its own normal's screen direction by the share the view foreshortens the face,
+/// so a blade or a stem thinner than the least drawn width still covers a pixel. A face turned
+/// square to the eye draws its whole width and moves nowhere. The offset comes back to the plant's
+/// space as the wood's does.
+fn foliage_widen(input: VertexInput, plant: vec3f) -> vec3f {
+    if (frame.resolution.x <= 0.0 || frame.resolution.y <= 0.0) {
+        return vec3f(0.0);
+    }
+    let model = object.worldMatrix;
+    let normal = normalize(input.normal);
+    let world = (model * vec4f(plant, 1.0)).xyz;
+    // The eye's direction from the surface and the surface's own normal, both in view space, where
+    // the camera stands at the origin.
+    let to_eye = normalize((camera.view * vec4f(world, 1.0)).xyz);
+    let turned = (camera.view * vec4f(normal, 0.0)).xyz;
+    let grazing = 1.0 - abs(dot(normalize(turned), to_eye));
+    if (grazing <= 0.02) {
+        return vec3f(0.0);
+    }
+    let clip = camera.viewProjection * vec4f(world, 1.0);
+    if (clip.w <= 0.0001) {
+        return vec3f(0.0);
+    }
+    let clip_out = camera.viewProjection * (model * vec4f(plant + normal * 0.01, 1.0));
+    if (clip_out.w <= 0.0001) {
+        return vec3f(0.0);
+    }
+    let step = clip_out.xy / clip_out.w - clip.xy / clip.w;
+    if (length(step) <= 0.000001) {
+        return vec3f(0.0);
+    }
+    let half_least = FOLIAGE_LEAST_PIXELS * 0.5 * grazing;
+    let across = normalize(step) * half_least * 2.0 / frame.resolution;
+    let projection = camera.projection;
+    let view = vec3f(across.x * clip.w / projection[0][0], across.y * clip.w / projection[1][1], 0.0);
+    let world_offset = (transpose(camera.view) * vec4f(view, 0.0)).xyz;
+    let linear = mat3x3f(model[0].xyz, model[1].xyz, model[2].xyz);
+    let squared = max(dot(linear[0], linear[0]), 0.000001);
+    return transpose(linear) * world_offset / squared;
+}
+
 /// Wood, cards, merged foliage and extras: the 16-bit position into the plant's metres, lifted by
 /// the bark's height on the nearest wood, and moved by the wind in the plant's own space. The
 /// position comes as a fraction of the box, so the offset back from it keeps the plant's own
@@ -730,6 +778,9 @@ fn plant_offset(input: VertexInput, mode: i32) -> vec3f {
     }
     if (mode == MODE_WOOD) {
         moved += wood_widen(input, moved);
+    }
+    if (mode == MODE_FOLIAGE && material.matte > 0.5) {
+        moved += foliage_widen(input, moved);
     }
     return moved - input.position;
 }

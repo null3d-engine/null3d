@@ -1298,9 +1298,14 @@ function cutLeaves(kit: SpeciesKitData, press?: boolean, age?: number): readonly
 	if (leaf.kind !== 'blade' && leaf.kind !== 'grass-blade') return kit.leaves;
 	if (leaf.kind === 'grass-blade') {
 		if (!flat) return kit.leaves;
+		const shape = pressedBladeShape(leaf.blade);
+		const length = record.cuttings?.leaf?.length;
 		const pressedLeaf: Species = {
 			...record,
-			foliage: { ...leaf, blade: pressedBladeShape(leaf.blade) },
+			foliage: {
+				...leaf,
+				blade: length === undefined ? shape : { ...shape, length: { mean: length, spread: 0 } },
+			},
 		};
 		return foliage('grass-blade').leaves(pressedLeaf, kit.manifest, kit.detail);
 	}
