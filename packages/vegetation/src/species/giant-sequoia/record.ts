@@ -317,7 +317,7 @@ export const record: Species = {
 			to: 8.5,
 			angle: 90,
 			width: 72,
-			depth: 1.2,
+			depth: 2.2,
 			colour: [0.012, 0.011, 0.009],
 			shade: 0.92,
 		},

@@ -57,7 +57,7 @@
 	},
 	"20-fire-scar.png": {
 		"view": "bark-base",
-		"distance": 22,
+		"distance": 12,
 		"season": null,
 		"span": null,
 		"thin": null,
