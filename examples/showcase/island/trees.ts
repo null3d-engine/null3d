@@ -15,6 +15,12 @@ import { createGrass, type PlantMaterial, setWindLayer } from '@null3d/vegetatio
 import { createWind } from '@null3d/wind';
 import { type PlantSpot, plantSpecies } from '../../lib/plants';
 import { Noise } from '../../lib/procedural';
+import {
+	ISLAND_HOLM_OAK,
+	ISLAND_OLEANDER,
+	ISLAND_OLIVE,
+	ISLAND_STONE_PINE,
+} from '../../lib/stand-ins';
 import { cypress, finish } from './kit';
 import {
 	CYPRESS,
@@ -69,27 +75,27 @@ const KINDS = [
 	{
 		kind: UMBRELLA,
 		// A tall bare red trunk under a wide flat dark crown of needles.
-		id: 'stone-pine',
-		standIn: { height: 13, aspect: 1, leaf: [0.035, 0.085, 0.03], bark: [0.3, 0.14, 0.08] },
+		id: ISLAND_STONE_PINE.id,
+		standIn: ISLAND_STONE_PINE.standIn,
 	},
 	{
 		kind: OLIVE,
 		// A short gnarled trunk under fine silver-green leaves.
-		id: 'olive',
-		standIn: { height: 6, aspect: 1, leaf: [0.13, 0.17, 0.1], bark: [0.22, 0.18, 0.14] },
+		id: ISLAND_OLIVE.id,
+		standIn: ISLAND_OLIVE.standIn,
 	},
 	{
 		kind: OAK,
 		// A round dark crown, full to the ground, for the forest and the square's shade.
-		id: 'holm-oak',
-		standIn: { height: 11, aspect: 0.8, leaf: [0.04, 0.085, 0.028], bark: [0.14, 0.11, 0.08] },
+		id: ISLAND_HOLM_OAK.id,
+		standIn: ISLAND_HOLM_OAK.standIn,
 	},
 ] as const;
 
 /** The lanes' shrubs: low rounded oleanders. */
 const SHRUB = {
-	id: 'oleander',
-	standIn: { height: 1.5, aspect: 1, leaf: [0.15, 0.3, 0.1], bark: [0.22, 0.18, 0.13] },
+	id: ISLAND_OLEANDER.id,
+	standIn: ISLAND_OLEANDER.standIn,
 } as const;
 
 /** A cypress's foliage: upward sprays of darker and paler green, near white, which its colors tint. */
