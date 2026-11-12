@@ -177,7 +177,7 @@
 		"test": "particles-wind",
 		"tier": "compat",
 		"date": "2026-11-12",
-		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that added the picture; the branch is not pushed yet, so CI has not drawn its own reference"
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the change that added the picture; CI has not drawn its own reference yet, and its next drawing replaces this one"
 	},
 	"chromium-swiftshader/compat/plant-bracken.png": {
 		"test": "plant-bracken",
@@ -525,7 +525,7 @@
 		"test": "particles-wind",
 		"tier": "webgl2",
 		"date": "2026-11-12",
-		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that added the picture; the branch is not pushed yet, so CI has not drawn its own reference"
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the change that added the picture; CI has not drawn its own reference yet, and its next drawing replaces this one"
 	},
 	"chromium-swiftshader/webgl2/plant-bracken.png": {
 		"test": "plant-bracken",
@@ -903,7 +903,7 @@
 		"test": "particles-wind",
 		"tier": "webgpu",
 		"date": "2026-11-12",
-		"reason": "drawn on this Mac's SwiftShader with CI=1 from the branch that added the picture; the branch is not pushed yet, so CI has not drawn its own reference"
+		"reason": "drawn on this Mac's SwiftShader with CI=1 from the change that added the picture; CI has not drawn its own reference yet, and its next drawing replaces this one"
 	},
 	"chromium-swiftshader/webgpu/plant-bracken.png": {
 		"test": "plant-bracken",
