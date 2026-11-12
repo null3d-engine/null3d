@@ -1338,10 +1338,18 @@ class Mesher {
 
 	/**
 	 * Marks the parent's written bark round a fork's end, where the leaders part: the creases gather
-	 * over one and a half parent radii up the parent from the fork. Only a record that names creases
-	 * calls this, so every other species' bark coordinates stay as they were.
+	 * over one and a half parent radii up the parent from the fork. The mark is strongest on the
+	 * side the leader leans toward, where the two limbs form the armpit, so the fan stays on the
+	 * crotch rather than ringing the whole stem. Only a record that names creases calls this, so
+	 * every other species' bark coordinates stay as they were.
 	 */
-	private markParentFork(key: number, rings: AxisRings, arc: number, radius: number): void {
+	private markParentFork(
+		key: number,
+		rings: AxisRings,
+		arc: number,
+		radius: number,
+		toward: Float64Array,
+	): void {
 		const ends = this.outputRingFirst.get(key);
 		if (!ends) return;
 		const reach = Math.max(radius * 1.5, 1e-3);
@@ -1352,9 +1360,23 @@ class Mesher {
 			const distance = Math.abs((rings.arc[r] as number) - arc);
 			if (distance >= reach) continue;
 			const fade = 1 - distance / reach;
-			const mask = fade * fade;
 			const count = rings.sides[r] as number;
+			const cx = rings.centre[r * 3] as number;
+			const cy = rings.centre[r * 3 + 1] as number;
+			const cz = rings.centre[r * 3 + 2] as number;
+			const first = rings.first[r] as number;
 			for (let j = 0; j <= count; j++) {
+				const i = first + (j % count);
+				const dx = (rings.position[i * 3] as number) - cx;
+				const dy = (rings.position[i * 3 + 1] as number) - cy;
+				const dz = (rings.position[i * 3 + 2] as number) - cz;
+				const length = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
+				const side = Math.max(
+					0,
+					(dx * (toward[0] as number) + dy * (toward[1] as number) + dz * (toward[2] as number)) /
+						length,
+				);
+				const mask = fade * fade * (0.25 + 0.75 * side);
 				const to = (out + j) * 2 + 1;
 				if ((uvs1[to] as number) < mask) uvs1[to] = mask;
 			}
@@ -1515,10 +1537,6 @@ class Mesher {
 		rings.welded = 1;
 		rings.shared = true;
 		mean /= sides;
-		// A fork's leaders part from the parent's end, and the armpit's creases gather on the
-		// parent's bark round the fork, where the photograph puts them.
-		if ((this.record.bark?.collar.creases ?? 0) > 0)
-			this.markParentFork(parentContext.wood.key, parentRings, parentContext.path.length, mean);
 		const rc = path.radius[0] as number;
 		const pt = Float64Array.from(
 			frameAt(parentContext.path, parentContext.path.length, this.frame).tangent,
@@ -1528,6 +1546,23 @@ class Mesher {
 			(pt[0] as number) * (lt[0] as number) +
 			(pt[1] as number) * (lt[1] as number) +
 			(pt[2] as number) * (lt[2] as number);
+		// A fork's leaders part from the parent's end, and the armpit's creases gather on the
+		// parent's bark round the fork, on the side the leader leans toward.
+		const toward = Float64Array.from([
+			(lt[0] as number) - (pt[0] as number) * cosine,
+			(lt[1] as number) - (pt[1] as number) * cosine,
+			(lt[2] as number) - (pt[2] as number) * cosine,
+		]);
+		const sideways = Math.hypot(toward[0] as number, toward[1] as number, toward[2] as number);
+		if (sideways > 1e-6) for (let k = 0; k < 3; k++) toward[k] = (toward[k] as number) / sideways;
+		if ((this.record.bark?.collar.creases ?? 0) > 0)
+			this.markParentFork(
+				parentContext.wood.key,
+				parentRings,
+				parentContext.path.length,
+				mean,
+				toward,
+			);
 		const turn = acos(Math.min(1, Math.max(-1, cosine)));
 		const angle = Math.min(LEADER_TILT, turn);
 		const clear = mean * tan(angle) + 0.25 * rc;

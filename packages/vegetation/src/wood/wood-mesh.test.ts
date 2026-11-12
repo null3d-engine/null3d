@@ -74,9 +74,9 @@ describe('the wood mesher', () => {
 			if ((creased.uvs1[i + 1] as number) > 0.6) strong++;
 		}
 		expect(marked).toBeGreaterThan(0);
-		// The welds alone mark a few hundred vertices; the fork's leaders carry the same mark round
-		// the parent's end, so a tree with both reads far more.
-		expect(strong).toBeGreaterThan(500);
+		// The welds alone mark about a quarter of a thousand vertices; the fork's crooked side
+		// carries the same mark up the parent from its end, so a tree with both reads far more.
+		expect(strong).toBeGreaterThan(400);
 	});
 
 	it('pushes no child tube into its parent at the joint', () => {

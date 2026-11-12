@@ -181,12 +181,12 @@ const CAVITY_ROUGH: f32 = 0.2;
 // but light scatters through the crown, so the wood keeps more of the sky than a leaf's density
 // alone would give it.
 const WOOD_SHADE: f32 = 0.35;
-// The armpit's creases: rings about two centimetres apart along the limb, with the trough's
-// darkening and the normal's tilt across the grain. The bark's along-limb coordinate runs in the
-// metres of bark one metre of wood draws, so the frequency is one turn per that spacing.
-const CREASE_SPACING: f32 = 0.02;
-const CREASE_FREQUENCY: f32 = 6.2831853 / CREASE_SPACING;
-const CREASE_DARK: f32 = 0.30;
+// The armpit's creases: rings that follow the joint's own seam, with the trough's darkening and
+// the normal's tilt across the grain. The joint's mask fades with distance from the seam, so a
+// phase taken from it draws arcs about the joint, as the photograph's fan does, rather than the
+// parent's own rings round its girth. The count is the rings the drawn band holds.
+const CREASE_RINGS: f32 = 50.265482;
+const CREASE_DARK: f32 = 0.45;
 const CREASE_TILT: f32 = 0.35;
 
 /// One texel of the header row.
@@ -1031,9 +1031,9 @@ fn surface(input: SurfaceInput) -> Surface {
         // The bark gathers in tight parallel creases where a limb joins its parent: rings across
         // the limb's own grain, deepest in the armpit. A species whose record names none draws
         // nothing here, so its bark stays as it was.
-        let armpit = header(HEADER_ARMPIT).x * smoothstep(0.25, 0.9, junction);
+        let armpit = header(HEADER_ARMPIT).x * smoothstep(0.12, 0.7, junction);
         if (armpit > 0.0) {
-            let crease = sin(input.uv.y * CREASE_FREQUENCY);
+            let crease = sin(junction * CREASE_RINGS);
             let trough = 0.5 - 0.5 * crease;
             bark *= 1.0 - CREASE_DARK * armpit * trough;
             bark_normal = normalize(bark_normal + vec3f(0.0, CREASE_TILT * armpit * crease, 0.0));
