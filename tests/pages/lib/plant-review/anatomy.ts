@@ -2,7 +2,7 @@
 // stem and its radius at a height, the largest first-order limb, the limb that carries a thickness,
 // where the stem first forks, and a sunlit shoot tip. They read only the skeleton's arrays, so they
 // hold for every growth model.
-import { AXIS_CULM, AXIS_LIMB, BUD_FLOWER } from '../../../../packages/vegetation/src/core/graph';
+import { AXIS_CULM, AXIS_LIMB, BUD_TERMINAL } from '../../../../packages/vegetation/src/core/graph';
 import type { MacroSkeleton, ShootRows } from './plant-types';
 
 /** A point or direction in plant space. */
@@ -323,9 +323,9 @@ export interface ShootTip {
 	readonly direction: V3;
 }
 
-/** The flower sites a plant carries: where they stand, the ring's middle and the ring's radius. */
+/** The crown-top sites a plant carries: where they stand, their middle and their ring's radius. */
 export interface FlowerSites {
-	/** Where the flowers stand, in plant space. */
+	/** Where the sites stand, in plant space. */
 	readonly sites: readonly V3[];
 	/** The middle of the ring, in plant space. */
 	readonly centre: V3;
@@ -334,19 +334,19 @@ export interface FlowerSites {
 }
 
 /**
- * The flowers the plant carries, from the flower sites the grown plant marks: a cactus and other
- * crown-flowering plants carry a ring of them at the stem's top, which a close view frames as a ring.
+ * The crown-top sites the plant carries: the terminal buds above 0.85 of its height, the same sites
+ * the engine gives a record's `crown-top` extras, so a crown-flowering plant's flower ring is framed
+ * as the ring it is rather than one shoot tip.
  */
-export function flowerSites(skeleton: MacroSkeleton): FlowerSites | undefined {
+export function crownTopSites(skeleton: MacroSkeleton): FlowerSites | undefined {
 	const { buds } = skeleton;
 	const sites: V3[] = [];
+	const low = skeleton.height * 0.85;
 	for (let b = 0; b < buds.count; b++) {
-		if ((buds.kind[b] as number) !== BUD_FLOWER) continue;
-		sites.push([
-			buds.position[b * 3] as number,
-			buds.position[b * 3 + 1] as number,
-			buds.position[b * 3 + 2] as number,
-		]);
+		if ((buds.kind[b] as number) !== BUD_TERMINAL) continue;
+		const y = buds.position[b * 3 + 1] as number;
+		if (y <= low) continue;
+		sites.push([buds.position[b * 3] as number, y, buds.position[b * 3 + 2] as number]);
 	}
 	if (sites.length === 0) return undefined;
 	const centre: V3 = [0, 0, 0];
