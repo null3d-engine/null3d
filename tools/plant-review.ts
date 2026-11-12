@@ -174,6 +174,15 @@ function stillShot(
 					sunRise: measures.light.rise,
 				};
 		}
+		// A junction view frames its subject so the limb's thickness and the stem's width take the
+		// shares of the frame that the picture's own subject box gives them, so the picture's box
+		// measures both axes rather than one.
+		if (slot.view === 'junction' && measures.box)
+			query = {
+				...query,
+				subjectWidth: (measures.box.right - measures.box.left) / image.width,
+				subjectHeight: (measures.box.bottom - measures.box.top) / image.height,
+			};
 		if (slot.framed && measures.box) {
 			const {
 				sky: _sky,
