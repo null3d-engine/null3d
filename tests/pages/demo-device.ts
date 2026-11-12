@@ -182,13 +182,14 @@ run('demo-device', async () => {
 		'still',
 		'follow',
 		// A showcase scene's own switches: its mood, its storm, the lens marks, the governor, the
-		// render scale and the parts of the scene that a measurement leaves out.
+		// render scale, the parts of the scene that a measurement leaves out, and the wind field.
 		'mood',
 		'storm',
 		'lens',
 		'governor',
 		'render-scale',
 		'without',
+		'wind',
 	])
 		if (params.has(id)) sketch.searchParams.set(id, params.get(id) ?? '');
 	const runDemo = { ...demo, sketch };

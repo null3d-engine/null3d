@@ -260,13 +260,16 @@ fn surface(input: SurfaceInput) -> Surface {
 }
 `;
 
-/** The forest's material, and the frame that keeps its wind layer current. */
+/**
+ * The forest's material, and the frame that keeps its wind layer current. A material that is not
+ * live names no field, so its vertex shader reads none.
+ */
 export function createSway(
 	ctx: SketchContext,
-	options: { readonly wood: Texture; readonly wind: Wind },
+	options: { readonly wood: Texture; readonly wind: Wind; readonly live?: boolean },
 ): { readonly material: Material; update(): void } {
 	const { materials, textures } = ctx;
-	const { wood, wind } = options;
+	const { wood, wind, live = true } = options;
 	/** The sent gust's born time that the settings texture holds, so one gust costs one upload. */
 	let sentBorn = Number.NaN;
 	const airSettings = textures.fromData({
@@ -284,7 +287,7 @@ export function createSway(
 		textures: { wood, wind: wind.field.texture, airSettings },
 		uniforms: {
 			windBox: wind.field.size,
-			windStrength: 1,
+			windStrength: live ? 1 : 0,
 			windLayer: 0,
 			height: 18,
 			swayDistance: SWAY_DISTANCE,
@@ -294,6 +297,7 @@ export function createSway(
 	return {
 		material,
 		update() {
+			if (!live) return;
 			material.setUniform('windLayer', wind.field.texture.layer);
 			// A gust that a page sends travels through the steady field, which the settings carry. The
 			// texels go up when a gust is sent, not once a frame.
