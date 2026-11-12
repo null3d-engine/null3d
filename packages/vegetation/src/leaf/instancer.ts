@@ -335,6 +335,7 @@ export function dressShoots(input: DressInput): DressedShoots {
 					rows.map((row) => row.axis),
 					limit,
 					lowest,
+					input.record.shoots?.placement.bareEnds !== false,
 				)
 			: undefined;
 	if (!trimmed) {
@@ -693,11 +694,17 @@ function placedRows(input: DressInput, bySky = true): Row[] {
 			quatAxisAngle([0, 1, 0], turn, roll);
 			const rotation = [0, 0, 0, 1];
 			quatMultiply(frame, 0, roll, 0, rotation);
+			// A limb carries its own shoot length where the record gives one: the scale follows the
+			// shoot's height in the crown, so the skirt and the top take different reaches.
+			const byHeight = shoots.placement.scaleByHeight;
+			const scale =
+				spreadAt(shoots.placement.scale, draw(Purpose.Scale, b, k)) *
+				(byHeight === undefined ? 1 : curveAt(byHeight, crownShare));
 			rows.push({
 				prototype: candidates[pick(Purpose.Prototype, b, k) % candidates.length] as number,
 				position: place,
 				rotation,
-				scale: spreadAt(shoots.placement.scale, draw(Purpose.Scale, b, k)),
+				scale,
 				record: record16,
 				phase: pick(Purpose.Phase, b, k) & 255,
 				node,
