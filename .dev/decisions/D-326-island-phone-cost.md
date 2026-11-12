@@ -1,6 +1,6 @@
 # D-326: The Island lightens its drawing on a phone
 
-Status: decided by the owner. Built: the Low preset's fixed shadow range. The one-view cards are not applied: their saving was inside the load's spread. The slower water reflection is not applied. Measured: both sides on the M3 Max, two loads each, in [the data](#data), with the cards change in; both sides on the two cloud phones, in [the cloud phones](#the-cloud-phones), also with it in, and again in one session a side, where the iPhone's whole frame separates the reaches and the S25's cascades do. Pending: the pictures, and the software WebGL2 gap. Task: none.
+Status: decided by the owner. Built: the Low preset's fixed shadow range. The one-view cards are not applied: their saving was inside the load's spread. The slower water reflection is not applied. Measured: both sides on the M3 Max, two loads each, in [the data](#data), with the cards change in; both sides on the two cloud phones, in [the cloud phones](#the-cloud-phones), also with it in, and again in one session a side, where the iPhone's whole frame separates the reaches and the S25's cascades do. Task: none.
 
 Owner, 9 November 2026: the better-looking drawing stays. The one-view cards and the slower reflection remain out, the three atlas views and the every-second reflection stay, and the shorter shadow reach is the change that ships. <!-- outside date -->
 
@@ -94,3 +94,15 @@ Low draws the reflection every second frame, the add-on's default; High and Ultr
 - The software WebGL2 path keeps a gap. At a cadence of four, the drawn sea is about 40 RGB points darker than at a cadence of two. The means are 57.0 65.3 74.4 against 99.9 112.0 90.4 in the same view. With the held-frame turn in place, the webgpu and webgl2 drawings differ at 30.835 per cent, where the old references agree at 0.217 per cent. The two cadence pictures are byte-identical. The gap is in the software path alone and remains open. `fix/hold-cadence` keeps the attempted fix for a later round.
 - A change to the Island's Low drawing darkens the sea on the software WebGL2 picture, and the change's content does not decide it. A branch carrying only the one-view cards drew compat at 3.278 per cent and webgl2 at 29.745 against the old references, and one carrying only the 250 m range drew 4.259 and 30.024, where the bare base drew 3.227 and 3.241. A second run of the same bare base commit then drew webgl2 at 29.845, so the picture is not stable: the first base run was the outlier, and the Island's changes are not the cause. The water alone darkens, by about 41 RGB points in rows 100 to 180, while the sky does not move and the land moves by about one point. On this Mac the same pictures are bright on the real GPU and on SwiftShader, a reflection cadence of sixteen frames keeps the sea bright, and turning the sun's shadows off does not darken it. `.dev/image-tests.md` records the fault. The branch's picture stays owed until the software WebGL2 water is understood, and no reference may be accepted from a dark drawing: its sea would disagree with the other two tiers' by about 30 per cent.
 - The cloud phone runs carried all three changes, so their rows describe the trial. The shipped branch loses the cards' share of the saving.
+
+## Addendum: the cross-tier software picture
+
+The owner read M3-R43's cross-tier clause under the device tolerance. The three SwiftShader
+`demo-island` references come from CI run 42992273718 at `7a084744d`; the same-run drawings agree at
+0.109 to 0.127 per cent, inside the 0.5 per cent tolerance that browsers and devices use, so the
+clause is met. That run is the CI drawing that the pending pictures item asked for. The harness's
+0.100 reference limit is the bar for a drawing against its reference; its 0.127 count on this pair is
+its anti-aliasing exclusion failing on a dithered picture, where a pixel needs three exactly equal
+neighbours and the dither leaves none. The stability is measured at `5fad58f09`, and the water
+add-on's held-frame test observes the add-on's own pass. The software WebGL2 gap is closed on the
+owner's reading, not on a bit-identical tier comparison, which two shader front ends cannot give.
