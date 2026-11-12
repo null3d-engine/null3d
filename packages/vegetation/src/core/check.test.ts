@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test';
+import { meadowGrassRecord } from '../grow/ground.fixture';
 import { record as template } from '../species/_template/record';
 import { record as meadow } from '../species/meadow-grass/record';
 import { capProblems, capsFor, MODEL_CAPS } from './caps';
@@ -121,7 +122,15 @@ describe('the record check', () => {
 		const shoots = template.shoots;
 		const out = {
 			...template,
-			growth: { ...growth, floor: 0.6, turning: 120 },
+			growth: {
+				...growth,
+				floor: 0.6,
+				turning: 120,
+				branchingByOrder: [
+					[0, 1],
+					[1, -0.5],
+				],
+			},
 			shoots: {
 				...shoots,
 				placement: {
@@ -129,26 +138,52 @@ describe('the record check', () => {
 					skyPrune: 1.5,
 					skyPruneLayer: 10,
 					gather: 1.5,
+					cardCoverage: 1.5,
 					reach: 90,
 					bareTrim: 0.5,
 					lift: 45,
 					tipPrune: 1.5,
+					limbMass: { order: 9, hold: -1, reach: -2, depth: 1.5, bare: 1.5 },
+					scaleByHeight: [
+						[0, 1],
+						[1, 0],
+					],
 				},
 			},
 		} as Species;
 		const problems = speciesProblems(out);
 		expect(problems.some((p) => p.startsWith('growth.floor is 0.6'))).toBe(true);
 		expect(problems.some((p) => p.startsWith('growth.turning is 120'))).toBe(true);
+		expect(problems.some((p) => p.startsWith('growth.branchingByOrder is -0.5 at pair 1'))).toBe(
+			true,
+		);
 		expect(problems.some((p) => p.startsWith('shoots.placement.skyPrune is 1.5'))).toBe(true);
 		expect(problems.some((p) => p.startsWith('shoots.placement.skyPruneLayer is 10'))).toBe(true);
 		expect(problems.some((p) => p.startsWith('shoots.placement.gather is 1.5'))).toBe(true);
+		expect(problems.some((p) => p.startsWith('shoots.placement.cardCoverage is 1.5'))).toBe(true);
 		expect(problems.some((p) => p.startsWith('shoots.placement.reach is 90'))).toBe(true);
 		expect(problems.some((p) => p.startsWith('shoots.placement.bareTrim is 0.5'))).toBe(true);
 		expect(problems.some((p) => p.startsWith('shoots.placement.lift is 45'))).toBe(true);
 		expect(problems.some((p) => p.startsWith('shoots.placement.tipPrune is 1.5'))).toBe(true);
+		expect(problems.some((p) => p.startsWith('shoots.placement.limbMass.order is 9'))).toBe(true);
+		expect(problems.some((p) => p.startsWith('shoots.placement.limbMass.hold is -1'))).toBe(true);
+		expect(problems.some((p) => p.startsWith('shoots.placement.limbMass.reach is -2'))).toBe(true);
+		expect(problems.some((p) => p.startsWith('shoots.placement.limbMass.depth is 1.5'))).toBe(true);
+		expect(problems.some((p) => p.startsWith('shoots.placement.limbMass.bare is 1.5'))).toBe(true);
+		expect(
+			problems.some((p) => p.startsWith('shoots.placement.scaleByHeight is 0 at pair 1')),
+		).toBe(true);
 		const within = {
 			...template,
-			growth: { ...growth, floor: 0.15, turning: 30 },
+			growth: {
+				...growth,
+				floor: 0.15,
+				turning: 30,
+				branchingByOrder: [
+					[0, 1],
+					[1, 0.5],
+				],
+			},
 			shoots: {
 				...shoots,
 				placement: {
@@ -158,6 +193,11 @@ describe('the record check', () => {
 					bareTrim: 0.03,
 					lift: -30,
 					tipPrune: 0.05,
+					limbMass: { order: 2, hold: 1.5, reach: 3.5, depth: 1, bare: 0.5 },
+					scaleByHeight: [
+						[0, 1],
+						[1, 0.5],
+					],
 				},
 			},
 		} as Species;
@@ -315,6 +355,29 @@ describe('the record check', () => {
 		).toBe(true);
 		expect(
 			problems.some((p) => p.startsWith('extras[2].shape.stalkSides is 2.5; it must be a whole')),
+		).toBe(true);
+		const spikes: Species = {
+			...template,
+			extras: [
+				{ ...acorn, shape: { catkin: { length: 0.05, radius: 0.002, spikelets: { count: 1 } } } },
+				{
+					...acorn,
+					shape: { catkin: { length: 0.05, radius: 0.002, spikelets: { count: 6, bulge: 1.5 } } },
+				},
+			],
+		};
+		const spikeProblems = speciesProblems(spikes);
+		expect(
+			spikeProblems.some((p) =>
+				p.startsWith(
+					'extras[0].shape.catkin.spikelets.count is 1; it must be a whole number from 2 to 16',
+				),
+			),
+		).toBe(true);
+		expect(
+			spikeProblems.some((p) =>
+				p.startsWith('extras[1].shape.catkin.spikelets.bulge is 1.5; a share lies from 0 to 1'),
+			),
 		).toBe(true);
 		expect(speciesProblems({ ...template, extras: [{ ...acorn, group: 3 }] })).toEqual([]);
 		expect(
@@ -532,5 +595,41 @@ describe('the record check', () => {
 		expect(speciesProblems(held(65))).toEqual([]);
 		expect(problems(held(200))).toContain('.lateralMost is 200');
 		expect(problems(held(-5))).toContain('.lateralMost is -5');
+	});
+});
+
+describe('a tuft sheath colour', () => {
+	const withColour = (foot: readonly [number, number, number]): Species => {
+		const growth = meadowGrassRecord.growth;
+		if (growth.model !== 'tuft') throw new Error('the meadow grass is a tuft');
+		return {
+			...meadowGrassRecord,
+			growth: { ...growth, sheathColour: { foot, collar: [0.4, 0.4, 0.32], reach: 0.85 } },
+		};
+	};
+
+	it('reads its two colours as three shares from 0 to 1, and its reach as a share', () => {
+		expect(speciesProblems(meadowGrassRecord)).toEqual([]);
+		expect(speciesProblems(withColour([0.366, 0.38, 0.309]))).toEqual([]);
+		const problems = speciesProblems(withColour([0.366, 1.38, -0.1]));
+		expect(problems.some((p) => p.startsWith('growth.sheathColour.foot.1'))).toBe(true);
+		expect(problems.some((p) => p.startsWith('growth.sheathColour.foot.2'))).toBe(true);
+		expect(problems.some((p) => p.startsWith('growth.sheathColour.foot.0'))).toBe(false);
+		const growth = meadowGrassRecord.growth;
+		if (growth.model !== 'tuft') throw new Error('the meadow grass is a tuft');
+		const overReach = {
+			...meadowGrassRecord,
+			growth: {
+				...growth,
+				sheathColour: {
+					foot: [0.2, 0.1, 0.05] as const,
+					collar: [0.4, 0.4, 0.3] as const,
+					reach: 1.5,
+				},
+			},
+		};
+		expect(speciesProblems(overReach).some((p) => p.startsWith('growth.sheathColour.reach'))).toBe(
+			true,
+		);
 	});
 });

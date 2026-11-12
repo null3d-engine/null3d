@@ -217,6 +217,7 @@ export type {
 	ParticleLook,
 	ParticleMotion,
 	ParticleValues,
+	ParticleWindField,
 } from './scene/particles';
 export type { PickHit } from './scene/picks';
 export type {

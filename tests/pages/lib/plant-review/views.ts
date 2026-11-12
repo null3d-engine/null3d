@@ -8,12 +8,14 @@ export const PLANT_VIEWS = [
 	'turntable',
 	'whole',
 	'crown',
+	'crown-foot',
 	'below',
 	'crown-underside',
 	'inside',
 	'junction',
 	'fork',
 	'twigs',
+	'spike',
 	'flowers',
 	'strands',
 	'limb',
@@ -116,6 +118,16 @@ export const VIEW_SPECS: Readonly<Record<PlantView, ViewSpec>> = {
 		elevation: 0,
 		size: [960, 720],
 	},
+	'crown-foot': {
+		// The crown at soil level on a plain ground: the shoot columns' lower length against the
+		// studio's grey, framed from the foot up as picture 07 frames it.
+		slots: [7],
+		fov: 50,
+		background: 'studio-grey',
+		sun: 'default',
+		elevation: 0,
+		size: [960, 720],
+	},
 	below: {
 		slots: [3],
 		fov: 70,
@@ -167,6 +179,16 @@ export const VIEW_SPECS: Readonly<Record<PlantView, ViewSpec>> = {
 		sun: 'default',
 		elevation: 0,
 		size: [960, 720],
+	},
+	spike: {
+		// A tuft's flowering heads: one stem's hanging spikes seen close and level against the
+		// plain ground, as their photograph frames them.
+		slots: [],
+		fov: 40,
+		background: 'studio-grey',
+		sun: 'default',
+		elevation: 0,
+		size: [960, 960],
 	},
 	flowers: {
 		slots: [19],

@@ -325,6 +325,28 @@ export function framingQuery(framing: ReferenceFraming): Partial<PlantReviewQuer
 	};
 }
 
+/** A camera's stand from its target, in metres, and its vertical field of view, in degrees. */
+export interface CameraStand {
+	readonly distance: number;
+	readonly fov: number;
+}
+
+/**
+ * The share of the frame's width that a plant of `plantWidth` metres fills at the camera's target:
+ * the frame holds twice the stand's distance times the half field of view's tangent, times the
+ * aspect. A mask that runs off both side edges cannot report a width, so it reads this instead,
+ * and the figure responds to a redraw's stand rather than saturating at the frame's edge.
+ */
+export function cameraWidthShare(
+	plantWidth: number,
+	stand: CameraStand,
+	aspect: number,
+): number | null {
+	if (!(plantWidth > 0) || !(stand.distance > 0) || !(stand.fov > 0) || !(aspect > 0)) return null;
+	const height = 2 * stand.distance * Math.tan((stand.fov * Math.PI) / 360);
+	return plantWidth / (height * aspect);
+}
+
 /** The size of the canvas that outlines are compared on: the plant's height and the canvas width. */
 export const NORMAL_HEIGHT = 160;
 export const NORMAL_WIDTH = 640;
@@ -496,15 +518,22 @@ function renderSide(
 	file: string,
 	matte: string | undefined,
 	bottomCut: boolean,
+	moundForm = false,
 ): Side {
 	const image = readImage(file);
 	const plant = matte && existsSync(matte) ? matteMask(readImage(matte)) : plantMask(image);
-	return side(label, image, plant, bottomCut);
+	return side(label, image, plant, bottomCut, moundForm);
 }
 
 /** A side of a comparison from a picture and its outline. */
-function side(label: string, image: Rgba, plant: PlantMask, bottomCut: boolean): Side {
-	const measures = measurePlant(image, plant);
+function side(
+	label: string,
+	image: Rgba,
+	plant: PlantMask,
+	bottomCut: boolean,
+	moundForm = false,
+): Side {
+	const measures = measurePlant(image, plant, moundForm);
 	const box = measures.box;
 	if (!box) return { label, image, plant, measures };
 	const bottom = bottomCut ? plant.height - 1 : box.bottom;
@@ -1063,12 +1092,19 @@ export function sweepMeasures(runDir: string, frame: RunFrame): SweepMeasures {
 }
 
 /** A render frame's side of a comparison. */
-function renderSideOf(runDir: string, frame: RunFrame, label: string, bottomCut: boolean): Side {
+function renderSideOf(
+	runDir: string,
+	frame: RunFrame,
+	label: string,
+	bottomCut: boolean,
+	moundForm = false,
+): Side {
 	return renderSide(
 		label,
 		join(runDir, frame.file),
 		frame.matte ? join(runDir, frame.matte) : undefined,
 		bottomCut,
+		moundForm,
 	);
 }
 
@@ -1096,6 +1132,7 @@ export function compareTurn(
 	video: TurnVideo,
 	frames: readonly RunFrame[],
 	title: string,
+	moundForm = false,
 ): TurnResult {
 	const facts = probeVideo(video.path);
 	const references = videoFrames(video.path, facts, WORK_WIDTH);
@@ -1132,13 +1169,21 @@ export function compareTurn(
 	};
 	if (m === 0) return { ...empty, error: 'the run drew no frame of this turn' };
 	const refMasks = references.map((image) => plantMask(image));
-	const refMeasures = refMasks.map((mask, k) => measurePlant(references[k] as Rgba, mask));
+	const refMeasures = refMasks.map((mask, k) =>
+		measurePlant(references[k] as Rgba, mask, moundForm),
+	);
 	const bottomCut = refMeasures.filter((measure) => measure.clipped.bottom).length > n / 2;
 	const refSides = references.map((image, k) =>
-		side(`REF ${(k * frameStep).toFixed(1)}`, image, refMasks[k] as PlantMask, bottomCut),
+		side(
+			`REF ${(k * frameStep).toFixed(1)}`,
+			image,
+			refMasks[k] as PlantMask,
+			bottomCut,
+			moundForm,
+		),
 	);
 	const renderSides = usable.map((frame) =>
-		renderSideOf(runDir, frame, `RENDER ${frame.turn.toFixed(1)}`, bottomCut),
+		renderSideOf(runDir, frame, `RENDER ${frame.turn.toFixed(1)}`, bottomCut, moundForm),
 	);
 	const checks = usable.flatMap((frame, j) => {
 		if (!frame.matte) return [];
@@ -1665,6 +1710,7 @@ export function compareStills(
 	set: ReferenceSet,
 	frames: readonly RunFrame[],
 	title: string,
+	moundForm = false,
 	sheath?: SheathTarget,
 ): { readonly pairs: readonly StillResult[]; readonly sheets: readonly string[] } {
 	const byReference = new Map(
@@ -1709,8 +1755,8 @@ export function compareStills(
 			continue;
 		}
 		const refPlant = plantMask(refImage);
-		const refSide = side(slot.file, refImage, refPlant, false);
-		const render = renderSideOf(runDir, frame, frame.file, false);
+		const refSide = side(slot.file, refImage, refPlant, false, moundForm);
+		const render = renderSideOf(runDir, frame, frame.file, false, moundForm);
 		// A bark close view photographs the bark against bark, and a bark texture is a cut-out of
 		// the material, so neither separates a plant from a background. Their rows read colour,
 		// never an outline: a mask fitted to a picture with no plain border invents one.

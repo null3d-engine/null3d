@@ -22,6 +22,7 @@ import {
 } from './core/graph';
 import {
 	acos,
+	cos,
 	cross3,
 	length3,
 	log,
@@ -29,6 +30,7 @@ import {
 	quatAxisAngle,
 	quatMultiply,
 	quatRotate,
+	sin,
 	type Vector3,
 } from './core/math';
 import type {
@@ -114,6 +116,14 @@ export const CUTTING_LENGTH: Readonly<Record<CuttingPart, number>> = {
  * none: a leaf picked from the crown shows a short piece of it under the blade.
  */
 export const LEAF_CUT_PETIOLE = 0.12;
+
+/**
+ * The most shoots one branch or sub-branch cut may carry: a piece with more reads as a thicket
+ * rather than the one divided branch a photograph shows.
+ */
+export const CUT_SHOOTS_MOST = 8;
+/** The plant's up axis, for a shoot row's spin about the piece's own upright line. */
+const UP: Vector3 = [0, 1, 0];
 
 /**
  * Steps of length match within which a piece counts as near the asked length, about a third either
@@ -751,28 +761,129 @@ export function clusterRow(
 	const tier = prototype.tiers[heldTier(kit, detail)] as PrototypeArrays;
 	const turn = shootTurn(prototype, cutting);
 	const p = tier.positions;
-	const min = [0, 0, 0];
-	const max = [0, 0, 0];
 	const turned: Vector3 = [0, 0, 0];
-	for (let i = 0; i < p.length; i += 3) {
-		quatRotate(turn, 0, [p[i] as number, p[i + 1] as number, p[i + 2] as number], turned);
-		for (let k = 0; k < 3; k++) {
-			min[k] = Math.min(min[k] as number, turned[k] as number);
-			max[k] = Math.max(max[k] as number, turned[k] as number);
+	// A branch or sub-branch photograph that shows a divided, hanging branch needs more than the one
+	// shoot a class prototype gives. The record hint may name how many shoots the piece carries, and
+	// the tool fans that many rows of the class about the piece's upright axis. The hint may also
+	// set the ring the rows stand on, how far each row leans outward, and how much of a full turn
+	// each row takes, so a piece can share one base and still spread to its photograph's width. A
+	// cluster or a leaf keeps its one shoot, and a piece whose hint names none keeps the one shoot
+	// it always had.
+	const asked = hint && 'shoot' in hint ? (hint.shoots ?? 1) : 1;
+	const shoots =
+		cutting.part === 'cluster' || cutting.part === 'leaf'
+			? 1
+			: Math.max(1, Math.min(CUT_SHOOTS_MOST, Math.round(asked)));
+	const fan = hint && 'shoot' in hint ? hint : undefined;
+	const ring = Math.min(1, Math.max(0, fan?.fanRing ?? 0.18));
+	const lean = Math.min(90, Math.max(-90, fan?.fanLean ?? 0));
+	const spinShare = Math.min(1, Math.max(0, fan?.fanSpin ?? 1));
+	const yaw = Math.min(180, Math.max(-180, fan?.fanYaw ?? 0));
+	// The whole piece turns about its upright axis once, before any row's own fan, so a branch whose
+	// side shoots lie in one plane shows that plane to the camera its photograph was taken from.
+	const turnQ = [0, 0, 0, 1];
+	if (yaw !== 0) {
+		const yawQ = [0, 0, 0, 1];
+		quatAxisAngle(UP, (yaw * Math.PI) / 180, yawQ);
+		quatMultiply(yawQ, 0, turn, 0, turnQ);
+	} else {
+		turnQ[0] = turn[0] as number;
+		turnQ[1] = turn[1] as number;
+		turnQ[2] = turn[2] as number;
+		turnQ[3] = turn[3] as number;
+	}
+	if (shoots === 1) {
+		const min = [0, 0, 0];
+		const max = [0, 0, 0];
+		for (let i = 0; i < p.length; i += 3) {
+			quatRotate(turnQ, 0, [p[i] as number, p[i + 1] as number, p[i + 2] as number], turned);
+			for (let k = 0; k < 3; k++) {
+				min[k] = Math.min(min[k] as number, turned[k] as number);
+				max[k] = Math.max(max[k] as number, turned[k] as number);
+			}
 		}
+		return {
+			rows: {
+				count: 1,
+				prototype: new Uint8Array([prototype.index]),
+				position: new Float32Array(3),
+				rotation: new Float32Array(turnQ),
+				scale: new Float32Array([1]),
+				record: new Uint16Array(1),
+				phase: new Uint8Array(1),
+				sky: new Uint8Array([250]),
+				bent: new Uint8Array([0x88]),
+				order: new Uint32Array(1),
+			},
+			bounds: {
+				min: [min[0] as number, min[1] as number, min[2] as number],
+				max: [max[0] as number, max[1] as number, max[2] as number],
+			},
+		};
+	}
+	// The piece's own height, so the shoots stand along it and fan from its base.
+	let low = Number.POSITIVE_INFINITY;
+	let high = Number.NEGATIVE_INFINITY;
+	for (let i = 0; i < p.length; i += 3) {
+		quatRotate(turnQ, 0, [p[i] as number, p[i + 1] as number, p[i + 2] as number], turned);
+		low = Math.min(low, turned[1] as number);
+		high = Math.max(high, turned[1] as number);
+	}
+	const tall = Number.isFinite(high - low) ? high - low : 0;
+	const position = new Float32Array(3 * shoots);
+	const rotation = new Float32Array(4 * shoots);
+	const min = [Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY];
+	const max = [Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY];
+	const placed: Vector3 = [0, 0, 0];
+	for (let row = 0; row < shoots; row++) {
+		const angle = (row * 2 * Math.PI) / shoots;
+		const spin = [0, 0, 0, 1];
+		quatAxisAngle(UP, angle * spinShare, spin);
+		const q = [0, 0, 0, 1];
+		quatMultiply(spin, 0, turnQ, 0, q);
+		// Each row leans about the horizontal tangent at its own side of the ring, so a positive
+		// lean opens the row away from the axis and a small ring keeps every base at one point.
+		const r = [0, 0, 0, 1];
+		if (lean !== 0) {
+			const tangent: [number, number, number] = [-sin(angle), 0, cos(angle)];
+			const leanQ = [0, 0, 0, 1];
+			quatAxisAngle(tangent, (-lean * Math.PI) / 180, leanQ);
+			quatMultiply(leanQ, 0, q, 0, r);
+		} else {
+			r[0] = q[0] as number;
+			r[1] = q[1] as number;
+			r[2] = q[2] as number;
+			r[3] = q[3] as number;
+		}
+		position[row * 3] = ring * tall * cos(angle);
+		position[row * 3 + 1] = (row * 0.55 * tall) / shoots;
+		position[row * 3 + 2] = ring * tall * sin(angle);
+		rotation.set(r, row * 4);
+		for (let i = 0; i < p.length; i += 3) {
+			quatRotate(r, 0, [p[i] as number, p[i + 1] as number, p[i + 2] as number], placed);
+			for (let k = 0; k < 3; k++) {
+				const v = (placed[k] as number) + (position[row * 3 + k] as number);
+				min[k] = Math.min(min[k] as number, v);
+				max[k] = Math.max(max[k] as number, v);
+			}
+		}
+	}
+	for (let k = 0; k < 3; k++) {
+		if (!Number.isFinite(min[k])) min[k] = 0;
+		if (!Number.isFinite(max[k])) max[k] = 0;
 	}
 	return {
 		rows: {
-			count: 1,
-			prototype: new Uint8Array([prototype.index]),
-			position: new Float32Array(3),
-			rotation: new Float32Array(turn),
-			scale: new Float32Array([1]),
-			record: new Uint16Array(1),
-			phase: new Uint8Array(1),
-			sky: new Uint8Array([250]),
-			bent: new Uint8Array([0x88]),
-			order: new Uint32Array(1),
+			count: shoots,
+			prototype: new Uint8Array(shoots).fill(prototype.index),
+			position,
+			rotation,
+			scale: new Float32Array(shoots).fill(1),
+			record: new Uint16Array(shoots),
+			phase: new Uint8Array(shoots),
+			sky: new Uint8Array(shoots).fill(250),
+			bent: new Uint8Array(shoots).fill(0x88),
+			order: new Uint32Array(shoots),
 		},
 		bounds: {
 			min: [min[0] as number, min[1] as number, min[2] as number],
