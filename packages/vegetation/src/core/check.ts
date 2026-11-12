@@ -598,6 +598,7 @@ export function speciesProblems(record: Species): string[] {
 	if (record.envelope) envelopeProblems(record.envelope, out);
 	if (record.base) baseProblems(record.base, out);
 	if (record.shoots) shootProblems(record.shoots, out);
+	if (record.skyToLeaf !== undefined) shareProblem(record.skyToLeaf, 'skyToLeaf', out);
 	cuttingProblems(record, out);
 	sparseProblems(record, out);
 	extraProblems(record, out);

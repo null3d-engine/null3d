@@ -109,6 +109,16 @@ describe('the species header', () => {
 		expect(header.length).toBe(HEADER_ROWS * RECORDS_WIDTH * 4);
 	});
 
+	test('draws as before when the record names no sky-to-leaf term', () => {
+		expect([...speciesHeader(record, manifest, box)]).toEqual([...header]);
+		expect(texel(header, HEADER.sway)[3]).toBe(0);
+	});
+
+	test('packs the sky-to-leaf extinction in the sway texel', () => {
+		const lit = speciesHeader({ ...record, skyToLeaf: 0.3 }, manifest, box);
+		expect(texel(lit, HEADER.sway)[3]).toBeCloseTo(0.3, 6);
+	});
+
 	test('holds each face its own scale, share and roughness from its own mean', () => {
 		const upper = faceTerms([0.05, 0.09, 0.02], [0.07, 0.12, 0.025], [0.04, 0.08, 0.02]);
 		const lower = faceTerms([0.2, 0.25, 0.2], [0.07, 0.12, 0.025], [0.22, 0.28, 0.21]);
