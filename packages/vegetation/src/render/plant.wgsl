@@ -134,6 +134,8 @@ const HEADER_EXTRA_SCALES: i32 = 47;
 const HEADER_EXTRA_STALKS: i32 = 51;
 // The least width in pixels that a card's stalk draws, or 0 where the record gives none.
 const HEADER_CARD_STALK: i32 = 55;
+const HEADER_SCAR: i32 = 69;
+const HEADER_SCAR_COLOUR: i32 = 70;
 // The second coordinate that marks a card's stalk, in a place that the card planes leave free.
 const STALK_PLANE: f32 = 0.75;
 // How much of the young bark's tone a card's stalk keeps: it stands inside the crown, where the
@@ -148,6 +150,10 @@ const WOOD_UV_STEPS: f32 = 1024.0;
 const TEXTURE_UV_STEPS: f32 = 65535.0;
 // The radius that the wood's second coordinates count from 0 to 1.
 const WOOD_RADIUS_SPAN: f32 = 4.0;
+// The least width, in the drawn frame's pixels, that the wood draws: one pixel at the review's work
+// width, where the matte is measured, in a frame drawn at the stills' width. A twig thinner than
+// this rasterises as dots, and the piece measure then reads its join as a gap.
+const WOOD_LEAST_PIXELS: f32 = 1.2;
 // The coverage at which a texel counts as leaf, the materials' alpha cutoff.
 const CUTOFF: f32 = 0.5;
 // How much a card's alpha rises for each mip level its sample reads. A mip level's alpha is already
@@ -632,6 +638,41 @@ fn stalk_widen(input: VertexInput, plant: vec3f) -> vec3f {
     return transpose(linear) * world_offset / squared;
 }
 
+/// The plant-space offset that widens wood thinner than the least drawn width: each side vertex
+/// moves out along its normal's screen direction until the tube's projected width reaches the
+/// figure. The conversion back to the plant's space is the card stalk's, since both offsets are a
+/// screen-space widening of a line.
+fn wood_widen(input: VertexInput, plant: vec3f) -> vec3f {
+    if (frame.resolution.x <= 0.0 || frame.resolution.y <= 0.0) {
+        return vec3f(0.0);
+    }
+    let model = object.worldMatrix;
+    let clip = camera.viewProjection * (model * vec4f(plant, 1.0));
+    if (clip.w <= 0.0001) {
+        return vec3f(0.0);
+    }
+    let radius = max(input.uv1.x * WOOD_RADIUS_SPAN, 0.00001);
+    let normal = normalize(input.normal);
+    let clip_out = camera.viewProjection * (model * vec4f(plant + normal * radius, 1.0));
+    if (clip_out.w <= 0.0001) {
+        return vec3f(0.0);
+    }
+    // The tube's radius on the screen, in pixels, and the half-width the figure asks for.
+    let step = clip_out.xy / clip_out.w - clip.xy / clip.w;
+    let half_now = length(step * frame.resolution * 0.5);
+    let half_least = WOOD_LEAST_PIXELS * 0.5;
+    if (half_now >= half_least || length(step) <= 0.000001) {
+        return vec3f(0.0);
+    }
+    let across = normalize(step) * (half_least - half_now) * 2.0 / frame.resolution;
+    let projection = camera.projection;
+    let view = vec3f(across.x * clip.w / projection[0][0], across.y * clip.w / projection[1][1], 0.0);
+    let world_offset = (transpose(camera.view) * vec4f(view, 0.0)).xyz;
+    let linear = mat3x3f(model[0].xyz, model[1].xyz, model[2].xyz);
+    let squared = max(dot(linear[0], linear[0]), 0.000001);
+    return transpose(linear) * world_offset / squared;
+}
+
 /// Wood, cards, merged foliage and extras: the 16-bit position into the plant's metres, lifted by
 /// the bark's height on the nearest wood, and moved by the wind in the plant's own space. The
 /// position comes as a fraction of the box, so the offset back from it keeps the plant's own
@@ -686,6 +727,9 @@ fn plant_offset(input: VertexInput, mode: i32) -> vec3f {
     }
     if (mode == MODE_CARDS && abs(input.uv1.y - STALK_PLANE) < 0.1) {
         moved += stalk_widen(input, plant);
+    }
+    if (mode == MODE_WOOD) {
+        moved += wood_widen(input, moved);
     }
     return moved - input.position;
 }
@@ -1038,6 +1082,23 @@ fn surface(input: SurfaceInput) -> Surface {
         bark = mix(bark, lichen.rgb * (0.92 + 0.16 * grain), lichen_mask);
         // The collar's dark ridge where a branch joins its parent.
         bark *= 1.0 - 0.5 * moss_reach.z * junction;
+        // A fire scar's hollow: the bark chars to the record's colour between its foot and head, on
+        // one side of the first stem. The hollow's own geometry cuts the notch; this darkens it and
+        // keeps it matte, so the charred wood reads as the burnt surface the old trees carry.
+        let scar = header(HEADER_SCAR);
+        let scar_colour = header(HEADER_SCAR_COLOUR);
+        if (scar.y > scar.x && scar_colour.w > 0.0) {
+            let outward = normalize(vec2f(n.x, n.z) + vec2f(0.000001, 0.0));
+            let want = vec2f(cos(scar.z), sin(scar.z));
+            let half = max(scar.w, 0.0001);
+            let facing = dot(outward, want);
+            let angular = smoothstep(cos(half), 1.0, facing);
+            let up = (plant.y - scar.x) / max(scar.y - scar.x, 0.001);
+            let vertical = smoothstep(0.0, 0.08, up) * (1.0 - smoothstep(0.82, 1.0, up));
+            let burnt = angular * vertical * (1.0 - youth);
+            bark = mix(bark, scar_colour.rgb, burnt * scar_colour.w);
+            cavity = max(cavity, burnt);
+        }
         // A stem whose own colour turns with the year takes its season's tint, which multiplies the
         // bark it would otherwise draw. A season the record does not name multiplies by nothing.
         let autumn_bark = header(HEADER_AUTUMN_BARK);

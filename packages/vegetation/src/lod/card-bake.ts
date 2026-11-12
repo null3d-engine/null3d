@@ -237,7 +237,7 @@ export function bakeCards(
 	detail: Detail,
 	prototypes: readonly UncardedPrototype[],
 ): { readonly atlas: CardAtlas; readonly cells: readonly CardCell[] } {
-	const { size, rects } = layout(prototypes, CARD_CELL[detail]);
+	const { size, rects } = layout(prototypes, record.lod.cardCell?.[detail] ?? CARD_CELL[detail]);
 	const layerBytes = size * size * 4;
 	const color = new Uint8Array(layerBytes * 2);
 	const surface = new Uint8Array(layerBytes * 2);
