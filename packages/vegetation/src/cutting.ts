@@ -119,13 +119,15 @@ export interface CuttingOptions {
 	 * piece's axis; 'spray' roots them along one lateral line at rising heights, as a close picture
 	 * of a twig spray shows; 'fan' roots every shoot at one base and tilts each row across the
 	 * prototype's own leaf plane, so the piece opens like a hand of cards and every row keeps its
-	 * leaf faces turned the same way. 'ring' by default.
+	 * leaf faces turned the same way; 'bunch' stands each row at its own place along the piece's
+	 * depth and height, so the rows draw as separate twigs inside a narrow frame. 'ring' by default.
 	 */
-	readonly layout?: 'ring' | 'spray' | 'fan';
+	readonly layout?: 'ring' | 'spray' | 'fan' | 'bunch';
 	/**
-	 * For a 'spray' or 'fan' layout: the width the shoots span, as a share of the piece's height.
-	 * A spray spreads its lateral line this wide; a fan opens its arc until its tips stand this far
-	 * apart. A wider span draws separate thin twigs or a broader fan.
+	 * For a 'spray', 'fan' or 'bunch' layout: the width the shoots span, as a share of the piece's
+	 * height. A spray spreads its lateral line this wide; a fan opens its arc until its tips stand
+	 * this far apart; a bunch spreads its rows this far through the piece's depth. A wider span
+	 * draws separate thin twigs or a broader fan.
 	 */
 	readonly spread?: number;
 	/**
@@ -877,6 +879,17 @@ export function clusterRow(
 			const tilt = [0, 0, 0, 1];
 			quatAxisAngle(fanAxis, (along - 0.5) * 2 * half, tilt);
 			quatMultiply(tilt, 0, turnQ, 0, r);
+		} else if (layout === 'bunch') {
+			// A bunch stands each row at its own place along the piece's depth and height, with a
+			// small sideways stagger, so a photograph of separate fine twigs draws separate pieces
+			// inside a narrow frame. Every row keeps the piece's turn, so its leaf face still shows.
+			r[0] = turnQ[0] as number;
+			r[1] = turnQ[1] as number;
+			r[2] = turnQ[2] as number;
+			r[3] = turnQ[3] as number;
+			position[row * 3] = (row % 2 === 0 ? 1 : -1) * 0.15 * spread * tall;
+			position[row * 3 + 1] = (row * 0.5 * tall) / shoots;
+			position[row * 3 + 2] = (along - 0.5) * spread * tall;
 		} else {
 			const angle = (row * 2 * Math.PI) / shoots;
 			const spin = [0, 0, 0, 1];
