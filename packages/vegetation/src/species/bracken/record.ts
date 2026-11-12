@@ -33,7 +33,7 @@ export const record: Species = {
 			spacing: { mean: 0.55, spread: 0.1 },
 			// Stills 01 and 18: the fronds stand in four separate masses with ground between them,
 			// their blades fanning away from the colony's middle, not one continuous roof.
-			clump: { count: 4, radius: 0.12, ring: 0.62 },
+			clump: { count: 4, radius: 0.05, ring: 0.95 },
 		},
 		// Still 02: the bare stipe is about as long as the blade it carries, and leans a little.
 		stipe: { length: { mean: 0.8, spread: 0.16 }, lean: { mean: 6, spread: 5 } },
