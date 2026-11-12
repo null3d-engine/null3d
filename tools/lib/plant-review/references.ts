@@ -316,8 +316,9 @@ const SLOT_RULES: readonly { readonly test: (name: string) => boolean; readonly 
 		{
 			// A plant that flowers at its crown, such as a cactus, shows a ring of flowers at the stem's
 			// top: the picture frames the ring's own sites, not the plant's middle that the crown view
-			// takes or a single shoot tip. It stands before the crown rule, which the name also holds.
-			test: (n) => /^(flowers?|blossom|bloom)/.test(n),
+			// takes or a single shoot tip. The name must say the flowers stand on the crown, so a
+			// species' flower detail or flower spikes keep the view their number gives.
+			test: (n) => /flowers?.*crown|crown.*flowers?/.test(n),
 			slot: { view: 'flowers', framed: false },
 		},
 		{ test: (n) => n.includes('crown'), slot: { view: 'crown', framed: false } },
