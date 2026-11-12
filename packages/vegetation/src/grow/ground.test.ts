@@ -403,7 +403,6 @@ describe('the pendulous sedge', () => {
 			return growPlantNow(kit, OPTIONS).skeleton;
 		};
 		const wide = withShare(0.6);
-		const narrow = withShare(0.3);
 		// The share this plant was grown with, read against the stem's own base radius, so the
 		// height calibration's scale cancels: the fixture carries no share of its own.
 		const share = 0.6;
