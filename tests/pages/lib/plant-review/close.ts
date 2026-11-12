@@ -110,6 +110,12 @@ const JUNCTION_LIMB_SHARE = 0.55;
 /** The least radius, against the thickest limb that leaves the stem, of a limb a junction view takes. */
 const JUNCTION_THICK = 0.5;
 /**
+ * The share of the thickest limb's radius down to which a thinner limb still joins the candidates,
+ * so a crown-rosette's dead skirt, whose stipes leave the trunk below the living crown, can give a
+ * junction whose crotch stands clear of the fronds. The thickness bonus ranks it below a thick limb.
+ */
+const JUNCTION_SKIRT_THICK = 0.2;
+/**
  * Degrees short of the most level of the thick limbs within which a junction view still takes a
  * limb: the photograph's limb leaves nearly level, so the most level limbs give its angle its best
  * chance.
@@ -630,6 +636,22 @@ export function junctionFrameHeight(
 }
 
 /**
+ * The limbs a junction view takes as its candidates: thick enough to be a great limb or the dead
+ * skirt's stipe, and running out of the frame as the photograph's limb does.
+ */
+export function junctionCandidates(
+	limbs: readonly Departure[],
+	thickest: number,
+	lens: Lens,
+): readonly Departure[] {
+	return limbs.filter(
+		(d) =>
+			d.radius >= JUNCTION_SKIRT_THICK * thickest &&
+			d.length >= ((2 * d.radius) / JUNCTION_LIMB_SHARE) * lens.aspect,
+	);
+}
+
+/**
  * The view of a great limb leaving the stem. It takes the thick limbs that leave the stem and run
  * on past the frame, each seen side on across the plane of the stem and the limb so its angle of
  * departure shows at its true size, framed so the limb's thickness and the stem's width take the
@@ -647,48 +669,39 @@ export function junctionView(
 	const thickest = limbs[0]?.radius ?? 0;
 	const stem = mainStem(skeleton);
 	// A thick limb that runs out of the frame, as the photograph's does, rather than ending in it.
-	const thick = limbs.filter(
-		(d) =>
-			d.radius >= JUNCTION_THICK * thickest &&
-			d.length >= ((2 * d.radius) / JUNCTION_LIMB_SHARE) * lens.aspect,
-	);
-	// A limb leaves level where it stands square to the stem's line, rising or drooping alike.
+	const thick = junctionCandidates(limbs, thickest, lens);
+	// A limb leaves level where it stands square to the stem's line, rising or drooping alike. Every
+	// thick limb is a candidate: the near-level departure is a bonus, so a crotch that stands clear
+	// of the crown can win over a level one buried behind it.
 	const off = (d: Departure) => Math.abs(90 - d.angle);
-	const level = thick.reduce((least, d) => Math.min(least, off(d)), 90);
-	const subjects: Subject<Departure>[] = thick
-		.filter((d) => off(d) <= level + JUNCTION_LEVEL)
-		.flatMap((limb) => {
-			const height = junctionFrameHeight(
-				2 * limb.radius,
-				2 * limb.stem.radius,
-				shares,
-				lens.aspect,
-			);
-			return [
-				{
-					// The crotch: where the limb's underside leaves the stem's surface.
-					target: step(
-						step(limb.at, limb.direction, limb.stem.radius),
-						[0, -1, 0],
-						limb.radius * 0.5,
-					),
-					normal: normalize(cross(limb.stem.direction, limb.direction)),
-					spin: limb.stem.direction,
-					distance: distanceFor(height, lens.fov),
-					mark: {
-						axes: markAxes(skeleton, [stem, leader?.axis ?? -1], [limb.axis]),
-						band: limb.stem.radius + height / 2,
-					},
-					// A thick limb and a wide departure are what the photograph shows, and a limb
-					// running to the right reads as its limb does.
-					bonus: (shot: Shot) =>
-						0.1 * (limb.radius / thickest) +
-						0.1 * Math.sin(Math.min(90, limb.angle) * DEG) +
-						(dot(limb.direction, lensAxes(shot).right) > 0 ? 0.03 : 0),
-					facts: limb,
+	const subjects: Subject<Departure>[] = thick.flatMap((limb) => {
+		const height = junctionFrameHeight(2 * limb.radius, 2 * limb.stem.radius, shares, lens.aspect);
+		return [
+			{
+				// The crotch: where the limb's underside leaves the stem's surface.
+				target: step(
+					step(limb.at, limb.direction, limb.stem.radius),
+					[0, -1, 0],
+					limb.radius * 0.5,
+				),
+				normal: normalize(cross(limb.stem.direction, limb.direction)),
+				spin: limb.stem.direction,
+				distance: distanceFor(height, lens.fov),
+				mark: {
+					axes: markAxes(skeleton, [stem, leader?.axis ?? -1], [limb.axis]),
+					band: limb.stem.radius + height / 2,
 				},
-			];
-		});
+				// A thick limb and a wide departure are what the photograph shows, and a limb
+				// running to the right reads as its limb does.
+				bonus: (shot: Shot) =>
+					0.1 * (limb.radius / thickest) +
+					0.1 * Math.sin(Math.min(90, limb.angle) * DEG) +
+					0.1 * (1 - Math.min(off(limb), 90) / 90) +
+					(dot(limb.direction, lensAxes(shot).right) > 0 ? 0.03 : 0),
+				facts: limb,
+			},
+		];
+	});
 	// The limbs of a whorl stand round the junction, so its cameras walk further round the stem.
 	const found = bestOf(
 		plant,
