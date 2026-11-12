@@ -24,14 +24,18 @@ reaches its height, three orders below it, and a crown base at the share its pic
 
 ## Data
 
-The Scots pine at seed 11, variant 0, grows 1 leader, 540 axes and about 6,400 bud sites. It
-stands 19.14 m tall, and its crown base is at 0.52 of the height. The fitted envelope comes from 32 views of `pine-turntable.mp4`. Its own outlines overlap those
-views by 0.70 at their mean, so it stands as a cap rather than a target.
+The Scots pine at seed 11, variant 0, grows 1 leader, 358 axes, 3,874 bud sites and 5,885 shoots.
+It stands 19.14 m tall with its crown base at 9.36 m, and its three levels measure 94,299, 99,043
+and 33,621 triangles. The fitted envelope comes from 32 views of `pine-turntable.mp4`. Its own
+outlines overlap those views by 0.70 at their mean, so it stands as a cap rather than a target.
 
-The reference's twelve rows are measured in `pine-r35`. The whole views give a shape IoU of 0.29,
-0.32 and 0.34. Their crown-box gap is 0.41 and 0.48 against the photographs' 0.19 and 0.26. Their
-leaf color difference is 9.4 and 13.8. The plant stands 20.56 m tall and 19.54 m wide. The young form gives a shape IoU of 0.60. The close and bark views
-and the rows that fail are listed in the species' review record.
+The first verdict round is `pine-r35`, at which 3 of the 12 rows passed. It predates the rim-twig
+rule below, which removes only the few twigs that stood up to 0.13 m outside the drawn outline; the
+plant's other figures stand. The crown-fill rounds after it are `pine-r38` to `pine-r46`; the last
+of them gives whole-view shape IoUs of 0.54, 0.56 and 0.64, crown-box gaps of 0.17, 0.15 and 0.16
+against the photographs' 0.19, 0.26 and 0.19, and leaf color differences of 6.5, 12.3 and 8.1.
+The species stands down under the owner's ruling until the twelve existing species are complete;
+its open rows and their causes are in the species' review record.
 
 ## Look
 
@@ -47,14 +51,18 @@ and the rows that fail are listed in the species' review record.
   narrow sides lift, the widest stays within the reference's own spread, and no view draws a crown
   half the width of its neighbor.
 - **The envelope caps the wood, not the leaves.** Each axis marches out until its next step would
-  leave the outline, and stops on the boundary. The shoot reach is kept clear first, so the needles
-  fill the last hands of the outline.
+  leave the outline, and stops on the boundary. An axis whose parent already stands on the outline
+  takes no step beyond it, so a rim twig never stands outside the crown. The shoot reach is kept
+  clear first, so the needles fill the last hands of the outline.
 - **The pipe model sets the girth.** Every terminal axis carries one pipe. The loads sum down the
   tree, and the radii are fitted to the species' diameter at breast height. Each axis keeps a share
   of its own girth from node to node, so a fork never draws as a cone.
-- **Bud sites stand on the finest axes and at every tip.** A lateral bud sits on the bark beside
-  its twig; a tip carries a terminal bud. The shoot instancer places the species' brushes. Its
-  per-meter curve and clumping make the crown's plates.
+- **Bud sites line the limbs, not only their tips.** A limb is not bare under its foliage: the
+  lateral sites run along every axis below the finest from a bare inner share of its length outward,
+  at a low vigor that keeps the run thin, and every tip carries a terminal site. Without them a
+  conifer draws as bare orange limbs with a tuft at each end, which is the fault the first pine
+  verdict and the giant sequoia's review both report. The shoot instancer turns the sites into the
+  species' brushes, and its per-meter curve and clumping make the crown's plates.
 - **A thin leaf needs a finer card.** A pine needle is 1.6 mm across, under one texel of the default
   64-texel card cell, so its card would draw only the bare twig. The record may name a cell of 64,
   128 or 256 texels at each tier. The pine takes 128 at the high tiers, which costs four times the
@@ -65,16 +73,19 @@ and the rows that fail are listed in the species' review record.
 Grow conifers by the architectural model. One leader carries whorls of boughs at the record's
 spacing. Positional curves give each axis its length and angle, and sag and upturn bend it. The
 envelope caps it, the outline is rounded toward its mean, and the pipe model gives it its girth.
-Bud sites stand on the finest axes. A record
-may name the card cell at each tier, from 64 to 256 texels. The Scots pine settles the numbers.
+Bud sites stand along the finest axes, along the limbs below them from a bare inner run outward,
+and at every tip. A record may name the card cell at each tier, from 64 to 256 texels. The Scots
+pine settles the numbers.
 Rejected: the self-organizing grower for a pine, whose competition fills a dome. It cannot leave the
 long bare bole and the flat separate plates.
 
 ## Consequences
 
 - `grow/architectural.ts` holds the grower. `grow/envelope.ts` holds `smoothedVolume`, and
-  `grow/envelope.test.ts` checks it. `grow/architectural.test.ts` holds one leader and the bud
-  sites. It also checks the chain of every axis to a stem, the same bytes twice and the envelope cap.
+  `grow/envelope.test.ts` checks it. `grow/architectural.test.ts` holds one leader, the bud sites
+  and the limb sites: it checks that a bough carries lateral sites along its length rather than a
+  tuft at its tip. It also checks the chain of every axis to a stem, the same bytes twice and the
+  envelope cap.
 - `lod/card-bake.ts` reads `lod.cardCell`, and `lod/cards.test.ts` checks the finer atlas.
 - The Scots pine's record, envelope, textures and review slot live under its species folder, the
   textures package and `tools/lib/plant-review/slots/`. Its leaf is the fascicle: stills 11 and 12

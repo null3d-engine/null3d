@@ -1,7 +1,7 @@
 // Coarseness on the self-organizing grower's oak with the leaf package's oak shoots: the same bytes
-// at every setting, the silhouette within 0.05 of the plant as grown at eight angles, triangles and
-// bytes that fall at every step, a triangle target met within 10 per cent, and the plant as grown
-// and every stand-in unchanged.
+// at every setting, the crown as grown at every setting, the same silhouette at eight angles,
+// triangles and bytes that fall at every step, a triangle target met within 10 per cent, and the
+// plant as grown and every stand-in unchanged.
 import { describe, expect, it } from 'bun:test';
 import { scaledBudget } from '../../../tests/lib/run-budget.ts';
 import { type MeshArrays, plantAssetDigest, type ShootRows, type SpeciesKitData } from './asset';
@@ -13,7 +13,6 @@ import type { Species } from './core/record';
 import { standInSpecies } from './core/stand-in';
 import { DETAILS, type Detail, spreadAt } from './core/types';
 import { buildKitNow, growPlantNow, loadPlantCode, variantKey } from './generate';
-import { coarsenSkeleton } from './grow/coarsen';
 import {
 	envelopeSilhouette,
 	envelopeVolume,
@@ -23,7 +22,7 @@ import {
 } from './grow/envelope';
 import { oakRecord as grownOak } from './grow/oak.fixture';
 import { growSelfOrganizing } from './grow/self-organizing';
-import { placeShoots } from './leaf/instancer';
+import { dressShoots, placeShoots } from './leaf/instancer';
 import { builder } from './leaf/leaf-mesh';
 import { oakRecord as leafOak, OAK_MANIFEST } from './leaf/oak.test-support';
 import { shootPrototypes } from './leaf/shoot';
@@ -71,7 +70,7 @@ const grown = [0, 1].map((variant) =>
 	growSelfOrganizing({ record, seed: SEED, variant, season: 'summer' }),
 );
 
-/** The oak of a variant dressed at a coarseness: its pruned skeleton and its rows. */
+/** The oak of a variant dressed at a coarseness: the grown skeleton and its rows, meshed finer or coarser. */
 function dressed(variant: number, coarseness: number): { input: DressInput; rows: ShootRows } {
 	const input: DressInput = {
 		record,
@@ -79,7 +78,7 @@ function dressed(variant: number, coarseness: number): { input: DressInput; rows
 		variant,
 		season: 'summer',
 		kit,
-		skeleton: coarsenSkeleton(grown[variant] as MacroSkeleton, coarseness),
+		skeleton: grown[variant] as MacroSkeleton,
 		coarseness,
 	};
 	return { input, rows: placeShoots(input) };
@@ -164,7 +163,6 @@ describe('coarseness on the oak', () => {
 
 	it('changes nothing at 0: the skeleton, the rows and the wood are as grown', () => {
 		const skeleton = grown[0] as MacroSkeleton;
-		expect(coarsenSkeleton(skeleton, 0)).toBe(skeleton);
 		const plain: DressInput = { record, seed: SEED, variant: 0, season: 'summer', kit, skeleton };
 		const zero = { ...plain, coarseness: 0 };
 		const rows = placeShoots(plain);
@@ -174,7 +172,7 @@ describe('coarseness on the oak', () => {
 		);
 	});
 
-	it('keeps its silhouette in its envelope within 0.05 of the plant as grown, at eight angles', () => {
+	it('keeps the crown as grown at every setting: the same skeleton, rows and eight-angle silhouette', () => {
 		const lengths = kit.prototypes.map((p) => p.length);
 		for (const variant of [0, 1]) {
 			const salt = record.seedSalt >>> 0;
@@ -201,10 +199,16 @@ describe('coarseness on the oak', () => {
 				);
 			};
 			const full = fit(0);
-			for (const c of [0.5, 1])
+			for (const c of [0.5, 1]) {
+				const coarse = dressed(variant, c);
+				expect(digest(skeletonBuffers(coarse.input.skeleton).map((x) => new Uint8Array(x)))).toBe(
+					digest(skeletonBuffers(dressed(variant, 0).input.skeleton).map((x) => new Uint8Array(x))),
+				);
+				expect(digest(rowViews(coarse.rows))).toBe(digest(rowViews(dressed(variant, 0).rows)));
 				fit(c).forEach((iou, k) => {
 					expect(iou).toBeGreaterThanOrEqual((full[k] as number) - 0.05);
 				});
+			}
 		}
 	});
 
@@ -240,22 +244,83 @@ describe('coarseness on the oak', () => {
 		scaledBudget(30_000),
 	);
 
-	it('meets a triangle target within 10 per cent', () => {
+	it('meets a triangle target the wood mesh can reach, and floors one it cannot', () => {
 		const skeleton = grown[0] as MacroSkeleton;
 		const growth = { record, seed: SEED, variant: 0, season: 'summer' as const, skeleton };
-		for (const target of [15_000_000, 6_000_000]) {
-			const c = coarsenessFor(kit, growth, DETAIL, { triangles: target });
-			expect(c).toBeGreaterThan(0);
-			expect(c).toBeLessThan(1);
-			expect(coarsenessFor(kit, growth, DETAIL, { triangles: target })).toBe(c);
-			const { input, rows } = dressed(0, c);
-			const near = meshWood(meshInput(input, rows), 0);
-			const triangles = near.indices.length / 3 + shootTriangles(kit, rows, DETAIL);
-			expect(Math.abs(triangles / target - 1)).toBeLessThan(0.1);
-		}
-		expect(coarsenessFor(kit, growth, DETAIL, { triangles: 1e9 })).toBe(0);
-		expect(coarsenessFor(kit, growth, DETAIL, { triangles: 1000 })).toBe(1);
+		// The coarseness smooths the wood; it never thins the plant, so a target below the coarsest
+		// mesh has no coarseness that reaches it and takes the coarsest. The wood alone is the share a
+		// target can move, so the search is read with its leaves out of the count.
+		const woodOnly = { ...kit, prototypes: [] };
+		const count = (c: number) =>
+			woodTriangles({ ...dressed(0, c).input, coarseness: c, detail: DETAIL }, 0);
+		const full = count(0);
+		const fewest = count(1);
+		expect(fewest).toBeLessThan(full / 1.2);
+		const target = (full + fewest) / 2;
+		const c = coarsenessFor(woodOnly, growth, DETAIL, { triangles: target });
+		expect(c).toBeGreaterThan(0);
+		expect(c).toBeLessThan(1);
+		expect(Math.abs(count(c) / target - 1)).toBeLessThan(0.1);
+		expect(coarsenessFor(woodOnly, growth, DETAIL, { triangles: full * 2 })).toBe(0);
+		expect(coarsenessFor(woodOnly, growth, DETAIL, { triangles: fewest / 2 })).toBe(1);
+		// The meshed wood at the chosen coarseness stands nearer the target than at either end.
+		const meshed = (k: number) => {
+			const { input, rows } = dressed(0, k);
+			return meshWood(meshInput(input, rows), 0).indices.length / 3;
+		};
+		const miss = (k: number) => Math.abs(meshed(k) / target - 1);
+		expect(miss(c)).toBeLessThan(miss(0));
+		expect(miss(c)).toBeLessThan(miss(1));
 		expect(coarsenessFor({ ...kit, coarseness: 0.4 }, growth, DETAIL, {})).toBe(0.4);
+	});
+});
+
+describe('the section sparsity', () => {
+	const wood = (sections: number, level: MeshLevel) => {
+		const { input, rows } = dressed(0, 0);
+		const mesh = meshInput({ ...input, sections }, rows);
+		return {
+			mesh,
+			triangles: meshWood(mesh, level).indices.length / 3,
+			estimate: woodTriangles(mesh, level),
+		};
+	};
+
+	it('thins every level as it rises, leaving the full form exact at zero', () => {
+		for (const level of [0, 1, 2] as const) {
+			const none = wood(0, level).triangles;
+			const half = wood(0.5, level).triangles;
+			const most = wood(1, level).triangles;
+			expect(half).toBeLessThan(none);
+			expect(most).toBeLessThan(half);
+		}
+		const { input, rows } = dressed(0, 0);
+		const plain = meshInput(input, rows);
+		const zero = meshInput({ ...input, sections: 0 }, rows);
+		expect(digest(meshViews(meshWood(zero, 2)))).toBe(digest(meshViews(meshWood(plain, 2))));
+	});
+
+	it('draws the far level of the oak as one segment an axis, in a few triangles', () => {
+		// The far level keeps three axes at most, each one segment of three sides, with no joins,
+		// tips or roots, so its whole wood is a handful of triangles.
+		const full = wood(0, 2).triangles;
+		const fewest = wood(1, 2).triangles;
+		expect(fewest).toBeLessThan(full / 4);
+		expect(fewest).toBeGreaterThan(0);
+		expect(fewest).toBeLessThanOrEqual(30);
+	});
+
+	it('holds its quick count of the nearest level within ten per cent at half the sections', () => {
+		// The one-segment mode at the sparsest is a far level's shape, not the target's count.
+		const one = wood(0.5, 0);
+		expect(Math.abs(one.estimate / one.triangles - 1)).toBeLessThan(0.1);
+	});
+
+	it('keys a variant by its sections, and the plant as grown as before', () => {
+		const options = { seed: 1, variant: 0 };
+		const key = variantKey(kit, options);
+		expect(variantKey(kit, { ...options, sections: 0 })).toBe(key);
+		expect(variantKey(kit, { ...options, sections: 0.25 })).not.toBe(key);
 	});
 });
 
