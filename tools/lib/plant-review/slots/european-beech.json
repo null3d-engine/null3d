@@ -12,5 +12,8 @@
 		"thin": 0.015,
 		"span": 0.1,
 		"barkMask": true
+	},
+	"20-winter-held-leaves.png": {
+		"view": "whole"
 	}
 }
