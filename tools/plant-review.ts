@@ -34,6 +34,8 @@ import {
 	fittedMaskClause,
 	fixed,
 	framingQuery,
+	MASK_GATE_PLAIN,
+	MASK_SUBJECT_FLOOR,
 	rubricBand,
 	SHEATH_VIEWS,
 	type StillResult,
@@ -511,9 +513,13 @@ function turnSummary(result: TurnResult, limit: number): string[] {
 			: []),
 		...(result.maskCheck !== null
 			? [
-					`- Mask check: the colour outline of the render frames overlaps their matte by ${result.maskCheck.toFixed(3)} IoU.`,
+					`- Mask check: the colour outline of the render frames overlaps their matte by ${result.maskCheck.toFixed(3)} IoU over ${result.maskCheckFrames} frame${result.maskCheckFrames === 1 ? '' : 's'}${result.maskCheckUnreadable > 0 ? `, ${result.maskCheckUnreadable} unreadable` : ''}. The gate for ${result.maskCheckThreshold === MASK_GATE_PLAIN ? 'a plain background' : 'a natural background'} is ${result.maskCheckThreshold}, so the turn ${result.maskCheckFailed ? 'fails coverage' : 'stands'}.`,
 				]
-			: []),
+			: result.maskCheckUnreadable > 0
+				? [
+						`- Mask check: not measurable. The colour outline is under the ${MASK_SUBJECT_FLOOR * 100} per cent subject floor on all ${result.maskCheckUnreadable} frames with a matte, so the turn is neither passed nor failed on the check.`,
+					]
+				: []),
 		`- Sheets: ${result.sheets.join(', ')}.`,
 		'',
 	];
@@ -657,12 +663,18 @@ function compareRun(
 	metrics.winds = Object.fromEntries(winds);
 	const coverage = coverageOf(set, { stills, turns, winds }, 1 / windFps);
 	metrics.coverage = coverage;
+	const maskFailures = [...turns.values()].filter((turn) => turn.maskCheckFailed);
 	summary.push(
 		'### Coverage',
 		'',
 		coverage.complete
 			? `- Every one of the ${coverage.inUse} reference files in use was compared. coverage.md lists each with its render.`
 			: `- ${coverage.compared} of ${coverage.inUse} reference files in use were compared in full, so the species cannot pass. coverage.md lists each file and what it lacks.`,
+		...(maskFailures.length > 0
+			? [
+					`- The mask check fails on ${maskFailures.length} turn${maskFailures.length === 1 ? '' : 's'}: ${maskFailures.map((turn) => turn.video).join(', ')}. A matte that the colour outline cannot follow is not a matte a row can be judged on.`,
+				]
+			: []),
 		'',
 		'### Limits of the measures',
 		'',
@@ -676,7 +688,7 @@ function compareRun(
 	writeFileSync(join(dir, 'coverage.json'), `${JSON.stringify(coverage, null, '\t')}\n`);
 	writeFileSync(join(dir, 'coverage.md'), coverageMarkdown(manifest.species, set.slug, coverage));
 	writeFileSync(join(dir, 'summary.md'), `${summary.join('\n')}\n`);
-	return coverage.complete;
+	return coverage.complete && maskFailures.length === 0;
 }
 
 /** The edge-direction lines for the stills that give no outline, so a close-up still has a figure. */

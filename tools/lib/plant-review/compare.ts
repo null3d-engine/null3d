@@ -935,8 +935,59 @@ export interface TurnResult {
 		readonly metres: readonly ({ readonly width: number; readonly height: number } | null)[];
 	};
 	readonly maskCheck: number | null;
+	/** The frames the check read, and the frames whose colour outline saw no plant to read. */
+	readonly maskCheckFrames: number;
+	readonly maskCheckUnreadable: number;
+	/** The gate the turn's background takes, and whether its check falls below the gate. */
+	readonly maskCheckThreshold: number | null;
+	readonly maskCheckFailed: boolean;
 	readonly sheets: readonly string[];
 	readonly error?: string;
+}
+
+/**
+ * The mask check's gates, measured over every turn check in the tree on 12 November 2026. A frame's
+ * colour outline can only be read against its matte when the outline is a plant outline, so the
+ * gates are set from the corpus of sound turns and give a margin under each kind's lowest reading.
+ * A turn on a natural background reads a frame as low as 0.717 and a sound turn as low as 0.750, so
+ * its gate sits 0.15 under that. A plain-background cut piece reads 0.941 to 0.978 a frame, so its
+ * gate sits 0.045 under. A colour outline under the plant mask's own fitted-subject floor cannot see
+ * the plant at all, so that frame is reported as unreadable rather than scored.
+ */
+export const MASK_GATE_NATURAL = 0.6;
+export const MASK_GATE_PLAIN = 0.9;
+export const MASK_SUBJECT_FLOOR = 0.02;
+
+/** A turning video's mask check: the readable frames' mean overlap, or none when no frame is read. */
+export interface MaskCheck {
+	readonly value: number | null;
+	readonly frames: number;
+	readonly unreadable: number;
+	readonly threshold: number | null;
+	readonly failed: boolean;
+}
+
+/**
+ * The mask check a turning video's frames give. A null check is a frame whose colour outline covers
+ * under the subject floor, which the fitted background cannot see the plant in.
+ *
+ * @param checks Each frame's overlap, or null where the frame is unreadable.
+ * @param plain Whether the turn drew on a plain background, as a cut piece does.
+ * @returns The readable frames' mean overlap and the gate it is judged against.
+ */
+export function maskCheckOf(checks: readonly (number | null)[], plain: boolean): MaskCheck {
+	const readable = checks.filter((check): check is number => check !== null);
+	const unreadable = checks.length - readable.length;
+	if (readable.length === 0)
+		return { value: null, frames: 0, unreadable, threshold: null, failed: false };
+	const value = Number(mean(readable).toFixed(4));
+	const threshold = plain ? MASK_GATE_PLAIN : MASK_GATE_NATURAL;
+	return { value, frames: readable.length, unreadable, threshold, failed: value < threshold };
+}
+
+/** Whether a turn's frames drew a plain background, as a cut piece does, rather than sky and ground. */
+export function plainTurnOf(background: string | undefined): boolean {
+	return background !== undefined && background !== 'sky-meadow';
 }
 
 /** A render frame's side of a comparison. */
@@ -999,6 +1050,10 @@ export function compareTurn(
 			metres: [],
 		},
 		maskCheck: null,
+		maskCheckFrames: 0,
+		maskCheckUnreadable: 0,
+		maskCheckThreshold: null,
+		maskCheckFailed: false,
 		sheets: [],
 	};
 	if (m === 0) return { ...empty, error: 'the run drew no frame of this turn' };
@@ -1014,8 +1069,11 @@ export function compareTurn(
 	const checks = usable.flatMap((frame, j) => {
 		if (!frame.matte) return [];
 		const coloured = plantMask((renderSides[j] as Side).image);
+		const share = coloured.mask.reduce((sum, value) => sum + value, 0) / coloured.mask.length;
+		if (share < MASK_SUBJECT_FLOOR) return [null];
 		return [frameIou(coloured, (renderSides[j] as Side).plant)];
 	});
+	const mask = maskCheckOf(checks, plainTurnOf((usable[0] as RunFrame).query?.background));
 	const refCoarse = refSides.map((s) => (s.normal ? coarse(s.normal) : undefined));
 	const renderCoarse = renderSides.map((s) => (s.normal ? coarse(s.normal) : undefined));
 	const scores = refCoarse.map((r) => renderCoarse.map((s) => (r && s ? iou(r, s) : 0)));
@@ -1083,7 +1141,11 @@ export function compareTurn(
 			render: spreadOf(renderAt),
 			metres: atAngle.map((k) => metresOf(usable[alignment.pairs[k] as number])),
 		},
-		maskCheck: checks.length > 0 ? Number(mean(checks).toFixed(4)) : null,
+		maskCheck: mask.value,
+		maskCheckFrames: mask.frames,
+		maskCheckUnreadable: mask.unreadable,
+		maskCheckThreshold: mask.threshold,
+		maskCheckFailed: mask.failed,
 		sheets: writeSheets(runDir, group, pages),
 	};
 }

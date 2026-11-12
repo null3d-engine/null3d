@@ -68,6 +68,10 @@ const turn = (covered: number): TurnResult => ({
 		metres: [],
 	},
 	maskCheck: null,
+	maskCheckFrames: 0,
+	maskCheckUnreadable: 0,
+	maskCheckThreshold: null,
+	maskCheckFailed: false,
 	sheets: [],
 });
 
