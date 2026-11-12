@@ -173,13 +173,13 @@ export const record: Species = {
 				years: 2,
 				leafYears: 1,
 				length: { mean: 0.95, spread: 0.08 },
-				// Stills 21 and 22 hold about forty leaves over their three sprays. Eleven nodes
-				// raised the branch piece's shape to 0.2213 from 0.1485 but narrowed its aspect to
-				// 0.96 against 1.44, so the laterals leave wider to carry the reach the leaves took.
-				nodes: { mean: 11, spread: 0.5 },
+				// Stills 21 and 22 hold about forty leaves over their three sprays, so a spray carries
+				// more leaves than the crown's own shoots do. A dozen along each made the piece denser
+				// and narrower, so the sprays reach outward instead: the laterals leave wider.
+				nodes: { mean: 8, spread: 0.5 },
 				internode: ALTERNATE,
 				stem: { radius: [0.006, 0.003] },
-				lateral: 72,
+				lateral: 60,
 				laterals: 2,
 				lateralGap: 0.3,
 				leafScale: [
