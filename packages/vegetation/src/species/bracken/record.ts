@@ -33,7 +33,7 @@ export const record: Species = {
 			spacing: { mean: 0.55, spread: 0.1 },
 			// Stills 01 and 18: the fronds stand in four separate masses with ground between them,
 			// their blades fanning away from the colony's middle, not one continuous roof.
-			clump: { count: 4, radius: 0.05, ring: 0.95 },
+			clump: { count: 4, radius: 0.05, ring: 1.1 },
 		},
 		// Still 02: the bare stipe is about as long as the blade it carries, and leans a little.
 		stipe: { length: { mean: 0.8, spread: 0.16 }, lean: { mean: 6, spread: 5 } },
@@ -41,7 +41,7 @@ export const record: Species = {
 			// Stills 12 and 21: the blade is bipinnate and broadly triangular, about as long as
 			// its stipe, and the blades of a stand overlap into a continuous roof.
 			kind: 'bipinnate',
-			length: { mean: 1.05, spread: 0.15 },
+			length: { mean: 0.95, spread: 0.15 },
 			// Stills 06 and 16: a stipe stout enough to carry the blade.
 			petiole: { length: 0, width: 0.014, teeth: 0 },
 			// Still 02: the rachis leaves the stipe's top rising, turns over through the blade's
