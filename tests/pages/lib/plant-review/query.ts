@@ -315,6 +315,7 @@ const NUMBER_FIELDS = [
 	'sparse',
 	'sections',
 	'cards',
+	'age',
 	'roll',
 	'girth',
 	'turns',
@@ -339,6 +340,7 @@ const SHARE_FIELDS = new Set([
 	'sparse',
 	'sections',
 	'cards',
+	'age',
 ]);
 
 /** The fields that are whole numbers of at least one. */
@@ -356,6 +358,8 @@ const SWITCHES = [
 	'leafyBark',
 	'noOutline',
 	'foliage',
+	'motion',
+	'young',
 ] as const;
 
 /** A short form of a number for a query, so a query reads well and keeps its precision. */
@@ -528,6 +532,7 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 		foliage: params.get('foliage') === '1',
 		scale: params.get('scale') === '1',
 		motion: params.get('motion') === '1',
+		young: params.get('young') === '1',
 		matte: params.get('matte') === '1',
 		fruit: params.get('fruit') === '1',
 		surface: params.get('surface') === '1',
