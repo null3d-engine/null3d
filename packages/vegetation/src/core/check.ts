@@ -421,11 +421,16 @@ function growthProblems(record: Species, out: string[]): void {
 		spreadProblems(growth.sheath, 'growth.sheath', true, out);
 		const sheathColour = growth.sheathColour;
 		if (sheathColour) {
-			for (const [end, value] of sheathColour.entries())
-				if (!(value >= 0 && value <= 1))
-					out.push(
-						`growth.sheathColour.${end} is ${JSON.stringify(value)}; a colour lies from 0 to 1`,
-					);
+			for (const [end, colour] of [
+				['foot', sheathColour.foot],
+				['collar', sheathColour.collar],
+			] as const)
+				for (const [channel, value] of colour.entries())
+					if (!(value >= 0 && value <= 1))
+						out.push(
+							`growth.sheathColour.${end}.${channel} is ${JSON.stringify(value)}; a colour lies from 0 to 1`,
+						);
+			shareProblem(sheathColour.reach, 'growth.sheathColour.reach', out);
 		}
 		wholeProblem(growth.ranks, 'growth.ranks', 1, 3, out);
 		for (const key of ['lean', 'spread', 'size'] as const)
@@ -572,14 +577,15 @@ function extraProblems(record: Species, out: string[]): void {
  * foliage that cannot lie flat.
  */
 function cuttingProblems(record: Species, out: string[]): void {
-	// A blade, a thick leaf or a whole frond can lie pressed flat in its frame's plane.
+	// A blade, a thick leaf, a whole frond or a grass blade can lie pressed flat in its frame's plane.
 	const leaf = record.cuttings?.leaf;
 	if (record.cuttings?.leaves) spreadProblems(record.cuttings.leaves, 'cuttings.leaves', true, out);
 	if (
 		leaf?.pressed &&
 		record.foliage.kind !== 'blade' &&
 		record.foliage.kind !== 'thick' &&
-		record.foliage.kind !== 'frond'
+		record.foliage.kind !== 'frond' &&
+		record.foliage.kind !== 'grass-blade'
 	)
 		out.push(`cuttings.leaf.pressed lays a leaf flat, and the foliage is '${record.foliage.kind}'`);
 	if (leaf?.petiole !== undefined && !(leaf.petiole > 0))
@@ -665,6 +671,7 @@ export function speciesProblems(record: Species): string[] {
 	if (record.envelope) envelopeProblems(record.envelope, out);
 	if (record.base) baseProblems(record.base, out);
 	if (record.shoots) shootProblems(record.shoots, out);
+	if (record.skyToLeaf !== undefined) shareProblem(record.skyToLeaf, 'skyToLeaf', out);
 	cuttingProblems(record, out);
 	sparseProblems(record, out);
 	extraProblems(record, out);

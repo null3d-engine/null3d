@@ -71,12 +71,14 @@
 		"background": "studio-grey"
 	},
 	"15-bark-mid-stem.png": {
-		"span": 0.4
+		"span": 0.4,
+		"barkMask": true
 	},
 	"16-bark-on-branch.png": {
 		"view": "bark-limb",
 		"thin": 0.018,
-		"span": 0.08
+		"span": 0.08,
+		"leafyBark": true
 	},
 	"26-bark-texture.png": {
 		"span": 0.3

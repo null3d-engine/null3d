@@ -101,12 +101,14 @@ const REST_STEPS: f32 = 255.0;
 const HEADER_YOUNG: i32 = 15;
 const HEADER_YOUNG_TILE: i32 = 16;
 const HEADER_YOUNG_TINT: i32 = 56;
-// A tuft's basal sheath colour and roughness, for the merged foliage's sheath columns.
+// A tuft's sheath colour at the column's foot, and its roughness, for the merged foliage.
 const HEADER_SHEATH: i32 = 65;
 // The share of a card's leaf groups that stays, where the record names one.
-const HEADER_CARD_COVERAGE: i32 = 67;
+const HEADER_CARD_COVERAGE: i32 = 68;
 // A grass blade's collar: its colour, then the share of the blade's base it takes.
 const HEADER_COLLAR: i32 = 66;
+// A tuft's sheath colour at the column's collar, then the share of the column it takes.
+const HEADER_SHEATH_COLLAR: i32 = 67;
 const HEADER_MOSS: i32 = 17;
 const HEADER_MOSS_REACH: i32 = 18;
 const HEADER_EXTRAS: i32 = 19;
@@ -877,6 +879,9 @@ fn coverage(input: SurfaceInput) -> f32 {
 fn surface(input: SurfaceInput) -> Surface {
     var s = defaultSurface(input);
     let mode = plant_mode();
+    // The share of the open sky added to the leaf and card faces, the record's own extinction; 0
+    // where it names none, so the faces draw as before.
+    let leaf_sky = header(HEADER_SWAY).w;
     let upper = input.frontFacing;
     let facing = select(-1.0, 1.0, upper);
     // Derivatives first, in uniform control flow; the roles sample with explicit gradients.
@@ -1094,6 +1099,7 @@ fn surface(input: SurfaceInput) -> Surface {
             // The card's normal is toward the viewer of the face it shows; the frame's normal is too.
             mapped = card_normal;
             occlusion = input.vertexColor.a * saturate(self_shade);
+            occlusion = mix(occlusion, 1.0, leaf_sky);
         }
     } else if (mode == MODE_EXTRAS) {
         // An extra takes its kind's colour and roughness from the header, by the index in its
@@ -1174,17 +1180,23 @@ fn surface(input: SurfaceInput) -> Surface {
         } else if (mode == MODE_FOLIAGE && abs(input.vertexColor.b * 255.0 - KIND_SHEATH) < 0.5) {
             // A merged ground plant's sheath column draws in the record's sheath colour. Its kind
             // marks the colour's third byte, since the asset clamps a negative coordinate to zero.
-            let body = header(HEADER_SHEATH);
-            base = body.rgb;
-            roughness = max(body.w, 0.5);
+            // The leaf texture's stalk strip lies over it, divided by the face's mean, so the
+            // sheath shows the blade's ribbing and the record's colour stays the material's own.
+            // The column's second coordinates' x runs from its foot to its collar, so the record's
+            // two colours mix up the height and the stalk strip's ribbing lies over them.
+            let foot = header(HEADER_SHEATH);
+            let top = header(HEADER_SHEATH_COLLAR);
+            let up = saturate(input.uv1.x);
+            let reach = clamp(top.w, 0.05, 1.0);
+            let sheath_colour = mix(foot.rgb, top.rgb, smoothstep(1.0 - reach, 1.0, up));
+            let strip = textureSampleGrad(colour, colourSampler, uv, 0, gx, gy).rgb;
+            let face = max(header(HEADER_UPPER_MEAN).rgb, vec3f(0.0001));
+            base = sheath_colour * clamp(strip / face, vec3f(0.55), vec3f(1.45));
+            roughness = max(foot.w, 0.5);
         } else {
             let layer = select(1, 0, upper);
             let texel = textureSampleGrad(colour, colourSampler, uv, layer, gx, gy);
             let relief_texel = textureSampleGrad(relief, reliefSampler, uv, 0, gx, gy).rgb;
-            // A shoot's sheath column carries the record's own colour rather than the leaf's: the
-            // top bit of its flutter byte marks it, in a species that gives a sheath colour.
-            let sheath = mode == MODE_FOLIAGE && header(HEADER_SHEATH).w > 0.5
-                && (i32(round(input.vertexColor.b * 255.0)) & 128) != 0;
             // A merged leaf browns on its own by its second coordinates' y, as a dying frond does.
             let browning = select(0.0, input.uv1.y, mode == MODE_FOLIAGE);
             let light = leaf_light(texel.rgb, upper, browning);
@@ -1211,22 +1223,12 @@ fn surface(input: SurfaceInput) -> Surface {
                 base = mix(collar.rgb, base, smoothstep(collar.w * 0.6, collar.w, input.uv1.x));
             }
             sheen = select(header(HEADER_UPPER_REFLECTANCE).w, 0.0, upper);
-            if (sheath) {
-                // A sheath is a smooth, matte tube of the record's own colour: it holds no leaf
-                // relief and passes no light through.
-                base = header(HEADER_SHEATH).rgb;
-                share = 0.0;
-                through = vec3f(0.0);
-                roughness = 0.8;
-                alpha = 1.0;
-                mapped = vec3f(0.0, 0.0, 1.0);
-                sheen = 0.0;
-            }
         }
         if (mode == MODE_SHOOTS) {
             let row = shoot_row(object.values);
             let turn = near_texel(row.slot * 2).w;
             occlusion = saturate(row.sky / 250.0) * input.vertexColor.a;
+            occlusion = mix(occlusion, 1.0, leaf_sky);
             sky_normal = out_of_turn(bent_normal(row.bent), turn);
         } else {
             occlusion = input.vertexColor.a;

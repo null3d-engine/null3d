@@ -1,0 +1,12 @@
+{
+	"15-bark-mid-stem.png": {
+		"span": 0.4,
+		"barkMask": true
+	},
+	"16-bark-on-branch.png": {
+		"view": "bark-limb",
+		"thin": 0.018,
+		"span": 0.08,
+		"barkMask": true
+	}
+}

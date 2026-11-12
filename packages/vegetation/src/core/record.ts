@@ -40,6 +40,13 @@ export interface Species {
 	readonly shoots?: ShootSpec;
 	/** What the leaves are. */
 	readonly foliage: Foliage;
+	/**
+	 * The share of the open sky, 0 to 1, added to the leaf and card faces' ambient light, where a
+	 * crown's leaves stand in less skylight than its photographs show. The value is the extinction
+	 * that the added sky term uses, its own per species: the far-card shading's share, applied to the
+	 * leaf faces. Absent or 0, the faces draw as before.
+	 */
+	readonly skyToLeaf?: number;
 	/** The bark zones and how the wood takes them. */
 	readonly bark?: BarkSpec;
 	/** Root flare, buttresses, surface roots and flutes at the stem base. */
@@ -788,6 +795,21 @@ export interface FrondColony {
 }
 
 /**
+ * A tuft sheath column's colours: the colour at its foot and the colour where the blades leave,
+ * mixed up the column, so a crown draws its own colour at the soil and the collar's colour above.
+ *
+ * @category api/vegetation
+ */
+export interface SheathColour {
+	/** The colour at the column's foot, in linear reflectance. */
+	readonly foot: Rgb;
+	/** The colour at the column's collar, in linear reflectance. */
+	readonly collar: Rgb;
+	/** The share of the column's height below its collar over which the collar's colour takes over. */
+	readonly reach: number;
+}
+
+/**
  * A tuft of shoots from one crown, each shoot a column of sheaths with blades in two or three ranks,
  * and flowering stems in season: grasses and sedges.
  *
@@ -811,10 +833,10 @@ export interface Tuft {
 	/** The sheath's radius in metres. */
 	readonly sheathRadius: number;
 	/**
-	 * The linear colour of each shoot's sheath column, where the species gives one. Absent, the
-	 * column draws the leaf material as the blades do.
+	 * The sheath column's colours, where the photographs show the plant's own sheaths rather than the
+	 * leaf's green: a merged ground plant draws its columns in them, from the foot up to the collar.
 	 */
-	readonly sheathColour?: Rgb;
+	readonly sheathColour?: SheathColour;
 	/** Degrees a blade leaves its shoot, by blade age (t = 0 the youngest, innermost, 1 the oldest). */
 	readonly spread: Curve;
 	/** Blade length over the foliage's blade length, by blade age. */
@@ -890,6 +912,12 @@ export interface TuftHeads {
 		readonly droop: number;
 		/** Flowers (spikelets) per branch, on its outer part. */
 		readonly flowers: Spread;
+		/**
+		 * The share of the flowering stem's radius that a branch takes, from 0 to 1; absent, 0.18. A
+		 * branch thinner than a pixel drops from a silhouette's matte and splits the spray into
+		 * pieces, while a thicker one closes the gaps the see-through reads.
+		 */
+		readonly branchShare?: number;
 	};
 	/** Spikes hanging one below another from the stem's bowed top. */
 	readonly spikes?: {
