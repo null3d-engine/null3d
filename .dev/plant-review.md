@@ -180,7 +180,7 @@ own light they read 1.9, and the head's oak reads 2.2, so the light makes most o
   read 16.13 while it drew a great limb's old plates; setting the slot's `thin` to the photograph's
   own branch size and its `span` to the photograph's width took it to 3.7 before any material
   changed, and a tint measured against that frame took it to 2.3. Framing first, material second:
-  a tint chosen before the frame is right measures the camera, not the plant.
+  a tint chosen before the frame is right measures the camera, not the plant. A plant that flowers at its crown, such as a cactus, is framed on the ring of flower sites at its stem's top, not on a single shoot tip and not on the plant's middle.
 
 ## What a reviewer must see for the picture-judged rows
 

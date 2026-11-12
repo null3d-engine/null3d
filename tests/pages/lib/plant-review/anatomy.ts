@@ -2,7 +2,7 @@
 // stem and its radius at a height, the largest first-order limb, the limb that carries a thickness,
 // where the stem first forks, and a sunlit shoot tip. They read only the skeleton's arrays, so they
 // hold for every growth model.
-import { AXIS_ROOT } from '../../../../packages/vegetation/src/core/graph';
+import { AXIS_ROOT, BUD_FLOWER } from '../../../../packages/vegetation/src/core/graph';
 import type { MacroSkeleton, ShootRows } from './plant-types';
 
 /** A point or direction in plant space. */
@@ -333,6 +333,42 @@ export interface ShootTip {
 	readonly bud: number;
 	readonly at: V3;
 	readonly direction: V3;
+}
+
+/** The flower sites a plant carries: where they stand, the ring's middle and the ring's radius. */
+export interface FlowerSites {
+	/** Where the flowers stand, in plant space. */
+	readonly sites: readonly V3[];
+	/** The middle of the ring, in plant space. */
+	readonly centre: V3;
+	/** The ring's radius in metres: the farthest site from the centre across, zero for one site. */
+	readonly radius: number;
+}
+
+/**
+ * The flowers the plant carries, from the flower sites the grown plant marks: a cactus and other
+ * crown-flowering plants carry a ring of them at the stem's top, which a close view frames as a ring.
+ */
+export function flowerSites(skeleton: MacroSkeleton): FlowerSites | undefined {
+	const { buds } = skeleton;
+	const sites: V3[] = [];
+	for (let b = 0; b < buds.count; b++) {
+		if ((buds.kind[b] as number) !== BUD_FLOWER) continue;
+		sites.push([
+			buds.position[b * 3] as number,
+			buds.position[b * 3 + 1] as number,
+			buds.position[b * 3 + 2] as number,
+		]);
+	}
+	if (sites.length === 0) return undefined;
+	const centre: V3 = [0, 0, 0];
+	for (const site of sites)
+		for (let k = 0; k < 3; k++)
+			centre[k] = (centre[k] as number) + (site[k] as number) / sites.length;
+	let radius = 0;
+	for (const site of sites)
+		radius = Math.max(radius, Math.hypot(site[0] - centre[0], site[2] - centre[2]));
+	return { sites, centre, radius };
 }
 
 /**

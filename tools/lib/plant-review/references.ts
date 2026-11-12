@@ -201,12 +201,6 @@ const SLOT_RULES: readonly { readonly test: (name: string) => boolean; readonly 
 			test: (n) => /arm-tip/.test(n),
 			slot: { view: 'limb', query: { span: 0.35, thin: 0.24 }, framed: false },
 		},
-		{
-			// A cactus flowers at the crown, so its flowers are a close view of a tip rather than the
-			// crown's lower rim that a broadleaf's crown view frames.
-			test: (n) => /flowers?/.test(n),
-			slot: { view: 'twigs', query: { season: 'blossom' }, framed: false },
-		},
 		// A cut piece on a plain ground, framed as its photograph frames it: the photograph's piece
 		// sets the rows its top and its foot land on.
 		{ test: (n) => n.includes('subbranch-studio'), slot: { view: 'subbranch', framed: true } },
@@ -318,6 +312,13 @@ const SLOT_RULES: readonly { readonly test: (name: string) => boolean; readonly 
 		{
 			test: (n) => n.includes('branching'),
 			slot: { view: 'fork', query: { distance: 2.5 }, framed: false },
+		},
+		{
+			// A plant that flowers at its crown, such as a cactus, shows a ring of flowers at the stem's
+			// top: the picture frames the ring's own sites, not the plant's middle that the crown view
+			// takes or a single shoot tip. It stands before the crown rule, which the name also holds.
+			test: (n) => /^(flowers?|blossom|bloom)/.test(n),
+			slot: { view: 'flowers', framed: false },
 		},
 		{ test: (n) => n.includes('crown'), slot: { view: 'crown', framed: false } },
 		{ test: (n) => n.includes('bark'), slot: { view: 'bark-mid', framed: false } },
