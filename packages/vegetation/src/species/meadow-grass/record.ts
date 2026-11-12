@@ -38,6 +38,9 @@ export const record: Species = {
 		ranks: 2,
 		sheath: { mean: 0.035, spread: 0.01 },
 		sheathRadius: 0.0018,
+		// Stills 15 and 16: the basal sheath is pale cream, not the blade's green, and its columns
+		// draw in that colour under the blade texture's ribbing.
+		sheathColour: [0.366, 0.38, 0.309],
 		// Still 21: the youngest inner blades stand tall and almost straight, arching only near
 		// their tips, while the oldest outer ones leave their collars wide and arch toward the
 		// ground. The young blades hold the leaf mass's height; the old ones its width.
@@ -96,6 +99,11 @@ export const record: Species = {
 			arch: { mean: 18, spread: 8 },
 			// Stills 02 and 06: the old outer blades carry dry brown tips.
 			dryTip: 0.03,
+			// Stills 15 and 16: the ribbed pale sheath ends in a pale collar with a small papery
+			// ligule in the V where the blade leaves it. Both are the sheath's own pale cream, and
+			// the collar takes the lowest fiftieth of the blade.
+			collar: { colour: [0.366, 0.38, 0.309], share: 0.02 },
+			ligule: { length: { mean: 0.006, spread: 0.002 }, width: 0.004, share: 0.5 },
 			// The texture source's two faces under flat light: the shader scales each face's picture
 			// by that face's mean, so these figures are the pictures' own means.
 			optics: {

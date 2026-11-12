@@ -109,6 +109,18 @@ describe('the species header', () => {
 		expect(header.length).toBe(HEADER_ROWS * RECORDS_WIDTH * 4);
 	});
 
+	test('packs a tuft sheath colour for the material, and none where the record gives none', () => {
+		const tuft = {
+			...record,
+			growth: { model: 'tuft', sheathColour: [0.3, 0.4, 0.2] },
+		} as unknown as Species;
+		const sheathed = texel(speciesHeader(tuft, manifest, box), HEADER.sheath);
+		for (const [k, v] of [0.3, 0.4, 0.2, 0.7].entries())
+			expect(sheathed[k] as number).toBeCloseTo(v, 5);
+		// The blade-leaved record names no tuft, so its sheath texel stays empty.
+		expect(texel(header, HEADER.sheath)).toEqual([0, 0, 0, 0]);
+	});
+
 	test('holds each face its own scale, share and roughness from its own mean', () => {
 		const upper = faceTerms([0.05, 0.09, 0.02], [0.07, 0.12, 0.025], [0.04, 0.08, 0.02]);
 		const lower = faceTerms([0.2, 0.25, 0.2], [0.07, 0.12, 0.025], [0.22, 0.28, 0.21]);
