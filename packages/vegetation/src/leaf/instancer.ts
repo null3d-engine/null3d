@@ -246,6 +246,49 @@ function axisReach(skeleton: MacroSkeleton): {
 	return { along, ends };
 }
 
+/**
+ * The distance from each bud site to the nearest node of an axis of `order` or coarser: the wood
+ * that the limb masses stand on. A bud on that wood reads 0, and the distance grows through the
+ * space between one limb and the next.
+ */
+function limbMassReach(skeleton: MacroSkeleton, order: number): Float64Array {
+	const { axes, buds, position } = skeleton;
+	const segments: number[] = [];
+	for (let a = 0; a < axes.count; a++) {
+		if ((axes.order[a] as number) > order) continue;
+		const first = axes.first[a] as number;
+		const last = axes.last[a] as number;
+		for (let n = first; n < last; n++) segments.push(n);
+	}
+	const out = new Float64Array(buds.count);
+	for (let b = 0; b < buds.count; b++) {
+		const x = buds.position[b * 3] as number;
+		const y = buds.position[b * 3 + 1] as number;
+		const z = buds.position[b * 3 + 2] as number;
+		let best = Number.POSITIVE_INFINITY;
+		for (const n of segments) {
+			const ax = position[n * 3] as number;
+			const ay = position[n * 3 + 1] as number;
+			const az = position[n * 3 + 2] as number;
+			const dx = (position[(n + 1) * 3] as number) - ax;
+			const dy = (position[(n + 1) * 3 + 1] as number) - ay;
+			const dz = (position[(n + 1) * 3 + 2] as number) - az;
+			const length = dx * dx + dy * dy + dz * dz;
+			const along =
+				length > 1e-12
+					? Math.min(1, Math.max(0, ((x - ax) * dx + (y - ay) * dy + (z - az) * dz) / length))
+					: 0;
+			const px = ax + dx * along - x;
+			const py = ay + dy * along - y;
+			const pz = az + dz * along - z;
+			const distance = Math.sqrt(px * px + py * py + pz * pz);
+			if (distance < best) best = distance;
+		}
+		out[b] = best;
+	}
+	return out;
+}
+
 /** The space-filling key of a point inside a box: its axes' bits interleaved, high bits first. */
 function spaceKey(p: Readonly<Vector3>, min: readonly number[], side: number): number {
 	const max = (1 << ORDER_BITS) - 1;
@@ -279,8 +322,35 @@ export function placeShoots(input: DressInput): ShootRows {
  * @param input The grown skeleton, the kit, the record, the seed and the variant.
  * @returns The rows and their skeleton.
  */
+/**
+ * Thins each axis's rows evenly to the record's budget, so an axis carries at most the rows it names.
+ * The rows kept stand spread along the axis, and an axis under the budget keeps every row.
+ */
+function cappedRows(rows: Row[], cap: number | undefined): Row[] {
+	if (cap === undefined) return rows;
+	const byAxis = new Map<number, number[]>();
+	for (let index = 0; index < rows.length; index++) {
+		const row = rows[index] as Row;
+		const list = byAxis.get(row.axis) ?? [];
+		list.push(index);
+		byAxis.set(row.axis, list);
+	}
+	const drop = new Uint8Array(rows.length);
+	let capped = false;
+	for (const list of byAxis.values()) {
+		if (list.length <= cap) continue;
+		capped = true;
+		const stride = list.length / cap;
+		const keep = new Set<number>();
+		for (let k = 0; k < cap; k++)
+			keep.add(list[Math.min(list.length - 1, Math.floor((k + 0.5) * stride))] as number);
+		for (const index of list) if (!keep.has(index)) drop[index] = 1;
+	}
+	return capped ? rows.filter((_, index) => drop[index] === 0) : rows;
+}
+
 export function dressShoots(input: DressInput): DressedShoots {
-	const rows = placedRows(input);
+	const rows = cappedRows(placedRows(input), input.record.shoots?.placement.rowsPerAxis);
 	const limit = Math.min(MOST_TRIM, Math.max(0, input.record.shoots?.placement.bareTrim ?? 0));
 	let lowest = Number.POSITIVE_INFINITY;
 	for (const row of rows) lowest = Math.min(lowest, row.position[1]);
@@ -292,6 +362,7 @@ export function dressShoots(input: DressInput): DressedShoots {
 					rows.map((row) => row.axis),
 					limit,
 					lowest,
+					input.record.shoots?.placement.bareEnds !== false,
 				)
 			: undefined;
 	if (!trimmed) {
@@ -457,6 +528,8 @@ function placedRows(input: DressInput, bySky = true): Row[] {
 	const frame = [0, 0, 0, 1];
 	const roll = [0, 0, 0, 1];
 	const clump = shoots.placement.clump;
+	const mass = shoots.placement.limbMass;
+	const massDistance = mass ? limbMassReach(skeleton, mass.order) : undefined;
 	const bias = Math.min(1, Math.max(0, shoots.placement.tipBias ?? 0));
 	const reach = bias > 0 ? axisReach(skeleton) : undefined;
 	for (const b of order) {
@@ -552,6 +625,21 @@ function placedRows(input: DressInput, bySky = true): Row[] {
 				patch = Math.min(patch, tuft);
 			}
 		}
+		// The crown's foliage stands on the plant's own limb masses: a shoot keeps its full density
+		// near the wood of the record's coarsest orders and thins with its distance from that wood,
+		// so the foliage gathers on the limbs and the space between one mass and the next stays open
+		// through the crown.
+		if (mass && massDistance) {
+			const span = Math.max(1e-6, mass.reach - mass.hold);
+			const apart = Math.min(1, Math.max(0, ((massDistance[b] as number) - mass.hold) / span));
+			const share = 1 - Math.min(1, Math.max(0, mass.depth)) * apart * apart * (3 - 2 * apart);
+			// Thin enough a part of the mass bears nothing at all: a bud here keeps no shoot by
+			// chance, so the wood that carried it stands bare, the trim takes it, and the crown parts
+			// into masses rather than unravels into whiskers.
+			if (mass.bare !== undefined && share <= mass.bare) continue;
+			expected *= share;
+			patch = Math.min(patch, share);
+		}
 		// The outermost bud of an axis carries a rosette even where its vigor and stretch give none,
 		// whether it is the axis's terminal bud or the live shoot that replaced a lost one: a twig
 		// end bears leaves at the tip, so no bare spray stands past the crown's leaves. A patch the
@@ -633,11 +721,17 @@ function placedRows(input: DressInput, bySky = true): Row[] {
 			quatAxisAngle([0, 1, 0], turn, roll);
 			const rotation = [0, 0, 0, 1];
 			quatMultiply(frame, 0, roll, 0, rotation);
+			// A limb carries its own shoot length where the record gives one: the scale follows the
+			// shoot's height in the crown, so the skirt and the top take different reaches.
+			const byHeight = shoots.placement.scaleByHeight;
+			const scale =
+				spreadAt(shoots.placement.scale, draw(Purpose.Scale, b, k)) *
+				(byHeight === undefined ? 1 : curveAt(byHeight, crownShare));
 			rows.push({
 				prototype: candidates[pick(Purpose.Prototype, b, k) % candidates.length] as number,
 				position: place,
 				rotation,
-				scale: spreadAt(shoots.placement.scale, draw(Purpose.Scale, b, k)),
+				scale,
 				record: record16,
 				phase: pick(Purpose.Phase, b, k) & 255,
 				node,

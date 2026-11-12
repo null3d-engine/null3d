@@ -1,0 +1,147 @@
+{
+	"01-whole-distant.png": {
+		"sunAzimuth": -24,
+		"sunRise": 56,
+		"skyShare": 0.32,
+		"daylight": 1.5,
+		"noOutline": true
+	},
+	"02-whole-profile.png": {
+		"sunAzimuth": -18,
+		"sunRise": 52,
+		"skyShare": 0.32,
+		"daylight": 1.5
+	},
+	"03-whole-from-below.png": {
+		"sunAzimuth": 5,
+		"sunRise": 62,
+		"skyShare": 0.34,
+		"daylight": 2.1
+	},
+	"04-arms-outside.png": {
+		"span": 4.5,
+		"thin": 0.22,
+		"along": 0.8,
+		"sunAzimuth": -20,
+		"sunRise": 55,
+		"skyShare": 0.3,
+		"daylight": 2.3,
+		"composition": "arms",
+		"elevation": 5
+	},
+	"05-arm-underside.png": {
+		"span": 2.2,
+		"thin": 0.22,
+		"along": 0.5,
+		"sunAzimuth": 10,
+		"sunRise": 50,
+		"skyShare": 0.3,
+		"daylight": 2.2,
+		"composition": "elbow",
+		"elevation": -55
+	},
+	"06-between-arms.png": {
+		"span": 3.5,
+		"thin": 0.22,
+		"along": 0.75,
+		"sunAzimuth": -15,
+		"sunRise": 55,
+		"skyShare": 0.3,
+		"daylight": 2.3,
+		"composition": "between",
+		"elevation": -14
+	},
+	"07-arm-junction.png": {
+		"sunAzimuth": -15,
+		"sunRise": 55,
+		"skyShare": 0.3,
+		"daylight": 2.3
+	},
+	"08-arm-elbow.png": {
+		"span": 2,
+		"thin": 0.22,
+		"along": 0.5,
+		"composition": "elbow",
+		"elevation": -14
+	},
+	"09-rib-pattern.png": {
+		"span": 0.24,
+		"barkHeight": 4,
+		"lamp": "#fff0e2",
+		"daylight": 1.08
+	},
+	"10-areoles-and-spines.png": {
+		"span": 0.16,
+		"barkHeight": 4,
+		"lamp": "#fff2d2",
+		"daylight": 1.1
+	},
+	"13-rib-cross-section.png": {
+		"span": 0.5,
+		"barkHeight": 4
+	},
+	"14-base.png": {
+		"sunAzimuth": -24,
+		"sunRise": 56,
+		"skyShare": 0.3,
+		"daylight": 2.3
+	},
+	"15-skin-mid-trunk.png": {
+		"span": 0.72,
+		"barkHeight": 4,
+		"daylight": 0.9
+	},
+	"16-skin-on-arm.png": {
+		"view": "bark-limb",
+		"thin": 0.19,
+		"along": 0.75,
+		"span": 0.45,
+		"girth": null,
+		"daylight": 1.2
+	},
+	"17-trunk-taper.png": {
+		"sunAzimuth": -24,
+		"sunRise": 56,
+		"skyShare": 0.3,
+		"daylight": 2.3
+	},
+	"19-flowers-on-crown.png": {
+		"sunAzimuth": -15,
+		"sunRise": 60,
+		"skyShare": 0.34,
+		"daylight": 2.2
+	},
+	"20-nest-holes.png": {
+		"view": "bark-mid",
+		"span": 1,
+		"barkHeight": 8,
+		"lamp": "#f8f9ff"
+	},
+	"22-subbranch-studio.png": {
+		"view": "subbranch"
+	},
+	"23-leaf-cluster-studio.png": {
+		"view": "limb",
+		"span": 0.35,
+		"thin": 0.22,
+		"leaves": null
+	},
+	"26-bark-texture.png": {
+		"span": 0.72,
+		"barkHeight": 4
+	},
+	"leaf-cluster-turntable.mp4": {
+		"view": "limb",
+		"span": 0.35,
+		"thin": 0.22
+	},
+	"subbranch-turntable.mp4": {
+		"view": "bark-limb",
+		"thin": 0.19,
+		"girth": 0.8,
+		"along": 0.4
+	},
+	"saguaro-wind-motion.mp4": {
+		"sway": 100
+	}
+}

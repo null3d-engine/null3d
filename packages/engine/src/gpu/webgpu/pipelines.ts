@@ -1351,8 +1351,9 @@ export class Pipelines {
 			...foldEntries,
 			unfiltered(5, true),
 		]);
-		// A particle system's values, then the block of the view that draws, at a dynamic offset;
-		// then the view's copy of its opaque depth, which soft particles read with textureLoad.
+		// A particle system's values, then the block of the view that draws, at a dynamic offset,
+		// then the wind field that its vertex shader samples; then the view's copy of its opaque
+		// depth, which soft particles read with textureLoad.
 		const vertexAndFragment = GPUShaderStage.VERTEX | fragment;
 		this.defineLayout(LAYOUT_PARTICLE, 'particle', [
 			{ binding: 0, visibility: vertexAndFragment, buffer: { type: 'uniform' } },
@@ -1361,6 +1362,12 @@ export class Pipelines {
 				visibility: vertexAndFragment,
 				buffer: { type: 'uniform', hasDynamicOffset: true },
 			},
+			{
+				binding: 2,
+				visibility: GPUShaderStage.VERTEX,
+				texture: { sampleType: 'float', viewDimension: '2d-array' },
+			},
+			{ binding: 3, visibility: GPUShaderStage.VERTEX, sampler: { type: 'filtering' } },
 		]);
 		this.defineLayout(LAYOUT_PARTICLE_SCENE_DEPTH, 'particle scene depth', [unfiltered(0)]);
 		// The copy of the opaque depth for soft particles reads a multisampled depth's first sample;

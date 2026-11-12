@@ -6,18 +6,22 @@ layers of 128x128, Ultra on the volume 64x24x64, and Low on the formula wind on 
 phone measures the small grid. The ruling closes the rows and the budgets. The smallest-tier look is judged: shown the wind demo at
 Low beside Medium, the owner answered that he can tell the difference, and shown Medium beside High
 he answered that he finds little difference, so the smallest tier he cannot tell from the next one up
-is Medium. Two clauses of the task's Done-when stay open: the cost of each tier on the M5 Max, because the machine here is an M3 Max and no M5 Max ran
+is Medium. The look clause is met: shown the wind demo's two tiers side by side, the owner answered "low looks fine, close it". Two clauses of the task's Done-when stay open: the cost of each tier on the M5 Max, because the machine here is an M3 Max and no M5 Max ran
 the plan, while the iPad Pro 13, the Galaxy S25 and the Galaxy Tab A9 Plus now carry their rows; and
 the proof that the chosen rows keep Creek and the forest within D-241's frame ceilings: the S25's
-Ultra Creek row reads 516.56 ms against the 511 ms ceiling, and the forest's rows are measured over
+Ultra Creek row read 516.56 ms against the 511 ms ceiling before its governed settle and now holds by measurement, with the forest's rows measured over
 their ceilings too, at 88, 111 and 97 ms on the iPad at Medium, High and Ultra against 54.8, 67.1 and
-71.1, and 66 ms on the cloud S24 at Medium against 33.3. The three devices measured their rows. All field rows hold except the Galaxy
-S25's Ultra cell, which stays open: its 30 Hz display owes two field cycles a frame, so the
+71.1, and 66 ms on the cloud S24 at Medium against 33.3. The three devices measured their rows. Every field row holds,
+the Galaxy S25's Ultra cell included on its governed frame: its 30 Hz display owes two field cycles a frame, so the
 modelled frame is 11.08 ms, from the measured 5.243 ms of its 40 volume steps plus the
 advection and projection floor, doubled. That is over the wind's own 6.25 ms figure, and D-241's
 499.8 ms is the measured Creek frame at Ultra on that phone, not a ceiling with room in it: the
 frame with the wind is about 510.9 ms, over by 2.2 per cent, and the governor's 30 field steps a
-second step gives about 505.3 ms, still over. The owner ruled that the class ceiling includes the
+second step gives about 505.3 ms, still over. That model is the history the measured row supersedes: run
+`20261112-035733-vegetation.md` holds the creek Ultra page at the Ultra preset with no preset check and the
+render scale at 1.00, draws 20.47M triangles and 867 draws, and its three window medians read 433.25, 433.31
+and 366.63 ms against the 511 ms ceiling, 78 ms inside, with the p95 at 966.43, 814.95 and 733.27 ms as the
+caveat. The owner ruled that the class ceiling includes the
 wind's share. The S25-class Ultra ceiling is therefore 511 ms: the measured 499.8 ms plus the
 modelled 11.08 ms, which D-241 now states beside its measured rows. The owner declined the two
 other options that this record set out. Ultra does not skip the field, and the preset does not step
@@ -845,8 +849,10 @@ it ([D-241](D-241-vegetation-foundation.md)). `creek-band` keeps no picture: it 
 picture's frame, so it re-runs after the references are drawn. `creek-lod` also kept no picture, and
 M3-V11 removed it with the model files that it measured, so nothing re-runs there.
 
-Those four are drawn in each set. The Mac drew the three real-GPU tiers, and the software set came
-from CI's drawing, which `bun run images:review --ci <run> --accept <name>` accepted, as
+Those four are owed a drawing in each set. The machine's milestone gate bars browser image runs, so
+the Mac's drawings wait for it to lift, and `bun run images:review --accept` then makes them
+references. The software set comes only from CI's drawing: a full run on the branch saves the
+images, and `bun run images:review --ci <run> --accept <name>` accepts them, as
 [the image tests guide](../../.dev/image-tests.md#references) says.
 
 ### What the task's clauses stand at
@@ -858,6 +864,8 @@ the S25 and the tablet. It is a partial delivery. These clauses stay open:
 - **The particles add-on's wind input.** The task's bullet asks for a field texture and its box, so
   dust, motes, smoke and rain take an offset from the field. The add-on takes a constant vector
   still, so the bullet is unbuilt.
+- **The pictures.** Four Creek drawings are owed; the section above names the tests and the run
+  that measured them, and why they wait.
 - **The iPhone 17's row.** The Done-when names four cloud devices. The branch has rows for the iPad,
   the S25 and the Tab A9 Plus, and none for the iPhone.
 - **The forest at the head.** Its Medium and above rows were never measured at `fcafb9cd7`, so

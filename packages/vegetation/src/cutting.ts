@@ -13,6 +13,7 @@ import type {
 } from './asset';
 import {
 	AXIS_CULM,
+	AXIS_RACHIS,
 	AXIS_ROOT,
 	AXIS_STEM,
 	AXIS_STIPE,
@@ -35,6 +36,7 @@ import {
 import type {
 	CutFromPlant,
 	FrondShape,
+	GrassBlade,
 	LeafShape,
 	PinnaSpec,
 	ShootClass,
@@ -289,6 +291,7 @@ function candidates(
 	length: number,
 	shade: number,
 	young = false,
+	cluster = false,
 ): Candidate[] {
 	const { axes } = skeleton;
 	const depth = depths(skeleton);
@@ -297,9 +300,12 @@ function candidates(
 	);
 	// The candidate ancestors of each axis, nearest first, found walking parents before children.
 	const owners: number[][] = Array.from({ length: axes.count }, () => []);
+	// A cluster is one shoot: a leaf's own axis meshes no piece, so a cluster of a species without
+	// shoot prototypes refuses the leaf axes rather than drawing an empty still.
 	const isCandidate = (a: number) =>
 		(axes.parent[a] as number) >= 0 &&
-		(order === undefined ? (axes.order[a] as number) >= 1 : (axes.order[a] as number) === order);
+		(order === undefined ? (axes.order[a] as number) >= 1 : (axes.order[a] as number) === order) &&
+		(!cluster || (axes.kind[a] as number) !== AXIS_RACHIS);
 	for (const a of byDepth) {
 		const parent = axes.parent[a] as number;
 		const inherited = parent >= 0 ? (owners[parent] as number[]) : [];
@@ -362,10 +368,11 @@ function candidates(
 	const leafy = (c: Candidate) => (c.buds > 0 ? 1 : 0);
 	const head = (c: Candidate) => c.head;
 	const divides = (c: Candidate) => (c.axes > 1 ? 1 : 0);
-	// A photograph of a piece shows a thick axis where it shows one at all. Among the pieces near the
-	// asked length, a leafy shoot ranks before a flowering head, and a piece that divides ranks before
-	// a single thick axis, so a cluster is a fan of leaves and not one blade or one panicle; then the
-	// thickest axis, then the closest match.
+	// A photograph of a piece shows a shoot with the leaves on it where it shows one at all, so a
+	// cut with no hinted order prefers a piece that divides ahead of a single thick axis, then the
+	// thickest among those near the asked length, before the closest match. A merged ground plant's
+	// leaf axis is a thick single axis whose own piece carries no mesh, so ranking it first would
+	// draw nothing.
 	return out.sort(
 		(x, y) =>
 			(young ? x.age - y.age : 0) ||
@@ -430,9 +437,23 @@ export function cutBranch(
 	const length = cuttingLength(record, cutting);
 	const hinted = plantHint(record, cutting.part)?.order;
 	const shade = record.shoots?.placement.shadePrune ?? 0;
-	let ranked = candidates(skeleton, hinted, length, shade, cutting.young);
+	let ranked = candidates(
+		skeleton,
+		hinted,
+		length,
+		shade,
+		cutting.young,
+		cutting.part === 'cluster',
+	);
 	if (ranked.length === 0 && hinted !== undefined)
-		ranked = candidates(skeleton, undefined, length, shade, cutting.young);
+		ranked = candidates(
+			skeleton,
+			undefined,
+			length,
+			shade,
+			cutting.young,
+			cutting.part === 'cluster',
+		);
 	if (ranked.length === 0) return undefined;
 	const chosen = ranked[(cutting.pick ?? 0) % ranked.length] as Candidate;
 	const { axes, buds } = skeleton;
@@ -743,18 +764,39 @@ export function clusterRow(
 	const turned: Vector3 = [0, 0, 0];
 	// A branch or sub-branch photograph that shows a divided, hanging branch needs more than the one
 	// shoot a class prototype gives. The record hint may name how many shoots the piece carries, and
-	// the tool fans that many rows of the class about the piece's upright axis. A cluster or a leaf
-	// keeps its one shoot, and a piece whose hint names none keeps the one shoot it always had.
+	// the tool fans that many rows of the class about the piece's upright axis. The hint may also
+	// set the ring the rows stand on, how far each row leans outward, and how much of a full turn
+	// each row takes, so a piece can share one base and still spread to its photograph's width. A
+	// cluster or a leaf keeps its one shoot, and a piece whose hint names none keeps the one shoot
+	// it always had.
 	const asked = hint && 'shoot' in hint ? (hint.shoots ?? 1) : 1;
 	const shoots =
 		cutting.part === 'cluster' || cutting.part === 'leaf'
 			? 1
 			: Math.max(1, Math.min(CUT_SHOOTS_MOST, Math.round(asked)));
+	const fan = hint && 'shoot' in hint ? hint : undefined;
+	const ring = Math.min(1, Math.max(0, fan?.fanRing ?? 0.18));
+	const lean = Math.min(90, Math.max(-90, fan?.fanLean ?? 0));
+	const spinShare = Math.min(1, Math.max(0, fan?.fanSpin ?? 1));
+	const yaw = Math.min(180, Math.max(-180, fan?.fanYaw ?? 0));
+	// The whole piece turns about its upright axis once, before any row's own fan, so a branch whose
+	// side shoots lie in one plane shows that plane to the camera its photograph was taken from.
+	const turnQ = [0, 0, 0, 1];
+	if (yaw !== 0) {
+		const yawQ = [0, 0, 0, 1];
+		quatAxisAngle(UP, (yaw * Math.PI) / 180, yawQ);
+		quatMultiply(yawQ, 0, turn, 0, turnQ);
+	} else {
+		turnQ[0] = turn[0] as number;
+		turnQ[1] = turn[1] as number;
+		turnQ[2] = turn[2] as number;
+		turnQ[3] = turn[3] as number;
+	}
 	if (shoots === 1) {
 		const min = [0, 0, 0];
 		const max = [0, 0, 0];
 		for (let i = 0; i < p.length; i += 3) {
-			quatRotate(turn, 0, [p[i] as number, p[i + 1] as number, p[i + 2] as number], turned);
+			quatRotate(turnQ, 0, [p[i] as number, p[i + 1] as number, p[i + 2] as number], turned);
 			for (let k = 0; k < 3; k++) {
 				min[k] = Math.min(min[k] as number, turned[k] as number);
 				max[k] = Math.max(max[k] as number, turned[k] as number);
@@ -765,7 +807,7 @@ export function clusterRow(
 				count: 1,
 				prototype: new Uint8Array([prototype.index]),
 				position: new Float32Array(3),
-				rotation: new Float32Array(turn),
+				rotation: new Float32Array(turnQ),
 				scale: new Float32Array([1]),
 				record: new Uint16Array(1),
 				phase: new Uint8Array(1),
@@ -783,7 +825,7 @@ export function clusterRow(
 	let low = Number.POSITIVE_INFINITY;
 	let high = Number.NEGATIVE_INFINITY;
 	for (let i = 0; i < p.length; i += 3) {
-		quatRotate(turn, 0, [p[i] as number, p[i + 1] as number, p[i + 2] as number], turned);
+		quatRotate(turnQ, 0, [p[i] as number, p[i + 1] as number, p[i + 2] as number], turned);
 		low = Math.min(low, turned[1] as number);
 		high = Math.max(high, turned[1] as number);
 	}
@@ -796,15 +838,29 @@ export function clusterRow(
 	for (let row = 0; row < shoots; row++) {
 		const angle = (row * 2 * Math.PI) / shoots;
 		const spin = [0, 0, 0, 1];
-		quatAxisAngle(UP, angle, spin);
+		quatAxisAngle(UP, angle * spinShare, spin);
 		const q = [0, 0, 0, 1];
-		quatMultiply(spin, 0, turn, 0, q);
-		position[row * 3] = 0.18 * tall * cos(angle);
+		quatMultiply(spin, 0, turnQ, 0, q);
+		// Each row leans about the horizontal tangent at its own side of the ring, so a positive
+		// lean opens the row away from the axis and a small ring keeps every base at one point.
+		const r = [0, 0, 0, 1];
+		if (lean !== 0) {
+			const tangent: [number, number, number] = [-sin(angle), 0, cos(angle)];
+			const leanQ = [0, 0, 0, 1];
+			quatAxisAngle(tangent, (-lean * Math.PI) / 180, leanQ);
+			quatMultiply(leanQ, 0, q, 0, r);
+		} else {
+			r[0] = q[0] as number;
+			r[1] = q[1] as number;
+			r[2] = q[2] as number;
+			r[3] = q[3] as number;
+		}
+		position[row * 3] = ring * tall * cos(angle);
 		position[row * 3 + 1] = (row * 0.55 * tall) / shoots;
-		position[row * 3 + 2] = 0.18 * tall * sin(angle);
-		rotation.set(q, row * 4);
+		position[row * 3 + 2] = ring * tall * sin(angle);
+		rotation.set(r, row * 4);
 		for (let i = 0; i < p.length; i += 3) {
-			quatRotate(q, 0, [p[i] as number, p[i + 1] as number, p[i + 2] as number], placed);
+			quatRotate(r, 0, [p[i] as number, p[i + 1] as number, p[i + 2] as number], placed);
 			for (let k = 0; k < 3; k++) {
 				const v = (placed[k] as number) + (position[row * 3 + k] as number);
 				min[k] = Math.min(min[k] as number, v);
@@ -847,6 +903,11 @@ function pressedShape(shape: LeafShape): LeafShape {
 		wave: [0, shape.wave[1]],
 		petiole: { ...shape.petiole, droop: 0 },
 	};
+}
+
+/** A grass blade pressed flat: no fold, twist or arch, so the piece lies as a picked blade does. */
+function pressedBladeShape(shape: GrassBlade): GrassBlade {
+	return { ...shape, fold: 0, twist: 0, arch: 0 };
 }
 
 /** A pinna's shape pressed flat: no fold and no droop, and its own pinnules flat too. */
@@ -939,7 +1000,15 @@ function cutLeaves(kit: SpeciesKitData, press?: boolean, age?: number): readonly
 		};
 		return foliage('thick').leaves(pressed, kit.manifest, kit.detail);
 	}
-	if (leaf.kind !== 'blade') return kit.leaves;
+	if (leaf.kind !== 'blade' && leaf.kind !== 'grass-blade') return kit.leaves;
+	if (leaf.kind === 'grass-blade') {
+		if (!flat) return kit.leaves;
+		const pressedLeaf: Species = {
+			...record,
+			foliage: { ...leaf, blade: pressedBladeShape(leaf.blade) },
+		};
+		return foliage('grass-blade').leaves(pressedLeaf, kit.manifest, kit.detail);
+	}
 	const pressedLeaf: Species = { ...record, foliage: { ...leaf, leaf: pressedShape(leaf.leaf) } };
 	return foliage('blade').leaves(pressedLeaf, kit.manifest, kit.detail);
 }
