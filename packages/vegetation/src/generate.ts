@@ -501,7 +501,7 @@ export function variantKey(kit: SpeciesKitData, options: GrowOptions): string {
 		options.cardJoin === undefined || options.cardJoin === 'remove'
 			? ''
 			: `:join=${options.cardJoin}`;
-	return `${kit.key}:${options.seed >>> 0}:${options.variant}:${season}:${options.detail ?? kit.detail}:${cutting}${coarsenessKey(kit, options)}${leaves}${limbs}${sections}${cards}`;
+	return `${kit.key}:${options.seed >>> 0}:${options.variant}:${season}:${options.detail ?? kit.detail}:${cutting}${coarsenessKey(kit, options)}${leaves}${limbs}${sections}${cards}${join}`;
 }
 
 /**
