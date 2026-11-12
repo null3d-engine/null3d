@@ -757,6 +757,77 @@ describe('the shoot rows', () => {
 		expect(placeShoots({ ...input, seed: 12 }).rotation).not.toEqual(a.rotation);
 	});
 
+	it('gives each row the scale its height in the crown sets', () => {
+		const plain: Species = {
+			...record,
+			shoots: {
+				...record.shoots!,
+				placement: {
+					...record.shoots!.placement,
+					shadePrune: 0,
+					skyPrune: 0,
+					tipPrune: undefined,
+					bareTrim: 0,
+				},
+			},
+		};
+		const shaped: Species = {
+			...plain,
+			shoots: {
+				...plain.shoots!,
+				placement: {
+					...plain.shoots!.placement,
+					scaleByHeight: [
+						[0, 1],
+						[1, 0.5],
+					],
+				},
+			},
+		};
+		const before = placeShoots({ ...input, record: plain });
+		const after = placeShoots({ ...input, record: shaped });
+		expect(after.count).toBe(before.count);
+		expect(after.count).toBeGreaterThan(0);
+		let low = 0;
+		let high = 0;
+		for (let r = 0; r < after.count; r++) {
+			if ((after.position[r * 3 + 1] as number) < (after.position[low * 3 + 1] as number)) low = r;
+			if ((after.position[r * 3 + 1] as number) > (after.position[high * 3 + 1] as number))
+				high = r;
+		}
+		// The scale multiplier follows the row's height in the crown: each row takes the curve at its
+		// crown share, so the highest rows take half and no row is left at the plain scale.
+		const top = skeleton.height - skeleton.crownBase || 1;
+		let upper = 0;
+		let upperCount = 0;
+		let lower = 0;
+		let lowerCount = 0;
+		for (let r = 0; r < after.count; r++) {
+			const ratio = (after.scale[r] as number) / (before.scale[r] as number);
+			expect(ratio).toBeGreaterThanOrEqual(0.5);
+			expect(ratio).toBeLessThanOrEqual(1);
+			const share = ((after.position[r * 3 + 1] as number) - skeleton.crownBase) / top;
+			if (share > 0.75) {
+				upper += ratio;
+				upperCount++;
+			} else if (share < 0.25) {
+				lower += ratio;
+				lowerCount++;
+			}
+		}
+		// The crown's top rows take the shortened scale and its skirt keeps the plain one.
+		expect(upperCount).toBeGreaterThan(0);
+		expect(lowerCount).toBeGreaterThan(0);
+		expect(upper / upperCount).toBeLessThan(0.8);
+		// The oak's rows sit above its crown base, so its lowest rows already read partway along the
+		// curve; they still keep more of the plain scale than the top rows do.
+		expect(lower / lowerCount).toBeGreaterThan(upper / upperCount);
+		expect((after.scale[high] as number) / (before.scale[high] as number)).toBeLessThan(0.95);
+		expect((after.scale[low] as number) / (before.scale[low] as number)).toBeGreaterThan(
+			(after.scale[high] as number) / (before.scale[high] as number),
+		);
+	});
+
 	it("keeps the record's shoots per metre along the axes that carry buds", () => {
 		const rows = placeShoots(input);
 		const buds = skeleton.buds;
@@ -1249,6 +1320,27 @@ describe('the bare trim', () => {
 		const skeleton = tree();
 		const ends = [1, 2, 3, 5, 6].map((a) => skeleton.axes.last[a] as number);
 		expect(bareTrimmed(skeleton, ends, [1, 2, 3, 5, 6], 0.05, 1)).toBeUndefined();
+	});
+
+	it('cuts every branch end at its last shoot when the crop asks, and a branch left bare goes', () => {
+		const skeleton = tree();
+		const node = (skeleton.axes.first[1] as number) + 1;
+		const out = bareTrimmed(skeleton, [node], [1], 0.05, 1, true);
+		expect(out).toBeDefined();
+		const { skeleton: kept, axisOut } = out as NonNullable<typeof out>;
+		// The stem, the bearing branch and the dead stub stay; the thick branch with no shoot and the
+		// one that thins both go, because neither carries foliage.
+		expect(axisOut[0]).toBeGreaterThanOrEqual(0);
+		expect(axisOut[1]).toBeGreaterThanOrEqual(0);
+		expect(axisOut[2]).toBe(-1);
+		expect(axisOut[3]).toBe(-1);
+		expect(axisOut[4]).toBe(-1);
+		expect(axisOut[5]).toBeGreaterThanOrEqual(0);
+		expect(axisOut[6]).toBe(-1);
+		const length = (axis: number) =>
+			(kept.axes.last[axis] as number) - (kept.axes.first[axis] as number) + 1;
+		expect(length(axisOut[1] as number)).toBe(2);
+		expect(length(axisOut[5] as number)).toBe(3);
 	});
 });
 

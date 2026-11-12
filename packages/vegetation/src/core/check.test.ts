@@ -114,7 +114,15 @@ describe('the record check', () => {
 		const shoots = template.shoots;
 		const out = {
 			...template,
-			growth: { ...growth, floor: 0.6, turning: 120 },
+			growth: {
+				...growth,
+				floor: 0.6,
+				turning: 120,
+				branchingByOrder: [
+					[0, 1],
+					[1, -0.5],
+				],
+			},
 			shoots: {
 				...shoots,
 				placement: {
@@ -127,12 +135,19 @@ describe('the record check', () => {
 					lift: 45,
 					tipPrune: 1.5,
 					limbMass: { order: 9, hold: -1, reach: -2, depth: 1.5, bare: 1.5 },
+					scaleByHeight: [
+						[0, 1],
+						[1, 0],
+					],
 				},
 			},
 		} as Species;
 		const problems = speciesProblems(out);
 		expect(problems.some((p) => p.startsWith('growth.floor is 0.6'))).toBe(true);
 		expect(problems.some((p) => p.startsWith('growth.turning is 120'))).toBe(true);
+		expect(problems.some((p) => p.startsWith('growth.branchingByOrder is -0.5 at pair 1'))).toBe(
+			true,
+		);
 		expect(problems.some((p) => p.startsWith('shoots.placement.skyPrune is 1.5'))).toBe(true);
 		expect(problems.some((p) => p.startsWith('shoots.placement.skyPruneLayer is 10'))).toBe(true);
 		expect(problems.some((p) => p.startsWith('shoots.placement.gather is 1.5'))).toBe(true);
@@ -145,9 +160,20 @@ describe('the record check', () => {
 		expect(problems.some((p) => p.startsWith('shoots.placement.limbMass.reach is -2'))).toBe(true);
 		expect(problems.some((p) => p.startsWith('shoots.placement.limbMass.depth is 1.5'))).toBe(true);
 		expect(problems.some((p) => p.startsWith('shoots.placement.limbMass.bare is 1.5'))).toBe(true);
+		expect(
+			problems.some((p) => p.startsWith('shoots.placement.scaleByHeight is 0 at pair 1')),
+		).toBe(true);
 		const within = {
 			...template,
-			growth: { ...growth, floor: 0.15, turning: 30 },
+			growth: {
+				...growth,
+				floor: 0.15,
+				turning: 30,
+				branchingByOrder: [
+					[0, 1],
+					[1, 0.5],
+				],
+			},
 			shoots: {
 				...shoots,
 				placement: {
@@ -158,6 +184,10 @@ describe('the record check', () => {
 					lift: -30,
 					tipPrune: 0.05,
 					limbMass: { order: 2, hold: 1.5, reach: 3.5, depth: 1, bare: 0.5 },
+					scaleByHeight: [
+						[0, 1],
+						[1, 0.5],
+					],
 				},
 			},
 		} as Species;

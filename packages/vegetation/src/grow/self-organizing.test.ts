@@ -755,6 +755,41 @@ self.onmessage = () => {
 			).toBe(true);
 	});
 
+	it('thins an order’s side axes by the record’s branching curve, and changes nothing without one', () => {
+		const growth = oakRecord.growth as Extract<Species['growth'], { model: 'self-organizing' }>;
+		const thinning = (
+			branchingByOrder?: number | readonly (readonly [number, number])[],
+		): Species => ({
+			...oakRecord,
+			growth: { ...growth, ...(branchingByOrder !== undefined && { branchingByOrder }) },
+		});
+		const plain = grow(0, thinning());
+		expect(digest(plain)).toBe(digest(grow(0)));
+		// A constant 1 is the plain record to the byte.
+		expect(digest(grow(0, thinning(1)))).toBe(digest(grow(0)));
+		// No side axes above the stem: the crown keeps one branching order.
+		const orders = (oak: MacroSkeleton) => new Set(Array.from(oak.axes.order as Uint8Array));
+		const cut = grow(
+			0,
+			thinning([
+				[0, 1],
+				[0.24, 1],
+				[0.25, 0],
+				[1, 0],
+			]),
+		);
+		expect(Math.max(...orders(cut))).toBe(1);
+		expect(Math.max(...orders(plain))).toBeGreaterThan(1);
+		// A negative share is refused.
+		const bad = speciesProblems(
+			thinning([
+				[0, 1],
+				[1, -0.5],
+			]),
+		);
+		expect(bad.some((p) => p.startsWith('growth.branchingByOrder is -0.5 at pair 1'))).toBe(true);
+	});
+
 	it("keeps the record's share of a stem's girth from node to node, and half without one", () => {
 		const growth = oakRecord.growth as Extract<Species['growth'], { model: 'self-organizing' }>;
 		const keeping = (leader?: number): Species => ({

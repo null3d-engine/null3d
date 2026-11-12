@@ -100,13 +100,18 @@
 		"leaves": 2.5
 	},
 	"21-branch-studio.png": {
-		"background": "studio-grey"
+		"background": "studio-grey",
+		"leaves": 5.6,
+		"pick": 1
 	},
 	"22-subbranch-studio.png": {
-		"background": "studio-grey"
+		"background": "studio-grey",
+		"leaves": 7.4,
+		"pick": 2
 	},
 	"23-leaf-cluster-studio.png": {
-		"background": "studio-grey"
+		"background": "studio-grey",
+		"pick": 1
 	},
 	"hawthorn-turntable-halfturn.mp4": {
 		"skyShare": 0.19,
