@@ -272,9 +272,11 @@ describe('the self-organizing oak', () => {
 		() => {
 			const record = species.record;
 			const growth = record.growth as Extract<Species['growth'], { model: 'self-organizing' }>;
+			// The rule alone is judged here, without the probe record's great-limb bud share.
+			const buds = { ...growth.buds, limbBuds: undefined };
 			const shaped = (clearanceThickness: number): Species => ({
 				...record,
-				growth: { ...growth, clearance: 0.3, turning: 30, clearanceThickness },
+				growth: { ...growth, buds, clearance: 0.3, turning: 30, clearanceThickness },
 			});
 			// A floor above the great limbs' share leaves no other wood thick enough to block, so the
 			// plant grows exactly as a record without the rule does.
@@ -282,6 +284,7 @@ describe('the self-organizing oak', () => {
 				...record,
 				growth: {
 					...growth,
+					buds,
 					clearance: undefined,
 					turning: undefined,
 					clearanceThickness: undefined,
@@ -427,6 +430,37 @@ self.onmessage = () => {
 			expect(strong).toBeLessThan(buds.count * 0.95);
 			expect(terminal).toBeGreaterThan(100);
 		}
+	});
+
+	it('keeps a share of the great limbs’ lateral buds as buds when the record asks', () => {
+		const grown = species.record;
+		const growth = grown.growth as Extract<Species['growth'], { model: 'self-organizing' }>;
+		// The record's own bud share is off here, so both arms start from the same crown.
+		const base: Species = {
+			...grown,
+			growth: { ...growth, buds: { ...growth.buds, limbBuds: undefined } },
+		};
+		const withShare = (limbBuds: number | undefined): Species =>
+			({
+				...base,
+				growth: { ...growth, buds: { ...growth.buds, limbBuds } },
+			}) as Species;
+		const lateralsOnLimbs = (oak: MacroSkeleton) => {
+			let count = 0;
+			for (let b = 0; b < oak.buds.count; b++) {
+				if (oak.buds.kind[b] === BUD_TERMINAL) continue;
+				if ((oak.axes.order[oak.buds.axis[b] as number] as number) === 1) count++;
+			}
+			return count;
+		};
+		// Absent, the growth is the record's own, byte for byte.
+		expect(digest(grow(0, withShare(undefined)))).toBe(digest(grow(0, base)));
+		const plain = grow(0, base);
+		const budded = grow(0, withShare(0.6));
+		// The great limbs keep lateral buds along their own length, which carry the shoots there.
+		expect(lateralsOnLimbs(budded)).toBeGreaterThan(lateralsOnLimbs(plain));
+		// A kept bud grows no side axis, so the crown has no more wood than it had.
+		expect(budded.axes.count).toBeLessThanOrEqual(plain.axes.count);
 	});
 
 	it("gives the real oak's surface buds a share of the last resource by their site's light", () => {

@@ -332,6 +332,8 @@ function growthProblems(record: Species, out: string[]): void {
 		curveProblems(growth.buds.angle, 'growth.buds.angle', out);
 		if (growth.buds.sideOrders !== undefined)
 			wholeProblem(growth.buds.sideOrders, 'growth.buds.sideOrders', 1, growth.macroOrders, out);
+		if (growth.buds.limbBuds !== undefined)
+			shareProblem(growth.buds.limbBuds, 'growth.buds.limbBuds', out);
 		curveProblems(growth.apical.control, 'growth.apical.control', out);
 		curveProblems(growth.tropism.photo, 'growth.tropism.photo', out);
 		curveProblems(growth.tropism.gravi, 'growth.tropism.gravi', out);

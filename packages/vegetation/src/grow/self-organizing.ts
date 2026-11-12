@@ -136,6 +136,7 @@ const Purpose = {
 	WanderZ: 7,
 	WanderA: 8,
 	Stub: 9,
+	LimbBuds: 10,
 } as const;
 
 /** A branch is judged for shedding once it holds this many nodes. */
@@ -529,6 +530,7 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 	const [extinctApical, extinctLateral] = g.buds.extinction;
 	const branching = Math.max(0, g.branching ?? 1);
 	const sideOrders = g.buds.sideOrders ?? Number.POSITIVE_INFINITY;
+	const limbBuds = g.buds.limbBuds ?? 0;
 	const wander = tan(radians(Math.min(80, Math.max(0, g.apical.wander))));
 	// The height at which the leader divides into its great limbs, if the record gives one.
 	const divideAt = g.divide === undefined ? Number.POSITIVE_INFINITY : height * g.divide.at;
@@ -1512,7 +1514,13 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 						1,
 						pow(q, lightLateral) * exp(-ageDominance * suppression) * branching,
 					);
-					if (sides && unit(Purpose.Flush, year, b) < chance) {
+					// A great limb keeps a share of its lateral buds as buds, so the limb's own length
+					// carries shoots instead of running out bare between its branches.
+					const kept =
+						limbBuds > 0 &&
+						(plant.axisOrder[a] as number) === 1 &&
+						unit(Purpose.LimbBuds, 0, b) < limbBuds;
+					if (sides && !kept && unit(Purpose.Flush, year, b) < chance) {
 						flushing.push(b);
 						takes[b] = 1;
 						flushed++;
