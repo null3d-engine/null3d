@@ -30,8 +30,8 @@ import {
 import { createWind, type Wind } from '@null3d/wind';
 import {
 	chainOf,
+	crownTopSites,
 	facing,
-	flowerSites,
 	largestLimb,
 	limbGapTurn,
 	limbNear,
@@ -850,7 +850,7 @@ export default defineSketch(async (ctx) => {
 			case 'flowers': {
 				// A ring of flowers at a crown's top: the flower sites the plant carries, framed at the
 				// ring's own scale from a little above, as a cactus's crown flowers are photographed.
-				const ring = flowerSites(skeleton);
+				const ring = crownTopSites(skeleton);
 				if (!ring) break;
 				const fill = 0.62;
 				const distance = Math.max(0.2, ring.radius / (fill * Math.tan((fov * DEG) / 2)));
