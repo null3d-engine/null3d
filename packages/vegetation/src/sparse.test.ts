@@ -72,6 +72,36 @@ describe('the sparse form', () => {
 		expect(LEAVES_LEAST).toBeGreaterThan(SPARSE_LEAST);
 	});
 
+	it("moves the section sparsity to the floor at level one, and keeps a page's own above it", async () => {
+		const record = await floored();
+		const floor = record.sparse as NonNullable<Species['sparse']>;
+		const withSections: Species = { ...record, sparse: { ...floor, sections: 0.7 } };
+		expect(withSparse(withSections, { seed: 11, variant: 0, sparse: 1 }).sections).toBeCloseTo(
+			0.7,
+			10,
+		);
+		expect(withSparse(withSections, { seed: 11, variant: 0, sparse: 0.5 }).sections).toBeCloseTo(
+			0.35,
+			10,
+		);
+		expect(
+			withSparse(withSections, { seed: 11, variant: 0, sparse: 1, sections: 0.9 }).sections,
+		).toBeCloseTo(0.9, 10);
+		// A record with no section floor keeps the sections its coarseness gives.
+		expect(withSparse(record, { seed: 11, variant: 0, sparse: 1 }).sections).toBe(0);
+	});
+
+	it('refuses a section sparsity outside 0 to 1', async () => {
+		const record = await floored();
+		expect(() => withSparse(record, { seed: 11, variant: 0, sections: 1.2 })).toThrow(
+			/sections is 1.2/,
+		);
+		const floor = record.sparse as NonNullable<Species['sparse']>;
+		expect(speciesProblems({ ...record, sparse: { ...floor, sections: 1.2 } })).toContain(
+			'sparse.sections is 1.2; a share lies from 0 to 1',
+		);
+	});
+
 	it('gives phones and tablets the light form and desktops the record', () => {
 		expect(sparseForDevice('phone')).toBe(1);
 		expect(sparseForDevice('tablet')).toBe(1);
