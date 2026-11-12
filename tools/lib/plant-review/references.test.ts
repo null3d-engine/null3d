@@ -681,6 +681,15 @@ describe('the strands view', () => {
 	});
 });
 
+describe('the flowers view', () => {
+	test('a picture whose name begins with flowers takes it, and the crown rule keeps the rest', () => {
+		expect(classifySlot('19-flowers-on-crown.png')?.view).toBe('flowers');
+		expect(classifySlot('20-flowers-spring.png')?.view).toBe('flowers');
+		// A crown picture that names no flowers keeps the crown view.
+		expect(classifySlot('09-crown-close.png')?.view).toBe('crown');
+	});
+});
+
 describe('the sheath view', () => {
 	test('a ground plant’s sheath, collar and ligule pictures take it', () => {
 		expect(classifySlot('15-sheath-and-collar.png')?.view).toBe('sheath');
