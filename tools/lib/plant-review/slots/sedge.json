@@ -1,7 +1,18 @@
 {
+	"01-whole-tuft-distant.png": {
+		"daylight": 1.9,
+		"skyShare": 0.4
+	},
 	"04-tuft-from-above.png": {
 		"elevation": 88,
-		"view": "whole"
+		"view": "crown"
+	},
+	"07-basal-crown.png": {
+		"background": "studio-grey",
+		"ground": "#4a3b2c",
+		"view": "crown-foot",
+		"daylight": 2.5,
+		"skyShare": 0.8
 	},
 	"08-leaf-leaving-sheath.png": {
 		"distance": 0.25,
@@ -14,20 +25,20 @@
 		"view": "soil"
 	},
 	"12-single-leaf-upper.png": {
-		"leaves": 1.0,
-		"roll": -40
+		"leaves": 0.1,
+		"roll": -45
 	},
 	"13-single-leaf-underside.png": {
-		"leaves": 1.0,
-		"roll": -40
+		"leaves": 0.1,
+		"roll": -45
 	},
 	"24-leaf-texture-upper.png": {
-		"leaves": 1.0,
-		"roll": -40
+		"leaves": 0.2,
+		"roll": -46
 	},
 	"25-leaf-texture-underside.png": {
-		"leaves": 1.0,
-		"roll": -40
+		"leaves": 0.2,
+		"roll": -46
 	},
 	"15-sheath-and-ligule.png": {
 		"distance": 0.25,
@@ -43,7 +54,14 @@
 	},
 	"21-branch-studio.png": {
 		"background": "studio-grey",
-		"view": "whole"
+		"view": "whole",
+		"lifted": 1,
+		"lod": 0,
+		"horizon": null,
+		"fill": null,
+		"targetY": null,
+		"targetX": null,
+		"elevation": -14
 	},
 	"10-fine-leaf-tips.png": {
 		"leafLength": 0.1
@@ -52,5 +70,10 @@
 		"background": "studio-grey",
 		"lifted": 1,
 		"view": "soil"
+	},
+	"_sheath": {
+		"foot": [0.21, 0.123, 0.079],
+		"collar": [0.21, 0.107, 0.062],
+		"reach": 0.85
 	}
 }

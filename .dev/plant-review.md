@@ -31,12 +31,53 @@ structure, leaf clusters at the end of a shoot, single leaves on both faces, bar
 mid-trunk and on a limb, the trunk's taper and root flare, and the silhouette. The set also carries
 turning videos and usually a wind clip.
 
+## The branch structure
+
+The silhouette is judged on how the branches fill the space, not only on the outline they trace.
+The owner's ruling sets five points, and they bind every tree and every species in the catalogue,
+including any species added later:
+
+- **The sky is spread evenly through the silhouette.** Openings sit throughout the crown, in the
+  share the species' own reference shows. Sky gathered into a few large holes in one place fails,
+  and so does a crown with an open rim and a solid middle.
+- **No branch ends bare.** A branch carries foliage at its end, or it is pruned away. A thin bare
+  tip against the sky fails at any view, even when the recorded figures are inside their bands.
+- **Bends are gentle and progress upward.** A branch curves as it grows, and each bend carries it
+  up and out from the trunk. An odd kink, a bend back toward the trunk, or a zigzag between joints
+  fails.
+- **The branch count fits the species.** Too many branches and subbranches fill the crown with wood
+  the plant does not have; too few leave it thin. The reviewer counts the visible limbs at the
+  skeleton view against the reference, and the subbranch orders at the crown close-up.
+- **Laterals are spaced along their parent.** Subbranches leave the parent at separate points, with
+  a clear gap between one and the next. Several laterals from one point, or a crowd of them within
+  one internode, fails unless the species shows that clustering. Most trees carry one lateral at a
+  node in a spiral, or a pair at opposite nodes, and do not bunch their subbranches; a tiered whorl
+  is natural in a conifer, and clustered shoots in some shrubs. Even spacing carries the crown's
+  foliage with less wood, so a crown that reaches its density by crowding laterals fails this point
+  as well as the row 6 reading.
+- **The structure is balanced through 360 degrees.** Branches and subbranches are spread around the
+  trunk in every direction, so the tree reads balanced from above and from the side. One heavy side
+  and one thin side fails, even when the foliage's outline is regular.
+
+The rows carry the points:
+
+| Point | Judged on |
+| --- | --- |
+| even sky through the crown | row 6, with row 12's plausibility |
+| no bare termination | row 12, subdivision and no strays |
+| gentle upward bends | row 7, with row 1's limb angles |
+| branch count | row 2 |
+| lateral spacing along the parent | row 2, with row 12's neatness |
+| balance through 360 degrees | the coverage rule below |
+
+A species that fails a point fails the row that carries it.
+
 ## The twelve rows
 
 | # | Row | What is judged | Evidence |
 | --- | --- | --- | --- |
 | 1 | Structure | The skeleton: one stem or many, where the first limbs leave, the angles they leave at, how they fork, where the crown begins, and whether the silhouette is one solid shape or a set of pieces | The whole view against its reference, plus the skeleton view |
-| 2 | Branch density | How many branches there are, how they are spaced along the trunk, and whether the spacing follows the species: whorled tiers for a conifer, alternate for a broadleaf, a fan for a palm | The skeleton view, counting the visible limbs |
+| 2 | Branch density | How many branches there are, how they are spaced along the trunk and along each parent branch, and whether the spacing follows the species: whorled tiers for a conifer, alternate for a broadleaf, a fan for a palm | The skeleton view, counting the visible limbs and their gaps along each parent |
 | 3 | Branch length and taper | Whether a branch reaches far enough before it forks, and whether it thins along its length | The skeleton view and a close view of a limb |
 | 4 | Leaf shape | The painted silhouette of one leaf: entire, toothed or lobed, its proportion, its tip and its base | The leaf close-up against the reference leaf picture |
 | 5 | Leaf cluster density | How many leaves a cluster carries, how tightly they sit, and how a cluster meets its shoot | The leaf close-up and the crown close-up |
@@ -53,14 +94,18 @@ states that instead of passing.
 
 Row 6 is read from the sky gap: the share of the crown's own box that shows background, measured on
 both pictures at each whole view. A plant with no bare stem below its foliage, such as a sedge or a
-hosta, runs as wide at its foot as through its mound, so its crown's box is its whole box. The
+hosta, runs as wide at its foot as through its mound, so its crown's box is its whole box. A
+photograph whose lowest boughs sweep beside the stem can read as such a plant. Where the row's outer
+span hides the stem, the tool reads the stem's own central run and puts the crown's foot above it. The
 reviewer writes the render's figure beside the reference's for
 every whole view. The row passes when the render's sky gap is no more than five hundredths above its
 reference's and no more than two hundredths below it. The small allowance below covers the measure:
 a reference outline comes from color against a plain background and can lose its thinnest foliage.
 Anything more closed than that fails, and so does anything more open than the species. A crown
 denser than its reference is as much a fail as a thin one. The eye is the judge and the figure is
-the check: when the two disagree the reviewer says so and names which it followed.
+the check: when the two disagree the reviewer says so and names which it followed. The figure
+measures the share of sky, not where it sits: a crown whose openings gather in a few large holes
+fails under the branch structure section, whatever the share reads.
 
 Row 12 carries a checklist, and one entry on it fails the row. The reviewer writes the entry's
 picture beside it:
@@ -70,7 +115,8 @@ picture beside it:
   from the middle of another without a join is the same fault.
 - **Subdivision.** A branch of one order divides into smaller orders. Those divide again, down to
   the twigs that carry the leaves. A limb that ends in a stub fails. So does a twig that carries
-  nothing, or a jump from a thick limb straight to a leaf cluster.
+  nothing, or a jump from a thick limb straight to a leaf cluster. A branch that ends bare fails
+  wherever it shows, inside the crown as well as outside it.
 - **Neatness.** The wood runs as limbs, then branches, then twigs, each clearing the last. A tangle
   of parts crossing at odd angles is not a plant. It is the meshes laid over each other. It fails
   however well the silhouette scores.
@@ -92,7 +138,9 @@ picture beside it:
 ## Coverage
 
 A plant's appendages are spread around its three dimensions in equal proportion, so that turning
-around it never shows a lopsided tree. A crown that is full from the front and thin from the side, or
+around it never shows a lopsided tree. Its branches are spread the same way: branching and
+subbranching run through 360 degrees around the trunk, so the tree reads balanced from above and
+from the side, not only in outline. A crown that is full from the front and thin from the side, or
 a set of limbs that all leave in one plane, fails even when every other row passes, because a viewer
 walks round it.
 
@@ -188,6 +236,16 @@ own light they read 1.9, and the head's oak reads 2.2, so the light makes most o
   width, because the silhouette's spread is the figure. The bracken's silhouette picture kept 65 per
   cent of its 2.61 m colony in a 1.71 m view. Two rounds read its piece count as a structure fault
   before anyone measured the frame.
+- A ground plant's flowering heads are drawn as one stem's hanging spikes, seen close and level,
+  because a twig view has no woody stem to frame and falls back to the whole plant. A picture that
+  lifts the plant from the ground grows its soil and stands the plant on its lowest root, so a
+  lifted whole plant shows the root ball its photograph shows; a lifted whole picture may also look
+  up from below, where the crown's arch would otherwise hide the roots. A sheath, collar or ligule
+  picture is drawn as one tiller's sheath column at the photograph's span, or as the species' own
+  tiller cutting where the photograph shows a cut stalk, because a bark view has no stem to frame
+  and falls back to the crown's foot culms. A plant that flowers at its crown, such as a cactus, is
+  framed on the ring of flower sites at its stem's top, not on a single shoot tip and not on the
+  plant's middle.
 
 ## What a reviewer must see for the picture-judged rows
 
@@ -344,6 +402,63 @@ than turning a fault of the measure into a pass or a fail.
   not species data. M3-V4 carries the debt, because the review rows are its evidence, while the code
   lives under `tools/`.
 
+## The central-run crown start's reach
+
+A row's central run is the stem where its boughs stand apart from it. The crown start reads that run where the row's outer span is wider than half the plant's widest row. A reference whose boughs sweep beside the stem moves; a reference whose outer span is the stem does not. The change is `3972fd3cc`.
+
+The mound guard is `36fe37843`. A species the record grows as a tuft or a rosette keeps the outer span, and its crown starts at its foot. The sedge's 25 in-use stills, the hosta's 26 and the meadow grass's 25 are byte-identical before and after the guard. The oak's 30 are byte-identical too.
+
+The in-use references that still move, by species, their number and the start before and after. The figures follow the review's reference path: each picture is flattened onto white before its mask:
+
+| Species | References that move |
+| --- | --- |
+| agave | 02 0 to 0.0345, 09 0 to 0.019 |
+| apple-tree | 02 0 to 0.2607 |
+| bamboo | 17 0 to 0.0266, 26 0 to 0.0566 |
+| banyan | 02 0.0042 to 0.2881, 08 0 to 0.2857, 18 0.0041 to 0.0248 |
+| bracken | 01 0 to 0.1084, 18 0 to 0.033 |
+| cedar-of-lebanon | 14 0 to 0.0338 |
+| clipped-box-hedge | 17 0 to 0.0938, 19 0.0031 to 0.0453 |
+| coconut-palm | 09 0 to 0.0696, 14 0.0057 to 0.0324 |
+| common-alder | 01 0 to 0.0493, 09 0.0042 to 0.0063 |
+| common-ash | 10 0 to 0.1135, 14 0 to 0.0269, 15 0 to 0.0203 |
+| common-juniper | 04 0 to 0.0073, 10 0 to 0.0449, 18 0.0106 to 0.2624 |
+| douglas-fir | 10 0 to 0.0178, 14 0 to 0.0136, 17 0 to 0.0356 |
+| english-elm | 10 0 to 0.0247, 19 0 to 0.0456 |
+| english-yew | 18 0 to 0.0544 |
+| eucalyptus | 14 0 to 0.1024, 19 0 to 0.163 |
+| european-beech | 02 0 to 0.1086, 15 0 to 0.0266, 18 0.0028 to 0.1567 |
+| european-larch | 03 0 to 0.0769, 05 0 to 0.0191, 19 0 to 0.1212 |
+| fan-palm | 11 0.0102 to 0.0969 |
+| flowering-cherry | 04 0 to 0.0267, 17 0.0016 to 0.0125 |
+| giant-sequoia | 11 0.005 to 0.2137, 14 0.0029 to 0.0172 |
+| hawthorn-shrub | 04 0 to 0.1096 |
+| holm-oak | 20 0 to 0.0254 |
+| horse-chestnut | 04 0 to 0.0179, 08 0 to 0.0537, 14 0 to 0.0027, 15 0 to 0.0078, 17 0 to 0.0224, 19 0 to 0.0153, 28 0.0769 to 0.1538 |
+| italian-cypress | 09 0 to 0.0141 |
+| japanese-maple | 04 0 to 0.008, 15 0 to 0.0094 |
+| lavender | 10 0 to 0.0575 |
+| live-oak | 01 0 to 0.1524, 06 0 to 0.0068, 16 0 to 0.0103, 18 0 to 0.1481 |
+| lombardy-poplar | 04 0 to 0.0357, 07 0 to 0.0109, 14 0 to 0.0076, 15 0 to 0.0187, 16 0 to 0.0203, 17 0 to 0.0109, 19 0 to 0.25 |
+| london-plane | 20 0 to 0.0266 |
+| norway-maple | 14 0 to 0.0054, 15 0 to 0.0797 |
+| norway-spruce | 02 0 to 0.0673, 03 0 to 0.0782, 31 0 to 0.0459 |
+| oleander | 03 0 to 0.0043, 19 0 to 0.0607 |
+| olive | 14 0 to 0.0081 |
+| quaking-aspen | 16 0 to 0.0259, 30 0.0034 to 0.0952, 31 0 to 0.3284 |
+| rush | 05 0 to 0.2984 |
+| saguaro | 25 0 to 0.0382 |
+| scots-pine | 04 0 to 0.0506, 17 0 to 0.0352 |
+| silver-birch | 14 0 to 0.0216, 34 0 to 0.0453 |
+| small-leaved-lime | 15 0 to 0.0187 |
+| stone-pine | 14 0 to 0.0128 |
+| tree-fern | 07 0 to 0.0175 |
+| weeping-willow | 01 0.0034 to 0.055, 09 0 to 0.0156, 18 0.0033 to 0.32, 31 0 to 0.0289 |
+| winter-oak-bare | 14 0 to 0.0918 |
+
+A cut piece's subject crop sets its crown bottom. The crown-start move does not reach such a picture: the sequoia's `11` keeps its box 506×596 and its figures, and the raw reading above is not its row figure.
+
+The affected owners are told. The beech and the alder were told first; the oak keeps its figures.
 ## The rows a species still owes
 
 **M3-V4 is ticked, and it carries 67 of the 78 owed rows: the 17 engine items and 50 of the limits.

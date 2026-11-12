@@ -1,0 +1,34 @@
+{
+	"06-inside-column.png": {
+		"view": "inside",
+		"distance": 2,
+		"elevation": 30
+	},
+	"20-young-cypress.png": {
+		"view": "whole"
+	},
+	"12-shoot-upper.png": {
+		"view": "cluster"
+	},
+	"21-branch-studio.png": {
+		"daylight": 3,
+		"lamp": "#ffe9c0"
+	},
+	"branch-turntable.mp4": {
+		"daylight": 3,
+		"lamp": "#ffe9c0"
+	},
+	"14-bark-base.png": {
+		"barkMask": true
+	},
+	"16-bark-on-branch.png": {
+		"barkMask": true,
+		"leafyBark": true
+	},
+	"28-young-bark.png": {
+		"barkMask": true
+	},
+	"11-single-spray.png": {
+		"view": "leaf-upper"
+	}
+}

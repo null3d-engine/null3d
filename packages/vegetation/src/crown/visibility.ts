@@ -16,6 +16,10 @@ import { leafDensity, rowCentre } from './density';
  * before, every crown drew darker than its photograph could explain — the English elm read eleven to
  * thirteen colour steps at the far views against a band of three, and even with no crown shade at
  * all it stayed five to six steps off, so the term explains most but not all of that darkness.
+ *
+ * A species that names `skyToLeaf` takes its own value here instead, so one value is the crown's
+ * extinction and the share of the sky added to its leaf and card faces in the shader; absent, this
+ * default stands and the faces draw as before.
  */
 const EXTINCTION = 0.3;
 /** Directions over the upper hemisphere. */
@@ -137,6 +141,7 @@ export function crownSkyAt(crown: CrownLight, x: number, y: number, z: number): 
  */
 export function lightCrown(input: DressInput, rows: ShootRows): CrownLight {
 	const lad = leafDensity(input, rows);
+	const extinction = input.record.skyToLeaf ?? EXTINCTION;
 	const [nx, ny, nz] = lad.cells;
 	const { cell, density } = lad;
 	const count = nx * ny * nz;
@@ -171,7 +176,7 @@ export function lightCrown(input: DressInput, rows: ShootRows): CrownLight {
 						y += d.y;
 						z += d.z;
 					}
-					const through = exp(-EXTINCTION * depth * cell) * d.w;
+					const through = exp(-extinction * depth * cell) * d.w;
 					seen += through;
 					bx += d.x * through;
 					by += d.y * through;
