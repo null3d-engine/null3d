@@ -710,19 +710,23 @@ function dress(kit: SpeciesKitData, options: GrowOptions): MeshInput {
 	);
 	speciesHooks(record.id)?.afterGrow?.(grown, record, growInput.seed);
 	// The record's height means the drawn plant's top: the grown skeleton and the shoot placement are
-	// scaled together before the light, so the foliage's highest point aims at the sampled target. A
-	// cut piece keeps its own size, and a merged foliage has no instanced rows for this measure.
+	// scaled together before the light, so the drawn crown aims at the sampled target. A cut piece
+	// keeps its own size. An instanced plant draws its cards, and a merged plant its foliage mesh;
+	// both are scaled through the skeleton, and each is measured at its own drawn level.
+	const merged = record.lod.nearFoliage === 'merged';
 	const target =
 		!options.cutting &&
 		placeholders !== true &&
-		record.lod.nearFoliage === 'instanced' &&
-		kit.prototypes.length > 0
+		(merged
+			? grower(record.growth.model).foliage !== undefined
+			: record.lod.nearFoliage === 'instanced' && kit.prototypes.length > 0)
 			? targetHeight(record, options.seed, options.variant)
 			: 0;
 	let calibrated = grown;
 	let calibratedRecord = record;
 	if (target > 0) {
-		const aim = grown.height + crownReach(kit, record);
+		// A merged plant's foliage rises from the skeleton itself, so no kit reach is added.
+		const aim = grown.height + (merged ? 0 : crownReach(kit, record));
 		if (aim > 0) {
 			const factor = target / aim;
 			calibrated = scaledSkeleton(grown, factor);
@@ -771,8 +775,21 @@ function dress(kit: SpeciesKitData, options: GrowOptions): MeshInput {
 	// The reach is an estimate from the kit, so the drawn top is measured once the shoots stand. A
 	// residual over the accepted share is taken out by one scale of the already-placed geometry: a
 	// matrix scale, not a second growth.
-	if (target > 0 && rows.count > 0) {
-		const top = Math.max(skeleton.height, cardTop(kit, rows, record.lod.cardGrow ?? 1));
+	if (target > 0) {
+		const top = merged
+			? mergedTop(
+					{
+						...dressInput,
+						skeleton,
+						rows,
+						crown: placeholderCrown({ ...dressInput, skeleton }),
+						detail,
+					},
+					1,
+				)
+			: rows.count > 0
+				? Math.max(skeleton.height, cardTop(kit, rows, record.lod.cardGrow ?? 1))
+				: 0;
 		if (top > 0 && Math.abs(top - target) / target > HEIGHT_RESIDUAL) {
 			const corrective = target / top;
 			skeleton = scaledSkeleton(skeleton, corrective);
@@ -786,6 +803,23 @@ function dress(kit: SpeciesKitData, options: GrowOptions): MeshInput {
 		() => placeholderCrown(input),
 	);
 	return { ...input, rows, crown, detail };
+}
+
+/**
+ * The drawn top of a merged plant's first card level: its foliage mesh, its extras and its wood, in
+ * metres. The mesh colours read a crown light, which moves no vertex, so a stand-in light serves the
+ * measure before the real one is found.
+ */
+function mergedTop(input: MeshInput, level: MeshLevel): number {
+	let top = input.skeleton.height;
+	const build = grower(input.record.growth.model).foliage;
+	for (const mesh of [build?.(input, level), extrasMesh(input, level)]) {
+		if (!mesh) continue;
+		const positions = mesh.positions;
+		for (let i = 1; i < positions.length; i += 3)
+			if ((positions[i] as number) > top) top = positions[i] as number;
+	}
+	return top;
 }
 
 /** Whether a cutting is cut from the grown skeleton rather than built from the kit alone. */
