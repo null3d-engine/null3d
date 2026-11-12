@@ -155,6 +155,22 @@ export interface PlantReviewQuery {
 	 * For a single-leaf still: how far the leaf has opened, from 0 for a crozier still rolled to 1
 	 * for a leaf fully out. Absent, it is drawn as it stands on a mature plant.
 	 */
+	/**
+	 * How far the wood's own sections are thinned, from 0 to 1: a review redraw reads the same plant
+	 * with fewer rings and sides, to measure what the section level costs and what it breaks. Absent
+	 * draws the level's own sections.
+	 */
+	readonly sections?: number;
+	/**
+	 * The share of a card level's own card rows to keep, from 0.05 to 1: a review redraw thins the
+	 * cards to measure what they buy, the kept cards growing by the level's rule. Absent keeps them.
+	 */
+	readonly cards?: number;
+	/**
+	 * How a card joins the plant when a level does not draw its branch: `remove` drops it, `branch`
+	 * draws the branch it stands on, and `twig` gives it a line to the nearest drawn branch.
+	 */
+	readonly cardJoin?: 'remove' | 'branch' | 'twig';
 	readonly age?: number;
 	/** For a cut branch: whether its candidates rank by how young they are, so the piece is opening. */
 	readonly young?: boolean;
@@ -297,6 +313,9 @@ const NUMBER_FIELDS = [
 	'leaves',
 	'leafLength',
 	'sparse',
+	'sections',
+	'cards',
+	'age',
 	'roll',
 	'girth',
 	'turns',
@@ -319,6 +338,9 @@ const SHARE_FIELDS = new Set([
 	'along',
 	'skyShare',
 	'sparse',
+	'sections',
+	'cards',
+	'age',
 ]);
 
 /** The fields that are whole numbers of at least one. */
@@ -336,6 +358,8 @@ const SWITCHES = [
 	'leafyBark',
 	'noOutline',
 	'foliage',
+	'motion',
+	'young',
 ] as const;
 
 /** A short form of a number for a query, so a query reads well and keeps its precision. */
@@ -470,6 +494,13 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 			throw new Error(`size=${sizeText} is not a size: give one such as 960x720.`);
 		size = [width, height];
 	}
+	const joinText = params.get('cardJoin');
+	let cardJoin: 'remove' | 'branch' | 'twig' | undefined;
+	if (joinText !== null) {
+		if (joinText !== 'remove' && joinText !== 'branch' && joinText !== 'twig')
+			throw new Error(`cardJoin=${joinText} is not a join: use remove, branch or twig.`);
+		cardJoin = joinText;
+	}
 	const background = oneOf('background', params.get('background'), PLANT_BACKGROUNDS);
 	const season = oneOf('season', params.get('season'), PLANT_SEASONS);
 	const preset = oneOf('preset', params.get('preset'), PLANT_PRESETS);
@@ -501,6 +532,7 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 		foliage: params.get('foliage') === '1',
 		scale: params.get('scale') === '1',
 		motion: params.get('motion') === '1',
+		young: params.get('young') === '1',
 		matte: params.get('matte') === '1',
 		fruit: params.get('fruit') === '1',
 		surface: params.get('surface') === '1',
