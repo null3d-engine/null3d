@@ -56,8 +56,12 @@
 		"daylight": 2.4
 	},
 	"09-secondary-branching.png": {
-		"leaves": 19.5,
-		"roll": -90
+		"leaves": 4.5,
+		"roll": -90,
+		"shoot": "twig-big",
+		"shoots": 3,
+		"layout": "spray",
+		"spread": 1.2
 	},
 	"10-fine-twigs.png": {
 		"leaves": 7.46

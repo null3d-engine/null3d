@@ -1189,7 +1189,7 @@ export interface ShootSpec {
  */
 export interface ShootClass {
 	/** The class's name. */
-	readonly name: 'long' | 'short' | 'spur' | 'whip' | 'spray' | 'cut' | 'twig';
+	readonly name: 'long' | 'short' | 'spur' | 'whip' | 'spray' | 'cut' | 'twig' | 'twig-big';
 	/** Bud vigor this class serves, 0 weak to 1 strong. */
 	readonly vigor: readonly [number, number];
 	/** Share of the species' prototypes in this class. */

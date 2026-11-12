@@ -297,6 +297,37 @@ export const record: Species = {
 				skyward: 0.25,
 				droop: 3,
 			},
+			{
+				// Still 09: a secondary branch's twig with fewer, larger leaves, so a close picture at
+				// the review's work width keeps every leaf joined to its stem. It is last so the
+				// classes before it keep the places their prototypes were grown from.
+				name: 'twig-big',
+				cutOnly: true,
+				vigor: [0, 1],
+				share: 0,
+				years: 1,
+				length: { mean: 0.35, spread: 0.05 },
+				nodes: { mean: 24, spread: 1 },
+				internode: [
+					[0, 1.2],
+					[1, 0.8],
+				],
+				stem: { radius: [0.003, 0.0015] },
+				laterals: { mean: 0, spread: 0 },
+				bend: { length: 0.05, angle: 20 },
+				leafScale: [
+					[0, 1.4],
+					[1, 1.6],
+				],
+				leafAngle: [
+					[0, 25],
+					[1, 35],
+				],
+				leafAngleSpread: 10,
+				leafYears: 1,
+				skyward: 0.2,
+				droop: 55,
+			},
 		],
 		// Stills 11 and 23: one leaf at each node, in two opposite ranks down the shoot, and each
 		// blade turned into the shoot's own plane so the ranks join into one narrow falling lance.
