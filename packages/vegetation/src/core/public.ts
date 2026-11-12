@@ -86,6 +86,7 @@ export type {
 	SeasonSpec,
 	SelfOrganizing,
 	ShapeEnvelope,
+	SheathColour,
 	ShootClass,
 	ShootSpec,
 	SparseFloors,
