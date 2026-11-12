@@ -1955,10 +1955,11 @@ export function vegetationPlan(): PlanItem<Check>[] {
 					'gpu=webgpu',
 					'demo=creek',
 					'preset=ultra',
-					// The display's rate is the target, so the governor steps the preset's settings. A settle
-					// lets the step land before the measure, rather than measuring the frames before it.
+					// The display's rate is the target, so the governor steps the preset's settings. The
+					// settle lets the step land, and three windows show whether the state then holds.
 					'target-fps=display',
-					'settle=30',
+					'settle=90',
+					'windows=3',
 					'seconds=5',
 				],
 				timeoutSeconds: VEGETATION_TIMEOUT_SECONDS,
