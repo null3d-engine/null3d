@@ -1660,7 +1660,10 @@ export default defineSketch(async (ctx) => {
 					fov: FOV,
 					...((LOD === 0 || SPEC.cutting !== undefined) && { switchBias: -FORCED_NEAR_STOPS }),
 				},
-				castShadows: !MATTE,
+				// A sheet's cells are measured against the matte, which carries the plant alone: the
+				// sun's cast shadow on the backdrop would be counted as plant, so a cell draws
+				// unshadowed, as a release build draws it.
+				castShadows: !MATTE && VIEW !== 'turntable',
 			},
 		);
 	const drawn = shaped(main, WOOD_ONLY);
