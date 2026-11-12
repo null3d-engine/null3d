@@ -22,6 +22,9 @@
 		"barkMask": true
 	},
 	"16-bark-on-branch.png": {
+		"view": "bark-limb",
+		"thin": 0.015,
+		"span": 0.1,
 		"barkMask": true,
 		"leafyBark": true
 	},
