@@ -629,6 +629,7 @@ function compareRun(
 			...edgeLines(result.pairs),
 			...framingLines(result.pairs),
 			...pieceLines(result.pairs),
+			...connectivityLines(result.pairs),
 			...result.pairs.flatMap((pair) => (pair.note ? [`- ${pair.file}: ${pair.note}.`] : [])),
 			`- Sheets: ${result.sheets.join(', ')}.`,
 			'',
@@ -668,6 +669,9 @@ function compareRun(
 	const coverage = coverageOf(set, { stills, turns, winds }, 1 / windFps);
 	metrics.coverage = coverage;
 	const maskFailures = [...turns.values()].filter((turn) => turn.maskCheckFailed);
+	const floating = [...stills.values()].filter(
+		(pair) => (pair.connectivity?.floating.length ?? 0) > 0,
+	);
 	summary.push(
 		'### Coverage',
 		'',
@@ -677,6 +681,11 @@ function compareRun(
 		...(maskFailures.length > 0
 			? [
 					`- The mask check fails on ${maskFailures.length} turn${maskFailures.length === 1 ? '' : 's'}: ${maskFailures.map((turn) => turn.video).join(', ')}. A matte that the colour outline cannot follow is not a matte a row can be judged on.`,
+				]
+			: []),
+		...(floating.length > 0
+			? [
+					`- ${floating.length} picture${floating.length === 1 ? '' : 's'} draw${floating.length === 1 ? 's' : ''} a piece hanging free: ${floating.map((pair) => pair.file).join(', ')}. The owner's rule is that no piece hangs free at any level or sparseness, so the fault is the generator's and the run fails.`,
 				]
 			: []),
 		'',
@@ -692,7 +701,7 @@ function compareRun(
 	writeFileSync(join(dir, 'coverage.json'), `${JSON.stringify(coverage, null, '\t')}\n`);
 	writeFileSync(join(dir, 'coverage.md'), coverageMarkdown(manifest.species, set.slug, coverage));
 	writeFileSync(join(dir, 'summary.md'), `${summary.join('\n')}\n`);
-	return coverage.complete && maskFailures.length === 0;
+	return coverage.complete && maskFailures.length === 0 && floating.length === 0;
 }
 
 /** The edge-direction lines for the stills that give no outline, so a close-up still has a figure. */
@@ -748,6 +757,25 @@ function barkLine(pair: StillResult): string | null {
 	if (!pair.barkColour) return null;
 	const steps = deltaE2000(pair.barkColour.reference, pair.barkColour.render);
 	return `- ${pair.file}: no plain outline${barkClause(pair)}, ${steps.toFixed(2)} steps apart.`;
+}
+
+/**
+ * The connectivity gate: the owner's rule is that no piece hangs free at any level or sparseness, so
+ * a component that meets nothing inside the frame fails the picture as a generator fault, whatever
+ * the piece count says. A component the frame's border carries may run on outside the picture and is
+ * not a fault.
+ */
+function connectivityLines(pairs: readonly StillResult[]): string[] {
+	const lines: string[] = [];
+	for (const pair of pairs) {
+		const check = pair.connectivity;
+		if (!check || check.floating.length === 0) continue;
+		const sparse = pair.sparse === undefined ? '' : ` at sparse ${pair.sparse}`;
+		lines.push(
+			`- ${pair.file}${sparse}: ${check.components} components, ${check.floating.length} floating — ${check.floating.map((part) => `${part.area} px ${part.box}`).join(', ')}. A piece that meets nothing is a generator fault, not this row's.`,
+		);
+	}
+	return lines;
 }
 
 /** Where the render is drawn as more or fewer separate pieces than its reference. */

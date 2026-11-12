@@ -33,6 +33,7 @@ const still = (file: string): StillResult => ({
 	frameIou: 0.7,
 	edgeDifference: 0.2,
 	pieces: null,
+	connectivity: null,
 	profileError: 0.05,
 	gap: null,
 	crownBoxGap: null,

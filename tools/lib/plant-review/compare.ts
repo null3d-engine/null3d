@@ -38,6 +38,7 @@ import {
 	type PlantMask,
 	type PlantMeasures,
 	pieceCount,
+	pieceParts,
 	plantMask,
 	type ReferenceSet,
 	SOIL_MASK_GROUND_SHARE,
@@ -1368,6 +1369,16 @@ export interface StillResult extends PairMetrics {
 	 * A plant hangs together, so a part that meets nothing shows here as an extra piece.
 	 */
 	readonly pieces: { readonly reference: number | null; readonly render: number } | null;
+	/**
+	 * The render matte's components and any piece that meets nothing inside the frame. A piece that
+	 * touches the frame's border may run on outside the picture, so it is not counted as floating.
+	 */
+	readonly connectivity: {
+		readonly components: number;
+		readonly floating: readonly { readonly area: number; readonly box: string }[];
+	} | null;
+	/** The sparseness the picture was drawn at, where its query names one above the record. */
+	readonly sparse?: number;
 	/** What a close view's camera framed, and how clear it found its subject, as the page posted it. */
 	readonly framing?: CloseFraming;
 	/**
@@ -1658,6 +1669,7 @@ export function compareStills(
 				barkColour: null,
 				edgeDifference: null,
 				pieces: null,
+				connectivity: null,
 				error,
 			});
 			rows.push({ reference: refImage, lines: [...head, 'NO RENDER', error.slice(0, 18)] });
@@ -1726,25 +1738,41 @@ export function compareStills(
 		// reference's. A part that meets nothing, such as a fruit on a stalk, adds a piece here
 		// while every other figure stays sound. The render's own outline is exact wherever the run
 		// drew a matte, so the render's count stands on its own when the reference does not separate.
-		const pieces = noOutline
-			? null
-			: frame.matte !== undefined
-				? {
-						reference:
-							refSide.measures.box !== null &&
-							(refPlant.background.plain ||
-								skyMaskable(refPlant.background) ||
-								soilMaskable(refPlant.background, refPlant.height))
-								? pieceCount(anyPlantMask(refPlant), refPlant.width, refPlant.height, PIECE_AREA)
-								: null,
-						render: pieceCount(
-							anyPlantMask(render.plant),
-							render.plant.width,
-							render.plant.height,
-							PIECE_AREA,
-						),
-					}
-				: null;
+		const parts =
+			noOutline || frame.matte === undefined
+				? null
+				: pieceParts(
+						anyPlantMask(render.plant),
+						render.plant.width,
+						render.plant.height,
+						PIECE_AREA,
+					);
+		const pieces = parts
+			? {
+					reference:
+						refSide.measures.box !== null &&
+						(refPlant.background.plain ||
+							skyMaskable(refPlant.background) ||
+							soilMaskable(refPlant.background, refPlant.height))
+							? pieceCount(anyPlantMask(refPlant), refPlant.width, refPlant.height, PIECE_AREA)
+							: null,
+					render: parts.length,
+				}
+			: null;
+		// The largest run is the plant's body; any other run that the frame's border does not carry
+		// meets nothing inside the picture, which is a generator fault rather than a row's fault.
+		const connectivity = parts
+			? {
+					components: parts.length,
+					floating: parts
+						.slice(1)
+						.filter((part) => !part.border)
+						.map((part) => ({
+							area: part.area,
+							box: `${part.right - part.left + 1}x${part.bottom - part.top + 1}@${part.left},${part.top}`,
+						})),
+				}
+			: null;
 		const shown: PairMetrics = masked
 			? pair
 			: {
@@ -1797,6 +1825,8 @@ export function compareStills(
 					: shown.barkDeltaE,
 			edgeDifference: edges,
 			pieces,
+			connectivity,
+			...(frame.query?.sparse !== undefined ? { sparse: frame.query.sparse } : {}),
 			...(sheathFigure ? { sheath: sheathFigure } : {}),
 			...(framing ? { framing } : {}),
 			...(note ? { note } : {}),
