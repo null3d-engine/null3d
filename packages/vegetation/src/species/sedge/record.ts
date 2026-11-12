@@ -222,13 +222,22 @@ export const record: Species = {
 			// its 170 shoots, and its caps are raised to what the newer grower costs rather than the
 			// plant being cut. Measured at seed 11, variant 0, high detail it draws 3,042,793 variant
 			// bytes and 35,843 and 19,505 triangles at the two card levels; the caps take a stated
-			// margin above each. The medium, low and ultra byte caps are unchanged and were measured
-			// before the newer grower, so a later read should confirm them. The kit holds 33 to 37 KB.
+			// margin above each. The medium, low and ultra byte caps were measured before the newer
+			// grower; the read below re-records them. The kit holds 33 to 37 KB.
 			kitBytes: { low: 100_000, medium: 100_000, high: 100_000, ultra: 100_000 },
 			// The owner's 12 November 2026 ruling, after the standing authority: the sedge draws the
 			// photographs' twenty-two flowering stems, measured at 3,375,625 variant bytes and
 			// 78,833, 40,987 and 23,409 triangles, and the caps take a stated margin above each.
-			variantBytes: { low: 1_673_928, medium: 2_300_000, high: 3_600_000, ultra: 3_800_000 },
+			// 13 November 2026: the low, medium and ultra caps were re-recorded, as the note above
+			// asked. The later read at seed 11, variant 0 gives 2,860,705, 3,156,121 and 4,956,731
+			// bytes against the old 1,673,928, 2,300,000 and 3,800,000, so the new caps keep the
+			// class's 15 per cent spare at 3,290,000, 3,630,000 and 5,700,000. The high cap stays at
+			// 3,600,000, which the same read clears at 3,553,303, leaving 46,697 bytes. The largest
+			// variant at that seed reaches further at every tier (3,456,215, 3,786,578, 4,227,590 and
+			// 5,740,106 for variant 3) and its second card level draws 31,665 triangles against the
+			// 25,000 cap, 29,811 before the far tier's flower stalks joined it; those figures are
+			// recorded here for the next read rather than folded into the caps.
+			variantBytes: { low: 3_290_000, medium: 3_630_000, high: 3_600_000, ultra: 5_700_000 },
 			lod0Triangles: 140_000,
 			lod1Triangles: 80_000,
 			lod2Triangles: 25_000,

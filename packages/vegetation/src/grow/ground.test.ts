@@ -30,6 +30,7 @@ import { builder as thickBuilder } from '../leaf/thick-leaf';
 import { dequantisePosition } from '../lod/quantise';
 import { AXIS_LEAF, SHEATH_KIND } from './ground';
 import { GROUND_TEST_SPECIES, hostaRecord, meadowGrassRecord, sedgeRecord } from './ground.fixture';
+import { targetHeight } from './height';
 
 for (const species of GROUND_TEST_SPECIES) await loadPlantCode(species.record);
 const kits = new Map<string, SpeciesKitData>(
@@ -325,7 +326,11 @@ describe('the hosta', () => {
 		const foliage = autumn.levels[0].parts.find((part) => part.name === 'foliage');
 		expect(foliage?.arrays.uvs1[1]).toBe(65535);
 		const blossom = growPlantNow(kit, { ...OPTIONS, season: 'blossom' });
-		expect(topOf(blossom.skeleton, AXIS_CULM)).toBeGreaterThan(0.6);
+		// The scape is the plant's top in blossom, so the height calibration draws it on the
+		// record's own sampled target rather than a constant.
+		const target = targetHeight(hostaRecord, OPTIONS.seed, OPTIONS.variant);
+		expect(topOf(blossom.skeleton, AXIS_CULM)).toBeGreaterThan(target * 0.98);
+		expect(topOf(blossom.skeleton, AXIS_CULM)).toBeLessThan(target * 1.02);
 		expect(blossom.levels[0].parts.map((part) => part.name)).toContain('extras');
 		let flowers = 0;
 		for (let b = 0; b < blossom.skeleton.buds.count; b++)

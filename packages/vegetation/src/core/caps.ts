@@ -136,7 +136,13 @@ export const MODEL_CAPS: Readonly<Record<CapClass, ModelCaps>> = {
 		// On 12 November 2026 the owner then raised the high variant and the first two card levels so
 		// the sedge could draw the photographs' twenty-two flowering stems: the measured twenty-two
 		// read 3,375,625 bytes and 78,833, 40,987 and 23,409 triangles.
-		variantBytes: { low: 1_673_928, medium: 2.3 * MB, high: 3.6 * MB, ultra: 3.8 * MB },
+		// On 13 November 2026 the low, medium and ultra tiers were re-recorded: the sedge's record
+		// itself had flagged them as measured before the newer grower and awaiting a later read, and
+		// that read at seed 11, variant 0 gives 2,860,705, 3,156,121 and 4,956,731 bytes against the
+		// old 1,673,928, 2,300,000 and 3,800,000. Each new cap keeps the class's 15 per cent spare:
+		// 3,290,000, 3,630,000 and 5,700,000. The high tier stays at its owner-ruled 3,600,000, which
+		// the same read clears at 3,553,303.
+		variantBytes: { low: 3.29 * MB, medium: 3.63 * MB, high: 3.6 * MB, ultra: 5.7 * MB },
 		// A frond colony's stipes and rachises are wood: the bracken test colony's largest of sixteen
 		// variants and seasons, with about 15 per cent to spare: 52, 58, 61 and 64 KB.
 		lod0WoodBytes: { low: 0.06 * MB, medium: 0.066 * MB, high: 0.07 * MB, ultra: 0.074 * MB },
