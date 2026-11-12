@@ -47,6 +47,7 @@ import {
 	WORK_WIDTH,
 } from './references.ts';
 import type { RunFrame } from './render.ts';
+import type { SheathTarget } from './sheath.ts';
 
 /** The bins of an edge-direction profile: twelve of fifteen degrees across half a turn. */
 const EDGE_BINS = 12;
@@ -61,7 +62,33 @@ const EDGE_FLOOR = 6;
 const PIECE_AREA = 24;
 
 /** The views that photograph the bark close up, whatever words a species puts in its file names. */
-const BARK_VIEWS: ReadonlySet<string> = new Set(['bark-base', 'bark-mid', 'bark-limb']);
+const BARK_VIEWS: ReadonlySet<string> = new Set([
+	'bark-base',
+	'bark-mid',
+	'bark-limb',
+	// A ground plant's bark is its sheath, so the sheath close view reads the material as a bark
+	// close view does.
+	'sheath',
+]);
+
+/**
+ * The green of a leaf in CIELAB a*, below which a patch pixel is foliage rather than bark. Foliage
+ * over a bark close-up stands well below this; the barks measured across the corpus stay above it.
+ */
+const LEAF_GREEN = -5;
+
+/**
+ * Whether a picture separates a plant from a plain background, so its outline can be read. A bark
+ * close view photographs the bark against bark, and a bark texture is a cut-out of the material:
+ * neither has a plant outline, and their rows read colour. A leaf texture is a cut-out on white
+ * and keeps its outline. A species' slot can also name a picture whose own background is the
+ * subject, such as a far scrub band that the fitted sky and ground admit; that picture carries no
+ * outline either, and the crown box and its gap, which `measurePlant` reads from the same mask, go
+ * with it rather than staying beside the null figures.
+ */
+export function hasSeparableOutline(view: string, kind: string, noOutline = false): boolean {
+	return !noOutline && !(BARK_VIEWS.has(view) || (kind === 'texture' && !view.startsWith('leaf')));
+}
 
 /** The camera's framing of a reference, in screen shares, as the review page takes it. */
 export interface ReferenceFraming {
@@ -1217,6 +1244,36 @@ export function compareWind(
 	return { ...base, motion: { reference, render }, sheets: writeSheets(runDir, group, pages) };
 }
 
+/**
+ * The sheath target's shape and its parser live in the review-data module; a junction or crown-foot
+ * still of a species whose review data names one is read against it, because its subject is the
+ * sheath itself.
+ */
+export type { SheathTarget };
+
+/** A sheath surface's two ends as a picture shows them: mean CIELAB colour and pixels. */
+export interface SheathPatches {
+	readonly foot: { readonly colour: readonly number[]; readonly pixels: number };
+	readonly collar: { readonly colour: readonly number[]; readonly pixels: number };
+}
+
+/** A sheath surface's figure: the render against the photograph, and against the record. */
+export interface SheathDifference {
+	/**
+	 * The render's foot and collar against the photograph's, both lit by the view: the row's mark.
+	 * Null when the photograph's sheath cannot be isolated in its picture.
+	 */
+	readonly photograph: { readonly foot: number; readonly collar: number } | null;
+	/** The render's ends against the record's authored colours: the material check, not the row. */
+	readonly record: { readonly foot: number; readonly collar: number };
+	/** The pixels the render's two patches cover, so a reader can tell a figure from an empty patch. */
+	readonly footPixels: number;
+	readonly collarPixels: number;
+	/** The photograph's patch areas, when it gave a figure. */
+	readonly photographFootPixels?: number;
+	readonly photographCollarPixels?: number;
+}
+
 /** One still or texture source beside the render of its view. */
 export interface StillResult extends PairMetrics {
 	readonly file: string;
@@ -1252,6 +1309,11 @@ export interface StillResult extends PairMetrics {
 	readonly pieces: { readonly reference: number | null; readonly render: number } | null;
 	/** What a close view's camera framed, and how clear it found its subject, as the page posted it. */
 	readonly framing?: CloseFraming;
+	/**
+	 * For a junction or crown-foot still of a species whose record names its sheath's colours: the
+	 * render's foot and collar patches, each read against the record under the view's own light.
+	 */
+	readonly sheath?: SheathDifference;
 	readonly note?: string;
 	readonly error?: string;
 }
@@ -1294,8 +1356,13 @@ export function closeFraming(facts: unknown): CloseFraming | undefined {
  * picture a side, centred at a fifth, a half and four fifths each way, so the patches do not overlap
  * and together they cover different phases of a bark tile. Averaging them measures the material
  * rather than the one window the camera happens to frame.
+ *
+ * With `onPlant`, pixels as close to a corner colour as the backdrop are dropped. With `barkOnly`,
+ * leaf-green pixels are dropped as well: a limb close-up carries leaves across the bark, and the
+ * material the figure is about is the bark. A patch that is leaf from edge to edge has no bark to
+ * read, so it falls back to the plant-filtered mean.
  */
-export function patchLab(image: Rgba, onPlant = false): number[] {
+export function patchLab(image: Rgba, onPlant = false, barkOnly = false): number[] {
 	const lab = labImage(image);
 	// A picture's own background, read from its four corners: a close view lays a stem on sky or
 	// on a plain studio ground, so the corners are the backdrop wherever the stem does not reach.
@@ -1333,20 +1400,153 @@ export function patchLab(image: Rgba, onPlant = false): number[] {
 						);
 						if (backdrop) continue;
 					}
+					if (barkOnly && (lab[at + 1] as number) < LEAF_GREEN) continue;
 					for (let c = 0; c < 3; c++) sum[c] = (sum[c] as number) + (lab[at + c] as number);
 					n++;
 				}
 		}
+	if (n === 0 && barkOnly) return patchLab(image, onPlant);
 	return sum.map((v) => v / Math.max(1, n));
 }
 
 /**
  * The colour difference between two pictures' nine-patch means, read on the plant alone when asked.
  * A texture source and its render are cut out on different colours, so asking for the plant drops
- * both backdrops and compares the material.
+ * both backdrops and compares the material. With `barkOnly`, both sides drop their foliage too.
  */
-export function patchDifference(reference: Rgba, render: Rgba, onPlant = false): number {
-	return Number(deltaE2000(patchLab(reference, onPlant), patchLab(render, onPlant)).toFixed(2));
+export function patchDifference(
+	reference: Rgba,
+	render: Rgba,
+	onPlant = false,
+	barkOnly = false,
+): number {
+	return Number(
+		deltaE2000(patchLab(reference, onPlant, barkOnly), patchLab(render, onPlant, barkOnly)).toFixed(
+			2,
+		),
+	);
+}
+
+/**
+ * The share of a sheath's length, at each end, that a patch reads. The record's collar share caps
+ * it, so a colour that takes over only near the tip is not read a fifth of the way down.
+ */
+const SHEATH_PATCH_SHARE = 0.2;
+
+/** The views whose subject is the sheath surface at the crown's foot. */
+export const SHEATH_VIEWS: ReadonlySet<string> = new Set(['junction', 'crown-foot']);
+
+/** A blade's green in CIELAB: a leaf is green on the a axis and warm on b, where a sheath is not. */
+const GREEN_A = -8;
+const GREEN_B = 5;
+
+/** A linear reflectance as the sRGB byte the picture shows. */
+function srgbByte(value: number): number {
+	const v = Math.min(1, Math.max(0, value));
+	return Math.round(255 * (v <= 0.0031308 ? 12.92 * v : 1.055 * v ** (1 / 2.4) - 0.055));
+}
+
+/**
+ * Reads a sheath surface's foot and collar off a picture, in the plant's own box. The surface's
+ * rows are the plant's pixels that are not leaf-green, since a sheath draws brown and pale where a
+ * blade draws green; a view whose surface fills the frame takes the whole box. A surface that draws
+ * green too — a record whose field the grower does not yet read — leaves the box as the surface.
+ *
+ * @param image The picture.
+ * @param box The plant's box in the mask's pixels, as the measures give it.
+ * @param plant The picture's mask, whose pixels are the plant's own.
+ * @returns The two patches and their pixel counts, or null when an end holds no plant.
+ */
+export function sheathPatches(
+	image: Rgba,
+	box: Box,
+	plant: PlantMask,
+	reach: number,
+): SheathPatches | null {
+	if (box.right < box.left || box.bottom < box.top) return null;
+	const work = image.width > plant.width ? resizeToWidth(image, plant.width) : image;
+	const width = Math.min(plant.width, work.width);
+	const height = Math.min(plant.height, work.height);
+	const lab = labImage(work);
+	const band = (top: number, bottom: number): { colour: number[]; pixels: number } => {
+		const sum = [0, 0, 0];
+		let pixels = 0;
+		for (let y = Math.max(0, top); y <= Math.min(height - 1, bottom); y++)
+			for (let x = Math.max(0, box.left); x <= Math.min(width - 1, box.right); x++) {
+				if (!plant.mask[y * plant.width + x]) continue;
+				const at = (y * width + x) * 3;
+				for (let c = 0; c < 3; c++) sum[c] = (sum[c] as number) + (lab[at + c] as number);
+				pixels++;
+			}
+		return { colour: sum.map((v) => v / Math.max(1, pixels)), pixels };
+	};
+	let surfaceTop = Number.POSITIVE_INFINITY;
+	let surfaceBottom = Number.NEGATIVE_INFINITY;
+	for (let y = Math.max(0, box.top); y <= Math.min(height - 1, box.bottom); y++)
+		for (let x = Math.max(0, box.left); x <= Math.min(width - 1, box.right); x++) {
+			if (!plant.mask[y * plant.width + x]) continue;
+			const at = (y * width + x) * 3;
+			if ((lab[at + 1] as number) < GREEN_A && (lab[at + 2] as number) > GREEN_B) continue;
+			surfaceTop = Math.min(surfaceTop, y);
+			surfaceBottom = Math.max(surfaceBottom, y);
+		}
+	const rows = surfaceBottom - surfaceTop;
+	const top = rows >= 3 ? surfaceTop : Math.max(0, box.top);
+	const bottom = rows >= 3 ? surfaceBottom : Math.min(height - 1, box.bottom);
+	const surfaceHeight = bottom - top + 1;
+	const collarRows = Math.max(1, Math.round(surfaceHeight * Math.min(SHEATH_PATCH_SHARE, reach)));
+	const footRows = Math.max(1, Math.round(surfaceHeight * Math.min(SHEATH_PATCH_SHARE, 1 - reach)));
+	const collar = band(top, top + collarRows - 1);
+	const foot = band(bottom - footRows + 1, bottom);
+	if (collar.pixels === 0 || foot.pixels === 0) return null;
+	return { foot, collar };
+}
+
+/**
+ * The sheath surface's figure: the render's foot and collar against the photograph's, both lit by
+ * the view, which is the row's mark; and against the record's authored colours, which is the
+ * material check. A record is an albedo, so a shaded sheath cannot pass it; the photograph is the
+ * same lit surface the render draws.
+ *
+ * @param reference The photograph and its mask, or a null box when its sheath cannot be isolated.
+ * @param render The render and its mask.
+ * @param sheath The record's foot and collar colours and its collar share.
+ * @returns The photograph and record steps and the patch areas, or null when the render holds none.
+ */
+export function sheathDifference(
+	reference: { readonly image: Rgba; readonly box: Box | null; readonly plant: PlantMask },
+	render: { readonly image: Rgba; readonly box: Box; readonly plant: PlantMask },
+	sheath: SheathTarget,
+): SheathDifference | null {
+	const rendered = sheathPatches(render.image, render.box, render.plant, sheath.reach);
+	if (!rendered) return null;
+	const target = (rgb: readonly [number, number, number]) =>
+		labOf(srgbByte(rgb[0]), srgbByte(rgb[1]), srgbByte(rgb[2]));
+	const record = {
+		foot: Number(deltaE2000(rendered.foot.colour, target(sheath.foot)).toFixed(2)),
+		collar: Number(deltaE2000(rendered.collar.colour, target(sheath.collar)).toFixed(2)),
+	};
+	const photographed = reference.box
+		? sheathPatches(reference.image, reference.box, reference.plant, sheath.reach)
+		: null;
+	const photograph = photographed
+		? {
+				foot: Number(deltaE2000(rendered.foot.colour, photographed.foot.colour).toFixed(2)),
+				collar: Number(deltaE2000(rendered.collar.colour, photographed.collar.colour).toFixed(2)),
+			}
+		: null;
+	return {
+		photograph,
+		record,
+		footPixels: rendered.foot.pixels,
+		collarPixels: rendered.collar.pixels,
+		...(photographed
+			? {
+					photographFootPixels: photographed.foot.pixels,
+					photographCollarPixels: photographed.collar.pixels,
+				}
+			: {}),
+	};
 }
 
 /** A still or texture source as the comparison reads it: a cut-out laid on white. */
@@ -1361,6 +1561,7 @@ export function compareStills(
 	frames: readonly RunFrame[],
 	title: string,
 	moundForm = false,
+	sheath?: SheathTarget,
 ): { readonly pairs: readonly StillResult[]; readonly sheets: readonly string[] } {
 	const byReference = new Map(
 		frames.flatMap((frame) => (frame.reference ? [[frame.reference, frame]] : [])),
@@ -1405,6 +1606,11 @@ export function compareStills(
 		const refPlant = plantMask(refImage);
 		const refSide = side(slot.file, refImage, refPlant, false, moundForm);
 		const render = renderSideOf(runDir, frame, frame.file, false, moundForm);
+		// A bark close view photographs the bark against bark, and a bark texture is a cut-out of
+		// the material, so neither separates a plant from a background. Their rows read colour,
+		// never an outline: a mask fitted to a picture with no plain border invents one.
+		const drawn = frame.query?.view ?? slot.view;
+		const noOutline = !hasSeparableOutline(drawn, slot.kind, frame.query?.noOutline === true);
 		const fittedKind = refPlant.background.plain
 			? null
 			: skyMaskable(refPlant.background)
@@ -1413,8 +1619,9 @@ export function compareStills(
 					? ('ground' as const)
 					: null;
 		const masked =
-			(fittedKind === null && frame.matte !== undefined) ||
-			(fittedKind !== null && (frame.matte !== undefined || render.measures.box !== undefined));
+			!noOutline &&
+			((fittedKind === null && frame.matte !== undefined) ||
+				(fittedKind !== null && (frame.matte !== undefined || render.measures.box !== undefined)));
 		const pair = pairMetrics(masked ? refSide : { ...refSide, normal: undefined }, render);
 		const bark = slot.kind === 'texture' && !slot.view.startsWith('leaf');
 		// The shot carries the query the page was asked for, which is where a species' slot file
@@ -1432,11 +1639,26 @@ export function compareStills(
 		// The view the picture was drawn at, from the shot's own query, is what decides whether its
 		// colour is a bark colour: a species that names a picture's view draws that view, and the
 		// reference's number must not overrule it.
-		const drawn = frame.query?.view ?? slot.view;
 		const barkClose = slot.kind !== 'texture' && BARK_VIEWS.has(drawn);
+		// A limb close-up shows leaves over the bark, so a picture that names them reads the bark
+		// alone on both sides; the blend would otherwise be a leaf colour on one side of the pair.
+		const barkOnly = frame.query?.leafyBark === true;
 		const barkColour = barkClose
-			? { reference: patchLab(refImage, barkMaskOn), render: patchLab(render.image, barkMaskOn) }
+			? {
+					reference: patchLab(refImage, barkMaskOn, barkOnly),
+					render: patchLab(render.image, barkMaskOn, barkOnly),
+				}
 			: null;
+		// A junction or crown-foot still's subject is the sheath surface itself, so its foot and
+		// collar are read against the record's own colours. No other view takes this figure.
+		const sheathFigure =
+			sheath && SHEATH_VIEWS.has(drawn) && render.measures.box
+				? sheathDifference(
+						{ image: refImage, box: refSide.measures.box, plant: refPlant },
+						{ image: render.image, box: render.measures.box, plant: render.plant },
+						sheath,
+					)
+				: null;
 		const edges = Number(
 			edgeDifference(edgeProfile(refImage), edgeProfile(render.image)).toFixed(3),
 		);
@@ -1444,13 +1666,15 @@ export function compareStills(
 		// reference's. A part that meets nothing, such as a fruit on a stalk, adds a piece here
 		// while every other figure stays sound. The render's own outline is exact wherever the run
 		// drew a matte, so the render's count stands on its own when the reference does not separate.
-		const pieces =
-			frame.matte !== undefined
+		const pieces = noOutline
+			? null
+			: frame.matte !== undefined
 				? {
 						reference:
-							refPlant.background.plain ||
-							skyMaskable(refPlant.background) ||
-							soilMaskable(refPlant.background, refPlant.height)
+							refSide.measures.box !== null &&
+							(refPlant.background.plain ||
+								skyMaskable(refPlant.background) ||
+								soilMaskable(refPlant.background, refPlant.height))
 								? pieceCount(anyPlantMask(refPlant), refPlant.width, refPlant.height, PIECE_AREA)
 								: null,
 						render: pieceCount(
@@ -1513,6 +1737,7 @@ export function compareStills(
 					: shown.barkDeltaE,
 			edgeDifference: edges,
 			pieces,
+			...(sheathFigure ? { sheath: sheathFigure } : {}),
 			...(framing ? { framing } : {}),
 			...(note ? { note } : {}),
 		});

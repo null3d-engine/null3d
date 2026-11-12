@@ -171,6 +171,20 @@ export interface PlantReviewQuery {
 	 */
 	readonly barkMask?: boolean;
 	/**
+	 * Whether a bark close view's photograph shows leaves over the bark: the patches drop
+	 * leaf-green pixels on both pictures, so the figure reads the bark's own colour rather than a
+	 * blend with the foliage. A bark that is itself green leaves this off and keeps `barkMask`
+	 * alone, since that green is the material being measured.
+	 */
+	readonly leafyBark?: boolean;
+	/**
+	 * Whether a picture's own background cannot be separated from the plant, so the picture carries
+	 * no outline: its shape, width, pieces, frame gap, crown box and crown-box gap read null, while
+	 * the colour comparison stays. A species' slot names a picture whose background is the subject,
+	 * such as a far scrub band that the fitted sky and ground admit.
+	 */
+	readonly noOutline?: boolean;
+	/**
 	 * Whether a view that draws the wood alone draws the plant's foliage as well, which a bark
 	 * photograph taken among leaves needs if its colour is to be compared with like.
 	 */
@@ -233,9 +247,9 @@ export interface PlantReviewQuery {
 	 */
 	readonly barkZone?: number;
 	/**
-	 * Metres that a close view covers: the bark or limb a bark or limb view frames, or the width a
-	 * cut view shows across the frame, where the reference is a picture of a part of the piece
-	 * rather than the whole of it.
+	 * Metres that a close view covers: the bark or limb a bark or limb view frames, the sheath a
+	 * ground plant's sheath view frames, or the width a cut view shows across the frame, where the
+	 * reference is a picture of a part of the piece rather than the whole of it.
 	 */
 	readonly span?: number;
 	/**
@@ -374,6 +388,8 @@ const SWITCHES = [
 	'surface',
 	'lifted',
 	'barkMask',
+	'leafyBark',
+	'noOutline',
 	'foliage',
 ] as const;
 
@@ -553,6 +569,8 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 		measure: params.get('measure') === '1',
 		lifted: params.get('lifted') === '1',
 		barkMask: params.get('barkMask') === '1',
+		leafyBark: params.get('leafyBark') === '1',
+		noOutline: params.get('noOutline') === '1',
 		foliage: params.get('foliage') === '1',
 		scale: params.get('scale') === '1',
 		motion: params.get('motion') === '1',

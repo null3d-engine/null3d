@@ -13,6 +13,10 @@ const young: SpeciesForm = {
 	// A number, a curve and a list replace the record's whole value.
 	growth: {
 		years: 5,
+		// The growth fields the owner's ruling added: a form names its own, or drops the species' by
+		// naming null, as the woodland oak drops the turn limit to keep its long bole.
+		maxTurn: 6,
+		limbAzimuth: 0.4,
 		buds: {
 			angle: [
 				[0, 30],
@@ -44,6 +48,10 @@ describe("a species' other forms", () => {
 		if (grown.growth.model !== 'self-organizing' || template.growth.model !== 'self-organizing')
 			throw new Error('the template grows by the self-organizing model');
 		expect(grown.growth.years).toBe(5);
+		expect(grown.growth.maxTurn).toBe(6);
+		expect(grown.growth.limbAzimuth).toBe(0.4);
+		// Absent from the species' growth, and the form's naming leaves the species as it was.
+		expect('maxTurn' in template.growth).toBe(false);
 		expect(grown.growth.buds.angle).toEqual([
 			[0, 30],
 			[1, 40],
@@ -56,6 +64,21 @@ describe("a species' other forms", () => {
 		// The record a form merges into stays as it was.
 		expect(template.size.dbh).toBe(0.25);
 		expect(speciesProblems(withForms)).toEqual([]);
+		// A form may drop a species' growth field by naming null, as the woodland oak drops the turn
+		// limit, and the species keeps its own.
+		const turning: Species = {
+			...template,
+			growth: { ...template.growth, maxTurn: 8 } as Species['growth'],
+		};
+		const dropped = formRecord(
+			{
+				...turning,
+				forms: { young: { ...young, growth: { ...young.growth, maxTurn: null } } },
+			},
+			'young',
+		);
+		expect('maxTurn' in dropped.growth).toBe(false);
+		expect((turning.growth as { maxTurn?: number }).maxTurn).toBe(8);
 	});
 
 	it("merge a form given as plain data without reaching any object's prototype", () => {

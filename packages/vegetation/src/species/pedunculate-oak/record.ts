@@ -88,7 +88,20 @@ export const record: Species = {
 		},
 		// Stills 01, 02, 17 and 18 show sky under the crown's base: a shoot the righting carried below
 		// it stands in the crown's shade and dies back.
-		shedding: { threshold: 0.1, cleanBole: 0.2, stubs: 0.2, underCrown: 1 },
+		shedding: { threshold: 0.1, cleanBole: 0.2, stubs: 0, underCrown: 1 },
+		// Fewer subbranches and twigs, thinned most at the finest orders, so the crown keeps its
+		// masses with fewer drawn branches.
+		branchingByOrder: [
+			[0, 1],
+			[1, 0.6],
+		],
+		// The steps bend gently instead of kinking, and the branches leave their parents at separate
+		// points rather than as a crowd within one internode.
+		maxTurn: 8,
+		lateralSpacing: 0.6,
+		// The great limbs hold the azimuths their fork gave them, so the crown reads balanced from
+		// above while their branches take the light.
+		limbAzimuth: 0.5,
 		// The crown's sag was fitted with the wood weighed at a 3.5 m bole; the bend keeps weighing it
 		// so, whatever width the trunk is drawn at.
 		bending: { strength: 0.5, upturn: 0.2, girth: 3.5 },
