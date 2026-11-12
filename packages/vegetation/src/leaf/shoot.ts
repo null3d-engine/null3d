@@ -41,6 +41,7 @@ import {
 	spreadAt,
 	spreadMean,
 } from '../core/types';
+import { WOOD_RADIUS_RANGE } from '../wood/wood-mesh';
 import { shootOcclusion } from './occlusion';
 import { hasBareTwins } from './season';
 import { lathe, MeshWriter, SURFACE_BUD, SURFACE_STEM, type TubePoint, tube } from './writer';
@@ -959,12 +960,17 @@ export function meshShoot(
 			path.push(point);
 		}
 		mesh.mark();
-		tube(mesh, path, sides, (ring) => [
-			bendByte((path[ring] as TubePoint).along, plan.span),
-			0,
-			SURFACE_STEM,
-			255,
-		]);
+		tube(
+			mesh,
+			path,
+			sides,
+			(ring) => [bendByte((path[ring] as TubePoint).along, plan.span), 0, SURFACE_STEM, 255],
+			false,
+			undefined,
+			// The stem's radius in the wood's own units, so the shader can widen a stem thinner than
+			// the least drawn width, as it widens the wood.
+			(_ring, radius) => [Math.min(1, radius / WOOD_RADIUS_RANGE), 0],
+		);
 	}
 	for (const bud of plan.buds) {
 		const shape = (bud.cluster ? CLUSTER_BUD : AXIL_BUD)[detail];

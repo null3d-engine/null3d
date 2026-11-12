@@ -175,6 +175,8 @@ const MAX_BRANCH_DEPTH: i32 = 8;
 const KIND_STEM: f32 = 85.0;
 // The surface kind byte of a shoot's bud, which draws as a stem in the record's bud colour.
 const KIND_BUD: f32 = 128.0;
+// The surface kind byte of a leaf's own petiole, which is wood thin enough to need the least width.
+const KIND_PETIOLE: f32 = 42.0;
 /// A merged ground plant's sheath column, marked in the colour's third byte.
 const KIND_SHEATH: f32 = 240.0;
 // Texels across the near table: two for each of its sixteen slots.
@@ -729,6 +731,19 @@ fn plant_offset(input: VertexInput, mode: i32) -> vec3f {
         moved += stalk_widen(input, plant);
     }
     if (mode == MODE_WOOD) {
+        moved += wood_widen(input, moved);
+    }
+    // A shoot's stem is drawn a pixel wide too: under that, the matte drops the stalk a leaf
+    // cluster hangs from and the cluster reads as a piece in air.
+    if (mode == MODE_SHOOTS && input.colors.b * 255.0 >= KIND_STEM * 0.5) {
+        moved += wood_widen(input, moved);
+    }
+    // A leaf's own petiole is drawn at the least width too, where it is thin enough that the matte
+    // would drop it and the blade would read as a piece in air.
+    if (
+        (mode == MODE_SHOOTS || mode == MODE_FOLIAGE) &&
+        abs(input.colors.b * 255.0 - KIND_PETIOLE) < 0.5
+    ) {
         moved += wood_widen(input, moved);
     }
     return moved - input.position;
