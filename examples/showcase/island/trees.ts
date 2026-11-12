@@ -138,8 +138,62 @@ const copyOf = (spot: TreeSpot): PlantSpot => ({
 	variant: 0,
 });
 
-/** Grows the island's trees for the preset, and returns the call that moves them in the wind. */
-export async function createTrees(ctx: SketchContext, camera: Camera): Promise<{ update(): void }> {
+/**
+ * Places the cypresses, which need no species assets: solid spires that look the same from every
+ * distance. A live page places them before the other species grow, so they stand in the first
+ * frame.
+ */
+export function createCypressSpires(ctx: SketchContext): void {
+	const preset = ctx.quality.preset;
+	const onWall = onRetainingWall();
+	const kept = standing(TREE_SPOTS, TREE_SHARE[preset]).filter((spot) => !onWall(spot.x, spot.z));
+	placeCypresses(ctx, kept, standing(FILL_SPOTS, TREE_SHARE[preset]));
+}
+
+/** Places the cypresses of a list of spots. */
+function placeCypresses(
+	ctx: SketchContext,
+	kept: readonly TreeSpot[],
+	fills: readonly TreeSpot[],
+): void {
+	const preset = ctx.quality.preset;
+	const spires = kept.filter((spot) => spot.kind === CYPRESS);
+	const mesh = ctx.geometry.fromArrays(finish(cypress(14, 18)));
+	mesh.setLevels([
+		{ mesh: ctx.geometry.fromArrays(finish(cypress(8, 8))), error: 0.03 },
+		{ mesh: ctx.geometry.fromArrays(finish(cypress(5, 4))), error: 0.14 },
+	]);
+	const foliage = spireMap(ctx);
+	const batch = ctx.scene.createInstances(mesh, spires.length, {
+		material: ctx.materials.standard({ map: foliage, vertexColors: true, roughness: 0.95 }),
+		castShadows: true,
+		receiveShadows: true,
+	});
+	fill(batch, spires);
+	// The far canopy's cypresses stand only as the plainest spires, past the near trees.
+	const farSpires = fills.filter((spot) => spot.kind === CYPRESS);
+	if (farSpires.length > 0) {
+		const plain = ctx.geometry.fromArrays(finish(cypress(5, 4)));
+		const far = ctx.scene.createInstances(plain, farSpires.length, {
+			material: ctx.materials.standard({ map: foliage, vertexColors: true, roughness: 0.95 }),
+			castShadows: false,
+			receiveShadows: true,
+		});
+		fill(far, farSpires);
+		far.setDrawRange(FAR_SPIRES[preset], FILL_REACH);
+	}
+}
+
+/**
+ * Grows the island's trees for the preset, and returns the call that moves them in the wind. A
+ * scene that places the cypresses before the first frame passes `spires: false`, so no copy stands
+ * twice.
+ */
+export async function createTrees(
+	ctx: SketchContext,
+	camera: Camera,
+	{ spires = true }: { spires?: boolean } = {},
+): Promise<{ update(): void }> {
 	const preset = ctx.quality.preset;
 	const onWall = onRetainingWall();
 	const kept = standing(TREE_SPOTS, TREE_SHARE[preset]).filter((spot) => !onWall(spot.x, spot.z));
@@ -197,32 +251,7 @@ export async function createTrees(ctx: SketchContext, camera: Camera): Promise<{
 	ctx.quality.onChange(() => {
 		for (const lawn of lawns) lawn.fit(ctx.quality.preset);
 	});
-	// The cypresses are solid spires, which look the same from every distance.
-	const spires = kept.filter((spot) => spot.kind === CYPRESS);
-	const mesh = ctx.geometry.fromArrays(finish(cypress(14, 18)));
-	mesh.setLevels([
-		{ mesh: ctx.geometry.fromArrays(finish(cypress(8, 8))), error: 0.03 },
-		{ mesh: ctx.geometry.fromArrays(finish(cypress(5, 4))), error: 0.14 },
-	]);
-	const foliage = spireMap(ctx);
-	const batch = ctx.scene.createInstances(mesh, spires.length, {
-		material: ctx.materials.standard({ map: foliage, vertexColors: true, roughness: 0.95 }),
-		castShadows: true,
-		receiveShadows: true,
-	});
-	fill(batch, spires);
-	// The far canopy's cypresses stand only as the plainest spires, past the near trees.
-	const farSpires = fills.filter((spot) => spot.kind === CYPRESS);
-	if (farSpires.length > 0) {
-		const plain = ctx.geometry.fromArrays(finish(cypress(5, 4)));
-		const far = ctx.scene.createInstances(plain, farSpires.length, {
-			material: ctx.materials.standard({ map: foliage, vertexColors: true, roughness: 0.95 }),
-			castShadows: false,
-			receiveShadows: true,
-		});
-		fill(far, farSpires);
-		far.setDrawRange(FAR_SPIRES[preset], FILL_REACH);
-	}
+	if (spires) placeCypresses(ctx, kept, fills);
 	return {
 		update() {
 			// The field's box follows the camera, and a gust fades, so it steps every frame.

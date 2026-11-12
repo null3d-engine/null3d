@@ -6,6 +6,7 @@ import type {
 	ParticleBuffer,
 	ParticleEmitterOptions,
 	ParticleValues,
+	ParticleWindField,
 	SketchTime,
 	Vec3Like,
 } from '@null3d/engine';
@@ -21,6 +22,7 @@ function fakeBuffer(capacity = 64) {
 		sets: [] as ParticleValues[],
 		follows: [] as Float64Array[],
 		events: [] as { world: Float64Array; children: Float64Array[] }[],
+		winds: [] as { field: ParticleWindField | undefined; time: number }[],
 		destroyed: false,
 	};
 	const buffer = {
@@ -45,6 +47,9 @@ function fakeBuffer(capacity = 64) {
 		},
 		set(values: ParticleValues) {
 			state.sets.push(values);
+		},
+		setWind(field: ParticleWindField | undefined, time: number) {
+			state.winds.push({ field, time });
 		},
 		setEmitterFollow(last: Mat4Like, now: Mat4Like, toLocal: Mat4Like) {
 			state.follows.push(
@@ -178,6 +183,29 @@ describe('update', () => {
 		const s = system({ rate: 4 });
 		s.system.update(-1);
 		expect(s.state.frames[0]).toEqual([0, 0, 4, 1, 0]);
+	});
+
+	test('a wind field reaches the core in every frame, and a system without one sends none', () => {
+		const field = {
+			texture: { layer: 1, handle: 7 },
+			origin: [10, 20],
+			size: 128,
+			air: {
+				base: [2, 0.5, 0.3, 1],
+				gust: [1, 8, 2, 6],
+				swirl: [0.5, 0.1, 0.2, 0],
+				sent: [0, 0, 0, -1e9],
+			},
+		} as unknown as ParticleWindField;
+		const blown = system({ rate: 1, windField: field });
+		blown.system.update(0.1);
+		blown.system.update(0.1);
+		expect(blown.state.winds.map((w) => w.field)).toEqual([field, field]);
+		expect(blown.state.winds.map((w) => w.time)).toEqual([0, 0]);
+
+		const still = system({ rate: 1 });
+		still.system.update(0.1);
+		expect(still.state.winds).toEqual([]);
 	});
 });
 

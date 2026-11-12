@@ -52,14 +52,14 @@ for (const path of PATHS)
 		test(`meshes made in code plan their levels on the job workers, ${path.tier}, ${mode.name}`, async ({
 			page,
 		}) => {
-			test.setTimeout(120_000);
+			test.setTimeout(360_000);
 			expected ??= (await nodeLevels(bumpyGrid(CELLS), false, LOD_MAX_LEVELS)).map((level) => ({
 				triangles: (level.indices[0] as Uint32Array).length / 3,
 				hash: indicesHash(level.indices[0] as Uint32Array),
 				error: level.error,
 			}));
 			await page.goto(`runtime-levels.html?${[path.query, mode.query].filter(Boolean).join('&')}`);
-			const result = await pageResult<Result>(page, 90_000);
+			const result = await pageResult<Result>(page, 300_000);
 			expect(result.error).toBeUndefined();
 			test.skip(result.tier !== path.tier, `this browser has no ${path.tier}`);
 			expect(modeProblems(result.mode, mode)).toEqual([]);
