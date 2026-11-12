@@ -386,27 +386,38 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Four jobs share the workspace's tests through nextest's own partition, which splits
-          # them by a stable hash of their names.
-          - part: every test but the whole shader build (1 of 4)
+          # Six jobs share the workspace's tests through nextest's own partition, which splits
+          # them by a stable hash of their names. Four parts left each one over four minutes on
+          # the tests alone once the build was cached: 4m18s to 4m54s in run 43141954539.
+          - part: every test but the whole shader build (1 of 6)
             id: ci-1
             tests: --workspace --profile ci
-            partition: count:1/4
+            partition: count:1/6
             limit: 35
-          - part: every test but the whole shader build (2 of 4)
+          - part: every test but the whole shader build (2 of 6)
             id: ci-2
             tests: --workspace --profile ci
-            partition: count:2/4
+            partition: count:2/6
             limit: 35
-          - part: every test but the whole shader build (3 of 4)
+          - part: every test but the whole shader build (3 of 6)
             id: ci-3
             tests: --workspace --profile ci
-            partition: count:3/4
+            partition: count:3/6
             limit: 35
-          - part: every test but the whole shader build (4 of 4)
+          - part: every test but the whole shader build (4 of 6)
             id: ci-4
             tests: --workspace --profile ci
-            partition: count:4/4
+            partition: count:4/6
+            limit: 35
+          - part: every test but the whole shader build (5 of 6)
+            id: ci-5
+            tests: --workspace --profile ci
+            partition: count:5/6
+            limit: 35
+          - part: every test but the whole shader build (6 of 6)
+            id: ci-6
+            tests: --workspace --profile ci
+            partition: count:6/6
             limit: 35
           # The determinism check builds a few entries twice and compares the two builds, in a job
           # of its own.
