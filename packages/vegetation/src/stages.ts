@@ -51,8 +51,8 @@ export interface DressInput extends GrowInput {
 	/** The grown skeleton. */
 	readonly skeleton: MacroSkeleton;
 	/**
-	 * How much simpler than grown the plant is, from 0 to 1: fewer and larger shoot rows, and wood
-	 * of fewer rings and sides. 0 when not given. The skeleton is already pruned for it.
+	 * How finely the wood is drawn, from 0 to 1: it takes longer edges, so fewer rings and sides.
+	 * The skeleton and the shoot rows stay as grown. 0 when not given.
 	 */
 	readonly coarseness?: number;
 	/**

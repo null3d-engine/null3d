@@ -1,6 +1,7 @@
 // The sparse form: one level moves the wood, the leaves and the coarseness together toward the
 // floors a species records, and a page cannot reach past those floors with its own shares.
 import { describe, expect, it } from 'bun:test';
+import { scaledBudget } from '../../../tests/lib/run-budget.ts';
 import { speciesProblems } from './core/check';
 import type { Species } from './core/record';
 import { loadSpecies } from './core/registry';
@@ -131,39 +132,43 @@ describe('the sparse form', () => {
 });
 
 describe('a sparse form is one connected body', () => {
-	it('keeps one component that reaches the root at every level and sparse setting', async () => {
-		const module = await loadSpecies('pedunculate-oak');
-		await loadPlantCode(module.record);
-		const kit = buildKitNow(module, { placeholders: 'missing', detail: 'high' });
-		for (const sparse of [0, 0.25, 0.5, 0.75, 1]) {
-			const asset = growPlantNow(kit, { seed: 11, variant: 0, near: false, sparse });
-			const { min, max } = asset.skeleton.bounds;
-			const crown = {
-				cells: [1, 1, 1] as const,
-				min,
-				cell: Math.max(max[0] - min[0], max[1] - min[1], max[2] - min[2]),
-				sky: new Float32Array([1]),
-			};
-			const input = {
-				skeleton: asset.skeleton,
-				record: kit.record,
-				detail: 'high' as const,
-				coarseness: asset.coarseness,
-				rows: asset.shoots,
-				crown,
-				seed: 11,
-				variant: 0,
-				season: asset.season,
-				kit,
-			} as unknown as MeshInput;
-			for (const level of [0, 1, 2] as const) {
-				const body = connectedBody(input, level);
-				expect([sparse, level, body.components]).toEqual([sparse, level, 1]);
-				expect([sparse, level, body.reachesRoot]).toEqual([sparse, level, true]);
-				// The card levels keep cards, all joined: a level that drops them all would pass
-				// the count for the wrong reason.
-				if (level > 0) expect([sparse, level, body.cards > 0]).toEqual([sparse, level, true]);
+	it(
+		'keeps one component that reaches the root at every level and sparse setting',
+		async () => {
+			const module = await loadSpecies('pedunculate-oak');
+			await loadPlantCode(module.record);
+			const kit = buildKitNow(module, { placeholders: 'missing', detail: 'high' });
+			for (const sparse of [0, 0.25, 0.5, 0.75, 1]) {
+				const asset = growPlantNow(kit, { seed: 11, variant: 0, near: false, sparse });
+				const { min, max } = asset.skeleton.bounds;
+				const crown = {
+					cells: [1, 1, 1] as const,
+					min,
+					cell: Math.max(max[0] - min[0], max[1] - min[1], max[2] - min[2]),
+					sky: new Float32Array([1]),
+				};
+				const input = {
+					skeleton: asset.skeleton,
+					record: kit.record,
+					detail: 'high' as const,
+					coarseness: asset.coarseness,
+					rows: asset.shoots,
+					crown,
+					seed: 11,
+					variant: 0,
+					season: asset.season,
+					kit,
+				} as unknown as MeshInput;
+				for (const level of [0, 1, 2] as const) {
+					const body = connectedBody(input, level);
+					expect([sparse, level, body.components]).toEqual([sparse, level, 1]);
+					expect([sparse, level, body.reachesRoot]).toEqual([sparse, level, true]);
+					// The card levels keep cards, all joined: a level that drops them all would pass
+					// the count for the wrong reason.
+					if (level > 0) expect([sparse, level, body.cards > 0]).toEqual([sparse, level, true]);
+				}
 			}
-		}
-	});
+		},
+		scaledBudget(120_000),
+	);
 });

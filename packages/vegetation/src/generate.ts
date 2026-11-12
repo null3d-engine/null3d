@@ -65,7 +65,6 @@ import {
 	cutsShoot,
 	mergeShoots,
 } from './cutting';
-import { coarsenSkeleton } from './grow/coarsen';
 import {
 	crownReach,
 	foliageTop,
@@ -211,11 +210,8 @@ export const SPARSE_LEAST = 0.05;
 
 /**
  * The coarseness every species reaches at the full sparse level, whatever its record asks for. The
- * coarseness is the only share that reliably moves the triangle count down: it decides how finely
- * each limb is meshed, where the limb and leaf shares decide how the plant grows. Measured on the
- * oak, the beech and the willow, the level sets 11 to 29 per cent fewer triangles at every level and
- * up to 37 per cent at the farthest, in the same direction for all three. Lowering the other two
- * shares instead raised the count on the oak and the beech by up to eighty per cent.
+ * coarseness decides how finely each limb is meshed, so it moves the triangle count down without
+ * changing what the plant grows: the twigs, the shoot rows and the leaves stay.
  *
  * @category api/vegetation
  */
@@ -753,7 +749,8 @@ function dress(kit: SpeciesKitData, options: GrowOptions): MeshInput {
 	const dressInput: DressInput = {
 		...calibratedInput,
 		kit,
-		skeleton: cutSkeleton(kit, coarsenSkeleton(calibrated, coarseness), options.cutting),
+		// The coarseness dial changes how smoothly the wood is meshed, never what the plant grows.
+		skeleton: cutSkeleton(kit, calibrated, options.cutting),
 		coarseness,
 		sections: options.sections,
 		cards: options.cards,
