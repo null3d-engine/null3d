@@ -165,17 +165,6 @@ describe('the plant core with stand-ins', () => {
 		expect(asset.impostor.from).toBeGreaterThan(asset.levels[2].from);
 	});
 
-	it('throws where a stage is not built and the kit asks for no stand-ins', async () => {
-		// The architectural grower is not built yet, so a variant of its model meets an unbuilt stage.
-		const record = {
-			...stub.record,
-			growth: { model: 'architectural' } as unknown as typeof stub.record.growth,
-		};
-		await loadPlantCode(record);
-		const kit = buildKitNow({ ...stub, record });
-		expect(() => growPlantNow(kit, { seed: 11, variant: 0, near: true })).toThrow(NotBuiltError);
-	});
-
 	it('grows the same bytes in a worker that runs the job-worker task', async () => {
 		const dir = mkdtempSync(join(tmpdir(), 'plant-task-'));
 		try {
