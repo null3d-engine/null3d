@@ -192,7 +192,7 @@ export const record: Species = {
 			// Still 19: a ring of waxy white funnel flowers, yellow at the centre, stands round the
 			// stem's crown in late spring.
 			kind: 'flower',
-			at: 'crown-top',
+			at: 'flower',
 			share: 1,
 			seasons: ['blossom'],
 			shape: { petals: 12, radius: 0.055, cup: 0.25 },
