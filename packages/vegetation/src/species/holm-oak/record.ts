@@ -35,7 +35,7 @@ export const record: Species = {
 			count: { mean: 8, spread: 2 },
 			lean: { mean: 22, spread: 6 },
 			stool: 0.45,
-			fused: 0.95,
+			fused: 0.2,
 		},
 		buds: {
 			arrangement: { kind: 'spiral', divergence: 137.5 },
@@ -90,7 +90,7 @@ export const record: Species = {
 				share: 0.3,
 				years: 1,
 				length: { mean: 0.13, spread: 0.02 },
-				nodes: { mean: 8, spread: 0.5 },
+				nodes: { mean: 11, spread: 0.5 },
 				internode: SHOOT,
 				leafScale: [
 					[0, 1.28],
@@ -197,7 +197,7 @@ export const record: Species = {
 		zones: [
 			// The stool: the photograph's bark reads light and yellow-green where the algae sit, and
 			// the moss over the foot pulls the drawn mean dark, so the foot takes its own tint.
-			{ layer: 0, by: 'height', from: 0, to: 1, blend: 0.3, tint: [1.75, 1.8, 1.15] },
+			{ layer: 0, by: 'height', from: 0, to: 1, blend: 0.3, tint: [2.65, 2.05, 1.45] },
 			// The trunk keeps the texture's measured colour, since the flat-lit texture view draws the
 			// same material: the mid-stem view takes its own light instead.
 			{ layer: 0, by: 'height', from: 1, to: 3.6, blend: 0.4, tint: [1, 1, 1] },
@@ -207,6 +207,7 @@ export const record: Species = {
 		],
 		young: 0,
 		youngRadius: 0.06,
+		youngTint: [0.8, 0.8, 0.5],
 		girthScale: [
 			[0, 0.55],
 			[1, 1],

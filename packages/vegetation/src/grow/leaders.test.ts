@@ -318,7 +318,13 @@ function brokenForks(skeleton: MacroSkeleton): string[] {
 			below >= 0 ? direction(p, below, from) : direction(p, from, axes.first[0] as number);
 		const angle = degrees(line, direction(p, from, axes.first[a] as number));
 		const cont = continuation(skeleton, from, a);
-		if (cont < 0.05 && share > 0.9) {
+		// A child that takes over wholly at a node where its parent axis ends is a division, not a
+		// kink. The angle measured here runs from the parent's last internode to the child's first, so
+		// it is a departure between two axes, not a bend between successive internodes of one; the
+		// division case below draws such a fork as a crotch. The evaluated oak reads 37 degrees at
+		// share 1.00 with continuation 0.00 on a parent axis that ends at the node — a departure.
+		const endsParent = from === (axes.last[axes.parent[a] as number] as number);
+		if (cont < 0.05 && share > 0.9 && !endsParent) {
 			const limit = (radius[from] as number) >= thick ? 35 : 120;
 			if (angle > limit)
 				broken.push(`${(share * 100).toFixed(0)} % at ${angle.toFixed(0)} degrees (kink)`);

@@ -160,6 +160,12 @@ const SLOT_RULES: readonly { readonly test: (name: string) => boolean; readonly 
 			slot: { view: 'leaf-upper', framed: false },
 		},
 		{
+			// A ground plant's flowering heads: one stem's hanging spikes, seen close and level, where
+			// a twig view has no woody stem to frame and falls back to the whole plant.
+			test: (n) => /flower.*spike/.test(n),
+			slot: { view: 'spike', framed: false },
+		},
+		{
 			// Looking up the whole height from the foot: the stem's first fork stands a little above the
 			// middle of the frame, with the first limbs running out from it, and the camera stands as
 			// far from the stem as the photograph's, measured in stem radii from its share of the frame.
@@ -229,6 +235,13 @@ const SLOT_RULES: readonly { readonly test: (name: string) => boolean; readonly 
 			slot: { view: 'bark-limb', query: { girth: 0.38, along: 0.3 }, framed: false },
 		},
 		{
+			// A ground plant's sheath, collar or ligule: one tiller's column, seen side on at the
+			// scale the photograph frames it, since such a plant has no woody stem to show. The
+			// name must begin with the part, so a blade leaving its sheath keeps its fork picture.
+			test: (n) => /^(sheath|ligule|collar)/.test(n),
+			slot: { view: 'sheath', framed: false },
+		},
+		{
 			// A winter picture of a branch shows one branch on its own against the sky, as its
 			// reference does: the summer branch cutting, drawn in the season the name gives. A crop
 			// into the whole plant puts other limbs behind it and cannot be read the same way.
@@ -255,6 +268,14 @@ const SLOT_RULES: readonly { readonly test: (name: string) => boolean; readonly 
 		{
 			test: (n) => n.includes('branching'),
 			slot: { view: 'fork', query: { distance: 2.5 }, framed: false },
+		},
+		{
+			// A plant that flowers at its crown, such as a cactus, shows a ring of flowers at the stem's
+			// top: the picture frames the ring's own sites, not the plant's middle that the crown view
+			// takes or a single shoot tip. The name must say the flowers stand on the crown, so a
+			// species' flower detail or flower spikes keep the view their number gives.
+			test: (n) => /flowers?.*crown|crown.*flowers?/.test(n),
+			slot: { view: 'flowers', framed: false },
 		},
 		{ test: (n) => n.includes('crown'), slot: { view: 'crown', framed: false } },
 		{ test: (n) => n.includes('bark'), slot: { view: 'bark-mid', framed: false } },
@@ -1111,6 +1132,12 @@ export function plantMask(image: Rgba): PlantMask {
 	if (!background.plain && !skyMaskable(background) && !soilMaskable(background, height))
 		return { width, height, mask, background };
 	const horizon = background.horizon ?? height;
+	// A fitted sky or ground is trusted only where it finds a plausible subject. A picture of
+	// something else against a natural backdrop, such as bark or foliage, still admits a smooth
+	// surface on its border, and the surface then marks a few textured specks as the plant. A
+	// subject that a fitted background finds under a fiftieth of the frame is that failure, not a
+	// plant: every real reference's subject fills more.
+	const MIN_FITTED_PLANT_SHARE = 0.02;
 	// A plain background's spread was tuned against studio paper; a fitted sky or ground carries a
 	// wider residual, so its limit takes fewer spreads or the plant itself falls inside it.
 	const skyLimit = threshold(background.sky, 8, background.plain ? 3.5 : 2);
@@ -1146,6 +1173,11 @@ export function plantMask(image: Rgba): PlantMask {
 			height - Math.max(2, Math.round(height * FOOT_SHARE)),
 		);
 	keepPlantParts(mask, width, height, horizon);
+	if (!background.plain) {
+		let kept = 0;
+		for (let at = 0; at < mask.length; at++) kept += mask[at] as number;
+		if (kept / (width * height) < MIN_FITTED_PLANT_SHARE) mask.fill(0);
+	}
 	let plantToGround: number | undefined;
 	if (background.ground) {
 		const groundAt = surfaceAt(background.ground, 0.5, (horizon / height + 1) / 2);
@@ -1347,6 +1379,25 @@ export interface Box {
 	readonly top: number;
 	readonly right: number;
 	readonly bottom: number;
+}
+
+/**
+ * The shares of its picture's frame that a plant's subject box takes, for a view that frames by the
+ * box, or undefined where the picture's outline does not separate: a void box, or an outline the
+ * reference set names as not separable (a fitted ground that is the subject itself, or the band
+ * behind it). A view that receives no shares keeps its own frame, so a void outline never moves it.
+ */
+export function subjectShares(
+	width: number,
+	height: number,
+	box: Box | null | undefined,
+	separable: boolean,
+): { readonly width: number; readonly height: number } | undefined {
+	if (!separable || !box || width <= 0 || height <= 0) return undefined;
+	const across = (box.right - box.left) / width;
+	const down = (box.bottom - box.top) / height;
+	if (!(across > 0 && across <= 1 && down > 0 && down <= 1)) return undefined;
+	return { width: across, height: down };
 }
 
 /** The measures a reviewer reads from a plant's outline. Rows count down, shares run 0 to 1. */

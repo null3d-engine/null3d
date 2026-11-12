@@ -6,16 +6,21 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { ShootRows } from '../../../packages/vegetation/src/asset.ts';
 import {
+	AXIS_CULM,
 	AXIS_LIMB,
+	AXIS_RACHIS,
 	AXIS_ROOT,
 	AXIS_STEM,
+	BUD_FLOWER,
 	type MacroSkeleton,
 	SkeletonBuilder,
 } from '../../../packages/vegetation/src/core/graph.ts';
 import {
 	dot,
 	firstForkHeight,
+	flowerSites,
 	normalize,
+	sheathColumn,
 	stemAt,
 	stemSurfaceAt,
 	turnedAbout,
@@ -25,6 +30,7 @@ import {
 	barkLimbView,
 	belowView,
 	departures,
+	forkCandidates,
 	forks,
 	forkView,
 	insideView,
@@ -123,6 +129,41 @@ describe('a part of a piece framed at its own span', () => {
 		expect(spanDistance(0.5, 40, 1)).toBeCloseTo(0.25 / Math.tan((20 * Math.PI) / 180), 6);
 		// A taller frame is narrower across, so the camera stands further back for the same span.
 		expect(spanDistance(0.5, 40, 0.75)).toBeGreaterThan(spanDistance(0.5, 40, 1));
+	});
+});
+
+describe('the flower sites', () => {
+	test('finds the flowers and the ring they make, and none where the plant carries none', () => {
+		const b = new SkeletonBuilder();
+		const stem = b.addAxis({ parent: -1, parentNode: -1, order: 0, kind: AXIS_STEM });
+		const nodes = run(b, stem, -1, [0, 0, 0], [0, 0.4, 0], 6, 0.2, 0.3);
+		const node = nodes[nodes.length - 1] as number;
+		for (const [x, z] of [
+			[0.3, 0],
+			[-0.3, 0],
+			[0, 0.3],
+			[0, -0.3],
+		])
+			b.addBud({
+				node,
+				x: x as number,
+				y: 2.4,
+				z: z as number,
+				frame: [0, 0, 0, 1],
+				kind: BUD_FLOWER,
+				vigor: 0.5,
+				light: 1,
+				axis: stem,
+				woodRadius: 0.2,
+			});
+		const ring = flowerSites(b.finish(0));
+		expect(ring?.sites.length).toBe(4);
+		expect(ring?.radius as number).toBeCloseTo(0.3, 5);
+		expect(ring?.centre[1] as number).toBeCloseTo(2.4, 5);
+		// A plant with no flower site has no ring.
+		const bare = new SkeletonBuilder();
+		bare.addAxis({ parent: -1, parentNode: -1, order: 0, kind: AXIS_STEM });
+		expect(flowerSites(bare.finish(0))).toBeUndefined();
 	});
 });
 
@@ -380,8 +421,11 @@ describe("the junction frame from a picture's subject box", () => {
 			0.3 / 0.167,
 			6,
 		);
-		// Without a measured box the view keeps the limb's own share of the frame.
-		expect(junctionFrameHeight(0.286, 1.014, undefined, 1)).toBeCloseTo(0.286 / 0.55, 6);
+		// Without a measured box the frame keeps the limb's share and puts the stem's surface across
+		// the width, so the join shows rather than a wall of bark.
+		expect(junctionFrameHeight(0.286, 1.014, undefined, 1)).toBeCloseTo(1.014 / 0.3, 6);
+		// The stem's own width asks the further camera when the two are the same size.
+		expect(junctionFrameHeight(0.5, 0.5, undefined, 1)).toBeCloseTo(0.5 / 0.3, 6);
 	});
 });
 
@@ -410,6 +454,23 @@ describe('a limb dividing into two', () => {
 		const found = forks(skeleton);
 		expect(found.map((f) => f.arm)).toEqual([5, 6]);
 		for (const f of found) expect(f.armRadius).toBeGreaterThan(0.5 * f.radius);
+	});
+
+	test("reports the divisions and each wish a fork view reaches, keeping the finder's own set", () => {
+		const counts = forkCandidates(skeleton);
+		expect(counts.total).toBe(forks(skeleton).length);
+		// The clear-of-the-stem filter, then the four wishes in the finder's order.
+		expect(counts.counts.length).toBe(5);
+		expect(counts.kept).toBeGreaterThan(0);
+	});
+
+	test('reports no division on a stem that never divides', () => {
+		const b = new SkeletonBuilder();
+		const stem = b.addAxis({ parent: -1, parentNode: -1, order: 0, kind: AXIS_STEM });
+		run(b, stem, -1, [0, 0, 0], [0, 1, 0], 6, 0.8, 0.3);
+		const counts = forkCandidates(b.finish(1));
+		expect(counts.total).toBe(0);
+		expect(counts.kept).toBe(0);
 	});
 
 	test('is the fork whose arms part upright, seen square to them, its joint under the middle', () => {
@@ -746,6 +807,51 @@ describe('the stem surface of a plant with no single trunk', () => {
 
 	test('no axis reaches a height above the plant', () => {
 		expect(stemSurfaceAt(skeleton, 2)).toBeUndefined();
+	});
+});
+
+describe('the sheath column of a ground plant', () => {
+	test('takes the thickest short limb, not a blade or a flowering stem', () => {
+		const b = new SkeletonBuilder();
+		const crown = b.addAxis({ parent: -1, parentNode: -1, order: 0, kind: AXIS_ROOT });
+		const crownBase = b.addNode({ x: 0, y: -0.03, z: 0, radius: 0.05, parent: -1, axis: crown });
+		const crownTop = b.addNode({ x: 0, y: 0, z: 0, radius: 0.05, parent: crownBase, axis: crown });
+		const thick = b.addAxis({ parent: crown, parentNode: crownTop, order: 1, kind: AXIS_LIMB });
+		const thickNodes = run(b, thick, crownTop, [0.01, 0, 0], [0, 0.02, 0], 3, 0.0018, 0.2);
+		const thin = b.addAxis({ parent: crown, parentNode: crownTop, order: 1, kind: AXIS_LIMB });
+		run(b, thin, crownTop, [-0.01, 0, 0], [0, 0.02, 0], 3, 0.0009, 0.2);
+		// A flowering stem and a blade both rise past the sheaths; neither is the sheath column.
+		const culm = b.addAxis({
+			parent: thick,
+			parentNode: thickNodes[thickNodes.length - 1] as number,
+			order: 2,
+			kind: AXIS_CULM,
+		});
+		run(
+			b,
+			culm,
+			thickNodes[thickNodes.length - 1] as number,
+			[0.01, 0.06, 0],
+			[0, 0.1, 0],
+			5,
+			0.0008,
+			0.3,
+		);
+		const blade = b.addAxis({
+			parent: thick,
+			parentNode: thickNodes[0] as number,
+			order: 2,
+			kind: AXIS_RACHIS,
+		});
+		run(b, blade, thickNodes[0] as number, [0.01, 0.02, 0], [0.02, 0.1, 0], 4, 0.003, 0.5);
+		expect(sheathColumn(b.finish(0))).toBe(thick);
+	});
+
+	test('finds none on a plant with a trunk', () => {
+		const b = new SkeletonBuilder();
+		const stem = b.addAxis({ parent: -1, parentNode: -1, order: 0, kind: AXIS_STEM });
+		run(b, stem, -1, [0, 0, 0], [0, 1, 0], 6, 0.2, 0.3);
+		expect(sheathColumn(b.finish(0))).toBe(-1);
 	});
 });
 
