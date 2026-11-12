@@ -148,6 +148,14 @@ interface ImageTestSettings {
 	deviceTolerance?: Partial<Tolerance>;
 	/** Devices whose GPU draws the test differently, which keep their own references, such as 'ipad'. */
 	devices?: readonly string[];
+	/**
+	 * Other accepted drawings of this test in one place, beside its primary reference. A device
+	 * whose rasterizer puts a sample on an exact tie can draw the scene two ways, and each way
+	 * repeats byte for byte. Each drawing names its place, tier, reason and digest, and must differ
+	 * from the primary only outside the image's end rows and columns, where the FXAA corner's fringe
+	 * shows. At most one.
+	 */
+	otherDrawings?: readonly OtherDrawing[];
 	/** How long a page may take to publish its image, in seconds; 60 unless the entry gives another. */
 	timeoutSeconds?: number;
 	/**
@@ -156,6 +164,23 @@ interface ImageTestSettings {
 	 * show the scene with these switches, and every other place draws it in full.
 	 */
 	swiftShaderSwitches?: readonly string[];
+}
+
+/**
+ * Another accepted drawing of a test in one place, beside its primary reference. It is a complete
+ * drawing, not a wider tolerance: the run still compares within the test's own tolerance.
+ */
+export interface OtherDrawing {
+	/** The place that keeps it: an environment of Playwright's runs, or a device the test lists. */
+	place: string;
+	/** The tier it draws, which must be a tier whose references the test keeps. */
+	tier: Tier;
+	/** The file, from the folder of references: the primary's own folder. */
+	file: string;
+	/** The file's SHA-256, so the accepted picture cannot drift unrecorded. */
+	sha256: string;
+	/** Why the place draws this picture as well as the primary. */
+	reason: string;
 }
 
 /** A sketch that the image page draws in the engine's hold mode. */
@@ -207,6 +232,8 @@ export interface ImageRun {
 	expect: Readonly<Record<string, unknown>>;
 	/** Whose references the run compares with: the test and the tier that make them. */
 	reference: { test: string; tier: Tier; devices: readonly string[] };
+	/** The other accepted drawings that the test records, from its own manifest entry. */
+	otherDrawings?: readonly OtherDrawing[];
 	/** Another test of the same scene whose reference is the same picture as this run's. */
 	samePicture?: string;
 	/**
@@ -312,6 +339,7 @@ export function imageRuns(tests: readonly ImageTest[]): ImageRun[] {
 					tier: owner.sameOnEveryTier ? (tiersOf(owner)[0] as Tier) : tier,
 					devices: owner.devices ?? [],
 				},
+				...(owner.otherDrawings && { otherDrawings: owner.otherDrawings }),
 				tolerance: { ...TOLERANCE, ...test.tolerance },
 				...(test.samePicture && { samePicture: test.samePicture }),
 				...(test.swiftShaderTolerance && {
@@ -422,28 +450,54 @@ export const drawnIn = (place: Place) =>
 
 /** The reference that a run's image compares with in a place. */
 export interface Reference {
-	/** The file, from the folder of references. */
+	/** The primary file, from the folder of references. */
 	file: string;
+	/** The other accepted drawings of this place, each a complete picture, beside the primary. */
+	others: readonly string[];
 	tolerance: Tolerance;
 	/** Why an image from this place cannot become this reference; absent when it can. */
 	fixed?: string;
 }
 
+/** The name that a place takes in the manifest: its environment, or its device. */
+const placeName = (place: Place) => ('environment' in place ? place.environment : place.device);
+
+/**
+ * The other accepted drawings that a test records for a place, from the folder of the set that drew
+ * them. A device that compares with the real-GPU set has none of its own.
+ */
+function othersOf(run: ImageRun, place: Place, own: boolean, set: string): readonly string[] {
+	if (!own) return [];
+	const name = placeName(place);
+	const shared = 'environment' in place ? name : referenceDevice(name);
+	const tier = run.reference.tier;
+	return (run.otherDrawings ?? [])
+		.filter(
+			(drawing) =>
+				(drawing.place === name || drawing.place === shared) &&
+				drawing.tier === tier &&
+				drawing.file.startsWith(`${set}/`),
+		)
+		.map((drawing) => drawing.file);
+}
+
 /**
  * The reference a run's image compares with where it was drawn. An environment compares with its
  * own references. A device compares with its own references where the test records it, and with
- * the real-GPU references at the device tolerance elsewhere.
+ * the real-GPU references at the device tolerance elsewhere. A place that records another accepted
+ * drawing compares with that too.
  */
 export function referenceOf(run: ImageRun, place: Place): Reference {
 	const own = 'environment' in place || run.reference.devices.includes(place.device);
 	const set =
 		'environment' in place ? place.environment : own ? referenceDevice(place.device) : REAL_GPU;
 	const file = `${set}/${run.reference.tier}/${run.reference.test}.png`;
+	const others = othersOf(run, place, own, set);
 	const ownTolerance =
 		('environment' in place && place.environment === 'chromium-swiftshader'
 			? run.swiftShaderTolerance
 			: undefined) ?? run.tolerance;
-	const reference = { file, tolerance: own ? ownTolerance : run.deviceTolerance };
+	const reference = { file, others, tolerance: own ? ownTolerance : run.deviceTolerance };
 	if (!own && 'device' in place)
 		return {
 			...reference,
@@ -487,9 +541,24 @@ function makeCommand(run: ImageRun, place: Place): string {
 	return `${ci}bun run test:images -g "${test} on ${tier}", then ${accept}`;
 }
 
-/** Each reference that a run needs, with the place that drew it. */
+/**
+ * The command that makes a missing other drawing. The review accepts a drawing as its place's
+ * primary reference, never as another drawing, so the candidate is copied beside the primary.
+ */
+function makeOtherCommand(run: ImageRun, place: Place, file: string): string {
+	const { test, tier } = run.reference;
+	if ('device' in place)
+		return `run the checks plan on ${place.device} (.dev/devices.md), then copy ${test}'s candidate to ${file}`;
+	const ci = place.environment === REAL_GPU ? '' : 'CI=1 ';
+	return `${ci}bun run test:images -g "${test} on ${tier}", then copy ${test}'s candidate to ${file}`;
+}
+
+/** Each reference that a run needs, with the place that drew it: its primary first, then its others. */
 function* neededReferences(run: ImageRun): Generator<{ place: Place; file: string }> {
-	for (const place of placesNeeding(run)) yield { place, file: referenceOf(run, place).file };
+	for (const place of placesNeeding(run)) {
+		const reference = referenceOf(run, place);
+		for (const file of [reference.file, ...reference.others]) yield { place, file };
+	}
 }
 
 /**
@@ -509,6 +578,7 @@ export function referenceProblemsOnDisk(runs: readonly ImageRun[]): {
 		files: files.length,
 		problems: [
 			...referenceFileProblems(runs, files),
+			...otherDrawingProblems(runs),
 			...sharedReferenceProblems(runs, referenceDigest),
 		],
 	};
@@ -525,8 +595,12 @@ export function referenceFileProblems(
 ): string[] {
 	const needed = new Map<string, string>();
 	for (const run of runs)
-		for (const { place, file } of neededReferences(run))
-			if (!needed.has(file)) needed.set(file, makeCommand(run, place));
+		for (const place of placesNeeding(run)) {
+			const reference = referenceOf(run, place);
+			if (!needed.has(reference.file)) needed.set(reference.file, makeCommand(run, place));
+			for (const file of reference.others)
+				if (!needed.has(file)) needed.set(file, makeOtherCommand(run, place, file));
+		}
 	const present = new Set(files);
 	const missing = [...needed]
 		.filter(([file]) => !present.has(file))
@@ -535,6 +609,174 @@ export function referenceFileProblems(
 		.filter((file) => !needed.has(file))
 		.map((file) => `${file} is a reference of no test. Delete it, or add its test to the manifest`);
 	return [...missing.sort(), ...unused.sort()];
+}
+
+/**
+ * The image's last rows and columns that the FXAA corner's fringe shows in: eight rows and eight
+ * columns, beyond the four texels that a tap may read outside the drawn corner (D-167) at the
+ * upscale. An extra drawing may differ from its primary only outside this region, so a fringe
+ * regression there cannot hide behind it.
+ */
+export const GUARDED_END_ROWS = 8;
+export const GUARDED_END_COLUMNS = 8;
+
+/** Whether a pixel of an image lies in the guarded end rows or columns. */
+const inGuard = (x: number, y: number, width: number, height: number) =>
+	y >= height - Math.min(GUARDED_END_ROWS, height) ||
+	x >= width - Math.min(GUARDED_END_COLUMNS, width);
+
+/** The rows at the image's end that the guard covers, as an image. */
+function endRows(image: RgbaImage): RgbaImage {
+	const rows = Math.min(GUARDED_END_ROWS, image.height);
+	return {
+		width: image.width,
+		height: rows,
+		data: image.data.subarray((image.height - rows) * image.width * 4),
+	};
+}
+
+/** The columns at the image's end that the guard covers, as an image. */
+function endColumns(image: RgbaImage): RgbaImage {
+	const columns = Math.min(GUARDED_END_COLUMNS, image.width);
+	const data = new Uint8Array(columns * image.height * 4);
+	for (let y = 0; y < image.height; y++) {
+		const from = (y * image.width + (image.width - columns)) * 4;
+		data.set(image.data.subarray(from, from + columns * 4), y * columns * 4);
+	}
+	return { width: columns, height: image.height, data };
+}
+
+/** The share of pixels that differ past the threshold in the image's guarded end rows and columns. */
+function guardShare(a: RgbaImage, b: RgbaImage, threshold: number): number {
+	const rows = { a: endRows(a), b: endRows(b) };
+	const columns = { a: endColumns(a), b: endColumns(b) };
+	const rowPixels = rows.a.width * rows.a.height;
+	const columnPixels = columns.a.width * columns.a.height;
+	const rowCount = compareImages(rows.a, rows.b, threshold).share * rowPixels;
+	const columnCount = compareImages(columns.a, columns.b, threshold).share * columnPixels;
+	return (rowCount + columnCount) / (rowPixels + columnPixels);
+}
+
+/** How many pixels differ in any channel outside the image's guarded end rows and columns. */
+function outsideDifferentPixels(a: RgbaImage, b: RgbaImage): number {
+	let count = 0;
+	for (let y = 0; y < a.height; y++)
+		for (let x = 0; x < a.width; x++) {
+			if (inGuard(x, y, a.width, a.height)) continue;
+			const i = (y * a.width + x) * 4;
+			if (
+				a.data[i] !== b.data[i] ||
+				a.data[i + 1] !== b.data[i + 1] ||
+				a.data[i + 2] !== b.data[i + 2] ||
+				a.data[i + 3] !== b.data[i + 3]
+			)
+				count++;
+		}
+	return count;
+}
+
+/**
+ * What is wrong with the other drawings that a test records: more than one, a place or tier that
+ * the test keeps no pictures for, a file outside the place's folder, an empty reason, a digest that
+ * does not match, and a picture that differs from the primary in the guarded end rows and columns,
+ * or that differs from it nowhere outside them. `digest` and `read` give a file's contents, or
+ * undefined while it is missing, which `referenceFileProblems` reports.
+ */
+export function otherDrawingProblems(
+	runs: readonly ImageRun[],
+	digest: (file: string) => string | undefined = referenceDigest,
+	read: (file: string) => RgbaImage | undefined = referenceImage,
+): string[] {
+	const owners = new Map<
+		string,
+		{
+			tiers: Set<Tier>;
+			devices: readonly string[];
+			drawings: readonly OtherDrawing[];
+			tolerance: Tolerance;
+		}
+	>();
+	for (const run of runs) {
+		if (!run.otherDrawings || run.otherDrawings.length === 0) continue;
+		const entry = owners.get(run.reference.test) ?? {
+			tiers: new Set<Tier>(),
+			devices: run.reference.devices,
+			drawings: run.otherDrawings,
+			tolerance: run.tolerance,
+		};
+		entry.tiers.add(run.reference.tier);
+		owners.set(run.reference.test, entry);
+	}
+	const problems: string[] = [];
+	for (const [test, { tiers, devices, drawings, tolerance }] of owners) {
+		if (drawings.length > 1)
+			problems.push(`${test}: at most one other drawing may be recorded, not ${drawings.length}`);
+		for (const drawing of drawings) {
+			const environment = ENVIRONMENTS.find((name) => name === drawing.place);
+			if (environment === undefined && !devices.includes(drawing.place)) {
+				problems.push(
+					`${test}: the other drawing ${drawing.file} names the place ${drawing.place}, where the test keeps no pictures of its own`,
+				);
+				continue;
+			}
+			if (!tiers.has(drawing.tier)) {
+				problems.push(
+					`${test}: the other drawing ${drawing.file} is on ${drawing.tier}, and the test's references are on ${[...tiers].join(', ')}`,
+				);
+				continue;
+			}
+			const set = environment ?? referenceDevice(drawing.place);
+			const primary = `${set}/${drawing.tier}/${test}.png`;
+			if (!drawing.file.startsWith(`${set}/${drawing.tier}/`) || !drawing.file.endsWith('.png')) {
+				problems.push(
+					`${test}: the other drawing ${drawing.file} must be a .png in the ${set}/${drawing.tier} folder`,
+				);
+				continue;
+			}
+			if (drawing.file === primary) {
+				problems.push(`${test}: the other drawing ${drawing.file} is the primary reference`);
+				continue;
+			}
+			if (drawing.reason.trim().length === 0) {
+				problems.push(`${test}: the other drawing ${drawing.file} needs a reason`);
+				continue;
+			}
+			if (!/^[0-9a-f]{64}$/.test(drawing.sha256)) {
+				problems.push(`${test}: the other drawing ${drawing.file} needs its SHA-256`);
+				continue;
+			}
+			const found = digest(drawing.file);
+			if (found === undefined) continue;
+			if (found !== drawing.sha256) {
+				problems.push(
+					`${test}: ${drawing.file} has SHA-256 ${found}, not the recorded ${drawing.sha256}`,
+				);
+				continue;
+			}
+			const picture = read(drawing.file);
+			const reference = read(primary);
+			if (!picture || !reference) continue;
+			if (picture.width !== reference.width || picture.height !== reference.height) {
+				problems.push(
+					`${test}: ${drawing.file} is ${picture.width} x ${picture.height}, and ${primary} is ${reference.width} x ${reference.height}`,
+				);
+				continue;
+			}
+			const share = guardShare(reference, picture, tolerance.threshold);
+			if (share > tolerance.maxDiffRatio) {
+				problems.push(
+					`${test}: ${drawing.file} differs from ${primary} in ${percent(share)} of the guarded end rows and columns, and at most ${percent(tolerance.maxDiffRatio)} may: an extra drawing must not absorb a fringe`,
+				);
+				continue;
+			}
+			if (outsideDifferentPixels(reference, picture) === 0) {
+				problems.push(
+					`${test}: ${drawing.file} differs from ${primary} nowhere outside the guarded end rows and columns`,
+				);
+			}
+		}
+	}
+	return [...new Set(problems)].sort();
 }
 
 /**
@@ -598,6 +840,15 @@ export function referenceDigest(file: string): string | undefined {
 	}
 }
 
+/** A reference file's image, or undefined while the file is missing or unreadable. */
+export function referenceImage(file: string): RgbaImage | undefined {
+	try {
+		return readPng(join(HARNESS_DIRS.references, file));
+	} catch {
+		return undefined;
+	}
+}
+
 /** The folders of references and of candidates, and of the drawings that a run was asked to keep. */
 export interface HarnessDirs {
 	references: string;
@@ -632,10 +883,14 @@ export interface CandidateFacts {
 	 * Drawn: an asked run kept an image that matched its comparison, or failed it, without a diff.
 	 */
 	status: 'new' | 'changed' | 'drawn';
-	/** The reference it was compared with, from the folder of references. */
+	/** The reference it was compared with, from the folder of references: the closest accepted picture. */
 	reference: string;
 	/** For a changed image, the share of its pixels that differ, from 0 to 1. */
 	share?: number;
+	/** The accepted picture that the image matched: the primary reference or another drawing. */
+	matched?: string;
+	/** The share against each accepted picture, when the test records another drawing. */
+	shares?: readonly { reference: string; share: number }[];
 	tolerance: Tolerance;
 	/** Why the image cannot become the reference, when it cannot. */
 	fixed?: string;
@@ -684,8 +939,9 @@ export function clearCandidates(place: Place, dirs = HARNESS_DIRS): void {
 /**
  * Saves the image that the renderer drew, with the facts that the review reads, under the folder
  * of drawings. A run asked for its drawings keeps one picture for each test and tier that it drew
- * in, whichever thread mode drew it first. A run whose image cannot become a reference keeps
- * nothing, since the artifact exists to hand references on.
+ * in, whichever thread mode drew it first. A picture that cannot become a reference is kept too,
+ * with the reason in its facts, so the artifact records every image that the shard drew and the
+ * review refuses to accept one that belongs to another test.
  */
 export function saveDrawnImage(
 	run: ImageRun,
@@ -694,9 +950,14 @@ export function saveDrawnImage(
 	share: number | undefined,
 	dirs = HARNESS_DIRS,
 	page?: Record<string, unknown>,
+	compared?: {
+		/** The accepted picture that the share is against, and that the image matched when it did. */
+		file: string;
+		matched?: string;
+		shares?: readonly { reference: string; share: number }[];
+	},
 ): void {
 	const reference = referenceOf(run, place);
-	if (reference.fixed) return;
 	const base = join(dirs.drawn ?? DRAWN_IMAGES, drawnIn(place), run.tier, run.test);
 	if (existsSync(`${base}${CANDIDATE_FILES.facts}`)) return;
 	const facts: CandidateFacts = {
@@ -705,9 +966,12 @@ export function saveDrawnImage(
 		...(run.mode && { mode: run.mode.name }),
 		drawnIn: drawnIn(place),
 		status: 'drawn',
-		reference: reference.file,
+		reference: compared?.file ?? reference.file,
 		...(share !== undefined && { share }),
+		...(compared?.matched && { matched: compared.matched }),
+		...(compared?.shares && compared.shares.length > 1 && { shares: compared.shares }),
 		tolerance: reference.tolerance,
+		...(reference.fixed && { fixed: reference.fixed }),
 		...(ciRunOf(process.env) && { ciRun: ciRunOf(process.env) }),
 		...(page && { page }),
 	};
@@ -745,12 +1009,13 @@ export function compareWithReference(
 	};
 	// The first mode that differs keeps its candidate: the later modes of a test on a tier draw the
 	// same pixels, or fail for that on their own. The facts go last, so they mark a whole candidate.
-	const save = (extra: Partial<CandidateFacts>, diff?: RgbaImage) => {
+	// A diff is drawn against the accepted picture that is closest, whose file goes beside it.
+	const save = (extra: Partial<CandidateFacts>, diff?: RgbaImage, compared = reference.file) => {
 		if (existsSync(`${base}${CANDIDATE_FILES.facts}`)) return;
 		writePng(`${base}${CANDIDATE_FILES.image}`, image);
 		if (diff) {
 			writePng(`${base}${CANDIDATE_FILES.diff}`, diff);
-			copyFileSync(referencePath, `${base}${CANDIDATE_FILES.reference}`);
+			copyFileSync(join(dirs.references, compared), `${base}${CANDIDATE_FILES.reference}`);
 		}
 		writeFileSync(
 			`${base}${CANDIDATE_FILES.facts}`,
@@ -763,22 +1028,63 @@ export function compareWithReference(
 		if (keepDrawn) saveDrawnImage(run, place, image, undefined, dirs, page);
 		return [`there is no reference ${reference.file} yet. The new image is ${shown}`];
 	}
-	const expected = readPng(referencePath);
-	if (expected.width !== image.width || expected.height !== image.height) {
-		save({ status: 'changed', share: 1 });
-		if (keepDrawn) saveDrawnImage(run, place, image, 1, dirs, page);
-		return [
-			`the image is ${image.width} x ${image.height}, and the reference ${reference.file} is ${expected.width} x ${expected.height}. The new image is ${shown}`,
-		];
-	}
 	const tolerance = toleranceFor(place, reference.tolerance);
-	const { share, diff } = compareImages(expected, image, tolerance.threshold);
-	if (keepDrawn) saveDrawnImage(run, place, image, share, dirs, page);
-	if (share <= tolerance.maxDiffRatio) return [];
-	save({ status: 'changed', share }, diff);
-	return [
-		`${percent(share)} of pixels differ from the reference ${reference.file}, and at most ${percent(tolerance.maxDiffRatio)} may. The new image is ${shown}, and the diff ${relative(REPO_ROOT, `${base}${CANDIDATE_FILES.diff}`)}${elsewhereHint(place)}`,
-	];
+	const accepted: { file: string; image: RgbaImage }[] = [];
+	const missing: string[] = [];
+	for (const file of [reference.file, ...reference.others]) {
+		const path = join(dirs.references, file);
+		if (!existsSync(path)) {
+			missing.push(`the other drawing ${file} that the test records is missing`);
+			continue;
+		}
+		const expected = readPng(path);
+		if (expected.width !== image.width || expected.height !== image.height) {
+			if (file === reference.file) {
+				save({ status: 'changed', share: 1 });
+				if (keepDrawn) saveDrawnImage(run, place, image, 1, dirs, page);
+				return [
+					`the image is ${image.width} x ${image.height}, and the reference ${reference.file} is ${expected.width} x ${expected.height}. The new image is ${shown}`,
+				];
+			}
+			missing.push(
+				`the image is ${image.width} x ${image.height}, and the other drawing ${file} is ${expected.width} x ${expected.height}`,
+			);
+			continue;
+		}
+		accepted.push({ file, image: expected });
+	}
+	const compared = accepted.map(({ file, image: expected }) => ({
+		file,
+		...compareImages(expected, image, tolerance.threshold),
+	}));
+	// Any accepted picture within the tolerance passes. The closest decides the candidate and its
+	// diff, so the closest file is the one that the facts name.
+	const closest = compared.reduce((best, next) => (next.share < best.share ? next : best));
+	const matched = compared.find(({ share }) => share <= tolerance.maxDiffRatio);
+	const shares = compared.map(({ file, share }) => ({ reference: file, share }));
+	if (keepDrawn)
+		saveDrawnImage(run, place, image, closest.share, dirs, page, {
+			file: closest.file,
+			...(matched && { matched: matched.file }),
+			shares,
+		});
+	if (matched) return missing;
+	save(
+		{
+			status: 'changed',
+			share: closest.share,
+			reference: closest.file,
+			...(shares.length > 1 && { shares }),
+		},
+		closest.diff,
+		closest.file,
+	);
+	const diff = relative(REPO_ROOT, `${base}${CANDIDATE_FILES.diff}`);
+	const message =
+		shares.length > 1
+			? `${percent(closest.share)} of pixels differ from the closest accepted drawing ${closest.file}, and at most ${percent(tolerance.maxDiffRatio)} may (${shares.map(({ reference: file, share }) => `${file} ${percent(share)}`).join(', ')}). The new image is ${shown}, and the diff ${diff}${elsewhereHint(place)}`
+			: `${percent(closest.share)} of pixels differ from the reference ${closest.file}, and at most ${percent(tolerance.maxDiffRatio)} may. The new image is ${shown}, and the diff ${diff}${elsewhereHint(place)}`;
+	return [...missing, message];
 }
 
 /** The name a platform takes in a message: `macOS`, `win32`, `linux`. */

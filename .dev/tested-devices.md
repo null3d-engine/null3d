@@ -175,6 +175,13 @@ that first one had run. It has no High or Ultra row at any path, because those p
 WebGPU only, and at that run the tablet offered no WebGPU adapter. A later run reports a WebGPU
 adapter and plays every path, so the fault no longer repeated
 ([run](tested-devices/galaxy-tab-a9-plus-sm-x216b-chrome/20261101-030741-wind-field-cost.md)).
+The adapter is present and the top presets still draw no row: its vegetation run
+reports a WebGPU adapter and fails Creek at High while building one custom material's pipeline with
+E1404 and VK_ERROR_UNKNOWN, on the current build and on the commit before the reflection landing
+([record](tested-devices/galaxy-tab-a9-plus-sm-x216b-chrome/20261111-081454-vegetation.md)). Its
+grass pages draw all four presets on the same adapter. That failure is
+[an Adreno 619 driver fault](driver-bugs.md#adreno-619-a-pipeline-fails-to-build-with-vkerrorunknown-at-creeks-density),
+so its High and Ultra rows wait on the fault rather than on a slower frame.
 The page then reported 3 frames in 5.5 s, so the runner counted a pass with no triangles and no
 texture bytes. Its figures are in no table here and must not be read. The device's own fault is in
 [Driver bug reports](driver-bugs.md).

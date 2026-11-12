@@ -6,19 +6,23 @@ import { defineSketch, timeOfDay } from '@null3d/engine';
 import {
 	createGrass,
 	grassCover,
-	growPlant,
+	isSpeciesId,
 	loadSpecies,
 	type PlantMaterial,
-	placePlants,
-	plantMaterials,
-	prepareSpecies,
 	setWindLayer,
-	speciesIds,
 } from '@null3d/vegetation';
 import { createWind } from '@null3d/wind';
 import { interact } from '../lib/interact';
-import { DEMO_SPARSENESS } from '../lib/plants';
 import { applyWindControl, postWindHud, type WindControls } from './hud';
+import { plantWindClump } from './planting';
+
+/**
+ * The species a held picture draws, named in its switch by folder id; the live page names none and
+ * draws every registered species.
+ */
+const HELD_SPECIES = (new URL(import.meta.url).searchParams.get('species') ?? '')
+	.split(',')
+	.filter(isSpeciesId);
 
 /** Metres a second at the field's top, at the strongest of the sweep. */
 const GUST = 7;
@@ -76,50 +80,20 @@ export default defineSketch(async (ctx) => {
 	const seed = 11;
 	const plant = async () => {
 		for (const piece of planted) piece.destroy();
-		planted = [];
-		plantMats = [];
-		const ids = speciesIds();
-		const across = Math.max(1, Math.ceil(Math.sqrt(ids.length)));
-		let index = 0;
-		for (const id of ids) {
-			const module = await loadSpecies(id);
-			const kit = await prepareSpecies(ctx, module, { detail: 'high', placeholders: 'missing' });
-			const materials = plantMaterials(ctx, kit, { wind: wind.field });
-			plantMats.push(
-				materials.wood,
-				materials.shoots,
-				materials.cards,
-				materials.foliage,
-				materials.extras,
-			);
-			const variant = index % Math.max(1, kit.record.variants);
-			const asset = await growPlant(kit, {
-				seed,
-				variant,
-				near: true,
-				sparse: DEMO_SPARSENESS,
-			});
-			const x = ((index % across) - (across - 1) / 2) * 20;
-			const z = (Math.floor(index / across) - (ids.length / across - 1) / 2) * 20;
-			planted.push(
-				placePlants(
-					ctx,
-					kit,
-					[asset],
-					{
-						count: 1,
-						position: new Float32Array([x, 0, z]),
-						turn: new Float32Array([index * 0.6]),
-						scale: new Float32Array([1]),
-						variant: new Uint8Array([0]),
-					},
-					{ materials, view: { height: 1080, fov: 50 }, castShadows: true },
-				),
-			);
-			index++;
-		}
+		const clump = await plantWindClump(
+			ctx,
+			wind.field,
+			seed,
+			HELD_SPECIES.length > 0 ? HELD_SPECIES : undefined,
+		);
+		planted = clump.planted;
+		plantMats = clump.materials;
 	};
-	await plant();
+	// The clump grows while the meadow draws, so a live start shows its first frame without waiting
+	// for every species and the plants appear as each one finishes. A held picture waits for the
+	// whole clump, so its frame shows the finished scene.
+	if (ctx.engine.held) await plant();
+	else plant().catch((error: unknown) => console.error(error));
 
 	let announced = false;
 	return {

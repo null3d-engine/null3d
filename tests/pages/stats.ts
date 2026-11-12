@@ -83,18 +83,35 @@ if (params.has('no-page-memory'))
 const calls: GpuCalls = { timerQueries: 0, resolves: 0, readbacks: 0 };
 window.gpuCalls = () => ({ ...calls });
 
-/** Counts the calls of a method on a prototype, where the browser has it. */
-function count(prototype: object | undefined, method: string, counter: keyof GpuCalls): void {
+/** The label of the GPU timer's readback buffers, which only the timer maps. */
+const TIMER_READBACK = 'gpu timer readback';
+
+/**
+ * Counts a prototype method's calls where the browser has it, and `belongs` accepts the receiver.
+ * A map counts as GPU timing work only when the timer owns the buffer: a development build also
+ * maps the culling shader's dropped copies, and that read never times the GPU.
+ */
+function count(
+	prototype: object | undefined,
+	method: string,
+	counter: keyof GpuCalls,
+	belongs?: (target: unknown) => boolean,
+): void {
 	if (!prototype) return;
 	const original = Reflect.get(prototype, method);
 	if (typeof original !== 'function') return;
 	Reflect.set(prototype, method, function (this: unknown, ...args: unknown[]) {
-		calls[counter]++;
+		if (!belongs || belongs(this)) calls[counter]++;
 		return original.apply(this, args);
 	});
 }
 count(globalThis.GPUCommandEncoder?.prototype, 'resolveQuerySet', 'resolves');
-count(globalThis.GPUBuffer?.prototype, 'mapAsync', 'readbacks');
+count(
+	globalThis.GPUBuffer?.prototype,
+	'mapAsync',
+	'readbacks',
+	(buffer) => (buffer as GPUBuffer).label === TIMER_READBACK,
+);
 count(globalThis.WebGL2RenderingContext?.prototype, 'beginQuery', 'timerQueries');
 
 /** What the overlay shows, read through its shadow root. */

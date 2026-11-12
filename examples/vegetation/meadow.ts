@@ -6,6 +6,7 @@ import {
 	placePlants,
 	plantMaterials,
 	prepareSpecies,
+	type SpeciesId,
 	speciesIds,
 } from '@null3d/vegetation';
 import type { MeadowControls } from './hud';
@@ -15,6 +16,11 @@ import { plantSign } from './signage';
 export interface MeadowOptions {
 	/** The controls as they stand at the moment of a build. */
 	controls(): MeadowControls;
+	/**
+	 * The species to draw, when a held picture names a fixed subset; absent draws every registered
+	 * species, as the live page does.
+	 */
+	species?: readonly SpeciesId[];
 }
 
 /** A plant piece the meadow can take down again. */
@@ -78,7 +84,7 @@ export function createMeadow(
 		for (const piece of planted) piece.destroy();
 		planted = [];
 		const { season, sparse } = options.controls();
-		const ids = speciesIds();
+		const ids = options.species ?? speciesIds();
 		const across = Math.max(1, Math.ceil(Math.sqrt(ids.length)));
 		const step = 34;
 		const first = !grown;
@@ -87,22 +93,37 @@ export function createMeadow(
 			growing.begin();
 			growing.set(0, ids.length);
 		}
+		let done = 0;
+		// Load, prepare and grow every species at once: the job workers run the stages side by side.
+		const prepared = await Promise.all(
+			ids.map(async (id, index) => {
+				const module = await loadSpecies(id);
+				// The meadow carries several species at once, and at close range every copy near the camera
+				// draws its real shoots: the medium tier keeps each plant's shape while halving the nearest
+				// level's triangles, which is what made a pan after a zoom crawl.
+				const kit = await prepareSpecies(ctx, module, {
+					detail: 'medium',
+					placeholders: 'missing',
+				});
+				const asset = await growPlant(kit, {
+					seed,
+					variant: index % Math.max(1, kit.record.variants),
+					near: true,
+					season,
+					sparse,
+				});
+				// Count each species as it finishes, so the note moves while the rest still grow.
+				done++;
+				if (first) page.post('starting', { done, total: ids.length });
+				else growing.set(done, ids.length);
+				return { kit, asset };
+			}),
+		);
+		// Make the materials and place the copies in the registry's order, so the signs, the objects and
+		// the draws that follow from them keep their order.
 		let index = 0;
-		for (const id of ids) {
-			const module = await loadSpecies(id);
-			// The meadow carries several species at once, and at close range every copy near the camera
-			// draws its real shoots: the medium tier keeps each plant's shape while halving the nearest
-			// level's triangles, which is what made a pan after a zoom crawl.
-			const kit = await prepareSpecies(ctx, module, { detail: 'medium', placeholders: 'missing' });
+		for (const { kit, asset } of prepared) {
 			const materials = plantMaterials(ctx, kit, {});
-			const variant = index % Math.max(1, kit.record.variants);
-			const asset = await growPlant(kit, {
-				seed,
-				variant,
-				near: true,
-				season,
-				sparse,
-			});
 			const x = ((index % across) - (across - 1) / 2) * step;
 			const z = (Math.floor(index / across) - (ids.length / across - 1) / 2) * step;
 			// The sign stands beside the plant's foot, clear of its trunk.
@@ -123,8 +144,6 @@ export function createMeadow(
 				),
 			);
 			index++;
-			if (first) page.post('starting', { done: index, total: ids.length });
-			else growing.set(index, ids.length);
 		}
 		growing.end();
 		grown = true;

@@ -51,7 +51,10 @@ export const record: Species = {
 	// plant. Still 18 stands the thickest stem about two hundredths of the height across at breast
 	// height. Its height is read from the stems' own size in still 07; its spread and crown base are
 	// the fit's.
-	size: { height: { mean: 4, spread: 0.6 }, dbh: 0.08, aspect },
+	// Stills 07 and 18 stand the thickest stem at about two hundredths of the height across at
+	// breast height; the first setting drew it at 0.0156. The bend keeps its own girth below, so
+	// the thicker drawn wood does not stiffen the crown's sag.
+	size: { height: { mean: 4, spread: 0.6 }, dbh: 0.103, aspect },
 	growth: {
 		model: 'self-organizing',
 		years: 30,
@@ -114,8 +117,10 @@ export const record: Species = {
 			],
 		},
 		// Stills 01, 02 and 18: foliage stands almost to the grass, with only the stool itself bare,
-		// and no low shoot is lost to the shade of the crown above it.
-		shedding: { threshold: 0.03, cleanBole: 0, stubs: 0.1, underCrown: 0 },
+		// and no low shoot is lost to the shade of the crown above it. The drawn dome sits taller
+		// than the photographs' and keeps its mass too high, so the tender shoots in the crown's
+		// shade are shed a little more readily than the first setting allowed.
+		shedding: { threshold: 0.06, cleanBole: 0, stubs: 0.1, underCrown: 0 },
 		// The bend weighs the wood at the stem's own girth, so a thin stool sags a little and its
 		// tips right themselves.
 		bending: { strength: 0.2, upturn: 0.3, girth: 0.1 },
@@ -246,8 +251,9 @@ export const record: Species = {
 				[1, 16],
 			],
 			// The reference's dome is denser than the curve alone gives: this is the dial, not a
-			// change of reach or part size.
-			density: 1.7,
+			// change of reach or part size. The first card level's shared cap sets the most the crown
+			// may carry, so the dial stands where every variant and season fits under it.
+			density: 1.63,
 			shadePrune: 0,
 			// Stills 01, 03 and 05: sky shows through the crown's middle and under it, where its own
 			// leaves leave a shoot under this share of the sky, while the lit outer masses stay.
@@ -260,6 +266,15 @@ export const record: Species = {
 			lift: 6,
 			skyward: 0.55,
 			scale: { mean: 1.2, spread: 0.1 },
+			// Stills 01, 02 and 18: the dome is broad at its middle and flat across its top, so the
+			// mid-crown shoots reach a little further than the record's one scale and the top ones
+			// stand half as far past their twigs, which lowers the dome without raising its foot.
+			scaleByHeight: [
+				[0, 1],
+				[0.55, 1.1],
+				[0.8, 0.8],
+				[1, 0.32],
+			],
 		},
 	},
 	foliage: {
@@ -413,13 +428,15 @@ export const record: Species = {
 			// The kit's leaves and six shoot prototypes measure 2.46, 3.36, 5.29 and 9.05 MB; each
 			// cap sits above its figure, under the class's own ceiling.
 			kitBytes: { low: 2_600_000, medium: 3_500_000, high: 5_600_000, ultra: 9_500_000 },
-			// Six variants measure 4.6 to 8.8 MB in leaf, and the blossom season carries the flowers'
-			// own mesh at 13.7 MB; each cap sits above the largest, under the class's own ceiling.
+			// The six variants measure 5.1 to 9.1 MB in leaf, and the blossom season reaches 13.93 MB
+			// with the flowers' own mesh; each cap sits above the largest, under the class's own ceiling.
 			variantBytes: { low: 14_000_000, medium: 14_000_000, high: 14_000_000, ultra: 14_000_000 },
-			// The nearest level, with the shoot rows that stand in it, measures 246,651 triangles; the
-			// first card level 138,000 to 148,050 and the second 19,000 to 24,000, over three variants
-			// and every season.
-			lod0Triangles: 300_000,
+			// The near band measures 483,068 triangles once the height calibration's scale is applied
+			// before the light grid, so the cap keeps its 17,728-triangle spare above that read, 3.67
+			// per cent of it; the earlier 481,806 stood the same spare, 3.82 per cent, above the
+			// pre-calibration 464,078. The first card level measures at most 152,498 and the second at
+			// most 22,761 over the variants and seasons, under the class's shared card caps.
+			lod0Triangles: 500_796,
 			lod1Triangles: 155_000,
 			lod2Triangles: 25_000,
 			downloadBytes: 1_000_000,

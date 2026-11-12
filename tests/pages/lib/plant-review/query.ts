@@ -106,6 +106,51 @@ export interface PlantReviewQuery {
 	readonly cutFrom?: number;
 	/** Metres of the axis a spanned piece keeps, in place of the record's hint. */
 	readonly cutSpan?: number;
+	/**
+	 * The shoots a branch or sub-branch cutting carries, in place of the record hint's count, so two
+	 * pictures of one species can show different numbers of side shoots.
+	 */
+	readonly shoots?: number;
+	/**
+	 * The shoot class a branch or sub-branch cutting draws, in place of the record hint's class, so a
+	 * close view can draw a thin twig while the studio piece draws the whole branch.
+	 */
+	readonly shoot?: string;
+	/**
+	 * The radius of the ring a branch or sub-branch cutting's shoots stand on, as a share of the
+	 * piece's height, in place of the record hint's. A wide ring separates the shoots.
+	 */
+	readonly ring?: number;
+	/**
+	 * The degrees a branch or sub-branch cutting's shoots lean outward from its axis, in place of the
+	 * record hint's, so the tips separate while the bases stay together.
+	 */
+	readonly lean?: number;
+	/**
+	 * How a fanned cutting places its shoots: 'ring' round the piece's axis, 'spray' along one
+	 * lateral line, or 'fan' across the piece's own leaf plane from one shared base.
+	 */
+	readonly layout?: 'ring' | 'spray' | 'fan';
+	/**
+	 * The width a 'spray' or 'fan' layout spans, as a share of the piece's height.
+	 */
+	readonly spread?: number;
+	/**
+	 * The shoot class of the piece's main stem. Naming it builds the stem-and-laterals assembly: the
+	 * stem stands upright and the piece's own class hangs from it.
+	 */
+	readonly stem?: string;
+	/** How many laterals hang from the stem, from 1 to the cutting's most. */
+	readonly laterals?: number;
+	/** The share of the stem's height where the first lateral leaves, and where the last leaves. */
+	readonly lateralFrom?: number;
+	readonly lateralTo?: number;
+	/** Degrees each lateral leans outward from the stem's line. */
+	readonly lateralAngle?: number;
+	/** The laterals' length over their class's. */
+	readonly lateralScale?: number;
+	/** Which of the stem class's prototypes to take. */
+	readonly stemPick?: number;
 	/** Whether the page posts its measures of the plant beside the frame. */
 	readonly measure?: boolean;
 	/**
@@ -116,6 +161,12 @@ export interface PlantReviewQuery {
 	/** Whether the page draws a 1 m scale bar beside the view's target. */
 	readonly scale?: boolean;
 	/**
+	 * Whether the page draws the motion debug view in place of the plant: each pixel's motion since
+	 * the frame before, as a color. A held frame has the frame before it, so a plant that its vertex
+	 * offset sways shows its motion and a plant past its sway distance stays black.
+	 */
+	readonly motion?: boolean;
+	/**
 	 * Whether a close view's colour is measured on the plant alone, ignoring the backdrop. A stem
 	 * does not fill its frame, so the nine patches of a plain average reach sky and ground; a slot
 	 * naming this has those patches drop every pixel close to the picture's own background. A
@@ -123,6 +174,20 @@ export interface PlantReviewQuery {
 	 * the render stands on another, so a plain average lifts both sides alike.
 	 */
 	readonly barkMask?: boolean;
+	/**
+	 * Whether a bark close view's photograph shows leaves over the bark: the patches drop
+	 * leaf-green pixels on both pictures, so the figure reads the bark's own colour rather than a
+	 * blend with the foliage. A bark that is itself green leaves this off and keeps `barkMask`
+	 * alone, since that green is the material being measured.
+	 */
+	readonly leafyBark?: boolean;
+	/**
+	 * Whether a picture's own background cannot be separated from the plant, so the picture carries
+	 * no outline: its shape, width, pieces, frame gap, crown box and crown-box gap read null, while
+	 * the colour comparison stays. A species' slot names a picture whose background is the subject,
+	 * such as a far scrub band that the fitted sky and ground admit.
+	 */
+	readonly noOutline?: boolean;
 	/**
 	 * Whether a view that draws the wood alone draws the plant's foliage as well, which a bark
 	 * photograph taken among leaves needs if its colour is to be compared with like.
@@ -186,11 +251,20 @@ export interface PlantReviewQuery {
 	 */
 	readonly barkZone?: number;
 	/**
-	 * Metres that a close view covers: the bark or limb a bark or limb view frames, or the width a
-	 * cut view shows across the frame, where the reference is a picture of a part of the piece
-	 * rather than the whole of it.
+	 * Metres that a close view covers: the bark or limb a bark or limb view frames, the sheath a
+	 * ground plant's sheath view frames, or the width a cut view shows across the frame, where the
+	 * reference is a picture of a part of the piece rather than the whole of it.
 	 */
 	readonly span?: number;
+	/**
+	 * The share of its picture's frame that a close view's subject box takes across and down, as the
+	 * reference's own measure gives it. A junction view frames its subject so neither the limb's
+	 * thickness nor the stem's width outgrows its share, instead of sizing the frame from the limb's
+	 * diameter alone. Absent, the view keeps its own limb-diameter share.
+	 */
+	readonly subjectWidth?: number;
+	/** The subject box's share of the picture's height, with `subjectWidth`. */
+	readonly subjectHeight?: number;
 	/**
 	 * The row share on which a view up the stem puts the stem's first fork: the camera pitches up
 	 * until the fork lands there, no steeper than the view's elevation.
@@ -216,6 +290,22 @@ export interface PlantReviewQuery {
 	 * asks for: the species' floors hold it at what still reads as itself. 0 grows the record's own.
 	 */
 	readonly sparse?: number;
+	/**
+	 * How far the wood's own sections are thinned, from 0 to 1: a review redraw reads the same plant
+	 * with fewer rings and sides, to measure what the section level costs and what it breaks. Absent
+	 * draws the level's own sections.
+	 */
+	readonly sections?: number;
+	/**
+	 * The share of a card level's own card rows to keep, from 0.05 to 1: a review redraw thins the
+	 * cards to measure what they buy, the kept cards growing by the level's rule. Absent keeps them.
+	 */
+	readonly cards?: number;
+	/**
+	 * How a card joins the plant when a level does not draw its branch: `remove` drops it, `branch`
+	 * draws the branch it stands on, and `twig` gives it a line to the nearest drawn branch.
+	 */
+	readonly cardJoin?: 'remove' | 'branch' | 'twig';
 	/**
 	 * Metres of one leaf that a photographed cutting was measured in, for the `leaves` frame. A
 	 * blade or a cluster whose own leaf is far longer than the photographed one frames at the
@@ -252,6 +342,16 @@ const NUMBER_FIELDS = [
 	'cut',
 	'cutFrom',
 	'cutSpan',
+	'shoots',
+	'ring',
+	'lean',
+	'spread',
+	'laterals',
+	'lateralFrom',
+	'lateralTo',
+	'lateralAngle',
+	'lateralScale',
+	'stemPick',
 	'horizon',
 	'fill',
 	'targetY',
@@ -264,6 +364,8 @@ const NUMBER_FIELDS = [
 	'thin',
 	'barkZone',
 	'span',
+	'subjectWidth',
+	'subjectHeight',
 	'forkRow',
 	'footRow',
 	'crownRow',
@@ -272,6 +374,9 @@ const NUMBER_FIELDS = [
 	'leaves',
 	'leafLength',
 	'sparse',
+	'sections',
+	'cards',
+	'age',
 	'roll',
 	'girth',
 	'turns',
@@ -294,6 +399,9 @@ const SHARE_FIELDS = new Set([
 	'along',
 	'skyShare',
 	'sparse',
+	'sections',
+	'cards',
+	'age',
 ]);
 
 /** The fields that are whole numbers of at least one. */
@@ -308,7 +416,11 @@ const SWITCHES = [
 	'surface',
 	'lifted',
 	'barkMask',
+	'leafyBark',
+	'noOutline',
 	'foliage',
+	'motion',
+	'young',
 ] as const;
 
 /** A short form of a number for a query, so a query reads well and keeps its precision. */
@@ -320,6 +432,9 @@ function short(value: number): string {
 export function plantReviewQuery(query: PlantReviewQuery): string {
 	const params = new URLSearchParams({ species: query.species });
 	if (query.form) params.set('form', query.form);
+	if (query.shoot) params.set('shoot', query.shoot);
+	if (query.layout) params.set('layout', query.layout);
+	if (query.stem) params.set('stem', query.stem);
 	if (query.view) params.set('view', query.view);
 	for (const name of NUMBER_FIELDS) {
 		const value = query[name];
@@ -330,6 +445,7 @@ export function plantReviewQuery(query: PlantReviewQuery): string {
 		if (value) params.set(name, value);
 	}
 	if (query.lod !== undefined) params.set('lod', String(query.lod));
+	if (query.cardJoin !== undefined) params.set('cardJoin', query.cardJoin);
 	if (query.size) params.set('size', `${query.size[0]}x${query.size[1]}`);
 	for (const name of SWITCHES) if (query[name]) params.set(name, '1');
 	if (query.placeholders !== undefined) params.set('placeholders', query.placeholders ? '1' : '0');
@@ -356,6 +472,20 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 	const form = params.get('form');
 	if (form !== null && !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(form))
 		throw new Error(`form=${form} is not a form's name: give a kebab-case word, such as young.`);
+	const layoutText = params.get('layout');
+	if (
+		layoutText !== null &&
+		layoutText !== 'ring' &&
+		layoutText !== 'spray' &&
+		layoutText !== 'fan'
+	)
+		throw new Error(`layout=${layoutText} is not a layout: use ring, spray or fan.`);
+	const shoot = params.get('shoot');
+	if (shoot !== null && !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(shoot))
+		throw new Error(`shoot=${shoot} is not a class name: give a kebab-case word, such as twig.`);
+	const stem = params.get('stem');
+	if (stem !== null && !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(stem))
+		throw new Error(`stem=${stem} is not a class name: give a kebab-case word, such as cut.`);
 	const view = oneOf('view', params.get('view'), PLANT_VIEWS) ?? 'whole';
 	const numbers: Partial<Record<(typeof NUMBER_FIELDS)[number], number>> = {};
 	for (const name of NUMBER_FIELDS) {
@@ -411,6 +541,14 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 		throw new Error(
 			`barkZone=${numbers.barkZone} is an index into the record's bark zones: give a whole number of 0 or more.`,
 		);
+	for (const [name, value] of [
+		['subjectWidth', numbers.subjectWidth],
+		['subjectHeight', numbers.subjectHeight],
+	] as const)
+		if (value !== undefined && !(value > 0 && value <= 1))
+			throw new Error(
+				`${name}=${value} is a share of the frame: give a number above 0 and up to 1.`,
+			);
 	if (numbers.leafLength !== undefined && numbers.leafLength <= 0)
 		throw new Error(
 			`leafLength=${numbers.leafLength} is a leaf's length in metres: give a number above 0.`,
@@ -443,12 +581,22 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 	const background = oneOf('background', params.get('background'), PLANT_BACKGROUNDS);
 	const season = oneOf('season', params.get('season'), PLANT_SEASONS);
 	const preset = oneOf('preset', params.get('preset'), PLANT_PRESETS);
+	const joinText = params.get('cardJoin');
+	let cardJoin: 'remove' | 'branch' | 'twig' | undefined;
+	if (joinText !== null) {
+		if (joinText !== 'remove' && joinText !== 'branch' && joinText !== 'twig')
+			throw new Error(`cardJoin=${joinText} is not a join: use remove, branch or twig.`);
+		cardJoin = joinText;
+	}
 	const sun = oneOf('sun', params.get('sun'), PLANT_SUNS);
 	const placeholders = params.get('placeholders');
 	const pressed = params.get('pressed');
 	return {
 		species,
 		...(form !== null && { form }),
+		...(shoot !== null && { shoot }),
+		...(stem !== null && { stem }),
+		...(layoutText !== null && { layout: layoutText as 'ring' | 'spray' | 'fan' }),
 		view,
 		...numbers,
 		...(background && { background }),
@@ -459,14 +607,19 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 		...(preset && { preset }),
 		...(sun && { sun }),
 		...(lod !== undefined && { lod }),
+		...(cardJoin !== undefined && { cardJoin }),
 		...(size && { size }),
 		...(placeholders !== null && { placeholders: placeholders === '1' }),
 		...(pressed !== null && { pressed: pressed === '1' }),
 		measure: params.get('measure') === '1',
 		lifted: params.get('lifted') === '1',
 		barkMask: params.get('barkMask') === '1',
+		leafyBark: params.get('leafyBark') === '1',
+		noOutline: params.get('noOutline') === '1',
 		foliage: params.get('foliage') === '1',
 		scale: params.get('scale') === '1',
+		motion: params.get('motion') === '1',
+		young: params.get('young') === '1',
 		matte: params.get('matte') === '1',
 		fruit: params.get('fruit') === '1',
 		surface: params.get('surface') === '1',
