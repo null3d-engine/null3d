@@ -1027,12 +1027,36 @@ export const PIECE_BRIDGE = 1;
  * falls to the outline's cutoff. Two runs a pixel apart are therefore one piece. The reference and
  * the render both come through this function, so the rule counts the two sides alike.
  */
-export function pieceCount(
+/** One piece of a plant's outline: its area, its box, and whether it reaches the frame's border. */
+export interface PlantPart {
+	readonly area: number;
+	readonly left: number;
+	readonly top: number;
+	readonly right: number;
+	readonly bottom: number;
+	/** Whether the piece reaches the frame's border, where the part may run on outside the picture. */
+	readonly border: boolean;
+}
+
+/**
+ * The separate pieces a plant is drawn as: runs of at least `minArea` pixels, with two runs one
+ * background pixel apart counted as one. A plant hangs together: every fruit meets its twig, every
+ * twig meets its limb. A part that meets nothing is drawn as an island, and this returns it with its
+ * box so a reader can name it. A single background pixel between two runs is the mask's resolution
+ * rather than a drawn gap, so two runs a pixel apart are one piece.
+ *
+ * @param mask The picture's plant mask, one byte a pixel.
+ * @param width The mask's width in pixels.
+ * @param height The mask's height in pixels.
+ * @param minArea The smallest run that counts, so an outline's speckle is not a piece.
+ * @returns Every piece's area and box.
+ */
+export function pieceParts(
 	mask: Uint8Array,
 	width: number,
 	height: number,
 	minArea: number,
-): number {
+): PlantPart[] {
 	const { labels, sizes } = components(mask, width, height);
 	const parent = new Int32Array(sizes.length);
 	for (let label = 0; label < parent.length; label++) parent[label] = label;
@@ -1067,14 +1091,64 @@ export function pieceCount(
 					else join(near, label);
 				}
 		}
-	const areas = new Map<number, number>();
-	for (let label = 1; label < sizes.length; label++) {
-		const root = find(label);
-		areas.set(root, (areas.get(root) ?? 0) + (sizes[label] as number));
-	}
-	let count = 0;
-	for (const area of areas.values()) if (area >= minArea) count++;
-	return count;
+	const boxes = new Map<
+		number,
+		{ area: number; left: number; top: number; right: number; bottom: number; border: boolean }
+	>();
+	for (let y = 0; y < height; y++)
+		for (let x = 0; x < width; x++) {
+			const label = labels[y * width + x] as number;
+			if (!label) continue;
+			const root = find(label);
+			const box = boxes.get(root) ?? {
+				area: 0,
+				left: x,
+				top: y,
+				right: x,
+				bottom: y,
+				border: false,
+			};
+			box.area++;
+			box.left = Math.min(box.left, x);
+			box.top = Math.min(box.top, y);
+			box.right = Math.max(box.right, x);
+			box.bottom = Math.max(box.bottom, y);
+			if (x === 0 || y === 0 || x === width - 1 || y === height - 1) box.border = true;
+			boxes.set(root, box);
+		}
+	return [...boxes.values()]
+		.filter((box) => box.area >= minArea)
+		.map(({ area, left, top, right, bottom, border }) => ({
+			area,
+			left,
+			top,
+			right,
+			bottom,
+			border,
+		}))
+		.sort((a, b) => b.area - a.area);
+}
+
+/**
+ * The number of separate pieces a plant is drawn as, where a piece is a connected run of at least
+ * `minArea` pixels and two runs one background pixel apart count as one.
+ *
+ * A plant hangs together: every fruit meets its twig, every twig meets its limb. A part that meets
+ * nothing is drawn as an island, and this counts it. Pieces smaller than `minArea` are ignored so
+ * that a speck of background left by the outline's threshold is not read as a floating part.
+ *
+ * A single background pixel between two runs is the mask's resolution rather than a drawn gap: at
+ * the work width a shoot's supporting twig is thinner than a pixel, so the pixel that would join it
+ * falls to the outline's cutoff. Two runs a pixel apart are therefore one piece. The reference and
+ * the render both come through this function, so the rule counts the two sides alike.
+ */
+export function pieceCount(
+	mask: Uint8Array,
+	width: number,
+	height: number,
+	minArea: number,
+): number {
+	return pieceParts(mask, width, height, minArea).length;
 }
 
 /** The CIELAB distance from a colour to the nearest blend of two others. */ export function distanceToSegment(
