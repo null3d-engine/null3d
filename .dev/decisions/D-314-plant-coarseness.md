@@ -1,7 +1,7 @@
 # D-314: a page asks for a simpler plant by one coarseness or a triangle target, and moves every switch by one bias
 
 Status: decided. The pruning pass and the shoot-row thinning are superseded by
-[D-346](D-346-two-dials-keep-their-own-work.md); the triangle target and the switch bias stand.
+[D-348](D-348-two-dials-keep-their-own-work.md); the triangle target and the switch bias stand.
 Coarseness and the triangle target are built in the grower's mesh pass and the wood mesher. The
 page's switch bias is built on the stand-ins' placement. The real placement takes the same bias once
 it is built. Task: none.
