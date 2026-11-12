@@ -34,6 +34,7 @@ import {
 import type {
 	CutFromPlant,
 	FrondShape,
+	GrassBlade,
 	LeafShape,
 	PinnaSpec,
 	ShootClass,
@@ -793,6 +794,11 @@ function pressedShape(shape: LeafShape): LeafShape {
 	};
 }
 
+/** A grass blade pressed flat: no fold, twist or arch, so the piece lies as a picked blade does. */
+function pressedBladeShape(shape: GrassBlade): GrassBlade {
+	return { ...shape, fold: 0, twist: 0, arch: 0 };
+}
+
 /** A pinna's shape pressed flat: no fold and no droop, and its own pinnules flat too. */
 function pressedPinnae(pinnae: PinnaSpec): PinnaSpec {
 	return {
@@ -883,7 +889,15 @@ function cutLeaves(kit: SpeciesKitData, press?: boolean, age?: number): readonly
 		};
 		return foliage('thick').leaves(pressed, kit.manifest, kit.detail);
 	}
-	if (leaf.kind !== 'blade') return kit.leaves;
+	if (leaf.kind !== 'blade' && leaf.kind !== 'grass-blade') return kit.leaves;
+	if (leaf.kind === 'grass-blade') {
+		if (!flat) return kit.leaves;
+		const pressedLeaf: Species = {
+			...record,
+			foliage: { ...leaf, blade: pressedBladeShape(leaf.blade) },
+		};
+		return foliage('grass-blade').leaves(pressedLeaf, kit.manifest, kit.detail);
+	}
 	const pressedLeaf: Species = { ...record, foliage: { ...leaf, leaf: pressedShape(leaf.leaf) } };
 	return foliage('blade').leaves(pressedLeaf, kit.manifest, kit.detail);
 }

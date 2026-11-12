@@ -22,5 +22,8 @@
 	"holm-oak-turntable.mp4": {
 		"skyShare": 0.357,
 		"daylight": 1.925
+	},
+	"28-young-bark.png": {
+		"background": "studio-grey"
 	}
 }
