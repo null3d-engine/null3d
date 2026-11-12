@@ -60,7 +60,8 @@
 		"distance": 22,
 		"season": null,
 		"span": null,
-		"thin": null
+		"thin": null,
+		"elevation": 0
 	},
 	"26-bark-texture.png": {
 		"span": 3,
