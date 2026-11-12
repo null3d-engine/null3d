@@ -19,6 +19,7 @@ import {
 	measurePlant,
 	type PlantMask,
 	pieceCount,
+	pieceParts,
 	plantMask,
 	readIndex,
 	rowSpans,
@@ -557,6 +558,88 @@ describe('the slots', () => {
 				),
 			).pressed;
 		expect([pressed(true), pressed(false), pressed()]).toEqual([true, false, undefined]);
+		// The join a redraw asks for reads back, so a joined card level draws as asked.
+		const joined = { species: 'stub', view: 'whole' as const, cardJoin: 'twig' as const };
+		expect(readPlantReviewQuery(new URLSearchParams(plantReviewQuery(joined))).cardJoin).toBe(
+			'twig',
+		);
+		// Every field the page reads survives the query: a field the writer drops draws the default
+		// while the run records what was asked, so its picture measures nothing.
+		const every = {
+			species: 'stub',
+			form: 'young',
+			view: 'whole' as const,
+			variant: 3,
+			seed: 11,
+			turn: 1,
+			elevation: 2,
+			distance: 30,
+			fov: 40,
+			background: 'sky-meadow' as const,
+			sky: '#9dcefc',
+			ground: '#aba659',
+			sunAzimuth: 13.8,
+			sunRise: 41.9,
+			skyShare: 0.4,
+			daylight: 2.4,
+			lamp: '#f5f0b4',
+			wind: 1,
+			sway: 20,
+			time: 1.5,
+			season: 'summer' as const,
+			lod: 2 as const,
+			preset: 'high' as const,
+			size: [960, 720] as const,
+			sun: 'low' as const,
+			pick: 1,
+			cut: 2,
+			measure: true,
+			lifted: true,
+			scale: true,
+			motion: true,
+			barkMask: true,
+			leafyBark: true,
+			noOutline: true,
+			foliage: true,
+			fruit: true,
+			pressed: false,
+			age: 0.5,
+			young: true,
+			surface: true,
+			matte: true,
+			placeholders: true,
+			horizon: 0.84,
+			fill: 0.7,
+			targetY: 0.5,
+			targetX: 0.48,
+			widthShare: 0.77,
+			standScale: 1.1,
+			top: 0.1,
+			eye: 0.3,
+			along: 0.4,
+			thin: 0.2,
+			barkZone: 1,
+			span: 4,
+			subjectWidth: 0.6,
+			subjectHeight: 0.5,
+			forkRow: 0.4,
+			footRow: 0.5,
+			crownRow: 0.4,
+			aside: 10,
+			stand: 2,
+			leaves: 8,
+			sparse: 0.5,
+			sections: 0.5,
+			cards: 0.5,
+			cardJoin: 'twig' as const,
+			leafLength: 0.1,
+			roll: 5,
+			girth: 0.2,
+			turns: 8,
+			step: 45,
+			columns: 4,
+		};
+		expect(readPlantReviewQuery(new URLSearchParams(plantReviewQuery(every)))).toMatchObject(every);
 		// A picture whose own background is the subject keeps its no-outline flag through the query.
 		const flagged = { species: 'stub', view: 'whole' as const, noOutline: true };
 		expect(readPlantReviewQuery(new URLSearchParams(plantReviewQuery(flagged))).noOutline).toBe(
@@ -936,6 +1019,27 @@ describe('the coverage matte', () => {
 		// partly covered texel closes the gap to the one the piece rule already bridges.
 		expect(pieceCount(mask, width, height, 24)).toBe(2);
 		expect(pieceCount(anyPlantMask(plant), width, height, 24)).toBe(1);
+	});
+
+	test('names a piece that meets nothing, and spares one the frame carries', () => {
+		const width = 40;
+		const height = 40;
+		const mask = new Uint8Array(width * height);
+		// The body.
+		for (let y = 10; y < 20; y++) for (let x = 10; x < 20; x++) mask[y * width + x] = 1;
+		// A blob that meets nothing inside the frame: 25 pixels, five by five.
+		for (let y = 25; y < 30; y++) for (let x = 25; x < 30; x++) mask[y * width + x] = 1;
+		// A piece the frame's right edge carries, so its part may run on outside the picture.
+		for (let y = 30; y < 36; y++) for (let x = 36; x < 40; x++) mask[y * width + x] = 1;
+		const parts = pieceParts(mask, width, height, 24);
+		expect(parts.length).toBe(3);
+		expect(parts[0]?.area).toBe(100);
+		// The largest run is the body; any other run the border does not carry meets nothing.
+		const floating = parts.slice(1).filter((part) => !part.border);
+		expect(
+			floating.map((part) => [part.area, part.left, part.top, part.right, part.bottom]),
+		).toEqual([[25, 25, 25, 29, 29]]);
+		expect(parts.filter((part) => part.border).length).toBe(1);
 	});
 
 	test('counts a partly covered texel as the sky it leaves in the gap', () => {
