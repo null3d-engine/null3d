@@ -289,7 +289,9 @@ export const record: Species = {
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
-			kitBytes: { low: 2_000_000, medium: 2_900_000, high: 5_300_000, ultra: 9_500_000 },
+			// The lead merge grew the ultra kit to 9,894,888 from the 9.5 MB the record held; the
+			// measured figure plus about three per cent, and still under the owner's 13 MB tree cap.
+			kitBytes: { low: 2_000_000, medium: 2_900_000, high: 5_300_000, ultra: 10_200_000 },
 			// The densest variant sets each cap: variant 4 measures 10.18, 10.29, 10.50 and 10.85 MB
 			// at the four tiers. Each cap sits just above its figure. The crown's foliage stands in
 			// fewer, larger leaves, which carries the cover at fewer triangles.
