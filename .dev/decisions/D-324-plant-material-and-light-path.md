@@ -224,10 +224,13 @@ hash the same before and after through `tools/plant-mesh-hash.ts`.
 The plant coverage test counted a pixel as foliage only when its colour summed past 12. That count cut
 through the leaves' own dark range, so the crown shade above moved it: at `0436974e3`, the commit that
 agreed the bands, the crowns covered 0.350 to 0.403 and the test passed; at `63fddd5fa` they covered
-0.408 to 0.427 and it failed. The bisect found the change in this record's own commit, `1f06d15f7`: the
-two heads' crown boxes are identical to the pixel, and the dark pixels fell as the 41 to 120 band rose,
-so the pixels that crossed the count were made bright rather than drawn anew. A crossing's plane does
-not tell the bark from the leaves, so the count now takes every drawn pixel: the page clears to black,
+0.408 to 0.427 and it failed. The bisect put the move between `1f06d15f7` and its parent: the probe at `234025b1e` reads the band
+head's figures, and the two commits between it and the shade touch only example files. The two heads'
+crown boxes are identical to the pixel, and the dark pixels fell as the 41 to 120 band rose, so the
+pixels that crossed the old count were made bright rather than drawn anew. The shade's own diff changes
+the wood branch alone, and the measure counts the pixels the plant draws. No cut of the wood has been
+shown to work, because a material opacity is inert on this shader, so how the shade reaches the counted
+pixels is unproven inside that pair. The count now takes every drawn pixel: the page clears to black,
 the background sums to 0 and the plant's darkest pixels sum to 1. The two heads then read within 0.3
 points of each other, and the test keeps its relative bound with the ceiling moved to 0.64. The look
 change itself stands and is the owner's to see: the crown's shade on bark is brighter than it was.
