@@ -47,6 +47,7 @@ import {
 	WORK_WIDTH,
 } from './references.ts';
 import type { RunFrame } from './render.ts';
+import type { SheathTarget } from './sheath.ts';
 
 /** The bins of an edge-direction profile: twelve of fifteen degrees across half a turn. */
 const EDGE_BINS = 12;
@@ -1218,15 +1219,11 @@ export function compareWind(
 }
 
 /**
- * The colours a tuft's record names for its sheath surface, as linear reflectance, and the share of
- * the surface's length over which the collar colour takes over. A junction still of such a species
- * is read against these, because its subject is the sheath itself.
+ * The sheath target's shape and its parser live in the review-data module; a junction or crown-foot
+ * still of a species whose review data names one is read against it, because its subject is the
+ * sheath itself.
  */
-export interface SheathTarget {
-	readonly foot: readonly [number, number, number];
-	readonly collar: readonly [number, number, number];
-	readonly reach: number;
-}
+export type { SheathTarget };
 
 /** A sheath surface's two ends as a picture shows them: mean CIELAB colour and pixels. */
 export interface SheathPatches {
