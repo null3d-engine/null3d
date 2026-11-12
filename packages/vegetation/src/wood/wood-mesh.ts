@@ -2043,3 +2043,24 @@ export function meshWood(input: MeshInput, level: MeshLevel): MeshArrays {
 		input.variant,
 	);
 }
+
+/**
+ * Meshes the wood of a level at a chosen order and coarseness, for a page that gives the level a
+ * triangle budget.
+ *
+ * @param input The dressed variant.
+ * @param level The level.
+ * @param maxOrder The coarsest branch order kept.
+ * @param coarseness From 0, as the form meshes, to 1, the coarsest wood.
+ * @returns The wood's mesh.
+ * @category api/vegetation
+ */
+export function meshWoodAt(
+	input: MeshInput,
+	level: MeshLevel,
+	maxOrder: number,
+	coarseness: number,
+): MeshArrays {
+	const tuned = coarseness === (input.coarseness ?? 0) ? input : { ...input, coarseness };
+	return new Mesher(tuned, level, false).run(woodAxes(tuned, maxOrder), tuned.variant);
+}

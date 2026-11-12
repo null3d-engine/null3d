@@ -61,6 +61,12 @@ export interface DressInput extends GrowInput {
 	 * Absent, the prune lights the crown of the rows it is given.
 	 */
 	readonly pruneLight?: CrownLight;
+	/**
+	 * The triangle budget of each level, from the nearest to the second card level. The plant keeps
+	 * its grown form and spends the budget across its parts: the leaf cards, the wood and the extras.
+	 * Zero or absent leaves that level as the form meshes it.
+	 */
+	readonly budgets?: readonly [number, number, number];
 }
 
 /**

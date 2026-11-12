@@ -41,6 +41,22 @@ export function cardKeep(order: number, level: 1 | 2): number {
 }
 
 /**
+ * The triangles one kept shoot row's cards draw: two for each of the prototype's card planes, and
+ * four for the supporting twig's two-sided line where the record asks for one.
+ *
+ * @param input The dressed variant.
+ * @param prototype The row's prototype index.
+ * @returns The row's triangles.
+ * @category api/vegetation
+ */
+export function cardRowTriangles(input: MeshInput, prototype: number): number {
+	const card = input.kit.prototypes[prototype]?.card;
+	if (!card) return 0;
+	const stalk = (input.record.lod.cardStalk ?? 0) > 0 && input.rows.back ? 4 : 0;
+	return card.planes.length * 2 + stalk;
+}
+
+/**
  * The shoot cards of one variant at a card level.
  *
  * @param input The dressed variant.
@@ -48,6 +64,18 @@ export function cardKeep(order: number, level: 1 | 2): number {
  * @returns The cards' mesh.
  */
 export function cardMesh(input: MeshInput, level: 1 | 2): MeshArrays {
+	return cardMeshWith(input, (order) => cardKeep(order, level));
+}
+
+/**
+ * The shoot cards of one variant, with a row's growth chosen by the caller: 0 drops the row, and a
+ * share grows its cards about their middles.
+ *
+ * @param input The dressed variant.
+ * @param keep The growth of a row's cards by its space-filling order.
+ * @returns The cards' mesh.
+ */
+export function cardMeshWith(input: MeshInput, keep: (order: number) => number): MeshArrays {
 	const { rows, kit } = input;
 	const mesh = new MeshWriter();
 	const size = kit.cards.size || 1;
@@ -56,7 +84,7 @@ export function cardMesh(input: MeshInput, level: 1 | 2): MeshArrays {
 	const local: Vector3 = [0, 0, 0];
 	const world: Vector3 = [0, 0, 0];
 	for (let r = 0; r < rows.count; r++) {
-		const grow = cardKeep(rows.order[r] as number, level);
+		const grow = keep(rows.order[r] as number);
 		if (grow === 0) continue;
 		const prototype = kit.prototypes[rows.prototype[r] as number];
 		if (!prototype) continue;

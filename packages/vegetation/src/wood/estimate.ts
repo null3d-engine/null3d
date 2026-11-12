@@ -39,9 +39,29 @@ export function woodTriangles(
 	input: Pick<MeshInput, 'skeleton' | 'record' | 'detail' | 'coarseness'>,
 	level: MeshLevel,
 ): number {
-	const { skeleton } = input;
-	const tube = tubeDetail(level, input.detail, input.coarseness ?? 0);
 	const keep = level === 0 ? 255 : (input.record.lod.woodOrders[level - 1] ?? 255);
+	return woodTrianglesAt(input, level, keep, input.coarseness ?? 0);
+}
+
+/**
+ * About how many triangles the wood of a level holds at a chosen order and coarseness.
+ *
+ * @param input The dressed variant.
+ * @param level The level.
+ * @param maxOrder The coarsest branch order kept.
+ * @param coarseness From 0, as the tier meshes, to 1, the coarsest.
+ * @returns The count.
+ * @category api/vegetation
+ */
+export function woodTrianglesAt(
+	input: Pick<MeshInput, 'skeleton' | 'record' | 'detail' | 'coarseness'>,
+	level: MeshLevel,
+	maxOrder: number,
+	coarseness: number,
+): number {
+	const { skeleton } = input;
+	const tube = tubeDetail(level, input.detail, coarseness);
+	const keep = maxOrder;
 	const sample: PathSample = { radius: 0, height: 0 };
 	const axes = skeleton.axes;
 	const meshed = new Uint8Array(axes.count);

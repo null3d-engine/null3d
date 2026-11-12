@@ -588,6 +588,39 @@ export function plantSilhouette(
 	frame: SilhouetteFrame,
 ): Uint8Array {
 	const mask = woodSilhouette(skeleton, turn, frame);
+	addShoots(mask, rows, lengths, turn, frame);
+	return mask;
+}
+
+/**
+ * A dressed plant's shoots seen from the side at a turn: a disc for each shoot row, as wide as the
+ * row's shoot is long at its scale and centred halfway along it, without the wood.
+ *
+ * @param rows The shoot rows.
+ * @param lengths Metres from the attach point to the farthest tip of each prototype, at scale 1.
+ * @param turn Radians about the vertical axis; 0 looks from +Z.
+ * @param frame The grid.
+ * @returns One byte per cell, 1 covered, rows from the ground up.
+ */
+export function shootSilhouette(
+	rows: ShootRows,
+	lengths: readonly number[],
+	turn: number,
+	frame: SilhouetteFrame,
+): Uint8Array {
+	const mask = new Uint8Array(frame.cols * frame.rows);
+	addShoots(mask, rows, lengths, turn, frame);
+	return mask;
+}
+
+/** Draws each shoot row as a disc on a mask. */
+function addShoots(
+	mask: Uint8Array,
+	rows: ShootRows,
+	lengths: readonly number[],
+	turn: number,
+	frame: SilhouetteFrame,
+): void {
 	const [ex, ez] = rightOf(turn);
 	const q = rows.rotation;
 	for (let r = 0; r < rows.count; r++) {
@@ -605,7 +638,6 @@ export function plantSilhouette(
 		const across = x * ex + z * ez;
 		capsule(mask, frame, across, y, across, y, shoot * 0.8);
 	}
-	return mask;
 }
 
 /**

@@ -73,6 +73,7 @@ import { dressShoots, pruneLight } from './leaf/instancer';
 import { foliage, loadFoliage } from './leaf/kinds';
 import { inLeaf } from './leaf/season';
 import { shootPrototypes } from './leaf/shoot';
+import { budgetLevel, checkBudgets } from './lod/budget';
 import { bakeCards } from './lod/card-bake';
 import { cardMesh } from './lod/cards';
 import { bakeFar } from './lod/impostor';
@@ -171,6 +172,14 @@ export interface GrowOptions extends CoarsenessOptions {
 	 * grows the light form and a desktop the full one.
 	 */
 	readonly sparse?: number;
+	/**
+	 * A triangle budget for each level, from the nearest to the second card level. The plant keeps
+	 * the form its sparse level grew and spends the budget across the level's parts: the leaf cards
+	 * keep fewer rows, each grown to hold the crown's cover, the wood keeps its thickest axes at the
+	 * coarsest rings, and the extras draw only while the budget has room. A level of zero keeps the
+	 * form's own mesh, and a stand-in or a merged-foliage species keeps its own.
+	 */
+	readonly budgets?: readonly [number, number, number];
 }
 
 /** The least and the most share of leaves or limbs a growth may ask for. */
@@ -469,7 +478,8 @@ export function variantKey(kit: SpeciesKitData, options: GrowOptions): string {
 	const leaves =
 		options.leaves === undefined || options.leaves === 1 ? '' : `:leaves=${options.leaves}`;
 	const limbs = options.limbs === undefined || options.limbs === 1 ? '' : `:limbs=${options.limbs}`;
-	return `${kit.key}:${options.seed >>> 0}:${options.variant}:${season}:${options.detail ?? kit.detail}:${cutting}${coarsenessKey(kit, options)}${leaves}${limbs}`;
+	const budgets = options.budgets ? `:budgets=${options.budgets.join(',')}` : '';
+	return `${kit.key}:${options.seed >>> 0}:${options.variant}:${season}:${options.detail ?? kit.detail}:${cutting}${coarsenessKey(kit, options)}${leaves}${limbs}${budgets}`;
 }
 
 /**
@@ -696,6 +706,7 @@ function dress(kit: SpeciesKitData, options: GrowOptions): MeshInput {
 		kit,
 		skeleton: cutSkeleton(kit, coarsenSkeleton(grown, coarseness), options.cutting),
 		coarseness,
+		...(options.budgets ? { budgets: options.budgets } : {}),
 		...lit,
 	};
 	// The shoots stand on the skeleton, which loses the bare twigs the record trims once they stand.
@@ -885,6 +896,24 @@ function nearWood(mesh: MeshInput): PlantPart[] {
 function levelParts(mesh: MeshInput, level: MeshLevel): PlantPart[] {
 	const { kit, record } = mesh;
 	const placeholders = kit.placeholders;
+	const budget = mesh.budgets?.[level] ?? 0;
+	if (budget > 0) {
+		const built = budgetLevel(mesh, level, budget);
+		if (built) {
+			const out: PlantPart[] = [];
+			for (const part of built.parts)
+				out.push(
+					...partOf(
+						kit,
+						part.name,
+						part.mesh,
+						part.name === 'wood' ? WOOD_UV_STEPS : TEXTURE_UV_STEPS,
+						part.name === 'extras',
+					),
+				);
+			return out;
+		}
+	}
 	const parts: PlantPart[] = [];
 	if (level > 0) {
 		const wood = stage(
@@ -938,6 +967,7 @@ const now = () => (typeof performance === 'undefined' ? Date.now() : performance
  * @category api/vegetation
  */
 export function growPlantNow(kit: SpeciesKitData, options: GrowOptions): PlantAsset {
+	checkBudgets(options.budgets);
 	options = withSparse(kit.record, options);
 	if (options.cutting) return growCutting(kit, options, options.cutting);
 	const started = now();

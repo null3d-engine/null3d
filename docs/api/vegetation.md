@@ -127,6 +127,13 @@ console.log(crowd.coarseness, nearTriangles(kit, crowd));
 
 Give `triangles` in place of `coarseness` to set a target for one copy's nearest level: its wood, its shoots at the variant's tier and its extras. The variant grows at the coarseness that comes nearest, and the asset's `coarseness` says which one. The core finds it by counting the shoots and the wood at a few values of coarseness, before it builds any mesh. A target above the plant as grown gives the plant as grown, and a target below the coarsest plant gives the coarsest. Give one of the two options, not both.
 
+Give `budgets` in `growPlant` to set a triangle budget for each level instead, from the nearest to the second card level. The plant keeps the form its sparse level grew and spends each level's target across its parts. The leaf cards keep fewer shoot rows, spread evenly in their space-filling order. Each kept card grows to hold the crown's cover. The wood keeps its thickest axes at the coarsest rings. It keeps its trunk while the target holds the trunk and one card. The extras draw only while the target has room. The split follows each part's share of the plant's side outline, found once from the grown form. So the crown keeps its proportions, and the levels hand over without a pop. A level of 0 keeps the form's own mesh. A stand-in and a merged-foliage species keep their own meshes too.
+
+```ts
+const crowd = await growPlant(kit, { seed: 7, variant: 1, sparse: 1, budgets: [0, 300, 300] });
+console.log(crowd.levels[1].triangles, crowd.levels[2].triangles);
+```
+
 Options given to `prepareSpecies` apply to every variant that grows from its kit, and a variant's own options replace them. A coarseness of 0 grows the same bytes as no coarseness. Stand-ins grow the same at every coarseness. On a grown oak at the high tier, coarseness 1 cuts the nearest level from 26.7 million triangles to 3.8 million. Its outline stays within 0.01 of the plant as grown.
 
 A page can also move the level switches of all its species at once. Give `switchBias` in the view that every `placePlants` call takes. It counts in stops: each switch distance is multiplied by two to the power of minus the bias. A bias of 1 switches every level at half its distance, and a bias of -1 at twice its distance. `switchScale(bias)` gives that factor.
