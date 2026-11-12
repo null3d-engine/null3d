@@ -115,12 +115,6 @@ const JUNCTION_THICK = 0.5;
  * junction whose crotch stands clear of the fronds. The thickness bonus ranks it below a thick limb.
  */
 const JUNCTION_SKIRT_THICK = 0.2;
-/**
- * Degrees short of the most level of the thick limbs within which a junction view still takes a
- * limb: the photograph's limb leaves nearly level, so the most level limbs give its angle its best
- * chance.
- */
-const JUNCTION_LEVEL = 3;
 /** Degrees within which a limb that leaves the stem carries the stem's own line on. */
 const LEADER_ANGLE = 45;
 /** The share of the frame's height that the limb below a fork fills with its thickness. */
