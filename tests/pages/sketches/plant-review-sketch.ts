@@ -812,10 +812,16 @@ export default defineSketch(async (ctx) => {
 				return { position, target: add(position, look), fov, near: 0.05 };
 			}
 			case 'junction': {
-				// A great limb leaving the stem, seen side on from where no other limb hides it.
+				// A great limb leaving the stem, seen side on from where no other limb hides it. The
+				// picture's own subject box, when the tool measured one, gives the frame its width and
+				// height shares; without it the view frames the limb's thickness alone.
+				const shares =
+					QUERY.subjectWidth !== undefined && QUERY.subjectHeight !== undefined
+						? { width: QUERY.subjectWidth, height: QUERY.subjectHeight }
+						: undefined;
 				const found = closeAt(
 					view,
-					() => junctionView(closePlant(WOOD_ONLY), lens),
+					() => junctionView(closePlant(WOOD_ONLY), lens, shares),
 					turn,
 					fov,
 					0.05,
