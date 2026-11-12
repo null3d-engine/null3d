@@ -292,6 +292,7 @@ export function dressShoots(input: DressInput): DressedShoots {
 					rows.map((row) => row.axis),
 					limit,
 					lowest,
+					input.record.shoots?.placement.bareEnds !== false,
 				)
 			: undefined;
 	if (!trimmed) {

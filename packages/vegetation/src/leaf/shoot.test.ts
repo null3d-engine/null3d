@@ -1257,6 +1257,27 @@ describe('the bare trim', () => {
 		const ends = [1, 2, 3, 5, 6].map((a) => skeleton.axes.last[a] as number);
 		expect(bareTrimmed(skeleton, ends, [1, 2, 3, 5, 6], 0.05, 1)).toBeUndefined();
 	});
+
+	it('cuts every branch end at its last shoot when the crop asks, and a branch left bare goes', () => {
+		const skeleton = tree();
+		const node = (skeleton.axes.first[1] as number) + 1;
+		const out = bareTrimmed(skeleton, [node], [1], 0.05, 1, true);
+		expect(out).toBeDefined();
+		const { skeleton: kept, axisOut } = out as NonNullable<typeof out>;
+		// The stem, the bearing branch and the dead stub stay; the thick branch with no shoot and the
+		// one that thins both go, because neither carries foliage.
+		expect(axisOut[0]).toBeGreaterThanOrEqual(0);
+		expect(axisOut[1]).toBeGreaterThanOrEqual(0);
+		expect(axisOut[2]).toBe(-1);
+		expect(axisOut[3]).toBe(-1);
+		expect(axisOut[4]).toBe(-1);
+		expect(axisOut[5]).toBeGreaterThanOrEqual(0);
+		expect(axisOut[6]).toBe(-1);
+		const length = (axis: number) =>
+			(kept.axes.last[axis] as number) - (kept.axes.first[axis] as number) + 1;
+		expect(length(axisOut[1] as number)).toBe(2);
+		expect(length(axisOut[5] as number)).toBe(3);
+	});
 });
 
 describe('the plate run', () => {
