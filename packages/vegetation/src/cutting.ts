@@ -129,6 +129,36 @@ export interface CuttingOptions {
 	 */
 	readonly spread?: number;
 	/**
+	 * For 'branch' and 'subbranch': the shoot class of the piece's main stem, over the record's hint.
+	 * A stem joins full hanging lateral shoots from the piece's own class at heights along it, so a
+	 * photograph of a branch with hanging side shoots draws as one joined piece. Absent, the piece
+	 * keeps the one class and its fan.
+	 */
+	readonly stem?: string;
+	/**
+	 * How many lateral shoots hang from the stem, from 1 to the cutting's most. 6 by default.
+	 */
+	readonly laterals?: number;
+	/**
+	 * The share of the stem's height where the first lateral leaves, from 0 at the stem's foot to 1
+	 * at its tip. 0.45 by default.
+	 */
+	readonly lateralFrom?: number;
+	/**
+	 * The share of the stem's height where the last lateral leaves, from 0 at the stem's foot to 1
+	 * at its tip. 0.92 by default.
+	 */
+	readonly lateralTo?: number;
+	/**
+	 * Degrees each lateral leans outward from the stem's line, so a positive value opens the hanging
+	 * shoots away from the stem. 20 by default.
+	 */
+	readonly lateralAngle?: number;
+	/**
+	 * Which of the stem class's prototypes to take, 0 for the first. 0 by default.
+	 */
+	readonly stemPick?: number;
+	/**
 	 * For 'branch' and 'subbranch': whether the candidates rank by how young they are rather than by
 	 * how well their length matches, so the piece draws a shoot that is still opening. Absent, a
 	 * cut ranks as it always has.
@@ -749,6 +779,144 @@ export function clusterRank(
 }
 
 /**
+ * The stem-and-laterals assembly: one upright stem row on its cut at the origin, and the asked
+ * number of full lateral shoots hanging from heights along it. Each lateral is flipped so its tip
+ * falls, leans outward from the stem, and roots on the stem's own centreline, so the piece joins into
+ * one body. The hint's yaw turns the whole piece once. Clusters and leaves never take the assembly.
+ *
+ * @param kit The species' kit.
+ * @param cutting The piece.
+ * @param detail The mesh tier.
+ * @param stemPrototype The stem's prototype.
+ * @param lateralPrototype The lateral shoots' prototype.
+ * @param count How many laterals hang from the stem.
+ * @param from The share of the stem's height where the first lateral leaves.
+ * @param to The share where the last leaves.
+ * @param angle Degrees each lateral leans outward from the stem's line.
+ * @param yaw Degrees the whole piece turns about its upright axis.
+ * @returns The rows and their bounds, or undefined for a prototype without a mesh.
+ * @category api/vegetation
+ */
+function stemRows(
+	kit: SpeciesKitData,
+	cutting: CuttingOptions,
+	detail: Detail,
+	stemPrototype: ShootPrototype,
+	lateralPrototype: ShootPrototype,
+	count: number,
+	from: number,
+	to: number,
+	angle: number,
+	yaw: number,
+):
+	| { readonly rows: ShootRows; readonly bounds: { readonly min: Vec3; readonly max: Vec3 } }
+	| undefined {
+	const stemTier = stemPrototype.tiers[heldTier(kit, detail)] as PrototypeArrays | undefined;
+	const lateralTier = lateralPrototype.tiers[heldTier(kit, detail)] as PrototypeArrays | undefined;
+	if (!stemTier || !lateralTier || stemTier.positions.length === 0) return undefined;
+	const yawQ = [0, 0, 0, 1];
+	if (yaw !== 0) quatAxisAngle(UP, (yaw * Math.PI) / 180, yawQ);
+	const stemQ = [0, 0, 0, 1];
+	quatMultiply(yawQ, 0, shootTurn(stemPrototype, cutting), 0, stemQ);
+	const turned: Vector3 = [0, 0, 0];
+	// The stem's own line: the stem-coloured vertices, or every vertex for a mesh that marks none.
+	const line: { x: number; y: number; z: number }[] = [];
+	const stemMin = [Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY];
+	const stemMax = [Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY];
+	const stemP = stemTier.positions;
+	const stemC = stemTier.colors;
+	const visit = (i: number, keep: boolean) => {
+		quatRotate(
+			stemQ,
+			0,
+			[stemP[i] as number, stemP[i + 1] as number, stemP[i + 2] as number],
+			turned,
+		);
+		for (let k = 0; k < 3; k++) {
+			stemMin[k] = Math.min(stemMin[k] as number, turned[k] as number);
+			stemMax[k] = Math.max(stemMax[k] as number, turned[k] as number);
+		}
+		if (keep) line.push({ x: turned[0] as number, y: turned[1] as number, z: turned[2] as number });
+	};
+	for (let i = 0; i < stemP.length; i += 3)
+		visit(i, (stemC[(i / 3) * 4 + 2] as number) === SURFACE_STEM);
+	if (line.length === 0) for (let i = 0; i < stemP.length; i += 3) visit(i, true);
+	if (line.length === 0) return undefined;
+	const low = stemMin[1] as number;
+	const high = stemMax[1] as number;
+	const tall = Number.isFinite(high - low) ? high - low : 0;
+	// A lateral is uprighted as the kit grew it, then flipped so its tip falls, leaned outward and
+	// turned with the piece. Every row keeps its own leaf faces toward the camera the yaw shows.
+	const flip = [0, 0, 0, 1];
+	quatAxisAngle([1, 0, 0], Math.PI, flip);
+	const flipped = [0, 0, 0, 1];
+	quatMultiply(flip, 0, shootTurn(lateralPrototype, cutting), 0, flipped);
+	const rows = count + 1;
+	const position = new Float32Array(3 * rows);
+	const rotation = new Float32Array(4 * rows);
+	const prototype = new Uint8Array(rows);
+	const min = [Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY];
+	const max = [Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY];
+	const add = (p: Float32Array, q: ArrayLike<number>, at: readonly number[]) => {
+		for (let i = 0; i < p.length; i += 3) {
+			quatRotate(q, 0, [p[i] as number, p[i + 1] as number, p[i + 2] as number], turned);
+			for (let k = 0; k < 3; k++) {
+				const v = (turned[k] as number) + (at[k] as number);
+				min[k] = Math.min(min[k] as number, v);
+				max[k] = Math.max(max[k] as number, v);
+			}
+		}
+	};
+	const origin: readonly number[] = [0, 0, 0];
+	rotation.set(stemQ, 0);
+	prototype[0] = stemPrototype.index;
+	add(stemP, stemQ, origin);
+	const lateralP = lateralTier.positions;
+	for (let row = 1; row < rows; row++) {
+		const index = row - 1;
+		const share = count === 1 ? (from + to) / 2 : from + ((to - from) * index) / (count - 1);
+		const y = low + share * tall;
+		let best = line[0] as { x: number; y: number; z: number };
+		for (const sample of line) if (Math.abs(sample.y - y) < Math.abs(best.y - y)) best = sample;
+		const azimuth = index % 2 === 0 ? 0 : Math.PI;
+		const leanQ = [0, 0, 0, 1];
+		quatAxisAngle([-sin(azimuth), 0, cos(azimuth)], (angle * Math.PI) / 180, leanQ);
+		const leaned = [0, 0, 0, 1];
+		quatMultiply(leanQ, 0, flipped, 0, leaned);
+		const q = [0, 0, 0, 1];
+		quatMultiply(yawQ, 0, leaned, 0, q);
+		rotation.set(q, row * 4);
+		position[row * 3] = best.x;
+		position[row * 3 + 1] = y;
+		position[row * 3 + 2] = best.z;
+		prototype[row] = lateralPrototype.index;
+		add(lateralP, q, [best.x, y, best.z]);
+	}
+	for (let k = 0; k < 3; k++) {
+		if (!Number.isFinite(min[k])) min[k] = 0;
+		if (!Number.isFinite(max[k])) max[k] = 0;
+	}
+	return {
+		rows: {
+			count: rows,
+			prototype,
+			position,
+			rotation,
+			scale: new Float32Array(rows).fill(1),
+			record: new Uint16Array(rows),
+			phase: new Uint8Array(rows),
+			sky: new Uint8Array(rows).fill(250),
+			bent: new Uint8Array(rows).fill(0x88),
+			order: new Uint32Array(rows),
+		},
+		bounds: {
+			min: [min[0] as number, min[1] as number, min[2] as number],
+			max: [max[0] as number, max[1] as number, max[2] as number],
+		},
+	};
+}
+
+/**
  * A 'cluster' cutting from the kit alone: one shoot row of the prototype that `pick` names, standing
  * upright on its attach point at the origin unless the cutting keeps its pose, and the bounds of its
  * mesh at the tier.
@@ -800,6 +968,43 @@ export function clusterRow(
 	const spread = Math.min(4, Math.max(0, cutting.spread ?? fan?.spread ?? 0));
 	const spinShare = Math.min(1, Math.max(0, fan?.fanSpin ?? 1));
 	const yaw = Math.min(180, Math.max(-180, fan?.fanYaw ?? 0));
+	// A hint that names a stem class draws the stem-and-laterals assembly instead of a fan: the stem
+	// stands upright and the piece's own class hangs from it.
+	const stemName = cutting.stem ?? fan?.stem;
+	if (stemName !== undefined && cutting.part !== 'cluster' && cutting.part !== 'leaf') {
+		const stemClass = kit.prototypes.filter(
+			(candidate) =>
+				candidate.class === stemName && (leafy === undefined || candidate.leaves > 0 === leafy),
+		);
+		const pool =
+			stemClass.length > 0
+				? stemClass
+				: kit.prototypes.filter((candidate) => candidate.class === stemName);
+		const stemPrototype =
+			pool.length > 0
+				? (pool[(cutting.stemPick ?? fan?.stemPick ?? 0) % pool.length] as ShootPrototype)
+				: prototype;
+		const laterals = Math.max(
+			1,
+			Math.min(CUT_SHOOTS_MOST, Math.round(cutting.laterals ?? fan?.laterals ?? 6)),
+		);
+		const from = Math.min(1, Math.max(0, cutting.lateralFrom ?? fan?.lateralFrom ?? 0.45));
+		const to = Math.min(1, Math.max(from, cutting.lateralTo ?? fan?.lateralTo ?? 0.92));
+		const angle = Math.min(90, Math.max(-90, cutting.lateralAngle ?? fan?.lateralAngle ?? 20));
+		const assembly = stemRows(
+			kit,
+			cutting,
+			detail,
+			stemPrototype,
+			prototype,
+			laterals,
+			from,
+			to,
+			angle,
+			yaw,
+		);
+		if (assembly) return assembly;
+	}
 	// The whole piece turns about its upright axis once, before any row's own fan, so a branch whose
 	// side shoots lie in one plane shows that plane to the camera its photograph was taken from.
 	const turnQ = [0, 0, 0, 1];
