@@ -163,7 +163,7 @@ export const VIEW_SPECS: Readonly<Record<PlantView, ViewSpec>> = {
 		fov: 40,
 		background: 'studio-grey',
 		sun: 'default',
-		elevation: 12,
+		elevation: 20,
 		size: [960, 960],
 	},
 	strands: {
