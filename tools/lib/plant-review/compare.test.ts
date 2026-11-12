@@ -465,6 +465,48 @@ describe('the patch colour of a texture source', () => {
 		expect(patchDifference(reference, render, true)).toBeLessThan(0.5);
 		expect(patchDifference(reference, render, false)).toBeGreaterThan(10);
 	});
+
+	test('reads the bark alone across a limb picture that carries leaves', () => {
+		// A brown limb across the middle of a pale backdrop, with a band of leaves over it. The
+		// plant-filtered mean takes the leaves' green; the bark-only mean keeps the limb's own a*.
+		const size = 1000;
+		const data = new Uint8Array(size * size * 4);
+		for (let y = 0; y < size; y++)
+			for (let x = 0; x < size; x++) {
+				const leaf = y >= 420 && y < 580;
+				const limb = y >= 300 && y < 700;
+				const [r, g, b] = leaf ? [60, 140, 60] : limb ? [110, 100, 90] : [200, 220, 240];
+				const at = (y * size + x) * 4;
+				data[at] = r as number;
+				data[at + 1] = g as number;
+				data[at + 2] = b as number;
+				data[at + 3] = 255;
+			}
+		const image = { width: size, height: size, data };
+		const blended = patchLab(image, true)[1] as number;
+		const bark = patchLab(image, true, true)[1] as number;
+		expect(blended).toBeLessThan(-5);
+		expect(Math.abs(bark)).toBeLessThan(5);
+	});
+
+	test('falls back to the plant mean where the whole frame is leaf', () => {
+		// A picture with no bark surface has no bark mean to read. The bark-only request returns the
+		// plant-filtered mean rather than an empty average.
+		const size = 400;
+		const data = new Uint8Array(size * size * 4);
+		for (let y = 0; y < size; y++)
+			for (let x = 0; x < size; x++) {
+				const band = x >= 160 && x < 240;
+				const [r, g, b] = band ? [30, 100, 30] : [60, 140, 60];
+				const at = (y * size + x) * 4;
+				data[at] = r as number;
+				data[at + 1] = g as number;
+				data[at + 2] = b as number;
+				data[at + 3] = 255;
+			}
+		const image = { width: size, height: size, data };
+		expect(patchLab(image, true, true)).toEqual(patchLab(image, true));
+	});
 });
 
 describe('the pieces a plant is drawn as', () => {

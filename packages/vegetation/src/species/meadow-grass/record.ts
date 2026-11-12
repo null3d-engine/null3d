@@ -38,12 +38,15 @@ export const record: Species = {
 		ranks: 2,
 		sheath: { mean: 0.035, spread: 0.01 },
 		sheathRadius: 0.0018,
+		// Stills 15 and 16: the basal sheath is pale cream, not the blade's green, and it stays that
+		// pale from the soil to the collar, so both ends of the column take the same measured colour.
+		sheathColour: { foot: [0.366, 0.38, 0.309], collar: [0.366, 0.38, 0.309], reach: 0.85 },
 		// Still 21: the youngest inner blades stand tall and almost straight, arching only near
 		// their tips, while the oldest outer ones leave their collars wide and arch toward the
 		// ground. The young blades hold the leaf mass's height; the old ones its width.
 		spread: [
-			[0, 4],
-			[1, 18],
+			[0, 2],
+			[1, 12],
 		],
 		size: [
 			[0, 0.8],
@@ -72,6 +75,9 @@ export const record: Species = {
 				],
 				droop: 12,
 				flowers: { mean: 5, spread: 1 },
+				// Still 18: the spray's branches read on the silhouette, so a branch at 0.30 of the
+				// stem's radius joins it into one piece where 0.18 split the height profile.
+				branchShare: 0.3,
 			},
 		},
 	},
@@ -96,13 +102,18 @@ export const record: Species = {
 			arch: { mean: 18, spread: 8 },
 			// Stills 02 and 06: the old outer blades carry dry brown tips.
 			dryTip: 0.03,
+			// Stills 15 and 16: the ribbed pale sheath ends in a pale collar with a small papery
+			// ligule in the V where the blade leaves it. Both are the sheath's own pale cream, and
+			// the collar takes the lowest fiftieth of the blade.
+			collar: { colour: [0.366, 0.38, 0.309], share: 0.02 },
+			ligule: { length: { mean: 0.006, spread: 0.002 }, width: 0.004, share: 0.5 },
 			// The texture source's two faces under flat light: the shader scales each face's picture
 			// by that face's mean, so these figures are the pictures' own means.
 			optics: {
 				reflectance: [0.1284, 0.272, 0.0218],
 				reflectanceBack: [0.0654, 0.158, 0.0104],
 				transmittance: [0.16, 0.33, 0.03],
-				roughness: [0.55, 0.35],
+				roughness: [0.55, 0.6],
 			},
 		},
 	},
@@ -216,7 +227,7 @@ export const record: Species = {
 						reflectance: [0.1284, 0.272, 0.0218],
 						reflectanceBack: [0.0654, 0.158, 0.0104],
 						transmittance: [0.16, 0.33, 0.03],
-						roughness: [0.55, 0.35],
+						roughness: [0.55, 0.6],
 					},
 				},
 			},
@@ -227,5 +238,8 @@ export const record: Species = {
 		// on its own against the copy stand.
 		branch: { order: 1, length: 0.5 },
 		subbranch: { order: 1, length: 0.35 },
+		// Stills 12, 13 and the two texture sources: a picked blade lies pressed on the copy stand,
+		// so its fold, twist and arch straighten and the pictures show the blade's own width.
+		leaf: { pressed: true },
 	},
 };
