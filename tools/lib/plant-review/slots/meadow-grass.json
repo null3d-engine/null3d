@@ -1,21 +1,8 @@
 {
-	"04-tuft-from-above.png": {
-		"elevation": 82,
-		"distance": 0.45,
-		"fov": 40
-	},
-	"11-blade-cluster.png": {
-		"cut": 0.35,
-		"pick": 1
-	},
-	"12-single-blade-upper.png": {
-		"leaves": 0.72,
-		"roll": -45
-	},
-	"13-single-blade-underside.png": {
-		"leaves": 0.72,
-		"roll": -45
-	},
+	"04-tuft-from-above.png": { "elevation": 82, "distance": 0.45, "fov": 40 },
+	"11-blade-cluster.png": { "cut": 0.35 },
+	"12-single-blade-upper.png": { "leaves": 0.72, "roll": -45 },
+	"13-single-blade-underside.png": { "leaves": 0.72, "roll": -45 },
 	"15-sheath-and-collar.png": {
 		"view": "branch",
 		"cut": 0.12,
@@ -32,23 +19,11 @@
 		"leafLength": 0.1,
 		"roll": 0
 	},
-	"18-silhouette.png": {
-		"horizon": 0.455
-	},
-	"19-seed-head.png": {
-		"distance": 0.32,
-		"fov": 30
-	},
-	"23-leaf-cluster-studio.png": {
-		"cut": 0.35,
-		"pick": 1
-	},
-	"24-leaf-texture-upper.png": {
-		"leaves": 0.72,
-		"roll": -45
-	},
-	"25-leaf-texture-underside.png": {
-		"leaves": 0.72,
-		"roll": -45
-	}
+	"18-silhouette.png": { "horizon": 0.455 },
+	"19-seed-head.png": { "distance": 0.32, "fov": 30 },
+	"21-branch-studio.png": { "view": "whole", "lifted": true, "background": "studio-grey" },
+	"22-subbranch-studio.png": { "pick": 2 },
+	"23-leaf-cluster-studio.png": { "cut": 0.35 },
+	"24-leaf-texture-upper.png": { "leaves": 0.72, "roll": -45 },
+	"25-leaf-texture-underside.png": { "leaves": 0.72, "roll": -45 }
 }

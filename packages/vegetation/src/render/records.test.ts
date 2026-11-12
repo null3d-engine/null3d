@@ -109,6 +109,16 @@ describe('the species header', () => {
 		expect(header.length).toBe(HEADER_ROWS * RECORDS_WIDTH * 4);
 	});
 
+	test('draws as before when the record names no sky-to-leaf term', () => {
+		expect([...speciesHeader(record, manifest, box)]).toEqual([...header]);
+		expect(texel(header, HEADER.sway)[3]).toBe(0);
+	});
+
+	test('packs the sky-to-leaf extinction in the sway texel', () => {
+		const lit = speciesHeader({ ...record, skyToLeaf: 0.3 }, manifest, box);
+		expect(texel(lit, HEADER.sway)[3]).toBeCloseTo(0.3, 6);
+	});
+
 	test('packs the two colours of a tuft sheath, and none where the record gives none', () => {
 		const tuft = {
 			...record,
@@ -403,8 +413,10 @@ describe('the plant shader', () => {
 			HEADER_WINTER_BARK: HEADER.winterBark,
 			HEADER_WINTER_REFLECTANCE: HEADER.winterReflectance,
 			HEADER_WINTER_TRANSMITTANCE: HEADER.winterTransmittance,
+			HEADER_SHEATH: HEADER.sheath,
 			HEADER_EXTRA_BANDS: HEADER.extraBands,
 			HEADER_CARD_STALK: HEADER.cardStalk,
+			HEADER_CARD_COVERAGE: HEADER.cardCoverage,
 			BARK_ZONE_TEXELS,
 			MAX_BARK_ZONES,
 			MAX_EXTRAS,
