@@ -92,8 +92,14 @@ export interface SparseFloors {
 	readonly limbs: number;
 	/** The least leaf-area share, from 0.05 to 1: how much of the record's leaf it keeps. */
 	readonly leaves: number;
-	/** The most coarsening, from 0 to 1: how far the sparse form thins twigs and coarsens wood. */
+	/** The most coarsening, from 0 to 1: how far the sparse form smooths the wood's mesh. */
 	readonly coarseness: number;
+	/**
+	 * The most section sparsity, from 0 to 1: how far the sparse form may thin the wood's own
+	 * sections, from the level's rings and sides to a few flat-sided runs with square ends. Absent,
+	 * the sparse form keeps the sections its coarseness gives.
+	 */
+	readonly sections?: number;
 }
 
 /**
@@ -554,6 +560,20 @@ export interface Architectural {
 	readonly orders: readonly ArchitecturalOrder[];
 	/** Hanging second-order curtains (Norway spruce comb, larch). */
 	readonly pendulous?: { readonly order: number; readonly length: Curve; readonly share: number };
+	/**
+	 * The pipe model that gives the wood its thickness: a parent's diameter to the exponent is the
+	 * sum of its children's, and a terminal twig's radius in metres. The wood is then fitted to the
+	 * species' diameter at 1.3 m. Absent, an exponent of 2.3 and a 5 mm twig are used.
+	 */
+	readonly pipe?: {
+		readonly exponent: number;
+		readonly tipRadius: number;
+		/**
+		 * The least share of its girth a stem keeps from one node to the next, from 0.5 to 1.
+		 * Absent, 0.7, so a leader that carries the crown to the top is not outgrown by a whorl.
+		 */
+		readonly leader?: number;
+	};
 }
 
 /**
@@ -950,14 +970,23 @@ export interface Column {
 	readonly arms: {
 		/** Arms per plant. */
 		readonly count: Spread;
-		/** Share of height where arms leave. */
-		readonly from: number;
-		/** Metres out from the column where an arm turns upward. */
-		readonly elbow: number;
+		/**
+		 * Share of height where arms leave: one share for every arm, or one share per tier of arms,
+		 * lowest first. The grower deals the arms among the tiers in turn.
+		 */
+		readonly from: number | readonly number[];
+		/**
+		 * Metres out from the column where an arm turns upward: one distance for every arm, or one
+		 * distance per tier of arms, lowest first.
+		 */
+		readonly elbow: number | readonly number[];
 		/** An arm's radius in metres. */
 		readonly radius: number;
-		/** Metres an arm rises after its elbow. */
-		readonly rise: Spread;
+		/**
+		 * Metres an arm rises after its elbow: one spread for every arm, or one spread per tier of
+		 * arms, lowest first.
+		 */
+		readonly rise: Spread | readonly Spread[];
 	};
 	/** Metres between areoles on a rib crest; each carries a spine-cluster prototype. */
 	readonly areoles: number;
@@ -1314,6 +1343,12 @@ export interface ShootClass {
 	 * round from every side.
 	 */
 	readonly leafAngleSpread?: number;
+	/**
+	 * Degrees about the shoot where its first leaf stands, where every shoot of the class must show
+	 * its leaf the same way up: a cactus areole's spine cluster lies with its longest spine pointing
+	 * down the stem. Absent, each shoot takes a turn of its own from the hash.
+	 */
+	readonly azimuth?: number;
 	/** Degrees the shoot hangs over its length (willow whips, birch). */
 	readonly droop: number;
 	/**
@@ -1800,6 +1835,37 @@ export interface BaseSpec {
 	 * ground (from 0) and the height in metres they fade out by (above 0).
 	 */
 	readonly flutes?: { readonly count: Spread; readonly depth: number; readonly height: number };
+	/**
+	 * An old fire scar on the first stem's foot: the strong trees carry one where a ground fire
+	 * burned through the bark and the wood closed over it for a century. It cuts a hollow into the
+	 * stem between two heights and darkens the bark there, so the scar faces one side of the tree
+	 * while healthy bark closes round it. Absent, the foot has no scar.
+	 */
+	readonly scar?: ScarSpec;
+}
+
+/**
+ * A fire scar's hollow: a notch out of one side of the foot, charred. The angles run about the
+ * first stem from its frame's normal, which for an upright stem is the plant's +X axis, so a page
+ * can turn the plant to face the scar.
+ *
+ * @category api/vegetation
+ */
+export interface ScarSpec {
+	/** Metres above the ground where the scar's foot stands. */
+	readonly from: number;
+	/** Metres above the ground where the scar's head stands, above `from`. */
+	readonly to: number;
+	/** Degrees about the stem where the hollow's centre faces. */
+	readonly angle: number;
+	/** Degrees of the hollow's full angular width. */
+	readonly width: number;
+	/** Metres the hollow cuts into the stem at its deepest, in the middle of its height. */
+	readonly depth: number;
+	/** The charred colour, linear from 0 to 1. */
+	readonly colour: Rgb;
+	/** The share of the charred colour the hollow takes, from 0 to 1; 0.9 by default. */
+	readonly shade?: number;
 }
 
 /**
@@ -2100,6 +2166,14 @@ export interface LodSpec {
 	 * neighbour's leaves instead of on sky.
 	 */
 	readonly cardGrow?: number;
+	/**
+	 * Texels a side of one cell of the card atlas, at each tier, where the species' leaves are
+	 * thinner than the default cell can hold: each entry is a power of two from 64 to 256, and 64
+	 * by default. A needle a millimetre and a half across is under one texel of a 64 cell, so its
+	 * card would draw only the bare twig; a cell of 128 holds it while the crown still reads green.
+	 * Each doubling costs four times the atlas memory.
+	 */
+	readonly cardCell?: Readonly<Record<Detail, number>>;
 	/**
 	 * The least width, in pixels, that a card's own stalk draws at any distance, from 0 to 8. A card
 	 * stands on its axis's twig, whose wood may be thinner than a pixel at a whole view, so the

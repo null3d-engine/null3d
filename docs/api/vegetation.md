@@ -116,7 +116,7 @@ To keep results across visits, give `prepareSpecies` a store of bytes as its `ca
 
 ### Simpler plants
 
-The `detail` tier sets how finely the same branches and leaves are meshed. The `coarseness` option grows a simpler plant instead. It runs from 0, the plant as grown, to 1, the coarsest. A coarser plant loses a share of its finest twigs and their buds, the twigs deepest inside the crown first. It keeps fewer shoots, spread evenly through the crown, and grows each shoot it keeps, so its leaf area holds. Its wood has fewer rings and fewer sides. The twigs at the crown's edge stay, so the plant keeps its outline.
+The `detail` tier sets how finely the same branches and leaves are meshed. The `coarseness` option meshes the wood more simply still. It runs from 0, the plant as grown, to 1, the coarsest: the wood takes longer edges, so fewer rings and fewer sides. The twigs, the shoots and the leaves stay as grown, so the crown and the plant's drawn top do not move.
 
 ```ts
 const kit = await prepareSpecies(ctx, oak, { coarseness: 0.5 });
@@ -125,9 +125,9 @@ const crowd = await growPlant(kit, { seed: 7, variant: 1, triangles: 2_000_000 }
 console.log(crowd.coarseness, nearTriangles(kit, crowd));
 ```
 
-Give `triangles` in place of `coarseness` to set a target for one copy's nearest level: its wood, its shoots at the variant's tier and its extras. The variant grows at the coarseness that comes nearest, and the asset's `coarseness` says which one. The core finds it by counting the shoots and the wood at a few values of coarseness, before it builds any mesh. A target above the plant as grown gives the plant as grown, and a target below the coarsest plant gives the coarsest. Give one of the two options, not both.
+Give `triangles` in place of `coarseness` to set a target for one copy's nearest level: its wood, its shoots at the variant's tier and its extras. The variant grows at the coarseness that comes nearest, and the asset's `coarseness` says which one. The core finds it by counting the shoots and the wood at a few values of coarseness, before it builds any mesh. A target above the plant as grown gives the plant as grown, and a target below the coarsest wood mesh gives the coarsest. Give one of the two options, not both.
 
-Options given to `prepareSpecies` apply to every variant that grows from its kit, and a variant's own options replace them. A coarseness of 0 grows the same bytes as no coarseness. Stand-ins grow the same at every coarseness. On a grown oak at the high tier, coarseness 1 cuts the nearest level from 26.7 million triangles to 3.8 million. Its outline stays within 0.01 of the plant as grown.
+Options given to `prepareSpecies` apply to every variant that grows from its kit, and a variant's own options replace them. A coarseness of 0 grows the same bytes as no coarseness. Stand-ins grow the same at every coarseness. On a grown oak at the high tier, coarseness 1 cuts the nearest level's wood from 761,551 triangles to 576,720, while its 3,771 shoot rows and its cards stay as grown. To grow a sparser plant, use `sparse`.
 
 A page can also move the level switches of all its species at once. Give `switchBias` in the view that every `placePlants` call takes. It counts in stops: each switch distance is multiplied by two to the power of minus the bias. A bias of 1 switches every level at half its distance, and a bias of -1 at twice its distance. `switchScale(bias)` gives that factor.
 
