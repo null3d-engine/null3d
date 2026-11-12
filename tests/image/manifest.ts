@@ -3795,6 +3795,14 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			...(switches.length > 0 && { switches }),
 			...(demo.hdr === false && { expect: { hdr: false } }),
 			...(demo.timeoutSeconds !== undefined && { timeoutSeconds: demo.timeoutSeconds }),
+			// The held picture's eight-species subset fills more of the frame than the whole
+			// catalogue did, and Firefox on CI's software GPU rounds its grass and card edges a
+			// little further apart: it drew 0.535 per cent of the pixels differently from the Mac's
+			// picture, against the device's 0.5. The limit sits above that figure, and it applies
+			// only where a browser or a device compares with the Mac's pictures.
+			...(demo.name === 'vegetation' && {
+				deviceTolerance: { threshold: 0.1, maxDiffRatio: 0.006 },
+			}),
 			// The screens draw their readings into a 2D canvas, and each browser rasterises that
 			// text its own way. The readings, the bars, the chart and the layout match
 			// everywhere, while the glyphs of the digits differ. Firefox drew 2.615 per cent of
