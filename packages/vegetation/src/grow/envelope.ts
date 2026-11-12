@@ -317,6 +317,52 @@ export function insetVolume(volume: EnvelopeVolume, margin: number): EnvelopeVol
 }
 
 /**
+ * A volume whose radius at each height is drawn a share of the way toward the mean of its azimuths.
+ * A measured hull is as irregular as the views it came from, so an architectural crown that fills
+ * it exactly shows one view thin and another wide. Blending toward the mean rounds the narrow sides
+ * without moving the widest, and stays within the reference's own all-round spread.
+ *
+ * @param volume The volume.
+ * @param share How far toward the mean each azimuth's radius moves, from 0 (as it is) to 1.
+ * @returns The rounded volume.
+ */
+export function smoothedVolume(volume: EnvelopeVolume, share: number): EnvelopeVolume {
+	const blend = Math.min(1, Math.max(0, share));
+	if (blend === 0) return volume;
+	const steps = 16;
+	const meanAt = (y: number): number => {
+		let total = 0;
+		let count = 0;
+		for (let k = 0; k < steps; k++) {
+			const r = volume.radius(y, (k / steps) * TAU);
+			if (r > 0) {
+				total += r;
+				count++;
+			}
+		}
+		return count > 0 ? total / count : 0;
+	};
+	const radius = (y: number, azimuth: number): number => {
+		const own = volume.radius(y, azimuth);
+		const mean = meanAt(y);
+		return own + (mean - own) * blend;
+	};
+	return {
+		base: volume.base,
+		top: volume.top,
+		reach: volume.reach,
+		radius,
+		room(x, y, z) {
+			const across = Math.sqrt(x * x + z * z);
+			const r = radius(y, atan2(z, x));
+			if (y < volume.base) return Math.min(r, -(volume.base - y));
+			if (y > volume.top) return Math.min(r, -(y - volume.top));
+			return r - across;
+		},
+	};
+}
+
+/**
  * A grid of cells for side views of one plant, in metres: x across the view, y up.
  */
 export interface SilhouetteFrame {
