@@ -45,8 +45,8 @@ export const record: Species = {
 		// their tips, while the oldest outer ones leave their collars wide and arch toward the
 		// ground. The young blades hold the leaf mass's height; the old ones its width.
 		spread: [
-			[0, 4],
-			[1, 18],
+			[0, 2],
+			[1, 12],
 		],
 		size: [
 			[0, 0.8],
