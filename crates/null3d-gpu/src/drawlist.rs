@@ -2529,9 +2529,9 @@ pub mod groups {
         MESH[3],
         MESH[4],
     ];
-    /// The groups of a template that draws particles: its system's group, then the view's copy of
-    /// its opaque depth, the group the maps of a build that has them sit in, and the WebGL2 path's
-    /// draws and instances groups.
+    /// The groups of a template that draws particles: its system's group, which holds its values,
+    /// its views' blocks and its wind field; then the view's copy of its opaque depth, the maps of
+    /// a build that has them, and the WebGL2 path's draws and instances groups.
     const PARTICLE_MESH: &[&[u32]] = &[
         &[layout::FRAME],
         &[layout::PARTICLE, layout::DRAWS],
