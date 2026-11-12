@@ -315,6 +315,11 @@ export function speciesHeader(
 	const foliage = record.foliage;
 	if (foliage.kind === 'grass-blade' && foliage.blade.collar)
 		texel(header, HEADER.collar, [...foliage.blade.collar.colour, foliage.blade.collar.share]);
+	// A tuft's basal sheath column draws in the record's own colour where it names one; the
+	// roughness keeps the sheath from reading as polished wood beside the matt leaf.
+	const growth = record.growth;
+	if (growth.model === 'tuft' && growth.sheathColour)
+		texel(header, HEADER.sheath, [...growth.sheathColour, 0.7]);
 	const minParts = box.min.map(split);
 	const spanParts = box.max.map((max, k) => split(max - (box.min[k] as number)));
 	texel(header, HEADER.boxMin, [...minParts.map((p) => p[0]), 0]);
@@ -395,9 +400,6 @@ export function speciesHeader(
 		texel(header, HEADER.winterReflectance, [...winterLeaves.reflectance, 1]);
 		texel(header, HEADER.winterTransmittance, [...winterLeaves.transmittance, 0]);
 	}
-	const growth = record.growth;
-	if (growth.model === 'tuft' && growth.sheathColour)
-		texel(header, HEADER.sheath, [...growth.sheathColour, 1]);
 	texel(header, HEADER.cardStalk, [record.lod.cardStalk ?? 0, 0, 0, 0]);
 	return header;
 }

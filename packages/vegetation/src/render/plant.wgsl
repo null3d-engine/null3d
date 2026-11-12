@@ -1164,8 +1164,12 @@ fn surface(input: SurfaceInput) -> Surface {
         } else if (mode == MODE_FOLIAGE && abs(input.vertexColor.b * 255.0 - KIND_SHEATH) < 0.5) {
             // A merged ground plant's sheath column draws in the record's sheath colour. Its kind
             // marks the colour's third byte, since the asset clamps a negative coordinate to zero.
+            // The leaf texture's stalk strip lies over it, divided by the face's mean, so the
+            // sheath shows the blade's ribbing and the record's colour stays the material's own.
             let body = header(HEADER_SHEATH);
-            base = body.rgb;
+            let strip = textureSampleGrad(colour, colourSampler, uv, 0, gx, gy).rgb;
+            let face = max(header(HEADER_UPPER_MEAN).rgb, vec3f(0.0001));
+            base = body.rgb * clamp(strip / face, vec3f(0.55), vec3f(1.45));
             roughness = max(body.w, 0.5);
         } else {
             let layer = select(1, 0, upper);

@@ -99,6 +99,11 @@ export const record: Species = {
 			arch: { mean: 18, spread: 8 },
 			// Stills 02 and 06: the old outer blades carry dry brown tips.
 			dryTip: 0.03,
+			// Stills 15 and 16: the ribbed pale sheath ends in a pale collar with a small papery
+			// ligule in the V where the blade leaves it. Both are the sheath's own pale cream, and
+			// the collar takes the lowest fiftieth of the blade.
+			collar: { colour: [0.366, 0.38, 0.309], share: 0.02 },
+			ligule: { length: { mean: 0.006, spread: 0.002 }, width: 0.004, share: 0.5 },
 			// The texture source's two faces under flat light: the shader scales each face's picture
 			// by that face's mean, so these figures are the pictures' own means.
 			optics: {

@@ -27,6 +27,13 @@ import { type AxisPath, axisPath, emptyFrame, frameAt, type PathFrame } from '..
 /** The axis kind of a leaf or blade: a lamina on its own stalk or sheath. */
 export const AXIS_LEAF = AXIS_RACHIS;
 
+/**
+ * The flutter byte of a tuft's basal sheath column, which marks it for the plant material: the
+ * column draws in the record's sheath colour under the leaf texture's ribbing, not the leaf's green.
+ * The shader's `KIND_SHEATH` names the same value. Every other foliage axis keeps its phase byte.
+ */
+export const SHEATH_KIND = 240;
+
 /** The bits of a 32-bit float, for keys that a cut keeps. */
 const FLOAT = new Float32Array(1);
 const BITS = new Uint32Array(FLOAT.buffer);
@@ -274,9 +281,9 @@ export interface StemRun {
 	 */
 	readonly leastSky?: number;
 	/**
-	 * Whether the run is a shoot's sheath column. A sheath draws the record's own colour, and since
-	 * it does not flutter, the top bit of its flutter byte marks that byte as a sheath's rather than
-	 * a leaf's.
+	/**
+	 * Whether this run is a tuft's basal sheath column, which the plant material draws in the
+	 * record's sheath colour. Absent, the run draws as the leaf does.
 	 */
 	readonly sheath?: boolean;
 }
@@ -295,10 +302,12 @@ export function writeStem(mesh: MeshWriter, run: StemRun): void {
 	const sides = Math.max(3, section.sides);
 	const firstVertex = mesh.vertices;
 	const firstIndex = mesh.indices.length;
+	// A sheath column's flutter byte is its marker, so the column stands still and the material
+	// reads the record's colour for it; every other run keeps its sway phase.
 	const colour = [
 		run.bytes.high,
 		run.bytes.low,
-		run.sheath === true ? run.bytes.phase | 0x80 : run.bytes.phase,
+		run.sheath === true ? SHEATH_KIND : run.bytes.phase,
 		0,
 	];
 	const p = [0, 0, 0];
