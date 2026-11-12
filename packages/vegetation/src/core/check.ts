@@ -362,11 +362,14 @@ function growthProblems(record: Species, out: string[]): void {
 		spreadProblems(growth.sheath, 'growth.sheath', true, out);
 		const sheathColour = growth.sheathColour;
 		if (sheathColour) {
-			for (const [end, value] of sheathColour.entries())
-				if (!(value >= 0 && value <= 1))
-					out.push(
-						`growth.sheathColour.${end} is ${JSON.stringify(value)}; a colour lies from 0 to 1`,
-					);
+			const colourProblems = (colour: readonly number[], path: string) => {
+				for (const [end, value] of colour.entries())
+					if (!(value >= 0 && value <= 1))
+						out.push(`${path}.${end} is ${JSON.stringify(value)}; a colour lies from 0 to 1`);
+			};
+			colourProblems(sheathColour.foot, 'growth.sheathColour.foot');
+			colourProblems(sheathColour.collar, 'growth.sheathColour.collar');
+			shareProblem(sheathColour.reach, 'growth.sheathColour.reach', out);
 		}
 		wholeProblem(growth.ranks, 'growth.ranks', 1, 3, out);
 		for (const key of ['lean', 'spread', 'size'] as const)

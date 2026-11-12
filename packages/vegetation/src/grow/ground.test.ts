@@ -198,7 +198,10 @@ describe('the tuft sheath marker', () => {
 	if (growth.model !== 'tuft') throw new Error('the meadow grass is a tuft');
 	const sheathed: Species = {
 		...meadowGrassRecord,
-		growth: { ...growth, sheathColour: [0.366, 0.38, 0.309] },
+		growth: {
+			...growth,
+			sheathColour: { foot: [0.366, 0.38, 0.309], collar: [0.366, 0.38, 0.309], reach: 0.85 },
+		},
 	};
 	const grow = (record: Species) => {
 		const kit = buildKitNow(
