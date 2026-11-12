@@ -121,8 +121,7 @@
 		"sunAzimuth": -15,
 		"sunRise": 55,
 		"skyShare": 0.3,
-		"daylight": 2.3,
-		"distance": 1.2
+		"daylight": 2.3
 	},
 	"14-base.png": {
 		"sunAzimuth": -24,
