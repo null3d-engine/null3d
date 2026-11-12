@@ -28,6 +28,7 @@ import {
 	forks,
 	forkView,
 	insideView,
+	junctionCandidates,
 	junctionFrameHeight,
 	junctionView,
 	surfaceView,
@@ -337,6 +338,27 @@ describe('the limb a junction view takes', () => {
 			{ fov: 50, aspect: 1 },
 		);
 		expect(view?.subject.axis).toBe(level);
+	});
+});
+
+describe('the junction candidates', () => {
+	test('admit a thin stipe beside a thick limb, and a limb that ends inside the frame is left out', () => {
+		const b = new SkeletonBuilder();
+		const stem = b.addAxis({ parent: -1, parentNode: -1, order: 0, kind: AXIS_STEM });
+		const top = run(b, stem, -1, [0, 0, 0], [0, 1, 0], 6, 0.8, 0.3)[5] as number;
+		const thick = b.addAxis({ parent: stem, parentNode: top, order: 1, kind: AXIS_LIMB });
+		run(b, thick, top, [0.8, 5.8, 0], [0.7, 0.7, 0], 8, 0.5, 0.5);
+		// A stipe at three tenths of the thick limb's radius, running on past the frame.
+		const stipe = b.addAxis({ parent: stem, parentNode: top, order: 1, kind: AXIS_LIMB });
+		run(b, stipe, top, [-1, 5.1, 0], [-1, 0.02, 0], 8, 0.15, 0.2);
+		// A short twig that ends inside the frame is not a junction candidate.
+		const short = b.addAxis({ parent: stem, parentNode: top, order: 1, kind: AXIS_LIMB });
+		run(b, short, top, [0, 5, 0.5], [0, 0, 0.02], 4, 0.4, 0.2);
+		const limbs = departures(b.finish(1)).limbs;
+		const kept = junctionCandidates(limbs, limbs[0]?.radius ?? 0, { fov: 50, aspect: 1 });
+		const axes = kept.map((d) => d.axis);
+		expect(axes).toContain(stipe);
+		expect(axes).not.toContain(short);
 	});
 });
 
