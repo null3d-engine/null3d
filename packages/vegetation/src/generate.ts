@@ -67,8 +67,8 @@ import {
 } from './cutting';
 import { coarsenSkeleton } from './grow/coarsen';
 import {
+	cardTop,
 	crownReach,
-	foliageTop,
 	HEIGHT_RESIDUAL,
 	scaledPlacement,
 	scaledRows,
@@ -743,7 +743,7 @@ function dress(kit: SpeciesKitData, options: GrowOptions): MeshInput {
 	// residual over the accepted share is taken out by one scale of the already-placed geometry: a
 	// matrix scale, not a second growth.
 	if (target > 0 && rows.count > 0) {
-		const top = Math.max(skeleton.height, foliageTop(kit, rows));
+		const top = Math.max(skeleton.height, cardTop(kit, rows, record.lod.cardGrow ?? 1));
 		if (top > 0 && Math.abs(top - target) / target > HEIGHT_RESIDUAL) {
 			const corrective = target / top;
 			skeleton = scaledSkeleton(skeleton, corrective);
