@@ -23,11 +23,13 @@ interface MemoryResult {
 
 /**
  * The rounds in which the engine's start-up may still move the heap. A slower runner's start-up
- * arrives over more rounds: one run of 140 rounds settled at round 131, and CI's software GPU
- * settled at round 158 on WebGL2. The bound sits above that sighting, and the rounds after it test
- * the churn.
+ * arrives over more rounds: one run of 140 rounds settled at round 131, CI's software GPU at round
+ * 158 on WebGL2, and a slower runner at 185. The bound sits above the latest sighting, and the
+ * rounds after it test the churn; at 190 that leaves ten. The sighting has climbed with the
+ * runner's speed three times, so a fourth climb should raise the round count rather than this
+ * bound, which cannot pass the last round.
  */
-const WARM_ROUNDS = 180;
+const WARM_ROUNDS = 190;
 
 for (const gpu of ['webgpu', 'webgl2'] as const)
 	test(`loading and destroying models 200 times keeps the memory flat, on ${gpu}`, async ({

@@ -37,6 +37,10 @@ const PANELS_SECONDS = 120;
 const PANELS_SECONDS_BY_SPECIES: Readonly<Record<string, number>> = {
 	'common-alder': 240,
 	'tree-fern': 180,
+	// The willow's four panels drew in 138 seconds on WebGL2 and 192 on compatibility mode and
+	// WebGPU, with the three tiers drawing together under a machine loaded to 47 at its peak, so
+	// this keeps the same quarter margin the alder's 240 does.
+	'weeping-willow': 240,
 };
 
 /** The picture test of each species folder. */
