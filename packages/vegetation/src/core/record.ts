@@ -40,6 +40,13 @@ export interface Species {
 	readonly shoots?: ShootSpec;
 	/** What the leaves are. */
 	readonly foliage: Foliage;
+	/**
+	 * The share of the open sky, 0 to 1, added to the leaf and card faces' ambient light, where a
+	 * crown's leaves stand in less skylight than its photographs show. The value is the extinction
+	 * that the added sky term uses, its own per species: the far-card shading's share, applied to the
+	 * leaf faces. Absent or 0, the faces draw as before.
+	 */
+	readonly skyToLeaf?: number;
 	/** The bark zones and how the wood takes them. */
 	readonly bark?: BarkSpec;
 	/** Root flare, buttresses, surface roots and flutes at the stem base. */

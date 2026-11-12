@@ -13,6 +13,7 @@ import type {
 } from './asset';
 import {
 	AXIS_CULM,
+	AXIS_RACHIS,
 	AXIS_ROOT,
 	AXIS_STEM,
 	AXIS_STIPE,
@@ -290,6 +291,7 @@ function candidates(
 	length: number,
 	shade: number,
 	young = false,
+	cluster = false,
 ): Candidate[] {
 	const { axes } = skeleton;
 	const depth = depths(skeleton);
@@ -298,9 +300,12 @@ function candidates(
 	);
 	// The candidate ancestors of each axis, nearest first, found walking parents before children.
 	const owners: number[][] = Array.from({ length: axes.count }, () => []);
+	// A cluster is one shoot: a leaf's own axis meshes no piece, so a cluster of a species without
+	// shoot prototypes refuses the leaf axes rather than drawing an empty still.
 	const isCandidate = (a: number) =>
 		(axes.parent[a] as number) >= 0 &&
-		(order === undefined ? (axes.order[a] as number) >= 1 : (axes.order[a] as number) === order);
+		(order === undefined ? (axes.order[a] as number) >= 1 : (axes.order[a] as number) === order) &&
+		(!cluster || (axes.kind[a] as number) !== AXIS_RACHIS);
 	for (const a of byDepth) {
 		const parent = axes.parent[a] as number;
 		const inherited = parent >= 0 ? (owners[parent] as number[]) : [];
@@ -363,10 +368,11 @@ function candidates(
 	const leafy = (c: Candidate) => (c.buds > 0 ? 1 : 0);
 	const head = (c: Candidate) => c.head;
 	const divides = (c: Candidate) => (c.axes > 1 ? 1 : 0);
-	// A photograph of a piece shows a thick axis where it shows one at all. Among the pieces near the
-	// asked length, a leafy shoot ranks before a flowering head, and a piece that divides ranks before
-	// a single thick axis, so a cluster is a fan of leaves and not one blade or one panicle; then the
-	// thickest axis, then the closest match.
+	// A photograph of a piece shows a shoot with the leaves on it where it shows one at all, so a
+	// cut with no hinted order prefers a piece that divides ahead of a single thick axis, then the
+	// thickest among those near the asked length, before the closest match. A merged ground plant's
+	// leaf axis is a thick single axis whose own piece carries no mesh, so ranking it first would
+	// draw nothing.
 	return out.sort(
 		(x, y) =>
 			(young ? x.age - y.age : 0) ||
@@ -431,9 +437,23 @@ export function cutBranch(
 	const length = cuttingLength(record, cutting);
 	const hinted = plantHint(record, cutting.part)?.order;
 	const shade = record.shoots?.placement.shadePrune ?? 0;
-	let ranked = candidates(skeleton, hinted, length, shade, cutting.young);
+	let ranked = candidates(
+		skeleton,
+		hinted,
+		length,
+		shade,
+		cutting.young,
+		cutting.part === 'cluster',
+	);
 	if (ranked.length === 0 && hinted !== undefined)
-		ranked = candidates(skeleton, undefined, length, shade, cutting.young);
+		ranked = candidates(
+			skeleton,
+			undefined,
+			length,
+			shade,
+			cutting.young,
+			cutting.part === 'cluster',
+		);
 	if (ranked.length === 0) return undefined;
 	const chosen = ranked[(cutting.pick ?? 0) % ranked.length] as Candidate;
 	const { axes, buds } = skeleton;

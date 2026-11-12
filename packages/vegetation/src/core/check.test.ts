@@ -13,6 +13,13 @@ describe('the record check', () => {
 		expect(checkSpecies(template)).toBe(template);
 	});
 
+	it('reads a sky-to-leaf extinction as a share from 0 to 1', () => {
+		expect(speciesProblems({ ...template, skyToLeaf: 0.3 })).toEqual([]);
+		expect(speciesProblems({ ...template, skyToLeaf: 1.2 })).toContain(
+			'skyToLeaf is 1.2; a share lies from 0 to 1',
+		);
+	});
+
 	it('names every problem at once', () => {
 		const broken = {
 			...template,
