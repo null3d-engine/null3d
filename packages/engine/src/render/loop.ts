@@ -519,16 +519,32 @@ export class HoldLoop implements RenderLoop {
 		this.presenter = new Presenter(slots, renderer, metrics, {}, undefined, presented);
 	}
 
-	drawHeld(): Promise<void> {
+	drawHeld(clockMs = CAPTURE_CLOCK_MS): Promise<void> {
 		this.drawn ??= new Promise((resolve, reject) => {
 			let drawn = 0;
+			// The hold's frames draw from animation frame callbacks, so a page whose clock stops runs
+			// none and this promise never settles. The clock ends it by naming the stopped clock, as a
+			// capture's wait for a live frame does.
+			const clock = setTimeout(
+				() =>
+					reject(
+						new Error(
+							`the frame clock stopped: no animation frame callback came within ${(clockMs / 1000).toFixed(0)} seconds, so the held frame cannot draw`,
+						),
+					),
+				clockMs,
+			);
 			const attempt = (timestamp: number) => {
 				const published = Atomics.load(this.slots, Slot.FramesPublished);
 				const from = Atomics.load(this.slots, Slot.HeldFrom);
 				const frame = drawn > 0 ? drawn + 1 : from > 0 && from <= published ? from : published;
-				if (this.stopped) reject(new Error('the engine stopped before it drew the held frame'));
-				else if (published === 0) reject(new Error('the sketch thread published no held frame'));
-				else
+				if (this.stopped) {
+					clearTimeout(clock);
+					reject(new Error('the engine stopped before it drew the held frame'));
+				} else if (published === 0) {
+					clearTimeout(clock);
+					reject(new Error('the sketch thread published no held frame'));
+				} else
 					try {
 						// The held frames draw in the order they were recorded, so a plan that a later
 						// held frame changed leaves an earlier one safe. Only a list of an older GPU
@@ -543,8 +559,12 @@ export class HoldLoop implements RenderLoop {
 						this.presenter.draw(frame, timestamp, stale);
 						drawn = frame;
 						if (frame < published) requestAnimationFrame(attempt);
-						else resolve();
+						else {
+							clearTimeout(clock);
+							resolve();
+						}
 					} catch (error) {
+						clearTimeout(clock);
 						reject(error);
 					}
 			};

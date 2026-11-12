@@ -231,6 +231,18 @@ describe('the hold loop', () => {
 		expect(drawn).toEqual([1, 2]);
 		expect(Atomics.load(slots, Slot.FramesSkipped)).toBe(0);
 	});
+
+	it('fails by the stopped clock when the page runs no callbacks', async () => {
+		const { metrics, slots, renderer } = setup();
+		const hold = new HoldLoop(slots, renderer, metrics);
+		Atomics.store(slots, Slot.FramesPublished, 5);
+		const ended = hold.drawHeld(5).then(
+			() => 'resolved',
+			(error: Error) => error.message,
+		);
+		// No refresh: the page's animation-frame clock stopped, as a hidden or throttled page's does.
+		expect(await ended).toContain('the frame clock stopped');
+	});
 });
 
 describe("a capture's wait for the next frame", () => {
