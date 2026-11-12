@@ -33,10 +33,10 @@ const PANELS_SECONDS = 120;
  */
 const PANELS_SECONDS_BY_SPECIES: Readonly<Record<string, number>> = {
 	'common-alder': 240,
-	// Provisional: the willow overran the shared two minutes on all three tiers, after loading at
-	// 42 s and growing at 48 s. This is the vegetation demos' ceiling, not a measurement; a measured
-	// value drawn under the suite's load replaces it.
-	'weeping-willow': 600,
+	// The willow's four panels drew in 138 seconds on WebGL2 and 192 on compatibility mode and
+	// WebGPU, with the three tiers drawing together under a machine loaded to 47 at its peak, so
+	// this keeps the same quarter margin the alder's 240 does.
+	'weeping-willow': 240,
 };
 
 /** The picture test of each species folder. */
