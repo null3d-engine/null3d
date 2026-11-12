@@ -30,6 +30,7 @@ import { builder as thickBuilder } from '../leaf/thick-leaf';
 import { dequantisePosition } from '../lod/quantise';
 import { AXIS_LEAF, SHEATH_KIND } from './ground';
 import { GROUND_TEST_SPECIES, hostaRecord, meadowGrassRecord, sedgeRecord } from './ground.fixture';
+import { targetHeight } from './height';
 
 for (const species of GROUND_TEST_SPECIES) await loadPlantCode(species.record);
 const kits = new Map<string, SpeciesKitData>(
@@ -325,7 +326,11 @@ describe('the hosta', () => {
 		const foliage = autumn.levels[0].parts.find((part) => part.name === 'foliage');
 		expect(foliage?.arrays.uvs1[1]).toBe(65535);
 		const blossom = growPlantNow(kit, { ...OPTIONS, season: 'blossom' });
-		expect(topOf(blossom.skeleton, AXIS_CULM)).toBeGreaterThan(0.6);
+		// The scapes carry the plant's drawn top, which the dressing aims at the record's sampled height.
+		expect(topOf(blossom.skeleton, AXIS_CULM)).toBeCloseTo(
+			targetHeight(hostaRecord, blossom.seed, blossom.variant),
+			2,
+		);
 		expect(blossom.levels[0].parts.map((part) => part.name)).toContain('extras');
 		let flowers = 0;
 		for (let b = 0; b < blossom.skeleton.buds.count; b++)
@@ -400,7 +405,9 @@ describe('the pendulous sedge', () => {
 			if ((skeleton.axes.kind[a] as number) !== AXIS_LIMB) continue;
 			if ((skeleton.axes.kind[parent] as number) !== AXIS_CULM) continue;
 			const radius = skeleton.radius[skeleton.axes.first[a] as number] as number;
-			expect(radius).toBeCloseTo(heads.radius * 0.6, 3);
+			// The share is of the stem's own base radius, which the height calibration scales with it.
+			const stem = skeleton.radius[skeleton.axes.first[parent] as number] as number;
+			expect(radius).toBeCloseTo(stem * heads.stalkShare, 3);
 			stalks++;
 		}
 		expect(stalks).toBeGreaterThan(3);
@@ -460,7 +467,7 @@ describe('the pendulous sedge', () => {
 		// The plant's bytes with the soil block stripped, at this record: a plant that names no
 		// soil grows exactly these. A deliberate record change re-records the figure, and the
 		// growth path that reads no soil must not move it.
-		expect(plantAssetDigest(growPlantNow(kit, OPTIONS))).toBe('1581a58df495eb67');
+		expect(plantAssetDigest(growPlantNow(kit, OPTIONS))).toBe('e300c7ed30af9e41');
 	});
 
 	it('ends its blades in long fine points', () => {
