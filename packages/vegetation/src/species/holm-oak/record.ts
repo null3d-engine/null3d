@@ -152,6 +152,31 @@ export const record: Species = {
 				droop: 7,
 			},
 		],
+		// The cluster stills' own rosette, drawn as the 'spur' class only by the cluster cutting: the references are
+		// whorls of about fifteen leaves crowded at the tip, where the crown's short shoot spreads
+		// eight along a twig. The crown never draws this class.
+		cuttingClasses: [
+			{
+				name: 'spur',
+				vigor: [0, 1],
+				share: 0,
+				years: 1,
+				length: { mean: 0.15, spread: 0.01 },
+				nodes: { mean: 14, spread: 0.5 },
+				internode: SHOOT,
+				leafScale: [
+					[0, 1.35],
+					[1, 1.6],
+				],
+				leafAngle: [
+					[0, 150],
+					[0.5, 95],
+					[1, 40],
+				],
+				leafAngleSpread: 30,
+				droop: 4,
+			},
+		],
 		phyllotaxis: { kind: 'spiral', divergence: 144 },
 		orders: 3,
 		years: 3,
@@ -291,9 +316,10 @@ export const record: Species = {
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
-			// The lead merge grew the ultra kit to 9,894,888 from the 9.5 MB the record held; the
-			// measured figure plus about three per cent, and still under the owner's 13 MB tree cap.
-			kitBytes: { low: 2_000_000, medium: 2_900_000, high: 5_300_000, ultra: 10_200_000 },
+			// The cluster cutting's own rosette adds a prototype: the high kit measures 5,397,680
+			// and the ultra 10,560,964, each with about five per cent spare and still under the
+			// owner's tree caps of 7.1 and 13 MB.
+			kitBytes: { low: 2_000_000, medium: 2_900_000, high: 5_700_000, ultra: 11_200_000 },
 			// The densest variant sets each cap: variant 4 measures 10.18, 10.29, 10.50 and 10.85 MB
 			// at the four tiers. Each cap sits just above its figure. The crown's foliage stands in
 			// fewer, larger leaves, which carries the cover at fewer triangles.
@@ -320,6 +346,6 @@ export const record: Species = {
 	cuttings: {
 		branch: { shoot: 'spray' },
 		subbranch: { shoot: 'long' },
-		cluster: { shoot: 'short' },
+		cluster: { shoot: 'spur' },
 	},
 };
