@@ -227,6 +227,12 @@
 		"date": "2026-11-09",
 		"reason": "the oak's young bark now covers only wood under five centimetres radius, so its thin twigs keep the limb's colour; drawn on this Mac's SwiftShader at 453ba4198; a CI drawing replaces it if it differs"
 	},
+	"chromium-swiftshader/compat/plant-scots-pine.png": {
+		"test": "plant-scots-pine",
+		"tier": "compat",
+		"date": "2026-11-08",
+		"reason": "drawn on this Mac's SwiftShader; the drawn run's browser shard 21, which carries the pine's pictures, was cancelled at its time limit before this tier was drawn, so the reference stands until a drawing run finishes that shard"
+	},
 	"chromium-swiftshader/compat/plant-sedge.png": {
 		"test": "plant-sedge",
 		"tier": "compat",
@@ -262,12 +268,6 @@
 		"tier": "compat",
 		"date": "2026-11-10",
 		"reason": "M3-V7's sway picture: the branch is not pushed to CI, so this Mac's SwiftShader drew the software set; a CI drawing replaces it"
-	},
-	"chromium-swiftshader/compat/plant-scots-pine.png": {
-		"test": "plant-scots-pine",
-		"tier": "compat",
-		"date": "2026-11-08",
-		"reason": "the two software rasterisers agree byte for byte, and this branch draws the first reference before CI can"
 	},
 	"chromium-swiftshader/compat/probe-grid-wall-night.png": {
 		"test": "probe-grid-wall-night",
@@ -617,12 +617,6 @@
 		"date": "2026-11-10",
 		"reason": "M3-V7's sway picture: the branch is not pushed to CI, so this Mac's SwiftShader drew the software set; a CI drawing replaces it"
 	},
-	"chromium-swiftshader/webgl2/plant-scots-pine.png": {
-		"test": "plant-scots-pine",
-		"tier": "webgl2",
-		"date": "2026-11-08",
-		"reason": "the two software rasterisers agree byte for byte, and this branch draws the first reference before CI can"
-	},
 	"chromium-swiftshader/webgl2/probe-grid-wall-night.png": {
 		"test": "probe-grid-wall-night",
 		"tier": "webgl2",
@@ -965,6 +959,12 @@
 		"date": "2026-11-09",
 		"reason": "the oak's young bark now covers only wood under five centimetres radius, so its thin twigs keep the limb's colour; drawn on this Mac's SwiftShader at 453ba4198; a CI drawing replaces it if it differs"
 	},
+	"chromium-swiftshader/webgpu/plant-scots-pine.png": {
+		"test": "plant-scots-pine",
+		"tier": "webgpu",
+		"date": "2026-11-08",
+		"reason": "drawn on this Mac's SwiftShader; the drawn run's browser shard 21, which carries the pine's pictures, was cancelled at its time limit before this tier was drawn, so the reference stands until a drawing run finishes that shard"
+	},
 	"chromium-swiftshader/webgpu/plant-sedge.png": {
 		"test": "plant-sedge",
 		"tier": "webgpu",
@@ -1000,12 +1000,6 @@
 		"tier": "webgpu",
 		"date": "2026-11-10",
 		"reason": "M3-V7's sway picture: the branch is not pushed to CI, so this Mac's SwiftShader drew the software set; a CI drawing replaces it"
-	},
-	"chromium-swiftshader/webgpu/plant-scots-pine.png": {
-		"test": "plant-scots-pine",
-		"tier": "webgpu",
-		"date": "2026-11-08",
-		"reason": "the two software rasterisers agree byte for byte, and this branch draws the first reference before CI can"
 	},
 	"chromium-swiftshader/webgpu/probe-grid-wall-night.png": {
 		"test": "probe-grid-wall-night",
