@@ -24,19 +24,19 @@
 	},
 	"12-single-leaf-upper.png": {
 		"leaves": 0.1,
-		"roll": -40
+		"roll": -45
 	},
 	"13-single-leaf-underside.png": {
 		"leaves": 0.1,
-		"roll": -40
+		"roll": -45
 	},
 	"24-leaf-texture-upper.png": {
 		"leaves": 0.2,
-		"roll": -40
+		"roll": -46
 	},
 	"25-leaf-texture-underside.png": {
 		"leaves": 0.2,
-		"roll": -40
+		"roll": -46
 	},
 	"15-sheath-and-ligule.png": {
 		"distance": 0.25,
