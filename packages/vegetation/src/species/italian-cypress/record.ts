@@ -198,7 +198,7 @@ export const record: Species = {
 			// Stills 11 and 12: the leaf a shoot carries is a flattened spray of two or three short
 			// cords, each clothed along its whole length in shingled scale leaves.
 			orders: 2,
-			segment: 0.022,
+			segment: 0.01,
 			radius: 0.0014,
 			// Stills 11, 12 and 22: the side cords stand in the spray's own flat plane, as a cypress
 			// frond does.
