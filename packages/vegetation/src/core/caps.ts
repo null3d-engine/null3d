@@ -141,7 +141,9 @@ export const MODEL_CAPS: Readonly<Record<CapClass, ModelCaps>> = {
 		// before the newer grower and awaiting a later read. At seed 11 the largest of its six
 		// variants (variant 3) reads 3,327,959, 3,658,322, 4,099,334 and 5,611,850 bytes against the
 		// old 1,673,928, 2,300,000, 3,600,000 and 3,800,000, so the caps take the class's 15 per cent
-		// spare at 3,830,000, 4,210,000, 4,710,000 and 6,450,000.
+		// spare at 3,830,000, 4,210,000, 4,710,000 and 6,450,000. The sedge's largest variant therefore
+		// sets this class's byte ceiling: the meadow grass and the hosta inherit headroom they did not
+		// need, and their own figures did not grow.
 		variantBytes: { low: 3_830_000, medium: 4_210_000, high: 4_710_000, ultra: 6_450_000 },
 		// A frond colony's stipes and rachises are wood: the bracken test colony's largest of sixteen
 		// variants and seasons, with about 15 per cent to spare: 52, 58, 61 and 64 KB.
