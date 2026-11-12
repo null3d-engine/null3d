@@ -219,6 +219,13 @@ function shootProblems(shoots: ShootSpec, out: string[]): void {
 		);
 	if (cluster && !(cluster.lean >= 0 && cluster.lean <= 80))
 		out.push(`shoots.bud.cluster.lean is ${cluster.lean}; it is degrees from 0 to 80`);
+	const scales = shoots.bud.scales;
+	if (scales) {
+		if (!Number.isInteger(scales.rows) || scales.rows < 1 || scales.rows > 12)
+			out.push(`shoots.bud.scales.rows is ${scales.rows}; it is whole rows from 1 to 12`);
+		if (!Number.isInteger(scales.around) || scales.around < 3 || scales.around > 16)
+			out.push(`shoots.bud.scales.around is ${scales.around}; it is faces from 3 to 16`);
+	}
 	if (shoots.leafYears > shoots.years)
 		out.push(`shoots.leafYears is ${shoots.leafYears}, more than shoots.years (${shoots.years})`);
 	if (shoots.classes.length === 0) out.push('shoots.classes is empty; give at least one class');

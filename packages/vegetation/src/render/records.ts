@@ -144,6 +144,8 @@ export const HEADER = {
 	collar: 66,
 	/** The share of the armpit's tight parallel creases that draw, 0 where the record names none. */
 	armpit: 67,
+	/** A bud's scales: rows along its length and faces round it, 0 rows where the record names none. */
+	budScales: 68,
 } as const;
 
 /**
@@ -153,7 +155,7 @@ export const HEADER = {
 export const BARK_ZONE_TEXELS = 4;
 
 /** The header's texels that hold anything. */
-export const HEADER_TEXELS = HEADER.armpit + 1;
+export const HEADER_TEXELS = HEADER.budScales + 1;
 
 /** An extra's roughness where its record names none. */
 export const EXTRA_ROUGHNESS = 0.6;
@@ -388,6 +390,8 @@ export function speciesHeader(
 	});
 	const bud = record.shoots?.bud.colour;
 	if (bud) texel(header, HEADER.bud, [...bud, 1]);
+	const budScales = record.shoots?.bud.scales;
+	texel(header, HEADER.budScales, [budScales?.rows ?? 0, budScales?.around ?? 0, 0, 0]);
 	const sway = windSway(record);
 	texel(header, HEADER.sway, [sway.amplitude, sway.frequency, sway.power, 0]);
 	const seasonBark = record.seasons.bark;

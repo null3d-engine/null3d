@@ -111,6 +111,8 @@ const HEADER_MOSS_REACH: i32 = 18;
 const HEADER_ARMPIT: i32 = 67;
 const HEADER_EXTRAS: i32 = 19;
 const HEADER_BUD: i32 = 23;
+// A bud's scales: rows along its length and faces round it, 0 rows where the record names none.
+const HEADER_BUD_SCALES: i32 = 68;
 const MAX_EXTRAS: i32 = 4;
 const HEADER_BARK_ZONES: i32 = 24;
 const BARK_ZONE_TEXELS: i32 = 4;
@@ -1172,11 +1174,35 @@ fn surface(input: SurfaceInput) -> Surface {
             // A bud takes the young bark's pattern in the record's bud colour.
             let bud = header(HEADER_BUD);
             let kind = input.vertexColor.b * 255.0;
-            if (bud.w > 0.5 && kind > (KIND_STEM + KIND_BUD) * 0.5) {
+            let is_bud = kind > (KIND_STEM + KIND_BUD) * 0.5;
+            if (bud.w > 0.5 && is_bud) {
                 let young_mean = max(header(HEADER_YOUNG).rgb, vec3f(0.0001));
                 base = min(bud.rgb * base / young_mean, vec3f(1.0));
             } else {
                 base *= header(HEADER_YOUNG_TINT).rgb;
+            }
+            if (is_bud) {
+                // A bud's scales: one cell per scale, in rows that stagger so a scale sits over
+                // the crevice between the two below it. Each scale shows a pale rim round a
+                // darker face, as the photograph's overwintering bud does. A cell too small to
+                // draw leaves the bud smooth, so a distant twig never shimmers.
+                let scales = header(HEADER_BUD_SCALES);
+                if (scales.x > 0.5) {
+                    let cells = vec2f(max(1.0, scales.x), max(3.0, scales.y));
+                    let row = floor(uv.y * cells.x);
+                    let stagger = 0.5 * (row - 2.0 * floor(row * 0.5));
+                    let p = vec2f(uv.x * cells.y + stagger, uv.y * cells.x);
+                    let f = fract(p) - vec2f(0.5);
+                    let d = length(f * vec2f(1.0, 1.25));
+                    let rim = smoothstep(0.28, 0.40, d) * (1.0 - smoothstep(0.44, 0.50, d));
+                    // The crevice where a scale overlaps the one below reads darker still.
+                    let crevice = smoothstep(0.40, 0.54, d);
+                    let grain = cell_noise(floor(p).x, floor(p).y);
+                    let footprint = length(gx * cells) + length(gy * cells);
+                    let fade = saturate(1.5 - footprint);
+                    let shade = (0.88 + 0.10 * grain - 0.20 * crevice) * (1.0 + 1.15 * rim);
+                    base = mix(base, base * shade, fade);
+                }
             }
             roughness = 0.8;
         } else if (mode == MODE_FOLIAGE && abs(input.vertexColor.b * 255.0 - KIND_SHEATH) < 0.5) {

@@ -387,6 +387,7 @@ describe('the plant shader', () => {
 			HEADER_ARMPIT: HEADER.armpit,
 			HEADER_EXTRAS: HEADER.extras,
 			HEADER_BUD: HEADER.bud,
+			HEADER_BUD_SCALES: HEADER.budScales,
 			HEADER_BARK_ZONES: HEADER.barkZones,
 			HEADER_BARK_SECONDS: HEADER.barkSeconds,
 			HEADER_LICHEN: HEADER.lichen,

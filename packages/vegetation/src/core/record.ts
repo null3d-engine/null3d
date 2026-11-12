@@ -1080,6 +1080,14 @@ export interface ShootSpec {
 		readonly cluster?: { readonly step: number; readonly lean: number };
 		/** The buds' linear colour, which takes the young bark's pattern; the young bark's own when not given. */
 		readonly colour?: Rgb;
+		/**
+		 * The bud's overlapping scales: rows along its length and faces round it. The material lays
+		 * a pale rim over each scale's darker face, in rows that stagger so a scale sits over the
+		 * crevice between the two below it, as an overwintering bud's scales do. The rows follow the
+		 * bud's own surface coordinates, so the mesh keeps one smooth body. Without this the bud
+		 * draws smooth.
+		 */
+		readonly scales?: { readonly rows: number; readonly around: number };
 	};
 	/** Where shoots attach to a variant. */
 	readonly placement: {

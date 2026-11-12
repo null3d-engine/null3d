@@ -996,9 +996,12 @@ export function meshShoot(
 		const l = bud.length;
 		const profile: [number, number][] = shape.round
 			? [
-					[w * 0.6, 0],
-					[w, l * 0.35],
-					[w * 0.7, l * 0.72],
+					// The photograph's bud: a narrow foot, a shoulder that swells at once to the
+					// belly past its middle, and one long point to the tip. The four stations keep
+					// the ring count every bud had, so no species' kit grows for the form.
+					[w * 0.33, 0],
+					[w * 0.92, l * 0.13],
+					[w, l * 0.42],
 					[0, l],
 				]
 			: [

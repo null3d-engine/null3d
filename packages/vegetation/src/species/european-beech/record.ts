@@ -235,7 +235,15 @@ export const record: Species = {
 		// Stills 10, 11 and 23: a long copper bud at each twig's tip, measured at six tenths of a
 		// leaf's length (0.078 m for the 0.13 m leaf) and plump, with smaller axillary buds at the
 		// nodes below it. The earlier half-leaf figure read short against the photograph's buds.
-		bud: { length: 0.078, width: 0.018, tipCluster: 1, colour: [0.32, 0.18, 0.08] },
+		bud: {
+			length: 0.078,
+			width: 0.018,
+			tipCluster: 1,
+			colour: [0.32, 0.18, 0.08],
+			// Five scale rows along the bud and six faces round it, from the photograph's lattice
+			// of overlapping scales: three scale faces show across the bud's visible side.
+			scales: { rows: 5, around: 6 },
+		},
 		placement: {
 			perMetre: [
 				[0, 1.8],
