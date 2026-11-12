@@ -1,9 +1,9 @@
 // Plants for the demos from the vegetation add-on's plant core. A demo names each species by its id
-// and gives the size, colours and ecology of its stand-in, and the species draws as that stand-in,
-// even once the species' own folder exists in the add-on: the demos keep their pictures until they
-// move to the real species and the scene-wide near pool together. Its kit and its variants grow in
-// the engine's job workers, and its copies stand where the demo puts them, with far cards past the
-// distance where a plant spans a few pixels.
+// and gives the size, colours and ecology of its stand-in, and the species draws as that stand-in
+// until the species lands in the add-on. Once it lands, the real species draws instead, and a page
+// that needs its approved picture to stay comparable holds its stand-in with keepStandIn. Its kit
+// and its variants grow in the engine's job workers, and its copies stand where the demo puts them,
+// with far cards past the distance where a plant spans a few pixels.
 import type { SketchContext } from '@null3d/engine';
 import {
 	bakeFarPlant,
