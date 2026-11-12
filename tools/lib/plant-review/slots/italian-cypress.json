@@ -42,5 +42,8 @@
 	"25-leaf-texture-underside.png": {
 		"view": "cluster",
 		"elevation": -80
+	},
+	"cypress-wind-motion.mp4": {
+		"sway": 60
 	}
 }
