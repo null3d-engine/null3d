@@ -322,8 +322,35 @@ export function placeShoots(input: DressInput): ShootRows {
  * @param input The grown skeleton, the kit, the record, the seed and the variant.
  * @returns The rows and their skeleton.
  */
+/**
+ * Thins each axis's rows evenly to the record's budget, so an axis carries at most the rows it names.
+ * The rows kept stand spread along the axis, and an axis under the budget keeps every row.
+ */
+function cappedRows(rows: Row[], cap: number | undefined): Row[] {
+	if (cap === undefined) return rows;
+	const byAxis = new Map<number, number[]>();
+	for (let index = 0; index < rows.length; index++) {
+		const row = rows[index] as Row;
+		const list = byAxis.get(row.axis) ?? [];
+		list.push(index);
+		byAxis.set(row.axis, list);
+	}
+	const drop = new Uint8Array(rows.length);
+	let capped = false;
+	for (const list of byAxis.values()) {
+		if (list.length <= cap) continue;
+		capped = true;
+		const stride = list.length / cap;
+		const keep = new Set<number>();
+		for (let k = 0; k < cap; k++)
+			keep.add(list[Math.min(list.length - 1, Math.floor((k + 0.5) * stride))] as number);
+		for (const index of list) if (!keep.has(index)) drop[index] = 1;
+	}
+	return capped ? rows.filter((_, index) => drop[index] === 0) : rows;
+}
+
 export function dressShoots(input: DressInput): DressedShoots {
-	const rows = placedRows(input);
+	const rows = cappedRows(placedRows(input), input.record.shoots?.placement.rowsPerAxis);
 	const limit = Math.min(MOST_TRIM, Math.max(0, input.record.shoots?.placement.bareTrim ?? 0));
 	let lowest = Number.POSITIVE_INFINITY;
 	for (const row of rows) lowest = Math.min(lowest, row.position[1]);
