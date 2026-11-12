@@ -1,4 +1,4 @@
-# D-345: the saguaro grows as a ribbed column, with one spine-cluster card at every areole
+# D-349: the saguaro grows as a ribbed column, with one spine-cluster card at every areole
 
 Status: decided and built in the column growth model, the saguaro's record and texture folder, and
 the plant review's skin close-ups. The owner approved the raise of the tree class's second-card-level

@@ -34,7 +34,9 @@ How does a sketch draw the scene from a second camera into a texture that materi
 
 ### Image orientation
 
-Images upload with their first row at v = 0, the bottom of a plane (`textures.fromImageBitmap`). three.js's render target textures, sampled on a plane, stand upright too: WebGL draws the bottom row first. WebGL2 draws a view's rows in that order, so its texture needs nothing. WebGPU draws the top row first, so a texture straight from a WebGPU view stands upside down. A reflection view on the HDR WebGPU path draws into its target directly, and `reflection_uv` turns the rows that it reads.
+Images upload with their first row at v = 0, the bottom of a plane (`textures.fromImageBitmap`). three.js's render target textures, sampled on a plane, stand upright too: WebGL draws the bottom row first. WebGL2 draws a view's rows in that order, so its texture needs nothing. WebGPU draws the top row first, so a texture straight from a WebGPU view stands upside down.
+
+The final pass dithers with the raw fragment row (`tonemap.wgsl`, `dither(position)`), so the noise's row origin differs between the paths: WebGL2 counts fragment rows from the bottom and WebGPU from the top, and each path's noise is a vertical mirror of the other's. The difference is one level, under the picture comparison's threshold, and it is applied after the anti-aliasing, so it moves no reference test; a fix would change every raw picture, which is the cost recorded here, and no decision is taken on it. A reflection view on the HDR WebGPU path draws into its target directly, and `reflection_uv` turns the rows that it reads.
 
 ## Decision
 

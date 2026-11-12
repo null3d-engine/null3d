@@ -10,6 +10,7 @@ import {
 	placePlants,
 	plantMaterials,
 	prepareSpecies,
+	type SpeciesId,
 	speciesIds,
 } from '@null3d/vegetation';
 import type { WindField } from '@null3d/wind';
@@ -30,14 +31,16 @@ const SPACING = 20;
  * @param ctx The sketch.
  * @param field The wind field, which each material reads every frame.
  * @param seed The clump's seed.
+ * @param species The species to draw, or absent for every registered species, as the live page does.
  * @returns The pieces and the materials.
  */
 export async function plantWindClump(
 	ctx: SketchContext,
 	field: WindField,
 	seed: number,
+	species?: readonly SpeciesId[],
 ): Promise<WindClump> {
-	const ids = speciesIds();
+	const ids = species ?? speciesIds();
 	const across = Math.max(1, Math.ceil(Math.sqrt(ids.length)));
 	// Keep each species' kit and grown variant in the browser's store of derived data, so a later
 	// visit reads the same bytes back instead of growing them again.

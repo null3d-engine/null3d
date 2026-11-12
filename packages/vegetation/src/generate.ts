@@ -65,7 +65,15 @@ import {
 	cutsShoot,
 	mergeShoots,
 } from './cutting';
-import { coarsenSkeleton } from './grow/coarsen';
+import {
+	cardTop,
+	crownReach,
+	HEIGHT_RESIDUAL,
+	scaledPlacement,
+	scaledRows,
+	scaledSkeleton,
+	targetHeight,
+} from './grow/height';
 import { leadOnThickest } from './grow/leaders';
 import { grower, loadGrower } from './grow/models';
 import { extrasMesh } from './leaf/extras';
@@ -171,6 +179,21 @@ export interface GrowOptions extends CoarsenessOptions {
 	 * grows the light form and a desktop the full one.
 	 */
 	readonly sparse?: number;
+	/**
+	 * How far the wood's own sections are thinned, from 0 to 1: 0 is the level's own rings and
+	 * sides, and 1 the fewest that still draws a closed run, with square ends and no rounded joins.
+	 * A page rarely sets it; a sparse level raises it to the species' floor, if the record names
+	 * one. Every growth model answers it the same way, since one wood mesher builds them all.
+	 */
+	readonly sections?: number;
+	/**
+	 * The share of a card level's own card rows to keep, from 0.05 to 1: 1 keeps the level's own
+	 * cards and their size, and below 1 thins the rows by the level's rule, so the kept cards grow.
+	 * A review redraw sets it to measure what the cards buy; a page rarely does.
+	 */
+	readonly cards?: number;
+	/** How a card joins the plant when its branch is not drawn: `remove`, `branch` or `twig`. */
+	readonly cardJoin?: 'remove' | 'branch' | 'twig';
 }
 
 /** The least and the most share of leaves or limbs a growth may ask for. */
@@ -187,11 +210,8 @@ export const SPARSE_LEAST = 0.05;
 
 /**
  * The coarseness every species reaches at the full sparse level, whatever its record asks for. The
- * coarseness is the only share that reliably moves the triangle count down: it decides how finely
- * each limb is meshed, where the limb and leaf shares decide how the plant grows. Measured on the
- * oak, the beech and the willow, the level sets 11 to 29 per cent fewer triangles at every level and
- * up to 37 per cent at the farthest, in the same direction for all three. Lowering the other two
- * shares instead raised the count on the oak and the beech by up to eighty per cent.
+ * coarseness decides how finely each limb is meshed, so it moves the triangle count down without
+ * changing what the plant grows: the twigs, the shoot rows and the leaves stay.
  *
  * @category api/vegetation
  */
@@ -465,11 +485,19 @@ export function kitKey(
 export function variantKey(kit: SpeciesKitData, options: GrowOptions): string {
 	const season = options.season ?? kit.record.seasons.default;
 	const cutting = options.cutting ? JSON.stringify(options.cutting) : '';
-	// A share of leaves or limbs grows a different plant, so it keys a different asset.
+	// A share of leaves or limbs grows a different plant, so it keys a different asset. Section
+	// sparsity meshes the same plant coarser, which is a different asset too.
 	const leaves =
 		options.leaves === undefined || options.leaves === 1 ? '' : `:leaves=${options.leaves}`;
 	const limbs = options.limbs === undefined || options.limbs === 1 ? '' : `:limbs=${options.limbs}`;
-	return `${kit.key}:${options.seed >>> 0}:${options.variant}:${season}:${options.detail ?? kit.detail}:${cutting}${coarsenessKey(kit, options)}${leaves}${limbs}`;
+	const sections =
+		options.sections === undefined || options.sections === 0 ? '' : `:sections=${options.sections}`;
+	const cards = options.cards === undefined || options.cards === 1 ? '' : `:cards=${options.cards}`;
+	const join =
+		options.cardJoin === undefined || options.cardJoin === 'remove'
+			? ''
+			: `:join=${options.cardJoin}`;
+	return `${kit.key}:${options.seed >>> 0}:${options.variant}:${season}:${options.detail ?? kit.detail}:${cutting}${coarsenessKey(kit, options)}${leaves}${limbs}${sections}${cards}${join}`;
 }
 
 /**
@@ -600,10 +628,11 @@ function cuttingLeaves(record: Species, cutting: CuttingOptions | undefined): Sp
 }
 
 /**
- * The grow options a sparse level asks for: the leaves, limbs and coarseness moved toward the
- * record's floors by the level, from 0, the record's own form, to 1, the sparsest the species
- * allows. A record with no floors, or a level of 0, leaves the options as they stand. The level is
- * kept in the options so the shares it sets are taken at the sparse bound rather than a page's own.
+ * The grow options a sparse level asks for: the leaves, limbs, coarseness and section sparsity
+ * moved toward the record's floors by the level, from 0, the record's own form, to 1, the sparsest
+ * the species allows. A record with no floors, or a level of 0, leaves the options as they stand.
+ * The level is kept in the options so the shares it sets are taken at the sparse bound rather than
+ * a page's own.
  *
  * @param record The species record.
  * @param options The options as the page gave them.
@@ -611,6 +640,10 @@ function cuttingLeaves(record: Species, cutting: CuttingOptions | undefined): Sp
  * @category api/vegetation
  */
 export function withSparse<T extends GrowOptions>(record: Species, options: T): GrowOptions {
+	if (options.sections !== undefined && !(options.sections >= 0 && options.sections <= 1))
+		throw new Error(`sections is ${options.sections}; a section sparsity lies from 0 to 1`);
+	if (options.cards !== undefined && !(options.cards >= 0.05 && options.cards <= 1))
+		throw new Error(`cards is ${options.cards}; a share of the card rows lies from 0.05 to 1`);
 	const floors = record.sparse;
 	const asked = options.sparse;
 	if (!floors || asked === undefined || asked <= 0) return options;
@@ -625,6 +658,7 @@ export function withSparse<T extends GrowOptions>(record: Species, options: T): 
 			options.coarseness ?? 0,
 			level * Math.max(floors.coarseness, SPARSE_COARSENESS),
 		),
+		sections: Math.max(options.sections ?? 0, level * (floors.sections ?? 0)),
 	};
 }
 
@@ -675,6 +709,31 @@ function dress(kit: SpeciesKitData, options: GrowOptions): MeshInput {
 		() => placeholderSkeleton(growInput),
 	);
 	speciesHooks(record.id)?.afterGrow?.(grown, record, growInput.seed);
+	// The record's height means the drawn plant's top: the grown skeleton and the shoot placement are
+	// scaled together before the light, so the drawn crown aims at the sampled target. A cut piece
+	// keeps its own size. An instanced plant draws its cards, and a merged plant its foliage mesh;
+	// both are scaled through the skeleton, and each is measured at its own drawn level.
+	const merged = record.lod.nearFoliage === 'merged';
+	const target =
+		!options.cutting &&
+		placeholders !== true &&
+		(merged
+			? grower(record.growth.model).foliage !== undefined
+			: record.lod.nearFoliage === 'instanced' && kit.prototypes.length > 0)
+			? targetHeight(record, options.seed, options.variant)
+			: 0;
+	let calibrated = grown;
+	let calibratedRecord = record;
+	if (target > 0) {
+		// A merged plant's foliage rises from the skeleton itself, so no kit reach is added.
+		const aim = grown.height + (merged ? 0 : crownReach(kit, record));
+		if (aim > 0) {
+			const factor = target / aim;
+			calibrated = scaledSkeleton(grown, factor);
+			calibratedRecord = scaledPlacement(record, factor);
+		}
+	}
+	const calibratedInput: GrowInput = { ...growInput, record: calibratedRecord };
 	// The crown's light as grown, which a sky prune reads at every coarseness the search tries and
 	// at the one it settles on, so it is found once. A cut piece lights its own rows.
 	const light =
@@ -683,19 +742,23 @@ function dress(kit: SpeciesKitData, options: GrowOptions): MeshInput {
 		record.lod.nearFoliage !== 'instanced' ||
 		kit.prototypes.length === 0
 			? undefined
-			: pruneLight({ ...growInput, kit, skeleton: grown });
+			: pruneLight({ ...calibratedInput, kit, skeleton: calibrated });
 	const lit = light ? { pruneLight: light } : {};
 	// A stand-in grows as it is at any coarseness. A real species that falls back to a stand-in for a
 	// stage it does not build is still a real plant, so it takes the coarseness it is asked for.
 	const coarseness =
 		placeholders === true
 			? 0
-			: coarsenessFor(kit, { ...growInput, skeleton: grown, ...lit }, detail, options);
+			: coarsenessFor(kit, { ...calibratedInput, skeleton: calibrated, ...lit }, detail, options);
 	const dressInput: DressInput = {
-		...growInput,
+		...calibratedInput,
 		kit,
-		skeleton: cutSkeleton(kit, coarsenSkeleton(grown, coarseness), options.cutting),
+		// The coarseness dial changes how smoothly the wood is meshed, never what the plant grows.
+		skeleton: cutSkeleton(kit, calibrated, options.cutting),
 		coarseness,
+		sections: options.sections,
+		cards: options.cards,
+		cardJoin: options.cardJoin,
 		...lit,
 	};
 	// The shoots stand on the skeleton, which loses the bare twigs the record trims once they stand.
@@ -707,14 +770,56 @@ function dress(kit: SpeciesKitData, options: GrowOptions): MeshInput {
 					() => ({ rows: placeholderRows(dressInput), skeleton: dressInput.skeleton }),
 				)
 			: { rows: emptyRows(), skeleton: dressInput.skeleton };
-	const { rows } = dressed;
-	const input: DressInput = { ...dressInput, skeleton: dressed.skeleton };
+	let rows = dressed.rows;
+	let skeleton = dressed.skeleton;
+	// The reach is an estimate from the kit, so the drawn top is measured once the shoots stand. A
+	// residual over the accepted share is taken out by one scale of the already-placed geometry: a
+	// matrix scale, not a second growth.
+	if (target > 0) {
+		const top = merged
+			? mergedTop(
+					{
+						...dressInput,
+						skeleton,
+						rows,
+						crown: placeholderCrown({ ...dressInput, skeleton }),
+						detail,
+					},
+					1,
+				)
+			: rows.count > 0
+				? Math.max(skeleton.height, cardTop(kit, rows, record.lod.cardGrow ?? 1))
+				: 0;
+		if (top > 0 && Math.abs(top - target) / target > HEIGHT_RESIDUAL) {
+			const corrective = target / top;
+			skeleton = scaledSkeleton(skeleton, corrective);
+			rows = scaledRows(rows, corrective);
+		}
+	}
+	const input: DressInput = { ...dressInput, skeleton };
 	const crown = stage(
 		placeholders,
 		() => lightCrown(input, rows),
 		() => placeholderCrown(input),
 	);
 	return { ...input, rows, crown, detail };
+}
+
+/**
+ * The drawn top of a merged plant's first card level: its foliage mesh, its extras and its wood, in
+ * metres. The mesh colours read a crown light, which moves no vertex, so a stand-in light serves the
+ * measure before the real one is found.
+ */
+function mergedTop(input: MeshInput, level: MeshLevel): number {
+	let top = input.skeleton.height;
+	const build = grower(input.record.growth.model).foliage;
+	for (const mesh of [build?.(input, level), extrasMesh(input, level)]) {
+		if (!mesh) continue;
+		const positions = mesh.positions;
+		for (let i = 1; i < positions.length; i += 3)
+			if ((positions[i] as number) > top) top = positions[i] as number;
+	}
+	return top;
 }
 
 /** Whether a cutting is cut from the grown skeleton rather than built from the kit alone. */

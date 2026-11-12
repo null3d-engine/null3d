@@ -101,10 +101,14 @@ const REST_STEPS: f32 = 255.0;
 const HEADER_YOUNG: i32 = 15;
 const HEADER_YOUNG_TILE: i32 = 16;
 const HEADER_YOUNG_TINT: i32 = 56;
-// A tuft's basal sheath colour and roughness, for the merged foliage's sheath columns.
+// A tuft's sheath colour at the column's foot, and its roughness, for the merged foliage.
 const HEADER_SHEATH: i32 = 65;
+// The share of a card's leaf groups that stays, where the record names one.
+const HEADER_CARD_COVERAGE: i32 = 68;
 // A grass blade's collar: its colour, then the share of the blade's base it takes.
 const HEADER_COLLAR: i32 = 66;
+// A tuft's sheath colour at the column's collar, then the share of the column it takes.
+const HEADER_SHEATH_COLLAR: i32 = 67;
 const HEADER_MOSS: i32 = 17;
 const HEADER_MOSS_REACH: i32 = 18;
 const HEADER_EXTRAS: i32 = 19;
@@ -122,7 +126,6 @@ const HEADER_AUTUMN_BARK: i32 = 61;
 const HEADER_WINTER_BARK: i32 = 62;
 const HEADER_WINTER_REFLECTANCE: i32 = 63;
 const HEADER_WINTER_TRANSMITTANCE: i32 = 64;
-// A tuft's sheath columns' linear colour, then 1 when the record gives one.
 const HEADER_EXTRA_BANDS: i32 = 43;
 // An extra's scale pattern: its scale rows, the cells round its turn, and its band's share of the
 // profile's height at each end, per extra in record order.
@@ -131,6 +134,8 @@ const HEADER_EXTRA_SCALES: i32 = 47;
 const HEADER_EXTRA_STALKS: i32 = 51;
 // The least width in pixels that a card's stalk draws, or 0 where the record gives none.
 const HEADER_CARD_STALK: i32 = 55;
+const HEADER_SCAR: i32 = 69;
+const HEADER_SCAR_COLOUR: i32 = 70;
 // The second coordinate that marks a card's stalk, in a place that the card planes leave free.
 const STALK_PLANE: f32 = 0.75;
 // How much of the young bark's tone a card's stalk keeps: it stands inside the crown, where the
@@ -145,6 +150,16 @@ const WOOD_UV_STEPS: f32 = 1024.0;
 const TEXTURE_UV_STEPS: f32 = 65535.0;
 // The radius that the wood's second coordinates count from 0 to 1.
 const WOOD_RADIUS_SPAN: f32 = 4.0;
+// The least width, in the drawn frame's pixels, that the wood draws: one pixel at the review's work
+// width, where the matte is measured, in a frame drawn at the stills' width. A twig thinner than
+// this rasterises as dots, and the piece measure then reads its join as a gap.
+const WOOD_LEAST_PIXELS: f32 = 1.2;
+// The least width, in the drawn frame's pixels, that a fine foliage edge draws in the matte: the
+// same figure as the wood's, for the same reason. A blade or a stem seen nearly edge-on is a line
+// thinner than a pixel, which rasterises as dots, and the piece measure then reads its join as a
+// gap. The colour image keeps the edge it draws; only the matte, whose outline the review reads,
+// widens the edge.
+const FOLIAGE_LEAST_PIXELS: f32 = 1.2;
 // The coverage at which a texel counts as leaf, the materials' alpha cutoff.
 const CUTOFF: f32 = 0.5;
 // How much a card's alpha rises for each mip level its sample reads. A mip level's alpha is already
@@ -629,6 +644,83 @@ fn stalk_widen(input: VertexInput, plant: vec3f) -> vec3f {
     return transpose(linear) * world_offset / squared;
 }
 
+/// The plant-space offset that widens wood thinner than the least drawn width: each side vertex
+/// moves out along its normal's screen direction until the tube's projected width reaches the
+/// figure. The conversion back to the plant's space is the card stalk's, since both offsets are a
+/// screen-space widening of a line.
+fn wood_widen(input: VertexInput, plant: vec3f) -> vec3f {
+    if (frame.resolution.x <= 0.0 || frame.resolution.y <= 0.0) {
+        return vec3f(0.0);
+    }
+    let model = object.worldMatrix;
+    let clip = camera.viewProjection * (model * vec4f(plant, 1.0));
+    if (clip.w <= 0.0001) {
+        return vec3f(0.0);
+    }
+    let radius = max(input.uv1.x * WOOD_RADIUS_SPAN, 0.00001);
+    let normal = normalize(input.normal);
+    let clip_out = camera.viewProjection * (model * vec4f(plant + normal * radius, 1.0));
+    if (clip_out.w <= 0.0001) {
+        return vec3f(0.0);
+    }
+    // The tube's radius on the screen, in pixels, and the half-width the figure asks for.
+    let step = clip_out.xy / clip_out.w - clip.xy / clip.w;
+    let half_now = length(step * frame.resolution * 0.5);
+    let half_least = WOOD_LEAST_PIXELS * 0.5;
+    if (half_now >= half_least || length(step) <= 0.000001) {
+        return vec3f(0.0);
+    }
+    let across = normalize(step) * (half_least - half_now) * 2.0 / frame.resolution;
+    let projection = camera.projection;
+    let view = vec3f(across.x * clip.w / projection[0][0], across.y * clip.w / projection[1][1], 0.0);
+    let world_offset = (transpose(camera.view) * vec4f(view, 0.0)).xyz;
+    let linear = mat3x3f(model[0].xyz, model[1].xyz, model[2].xyz);
+    let squared = max(dot(linear[0], linear[0]), 0.000001);
+    return transpose(linear) * world_offset / squared;
+}
+
+/// The plant-space offset that widens a fine foliage edge seen nearly edge-on in the matte: each
+/// vertex moves along its own normal's screen direction by the share the view foreshortens the face,
+/// so a blade or a stem thinner than the least drawn width still covers a pixel. A face turned
+/// square to the eye draws its whole width and moves nowhere. The offset comes back to the plant's
+/// space as the wood's does.
+fn foliage_widen(input: VertexInput, plant: vec3f) -> vec3f {
+    if (frame.resolution.x <= 0.0 || frame.resolution.y <= 0.0) {
+        return vec3f(0.0);
+    }
+    let model = object.worldMatrix;
+    let normal = normalize(input.normal);
+    let world = (model * vec4f(plant, 1.0)).xyz;
+    // The eye's direction from the surface and the surface's own normal, both in view space, where
+    // the camera stands at the origin.
+    let to_eye = normalize((camera.view * vec4f(world, 1.0)).xyz);
+    let turned = (camera.view * vec4f(normal, 0.0)).xyz;
+    let grazing = 1.0 - abs(dot(normalize(turned), to_eye));
+    if (grazing <= 0.02) {
+        return vec3f(0.0);
+    }
+    let clip = camera.viewProjection * vec4f(world, 1.0);
+    if (clip.w <= 0.0001) {
+        return vec3f(0.0);
+    }
+    let clip_out = camera.viewProjection * (model * vec4f(plant + normal * 0.01, 1.0));
+    if (clip_out.w <= 0.0001) {
+        return vec3f(0.0);
+    }
+    let step = clip_out.xy / clip_out.w - clip.xy / clip.w;
+    if (length(step) <= 0.000001) {
+        return vec3f(0.0);
+    }
+    let half_least = FOLIAGE_LEAST_PIXELS * 0.5 * grazing;
+    let across = normalize(step) * half_least * 2.0 / frame.resolution;
+    let projection = camera.projection;
+    let view = vec3f(across.x * clip.w / projection[0][0], across.y * clip.w / projection[1][1], 0.0);
+    let world_offset = (transpose(camera.view) * vec4f(view, 0.0)).xyz;
+    let linear = mat3x3f(model[0].xyz, model[1].xyz, model[2].xyz);
+    let squared = max(dot(linear[0], linear[0]), 0.000001);
+    return transpose(linear) * world_offset / squared;
+}
+
 /// Wood, cards, merged foliage and extras: the 16-bit position into the plant's metres, lifted by
 /// the bark's height on the nearest wood, and moved by the wind in the plant's own space. The
 /// position comes as a fraction of the box, so the offset back from it keeps the plant's own
@@ -683,6 +775,12 @@ fn plant_offset(input: VertexInput, mode: i32) -> vec3f {
     }
     if (mode == MODE_CARDS && abs(input.uv1.y - STALK_PLANE) < 0.1) {
         moved += stalk_widen(input, plant);
+    }
+    if (mode == MODE_WOOD) {
+        moved += wood_widen(input, moved);
+    }
+    if (mode == MODE_FOLIAGE && material.matte > 0.5) {
+        moved += foliage_widen(input, moved);
     }
     return moved - input.position;
 }
@@ -876,6 +974,9 @@ fn coverage(input: SurfaceInput) -> f32 {
 fn surface(input: SurfaceInput) -> Surface {
     var s = defaultSurface(input);
     let mode = plant_mode();
+    // The share of the open sky added to the leaf and card faces, the record's own extinction; 0
+    // where it names none, so the faces draw as before.
+    let leaf_sky = header(HEADER_SWAY).w;
     let upper = input.frontFacing;
     let facing = select(-1.0, 1.0, upper);
     // Derivatives first, in uniform control flow; the roles sample with explicit gradients.
@@ -1032,6 +1133,23 @@ fn surface(input: SurfaceInput) -> Surface {
         bark = mix(bark, lichen.rgb * (0.92 + 0.16 * grain), lichen_mask);
         // The collar's dark ridge where a branch joins its parent.
         bark *= 1.0 - 0.5 * moss_reach.z * junction;
+        // A fire scar's hollow: the bark chars to the record's colour between its foot and head, on
+        // one side of the first stem. The hollow's own geometry cuts the notch; this darkens it and
+        // keeps it matte, so the charred wood reads as the burnt surface the old trees carry.
+        let scar = header(HEADER_SCAR);
+        let scar_colour = header(HEADER_SCAR_COLOUR);
+        if (scar.y > scar.x && scar_colour.w > 0.0) {
+            let outward = normalize(vec2f(n.x, n.z) + vec2f(0.000001, 0.0));
+            let want = vec2f(cos(scar.z), sin(scar.z));
+            let half = max(scar.w, 0.0001);
+            let facing = dot(outward, want);
+            let angular = smoothstep(cos(half), 1.0, facing);
+            let up = (plant.y - scar.x) / max(scar.y - scar.x, 0.001);
+            let vertical = smoothstep(0.0, 0.08, up) * (1.0 - smoothstep(0.82, 1.0, up));
+            let burnt = angular * vertical * (1.0 - youth);
+            bark = mix(bark, scar_colour.rgb, burnt * scar_colour.w);
+            cavity = max(cavity, burnt);
+        }
         // A stem whose own colour turns with the year takes its season's tint, which multiplies the
         // bark it would otherwise draw. A season the record does not name multiplies by nothing.
         let autumn_bark = header(HEADER_AUTUMN_BARK);
@@ -1076,6 +1194,15 @@ fn surface(input: SurfaceInput) -> Surface {
                 base = texel.rgb;
             }
             alpha = card_alpha(texel.a, gx, gy);
+            // A card's coverage: a hashed share of the crown's leaf groups gives way, so the crown
+            // shows sky between them while the leaves of the rest keep their mass. At 1, or when the
+            // record names none, the card draws whole.
+            let card_cover = header(HEADER_CARD_COVERAGE).x;
+            if (card_cover < 0.999) {
+                if (value3(input.relativePosition * 5.0) > card_cover) {
+                    alpha = 0.0;
+                }
+            }
             if (near_copy && length(input.relativePosition) < material.nearDistance * 0.96) {
                 alpha = 0.0;
             }
@@ -1084,6 +1211,7 @@ fn surface(input: SurfaceInput) -> Surface {
             // The card's normal is toward the viewer of the face it shows; the frame's normal is too.
             mapped = card_normal;
             occlusion = input.vertexColor.a * saturate(self_shade);
+            occlusion = mix(occlusion, 1.0, leaf_sky);
         }
     } else if (mode == MODE_EXTRAS) {
         // An extra takes its kind's colour and roughness from the header, by the index in its
@@ -1164,17 +1292,23 @@ fn surface(input: SurfaceInput) -> Surface {
         } else if (mode == MODE_FOLIAGE && abs(input.vertexColor.b * 255.0 - KIND_SHEATH) < 0.5) {
             // A merged ground plant's sheath column draws in the record's sheath colour. Its kind
             // marks the colour's third byte, since the asset clamps a negative coordinate to zero.
-            let body = header(HEADER_SHEATH);
-            base = body.rgb;
-            roughness = max(body.w, 0.5);
+            // The leaf texture's stalk strip lies over it, divided by the face's mean, so the
+            // sheath shows the blade's ribbing and the record's colour stays the material's own.
+            // The column's second coordinates' x runs from its foot to its collar, so the record's
+            // two colours mix up the height and the stalk strip's ribbing lies over them.
+            let foot = header(HEADER_SHEATH);
+            let top = header(HEADER_SHEATH_COLLAR);
+            let up = saturate(input.uv1.x);
+            let reach = clamp(top.w, 0.05, 1.0);
+            let sheath_colour = mix(foot.rgb, top.rgb, smoothstep(1.0 - reach, 1.0, up));
+            let strip = textureSampleGrad(colour, colourSampler, uv, 0, gx, gy).rgb;
+            let face = max(header(HEADER_UPPER_MEAN).rgb, vec3f(0.0001));
+            base = sheath_colour * clamp(strip / face, vec3f(0.55), vec3f(1.45));
+            roughness = max(foot.w, 0.5);
         } else {
             let layer = select(1, 0, upper);
             let texel = textureSampleGrad(colour, colourSampler, uv, layer, gx, gy);
             let relief_texel = textureSampleGrad(relief, reliefSampler, uv, 0, gx, gy).rgb;
-            // A shoot's sheath column carries the record's own colour rather than the leaf's: the
-            // top bit of its flutter byte marks it, in a species that gives a sheath colour.
-            let sheath = mode == MODE_FOLIAGE && header(HEADER_SHEATH).w > 0.5
-                && (i32(round(input.vertexColor.b * 255.0)) & 128) != 0;
             // A merged leaf browns on its own by its second coordinates' y, as a dying frond does.
             let browning = select(0.0, input.uv1.y, mode == MODE_FOLIAGE);
             let light = leaf_light(texel.rgb, upper, browning);
@@ -1201,22 +1335,12 @@ fn surface(input: SurfaceInput) -> Surface {
                 base = mix(collar.rgb, base, smoothstep(collar.w * 0.6, collar.w, input.uv1.x));
             }
             sheen = select(header(HEADER_UPPER_REFLECTANCE).w, 0.0, upper);
-            if (sheath) {
-                // A sheath is a smooth, matte tube of the record's own colour: it holds no leaf
-                // relief and passes no light through.
-                base = header(HEADER_SHEATH).rgb;
-                share = 0.0;
-                through = vec3f(0.0);
-                roughness = 0.8;
-                alpha = 1.0;
-                mapped = vec3f(0.0, 0.0, 1.0);
-                sheen = 0.0;
-            }
         }
         if (mode == MODE_SHOOTS) {
             let row = shoot_row(object.values);
             let turn = near_texel(row.slot * 2).w;
             occlusion = saturate(row.sky / 250.0) * input.vertexColor.a;
+            occlusion = mix(occlusion, 1.0, leaf_sky);
             sky_normal = out_of_turn(bent_normal(row.bent), turn);
         } else {
             occlusion = input.vertexColor.a;

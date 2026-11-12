@@ -29,8 +29,8 @@ The `@null3d/particles` add-on builds its systems from buffers. Its emitters, bu
 | --- | --- | --- |
 | The object | one scene object | Its place, turn, scale, layers, visibility and bounds. Birth places are in its space, so moving the object moves every particle. |
 | The records | 32 bytes for each of `capacity` | One record for each particle that the buffer holds at once. |
-| The values | 512 bytes | The motion and the look of every particle of the buffer. It uploads when `set` changes it. |
-| The frame's values | 16 bytes | The time, the record count and the time shift. The sketch writes them, or the core's emitter does. |
+| The values | 608 bytes | The motion and the look of every particle of the buffer, and the wind field when it names one. It uploads when `set` or `setWind` changes it. |
+| The frame's values | 20 bytes | The time, the record count, the time shift and the wind texture's number. The sketch writes them, or the core's emitter does. |
 | The emitter | a block of numbers | The settings and the frame's numbers of an emitter in the core, when the buffer has one. |
 
 The engine gives the object one material, with the particle shading. It blends and writes no depth. The material takes a `map` for the particles' texture, and without one each particle is a soft round dot. The `blending` option is additive or normal, and it defaults to additive. `layers` chooses the layers that the buffer draws on.
@@ -168,10 +168,14 @@ buffer.emitFrame(frame);
 
 The core gives the object its culling sphere after each frame. The sphere covers the births of the last two lifetimes, grown by how far a particle can move. A system such as the add-on's follows a moving object with `setEmitterFollow`, and gives each sub-emitter's world place with `setEmitterEvents`.
 
+## The wind field
+
+`setWind(field, time)` gives the buffer a field of air, as the wind add-on's field is, or removes it with `undefined`. Call it once per frame for a field: the box follows the camera and the texture's newest state moves. The vertex shader samples the field once for each particle, at the place where the particle passes. The field's air replaces the fixed `wind`. `time` is the sketch time, which the field's gust and swirl read. A buffer without a field binds one texel and takes no read.
+
 ## What a frame sends
 
 - The records written since the last frame, in up to four ranges. The first frame after creation sends the whole table. A fifth range merges with the nearest of the four, so writes scattered across the table send a wider range.
-- The values, 512 bytes, only after `set` changes them.
+- The values, 608 bytes, only after `set` or `setWind` changes them.
 - No other data uploads in a frame. The renderer reads the frame's values from the buffer's memory, then writes one small block for each view with the object's matrix and the shift.
 
 A frame's upload therefore grows with the births it writes. The number of particles alive does not change it. The GPU still works out each record that the count covers, in every frame and in every view.
