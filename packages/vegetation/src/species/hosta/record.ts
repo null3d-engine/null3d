@@ -129,8 +129,11 @@ export const record: Species = {
 			[0, 0.99],
 			[1, 0.93],
 		],
-		sway: { frequency: 0.9, amplitude: 0.004 },
-		flutter: { kind: 'blade', amplitude: 0.006, frequency: 0.8 },
+		// The wind clip's six bands read 0.017, 0.006, 0.036, 0.008, 0.006 and 0.041 against the
+		// photographs' 0.115, 0.056, 0.028, 0.057, 0.056 and 0.124; the sway and the blade's flutter
+		// rise together to carry the broad blade's larger travel.
+		sway: { frequency: 0.9, amplitude: 0.016 },
+		flutter: { kind: 'blade', amplitude: 0.012, frequency: 0.8 },
 	},
 	lod: {
 		nearFoliage: 'merged',
