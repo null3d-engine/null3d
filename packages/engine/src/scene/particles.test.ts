@@ -7,7 +7,7 @@ import {
 import type { CoreGlue } from '../shared/core';
 import { linearColor } from './color';
 import { CoreMemory } from './memory';
-import { ParticleBuffer } from './particles';
+import { ParticleBuffer, type ParticleWindField } from './particles';
 import type { Mesh } from './scene';
 
 /** Where the fake core keeps the records and the values. */
@@ -187,6 +187,33 @@ describe('particle buffers', () => {
 		expect(values[PARTICLE_PARAM_FLOATS + 1]).toBe(8);
 	});
 
+	test('a wind field lands in the values and the frame, and clears again', () => {
+		const { particles, values, marks } = buffer(8);
+		const field = {
+			texture: { layer: 1, handle: 12 },
+			origin: [3, 4],
+			size: 64,
+			air: {
+				base: [2, 0.5, 0.25, 1],
+				gust: [1, 8, 2, 6],
+				swirl: [0.5, 0.25, 0.5, 0],
+				sent: [1, 2, 3, 4],
+			},
+		} as unknown as ParticleWindField;
+		particles.setWind(field, 1.5);
+		expect([...values.slice(128, 144)]).toEqual([
+			2, 0.5, 0.25, 1, 1, 8, 2, 6, 0.5, 0.25, 0.5, 0, 1, 2, 3, 4,
+		]);
+		// The texture's newest layer, then the 1 that says the system reads a field.
+		expect([values[144], values[145]]).toEqual([1, 1]);
+		expect([values[148], values[149], values[150]]).toEqual([3, 4, 64]);
+		expect(particles.frame[4]).toBe(12);
+		expect(marks.at(-1)).toEqual([-1]);
+		particles.setWind(undefined, 1.5);
+		expect(values[145]).toBe(0);
+		expect(particles.frame[4]).toBe(0);
+	});
+
 	test('values land where the shaders read them, with colors made linear and curves resampled', () => {
 		const { particles, values } = buffer(8, false);
 		particles.set({
@@ -262,7 +289,7 @@ describe('the emitter', () => {
 	test('the settings land where the core reads them, with the rows of bursts and sub-emitters', () => {
 		const b = configured();
 		const floats = b.emitterFloats();
-		expect(floats).toBe(88 + (2 + 1) * 4 + 48);
+		expect(floats).toBe(88 + (2 + 1) * 4 + 72);
 		expect(b.blocks).toEqual([floats]);
 		expect(b.configured).toEqual([1]);
 		const block = b.core.f64(EMITTER, floats);

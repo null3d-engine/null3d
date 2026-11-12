@@ -943,6 +943,9 @@ struct VertexIn {
 #endif
 #ifdef VERTEX_TANGENT
     @location(4) tangent: vec4f,
+#else ifdef CUSTOM_TANGENT
+    /// The mesh's tangent attribute, whose four bytes a foliage role packs a blade's keel in.
+    @location(4) tangent: vec4f,
 #endif
 #ifdef VERTEX_COLOR
     @location(5) vertex_color: vec4f,
@@ -1081,6 +1084,10 @@ struct VertexInput {
     /// The mesh's four-number vertex record: a generated shape writes the position that the vertex
     /// takes at a coarser level of detail and that level's error, or whatever the shape needs.
     vertexRecord: vec4f,
+#endif
+#ifdef CUSTOM_TANGENT
+    /// The mesh's tangent attribute, whose four bytes a foliage role packs a blade's keel in.
+    tangent: vec4f,
 #endif
 }
 #endif
@@ -1718,6 +1725,9 @@ fn vertex_input(v: VertexIn, position: vec3f, normal: vec3f, ids: vec2u) -> Vert
 #endif
 #ifdef CUSTOM_TARGET
     input.vertexRecord = v.vertex_record;
+#endif
+#ifdef CUSTOM_TANGENT
+    input.tangent = v.tangent;
 #endif
     return input;
 }

@@ -95,6 +95,14 @@
 		"skyShare": 0.55,
 		"daylight": 2.0
 	},
+	"16-bark-on-limb.png": {
+		"girth": null,
+		"thin": 0.153,
+		"span": 0.5,
+		"along": 0.3,
+		"barkMask": true,
+		"leafyBark": true
+	},
 	"28-young-bark.png": {
 		"thin": 0.015,
 		"span": 0.1,

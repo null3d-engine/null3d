@@ -40,6 +40,13 @@ export interface Species {
 	readonly shoots?: ShootSpec;
 	/** What the leaves are. */
 	readonly foliage: Foliage;
+	/**
+	 * The share of the open sky, 0 to 1, added to the leaf and card faces' ambient light, where a
+	 * crown's leaves stand in less skylight than its photographs show. The value is the extinction
+	 * that the added sky term uses, its own per species: the far-card shading's share, applied to the
+	 * leaf faces. Absent or 0, the faces draw as before.
+	 */
+	readonly skyToLeaf?: number;
 	/** The bark zones and how the wood takes them. */
 	readonly bark?: BarkSpec;
 	/** Root flare, buttresses, surface roots and flutes at the stem base. */
@@ -788,6 +795,21 @@ export interface FrondColony {
 }
 
 /**
+ * A tuft sheath column's colours: the colour at its foot and the colour where the blades leave,
+ * mixed up the column, so a crown draws its own colour at the soil and the collar's colour above.
+ *
+ * @category api/vegetation
+ */
+export interface SheathColour {
+	/** The colour at the column's foot, in linear reflectance. */
+	readonly foot: Rgb;
+	/** The colour at the column's collar, in linear reflectance. */
+	readonly collar: Rgb;
+	/** The share of the column's height below its collar over which the collar's colour takes over. */
+	readonly reach: number;
+}
+
+/**
  * A tuft of shoots from one crown, each shoot a column of sheaths with blades in two or three ranks,
  * and flowering stems in season: grasses and sedges.
  *
@@ -811,10 +833,10 @@ export interface Tuft {
 	/** The sheath's radius in metres. */
 	readonly sheathRadius: number;
 	/**
-	 * The linear colour of each shoot's sheath column, where the species gives one. Absent, the
-	 * column draws the leaf material as the blades do.
+	 * The sheath column's colours, where the photographs show the plant's own sheaths rather than the
+	 * leaf's green: a merged ground plant draws its columns in them, from the foot up to the collar.
 	 */
-	readonly sheathColour?: Rgb;
+	readonly sheathColour?: SheathColour;
 	/** Degrees a blade leaves its shoot, by blade age (t = 0 the youngest, innermost, 1 the oldest). */
 	readonly spread: Curve;
 	/** Blade length over the foliage's blade length, by blade age. */
@@ -890,6 +912,12 @@ export interface TuftHeads {
 		readonly droop: number;
 		/** Flowers (spikelets) per branch, on its outer part. */
 		readonly flowers: Spread;
+		/**
+		 * The share of the flowering stem's radius that a branch takes, from 0 to 1; absent, 0.18. A
+		 * branch thinner than a pixel drops from a silhouette's matte and splits the spray into
+		 * pieces, while a thicker one closes the gaps the see-through reads.
+		 */
+		readonly branchShare?: number;
 	};
 	/** Spikes hanging one below another from the stem's bowed top. */
 	readonly spikes?: {
@@ -1196,6 +1224,18 @@ export interface ShootSpec {
 		 * spread over the whole internode and the axes carry leaves the length of their run.
 		 */
 		readonly gather?: number;
+		/**
+		 * The most shoot rows one axis carries. Above it the rows thin evenly along the axis, so a
+		 * crown with fewer branches opens rather than giving the leaves their places. Absent, an axis
+		 * carries every row its buds place.
+		 */
+		readonly rowsPerAxis?: number;
+		/**
+		 * The share of a card's leaf groups that stays, 0 to 1. Below 1 a hashed share of the crown's
+		 * leaf groups gives way, so the crown shows sky between them while the leaves of the rest keep
+		 * their mass. Absent or 1, the card draws whole.
+		 */
+		readonly cardCoverage?: number;
 		/**
 		 * Gathers the shoots into masses along each axis, with a thinner run between them, so the
 		 * crown is built of clumps with sky and wood between rather than an even mesh of leaves.
@@ -1950,7 +1990,22 @@ export type ExtraShape =
 			readonly stalk?: number;
 	  }
 	| { readonly spines: number; readonly length: number; readonly spread: number }
-	| { readonly catkin: { readonly length: number; readonly radius: number } };
+	| {
+			readonly catkin: {
+				readonly length: number;
+				readonly radius: number;
+				/**
+				 * Rows of short spikelets that stand along the body, so a spike reads as a
+				 * cluster of them rather than one smooth pendant. Absent, the body is smooth.
+				 */
+				readonly spikelets?: {
+					/** Rows along the body, 2 to 16. */
+					readonly count: number;
+					/** Share of the body's radius each row adds, from 0 to 1; absent, 0.35. */
+					readonly bulge?: number;
+				};
+			};
+	  };
 
 /**
  * The seasons a species shows.
@@ -2194,6 +2249,28 @@ export interface CutFromShoots {
 	 * default, and a cluster or a leaf keeps one whatever it names.
 	 */
 	readonly shoots?: number;
+	/**
+	 * The radius of the ring the fanned shoots stand on, as a share of the piece's height. A small
+	 * ring joins the shoots at the base; a wide one spreads them. Applies only where `shoots` names
+	 * more than one. 0.18 by default.
+	 */
+	readonly fanRing?: number;
+	/**
+	 * The degrees each fanned shoot leans outward from the piece's upright axis, so the shoots share
+	 * a base and diverge above it. Negative values lean them inward. 0 by default.
+	 */
+	readonly fanLean?: number;
+	/**
+	 * The share of a full turn each fanned shoot takes about the piece's axis, from 0 for every
+	 * shoot keeping the prototype's own leaf plane to 1 for an even fan. 1 by default.
+	 */
+	readonly fanSpin?: number;
+	/**
+	 * The degrees the whole piece turns about its upright axis before it is framed. A branch whose
+	 * side shoots lie in one plane shows that plane from the camera the pieces are drawn from, so a
+	 * species whose photograph lays the branch across the frame turns it by a quarter. 0 by default.
+	 */
+	readonly fanYaw?: number;
 }
 
 /**

@@ -28,6 +28,8 @@ export interface MeshArrays {
 	readonly uvs1: Float32Array;
 	/** 4 bytes per vertex: wind record high and low byte, then two bytes the part defines. */
 	readonly colors: Uint8Array;
+	/** 4 bytes per vertex: the packed offset from a blade's keel, its fourth byte 127 on a blade. */
+	readonly tangents?: Int8Array;
 	/** 3 per triangle. */
 	readonly indices: Uint16Array | Uint32Array;
 }
@@ -51,6 +53,8 @@ export interface PrototypeArrays {
 	 * (0 leaf, 1 stem or bud, 2 extra, in steps of 85) and self-occlusion inside the shoot.
 	 */
 	readonly colors: Uint8Array;
+	/** 4 bytes per vertex: the packed offset from a blade's keel, its fourth byte 127 on a blade. */
+	readonly tangents?: Int8Array;
 	/** 3 per triangle. */
 	readonly indices: Uint16Array;
 }
@@ -168,6 +172,8 @@ export interface QuantisedArrays {
 	readonly uvs1: Uint16Array;
 	/** 4 per vertex: wind record high and low byte, then two bytes the part's mode defines. */
 	readonly colors: Uint8Array;
+	/** 4 bytes per vertex: the packed offset from a blade's keel, its fourth byte 127 on a blade. */
+	readonly tangents?: Int8Array;
 	/** 3 per triangle. */
 	readonly indices: Uint16Array | Uint32Array;
 }
@@ -317,7 +323,15 @@ export interface SpeciesKitData {
 
 /** The typed arrays of a part, in a fixed order. */
 function quantisedViews(arrays: QuantisedArrays): ArrayBufferView[] {
-	return [arrays.positions, arrays.normals, arrays.uvs, arrays.uvs1, arrays.colors, arrays.indices];
+	return [
+		arrays.positions,
+		arrays.normals,
+		arrays.uvs,
+		arrays.uvs1,
+		arrays.colors,
+		...(arrays.tangents ? [arrays.tangents] : []),
+		arrays.indices,
+	];
 }
 
 /**
