@@ -1494,6 +1494,32 @@ export default defineSketch(async (ctx) => {
 	// the union of every part's bounds.
 	const pieceTurn = cells.find((cell) => cell.piece === 'away')?.turn ?? cells[0]?.turn ?? 0;
 	const pieceBox = piece ? measurePlant(piece, pieceKit.box, pieceTurn).plantBox : null;
+	// The stem class the piece draws, and its record's taper, so the facts carry the piece's own
+	// thickness rather than leaving it in prose.
+	const stemName =
+		QUERY.stem ??
+		QUERY.shoot ??
+		(cutHint !== undefined && 'shoot' in cutHint ? cutHint.shoot : undefined);
+	const stemClass =
+		stemName === undefined
+			? undefined
+			: (record.shoots?.cuttingClasses ?? []).find((shoot) => shoot.name === stemName);
+	const stemFacts =
+		stemName === undefined
+			? undefined
+			: { stemClass: stemName, stemRadius: stemClass?.stem?.radius ?? null };
+	// The shoot rows the piece actually draws, counted by class: a count on the drawn piece, not the
+	// slot's request.
+	const rowsByClass = piece
+		? (() => {
+				const counts: Record<string, number> = {};
+				for (let row = 0; row < piece.shoots.count; row++) {
+					const name = pieceKit.prototypes[piece.shoots.prototype[row] as number]?.class;
+					if (name !== undefined) counts[name] = (counts[name] ?? 0) + 1;
+				}
+				return counts;
+			})()
+		: undefined;
 	facts = {
 		species: record.id,
 		name: record.name,
@@ -1517,6 +1543,7 @@ export default defineSketch(async (ctx) => {
 		...(piece && {
 			cutting: {
 				...piece.cutting,
+				...stemFacts,
 				size: (() => {
 					const b = boundsOf(piece, pieceKit);
 					return pieceBox
@@ -1524,6 +1551,8 @@ export default defineSketch(async (ctx) => {
 						: sub(b.max, b.min);
 				})(),
 				axes: piece.skeleton.axes.count,
+				rows: piece.shoots.count,
+				...(rowsByClass && { rowsByClass }),
 			},
 		}),
 		...(limb >= 0 && { limb: { axis: limb, nodes: chainOf(skeleton, limb).length } }),
