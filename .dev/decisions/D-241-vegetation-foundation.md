@@ -399,7 +399,11 @@ than its work. The class's Medium ceiling is the S25's, which is the only real f
 Two figures are owed by a device rather than left out by choice. No run gives Creek on WebGPU on
 the iPhone or the iPad, because its Low page stalls there, which is a recorded driver fault
 ([Driver bug reports](../driver-bugs.md)). The Galaxy Tab A9 Plus has no High or Ultra row, because
-those presets draw on core WebGPU only, and the tablet offers no WebGPU adapter.
+those presets draw on core WebGPU only, and the tablet offered no WebGPU adapter when the table was
+set. The tablet's own run reports the WebGPU tier at all four presets, so the reason no longer holds and a ceiling for its High and Ultra rows is owed; until then those figures have no
+budget to compare. The rows still do not draw: Creek at High fails one custom material's pipeline
+with E1404 and VK_ERROR_UNKNOWN on that device, on this build and on the commit before the reflection
+landing ([Driver bug reports](../driver-bugs.md#adreno-619-a-pipeline-fails-to-build-with-vkerrorunknown-at-creeks-density)), so the ceiling waits on that fault.
 
 - **Frame time:** the dressed Creek and forest must stay within the frame interval of the same
   preset, device and path. A preset that falls to a lower one at the same page fails.
@@ -638,23 +642,25 @@ last, and returns flat arrays of nine floats for each point.
   in Creek, with nothing in the ground layer. Their bounds are narrower than the ground's own
   bands. A scene on other terrain moves the numbers that differ.
 
-**Figures.** Creek's 160 m valley, placed with its eight species at seed 7, holds **1,245 points**:
-101 canopy trees, 170 saplings, 956 ground plants and 18 dead wood. The checksum of that placement is
-**2493806866**, read from the exact bytes of every float, so a page compares its point list with
-another device's and any difference at all shows. The earlier figure of 956 points and checksum
-3358570449 was taken before the scatter's own changes moved the placement, and the page has shipped
-the later reference since; the Galaxy S25 reaches it on both GPU paths, recorded at
-[20261110-025541](../tested-devices/galaxy-s25-sm-s931b-chrome/20261110-025541-vegetation-scatter.md). The device page compares it on every device
-and both GPU paths. The ground maps hold their samples as 32-bit floats, which is what keeps the
+**Figures.** Creek's 160 m valley, placed with its eight species at seed 7, holds **1,020 points**
+now that the waterline rules refuse ground at or below the water. The checksum of that placement is
+**2006477110**, read from the exact bytes of every float, so a page compares its point list with
+another device's and any difference at all shows. Before the waterline rules the shipped reference
+was **1,245 points** with checksum **2493806866**: 101 canopy trees, 170 saplings, 956 ground plants
+and 18 dead wood. The earlier figure of 956 points and checksum 3358570449 came before the scatter's
+own changes moved the placement. The Galaxy S25's run of 10 November reached the 1,245 reference on both GPU paths,
+recorded at
+[20261110-025541](../tested-devices/galaxy-s25-sm-s931b-chrome/20261110-025541-vegetation-scatter.md);
+the run of 11 November, below, reaches the current one on every device. The ground maps hold their samples as 32-bit floats, which is what keeps the
 samples of a height function that uses `Math.sin` and a fractional power equal between engines: the
 last bits that an engine may round another way do not survive the narrowing. A height function that
 answers other samples on another engine would move the points that it places.
 
 The species records set the room that each plant keeps, so the placement follows a change to one.
 The conifer's whorled tiers and the cards of many small leaves moved it twice after the linked runs
-below were measured. Only the Galaxy S25's latest run reaches the shipped reference of
-1,245 plants and checksum 2493806866, on both GPU paths. No Mac or iPad row reaches it: those rows,
-and the Galaxy S24's, hold the earlier record of 956 plants and checksum 3358570449.
+below were measured. The run of 11 November reaches the shipped reference on every device and both
+GPU paths, which is what the table below holds; the earlier rows, taken against 956 and 1,245, are
+kept in M3-V6's evidence for the size of each move.
 
 **The budget.** The placement runs once, after the ground maps and before the first plant draws, so
 it holds a one-time line rather than a frame ceiling: 250 ms on the reference Mac, the line that
@@ -663,29 +669,34 @@ maps are timed apart from it and take 26 to 86 ms once. The placement starts no 
 GPU, so its GPU time is nil. Its arrays hold about 1.8 MB once for a valley this size: 1.6 MB for
 the ground maps' samples, 0.13 MB for the variance maps and 34 KB for the points.
 
-The `vegetation-scatter` plan ran on two cloud phones, a cloud iPad and the Mac. The Galaxy S25's
-rows are its later run; every other row is an earlier run.
+The `vegetation-scatter` plan ran at `396cab7df` on two cloud phones, a cloud iPad and the Mac, two
+pages on each device, and every page compared against the shipped reference. The Mac, the S25 and
+the iPad start both GPU paths; the S24 has no WebGPU adapter, so its second page is a WebGL2 drawing.
+The placement is the middle of three timed runs; the ground maps are read once.
 
-| Device | Plants | Checksum | Placement | Ground maps | Display | At the shipped reference |
-| --- | --- | --- | --- | --- | --- | --- |
-| Galaxy S24, Chrome, WebGL2 page | 956 | 3358570449 | 7.35 ms | 71.54 ms | 30 Hz | no |
-| Galaxy S24, Chrome, WebGPU page | 956 | 3358570449 | 7.19 ms | 55.19 ms | 30 Hz | no |
-| Galaxy S25, Chrome, WebGL2 page | 1,245 | 2493806866 | 6.42 ms | 49.40 ms | 30 Hz | yes |
-| Galaxy S25, Chrome, WebGPU page | 1,245 | 2493806866 | 6.42 ms | 49.40 ms | 30 Hz | yes |
-| iPad Pro 13, Safari, WebGL2 page | 956 | 3358570449 | 5.20 ms | 37.02 ms | none timed | no |
-| iPad Pro 13, Safari, WebGPU page | 956 | 3358570449 | 4.84 ms | 35.92 ms | none timed | no |
-| MacBook Pro M3 Max, Chrome, WebGL2 page | 956 | 3358570449 | 5.77 ms | 27.98 ms | 120 Hz | no |
-| MacBook Pro M3 Max, Chrome, WebGPU page | 956 | 3358570449 | 5.21 ms | 21.57 ms | 120 Hz | no |
+| Device | Plants | Checksum | Placement | Ground maps | Display |
+| --- | --- | --- | --- | --- | --- |
+| Galaxy S24, Chrome, WebGL2 page | 1,020 | 2006477110 | 11.30 ms | 82.70 ms | 30 Hz |
+| Galaxy S24, Chrome, second page, drawn on WebGL2 | 1,020 | 2006477110 | 9.33 ms | 69.05 ms | 30 Hz |
+| Galaxy S25, Chrome, WebGL2 page | 1,020 | 2006477110 | 5.77 ms | 46.61 ms | 30 Hz |
+| Galaxy S25, Chrome, WebGPU page | 1,020 | 2006477110 | 6.35 ms | 46.35 ms | 30 Hz |
+| iPad Pro 13, Safari, WebGL2 page | 1,020 | 2006477110 | 5.10 ms | 36.02 ms | 59 Hz |
+| iPad Pro 13, Safari, WebGPU page | 1,020 | 2006477110 | 5.22 ms | 40.30 ms | 59 Hz |
+| MacBook Pro M3 Max, Chrome, WebGL2 page | 1,020 | 2006477110 | 5.89 ms | 24.58 ms | 60 Hz |
+| MacBook Pro M3 Max, Chrome, WebGPU page | 1,020 | 2006477110 | 6.15 ms | 24.17 ms | 60 Hz |
+
+Both phones reported a 30 Hz display where 60 was expected, so their frame timing is unreliable and
+no frame rate is claimed from them; the placement and ground-map times are the pages' own timers.
 
 The placement runs on the CPU and starts no engine, so both pages of a device run the same work.
 The S24 has no WebGPU adapter, so its second page named a path that it did not start. Both phone
 displays ran at 30 Hz, and the cloud reported each phone hot, so read the times as upper bounds.
 Safari on iPadOS runs WebKit and JavaScriptCore, so that row places the points on the second
 JavaScript engine beside Chrome's V8. The run files are
-[the S24's](../tested-devices/galaxy-s24-sm-s921b-chrome/20261102-013756-vegetation-scatter.md),
-[the S25's](../tested-devices/galaxy-s25-sm-s931b-chrome/20261110-025541-vegetation-scatter.md),
-[the iPad's](../tested-devices/ipad-pro-13-safari/20261102-013401-vegetation-scatter.md) and
-[the Mac's](../tested-devices/macbook-pro-m3-max-chrome/20261102-014351-vegetation-scatter.md).
+[the S24's](../tested-devices/galaxy-s24-sm-s921b-chrome/20261111-034601-vegetation-scatter.md),
+[the S25's](../tested-devices/galaxy-s25-sm-s931b-chrome/20261111-034402-vegetation-scatter.md),
+[the iPad's](../tested-devices/ipad-pro-13-safari/20261111-034748-vegetation-scatter.md) and
+[the Mac's](../tested-devices/macbook-pro-m3-max-chrome/20261111-034314-vegetation-scatter.md).
 
 **Options rejected.**
 
@@ -756,10 +767,21 @@ atlas, at 12, 24 and 48 meters from one camera, cover the same share of their ow
 `tests/image/leaf-card-coverage.spec.ts` runs it on all three GPU paths, and the
 `vegetation-coverage` picture shows the same for three crowns at three distances.
 
-**Owed.** The paint's time on each device, which the device record keeps. The owner's judgment of
-the generated leaves is given: he found them at least as good as the painted set and ruled his sample
-stands for the catalogue, so the leaves are no longer owed here. The `vegetation-versus-creek` picture
-that showed them side by side is removed with Creek's Blender models.
+**The owner's judgment is given.** On 10 November 2026 he judged the generated leaf and bark files
+of the pedunculate oak and the common ash, from review sheets that write both faces of the leaf, its
+relief, the mature bark tiled and one corner at full size, and the young wood, each beside a note of
+what a wrong one would look like. He judged them at least as good as the painted set they replace.
+Asked in two parts, he answered yes that those two species' sheets stand as the sample for every
+species the add-on generates, and yes that he wants the other species shown as well. <!-- outside date -->
+
+The ruling's scope is the approach, not each file. It answers whether the generated atlases are at
+least as good as the painted set they replace; it does not certify that any one species' files are
+right. A fault found in a species' sheet is a finding against that species' work, the painter's when
+the fault is shared and that species' record when it is local, and this ruling never dissolves one.
+Showing him the remaining species' sheets is an obligation this record carries until they are drawn
+and read.
+
+**Owed.** The paint's time on each device, which the device record keeps.
 
 ## What each leaf cell holds
 
@@ -1075,9 +1097,10 @@ the near shadows and 283.97 without. The rows that D-241's ceilings compare draw
 own density. On the same tablet, 2,312 tufts, its valley's 2.0 on each square meter, take 306.09 ms
 with the view cull and the far share and 318.77 without. 6,820 tufts, its bank strip's 5.9, take
 490.73 and 527.17. The cull takes 4.0 per cent back at the valley's density and 6.9 at the strip's.
-Neither row reached 208.3 before the far cover. The same page with the grass switched off measures 179.18 ms, which is
-29.12 ms inside the ceiling, so the base scene does not break it: the grass at the valley's density
-adds 126.91 ms and at the strip's 311.55. The frame's own cost sits mostly in its opaque pass: with
+Neither row reached 208.3, the S24 class's High ceiling, which these rows were measured against as a
+target because the tablet has no row above Medium. The same page with the grass switched off
+measures 179.18 ms, which is 29.12 ms inside that target, so the base scene does not break it: the
+grass at the valley's density adds 126.91 ms and at the strip's 311.55. The frame's own cost sits mostly in its opaque pass: with
 the sun's contact shadows and the bounce light off, the scene measures 143.49 ms and the timer names the
 opaque pass at 138.94. The timer times the frame's first seven passes one by one and adds every pass after them to
 the last of those, so the 176.36 ms that it gave ambient occlusion's denoise was the opaque pass
@@ -1085,14 +1108,14 @@ and the rest of the frame in that slot. The three ambient
 occlusion passes, which the contact shadows and the bounce light keep, cost about 43 ms: the same
 scene measures 186.25 with the contact shadows on. The pictures show that neither effect changes what
 the hill looks like: the four drawings, with either effect off and with both, are pixel for pixel the
-same. With both off the hill at Creek's density measures 235.41 ms, 27.11 ms past the ceiling, so the
-effects' 43 ms does not close the budget either. The grass's fixed cost, its shadow pass and draw
+same. With both off the hill at Creek's density measures 235.41 ms, 27.11 ms past the target, so the
+effects' 43 ms does not close the gap either. The grass's fixed cost, its shadow pass and draw
 setup, adds about 33 ms on top of the per-tuft cost. The owner ruled that the demo draws without the
 two effects: their pictures are the same at Low, Medium and High, and the Creek sketch pins the
 settings so a preset change does not bring them back. The far cover then closed the gap: at 24.31
 meters the row measures 209.72 and 196.02 ms, mean 202.87, while 25.59 meters gives 217.45 and
 216.60. The base page bracketed that block at 162.27 and 156.30, so the machine drifted about 6 ms
-within it, and 208.3 sits inside the row's spread at the chosen distance rather than outside it.
+within it, and the 208.3 target sits inside the row's spread at the chosen distance rather than outside it.
 The fit through two tuft counts first put the base at 211.9 ms and was read as the scene's own cost. A
 fitted intercept is not a base frame: it carries everything the removal would also take away, whether or
 not that cost varies with the count, and only switching the thing off gives the base. Every view culls the
@@ -1101,8 +1124,8 @@ cascade. It reads the frame's own matrix and the one count that the compute pass
 tablet the cull takes little back, because the cascades were never the large part: three runs at
 2,312 tufts measure 288.75, 294.98 and 298.22 ms against 306.09 before, 3 to 6 per cent, and at
 6,820 they straddle the earlier 490.73 at 466.35 to 497.68. The three cascade passes together time
-at 2.1 to 2.2 ms a frame at the valley's density and 6.3 at the strip's. The row still misses 208.3
-by about 87 ms, and the two places that could close it stand unchanged.
+at 2.1 to 2.2 ms a frame at the valley's density and 6.3 at the strip's. The row still misses that
+target by about 87 ms, and the two places that could close it stand unchanged.
 Two pictures hold the look. `vegetation-grass` holds the hill. `vegetation-grass-shadow` holds it at a
 low sun, where the grass's shadows follow the count, so a view that drew the capacity would show the
 rows past it.
@@ -1113,7 +1136,11 @@ translucency demo is. <!-- outside date -->
 
 The forest's own trees stay only until the swap. The add-on's limbs, leaves and coarseness gain the
 much sparser setting that this record's foundation section defines, and the forest then swaps its
-56,000 trees of four kinds to the add-on. Its three fir kinds take variants of the Scots pine, which
+56,000 trees of four kinds to the add-on. The owner confirmed the swap on 10 November 2026, when the
+sparse setting existed and the choice was between swapping and keeping a measured stand-in. His own
+stand costs 240,000 to 496,000 triangles at the demo's count, against 24,600,000 through the add-on,
+which is why the swap waits for the sparse form rather than happening at the dense one.
+<!-- outside date --> Its three fir kinds take variants of the Scots pine, which
 is revived to the species bar, rather than the add-on's built-in conifer.
 
 The translucency demo is an accepted exception. Its own leaf mesh and the standard material's
@@ -1141,3 +1168,22 @@ have the owner's answer beside them: the translucency garden, the impostor fores
 glade and the battle demo. The forest is not one of them. Its own generator stays only until the
 sparse tree lands, and then it draws through the add-on, so the task does not close on these
 rulings. It closes when the forest swaps.
+
+## Addendum: the owner's completeness ruling
+
+The owner ruled: "We're going to take the current state of the vegetation add-on as complete so that
+we can go ahead and complete all the milestone tasks." The add-on as it stands on the milestone is
+what the milestone ships, and the species batch's remaining rows are not a gate on anything here.
+
+What the ruling closes, by task:
+- M3-V4: its generation clause closes on the shipped set. The measured figures are an upper bound for
+  the form shipped now, because the floors are the ruling's and the shared coarseness and the species
+  work since make the sparse mesh cheaper, never dearer.
+- M3-V5: the bake-time clause closes on the shipped path. The files ship; there is no runtime bake to
+  measure.
+- M3-V12: the forest's own generator closes the task, as the paragraph above says, and the ruling's
+  line is drawn at the add-on's current state rather than at the sparse tree.
+
+What it does not do: it does not settle any species' pictures, which follow the shipped records and
+are redrawn when a record moves; and it does not open the milestone to the vegetation session's
+branches, which wait for the owner's word before they merge.

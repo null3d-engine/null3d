@@ -99,8 +99,8 @@ export interface CoverageRow {
 }
 
 /**
- * Grows the oak and places three copies at three distances, each in a different band of the plant
- * core's card levels: two in the first card level's band and one in the second's.
+ * Grows the oak and places three copies at three distances: two in the first band of the plant
+ * core's card levels and one in the second.
  *
  * @param ctx The sketch's context.
  * @param options The proving controls; the record's own grow by default.
@@ -136,8 +136,8 @@ export async function addCoverageRow(
 	const nearSplit = (longest * scale * FRAME.height) / (2 * TAN_HALF * switchPixels[0]);
 	// The second card level's own start, measured at the asset's reference view.
 	const secondStart = asset.levels[2].from * VIEW_SCALE;
-	// One distance in each band, away from the hand-over edges: the first card level draws from the
-	// shoot split to the second's start, and the second level from its start outwards.
+	// Two distances in the first band and one in the second, away from the hand-over edges: the first
+	// card level draws from the shoot split to the second's start, and the second from its start out.
 	const distances = [Math.max(nearSplit * 2, 20), secondStart * 0.5, secondStart * 1.25];
 
 	// A crown keeps the same share of the frame at every distance, so its scale follows the

@@ -11,6 +11,17 @@ const DISTANCES = [6, 400];
 /** Where the large grid with pieces draws, and the same grid without them, by name. */
 const CORNERS = { pieces: 500, whole: -500 };
 
+/** The most measures that a view takes while its frames and counts catch up. */
+const SETTLE_WAITS = 90;
+/**
+ * Frames that a view draws before it reads its count. The GPU samples the triangles of the draws
+ * that it culled on one frame in eleven, so this covers a sample drawn after the camera moved,
+ * and the few frames that its sums take to come back.
+ */
+const SETTLE_FRAMES = 16;
+/** The most reads that a view takes to repeat its count. */
+const REPEAT_READS = 4;
+
 run('runtime-levels', async () => {
 	const canvas = document.querySelector('canvas');
 	if (!canvas) throw new Error('the page has no canvas');
@@ -37,11 +48,31 @@ run('runtime-levels', async () => {
 			});
 			engine.postToSketch(type, place);
 		});
-	// WebGPU counts the triangles that the GPU culled on one frame in eleven, a few frames late.
+	/**
+	 * The triangles that a frame draws, once the GPU's counts describe the view. WebGPU takes the
+	 * triangles of the draws that it culled from the GPU, on one frame in eleven and a few frames
+	 * late, so a slow device still reports the count of the camera before this one. Waiting a
+	 * wall-clock time can pass no frames at all on such a device, so the page first draws enough
+	 * frames for a later sample to describe the view, then reads until a count differs from the
+	 * view before and repeats.
+	 */
+	let lastDrawn = -1;
 	const drawn = async () => {
-		await engine.measure(0.5);
-		return (await engine.measure(1)).triangles.median;
+		let frames = 0;
+		for (let k = 0; k < SETTLE_WAITS && frames < SETTLE_FRAMES; k++)
+			frames += (await engine.measure(0.5)).frames;
+		let triangles = -1;
+		for (let k = 0; k < REPEAT_READS; k++) {
+			const read = (await engine.measure(1)).triangles.median;
+			if (read > 0 && read !== lastDrawn && read === triangles) break;
+			triangles = read;
+		}
+		lastDrawn = triangles;
+		return triangles;
 	};
+	// The count of the camera before the first view, which a stale read can still repeat.
+	const before = (await engine.measure(1)).triangles.median;
+	if (before > 0) lastDrawn = before;
 	const triangles: Record<string, number> = {};
 	for (const distance of DISTANCES) {
 		await moved('distance', distance);

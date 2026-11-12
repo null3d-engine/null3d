@@ -71,12 +71,14 @@
 		"background": "studio-grey"
 	},
 	"15-bark-mid-stem.png": {
-		"span": 0.4
+		"span": 0.4,
+		"barkMask": true
 	},
 	"16-bark-on-branch.png": {
 		"view": "bark-limb",
 		"thin": 0.018,
-		"span": 0.08
+		"span": 0.08,
+		"leafyBark": true
 	},
 	"26-bark-texture.png": {
 		"span": 0.3
@@ -90,7 +92,8 @@
 	"19-thorns.png": {
 		"background": "studio-grey",
 		"leaves": 2.5,
-		"fruit": false
+		"fruit": false,
+		"season": "winter"
 	},
 	"20-flowers-spring.png": {
 		"view": "twigs",
@@ -99,13 +102,18 @@
 		"leaves": 2.5
 	},
 	"21-branch-studio.png": {
-		"background": "studio-grey"
+		"background": "studio-grey",
+		"leaves": 5.6,
+		"pick": 1
 	},
 	"22-subbranch-studio.png": {
-		"background": "studio-grey"
+		"background": "studio-grey",
+		"leaves": 7.4,
+		"pick": 2
 	},
 	"23-leaf-cluster-studio.png": {
-		"background": "studio-grey"
+		"background": "studio-grey",
+		"pick": 1
 	},
 	"hawthorn-turntable-halfturn.mp4": {
 		"skyShare": 0.19,

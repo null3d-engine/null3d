@@ -474,7 +474,10 @@ export const DEMOS: readonly Demo[] = [
 		summary:
 			"A day passes over a valley in a minute, under the physical sky. The air turns the sky gold and rose at sunset and hazes each ridge by its distance. At night the moon lights the air and the stars come out. The groves on the valley floor are the vegetation add-on's conifers, grown at three levels and swaying in the wind add-on's field.",
 		hold: 2,
-		timeoutSeconds: 60,
+		// The held frame builds 40 pipelines, and the physical sky's clouds draw through them, so a
+		// software GPU's capture of the frame runs past a minute on a runner with few cores. The
+		// budget allows three minutes, as the valley scenes do for the same reason.
+		timeoutSeconds: 180,
 	},
 	{
 		name: 'contact-shadows',
@@ -487,7 +490,10 @@ export const DEMOS: readonly Demo[] = [
 			'A stone garden in the low evening sun, made in code: raked sand, mossy granite rocks, 640 pebbles and moss clumps in one batch, tufts of meadow grass and pines from the vegetation add-on, a stone lantern, and a plaster wall with bamboo beyond it. Contact shadows give each pebble, blade and stone the dark line where it meets the sand, which the shadow map is too coarse to hold. Every 3 seconds they turn off and on again.',
 		controls: [{ keys: ['Move', 'Tap'], does: 'Swing the sun around the garden' }],
 		hold: 1,
-		timeoutSeconds: 60,
+		// The garden draws 640 pebbles' contact shadows in one batch, and a software GPU needs past a
+		// minute for its held frame: three drawings on this machine ran past seventy seconds at loads
+		// from six to thirty-seven. The budget is what failed, not the scene.
+		timeoutSeconds: 180,
 	},
 	{
 		name: 'hero-shadow',
@@ -863,7 +869,10 @@ export const DEMOS: readonly Demo[] = [
 			"The vegetation add-on's meadow: every species the catalogue registers, each grown from its own record through the add-on's public functions and planted across a field. The pedunculate oak stands there today with the species that follow it, so the page fills as records land. Drag to turn round the meadow and use the wheel to step in, and press R to grow it all again from another seed.",
 		controls: [{ keys: ['R'], does: 'Grow the meadow again from another seed' }],
 		hold: 2,
-		timeoutSeconds: 240,
+		// The meadow grows every registered species at medium detail with shadows, and its held
+		// capture needs more than 240 s on CI's software GPU. The wait takes the 600 s ceiling that
+		// the island and the timed script use.
+		timeoutSeconds: 600,
 	},
 	{
 		name: 'vegetation-wind',
@@ -876,7 +885,9 @@ export const DEMOS: readonly Demo[] = [
 			"The same plants under the wind add-on's field: set the wind's strength and its bearing on the sliders, and the crowns lift and settle as it passes. The Hold button stops the air, so a still frame can be compared with a moving one.",
 		controls: [],
 		hold: 2,
-		timeoutSeconds: 240,
+		// The same meadow under the wind's field costs at least as much as the still meadow, and its
+		// held capture needs more than 240 s on CI's software GPU.
+		timeoutSeconds: 600,
 	},
 	{
 		name: 'forest',
@@ -892,7 +903,9 @@ export const DEMOS: readonly Demo[] = [
 			{ keys: ['L'], does: 'Levels of detail on or off' },
 		],
 		hold: 2,
-		timeoutSeconds: 300,
+		// The 56,000 trees and the understory need more than 300 s to draw and capture on CI's
+		// software GPU, so the wait takes the 600 s ceiling that the other large scenes use.
+		timeoutSeconds: 600,
 	},
 	{
 		name: 'impostors',

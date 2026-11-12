@@ -22,6 +22,9 @@ const RANK: readonly (readonly [number, number])[] = [
 
 /** The weeping willow's record. */
 export const record: Species = {
+	// A first pass at the floors a phone's lighter form keeps, set from the species' form and to
+	// be measured on the phone set before they are trusted.
+	sparse: { limbs: 0.4, leaves: 0.5, coarseness: 0.55 },
 	id: 'weeping-willow',
 	name: 'Weeping willow',
 	latin: 'Salix babylonica',
@@ -443,16 +446,13 @@ export const record: Species = {
 	textures: 'own',
 	variants: 6,
 	seedSalt: 20261108,
-	// A first pass at the floors a phone's lighter form keeps, set from the species' form and to
-	// be measured on the phone set before they are trusted.
-	sparse: { limbs: 0.4, leaves: 0.5, coarseness: 0.55 },
 	forms,
 	roundBand,
 	cuttings: {
 		// Still 21: a metre of arching branch with its hanging shoots still on it.
-		branch: { shoot: 'cut' },
+		branch: { shoot: 'cut', shoots: 3 },
 		// Still 22: a short twig with two or three pliant shoots hanging from its end.
-		subbranch: { shoot: 'spray' },
+		subbranch: { shoot: 'spray', shoots: 3 },
 		// Still 23: the end of one shoot, its narrow leaves in alternate ranks.
 		cluster: { shoot: 'spur' },
 		// Stills 12, 13, 24 and 25 lay the leaf flat on a copy stand.

@@ -14,8 +14,14 @@ import { Counter, type FrameRecorder } from '../shared/metrics';
 
 /** How often a capture checks whether the pipelines it waits for are built. */
 const BUILD_POLL_MS = 4;
-/** The longest that a capture waits for pipelines to build. */
-export const BUILD_WAIT_LIMIT_MS = 30_000;
+/**
+ * The longest that a capture waits for pipelines to build. A software rasteriser builds a
+ * showcase's pipelines slower than a GPU: the island needed more than thirty seconds at every
+ * load, from forty-five to four, and returned no frame at all under the old limit. Its High preset
+ * at 640 x 360 then needed more than two minutes, so the wait takes five, which is half the
+ * worker's ten-minute reply limit: a capture that waits for a slow build still reports a stuck one.
+ */
+export const BUILD_WAIT_LIMIT_MS = 300_000;
 
 /** What the scene renderers ask of a GPU backend. */
 interface SceneBackend {
