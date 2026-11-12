@@ -1,4 +1,4 @@
-// Loads and destroys models 240 times on each GPU path: a skinned and animated fox with a
+// Loads and destroys models 320 times on each GPU path: a skinned and animated fox with a
 // texture, a face with morph targets, and a scene with stored raycast trees, with copies, an
 // instance batch and raycasts each round. The engine's start-up takes longer than a few rounds on
 // a slow machine, and the heap never gives a page back, so the test finds the round from which the
@@ -23,16 +23,17 @@ interface MemoryResult {
 
 /**
  * The rounds in which the engine's start-up may still move the heap. A slower runner's start-up
- * arrives over more rounds: one run of 140 rounds settled at round 131, CI's software GPU at round
- * 158 on WebGL2, and a slower runner at 185. The bound sits above the latest sighting, and the
- * rounds after it test the churn; at 240 that leaves fifty. The sighting has climbed four times,
- * the fourth at 192; this bound cannot pass the last round, so a further climb raises the round
- * count.
+ * arrives over more rounds, and the settlements read 131, 158, 185 and 192 as the runners slowed,
+ * with the fifth at 202. The climb tracks the runner's speed and not the round count: the heap's
+ * steady figures stayed flat once it settled, so the engine held its memory however late the
+ * plateau began. The bound sits above the latest sighting, and the rounds after it test the churn;
+ * at 320 that leaves 110. A settlement later than the bound raises the round count, as this one
+ * did, so that the churn keeps its length.
  */
-const WARM_ROUNDS = 190;
+const WARM_ROUNDS = 210;
 
 for (const gpu of ['webgpu', 'webgl2'] as const)
-	test(`loading and destroying models 240 times keeps the memory flat, on ${gpu}`, async ({
+	test(`loading and destroying models 320 times keeps the memory flat, on ${gpu}`, async ({
 		page,
 	}) => {
 		test.setTimeout(690_000);
@@ -48,7 +49,7 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 		expect(result.done.hits).toBeGreaterThan(100);
 		const checkpoints = result.checkpoints;
 		const last = checkpoints.at(-1);
-		expect(last?.round).toBe(240);
+		expect(last?.round).toBe(320);
 		// The first round whose heap figure is the last one: from there the engine held one figure.
 		const settled = checkpoints.findIndex((point) => point.wasmBytes === last?.wasmBytes);
 		expect(settled).toBeGreaterThanOrEqual(0);
