@@ -28,7 +28,7 @@ import type { PlantTaskInput } from '../generate-task';
 import { bladeHalf } from '../leaf/grass-blade';
 import { builder as thickBuilder } from '../leaf/thick-leaf';
 import { dequantisePosition } from '../lod/quantise';
-import { AXIS_LEAF } from './ground';
+import { AXIS_LEAF, SHEATH_KIND } from './ground';
 import { GROUND_TEST_SPECIES, hostaRecord, meadowGrassRecord, sedgeRecord } from './ground.fixture';
 
 for (const species of GROUND_TEST_SPECIES) await loadPlantCode(species.record);
@@ -198,7 +198,14 @@ describe('the tuft sheath marker', () => {
 	if (growth.model !== 'tuft') throw new Error('the meadow grass is a tuft');
 	const sheathed: Species = {
 		...meadowGrassRecord,
-		growth: { ...growth, sheathColour: [0.366, 0.38, 0.309] },
+		growth: {
+			...growth,
+			sheathColour: {
+				foot: [0.366, 0.38, 0.309],
+				collar: [0.366, 0.38, 0.309],
+				reach: 0.85,
+			},
+		},
 	};
 	const grow = (record: Species) => {
 		const kit = buildKitNow(
@@ -231,9 +238,13 @@ describe('the tuft sheath marker', () => {
 			for (let i = 0; i < one.length; i += 4) {
 				// The wind record and the sky visibility are the same plant's.
 				expect([one[i], one[i + 1], one[i + 3]]).toEqual([other[i], other[i + 1], other[i + 3]]);
-				// The phase keeps its seven low bits, and only the sheath's byte takes the mark.
-				expect((one[i + 2] as number) & 0x7f).toBe((other[i + 2] as number) >> 1);
-				if (((one[i + 2] as number) & 0x80) !== 0) sheathVertices++;
+				// The phase keeps its seven low bits, and only the sheath's own byte takes the mark.
+				const byte = one[i + 2] as number;
+				if (byte === SHEATH_KIND) {
+					sheathVertices++;
+				} else {
+					expect(byte).toBe((other[i + 2] as number) >> 1);
+				}
 				vertices++;
 			}
 		}

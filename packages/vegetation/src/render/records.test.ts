@@ -109,6 +109,34 @@ describe('the species header', () => {
 		expect(header.length).toBe(HEADER_ROWS * RECORDS_WIDTH * 4);
 	});
 
+	test('draws as before when the record names no sky-to-leaf term', () => {
+		expect([...speciesHeader(record, manifest, box)]).toEqual([...header]);
+		expect(texel(header, HEADER.sway)[3]).toBe(0);
+	});
+
+	test('packs the sky-to-leaf extinction in the sway texel', () => {
+		const lit = speciesHeader({ ...record, skyToLeaf: 0.3 }, manifest, box);
+		expect(texel(lit, HEADER.sway)[3]).toBeCloseTo(0.3, 6);
+	});
+
+	test('packs the two colours of a tuft sheath, and none where the record gives none', () => {
+		const tuft = {
+			...record,
+			growth: {
+				model: 'tuft',
+				sheathColour: { foot: [0.3, 0.4, 0.2], collar: [0.5, 0.6, 0.7], reach: 0.85 },
+			},
+		} as unknown as Species;
+		const sheathed = speciesHeader(tuft, manifest, box);
+		for (const [k, v] of [0.3, 0.4, 0.2, 0.7].entries())
+			expect(texel(sheathed, HEADER.sheath)[k] as number).toBeCloseTo(v, 5);
+		for (const [k, v] of [0.5, 0.6, 0.7, 0.85].entries())
+			expect(texel(sheathed, HEADER.sheathCollar)[k] as number).toBeCloseTo(v, 5);
+		// The blade-leaved record names no tuft, so both sheath texels stay empty.
+		expect(texel(header, HEADER.sheath)).toEqual([0, 0, 0, 0]);
+		expect(texel(header, HEADER.sheathCollar)).toEqual([0, 0, 0, 0]);
+	});
+
 	test('holds each face its own scale, share and roughness from its own mean', () => {
 		const upper = faceTerms([0.05, 0.09, 0.02], [0.07, 0.12, 0.025], [0.04, 0.08, 0.02]);
 		const lower = faceTerms([0.2, 0.25, 0.2], [0.07, 0.12, 0.025], [0.22, 0.28, 0.21]);

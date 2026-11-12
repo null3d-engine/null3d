@@ -453,6 +453,33 @@ describe('cuttings', () => {
 		scaledBudget(20_000),
 	);
 
+	it('presses a cut grass blade flat in its frame', async () => {
+		const { species } = await import('./species/sedge');
+		const { record } = species;
+		await loadPlantCode(record);
+		const pressedKit = buildKitNow(species, { placeholders: 'missing', detail: 'low' });
+		const grown = { ...record, cuttings: { ...record.cuttings, leaf: undefined } };
+		const grownKit = buildKitNow(
+			{ ...species, record: grown },
+			{ placeholders: 'missing', detail: 'low' },
+		);
+		const pressed = cutFoliage(pressedKit, { part: 'leaf' }, 'low');
+		const plain = cutFoliage(grownKit, { part: 'leaf' }, 'low');
+		if (!pressed || !plain) throw new Error('the sedge has no leaf');
+		// A picked blade lies in the plane of its frame; the plant's blade folds and twists out of it.
+		const depth = (mesh: { readonly positions: Float32Array }): number => {
+			let far = 0;
+			for (let i = 2; i < mesh.positions.length; i += 3)
+				far = Math.max(far, Math.abs(mesh.positions[i] as number));
+			return far;
+		};
+		expect(depth(pressed)).toBeLessThan(1e-6);
+		expect(depth(plain)).toBeGreaterThan(0.002);
+		expect(Array.from(plain.positions)).toEqual(Array.from(grownKit.leaves[0]?.positions ?? []));
+		const flattenOfGrown = cutFoliage(grownKit, { part: 'leaf', pressed: true }, 'low');
+		expect(Array.from(flattenOfGrown?.positions ?? [])).toEqual(Array.from(pressed.positions));
+	});
+
 	it('presses a cut frond flat in its own plane', async () => {
 		const { brackenRecord } = await import('./grow/bracken.fixture');
 		const { noTextureFiles } = await import('./core/textures');

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { meadowGrassRecord } from '../grow/ground.fixture';
 import { record as template } from '../species/_template/record';
+import { record as meadow } from '../species/meadow-grass/record';
 import { capProblems, capsFor, MODEL_CAPS } from './caps';
 import { checkSpecies, speciesProblems } from './check';
 import type { ShootSpec, Species } from './record';
@@ -10,6 +11,13 @@ describe('the record check', () => {
 	it('passes the template', () => {
 		expect(speciesProblems(template)).toEqual([]);
 		expect(checkSpecies(template)).toBe(template);
+	});
+
+	it('reads a sky-to-leaf extinction as a share from 0 to 1', () => {
+		expect(speciesProblems({ ...template, skyToLeaf: 0.3 })).toEqual([]);
+		expect(speciesProblems({ ...template, skyToLeaf: 1.2 })).toContain(
+			'skyToLeaf is 1.2; a share lies from 0 to 1',
+		);
 	});
 
 	it('names every problem at once', () => {
@@ -342,7 +350,7 @@ describe('the record check', () => {
 		).toBe(true);
 	});
 
-	it('presses a blade, a thick leaf or a whole frond flat, and no other foliage', () => {
+	it('presses a blade, a thick leaf, a whole frond or a grass blade flat, and no other foliage', () => {
 		const pressed: Species = { ...template, cuttings: { leaf: { pressed: true } } };
 		const flat = template.foliage.kind === 'blade' || template.foliage.kind === 'thick';
 		expect(speciesProblems(pressed).some((p) => p.startsWith('cuttings.leaf.pressed'))).toBe(!flat);
@@ -358,6 +366,8 @@ describe('the record check', () => {
 			foliage: { kind: 'frond', optics: {} },
 		} as unknown as Species;
 		expect(speciesProblems(frond).some((p) => p.startsWith('cuttings.leaf.pressed'))).toBe(false);
+		const grass: Species = { ...meadow, cuttings: { leaf: { pressed: true } } };
+		expect(speciesProblems(grass).some((p) => p.startsWith('cuttings.leaf.pressed'))).toBe(false);
 	});
 
 	it('holds a pressed leaf own stalk to a length above zero', () => {
@@ -552,18 +562,21 @@ describe('the record check', () => {
 });
 
 describe('a tuft sheath colour', () => {
-	const withColour = (sheathColour: readonly [number, number, number]): Species => {
+	const withColour = (colour: readonly [number, number, number]): Species => {
 		const growth = meadowGrassRecord.growth;
 		if (growth.model !== 'tuft') throw new Error('the meadow grass is a tuft');
-		return { ...meadowGrassRecord, growth: { ...growth, sheathColour } };
+		return {
+			...meadowGrassRecord,
+			growth: { ...growth, sheathColour: { foot: colour, collar: colour, reach: 0.85 } },
+		};
 	};
 
 	it('reads a colour as three shares from 0 to 1', () => {
 		expect(speciesProblems(meadowGrassRecord)).toEqual([]);
 		expect(speciesProblems(withColour([0.366, 0.38, 0.309]))).toEqual([]);
 		const problems = speciesProblems(withColour([0.366, 1.38, -0.1]));
-		expect(problems.some((p) => p.startsWith('growth.sheathColour.1'))).toBe(true);
-		expect(problems.some((p) => p.startsWith('growth.sheathColour.2'))).toBe(true);
-		expect(problems.some((p) => p.startsWith('growth.sheathColour.0'))).toBe(false);
+		expect(problems.some((p) => p.startsWith('growth.sheathColour.foot.1'))).toBe(true);
+		expect(problems.some((p) => p.startsWith('growth.sheathColour.foot.2'))).toBe(true);
+		expect(problems.some((p) => p.startsWith('growth.sheathColour.foot.0'))).toBe(false);
 	});
 });

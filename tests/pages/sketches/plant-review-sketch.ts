@@ -31,10 +31,12 @@ import { createWind, type Wind } from '@null3d/wind';
 import {
 	chainOf,
 	facing,
+	flowerSites,
 	largestLimb,
 	limbNear,
 	normalize,
 	pointAlong,
+	sheathColumn,
 	stemAt,
 	stemFoot,
 	stemSurfaceAt,
@@ -65,6 +67,7 @@ import {
 	type ScreenFraming,
 	spanDistance,
 	standCamera,
+	widthDistance,
 } from '../lib/plant-review/framing';
 import { measurePlant, partPositions, shootPositions } from '../lib/plant-review/measure';
 import { readPlantReviewQuery } from '../lib/plant-review/query';
@@ -346,7 +349,16 @@ function fit(bounds: Bounds, turn: number, elevation: number, aspect: number, fo
  * The camera that stands on the ground and puts a whole plant where the query's framing in screen
  * shares asks, as a reference picture framed its plant.
  */
-function standView(height: number, foot: V3, turn: number, aspect: number): View {
+const STAND_ROWS: Record<string, number>[] = [];
+
+function standView(
+	height: number,
+	bounds: Bounds,
+	points: Float32Array | undefined,
+	foot: V3,
+	turn: number,
+	aspect: number,
+): View {
 	const middle = QUERY.targetY ?? 0.5;
 	const fill = QUERY.fill ?? 0.8;
 	const asked = QUERY.top !== undefined && QUERY.fill === undefined;
@@ -358,13 +370,133 @@ function standView(height: number, foot: V3, turn: number, aspect: number): View
 		...(asked ? { eye: QUERY.eye ?? EYE } : { base: middle + fill / 2 }),
 		targetX: QUERY.targetX ?? 0.5,
 	};
-	const stand = standCamera(framing, height);
+	let stand = standCamera(framing, height);
 	const out = facing(turn);
 	const right: V3 = [Math.cos(turn), 0, -Math.sin(turn)];
-	const position = add(add(foot, scale(out, stand.distance)), [0, stand.height, 0]);
-	const level = sub(scale(out, -Math.cos(stand.yaw)), scale(right, Math.sin(stand.yaw)));
-	const look = add(scale(level, Math.cos(stand.pitch)), [0, Math.sin(stand.pitch), 0]);
-	return { position, target: add(position, scale(look, stand.distance)), fov: FOV };
+	/** The view a stand camera gives, before the box is projected into its frame. */
+	const viewOf = (at: typeof stand): View => {
+		const position = add(add(foot, scale(out, at.distance)), [0, at.height, 0]);
+		const level = sub(scale(out, -Math.cos(at.yaw)), scale(right, Math.sin(at.yaw)));
+		const look = add(scale(level, Math.cos(at.pitch)), [0, Math.sin(at.pitch), 0]);
+		return { position, target: add(position, scale(look, at.distance)), fov: FOV };
+	};
+	// The reference's plant keeps a margin at the frame's sides. The camera stands back until the
+	// render's widest corner keeps that share too, so a plant broader than its reference is framed
+	// with the same margin rather than cropped at the sides.
+	const widthShare = QUERY.widthShare;
+	if (widthShare !== undefined && widthShare < 1) {
+		let distance = stand.distance;
+		for (let c = 0; c < 8; c++) {
+			const corner: V3 = [
+				c & 1 ? bounds.max[0] : bounds.min[0],
+				c & 2 ? bounds.max[1] : bounds.min[1],
+				c & 4 ? bounds.max[2] : bounds.min[2],
+			];
+			const d = sub(corner, foot);
+			const across = Math.abs(d[0] * right[0] + d[2] * right[2]);
+			const toward = d[0] * out[0] + d[1] * out[1] + d[2] * out[2];
+			distance = Math.max(distance, widthDistance(across, toward, widthShare, aspect, FOV));
+		}
+		if (distance > stand.distance) stand = { ...stand, distance };
+	}
+	// The drawn box, not the axis, sets the rows: a tuft's near-side blades stand off its axis and
+	// sweep the ground, so they project below the foot row the axis solve aimed at, and a plant whose
+	// foliage rises past the axis's top projects above its row. Project the box's eight corners and
+	// stand the camera until the box spans the asked rows and its middle sits on the asked middle.
+	let view = viewOf(stand);
+	const askedTop = framing.top;
+	const askedBase = framing.base ?? 1;
+	// Only a drawn box that runs off the frame is stood back: a picture that already holds its plant
+	// keeps the camera its reference was measured with, so its figures do not move.
+	const first = projectedRows(view, bounds, points);
+	// Only a box clear of the frame itself is cropped: a plant whose geometry project past the rows
+	// its photograph asked for, yet stays inside the frame, is not cropped and keeps the axis camera.
+	const clipped = first.base > 1.05 || first.top < -0.05;
+	if (STAND_ROWS.length < 1)
+		STAND_ROWS.push({
+			top: Number(first.top.toFixed(4)),
+			base: Number(first.base.toFixed(4)),
+			askedTop: Number(askedTop.toFixed(4)),
+			askedBase: Number(askedBase.toFixed(4)),
+			clipped: clipped ? 1 : 0,
+		});
+	for (let pass = 0; clipped && pass < 4; pass++) {
+		const rows = projectedRows(view, bounds, points);
+		if (framing.base === undefined) {
+			// The plant runs off the frame's foot: the solve asks only its top, so stand back until
+			// the drawn box's lowest row is inside the frame.
+			if (rows.base <= 1 - 0.005) break;
+			stand = { ...stand, distance: stand.distance * Math.max(1, (rows.base - 0.5) / 0.5) };
+			view = viewOf(stand);
+			continue;
+		}
+		const span = rows.base - rows.top;
+		const askedSpan = askedBase - askedTop;
+		const scale = span > 1e-4 && askedSpan > 1e-4 ? span / askedSpan : 1;
+		const middle = (rows.base + rows.top) / 2;
+		const askedMiddle = (askedBase + askedTop) / 2;
+		if (Math.abs(scale - 1) < 0.005 && Math.abs(middle - askedMiddle) < 0.005) break;
+		// A row's height at the target's depth, which turns the eye's row error into metres.
+		const metresPerRow = 2 * stand.distance * Math.tan((FOV * DEG) / 2);
+		stand = {
+			...stand,
+			distance: stand.distance * Math.max(0.2, Math.min(5, scale)),
+			height: Math.max(0.02, stand.height - (middle - askedMiddle) * metresPerRow),
+		};
+		view = viewOf(stand);
+	}
+	return view;
+}
+
+/**
+ * The rows a box's outermost corners land on from a view: the topmost and bottommost, as shares of
+ * the frame's height with the frame's top at 0. These cameras stand without roll, so the view's
+ * right is the world up crossed with its line of sight.
+ */
+function projectedRows(
+	view: View,
+	bounds: Bounds,
+	points: Float32Array | undefined,
+): { top: number; base: number } {
+	const forward = normalize(sub(view.target, view.position));
+	const right = normalize(cross(forward, [0, 1, 0]));
+	const up = cross(right, forward);
+	const half = Math.tan((view.fov * DEG) / 2);
+	let top = Number.POSITIVE_INFINITY;
+	let base = Number.NEGATIVE_INFINITY;
+	const row = (x: number, y: number, z: number): number | undefined => {
+		const dx = x - view.position[0];
+		const dy = y - view.position[1];
+		const dz = z - view.position[2];
+		const depth = dx * forward[0] + dy * forward[1] + dz * forward[2];
+		if (depth <= 1e-6) return undefined;
+		const rise = dx * up[0] + dy * up[1] + dz * up[2];
+		return 0.5 - rise / (2 * half * depth);
+	};
+	const take = (value: number | undefined): void => {
+		if (value === undefined) return;
+		top = Math.min(top, value);
+		base = Math.max(base, value);
+	};
+	if (points !== undefined && points.length >= 3) {
+		// The drawn plant's own points: a box's corners can stand in empty air, so they would frame
+		// air below the lowest blade and above the highest leaf.
+		for (let i = 0; i + 2 < points.length; i += 3)
+			// The frames these cameras make stand on a ground that hides the wood below it, so the
+			// points under the ground never show and cannot crop the picture.
+			if ((points[i + 1] as number) >= 0)
+				take(row(points[i] as number, points[i + 1] as number, points[i + 2] as number));
+	} else {
+		for (let c = 0; c < 8; c++)
+			take(
+				row(
+					c & 1 ? bounds.max[0] : bounds.min[0],
+					c & 2 ? bounds.max[1] : bounds.min[1],
+					c & 4 ? bounds.max[2] : bounds.min[2],
+				),
+			);
+	}
+	return { top, base };
 }
 
 /**
@@ -630,6 +762,19 @@ export default defineSketch(async (ctx) => {
 		}
 		return out;
 	})();
+	/** The drawn plant's own points, which a framed view holds between its asked rows. */
+	const plantPoints = ((): Float32Array | undefined => {
+		const parts = main.levels[0]?.parts ?? [];
+		if (parts.length === 0) return undefined;
+		const lists = parts.map((part) => partPositions(part, kit.box));
+		const out = new Float32Array(lists.reduce((n, list) => n + list.length, 0));
+		let at = 0;
+		for (const list of lists) {
+			out.set(list, at);
+			at += list.length;
+		}
+		return out;
+	})();
 	/** What the close views read of the plant: its wood alone for a view that draws the wood alone. */
 	const closePlant = (woodOnly: boolean): ClosePlant => ({
 		skeleton,
@@ -678,7 +823,7 @@ export default defineSketch(async (ctx) => {
 			case 'skeleton':
 			case 'silhouette': {
 				const view = FRAMED
-					? standView(height, foot, turn, aspect)
+					? standView(height, bounds, plantPoints, foot, turn, aspect)
 					: fit(bounds, turn, e, aspect, fov);
 				return scaledStand(view, QUERY.standScale);
 			}
@@ -808,10 +953,16 @@ export default defineSketch(async (ctx) => {
 				return { position, target: add(position, look), fov, near: 0.05 };
 			}
 			case 'junction': {
-				// A great limb leaving the stem, seen side on from where no other limb hides it.
+				// A great limb leaving the stem, seen side on from where no other limb hides it. The
+				// picture's own subject box, when the tool measured one, gives the frame its width and
+				// height shares; without it the view frames the limb's thickness alone.
+				const shares =
+					QUERY.subjectWidth !== undefined && QUERY.subjectHeight !== undefined
+						? { width: QUERY.subjectWidth, height: QUERY.subjectHeight }
+						: undefined;
 				const found = closeAt(
 					view,
-					() => junctionView(closePlant(WOOD_ONLY), lens),
+					() => junctionView(closePlant(WOOD_ONLY), lens, shares),
 					turn,
 					fov,
 					0.05,
@@ -842,6 +993,22 @@ export default defineSketch(async (ctx) => {
 				);
 				if (found) return found;
 				break;
+			}
+			case 'flowers': {
+				// A ring of flowers at a crown's top: the flower sites the plant carries, framed as the
+				// photograph frames the crown's top. The ring takes about three fifths of the frame's
+				// width, and the crop sits a little above the ring so the stem's top fills the foot
+				// rather than the height, as the pictures show it.
+				const ring = flowerSites(skeleton);
+				if (!ring) break;
+				const fill = 0.42;
+				const distance = Math.max(0.2, ring.radius / (fill * Math.tan((fov * DEG) / 2)));
+				const target: V3 = [
+					ring.centre[0],
+					ring.centre[1] + 0.15 * Math.max(ring.radius, 0.05),
+					ring.centre[2],
+				];
+				return orbit(target, distance, e, turn, fov);
 			}
 			case 'twigs': {
 				// A view of the fruit goes to a fruit the plant carries rather than to a tip that
@@ -1069,6 +1236,17 @@ export default defineSketch(async (ctx) => {
 				const reach = QUERY.span !== undefined ? QUERY.span / 2 / Math.tan((fov * DEG) / 2) : 0.8;
 				return orbit(at.at, reach + at.radius, e, Math.atan2(across[0], across[2]), fov);
 			}
+			case 'sheath': {
+				// A ground plant's sheath column, seen side on as its photograph frames it: one
+				// tiller's sheaths stand on the frame's foot with the blade leaving the collar above,
+				// at the span the picture covers.
+				const axis = sheathColumn(skeleton);
+				if (axis < 0) break;
+				const base = pointAlong(skeleton, axis, 0).at;
+				const span = QUERY.span ?? 0.13;
+				const reach = span / 2 / Math.tan((fov * DEG) / 2);
+				return orbit([base[0], base[1] + span / 2, base[2]], reach, e, turn, fov);
+			}
 			case 'trunk': {
 				// The bole from its foot to where it first divides, seen from a person's eye height on
 				// the side where the fewest branches and leaves cross it near the asked turn; a sheet's
@@ -1115,8 +1293,24 @@ export default defineSketch(async (ctx) => {
 				const length = QUERY.leafLength ?? leafLength ?? (oneLeaf ? bladeLength : undefined);
 				if (QUERY.leaves !== undefined && length !== undefined) {
 					const frame = leafFrame(QUERY.leaves, length, QUERY.roll ?? 0, aspect, fov);
+					// The cut stands on the frame's lower edge, at the piece's own foot. A cutting of a
+					// ground plant keeps the plant's crown base, so the ground under it is below the cut.
+					const part = piece ? boundsOf(piece as PlantAsset, pieceKit) : undefined;
+					const foot = part ? (part.min[1] as number) : 0;
+					const middle = part
+						? [
+								((part.min[0] as number) + (part.max[0] as number)) / 2,
+								((part.min[2] as number) + (part.max[2] as number)) / 2,
+							]
+						: [0, 0];
 					return {
-						...orbit([0, frame.run / 2, 0], frame.distance, e, turn, fov),
+						...orbit(
+							[middle[0] as number, foot + frame.run / 2, middle[1] as number],
+							frame.distance,
+							e,
+							turn,
+							fov,
+						),
 						roll: frame.roll,
 						near: 0.01,
 					};
@@ -1374,19 +1568,16 @@ export default defineSketch(async (ctx) => {
 				})
 			: undefined;
 	// A stand-in kit's matte is plain black materials; a real kit's is the plant shader's own, which
-	// keeps its quantised parts, cut-outs and sway. The review frames one plant with a camera of its
-	// own, so the sway reach follows that camera's distance: four times the distance keeps every
-	// vertex of the framed plant inside the fade, whatever the governor's live preset is. A slot may
-	// name a shorter reach to show the fade itself.
-	const windCamera = cells[0]?.view.position ?? [0, 0, 0];
-	const swayReach = Math.hypot(windCamera[0], windCamera[1], windCamera[2]) * 4;
+	// keeps its quantised parts, cut-outs and sway. The review draws one plant, so the scene's
+	// distance fade stays off unless a still asks for one with `sway`: the fade is there to stand far
+	// cascades still, and a plant drawn alone has no cascade to spare.
 	const plantLook =
 		MATTE && kit.placeholders === true
 			? matteMaterials(ctx, kit)
 			: plantMaterials(ctx, kit, {
 					...(wind && {
 						wind: wind.field,
-						swayDistance: QUERY.sway ?? swayReach,
+						...(QUERY.sway !== undefined && { swayDistance: QUERY.sway }),
 					}),
 					matte: MATTE,
 				});
@@ -1464,9 +1655,24 @@ export default defineSketch(async (ctx) => {
 		);
 	const trunk = stemAt(skeleton, 1.3);
 	const close = closeViews.get(VIEW);
-	const subject = close
+	// A slot that names a distance stands in for whatever stand the view fitted, so the facts say so:
+	// an old slot entry can otherwise hold a view off its own subject without a trace.
+	const override =
+		QUERY.distance === undefined
+			? undefined
+			: "the slot names a distance, which stands in for the view's own fitted stand";
+	const foundSubject = close
 		? { ...close.subject, ...(close.clutter && { clutter: close.clutter }) }
 		: plainSubjects.get(VIEW);
+	const prior = (foundSubject as { warning?: string } | undefined)?.warning;
+	const subject = foundSubject
+		? {
+				...foundSubject,
+				...(override && { warning: [prior, override].filter(Boolean).join('; ') }),
+			}
+		: override
+			? { kind: 'the camera the slot placed', warning: override }
+			: undefined;
 	// The plant as the view draws it: the level's filled silhouette, not every level's part bounds,
 	// so a vertex or a part outside the drawn cells cannot inflate the posted width and height.
 	const drawnBox = cells[0] ? measurePlant(main, kit.box, cells[0].turn).plantBox : null;
@@ -1475,6 +1681,7 @@ export default defineSketch(async (ctx) => {
 	const pieceTurn = cells.find((cell) => cell.piece === 'away')?.turn ?? cells[0]?.turn ?? 0;
 	const pieceBox = piece ? measurePlant(piece, pieceKit.box, pieceTurn).plantBox : null;
 	facts = {
+		...(STAND_ROWS[0] ? { stand: STAND_ROWS[0] } : {}),
 		species: record.id,
 		name: record.name,
 		form: form ?? null,

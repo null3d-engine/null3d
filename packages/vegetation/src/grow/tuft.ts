@@ -319,7 +319,9 @@ function growHeads(
 				kind: AXIS_LIMB,
 			});
 			const radius =
-				heads.radius * 0.18 * (1 + 0.02 * draw(input, Purpose.Branch, index, w * 16 + b, 5));
+				heads.radius *
+				(panicle.branchShare ?? 0.18) *
+				(1 + 0.02 * draw(input, Purpose.Branch, index, w * 16 + b, 5));
 			let previous = node;
 			const steps = 4;
 			let direction = normalize3([
@@ -701,9 +703,9 @@ function levelOf(detail: Detail, level: MeshLevel): TuftLevel {
  */
 export function meshTuft(input: MeshInput, level: MeshLevel): MeshArrays {
 	const { blade, growth } = tuftOf(input.record);
-	// A species that gives its sheath columns a colour reserves the flutter byte's top bit for the
-	// sheath mark, so every other foliage axis keeps its phase in the low seven bits. A species
-	// without the colour leaves every byte as it was.
+	// A species that gives its sheath columns a colour reserves a marked byte value for them, so
+	// every other foliage axis keeps its phase in the low seven bits. A species without the colour
+	// leaves every byte as it was.
 	const sheathed = growth.sheathColour !== undefined;
 	const { skeleton, crown, kit } = input;
 	const axes = skeleton.axes;
@@ -801,6 +803,8 @@ export function meshTuft(input: MeshInput, level: MeshLevel): MeshArrays {
 		const fine = (axes.order[a] as number) >= 3;
 		if (fine && !tiers.fine) continue;
 		const isStem = kind === AXIS_CULM;
+		// A shoot's column of sheaths takes the record's colours, marked in its surface-kind byte.
+		const sheath = !isStem && !fine && growth.sheathColour !== undefined;
 		if (!isStem && !fine && level === 2) continue;
 		const path = wholePath(skeleton, a, [0, 1, 0]);
 		if (!path) continue;
@@ -823,9 +827,10 @@ export function meshTuft(input: MeshInput, level: MeshLevel): MeshArrays {
 			uHalf: strip.stalkHalf,
 			bytes,
 			crown,
-			along: isStem ? [0, 1] : fine ? [0.85, 1] : [0, 0.05],
-			// A sheath column carries a sentinel browning value, which the plant material reads as
-			// the record's sheath colour; every other stalk browns as the season gives.
+			// A sheath column's second coordinates run from its foot to its collar, so the record's
+			// two colours read the column's own height.
+			along: sheath || isStem ? [0, 1] : fine ? [0.85, 1] : [0, 0.05],
+			// Stalks brown as the season gives; a stalk under its leaves keeps a share of its green.
 			browning: isStem ? Math.max(browning, 0.15) : Math.max(browning, 0.3),
 			closeTip: isStem || fine,
 			// The shoot's sheath column is the one merged-foliage run a sheath colour draws.
