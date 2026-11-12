@@ -123,6 +123,24 @@ const CLEAN_BOLE: SlotRule = {
 	framed: false,
 };
 
+/**
+ * A cactus's rib, areole and spine close-ups: the skin's own surface, where the areoles and their
+ * spine clusters stand, rather than a leaf or a twig. The span frames an areole and its neighbours.
+ */
+const SKIN_CLOSE: SlotRule = {
+	view: 'bark-mid',
+	query: { span: 0.2 },
+	framed: false,
+	note: 'a cactus skin close-up: judged on the waxy ribbed skin at close range',
+};
+
+/** A woodpecker's nest holes in an old cactus trunk: the same skin, framed wider. */
+const NEST_HOLES: SlotRule = {
+	view: 'bark-mid',
+	query: { span: 0.55 },
+	framed: false,
+};
+
 /** A branch with its side branches: the branch cutting laid across a frame of the photograph's scale. */
 const SECONDARY_BRANCHING: SlotRule = {
 	view: 'branch',
@@ -144,6 +162,28 @@ const FINE_TWIGS: SlotRule = {
 /** The slot rules, first match wins: words in the still's name, and the slot they name. */
 const SLOT_RULES: readonly { readonly test: (name: string) => boolean; readonly slot: SlotRule }[] =
 	[
+		// A cactus's ribs, areoles and spine clusters are the skin's own close view: the species has no
+		// leaf or twig for the leaf and twig views to cut, and its body is one ribbed surface.
+		{ test: (n) => /rib|areole|spine/.test(n), slot: SKIN_CLOSE },
+		{ test: (n) => /\bnest|\bholes?\b/.test(n), slot: NEST_HOLES },
+		// A cactus's arms are its limbs: the whole arm, its underside and its elbow are limb views,
+		// and the crownless plant has no fork for the fork view to find.
+		{
+			test: (n) => /arms?-outside|between-arms/.test(n),
+			slot: { view: 'limb', query: { span: 2.5, thin: 0.24 }, framed: false },
+		},
+		{
+			test: (n) => /arm.*underside/.test(n),
+			slot: { view: 'limb', elevation: -30, query: { span: 1.5, thin: 0.24 }, framed: false },
+		},
+		{
+			test: (n) => /arm-elbow/.test(n),
+			slot: { view: 'limb', query: { span: 1.2, thin: 0.24 }, framed: false },
+		},
+		{
+			test: (n) => /arm-tip/.test(n),
+			slot: { view: 'limb', query: { span: 0.35, thin: 0.24 }, framed: false },
+		},
 		// A cut piece on a plain ground, framed as its photograph frames it: the photograph's piece
 		// sets the rows its top and its foot land on.
 		{ test: (n) => n.includes('subbranch-studio'), slot: { view: 'subbranch', framed: true } },
@@ -425,6 +465,8 @@ function formOf(name: string, forms: readonly string[]): string | undefined {
 
 /** The texture rule of a texture source that its number does not name. */
 function textureRule(number: number, name: string): SlotRule {
+	// A cactus's texture sources hold its spine clusters, not leaves: its surface is the ribbed stem.
+	if (/rib|areole|spine/.test(name)) return SKIN_CLOSE;
 	const known = TEXTURE_BY_NUMBER[number];
 	if (known) return known;
 	if (/leaf|needle|frond|blade/.test(name))
@@ -997,12 +1039,36 @@ export const PIECE_BRIDGE = 1;
  * falls to the outline's cutoff. Two runs a pixel apart are therefore one piece. The reference and
  * the render both come through this function, so the rule counts the two sides alike.
  */
-export function pieceCount(
+/** One piece of a plant's outline: its area, its box, and whether it reaches the frame's border. */
+export interface PlantPart {
+	readonly area: number;
+	readonly left: number;
+	readonly top: number;
+	readonly right: number;
+	readonly bottom: number;
+	/** Whether the piece reaches the frame's border, where the part may run on outside the picture. */
+	readonly border: boolean;
+}
+
+/**
+ * The separate pieces a plant is drawn as: runs of at least `minArea` pixels, with two runs one
+ * background pixel apart counted as one. A plant hangs together: every fruit meets its twig, every
+ * twig meets its limb. A part that meets nothing is drawn as an island, and this returns it with its
+ * box so a reader can name it. A single background pixel between two runs is the mask's resolution
+ * rather than a drawn gap, so two runs a pixel apart are one piece.
+ *
+ * @param mask The picture's plant mask, one byte a pixel.
+ * @param width The mask's width in pixels.
+ * @param height The mask's height in pixels.
+ * @param minArea The smallest run that counts, so an outline's speckle is not a piece.
+ * @returns Every piece's area and box.
+ */
+export function pieceParts(
 	mask: Uint8Array,
 	width: number,
 	height: number,
 	minArea: number,
-): number {
+): PlantPart[] {
 	const { labels, sizes } = components(mask, width, height);
 	const parent = new Int32Array(sizes.length);
 	for (let label = 0; label < parent.length; label++) parent[label] = label;
@@ -1037,14 +1103,64 @@ export function pieceCount(
 					else join(near, label);
 				}
 		}
-	const areas = new Map<number, number>();
-	for (let label = 1; label < sizes.length; label++) {
-		const root = find(label);
-		areas.set(root, (areas.get(root) ?? 0) + (sizes[label] as number));
-	}
-	let count = 0;
-	for (const area of areas.values()) if (area >= minArea) count++;
-	return count;
+	const boxes = new Map<
+		number,
+		{ area: number; left: number; top: number; right: number; bottom: number; border: boolean }
+	>();
+	for (let y = 0; y < height; y++)
+		for (let x = 0; x < width; x++) {
+			const label = labels[y * width + x] as number;
+			if (!label) continue;
+			const root = find(label);
+			const box = boxes.get(root) ?? {
+				area: 0,
+				left: x,
+				top: y,
+				right: x,
+				bottom: y,
+				border: false,
+			};
+			box.area++;
+			box.left = Math.min(box.left, x);
+			box.top = Math.min(box.top, y);
+			box.right = Math.max(box.right, x);
+			box.bottom = Math.max(box.bottom, y);
+			if (x === 0 || y === 0 || x === width - 1 || y === height - 1) box.border = true;
+			boxes.set(root, box);
+		}
+	return [...boxes.values()]
+		.filter((box) => box.area >= minArea)
+		.map(({ area, left, top, right, bottom, border }) => ({
+			area,
+			left,
+			top,
+			right,
+			bottom,
+			border,
+		}))
+		.sort((a, b) => b.area - a.area);
+}
+
+/**
+ * The number of separate pieces a plant is drawn as, where a piece is a connected run of at least
+ * `minArea` pixels and two runs one background pixel apart count as one.
+ *
+ * A plant hangs together: every fruit meets its twig, every twig meets its limb. A part that meets
+ * nothing is drawn as an island, and this counts it. Pieces smaller than `minArea` are ignored so
+ * that a speck of background left by the outline's threshold is not read as a floating part.
+ *
+ * A single background pixel between two runs is the mask's resolution rather than a drawn gap: at
+ * the work width a shoot's supporting twig is thinner than a pixel, so the pixel that would join it
+ * falls to the outline's cutoff. Two runs a pixel apart are therefore one piece. The reference and
+ * the render both come through this function, so the rule counts the two sides alike.
+ */
+export function pieceCount(
+	mask: Uint8Array,
+	width: number,
+	height: number,
+	minArea: number,
+): number {
+	return pieceParts(mask, width, height, minArea).length;
 }
 
 /** The CIELAB distance from a colour to the nearest blend of two others. */ export function distanceToSegment(
