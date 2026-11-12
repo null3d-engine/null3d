@@ -3842,6 +3842,23 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			...(demo.name === 'spot-cookies' && { size: [640, 360] as const }),
 		};
 	}),
+	// Creek under a gust that its address sends, held on the route's near-bank view. The picture
+	// draws on WebGL2's 8-bit path, where the field keeps no grid and every reader works the air out
+	// from the steady field, which carries the sent gust's place, strength and birth. The gust is
+	// sent from the camera's place at 8.4 seconds, as the demo's G key sends it, and the route is a
+	// function of the sketch time, so the place and the send hold still. The spec holds the page at
+	// 9 seconds beside a twin that never sends, so the difference between the pair is the gust
+	// alone, and the sketch reports the send's time and strength beside the pixels.
+	{
+		name: 'creek-gust',
+		sketch: 'examples/showcase/creek/sketch.ts?gust=10&gust-at=8.4',
+		hold: 9,
+		tiers: ['webgl2'],
+		switches: ['hdr=off'],
+		swiftShaderSwitches: ['preset=low'],
+		expect: { hdr: false },
+		timeoutSeconds: 600,
+	},
 	// Creek on a near-square canvas at a render scale below the whole canvas, from the opening view
 	// and from the low pass along the bank. The scene draws into a corner of the depth copy, which
 	// keeps the whole canvas's size, so a custom material that reads the scene's depth must map its

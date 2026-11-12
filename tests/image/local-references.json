@@ -377,6 +377,12 @@
 		"date": "2026-11-03",
 		"reason": "drawn on the Mac's SwiftShader because the branch is not pushed for a CI run; a CI drawing replaces it"
 	},
+	"chromium-swiftshader/webgl2/creek-gust.png": {
+		"test": "creek-gust",
+		"tier": "webgl2",
+		"date": "2026-11-12",
+		"reason": "the held Creek gust picture: the branch had not been pushed when this Mac drew the software set, so no CI run could draw it; CI's own SwiftShader drawing replaces this file (D-238)"
+	},
 	"chromium-swiftshader/webgl2/creek-water-close.png": {
 		"test": "creek-water-close",
 		"tier": "webgl2",
