@@ -239,6 +239,10 @@ export const record: Species = {
 			// before the stalks joined it and 31,665 with them at the old cost. That variant's three
 			// levels read 98,819, 51,409 and 24,317 at the high tier against 140,000, 80,000 and
 			// 25,000.
+			// The same calibration's merged scale gives the high tier a read of 3,227,419 variant
+			// bytes, which the lead line re-recorded from 3,100,000 to 3,300,000. It is a byte read,
+			// not a triangle one, and it sits inside the every-variant cap above; the near band's
+			// triangle cap stays lod0Triangles at 140,000 against a read of 83,326.
 			variantBytes: { low: 3_830_000, medium: 4_210_000, high: 4_710_000, ultra: 6_450_000 },
 			lod0Triangles: 140_000,
 			lod1Triangles: 80_000,
