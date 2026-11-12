@@ -838,9 +838,11 @@ export function meshTuft(input: MeshInput, level: MeshLevel): MeshArrays {
 			bytes,
 			crown,
 			along: isStem ? [0, 1] : fine ? [0.85, 1] : [0, 0.05],
-			// A sheath column carries a sentinel browning value, which the plant material reads as
-			// the record's sheath colour; every other stalk browns as the season gives.
+			// Stalks brown as the season gives; a stalk under its leaves keeps a share of its green.
 			browning: isStem ? Math.max(browning, 0.15) : Math.max(browning, 0.3),
+			// The shoot's basal column is its sheath, which the material draws in the record's
+			// sheath colour where the record gives one.
+			...(growth.sheathColour && !isStem && !fine ? { sheath: true } : {}),
 			closeTip: isStem || fine,
 			// The shoot's sheath column is the one merged-foliage run a sheath colour draws.
 			sheath: !isStem && !fine && sheathed,
