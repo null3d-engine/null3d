@@ -1,4 +1,4 @@
-# D-345: Rows the vegetation batch could not settle, and the items that block them
+# D-346: Rows the vegetation batch could not settle, and the items that block them
 
 Status: proposed, and growing as each species' owner reports. Built: the record itself, with the rows
 settled so far. The items it names are not built: each waits for the session that owns it. Task:
