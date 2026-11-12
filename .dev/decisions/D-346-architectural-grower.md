@@ -106,3 +106,9 @@ sparseness. The table gives the same twenty hashes at the base and at the narrow
 also keep its stand-in explicitly with `keepStandIn`. The contact-shadows page sets it for its pine,
 so its approved picture stays comparable until the page moves to the species. The pine's own drawn
 look does not change.
+
+The second route is the owner's, not the close. A page may draw the real species instead of holding
+its stand-in: its spots, sizes and count are set for the real plant, the owner judges the look, and
+the page's reference is redrawn with attribution to the drawing that replaced it. That is a change
+taken on the owner's word, with a redrawn picture, and it is recorded here so the stand-in hold is
+not mistaken for the only way a page may answer a landing.
