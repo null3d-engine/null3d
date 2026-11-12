@@ -1110,6 +1110,12 @@ export interface ShootSpec {
 		 */
 		readonly bareTrim?: number;
 		/**
+		 * Whether a branch end with no shoot is cut back to its last shoot, so no branch ends bare:
+		 * it ends in foliage or is pruned away. On when absent. A stem's own top and a dead stub
+		 * stay; false keeps only `bareTrim`'s radius-limited trim.
+		 */
+		readonly bareEnds?: boolean;
+		/**
 		 * A bare column round each stem below a share of the plant's height: no shoot stands on wood
 		 * within `radius` metres of a stem's own axis below `height` times the plant's height. An
 		 * open-grown tree leaves its lower trunk and the bases of its great limbs clear, so the bole
