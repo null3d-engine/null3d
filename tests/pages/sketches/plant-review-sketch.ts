@@ -684,6 +684,19 @@ export default defineSketch(async (ctx) => {
 		part: cuttingPart,
 		...(QUERY.cut !== undefined && { length: QUERY.cut }),
 		...(QUERY.pick !== undefined && { pick: QUERY.pick }),
+		...(QUERY.shoots !== undefined && { shoots: QUERY.shoots }),
+		...(QUERY.shoot !== undefined && { shoot: QUERY.shoot }),
+		...(QUERY.ring !== undefined && { ring: QUERY.ring }),
+		...(QUERY.lean !== undefined && { lean: QUERY.lean }),
+		...(QUERY.layout !== undefined && { layout: QUERY.layout }),
+		...(QUERY.spread !== undefined && { spread: QUERY.spread }),
+		...(QUERY.stem !== undefined && { stem: QUERY.stem }),
+		...(QUERY.laterals !== undefined && { laterals: QUERY.laterals }),
+		...(QUERY.lateralFrom !== undefined && { lateralFrom: QUERY.lateralFrom }),
+		...(QUERY.lateralTo !== undefined && { lateralTo: QUERY.lateralTo }),
+		...(QUERY.lateralAngle !== undefined && { lateralAngle: QUERY.lateralAngle }),
+		...(QUERY.lateralScale !== undefined && { lateralScale: QUERY.lateralScale }),
+		...(QUERY.stemPick !== undefined && { stemPick: QUERY.stemPick }),
 		orient: 'upright' as const,
 		...(VIEW === 'leaf-under' ? { face: 'lower' as const } : {}),
 		...(QUERY.pressed !== undefined && { pressed: QUERY.pressed }),
@@ -694,11 +707,12 @@ export default defineSketch(async (ctx) => {
 	// A piece whose record hint names one of the species' cutting classes grows from a kit of its
 	// own, which holds that class and no cards: the piece is only ever drawn at the nearest level.
 	const cutHint = cutting ? record.cuttings?.[cutting.part] : undefined;
+	const cutClass =
+		QUERY.shoot ?? (cutHint !== undefined && 'shoot' in cutHint ? cutHint.shoot : undefined);
 	const cutsClass =
-		cutHint !== undefined &&
-		'shoot' in cutHint &&
+		cutClass !== undefined &&
 		(record.shoots?.cuttingClasses ?? []).some(
-			(shoot) => shoot.name === cutHint.shoot && shoot.cutOnly === true,
+			(shoot) => shoot.name === cutClass && shoot.cutOnly === true,
 		);
 	// A plant cut carries a denser covering when the record asks for one: its cutting kit places the
 	// shoots the studio piece needs and holds no card levels.
@@ -1717,6 +1731,32 @@ export default defineSketch(async (ctx) => {
 	// the union of every part's bounds.
 	const pieceTurn = cells.find((cell) => cell.piece === 'away')?.turn ?? cells[0]?.turn ?? 0;
 	const pieceBox = piece ? measurePlant(piece, pieceKit.box, pieceTurn).plantBox : null;
+	// The stem class the piece draws, and its record's taper, so the facts carry the piece's own
+	// thickness rather than leaving it in prose.
+	const stemName =
+		QUERY.stem ??
+		QUERY.shoot ??
+		(cutHint !== undefined && 'shoot' in cutHint ? cutHint.shoot : undefined);
+	const stemClass =
+		stemName === undefined
+			? undefined
+			: (record.shoots?.cuttingClasses ?? []).find((shoot) => shoot.name === stemName);
+	const stemFacts =
+		stemName === undefined
+			? undefined
+			: { stemClass: stemName, stemRadius: stemClass?.stem?.radius ?? null };
+	// The shoot rows the piece actually draws, counted by class: a count on the drawn piece, not the
+	// slot's request.
+	const rowsByClass = piece
+		? (() => {
+				const counts: Record<string, number> = {};
+				for (let row = 0; row < piece.shoots.count; row++) {
+					const name = pieceKit.prototypes[piece.shoots.prototype[row] as number]?.class;
+					if (name !== undefined) counts[name] = (counts[name] ?? 0) + 1;
+				}
+				return counts;
+			})()
+		: undefined;
 	facts = {
 		...(STAND_ROWS[0] ? { stand: STAND_ROWS[0] } : {}),
 		species: record.id,
@@ -1741,6 +1781,7 @@ export default defineSketch(async (ctx) => {
 		...(piece && {
 			cutting: {
 				...piece.cutting,
+				...stemFacts,
 				size: (() => {
 					const b = boundsOf(piece, pieceKit);
 					return pieceBox
@@ -1748,6 +1789,8 @@ export default defineSketch(async (ctx) => {
 						: sub(b.max, b.min);
 				})(),
 				axes: piece.skeleton.axes.count,
+				rows: piece.shoots.count,
+				...(rowsByClass && { rowsByClass }),
 			},
 		}),
 		...(limb >= 0 && { limb: { axis: limb, nodes: chainOf(skeleton, limb).length } }),
