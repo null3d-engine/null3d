@@ -1,4 +1,4 @@
-// Loads and destroys models 200 times on each GPU path: a skinned and animated fox with a
+// Loads and destroys models 240 times on each GPU path: a skinned and animated fox with a
 // texture, a face with morph targets, and a scene with stored raycast trees, with copies, an
 // instance batch and raycasts each round. The engine's start-up takes longer than a few rounds on
 // a slow machine, and the heap never gives a page back, so the test finds the round from which the
@@ -25,14 +25,14 @@ interface MemoryResult {
  * The rounds in which the engine's start-up may still move the heap. A slower runner's start-up
  * arrives over more rounds: one run of 140 rounds settled at round 131, CI's software GPU at round
  * 158 on WebGL2, and a slower runner at 185. The bound sits above the latest sighting, and the
- * rounds after it test the churn; at 190 that leaves ten. The sighting has climbed with the
- * runner's speed three times, so a fourth climb should raise the round count rather than this
- * bound, which cannot pass the last round.
+ * rounds after it test the churn; at 240 that leaves fifty. The sighting has climbed four times,
+ * the fourth at 192; this bound cannot pass the last round, so a further climb raises the round
+ * count.
  */
 const WARM_ROUNDS = 190;
 
 for (const gpu of ['webgpu', 'webgl2'] as const)
-	test(`loading and destroying models 200 times keeps the memory flat, on ${gpu}`, async ({
+	test(`loading and destroying models 240 times keeps the memory flat, on ${gpu}`, async ({
 		page,
 	}) => {
 		test.setTimeout(690_000);
@@ -48,7 +48,7 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 		expect(result.done.hits).toBeGreaterThan(100);
 		const checkpoints = result.checkpoints;
 		const last = checkpoints.at(-1);
-		expect(last?.round).toBe(200);
+		expect(last?.round).toBe(240);
 		// The first round whose heap figure is the last one: from there the engine held one figure.
 		const settled = checkpoints.findIndex((point) => point.wasmBytes === last?.wasmBytes);
 		expect(settled).toBeGreaterThanOrEqual(0);
