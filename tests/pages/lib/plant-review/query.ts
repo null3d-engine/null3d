@@ -248,6 +248,11 @@ export interface PlantReviewQuery {
 	 */
 	readonly sections?: number;
 	/**
+	 * The share of a card level's own card rows to keep, from 0.05 to 1: a review redraw thins the
+	 * cards to measure what they buy, the kept cards growing by the level's rule. Absent keeps them.
+	 */
+	readonly cards?: number;
+	/**
 	 * Metres of one leaf that a photographed cutting was measured in, for the `leaves` frame. A
 	 * blade or a cluster whose own leaf is far longer than the photographed one frames at the
 	 * photograph's scale only when the length the photograph was measured in is named.
@@ -304,6 +309,7 @@ const NUMBER_FIELDS = [
 	'leafLength',
 	'sparse',
 	'sections',
+	'cards',
 	'roll',
 	'girth',
 	'turns',
@@ -327,6 +333,7 @@ const SHARE_FIELDS = new Set([
 	'skyShare',
 	'sparse',
 	'sections',
+	'cards',
 ]);
 
 /** The fields that are whole numbers of at least one. */

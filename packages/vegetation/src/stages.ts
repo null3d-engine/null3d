@@ -62,6 +62,12 @@ export interface DressInput extends GrowInput {
 	 */
 	readonly sections?: number;
 	/**
+	 * The share of a card level's own card rows to keep, from 0.05 to 1: 1 keeps the level's own
+	 * rows and the cards' own size, and below 1 thins the rows by the level's rule, so the kept
+	 * cards grow to hold the crown. A review redraw uses it to measure what the cards buy.
+	 */
+	readonly cards?: number;
+	/**
 	 * The light of the crown as grown, which a sky-prune line reads at every coarseness, so a
 	 * coarser plant prunes the shoots its full crown leaves in the dark and the light is found once.
 	 * Absent, the prune lights the crown of the rows it is given.

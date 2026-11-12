@@ -24,20 +24,92 @@ const CORNERS = [
 /** The second coordinate that marks a card's stalk, in a place that the three card planes leave free. */
 const STALK_PLANE = 0.75;
 
+/** Metres from a card to a branch its level draws within which the card joins the plant. */
+const SEED_REACH = 2.5;
+
+/** Metres between two cards within which their leaves meet, so one joins the other's clump. */
+const CARD_REACH = 2;
+
 /**
  * Whether a card level keeps a row, and how much it grows the row's cards: every second row of the
- * level above in the space-filling order, grown by the square root of the step.
+ * level above in the space-filling order, grown by the square root of the step. A share below one
+ * thins the level's own rows further, by the same rule, so the kept cards grow to hold the crown
+ * they stood on; the review tool tests the share to measure what the cards buy.
  *
  * @param order The row's rank on the space-filling curve.
  * @param level The card level.
+ * @param share The share of the level's own card rows to keep, from 0.05 to 1.
  * @returns The growth of the row's cards, or 0 when the level drops it.
  * @category api/vegetation
  */
-export function cardKeep(order: number, level: 1 | 2): number {
-	const every = 1 << (level - 1);
+export function cardKeep(order: number, level: 1 | 2, share = 1): number {
+	const own = 1 << (level - 1);
+	const every = Math.max(1, Math.round(own / Math.max(0.05, Math.min(1, share))));
 	if (order % every !== 0) return 0;
 	const grow = Math.sqrt(every);
 	return grow;
+}
+
+/**
+ * The card rows a level draws, each joined to the plant: a card joins where its own leaves reach a
+ * branch the level draws, or another joined card, so no clump of cards hangs free. A level that
+ * thins the wood as well as the cards drops the cards whose branch went with it.
+ *
+ * @param input The dressed variant.
+ * @param level The card level.
+ * @returns One flag per row, 1 for a card the level draws.
+ * @category api/vegetation
+ */
+export function connectedCards(input: MeshInput, level: 1 | 2): Uint8Array {
+	const { skeleton, rows, kit } = input;
+	const keep = input.record.lod.woodOrders[level - 1] ?? 255;
+	const { position, axisOf, nodeCount } = skeleton;
+	const keptRows: number[] = [];
+	for (let r = 0; r < rows.count; r++) {
+		if (cardKeep(rows.order[r] as number, level, input.cards ?? 1) === 0) continue;
+		if (!kit.prototypes[rows.prototype[r] as number]) continue;
+		keptRows.push(r);
+	}
+	const connected = new Uint8Array(rows.count);
+	const queue: number[] = [];
+	const seedReach = SEED_REACH * SEED_REACH;
+	for (const r of keptRows) {
+		const x = rows.position[r * 3] as number;
+		const y = rows.position[r * 3 + 1] as number;
+		const z = rows.position[r * 3 + 2] as number;
+		let best = Number.POSITIVE_INFINITY;
+		for (let n = 0; n < nodeCount; n++) {
+			const axis = axisOf[n] as number;
+			if ((skeleton.axes.order[axis] as number) > keep) continue;
+			const dx = (position[n * 3] as number) - x;
+			const dy = (position[n * 3 + 1] as number) - y;
+			const dz = (position[n * 3 + 2] as number) - z;
+			const d = dx * dx + dy * dy + dz * dz;
+			if (d < best) best = d;
+		}
+		if (best <= seedReach) {
+			connected[r] = 1;
+			queue.push(r);
+		}
+	}
+	const cardReach = CARD_REACH * CARD_REACH;
+	while (queue.length > 0) {
+		const r = queue.pop() as number;
+		const x = rows.position[r * 3] as number;
+		const y = rows.position[r * 3 + 1] as number;
+		const z = rows.position[r * 3 + 2] as number;
+		for (const other of keptRows) {
+			if (connected[other]) continue;
+			const dx = (rows.position[other * 3] as number) - x;
+			const dy = (rows.position[other * 3 + 1] as number) - y;
+			const dz = (rows.position[other * 3 + 2] as number) - z;
+			if (dx * dx + dy * dy + dz * dz <= cardReach) {
+				connected[other] = 1;
+				queue.push(other);
+			}
+		}
+	}
+	return connected;
 }
 
 /**
@@ -55,8 +127,9 @@ export function cardMesh(input: MeshInput, level: 1 | 2): MeshArrays {
 	const base = input.variant * VARIANT_RECORDS;
 	const local: Vector3 = [0, 0, 0];
 	const world: Vector3 = [0, 0, 0];
+	const connected = connectedCards(input, level);
 	for (let r = 0; r < rows.count; r++) {
-		const grow = cardKeep(rows.order[r] as number, level);
+		const grow = cardKeep(rows.order[r] as number, level, input.cards ?? 1);
 		if (grow === 0) continue;
 		const prototype = kit.prototypes[rows.prototype[r] as number];
 		if (!prototype) continue;
@@ -71,6 +144,7 @@ export function cardMesh(input: MeshInput, level: 1 | 2): MeshArrays {
 		const px = rows.position[r * 3] as number;
 		const py = rows.position[r * 3 + 1] as number;
 		const pz = rows.position[r * 3 + 2] as number;
+		if (connected[r] === 0) continue;
 		prototype.card.planes.forEach((plane, k) => {
 			const n = normalize3([
 				plane.right[1] * plane.up[2] - plane.right[2] * plane.up[1],
