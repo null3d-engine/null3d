@@ -328,6 +328,34 @@ export const record: Species = {
 				skyward: 0.2,
 				droop: 55,
 			},
+			{
+				// A stem for a cut piece that carries hanging laterals: one straight year's shoot,
+				// thin and clean, so the laterals carry the leaves and the stem reads as the
+				// photograph's branch. It is last so the classes before it keep their prototype places.
+				name: 'whip-stem',
+				cutOnly: true,
+				vigor: [0, 1],
+				share: 0,
+				years: 1,
+				length: { mean: 1.6, spread: 0.05 },
+				nodes: { mean: 24, spread: 2 },
+				internode: RANK,
+				stem: { radius: [0.009, 0.004] },
+				laterals: { mean: 0, spread: 0 },
+				bend: { length: 0.09, angle: 15 },
+				leafScale: [
+					[0, 0.8],
+					[1, 0.9],
+				],
+				leafAngle: [
+					[0, 30],
+					[1, 40],
+				],
+				leafAngleSpread: 10,
+				leafYears: 1,
+				skyward: 0.15,
+				droop: 70,
+			},
 		],
 		// Stills 11 and 23: one leaf at each node, in two opposite ranks down the shoot, and each
 		// blade turned into the shoot's own plane so the ranks join into one narrow falling lance.

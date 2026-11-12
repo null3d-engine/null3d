@@ -55,6 +55,15 @@
 		"skyShare": 0.62,
 		"daylight": 2.4
 	},
+	"22-subbranch-studio.png": {
+		"stem": "whip-stem",
+		"shoot": "cut",
+		"laterals": 3,
+		"lateralFrom": 0.45,
+		"lateralTo": 0.95,
+		"lateralAngle": 20,
+		"lateralScale": 0.7
+	},
 	"09-secondary-branching.png": {
 		"leaves": 4.5,
 		"roll": -90,
