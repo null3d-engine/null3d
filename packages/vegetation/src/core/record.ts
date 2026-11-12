@@ -396,6 +396,25 @@ export interface SelfOrganizing {
 	 */
 	readonly kinks?: boolean;
 	/**
+	 * The most a step may turn from the axis's last direction, in degrees. Small, the wood bends in
+	 * gentle steps that follow its line instead of kinking at odd joints. Absent, the wander turns
+	 * the heading without a limit.
+	 */
+	readonly maxTurn?: number;
+	/**
+	 * How strongly a first-order limb holds the azimuth its fork gave it, 0 to 1: each step pulls its
+	 * sideways direction back toward that azimuth by this share, so the great limbs stay apart round
+	 * the stem while the light steers their branches above. Absent, the light steers them freely.
+	 */
+	readonly limbAzimuth?: number;
+	/**
+	 * Metres along a parent axis between two neighbouring laterals it grows. A lateral whose node
+	 * stands closer than this to the last one accepted keeps its bud, so the branches leave the wood
+	 * at separate points rather than as a crowd within one internode. Absent, the chance alone parts
+	 * them.
+	 */
+	readonly lateralSpacing?: number;
+	/**
 	 * The leader's relay: an axis whose leader bud dies hands the lead to the lateral bud at its tip,
 	 * turned in toward the axis's line, and a stem's leader below the crown is spared chance loss, so
 	 * no axis ends in a stump. On when absent; false leaves an axis whose leader dies to stop there,

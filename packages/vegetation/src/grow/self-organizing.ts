@@ -533,6 +533,10 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 	const macroOrders = Math.max(1, g.macroOrders);
 	const sideOrders = g.buds.sideOrders ?? Number.POSITIVE_INFINITY;
 	const limbBuds = g.buds.limbBuds ?? 0;
+	const maxTurn =
+		g.maxTurn === undefined ? undefined : radians(Math.min(90, Math.max(0, g.maxTurn)));
+	const limbAzimuth = Math.min(1, Math.max(0, g.limbAzimuth ?? 0));
+	const lateralSpacing = g.lateralSpacing;
 	const wander = tan(radians(Math.min(80, Math.max(0, g.apical.wander))));
 	// The height at which the leader divides into its great limbs, if the record gives one.
 	const divideAt = g.divide === undefined ? Number.POSITIVE_INFINITY : height * g.divide.at;
@@ -925,6 +929,57 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 			nx /= l;
 			ny /= l;
 			nz /= l;
+			// The gentle-bend rule: the step turns no further from the axis's last direction than the
+			// record allows, so the wood bends in small steps rather than kinking at an odd joint.
+			if (maxTurn !== undefined) {
+				const dot = Math.min(1, Math.max(-1, d[0] * nx + d[1] * ny + d[2] * nz));
+				const turn = Math.acos(dot);
+				if (turn > maxTurn) {
+					// The component of the new direction across the old one gives the plane it turned in.
+					let px = nx - d[0] * dot;
+					let py = ny - d[1] * dot;
+					let pz = nz - d[2] * dot;
+					const pl = Math.sqrt(px * px + py * py + pz * pz);
+					if (pl > 1e-9) {
+						px /= pl;
+						py /= pl;
+						pz /= pl;
+						const c = Math.cos(maxTurn);
+						const s = Math.sin(maxTurn);
+						nx = d[0] * c + px * s;
+						ny = d[1] * c + py * s;
+						nz = d[2] * c + pz * s;
+					}
+				}
+			}
+			// The carried direction follows the step the rules allow, so a kinked shoot's next step
+			// turns from the wood as drawn rather than from a separate heading. Absent both rules,
+			// nothing here changes the growth.
+			if (maxTurn !== undefined || limbAzimuth > 0) {
+				internode[0] = nx;
+				internode[1] = ny;
+				internode[2] = nz;
+				if (kinks) {
+					heading[0] = nx;
+					heading[1] = ny;
+					heading[2] = nz;
+				}
+			}
+			// A great limb holds its fork azimuth by this share, so the great limbs keep apart round
+			// the stem and only the branches above take the light grid's steering.
+			if (limbAzimuth > 0 && order === 1) {
+				// The axis's own bud is the one that left the fork, not the bud this step grows from.
+				const start = plant.axisBud[axis] as number;
+				const from = start >= 0 ? start : b;
+				const base = Math.atan2(plant.budDx[from] as number, plant.budDz[from] as number);
+				const current = Math.atan2(nx, nz);
+				let delta = base - current;
+				delta = Math.atan2(Math.sin(delta), Math.cos(delta));
+				const turned = current + delta * limbAzimuth;
+				const flat = Math.sqrt(nx * nx + nz * nz);
+				nx = Math.sin(turned) * flat;
+				nz = Math.cos(turned) * flat;
+			}
 			// The envelope holds the only light: a shoot stops at it, with a last short internode where
 			// part of a step still fits, so the crown reaches its outline.
 			let step = length;
@@ -1460,7 +1515,23 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 
 	const years = Math.max(1, Math.round(g.years));
 	let takes = new Uint8Array(0);
+	// The along-axis distance of the highest lateral accepted on each axis, and each node's distance
+	// from its axis's first node, for the record's lateral spacing.
+	let highestLateral = new Float64Array(1024).fill(-1);
+	let alongOf = new Float64Array(4096);
 	for (let year = 0; year < years; year++) {
+		if (lateralSpacing !== undefined) {
+			if (highestLateral.length < plant.axes * 2) {
+				const next = new Float64Array(plant.axes * 2).fill(-1);
+				next.set(highestLateral);
+				highestLateral = next;
+			}
+			if (alongOf.length < plant.nodes * 2) {
+				const next = new Float64Array(plant.nodes * 2);
+				next.set(alongOf);
+				alongOf = next;
+			}
+		}
 		const lambda = curveAt(g.apical.control, year / years);
 		const length = g.internode.length * pow(g.internode.ageFactor, year);
 		plant.compact();
@@ -1503,6 +1574,29 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 					suppression += 1;
 				}
 			}
+			// The last lateral accepted on this axis, for the spacing rule. It starts at the highest
+			// accepted before this year, since the new year's nodes stand above it.
+			// The fork's buds leave the trunk at one point by design; the rule parts the branches
+			// below it.
+			const spacedAxis = lateralSpacing !== undefined && (plant.axisOrder[a] as number) >= 1;
+			let lastLateral = -1;
+			if (spacedAxis) lastLateral = highestLateral[a] as number;
+			// Each node's distance along its axis, so the spacing rule parts neighbouring laterals.
+			if (spacedAxis) {
+				let along = 0;
+				let previous = -1;
+				for (let n = plant.axisFirst[a] as number; n >= 0; n = plant.next[n] as number) {
+					if (previous >= 0)
+						along += Math.hypot(
+							(plant.x[n] as number) - (plant.x[previous] as number),
+							(plant.y[n] as number) - (plant.y[previous] as number),
+							(plant.z[n] as number) - (plant.z[previous] as number),
+						);
+					alongOf[n] = along;
+					previous = n;
+					if (n === (plant.axisTip[a] as number)) break;
+				}
+			}
 			for (
 				let n = plant.axisTip[a] as number;
 				n >= 0 && plant.axisOf[n] === a;
@@ -1529,7 +1623,19 @@ export function growSelfOrganizing(input: GrowInput): MacroSkeleton {
 						limbBuds > 0 &&
 						(plant.axisOrder[a] as number) === 1 &&
 						unit(Purpose.LimbBuds, 0, b) < limbBuds;
-					if (sides && !kept && unit(Purpose.Flush, year, b) < chance) {
+					// The spacing rule: a lateral within the record's distance of the last one accepted
+					// keeps its bud, so the branches leave the wood at separate points.
+					let spaced = true;
+					let along = 0;
+					if (spacedAxis) {
+						along = alongOf[n] as number;
+						spaced = lastLateral < 0 || Math.abs(lastLateral - along) >= (lateralSpacing as number);
+					}
+					if (sides && !kept && spaced && unit(Purpose.Flush, year, b) < chance) {
+						if (spacedAxis) {
+							lastLateral = along;
+							if (along > (highestLateral[a] as number)) highestLateral[a] = along;
+						}
 						flushing.push(b);
 						takes[b] = 1;
 						flushed++;
