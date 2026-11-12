@@ -539,7 +539,8 @@ export function growTuft(input: GrowInput): MacroSkeleton {
 			const unit = (k: number) => draw(input, Purpose.Head, h, k);
 			const height = spreadAt(heads.height, unit(0));
 			const heading = tiller.heading + (unit(1) - 0.5) * 0.6;
-			const lean = tiller.lean * 1.2 + radians(3 + unit(2) * 12);
+			const leanShare = heads.leanShare ?? 1.2;
+			const lean = tiller.lean * leanShare + radians(3 + unit(2) * 12);
 			const bow = radians(spreadAt(heads.bow, unit(3)));
 			const at: Vector3 = [
 				builder.position[tiller.top * 3] as number,
@@ -735,6 +736,12 @@ export function meshTuft(input: MeshInput, level: MeshLevel): MeshArrays {
 			? { length: spreadMean(blade.ligule.length), width: blade.ligule.width }
 			: undefined;
 	const liguleShare = blade.ligule?.share ?? 1;
+	// The axes that carry a flower, whether a stem or a spike's stalk: they are kept at every tier,
+	// because the flower draws at its axis's own site and a stalk the tier drops leaves it hanging.
+	const flowering = new Set<number>();
+	for (let b = 0; b < skeleton.buds.count; b++)
+		if ((skeleton.buds.kind[b] as number) === BUD_FLOWER)
+			flowering.add(skeleton.buds.axis[b] as number);
 	const mesh = new MeshWriter();
 	const season = input.season;
 	const browning =
@@ -815,14 +822,17 @@ export function meshTuft(input: MeshInput, level: MeshLevel): MeshArrays {
 			continue;
 		}
 		const fine = (axes.order[a] as number) >= 3;
-		if (fine && !tiers.fine) continue;
 		const isStem = kind === AXIS_CULM;
+		if (fine && !tiers.fine && !flowering.has(a)) continue;
 		// A shoot's column of sheaths takes the record's colours, marked in its surface-kind byte.
 		const sheath = !isStem && !fine && growth.sheathColour !== undefined;
 		if (!isStem && !fine && level === 2) continue;
 		const path = wholePath(skeleton, a, [0, 1, 0]);
 		if (!path) continue;
 		const sides = isStem ? (growth.heads?.sides ?? 5) : fine ? 3 : 6;
+		// A flower stalk at the far tier is a single run of two rings: that tier's cap carries the
+		// stalks with their spikes, and the polygon dial draws them coarser there than near.
+		const rings = isStem ? (level === 0 ? 12 : 5) : level === 2 ? 2 : 4;
 		const first = axes.first[a] as number;
 		const last = axes.last[a] as number;
 		const r0 = skeleton.radius[first] as number;
@@ -831,7 +841,7 @@ export function meshTuft(input: MeshInput, level: MeshLevel): MeshArrays {
 			path,
 			from: 0,
 			to: path.length,
-			rings: Math.max(2, Math.min(last - first + 1, isStem ? (level === 0 ? 12 : 5) : 4)),
+			rings: Math.max(2, Math.min(last - first + 1, rings)),
 			radius: (share) => r0 + (r1 - r0) * share,
 			section: {
 				sides: tiers.stemSides(sides),

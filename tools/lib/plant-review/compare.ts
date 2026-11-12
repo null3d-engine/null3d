@@ -35,9 +35,12 @@ import {
 	type Box,
 	boxOf,
 	matteMask,
+	matteOwnMask,
 	measurePlant,
+	PIECE_BRIDGE,
 	type PlantMask,
 	type PlantMeasures,
+	type PlantPart,
 	pieceCount,
 	pieceParts,
 	plantMask,
@@ -1063,17 +1066,53 @@ export function plainTurnOf(background: string | undefined): boolean {
 	return background !== undefined && background !== 'sky-meadow';
 }
 
+/** The parts a picture draws that meet nothing inside its frame, as the gate reports them. */
+export function floatingParts(
+	list: readonly PlantPart[],
+): readonly { readonly area: number; readonly box: string }[] {
+	return list
+		.slice(1)
+		.filter((part) => !part.border)
+		.map((part) => ({
+			area: part.area,
+			box: `${part.right - part.left + 1}x${part.bottom - part.top + 1}@${part.left},${part.top}`,
+		}));
+}
+
+/**
+ * The piece test at a picture's own width: the work width's area and gap tolerance scaled to the
+ * picture, so its finer pixels neither add a part nor lose a join the work-width read keeps.
+ */
+export function piecePartsAtOwnWidth(mask: Uint8Array, width: number, height: number): PlantPart[] {
+	const scale = width / WORK_WIDTH;
+	return pieceParts(
+		mask,
+		width,
+		height,
+		Math.max(1, Math.round(PIECE_AREA * scale * scale)),
+		Math.max(PIECE_BRIDGE, Math.ceil(PIECE_BRIDGE * scale)),
+	);
+}
+
 /** A sweep picture's readings: its components and floating pieces, and the render's crown-box gap. */
 export interface SweepMeasures {
 	readonly components: number;
 	readonly floating: readonly { readonly area: number; readonly box: string }[];
+	/**
+	 * The same read at the tool's work width, kept beside the picture's own: a downscale can drop a
+	 * hairline join the picture keeps. Only the picture's own read decides whether a piece floats.
+	 */
+	readonly workWidth: {
+		readonly components: number;
+		readonly floating: readonly { readonly area: number; readonly box: string }[];
+	} | null;
 	readonly crownBoxGap: number | null;
 }
 
 /**
  * Reads one sweep picture: the matte's components and any piece that meets nothing inside the frame,
- * and the crown box's gap. The picture has no reference, so its figures stand alone and are read
- * against the record's band and each other.
+ * read at the picture's own width, and the crown box's gap. The picture has no reference, so its
+ * figures stand alone and are read against the record's band and each other.
  */
 export function sweepMeasures(runDir: string, frame: RunFrame): SweepMeasures {
 	const render = renderSideOf(runDir, frame, `SWEEP ${frame.file}`, false);
@@ -1083,15 +1122,18 @@ export function sweepMeasures(runDir: string, frame: RunFrame): SweepMeasures {
 		render.plant.height,
 		PIECE_AREA,
 	);
+	const own =
+		frame.matte === undefined
+			? null
+			: (() => {
+					const mask = matteOwnMask(readImage(join(runDir, frame.matte as string)));
+					return piecePartsAtOwnWidth(mask.mask, mask.width, mask.height);
+				})();
+	const read = own ?? parts;
 	return {
-		components: parts.length,
-		floating: parts
-			.slice(1)
-			.filter((part) => !part.border)
-			.map((part) => ({
-				area: part.area,
-				box: `${part.right - part.left + 1}x${part.bottom - part.top + 1}@${part.left},${part.top}`,
-			})),
+		components: read.length,
+		floating: floatingParts(read),
+		workWidth: own ? { components: parts.length, floating: floatingParts(parts) } : null,
 		crownBoxGap: render.measures.crownBoxGap ?? null,
 	};
 }
@@ -1475,12 +1517,22 @@ export interface StillResult extends PairMetrics {
 	 */
 	readonly pieces: { readonly reference: number | null; readonly render: number } | null;
 	/**
-	 * The render matte's components and any piece that meets nothing inside the frame. A piece that
-	 * touches the frame's border may run on outside the picture, so it is not counted as floating.
+	 * The render matte's components and any piece that meets nothing inside the frame, read at the
+	 * picture's own width. A piece that touches the frame's border may run on outside the picture,
+	 * so it is not counted as floating.
 	 */
 	readonly connectivity: {
 		readonly components: number;
 		readonly floating: readonly { readonly area: number; readonly box: string }[];
+		/**
+		 * The same read at the tool's work width, kept beside the picture's own: a downscale can drop
+		 * a hairline join the picture keeps, and so show a piece hanging free that the picture does
+		 * not. Only the picture's own read decides whether a piece floats.
+		 */
+		readonly workWidth: {
+			readonly components: number;
+			readonly floating: readonly { readonly area: number; readonly box: string }[];
+		} | null;
 	} | null;
 	/** The sparseness the picture was drawn at, where its query names one above the record. */
 	readonly sparse?: number;
@@ -1872,6 +1924,16 @@ export function compareStills(
 						render.plant.height,
 						PIECE_AREA,
 					);
+		// The connectivity gate reads the matte at the picture's own width: a downscale to the work
+		// width can drop a hairline shoot the picture keeps and so invent a piece hanging free. The
+		// work-width read is kept beside it as a second figure.
+		const ownParts =
+			frame.matte === undefined
+				? null
+				: (() => {
+						const own = matteOwnMask(readImage(join(runDir, frame.matte)));
+						return piecePartsAtOwnWidth(own.mask, own.width, own.height);
+					})();
 		const pieces = parts
 			? {
 					reference:
@@ -1886,16 +1948,11 @@ export function compareStills(
 			: null;
 		// The largest run is the plant's body; any other run that the frame's border does not carry
 		// meets nothing inside the picture, which is a generator fault rather than a row's fault.
-		const connectivity = parts
+		const connectivity = ownParts
 			? {
-					components: parts.length,
-					floating: parts
-						.slice(1)
-						.filter((part) => !part.border)
-						.map((part) => ({
-							area: part.area,
-							box: `${part.right - part.left + 1}x${part.bottom - part.top + 1}@${part.left},${part.top}`,
-						})),
+					components: ownParts.length,
+					floating: floatingParts(ownParts),
+					workWidth: parts ? { components: parts.length, floating: floatingParts(parts) } : null,
 				}
 			: null;
 		const shown: PairMetrics = masked

@@ -30,6 +30,7 @@ import { builder as thickBuilder } from '../leaf/thick-leaf';
 import { dequantisePosition } from '../lod/quantise';
 import { AXIS_LEAF, SHEATH_KIND } from './ground';
 import { GROUND_TEST_SPECIES, hostaRecord, meadowGrassRecord, sedgeRecord } from './ground.fixture';
+import { targetHeight } from './height';
 
 for (const species of GROUND_TEST_SPECIES) await loadPlantCode(species.record);
 const kits = new Map<string, SpeciesKitData>(
@@ -325,7 +326,11 @@ describe('the hosta', () => {
 		const foliage = autumn.levels[0].parts.find((part) => part.name === 'foliage');
 		expect(foliage?.arrays.uvs1[1]).toBe(65535);
 		const blossom = growPlantNow(kit, { ...OPTIONS, season: 'blossom' });
-		expect(topOf(blossom.skeleton, AXIS_CULM)).toBeGreaterThan(0.6);
+		// The scapes carry the plant's drawn top, which the dressing aims at the record's sampled height.
+		expect(topOf(blossom.skeleton, AXIS_CULM)).toBeCloseTo(
+			targetHeight(hostaRecord, blossom.seed, blossom.variant),
+			2,
+		);
 		expect(blossom.levels[0].parts.map((part) => part.name)).toContain('extras');
 		let flowers = 0;
 		for (let b = 0; b < blossom.skeleton.buds.count; b++)
@@ -382,25 +387,34 @@ describe('the pendulous sedge', () => {
 	it("gives each hanging spike's stalk the share of the stem's radius the record asks", () => {
 		const growth = sedgeRecord.growth;
 		if (growth.model !== 'tuft' || !growth.heads) throw new Error('the fixture is not a tuft');
-		const heads = { ...growth.heads, stalkShare: 0.6 };
-		const shared: Species = {
-			...sedgeRecord,
-			id: 'sedge-stalk-share',
-			growth: { ...growth, heads },
+		const heads = growth.heads;
+		// A plant is scaled to its height target after growth, radii with it, so the share is read
+		// between two plants that differ only in it: their radii carry the same scale.
+		const withShare = (stalkShare: number) => {
+			const shared: Species = {
+				...sedgeRecord,
+				id: 'sedge-stalk-share',
+				growth: { ...growth, heads: { ...heads, stalkShare } },
+			};
+			const kit = buildKitNow(
+				{ record: shared, textures: noTextureFiles(shared.id) },
+				{ placeholders: 'missing' },
+			);
+			return growPlantNow(kit, OPTIONS).skeleton;
 		};
-		const kit = buildKitNow(
-			{ record: shared, textures: noTextureFiles(shared.id) },
-			{ placeholders: 'missing' },
-		);
-		const { skeleton } = growPlantNow(kit, OPTIONS);
+		const wide = withShare(0.6);
+		// The share this plant was grown with, read against the stem's own base radius, so the
+		// height calibration's scale cancels: the fixture carries no share of its own.
+		const share = 0.6;
 		let stalks = 0;
-		for (let a = 0; a < skeleton.axes.count; a++) {
-			const parent = skeleton.axes.parent[a] as number;
+		for (let a = 0; a < wide.axes.count; a++) {
+			const parent = wide.axes.parent[a] as number;
 			if (parent < 0) continue;
-			if ((skeleton.axes.kind[a] as number) !== AXIS_LIMB) continue;
-			if ((skeleton.axes.kind[parent] as number) !== AXIS_CULM) continue;
-			const radius = skeleton.radius[skeleton.axes.first[a] as number] as number;
-			expect(radius).toBeCloseTo(heads.radius * 0.6, 3);
+			if ((wide.axes.kind[a] as number) !== AXIS_LIMB) continue;
+			if ((wide.axes.kind[parent] as number) !== AXIS_CULM) continue;
+			const radius = wide.radius[wide.axes.first[a] as number] as number;
+			const stem = wide.radius[wide.axes.first[parent] as number] as number;
+			expect(radius).toBeCloseTo(stem * share, 3);
 			stalks++;
 		}
 		expect(stalks).toBeGreaterThan(3);
@@ -460,7 +474,7 @@ describe('the pendulous sedge', () => {
 		// The plant's bytes with the soil block stripped, at this record: a plant that names no
 		// soil grows exactly these. A deliberate record change re-records the figure, and the
 		// growth path that reads no soil must not move it.
-		expect(plantAssetDigest(growPlantNow(kit, OPTIONS))).toBe('1581a58df495eb67');
+		expect(plantAssetDigest(growPlantNow(kit, OPTIONS))).toBe('df7ccc5c008f7902');
 	});
 
 	it('ends its blades in long fine points', () => {
