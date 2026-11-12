@@ -231,7 +231,7 @@
 		"test": "plant-scots-pine",
 		"tier": "compat",
 		"date": "2026-11-08",
-		"reason": "drawn on this Mac's SwiftShader; the drawn run's browser shard 21, which carries the pine's pictures, was cancelled at its time limit before this tier was drawn, so the reference stands until a drawing run finishes that shard"
+		"reason": "drawn on this Mac's SwiftShader; browser shard 21, which carries the pine's pictures, was cancelled at its time limit in both drawn runs so far (43241143165 and 43253929518) before this tier was drawn, so the reference stands until a drawing run finishes that shard"
 	},
 	"chromium-swiftshader/compat/plant-sedge.png": {
 		"test": "plant-sedge",
@@ -963,7 +963,7 @@
 		"test": "plant-scots-pine",
 		"tier": "webgpu",
 		"date": "2026-11-08",
-		"reason": "drawn on this Mac's SwiftShader; the drawn run's browser shard 21, which carries the pine's pictures, was cancelled at its time limit before this tier was drawn, so the reference stands until a drawing run finishes that shard"
+		"reason": "drawn on this Mac's SwiftShader; browser shard 21, which carries the pine's pictures, was cancelled at its time limit in both drawn runs so far (43241143165 and 43253929518) before this tier was drawn, so the reference stands until a drawing run finishes that shard"
 	},
 	"chromium-swiftshader/webgpu/plant-sedge.png": {
 		"test": "plant-sedge",
