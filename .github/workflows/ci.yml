@@ -451,6 +451,7 @@ jobs:
           save-if: ${{ env.SAVE_CACHES == 'true' }}
           cache-targets: false
       - name: Restore the built test binaries
+        id: target
         if: steps.passed.outputs.cache-hit != 'true'
         uses: actions/cache/restore@v4
         with:
@@ -462,6 +463,14 @@ jobs:
           restore-keys: |
             rust-test-target-${{ needs.passes.outputs.rust-workspace }}-
             rust-test-target-
+      # A restored tree carries the file times of the run that built it, and a fresh checkout gives
+      # every source the time of the checkout, which is newer. Cargo trusts file times, so it would
+      # rebuild every crate against that cache. On an exact key the tree was built from exactly
+      # these sources, so their times go behind it and the build is reused. A prefix fallback keeps
+      # its own times and rebuilds what changed, which is why this takes only the exact hit.
+      - name: Trust the restored tree's file times
+        if: steps.target.outputs.cache-hit == 'true' && steps.passed.outputs.cache-hit != 'true'
+        run: find crates packages tests examples tools bench Cargo.toml Cargo.lock rust-toolchain.toml .config -type f -exec touch -d '2000-01-01T00:00:00Z' {} +
       - uses: taiki-e/install-action@v2
         if: steps.passed.outputs.cache-hit != 'true'
         with:
