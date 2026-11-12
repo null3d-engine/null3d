@@ -67,10 +67,13 @@ const BARK_VIEWS: ReadonlySet<string> = new Set(['bark-base', 'bark-mid', 'bark-
  * Whether a picture separates a plant from a plain background, so its outline can be read. A bark
  * close view photographs the bark against bark, and a bark texture is a cut-out of the material:
  * neither has a plant outline, and their rows read colour. A leaf texture is a cut-out on white
- * and keeps its outline.
+ * and keeps its outline. A species' slot can also name a picture whose own background is the
+ * subject, such as a far scrub band that the fitted sky and ground admit; that picture carries no
+ * outline either, and the crown box and its gap, which `measurePlant` reads from the same mask, go
+ * with it rather than staying beside the null figures.
  */
-export function hasSeparableOutline(view: string, kind: string): boolean {
-	return !(BARK_VIEWS.has(view) || (kind === 'texture' && !view.startsWith('leaf')));
+export function hasSeparableOutline(view: string, kind: string, noOutline = false): boolean {
+	return !noOutline && !(BARK_VIEWS.has(view) || (kind === 'texture' && !view.startsWith('leaf')));
 }
 
 /**
@@ -1395,7 +1398,7 @@ export function compareStills(
 		// the material, so neither separates a plant from a background. Their rows read colour,
 		// never an outline: a mask fitted to a picture with no plain border invents one.
 		const drawn = frame.query?.view ?? slot.view;
-		const noOutline = !hasSeparableOutline(drawn, slot.kind);
+		const noOutline = !hasSeparableOutline(drawn, slot.kind, frame.query?.noOutline === true);
 		const fittedKind = refPlant.background.plain
 			? null
 			: skyMaskable(refPlant.background)

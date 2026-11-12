@@ -99,6 +99,10 @@ describe('whether a picture carries a plant outline', () => {
 	test('is true for a whole plant against a plain background', () => {
 		expect(hasSeparableOutline('whole', 'still')).toBe(true);
 	});
+
+	test('is false for a picture whose own background is the subject, which a slot names', () => {
+		expect(hasSeparableOutline('whole', 'still', true)).toBe(false);
+	});
 });
 
 describe('the edge directions', () => {
