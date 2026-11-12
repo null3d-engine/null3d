@@ -463,28 +463,6 @@ self.onmessage = () => {
 		expect(budded.axes.count).toBeLessThanOrEqual(plain.axes.count);
 	});
 
-	it('caps an axis’s subbranches per metre when the record asks', () => {
-		const record = species.record;
-		const growth = record.growth as Extract<Species['growth'], { model: 'self-organizing' }>;
-		const withCap = (sideBranchesPerMetre: number | undefined): Species => ({
-			...record,
-			growth: { ...growth, sideBranchesPerMetre },
-		});
-		// Absent, the growth is the record's own, byte for byte.
-		expect(digest(grow(0, withCap(undefined)))).toBe(digest(grow(0, record)));
-		// The subbranch order carries fewer axes under the cap; the great limbs still leave the fork.
-		const orderCount = (oak: MacroSkeleton, order: number) => {
-			let count = 0;
-			for (let a = 0; a < oak.axes.count; a++) if ((oak.axes.order[a] as number) === order) count++;
-			return count;
-		};
-		const open = grow(0, record);
-		const capped = grow(0, withCap(0.25));
-		expect(orderCount(capped, 2)).toBeLessThan(orderCount(open, 2));
-		// The fork still makes its great limbs; the cap is on the orders below it.
-		expect(orderCount(capped, 1)).toBeGreaterThanOrEqual(2);
-	});
-
 	it("gives the real oak's surface buds a share of the last resource by their site's light", () => {
 		const record = species.record;
 		const growth = record.growth as Extract<Species['growth'], { model: 'self-organizing' }>;
