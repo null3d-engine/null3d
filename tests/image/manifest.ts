@@ -3095,6 +3095,14 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sketch: 'tests/pages/sketches/particles-sketch.ts',
 		hold: 2,
 	},
+	// The same scene with a steady field on, which carries a row of dust across the frame. With the
+	// field off the dust would fall at its emitter. The field keeps no grid, so the held frame is
+	// the analytic air on every device.
+	{
+		name: 'particles-wind',
+		sketch: 'tests/pages/sketches/particles-sketch.ts?wind=on',
+		hold: 2,
+	},
 	// Terrain of the terrain add-on: a height field drawn as a camera-centred quadtree of blocks,
 	// lit per pixel from normals baked over the ground, with grass, soil, rock and snow blended by
 	// a splat map and each layer's own height, and stones seated with heightAt.
