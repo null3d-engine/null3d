@@ -102,6 +102,51 @@ export interface PlantReviewQuery {
 	readonly pick?: number;
 	/** The cutting's length in metres. */
 	readonly cut?: number;
+	/**
+	 * The shoots a branch or sub-branch cutting carries, in place of the record hint's count, so two
+	 * pictures of one species can show different numbers of side shoots.
+	 */
+	readonly shoots?: number;
+	/**
+	 * The shoot class a branch or sub-branch cutting draws, in place of the record hint's class, so a
+	 * close view can draw a thin twig while the studio piece draws the whole branch.
+	 */
+	readonly shoot?: string;
+	/**
+	 * The radius of the ring a branch or sub-branch cutting's shoots stand on, as a share of the
+	 * piece's height, in place of the record hint's. A wide ring separates the shoots.
+	 */
+	readonly ring?: number;
+	/**
+	 * The degrees a branch or sub-branch cutting's shoots lean outward from its axis, in place of the
+	 * record hint's, so the tips separate while the bases stay together.
+	 */
+	readonly lean?: number;
+	/**
+	 * How a fanned cutting places its shoots: 'ring' round the piece's axis, 'spray' along one
+	 * lateral line, or 'fan' across the piece's own leaf plane from one shared base.
+	 */
+	readonly layout?: 'ring' | 'spray' | 'fan';
+	/**
+	 * The width a 'spray' or 'fan' layout spans, as a share of the piece's height.
+	 */
+	readonly spread?: number;
+	/**
+	 * The shoot class of the piece's main stem. Naming it builds the stem-and-laterals assembly: the
+	 * stem stands upright and the piece's own class hangs from it.
+	 */
+	readonly stem?: string;
+	/** How many laterals hang from the stem, from 1 to the cutting's most. */
+	readonly laterals?: number;
+	/** The share of the stem's height where the first lateral leaves, and where the last leaves. */
+	readonly lateralFrom?: number;
+	readonly lateralTo?: number;
+	/** Degrees each lateral leans outward from the stem's line. */
+	readonly lateralAngle?: number;
+	/** The laterals' length over their class's. */
+	readonly lateralScale?: number;
+	/** Which of the stem class's prototypes to take. */
+	readonly stemPick?: number;
 	/** Whether the page posts its measures of the plant beside the frame. */
 	readonly measure?: boolean;
 	/**
@@ -291,6 +336,16 @@ const NUMBER_FIELDS = [
 	'time',
 	'pick',
 	'cut',
+	'shoots',
+	'ring',
+	'lean',
+	'spread',
+	'laterals',
+	'lateralFrom',
+	'lateralTo',
+	'lateralAngle',
+	'lateralScale',
+	'stemPick',
 	'horizon',
 	'fill',
 	'targetY',
@@ -371,6 +426,9 @@ function short(value: number): string {
 export function plantReviewQuery(query: PlantReviewQuery): string {
 	const params = new URLSearchParams({ species: query.species });
 	if (query.form) params.set('form', query.form);
+	if (query.shoot) params.set('shoot', query.shoot);
+	if (query.layout) params.set('layout', query.layout);
+	if (query.stem) params.set('stem', query.stem);
 	if (query.view) params.set('view', query.view);
 	for (const name of NUMBER_FIELDS) {
 		const value = query[name];
@@ -408,6 +466,20 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 	const form = params.get('form');
 	if (form !== null && !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(form))
 		throw new Error(`form=${form} is not a form's name: give a kebab-case word, such as young.`);
+	const layoutText = params.get('layout');
+	if (
+		layoutText !== null &&
+		layoutText !== 'ring' &&
+		layoutText !== 'spray' &&
+		layoutText !== 'fan'
+	)
+		throw new Error(`layout=${layoutText} is not a layout: use ring, spray or fan.`);
+	const shoot = params.get('shoot');
+	if (shoot !== null && !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(shoot))
+		throw new Error(`shoot=${shoot} is not a class name: give a kebab-case word, such as twig.`);
+	const stem = params.get('stem');
+	if (stem !== null && !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(stem))
+		throw new Error(`stem=${stem} is not a class name: give a kebab-case word, such as cut.`);
 	const view = oneOf('view', params.get('view'), PLANT_VIEWS) ?? 'whole';
 	const numbers: Partial<Record<(typeof NUMBER_FIELDS)[number], number>> = {};
 	for (const name of NUMBER_FIELDS) {
@@ -510,6 +582,9 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 	return {
 		species,
 		...(form !== null && { form }),
+		...(shoot !== null && { shoot }),
+		...(stem !== null && { stem }),
+		...(layoutText !== null && { layout: layoutText as 'ring' | 'spray' | 'fan' }),
 		view,
 		...numbers,
 		...(background && { background }),

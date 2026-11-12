@@ -331,3 +331,19 @@ describe('the card levels', () => {
 		expect(cardKeep(0, 2, 1)).toBeCloseTo(Math.SQRT2, 12);
 	});
 });
+
+describe('a record that asks for a finer card cell', () => {
+	it('bakes each cell at the size its own tier names', () => {
+		const record = oakRecord();
+		const base = bakeCards(record, OAK_MANIFEST, 'high', testKit(record).prototypes);
+		const fineRecord = {
+			...record,
+			lod: { ...record.lod, cardCell: { low: 64, medium: 64, high: 128, ultra: 128 } },
+		};
+		const fine = bakeCards(fineRecord, OAK_MANIFEST, 'high', testKit(fineRecord).prototypes);
+		expect(fine.atlas.size).toBe(base.atlas.size * 2);
+		// The drawn area keeps its two-texel border at either size.
+		expect(fine.cells[0]?.planes[0]?.front).toEqual([2, 2, 124, 124]);
+		expect(base.cells[0]?.planes[0]?.front).toEqual([2, 2, 60, 60]);
+	});
+});

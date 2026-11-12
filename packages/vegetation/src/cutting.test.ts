@@ -458,7 +458,12 @@ describe('cuttings', () => {
 		const { record } = species;
 		await loadPlantCode(record);
 		const pressedKit = buildKitNow(species, { placeholders: 'missing', detail: 'low' });
-		const grown = { ...record, cuttings: { ...record.cuttings, leaf: undefined } };
+		// The grown kit keeps the record's leaf length but not its press, so the explicit press
+		// below is the same piece the record's own hint draws.
+		const grown = {
+			...record,
+			cuttings: { ...record.cuttings, leaf: { ...record.cuttings?.leaf, pressed: false } },
+		};
 		const grownKit = buildKitNow(
 			{ ...species, record: grown },
 			{ placeholders: 'missing', detail: 'low' },
@@ -512,6 +517,28 @@ describe('cuttings', () => {
 		expect(() => cutFoliage(frondKit, { part: 'leaf', age: 1.5 }, 'low')).toThrow(
 			/runs from 0 to 1/,
 		);
+	});
+
+	it('cuts a cluster from a frond colony rather than the whole plant', async () => {
+		const { brackenRecord } = await import('./grow/bracken.fixture');
+		const { noTextureFiles } = await import('./core/textures');
+		await loadPlantCode(brackenRecord);
+		const species = { record: brackenRecord, textures: noTextureFiles(brackenRecord.id) };
+		const frondKit = buildKitNow(species, { placeholders: 'missing', detail: 'low' });
+		const grown = growPlantNow(frondKit, { seed: 11, variant: 0, near: true });
+		// The colony's fronds stand on stipes that are each a root of their own, so cut the cluster
+		// without a hint leaves no candidate under the cluster rule, which refuses a rachis. The
+		// fallback takes the rachis: the piece is one blade hanging from its cut, not the colony.
+		const piece = cutBranch(grown.skeleton, brackenRecord, { part: 'cluster' });
+		expect(piece).toBeDefined();
+		const baked = (piece as NonNullable<typeof piece>).skeleton;
+		expect(baked.axes.count).toBeGreaterThan(0);
+		expect(baked.axes.count).toBeLessThan(grown.skeleton.axes.count);
+		// One root node, the cut face: every other node hangs from it.
+		let roots = 0;
+		for (let node = 0; node < baked.nodeCount; node++)
+			if ((baked.parent[node] as number) < 0) roots++;
+		expect(roots).toBe(1);
 	});
 
 	it('gives a rosette piece the leaf count its cutting hint names', async () => {
@@ -640,6 +667,32 @@ describe('cuttings', () => {
 		expect(clusterHinted?.rows.count).toBe(1);
 	});
 
+	it('lets a piece name its own shoot class over the record hint', () => {
+		const hint = kit.record.shoots?.classes?.[0]?.name;
+		const other = kit.prototypes.map((p) => p.class).find((name) => name !== hint);
+		if (!other) return;
+		const row = clusterRow(kit, { part: 'subbranch', shoot: other }, kit.detail);
+		const drawn = kit.prototypes[row?.rows.prototype[0] as number]?.class;
+		expect(drawn).toBe(other);
+	});
+
+	it('lets a piece name its own shoot count and ring over the record hint', () => {
+		const className = kit.record.shoots?.classes?.[0]?.name ?? 'cut';
+		const hinted = {
+			...kit,
+			record: {
+				...kit.record,
+				cuttings: { branch: { shoot: className, shoots: 3, fanRing: 0.06, fanSpin: 0 } },
+			},
+		} as SpeciesKitData;
+		const single = clusterRow(hinted, { part: 'branch', shoots: 1 }, kit.detail);
+		const seven = clusterRow(hinted, { part: 'branch', shoots: 7, ring: 0.4 }, kit.detail);
+		expect(single?.rows.count).toBe(1);
+		expect(seven?.rows.count).toBe(7);
+		// The wider ring stands the rows further from the piece's axis than the hint's near-base ring.
+		expect(seven?.bounds.max[0]).toBeGreaterThan((single?.bounds.max[0] as number) + 1e-6);
+	});
+
 	it('turns a whole fanned piece a quarter about its axis', () => {
 		const className = kit.record.shoots?.classes?.[0]?.name ?? 'cut';
 		const hint = { shoot: className, shoots: 3, fanRing: 0.06, fanSpin: 0 };
@@ -660,6 +713,94 @@ describe('cuttings', () => {
 		// A quarter turn about the upright axis swaps the piece's width and its depth.
 		expect(Math.abs(tx - pz)).toBeLessThan(0.05 * Math.max(1, pz));
 		expect(Math.abs(tz - px)).toBeLessThan(0.05 * Math.max(1, px));
+	});
+
+	it('fans a piece from one shared base across its own leaf plane', () => {
+		const className = kit.record.shoots?.classes?.[0]?.name ?? 'cut';
+		const hinted = {
+			...kit,
+			record: {
+				...kit.record,
+				cuttings: { branch: { shoot: className, shoots: 5, fanRing: 0, fanSpin: 0 } },
+			},
+		} as SpeciesKitData;
+		const ring = clusterRow(hinted, { part: 'branch' }, kit.detail);
+		const fan = clusterRow(hinted, { part: 'branch', layout: 'fan', spread: 1 }, kit.detail);
+		if (!ring || !fan) throw new Error('the kit grew no piece to fan');
+		// Every row of a fan leaves the same foot.
+		for (let row = 0; row < fan.rows.count; row++)
+			expect([...fan.rows.position.subarray(row * 3, row * 3 + 3)]).toEqual([0, 0, 0]);
+		// The fan opens a body the unspread rows do not reach.
+		const size = (row: typeof fan) =>
+			[0, 1, 2].reduce(
+				(v, k) => v * ((row.bounds.max[k] as number) - (row.bounds.min[k] as number)),
+				1,
+			);
+		expect(size(fan)).toBeGreaterThan(size(ring) * 1.1);
+		// A record hint names the same fan the caller can.
+		const recorded = clusterRow(
+			{
+				...hinted,
+				record: {
+					...hinted.record,
+					cuttings: {
+						branch: { shoot: className, shoots: 5, layout: 'fan', spread: 1 },
+					},
+				},
+			} as SpeciesKitData,
+			{ part: 'branch' },
+			kit.detail,
+		);
+		expect(recorded?.bounds.max[2]).toBeCloseTo(fan.bounds.max[2] as number, 5);
+	});
+
+	it('joins hanging laterals to one upright stem', () => {
+		const lateralClass = kit.record.shoots?.classes?.[0]?.name ?? 'cut';
+		const stemClass = kit.record.shoots?.cuttingClasses?.[0]?.name ?? lateralClass;
+		const hinted = {
+			...kit,
+			record: {
+				...kit.record,
+				cuttings: {
+					branch: { shoot: lateralClass, stem: stemClass, laterals: 3 },
+				},
+			},
+		} as SpeciesKitData;
+		const piece = clusterRow(hinted, { part: 'branch' }, kit.detail);
+		if (!piece) throw new Error('the kit grew no stem piece');
+		expect(piece.rows.count).toBe(4);
+		// The stem stands on its cut at the foot, and every lateral roots above it.
+		expect([...piece.rows.position.subarray(0, 3)]).toEqual([0, 0, 0]);
+		for (let row = 1; row < piece.rows.count; row++) {
+			const y = piece.rows.position[row * 3 + 1] as number;
+			expect(y).toBeGreaterThan(0);
+			expect(y).toBeLessThan(piece.bounds.max[1] as number);
+		}
+		// The stem draws the stem's class and the laterals the piece's own.
+		const drawn = [...piece.rows.prototype].map((index) => kit.prototypes[index]?.class);
+		expect(drawn[0]).toBe(stemClass);
+		expect(drawn[1]).toBe(lateralClass);
+		// A cluster keeps one shoot, whatever its hint names.
+		expect(clusterRow(hinted, { part: 'cluster' }, kit.detail)?.rows.count).toBe(1);
+		// A shorter lateral scale draws a narrower piece and shows in the rows' own scales.
+		const shorter = clusterRow(
+			{
+				...hinted,
+				record: {
+					...hinted.record,
+					cuttings: {
+						branch: { shoot: lateralClass, stem: stemClass, laterals: 3, lateralScale: 0.5 },
+					},
+				},
+			} as SpeciesKitData,
+			{ part: 'branch' },
+			kit.detail,
+		);
+		if (!shorter) throw new Error('the kit grew no shorter stem piece');
+		expect(shorter.rows.scale[1]).toBeCloseTo(0.5, 5);
+		const width = (row: typeof piece) =>
+			(row.bounds.max[0] as number) - (row.bounds.min[0] as number);
+		expect(width(shorter)).toBeLessThan(width(piece));
 	});
 
 	it('grows the same bytes twice, and in a worker that runs the job-worker task', async () => {
