@@ -3,9 +3,16 @@
 // target strength stepped one frame's step away from it and back again, for ever, so every lit
 // surface in the scene pulsed by one eighth of the area lights' light on every frame. This test
 // holds the demo's camera still and measures the floor on consecutive frames as the browser presents
-// them, not through the engine's own reader, which draws a frame again and hides the fault.
+// them, not through the engine's own reader, which draws a frame again and hides the fault. The
+// scene itself is alive: the car turns on the spot in the opening view and its body and lights cross
+// the mirror floor over several frames, which is a slow drift. The floor's swing is therefore read
+// about a short moving average of the frames' means, where the drift cancels and the pulse stays.
 import { expect, test } from '@playwright/test';
+import { defaultEnvironment } from '../../packages/cli/src/browser.js';
 import { decodePngRgba } from '../../packages/cli/src/png.js';
+
+/** True on the software GPU, where the page draws a smaller window. */
+const SOFTWARE_GPU = defaultEnvironment() === 'chromium-swiftshader';
 
 /** The share of the canvas to measure, of its width and height: the lit floor before the car. */
 const BOX = [0.3, 0.7, 0.6, 0.95] as const;
@@ -13,8 +20,18 @@ const BOX = [0.3, 0.7, 0.6, 0.95] as const;
 const MOVING = [0.55, 0.3, 0.9, 0.75] as const;
 /** The least that the moving part may change over the run, in levels of 255. */
 const MOVES = 1;
-/** The most that the floor's mean luminance may move across the frames, in levels of 255. */
+/**
+ * The most that the floor's mean luminance may move about its own slow drift across the frames, in
+ * levels of 255. The car turns on the spot in the opening view, and its body and lights cross the
+ * mirror floor over several frames, which is a drift; the area lights' pulse is a step from one
+ * frame to the next, which the drift does not take out.
+ */
 const LIMIT = 2;
+/**
+ * The frames of the moving average that the drift is read from. A window of about five frames takes
+ * the car's drift out and keeps a pulse that alternates frame to frame.
+ */
+const DRIFT_FRAMES = 5;
 /**
  * How much more a frame may step from the one before it than from the one two before: an image that
  * alternates frame to frame steps about twice as far between neighbours as across two frames, while
@@ -58,7 +75,27 @@ function meanOf(
 	return sum / count;
 }
 
+/**
+ * The floor's means less a centred moving average of themselves: a slow drift of the scene cancels,
+ * while a pulse that alternates frame to frame stays. A frame near either end averages the frames it
+ * has, so a short capture keeps its own mean at its ends.
+ */
+function withoutDrift(means: readonly number[]): number[] {
+	const half = Math.floor(DRIFT_FRAMES / 2);
+	return means.map((mean, at) => {
+		const from = Math.max(0, at - half);
+		const to = Math.min(means.length, at + half + 1);
+		let sum = 0;
+		for (let k = from; k < to; k++) sum += means[k]!;
+		return mean - sum / (to - from);
+	});
+}
+
 test('the showroom floor holds still on a still camera', async ({ page, context }) => {
+	// A software GPU draws the full window's studio too slowly to publish the engine in time. The
+	// measure reads the floor's mean luminance over boxes that are shares of the canvas, so a
+	// smaller window keeps the same reading; a real GPU keeps the full window.
+	if (SOFTWARE_GPU) await page.setViewportSize({ width: 480, height: 320 });
 	test.setTimeout(READY_MS + CAPTURE_MS + 60_000);
 	await page.goto('/examples/?demo=showroom&bench');
 	await page.waitForFunction(
@@ -104,7 +141,11 @@ test('the showroom floor holds still on a still camera', async ({ page, context 
 	const means = drawn.map((frame) => meanOf(frame.data, frame.width, frame.height, BOX));
 	const moving = drawn.map((frame) => meanOf(frame.data, frame.width, frame.height, MOVING));
 	const frameAfter = await frameOf();
-	const swing = Math.max(...means) - Math.min(...means);
+	// The drift's own range, and the range about it: a pulse shows in the second and a slow turn of
+	// the car in the first alone.
+	const raw = Math.max(...means) - Math.min(...means);
+	const about = withoutDrift(means);
+	const swing = Math.max(...about) - Math.min(...about);
 	let step = 0;
 	let across = 0;
 	for (let at = 0; at + 1 < means.length; at++) step += Math.abs(means[at + 1]! - means[at]!);
@@ -114,9 +155,9 @@ test('the showroom floor holds still on a still camera', async ({ page, context 
 	console.log(
 		`the showroom floor over ${means.length} frames: mean ${(
 			means.reduce((a, b) => a + b, 0) / means.length
-		).toFixed(2)}, swing ${swing.toFixed(2)} of ${LIMIT}, step ${apart.toFixed(
-			3,
-		)} against ${twoApart.toFixed(3)} two frames apart`,
+		).toFixed(2)}, swing ${swing.toFixed(2)} of ${LIMIT} about its drift (${raw.toFixed(
+			2,
+		)} raw), step ${apart.toFixed(3)} against ${twoApart.toFixed(3)} two frames apart`,
 	);
 	const moved = Math.max(...moving) - Math.min(...moving);
 	console.log(
