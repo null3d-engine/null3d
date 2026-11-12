@@ -23,6 +23,18 @@ const LEVEL_SCALE = [1, 2, 4] as const;
 /** How much longer edges and ring steps grow on the coarsest plant, over and above the level's. */
 export const COARSE_EDGE = 2;
 
+/** How much longer edges grow at the sparsest sections, over the coarseness's own growth. */
+const SECTION_EDGE = 7;
+
+/** Metres a ring step may reach at the sparsest sections, over the level's own cap. */
+const SECTION_STEP = 8;
+
+/** Radians an axis may turn between two rings at the sparsest sections. */
+const SECTION_TURN = Math.PI / 2;
+
+/** The fewest sides a ring has at the sparsest sections: a closed run of three. */
+const SECTION_SIDES = 3;
+
 /** The most sides a ring has at each level. */
 const MAX_SIDES = [96, 48, 24] as const;
 
@@ -77,26 +89,48 @@ export interface TubeDetail {
 	readonly stray: number;
 	/** The least stray in metres. */
 	readonly leastStray: number;
+	/** How far the sections are thinned, from 0 to the level's own counts, to 1, the fewest. */
+	readonly sections: number;
+	/** Metres the longest step between rings may reach. */
+	readonly step: number;
 }
 
 /**
  * The tube detail of a level at a tier. A coarser plant takes longer edges, so its rings have fewer
- * sides and stand further apart.
+ * sides and stand further apart. Thinned sections take longer edges still, fewer sides down to a
+ * closed run of three, and a longer step between rings, so a whole tree can draw in tens of
+ * triangles at the far levels.
  *
  * @param level The level.
  * @param detail The tier.
  * @param coarseness From 0, as the tier meshes, to 1, the coarsest.
+ * @param sections From 0, the level's own sections, to 1, the fewest rings and sides.
  * @returns The detail.
  */
-export function tubeDetail(level: MeshLevel, detail: Detail, coarseness = 0): TubeDetail {
-	const edge = EDGE[detail] * LEVEL_SCALE[level];
+export function tubeDetail(
+	level: MeshLevel,
+	detail: Detail,
+	coarseness = 0,
+	sections = 0,
+): TubeDetail {
+	const thin = Math.max(0, Math.min(1, sections));
+	const edge =
+		EDGE[detail] *
+		LEVEL_SCALE[level] *
+		(coarseness > 0 ? 1 + COARSE_EDGE * Math.min(1, coarseness) : 1) *
+		(1 + SECTION_EDGE * thin);
 	return {
 		level,
-		edge: coarseness > 0 ? edge * (1 + COARSE_EDGE * Math.min(1, coarseness)) : edge,
-		maxSides: MAX_SIDES[level],
-		maxTurn: MAX_TURN[level],
-		stray: STRAY[level],
-		leastStray: LEAST_STRAY[level],
+		edge,
+		maxSides: Math.max(
+			SECTION_SIDES,
+			Math.round(MAX_SIDES[level] * (1 - thin) + SECTION_SIDES * thin),
+		),
+		maxTurn: Math.min(SECTION_TURN, MAX_TURN[level] * (1 + 3 * thin)),
+		stray: STRAY[level] * (1 + 3 * thin),
+		leastStray: LEAST_STRAY[level] * (1 + 4 * thin),
+		sections: thin,
+		step: 1.2 + SECTION_STEP * thin,
 	};
 }
 
@@ -110,7 +144,8 @@ export function tubeDetail(level: MeshLevel, detail: Detail, coarseness = 0): Tu
  * @returns The side count.
  */
 export function sidesFor(perimeter: number, radius: number, tube: TubeDetail): number {
-	const fewest = tube.level === 0 ? (radius >= 0.02 ? 6 : radius >= THIN ? 4 : 3) : 3;
+	const base = tube.level === 0 ? (radius >= 0.02 ? 6 : radius >= THIN ? 4 : 3) : 3;
+	const fewest = Math.max(SECTION_SIDES, Math.round(base - (base - SECTION_SIDES) * tube.sections));
 	return Math.min(tube.maxSides, Math.max(fewest, Math.round(perimeter / tube.edge)));
 }
 
@@ -230,7 +265,9 @@ export function ringArcs(
 	while (s < end - 1e-6) {
 		while (first < path.count - 1 && (path.arc[first + 1] as number) <= s) first++;
 		const r = radiusAt(s);
-		const longest = nearGround(s) ? Math.max(0.02, r / 2) * scale : Math.min(1.2, 1.2 * scale);
+		const longest = nearGround(s)
+			? Math.max(0.02, r / 2) * scale
+			: Math.min(tube.step, 1.2 * scale);
 		// The longest step that fits; failing that, the farthest of the axis's points within reach,
 		// where its radius and direction kink; failing that, halves of the step.
 		let next = Math.min(end, s + longest);
@@ -281,8 +318,10 @@ const BEND_EDGES = 2;
  * @returns The rings between the parent's last ring and the leader's first plain ring.
  */
 export function bendRings(turn: number, girth: number, tube: TubeDetail): number {
-	if (girth * turn < BEND_EDGES * tube.edge) return 0;
-	return Math.max(0, Math.ceil(turn / ringTurn(girth, tube)) - 1);
+	// A thinned section takes the fold on one ring, so its fork draws a hard corner or none at all.
+	const allowed = turn * (1 - tube.sections);
+	if (girth * allowed < BEND_EDGES * tube.edge) return 0;
+	return Math.max(0, Math.ceil(allowed / ringTurn(girth, tube)) - 1);
 }
 
 /** The cosine and sine of each side's angle, by side count, made once. */

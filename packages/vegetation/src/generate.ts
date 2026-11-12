@@ -171,6 +171,13 @@ export interface GrowOptions extends CoarsenessOptions {
 	 * grows the light form and a desktop the full one.
 	 */
 	readonly sparse?: number;
+	/**
+	 * How far the wood's own sections are thinned, from 0 to 1: 0 is the level's own rings and
+	 * sides, and 1 the fewest that still draws a closed run, with square ends and no rounded joins.
+	 * A page rarely sets it; a sparse level raises it to the species' floor, if the record names
+	 * one. Every growth model answers it the same way, since one wood mesher builds them all.
+	 */
+	readonly sections?: number;
 }
 
 /** The least and the most share of leaves or limbs a growth may ask for. */
@@ -465,11 +472,14 @@ export function kitKey(
 export function variantKey(kit: SpeciesKitData, options: GrowOptions): string {
 	const season = options.season ?? kit.record.seasons.default;
 	const cutting = options.cutting ? JSON.stringify(options.cutting) : '';
-	// A share of leaves or limbs grows a different plant, so it keys a different asset.
+	// A share of leaves or limbs grows a different plant, so it keys a different asset. Section
+	// sparsity meshes the same plant coarser, which is a different asset too.
 	const leaves =
 		options.leaves === undefined || options.leaves === 1 ? '' : `:leaves=${options.leaves}`;
 	const limbs = options.limbs === undefined || options.limbs === 1 ? '' : `:limbs=${options.limbs}`;
-	return `${kit.key}:${options.seed >>> 0}:${options.variant}:${season}:${options.detail ?? kit.detail}:${cutting}${coarsenessKey(kit, options)}${leaves}${limbs}`;
+	const sections =
+		options.sections === undefined || options.sections === 0 ? '' : `:sections=${options.sections}`;
+	return `${kit.key}:${options.seed >>> 0}:${options.variant}:${season}:${options.detail ?? kit.detail}:${cutting}${coarsenessKey(kit, options)}${leaves}${limbs}${sections}`;
 }
 
 /**
@@ -600,10 +610,11 @@ function cuttingLeaves(record: Species, cutting: CuttingOptions | undefined): Sp
 }
 
 /**
- * The grow options a sparse level asks for: the leaves, limbs and coarseness moved toward the
- * record's floors by the level, from 0, the record's own form, to 1, the sparsest the species
- * allows. A record with no floors, or a level of 0, leaves the options as they stand. The level is
- * kept in the options so the shares it sets are taken at the sparse bound rather than a page's own.
+ * The grow options a sparse level asks for: the leaves, limbs, coarseness and section sparsity
+ * moved toward the record's floors by the level, from 0, the record's own form, to 1, the sparsest
+ * the species allows. A record with no floors, or a level of 0, leaves the options as they stand.
+ * The level is kept in the options so the shares it sets are taken at the sparse bound rather than
+ * a page's own.
  *
  * @param record The species record.
  * @param options The options as the page gave them.
@@ -611,6 +622,8 @@ function cuttingLeaves(record: Species, cutting: CuttingOptions | undefined): Sp
  * @category api/vegetation
  */
 export function withSparse<T extends GrowOptions>(record: Species, options: T): GrowOptions {
+	if (options.sections !== undefined && !(options.sections >= 0 && options.sections <= 1))
+		throw new Error(`sections is ${options.sections}; a section sparsity lies from 0 to 1`);
 	const floors = record.sparse;
 	const asked = options.sparse;
 	if (!floors || asked === undefined || asked <= 0) return options;
@@ -625,6 +638,7 @@ export function withSparse<T extends GrowOptions>(record: Species, options: T): 
 			options.coarseness ?? 0,
 			level * Math.max(floors.coarseness, SPARSE_COARSENESS),
 		),
+		sections: Math.max(options.sections ?? 0, level * (floors.sections ?? 0)),
 	};
 }
 
@@ -696,6 +710,7 @@ function dress(kit: SpeciesKitData, options: GrowOptions): MeshInput {
 		kit,
 		skeleton: cutSkeleton(kit, coarsenSkeleton(grown, coarseness), options.cutting),
 		coarseness,
+		sections: options.sections,
 		...lit,
 	};
 	// The shoots stand on the skeleton, which loses the bare twigs the record trims once they stand.

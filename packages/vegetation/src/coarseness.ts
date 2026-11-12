@@ -138,7 +138,7 @@ export function coarsenessFor(
 	kit: SpeciesKitData,
 	grown: GrowInput & { readonly skeleton: MacroSkeleton; readonly pruneLight?: CrownLight },
 	detail: Detail,
-	options: CoarsenessOptions,
+	options: CoarsenessOptions & { readonly sections?: number },
 ): number {
 	const { coarseness, triangles: target } = chosen(kit, options);
 	if (target === undefined) return coarseness ?? 0;
@@ -148,6 +148,7 @@ export function coarsenessFor(
 			kit,
 			skeleton: coarsenSkeleton(grown.skeleton, c),
 			coarseness: c,
+			sections: options.sections,
 		};
 		// The rows and the wood the dressing keeps, its bare twigs trimmed as the record asks.
 		if (kit.record.lod.nearFoliage !== 'instanced' || kit.prototypes.length === 0)

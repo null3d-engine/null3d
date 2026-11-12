@@ -32,7 +32,7 @@ import { cardMesh } from './lod/cards';
 import { quantiseParts, TEXTURE_UV_STEPS, WOOD_UV_STEPS } from './lod/quantise';
 import type { DressInput, MeshInput, MeshLevel } from './stages';
 import { woodTriangles } from './wood/estimate';
-import { meshWood } from './wood/wood-mesh';
+import { cappedAxes, meshWood } from './wood/wood-mesh';
 import { testRecord } from './wood/wood-test-tree';
 
 const DETAIL: Detail = 'high';
@@ -256,6 +256,70 @@ describe('coarseness on the oak', () => {
 		expect(coarsenessFor(kit, growth, DETAIL, { triangles: 1e9 })).toBe(0);
 		expect(coarsenessFor(kit, growth, DETAIL, { triangles: 1000 })).toBe(1);
 		expect(coarsenessFor({ ...kit, coarseness: 0.4 }, growth, DETAIL, {})).toBe(0.4);
+	});
+});
+
+describe('the section sparsity', () => {
+	const wood = (sections: number, level: MeshLevel) => {
+		const { input, rows } = dressed(0, 0);
+		const mesh = meshInput({ ...input, sections }, rows);
+		return {
+			mesh,
+			triangles: meshWood(mesh, level).indices.length / 3,
+			estimate: woodTriangles(mesh, level),
+		};
+	};
+
+	it('thins every level as it rises, leaving the full form exact at zero', () => {
+		for (const level of [0, 1, 2] as const) {
+			const none = wood(0, level).triangles;
+			const half = wood(0.5, level).triangles;
+			const most = wood(1, level).triangles;
+			expect(half).toBeLessThan(none);
+			expect(most).toBeLessThan(half);
+		}
+		const { input, rows } = dressed(0, 0);
+		const plain = meshInput(input, rows);
+		const zero = meshInput({ ...input, sections: 0 }, rows);
+		expect(digest(meshViews(meshWood(zero, 2)))).toBe(digest(meshViews(meshWood(plain, 2))));
+	});
+
+	it('draws the far level of the oak in a quarter of its triangles or fewer', () => {
+		// The oak's far level keeps its stem and six great limbs, so its floor is their prisms.
+		const full = wood(0, 2).triangles;
+		const fewest = wood(1, 2).triangles;
+		expect(fewest).toBeLessThan(full / 4);
+		expect(fewest).toBeGreaterThan(20);
+	});
+
+	it('holds its quick count of the nearest level within ten per cent at the sparsest sections', () => {
+		const one = wood(1, 0);
+		expect(Math.abs(one.estimate / one.triangles - 1)).toBeLessThan(0.1);
+	});
+
+	it('caps a far level at three axes, and keeps the ones that carry the most crown', () => {
+		const { input } = dressed(0, 0);
+		const keep = record.lod.woodOrders[1] ?? 255;
+		const dropped = cappedAxes(input.skeleton, keep, 2, 1);
+		const axes = input.skeleton.axes;
+		let keptCount = 0;
+		for (let a = 0; a < axes.count; a++)
+			if ((axes.order[a] as number) <= keep && dropped?.[a] !== 1) keptCount++;
+		expect(keptCount).toBeLessThanOrEqual(3);
+		// The sparsest level keeps fewer axes than the half level, and the full level keeps all.
+		const half = cappedAxes(input.skeleton, keep, 2, 0.5);
+		let halfCount = 0;
+		for (let a = 0; a < axes.count; a++)
+			if ((axes.order[a] as number) <= keep && half?.[a] !== 1) halfCount++;
+		expect(halfCount).toBeGreaterThanOrEqual(keptCount);
+		expect(cappedAxes(input.skeleton, keep, 2, 0)).toBeUndefined();
+	});
+
+	it('keys a variant by its sections, and the plant as grown as before', () => {
+		const options = { seed: 1, variant: 0 };
+		const key = variantKey(kit, options);
+		expect(variantKey(kit, { ...options, sections: 0 })).toBe(key);
+		expect(variantKey(kit, { ...options, sections: 0.25 })).not.toBe(key);
 	});
 });
 

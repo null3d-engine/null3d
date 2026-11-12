@@ -56,6 +56,12 @@ export interface DressInput extends GrowInput {
 	 */
 	readonly coarseness?: number;
 	/**
+	 * How far the wood's own sections are thinned, from 0 to 1: 0 is the level's own rings and
+	 * sides, and 1 a few flat-sided runs with square ends. Absent or 0 meshes as the level does.
+	 * It changes no vertex's place along its axis, only how many rings and sides the axis draws.
+	 */
+	readonly sections?: number;
+	/**
 	 * The light of the crown as grown, which a sky-prune line reads at every coarseness, so a
 	 * coarser plant prunes the shoots its full crown leaves in the dark and the light is found once.
 	 * Absent, the prune lights the crown of the rows it is given.

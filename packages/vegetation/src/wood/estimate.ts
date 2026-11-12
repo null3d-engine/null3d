@@ -3,7 +3,7 @@
 // counts its girth asks for, and counts the strips between them, the blend rings of each weld, the
 // bend rings of each fork's leaders and each tip's cap. It builds no vertex, no weld and no stem
 // foot, so it runs in a small share of the mesher's time and comes within a few per cent of its
-// count.
+// count at the nearest level, where a triangle target is read.
 import { AXIS_STEM, type MacroSkeleton } from '../core/graph';
 import { acos, PI } from '../core/math';
 import type { MeshInput, MeshLevel } from '../stages';
@@ -19,6 +19,7 @@ import {
 	type TubeDetail,
 	tubeDetail,
 } from './tube';
+import { cappedAxes } from './wood-mesh';
 
 /** Blend rings of a weld, as the mesher gives them: thin wood, wood under 2 cm, and the rest. */
 const BLEND_THIN = 2;
@@ -36,12 +37,13 @@ const TIP_RINGS = 1;
  * @returns The count.
  */
 export function woodTriangles(
-	input: Pick<MeshInput, 'skeleton' | 'record' | 'detail' | 'coarseness'>,
+	input: Pick<MeshInput, 'skeleton' | 'record' | 'detail' | 'coarseness' | 'sections'>,
 	level: MeshLevel,
 ): number {
 	const { skeleton } = input;
-	const tube = tubeDetail(level, input.detail, input.coarseness ?? 0);
+	const tube = tubeDetail(level, input.detail, input.coarseness ?? 0, input.sections ?? 0);
 	const keep = level === 0 ? 255 : (input.record.lod.woodOrders[level - 1] ?? 255);
+	const capped = cappedAxes(skeleton, keep, level, input.sections ?? 0);
 	const sample: PathSample = { radius: 0, height: 0 };
 	const axes = skeleton.axes;
 	const meshed = new Uint8Array(axes.count);
@@ -49,6 +51,7 @@ export function woodTriangles(
 	for (let a = 0; a < axes.count; a++) {
 		const parent = axes.parent[a] as number;
 		if ((axes.order[a] as number) > keep) continue;
+		if (capped?.[a] === 1) continue;
 		if (parent < 0 ? axes.kind[a] !== AXIS_STEM : !meshed[parent]) continue;
 		const path = pathOf(skeleton, a);
 		if (!path) continue;
@@ -70,10 +73,11 @@ export function woodTriangles(
 		}
 		const r0 = path.radius[0] as number;
 		const first = sidesFor(2 * PI * r0, r0, tube);
-		if (parent >= 0)
-			triangles +=
-				2 * first * (r0 < THIN ? BLEND_THIN : r0 < 2.5 * THIN ? BLEND_SMALL : BLEND_WIDE) +
-				forkBend(skeleton, a, tube);
+		if (parent >= 0) {
+			const full = r0 < THIN ? BLEND_THIN : r0 < 2.5 * THIN ? BLEND_SMALL : BLEND_WIDE;
+			const blend = Math.max(1, Math.round(full - (full - 1) * tube.sections));
+			triangles += 2 * first * blend + forkBend(skeleton, a, tube);
+		}
 		triangles += 2 * sides * TIP_RINGS;
 	}
 	return triangles;

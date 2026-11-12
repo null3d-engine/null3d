@@ -242,6 +242,12 @@ export interface PlantReviewQuery {
 	 */
 	readonly sparse?: number;
 	/**
+	 * How far the wood's own sections are thinned, from 0 to 1: a review redraw reads the same plant
+	 * with fewer rings and sides, to measure what the section level costs and what it breaks. Absent
+	 * draws the level's own sections.
+	 */
+	readonly sections?: number;
+	/**
 	 * Metres of one leaf that a photographed cutting was measured in, for the `leaves` frame. A
 	 * blade or a cluster whose own leaf is far longer than the photographed one frames at the
 	 * photograph's scale only when the length the photograph was measured in is named.
@@ -297,6 +303,7 @@ const NUMBER_FIELDS = [
 	'leaves',
 	'leafLength',
 	'sparse',
+	'sections',
 	'roll',
 	'girth',
 	'turns',
@@ -319,6 +326,7 @@ const SHARE_FIELDS = new Set([
 	'along',
 	'skyShare',
 	'sparse',
+	'sections',
 ]);
 
 /** The fields that are whole numbers of at least one. */
