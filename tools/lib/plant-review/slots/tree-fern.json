@@ -1,0 +1,74 @@
+{
+	"04-crown-outside.png": {
+		"view": "crown",
+		"elevation": -20,
+		"distance": 4
+	},
+	"06-inside-crown.png": {
+		"view": "crown",
+		"elevation": 45,
+		"distance": 1.6
+	},
+	"07-frond-leaving-trunk.png": {
+		"noOutline": true
+	},
+	"08-frond-division.png": {
+		"view": "branch",
+		"turn": 270
+	},
+	"09-pinna.png": {
+		"view": "leaf-upper",
+		"background": "studio-grey",
+		"roll": 141
+	},
+	"12-single-pinna-upper.png": {
+		"roll": 141
+	},
+	"13-single-pinna-underside.png": {
+		"roll": 141
+	},
+	"15-trunk-mid.png": {
+		"span": 0.45
+	},
+	"16-trunk-under-crown.png": {
+		"view": "bark-mid",
+		"along": 0.94,
+		"span": 0.45
+	},
+	"19-sori.png": {
+		"view": "leaf-under",
+		"roll": 141
+	},
+	"20-dead-frond-skirt.png": {
+		"view": "whole"
+	},
+	"24-leaf-texture-upper.png": {
+		"roll": 141
+	},
+	"25-leaf-texture-underside.png": {
+		"roll": 141
+	},
+	"14-trunk-base.png": {
+		"view": "bark-mid",
+		"along": 0.03,
+		"span": 0.9
+	},
+	"26-bark-texture.png": {
+		"span": 0.45
+	},
+	"10-pinnules.png": {
+		"turn": 90
+	},
+	"11-frond-group.png": {
+		"turn": 270
+	},
+	"21-branch-studio.png": {
+		"turn": 270
+	},
+	"22-subbranch-studio.png": {
+		"turn": 270
+	},
+	"23-leaf-cluster-studio.png": {
+		"turn": 270
+	}
+}
