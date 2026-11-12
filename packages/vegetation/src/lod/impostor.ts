@@ -2,44 +2,12 @@
 // impostor atlases, from the card atlas's pixels and a mean bark colour. The first card level holds
 // the same silhouette as the nearest one at a hundredth of its triangles. The card's alpha is the
 // card atlas's coverage, so the far card keeps the crown's own holes.
+
+import { bakeImpostorAtlas, type ImpostorBakePart } from '@null3d/impostors/bake';
 import type { PlantAsset, SpeciesKitData } from '../asset';
 import type { FarBake, MeshInput } from '../stages';
 import { cardMesh } from './cards';
 import { dequantisePosition } from './quantise';
-
-/** The bake's inputs and outputs, as this add-on gives and takes them. The bake itself is imported
- * when a far bake runs, so a page that never bakes loads neither the add-on nor the engine's page
- * code through it. */
-interface BakeMap {
-	readonly width: number;
-	readonly height: number;
-	readonly data: Uint8Array;
-}
-interface BakePart {
-	readonly positions: ArrayLike<number>;
-	readonly normals?: ArrayLike<number>;
-	readonly uvs?: ArrayLike<number>;
-	readonly colors?: ArrayLike<number>;
-	readonly indices: ArrayLike<number>;
-	readonly color?: BakeMap;
-	readonly coverage?: BakeMap;
-	readonly doubleSided?: boolean;
-	readonly alphaCutoff?: number;
-}
-interface BakeOutput {
-	readonly color: { readonly data: Uint8Array };
-	readonly surface: { readonly data: Uint8Array };
-	readonly size: readonly [number, number];
-	readonly room: number;
-	readonly depth: number;
-}
-type BakeAtlas = (options: {
-	readonly atlas: { readonly columns: number; readonly rows: number };
-	readonly texels: number;
-	readonly parts: readonly BakePart[];
-	readonly min: readonly [number, number, number];
-	readonly max: readonly [number, number, number];
-}) => BakeOutput;
 
 /**
  * A variant's far cards on a page: its impostor bake, which the impostors add-on's cards draw.
@@ -85,7 +53,7 @@ function drawnBounds(positions: readonly Float32Array[]): {
  * @returns The atlases.
  * @category api/vegetation
  */
-export async function bakeFar(kit: SpeciesKitData, asset: PlantAsset): Promise<FarBake> {
+export function bakeFar(kit: SpeciesKitData, asset: PlantAsset): FarBake {
 	const record = kit.record;
 	// The first card level's cards, rebuilt from the rows and the kit: their atlas is the bake's map.
 	const input = {
@@ -110,7 +78,7 @@ export async function bakeFar(kit: SpeciesKitData, asset: PlantAsset): Promise<F
 	const front = kit.cards.color.subarray(0, cell * cell * 4);
 	const coverage = new Uint8Array(cell * cell * 4);
 	for (let i = 0; i < cell * cell; i++) coverage[i * 4 + 2] = front[i * 4 + 3] as number;
-	const parts: BakePart[] = [
+	const parts: ImpostorBakePart[] = [
 		{
 			positions: cards.positions,
 			normals: cards.normals,
@@ -153,8 +121,6 @@ export async function bakeFar(kit: SpeciesKitData, asset: PlantAsset): Promise<F
 	const views = asset.impostor.views;
 	const texels = asset.impostor.texels;
 	// The far cards read a square atlas of `views` by `views` cells, each `texels` a side.
-	const moduleName = '@null3d/impostors';
-	const { bakeImpostorAtlas } = (await import(moduleName)) as { bakeImpostorAtlas: BakeAtlas };
 	const bake = bakeImpostorAtlas({
 		atlas: { columns: views, rows: views },
 		texels,

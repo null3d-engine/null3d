@@ -1099,7 +1099,10 @@ export function growNearWoodNow(kit: SpeciesKitData, options: GrowOptions): read
  * @returns The atlases.
  * @category api/vegetation
  */
-export async function bakeFarNow(kit: SpeciesKitData, asset: PlantAsset): Promise<FarBake> {
-	if (kit.placeholders) return placeholderFar(kit, asset);
-	return bakeFar(kit, asset);
+export function bakeFarNow(kit: SpeciesKitData, asset: PlantAsset): FarBake {
+	return stage(
+		kit.placeholders,
+		() => bakeFar(kit, asset),
+		() => placeholderFar(kit, asset),
+	);
 }
