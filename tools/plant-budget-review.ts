@@ -16,7 +16,7 @@ import { join } from 'node:path';
 import { writePng } from '../packages/cli/src/png.js';
 import type { ShootRows } from '../packages/vegetation/src/asset.ts';
 import { loadSpecies } from '../packages/vegetation/src/core/registry.ts';
-import { buildKitNow, growPlantNow } from '../packages/vegetation/src/generate.ts';
+import { buildKitNow, growPlantNow, loadPlantCode } from '../packages/vegetation/src/generate.ts';
 import {
 	plantSilhouette,
 	type SilhouetteFrame,
@@ -46,7 +46,7 @@ const BUDGETS = [30, 300, 1000] as const;
  * The distances the page draws: the beech's closest whole view, which the forest's 50 degree field
  * of view fits its 21.5 m height at, then the near band's own ends.
  */
-const DISTANCES = [23, 30, 70, 117] as const;
+const DISTANCES = [27, 30, 70, 117] as const;
 /** One render's size, in pixels: enough to read a 30-triangle crown's cards. */
 const CELL = [360, 270] as const;
 /** The forest's field of view, in degrees: a 20 m tree fits the frame at 30 m. */
@@ -102,6 +102,7 @@ async function formsOf(species: string): Promise<Forms> {
 	const known = FORMS.get(species);
 	if (known) return known;
 	const module = await loadSpecies(species as Parameters<typeof loadSpecies>[0]);
+	await loadPlantCode(module.record);
 	const kit = buildKitNow(module, { placeholders: 'missing', detail: PRESET });
 	const forms = {
 		kit,
@@ -127,7 +128,11 @@ function thinnedRows(
 	kept: number,
 	grow: number,
 ): ShootRows {
-	const take = own.slice(0, Math.max(1, kept));
+	const count = Math.max(1, kept);
+	const take = Array.from(
+		{ length: count },
+		(_, k) => own[Math.min(own.length - 1, Math.floor((k * own.length) / count))] as number,
+	);
 	const out = {
 		count: take.length,
 		prototype: new Uint8Array(take.length),
@@ -290,7 +295,7 @@ function title(page: Rgba, sha: string): number {
 	for (const [k, line] of rows.entries()) drawText(page, line, GAP, 12 + k * 24, 3, INK);
 	drawText(
 		page,
-		'CLOSEST WHOLE VIEW 23 M (BEECH 21.5 M AT 50 DEG)   DIVERGENCE = SILHOUETTE IOU VS APPROVED',
+		'CLOSEST WHOLE VIEW 27 M (BEECH 21.5 M AT 50 DEG, WITH A MARGIN)   DIVERGENCE = SILHOUETTE IOU',
 		GAP,
 		64,
 		2,
@@ -603,7 +608,7 @@ async function main(): Promise<void> {
 				const y = 100 + DISTANCES.length * (CELL[1] + 56) + 8;
 				drawText(
 					page,
-					'EXTRAS: WITH AND WITHOUT THEM AT THE CLOSEST VIEW 23 M',
+					'EXTRAS: WITH AND WITHOUT THEM AT THE CLOSEST VIEW 27 M',
 					GAP + approvedW + GAP,
 					y,
 					2,
