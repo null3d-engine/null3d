@@ -171,7 +171,9 @@ describe('the manifest', () => {
 					return path === 'showcase' ? sketches(path) : [];
 				});
 		expect(DEMOS.map(sketchPath).sort()).toEqual(sketches('').sort());
-		const tests = new Set(IMAGE_TESTS.map((test) => ('sketch' in test ? test.sketch : '')));
+		const tests = new Set(
+			IMAGE_TESTS.map((test) => ('sketch' in test ? test.sketch.split('?')[0] : '')),
+		);
 		expect(DEMOS.filter((demo) => !tests.has(`examples/${sketchPath(demo)}`))).toEqual([]);
 		const long = DEMOS.filter(
 			(demo) =>

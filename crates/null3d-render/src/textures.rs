@@ -1201,6 +1201,18 @@ impl TextureStore {
     }
 
     /// The array and the sampler that a live map samples, or `None` for a slot without one.
+    /// The GPU texture and sampler that a texture binds with alone: one array texture and its
+    /// sampler, or none for a texture that has no group of its own.
+    pub fn pair(&self, texture: Handle) -> Option<(u32, u32)> {
+        let slot = self.slot(texture).ok()?;
+        (slot.group != NO_GROUP).then(|| {
+            (
+                self.array_id(slot.array),
+                self.ids.first_sampler + slot.sampler,
+            )
+        })
+    }
+
     fn map_pair(&self, map: Handle) -> Option<(u32, u32)> {
         let texture = self.slot(map).ok()?;
         (texture.group != NO_GROUP).then_some((texture.array, texture.sampler))

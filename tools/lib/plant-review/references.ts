@@ -123,6 +123,24 @@ const CLEAN_BOLE: SlotRule = {
 	framed: false,
 };
 
+/**
+ * A cactus's rib, areole and spine close-ups: the skin's own surface, where the areoles and their
+ * spine clusters stand, rather than a leaf or a twig. The span frames an areole and its neighbours.
+ */
+const SKIN_CLOSE: SlotRule = {
+	view: 'bark-mid',
+	query: { span: 0.2 },
+	framed: false,
+	note: 'a cactus skin close-up: judged on the waxy ribbed skin at close range',
+};
+
+/** A woodpecker's nest holes in an old cactus trunk: the same skin, framed wider. */
+const NEST_HOLES: SlotRule = {
+	view: 'bark-mid',
+	query: { span: 0.55 },
+	framed: false,
+};
+
 /** A branch with its side branches: the branch cutting laid across a frame of the photograph's scale. */
 const SECONDARY_BRANCHING: SlotRule = {
 	view: 'branch',
@@ -144,6 +162,28 @@ const FINE_TWIGS: SlotRule = {
 /** The slot rules, first match wins: words in the still's name, and the slot they name. */
 const SLOT_RULES: readonly { readonly test: (name: string) => boolean; readonly slot: SlotRule }[] =
 	[
+		// A cactus's ribs, areoles and spine clusters are the skin's own close view: the species has no
+		// leaf or twig for the leaf and twig views to cut, and its body is one ribbed surface.
+		{ test: (n) => /rib|areole|spine/.test(n), slot: SKIN_CLOSE },
+		{ test: (n) => /\bnest|\bholes?\b/.test(n), slot: NEST_HOLES },
+		// A cactus's arms are its limbs: the whole arm, its underside and its elbow are limb views,
+		// and the crownless plant has no fork for the fork view to find.
+		{
+			test: (n) => /arms?-outside|between-arms/.test(n),
+			slot: { view: 'limb', query: { span: 2.5, thin: 0.24 }, framed: false },
+		},
+		{
+			test: (n) => /arm.*underside/.test(n),
+			slot: { view: 'limb', elevation: -30, query: { span: 1.5, thin: 0.24 }, framed: false },
+		},
+		{
+			test: (n) => /arm-elbow/.test(n),
+			slot: { view: 'limb', query: { span: 1.2, thin: 0.24 }, framed: false },
+		},
+		{
+			test: (n) => /arm-tip/.test(n),
+			slot: { view: 'limb', query: { span: 0.35, thin: 0.24 }, framed: false },
+		},
 		// A cut piece on a plain ground, framed as its photograph frames it: the photograph's piece
 		// sets the rows its top and its foot land on.
 		{ test: (n) => n.includes('subbranch-studio'), slot: { view: 'subbranch', framed: true } },
@@ -158,6 +198,12 @@ const SLOT_RULES: readonly { readonly test: (name: string) => boolean; readonly 
 		{
 			test: (n) => /(leaf|needle|frond|blade).*upper/.test(n),
 			slot: { view: 'leaf-upper', framed: false },
+		},
+		{
+			// A ground plant's flowering heads: one stem's hanging spikes, seen close and level, where
+			// a twig view has no woody stem to frame and falls back to the whole plant.
+			test: (n) => /flower.*spike/.test(n),
+			slot: { view: 'spike', framed: false },
 		},
 		{
 			// Looking up the whole height from the foot: the stem's first fork stands a little above the
@@ -246,6 +292,13 @@ const SLOT_RULES: readonly { readonly test: (name: string) => boolean; readonly 
 			slot: { view: 'bark-limb', query: { girth: 0.38, along: 0.3 }, framed: false },
 		},
 		{
+			// A ground plant's sheath, collar or ligule: one tiller's column, seen side on at the
+			// scale the photograph frames it, since such a plant has no woody stem to show. The
+			// name must begin with the part, so a blade leaving its sheath keeps its fork picture.
+			test: (n) => /^(sheath|ligule|collar)/.test(n),
+			slot: { view: 'sheath', framed: false },
+		},
+		{
 			// A winter picture of a branch shows one branch on its own against the sky, as its
 			// reference does: the summer branch cutting, drawn in the season the name gives. A crop
 			// into the whole plant puts other limbs behind it and cannot be read the same way.
@@ -272,6 +325,14 @@ const SLOT_RULES: readonly { readonly test: (name: string) => boolean; readonly 
 		{
 			test: (n) => n.includes('branching'),
 			slot: { view: 'fork', query: { distance: 2.5 }, framed: false },
+		},
+		{
+			// A plant that flowers at its crown, such as a cactus, shows a ring of flowers at the stem's
+			// top: the picture frames the ring's own sites, not the plant's middle that the crown view
+			// takes or a single shoot tip. The name must say the flowers stand on the crown, so a
+			// species' flower detail or flower spikes keep the view their number gives.
+			test: (n) => /flowers?.*crown|crown.*flowers?/.test(n),
+			slot: { view: 'flowers', framed: false },
 		},
 		{ test: (n) => n.includes('crown'), slot: { view: 'crown', framed: false } },
 		{ test: (n) => n.includes('bark'), slot: { view: 'bark-mid', framed: false } },
@@ -421,6 +482,8 @@ function formOf(name: string, forms: readonly string[]): string | undefined {
 
 /** The texture rule of a texture source that its number does not name. */
 function textureRule(number: number, name: string): SlotRule {
+	// A cactus's texture sources hold its spine clusters, not leaves: its surface is the ribbed stem.
+	if (/rib|areole|spine/.test(name)) return SKIN_CLOSE;
 	const known = TEXTURE_BY_NUMBER[number];
 	if (known) return known;
 	if (/leaf|needle|frond|blade/.test(name))
@@ -993,12 +1056,37 @@ export const PIECE_BRIDGE = 1;
  * falls to the outline's cutoff. Two runs a pixel apart are therefore one piece. The reference and
  * the render both come through this function, so the rule counts the two sides alike.
  */
-export function pieceCount(
+/** One piece of a plant's outline: its area, its box, and whether it reaches the frame's border. */
+export interface PlantPart {
+	readonly area: number;
+	readonly left: number;
+	readonly top: number;
+	readonly right: number;
+	readonly bottom: number;
+	/** Whether the piece reaches the frame's border, where the part may run on outside the picture. */
+	readonly border: boolean;
+}
+
+/**
+ * The separate pieces a plant is drawn as: runs of at least `minArea` pixels, with two runs one
+ * background pixel apart counted as one. A plant hangs together: every fruit meets its twig, every
+ * twig meets its limb. A part that meets nothing is drawn as an island, and this returns it with its
+ * box so a reader can name it. A single background pixel between two runs is the mask's resolution
+ * rather than a drawn gap, so two runs a pixel apart are one piece.
+ *
+ * @param mask The picture's plant mask, one byte a pixel.
+ * @param width The mask's width in pixels.
+ * @param height The mask's height in pixels.
+ * @param minArea The smallest run that counts, so an outline's speckle is not a piece.
+ * @returns Every piece's area and box.
+ */
+export function pieceParts(
 	mask: Uint8Array,
 	width: number,
 	height: number,
 	minArea: number,
-): number {
+	bridge = PIECE_BRIDGE,
+): PlantPart[] {
 	const { labels, sizes } = components(mask, width, height);
 	const parent = new Int32Array(sizes.length);
 	for (let label = 0; label < parent.length; label++) parent[label] = label;
@@ -1022,8 +1110,8 @@ export function pieceCount(
 		for (let x = 0; x < width; x++) {
 			if (labels[y * width + x]) continue;
 			let near = 0;
-			for (let dy = -PIECE_BRIDGE; dy <= PIECE_BRIDGE; dy++)
-				for (let dx = -PIECE_BRIDGE; dx <= PIECE_BRIDGE; dx++) {
+			for (let dy = -bridge; dy <= bridge; dy++)
+				for (let dx = -bridge; dx <= bridge; dx++) {
 					const nx = x + dx;
 					const ny = y + dy;
 					if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
@@ -1033,14 +1121,64 @@ export function pieceCount(
 					else join(near, label);
 				}
 		}
-	const areas = new Map<number, number>();
-	for (let label = 1; label < sizes.length; label++) {
-		const root = find(label);
-		areas.set(root, (areas.get(root) ?? 0) + (sizes[label] as number));
-	}
-	let count = 0;
-	for (const area of areas.values()) if (area >= minArea) count++;
-	return count;
+	const boxes = new Map<
+		number,
+		{ area: number; left: number; top: number; right: number; bottom: number; border: boolean }
+	>();
+	for (let y = 0; y < height; y++)
+		for (let x = 0; x < width; x++) {
+			const label = labels[y * width + x] as number;
+			if (!label) continue;
+			const root = find(label);
+			const box = boxes.get(root) ?? {
+				area: 0,
+				left: x,
+				top: y,
+				right: x,
+				bottom: y,
+				border: false,
+			};
+			box.area++;
+			box.left = Math.min(box.left, x);
+			box.top = Math.min(box.top, y);
+			box.right = Math.max(box.right, x);
+			box.bottom = Math.max(box.bottom, y);
+			if (x === 0 || y === 0 || x === width - 1 || y === height - 1) box.border = true;
+			boxes.set(root, box);
+		}
+	return [...boxes.values()]
+		.filter((box) => box.area >= minArea)
+		.map(({ area, left, top, right, bottom, border }) => ({
+			area,
+			left,
+			top,
+			right,
+			bottom,
+			border,
+		}))
+		.sort((a, b) => b.area - a.area);
+}
+
+/**
+ * The number of separate pieces a plant is drawn as, where a piece is a connected run of at least
+ * `minArea` pixels and two runs one background pixel apart count as one.
+ *
+ * A plant hangs together: every fruit meets its twig, every twig meets its limb. A part that meets
+ * nothing is drawn as an island, and this counts it. Pieces smaller than `minArea` are ignored so
+ * that a speck of background left by the outline's threshold is not read as a floating part.
+ *
+ * A single background pixel between two runs is the mask's resolution rather than a drawn gap: at
+ * the work width a shoot's supporting twig is thinner than a pixel, so the pixel that would join it
+ * falls to the outline's cutoff. Two runs a pixel apart are therefore one piece. The reference and
+ * the render both come through this function, so the rule counts the two sides alike.
+ */
+export function pieceCount(
+	mask: Uint8Array,
+	width: number,
+	height: number,
+	minArea: number,
+): number {
+	return pieceParts(mask, width, height, minArea).length;
 }
 
 /** The CIELAB distance from a colour to the nearest blend of two others. */ export function distanceToSegment(
@@ -1128,6 +1266,12 @@ export function plantMask(image: Rgba): PlantMask {
 	if (!background.plain && !skyMaskable(background) && !soilMaskable(background, height))
 		return { width, height, mask, background };
 	const horizon = background.horizon ?? height;
+	// A fitted sky or ground is trusted only where it finds a plausible subject. A picture of
+	// something else against a natural backdrop, such as bark or foliage, still admits a smooth
+	// surface on its border, and the surface then marks a few textured specks as the plant. A
+	// subject that a fitted background finds under a fiftieth of the frame is that failure, not a
+	// plant: every real reference's subject fills more.
+	const MIN_FITTED_PLANT_SHARE = 0.02;
 	// A plain background's spread was tuned against studio paper; a fitted sky or ground carries a
 	// wider residual, so its limit takes fewer spreads or the plant itself falls inside it.
 	const skyLimit = threshold(background.sky, 8, background.plain ? 3.5 : 2);
@@ -1163,6 +1307,11 @@ export function plantMask(image: Rgba): PlantMask {
 			height - Math.max(2, Math.round(height * FOOT_SHARE)),
 		);
 	keepPlantParts(mask, width, height, horizon);
+	if (!background.plain) {
+		let kept = 0;
+		for (let at = 0; at < mask.length; at++) kept += mask[at] as number;
+		if (kept / (width * height) < MIN_FITTED_PLANT_SHARE) mask.fill(0);
+	}
 	let plantToGround: number | undefined;
 	if (background.ground) {
 		const groundAt = surfaceAt(background.ground, 0.5, (horizon / height + 1) / 2);
@@ -1358,6 +1507,31 @@ export function anyPlantMask(plant: PlantMask): Uint8Array {
 	return mask;
 }
 
+/**
+ * A matte's own coverage mask at the picture's width, read by the same any-coverage rule the piece
+ * test uses. The gate reads this mask, because a downscale to the work width can drop a hairline
+ * shoot that the picture itself keeps, and so invent a piece that hangs free.
+ *
+ * @param image The matte picture, at the size the run drew it.
+ * @returns The picture's width and height with one byte per texel, 1 where any leaf covers it.
+ */
+export function matteOwnMask(image: Rgba): {
+	readonly width: number;
+	readonly height: number;
+	readonly mask: Uint8Array;
+} {
+	const { width, height } = image;
+	const mask = new Uint8Array(width * height);
+	for (let at = 0; at < mask.length; at++) {
+		const luma =
+			0.2126 * (image.data[at * 4] as number) +
+			0.7152 * (image.data[at * 4 + 1] as number) +
+			0.0722 * (image.data[at * 4 + 2] as number);
+		mask[at] = luma < 254 ? 1 : 0;
+	}
+	return { width, height, mask };
+}
+
 /** A box of pixels, edges included. */
 export interface Box {
 	readonly left: number;
@@ -1496,6 +1670,16 @@ export function widthProfile(spans: Int32Array, box: Box, bands = PROFILE_BANDS)
  */
 const MOUND_FROM = 0.7;
 const MOUND_TO = 0.95;
+/** How much of a mound a plant must be before the bole rule reaches its crown start. */
+const MOUND_BOLE_FROM = 0.5;
+/** How many trunk widths a row may stand before it belongs to the crown rather than the bole. */
+const BOLE_MULTIPLE = 2.5;
+/**
+ * The share of the plant's widest row at which a trunk stops reading as a stem. A row's outermost
+ * span joins a stem to the boughs that sweep beside it and can stand as wide as the crown; above
+ * this share the bole rule reads the stem from its own central run.
+ */
+const CORRUPT_TRUNK_SHARE = 0.5;
 
 /** A value that rises smoothly from 0 at `from` to 1 at `to`, and stays at the ends. */
 function smoothstep(from: number, to: number, value: number): number {
@@ -1504,20 +1688,10 @@ function smoothstep(from: number, to: number, value: number): number {
 }
 
 /**
- * The row where the crown starts: going up from the plant's base, the first row from which the
- * plant stays wider than its trunk by a clear margin. The trunk's width is the median width of the
- * lowest rows. A plant with no bare stem runs as wide at its foot as at its widest, and its crown
- * starts at its foot; its whole box is its crown, which is what its openness is measured over.
+ * The narrowest median of the lowest bands: a stem's own width, clear of a buttressed foot and a low
+ * crown, whose widths lie above it.
  */
-export function crownStartRow(spans: Int32Array, box: Box): number {
-	const tall = box.bottom - box.top + 1;
-	const width = (y: number) => {
-		const left = spans[y * 2] as number;
-		return left < 0 ? 0 : (spans[y * 2 + 1] as number) - left + 1;
-	};
-	// The trunk's width is the narrowest median of the lowest bands: a buttressed foot widens the
-	// rows at the ground, and a low crown widens the rows above it, so the stem's own width lies in
-	// the band between the two.
+function lowestMedian(width: (y: number) => number, box: Box, tall: number): number {
 	let trunk = Number.POSITIVE_INFINITY;
 	for (const [from, to] of [
 		[0, 0.06],
@@ -1532,7 +1706,57 @@ export function crownStartRow(spans: Int32Array, box: Box): number {
 		const median = low[low.length >> 1];
 		if (median !== undefined) trunk = Math.min(trunk, median);
 	}
-	if (!Number.isFinite(trunk)) trunk = 0;
+	return Number.isFinite(trunk) ? trunk : 0;
+}
+
+/**
+ * Each row's central plant run: the width of the contiguous run nearest the plant's centre column,
+ * or 0 for a row with no plant. A row's outermost span joins a stem to the boughs that sweep beside
+ * it and reads as wide as the crown, where the central run is the stem the boughs stand apart from.
+ */
+function centralRuns(mask: Uint8Array, width: number, box: Box): Int32Array {
+	const runs = new Int32Array(box.bottom + 1);
+	const centre = (box.left + box.right) / 2;
+	for (let y = box.top; y <= box.bottom; y++) {
+		let start = -1;
+		let nearest = Number.POSITIVE_INFINITY;
+		for (let x = 0; x <= width; x++) {
+			const on = x < width && mask[y * width + x] !== 0;
+			if (on && start < 0) start = x;
+			if (!on && start >= 0) {
+				const distance = centre < start ? start - centre : centre > x - 1 ? centre - (x - 1) : 0;
+				if (distance < nearest) {
+					nearest = distance;
+					runs[y] = x - start;
+				}
+				start = -1;
+			}
+		}
+	}
+	return runs;
+}
+
+/**
+ * The row where the crown starts: going up from the plant's base, the first row from which the
+ * plant stays wider than its trunk by a clear margin. The trunk's width is the median width of the
+ * lowest rows. A plant with no bare stem runs as wide at its foot as at its widest, and its crown
+ * starts at its foot; its whole box is its crown, which is what its openness is measured over.
+ */
+export function crownStartRow(
+	spans: Int32Array,
+	box: Box,
+	central?: Int32Array,
+	moundForm = false,
+): number {
+	const tall = box.bottom - box.top + 1;
+	const width = (y: number) => {
+		const left = spans[y * 2] as number;
+		return left < 0 ? 0 : (spans[y * 2 + 1] as number) - left + 1;
+	};
+	// The trunk's width is the narrowest median of the lowest bands: a buttressed foot widens the
+	// rows at the ground, and a low crown widens the rows above it, so the stem's own width lies in
+	// the band between the two.
+	const trunk = lowestMedian(width, box, tall);
 	let widest = 0;
 	for (let y = box.top; y <= box.bottom; y++) widest = Math.max(widest, width(y));
 	// The foot's flare: the widening where the stem meets the ground, or a strip of ground that the
@@ -1589,8 +1813,50 @@ export function crownStartRow(spans: Int32Array, box: Box): number {
 	// first narrow stretch below it that the stem continues below is its base. A scan from the foot's
 	// end cannot be trusted, because a flare or a ground strip is a wide stretch of its own there.
 	const found = crownStartFromTop(spans, box, limit);
-	// The more the plant is a mound, the further its crown's foot moves towards its own foot.
-	return Math.round(found + mound * (box.bottom - found));
+	const fromMound = Math.round(found + mound * (box.bottom - found));
+	// A photograph of a whole plant can read its bole as crown: when the stem is wide the mound rule
+	// pulls the start to the foot, and the crown's box then holds the whole plant. The stem below the
+	// first row standing wider than a set multiple of the trunk's own width is not crown, so on a
+	// plant the mound rule reaches, the start never falls below that row's top. A tuft is wide at its
+	// own foot, so its first wide row is its foot and its start is unchanged.
+	// The rule reaches two cases: a plant the mound rule pulls to its foot, and any start the finder
+	// itself leaves at the foot, where a photograph's bole reads as crown. A close view's crown
+	// starts well above its foot, so its start is untouched.
+	const footStart = box.bottom - fromMound <= Math.max(1, Math.round(tall * 0.01));
+	if (mound <= MOUND_BOLE_FROM && !footStart) return fromMound;
+	// A low crown whose boughs sweep beside the stem makes a row's outermost span as wide as the
+	// crown, so a trunk read from it stands as wide as the plant and the bole cap never fires. Where
+	// that shows, the stem is the row's own central run: scan that, past the frame's bottom sliver
+	// and the foot's flare, for the first row above the stem that stands wider than the bole limit.
+	const stem =
+		central !== undefined && !moundForm && widest > 0 && trunk > widest * CORRUPT_TRUNK_SHARE
+			? central
+			: undefined;
+	const boleLimit =
+		(stem === undefined ? trunk : lowestMedian((y) => stem[y] as number, box, tall)) *
+		BOLE_MULTIPLE;
+	let bole = foot;
+	if (stem === undefined) {
+		// The scan starts above the strip of ground the mask keeps at the plant's foot, which is often
+		// the widest run of all and is not the bole.
+		for (let y = foot; y > box.top; y--) {
+			if (width(y) > boleLimit) {
+				bole = y;
+				break;
+			}
+		}
+	} else {
+		const at = (y: number) => stem[y] as number;
+		let y = foot;
+		while (y > box.top && at(y) <= 2) y--;
+		while (y > box.top && at(y) > boleLimit) y--;
+		for (; y > box.top; y--)
+			if (at(y) > boleLimit) {
+				bole = y;
+				break;
+			}
+	}
+	return Math.min(fromMound, bole);
 }
 
 /**
@@ -1655,7 +1921,7 @@ function meanColour(
 }
 
 /** Measures a plant from its outline in a picture. */
-export function measurePlant(image: Rgba, plant: PlantMask): PlantMeasures {
+export function measurePlant(image: Rgba, plant: PlantMask, moundForm = false): PlantMeasures {
 	const { width, height, mask, coverage, background } = plant;
 	const work = image.width === width ? image : resizeToWidth(image, width);
 	const lab = labImage(work);
@@ -1693,7 +1959,7 @@ export function measurePlant(image: Rgba, plant: PlantMask): PlantMeasures {
 			light: null,
 		};
 	const spans = rowSpans(mask, width, height);
-	const start = crownStartRow(spans, box);
+	const start = crownStartRow(spans, box, centralRuns(mask, width, box), moundForm);
 	const tall = box.bottom - box.top + 1;
 	// The crown's outline: in each crown row, everything between the row's outermost plant pixels.
 	let hull = 0;

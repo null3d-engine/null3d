@@ -109,6 +109,34 @@ describe('the species header', () => {
 		expect(header.length).toBe(HEADER_ROWS * RECORDS_WIDTH * 4);
 	});
 
+	test('draws as before when the record names no sky-to-leaf term', () => {
+		expect([...speciesHeader(record, manifest, box)]).toEqual([...header]);
+		expect(texel(header, HEADER.sway)[3]).toBe(0);
+	});
+
+	test('packs the sky-to-leaf extinction in the sway texel', () => {
+		const lit = speciesHeader({ ...record, skyToLeaf: 0.3 }, manifest, box);
+		expect(texel(lit, HEADER.sway)[3]).toBeCloseTo(0.3, 6);
+	});
+
+	test('packs the two colours of a tuft sheath, and none where the record gives none', () => {
+		const tuft = {
+			...record,
+			growth: {
+				model: 'tuft',
+				sheathColour: { foot: [0.3, 0.4, 0.2], collar: [0.5, 0.6, 0.7], reach: 0.85 },
+			},
+		} as unknown as Species;
+		const sheathed = speciesHeader(tuft, manifest, box);
+		for (const [k, v] of [0.3, 0.4, 0.2, 0.7].entries())
+			expect(texel(sheathed, HEADER.sheath)[k] as number).toBeCloseTo(v, 5);
+		for (const [k, v] of [0.5, 0.6, 0.7, 0.85].entries())
+			expect(texel(sheathed, HEADER.sheathCollar)[k] as number).toBeCloseTo(v, 5);
+		// The blade-leaved record names no tuft, so both sheath texels stay empty.
+		expect(texel(header, HEADER.sheath)).toEqual([0, 0, 0, 0]);
+		expect(texel(header, HEADER.sheathCollar)).toEqual([0, 0, 0, 0]);
+	});
+
 	test('holds each face its own scale, share and roughness from its own mean', () => {
 		const upper = faceTerms([0.05, 0.09, 0.02], [0.07, 0.12, 0.025], [0.04, 0.08, 0.02]);
 		const lower = faceTerms([0.2, 0.25, 0.2], [0.07, 0.12, 0.025], [0.22, 0.28, 0.21]);
@@ -151,6 +179,37 @@ describe('the species header', () => {
 		const stalked: Species = { ...record, lod: { ...record.lod, cardStalk: 1.5 } };
 		expect(texel(speciesHeader(stalked, manifest, box), HEADER.cardStalk)[0]).toBeCloseTo(1.5, 6);
 	});
+	test("writes a fire scar's hollow and char into the header, or zeroes it where the record gives none", () => {
+		expect(texel(header, HEADER.scar)).toEqual([0, 0, 0, 0]);
+		expect(texel(header, HEADER.scarColour)).toEqual([0, 0, 0, 0]);
+		const scarred: Species = {
+			...record,
+			base: {
+				flare: { amount: 0.3, height: 0.5 },
+				scar: {
+					from: 0.2,
+					to: 4,
+					angle: 90,
+					width: 40,
+					depth: 0.5,
+					colour: [0.01, 0.012, 0.009],
+					shade: 0.8,
+				},
+			},
+		};
+		const written = speciesHeader(scarred, manifest, box);
+		const scar = texel(written, HEADER.scar);
+		expect(scar[0]).toBeCloseTo(0.2, 3);
+		expect(scar[1]).toBeCloseTo(4, 3);
+		expect(scar[2]).toBeCloseTo(Math.PI / 2, 4);
+		expect(scar[3]).toBeCloseTo((Math.PI * 40) / 180 / 2, 4);
+		const colour = texel(written, HEADER.scarColour);
+		expect(colour[0]).toBeCloseTo(0.01, 5);
+		expect(colour[1]).toBeCloseTo(0.012, 5);
+		expect(colour[2]).toBeCloseTo(0.009, 5);
+		expect(colour[3]).toBeCloseTo(0.8, 5);
+	});
+
 	test('gives the whole plant its species sway, in metres at its top and cycles a second', () => {
 		const sway = record.wind.sway;
 		const written = texel(header, HEADER.sway);
@@ -388,6 +447,7 @@ describe('the plant shader', () => {
 			HEADER_SHEATH: HEADER.sheath,
 			HEADER_EXTRA_BANDS: HEADER.extraBands,
 			HEADER_CARD_STALK: HEADER.cardStalk,
+			HEADER_CARD_COVERAGE: HEADER.cardCoverage,
 			BARK_ZONE_TEXELS,
 			MAX_BARK_ZONES,
 			MAX_EXTRAS,

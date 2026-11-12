@@ -42,7 +42,7 @@ import { VARIANT_RECORDS } from '../wind/records';
 import { lathe, MeshWriter, SURFACE_STEM, sideAxes } from './writer';
 
 /** Faces round an extra by level; the thinned level draws the fewest. */
-const SIDES: Readonly<Record<MeshLevel, number>> = { 0: 8, 1: 5, 2: 4 };
+const SIDES: Readonly<Record<MeshLevel, number>> = { 0: 8, 1: 5, 2: 3 };
 /**
  * Extras smaller than this, in metres, are left out of the thinned level of a plant without shoots,
  * where they cover no pixel.
@@ -370,6 +370,8 @@ function colourOf(site: Site, index: number): number[] {
  * beside its twig.
  */
 const STALK_OVERLAP = 0.02;
+/** Metres a hanging body reaches back into its support, so the two tubes share a length. */
+const BODY_ROOT = 0.012;
 /** Degrees a copy's own footstalk splays from the shared stalk at its fork. */
 const PEDICEL_SPLAY = 60;
 /** Degrees a body leans from straight down below its footstalk. */
@@ -756,15 +758,33 @@ function writeExtra(
 				profile = fine;
 			}
 		} else {
-			const { length, radius } = shape.catkin;
-			profile = [
-				// The foot takes the body's width at the stalk, so a thin hanging spike keeps its
-				// join through a silhouette's half-cover cutoff instead of pinching to nothing.
-				[radius, 0],
-				[radius, length * 0.15],
-				[radius, length * 0.8],
-				[0, length],
-			];
+			const { length, radius, spikelets } = shape.catkin;
+			const rows = spikelets?.count ?? 0;
+			if (rows > 0) {
+				// A sedge's spike is a cluster of short spikelets: a ring of swellings for each
+				// row along the body, so the silhouette carries the cluster's own edge.
+				const bulge = spikelets?.bulge ?? 0.35;
+				const from = 0.12;
+				const to = 0.88;
+				const rings = rows * 2;
+				profile = [[radius, 0]];
+				for (let k = 0; k <= rings; k++) {
+					const t = from + ((to - from) * k) / rings;
+					const swell = k % 2 === 0 ? 1 + bulge : 1 - bulge * 0.45;
+					profile.push([radius * swell, length * t]);
+				}
+				profile.push([radius * 0.55, length * 0.95]);
+				profile.push([0, length]);
+			} else {
+				profile = [
+					// The foot takes the body's width at the stalk, so a thin hanging spike keeps its
+					// join through a silhouette's half-cover cutoff instead of pinching to nothing.
+					[radius, 0],
+					[radius, length * 0.15],
+					[radius, length * 0.8],
+					[0, length],
+				];
+			}
 		}
 		// A band colour meets the body at a sharp edge, so each end of the band stands twice.
 		const banded =
@@ -772,10 +792,18 @@ function writeExtra(
 				? bandEdges(profile, shape.scaled[0], shape.scaled[1])
 				: undefined;
 		if (banded) profile = banded.profile;
+		// A hanging body roots a short way back along the support it hangs from, so the body's tube
+		// and the stalk's share a length rather than meeting at a point that a thin outline drops.
+		const root = 'catkin' in shape ? Math.min(BODY_ROOT, shape.catkin.length * 0.15) : 0;
+		const base: Readonly<Vector3> = [
+			site.at[0] - site.direction[0] * root,
+			site.at[1] - site.direction[1] * root,
+			site.at[2] - site.direction[2] * root,
+		];
 		const first = mesh.vertices;
 		if (scaledTo > scaledFrom)
-			scallopedLathe(mesh, profile, site.at, direction, sides, colour, scaledFrom, scaledTo);
-		else lathe(mesh, profile, site.at, direction, sides, colour);
+			scallopedLathe(mesh, profile, base, direction, sides, colour, scaledFrom, scaledTo);
+		else lathe(mesh, profile, base, direction, sides, colour);
 		// The band's crevices take part of the body's colour on every other vertex round each ring,
 		// offset from ring to ring, so a cup reads as rows of overlapping scales. Each scale's own
 		// shade then departs from its neighbours' by a fixed share, so no two read alike.

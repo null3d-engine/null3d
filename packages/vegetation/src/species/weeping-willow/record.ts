@@ -184,63 +184,99 @@ export const record: Species = {
 		cuttingClasses: [
 			{
 				name: 'cut',
+				cutOnly: true,
 				vigor: [0, 1],
 				share: 0,
 				years: 2,
 				length: { mean: 1, spread: 0.1 },
-				nodes: { mean: 7, spread: 1 },
+				nodes: { mean: 36, spread: 4 },
 				internode: [
 					[0, 1.6],
 					[0.5, 1],
 					[1, 0.8],
 				],
 				stem: { radius: [0.012, 0.006] },
-				laterals: { mean: 2.7, spread: 0.3 },
+				laterals: { mean: 3, spread: 0 },
 				lateralGap: 0.25,
 				bend: { length: 0.09, angle: 19 },
 				leafScale: [
-					[0, 0.85],
-					[1, 0.95],
+					[0, 1.25],
+					[1, 1.4],
 				],
 				leafAngle: [
-					[0, 38],
-					[1, 50],
+					[0, 22],
+					[1, 32],
 				],
 				leafAngleSpread: 10,
 				leafYears: 2,
+				// The piece's leaves face across its two ranks rather than up, so a camera looking
+				// at the branch's plane sees the blades and not their edges.
+				phyllotaxis: { kind: 'distichous', flatten: 0.2 },
+				skyward: 0.05,
+				droop: 70,
+			},
+			{
+				// Stills 09 and 10: a fine twig on its own, so a close view can draw the separate
+				// thin twigs the photographs show while the studio piece draws the whole branch.
+				name: 'twig',
+				cutOnly: true,
+				vigor: [0, 1],
+				share: 0,
+				years: 1,
+				length: { mean: 0.35, spread: 0.05 },
+				nodes: { mean: 14, spread: 1 },
+				internode: [
+					[0, 1.2],
+					[1, 0.8],
+				],
+				stem: { radius: [0.003, 0.0015] },
+				laterals: { mean: 0, spread: 0 },
+				bend: { length: 0.05, angle: 20 },
+				leafScale: [
+					[0, 0.9],
+					[1, 1],
+				],
+				leafAngle: [
+					[0, 30],
+					[1, 42],
+				],
+				leafAngleSpread: 12,
+				leafYears: 1,
 				skyward: 0.2,
 				droop: 55,
 			},
 			{
 				name: 'spray',
+				cutOnly: true,
 				vigor: [0, 1],
 				share: 0,
 				years: 2,
 				length: { mean: 0.35, spread: 0.04 },
-				nodes: { mean: 4, spread: 1 },
+				nodes: { mean: 8, spread: 1 },
 				internode: [
 					[0, 1.4],
 					[1, 0.9],
 				],
 				stem: { radius: [0.005, 0.003] },
-				laterals: { mean: 2, spread: 0.5 },
-				lateralGap: 0.3,
+				// The piece's rows are its hanging shoots, so a row carries none of its own.
+				laterals: { mean: 0, spread: 0 },
 				bend: { length: 0.07, angle: 22 },
 				leafScale: [
-					[0, 0.85],
-					[1, 1],
+					[0, 1],
+					[1, 1.1],
 				],
 				leafAngle: [
-					[0, 38],
-					[1, 50],
+					[0, 30],
+					[1, 40],
 				],
 				leafAngleSpread: 12,
 				leafYears: 1,
 				skyward: 0.2,
-				droop: 45,
+				droop: 60,
 			},
 			{
 				name: 'spur',
+				cutOnly: true,
 				vigor: [0, 1],
 				share: 0,
 				years: 1,
@@ -260,6 +296,65 @@ export const record: Species = {
 				leafAngleSpread: 12,
 				skyward: 0.25,
 				droop: 3,
+			},
+			{
+				// Still 09: a secondary branch's twig with fewer, larger leaves, so a close picture at
+				// the review's work width keeps every leaf joined to its stem. It is last so the
+				// classes before it keep the places their prototypes were grown from.
+				name: 'twig-big',
+				cutOnly: true,
+				vigor: [0, 1],
+				share: 0,
+				years: 1,
+				length: { mean: 0.35, spread: 0.05 },
+				nodes: { mean: 24, spread: 1 },
+				internode: [
+					[0, 1.2],
+					[1, 0.8],
+				],
+				stem: { radius: [0.003, 0.0015] },
+				laterals: { mean: 0, spread: 0 },
+				bend: { length: 0.05, angle: 20 },
+				leafScale: [
+					[0, 1.4],
+					[1, 1.6],
+				],
+				leafAngle: [
+					[0, 25],
+					[1, 35],
+				],
+				leafAngleSpread: 10,
+				leafYears: 1,
+				skyward: 0.2,
+				droop: 55,
+			},
+			{
+				// A stem for a cut piece that carries hanging laterals: one straight year's shoot,
+				// thin and clean, so the laterals carry the leaves and the stem reads as the
+				// photograph's branch. It is last so the classes before it keep their prototype places.
+				name: 'whip-stem',
+				cutOnly: true,
+				vigor: [0, 1],
+				share: 0,
+				years: 1,
+				length: { mean: 1.6, spread: 0.05 },
+				nodes: { mean: 24, spread: 2 },
+				internode: RANK,
+				stem: { radius: [0.009, 0.004] },
+				laterals: { mean: 0, spread: 0 },
+				bend: { length: 0.09, angle: 15 },
+				leafScale: [
+					[0, 0.8],
+					[1, 0.9],
+				],
+				leafAngle: [
+					[0, 30],
+					[1, 40],
+				],
+				leafAngleSpread: 10,
+				leafYears: 1,
+				skyward: 0.15,
+				droop: 70,
 			},
 		],
 		// Stills 11 and 23: one leaf at each node, in two opposite ranks down the shoot, and each
@@ -429,6 +524,9 @@ export const record: Species = {
 		// A hanging shoot's card stands its whole length ahead of the row that draws it, so the
 		// stalk runs on to the card's centre and the curtain meets the wood it grows from.
 		cardStalkToFoliage: true,
+		// Stills 01 and 02: the card's leaves scatter into separate islands at a whole view, so each
+		// card also draws its shoot's own axis as one connected strand for the leaves to join.
+		cardStrand: 1,
 		woodOrders: [2, 1],
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
@@ -449,10 +547,14 @@ export const record: Species = {
 	forms,
 	roundBand,
 	cuttings: {
-		// Still 21: a metre of arching branch with its hanging shoots still on it.
-		branch: { shoot: 'cut' },
-		// Still 22: a short twig with two or three pliant shoots hanging from its end.
-		subbranch: { shoot: 'spray' },
+		// Still 21: a metre of arching branch with its hanging shoots still on it. The shoots share
+		// one base and open as a fan across their own leaf plane, and the whole piece turns a quarter
+		// about its axis so that plane and its side shoots face the frame.
+		branch: { shoot: 'cut', shoots: 8, layout: 'fan', spread: 0.25, fanYaw: 90 },
+		// Still 22: a short twig with two or three pliant shoots hanging from its end. Its photograph
+		// is narrower than the branch's, so its fan opens less; the shoots are the piece's own rows,
+		// and a row carries no laterals of its own.
+		subbranch: { shoot: 'spray', shoots: 3, layout: 'fan', spread: 0.25, fanYaw: 90 },
 		// Still 23: the end of one shoot, its narrow leaves in alternate ranks.
 		cluster: { shoot: 'spur' },
 		// Stills 12, 13, 24 and 25 lay the leaf flat on a copy stand.
