@@ -63,6 +63,19 @@ const PIECE_AREA = 24;
 /** The views that photograph the bark close up, whatever words a species puts in its file names. */
 const BARK_VIEWS: ReadonlySet<string> = new Set(['bark-base', 'bark-mid', 'bark-limb']);
 
+/**
+ * Whether a picture separates a plant from a plain background, so its outline can be read. A bark
+ * close view photographs the bark against bark, and a bark texture is a cut-out of the material:
+ * neither has a plant outline, and their rows read colour. A leaf texture is a cut-out on white
+ * and keeps its outline. A species' slot can also name a picture whose own background is the
+ * subject, such as a far scrub band that the fitted sky and ground admit; that picture carries no
+ * outline either, and the crown box and its gap, which `measurePlant` reads from the same mask, go
+ * with it rather than staying beside the null figures.
+ */
+export function hasSeparableOutline(view: string, kind: string, noOutline = false): boolean {
+	return !noOutline && !(BARK_VIEWS.has(view) || (kind === 'texture' && !view.startsWith('leaf')));
+}
+
 /** The camera's framing of a reference, in screen shares, as the review page takes it. */
 export interface ReferenceFraming {
 	readonly horizon: number;
@@ -1405,6 +1418,13 @@ export function compareStills(
 		const refPlant = plantMask(refImage);
 		const refSide = side(slot.file, refImage, refPlant, false, moundForm);
 		const render = renderSideOf(runDir, frame, frame.file, false, moundForm);
+		// A bark close view photographs the bark against bark, and a bark texture is a cut-out of
+		// the material, so neither separates a plant from a background. Their rows read colour,
+		// never an outline: a mask fitted to a picture with no plain border invents one. The same
+		// holds for a picture whose slot names its own background as the subject, such as a far
+		// scrub band the fitted sky and ground admit.
+		const drawn = frame.query?.view ?? slot.view;
+		const noOutline = !hasSeparableOutline(drawn, slot.kind, frame.query?.noOutline === true);
 		const fittedKind = refPlant.background.plain
 			? null
 			: skyMaskable(refPlant.background)
@@ -1413,8 +1433,9 @@ export function compareStills(
 					? ('ground' as const)
 					: null;
 		const masked =
-			(fittedKind === null && frame.matte !== undefined) ||
-			(fittedKind !== null && (frame.matte !== undefined || render.measures.box !== undefined));
+			!noOutline &&
+			((fittedKind === null && frame.matte !== undefined) ||
+				(fittedKind !== null && (frame.matte !== undefined || render.measures.box !== undefined)));
 		const pair = pairMetrics(masked ? refSide : { ...refSide, normal: undefined }, render);
 		const bark = slot.kind === 'texture' && !slot.view.startsWith('leaf');
 		// The shot carries the query the page was asked for, which is where a species' slot file
@@ -1432,7 +1453,6 @@ export function compareStills(
 		// The view the picture was drawn at, from the shot's own query, is what decides whether its
 		// colour is a bark colour: a species that names a picture's view draws that view, and the
 		// reference's number must not overrule it.
-		const drawn = frame.query?.view ?? slot.view;
 		const barkClose = slot.kind !== 'texture' && BARK_VIEWS.has(drawn);
 		const barkColour = barkClose
 			? { reference: patchLab(refImage, barkMaskOn), render: patchLab(render.image, barkMaskOn) }
@@ -1444,8 +1464,9 @@ export function compareStills(
 		// reference's. A part that meets nothing, such as a fruit on a stalk, adds a piece here
 		// while every other figure stays sound. The render's own outline is exact wherever the run
 		// drew a matte, so the render's count stands on its own when the reference does not separate.
-		const pieces =
-			frame.matte !== undefined
+		const pieces = noOutline
+			? null
+			: frame.matte !== undefined
 				? {
 						reference:
 							refPlant.background.plain ||
