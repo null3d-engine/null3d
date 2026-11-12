@@ -61,7 +61,7 @@ function spreadProblems(spread: Spread, path: string, positive: boolean, out: st
 		out.push(`${path} can draw ${mean - half}; it must stay above 0`);
 }
 
-/** A species' sparse floors' problems: each share from 0.05 to 1, and the coarsening from 0 to 1. */
+/** A species' sparse floors' problems: each share from 0.05 to 1, and the coarsenings from 0 to 1. */
 function sparseProblems(record: Species, out: string[]): void {
 	const sparse = record.sparse;
 	if (!sparse) return;
@@ -72,6 +72,7 @@ function sparseProblems(record: Species, out: string[]): void {
 	}
 	if (sparse.coarseness < 0 || sparse.coarseness > 1)
 		out.push(`sparse.coarseness is ${sparse.coarseness}; it lies from 0 to 1`);
+	shareProblem(sparse.sections, 'sparse.sections', out);
 }
 
 /** A share's problems: it lies from 0 to 1. */
