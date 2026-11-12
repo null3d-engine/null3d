@@ -113,6 +113,11 @@ const JUNCTION_THICK = 0.5;
  * The share of the thickest limb's radius down to which a thinner limb still joins the candidates,
  * so a crown-rosette's dead skirt, whose stipes leave the trunk below the living crown, can give a
  * junction whose crotch stands clear of the fronds. The thickness bonus ranks it below a thick limb.
+ *
+ * The premise that a thin limb means a dead skirt fails where a species' dead fronds leave at the
+ * stem top: the tree fern has no stipe below its crown, and its only clear thin crotch is a living
+ * frond this rule excludes. Its picture 07 is a stated subject limit with three measured attempts,
+ * and no per-species admission. A species whose thin living limb should stand needs its own record.
  */
 const JUNCTION_SKIRT_THICK = 0.2;
 /** Degrees within which a limb that leaves the stem carries the stem's own line on. */
