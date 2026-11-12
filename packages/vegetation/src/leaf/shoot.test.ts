@@ -804,6 +804,77 @@ describe('the shoot rows', () => {
 		expect(placeShoots({ ...input, seed: 12 }).rotation).not.toEqual(a.rotation);
 	});
 
+	it('gives each row the scale its height in the crown sets', () => {
+		const plain: Species = {
+			...record,
+			shoots: {
+				...record.shoots!,
+				placement: {
+					...record.shoots!.placement,
+					shadePrune: 0,
+					skyPrune: 0,
+					tipPrune: undefined,
+					bareTrim: 0,
+				},
+			},
+		};
+		const shaped: Species = {
+			...plain,
+			shoots: {
+				...plain.shoots!,
+				placement: {
+					...plain.shoots!.placement,
+					scaleByHeight: [
+						[0, 1],
+						[1, 0.5],
+					],
+				},
+			},
+		};
+		const before = placeShoots({ ...input, record: plain });
+		const after = placeShoots({ ...input, record: shaped });
+		expect(after.count).toBe(before.count);
+		expect(after.count).toBeGreaterThan(0);
+		let low = 0;
+		let high = 0;
+		for (let r = 0; r < after.count; r++) {
+			if ((after.position[r * 3 + 1] as number) < (after.position[low * 3 + 1] as number)) low = r;
+			if ((after.position[r * 3 + 1] as number) > (after.position[high * 3 + 1] as number))
+				high = r;
+		}
+		// The scale multiplier follows the row's height in the crown: each row takes the curve at its
+		// crown share, so the highest rows take half and no row is left at the plain scale.
+		const top = skeleton.height - skeleton.crownBase || 1;
+		let upper = 0;
+		let upperCount = 0;
+		let lower = 0;
+		let lowerCount = 0;
+		for (let r = 0; r < after.count; r++) {
+			const ratio = (after.scale[r] as number) / (before.scale[r] as number);
+			expect(ratio).toBeGreaterThanOrEqual(0.5);
+			expect(ratio).toBeLessThanOrEqual(1);
+			const share = ((after.position[r * 3 + 1] as number) - skeleton.crownBase) / top;
+			if (share > 0.75) {
+				upper += ratio;
+				upperCount++;
+			} else if (share < 0.25) {
+				lower += ratio;
+				lowerCount++;
+			}
+		}
+		// The crown's top rows take the shortened scale and its skirt keeps the plain one.
+		expect(upperCount).toBeGreaterThan(0);
+		expect(lowerCount).toBeGreaterThan(0);
+		expect(upper / upperCount).toBeLessThan(0.8);
+		// The oak's rows sit above its crown base, so its lowest rows already read partway along the
+		// curve; they still keep more of the plain scale than the top rows do.
+		expect(lower / lowerCount).toBeGreaterThan(upper / upperCount);
+		expect((after.scale[high] as number) / (before.scale[high] as number)).toBeLessThan(0.95);
+		expect((after.scale[low] as number) / (before.scale[low] as number)).toBeGreaterThan(
+			(after.scale[high] as number) / (before.scale[high] as number),
+		);
+	});
+
 	it("keeps the record's shoots per metre along the axes that carry buds", () => {
 		const rows = placeShoots(input);
 		const buds = skeleton.buds;
@@ -881,6 +952,100 @@ describe('the shoot rows', () => {
 		// A clump at no depth is the even placement again.
 		const flat = clumped(2.5, 0);
 		expect(Math.abs(flat.count - even.count)).toBeLessThan(even.count * 0.05);
+	});
+
+	it('stands the shoots on the limb masses when the record asks', () => {
+		const massed = (limbMass?: NonNullable<typeof OAK_SHOOTS.placement>['limbMass']) =>
+			placeShoots({
+				...input,
+				record: {
+					...record,
+					shoots: {
+						...OAK_SHOOTS,
+						placement: { ...OAK_SHOOTS.placement, limbMass },
+					},
+				},
+			});
+		const even = massed();
+		const gathered = massed({ order: 1, hold: 0.5, reach: 2, depth: 1 });
+		// The foliage keeps to the coarse wood, so the crown carries fewer rows.
+		expect(gathered.count).toBeLessThan(even.count);
+		// A row's distance to the nearest coarse node: the kept rows stand nearer that wood.
+		const distanceToCoarse = (rows: ReturnType<typeof placeShoots>) => {
+			const axes = skeleton.axes;
+			const coarse: number[] = [];
+			for (let a = 0; a < axes.count; a++) if ((axes.order[a] as number) <= 1) coarse.push(a);
+			const near = (r: number) => {
+				let best = Number.POSITIVE_INFINITY;
+				for (const a of coarse)
+					for (let n = axes.first[a] as number; n <= (axes.last[a] as number); n++) {
+						const dx = (rows.position[r * 3] as number) - (skeleton.position[n * 3] as number);
+						const dy =
+							(rows.position[r * 3 + 1] as number) - (skeleton.position[n * 3 + 1] as number);
+						const dz =
+							(rows.position[r * 3 + 2] as number) - (skeleton.position[n * 3 + 2] as number);
+						best = Math.min(best, Math.sqrt(dx * dx + dy * dy + dz * dz));
+					}
+				return best;
+			};
+			let sum = 0;
+			for (let r = 0; r < rows.count; r++) sum += near(r);
+			return sum / Math.max(1, rows.count);
+		};
+		expect(distanceToCoarse(gathered)).toBeLessThan(distanceToCoarse(even) * 0.9);
+		// Absent, the crown is the record's own, row for row; and no depth keeps it too.
+		expect(Array.from(even.position)).toEqual(Array.from(massed(undefined).position));
+		const flat = massed({ order: 1, hold: 0.5, reach: 2, depth: 0 });
+		expect(Math.abs(flat.count - even.count)).toBeLessThan(even.count * 0.05);
+		// A part of the mass thin enough bears nothing at all, so the trim takes its wood with it:
+		// the crown keeps its rows nearer the coarse wood and the skeleton loses the bare stretches.
+		const trimmed = (limbMass: NonNullable<typeof OAK_SHOOTS.placement>['limbMass']) =>
+			dressShoots({
+				...input,
+				record: {
+					...record,
+					shoots: {
+						...OAK_SHOOTS,
+						placement: { ...OAK_SHOOTS.placement, bareTrim: 0.1, limbMass },
+					},
+				},
+			});
+		const setting = { order: 1, hold: 0.5, reach: 2, depth: 1 } as const;
+		const solid = trimmed(setting);
+		const gated = trimmed({ ...setting, bare: 0.5 });
+		expect(gated.rows.count).toBeLessThan(solid.rows.count);
+		expect(gated.skeleton.axes.count).toBeLessThan(solid.skeleton.axes.count);
+		expect(distanceToCoarse(gated.rows)).toBeLessThanOrEqual(distanceToCoarse(solid.rows));
+	});
+
+	it('caps the rows one axis carries when the record asks', () => {
+		const capped = (rowsPerAxis?: number) =>
+			dressShoots({
+				...input,
+				record: {
+					...record,
+					shoots: {
+						...OAK_SHOOTS,
+						placement: { ...OAK_SHOOTS.placement, rowsPerAxis },
+					},
+				},
+			});
+		// Absent, the crown is the record's own, row for row.
+		const plain = capped(undefined);
+		expect(Array.from(plain.rows.position)).toEqual(Array.from(capped(undefined).rows.position));
+		// The budget holds on every axis, and the rows it drops are spread along the axes.
+		const perAxis = (rows: ReturnType<typeof capped>['rows']) => {
+			const counts = new Map<number, number>();
+			for (let r = 0; r < rows.count; r++)
+				counts.set(rows.record[r] as number, (counts.get(rows.record[r] as number) ?? 0) + 1);
+			return [...counts.values()];
+		};
+		const tight = capped(1);
+		expect(Math.max(...perAxis(tight.rows))).toBe(1);
+		expect(tight.rows.count).toBeLessThan(plain.rows.count);
+		const loose = capped(3);
+		expect(Math.max(...perAxis(loose.rows))).toBeLessThanOrEqual(3);
+		expect(loose.rows.count).toBeGreaterThanOrEqual(tight.rows.count);
 	});
 
 	it('gathers the shoots of one bud into a tuft at its node when the record asks', () => {
@@ -1232,6 +1397,27 @@ describe('the bare trim', () => {
 		const skeleton = tree();
 		const ends = [1, 2, 3, 5, 6].map((a) => skeleton.axes.last[a] as number);
 		expect(bareTrimmed(skeleton, ends, [1, 2, 3, 5, 6], 0.05, 1)).toBeUndefined();
+	});
+
+	it('cuts every branch end at its last shoot when the crop asks, and a branch left bare goes', () => {
+		const skeleton = tree();
+		const node = (skeleton.axes.first[1] as number) + 1;
+		const out = bareTrimmed(skeleton, [node], [1], 0.05, 1, true);
+		expect(out).toBeDefined();
+		const { skeleton: kept, axisOut } = out as NonNullable<typeof out>;
+		// The stem, the bearing branch and the dead stub stay; the thick branch with no shoot and the
+		// one that thins both go, because neither carries foliage.
+		expect(axisOut[0]).toBeGreaterThanOrEqual(0);
+		expect(axisOut[1]).toBeGreaterThanOrEqual(0);
+		expect(axisOut[2]).toBe(-1);
+		expect(axisOut[3]).toBe(-1);
+		expect(axisOut[4]).toBe(-1);
+		expect(axisOut[5]).toBeGreaterThanOrEqual(0);
+		expect(axisOut[6]).toBe(-1);
+		const length = (axis: number) =>
+			(kept.axes.last[axis] as number) - (kept.axes.first[axis] as number) + 1;
+		expect(length(axisOut[1] as number)).toBe(2);
+		expect(length(axisOut[5] as number)).toBe(3);
 	});
 });
 

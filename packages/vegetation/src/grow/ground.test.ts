@@ -28,7 +28,7 @@ import type { PlantTaskInput } from '../generate-task';
 import { bladeHalf } from '../leaf/grass-blade';
 import { builder as thickBuilder } from '../leaf/thick-leaf';
 import { dequantisePosition } from '../lod/quantise';
-import { AXIS_LEAF } from './ground';
+import { AXIS_LEAF, SHEATH_KIND } from './ground';
 import { GROUND_TEST_SPECIES, hostaRecord, meadowGrassRecord, sedgeRecord } from './ground.fixture';
 
 for (const species of GROUND_TEST_SPECIES) await loadPlantCode(species.record);
@@ -190,6 +190,79 @@ self.onmessage = async (event) => {
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
+	});
+});
+
+describe('the tuft sheath marker', () => {
+	const growth = meadowGrassRecord.growth;
+	if (growth.model !== 'tuft') throw new Error('the meadow grass is a tuft');
+	const sheathed: Species = {
+		...meadowGrassRecord,
+		growth: {
+			...growth,
+			sheathColour: {
+				foot: [0.366, 0.38, 0.309],
+				collar: [0.366, 0.38, 0.309],
+				reach: 0.85,
+			},
+		},
+	};
+	const grow = (record: Species) => {
+		const kit = buildKitNow(
+			{ record, textures: noTextureFiles(record.id) },
+			{ placeholders: 'missing' },
+		);
+		return growPlantNow(kit, OPTIONS);
+	};
+	const marked = grow(sheathed);
+	// The meadow's own record now names a colour, so the comparison strips it: the same plant
+	// without a sheath colour keeps every run's full phase byte.
+	const plain = grow({ ...meadowGrassRecord, growth: { ...growth, sheathColour: undefined } });
+
+	/** The merged foliage's colour bytes, part by part. */
+	const foliageColours = (asset: PlantAsset) =>
+		asset.levels[0].parts
+			.filter((part) => part.name === 'foliage')
+			.map((part) => part.arrays.colors as Uint8Array);
+
+	it('marks the sheath columns in the flutter byte and holds the plant otherwise', () => {
+		expect(marked.skeleton.nodeCount).toBe(plain.skeleton.nodeCount);
+		expect(marked.skeleton.height).toBe(plain.skeleton.height);
+		const a = foliageColours(marked);
+		const b = foliageColours(plain);
+		expect(a.length).toBe(b.length);
+		let sheathVertices = 0;
+		let vertices = 0;
+		for (let p = 0; p < a.length; p++) {
+			const one = a[p] as Uint8Array;
+			const other = b[p] as Uint8Array;
+			expect(one.length).toBe(other.length);
+			for (let i = 0; i < one.length; i += 4) {
+				// The wind record and the sky visibility are the same plant's.
+				expect([one[i], one[i + 1], one[i + 3]]).toEqual([other[i], other[i + 1], other[i + 3]]);
+				// The phase keeps its seven low bits, and only the sheath's own byte takes the mark.
+				const byte = one[i + 2] as number;
+				if (byte === SHEATH_KIND) {
+					sheathVertices++;
+				} else {
+					expect(byte).toBe((other[i + 2] as number) >> 1);
+				}
+				vertices++;
+			}
+		}
+		expect(sheathVertices).toBeGreaterThan(0);
+		expect(sheathVertices).toBeLessThan(vertices);
+	});
+
+	it('leaves a species without a sheath colour its full eight-bit phases', () => {
+		expect(sedgeRecord.growth.model === 'tuft' && sedgeRecord.growth.sheathColour).toBe(undefined);
+		// The sedge gives no sheath colour, so its phases keep the top bit, the mark's place.
+		const phases = foliageColours(assetOf(sedgeRecord)).flatMap((part) => {
+			const out: number[] = [];
+			for (let i = 2; i < part.length; i += 4) out.push(part[i] as number);
+			return out;
+		});
+		expect(phases.some((phase) => (phase & 0x80) !== 0)).toBe(true);
 	});
 });
 
@@ -387,7 +460,7 @@ describe('the pendulous sedge', () => {
 		// The plant's bytes with the soil block stripped, at this record: a plant that names no
 		// soil grows exactly these. A deliberate record change re-records the figure, and the
 		// growth path that reads no soil must not move it.
-		expect(plantAssetDigest(growPlantNow(kit, OPTIONS))).toBe('576370cb67e331a2');
+		expect(plantAssetDigest(growPlantNow(kit, OPTIONS))).toBe('679bcdad4b68f945');
 	});
 
 	it('ends its blades in long fine points', () => {

@@ -37,6 +37,7 @@ import {
 	fixed,
 	framingQuery,
 	rubricBand,
+	SHEATH_VIEWS,
 	type StillResult,
 	type TurnResult,
 	viewSheets,
@@ -44,6 +45,7 @@ import {
 } from './lib/plant-review/compare.ts';
 import { coverageMarkdown, coverageOf } from './lib/plant-review/coverage.ts';
 import {
+	deltaE2000,
 	onColour,
 	probeVideo,
 	type Rgba,
@@ -60,6 +62,7 @@ import {
 	type Slot,
 	skyMaskable,
 	soilMaskable,
+	subjectShares,
 	TURN_VIEW,
 	type TurnVideo,
 	withSlot,
@@ -72,6 +75,7 @@ import {
 	singleShot,
 	turnShots,
 } from './lib/plant-review/render.ts';
+import { type SheathTarget, sheathTargetOf } from './lib/plant-review/sheath.ts';
 
 /** Where the reference folders are when `--refs` names a slug. */
 const REFERENCES =
@@ -138,6 +142,17 @@ async function moundFormOf(species: string): Promise<boolean> {
 	return model === 'tuft' || model === 'rosette';
 }
 
+/**
+ * The sheath target a species' review data names, if any. The target is the authored foot and
+ * collar the measure compares against; the plant record's own colour draws the surface and is not
+ * read here.
+ */
+function sheathTargetOfSpecies(species: string): SheathTarget | undefined {
+	const path = join(REPO_ROOT, 'tools/lib/plant-review/slots', `${species}.json`);
+	if (!existsSync(path)) return undefined;
+	return sheathTargetOf(JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>);
+}
+
 /** The metres a bark view frames, from the species' texture manifest when it has one. */
 function barkSpan(species: string): number | undefined {
 	const path = join(REPO_ROOT, 'packages/vegetation-textures/textures', species, 'manifest.json');
@@ -193,6 +208,17 @@ function stillShot(
 					sunRise: measures.light.rise,
 				};
 		}
+		// A junction view frames its subject so the limb's thickness and the stem's width take the
+		// shares of the frame that the picture's own subject box gives them. The box comes only from a
+		// picture whose outline separates; a picture whose reference set names no separable outline
+		// adds that to the flag, and a void box passes no shares, so the view keeps its own frame.
+		const shares = subjectShares(image.width, image.height, measures.box, plant.background.plain);
+		if (slot.view === 'junction' && shares)
+			query = {
+				...query,
+				subjectWidth: shares.width,
+				subjectHeight: shares.height,
+			};
 		if (slot.framed && measures.box) {
 			const {
 				sky: _sky,
@@ -226,7 +252,10 @@ function stillShot(
 			slot.view !== 'silhouette') ||
 		slot.framed ||
 		slot.query?.fruit === true ||
-		CUTTING_VIEWS.includes(slot.view);
+		CUTTING_VIEWS.includes(slot.view) ||
+		// A sheath picture reads its own surface off the plant alone, so its outline must be exact
+		// even where the photograph does not separate from its soil.
+		SHEATH_VIEWS.has(slot.view);
 	return singleShot(
 		'stills',
 		`${slot.file.replace(/\.\w+$/, '')}.png`,
@@ -769,6 +798,7 @@ function compareRun(
 	set: ReferenceSet | undefined,
 	windFps: number,
 	moundForm: boolean,
+	sheath: SheathTarget | undefined,
 ): boolean {
 	const byGroup = new Map<string, RunFrame[]>();
 	for (const frame of manifest.frames) {
@@ -808,6 +838,7 @@ function compareRun(
 			byGroup.get('stills') ?? [],
 			`${label}  STILLS AND TEXTURE SOURCES`,
 			moundForm,
+			sheath,
 		);
 		for (const pair of result.pairs) stills.set(pair.file, pair);
 		metrics.stills = result;
@@ -825,6 +856,25 @@ function compareRun(
 					? [`- ${pair.file}: surface colour difference ${fixed(pair.surfaceDeltaE, 1)}.`]
 					: [],
 			),
+			...result.pairs.flatMap((pair) => {
+				if (!pair.sheath) return [];
+				const { photograph, record } = pair.sheath;
+				const material = `against the record, foot ${fixed(record.foot, 1)} and collar ${fixed(record.collar, 1)} (the material check)`;
+				const patches = `from ${pair.sheath.footPixels} and ${pair.sheath.collarPixels} render pixels`;
+				return photograph
+					? [
+							`- ${pair.file}: sheath against the photograph, foot ${fixed(photograph.foot, 1)} and collar ${fixed(photograph.collar, 1)} (the row's figure); ${material}, ${patches}.`,
+						]
+					: [
+							`- ${pair.file}: the photograph's sheath cannot be isolated on this view, so the row has no photograph figure (the carrier's limit); ${material}, ${patches}.`,
+						];
+			}),
+			// A bark close view photographs the bark against bark, so it has no outline. Its row is
+			// its material, and the pair below names each side's colour and the distance between.
+			...result.pairs.flatMap((pair) => {
+				const line = masked.includes(pair) ? null : barkLine(pair);
+				return line ? [line] : [];
+			}),
 			// A picture whose backdrop the tool cannot separate still has edges, and its edges say
 			// where its parts run. It gets that figure instead of an outline it cannot trust.
 			...edgeLines(result.pairs),
@@ -945,6 +995,13 @@ function barkClause(pair: StillResult): string {
 	return `, bark photographs ${show(reference)} and draws ${show(render)}`;
 }
 
+/** A bark close view's colour pair for a picture that has no outline to carry it. */
+function barkLine(pair: StillResult): string | null {
+	if (!pair.barkColour) return null;
+	const steps = deltaE2000(pair.barkColour.reference, pair.barkColour.render);
+	return `- ${pair.file}: no plain outline${barkClause(pair)}, ${steps.toFixed(2)} steps apart.`;
+}
+
 /** Where the render is drawn as more or fewer separate pieces than its reference. */
 function pieceLines(pairs: readonly StillResult[]): string[] {
 	const lines: string[] = [];
@@ -980,6 +1037,7 @@ async function main(): Promise<void> {
 			set,
 			manifest.windFps ?? windFps,
 			await moundFormOf(manifest.species),
+			sheathTargetOfSpecies(manifest.species),
 		);
 		console.log(readFileSync(join(dir, 'summary.md'), 'utf8'));
 		if (!complete) process.exitCode = 1;
@@ -988,6 +1046,7 @@ async function main(): Promise<void> {
 	const species = positional(0) ?? option('species');
 	const folder = referenceFolder(species);
 	const set = folder ? readReferenceSet(folder, await formsOf(species)) : undefined;
+	const sheath = sheathTargetOfSpecies(species);
 	const { commit, dirty } = commitOf();
 	const stamp = new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 13);
 	const run = option('run', `${species}-${stamp}`);
@@ -1088,7 +1147,14 @@ async function main(): Promise<void> {
 	console.log(
 		`${frames.length - failed} of ${frames.length} frames drawn in ${manifest.seconds} s`,
 	);
-	const complete = compareRun(dir, manifest, set, windFps, await moundFormOf(manifest.species));
+	const complete = compareRun(
+		dir,
+		manifest,
+		set,
+		windFps,
+		await moundFormOf(manifest.species),
+		sheath,
+	);
 	console.log(readFileSync(join(dir, 'summary.md'), 'utf8'));
 	if (failed > 0 || !complete) process.exitCode = 1;
 }

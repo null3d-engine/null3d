@@ -9,9 +9,12 @@
 		"elevation": 45,
 		"distance": 1.6
 	},
+	"07-frond-leaving-trunk.png": {
+		"noOutline": true
+	},
 	"08-frond-division.png": {
 		"view": "branch",
-		"turn": 90
+		"turn": 270
 	},
 	"09-pinna.png": {
 		"view": "leaf-upper",
@@ -57,15 +60,15 @@
 		"turn": 90
 	},
 	"11-frond-group.png": {
-		"turn": 90
+		"turn": 270
 	},
 	"21-branch-studio.png": {
-		"turn": 90
+		"turn": 270
 	},
 	"22-subbranch-studio.png": {
-		"turn": 90
+		"turn": 270
 	},
 	"23-leaf-cluster-studio.png": {
-		"turn": 90
+		"turn": 270
 	}
 }
