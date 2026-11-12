@@ -487,6 +487,35 @@ function standView(
 }
 
 /**
+ * The rows the plant's feet land on from a view: the ground at the foot level, projected from the
+ * box's four ground corners. A colony's groups stand at different depths, so their feet land on
+ * different rows of the picture. This band is the ground contact the plant actually has, and a
+ * piece standing within it stands on the ground rather than in the air.
+ */
+function groundBandRows(view: View, bounds: Bounds): { top: number; base: number } {
+	const forward = normalize(sub(view.target, view.position));
+	const right = normalize(cross(forward, [0, 1, 0]));
+	const up = cross(right, forward);
+	const half = Math.tan((view.fov * DEG) / 2);
+	const y = bounds.min[1];
+	let top = Number.POSITIVE_INFINITY;
+	let base = Number.NEGATIVE_INFINITY;
+	for (const x of [bounds.min[0], bounds.max[0]])
+		for (const z of [bounds.min[2], bounds.max[2]]) {
+			const dx = x - view.position[0];
+			const dy = y - view.position[1];
+			const dz = z - view.position[2];
+			const depth = dx * forward[0] + dy * forward[1] + dz * forward[2];
+			if (depth <= 1e-6) continue;
+			const rise = dx * up[0] + dy * up[1] + dz * up[2];
+			const row = 0.5 - rise / (2 * half * depth);
+			top = Math.min(top, row);
+			base = Math.max(base, row);
+		}
+	return { top: Number.isFinite(top) ? top : 0.5, base: Number.isFinite(base) ? base : 0.5 };
+}
+
+/**
  * The rows a box's outermost corners land on from a view: the topmost and bottommost, as shares of
  * the frame's height with the frame's top at 0. These cameras stand without roll, so the view's
  * right is the world up crossed with its line of sight.
@@ -1811,6 +1840,9 @@ export default defineSketch(async (ctx) => {
 			trunkRadius: trunk?.radius ?? null,
 			limbs: skeleton.axes.count,
 			triangles: main.levels.map((level) => level.triangles),
+			// The rows the plant's own feet land on: a colony's groups stand at different depths,
+			// so a piece standing anywhere in this band stands on the ground.
+			groundRows: cells[0] ? groundBandRows(cells[0].view, bounds) : null,
 		},
 		...(piece && {
 			cutting: {
