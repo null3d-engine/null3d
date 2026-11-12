@@ -74,6 +74,43 @@ describe('the frond-colony grower', () => {
 		expect(speciesProblems(brackenRecord)).toEqual([]);
 	});
 
+	it('gathers the fronds into the masses the record names', () => {
+		const colony = brackenRecord.growth as Extract<Species['growth'], { model: 'frond-colony' }>;
+		const clumped: Species = {
+			...brackenRecord,
+			growth: {
+				...colony,
+				rhizome: {
+					...colony.rhizome,
+					clump: { count: 4, radius: 0.12, ring: 0.62 },
+				},
+			},
+		};
+		const skeleton = growFrondColony({ record: clumped, seed: 11, variant: 0, season: 'summer' });
+		const feet: number[][] = [];
+		for (let a = 0; a < skeleton.axes.count; a++) {
+			if (skeleton.axes.order[a] !== 0) continue;
+			const n = skeleton.axes.first[a] as number;
+			feet.push([skeleton.position[n * 3] as number, skeleton.position[n * 3 + 2] as number]);
+		}
+		expect(feet.length).toBeGreaterThan(4);
+		const centres = [0, 1, 2, 3].map((c) => {
+			const mine = feet.filter((_, f) => f % 4 === c);
+			const x = mine.reduce((s, p) => s + (p[0] as number), 0) / mine.length;
+			const z = mine.reduce((s, p) => s + (p[1] as number), 0) / mine.length;
+			return { x, z, mine };
+		});
+		for (const centre of centres) {
+			// Each mass's fronds stand within its disc, and its centre sits on the named ring.
+			for (const p of centre.mine)
+				expect(Math.hypot((p[0] as number) - centre.x, (p[1] as number) - centre.z)).toBeLessThan(
+					0.25,
+				);
+			expect(Math.hypot(centre.x, centre.z)).toBeGreaterThan(0.4);
+			expect(Math.hypot(centre.x, centre.z)).toBeLessThan(0.8);
+		}
+	});
+
 	it('grows no crown: each frond rises alone on a stipe rooted at the ground', () => {
 		const { axes, buds, position } = summer;
 		const stipes: number[] = [];

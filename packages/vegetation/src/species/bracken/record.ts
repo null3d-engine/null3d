@@ -20,6 +20,10 @@ export const record: Species = {
 	size: { height: { mean: 1.2, spread: 0.3 }, aspect },
 	envelope,
 	roundBand,
+	// The sparsest form still reads as a bracken patch: six fronds of the colony's fifteen keep
+	// the four masses apart, half the blade area keeps the fronds leafy rather than bare stems,
+	// and coarsening past this merges the pinnae into a single blade.
+	sparse: { limbs: 0.4, leaves: 0.5, coarseness: 0.6 },
 	growth: {
 		model: 'frond-colony',
 		// Still 01 and the turntable: about twenty fronds stand in one patch, their blades
@@ -31,14 +35,17 @@ export const record: Species = {
 			length: 0.95,
 			branches: { mean: 10, spread: 1 },
 			spacing: { mean: 0.55, spread: 0.1 },
+			// Stills 01 and 18: the fronds stand in four separate masses with ground between them,
+			// their blades fanning away from the colony's middle, not one continuous roof.
+			clump: { count: 4, radius: 0.05, ring: 1.1 },
 		},
 		// Still 02: the bare stipe is about as long as the blade it carries, and leans a little.
-		stipe: { length: { mean: 0.76, spread: 0.16 }, lean: { mean: 6, spread: 5 } },
+		stipe: { length: { mean: 0.8, spread: 0.16 }, lean: { mean: 6, spread: 5 } },
 		frond: {
 			// Stills 12 and 21: the blade is bipinnate and broadly triangular, about as long as
 			// its stipe, and the blades of a stand overlap into a continuous roof.
 			kind: 'bipinnate',
-			length: { mean: 1.05, spread: 0.15 },
+			length: { mean: 0.95, spread: 0.15 },
 			// Stills 06 and 16: a stipe stout enough to carry the blade.
 			petiole: { length: 0, width: 0.014, teeth: 0 },
 			// Still 02: the rachis leaves the stipe's top rising, turns over through the blade's
@@ -172,5 +179,7 @@ export const record: Species = {
 	seedSalt: 0x6272616b,
 	// Still 12: one whole frond is the single leaf that the close views lay out, pressed flat as a
 	// scanned frond lies.
-	cuttings: { leaf: { pressed: true } },
+	// Stills 08 and 21: a cut frond stands as the colony grows it, the stipe forking into the
+	// bipinnate blade at the record's own size.
+	cuttings: { branch: { order: 0, length: 1.8 }, leaf: { pressed: true } },
 };

@@ -1001,6 +1001,12 @@
 		"date": "2026-11-10",
 		"reason": "M3-V7's sway picture: the branch is not pushed to CI, so this Mac's SwiftShader drew the software set; a CI drawing replaces it"
 	},
+	"chromium-swiftshader/webgpu/plant-scots-pine.png": {
+		"test": "plant-scots-pine",
+		"tier": "webgpu",
+		"date": "2026-11-08",
+		"reason": "the two software rasterisers agree byte for byte, and this branch draws the first reference before CI can"
+	},
 	"chromium-swiftshader/webgpu/probe-grid-wall-night.png": {
 		"test": "probe-grid-wall-night",
 		"tier": "webgpu",
@@ -1120,5 +1126,65 @@
 		"tier": "webgpu",
 		"date": "2026-10-29",
 		"reason": "the band hand-over and the water bounds view were drawn before a CI run; CI draws this set again on the next push"
+	},
+	"chromium-swiftshader/compat/plant-common-alder.png": {
+		"test": "plant-common-alder",
+		"tier": "compat",
+		"date": "2026-11-09",
+		"reason": "SwiftShader drawn on the reference Mac at 0fdef2684, after the leaf optics, the cluster counts and the young-bark framing changed what the four panels draw"
+	},
+	"chromium-swiftshader/compat/plant-common-ash.png": {
+		"test": "plant-common-ash",
+		"tier": "compat",
+		"date": "2026-11-09",
+		"reason": "drawn on this Mac's SwiftShader at 5c8a4d15d after the m3-start merge; the plant sits a fraction of a pixel over in every panel, so the outlines differ while the interiors do not, and a CI drawing replaces the set if it differs"
+	},
+	"chromium-swiftshader/compat/weather.png": {
+		"test": "weather",
+		"tier": "compat",
+		"date": "2026-10-30",
+		"reason": "No CI run has drawn this picture yet: run 41006111918 drew the three weather pictures and lost them when its shard reached the job's time limit, before the guard let a timed-out shard upload. This Mac's SwiftShader drew these three, and the next CI drawing of them replaces them."
+	},
+	"chromium-swiftshader/webgl2/plant-common-alder.png": {
+		"test": "plant-common-alder",
+		"tier": "webgl2",
+		"date": "2026-11-09",
+		"reason": "SwiftShader drawn on the reference Mac at 0fdef2684, after the leaf optics, the cluster counts and the young-bark framing changed what the four panels draw"
+	},
+	"chromium-swiftshader/webgl2/plant-common-ash.png": {
+		"test": "plant-common-ash",
+		"tier": "webgl2",
+		"date": "2026-11-09",
+		"reason": "drawn on this Mac's SwiftShader at 5c8a4d15d after the m3-start merge; the plant sits a fraction of a pixel over in every panel, so the outlines differ while the interiors do not, and a CI drawing replaces the set if it differs"
+	},
+	"chromium-swiftshader/webgl2/weather.png": {
+		"test": "weather",
+		"tier": "webgl2",
+		"date": "2026-10-30",
+		"reason": "No CI run has drawn this picture yet: run 41006111918 drew the three weather pictures and lost them when its shard reached the job's time limit, before the guard let a timed-out shard upload. This Mac's SwiftShader drew these three, and the next CI drawing of them replaces them."
+	},
+	"chromium-swiftshader/webgpu/demo-impostors.png": {
+		"test": "demo-impostors",
+		"tier": "webgpu",
+		"date": "2026-10-29",
+		"reason": "M3-V2 moves two kinds of cut edge: a batch whose rows bring values now tests its mask by alpha to coverage, and a custom material whose WGSL names the surface's alpha takes it too. This machine's SwiftShader run drew the new pictures, and CI has no run of this branch to take them from"
+	},
+	"chromium-swiftshader/webgpu/plant-common-alder.png": {
+		"test": "plant-common-alder",
+		"tier": "webgpu",
+		"date": "2026-11-09",
+		"reason": "SwiftShader drawn on the reference Mac at 0fdef2684, after the leaf optics, the cluster counts and the young-bark framing changed what the four panels draw"
+	},
+	"chromium-swiftshader/webgpu/plant-common-ash.png": {
+		"test": "plant-common-ash",
+		"tier": "webgpu",
+		"date": "2026-11-09",
+		"reason": "drawn on this Mac's SwiftShader at 5c8a4d15d after the m3-start merge; the plant sits a fraction of a pixel over in every panel, so the outlines differ while the interiors do not, and a CI drawing replaces the set if it differs"
+	},
+	"chromium-swiftshader/webgpu/weather.png": {
+		"test": "weather",
+		"tier": "webgpu",
+		"date": "2026-10-30",
+		"reason": "No CI run has drawn this picture yet: run 41006111918 drew the three weather pictures and lost them when its shard reached the job's time limit, before the guard let a timed-out shard upload. This Mac's SwiftShader drew these three, and the next CI drawing of them replaces them."
 	}
 }

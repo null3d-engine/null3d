@@ -122,6 +122,27 @@ function frondPlaces(input: GrowInput, colony: FrondColony): { x: number; z: num
 		}
 		traces.push(trace);
 	}
+	// Where the record asks for separate masses, the fronds gather into a few discs on a ring
+	// round the colony's middle instead of standing evenly along the lines: each mass's blades
+	// crowd into one piece, and the ring leaves the ground between the masses bare.
+	const clump = colony.rhizome.clump;
+	if (clump && clump.count >= 1) {
+		const masses = Math.max(1, Math.round(clump.count));
+		const radius = Math.max(0, clump.radius);
+		const ring = Math.max(0, clump.ring);
+		const startTurn = draw(DRAW.lineTurn) * 2 * PI;
+		const places: { x: number; z: number }[] = [];
+		for (let f = 0; f < count; f++) {
+			const turn = startTurn + (2 * PI * (f % masses)) / masses;
+			const away = Math.sqrt(draw(DRAW.offset, f * 2)) * radius;
+			const around = draw(DRAW.wander, f * 2 + 1) * 2 * PI;
+			places.push({
+				x: cos(turn) * ring + cos(around) * away,
+				z: sin(turn) * ring + sin(around) * away,
+			});
+		}
+		return places;
+	}
 	const reached = new Float64Array(lines);
 	const places: { x: number; z: number }[] = [];
 	for (let f = 0; f < count; f++) {

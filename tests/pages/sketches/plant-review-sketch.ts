@@ -246,7 +246,43 @@ function boundsOf(asset: PlantAsset, kit: SpeciesKit): Bounds {
 				max[k] = Math.max(max[k] as number, p[i] as number);
 			}
 		}
+	refuseEmptyBox(min, max);
 	return { min, max };
+}
+
+/**
+ * Refuses a camera that came out non-finite, naming the picture and the numbers behind it. A
+ * framing solve can leave a distance or an axis non-finite while the plant's box is sound, and the
+ * camera's near plane then reaches the scene as a NaN; the picture fails here, where the fault is,
+ * instead of inside the renderer.
+ */
+function refuseNonFiniteCamera(fov: number, span: number, position: V3, target: V3): void {
+	if (
+		Number.isFinite(fov) &&
+		Number.isFinite(span) &&
+		span > 0 &&
+		[...position, ...target].every(Number.isFinite)
+	)
+		return;
+	const frame = `${QUERY.view ?? 'whole'} view, season ${QUERY.season ?? 'default'}, seed ${QUERY.seed ?? 0}, variant ${QUERY.variant ?? 0}`;
+	throw new Error(
+		`the ${frame} camera came out non-finite (fov ${fov}, span ${span}, position ${position.join(', ')}, target ${target.join(', ')}); the framing solve cannot stand a camera on this plant`,
+	);
+}
+
+/**
+ * Refuses a box a camera cannot be framed on: one with a non-finite corner or with no extent at
+ * all. A frame framed on such a box has no finite distance, and its near plane reaches the scene as
+ * a NaN, so the picture fails where the fault is instead of inside the renderer.
+ */
+function refuseEmptyBox(min: V3, max: V3): void {
+	const extent = [max[0] - min[0], max[1] - min[1], max[2] - min[2]];
+	const finite = extent.every(Number.isFinite);
+	if (finite && extent.some((value) => Math.abs(value) > 1e-9)) return;
+	const frame = `${QUERY.view ?? 'whole'} view, season ${QUERY.season ?? 'default'}, seed ${QUERY.seed ?? 0}, variant ${QUERY.variant ?? 0}`;
+	throw new Error(
+		`the drawn box has no usable extent (${extent.map((value) => value.toFixed(3)).join(', ')} m) on the ${frame} picture; a camera cannot be framed on it`,
+	);
 }
 
 /**
@@ -448,6 +484,35 @@ function standView(
 		view = viewOf(stand);
 	}
 	return view;
+}
+
+/**
+ * The rows the plant's feet land on from a view: the ground at the foot level, projected from the
+ * box's four ground corners. A colony's groups stand at different depths, so their feet land on
+ * different rows of the picture. This band is the ground contact the plant actually has, and a
+ * piece standing within it stands on the ground rather than in the air.
+ */
+function groundBandRows(view: View, bounds: Bounds): { top: number; base: number } {
+	const forward = normalize(sub(view.target, view.position));
+	const right = normalize(cross(forward, [0, 1, 0]));
+	const up = cross(right, forward);
+	const half = Math.tan((view.fov * DEG) / 2);
+	const y = bounds.min[1];
+	let top = Number.POSITIVE_INFINITY;
+	let base = Number.NEGATIVE_INFINITY;
+	for (const x of [bounds.min[0], bounds.max[0]])
+		for (const z of [bounds.min[2], bounds.max[2]]) {
+			const dx = x - view.position[0];
+			const dy = y - view.position[1];
+			const dz = z - view.position[2];
+			const depth = dx * forward[0] + dy * forward[1] + dz * forward[2];
+			if (depth <= 1e-6) continue;
+			const rise = dx * up[0] + dy * up[1] + dz * up[2];
+			const row = 0.5 - rise / (2 * half * depth);
+			top = Math.min(top, row);
+			base = Math.max(base, row);
+		}
+	return { top: Number.isFinite(top) ? top : 0.5, base: Number.isFinite(base) ? base : 0.5 };
 }
 
 /**
@@ -1433,6 +1498,7 @@ export default defineSketch(async (ctx) => {
 	const cameras: Camera[] = cells.map((cell) => {
 		const { position, target, roll } = cell.view;
 		const span = Math.hypot(...sub(target, position));
+		refuseNonFiniteCamera(cell.view.fov, span, position, target);
 		return scene.createPerspectiveCamera({
 			fov: cell.view.fov,
 			near: cell.view.near ?? Math.max(0.005, Math.min(0.5, span * 0.02)),
@@ -1774,6 +1840,9 @@ export default defineSketch(async (ctx) => {
 			trunkRadius: trunk?.radius ?? null,
 			limbs: skeleton.axes.count,
 			triangles: main.levels.map((level) => level.triangles),
+			// The rows the plant's own feet land on: a colony's groups stand at different depths,
+			// so a piece standing anywhere in this band stands on the ground.
+			groundRows: cells[0] ? groundBandRows(cells[0].view, bounds) : null,
 		},
 		...(piece && {
 			cutting: {

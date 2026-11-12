@@ -259,17 +259,26 @@ own light they read 1.9, and the head's oak reads 2.2, so the light makes most o
   read 16.13 while it drew a great limb's old plates; setting the slot's `thin` to the photograph's
   own branch size and its `span` to the photograph's width took it to 3.7 before any material
   changed, and a tint measured against that frame took it to 2.3. Framing first, material second:
-  a tint chosen before the frame is right measures the camera, not the plant. A ground plant's
-  flowering heads are drawn as one stem's hanging spikes, seen close and level, because a twig view
-  has no woody stem to frame and falls back to the whole plant. A picture that lifts the plant from
-  the ground grows its soil and stands the plant on its lowest root, so a lifted whole plant shows
-  the root ball its photograph shows; a lifted whole picture may also look up from below, where the
-  crown's arch would otherwise hide the roots.
-  sheath, collar or ligule picture is drawn as one tiller's sheath column at the photograph's span,
-  or as the species' own tiller cutting where the photograph shows a cut stalk, because a bark view
-  has no stem to frame and falls back to the crown's foot culms. A plant that flowers at its crown,
-  such as a cactus, is framed on the ring of flower sites at its stem's top, not on a single shoot
-  tip and not on the plant's middle.
+  a tint chosen before the frame is right measures the camera, not the plant.
+- **A camera that crops the plant is a void frame.** Measure the view's width at the plant's distance.
+  It must be at least the plant's width before any outline, gap or piece count is read. A camera that
+  keeps only part of the plant's width draws a crop. Its piece count then counts the crop, and its
+  outline and gap compare unlike things. The picture is void for every row. The reviewer reports the
+  frame and the share it keeps, never the figure. A wide plant needs its slot's `fill` set from its
+  width rather than its height. Where one fill cannot match both of the reference's shares, match the
+  width, because the silhouette's spread is the figure. The bracken's silhouette picture kept 65 per
+  cent of its 2.61 m colony in a 1.71 m view. Two rounds read its piece count as a structure fault
+  before anyone measured the frame.
+- A ground plant's flowering heads are drawn as one stem's hanging spikes, seen close and level,
+  because a twig view has no woody stem to frame and falls back to the whole plant. A picture that
+  lifts the plant from the ground grows its soil and stands the plant on its lowest root, so a
+  lifted whole plant shows the root ball its photograph shows; a lifted whole picture may also look
+  up from below, where the crown's arch would otherwise hide the roots. A sheath, collar or ligule
+  picture is drawn as one tiller's sheath column at the photograph's span, or as the species' own
+  tiller cutting where the photograph shows a cut stalk, because a bark view has no stem to frame
+  and falls back to the crown's foot culms. A plant that flowers at its crown, such as a cactus, is
+  framed on the ring of flower sites at its stem's top, not on a single shoot tip and not on the
+  plant's middle.
 
 ## What a reviewer must see for the picture-judged rows
 

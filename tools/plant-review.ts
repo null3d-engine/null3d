@@ -5,7 +5,7 @@
 //
 //   bun run plants:review <species> [--refs <folder or slug>] [--out <folder>] [--run <name>]
 //     [--views a,b | all] [--step <degrees>] [--wind-fps 8] [--cell <pixels>] [--only stills,turns,wind]
-//     [--stills 01,02,18] [--seed 11] [--variant 0] [--preset high] [--lod 0|1|2] [--gpu webgpu]
+//     [--stills 01,02,18] [--seed 11] [--variant 0] [--preset high] [--sparse 0..1] [--lod 0|1|2] [--gpu webgpu]
 //     [--no-matte] [--compare <run folder>]
 //
 // The species is any registered species id, or any other id, which draws as a stand-in. The dev
@@ -942,6 +942,8 @@ function compareRun(
 					floating.length > 0
 						? `, ${floating.length} floating (${floating.map((part) => `${part.area} px ${part.box}`).join(', ')})`
 						: ', none floating'
+				}; foot row ${read.footRow}; ground band ${
+					read.groundBand ? `${read.groundBand.top} to ${read.groundBand.base}` : 'not named'
 				}; height ${height === undefined ? '-' : `${height.toFixed(2)} m`}${
 					inside === null
 						? ''
@@ -981,7 +983,7 @@ function compareRun(
 			: []),
 		...(floating.length + sweepFloating.length > 0
 			? [
-					`- ${floating.length + sweepFloating.length} picture${floating.length + sweepFloating.length === 1 ? '' : 's'} draw${floating.length + sweepFloating.length === 1 ? 's' : ''} a piece hanging free: ${[...floating.map((pair) => pair.file), ...sweepFloating].join(', ')}. The owner's rule is that no piece hangs free at any level or sparseness, so the fault is the generator's and the run fails.`,
+					`- ${floating.length + sweepFloating.length} picture${floating.length + sweepFloating.length === 1 ? '' : 's'} draw${floating.length + sweepFloating.length === 1 ? 's' : ''} a piece hanging free: ${[...floating.map((pair) => `${pair.file} (foot row ${pair.connectivity?.footRow ?? '-'}, ground band ${pair.connectivity?.groundBand ? `${pair.connectivity.groundBand.top} to ${pair.connectivity.groundBand.base}` : 'not named'})`), ...sweepFloating].join(', ')}. A piece standing on the ground band the plant's feet span is rooted in the soil and is not counted; the rest meet nothing inside the picture. The owner's rule is that no piece hangs free at any level or sparseness, so the fault is the generator's and the run fails.`,
 				]
 			: []),
 		'',
@@ -1141,6 +1143,8 @@ async function main(): Promise<void> {
 		seed: Number(option('seed', '11')),
 		variant: Number(option('variant', '0')),
 		preset: option('preset', 'high') as PlantReviewQuery['preset'],
+		// A view drawn at a named sparseness reads the sparse form as a page would draw it.
+		...(flag('sparse') && { sparse: Number(option('sparse')) }),
 		...(flag('lod') && { lod: Number(option('lod')) as PlantReviewQuery['lod'] }),
 	};
 	const matte = !flag('no-matte');

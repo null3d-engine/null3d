@@ -806,6 +806,17 @@ export interface FrondColony {
 		readonly length: number;
 		readonly branches: Spread;
 		readonly spacing: Spread;
+		/**
+		 * Separate masses of fronds, where the photographs show ground between them: the number of
+		 * masses, the metres within which a mass's fronds scatter, and the metres from the colony's
+		 * middle to a mass's centre. Absent, the fronds stand evenly along the rhizome's lines and
+		 * their blades knit into one roof.
+		 */
+		readonly clump?: {
+			readonly count: number;
+			readonly radius: number;
+			readonly ring: number;
+		};
 	};
 	/** Stipe height and lean; the blade is held near horizontal on top. */
 	readonly stipe: { readonly length: Spread; readonly lean: Spread };
