@@ -528,6 +528,12 @@ export function cutBranch(
 			cutting.young,
 			cutting.part === 'cluster',
 		);
+	// A cluster is one shoot, and a shoot's own leaves are not an axis to cut, so the cluster rule
+	// refuses a rachis. A species with no shoot axes of its own, such as a frond colony, then has no
+	// candidate at all and the piece would fall back to the whole plant, whose fronds are separate
+	// roots. Take the rachis in that case: it carries the blade's leaves and hangs from the cut.
+	if (ranked.length === 0 && cutting.part === 'cluster')
+		ranked = candidates(skeleton, undefined, length, shade, cutting.young, false);
 	if (ranked.length === 0) return undefined;
 	const chosen = ranked[(cutting.pick ?? 0) % ranked.length] as Candidate;
 	const { axes, buds } = skeleton;
