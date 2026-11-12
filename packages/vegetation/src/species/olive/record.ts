@@ -290,6 +290,15 @@ export const record: Species = {
 			// so a side view shows their faces rather than their edges.
 			skyward: 0.15,
 			scale: { mean: 1.25, spread: 0.15 },
+			// Stills 01, 02 and 18: the crown's top stands above the photographs' and the plant draws
+			// over its height band, so the topmost shoots stand shorter past their twigs while the
+			// middle keeps its reach and the crown's foot is untouched.
+			scaleByHeight: [
+				[0, 1],
+				[0.55, 1],
+				[0.8, 0.85],
+				[1, 0.32],
+			],
 		},
 	},
 	foliage: {
