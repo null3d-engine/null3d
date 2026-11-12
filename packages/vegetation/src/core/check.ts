@@ -266,6 +266,8 @@ function shootProblems(shoots: ShootSpec, out: string[]): void {
 	if (shoots.placement.reach !== undefined)
 		wholeProblem(shoots.placement.reach, 'shoots.placement.reach', 0, 60, out);
 	shareProblem(shoots.placement.gather, 'shoots.placement.gather', out);
+	if (shoots.placement.cardCoverage !== undefined)
+		shareProblem(shoots.placement.cardCoverage, 'shoots.placement.cardCoverage', out);
 	const rowsPerAxis = shoots.placement.rowsPerAxis;
 	if (rowsPerAxis !== undefined && !(Number.isInteger(rowsPerAxis) && rowsPerAxis >= 1))
 		out.push(

@@ -1203,6 +1203,12 @@ export interface ShootSpec {
 		 */
 		readonly rowsPerAxis?: number;
 		/**
+		 * The share of a card's leaf groups that stays, 0 to 1. Below 1 a hashed share of the crown's
+		 * leaf groups gives way, so the crown shows sky between them while the leaves of the rest keep
+		 * their mass. Absent or 1, the card draws whole.
+		 */
+		readonly cardCoverage?: number;
+		/**
 		 * Gathers the shoots into masses along each axis, with a thinner run between them, so the
 		 * crown is built of clumps with sky and wood between rather than an even mesh of leaves.
 		 * Absent, the shoots stand evenly spaced. The masses of neighbouring axes do not line up,

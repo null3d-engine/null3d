@@ -103,6 +103,8 @@ const HEADER_YOUNG_TILE: i32 = 16;
 const HEADER_YOUNG_TINT: i32 = 56;
 // A tuft's basal sheath colour and roughness, for the merged foliage's sheath columns.
 const HEADER_SHEATH: i32 = 65;
+// The share of a card's leaf groups that stays, where the record names one.
+const HEADER_CARD_COVERAGE: i32 = 67;
 // A grass blade's collar: its colour, then the share of the blade's base it takes.
 const HEADER_COLLAR: i32 = 66;
 const HEADER_MOSS: i32 = 17;
@@ -1075,6 +1077,15 @@ fn surface(input: SurfaceInput) -> Surface {
                 base = texel.rgb;
             }
             alpha = card_alpha(texel.a, gx, gy);
+            // A card's coverage: a hashed share of the crown's leaf groups gives way, so the crown
+            // shows sky between them while the leaves of the rest keep their mass. At 1, or when the
+            // record names none, the card draws whole.
+            let card_cover = header(HEADER_CARD_COVERAGE).x;
+            if (card_cover < 0.999) {
+                if (value3(input.relativePosition * 5.0) > card_cover) {
+                    alpha = 0.0;
+                }
+            }
             if (near_copy && length(input.relativePosition) < material.nearDistance * 0.96) {
                 alpha = 0.0;
             }
