@@ -31,6 +31,39 @@ structure, leaf clusters at the end of a shoot, single leaves on both faces, bar
 mid-trunk and on a limb, the trunk's taper and root flare, and the silhouette. The set also carries
 turning videos and usually a wind clip.
 
+## No piece hangs free
+
+At every level and at every sparseness setting, every drawn piece is connected to the plant's body.
+A leaf, twig, card or bough that loses its parent when a level thins or a share drops is either joined
+back to the piece it belonged to or removed; nothing is left standing in the air.
+
+This binds the generator and the reading. A level that thins its wood, drops its axes or thins its
+cards must prune whatever loses its parent, so the drawn plant stays one connected body at that level,
+and the unit tests hold that: a plant built at each sparseness setting has one connected component that
+reaches its root, whatever its density. The reading counts the pieces as the row requires, and where a
+picture shows a piece standing free, the shader and the generator are at fault whichever row is being
+read; the picture fails, and the fault is a generator fault, not a row to judge.
+
+## Sparseness and polygon count are different dials
+
+Sparseness is about how much foliage and how many limbs the plant carries: a sparse plant has fewer
+leaves and fewer limbs, and every one of them still connects to the trunk and the root. It changes how
+much plant there is, never whether the plant holds together.
+
+Polygon count is about how finely the plant is defined, not about how much plant there is. A dense crown
+can be drawn with very few polygons, and then it looks blocky: its forms are coarse and its surfaces
+faceted while its foliage stays as full as the photographs show. A high polygon count buys smoothness of
+form: round trunks, blended joins and rounded leaf clusters, not density.
+
+So a species is set twice: its density by what its pictures show, and its polygon budget by the target
+its level must hold, with the blockiness that budget buys accepted at the distance the level is seen. A
+coarse setting that thins the plant, or a density setting that changes how smooth it looks, has mixed
+the two dials and is wrong.
+
+Sparseness is where the connectedness rule shows first, because thinning is when parents are lost. A
+sparse picture that scatters leaf clumps through air is a failed picture even where its density figure
+sits inside its band.
+
 ## The branch structure
 
 The silhouette is judged on how the branches fill the space, not only on the outline they trace.
