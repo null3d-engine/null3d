@@ -143,6 +143,8 @@ export interface PlantReviewQuery {
 	readonly lateralTo?: number;
 	/** Degrees each lateral leans outward from the stem's line. */
 	readonly lateralAngle?: number;
+	/** The laterals' length over their class's. */
+	readonly lateralScale?: number;
 	/** Which of the stem class's prototypes to take. */
 	readonly stemPick?: number;
 	/** Whether the page posts its measures of the plant beside the frame. */
@@ -312,6 +314,7 @@ const NUMBER_FIELDS = [
 	'lateralFrom',
 	'lateralTo',
 	'lateralAngle',
+	'lateralScale',
 	'stemPick',
 	'horizon',
 	'fill',

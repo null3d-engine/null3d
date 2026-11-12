@@ -554,6 +554,7 @@ export default defineSketch(async (ctx) => {
 		...(QUERY.lateralFrom !== undefined && { lateralFrom: QUERY.lateralFrom }),
 		...(QUERY.lateralTo !== undefined && { lateralTo: QUERY.lateralTo }),
 		...(QUERY.lateralAngle !== undefined && { lateralAngle: QUERY.lateralAngle }),
+		...(QUERY.lateralScale !== undefined && { lateralScale: QUERY.lateralScale }),
 		...(QUERY.stemPick !== undefined && { stemPick: QUERY.stemPick }),
 		orient: 'upright' as const,
 		...(VIEW === 'leaf-under' ? { face: 'lower' as const } : {}),

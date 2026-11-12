@@ -728,6 +728,25 @@ describe('cuttings', () => {
 		expect(drawn[1]).toBe(lateralClass);
 		// A cluster keeps one shoot, whatever its hint names.
 		expect(clusterRow(hinted, { part: 'cluster' }, kit.detail)?.rows.count).toBe(1);
+		// A shorter lateral scale draws a narrower piece and shows in the rows' own scales.
+		const shorter = clusterRow(
+			{
+				...hinted,
+				record: {
+					...hinted.record,
+					cuttings: {
+						branch: { shoot: lateralClass, stem: stemClass, laterals: 3, lateralScale: 0.5 },
+					},
+				},
+			} as SpeciesKitData,
+			{ part: 'branch' },
+			kit.detail,
+		);
+		if (!shorter) throw new Error('the kit grew no shorter stem piece');
+		expect(shorter.rows.scale[1]).toBeCloseTo(0.5, 5);
+		const width = (row: typeof piece) =>
+			(row.bounds.max[0] as number) - (row.bounds.min[0] as number);
+		expect(width(shorter)).toBeLessThan(width(piece));
 	});
 
 	it('grows the same bytes twice, and in a worker that runs the job-worker task', async () => {

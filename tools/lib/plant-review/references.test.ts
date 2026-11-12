@@ -518,6 +518,7 @@ describe('the slots', () => {
 				lateralFrom: 0.4,
 				lateralTo: 0.9,
 				lateralAngle: 20,
+				lateralScale: 0.6,
 				stemPick: 1,
 			}),
 		).toMatchObject({
@@ -526,6 +527,7 @@ describe('the slots', () => {
 			lateralFrom: 0.4,
 			lateralTo: 0.9,
 			lateralAngle: 20,
+			lateralScale: 0.6,
 			stemPick: 1,
 		});
 		// A single-leaf still's pressed choice reads back either way, and is absent when not named.
