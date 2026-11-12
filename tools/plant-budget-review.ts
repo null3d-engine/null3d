@@ -329,7 +329,7 @@ function cellLabel(
 ): string[] {
 	const parts = plan ? `WOOD ${plan.wood} CARDS ${plan.cards}` : 'WOOD - CARDS -';
 	const growth = plan ? `CARDS ${plan.kept}/${plan.of} GROWN ${plan.grow.toFixed(1)}X` : 'CARDS -';
-	const drawn = triangles === undefined ? 'NOT DRAWN' : `DRAWN ${triangles}`;
+	const drawn = triangles === undefined ? '' : `DRAWN ${triangles}   `;
 	const divergence = plan ? `DIVERGENCE ${plan.divergence.toFixed(2)}` : 'DIVERGENCE -';
 	const extras = plan
 		? plan.extras > 0
@@ -338,7 +338,7 @@ function cellLabel(
 		: 'EXTRAS -';
 	return [
 		`${budget} TRIANGLES AT ${distance} M`,
-		`LEVEL ${level}   ${drawn}   ${divergence}`,
+		`LEVEL ${level}   ${drawn}${divergence}`,
 		`${parts}   ${growth}`,
 		extras,
 	];
