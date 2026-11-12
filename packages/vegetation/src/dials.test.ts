@@ -99,7 +99,7 @@ describe('the sparse dial', () => {
 		LONG,
 	);
 
-	it.skip('keeps the crown top in the record height band (GAP: sparse 0.5 draws 24.54 m above the record 18 to 22 m)', () => {
+	it('keeps the crown top in the record height band at every sparse level', () => {
 		const size = record.size.height;
 		const band = typeof size === 'number' ? { mean: size, spread: 0 } : size;
 		for (const sparse of [0, 0.5, 1]) {
@@ -129,7 +129,7 @@ describe('the polygon dial', () => {
 		LONG,
 	);
 
-	it.skip('keeps the card count, the leaf count and the crown box (GAP: coarseness thins the crown, 3,178 cards at 0.2 to 1,190 at 0.8)', () => {
+	it.skip('keeps the card count, the leaf count and the crown box (GAP: coarseness thins the crown, 3,131 cards at 0.2 to 1,176 at 0.8)', () => {
 		let first: { cards: number; leaves: number; box: ReturnType<typeof boxOf> } | undefined;
 		for (const coarseness of [0.2, 0.5, 0.8]) {
 			const asset = growPlantNow(kit, { seed: 11, variant: 0, near: true, coarseness });
