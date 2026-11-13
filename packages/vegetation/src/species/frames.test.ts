@@ -30,6 +30,8 @@ import { frame as commonAlder } from './common-alder/directed';
 import { record as commonAlderRecord } from './common-alder/record';
 import { frame as silverBirch } from './silver-birch/directed';
 import { record as silverBirchRecord } from './silver-birch/record';
+import { frame as weepingWillow } from './weeping-willow/directed';
+import { record as weepingWillowRecord } from './weeping-willow/record';
 
 const SEEDS = [11, 12, 13, 14] as const;
 /** The narrowest a crown's plan may be: its narrow side over its wide side, by the owner's ruling. */
@@ -79,6 +81,19 @@ const HELD: readonly Held[] = [
 		base: { limb: 0.25, twig: 0.5 },
 		plumb: ['leader'],
 		tall: [0.98, 1.02],
+	},
+	{
+		id: 'weeping-willow',
+		spec: weepingWillow,
+		record: weepingWillowRecord,
+		counts: { trunk: 1, great: 3, upper: 3, secondary: 6, branch: [18, 54], whip: [100, 400] },
+		// Six level limbs in three pairs leave no gap wider than a pair's share and its jitter.
+		round: { rule: 'secondary', gap: 110, lean: 0.25 },
+		base: { great: 0.5, upper: 0.55, secondary: 0.55, branch: 0.5, whip: 0.3 },
+		// A whip hangs by its own weight.
+		plumb: ['trunk', 'whip'],
+		// The heads' foliage stands above the highest wood.
+		tall: [0.93, 1.02],
 	},
 ];
 
