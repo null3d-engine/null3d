@@ -102,9 +102,9 @@ const BY_ORDER: Paint = {
 
 /** The marks of every patch: a ring round its top and a ring round its underside. */
 function patchMarks(plan: ConiferPlan): Float32Array {
-	const marks = new Float32Array(plan.limbs.length * RING * 2 * 3);
+	const marks = new Float32Array(plan.patches.length * RING * 2 * 3);
 	let at = 0;
-	for (const { patch } of plan.limbs)
+	for (const patch of plan.patches)
 		for (const lift of [0.5, -0.5])
 			for (let k = 0; k < RING; k++) {
 				const angle = (k / RING) * 2 * Math.PI;

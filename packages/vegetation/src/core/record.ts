@@ -703,6 +703,11 @@ export interface Conifer {
 		/** A level plate on top of the limb's end, a dome round it, or a tile of a closed shell. */
 		readonly kind: 'pad' | 'dome' | 'shell';
 		/**
+		 * One patch a limb, which the limb's arms spread under, or one patch at the limb's end and one
+		 * at each arm's end, each apart from the next.
+		 */
+		readonly each: 'limb' | 'end';
+		/**
 		 * The patch's width over the plant's height, for the shortest limb and for the longest. A
 		 * patch takes at most seven tenths of its limb's reach.
 		 */

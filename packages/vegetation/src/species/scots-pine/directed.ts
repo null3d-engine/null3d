@@ -103,7 +103,8 @@ export const directed: Species = {
 		// limbs of half the trunk's width keep its cross-section.
 		top: { limbs: 4, leave: 45, end: 0, radius: 0.5 },
 		// Still 02, six pads: 0.23 to 0.35 of the height wide, and 0.38 as deep as wide.
-		patch: { kind: 'pad', width: [0.23, 0.35], depth: 0.38 },
+		// One pad a limb: the limb's arms spread under it.
+		patch: { kind: 'pad', each: 'limb', width: [0.23, 0.35], depth: 0.38 },
 	},
 	bark: {
 		...(record.bark as BarkSpec),
