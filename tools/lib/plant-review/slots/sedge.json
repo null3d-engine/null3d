@@ -64,7 +64,10 @@
 		"top": null,
 		"view": "spike",
 		"piece": "blade",
-		"edge": true
+		"edge": true,
+		"span": null,
+		"season": null,
+		"thin": null
 	},
 	"21-branch-studio.png": {
 		"background": "studio-grey",

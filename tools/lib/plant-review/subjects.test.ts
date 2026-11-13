@@ -372,6 +372,16 @@ describe('the placed pieces of a plant', () => {
 		expect(stalk.depth?.side).toBeCloseTo(0, 6);
 	});
 
+	test("faces the upper side of a piece's plane whichever face its grower names +Z", () => {
+		// A quarter turn about +X lays the piece's +Z pointing down, as a fern leaf's lower face is.
+		const laid = rowsOf([
+			{ prototype: 0, at: [2, 1, 0], turn: [Math.SQRT1_2, 0, 0, Math.SQRT1_2], scale: 1 },
+		]);
+		const found = piecesOfRows(laid, kit, [0, 0, 0]);
+		if (isAbsent(found)) throw new Error(found.absent);
+		expect(found[0]?.face?.[1]).toBeCloseTo(1, 6);
+	});
+
 	test('finds the pieces of a class by its name or its leading words', () => {
 		const subjects: PlantSubjects = { ...subjectsOfSkeleton(oak()), pieces };
 		const boughs = piecesOfClass(subjects, 'bough');
