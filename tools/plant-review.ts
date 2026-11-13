@@ -36,6 +36,7 @@ import {
 	estimateFraming,
 	fittedMaskClause,
 	fixed,
+	frameFiguresHold,
 	framingQuery,
 	MASK_GATE_PLAIN,
 	MASK_SUBJECT_FLOOR,
@@ -894,7 +895,7 @@ function compareRun(
 			`- ${result.pairs.filter((pair) => !pair.error).length} of ${result.pairs.length} files drawn beside a render of their view; ${masked.length} give an outline on a plain background in both pictures.`,
 			...masked.map(
 				(pair) =>
-					`- ${pair.file}: shape IoU ${fixed(pair.shapeIou)}, width error ${fixed(pair.profileError, 3)}, sky gap enclosed by the crown's outline (row 6's figure): photograph ${fixed(pair.gap?.reference)}, drawing ${fixed(pair.gap?.render)}${pair.gap?.renderByCoverage === undefined ? '' : ` (${fixed(pair.gap.renderByCoverage)} by the drawing's clear share, the earlier reading)`}; sky share of the crown's box: photograph ${fixed(pair.crownBoxGap?.reference)}, drawing ${fixed(pair.crownBoxGap?.render)}; sky share of the whole frame: photograph ${fixed(pair.frameGap?.reference)}, drawing ${fixed(pair.frameGap?.render)}; foot row: photograph ${fixed(pair.footRow?.reference, 3)}, drawing ${fixed(pair.footRow?.render, 3)}; leaf colour difference ${fixed(pair.foliageDeltaE, 1)}${barkClause(pair)}${pieceClause(pair)}${fittedMaskClause(pair)}; drawn at the ${pair.level ?? 'level the page did not report'}.`,
+					`- ${pair.file}: shape IoU ${fixed(pair.shapeIou)}, width error ${fixed(pair.profileError, 3)}, sky gap enclosed by the crown's outline (row 6's figure): photograph ${fixed(pair.gap?.reference)}, drawing ${fixed(pair.gap?.render)}${pair.gap?.renderByCoverage === undefined ? '' : ` (${fixed(pair.gap.renderByCoverage)} by the drawing's clear share, the earlier reading)`}; sky share of the crown's box: photograph ${fixed(pair.crownBoxGap?.reference)}, drawing ${fixed(pair.crownBoxGap?.render)}; ${frameShareClause(pair)}; foot row: photograph ${fixed(pair.footRow?.reference, 3)}, drawing ${fixed(pair.footRow?.render, 3)}; leaf colour difference ${fixed(pair.foliageDeltaE, 1)}${barkClause(pair)}${pieceClause(pair)}${fittedMaskClause(pair)}; drawn at the ${pair.level ?? 'level the page did not report'}.`,
 			),
 			...result.pairs.flatMap((pair) =>
 				pair.surfaceDeltaE !== null
@@ -1171,6 +1172,17 @@ function areaLines(pairs: readonly StillResult[]): string[] {
 				]
 			: [],
 	);
+}
+
+/**
+ * The whole frame's sky share of a pair, or why it is not compared: a drawing at another scale than
+ * its photograph's sets a larger or a smaller plant in the frame, so a figure read on the frame as
+ * a whole compares unlike things, and only the frame-free figures stand.
+ */
+function frameShareClause(pair: StillResult): string {
+	if (pair.frameScale !== null && !frameFiguresHold(pair.frameScale))
+		return `sky share of the whole frame and overlap as framed: not compared, the drawing stands at ${pair.frameScale.toFixed(2)} of the photograph's scale`;
+	return `sky share of the whole frame: photograph ${fixed(pair.frameGap?.reference)}, drawing ${fixed(pair.frameGap?.render)}`;
 }
 
 /**

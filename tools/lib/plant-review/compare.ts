@@ -639,6 +639,13 @@ interface PairMetrics {
 	readonly crownBoxGap: { readonly reference: number; readonly render: number } | null;
 	readonly frameGap: { readonly reference: number; readonly render: number } | null;
 	/**
+	 * The drawn plant's share of the frame's height over its photograph's: its scale against the
+	 * photograph's. Where it differs from 1 by more than the frame band, the figures read on the
+	 * frame as a whole, the overlap as framed and the whole frame's sky share, compare a larger or a
+	 * smaller plant with the photograph's and are left out; the frame-free figures stand.
+	 */
+	readonly frameScale: number | null;
+	/**
 	 * The row share of each plant's foot, the lowest row of its outline. Every figure that is a
 	 * share of the plant's height counts from this row, so it stands beside them.
 	 */
@@ -652,9 +659,41 @@ interface PairMetrics {
 	readonly foliage: { readonly reference: string | null; readonly render: string | null };
 }
 
+/**
+ * How far a drawn plant's scale may stand from its photograph's before the figures read on the
+ * frame as a whole no longer compare like with like.
+ */
+export const FRAME_SCALE_BAND = 0.05;
+
+/**
+ * The drawn plant's share of the frame's height over its photograph's, from both outlines' boxes:
+ * its scale against the photograph's.
+ */
+export function frameScale(reference: FramedBox, render: FramedBox): number {
+	const tall = (side: FramedBox) => (side.box.bottom - side.box.top + 1) / side.height;
+	return Number((tall(render) / tall(reference)).toFixed(3));
+}
+
+/** Whether figures read on the frame as a whole compare like with like at a drawn plant's scale. */
+export function frameFiguresHold(scale: number | null): boolean {
+	return scale !== null && Math.abs(scale - 1) <= FRAME_SCALE_BAND;
+}
+
 /** Compares a reference frame with a render frame. */
 function pairMetrics(reference: Side, render: Side): PairMetrics {
 	const both = reference.measures.box !== null && render.measures.box !== null;
+	const scale =
+		reference.measures.box && render.measures.box
+			? frameScale(
+					{
+						box: reference.measures.box,
+						width: reference.plant.width,
+						height: reference.plant.height,
+					},
+					{ box: render.measures.box, width: render.plant.width, height: render.plant.height },
+				)
+			: null;
+	const framed = frameFiguresHold(scale);
 	const colour = (a: { lab: readonly number[] } | null, b: { lab: readonly number[] } | null) =>
 		a && b ? Number(deltaE2000(a.lab, b.lab).toFixed(2)) : null;
 	return {
@@ -664,7 +703,8 @@ function pairMetrics(reference: Side, render: Side): PairMetrics {
 			reference.normal && render.normal
 				? Number(iou(reference.normal, render.normal).toFixed(4))
 				: null,
-		frameIou: both ? Number(frameIou(reference.plant, render.plant).toFixed(4)) : null,
+		frameIou: both && framed ? Number(frameIou(reference.plant, render.plant).toFixed(4)) : null,
+		frameScale: scale,
 		footRow:
 			reference.measures.box && render.measures.box
 				? {
@@ -691,9 +731,10 @@ function pairMetrics(reference: Side, render: Side): PairMetrics {
 		crownBoxGap: both
 			? { reference: reference.measures.crownBoxGap, render: render.measures.crownBoxGap }
 			: null,
-		frameGap: both
-			? { reference: reference.measures.frameGap, render: render.measures.frameGap }
-			: null,
+		frameGap:
+			both && framed
+				? { reference: reference.measures.frameGap, render: render.measures.frameGap }
+				: null,
 		foliageDeltaE: colour(reference.measures.foliage, render.measures.foliage),
 		barkDeltaE: colour(reference.measures.bark, render.measures.bark),
 		crownBox: both
@@ -2134,6 +2175,7 @@ export function compareStills(
 			gap: null,
 			crownBoxGap: null,
 			frameGap: null,
+			frameScale: null,
 			foliageDeltaE: null,
 			barkDeltaE: null,
 			crownBox: null,
@@ -2395,6 +2437,7 @@ export function compareStills(
 					gap: null,
 					crownBoxGap: null,
 					frameGap: null,
+					frameScale: null,
 					barkDeltaE: null,
 					crownBox: null,
 					foliageDeltaE: refPlant.background.plain ? pair.foliageDeltaE : null,
