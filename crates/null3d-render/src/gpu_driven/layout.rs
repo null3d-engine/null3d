@@ -477,6 +477,15 @@ impl ClusterMesh {
     }
 }
 
+/// A hash of the keys whose trees the tables hold, in their sorted order: a structure change that
+/// leaves the same trees in the same order keeps the tables.
+fn treed_keys_of(keys: &[(BucketKey, u32)]) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    keys.hash(&mut hasher);
+    hasher.finish()
+}
+
 /// The source layout and bucket tables, rebuilt when the structure changes.
 #[derive(Default)]
 pub(super) struct Layout {
@@ -578,6 +587,11 @@ pub(super) struct Layout {
     /// The scene's cluster meshes, which the casters' layout may draw: the scene's tables hold
     /// their patches, and its own records name its own copies and draws.
     pub(super) scene_trees: Vec<ClusterMesh>,
+    /// The tree generation and the hash of the tree keys whose patches the tables hold. A rebuild
+    /// that changes neither keeps the tables, so a structure change does not copy or upload them.
+    tables_generation: u64,
+    treed_keys_hash: u64,
+    tables_built: bool,
     /// Every cluster patch of those meshes, eight words each: its sphere and its record.
     pub(super) cluster_patches: Vec<[u32; 8]>,
     /// Every patch's indices, one patch after another.
@@ -1353,6 +1367,9 @@ impl Layout {
         // fits the storage binding that the pass's tables and each view's list take, beside the
         // trees before it, or it draws whole levels.
         let patches = settings.patches();
+        // True when the patched tables are built again: the trees changed, or the keys that draw
+        // them changed or moved.
+        let mut rebuild_tables = true;
         // Each key that draws a tree, with the scene object that draws it.
         let mut treed_keys: Vec<(BucketKey, u32)> = Vec::new();
         // A caster draws its tree in each shadow view where the scene's layout draws the same
@@ -1412,6 +1429,14 @@ impl Layout {
             }
             treed_keys.sort_unstable_by_key(|&(key, _)| key);
             treed_keys.dedup_by_key(|pair| pair.0);
+            let generation = settings.patches().generation();
+            let keys_hash = treed_keys_of(&treed_keys);
+            rebuild_tables = !self.tables_built
+                || self.tables_generation != generation
+                || self.treed_keys_hash != keys_hash;
+            self.tables_built = true;
+            self.tables_generation = generation;
+            self.treed_keys_hash = keys_hash;
         }
         let tree_object = |key: &BucketKey| {
             treed_keys
@@ -1541,16 +1566,25 @@ impl Layout {
         self.bucket_levels.clear();
         self.draws.clear();
         self.skinned.clear();
-        self.clusters.clear();
-        self.cluster_patches.clear();
-        self.cluster_indices.clear();
         if shared_trees {
+            self.clusters.clear();
             self.clusters
                 .extend(self.scene_trees.iter().map(|&tree| ClusterMesh {
                     slot: NOT_DRAWN,
                     first_draw: NOT_DRAWN,
                     ..tree
                 }));
+        } else if rebuild_tables {
+            self.clusters.clear();
+            self.cluster_patches.clear();
+            self.cluster_indices.clear();
+        } else {
+            // The tables hold the same trees in the same order, so keep them and the records that
+            // name where each tree starts. The bucket loop writes each tree's copy and draw again.
+            for tree in &mut self.clusters {
+                tree.slot = NOT_DRAWN;
+                tree.first_draw = NOT_DRAWN;
+            }
         }
         self.parallax = false;
         self.material_views = 0;
@@ -1611,6 +1645,19 @@ impl Layout {
                     let record = &mut self.clusters[index];
                     record.slot = slot_base;
                     record.first_draw = first_draw;
+                    return Some(index as u32);
+                }
+                if !rebuild_tables {
+                    // The kept table puts this tree's patches where they were; find its record and
+                    // name this frame's copy and draw.
+                    let index = self
+                        .clusters
+                        .iter()
+                        .position(|record| record.mesh == mesh)?;
+                    let record = &mut self.clusters[index];
+                    record.slot = slot_base;
+                    record.first_draw = first_draw;
+                    record.object = tree_object(&key).unwrap_or(NOT_DRAWN);
                     return Some(index as u32);
                 }
                 let index = self.clusters.len() as u32;

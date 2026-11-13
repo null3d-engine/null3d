@@ -467,4 +467,8 @@ fn a_structure_change_that_leaves_the_tree_alone_writes_only_the_records() {
         !writes.contains(&0),
         "the patch table uploaded again though the tree did not change: {writes:?}"
     );
+    assert!(
+        !dispatched(&world).is_empty(),
+        "the kept table still draws the tree"
+    );
 }
