@@ -30,14 +30,12 @@ export const record: Species = {
 		// Still 02: the highest blade stands 250 px above the soil and the highest stem 423 px.
 		mound: 0.59,
 		// The blades cannot be counted on a photograph, so the shoots are counted by how full the
-		// mound is, on the mound's real shape: blades that stand up and out and come down at a slant,
-		// some to rest on the soil. Still 02's mound (left tip to right tip, mound top to soil), read
-		// as plant or sky in ten bands of height, is 0.735 full and its upper five bands 0.58. A
-		// drawing of the same size reads 0.57 there at forty shoots and 0.60 at forty-eight, so the
-		// count is forty-four, six either way. The drawing's lower half stays more open than the
-		// photograph's (0.73 against 0.92 at the soil at forty), whose foot is closed by litter.
-		// Twenty-two of them flower (still 02).
-		shoots: { mean: 44, spread: 6 },
+		// mound is. Still 02's mound (left tip to right tip, mound top to soil), read as plant or sky
+		// in ten bands of height, is 0.735 full, its upper five bands 0.58 and its lowest two 0.92
+		// and 0.95: its foot is hidden. Fifty-six shoots hide the drawing's foot; with blades that
+		// reach as far out as the photograph's, its upper five bands then read 0.73 and its lowest
+		// two 0.84 and 0.77. Twenty-two of them flower (still 02).
+		shoots: { mean: 56, spread: 8 },
 		// Fifty-six shoot bases of one and a half blade widths (still 07) pack a disc 0.76 of the
 		// mound's height across; the brown zone at the foot of still 02 spans 0.84 of it.
 		stool: 0.76,
@@ -54,9 +52,11 @@ export const record: Species = {
 		// Still 02, traced on a 3.4 times crop of the mound's left half, in mound heights from each
 		// blade's own shoot. The youngest blade stands near plumb with its tip leaning out. The
 		// oldest rises, runs out and comes down steeply at the mound's rim, its tip about 75 degrees
-		// below level. Still 02's right half on a three times crop: a middle blade stands up and out,
-		// arches over and comes down at about 65 degrees to the soil 0.7 out; few blades fall plumb.
-		// The younger blades between end in the air.
+		// below level. Still 02's right half on a three times crop: a middle blade stands up and out
+		// at about 75 degrees, arches over and comes down at about 65 degrees; few blades fall plumb,
+		// and the younger blades between end in the air. Still 02's mound is 1.74 times as wide at
+		// its foot as the plant is tall and 1.51 times at 0.45 of its height, so a middle blade
+		// lands 0.9 mound heights out and the oldest 1.35.
 		// A blade that can be traced is one that stands clear of the rest, the largest of its kind:
 		// the young blade traced stands 1.1 high, the middle one arches at 0.98, the mound's own
 		// top, and the oldest rises 0.8 and lands 1.35 out. The oldest blades land from 0.9 to 1.5
@@ -64,8 +64,8 @@ export const record: Species = {
 		// four fifths of its size and a blade's length strays a quarter either side of its pose's.
 		poses: [
 			{ share: 0.25, leave: 85, apex: 0.88, drop: 0.04, reach: 0.16 },
-			{ share: 0.4, leave: 80, apex: 0.78, drop: 0.78, reach: 0.7, tip: 65 },
-			{ share: 0.35, leave: 75, apex: 0.62, drop: 0.62, reach: 1.05, tip: 75 },
+			{ share: 0.4, leave: 75, apex: 0.78, drop: 0.78, reach: 0.9, tip: 65 },
+			{ share: 0.35, leave: 75, apex: 0.62, drop: 0.62, reach: 1.35, tip: 75 },
 		],
 		bladeSpread: 0.25,
 		stalks: {
