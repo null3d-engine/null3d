@@ -1904,6 +1904,11 @@ export interface LeafShape {
 	 * texture leaf.
 	 */
 	readonly breadth?: number;
+	/**
+	 * Bands a cut-out card of the leaf takes along its length where a tier bends its cards, so a long
+	 * curled blade keeps its curl; one where absent.
+	 */
+	readonly cardBands?: number;
 	/** The leaf stalk. */
 	readonly petiole: {
 		/** Metres long. */
