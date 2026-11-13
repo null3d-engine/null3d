@@ -34,7 +34,7 @@ export const record: Species = {
 		// in ten bands of height, is 0.735 full, its upper five bands 0.58 and its lowest two 0.92
 		// and 0.95: its foot is hidden. Fifty-six shoots hide the drawing's foot; with blades that
 		// reach as far out as the photograph's, its upper five bands then read 0.73 and its lowest
-		// two 0.84 and 0.77. Twenty-two of them flower (still 02).
+		// two 0.84 and 0.77. Forty-four of them flower.
 		shoots: { mean: 56, spread: 8 },
 		// Fifty-six shoot bases of one and a half blade widths (still 07) pack a disc 0.76 of the
 		// mound's height across; the brown zone at the foot of still 02 spans 0.84 of it.
@@ -69,8 +69,10 @@ export const record: Species = {
 		],
 		bladeSpread: 0.25,
 		stalks: {
-			// Still 02: twenty-two stems, thirteen clear of the mound and about nine inside it.
-			count: { mean: 22, spread: 2 },
+			// Still 02: fifteen to twenty stems stand clear of the mound, round the whole tuft, and
+			// more inside it. With the mound as wide and full as the photograph's, the shorter stems
+			// stand inside it, so a stem rises from most shoots: forty-four of the fifty-six.
+			count: { mean: 44, spread: 4 },
 			// The fact sheet: the spikes stand in flower through summer and stay brown into winter.
 			seasons: ['blossom', 'summer', 'autumn', 'winter'],
 			// Still 02: the stems' highest points spread evenly from the mound's top to 1.69 of it.
