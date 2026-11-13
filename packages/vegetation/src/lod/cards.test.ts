@@ -254,7 +254,6 @@ describe('the card levels', () => {
 		expect(on.indices.length).toBe(off.indices.length);
 		let reached = 0;
 		let vertex = 0;
-		const turn: Vector3 = [0, 0, 0];
 		const near = (actual: readonly number[], expected: readonly number[]) => {
 			for (let c = 0; c < 3; c++) expect(actual[c] as number).toBeCloseTo(expected[c] as number, 5);
 		};
@@ -282,21 +281,18 @@ describe('the card levels', () => {
 			near(offFrom, [px, py, pz]);
 			near(offTo, [px + bx, py + by, pz + bz]);
 			// With it, the line still starts at the row's origin, so the card stays joined to the
-			// wood, and it ends at the centre of the foliage the card carries.
+			// wood, and it ends at the centre of the foliage the card carries: the middle of the
+			// card's first plane where the level draws it.
 			near(onFrom, [px, py, pz]);
 			const centre = prototype.card.planes[0]?.centre;
 			if (!centre) continue;
-			quatRotate(
-				rows.rotation,
-				r * 4,
-				[
-					centre[0] * (rows.scale[r] as number),
-					centre[1] * (rows.scale[r] as number),
-					centre[2] * (rows.scale[r] as number),
-				],
-				turn,
-			);
-			near(onTo, [px + turn[0], py + turn[1], pz + turn[2]]);
+			const first = at - planes * 4;
+			const middle = [0, 0, 0];
+			for (let corner = 0; corner < 4; corner++)
+				for (let c = 0; c < 3; c++)
+					middle[c] =
+						(middle[c] as number) + (on.positions[(first + corner) * 3 + c] as number) / 4;
+			near(onTo, middle);
 			if (
 				Math.hypot(centre[0], centre[1], centre[2]) * (rows.scale[r] as number) >
 				Math.hypot(bx, by, bz) + 1e-3
