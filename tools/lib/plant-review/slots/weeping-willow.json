@@ -1,4 +1,9 @@
 {
+	"07-limb-leaving-trunk.png": {
+		"limbShare": 0.25,
+		"collarColumn": 0.45,
+		"limbLie": 45
+	},
 	"01-whole-distant.png": {
 		"sunAzimuth": 40,
 		"sunRise": 48,

@@ -24,7 +24,13 @@ import { buildKitNow, growPlantNow, loadPlantCode } from '../packages/vegetation
 import { growConifer, planConifer } from '../packages/vegetation/src/grow/conifer.ts';
 import { type FrameSpec, frameSkeleton, planFrame } from '../packages/vegetation/src/grow/frame.ts';
 import { REPO_ROOT } from '../tests/lib/server.ts';
-import { type PreviewCamera, standingCamera, upwardCamera } from './lib/plant-preview/camera.ts';
+import {
+	type PreviewCamera,
+	project,
+	restood,
+	standingCamera,
+	upwardCamera,
+} from './lib/plant-preview/camera.ts';
 import {
 	canvas,
 	drawMarks,
@@ -109,11 +115,16 @@ const BY_ORDER: Paint = {
 	mark: [40, 150, 70],
 };
 
-/** A foliage patch as the sheet rings it. */
+/**
+ * A foliage patch as the sheet rings it: as wide as its width across and, where it lies along a
+ * limb, as long as its length along the level direction it lies in.
+ */
 interface Ringed {
 	readonly centre: readonly [number, number, number];
 	readonly width: number;
 	readonly depth: number;
+	readonly length?: number;
+	readonly along?: readonly [number, number, number];
 }
 
 /** A directed frame as the sheet draws it, whichever planner made it. */
@@ -137,11 +148,51 @@ function patchMarks(patches: readonly Ringed[]): Float32Array {
 		for (const lift of [0.5, -0.5])
 			for (let k = 0; k < RING; k++) {
 				const angle = (k / RING) * 2 * Math.PI;
-				marks[at++] = patch.centre[0] + (Math.cos(angle) * patch.width) / 2;
+				const [ax, , az] = patch.along ?? [1, 0, 0];
+				const u = (Math.cos(angle) * (patch.length ?? patch.width)) / 2;
+				const v = (Math.sin(angle) * patch.width) / 2;
+				marks[at++] = patch.centre[0] + ax * u - az * v;
 				marks[at++] = patch.centre[1] + lift * patch.depth;
-				marks[at++] = patch.centre[2] + (Math.sin(angle) * patch.width) / 2;
+				marks[at++] = patch.centre[2] + az * u + ax * v;
 			}
 	return marks;
+}
+
+/** The share of a panel's half width and half height that a drawing may fill before it is stood back. */
+const FIT = 0.97;
+
+/**
+ * A camera stood back until a frame's wood and every patch ring stand inside the panel, and how far
+ * it was stood back: 1 where the frame fits at the photograph's own framing. A crown wider than its
+ * photograph's would otherwise leave the sheet.
+ */
+function fitted(
+	camera: PreviewCamera,
+	skeleton: MacroSkeleton,
+	patches: readonly Ringed[],
+): { readonly camera: PreviewCamera; readonly back: number } {
+	const marks = patchMarks(patches);
+	const at = new Float64Array(3);
+	let most = 0;
+	const read = (x: number, y: number, z: number): void => {
+		project(camera, x, y, z, at, 0);
+		if (!Number.isFinite(at[0] as number)) return;
+		most = Math.max(
+			most,
+			Math.abs((at[0] as number) - camera.width / 2) / (camera.width / 2),
+			Math.abs((at[1] as number) - camera.height / 2) / (camera.height / 2),
+		);
+	};
+	for (let k = 0; k < marks.length; k += 3)
+		read(marks[k] as number, marks[k + 1] as number, marks[k + 2] as number);
+	for (let n = 0; n < skeleton.nodeCount; n++)
+		read(
+			skeleton.position[n * 3] as number,
+			skeleton.position[n * 3 + 1] as number,
+			skeleton.position[n * 3 + 2] as number,
+		);
+	const back = most > FIT ? most / FIT : 1;
+	return { camera: restood(camera, back), back };
 }
 
 /** One skeleton's picture from a camera, with its patches' rings where it has a plan. */
@@ -264,6 +315,7 @@ async function coniferFrame(directed: Species): Promise<Drawn> {
 				place: Number(limb.place.toFixed(3)),
 				reach: share(limb.reach, H),
 				leaves: share(plan.trunk[limb.trunkNode]?.y ?? 0, H),
+				patchLength: share(limb.patch.length, H),
 				patchWidth: share(limb.patch.width, H),
 				patchDepth: share(limb.patch.depth, H),
 			})),
@@ -291,12 +343,18 @@ if (existsSync(folder)) {
 			// Both skeletons stand at the framing of the reference, each to its own height, so each
 			// one's top and foot land on the reference's rows.
 			const camera = (height: number) => standingCamera(reference.framing, height, turn, PANEL);
+			// The frame stands at the photograph's framing, or farther back where its crown would
+			// leave the panel; the caption says how far.
+			const fit = fitted(camera(drawn.height), drawn.skeleton, drawn.patches);
 			strips.push(
 				strip([
 					{ caption: `${still.file} (turn ${turn})`, picture: resizeToWidth(image, PANEL) },
 					{
-						caption: 'directed frame, with each foliage patch ringed',
-						picture: skeletonPicture(camera(drawn.height), drawn.skeleton, drawn.patches),
+						caption:
+							fit.back === 1
+								? 'directed frame, with each foliage patch ringed'
+								: `frame at ${(1 / fit.back).toFixed(2)} of the photo's scale, to fit`,
+						picture: skeletonPicture(fit.camera, drawn.skeleton, drawn.patches),
 					},
 					{
 						caption: "the registered record's skeleton",

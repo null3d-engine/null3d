@@ -81,10 +81,9 @@ export const directed: Species = {
 		},
 	},
 	pieces: PIECES,
-	// The sparsest palm keeps a quarter of each group of sockets, spread round the trunk: nine
-	// living fronds from every rank, two dead fronds and two date bunches on the default plant, so
-	// the crown still reads as a ball on a column (the specification asks ten, three and two).
-	sparse: { limbs: 0.25, leaves: 1, coarseness: 0 },
+	// The specification's sparsest palm keeps 10 living fronds and 3 dead ones of 35, so the crown
+	// still reads as a ball on a column: a share of 0.37 of its fronds.
+	sparse: { foliage: 0.37 },
 	// The pieces read their bud and leaf-turn figures here; no shoot class grows on this plant.
 	shoots: {
 		prototypes: 4,

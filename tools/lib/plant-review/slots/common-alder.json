@@ -124,7 +124,8 @@
 	},
 	"_pictures": {
 		"01-whole-distant.png": {
-			"outline": "the far river bank behind the tree joins its outline; picture 30 shows the same form on a clean ground"
+			"outline": "the far river bank behind the tree joins its outline; picture 30 shows the same form on a clean ground",
+			"ruling": "the session lead ruled the outline void when the tree's specification found the bank inside it"
 		}
 	}
 }

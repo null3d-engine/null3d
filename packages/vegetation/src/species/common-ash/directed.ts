@@ -4,7 +4,7 @@
 // bunches stand. Each figure names the reference picture it was read on. Shares are of the tree's
 // height, measured from the true foot. Still 01 and the whole-tree turning video are the one tree
 // the frame follows.
-import { type FrameBranchRule, type FrameSpec, framedRecord } from '../../grow/frame';
+import { evenOutline, type FrameBranchRule, type FrameSpec, framedRecord } from '../../grow/frame';
 import { record } from './record';
 
 /**
@@ -84,28 +84,30 @@ const branches: FrameBranchRule = {
 /** The common ash's frame. */
 export const frame: FrameSpec = {
 	// Still 01, the outline's half width in bands from the top down, each at its own height.
-	outline: [
-		[0.265, 0.21],
-		[0.305, 0.4],
-		[0.345, 0.438],
-		[0.385, 0.457],
-		[0.464, 0.448],
-		[0.543, 0.395],
-		[0.583, 0.41],
-		[0.623, 0.457],
-		[0.662, 0.467],
-		[0.702, 0.429],
-		[0.742, 0.424],
-		[0.782, 0.4],
-		[0.821, 0.334],
-		[0.861, 0.319],
-		[0.901, 0.272],
-		[0.94, 0.148],
-		[0.98, 0.119],
-		[1, 0],
-	],
-	// The crown is built nearly round. Still 01 looks across the wide side.
-	plan: { narrow: 0.88, turn: 0 },
+	outline: evenOutline(
+		[
+			[0.265, 0.21],
+			[0.305, 0.4],
+			[0.345, 0.438],
+			[0.385, 0.457],
+			[0.464, 0.448],
+			[0.543, 0.395],
+			[0.583, 0.41],
+			[0.623, 0.457],
+			[0.662, 0.467],
+			[0.702, 0.429],
+			[0.742, 0.424],
+			[0.782, 0.4],
+			[0.821, 0.334],
+			[0.861, 0.319],
+			[0.901, 0.272],
+			[0.94, 0.148],
+			[0.98, 0.119],
+			[1, 0],
+		],
+		// The crown is built nearly round. Still 01 looks across the wide side.
+		0.88,
+	),
 	stems: {
 		name: 'trunk',
 		count: 1,

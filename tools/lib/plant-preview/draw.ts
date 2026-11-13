@@ -11,7 +11,7 @@ import type {
 } from '../../../packages/vegetation/src/asset.ts';
 import type { MacroSkeleton } from '../../../packages/vegetation/src/core/graph.ts';
 import { DETAILS } from '../../../packages/vegetation/src/core/types.ts';
-import { SURFACE_LEAF } from '../../../packages/vegetation/src/leaf/writer.ts';
+import { leafSurface, SURFACE_BRUSH } from '../../../packages/vegetation/src/leaf/writer.ts';
 import { paletteOf } from '../../../packages/vegetation/src/lod/card-bake.ts';
 import {
 	type RasterTarget,
@@ -215,8 +215,23 @@ export function drawShoots(
 		const a = arrays.indices[t] as number;
 		const b = arrays.indices[t + 1] as number;
 		const c = arrays.indices[t + 2] as number;
-		const leaf = (arrays.colors[a * 4 + 2] as number) === SURFACE_LEAF;
-		if (leaf && mask) {
+		const kind = arrays.colors[a * 4 + 2] as number;
+		const leaf = leafSurface(kind);
+		if (kind === SURFACE_BRUSH) {
+			// A brush card covers where the card atlas's picture of its run does.
+			const u =
+				(arrays.uvs[a * 2] as number) * f.w0 +
+				(arrays.uvs[b * 2] as number) * f.w1 +
+				(arrays.uvs[c * 2] as number) * f.w2;
+			const v =
+				(arrays.uvs[a * 2 + 1] as number) * f.w0 +
+				(arrays.uvs[b * 2 + 1] as number) * f.w1 +
+				(arrays.uvs[c * 2 + 1] as number) * f.w2;
+			const size = kit.cards.size;
+			const tx = Math.min(size - 1, Math.max(0, Math.floor(u * size)));
+			const ty = Math.min(size - 1, Math.max(0, Math.floor(v * size)));
+			if ((kit.cards.color[(ty * size + tx) * 4 + 3] as number) < 128) return false;
+		} else if (leaf && mask) {
 			const u =
 				(arrays.uvs[a * 2] as number) * f.w0 +
 				(arrays.uvs[b * 2] as number) * f.w1 +

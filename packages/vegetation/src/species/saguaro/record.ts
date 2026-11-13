@@ -70,6 +70,8 @@ export const record: Species = {
 				},
 			],
 			plane: 1,
+			// Stills 04 and 16: fourteen ribs round an arm.
+			ribs: { mean: 14, spread: 1 },
 			leave: -5,
 			elbow: 1.5,
 			pinch: 0.75,
@@ -239,7 +241,6 @@ export const record: Species = {
 		nearFoliage: 'instanced',
 		switchPixels: [240, 12, 160],
 		woodOrders: [1, 1],
-		cardGrow: 1,
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {

@@ -447,9 +447,6 @@ export const record: Species = {
 	lod: {
 		nearFoliage: 'instanced',
 		switchPixels: [240, 12, 160],
-		// The cards stand a quarter larger than the shoots they picture, so a gap between one
-		// shoot's leaves falls on a neighbour's leaves rather than on sky.
-		cardGrow: 1.25,
 		woodOrders: [2, 1],
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
@@ -476,10 +473,9 @@ export const record: Species = {
 	textures: 'own',
 	variants: 6,
 	seedSalt: 1121298234,
-	// A phone grows this oak lighter than a desktop: below about half the record's wood and leaf the
-	// open-grown dome closes into a ball, and past this coarsening the twigs it hangs its leaves on
-	// start to break. These floors are a first pass and are measured against the phone set.
-	sparse: { limbs: 0.35, leaves: 0.42, coarseness: 0.6 },
+	// The sparsest form keeps this share of the crown's shoots, each whole: about the leaf area
+	// below which the crown stops reading as its species.
+	sparse: { foliage: 0.08 },
 	roundBand,
 	// The woodland oak of stills 30 and 31 and the young oak of still 32.
 	forms,

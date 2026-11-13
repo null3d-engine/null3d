@@ -79,10 +79,9 @@ export const directed: Species = {
 		},
 	},
 	pieces: PIECES,
-	// The sparsest fern keeps three tenths of each group of sockets, spread round the trunk: about
-	// nine living fronds from every rank and five skirt fronds, so the dome and the skirt still read
-	// (the specification asks eight and six).
-	sparse: { limbs: 0.3, leaves: 1, coarseness: 0 },
+	// The specification's sparsest fern keeps 8 living fronds and a skirt of 6 of 36, so the dome and
+	// the skirt still read: a share of 0.39 of its fronds.
+	sparse: { foliage: 0.39 },
 	// The pieces read their bud and leaf-turn figures here; no shoot class grows on this plant.
 	shoots: {
 		prototypes: 4,

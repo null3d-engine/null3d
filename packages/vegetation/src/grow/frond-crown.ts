@@ -10,10 +10,9 @@
 // no later scale of the wood leaves the pieces at its sockets out of step.
 //
 // Every socket carries a rank, ranked once across the plant. Within each group (a rank of fronds,
-// the dead fronds, the flower sites) a socket's place in the spiral is turned into a share by the
-// radical inverse, so any leading share of a group stands spread round the trunk; a sparse plant
-// keeps the sockets whose share is below the record's kept share, which keeps an even share of
-// every rank.
+// the dead fronds) a socket's place in the spiral is turned into a share by the radical inverse, so
+// any leading run of the ranks stands spread round the trunk with an even share of every group. A
+// sparser plant thins whole sockets by the plant's own order (grow/sparse.ts).
 import {
 	AXIS_RACHIS,
 	AXIS_STEM,
@@ -39,7 +38,6 @@ import {
 import type { FrondCrown, Species } from '../core/record';
 import { curveAt, spreadAt, spreadMean } from '../core/types';
 import { type PieceRule, pieceKey, pieceTurn, planPiece } from '../leaf/piece';
-import { pieceVigor } from '../leaf/piece-rows';
 import type { GrowInput } from '../stages';
 import { targetHeight } from './height';
 import type { Grower } from './models';
@@ -222,7 +220,7 @@ interface Planned {
 	readonly piece: number;
 	readonly scale: number;
 	readonly group: number;
-	/** Its share in its group's order: a sparse plant keeps the sockets below its kept share. */
+	/** Its share in its group's order, which ranks it across the plant. */
 	readonly share: number;
 	/** How low its piece reaches below its foot, in metres. */
 	readonly bottom: number;
@@ -247,8 +245,6 @@ export function growFrondCrown(input: GrowInput): MacroSkeleton {
 	const growth = crownOf(record);
 	const salt = record.seedSalt >>> 0;
 	const draw = (purpose: number, index = 0) => unitAt(seed, salt, variant, purpose, index);
-	const pieces = record.pieces ?? [];
-	const keep = Math.min(1, Math.max(0, growth.keep ?? 1));
 	const builder = new SkeletonBuilder();
 
 	// The trunk: straight, leaning one way, as tall as the drawn height leaves under the crown.
@@ -354,7 +350,6 @@ export function growFrondCrown(input: GrowInput): MacroSkeleton {
 	// Each socket's rank, once across the plant: by its share in its group, then by its group.
 	const kept = planned
 		.map((socket, i) => ({ socket, i }))
-		.filter(({ socket }) => socket.share === 0 || socket.share < keep)
 		.sort(
 			(a, b) => a.socket.share - b.socket.share || a.socket.group - b.socket.group || a.i - b.i,
 		);
@@ -370,21 +365,20 @@ export function growFrondCrown(input: GrowInput): MacroSkeleton {
 			z: socket.at[2],
 			frame,
 			kind: BUD_TERMINAL,
-			vigor: pieceVigor(socket.piece, pieces.length),
+			vigor: 1,
 			light: 1,
 			axis: trunk,
 			woodRadius: topRadius,
-			socket: { scale: socket.scale, rank, lobe: socket.group },
+			socket: { scale: socket.scale, rank, lobe: socket.group, piece: socket.piece },
 		});
 		lowest = Math.min(lowest, socket.at[1] + socket.bottom);
 	});
 
-	// The flower sites, a ring between the lowest living fronds, an even share kept as the sockets are.
+	// The flower sites, a ring between the lowest living fronds.
 	const flowers = growth.flowers;
 	if (flowers) {
 		const n = Math.max(0, Math.round(spreadAt(flowers.count, draw(DRAW.flowers))));
 		for (let k = 0; k < n; k++) {
-			if (radicalInverse(k) >= keep && k > 0) continue;
 			const azimuth =
 				start +
 				(2 * PI * (k + 0.5)) / n +

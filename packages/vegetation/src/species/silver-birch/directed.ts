@@ -2,32 +2,34 @@
 // one at a time, and the side branches whose ends arch over and hang. Each figure names the
 // reference picture it was read on. Shares are of the tree's height, measured from the true foot of
 // each picture. Still 01 and the whole-tree turning video are the one tree the frame follows.
-import { type FrameSpec, framedRecord } from '../../grow/frame';
+import { evenOutline, type FrameSpec, framedRecord } from '../../grow/frame';
 import { record } from './record';
 
 /** The silver birch's frame. */
 export const frame: FrameSpec = {
 	// Still 01, the outline's half width in 24 bands from the top down, each at its own height.
-	outline: [
-		[0.243, 0.084],
-		[0.282, 0.149],
-		[0.32, 0.182],
-		[0.359, 0.228],
-		[0.398, 0.247],
-		[0.437, 0.261],
-		[0.515, 0.256],
-		[0.592, 0.27],
-		[0.631, 0.238],
-		[0.709, 0.228],
-		[0.786, 0.191],
-		[0.864, 0.168],
-		[0.903, 0.13],
-		[0.942, 0.075],
-		[0.981, 0.037],
-		[1, 0],
-	],
-	// The crown is built nearly round. Still 01 looks across the wide side.
-	plan: { narrow: 0.8, turn: 0 },
+	outline: evenOutline(
+		[
+			[0.243, 0.084],
+			[0.282, 0.149],
+			[0.32, 0.182],
+			[0.359, 0.228],
+			[0.398, 0.247],
+			[0.437, 0.261],
+			[0.515, 0.256],
+			[0.592, 0.27],
+			[0.631, 0.238],
+			[0.709, 0.228],
+			[0.786, 0.191],
+			[0.864, 0.168],
+			[0.903, 0.13],
+			[0.942, 0.075],
+			[0.981, 0.037],
+			[1, 0],
+		],
+		// The crown is built nearly round. Still 01 looks across the wide side.
+		0.8,
+	),
 	stems: {
 		name: 'leader',
 		count: 1,
@@ -160,7 +162,7 @@ export const frame: FrameSpec = {
 						radius: 0.45,
 						taper: 0.3,
 						// Stills 21 and 22: an arm rises, arches over and ends pointing down.
-						bends: [{ from: 0.3, to: 1, level: -65 }],
+						bends: [{ from: 0.12, to: 1, level: -65 }],
 						sway: 9,
 						elbows: 4,
 						// Still 09: a side branch carries strands 17 to 28 cm long, and still 19 up to a
@@ -187,6 +189,8 @@ export const frame: FrameSpec = {
 				// Still 01: the crown is 0.13 of the height in half width at 0.90 and 0.04 at 0.98.
 				length: { outline: 0.7 },
 				vary: 0.08,
+				// Still 19: a branch end is half a metre long at the least.
+				least: 0.025,
 				radius: 0.4,
 				taper: 0.3,
 				bends: [{ from: 0.5, to: 1, level: -30 }],

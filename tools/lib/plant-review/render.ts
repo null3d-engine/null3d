@@ -60,6 +60,8 @@ export interface Shot {
 	readonly cell: readonly [number, number];
 	readonly cells: readonly ShotCell[];
 	readonly matte: boolean;
+	/** Whether a picture of the plant's parts in flat colours follows, from the same camera. */
+	readonly parts?: boolean;
 	/** The reference the shot is compared with, for a still. */
 	readonly reference?: string;
 }
@@ -77,6 +79,10 @@ export interface RunFrame {
 	readonly matte?: string;
 	/** Why the matte failed, when the picture drew and its matte did not. */
 	readonly matteError?: string;
+	/** The picture of the plant's parts in flat colours, where the shot drew one. */
+	readonly parts?: string;
+	/** Why the picture of the parts failed, when the picture drew and it did not. */
+	readonly partsError?: string;
 	readonly reference?: string;
 	readonly sha256?: string;
 	/** What the page posted for this cell: its camera and, when asked, its measures. */
@@ -168,6 +174,7 @@ export function singleShot(
 	matte: boolean,
 	reference?: string,
 	hold = 1,
+	parts = false,
 ): Shot {
 	return {
 		group,
@@ -176,6 +183,7 @@ export function singleShot(
 		cell,
 		cells: [{ file: join(group, file), turn: query.turn ?? 0 }],
 		matte,
+		...(parts && { parts }),
 		...(reference && { reference }),
 	};
 }
@@ -372,26 +380,32 @@ export async function drawShots(
 				const hashes = writeCells(dir, shot, image, '');
 				const cells = (facts?.cells as unknown[] | undefined) ?? [];
 				const { cells: _cells, ...shared } = facts ?? {};
-				let mattes: string[] | undefined;
-				let matteError: string | undefined;
-				if (shot.matte) {
-					// A matte that fails leaves the pictures; their outlines then come from colour.
+				// A second picture from the same cameras: the matte, or the parts in flat colours. One
+				// that fails leaves the pictures, and what it would have told is then not read.
+				const second = async (
+					flag: 'matte' | 'parts',
+				): Promise<{ files?: string[]; error?: string }> => {
 					try {
-						const matte = await drawPage(
+						const drawn = await drawPage(
 							browser,
 							server.url,
-							{ ...shot.query, matte: true },
+							{ ...shot.query, [flag]: true },
 							size,
 							shot.hold,
 							options.gpu,
 						);
-						writeCells(dir, shot, matte.image, '-matte');
-						mattes = shot.cells.map((cell) => cell.file.replace(/\.png$/, '-matte.png'));
+						writeCells(dir, shot, drawn.image, `-${flag}`);
+						return {
+							files: shot.cells.map((cell) => cell.file.replace(/\.png$/, `-${flag}.png`)),
+						};
 					} catch (error) {
-						matteError = (error as Error).message.split('\n')[0] ?? 'failed';
-						log(`      the matte failed: ${matteError}`);
+						const why = (error as Error).message.split('\n')[0] ?? 'failed';
+						log(`      the ${flag} picture failed: ${why}`);
+						return { error: why };
 					}
-				}
+				};
+				const { files: mattes, error: matteError } = shot.matte ? await second('matte') : {};
+				const { files: parts, error: partsError } = shot.parts ? await second('parts') : {};
 				const ms = Date.now() - begun;
 				for (const [k, record] of records.entries())
 					frames.push({
@@ -399,6 +413,8 @@ export async function drawShots(
 						sha256: hashes[k],
 						...(mattes && { matte: mattes[k] }),
 						...(matteError && { matteError }),
+						...(parts && { parts: parts[k] }),
+						...(partsError && { partsError }),
 						cell: cells[k],
 						facts: shared,
 						ms: ms / records.length,

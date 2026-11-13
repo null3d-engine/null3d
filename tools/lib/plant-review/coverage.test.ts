@@ -38,6 +38,7 @@ const still = (file: string): StillResult => ({
 	gap: null,
 	crownBoxGap: null,
 	frameGap: null,
+	frameScale: null,
 	foliageDeltaE: 3,
 	barkDeltaE: null,
 	barkColour: null,
@@ -167,6 +168,48 @@ describe('the coverage list', () => {
 		);
 		expect(coverage.compared).toBe(3);
 		expect(coverage.complete).toBe(false);
+	});
+
+	test('lists a picture with no figure as drawn where the standard states none, and as a fault elsewhere', () => {
+		const bare = (file: string, over: Partial<StillResult>): [string, StillResult] => [
+			file,
+			{ ...still(file), masked: false, foliageDeltaE: null, shapeIou: null, ...over },
+		];
+		const of = (over: Partial<StillResult>) =>
+			coverageOf(
+				set,
+				{
+					stills: new Map([
+						bare('01-whole-distant.png', over),
+						[
+							'26-bark-texture.png',
+							{ ...still('26-bark-texture.png'), kind: 'texture', masked: false, surfaceDeltaE: 4 },
+						],
+					]),
+					turns: new Map([['oak-turntable.mp4', turn(193)]]),
+					winds: new Map([['oak-wind-motion-b.mp4', wind(7.875, 0.125)]]),
+				},
+				0.125,
+			);
+		// A limb's join against leaves has no figure to give: the eye judges it, and the run is whole.
+		const eye = of({ view: 'junction', subjectChecked: true });
+		expect(eye.lines[0]?.status).toBe('drawn');
+		expect(eye.drawn).toEqual(['01-whole-distant.png']);
+		expect(eye.compared).toBe(3);
+		expect(eye.complete).toBe(true);
+		expect(coverageMarkdown('stub', 'oak', eye)).toContain(
+			'and 1 more was drawn for the eye with no figure',
+		);
+		// The same picture with no check of its subject cannot be said to show the join.
+		const unchecked = of({ view: 'junction' });
+		expect(unchecked.lines[0]?.status).toBe('unmeasured');
+		expect(unchecked.lines[0]?.result).toContain('no check confirmed its subject');
+		expect(unchecked.complete).toBe(false);
+		// A whole view has figures, so one that gave none is the tool's fault.
+		const whole = of({ view: 'whole', subjectChecked: true });
+		expect(whole.lines[0]?.status).toBe('unmeasured');
+		expect(whole.lines[0]?.result).toContain('a whole view has a figure and the tool read none');
+		expect(whole.complete).toBe(false);
 	});
 
 	test('does not hold a pass back for a stand picture, which is not judged', () => {

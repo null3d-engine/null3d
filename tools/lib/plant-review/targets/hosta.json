@@ -1,0 +1,1441 @@
+{
+	"schema": 1,
+	"species": "hosta",
+	"source": {
+		"command": "bun run plants:targets hosta",
+		"references": "hosta",
+		"workWidth": 640,
+		"lobeDepth": 0.04,
+		"holeClasses": [0.01, 0.02, 0.05],
+		"breastHeight": null,
+		"missing": {
+			"breastHeight": "the stated height, 0.55 m, is under 2 breast heights"
+		}
+	},
+	"stated": {
+		"names": "hosta, plantain lily, *Hosta* (a plain green large-leaved garden form, close to *H.* 'Royal Standard' or *H. ventricosa* in leaf). One plant: the bright green plant of `01` and `11`.",
+		"heightMetres": [0.5, 0.6],
+		"flowerStemMetres": null,
+		"spreadMetres": [0.9, 1.2],
+		"widthToHeight": [2, 2],
+		"crownShare": null,
+		"clearTrunkShare": null,
+		"trunkMetres": null,
+		"stems": "One crown, no stem above ground",
+		"leafLengthCm": [20, 30],
+		"leafWidthCm": [15, 22],
+		"leafletCm": null,
+		"arrangement": "spiral",
+		"habitWords": ["dome", "mound", "low"],
+		"outline": "a low dome of overlapping leaves",
+		"habit": "a mound 0.5 to 0.6 m tall and 0.9 to 1.2 m wide (width about twice the height). Widest at the leaf tips near the ground. Outline: a low dome of overlapping leaves. One crown, no stem above ground.",
+		"branching": "none. Leaves rise in a spiral from a short crown on long grooved stalks.",
+		"leaves": "simple, broadly oval to heart-shaped, 20 to 30 cm long and 15 to 22 cm wide (about 1.3 to 1 long to wide), widest below the middle; base heart-shaped, tip short and pointed. Margin entire, slightly wavy, no coloured rim. Eight to ten pairs of deep curved parallel veins from the midrib to the tip. Stalk 20 to 35 cm, pale green, grooved above. Upper face bright, slightly glossy green; lower face paler matt green with raised ribs.",
+		"missing": {
+			"flowerStemMetres": "the fact sheet gives no flowering stem height",
+			"crownShare": "the fact sheet does not state it in words the reader knows",
+			"clearTrunkShare": "the fact sheet does not state it in words the reader knows",
+			"trunkMetres": "the fact sheet does not state it in words the reader knows",
+			"leafletCm": "the fact sheet describes no leaflet apart from the leaf"
+		}
+	},
+	"whole": {
+		"primary": {
+			"still": {
+				"file": "01-whole-plant-distant.png",
+				"figures": {
+					"heightToWidth": 0.6299,
+					"foot": {
+						"rows": {
+							"frame": 688,
+							"horizon": 415,
+							"outline": 624,
+							"foot": 624
+						},
+						"belowHorizon": 0.3579,
+						"followed": 0
+					},
+					"crown": {
+						"heightToWidth": 0.6038,
+						"base": 0.0464,
+						"width": 1.5792
+					},
+					"trunk": {
+						"bareShare": null,
+						"width": null,
+						"column": false,
+						"breastHeightWidth": null,
+						"flare": null,
+						"lean": null,
+						"stems": null
+					},
+					"limbs": null,
+					"envelope": {
+						"left": [0.556, 0.5861, 0.7145, 0.7855, 0.791, 0.7883, 0.791, 0.7964, 0.7883, 0.7473, 0.7063, 0.6735, 0.5997, 0.5068, 0.4112, 0.2418],
+						"right": [0.5423, 0.5697, 0.7801, 0.7883, 0.7883, 0.7664, 0.7637, 0.7664, 0.7637, 0.7527, 0.7199, 0.6462, 0.6079, 0.5697, 0.4194, 0.2199]
+					},
+					"lobes": {
+						"count": 5,
+						"byDepth": [
+							{
+								"depth": 0.02,
+								"count": 11
+							},
+							{
+								"depth": 0.04,
+								"count": 5
+							},
+							{
+								"depth": 0.08,
+								"count": 1
+							}
+						],
+						"areaShares": [0.396, 0.383, 0.117, 0.085, 0.017],
+						"widthShares": [0.57, 0.538, 0.18, 0.136, 0.052],
+						"notchDepths": [0.07, 0.06, 0.052, 0.049]
+					},
+					"sky": {
+						"enclosedGap": 0.1169,
+						"boxGap": 0.3028,
+						"holes": {
+							"count": 47,
+							"share": 0.0029,
+							"largest": 0.0009,
+							"medianDiameter": 0.0019,
+							"bySize": [43, 2, 2, 0]
+						},
+						"grid": {
+							"enclosed": [
+								[0.0283, 0.073, 0.1018],
+								[0.0834, 0, 0.0585],
+								[0.3209, 0.1776, 0.17]
+							],
+							"box": [
+								[0.6654, 0.1672, 0.6591],
+								[0.1617, 0, 0.1461],
+								[0.4355, 0.1776, 0.3143]
+							]
+						},
+						"unevenness": 0.817
+					},
+					"missing": {
+						"trunk.bareShare": "the stem below the crown stands under the horizon, where the ground hides it",
+						"trunk.width": "the stem below the crown stands under the horizon, where the ground hides it",
+						"trunk.breastHeightWidth": "the stem below the crown stands under the horizon, where the ground hides it",
+						"trunk.flare": "the stem below the crown stands under the horizon, where the ground hides it",
+						"trunk.lean": "the stem below the crown stands under the horizon, where the ground hides it",
+						"trunk.stems": "the stem below the crown stands under the horizon, where the ground hides it",
+						"limbs": "no stem shows below the crown, so no fork shows"
+					}
+				},
+				"missing": {}
+			},
+			"turn": {
+				"video": "hosta-turntable-halfturn.mp4",
+				"arc": 180,
+				"frames": 180,
+				"read": 180,
+				"skipped": {},
+				"stats": {
+					"heightToWidth": {
+						"min": 0.6267,
+						"low": 0.6392,
+						"median": 0.6631,
+						"high": 0.6868,
+						"mean": 0.6634,
+						"max": 0.6918,
+						"spread": 0.0981,
+						"frames": 180
+					},
+					"footBelowHorizon": {
+						"min": 0.3579,
+						"low": 0.3622,
+						"median": 0.3782,
+						"high": 0.3943,
+						"mean": 0.3786,
+						"max": 0.3969,
+						"spread": 0.103,
+						"frames": 180
+					},
+					"footFollowed": {
+						"min": 0,
+						"low": 0,
+						"median": 0,
+						"high": 0,
+						"mean": 0,
+						"max": 0,
+						"spread": 0,
+						"frames": 180
+					},
+					"crownHeightToWidth": {
+						"min": 0.5892,
+						"low": 0.6,
+						"median": 0.624,
+						"high": 0.6511,
+						"mean": 0.6233,
+						"max": 0.6625,
+						"spread": 0.1176,
+						"frames": 180
+					},
+					"crownBase": {
+						"min": 0.0136,
+						"low": 0.037,
+						"median": 0.0653,
+						"high": 0.0984,
+						"mean": 0.0662,
+						"max": 0.1326,
+						"spread": 1.798,
+						"frames": 180
+					},
+					"crownWidth": {
+						"min": 1.4308,
+						"low": 1.4503,
+						"median": 1.4981,
+						"high": 1.5633,
+						"mean": 1.4987,
+						"max": 1.5847,
+						"spread": 0.1027,
+						"frames": 180
+					},
+					"bareTrunk": null,
+					"trunkWidth": null,
+					"breastHeightWidth": null,
+					"flare": null,
+					"lean": null,
+					"stems": null,
+					"limbs": null,
+					"lobes": {
+						"min": 2,
+						"low": 4,
+						"median": 5,
+						"high": 6,
+						"mean": 5.0222,
+						"max": 7,
+						"spread": 0.9956,
+						"frames": 180
+					},
+					"enclosedGap": {
+						"min": 0.0773,
+						"low": 0.1033,
+						"median": 0.115,
+						"high": 0.1435,
+						"mean": 0.1198,
+						"max": 0.1652,
+						"spread": 0.7337,
+						"frames": 180
+					},
+					"boxGap": {
+						"min": 0.2837,
+						"low": 0.2989,
+						"median": 0.3286,
+						"high": 0.3611,
+						"mean": 0.3298,
+						"max": 0.378,
+						"spread": 0.2859,
+						"frames": 180
+					},
+					"holeCount": {
+						"min": 21,
+						"low": 35,
+						"median": 58.5,
+						"high": 91,
+						"mean": 60.5389,
+						"max": 117,
+						"spread": 1.5858,
+						"frames": 180
+					},
+					"holeShare": {
+						"min": 0.001,
+						"low": 0.0022,
+						"median": 0.0047,
+						"high": 0.0084,
+						"mean": 0.0051,
+						"max": 0.015,
+						"spread": 2.7226,
+						"frames": 180
+					},
+					"unevenness": {
+						"min": 0.777,
+						"low": 0.839,
+						"median": 0.9925,
+						"high": 1.337,
+						"mean": 1.0429,
+						"max": 1.428,
+						"spread": 0.6242,
+						"frames": 180
+					}
+				},
+				"envelope": {
+					"max": [0.6612, 0.9813, 1.0053, 1.0293, 1.104, 1.104, 1.0933, 1.0987, 1.0987, 1.072, 1.0133, 0.976, 0.9013, 0.7947, 0.6933, 0.5493],
+					"mean": [0.2534, 0.4763, 0.6252, 0.7026, 0.7306, 0.7369, 0.7353, 0.7372, 0.7329, 0.7141, 0.6771, 0.628, 0.5777, 0.5001, 0.376, 0.2451],
+					"spread": [2.609, 1.909, 1.134, 0.95, 0.924, 0.944, 0.976, 0.98, 0.979, 0.96, 0.988, 1.151, 1.177, 1.246, 1.61, 2.241],
+					"byDirection": [
+						[0.4966, 0.5361, 0.6074, 0.7239, 0.7473, 0.7557, 0.7685, 0.7658, 0.7636, 0.7361, 0.6804, 0.6406, 0.572, 0.4746, 0.407, 0.2073],
+						[0.4542, 0.5708, 0.6474, 0.7123, 0.7504, 0.7566, 0.7487, 0.7338, 0.7152, 0.7103, 0.6676, 0.6268, 0.5878, 0.4864, 0.3834, 0.2759],
+						[0.2305, 0.5277, 0.6516, 0.6886, 0.7048, 0.7333, 0.7462, 0.7478, 0.7413, 0.733, 0.7007, 0.6248, 0.5746, 0.5232, 0.3368, 0.317],
+						[0.2361, 0.4864, 0.6273, 0.6879, 0.6794, 0.6439, 0.6299, 0.6533, 0.691, 0.6922, 0.6855, 0.6275, 0.5622, 0.509, 0.2694, 0.2767],
+						[0.4767, 0.5442, 0.6746, 0.7324, 0.7346, 0.7124, 0.7008, 0.7157, 0.7207, 0.7153, 0.6835, 0.6267, 0.5892, 0.5537, 0.3794, 0.2374],
+						[0.3094, 0.3302, 0.6125, 0.622, 0.6209, 0.6024, 0.571, 0.5716, 0.5774, 0.5753, 0.5387, 0.4546, 0.4251, 0.3903, 0.2773, 0.0825],
+						[0.0714, 0.3133, 0.5411, 0.5454, 0.5534, 0.5565, 0.5561, 0.5522, 0.5455, 0.5392, 0.4894, 0.4438, 0.4226, 0.324, 0.2545, 0.0167],
+						[0.3024, 0.6035, 0.688, 0.7129, 0.7567, 0.7815, 0.8121, 0.8124, 0.7928, 0.7431, 0.7093, 0.691, 0.6352, 0.5519, 0.407, 0.2117],
+						[0.3993, 0.5493, 0.6008, 0.6699, 0.698, 0.7146, 0.7116, 0.6929, 0.679, 0.6558, 0.6377, 0.5835, 0.5144, 0.4407, 0.3025, 0.2227],
+						[0.3989, 0.5031, 0.5857, 0.7008, 0.7172, 0.7393, 0.7446, 0.7376, 0.7243, 0.6939, 0.6889, 0.6413, 0.5893, 0.5347, 0.4278, 0.3757],
+						[0.1116, 0.3085, 0.5119, 0.6284, 0.7001, 0.7595, 0.7593, 0.7432, 0.7093, 0.6983, 0.685, 0.6497, 0.6203, 0.5687, 0.3702, 0.3882],
+						[0.0021, 0.3985, 0.6064, 0.718, 0.7995, 0.8095, 0.8051, 0.7923, 0.8047, 0.8001, 0.7578, 0.7017, 0.6598, 0.5629, 0.4005, 0.3608],
+						[0.3709, 0.5964, 0.6966, 0.8087, 0.8145, 0.8119, 0.8096, 0.8245, 0.818, 0.7846, 0.7315, 0.6716, 0.5981, 0.4964, 0.4148, 0.2042],
+						[0.0282, 0.7822, 0.8273, 0.8732, 0.9204, 0.92, 0.9031, 0.9165, 0.9171, 0.8878, 0.8276, 0.7943, 0.725, 0.615, 0.5182, 0.3672],
+						[0.0093, 0.3431, 0.725, 0.8494, 0.8642, 0.8624, 0.8779, 0.892, 0.883, 0.8465, 0.7919, 0.7588, 0.7151, 0.6046, 0.5224, 0.3144],
+						[0.1142, 0.2114, 0.3965, 0.5616, 0.623, 0.6285, 0.6169, 0.6392, 0.6397, 0.6122, 0.5563, 0.51, 0.4512, 0.3635, 0.3393, 0.0703]
+					]
+				},
+				"grid": {
+					"enclosed": [
+						[0.0698, 0.0844, 0.0466],
+						[0.0687, 0, 0.0511],
+						[0.3887, 0.1115, 0.2647]
+					],
+					"box": [
+						[0.6772, 0.1975, 0.656],
+						[0.1539, 0, 0.1519],
+						[0.5421, 0.1312, 0.4595]
+					]
+				},
+				"lobeCounts": {
+					"2": 3,
+					"3": 9,
+					"4": 29,
+					"5": 83,
+					"6": 52,
+					"7": 4
+				},
+				"series": {
+					"angles": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9.1, 10.1, 11.1, 12.1, 13.1, 14.1, 15.1, 16.1, 17.1, 18.1, 19.1, 20.1, 21.1, 22.1, 23.1, 24.1, 25.1, 26.1, 27.2, 28.2, 29.2, 30.2, 31.2, 32.2, 33.2, 34.2, 35.2, 36.2, 37.2, 38.2, 39.2, 40.2, 41.2, 42.2, 43.2, 44.2, 45.3, 46.3, 47.3, 48.3, 49.3, 50.3, 51.3, 52.3, 53.3, 54.3, 55.3, 56.3, 57.3, 58.3, 59.3, 60.3, 61.3, 62.3, 63.4, 64.4, 65.4, 66.4, 67.4, 68.4, 69.4, 70.4, 71.4, 72.4, 73.4, 74.4, 75.4, 76.4, 77.4, 78.4, 79.4, 80.4, 81.5, 82.5, 83.5, 84.5, 85.5, 86.5, 87.5, 88.5, 89.5, 90.5, 91.5, 92.5, 93.5, 94.5, 95.5, 96.5, 97.5, 98.5, 99.6, 100.6, 101.6, 102.6, 103.6, 104.6, 105.6, 106.6, 107.6, 108.6, 109.6, 110.6, 111.6, 112.6, 113.6, 114.6, 115.6, 116.6, 117.7, 118.7, 119.7, 120.7, 121.7, 122.7, 123.7, 124.7, 125.7, 126.7, 127.7, 128.7, 129.7, 130.7, 131.7, 132.7, 133.7, 134.7, 135.8, 136.8, 137.8, 138.8, 139.8, 140.8, 141.8, 142.8, 143.8, 144.8, 145.8, 146.8, 147.8, 148.8, 149.8, 150.8, 151.8, 152.8, 153.9, 154.9, 155.9, 156.9, 157.9, 158.9, 159.9, 160.9, 161.9, 162.9, 163.9, 164.9, 165.9, 166.9, 167.9, 168.9, 169.9, 170.9, 172, 173, 174, 175, 176, 177, 178, 179, 180],
+					"heightToWidth": [0.6267, 0.6284, 0.6284, 0.6284, 0.6284, 0.6284, 0.6284, 0.6301, 0.6284, 0.6318, 0.634, 0.634, 0.6357, 0.6357, 0.6357, 0.6357, 0.6375, 0.6375, 0.6392, 0.6392, 0.6392, 0.6453, 0.6453, 0.6453, 0.6493, 0.6493, 0.651, 0.6528, 0.6528, 0.6551, 0.6573, 0.6614, 0.6632, 0.6696, 0.6696, 0.6732, 0.672, 0.675, 0.6773, 0.6785, 0.6797, 0.6839, 0.6839, 0.6857, 0.6857, 0.6882, 0.6869, 0.69, 0.6875, 0.6918, 0.6893, 0.6893, 0.6893, 0.6893, 0.6918, 0.6893, 0.6868, 0.6868, 0.6851, 0.6875, 0.6875, 0.6845, 0.6845, 0.6833, 0.6833, 0.6857, 0.6864, 0.6864, 0.6883, 0.6895, 0.6902, 0.6877, 0.6835, 0.6823, 0.6817, 0.6768, 0.6781, 0.6763, 0.6738, 0.6661, 0.6685, 0.6661, 0.6625, 0.6667, 0.6703, 0.6691, 0.6715, 0.6733, 0.6757, 0.6733, 0.6739, 0.6764, 0.6782, 0.6721, 0.6727, 0.6709, 0.6721, 0.6709, 0.6685, 0.6667, 0.6637, 0.6631, 0.6631, 0.6601, 0.6613, 0.6595, 0.6637, 0.6631, 0.6643, 0.6703, 0.6679, 0.6685, 0.6685, 0.6643, 0.6649, 0.6679, 0.6661, 0.6596, 0.6602, 0.6573, 0.6596, 0.6551, 0.6591, 0.6591, 0.6591, 0.654, 0.6545, 0.6551, 0.6603, 0.6517, 0.6552, 0.6552, 0.6569, 0.6574, 0.6569, 0.654, 0.6592, 0.6569, 0.6609, 0.6598, 0.6626, 0.6603, 0.6638, 0.6638, 0.6667, 0.669, 0.6696, 0.669, 0.669, 0.6672, 0.6667, 0.6672, 0.6655, 0.6615, 0.6615, 0.6615, 0.6615, 0.6603, 0.662, 0.6603, 0.6603, 0.6608, 0.6603, 0.6603, 0.6585, 0.6528, 0.6528, 0.6493, 0.6528, 0.6528, 0.6516, 0.6498, 0.6498, 0.6469, 0.6486, 0.6451, 0.6486, 0.6496, 0.6496, 0.6479],
+					"crownBase": [0.0464, 0.0518, 0.049, 0.0518, 0.0545, 0.0518, 0.0518, 0.0543, 0.0518, 0.0542, 0.0596, 0.0596, 0.0622, 0.0649, 0.0595, 0.0649, 0.0674, 0.0647, 0.0699, 0.0672, 0.0699, 0.0751, 0.0697, 0.0724, 0.0749, 0.0749, 0.0773, 0.0745, 0.0745, 0.0771, 0.0798, 0.0796, 0.0767, 0.0871, 0.0871, 0.0871, 0.0765, 0.0842, 0.0916, 0.0864, 0.089, 0.0966, 0.0992, 0.1016, 0.0964, 0.099, 0.099, 0.1039, 0.1013, 0.1062, 0.101, 0.1036, 0.1062, 0.1088, 0.1036, 0.101, 0.0959, 0.0984, 0.0909, 0.0857, 0.0805, 0.0807, 0.0807, 0.0729, 0.0703, 0.0677, 0.0574, 0.0574, 0.0471, 0.0524, 0.0472, 0.042, 0.0368, 0.0344, 0.0317, 0.1326, 0.122, 0.1011, 0.0984, 0.0938, 0.0912, 0.0858, 0.0809, 0.078, 0.0749, 0.0753, 0.0806, 0.0751, 0.0724, 0.0322, 0.0376, 0.043, 0.0509, 0.0485, 0.0484, 0.0536, 0.0563, 0.0563, 0.0563, 0.0511, 0.0593, 0.0649, 0.0703, 0.0271, 0.0136, 0.0163, 0.0163, 0.0163, 0.019, 0.027, 0.1005, 0.0325, 0.0921, 0.0924, 0.0867, 0.0914, 0.0885, 0.0806, 0.0617, 0.0695, 0.0798, 0.0824, 0.0345, 0.0345, 0.0369, 0.037, 0.0371, 0.037, 0.042, 0.0423, 0.05, 0.05, 0.0525, 0.0526, 0.0577, 0.05, 0.0601, 0.0604, 0.0654, 0.0681, 0.0679, 0.0679, 0.0705, 0.0653, 0.0755, 0.0833, 0.0757, 0.0807, 0.0703, 0.0731, 0.0755, 0.0731, 0.0628, 0.0604, 0.0656, 0.0682, 0.0604, 0.0607, 0.0579, 0.058, 0.0607, 0.0556, 0.058, 0.058, 0.0476, 0.0532, 0.0532, 0.0481, 0.0399, 0.0505, 0.0455, 0.0429, 0.0456, 0.0568, 0.0431, 0.0759, 0.035, 0.0352, 0.0379, 0.0652],
+					"enclosedGap": [0.105, 0.1059, 0.1092, 0.1044, 0.1032, 0.1031, 0.1053, 0.1006, 0.1052, 0.1049, 0.1067, 0.1072, 0.1056, 0.1061, 0.1111, 0.1118, 0.107, 0.1073, 0.1045, 0.1114, 0.1091, 0.1076, 0.1081, 0.107, 0.1074, 0.1046, 0.1047, 0.1082, 0.1073, 0.1092, 0.1071, 0.1088, 0.1095, 0.1087, 0.1097, 0.1044, 0.107, 0.1059, 0.1021, 0.1038, 0.1033, 0.1047, 0.1013, 0.1079, 0.1111, 0.1115, 0.1093, 0.1137, 0.1127, 0.116, 0.1157, 0.12, 0.1208, 0.1227, 0.1223, 0.1274, 0.1323, 0.1268, 0.1264, 0.129, 0.1314, 0.1298, 0.1271, 0.1348, 0.129, 0.1317, 0.1355, 0.1339, 0.1357, 0.1305, 0.1301, 0.1356, 0.1389, 0.1379, 0.1383, 0.0951, 0.0987, 0.1064, 0.1071, 0.1076, 0.1094, 0.1118, 0.1145, 0.1167, 0.1198, 0.12, 0.1151, 0.1235, 0.1242, 0.1435, 0.1409, 0.1399, 0.1365, 0.1383, 0.134, 0.1415, 0.1392, 0.1414, 0.1359, 0.14, 0.1258, 0.1256, 0.1244, 0.1552, 0.1641, 0.1645, 0.1652, 0.1638, 0.156, 0.1543, 0.1083, 0.1515, 0.112, 0.1168, 0.1178, 0.122, 0.1245, 0.1254, 0.1407, 0.1414, 0.137, 0.1251, 0.1489, 0.1436, 0.1392, 0.1407, 0.1386, 0.1417, 0.1407, 0.1412, 0.1415, 0.1475, 0.1455, 0.1471, 0.1465, 0.1512, 0.1496, 0.1447, 0.1396, 0.137, 0.1313, 0.1262, 0.1197, 0.1177, 0.1169, 0.115, 0.1164, 0.116, 0.1157, 0.1119, 0.109, 0.1095, 0.1082, 0.1062, 0.1037, 0.1042, 0.1075, 0.1055, 0.1085, 0.1065, 0.1115, 0.1095, 0.108, 0.1164, 0.11, 0.1068, 0.1045, 0.1062, 0.1076, 0.0979, 0.094, 0.1014, 0.1003, 0.0961, 0.0957, 0.0805, 0.0978, 0.0915, 0.0888, 0.0773],
+					"lobes": [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 4, 5, 5, 4, 4, 4, 5, 6, 6, 6, 6, 6, 6, 6, 5, 5, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 5, 5, 5, 5, 6, 5, 5, 6, 6, 6, 6, 6, 6, 6, 6, 6, 5, 5, 4, 4, 4, 4, 4, 4, 5, 4, 4, 5, 5, 5, 5, 5, 5, 5, 5, 5, 6, 5, 5, 6, 6, 6, 6, 6, 6, 6, 6, 6, 5, 5, 4, 4, 4, 5, 5, 5, 5, 5, 5, 5, 5, 5, 4, 5, 4, 4, 4, 4, 4, 4, 6, 5, 5, 5, 5, 5, 4, 5, 5, 5, 5, 5, 4, 5, 4, 4, 4, 5, 5, 5, 5, 5, 5, 5, 5, 6, 5, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 7, 5, 6, 6, 6, 6, 5, 6, 6, 5, 6, 5, 5, 6, 6, 7, 7, 7, 5, 5, 6, 5]
+				},
+				"missing": {
+					"stats.bareTrunk": "no frame gives it: the stem below the crown stands under the horizon, where the ground hides it",
+					"stats.trunkWidth": "no frame gives it: the stem below the crown stands under the horizon, where the ground hides it",
+					"stats.breastHeightWidth": "no frame gives it: the stem below the crown stands under the horizon, where the ground hides it",
+					"stats.flare": "no frame gives it: the stem below the crown stands under the horizon, where the ground hides it",
+					"stats.lean": "no frame gives it: the stem below the crown stands under the horizon, where the ground hides it",
+					"stats.stems": "no frame gives it: the stem below the crown stands under the horizon, where the ground hides it",
+					"stats.limbs": "no frame gives it: no stem shows below the crown, so no fork shows",
+					"closing": "the video turns through less than a full turn, or an end frame has no outline"
+				},
+				"hull": {
+					"heights": [0, 0.071, 0.143, 0.214, 0.286, 0.357, 0.429, 0.5, 0.571, 0.643, 0.714, 0.786, 0.857, 0.929, 1],
+					"radii": [
+						[0.357, 0.228, 0.093, 0.11, 0.128, 0.15, 0.174, 0.317, 0.418, 0.229, 0.06, 0.177, 0.302, 0.158, 0.017, 0.18],
+						[0.455, 0.318, 0.138, 0.247, 0.393, 0.208, 0.028, 0.205, 0.403, 0.271, 0.108, 0.225, 0.341, 0.229, 0.167, 0.331],
+						[0.725, 0.6, 0.464, 0.567, 0.654, 0.453, 0.31, 0.499, 0.667, 0.516, 0.351, 0.458, 0.631, 0.607, 0.507, 0.607],
+						[0.797, 0.709, 0.607, 0.723, 0.825, 0.658, 0.573, 0.72, 0.795, 0.677, 0.56, 0.662, 0.8, 0.712, 0.607, 0.704],
+						[0.768, 0.708, 0.656, 0.782, 0.899, 0.795, 0.716, 0.786, 0.829, 0.773, 0.683, 0.724, 0.811, 0.726, 0.622, 0.691],
+						[0.797, 0.74, 0.674, 0.773, 0.873, 0.78, 0.707, 0.788, 0.854, 0.793, 0.712, 0.756, 0.811, 0.736, 0.651, 0.714],
+						[0.796, 0.743, 0.677, 0.785, 0.902, 0.802, 0.711, 0.779, 0.834, 0.77, 0.695, 0.747, 0.804, 0.737, 0.667, 0.722],
+						[0.797, 0.735, 0.667, 0.78, 0.9, 0.806, 0.724, 0.781, 0.818, 0.756, 0.677, 0.724, 0.798, 0.738, 0.666, 0.726],
+						[0.767, 0.719, 0.659, 0.756, 0.863, 0.779, 0.699, 0.751, 0.802, 0.768, 0.696, 0.716, 0.766, 0.703, 0.635, 0.695],
+						[0.656, 0.645, 0.613, 0.701, 0.794, 0.703, 0.635, 0.7, 0.752, 0.719, 0.66, 0.682, 0.719, 0.654, 0.581, 0.606],
+						[0.637, 0.594, 0.553, 0.646, 0.741, 0.665, 0.601, 0.646, 0.675, 0.649, 0.61, 0.629, 0.654, 0.607, 0.559, 0.595],
+						[0.591, 0.561, 0.506, 0.556, 0.63, 0.57, 0.508, 0.536, 0.576, 0.574, 0.557, 0.59, 0.61, 0.552, 0.503, 0.541],
+						[0.444, 0.399, 0.379, 0.463, 0.526, 0.443, 0.395, 0.447, 0.461, 0.426, 0.413, 0.435, 0.433, 0.391, 0.38, 0.425],
+						[0.196, 0.198, 0.176, 0.207, 0.247, 0.19, 0.15, 0.192, 0.247, 0.282, 0.273, 0.226, 0.175, 0.141, 0.126, 0.153],
+						0
+					],
+					"aspect": 1.56,
+					"crownBase": 0,
+					"consistency": {
+						"lowest": 0.6453,
+						"mean": 0.7363,
+						"highest": 0.8233
+					}
+				},
+				"closing": null,
+				"problems": ["the envelope's outlines match the views it came from with a mean overlap of only 0.7363: the plant drifts between views, or is too open for a hull to stand for it"]
+			},
+			"missing": {}
+		},
+		"secondary": [
+			{
+				"file": "02-whole-plant-profile.png",
+				"figures": {
+					"heightToWidth": 0.4664,
+					"foot": {
+						"rows": {
+							"frame": 688,
+							"horizon": 440,
+							"outline": 588,
+							"foot": 588
+						},
+						"belowHorizon": 0.3395,
+						"followed": 0
+					},
+					"crown": {
+						"heightToWidth": 0.4414,
+						"base": 0.0554,
+						"width": 2.1402
+					},
+					"trunk": {
+						"bareShare": null,
+						"width": null,
+						"column": false,
+						"breastHeightWidth": null,
+						"flare": null,
+						"lean": null,
+						"stems": null
+					},
+					"limbs": null,
+					"envelope": {
+						"left": [0.7435, 0.9686, 0.9723, 1.1347, 1.1347, 1.1199, 1.1273, 1.1273, 1.1125, 1.0609, 0.9945, 0.9428, 0.8321, 0.6697, 0.6624, 0.393],
+						"right": [0.6033, 0.6402, 1.0018, 1.0055, 0.9982, 0.9613, 0.928, 0.9244, 0.917, 0.8875, 0.8173, 0.7325, 0.6919, 0.6218, 0.441, 0.2159]
+					},
+					"lobes": {
+						"count": 5,
+						"byDepth": [
+							{
+								"depth": 0.02,
+								"count": 10
+							},
+							{
+								"depth": 0.04,
+								"count": 5
+							},
+							{
+								"depth": 0.08,
+								"count": 1
+							}
+						],
+						"areaShares": [0.38, 0.331, 0.111, 0.095, 0.082],
+						"widthShares": [0.43, 0.353, 0.163, 0.139, 0.13],
+						"notchDepths": [0.07, 0.062, 0.051, 0.049]
+					},
+					"sky": {
+						"enclosedGap": 0.1368,
+						"boxGap": 0.3367,
+						"holes": {
+							"count": 61,
+							"share": 0.0034,
+							"largest": 0.0017,
+							"medianDiameter": 0.0019,
+							"bySize": [58, 2, 1, 0]
+						},
+						"grid": {
+							"enclosed": [
+								[0.0372, 0.0839, 0.1235],
+								[0.0832, 0, 0.0539],
+								[0.3435, 0.2309, 0.2147]
+							],
+							"box": [
+								[0.688, 0.1866, 0.7357],
+								[0.1726, 0, 0.2279],
+								[0.4499, 0.2309, 0.34]
+							]
+						},
+						"unevenness": 0.804
+					},
+					"missing": {
+						"trunk.bareShare": "the stem below the crown stands under the horizon, where the ground hides it",
+						"trunk.width": "the stem below the crown stands under the horizon, where the ground hides it",
+						"trunk.breastHeightWidth": "the stem below the crown stands under the horizon, where the ground hides it",
+						"trunk.flare": "the stem below the crown stands under the horizon, where the ground hides it",
+						"trunk.lean": "the stem below the crown stands under the horizon, where the ground hides it",
+						"trunk.stems": "the stem below the crown stands under the horizon, where the ground hides it",
+						"limbs": "no stem shows below the crown, so no fork shows"
+					}
+				},
+				"missing": {}
+			},
+			{
+				"file": "17-silhouette.png",
+				"figures": {
+					"heightToWidth": 0.5179,
+					"foot": {
+						"rows": {
+							"frame": 688,
+							"horizon": 632,
+							"outline": 632,
+							"foot": 632
+						},
+						"belowHorizon": 0,
+						"followed": 0
+					},
+					"crown": {
+						"heightToWidth": 0.3407,
+						"base": 0.3564,
+						"width": 1.8893
+					},
+					"trunk": {
+						"bareShare": 0.0554,
+						"width": 0.1159,
+						"column": false,
+						"breastHeightWidth": null,
+						"flare": 3.005,
+						"lean": null,
+						"stems": null
+					},
+					"limbs": null,
+					"envelope": {
+						"left": [0.7249, 0.9533, 0.9533, 0.9498, 0.9221, 0.9533, 0.9498, 0.9256, 0.8737, 0.8529, 0.8149, 0.7422, 0.6211, 0.6107, 0.4273, 0.2855],
+						"right": [0.6903, 0.974, 0.974, 0.9637, 0.936, 0.9325, 0.9325, 0.936, 0.9256, 0.8806, 0.7907, 0.7491, 0.7076, 0.5588, 0.4654, 0.2682]
+					},
+					"lobes": {
+						"count": 5,
+						"byDepth": [
+							{
+								"depth": 0.02,
+								"count": 8
+							},
+							{
+								"depth": 0.04,
+								"count": 5
+							},
+							{
+								"depth": 0.08,
+								"count": 4
+							}
+						],
+						"areaShares": [0.403, 0.246, 0.141, 0.118, 0.088],
+						"widthShares": [0.455, 0.279, 0.195, 0.145, 0.119],
+						"notchDepths": [0.156, 0.101, 0.089, 0.071]
+					},
+					"sky": {
+						"enclosedGap": 0.1189,
+						"boxGap": 0.3775,
+						"holes": {
+							"count": 56,
+							"share": 0.0276,
+							"largest": 0.0027,
+							"medianDiameter": 0.0065,
+							"bySize": [32, 12, 12, 0]
+						},
+						"grid": {
+							"enclosed": [
+								[0.0405, 0.2001, 0.162],
+								[0.1112, 0.0335, 0.1538],
+								[0.1959, 0.0648, 0.1068]
+							],
+							"box": [
+								[0.851, 0.3431, 0.8623],
+								[0.4402, 0.0335, 0.4123],
+								[0.2646, 0.0648, 0.1245]
+							]
+						},
+						"unevenness": 0.503
+					},
+					"missing": {
+						"trunk.breastHeightWidth": "breast height is not placed on this plant: source.breastHeight gives the reason",
+						"trunk.lean": "the bare stem above its flare is too short to fit a line through",
+						"trunk.stems": "foliage hangs beside the stem down to its foot, so stems cannot be told from it",
+						"limbs": "foliage covers the fork, so the limbs do not show apart"
+					}
+				},
+				"missing": {}
+			}
+		],
+		"others": [
+			{
+				"file": "30-whole-with-landmark.png",
+				"figures": {
+					"heightToWidth": 0.6213,
+					"foot": {
+						"rows": {
+							"frame": 688,
+							"horizon": 413,
+							"outline": 616,
+							"foot": 616
+						},
+						"belowHorizon": 0.3518,
+						"followed": 0
+					},
+					"crown": {
+						"heightToWidth": 0.6125,
+						"base": 0.0194,
+						"width": 1.6011
+					},
+					"trunk": {
+						"bareShare": null,
+						"width": null,
+						"column": false,
+						"breastHeightWidth": null,
+						"flare": null,
+						"lean": null,
+						"stems": null
+					},
+					"limbs": null,
+					"envelope": {
+						"left": [0.5789, 0.7258, 0.7313, 0.8061, 0.8089, 0.8061, 0.8116, 0.8144, 0.8033, 0.7618, 0.723, 0.687, 0.6122, 0.5235, 0.4266, 0.2521],
+						"right": [0.7147, 0.723, 0.7839, 0.7922, 0.7922, 0.7701, 0.7673, 0.7673, 0.7673, 0.7535, 0.7175, 0.6399, 0.6039, 0.5679, 0.4183, 0.2161]
+					},
+					"lobes": {
+						"count": 5,
+						"byDepth": [
+							{
+								"depth": 0.02,
+								"count": 11
+							},
+							{
+								"depth": 0.04,
+								"count": 5
+							},
+							{
+								"depth": 0.08,
+								"count": 1
+							}
+						],
+						"areaShares": [0.392, 0.375, 0.121, 0.08, 0.032],
+						"widthShares": [0.575, 0.57, 0.188, 0.128, 0.074],
+						"notchDepths": [0.07, 0.059, 0.052, 0.04]
+					},
+					"sky": {
+						"enclosedGap": 0.1301,
+						"boxGap": 0.3121,
+						"holes": {
+							"count": 50,
+							"share": 0.0022,
+							"largest": 0.0007,
+							"medianDiameter": 0.0019,
+							"bySize": [47, 2, 1, 0]
+						},
+						"grid": {
+							"enclosed": [
+								[0.0328, 0.072, 0.0971],
+								[0.08, 0, 0.0595],
+								[0.3492, 0.1976, 0.2436]
+							],
+							"box": [
+								[0.6579, 0.1641, 0.6513],
+								[0.1553, 0, 0.1443],
+								[0.4821, 0.2248, 0.3308]
+							]
+						},
+						"unevenness": 0.853
+					},
+					"missing": {
+						"trunk.bareShare": "the stem below the crown stands under the horizon, where the ground hides it",
+						"trunk.width": "the stem below the crown stands under the horizon, where the ground hides it",
+						"trunk.breastHeightWidth": "the stem below the crown stands under the horizon, where the ground hides it",
+						"trunk.flare": "the stem below the crown stands under the horizon, where the ground hides it",
+						"trunk.lean": "the stem below the crown stands under the horizon, where the ground hides it",
+						"trunk.stems": "the stem below the crown stands under the horizon, where the ground hides it",
+						"limbs": "no stem shows below the crown, so no fork shows"
+					}
+				},
+				"missing": {}
+			}
+		],
+		"spread": [
+			{
+				"figure": "heightToWidth",
+				"primary": 0.6299,
+				"primaryOutsideTurn": false,
+				"turn": {
+					"min": 0.6267,
+					"low": 0.6392,
+					"median": 0.6631,
+					"high": 0.6868,
+					"max": 0.6918
+				},
+				"secondary": {
+					"02-whole-plant-profile.png": 0.4664,
+					"17-silhouette.png": 0.5179
+				},
+				"largest": 0.26,
+				"outsideTurn": ["02-whole-plant-profile.png", "17-silhouette.png"]
+			},
+			{
+				"figure": "crownHeightToWidth",
+				"primary": 0.6038,
+				"primaryOutsideTurn": false,
+				"turn": {
+					"min": 0.5892,
+					"low": 0.6,
+					"median": 0.624,
+					"high": 0.6511,
+					"max": 0.6625
+				},
+				"secondary": {
+					"02-whole-plant-profile.png": 0.4414,
+					"17-silhouette.png": 0.3407
+				},
+				"largest": 0.436,
+				"outsideTurn": ["02-whole-plant-profile.png", "17-silhouette.png"]
+			},
+			{
+				"figure": "crownBase",
+				"primary": 0.0464,
+				"primaryOutsideTurn": false,
+				"turn": {
+					"min": 0.0136,
+					"low": 0.037,
+					"median": 0.0653,
+					"high": 0.0984,
+					"max": 0.1326
+				},
+				"secondary": {
+					"02-whole-plant-profile.png": 0.0554,
+					"17-silhouette.png": 0.3564
+				},
+				"largest": 6.681,
+				"outsideTurn": ["17-silhouette.png"]
+			},
+			{
+				"figure": "crownWidth",
+				"primary": 1.5792,
+				"primaryOutsideTurn": false,
+				"turn": {
+					"min": 1.4308,
+					"low": 1.4503,
+					"median": 1.4981,
+					"high": 1.5633,
+					"max": 1.5847
+				},
+				"secondary": {
+					"02-whole-plant-profile.png": 2.1402,
+					"17-silhouette.png": 1.8893
+				},
+				"largest": 0.355,
+				"outsideTurn": ["02-whole-plant-profile.png", "17-silhouette.png"]
+			},
+			{
+				"figure": "bareTrunk",
+				"primary": null,
+				"primaryOutsideTurn": false,
+				"turn": null,
+				"secondary": {
+					"02-whole-plant-profile.png": null,
+					"17-silhouette.png": 0.0554
+				},
+				"largest": null,
+				"outsideTurn": []
+			},
+			{
+				"figure": "trunkWidth",
+				"primary": null,
+				"primaryOutsideTurn": false,
+				"turn": null,
+				"secondary": {
+					"02-whole-plant-profile.png": null,
+					"17-silhouette.png": 0.1159
+				},
+				"largest": null,
+				"outsideTurn": []
+			},
+			{
+				"figure": "flare",
+				"primary": null,
+				"primaryOutsideTurn": false,
+				"turn": null,
+				"secondary": {
+					"02-whole-plant-profile.png": null,
+					"17-silhouette.png": 3.005
+				},
+				"largest": null,
+				"outsideTurn": []
+			},
+			{
+				"figure": "lean",
+				"primary": null,
+				"primaryOutsideTurn": false,
+				"turn": null,
+				"secondary": {
+					"02-whole-plant-profile.png": null,
+					"17-silhouette.png": null
+				},
+				"largest": null,
+				"outsideTurn": []
+			},
+			{
+				"figure": "lobes",
+				"primary": 5,
+				"primaryOutsideTurn": false,
+				"turn": {
+					"min": 2,
+					"low": 4,
+					"median": 5,
+					"high": 6,
+					"max": 7
+				},
+				"secondary": {
+					"02-whole-plant-profile.png": 5,
+					"17-silhouette.png": 5
+				},
+				"largest": 0,
+				"outsideTurn": []
+			},
+			{
+				"figure": "enclosedGap",
+				"primary": 0.1169,
+				"primaryOutsideTurn": false,
+				"turn": {
+					"min": 0.0773,
+					"low": 0.1033,
+					"median": 0.115,
+					"high": 0.1435,
+					"max": 0.1652
+				},
+				"secondary": {
+					"02-whole-plant-profile.png": 0.1368,
+					"17-silhouette.png": 0.1189
+				},
+				"largest": 0.17,
+				"outsideTurn": []
+			},
+			{
+				"figure": "boxGap",
+				"primary": 0.3028,
+				"primaryOutsideTurn": false,
+				"turn": {
+					"min": 0.2837,
+					"low": 0.2989,
+					"median": 0.3286,
+					"high": 0.3611,
+					"max": 0.378
+				},
+				"secondary": {
+					"02-whole-plant-profile.png": 0.3367,
+					"17-silhouette.png": 0.3775
+				},
+				"largest": 0.247,
+				"outsideTurn": []
+			},
+			{
+				"figure": "holeShare",
+				"primary": 0.0029,
+				"primaryOutsideTurn": false,
+				"turn": {
+					"min": 0.001,
+					"low": 0.0022,
+					"median": 0.0047,
+					"high": 0.0084,
+					"max": 0.015
+				},
+				"secondary": {
+					"02-whole-plant-profile.png": 0.0034,
+					"17-silhouette.png": 0.0276
+				},
+				"largest": 8.517,
+				"outsideTurn": ["17-silhouette.png"]
+			}
+		]
+	},
+	"wood": {
+		"views": [
+			{
+				"file": "03-whole-from-below.png",
+				"limbs": null,
+				"missing": {
+					"limbs": "the background is not plain, so the wood has no outline"
+				}
+			},
+			{
+				"file": "05-underside-of-leaves.png",
+				"limbs": null,
+				"missing": {
+					"limbs": "the background is not plain, so the wood has no outline"
+				}
+			},
+			{
+				"file": "07-leaf-base-and-petiole.png",
+				"limbs": null,
+				"missing": {
+					"limbs": "no stem shows below the crown, so no fork shows"
+				}
+			},
+			{
+				"file": "08-leaf-surface-ribs.png",
+				"limbs": null,
+				"missing": {
+					"limbs": "the background is not plain, so the wood has no outline"
+				}
+			}
+		]
+	},
+	"pieces": {
+		"stills": [
+			{
+				"file": "09-vein-network.png",
+				"view": "branch",
+				"inPlace": true,
+				"figures": null,
+				"missing": {
+					"figures": "the background is not plain, so the piece has no outline"
+				}
+			},
+			{
+				"file": "10-leaf-margin-detail.png",
+				"view": "subbranch",
+				"inPlace": true,
+				"figures": null,
+				"missing": {
+					"figures": "a limb or a band of the backdrop crosses the frame and reads as a horizon, so the outline is not trusted"
+				}
+			},
+			{
+				"file": "20-autumn-collapse.png",
+				"view": "limb",
+				"inPlace": true,
+				"figures": null,
+				"missing": {
+					"figures": "a limb or a band of the backdrop crosses the frame and reads as a horizon, so the outline is not trusted"
+				}
+			},
+			{
+				"file": "21-branch-studio.png",
+				"view": "branch",
+				"inPlace": false,
+				"figures": {
+					"heightToWidth": 1.0567,
+					"boxShare": 0.3487,
+					"foliageShare": 0.3062,
+					"woodShare": 0.122,
+					"branch": {
+						"tips": 12,
+						"joints": 20,
+						"woodPerTip": 0.1557,
+						"tipsPerArea": 12.681,
+						"fanShare": 0.2,
+						"kinksPerLength": 0,
+						"meanKink": null,
+						"woodLength": 1.8685
+					},
+					"droop": null,
+					"clipped": [],
+					"missing": {
+						"droop": "the picture stands the cut piece on its cut, so its angle is the photographer's, not the plant's"
+					}
+				},
+				"missing": {}
+			},
+			{
+				"file": "22-subbranch-studio.png",
+				"view": "subbranch",
+				"inPlace": false,
+				"figures": {
+					"heightToWidth": 1.0242,
+					"boxShare": 0.2559,
+					"foliageShare": 0.2489,
+					"woodShare": 0.0275,
+					"branch": null,
+					"droop": null,
+					"clipped": [],
+					"missing": {
+						"branch": "the leaves hide the wood",
+						"droop": "the picture stands the cut piece on its cut, so its angle is the photographer's, not the plant's"
+					}
+				},
+				"missing": {}
+			},
+			{
+				"file": "23-leaf-cluster-studio.png",
+				"view": "cluster",
+				"inPlace": false,
+				"figures": {
+					"heightToWidth": 0.9715,
+					"boxShare": 0.3858,
+					"foliageShare": 0.3435,
+					"woodShare": 0.1096,
+					"branch": null,
+					"droop": null,
+					"clipped": [],
+					"missing": {
+						"branch": "a leaf cluster shows one shoot, so the cut-branch figures do not apply to it",
+						"droop": "the picture stands the cut piece on its cut, so its angle is the photographer's, not the plant's"
+					}
+				},
+				"missing": {}
+			}
+		],
+		"turns": [
+			{
+				"video": "branch-turntable.mp4",
+				"piece": "branch",
+				"arc": 360,
+				"frames": 24,
+				"read": 24,
+				"stats": {
+					"heightToWidth": {
+						"min": 1.0353,
+						"low": 1.0414,
+						"median": 1.1602,
+						"high": 1.4681,
+						"mean": 1.2145,
+						"max": 1.6912,
+						"spread": 0.54,
+						"frames": 24
+					},
+					"boxShare": {
+						"min": 0.2381,
+						"low": 0.2521,
+						"median": 0.3026,
+						"high": 0.3546,
+						"mean": 0.3044,
+						"max": 0.3571,
+						"spread": 0.391,
+						"frames": 24
+					},
+					"foliageShare": {
+						"min": 0.1814,
+						"low": 0.1907,
+						"median": 0.2562,
+						"high": 0.3126,
+						"mean": 0.2572,
+						"max": 0.3152,
+						"spread": 0.5202,
+						"frames": 24
+					},
+					"woodShare": {
+						"min": 0.1152,
+						"low": 0.1171,
+						"median": 0.1507,
+						"high": 0.2339,
+						"mean": 0.1606,
+						"max": 0.254,
+						"spread": 0.8643,
+						"frames": 24
+					},
+					"tips": {
+						"min": 5,
+						"low": 6,
+						"median": 8,
+						"high": 11,
+						"mean": 8.25,
+						"max": 12,
+						"spread": 0.8485,
+						"frames": 24
+					},
+					"woodPerTip": {
+						"min": 0.1305,
+						"low": 0.1426,
+						"median": 0.2006,
+						"high": 0.2597,
+						"mean": 0.2012,
+						"max": 0.2661,
+						"spread": 0.6738,
+						"frames": 24
+					},
+					"tipsPerArea": {
+						"min": 6.611,
+						"low": 7.247,
+						"median": 10.212,
+						"high": 14.215,
+						"mean": 9.9077,
+						"max": 15,
+						"spread": 0.8467,
+						"frames": 24
+					},
+					"fanShare": {
+						"min": 0.05,
+						"low": 0.0625,
+						"median": 0.15,
+						"high": 0.3889,
+						"mean": 0.1929,
+						"max": 0.5,
+						"spread": 2.3331,
+						"frames": 24
+					},
+					"kinksPerLength": {
+						"min": 0,
+						"low": 0,
+						"median": 0,
+						"high": 0.645,
+						"mean": 0.2078,
+						"max": 0.785,
+						"spread": 3.7771,
+						"frames": 24
+					}
+				},
+				"missing": {}
+			},
+			{
+				"video": "leaf-cluster-turntable.mp4",
+				"piece": "cluster",
+				"arc": 360,
+				"frames": 24,
+				"read": 24,
+				"stats": {
+					"heightToWidth": {
+						"min": 0.9607,
+						"low": 0.966,
+						"median": 1.2402,
+						"high": 2.3108,
+						"mean": 1.4493,
+						"max": 2.5833,
+						"spread": 1.1195,
+						"frames": 24
+					},
+					"boxShare": {
+						"min": 0.3857,
+						"low": 0.3909,
+						"median": 0.4224,
+						"high": 0.5065,
+						"mean": 0.4372,
+						"max": 0.5672,
+						"spread": 0.4151,
+						"frames": 24
+					},
+					"foliageShare": {
+						"min": 0.3407,
+						"low": 0.3483,
+						"median": 0.3661,
+						"high": 0.4238,
+						"mean": 0.3763,
+						"max": 0.4656,
+						"spread": 0.3319,
+						"frames": 24
+					},
+					"woodShare": {
+						"min": 0.1091,
+						"low": 0.1102,
+						"median": 0.1261,
+						"high": 0.1872,
+						"mean": 0.1368,
+						"max": 0.1968,
+						"spread": 0.641,
+						"frames": 24
+					},
+					"tips": null,
+					"woodPerTip": null,
+					"tipsPerArea": null,
+					"fanShare": null,
+					"kinksPerLength": null
+				},
+				"missing": {
+					"stats.tips": "no frame gives it: a leaf cluster shows one shoot, so the cut-branch figures do not apply to it",
+					"stats.woodPerTip": "no frame gives it: a leaf cluster shows one shoot, so the cut-branch figures do not apply to it",
+					"stats.tipsPerArea": "no frame gives it: a leaf cluster shows one shoot, so the cut-branch figures do not apply to it",
+					"stats.fanShare": "no frame gives it: a leaf cluster shows one shoot, so the cut-branch figures do not apply to it",
+					"stats.kinksPerLength": "no frame gives it: a leaf cluster shows one shoot, so the cut-branch figures do not apply to it"
+				}
+			},
+			{
+				"video": "subbranch-turntable-halfturn.mp4",
+				"piece": "subbranch",
+				"arc": 180,
+				"frames": 24,
+				"read": 24,
+				"stats": {
+					"heightToWidth": {
+						"min": 1.0181,
+						"low": 1.0305,
+						"median": 1.282,
+						"high": 1.8556,
+						"mean": 1.376,
+						"max": 2.1173,
+						"spread": 0.7989,
+						"frames": 24
+					},
+					"boxShare": {
+						"min": 0.1776,
+						"low": 0.185,
+						"median": 0.249,
+						"high": 0.2836,
+						"mean": 0.2446,
+						"max": 0.3012,
+						"spread": 0.5054,
+						"frames": 24
+					},
+					"foliageShare": {
+						"min": 0.166,
+						"low": 0.1753,
+						"median": 0.2369,
+						"high": 0.275,
+						"mean": 0.2349,
+						"max": 0.2896,
+						"spread": 0.5263,
+						"frames": 24
+					},
+					"woodShare": {
+						"min": 0.025,
+						"low": 0.0271,
+						"median": 0.0363,
+						"high": 0.0632,
+						"mean": 0.0408,
+						"max": 0.0678,
+						"spread": 1.0488,
+						"frames": 24
+					},
+					"tips": {
+						"min": 1,
+						"low": 1,
+						"median": 2,
+						"high": 3,
+						"mean": 2.2105,
+						"max": 3,
+						"spread": 0.9048,
+						"frames": 19
+					},
+					"woodPerTip": {
+						"min": 0.0643,
+						"low": 0.075,
+						"median": 0.0999,
+						"high": 0.2184,
+						"mean": 0.1189,
+						"max": 0.2964,
+						"spread": 1.9515,
+						"frames": 19
+					},
+					"tipsPerArea": {
+						"min": 1.428,
+						"low": 1.436,
+						"median": 3.183,
+						"high": 5.567,
+						"mean": 3.1652,
+						"max": 5.596,
+						"spread": 1.3168,
+						"frames": 19
+					},
+					"fanShare": {
+						"min": 0,
+						"low": 0,
+						"median": 0,
+						"high": 0,
+						"mean": 0.0294,
+						"max": 0.5,
+						"spread": 17,
+						"frames": 17
+					},
+					"kinksPerLength": {
+						"min": 0,
+						"low": 0,
+						"median": 0,
+						"high": 3.336,
+						"mean": 0.5215,
+						"max": 3.666,
+						"spread": 7.0294,
+						"frames": 19
+					}
+				},
+				"missing": {}
+			}
+		]
+	},
+	"nulls": [
+		{
+			"path": "source.breastHeight",
+			"reason": "the stated height, 0.55 m, is under 2 breast heights"
+		},
+		{
+			"path": "stated.flowerStemMetres",
+			"reason": "the fact sheet gives no flowering stem height"
+		},
+		{
+			"path": "stated.crownShare",
+			"reason": "the fact sheet does not state it in words the reader knows"
+		},
+		{
+			"path": "stated.clearTrunkShare",
+			"reason": "the fact sheet does not state it in words the reader knows"
+		},
+		{
+			"path": "stated.trunkMetres",
+			"reason": "the fact sheet does not state it in words the reader knows"
+		},
+		{
+			"path": "stated.leafletCm",
+			"reason": "the fact sheet describes no leaflet apart from the leaf"
+		},
+		{
+			"path": "whole.primary.still.figures.trunk.bareShare",
+			"reason": "the stem below the crown stands under the horizon, where the ground hides it"
+		},
+		{
+			"path": "whole.primary.still.figures.trunk.width",
+			"reason": "the stem below the crown stands under the horizon, where the ground hides it"
+		},
+		{
+			"path": "whole.primary.still.figures.trunk.breastHeightWidth",
+			"reason": "the stem below the crown stands under the horizon, where the ground hides it"
+		},
+		{
+			"path": "whole.primary.still.figures.trunk.flare",
+			"reason": "the stem below the crown stands under the horizon, where the ground hides it"
+		},
+		{
+			"path": "whole.primary.still.figures.trunk.lean",
+			"reason": "the stem below the crown stands under the horizon, where the ground hides it"
+		},
+		{
+			"path": "whole.primary.still.figures.trunk.stems",
+			"reason": "the stem below the crown stands under the horizon, where the ground hides it"
+		},
+		{
+			"path": "whole.primary.still.figures.limbs",
+			"reason": "no stem shows below the crown, so no fork shows"
+		},
+		{
+			"path": "whole.primary.turn.stats.bareTrunk",
+			"reason": "no frame gives it: the stem below the crown stands under the horizon, where the ground hides it"
+		},
+		{
+			"path": "whole.primary.turn.stats.trunkWidth",
+			"reason": "no frame gives it: the stem below the crown stands under the horizon, where the ground hides it"
+		},
+		{
+			"path": "whole.primary.turn.stats.breastHeightWidth",
+			"reason": "no frame gives it: the stem below the crown stands under the horizon, where the ground hides it"
+		},
+		{
+			"path": "whole.primary.turn.stats.flare",
+			"reason": "no frame gives it: the stem below the crown stands under the horizon, where the ground hides it"
+		},
+		{
+			"path": "whole.primary.turn.stats.lean",
+			"reason": "no frame gives it: the stem below the crown stands under the horizon, where the ground hides it"
+		},
+		{
+			"path": "whole.primary.turn.stats.stems",
+			"reason": "no frame gives it: the stem below the crown stands under the horizon, where the ground hides it"
+		},
+		{
+			"path": "whole.primary.turn.stats.limbs",
+			"reason": "no frame gives it: no stem shows below the crown, so no fork shows"
+		},
+		{
+			"path": "whole.primary.turn.closing",
+			"reason": "the video turns through less than a full turn, or an end frame has no outline"
+		},
+		{
+			"path": "whole.secondary[02-whole-plant-profile.png].figures.trunk.bareShare",
+			"reason": "the stem below the crown stands under the horizon, where the ground hides it"
+		},
+		{
+			"path": "whole.secondary[02-whole-plant-profile.png].figures.trunk.width",
+			"reason": "the stem below the crown stands under the horizon, where the ground hides it"
+		},
+		{
+			"path": "whole.secondary[02-whole-plant-profile.png].figures.trunk.breastHeightWidth",
+			"reason": "the stem below the crown stands under the horizon, where the ground hides it"
+		},
+		{
+			"path": "whole.secondary[02-whole-plant-profile.png].figures.trunk.flare",
+			"reason": "the stem below the crown stands under the horizon, where the ground hides it"
+		},
+		{
+			"path": "whole.secondary[02-whole-plant-profile.png].figures.trunk.lean",
+			"reason": "the stem below the crown stands under the horizon, where the ground hides it"
+		},
+		{
+			"path": "whole.secondary[02-whole-plant-profile.png].figures.trunk.stems",
+			"reason": "the stem below the crown stands under the horizon, where the ground hides it"
+		},
+		{
+			"path": "whole.secondary[02-whole-plant-profile.png].figures.limbs",
+			"reason": "no stem shows below the crown, so no fork shows"
+		},
+		{
+			"path": "whole.secondary[17-silhouette.png].figures.trunk.breastHeightWidth",
+			"reason": "breast height is not placed on this plant: source.breastHeight gives the reason"
+		},
+		{
+			"path": "whole.secondary[17-silhouette.png].figures.trunk.lean",
+			"reason": "the bare stem above its flare is too short to fit a line through"
+		},
+		{
+			"path": "whole.secondary[17-silhouette.png].figures.trunk.stems",
+			"reason": "foliage hangs beside the stem down to its foot, so stems cannot be told from it"
+		},
+		{
+			"path": "whole.secondary[17-silhouette.png].figures.limbs",
+			"reason": "foliage covers the fork, so the limbs do not show apart"
+		},
+		{
+			"path": "whole.others[30-whole-with-landmark.png].figures.trunk.bareShare",
+			"reason": "the stem below the crown stands under the horizon, where the ground hides it"
+		},
+		{
+			"path": "whole.others[30-whole-with-landmark.png].figures.trunk.width",
+			"reason": "the stem below the crown stands under the horizon, where the ground hides it"
+		},
+		{
+			"path": "whole.others[30-whole-with-landmark.png].figures.trunk.breastHeightWidth",
+			"reason": "the stem below the crown stands under the horizon, where the ground hides it"
+		},
+		{
+			"path": "whole.others[30-whole-with-landmark.png].figures.trunk.flare",
+			"reason": "the stem below the crown stands under the horizon, where the ground hides it"
+		},
+		{
+			"path": "whole.others[30-whole-with-landmark.png].figures.trunk.lean",
+			"reason": "the stem below the crown stands under the horizon, where the ground hides it"
+		},
+		{
+			"path": "whole.others[30-whole-with-landmark.png].figures.trunk.stems",
+			"reason": "the stem below the crown stands under the horizon, where the ground hides it"
+		},
+		{
+			"path": "whole.others[30-whole-with-landmark.png].figures.limbs",
+			"reason": "no stem shows below the crown, so no fork shows"
+		},
+		{
+			"path": "wood.views[03-whole-from-below.png].limbs",
+			"reason": "the background is not plain, so the wood has no outline"
+		},
+		{
+			"path": "wood.views[05-underside-of-leaves.png].limbs",
+			"reason": "the background is not plain, so the wood has no outline"
+		},
+		{
+			"path": "wood.views[07-leaf-base-and-petiole.png].limbs",
+			"reason": "no stem shows below the crown, so no fork shows"
+		},
+		{
+			"path": "wood.views[08-leaf-surface-ribs.png].limbs",
+			"reason": "the background is not plain, so the wood has no outline"
+		},
+		{
+			"path": "pieces.stills[09-vein-network.png].figures",
+			"reason": "the background is not plain, so the piece has no outline"
+		},
+		{
+			"path": "pieces.stills[10-leaf-margin-detail.png].figures",
+			"reason": "a limb or a band of the backdrop crosses the frame and reads as a horizon, so the outline is not trusted"
+		},
+		{
+			"path": "pieces.stills[20-autumn-collapse.png].figures",
+			"reason": "a limb or a band of the backdrop crosses the frame and reads as a horizon, so the outline is not trusted"
+		},
+		{
+			"path": "pieces.stills[21-branch-studio.png].figures.droop",
+			"reason": "the picture stands the cut piece on its cut, so its angle is the photographer's, not the plant's"
+		},
+		{
+			"path": "pieces.stills[22-subbranch-studio.png].figures.branch",
+			"reason": "the leaves hide the wood"
+		},
+		{
+			"path": "pieces.stills[22-subbranch-studio.png].figures.droop",
+			"reason": "the picture stands the cut piece on its cut, so its angle is the photographer's, not the plant's"
+		},
+		{
+			"path": "pieces.stills[23-leaf-cluster-studio.png].figures.branch",
+			"reason": "a leaf cluster shows one shoot, so the cut-branch figures do not apply to it"
+		},
+		{
+			"path": "pieces.stills[23-leaf-cluster-studio.png].figures.droop",
+			"reason": "the picture stands the cut piece on its cut, so its angle is the photographer's, not the plant's"
+		},
+		{
+			"path": "pieces.turns[leaf-cluster-turntable.mp4].stats.tips",
+			"reason": "no frame gives it: a leaf cluster shows one shoot, so the cut-branch figures do not apply to it"
+		},
+		{
+			"path": "pieces.turns[leaf-cluster-turntable.mp4].stats.woodPerTip",
+			"reason": "no frame gives it: a leaf cluster shows one shoot, so the cut-branch figures do not apply to it"
+		},
+		{
+			"path": "pieces.turns[leaf-cluster-turntable.mp4].stats.tipsPerArea",
+			"reason": "no frame gives it: a leaf cluster shows one shoot, so the cut-branch figures do not apply to it"
+		},
+		{
+			"path": "pieces.turns[leaf-cluster-turntable.mp4].stats.fanShare",
+			"reason": "no frame gives it: a leaf cluster shows one shoot, so the cut-branch figures do not apply to it"
+		},
+		{
+			"path": "pieces.turns[leaf-cluster-turntable.mp4].stats.kinksPerLength",
+			"reason": "no frame gives it: a leaf cluster shows one shoot, so the cut-branch figures do not apply to it"
+		}
+	],
+	"missing": {}
+}
