@@ -11,10 +11,20 @@ import {
 	type FrameSpec,
 	framedRecord,
 } from '../../grow/frame';
+import { PIECES } from './pieces';
 import { record } from './record';
 
+/**
+ * The sockets along the wood under a clump, each of which carries the branch end of still 21. A
+ * branch end is 0.79 m wide on a tree 20 m tall, and one leaves the wood every half of that, each
+ * turned on round the wood from the last, so the ends stand about a branch end's width apart. The
+ * still: a side shoot leaves its stem at 45 to 85 degrees.
+ */
+const ENDS = { every: 0.79 / 20 / 2, angle: 60 } as const;
+
 /** A rounded clump of foliage. The real tree's rim is ten to twelve clumps with sky bays between. */
-const clump = (width: number) => ({ kind: 'clump', width, depth: width * 0.7 }) as const;
+const clump = (width: number) =>
+	({ kind: 'clump', width, depth: width * 0.7, sockets: ENDS }) as const;
 
 /**
  * The boughs of a great limb and their branches. The real tree: each limb carries five to eight
@@ -66,6 +76,7 @@ const boughs: FrameBranchRule = {
 			[0, 0.14],
 			[1, 0.085],
 		],
+		sockets: ENDS,
 	},
 	children: [
 		{
@@ -332,7 +343,11 @@ export const frame: FrameSpec = {
 };
 
 /**
- * The pedunculate oak's record with the frame as its growth. A socket holds five shoot rows that fan
- * 45 degrees from its line: the figures the scaffold build's oak states for the same branch ends.
+ * The pedunculate oak's record with the frame as its growth and the branch end of still 21 at each
+ * socket. The shoot rows are the figures the scaffold build's oak states for the same branch ends;
+ * a kit with no pieces draws them.
  */
-export const directed = framedRecord(record, frame, { rows: { mean: 5, spread: 1 }, fan: 45 });
+export const directed = {
+	...framedRecord(record, frame, { rows: { mean: 5, spread: 1 }, fan: 45, piece: 'branch-end' }),
+	pieces: PIECES.filter((piece) => piece.name === 'branch-end'),
+};

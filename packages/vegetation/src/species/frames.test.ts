@@ -343,7 +343,7 @@ const HELD: readonly Held[] = [
 		// stated reach is the farthest of anything that touches the band, which the hanging tips of
 		// the low limbs set, and the crown no longer fills its lowest bands out to those tips.
 		bandFaults: 212,
-		axesPerSocket: 1.005,
+		axesPerSocket: 0.258,
 		tall: [0.95, 1.04],
 	},
 ];
@@ -658,7 +658,15 @@ for (const held of HELD)
 				const sockets = frameSockets(plan);
 				const skeleton = growFrame(input);
 				const table = skeleton.buds.sockets;
-				expect(sockets.length).toBe(plan.patches.length);
+				// One socket at the end of each patch's wood, and the rest along the wood under it.
+				expect(
+					sockets.filter((socket) => socket.along === 1).map((socket) => socket.patch),
+				).toEqual(plan.patches.map((_, k) => k));
+				for (const socket of sockets) {
+					const patch = plan.patches[socket.patch];
+					expect(patch?.axis).toBe(socket.axis);
+					if (socket.along < 1) expect(patch?.sockets).toBeDefined();
+				}
 				expect(skeleton.buds.count).toBe(sockets.length);
 				expect(table).toBeDefined();
 				if (!table) continue;
@@ -668,8 +676,11 @@ for (const held of HELD)
 				sockets.forEach((socket, b) => {
 					expect(table.lobe[b]).toBe(socket.patch);
 					expect(table.rank[b]).toBe(socket.rank);
-					// A plant's pieces are its own height over the species' middle height.
-					expect(table.scale[b]).toBeCloseTo(plan.scale / held.heightMean, 5);
+					// Shoot rows are the plant's own height over the species' middle height; a branch
+					// piece is the size its leaves make it.
+					const growth = held.directed.growth;
+					const piece = growth.model === 'frame' && growth.sockets.piece !== undefined;
+					expect(table.scale[b]).toBeCloseTo(piece ? 1 : plan.scale / held.heightMean, 5);
 					expect(skeleton.buds.position[b * 3 + 1]).toBeCloseTo(socket.at[1], 4);
 					quatRotate(skeleton.buds.frame, b * 4, [0, 1, 0], along);
 					expect(
