@@ -1,60 +1,95 @@
 // The European beech's pieces: the branch end of flat level sprays its sockets carry, and the twig at
 // its top. Each value names the reference picture it was measured on.
 //
-// The cut branch of still 21 is a metre tall over 715 pixels, which makes its leaf 8 to 9
-// centimetres (55 to 65 pixels at full size), inside the species' 5 to 10. The record's leaf is 13,
-// so a piece draws its leaves at 0.65 of that until the record's own length moves.
+// The leaf is the ruler. The beech has no fact sheet, so a piece's leaf is 9 centimetres, taken from
+// the species' range of 5 to 10; several full leaves read on still 21 at full size are 8 to 9. The
+// record's own leaf is 13 and is owed a change. A piece is written in shares of its photograph's
+// height and sized by the leaf's share of that height.
 import type { PieceLeaves, PieceRule, PieceStem, PieceStudio } from '../../leaf/piece';
 
-/** A piece's leaf over the record's: 8.5 centimetres measured on still 21, over 13. */
-const LEAF_SCALE = 0.65;
-/** The twig's leaf over the record's: on still 22 a leaf is a fifth of the 35-centimetre twig, 7 centimetres. */
-const TWIG_LEAF_SCALE = 0.55;
+/** A leaf's length in metres, from the species' range. */
+const LEAF = 0.09;
+/** The record's leaf length in metres. */
+const RECORD_LEAF = 0.13;
+/** A leaf's share of the branch end's height on still 21: 55 to 65 pixels of 715. */
+const LEAF_SHARE = 0.0845;
+/** A leaf's share of the twig's height on still 22, where the twig's stem is 0.38 of a unit. */
+const TWIG_LEAF_SHARE = 0.0715;
+/** A branch end's leaf over the record's, in a branch one unit tall. */
+const LEAF_SCALE = LEAF_SHARE / RECORD_LEAF;
+/** The twig's leaf over the record's, in the twig's own unit. */
+const TWIG_LEAF_SCALE = TWIG_LEAF_SHARE / RECORD_LEAF;
 
 /**
- * The leaves along a twig. Stills 09 and 04: alternate in two rows, lying in the spray's own plane.
- * A row's leaves stand 0.6 to 0.8 of a leaf's length apart, so a node comes each three centimetres.
- * Still 21: a spray of 50 centimetres carries about thirty leaves.
+ * The leaves along a twig. Stills 09, 04 and 21: alternate in two rows that lie in the spray's own
+ * plane, each leaf 60 to 80 degrees from its twig. Neighbours in a row just touch, so a node comes
+ * each three and a half centimetres.
+ *
+ * @param from The share of the twig's length below which no leaf stands.
+ * @param tilt Degrees the two rows stand round the twig off the piece's own plane; a drawn place
+ * where absent.
  */
-function rows(from: number): PieceLeaves {
+function rows(from: number, tilt?: number): PieceLeaves {
 	return {
-		gap: 0.03,
+		gap: 0.035,
 		from,
 		phyllotaxis: { kind: 'distichous', flatten: 0.9 },
-		angle: 55,
-		angleSpread: 6,
+		...(tilt === undefined ? {} : { heading: tilt }),
+		angle: 70,
+		angleSpread: 8,
 		scale: LEAF_SCALE,
 	};
 }
 
 /**
- * A limb of the branch end with its flat spray. Still 21: a bare grey limb whose outer half is a
- * spray 40 to 55 centimetres long and 20 to 25 wide, leaves in two rows on the limb and on short
- * side twigs, all in the branch's own plane. Still 09: four to five alternate side twigs at 40 to
- * 50 degrees, four to six leaves on each.
+ * A limb of the branch end with its flat spray. Still 21 at full size and its turning video: a
+ * slender grey limb that leaves steeply and levels out. Its grey wood is bare. Its leaves stand on
+ * its own thin brown end and on thin side twigs, 0.1 to 0.2 of the branch's height long, that leave
+ * to one side and the other at 50 to 80 degrees, four or five leaves on each. A spray is 0.4 to 0.5
+ * of the height long and 0.2 to 0.3 wide and holds about thirty leaves. Seen edge on, each spray's
+ * plane is tilted from the branch's own.
+ *
+ * @param length The limb's length in shares of the branch's height.
+ * @param arc Degrees the limb turns away from the branch's line over its length.
+ * @param tilt Degrees the spray's plane is turned round its limb off the branch's own plane.
+ * @param from The share of the limb's length where its first side twig leaves.
+ * @param own The share of the limb's length where its own thin leafy end begins.
+ * @param radius The limb's radius at its foot.
  */
-function limb(length: number): PieceStem {
+function limb(
+	length: number,
+	arc: number,
+	tilt: number,
+	from = 0.28,
+	own = 0.62,
+	radius = 0.005,
+): PieceStem {
+	// A side twig of a long limb is 0.17 of the branch's height long, and a short limb's are shorter.
+	const twig = Math.min(0.17, 0.4 * length);
 	return {
 		length: { mean: length, spread: length * 0.07 },
-		radius: [0.006, 0.0015],
+		radius: [radius, 0.0012],
 		zigzag: 10,
-		leaves: rows(0.45),
+		arc,
+		leaves: rows(own, tilt),
 		sides: [
 			{
 				stem: {
-					length: { mean: 0.14, spread: 0.03 },
-					radius: [0.002, 0.001],
+					length: { mean: twig, spread: twig * 0.18 },
+					radius: [0.0018, 0.001],
 					zigzag: 12,
-					leaves: rows(0.2),
+					leaves: rows(0.15, tilt),
 				},
-				gap: 0.085,
-				from: 0.45,
-				to: 0.92,
+				// Still 21: six side twigs on the left limb between 0.1 and 0.67 of its length.
+				gap: 0.07,
+				from,
+				to: 0.75,
 				arrangement: 'alternate',
-				angle: { mean: 48, spread: 6 },
+				angle: { mean: 62, spread: 10 },
+				turn: tilt,
 				lengthAlong: [
 					[0, 1.1],
-					[1, 0.6],
+					[1, 0.7],
 				],
 			},
 		],
@@ -86,27 +121,56 @@ function twigShoot(length: number): PieceStem {
 
 /** The European beech's pieces. */
 export const PIECES: readonly PieceRule[] = [
-	// Still 21: a slender grey stem a metre tall, bare for its lowest 0.28. Three limbs: one to the
-	// left from 0.28, 75 to 90 centimetres long; one to the right from 0.3, 55 to 60; and the stem's
-	// own top with a short limb at 0.55. Each ends in a flat spray, and the whole branch lies in one
-	// plane, which a tree holds level. The piece is 1.27 times as wide as tall.
+	// Still 21 at full size, in shares of the branch's height. A slender grey stem, bare. A limb
+	// leaves to the right at 0.28, at 55 degrees, 0.61 long, and levels out. At 0.44 the stem forks:
+	// a limb leaves to the left at 50 degrees, 0.72 long, and levels out, and the stem goes on 25
+	// to 35 degrees to the right. At 0.76 it breaks into the top spray: three thin twigs, 0.22 long
+	// to the left, 0.17 upward and 0.33 to the right. The piece is 1.27 times as wide as tall and holds 100 to 120
+	// leaves.
 	{
 		name: 'branch-end',
 		attitude: 'level',
 		variants: 2,
-		scale: 1 / LEAF_SCALE,
+		scale: LEAF / LEAF_SHARE,
 		// The turning video of the cut branch: edge on it is 0.24 as wide as face on.
 		depth: 13,
 		stem: {
-			...limb(0.95),
+			length: { mean: 0.44, spread: 0.02 },
 			// Still 21: the stem is 0.021 of the branch's height thick at its cut (15 of 727 pixels).
-			radius: [0.0103, 0.003],
-			leaves: rows(0.68),
+			radius: [0.0103, 0.0075],
+			bud: false,
 			sides: [
-				fork(limb(0.8), 0.28, 0.95, 58, true),
-				fork(limb(0.58), 0.3, 0.95, 62),
-				fork(limb(0.4), 0.55, 0.95, 50, true),
-				...(limb(0.95).sides ?? []).map((side) => ({ ...side, from: 0.68 })),
+				fork(limb(0.61, 28, -20, 0.33, 0.45), 0.64, 0.44, 55),
+				// A short twig of three leaves below the fork.
+				fork(
+					{
+						length: { mean: 0.12, spread: 0.02 },
+						radius: [0.0018, 0.001],
+						zigzag: 12,
+						leaves: rows(0.3, 0),
+					},
+					0.84,
+					0.44,
+					75,
+					true,
+				),
+				fork(limb(0.72, 45, 25, 0.1), 1.02, 0.44, 50, true),
+				fork(
+					{
+						length: { mean: 0.36, spread: 0.02 },
+						radius: [0.006, 0.003],
+						bud: false,
+						sides: [
+							// A thin twig of the top spray is leafy from a third of its length.
+							fork(limb(0.22, 10, 15, 0.28, 0.35, 0.002), 1.02, 0.36, 95, true),
+							fork(limb(0.17, 0, 0, 0.28, 0.35, 0.002), 1.02, 0.36, 22, true),
+							fork(limb(0.33, 25, -10, 0.28, 0.35, 0.0025), 1.02, 0.36, 28),
+						],
+					},
+					1.02,
+					0.44,
+					25,
+				),
 			],
 		},
 	},
@@ -116,7 +180,7 @@ export const PIECES: readonly PieceRule[] = [
 		name: 'twig',
 		attitude: 'level',
 		variants: 2,
-		scale: 1 / TWIG_LEAF_SCALE,
+		scale: LEAF / TWIG_LEAF_SHARE,
 		// The turning video of the sub-branch: edge on it is 0.29 as wide as face on.
 		depth: 16,
 		// Still 22 at full size, in shares of the twig's height: a zigzag stem with a shoot to the
