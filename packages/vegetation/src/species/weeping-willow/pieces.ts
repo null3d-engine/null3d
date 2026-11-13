@@ -22,11 +22,13 @@ function strand(length: number, spread: number): PieceStem {
 	return {
 		length: { mean: length, spread },
 		radius: [0.0015, 0.0008],
-		hook: { angle: 100, length: 0.045 },
+		// Still 21 at full size: a strand leaves its arm and hangs at once, on a short curve, and is
+		// leafy from where it leaves.
+		hook: { angle: 70, length: 0.03 },
 		zigzag: 2,
 		leaves: {
 			gap: 0.0175,
-			from: 0.05 / length,
+			from: 0.02 / length,
 			phyllotaxis: { kind: 'distichous', flatten: 0, turn: 35 },
 			angle: 24,
 			angleSpread: 6,
@@ -99,8 +101,9 @@ export const STUDIO: readonly PieceStudio[] = [
 						stem: {
 							length: 0.5,
 							radius: [0.006, 0.003],
-							droop: 100,
-							droopOver: [0.55, 1],
+							// The arm curves from where it leaves and arches over in one smooth sweep.
+							droop: 110,
+							droopOver: [0.25, 1],
 							bud: false,
 						},
 						gap: 0.03,
@@ -114,8 +117,8 @@ export const STUDIO: readonly PieceStudio[] = [
 						stem: {
 							length: 0.6,
 							radius: [0.006, 0.003],
-							droop: 90,
-							droopOver: [0.55, 1],
+							droop: 100,
+							droopOver: [0.25, 1],
 							bud: false,
 						},
 						gap: 0.03,

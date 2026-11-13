@@ -95,9 +95,10 @@ export interface PieceLeaves {
 	/**
 	 * A flat rosette: the stem's leaves fan out in the plane that faces the piece's sky side, spread
 	 * evenly to `reach` degrees either side of the stem, the lowest leaf the widest, and each blade
-	 * faces the sky side within `tilt` degrees. An oak's end tuft stands this way.
+	 * faces the sky side within `tilt` degrees. Each leaf also rises or falls out of that plane by up
+	 * to `cone` degrees, so the rosette has depth. An oak's end tuft stands this way.
 	 */
-	readonly fan?: { readonly reach: number; readonly tilt: number };
+	readonly fan?: { readonly reach: number; readonly tilt: number; readonly cone?: number };
 }
 
 /** The side stems along one stem of a piece. */
@@ -416,14 +417,15 @@ export function planPiece(
 			const side = normalize3(cross3(up, ahead, [0, 0, 0]));
 			// The lowest leaf stands widest, to one side and the other in turn.
 			const angle = radians(fan.reach) * (1 - (k + 0.5) / count) * (k % 2 === 0 ? 1 : -1);
+			const lift = radians((draw(Purpose.Fan, axis, k + 256) * 2 - 1) * (fan.cone ?? 0));
 			const direction = normalize3([
-				ahead[0] * cos(angle) + side[0] * sin(angle),
-				ahead[1] * cos(angle) + side[1] * sin(angle),
-				ahead[2] * cos(angle) + side[2] * sin(angle),
+				(ahead[0] * cos(angle) + side[0] * sin(angle)) * cos(lift) + up[0] * sin(lift),
+				(ahead[1] * cos(angle) + side[1] * sin(angle)) * cos(lift) + up[1] * sin(lift),
+				(ahead[2] * cos(angle) + side[2] * sin(angle)) * cos(lift) + up[2] * sin(lift),
 			]);
 			const tilt = (draw(Purpose.Fan, axis, k) * 2 - 1) * fan.tilt;
 			const rotation = [0, 0, 0, 1];
-			quatFromFrame(direction, turn(up, direction, tilt), rotation);
+			quatFromFrame(direction, turn(square(up, direction, [0, 0, 1]), direction, tilt), rotation);
 			leaves[first + k] = { ...leaf, direction, rotation };
 		}
 	};
@@ -565,11 +567,13 @@ export function planPiece(
 				const frame = frames[Math.min(steps - 1, Math.max(0, Math.round(place / run) - 1))];
 				if (!frame) continue;
 				const t = place / length;
-				// Each side stem's place off its arrangement's own: an even sequence from a drawn start,
-				// so a piece's side stems fill its depth evenly and no draw leaves it flat or lopsided.
-				const off = (sideStart / 360 + n * GOLDEN_SHARE) % 1;
+				// Each side stem's place off its arrangement's own: to the piece's front and its back
+				// in turn, by half to all of the depth, so a piece of a few side stems is never flat
+				// and never lopsided, whatever its draws.
+				const front = (n + (sideStart < 180 ? 0 : 1)) % 2 === 0 ? 1 : -1;
+				const reach = 0.5 + 0.5 * ((sideStart / 360 + n * GOLDEN_SHARE) % 1);
 				const wander =
-					(off - 0.5) * 2 * (sides.spread ?? rule.depth ?? SIDE_SPREAD) + (sides.turn ?? 0);
+					front * reach * (sides.spread ?? rule.depth ?? SIDE_SPREAD) + (sides.turn ?? 0);
 				const azimuths =
 					sides.arrangement === 'alternate'
 						? [90 + (n % 2) * 180 + wander]

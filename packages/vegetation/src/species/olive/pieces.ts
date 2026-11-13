@@ -10,7 +10,7 @@ import type { PieceLeaves, PieceRule, PieceStem, PieceStudio } from '../../leaf/
  * Still 21: a pair each 3.3 centimetres along a spray, held about 40 degrees from the stem, and
  * drooping with it. Still 22: a pair each 2.7 centimetres on a twig.
  */
-function pairs(from: number, gap: number, flat = 0.8): PieceLeaves {
+function pairs(from: number, gap: number, flat = 0.5): PieceLeaves {
 	return {
 		gap,
 		from,
@@ -76,10 +76,11 @@ export const PIECES: readonly PieceRule[] = [
 				{
 					stem: SPRAY,
 					gap: 0.075,
-					from: 0.36,
+					from: 0.3,
 					to: 0.9,
 					arrangement: 'alternate',
 					angle: { mean: 48, spread: 6 },
+					// The lowest sprays are the longest and hang to the branch's foot.
 					lengthAlong: [
 						[0, 1.2],
 						[1, 0.6],

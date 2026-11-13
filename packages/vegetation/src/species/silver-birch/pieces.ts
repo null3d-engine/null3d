@@ -15,7 +15,8 @@ function strand(length: number, spread: number, hook: PieceStem['hook'], foot = 
 		length: { mean: length, spread },
 		radius: [foot, 0.0006],
 		hook,
-		zigzag: 5,
+		// Stills 09 and 19: a strand wavers from node to node as it hangs.
+		zigzag: 9,
 		leaves: {
 			gap: 0.035,
 			from: 0.06 / length,
@@ -106,7 +107,13 @@ export const STUDIO: readonly PieceStudio[] = [
 				bud: false,
 				sides: [
 					{
-						stem: { length: 0.5, radius: [0.005, 0.002], bud: false },
+						// The arm curves a little along its length; its end's strand makes the arch.
+						stem: {
+							length: 0.5,
+							radius: [0.005, 0.002],
+							kink: { length: 0.12, angle: 6 },
+							bud: false,
+						},
 						gap: 0.02,
 						from: 0.95,
 						to: 1,
@@ -118,6 +125,7 @@ export const STUDIO: readonly PieceStudio[] = [
 						stem: {
 							length: 0.59,
 							radius: [0.006, 0.002],
+							kink: { length: 0.12, angle: 6 },
 							bud: false,
 							sides: [
 								{
