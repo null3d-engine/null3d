@@ -2,6 +2,7 @@
 // round the trunk, every axis bends within its bound and joins the wood it leaves, and one seed
 // grows one plant.
 import { describe, expect, it } from 'bun:test';
+import { VARIANTS_BY_PRESET } from '../core/caps';
 import { speciesProblems } from '../core/check';
 import { AXIS_STEM, type MacroSkeleton } from '../core/graph';
 import { hashBytes } from '../core/hash';
@@ -374,24 +375,38 @@ describe("the pine's frame against its photographs", () => {
 		}
 	});
 
-	it("is as wide at each height as still 01's outline, from four sides", () => {
-		for (const seed of SEEDS) {
-			const plan = planConifer(input(seed));
-			for (const [from, width] of WIDTHS) {
-				let sum = 0;
-				for (const turn of [0, 45, 90, 135]) {
-					const built = widthAt(plan, from, turn);
-					sum += built;
-					// From any side a band is no narrower than six tenths of the photograph's and no
-					// wider than a quarter of the height more.
-					expect(built).toBeGreaterThanOrEqual(width * 0.6);
-					expect(built).toBeLessThanOrEqual(width + 0.25);
-				}
-				// Over the four sides a band stands within a quarter of the height of the photograph's.
-				expect(Math.abs(sum / 4 - width)).toBeLessThanOrEqual(0.25);
+	/** Whether a plan is as wide at each height as still 01's outline, from four sides. */
+	const holdsWidths = (plan: ReturnType<typeof planConifer>): void => {
+		for (const [from, width] of WIDTHS) {
+			let sum = 0;
+			for (const turn of [0, 45, 90, 135]) {
+				const built = widthAt(plan, from, turn);
+				sum += built;
+				// From any side a band is no narrower than six tenths of the photograph's and no
+				// wider than a quarter of the height more.
+				expect(built).toBeGreaterThanOrEqual(width * 0.6);
+				expect(built).toBeLessThanOrEqual(width + 0.25);
 			}
+			// Over the four sides a band stands within a quarter of the height of the photograph's.
+			expect(Math.abs(sum / 4 - width)).toBeLessThanOrEqual(0.25);
 		}
-	});
+	};
+	/**
+	 * The plants a page grows: eight seeds of the first variant, and the variants a kit grows at the
+	 * High preset of the first seed. The variants known not to hold yet expect their failure, so
+	 * each line goes once its plant holds: at variants 3 and 4 the band at 0.70 of the height reads
+	 * 0.81 and 0.82 of the height over four sides against the photograph's 1.07.
+	 */
+	const GROWN = [
+		...[11, 12, 13, 14, 15, 16, 17, 18].map((seed) => input(seed)),
+		...Array.from({ length: VARIANTS_BY_PRESET.high - 1 }, (_, k) => input(11, k + 1)),
+	];
+	const WIDTHS_OPEN = new Set([3, 4]);
+	for (const grown of GROWN)
+		(grown.seed === 11 && WIDTHS_OPEN.has(grown.variant) ? it.failing : it)(
+			`is as wide at each height as still 01's outline, from four sides, at seed ${grown.seed} variant ${grown.variant}`,
+			() => holdsWidths(planConifer(grown)),
+		);
 
 	it('shares its foliage round the trunk: no eighth of the plan empty and no half heavy', () => {
 		for (const seed of SEEDS) {
