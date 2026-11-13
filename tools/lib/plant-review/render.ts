@@ -343,11 +343,12 @@ export async function drawShots(
 	options: { readonly gpu?: string; readonly log?: (line: string) => void } = {},
 ): Promise<RunFrame[]> {
 	const log = options.log ?? console.log;
-	// A checkout without a development certificate draws over plain HTTP on the loopback, as the
-	// server asks: the environment's choice reaches the server instead of being forced to HTTPS.
-	// A dev server can answer its index page before it can serve the sketch module the page imports,
-	// and a run whose first frame finds the module missing fails every frame: the probe is the module.
-	const server = await startServer(process.env.NULL3D_HTTPS !== '0', SKETCH_MODULE);
+	// The page is reached over the loopback, which is a secure origin already, so the server serves
+	// plain HTTP whatever the environment asks, and a checkout without a development certificate
+	// draws. A dev server can answer its index page before it can serve the sketch module the page
+	// imports, and a run whose first frame finds the module missing fails every frame: the probe is
+	// the module.
+	const server = await startServer(false, SKETCH_MODULE);
 	const browser = await launchRepoBrowser(defaultEnvironment());
 	const frames: RunFrame[] = [];
 	try {

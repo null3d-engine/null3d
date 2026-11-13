@@ -6,7 +6,7 @@
 //   bun run plants:review <species> [--refs <folder or slug>] [--out <folder>] [--run <name>]
 //     [--views a,b | all] [--step <degrees>] [--wind-fps 8] [--cell <pixels>] [--only stills,turns,wind]
 //     [--stills 01,02,18] [--seed 11] [--variant 0] [--preset high] [--sparse 0..1] [--lod 0|1|2] [--gpu webgpu]
-//     [--no-matte] [--compare <run folder>]
+//     [--no-matte] [--draw-only] [--compare <run folder>]
 //
 // The species is any registered species id, or any other id, which draws as a stand-in. The dev
 // server must serve this copy of the repository on the port that NULL3D_PORT names; one is started
@@ -1517,6 +1517,12 @@ async function main(): Promise<void> {
 	console.log(
 		`${frames.length - failed} of ${frames.length} frames drawn in ${manifest.seconds} s`,
 	);
+	if (flag('draw-only')) {
+		// The comparison then runs as a process of its own, within its own time limit.
+		console.log(`compare with: bun run plants:review --compare ${dir}`);
+		if (failed > 0) process.exitCode = 1;
+		return;
+	}
 	const complete = compareRun(dir, manifest, set, windFps, await habitOf(manifest.species), sheath);
 	console.log(readFileSync(join(dir, 'summary.md'), 'utf8'));
 	if (failed > 0 || !complete) process.exitCode = 1;
