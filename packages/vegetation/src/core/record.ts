@@ -1618,7 +1618,7 @@ export interface NeedleShape {
  * @category api/vegetation
  */
 export interface ScaleSpray {
-	/** Orders of branchlets in one spray, 2 to 4. */
+	/** Orders of branchlets in one spray, 1 to 4: 1 for a single cord, as a cypress's shoot carries. */
 	readonly orders: number;
 	/** Segment length in metres. */
 	readonly segment: number;
@@ -2282,7 +2282,8 @@ export interface CuttingHints {
 	/**
 	 * The shoots a cutting kit places over the crown's own, from 0.25 to 8, where a piece cut for
 	 * close review carries a denser covering than the crown can afford. The crown's kit is unchanged:
-	 * the piece is drawn at the nearest level alone, so its kit pays for no card levels.
+	 * the piece is drawn at the nearest level alone, so its kit pays for no card levels. A piece's
+	 * own hint may give a density of its own in place of this one.
 	 */
 	readonly density?: number;
 	/**
@@ -2338,6 +2339,13 @@ export interface CutFromPlant {
 	/** Metres of wood from the cut to the farthest tip. */
 	readonly length: number;
 	/**
+	/**
+	 * The shoots this piece places over the crown's own, from 0.25 to 8: a density of its own, where
+	 * the piece covers more or less than the species' `cuttings.density`, which applies where it
+	 * names none. A piece cut from the grown plant takes the kit this reshapes.
+	 */
+	readonly density?: number;
+	/**
 	 * The piece's leaf size over the crown's, where a piece cut from the plant wants leaves of its
 	 * own. A rosette's piece carries the crown's leaves at the crown's size, so a piece that stands
 	 * a little too dense for its photograph is opened by shrinking its leaves rather than by taking
@@ -2360,6 +2368,12 @@ export interface CutFromShoots {
 	 * class and still be different pieces, as a sub-branch and a leaf cluster are.
 	 */
 	readonly pick?: number;
+	/**
+	 * A density here does nothing: a piece taken from a shoot prototype carries the prototype's own
+	 * covering, and only a piece cut from the grown plant has placement to reshape. Thin a shoot-cut
+	 * piece with a class of its own instead, or leave the field out.
+	 */
+	readonly density?: number;
 	/**
 	 * How many shoots the piece carries, fanned about its own upright axis, where a branch photograph
 	 * shows a divided, hanging branch: one shoot is a class prototype, and a branch needs more. 1 by

@@ -22,6 +22,9 @@
 		"barkMask": true
 	},
 	"16-bark-on-branch.png": {
+		"view": "bark-limb",
+		"thin": 0.015,
+		"span": 0.1,
 		"barkMask": true,
 		"leafyBark": true
 	},
@@ -30,5 +33,21 @@
 	},
 	"11-single-spray.png": {
 		"view": "leaf-upper"
+	},
+	"13-shoot-underside.png": {
+		"view": "cluster",
+		"elevation": -70
+	},
+	"24-leaf-texture-upper.png": {
+		"view": "cluster",
+		"elevation": 60,
+		"pick": 0
+	},
+	"25-leaf-texture-underside.png": {
+		"view": "cluster",
+		"elevation": -80
+	},
+	"cypress-wind-motion.mp4": {
+		"sway": 60
 	}
 }

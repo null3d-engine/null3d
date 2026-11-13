@@ -5,13 +5,14 @@ import { describe, expect, it } from 'bun:test';
 import type { ShootRows } from '../asset';
 import { AXIS_LIMB, AXIS_STEM, BUD_LATERAL, SkeletonBuilder } from '../core/graph';
 import { placeholderSkeleton } from '../core/placeholder';
-import type { NeedleShape, Species } from '../core/record';
+import type { NeedleShape, ScaleSpray, Species } from '../core/record';
 import type { Season } from '../core/types';
 import { DETAILS } from '../core/types';
 import { fascicleMesh } from './fascicle';
 import { placeShoots } from './instancer';
 import { needleMesh } from './needle';
 import { OAK_MANIFEST, oakRecord, testKit } from './oak.test-support';
+import { builder as sprayBuilder, sprayMesh } from './scale-spray';
 import { inLeaf } from './season';
 
 const NEEDLE: NeedleShape = {
@@ -116,6 +117,73 @@ describe('the seasons on shoots', () => {
 		};
 		expect(inLeaf(blossom, 'blossom', 0.5, 0.2)).toBe(true);
 		expect(inLeaf(blossom, 'blossom', 0.5, 0.3)).toBe(false);
+	});
+});
+
+describe('the scale spray', () => {
+	const SPRAY: ScaleSpray = {
+		orders: 2,
+		segment: 0.022,
+		radius: 0.0012,
+		flatten: 0.3,
+		dead: 0.05,
+		optics: {
+			reflectance: [0.05, 0.1, 0.03],
+			reflectanceBack: [0.1, 0.15, 0.07],
+			transmittance: [0.04, 0.08, 0.02],
+			roughness: [0.55, 0.7],
+		},
+	};
+
+	it('builds a cord that divides, with its scales on the texture', () => {
+		for (const detail of DETAILS) {
+			const mesh = sprayMesh(SPRAY, OAK_MANIFEST, detail);
+			const triangles = mesh.indices.length / 3;
+			expect(triangles).toBeGreaterThan(10);
+			expect(triangles).toBeLessThan(900);
+			// The first cord runs a segment, and the child cords carry the spray above it.
+			expect(top(mesh.positions)).toBeGreaterThan(SPRAY.segment);
+			expect(top(mesh.positions)).toBeLessThan(SPRAY.segment * 2);
+			let low = 1;
+			let high = 0;
+			for (let i = 0; i < mesh.uvs.length; i += 2) {
+				low = Math.min(low, mesh.uvs[i] as number, mesh.uvs[i + 1] as number);
+				high = Math.max(high, mesh.uvs[i] as number, mesh.uvs[i + 1] as number);
+			}
+			expect(low).toBeGreaterThanOrEqual(0);
+			expect(high).toBeLessThanOrEqual(1);
+		}
+	});
+
+	it('draws its oldest cords as dead wood when the record asks', () => {
+		const live = sprayMesh({ ...SPRAY, dead: 0 }, OAK_MANIFEST, 'high');
+		const dead = sprayMesh({ ...SPRAY, dead: 1 }, OAK_MANIFEST, 'high');
+		const stem = (colors: Uint8Array) => {
+			let count = 0;
+			for (let i = 2; i < colors.length; i += 4) if (colors[i] === 85) count++;
+			return count;
+		};
+		// A live spray is foliage throughout; a dead one draws its cords as stem.
+		expect(stem(live.colors)).toBe(0);
+		expect(stem(dead.colors)).toBeGreaterThan(0);
+		expect(stem(dead.colors)).toBeLessThan(dead.colors.length / 4);
+	});
+
+	it('gives the shoots a few different sprays', () => {
+		const record: Species = {
+			...oakRecord(),
+			foliage: { kind: 'scale-spray', spray: SPRAY },
+		};
+		const leaves = sprayBuilder.leaves(record, OAK_MANIFEST, 'high');
+		expect(leaves.length).toBe(3);
+		expect(new Set(leaves.map((leaf) => leaf.positions.join(','))).size).toBe(3);
+		// Every leaf is a whole spray: its first cord runs a segment and its side cords carry the
+		// spray above it, which is the frond the leaf close-ups frame.
+		for (const leaf of leaves)
+			expect(top((leaf as { positions: Float32Array }).positions)).toBeGreaterThan(SPRAY.segment);
+		expect(top((leaves[0] as { positions: Float32Array }).positions)).toBeLessThan(
+			SPRAY.segment * 2,
+		);
 	});
 });
 
