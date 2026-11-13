@@ -27,7 +27,8 @@ const TWIG_LEAF_SCALE = 1.5;
  * The rosette at a shoot's end. Still 21 at full size: eight to ten separate leaves crowd in a
  * shoot's last few centimetres and radiate all round its tip, with sky between them, so a rosette
  * is two leaf lengths across, a third of the branch. Its turning video: the rosettes have depth,
- * and the branch is a third as deep as it is wide.
+ * the branch is a third as deep as it is wide, and in the narrowest frame most leaves still show
+ * part of their face, so the blades turn up to 55 degrees either way from facing the camera.
  */
 function tuft(length: number, leaves: number, scale = LEAF_SCALE): PieceLeaves {
 	const run = 0.05;
@@ -40,7 +41,7 @@ function tuft(length: number, leaves: number, scale = LEAF_SCALE): PieceLeaves {
 			[1 - run / length, scale],
 			[1, scale * 0.6],
 		],
-		fan: { reach: 165, tilt: 20, cone: 20 },
+		fan: { reach: 165, tilt: 55, cone: 20 },
 	};
 }
 
@@ -77,7 +78,7 @@ function sideShoot(length: number, forks = false): PieceStem {
 /** The leaves along the outer part of a twig's shoot, from a share of its length. */
 function twigLeaves(from: number): PieceLeaves {
 	return {
-		gap: 0.035,
+		gap: 0.03,
 		from,
 		angle: 62,
 		angleSpread: 10,
@@ -86,8 +87,10 @@ function twigLeaves(from: number): PieceLeaves {
 			[1, TWIG_LEAF_SCALE * 0.75],
 		],
 		// The sub-branch's turning video: edge on the twig is 0.37 as wide as face on, so its
-		// leaves lean most of the way into its plane.
+		// leaves lean most of the way into its plane; in its narrowest frame most blades still show
+		// part of their face, so each turns up to 45 degrees either way from facing the camera.
 		flat: 0.8,
+		face: { turn: 0, spread: 45, inPlane: true },
 	};
 }
 
@@ -147,8 +150,8 @@ export const PIECES: readonly PieceRule[] = [
 	// Still 22 at full size, in shares of the twig's height: a knobbly stem 0.032 thick that bends
 	// at each node. Three shoots: to the right at 0.2 (0.28 long, 40 degrees), to the left at 0.33
 	// (0.42 long, 50 degrees) and to the right at 0.5 (0.38 long, 45 degrees). Each shoot and the
-	// stem carry five to seven separate leaves along their outer half, held 50 to 70 degrees out,
-	// and end in a cluster of buds.
+	// stem carry five to nine separate leaves along their outer half, 25 to 27 in all, held 50 to
+	// 70 degrees out, a node each 3 centimetres, and end in a cluster of buds.
 	{
 		name: 'twig',
 		attitude: 'along',
