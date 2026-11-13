@@ -507,7 +507,7 @@ export function belowShot(subjects: PlantSubjects, lens: Lens, options: BelowOpt
 		else far = middle;
 	}
 	const steep = (rise - eye) / Math.tan(halfFov + BELOW_EDGE_ABOVE_LEVEL * DEG + above);
-	const distance = Math.max(radius + CLEARANCE, Math.min(Math.sqrt(near * far), steep));
+	let distance = Math.max(radius + CLEARANCE, Math.min(Math.sqrt(near * far), steep));
 	// The camera stands round the trunk where the trunk is at the eye's height, and looks at the
 	// fork, so a trunk that leans still shows its fork on the frame's middle column.
 	const beside = sampleAtHeight(trunk.axis, ground + eye)?.at ?? trunk.base;
@@ -524,9 +524,17 @@ export function belowShot(subjects: PlantSubjects, lens: Lens, options: BelowOpt
 			: options.turn;
 	// The stand already keeps clear of the trunk, so only a limb can be in the camera's way.
 	const walk = walkTo(asked, (turn) => standsClear(subjects, standAt(turn), { trunk: true }));
+	const out = facing(walk.turn);
+	// The steep stand holds the lower edge above level for a top straight over the trunk at the
+	// eye. A top that leans away from the camera stands farther off, so the camera comes in until
+	// its reach to the top is the steep one, never nearer the bark than the clearance.
+	const offset = [top.at[0] - beside[0], top.at[2] - beside[2]] as const;
+	const along = offset[0] * out[0] + offset[1] * out[2];
+	const room = along * along - (offset[0] ** 2 + offset[1] ** 2) + steep * steep;
+	if (room >= 0)
+		distance = Math.max(radius + CLEARANCE, Math.min(distance, along + Math.sqrt(room)));
 	const stand = standAt(walk.turn);
 	const reach = Math.hypot(top.at[0] - stand[0], top.at[2] - stand[2]);
-	const out = facing(walk.turn);
 	const level: V3 =
 		reach > 1e-6
 			? [(top.at[0] - stand[0]) / reach, 0, (top.at[2] - stand[2]) / reach]
@@ -1010,6 +1018,17 @@ export function junctionShot(
 	// The area read on the limb is a quarter of its own thickness each way, so a thin limb that
 	// rises across the frame still fills it.
 	const within = Math.min(0.05, (0.25 * 2 * limb.radius) / tall);
+	// The trunk's line level with the collar: a limb that leaves a thick trunk at a narrow angle
+	// comes out of the bark well above its joint on that line, so the trunk below the join is read
+	// from the collar's height.
+	const collarLevel = step(
+		limb.joint,
+		limb.trunkDirection,
+		dot(
+			[crotch[0] - limb.joint[0], crotch[1] - limb.joint[1], crotch[2] - limb.joint[2]],
+			limb.trunkDirection,
+		),
+	);
 	return {
 		kind: 'a great limb leaving the trunk',
 		camera,
@@ -1027,7 +1046,7 @@ export function junctionShot(
 			},
 			{
 				name: 'the trunk below the joint',
-				at: step(limb.joint, limb.trunkDirection, -0.25 * tall),
+				at: step(collarLevel, limb.trunkDirection, -0.25 * tall),
 				within: [-1.5, 0.5, column, 1.2],
 				size: { metres: 2 * limb.trunkRadius, of: 'width', min: 0.2, max: Infinity },
 			},

@@ -229,6 +229,28 @@ describe('the view up the trunk', () => {
 		expect(checkShot(shot, lens).present).toBe(true);
 	});
 
+	test('never looks down at the ground beside a thick trunk whose top leans away', () => {
+		// A bole a metre through, leaning so its limbs part well to the side of where it stands at the
+		// eye; the camera stands on the side it leans away from, so its top is farther off than its foot.
+		const lens = { fov: 70, aspect: 4 / 3 };
+		const leaning: TrunkSubject = {
+			...trunkOf(8, 1, 4),
+			axis: axis([0, 0, 0], [0.25, 1, 0], Math.hypot(2, 8), 1, 0.5, 17),
+			firstFork: { at: [1, 4, 0], radius: 0.8 },
+		};
+		const subjects = tree({
+			trunk: leaning,
+			crownBase: 4,
+			limbs: [{ ...limbOf(1, 4, [1, 0.25, 0], 0.5, 8, 0.9), joint: [1, 4, 0] }],
+		});
+		const shot = shotOf(belowShot(subjects, lens, { turn: 0 }));
+		expect(shot.camera.position[0]).toBeLessThan(0);
+		expect(pitchOf(shot.camera)).toBeCloseTo(40, 4);
+		expect(landing(shot, lens, 'the top of the bole').y).toBeCloseTo(0.42, 6);
+		expect(landing(shot, lens, 'the horizon').y).toBeGreaterThan(1);
+		expect(checkShot(shot, lens).present).toBe(true);
+	});
+
 	test('keeps the fork on the middle column of a trunk that leans', () => {
 		// A stool's stem: its fork stands 1.2 m to the side of its foot.
 		const lens = { fov: 70, aspect: 3 / 4 };
@@ -443,6 +465,25 @@ describe('the view of a limb leaving the trunk', () => {
 		// A thin limb on the same bole still shows the trunk's round: the frame is 0.9 of its diameter.
 		const thin = tree({ trunk, limbs: [limbOf(1, 5, [1, 0.3, 0], 0.15, 3, 0.9)] });
 		expect(shotOf(junctionShot(thin, TALL)).facts.frame as number).toBeCloseTo(0.9 * 1.8, 9);
+	});
+
+	test('reads the trunk below the join from the collar, where a limb leaves a thick trunk steeply', () => {
+		// A bole 2 m through with a limb about a metre through rising at 57 degrees: the limb comes out
+		// of the bark some 1.5 m above its joint on the trunk's line.
+		const lens = { fov: 50, aspect: 1 };
+		const trunk = trunkOf(14, 1, 5);
+		const lie = 57 * DEG;
+		const subjects = tree({
+			trunk,
+			limbs: [limbOf(1, 5, [Math.cos(lie), Math.sin(lie), 0], 0.48, 9, 1)],
+		});
+		const shot = shotOf(junctionShot(subjects, lens, { limbShare: 0.25, column: 0.45, lie: 45 }));
+		const below = landing(shot, lens, 'the trunk below the joint');
+		const collar = landing(shot, lens, 'the collar, where the limb meets the trunk');
+		expect(below.x).toBeLessThan(collar.x);
+		expect(below.y).toBeGreaterThan(collar.y);
+		expect(below.y).toBeLessThan(1);
+		expect(checkShot(shot, lens).present).toBe(true);
 	});
 
 	test("takes the photograph's own subject box shares where the tool measured them", () => {
