@@ -1,13 +1,14 @@
-// The pendulous sedge: a dense wide tussock of broad keeled leaves rising from one crown of brown
-// sheaths, under slender three-angled flowering stems that bow over and hang long narrow spikes one
-// below another along their upper part, with one brown male spike at the tip. A sedge is a grass-like
-// plant, so its "trunk" is the bundle of leaf sheaths and its "bark" is the sheath surface; the
-// leaves stand in three ranks from every shoot, and the solid three-angled stem tells it from a grass.
+// The pendulous sedge: a dense wide mound of broad keeled leaves from one stool of brown sheaths,
+// under slender three-angled flowering stems that bow over and hang long narrow spikes one below
+// another, with one more spike ending each stem. A sedge is a grass-like plant, so its "trunk" is
+// the bundle of leaf sheaths and its "bark" is the sheath surface; the leaves stand in three ranks
+// from every shoot, and the solid three-angled stem tells it from a grass.
 //
-// The envelope, the crown's aspect and the all-round band are measured from the reference turntable
-// by the fitting tool (fit.ts). The leaves, shoots, sheaths and spikes come from the stills of the
-// whole tuft, the basal crown, one shoot, the leaf faces, the stem's cut end and the studio pieces.
-// The record is plain data: no code runs in it.
+// The height is the fact sheet's. Every other length of the plant's build is a share of the leaf
+// mound's height, measured on the turning video's first frame (still 02), which the owner ruled the
+// primary plant. The blade's shape, the sheaths and the stem's section come from the close stills.
+// The envelope's aspect and the all-round band are the fitting tool's (fit.ts). The record is plain
+// data: no code runs in it.
 import type { Species } from '../../core/record';
 import { aspect, envelope, roundBand } from './fit';
 
@@ -17,83 +18,77 @@ export const record: Species = {
 	name: 'Pendulous sedge',
 	latin: 'Carex pendula',
 	form: 'wide fountain of broad keeled leaves under tall bowed stems with hanging spikes',
-	// Stills 01, 02 and 18 span about one and a half leaf-mound widths for the plant's height to the
-	// top of the bowed stems; the fit measures 1.42 over the turn.
-	size: { height: { mean: 1.45, spread: 0.18 }, aspect },
+	// The fact sheet: flowering stems 1 to 2 m and a leaf mound 0.6 to 1 m tall. The turning video's
+	// first frame (still 02) stands the tallest stem at 1.69 mound heights, so a mound of 0.60 m puts
+	// the stems' top at 1.01 m: the smallest plant that meets both.
+	size: { height: { mean: 1.01, spread: 0.08 }, aspect },
 	growth: {
 		model: 'tuft',
-		// Still 04's overhead view and still 07's crown show a dense tussock of many shoots.
-		shoots: { mean: 170, spread: 14 },
-		// Still 07 and 09: the shoots rise from one short thick crown, a little over 20 cm across.
-		base: 0.11,
-		// Still 02: the outer shoots lean away from the crown while the middle ones stand upright.
-		lean: [
-			[0, 2],
-			[1, 20],
-		],
-		// Still 11: one shoot carries six or seven blades.
-		blades: { mean: 6, spread: 1 },
-		// Stills 08 and 23: a sedge's leaves leave their shoot in three ranks.
-		ranks: 3,
-		// Still 07: the brown sheaths stand about 10 to 13 cm under the lowest blades.
-		sheath: { mean: 0.06, spread: 0.012 },
-		// Still 07: each shoot's sheath bundle is about 1.5 cm across.
-		sheathRadius: 0.008,
-		// Stills 07, 08 and 14: the sheaths are red-brown at the crown's foot and paler where the
-		// blades leave. The ends are the 07 carrier's measured bands as linear reflectance: foot
-		// Lab (44.0, 8.5, 15.1), collar Lab (42.1, 11.2, 17.9), the collar taking over at its top.
+		// Still 02: the highest blade stands 250 px above the soil and the highest stem 423 px.
+		mound: 0.59,
+		// The blades cannot be counted on a photograph, so the shoots are counted by how full the
+		// mound is. Still 02's mound, read as plant or sky in ten bands of height, is 0.71 full; a
+		// drawing of the same size with these blades is as full in its upper half at forty-eight
+		// shoots and as full in all at sixty-eight, so the count is fifty-six, eight either way.
+		// Twenty-two of them flower (still 02).
+		shoots: { mean: 56, spread: 8 },
+		// Fifty-six shoot bases of one and a half blade widths (still 07) pack a disc 0.76 of the
+		// mound's height across; the brown zone at the foot of still 02 spans 0.84 of it.
+		stool: 0.76,
+		// Stills 21 and 22: the brown sheaths stand a third of the mound's height under the blades;
+		// still 07: a shoot's sheath bundle is one and a half blade widths across.
+		sheath: { height: 0.35, width: 0.096 },
+		// Stills 07, 08 and 14: the sheaths are red-brown at the foot and paler where the blades
+		// leave. The ends are still 07's measured bands as linear reflectance.
 		sheathColour: { foot: [0.21, 0.123, 0.079], collar: [0.21, 0.107, 0.062], reach: 0.85 },
-		// Stills 07, 08 and 14: the basal sheaths are red-brown, and the leaf's own sheath reads a
-		// paler straw-brown, so the sheath draws a warm brown between the two. The colour belongs
-		// to the shoot's sheath column, so it moves the basal-crown pictures (07 and 14) from green
-		// toward the photographs' brown and leaves a picture that frames the leaf's own sheath at
-		// its collar, or the stem, where it is; the row 8 colour differences fall toward 3 only
-		// where the shoot's column stands in frame.
-		// Still 02: the youngest blades stand nearly upright and the oldest arch out and over.
-		spread: [
-			[0, 2],
-			[0.5, 14],
-			[1, 26],
+		// Stills 11 and 22: five or six blades a shoot.
+		blades: { mean: 5.5, spread: 0.5 },
+		// Stills 08, 22 and 23: a sedge's leaves leave their shoot in three ranks.
+		ranks: 3,
+		// Still 02, traced on a 3.4 times crop of the mound's left half, in mound heights from each
+		// blade's own shoot. The youngest blade stands near plumb with its tip leaning out. A middle
+		// blade rises steeply, turns right over and hangs plumb. The oldest rises, runs out and
+		// comes down steeply at the mound's rim, its tip about 75 degrees below level.
+		// A blade that can be traced is one that stands clear of the rest, the largest of its kind:
+		// the young blade traced stands 1.1 high, the middle one arches at 0.98, the mound's own
+		// top, and the oldest rises 0.8 and lands 1.35 out. The oldest blades land from 0.9 to 1.5
+		// from the middle, a quarter either side of their mean, so each pose is its traced blade at
+		// four fifths of its size and a blade's length strays a quarter either side of its pose's.
+		poses: [
+			{ share: 0.25, leave: 85, apex: 0.88, drop: 0.04, reach: 0.16 },
+			{ share: 0.4, leave: 85, apex: 0.78, drop: 0.78, reach: 0.38, tip: 90 },
+			{ share: 0.35, leave: 75, apex: 0.62, drop: 0.62, reach: 1.05, tip: 75 },
 		],
-		// Still 11: the innermost young blade is shorter than the outer ones.
-		size: [
-			[0, 0.55],
-			[0.35, 0.95],
-			[1, 1],
-		],
-		heads: {
-			// Stills 01 and 02: a big tussock rises about twenty-two flowering stems.
-			count: { mean: 22, spread: 4 },
-
-			kind: 'spike',
-			// Still 17: the stems stand about 30 cm above the leaf mound at their highest point.
-			height: { mean: 1.6, spread: 0.18 },
-			// Still 16: the solid three-angled stem; the photographs' stems read a centimetre to a
-			// centimetre and a half across, and a thinner one falls under a pixel at the far view.
-			radius: 0.007,
-			sides: 3,
-			// Still 02: each stem bows over through a quarter turn at the top.
-			bow: { mean: 100, spread: 15 },
-			// Still 19: the photographs' spike stalks read a few millimetres; at a pixel's width they
-			// drop from the silhouette's matte, so the spikes stand apart from their stems.
-			stalkShare: 0.6,
-			// Stills 19 and 20: the spikes stand in flower through summer and stay brown into winter.
+		bladeSpread: 0.25,
+		stalks: {
+			// Still 02: twenty-two stems, thirteen clear of the mound and about nine inside it.
+			count: { mean: 22, spread: 2 },
+			// The fact sheet: the spikes stand in flower through summer and stay brown into winter.
 			seasons: ['blossom', 'summer', 'autumn', 'winter'],
-			spikes: {
-				// Still 19: four or five female spikes hang one below another.
-				count: { mean: 4, spread: 0.8 },
-				// Still 19: the spikes hang in a drooping cluster near the stem's tip.
-				spacing: { mean: 0.045, spread: 0.01 },
-				// Still 19: the spikes hang on short stalks of 2 to 5 cm.
-				stalk: { mean: 0.04, spread: 0.008 },
-			},
+			// Still 02: the stems' highest points spread evenly from the mound's top to 1.69 of it.
+			top: [1, 1.69],
+			// Still 02: a stem stands plumb at the middle and leans up to 35 degrees at the rim.
+			lean: [0, 35],
+			// Stills 02, 17 and 19: a stem runs straight for seven tenths of its length, then bows
+			// through 100 to 150 degrees, so its tip points down and out.
+			bow: { from: 0.7, turn: [100, 150] },
+			// Still 02: a stem is 5 px across at mid height against a mound of 250 px.
+			width: 0.025,
+			// Still 16: the solid three-angled stem.
+			sides: 3,
+			// Still 02: two to four spikes hang from a stem, each 0.33 of the mound's height long and
+			// 0.028 across, on a thread of 0.04 to 0.1. Still 19: the spike that ends the stem is 0.4
+			// of a hanging spike's length.
+			head: { kind: 'spike', count: 3, length: 0.33, width: 0.028, thread: 0.07, tip: 0.13 },
 		},
+		// The least plant that still reads as the species: eight shoots spread over the stool, each
+		// with three blades, and five stems.
+		least: { shoots: 8, blades: 3, stalks: 5 },
 		soil: {
-			// Still 09: a short stout rhizome runs either side of the crown, about 8 cm in all.
+			// Still 09: a short stout rhizome runs either side of the stool, about 8 cm in all.
 			rhizome: { mean: 0.04, spread: 0.01 },
 			// Still 09: the rhizome reads 2 to 2.5 cm thick.
 			rhizomeRadius: 0.011,
-			// Still 14: dense brown roots, about fifteen of them, spread round the crown.
 			// Still 14 and the lifted studio piece: a dense brown root ball, not a sparse fringe.
 			roots: { mean: 32, spread: 5 },
 			rootLength: { mean: 0.18, spread: 0.05 },
@@ -106,10 +101,10 @@ export const record: Species = {
 	foliage: {
 		kind: 'grass-blade',
 		blade: {
-			// The fact sheet's 0.5 to 1 m blade, as stills 11 and 21 show it.
-			length: { mean: 1, spread: 0.08 },
-			// The fact sheet's 1.5 to 2 cm width, at its upper end.
-			width: 0.02,
+			// A middle blade's length on still 02: 1.5 mound heights.
+			length: { mean: 0.9, spread: 0.22 },
+			// Still 02: a blade is 16 px across against a mound of 250 px, 0.064 of its height.
+			width: 0.038,
 			// Still 12: the blade is widest in its lower third and narrows toward the long tip.
 			profile: [
 				[0, 0.7],
@@ -121,8 +116,8 @@ export const record: Species = {
 			// blade's width, so a metre of blade closes over a short last share of it.
 			tip: 'pointed',
 			tipLength: 0.08,
-			// Stills 08 and 12: the blade is a deep keeled V across its width.
-			fold: 40,
+			// Stills 08, 12 and 16: the blade is a shallow open V, about 15 degrees each side of flat.
+			fold: 15,
 			// Still 12: the upper face twists part way along the blade.
 			twist: 60,
 			// Still 02: each blade arches from upright to hanging at its tip.
@@ -156,43 +151,6 @@ export const record: Species = {
 			},
 		},
 	},
-	extras: [
-		{
-			// Still 19: the long green female spikes hang on their stalks in flower and summer.
-			kind: 'catkin',
-			at: 'flower',
-			share: 1,
-			seasons: ['blossom', 'summer'],
-			// Still 19: each spike is a dense cluster of short spikelets, so its silhouette carries
-			// the rows' swellings rather than a smooth pendant. The photograph's heads run about a
-			// third of the visible stem, so the body is longer than a catkin and its rows follow.
-			shape: { catkin: { length: 0.17, radius: 0.0036, spikelets: { count: 12, bulge: 0.28 } } },
-			colour: [0.13, 0.2, 0.06],
-			// The body keeps its stalk's outward droop rather than being forced straight down, so
-			// the heads splay as the photographs show them.
-			hang: 5,
-		},
-		{
-			// The fact sheet: the spikes stay on the plant brown through autumn and winter.
-			kind: 'catkin',
-			at: 'flower',
-			share: 1,
-			seasons: ['autumn', 'winter'],
-			shape: { catkin: { length: 0.17, radius: 0.0036, spikelets: { count: 12, bulge: 0.28 } } },
-			colour: [0.17, 0.11, 0.05],
-			hang: 5,
-		},
-		{
-			// Still 19: one short brown male spike at the stem's tip.
-			kind: 'spike',
-			at: 'stem-tip',
-			share: 1,
-			seasons: ['blossom', 'summer', 'autumn', 'winter'],
-			shape: { catkin: { length: 0.03, radius: 0.0018, spikelets: { count: 4, bulge: 0.15 } } },
-			colour: [0.19, 0.11, 0.05],
-			hang: 0,
-		},
-	],
 	seasons: {
 		// The reference set shows the plant in summer, in flower.
 		default: 'summer',
@@ -212,46 +170,29 @@ export const record: Species = {
 		flutter: { kind: 'grass', amplitude: 0.06, frequency: 2 },
 	},
 	lod: {
-		nearFoliage: 'merged',
+		nearFoliage: 'instanced',
 		switchPixels: [24, 12, 120],
+		// A piece's card first shows where the piece spans 24 pixels, so a cell of 32 texels holds
+		// it at every tier; a tree leaf's 64 would hold four times the texels for no pixel more.
+		cardCell: { low: 32, medium: 32, high: 32, ultra: 32 },
 		woodOrders: [0, 0],
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
-			// The owner's ruling of 12 November 2026: the sedge keeps its spikelet rows, its ligule and
-			// its 170 shoots, and its caps are raised to what the newer grower costs rather than the
-			// plant being cut. Measured at seed 11, variant 0, high detail it draws 3,042,793 variant
-			// bytes and 35,843 and 19,505 triangles at the two card levels; the caps take a stated
-			// margin above each. The medium, low and ultra byte caps were measured before the newer
-			// grower; the read below re-records them. The kit holds 33 to 37 KB.
-			kitBytes: { low: 100_000, medium: 100_000, high: 100_000, ultra: 100_000 },
-			// The owner's 12 November 2026 ruling, after the standing authority: the sedge draws the
-			// photographs' twenty-two flowering stems, measured at 3,375,625 variant bytes and
-			// 78,833, 40,987 and 23,409 triangles, and the caps take a stated margin above each.
-			// 13 November 2026: the caps govern every variant the species shows, all six at seed 11,
-			// not one drawn variant. The largest is variant 3, which reads 3,327,959, 3,658,322,
-			// 4,099,334 and 5,611,850 bytes at the four tiers (old caps 1,673,928, 2,300,000,
-			// 3,600,000 and 3,800,000), so each new cap keeps the class's 15 per cent spare at
-			// 3,830,000, 4,210,000, 4,710,000 and 6,450,000. The far tier was coarsened so that same
-			// variant clears the 25,000-triangle second card level: its extras draw three faces rather
-			// than four, and a flower stalk two rings rather than four. The stalks add 618 triangles
-			// there (1,854 at the old ring count), and the level reads 24,317 against the cap, 29,811
-			// before the stalks joined it and 31,665 with them at the old cost. That variant's three
-			// levels read 98,819, 51,409 and 24,317 at the high tier against 140,000, 80,000 and
-			// 25,000.
-			// The same calibration's merged scale gives the high tier a read of 3,227,419 variant
-			// bytes, which the lead line re-recorded from 3,100,000 to 3,300,000. It is a byte read,
-			// not a triangle one, and it sits inside the every-variant cap above; the near band's
-			// triangle cap stays lod0Triangles at 140,000 against a read of 83,326.
-			// A merge with the lead line must keep the every-variant figures: its high byte cap of
-			// 3,300,000 cannot cover variant 3's 4,099,334, so the 4,710,000 here wins; and its card
-			// levels of 36,000 and 19,600 are below that variant's 51,409 and 24,317, so the 80,000
-			// and 25,000 here win. The lower figures were measured on one variant before the far
-			// tier's flower stalks were carried.
-			variantBytes: { low: 3_830_000, medium: 4_210_000, high: 4_710_000, ultra: 6_450_000 },
-			lod0Triangles: 140_000,
-			lod1Triangles: 80_000,
-			lod2Triangles: 25_000,
+			// The kit holds eleven pieces, the sheath column, seven blade shapes and three flowering
+			// stems, and their card atlas of twenty-four cells of 32 texels. It reads 470,732,
+			// 510,572, 572,732 and 663,912 bytes at the four tiers, and each cap keeps about fifteen
+			// per cent above its read.
+			kitBytes: { low: 542_000, medium: 588_000, high: 659_000, ultra: 764_000 },
+			// A plant is rows of the kit's pieces, so a variant's bytes are the same at every tier.
+			// Measured over the six variants at seed 11, in summer and in blossom: the largest reads
+			// 218,144 bytes; 41,224 triangles at the nearest level at the high tier and 77,360 at
+			// the ultra; and 2,668 and 1,338 at the two card levels. Each cap keeps about fifteen
+			// per cent above its read, and the nearest level's holds the ultra tier.
+			variantBytes: { low: 251_000, medium: 251_000, high: 251_000, ultra: 251_000 },
+			lod0Triangles: 89_000,
+			lod1Triangles: 3_100,
+			lod2Triangles: 1_550,
 			downloadBytes: 350_000,
 			downloadHalfBytes: 120_000,
 			growMilliseconds: 150,

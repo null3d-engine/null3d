@@ -10,7 +10,7 @@ import type { PieceLeaves, PieceRule, PieceStem, PieceStudio } from '../../leaf/
  * Still 21: a pair each 3.3 centimetres along a spray, held about 40 degrees from the stem, and
  * drooping with it. Still 22: a pair each 2.7 centimetres on a twig.
  */
-function pairs(from: number, gap: number): PieceLeaves {
+function pairs(from: number, gap: number, flat = 0.5): PieceLeaves {
 	return {
 		gap,
 		from,
@@ -18,26 +18,45 @@ function pairs(from: number, gap: number): PieceLeaves {
 		angle: 42,
 		angleSpread: 8,
 		hang: 0.25,
+		// Still 21: both leaves of nearly every pair show beside their spray, so the pairs lie in the
+		// branch's plane, as its turning video shows the whole branch flat. Stills 10, 22 and 23: on
+		// an upright twig each pair stands a quarter turn from the last, so the twig takes none.
+		flat,
 	};
 }
 
 /**
  * A leafy spray. Still 21: 35 to 70 centimetres long. It leaves its axis at 40 to 50 degrees, runs
  * out nearly straight for a third of its length, arches over and ends pointing about 60 degrees
- * below level. It is leafy from a quarter of its length and carries one or two side sprays of 25 to
- * 40 centimetres on its arch.
+ * below level. Its first leaf pair stands 7 to 8 centimetres from the axis, 0.15 of its length, and
+ * it carries one or two side sprays of 25 to 40 centimetres on its arch.
  */
 const SPRAY: PieceStem = {
 	length: { mean: 0.52, spread: 0.15 },
-	radius: [0.003, 0.0012],
+	radius: [0.004, 0.0015],
 	droop: 105,
 	droopOver: [0.33, 1],
-	leaves: pairs(0.25, 0.033),
+	// Stills 21, 04 and 19: about twelve olives on the branch, singly or in twos, each two
+	// centimetres long, hanging on stalks of one to two centimetres from the middle of a spray.
+	marks: [
+		{
+			kind: 'body',
+			gap: 0.11,
+			from: 0.3,
+			to: 0.75,
+			share: 0.5,
+			length: { mean: 0.02, spread: 0.003 },
+			width: 0.014,
+			stalk: 0.015,
+			count: { mean: 1.4, spread: 0.5 },
+		},
+	],
+	leaves: pairs(0.15, 0.033),
 	sides: [
 		{
 			stem: {
 				length: { mean: 0.3, spread: 0.07 },
-				radius: [0.0018, 0.001],
+				radius: [0.0022, 0.0012],
 				droop: 50,
 				leaves: pairs(0.15, 0.033),
 			},
@@ -61,18 +80,22 @@ export const PIECES: readonly PieceRule[] = [
 		// The photograph's branch stands upright and its sprays arch down round it.
 		attitude: 'upright',
 		variants: 2,
+		// The turning video of the cut branch: edge on it is 0.38 as wide as face on.
+		depth: 26,
 		stem: {
 			length: { mean: 0.95, spread: 0.05 },
-			radius: [0.005, 0.0015],
+			// Still 21: the axis is 0.023 of the branch's height thick at its cut (17 of 735 pixels).
+			radius: [0.0115, 0.004],
 			leaves: pairs(0.72, 0.033),
 			sides: [
 				{
 					stem: SPRAY,
 					gap: 0.075,
-					from: 0.36,
+					from: 0.3,
 					to: 0.9,
 					arrangement: 'alternate',
 					angle: { mean: 48, spread: 6 },
+					// The lowest sprays are the longest and hang to the branch's foot.
 					lengthAlong: [
 						[0, 1.2],
 						[1, 0.6],
@@ -89,14 +112,15 @@ export const PIECES: readonly PieceRule[] = [
 		variants: 2,
 		stem: {
 			length: { mean: 0.35, spread: 0.03 },
-			radius: [0.002, 0.001],
-			leaves: pairs(0.3, 0.027),
+			// Still 22: the twig is 0.014 of its height thick at its cut.
+			radius: [0.0025, 0.001],
+			leaves: pairs(0.3, 0.027, 0),
 			sides: [
 				{
 					stem: {
 						length: { mean: 0.14, spread: 0.03 },
 						radius: [0.0015, 0.001],
-						leaves: pairs(0.2, 0.027),
+						leaves: pairs(0.2, 0.027, 0),
 					},
 					gap: 0.09,
 					from: 0.2,

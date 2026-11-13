@@ -115,6 +115,15 @@ export const BUD_FLOWER = 4;
  * @category api/vegetation
  */
 export const BUD_AREOLE = 5;
+/**
+ * Bud kind: a socket, where one piece of the kit attaches whole. Its frame stands the piece, +Y the
+ * piece's own up and +Z the way it heads; its vigor names the piece's class; its wood radius holds
+ * the piece's length in metres. A skeleton's sockets stand in the order the plant thins by, the
+ * last to go first.
+ *
+ * @category api/vegetation
+ */
+export const BUD_SOCKET = 6;
 
 /**
  * One plant's grown structure: nodes joined into axes, and the bud sites shoots attach to. Plain
@@ -180,6 +189,18 @@ export interface AxisTable {
 	readonly barkV: Float32Array;
 	/** Radians about the parent where the axis leaves, so the child's bark starts where the parent's is. */
 	readonly barkU: Float32Array;
+	/**
+	 * The share along the original axis where each axis's first node stands, where a cut took a
+	 * span of one axis; 0 for an axis grown in place.
+	 */
+	readonly cutFrom: Float32Array;
+	/**
+	 * The share along the original axis where each axis's last node stands, so a cut piece reads
+	 * its shoot's curves between the two shares; 1 for an axis grown in place.
+	 */
+	readonly cutTo: Float32Array;
+	/** Whether each axis draws the grown bark layer rather than the young bark; 0 for young bark. */
+	readonly grownBark: Uint8Array;
 }
 
 /**
@@ -292,6 +313,22 @@ export interface AxisInput {
 	readonly barkV?: number;
 	/** Radians about the parent where it leaves. */
 	readonly barkU?: number;
+	/**
+	 * The share along the original axis where this piece's first node stands, for a cut that took
+	 * a span of one axis. 0, the default, for an axis grown in place.
+	 */
+	readonly cutFrom?: number;
+	/**
+	 * The share along the original axis where this piece's last node stands: the shoot's curves
+	 * are read between the two shares. 1, the default, for an axis grown in place.
+	 */
+	readonly cutTo?: number;
+	/**
+	 * Whether the axis draws the grown bark layer rather than the young bark a thin shoot takes:
+	 * a rolled young frond is fleshy and hairy, not the smooth young wood of a twig. False, the
+	 * default, for every axis grown in place.
+	 */
+	readonly grownBark?: boolean;
 }
 
 /**
@@ -361,6 +398,9 @@ export class SkeletonBuilder {
 	private axisRecord = new Uint16Array(16);
 	private axisBarkV = new Float32Array(16);
 	private axisBarkU = new Float32Array(16);
+	private axisCutFrom = new Float32Array(16);
+	private axisCutTo = new Float32Array(16);
+	private axisGrownBark = new Uint8Array(16);
 	private budNode = new Uint32Array(64);
 	private budPosition = new Float32Array(3 * 64);
 	private budFrame = new Float32Array(4 * 64);
@@ -393,6 +433,9 @@ export class SkeletonBuilder {
 			this.axisRecord = grown(this.axisRecord, size);
 			this.axisBarkV = grown(this.axisBarkV, size);
 			this.axisBarkU = grown(this.axisBarkU, size);
+			this.axisCutFrom = grown(this.axisCutFrom, size);
+			this.axisCutTo = grown(this.axisCutTo, size);
+			this.axisGrownBark = grown(this.axisGrownBark, size);
 		}
 		this.axisFirst[index] = 0xffffffff;
 		this.axisLast[index] = 0;
@@ -404,6 +447,9 @@ export class SkeletonBuilder {
 		this.axisRecord[index] = index;
 		this.axisBarkV[index] = axis.barkV ?? 0;
 		this.axisBarkU[index] = axis.barkU ?? 0;
+		this.axisCutFrom[index] = axis.cutFrom ?? 0;
+		this.axisCutTo[index] = axis.cutTo ?? 1;
+		this.axisGrownBark[index] = axis.grownBark ? 1 : 0;
 		this.axisCount++;
 		return index;
 	}
@@ -542,6 +588,9 @@ export class SkeletonBuilder {
 				record: trimmed(this.axisRecord, axes),
 				barkV: trimmed(this.axisBarkV, axes),
 				barkU: trimmed(this.axisBarkU, axes),
+				cutFrom: trimmed(this.axisCutFrom, axes),
+				cutTo: trimmed(this.axisCutTo, axes),
+				grownBark: trimmed(this.axisGrownBark, axes),
 			},
 			buds: {
 				count: buds,

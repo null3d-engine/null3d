@@ -10,9 +10,11 @@ import { blank, labImage, labOf, type Rgba } from './image.ts';
 import {
 	anyPlantMask,
 	boxOf,
+	centralRuns,
 	classifySlot,
 	classifyTurn,
 	crownStartRow,
+	filledSpans,
 	findHorizon,
 	greenLeaves,
 	hangingParts,
@@ -276,6 +278,34 @@ describe('the width profile', () => {
 		expect(crownStartRow(rowSpans(mask, width, height), box)).toBe(44);
 	});
 
+	test('reads the stem through side offshoots at its foot, not the row span', () => {
+		const width = 500;
+		const height = 100;
+		const mask = new Uint8Array(width * height);
+		// A palm: a crown that tapers from its widest upper mass down to a thick trunk, with basal
+		// offshoots standing on both sides of the foot. The foot's rows span nearly the crown's width,
+		// but the run through the picture's centre is the narrow stem. The span alone raises the
+		// margin until the crown's taper reads as stem, and the box holds only the apex.
+		for (let y = 0; y < 10; y++) for (let x = 230; x < 270; x++) mask[y * width + x] = 1;
+		for (let y = 10; y < 29; y++) for (let x = 50; x < 450; x++) mask[y * width + x] = 1;
+		for (let y = 29; y < 50; y++) {
+			const half = Math.round(110 - 45 * ((y - 29) / 21));
+			for (let x = 250 - half; x < 250 + half; x++) mask[y * width + x] = 1;
+		}
+		for (let y = 50; y < 100; y++) for (let x = 224; x < 276; x++) mask[y * width + x] = 1;
+		for (let y = 82; y < 100; y++) {
+			for (let x = 130; x < 200; x++) mask[y * width + x] = 1;
+			for (let x = 300; x < 370; x++) mask[y * width + x] = 1;
+		}
+		const box = boxOf(mask, width, height) as NonNullable<ReturnType<typeof boxOf>>;
+		const spans = rowSpans(mask, width, height);
+		// The offshoots' span sets the margin, and the foot lands at the taper's top.
+		expect(crownStartRow(spans, box)).toBe(28);
+		// The centre-column runs are the corrupt-trunk guard, not the stem's own width, so they do
+		// not move this row.
+		expect(crownStartRow(spans, box, centralRuns(mask, width, box))).toBe(28);
+	});
+
 	test('finds a crown whose lowest boughs are thin above a flared foot', () => {
 		const width = 220;
 		const height = 180;
@@ -431,7 +461,7 @@ describe('a bole hidden by the boughs beside it', () => {
 		const measured = measurePlant(
 			blank(width, height, [255, 255, 255]),
 			plantOf(width, height, mask),
-			true,
+			'mound',
 		);
 		expect(measured.crownStart).toBeCloseTo((box.bottom - plain) / (box.bottom - box.top + 1), 3);
 	});
@@ -627,8 +657,6 @@ describe('the slots', () => {
 			forkRow: 0.4,
 			footRow: 0.5,
 			crownRow: 0.4,
-			aside: 10,
-			stand: 2,
 			leaves: 8,
 			sparse: 0.5,
 			sections: 0.5,
@@ -662,7 +690,6 @@ describe('the slots', () => {
 			readPlantReviewQuery(new URLSearchParams('species=stub&crownRow=0.4&footRow=0.5')),
 		).not.toThrow();
 		expect(read('leaves=0')).toThrow('above 0');
-		expect(read('stand=1')).toThrow('above 1');
 		// The daylight's strength is a multiple of the soft daylight: above none, and not past eight.
 		expect(read('daylight=2.5')().daylight).toBe(2.5);
 		expect(read('daylight=0')).toThrow('above 0');
@@ -957,10 +984,11 @@ describe('the sheath view', () => {
 		// The bark pictures keep the views they had: only the sheath words take the new view.
 		expect(classifySlot('15-bark-mid-trunk.png')?.view).toBe('bark-mid');
 		expect(classifySlot('16-bark-on-limb.png')?.view).toBe('bark-limb');
-		// A picture of a blade leaving its sheath, or of a culm sheath on a stem, is not one
-		// tiller's column, so it keeps the view its number gives.
+		// A picture of a blade leaving its sheath is not one tiller's column, so it keeps the view
+		// its number gives. A culm sheath on a stem is not one either: it takes the bamboo's own
+		// view of a young culm's foot, where the sheaths sit.
 		expect(classifySlot('08-blade-leaving-sheath.png')?.view).toBe('fork');
-		expect(classifySlot('16-culm-sheath.png')?.view).toBe('bark-limb');
+		expect(classifySlot('16-culm-sheath.png')?.view).toBe('bark-base');
 	});
 });
 
@@ -1090,17 +1118,43 @@ describe('the coverage matte', () => {
 		const image = blank(width, height, [0, 0, 0]);
 		const binary = measurePlant(image, mattePlant(width, height, mask));
 		const fractional = measurePlant(image, mattePlant(width, height, mask, coverage));
-		// The hole is four texels of the crown's hundred; two are half covered, so the fractional
-		// gap gives back the half texel each of them leaves. The measure rounds the share to four
-		// places, which is where three per cent sits.
+		// The hole is four texels of the crown's hundred, and both pictures count four. Two are
+		// half covered, so the reading by clear share gives back the half texel each of them
+		// leaves. The measure rounds the share to four places, which is where three per cent sits.
 		expect(binary.gapFraction).toBeCloseTo(4 / 100, 4);
-		expect(fractional.gapFraction).toBeCloseTo(3 / 100, 4);
+		expect(fractional.gapFraction).toBeCloseTo(4 / 100, 4);
+		expect(fractional.gapByCoverage as number).toBeCloseTo(3 / 100, 4);
+		expect(binary.gapByCoverage).toBe(null);
 		// The crown's own box holds the same hole as the outline, so its gap agrees; the frame keeps
 		// the empty sky around the plant and reads far larger.
 		expect(binary.crownBoxGap).toBeCloseTo(4 / 100, 4);
 		expect(fractional.crownBoxGap).toBeCloseTo(3 / 100, 4);
 		expect(binary.frameGap).toBeCloseTo(304 / 400, 4);
 		expect(fractional.frameGap).toBeCloseTo((300 + 2 + 2 * (1 - 128 / 255)) / 400, 4);
+	});
+
+	test("weights a texel's colour by the share of it a leaf covers", () => {
+		const width = 20;
+		const height = 20;
+		const mask = new Uint8Array(width * height);
+		for (let y = 5; y <= 14; y++) for (let x = 5; x <= 14; x++) mask[y * width + x] = 1;
+		const image = blank(width, height, [0, 0, 0]);
+		// One crown texel is half leaf and half sky, so its colour blends towards the white sky.
+		put(image, 14, 9, [255, 255, 255]);
+		const coverage = new Uint8Array(width * height);
+		for (let at = 0; at < coverage.length; at++) coverage[at] = mask[at] ? 255 : 0;
+		coverage[9 * width + 14] = 128;
+		const plain = measurePlant(image, mattePlant(width, height, mask));
+		const weighted = measurePlant(image, mattePlant(width, height, mask, coverage));
+		// The plain mean counts the half-covered texel whole, so its lightness is a hundredth of the
+		// white; the weighted mean takes only the share the leaf covers, which is half a hundredth.
+		expect(plain.foliage?.lab[0] as number).toBeCloseTo(1, 2);
+		expect(weighted.foliage?.lab[0] as number).toBeCloseTo(0.5, 1);
+		// A matte that covers every texel whole gives the plain mean back exactly.
+		const full = new Uint8Array(width * height).fill(255);
+		expect(measurePlant(image, mattePlant(width, height, mask, full)).foliage).toEqual(
+			plain.foliage,
+		);
 	});
 });
 
@@ -1149,5 +1203,47 @@ describe('a fitted sky', () => {
 			soilMaskable({ horizon: 10, sky: surface(1, 20), ground: surface(1, 18), plain: false }, 640),
 		).toBe(false);
 		expect(soilMaskable({ horizon: null, sky: surface(1, 18), plain: false }, 640)).toBe(false);
+	});
+});
+
+describe('the crown start of a clump', () => {
+	/** A clump 100 rows tall: five thin stems that fan out from its foot, then a dense dome. */
+	const clump = (): { mask: Uint8Array; width: number; height: number } => {
+		const width = 200;
+		const height = 100;
+		const mask = new Uint8Array(width * height);
+		// The dome fills rows 0 to 59, and the stems spread over rows 60 to 99.
+		for (let y = 0; y < 60; y++) for (let x = 20; x < 180; x++) mask[y * width + x] = 1;
+		for (let y = 60; y < height; y++) {
+			const up = (height - 1 - y) / 40;
+			for (let stem = 0; stem < 5; stem++) {
+				const centre = Math.round(100 + (stem - 2) * 30 * up);
+				for (let x = centre - 1; x <= centre + 1; x++) mask[y * width + x] = 1;
+			}
+		}
+		return { mask, width, height };
+	};
+
+	test('is where the rows fill with foliage, not where the stems have spread', () => {
+		const { mask, width, height } = clump();
+		const box = boxOf(mask, width, height);
+		if (!box) throw new Error('the clump has no box');
+		// The stems' outer span passes the width test well below the dome, so the outline rule
+		// starts the crown among the bare stems.
+		const outline = crownStartRow(rowSpans(mask, width, height), box);
+		expect(outline).toBeGreaterThan(70);
+		// Each row counted by the plant it holds starts the crown at the dome's foot.
+		const filled = crownStartRow(filledSpans(mask, width, height), box);
+		expect(filled).toBeGreaterThanOrEqual(58);
+		expect(filled).toBeLessThanOrEqual(60);
+	});
+
+	test('counts each row by the plant it holds, as one run on the frame’s middle', () => {
+		const { mask, width, height } = clump();
+		const spans = filledSpans(mask, width, height);
+		// A stem row holds five stems of three columns; a dome row holds 160 columns.
+		expect((spans[80 * 2 + 1] as number) - (spans[80 * 2] as number) + 1).toBe(15);
+		expect((spans[30 * 2 + 1] as number) - (spans[30 * 2] as number) + 1).toBe(160);
+		expect(Array.from(filledSpans(new Uint8Array(8), 4, 2))).toEqual([-1, -1, -1, -1]);
 	});
 });
