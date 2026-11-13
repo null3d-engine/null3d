@@ -48,6 +48,7 @@ import {
 	widestGap,
 	woodThrough,
 } from '../grow/frame-measure';
+import { stemSection, surfaceRoots } from '../wood/flare';
 import { frame as commonAlder, directed as commonAlderDirected } from './common-alder/directed';
 import { record as commonAlderRecord } from './common-alder/record';
 import { frame as commonAsh, directed as commonAshDirected } from './common-ash/directed';
@@ -975,6 +976,27 @@ describe("the pedunculate oak's frame against its photographs", () => {
 	 */
 	const DIVIDES_INTO = 3;
 	const LIMB_MOST = 0.65;
+	/**
+	 * Still 01's bole, read row by row from its foot row (587 of 688, the measuring worker's), where
+	 * the grass does not hide it: its width at a height, both as shares of the plant's height. It is
+	 * narrowest a tenth of the way up and flares on a rounded curve below.
+	 */
+	const STILL_01_FOOT: readonly (readonly [number, number])[] = [
+		[0.0365, 0.23],
+		[0.0472, 0.212],
+		[0.0579, 0.193],
+		[0.0794, 0.167],
+		[0.1009, 0.155],
+	];
+	const FOOT_WITHIN = 0.012;
+	/**
+	 * The stem base the trunk stands on: the most its lobes widen the foot at the ground, across it
+	 * through its middle, and the farthest a root runs past the foot above the ground, as a share of
+	 * the plant's height. A ring of fins half the tree's height across, as sheets 42 and 43 drew,
+	 * fails both: its lobes widened the foot 2.7 times.
+	 */
+	const LOBES_MOST = 1.3;
+	const ROOTS_PAST = 0.06;
 
 	/** What these tests read of one tree. */
 	interface Facts {
@@ -1093,6 +1115,59 @@ describe("the pedunculate oak's frame against its photographs", () => {
 				expect(limb.base / (trunk.nodes[limb.parentNode] as FrameNode).radius).toBeLessThanOrEqual(
 					LIMB_MOST,
 				);
+		}
+	});
+
+	it("stands on still 01's rounded foot, with no fins", () => {
+		const base = pedunculateOakDirected.base;
+		for (const seed of SEEDS) {
+			const plan = planOf(oak, seed);
+			const trunk = plan.axes[0] as FramePlan['axes'][number];
+			const widthAt = (height: number): number => {
+				const y = height * plan.scale;
+				for (let k = 1; k < trunk.nodes.length; k++) {
+					const a = trunk.nodes[k - 1] as FrameNode;
+					const b = trunk.nodes[k] as FrameNode;
+					if (y > b.y) continue;
+					const u = b.y > a.y ? (y - a.y) / (b.y - a.y) : 0;
+					return (2 * (a.radius + (b.radius - a.radius) * u)) / plan.scale;
+				}
+				return 0;
+			};
+			for (const [height, width] of STILL_01_FOOT)
+				expect(Math.abs(widthAt(height) - width)).toBeLessThanOrEqual(FOOT_WITHIN);
+			const foot = trunk.nodes[0] as FrameNode;
+			for (let variant = 0; variant < 6; variant++) {
+				const section = stemSection(base, seed, pedunculateOakDirected.seedSalt, variant, 0);
+				for (let k = 0; k < 36; k++) {
+					const theta = (k / 72) * 2 * Math.PI;
+					const across =
+						(section?.radius(0, theta, foot.radius) ?? foot.radius) +
+						(section?.radius(0, theta + Math.PI, foot.radius) ?? foot.radius);
+					expect(across / (2 * foot.radius)).toBeLessThanOrEqual(LOBES_MOST);
+				}
+				const roots = surfaceRoots(
+					base,
+					section,
+					foot,
+					[1, 0, 0],
+					[0, 0, 1],
+					seed,
+					pedunculateOakDirected.seedSalt,
+					variant,
+					0,
+				);
+				for (const root of roots)
+					root.radii.forEach((radius, i) => {
+						const x = (root.points[i * 3] as number) - foot.x;
+						const y = (root.points[i * 3 + 1] as number) - foot.y;
+						const z = (root.points[i * 3 + 2] as number) - foot.z;
+						if (y + radius <= 0) return;
+						expect((Math.hypot(x, z) + radius - foot.radius) / plan.scale).toBeLessThanOrEqual(
+							ROOTS_PAST,
+						);
+					});
+			}
 		}
 	});
 
