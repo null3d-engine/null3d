@@ -3,7 +3,7 @@
 // smooth elbow and up beside the stem to a rounded tip below its own. Every rib crest carries a
 // line of areoles, and each areole carries a spine cluster: the species' only "leaf", a card with
 // the cluster's own picture, standing with its longest spine down the stem. The skin is waxy
-// grey-green on the column and fresher on the arms, corky and grey-brown at the foot.
+// grey-green on the column and the arms, corky and grey-brown at the foot.
 //
 // The height is the fact sheet's. Every other length is a share of the height measured on still 01,
 // the first frame of the turning video, written here in metres at that height with the share beside
@@ -25,25 +25,26 @@ export const record: Species = {
 	growth: {
 		model: 'column',
 		height: { mean: 12, spread: 1 },
-		// Still 01, the stem's width as a share of the height: 0.083 at the foot, 0.089 from just
-		// above it to the arms, 0.066 above the arms and 0.061 under the rounded top.
+		// Still 01, the stem's width as a share of the height from its true foot: 0.083 at the foot,
+		// 0.089 from just above it to the arms, 0.063 at 0.7 and 0.053 at 0.95, under the rounded top.
 		radius: [
 			[0, 0.5],
 			[0.05, 0.534],
 			[0.44, 0.534],
 			[0.56, 0.396],
-			[0.92, 0.366],
-			[1, 0.366],
+			[0.85, 0.372],
+			[1, 0.29],
 		],
 		// Still 04: the stem and each arm end in a rounded top 0.65 of a width tall.
 		dome: 1.3,
 		// Stills 09 and 13: eighteen ribs round the stem, and a groove 0.17 of the radius deep.
 		ribs: { mean: 18, spread: 1 },
 		ribDepth: 0.17,
-		// Still 01 and the turning video: four arms in two tiers. The lower pair leaves at 0.46 of
-		// the height and stands 0.145 of the height out from the stem's axis; the upper pair leaves
-		// at 0.51 and stands 0.081 out, close beside the stem. All four tips end at 0.78. An arm is
-		// 0.054 of the height across above its bend and 0.042 at its tip (0.047 and 0.037 on the
+		// Still 01 and the turning video: four arms in two tiers. On still 01 read from its true foot
+		// the arms' lowest point stands at 0.40 to 0.44 of the height, so the lower pair leaves at
+		// 0.42 and stands 0.145 of the height out from the stem's axis, and the upper pair leaves
+		// at 0.47 and stands 0.081 out, close beside the stem. All four tips end at 0.78. An arm is
+		// 0.054 of the height across above its bend and 0.042 at its tip (0.0485 and 0.038 on the
 		// upper pair) and 0.063 across in the bend. Where it meets the stem it is 0.65 of its girth
 		// on stills 07 and 21 and nearly its full girth on still 08, so the joint takes a value
 		// between them. Its underside sags a little below its joint (stills 01 and 05), so it
@@ -57,16 +58,16 @@ export const record: Species = {
 			count: { mean: 4, spread: 1 },
 			tiers: [
 				{
-					at: { mean: 0.46, spread: 0.03 },
+					at: { mean: 0.42, spread: 0.03 },
 					reach: { mean: 1.74, spread: 0.12 },
 					top: { mean: 0.78, spread: 0.03 },
 					radius: [0.324, 0.252],
 				},
 				{
-					at: { mean: 0.51, spread: 0.03 },
+					at: { mean: 0.47, spread: 0.03 },
 					reach: { mean: 0.97, spread: 0.08 },
 					top: { mean: 0.78, spread: 0.03 },
-					radius: [0.282, 0.222],
+					radius: [0.304, 0.239],
 				},
 			],
 			plane: 1,
@@ -173,10 +174,12 @@ export const record: Species = {
 			// whole stem.
 			{ layer: 0, by: 'height', from: 3.2, to: 40, blend: 0.5, tint: [1, 1, 1] },
 		],
-		// Still 16: an arm's skin is fresher green than the old stem's. The arms are the wood below the
-		// stem's girth, so the young layer carries their skin.
+		// Every wood above the corky foot takes the stem's skin. The arm's own picture (still 16) is a
+		// crop of a lit arm whose seams and waxy highlight repeat as tiles and a white stripe when
+		// tiled, and an arm is as thick as the stem's top, so no radius parts the two: the young
+		// layer is not drawn. The arm's fresher green of still 16 is not drawn either.
 		young: 2,
-		youngRadius: 0.27,
+		youngRadius: 0,
 		girthScale: [
 			[0, 1],
 			[1, 1],
@@ -271,8 +274,9 @@ export const record: Species = {
 	seedSalt: 1916846534,
 	roundBand,
 	cuttings: {
-		// Still 21: the whole arm, from the pinched junction through its run and elbow to upright.
-		branch: { order: 1, length: 4.8 },
+		// Still 21: the whole arm, from the pinched junction through its run and elbow to upright,
+		// standing as it grew, its upright part plumb.
+		branch: { order: 1, length: 4.8, stands: 'as-grown' },
 		// Still 22: a short section of stem, showing the ribs and the areole rows.
 		subbranch: { order: 1, length: 0.35 },
 	},
