@@ -457,6 +457,20 @@ for (const [name, load] of SOCKET_PLANTS)
 				const floor = kit.record.sparse?.foliage ?? FOLIAGE_FLOOR;
 				const order = sparseOrder(skeleton, shoots, limbs, [], floor);
 				expect(order.bySockets).toBe(true);
+				// Each row's shoot is the shoot of the socket it names: the same node and the same group,
+				// so two pieces of different groups at one place thin apart.
+				const named = shoots.socket;
+				if (named)
+					for (let r = 0; r < shoots.count; r++) {
+						const own = named[r] as number;
+						const shoot = sockets[r] as number;
+						expect([
+							name,
+							r,
+							skeleton.buds.node[shoot],
+							skeleton.buds.sockets?.lobe[shoot],
+						]).toEqual([name, r, skeleton.buds.node[own], skeleton.buds.sockets?.lobe[own]]);
+					}
 				const rowsOf = new Map<number, number>();
 				for (let r = 0; r < shoots.count; r++)
 					rowsOf.set(sockets[r] as number, (rowsOf.get(sockets[r] as number) ?? 0) + 1);
