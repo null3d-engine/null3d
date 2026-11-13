@@ -18,6 +18,12 @@ import {
 	planPiece,
 } from '../leaf/piece';
 import type { ShootPlan } from '../leaf/shoot';
+import { PIECES as ALDER, STUDIO as ALDER_STUDIO } from './common-alder/pieces';
+import { PIECES as ASH, STUDIO as ASH_STUDIO } from './common-ash/pieces';
+import { PIECES as BEECH, STUDIO as BEECH_STUDIO } from './european-beech/pieces';
+import { PIECES as HAWTHORN, STUDIO as HAWTHORN_STUDIO } from './hawthorn-shrub/pieces';
+import { PIECES as HOLM, STUDIO as HOLM_STUDIO } from './holm-oak/pieces';
+import { PIECES as OLIVE, STUDIO as OLIVE_STUDIO } from './olive/pieces';
 import { PIECES as OAK, STUDIO as OAK_STUDIO } from './pedunculate-oak/pieces';
 import { PIECES as BIRCH, STUDIO as BIRCH_STUDIO } from './silver-birch/pieces';
 import { PIECES as WILLOW, STUDIO as WILLOW_STUDIO } from './weeping-willow/pieces';
@@ -36,6 +42,12 @@ const SPECIES: readonly {
 	{ id: 'silver-birch', pieces: BIRCH, studio: BIRCH_STUDIO },
 	{ id: 'weeping-willow', pieces: WILLOW, studio: WILLOW_STUDIO },
 	{ id: 'pedunculate-oak', pieces: OAK, studio: OAK_STUDIO },
+	{ id: 'olive', pieces: OLIVE, studio: OLIVE_STUDIO },
+	{ id: 'european-beech', pieces: BEECH, studio: BEECH_STUDIO },
+	{ id: 'common-ash', pieces: ASH, studio: ASH_STUDIO },
+	{ id: 'common-alder', pieces: ALDER, studio: ALDER_STUDIO },
+	{ id: 'holm-oak', pieces: HOLM, studio: HOLM_STUDIO },
+	{ id: 'hawthorn-shrub', pieces: HAWTHORN, studio: HAWTHORN_STUDIO },
 ];
 
 const distance = (a: readonly number[], b: readonly number[]): number =>

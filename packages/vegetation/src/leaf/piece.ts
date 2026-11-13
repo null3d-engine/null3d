@@ -489,8 +489,16 @@ export interface PieceStudio {
 		readonly stem: PieceStem;
 		/** Degrees the cut leans from plumb in its clamp, toward the picture's right. */
 		readonly lean?: number;
-		/** Pieces along the stand's side stems: metres between sockets and where on a stem they start. */
-		readonly along?: { readonly piece: string; readonly gap: number; readonly from: number };
+		/**
+		 * Pieces along the stand's side stems: metres between sockets, where on a stem they start, and
+		 * the degrees a piece leaves at from the stem's own run, square to it where absent.
+		 */
+		readonly along?: {
+			readonly piece: string;
+			readonly gap: number;
+			readonly from: number;
+			readonly angle?: number;
+		};
 	};
 	/** Degrees the camera stands round the layout; at 0 it looks along -Z. */
 	readonly turn?: number;
@@ -625,7 +633,13 @@ export function layStudio(
 			]);
 			// A side piece leaves to one side of its stem and the other in turn, level with the ground.
 			const flat = level(run, [0, 0, 1]);
-			const out: Vector3 = [-flat[2] * side, 0, flat[0] * side];
+			const across: Vector3 = [-flat[2] * side, 0, flat[0] * side];
+			const lean = radians(along.angle ?? 90);
+			const out: Vector3 = [
+				run[0] * cos(lean) + across[0] * sin(lean),
+				run[1] * cos(lean) + across[1] * sin(lean),
+				run[2] * cos(lean) + across[2] * sin(lean),
+			];
 			placed.push({
 				piece: along.piece,
 				pick: a * 64 + k,
