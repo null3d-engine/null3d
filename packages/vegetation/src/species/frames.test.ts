@@ -28,6 +28,8 @@ import {
 } from '../grow/frame-measure';
 import { frame as commonAlder } from './common-alder/directed';
 import { record as commonAlderRecord } from './common-alder/record';
+import { frame as europeanBeech } from './european-beech/directed';
+import { record as europeanBeechRecord } from './european-beech/record';
 import { frame as hawthornShrub } from './hawthorn-shrub/directed';
 import { record as hawthornShrubRecord } from './hawthorn-shrub/record';
 import { frame as holmOak } from './holm-oak/directed';
@@ -123,6 +125,18 @@ const HELD: readonly Held[] = [
 		plumb: ['shoot'],
 		// The leading shoots' tips are the plant's top.
 		tall: [0.95, 1.08],
+	},
+	{
+		id: 'european-beech',
+		spec: europeanBeech,
+		record: europeanBeechRecord,
+		counts: { trunk: 1, low: 4, upper: 3, bough: [28, 63], spray: [28, 252] },
+		// Four limbs a quarter turn apart leave no gap wider than that and their jitter.
+		round: { rule: 'low', gap: 112, lean: 0.25 },
+		base: { low: 0.47, upper: 0.55, bough: 0.5, spray: 0.5 },
+		plumb: ['trunk'],
+		// The top tiers' foliage stands above the highest wood.
+		tall: [0.93, 1.02],
 	},
 ];
 
