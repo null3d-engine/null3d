@@ -64,7 +64,14 @@ export * from './grass/public';
 export * from './grid/public';
 export * from './ground/public';
 export * from './grow/public';
-export type { PieceAttitude, PieceLeaves, PieceRule, PieceSides, PieceStem } from './leaf/piece';
+export type {
+	PieceAttitude,
+	PieceLeaves,
+	PieceMark,
+	PieceRule,
+	PieceSides,
+	PieceStem,
+} from './leaf/piece';
 export * from './leaf/public';
 export * from './lod/public';
 export * from './render/public';

@@ -1,0 +1,1241 @@
+{
+	"schema": 1,
+	"species": "saguaro",
+	"source": {
+		"command": "bun run plants:targets saguaro",
+		"references": "saguaro",
+		"workWidth": 640,
+		"lobeDepth": 0.04,
+		"holeClasses": [0.01, 0.02, 0.05],
+		"breastHeight": 0.104,
+		"missing": {}
+	},
+	"stated": {
+		"names": "saguaro, *Carnegiea gigantea*. No cultivar.",
+		"heightMetres": [10, 15],
+		"flowerStemMetres": null,
+		"spreadMetres": [3, 5],
+		"widthToHeight": [0.3333, 0.3333],
+		"crownShare": null,
+		"clearTrunkShare": null,
+		"trunkMetres": {
+			"range": [0.3, 0.75],
+			"words": "thick"
+		},
+		"stems": "One trunk 30 to 75 cm thick, no crown",
+		"leafLengthCm": null,
+		"leafWidthCm": null,
+		"leafletCm": null,
+		"arrangement": null,
+		"habitWords": ["column", "candelabrum"],
+		"outline": "a candelabrum column",
+		"habit": "a mature plant is 10 to 15 m tall and 3 to 5 m wide across its arms; height to width about 3 to 1. One trunk 30 to 75 cm thick, no crown; the whole height is stem. Widest at the arms, at about half the height. Outline: a candelabrum column. One stem, never branched at the ground.",
+		"branching": "arms appear after 50 to 100 years. Two to six arms leave the trunk singly, at about one third to one half of the height, from a pinched junction. Each arm runs out nearly level for 0.3 to 1 m, bends at an elbow and rises parallel to the trunk to a rounded tip. One order only: arms do not branch again, or rarely.",
+		"leaves": "none. The ribs and areoles stand in for them.",
+		"missing": {
+			"flowerStemMetres": "the fact sheet gives no flowering stem height",
+			"crownShare": "the fact sheet does not state it in words the reader knows",
+			"clearTrunkShare": "the fact sheet does not state it in words the reader knows",
+			"leafLengthCm": "the fact sheet says the plant has no leaves",
+			"leafWidthCm": "the fact sheet says the plant has no leaves",
+			"leafletCm": "the fact sheet describes no leaflet apart from the leaf",
+			"arrangement": "the fact sheet does not state it in words the reader knows"
+		}
+	},
+	"whole": {
+		"primary": {
+			"still": {
+				"file": "01-whole-distant.png",
+				"figures": null,
+				"missing": {
+					"figures": "the review's slot file names the picture's outline as not separable from its backdrop"
+				}
+			},
+			"turn": {
+				"video": "saguaro-turntable.mp4",
+				"arc": 360,
+				"frames": 193,
+				"read": 120,
+				"skipped": {
+					"the outline ends at the horizon on a mass too wide to be a stem, so the part of the plant that stands against the ground below is lost": 28,
+					"the plant's height in the frame leaves the turn's middle height by more than 15 per cent": 45
+				},
+				"stats": {
+					"heightToWidth": {
+						"min": 2.2394,
+						"low": 2.3682,
+						"median": 2.8948,
+						"high": 6.1,
+						"mean": 3.4976,
+						"max": 10.1429,
+						"spread": 2.2597,
+						"frames": 120
+					},
+					"crownHeightToWidth": {
+						"min": 1.5775,
+						"low": 1.6766,
+						"median": 2.3955,
+						"high": 5.5882,
+						"mean": 2.9495,
+						"max": 8.4821,
+						"spread": 2.3409,
+						"frames": 120
+					},
+					"crownBase": {
+						"min": 0,
+						"low": 0.048,
+						"median": 0.1663,
+						"high": 0.3015,
+						"mean": 0.1816,
+						"max": 0.3234,
+						"spread": 1.7811,
+						"frames": 120
+					},
+					"crownWidth": {
+						"min": 0.0986,
+						"low": 0.1703,
+						"median": 0.3452,
+						"high": 0.4223,
+						"mean": 0.3217,
+						"max": 0.4444,
+						"spread": 1.0749,
+						"frames": 120
+					},
+					"bareTrunk": {
+						"min": 0.3002,
+						"low": 0.3025,
+						"median": 0.3215,
+						"high": 0.3711,
+						"mean": 0.3354,
+						"max": 0.6143,
+						"spread": 0.9366,
+						"frames": 53
+					},
+					"trunkWidth": {
+						"min": 0.1071,
+						"low": 0.1107,
+						"median": 0.1134,
+						"high": 0.1174,
+						"mean": 0.1137,
+						"max": 0.1186,
+						"spread": 0.1011,
+						"frames": 53
+					},
+					"breastHeightWidth": {
+						"min": 0.1071,
+						"low": 0.1113,
+						"median": 0.1153,
+						"high": 0.1174,
+						"mean": 0.1147,
+						"max": 0.1195,
+						"spread": 0.1081,
+						"frames": 53
+					},
+					"flare": {
+						"min": 1,
+						"low": 1,
+						"median": 1,
+						"high": 1.037,
+						"mean": 1.0128,
+						"max": 1.057,
+						"spread": 0.0563,
+						"frames": 52
+					},
+					"lean": {
+						"min": -0.1,
+						"low": -0.02,
+						"median": 0.23,
+						"high": 0.54,
+						"mean": 0.2447,
+						"max": 0.73,
+						"spread": 3.3917,
+						"frames": 53
+					},
+					"stems": {
+						"min": 1,
+						"low": 1,
+						"median": 1,
+						"high": 1,
+						"mean": 1,
+						"max": 1,
+						"spread": 0,
+						"frames": 50
+					},
+					"limbs": {
+						"min": 2,
+						"low": 3,
+						"median": 4,
+						"high": 5,
+						"mean": 3.8919,
+						"max": 5,
+						"spread": 0.7708,
+						"frames": 37
+					},
+					"lobes": {
+						"min": 1,
+						"low": 3,
+						"median": 4,
+						"high": 5,
+						"mean": 3.9833,
+						"max": 5,
+						"spread": 1.0042,
+						"frames": 120
+					},
+					"enclosedGap": {
+						"min": 0.0017,
+						"low": 0.0063,
+						"median": 0.1119,
+						"high": 0.1641,
+						"mean": 0.1024,
+						"max": 0.2055,
+						"spread": 1.9905,
+						"frames": 120
+					},
+					"boxGap": {
+						"min": 0.1831,
+						"low": 0.3,
+						"median": 0.4425,
+						"high": 0.5243,
+						"mean": 0.4257,
+						"max": 0.5549,
+						"spread": 0.8735,
+						"frames": 120
+					},
+					"holeCount": {
+						"min": 0,
+						"low": 0,
+						"median": 1,
+						"high": 4,
+						"mean": 1.4,
+						"max": 7,
+						"spread": 5,
+						"frames": 120
+					},
+					"holeShare": {
+						"min": 0,
+						"low": 0,
+						"median": 0,
+						"high": 0.0002,
+						"mean": 0.0001,
+						"max": 0.0015,
+						"spread": 19.5652,
+						"frames": 120
+					},
+					"unevenness": {
+						"min": 0.619,
+						"low": 0.743,
+						"median": 0.8985,
+						"high": 1.64,
+						"mean": 1.0815,
+						"max": 2.386,
+						"spread": 1.6338,
+						"frames": 120
+					}
+				},
+				"envelope": {
+					"max": [0.0604, 0.0608, 0.0625, 0.0634, 0.1649, 0.203, 0.2156, 0.2199, 0.2212, 0.222, 0.2233, 0.222, 0.1936, 0.0463, 0.0431, 0.0389],
+					"mean": [0.0412, 0.048, 0.0547, 0.0554, 0.087, 0.1263, 0.1509, 0.1572, 0.1592, 0.1592, 0.1587, 0.1572, 0.0736, 0.039, 0.0366, 0.0323],
+					"spread": [1.465, 1.266, 0.351, 0.316, 1.368, 1.236, 1.125, 1.131, 1.146, 1.151, 1.186, 1.188, 2.164, 0.438, 0.391, 0.411],
+					"byDirection": [
+						[0.0474, 0.0485, 0.0544, 0.0549, 0.064, 0.0801, 0.0869, 0.0885, 0.0892, 0.0883, 0.0868, 0.0853, 0.0431, 0.0387, 0.0373, 0.033],
+						[0.0493, 0.0548, 0.0562, 0.056, 0.0901, 0.1223, 0.1363, 0.1394, 0.1403, 0.14, 0.1386, 0.1383, 0.0654, 0.0398, 0.039, 0.0343],
+						[0.0454, 0.0534, 0.0569, 0.0573, 0.1075, 0.1477, 0.1672, 0.172, 0.1735, 0.1741, 0.174, 0.1726, 0.0629, 0.0406, 0.0385, 0.0343],
+						[0.0432, 0.0519, 0.0549, 0.0553, 0.1014, 0.1612, 0.1907, 0.1985, 0.2012, 0.2017, 0.2024, 0.2008, 0.0838, 0.0407, 0.0383, 0.0342],
+						[0.0536, 0.0557, 0.0565, 0.0568, 0.124, 0.1805, 0.2017, 0.2077, 0.2098, 0.2102, 0.2107, 0.2084, 0.0649, 0.0425, 0.039, 0.0348],
+						[0.0311, 0.0406, 0.0519, 0.0529, 0.0799, 0.1175, 0.1659, 0.1786, 0.1815, 0.1825, 0.1822, 0.1807, 0.1063, 0.04, 0.0365, 0.0326],
+						[0.0371, 0.0454, 0.0547, 0.0553, 0.0822, 0.1228, 0.1518, 0.159, 0.1601, 0.1599, 0.1588, 0.1571, 0.099, 0.0395, 0.0375, 0.0341],
+						[0.0309, 0.0439, 0.0527, 0.0534, 0.0532, 0.0817, 0.0995, 0.1037, 0.1039, 0.1035, 0.101, 0.0989, 0.0904, 0.039, 0.0368, 0.0322],
+						[0.0446, 0.0495, 0.0556, 0.056, 0.0625, 0.0745, 0.0806, 0.0827, 0.0829, 0.083, 0.0826, 0.0811, 0.0542, 0.0392, 0.0364, 0.0315],
+						[0.0436, 0.0519, 0.0567, 0.0575, 0.088, 0.119, 0.1335, 0.1359, 0.1373, 0.1366, 0.1358, 0.1338, 0.0559, 0.04, 0.0366, 0.0319],
+						[0.0486, 0.0533, 0.0568, 0.0587, 0.1075, 0.1465, 0.1646, 0.1682, 0.1704, 0.17, 0.169, 0.1665, 0.0584, 0.0393, 0.0359, 0.0311],
+						[0.0395, 0.0499, 0.0558, 0.0564, 0.1033, 0.1596, 0.1876, 0.1957, 0.1988, 0.1987, 0.1981, 0.1973, 0.0734, 0.0377, 0.0356, 0.0309],
+						[0.0502, 0.051, 0.0568, 0.057, 0.119, 0.1736, 0.196, 0.2024, 0.2056, 0.2049, 0.2051, 0.2038, 0.0551, 0.0385, 0.0353, 0.0316],
+						[0.0257, 0.0353, 0.0518, 0.0528, 0.0746, 0.1088, 0.1583, 0.1719, 0.1756, 0.1766, 0.1762, 0.1759, 0.1217, 0.0352, 0.0343, 0.0303],
+						[0.0399, 0.0437, 0.0534, 0.0547, 0.076, 0.1194, 0.1483, 0.1557, 0.1587, 0.1584, 0.158, 0.1568, 0.0674, 0.0376, 0.0349, 0.0308],
+						[0.0387, 0.0444, 0.0523, 0.0531, 0.0545, 0.0871, 0.106, 0.1106, 0.1118, 0.1114, 0.1109, 0.1096, 0.0452, 0.0367, 0.034, 0.0303]
+					]
+				},
+				"grid": {
+					"enclosed": [
+						[0.2668, 0.0323, 0.2194],
+						[0.1646, 0.1465, 0.1362],
+						[0.0388, 0.0348, 0.0327]
+					],
+					"box": [
+						[0.9142, 0.3235, 0.8843],
+						[0.2459, 0.16, 0.2189],
+						[0.5313, 0.0682, 0.4881]
+					]
+				},
+				"lobeCounts": {
+					"1": 3,
+					"2": 2,
+					"3": 44,
+					"4": 16,
+					"5": 55
+				},
+				"series": {
+					"angles": [0, 1.9, 3.8, 5.6, 7.5, 9.4, 11.3, 13.1, 15, 16.9, 18.8, 20.6, 22.5, 24.4, 26.3, 28.1, 30, 31.9, 33.8, 35.6, 37.5, 39.4, 41.3, 43.1, 45, 46.9, 48.8, 50.6, 52.5, 54.4, 56.3, 58.1, 60, 61.9, 63.8, 65.6, 67.5, 69.4, 71.3, 73.1, 75, 76.9, 78.8, 80.6, 82.5, 84.4, 86.3, 88.1, 90, 91.9, 93.8, 95.6, 97.5, 99.4, 101.3, 103.1, 105, 106.9, 108.8, 110.6, 112.5, 114.4, 116.3, 118.1, 120, 121.9, 123.8, 125.6, 127.5, 129.4, 131.3, 133.1, 135, 136.9, 138.8, 140.6, 142.5, 144.4, 146.3, 148.1, 150, 151.9, 153.8, 155.6, 157.5, 159.4, 161.3, 163.1, 165, 166.9, 168.8, 170.6, 172.5, 174.4, 176.3, 178.1, 180, 181.9, 183.8, 185.6, 187.5, 189.4, 191.3, 193.1, 195, 196.9, 198.8, 200.6, 202.5, 204.4, 206.3, 208.1, 210, 211.9, 213.8, 215.6, 217.5, 219.4, 221.3, 223.1, 225, 226.9, 228.8, 230.6, 232.5, 234.4, 236.3, 238.1, 240, 241.9, 243.8, 245.6, 247.5, 249.4, 251.3, 253.1, 255, 256.9, 258.8, 260.6, 262.5, 264.4, 266.3, 268.1, 270, 271.9, 273.8, 275.6, 277.5, 279.4, 281.3, 283.1, 285, 286.9, 288.8, 290.6, 292.5, 294.4, 296.3, 298.1, 300, 301.9, 303.8, 305.6, 307.5, 309.4, 311.3, 313.1, 315, 316.9, 318.8, 320.6, 322.5, 324.4, 326.3, 328.1, 330, 331.9, 333.8, 335.6, 337.5, 339.4, 341.3, 343.1, 345, 346.9, 348.8, 350.6, 352.5, 354.4, 356.3, 358.1, 360],
+					"heightToWidth": [null, null, null, 2.3682, null, 2.3682, 2.8458, 2.6816, 2.4121, 2.7222, 2.8442, 2.8586, 2.4235, 2.9184, 2.4235, 2.898, 2.9326, null, null, null, 3.043, 2.7391, 2.6444, 2.8475, 2.767, 3.2948, 3.1006, 3.1145, 2.9815, null, 3.7468, 3.4122, 3.5069, 3.5643, 4.0597, 3.8846, null, 4.3277, 4.386, 4.5185, 4.8462, 5.2784, 5.4239, 5.8706, 6.1, 6.6081, 7.4493, 8.9688, null, null, null, 7.7419, null, null, 6.9275, null, null, null, 6.1591, null, null, null, null, null, 3.8661, 4.0303, null, 3.7552, 3.25, 3.6883, 2.9748, 2.9018, null, 2.7442, 2.6667, null, null, 2.8404, 2.7865, 2.4462, 2.4337, null, 2.3498, 2.3155, null, 2.5333, 2.2524, 2.2714, 2.2394, 2.4131, null, null, 2.2582, null, null, 2.662, null, 2.2594, 2.4019, 2.3107, null, null, null, null, null, null, null, 2.8817, 2.6848, 2.6889, 2.7816, 3.1059, 2.8916, 3.0745, 3.0637, 3.1316, 3.726, null, null, 3.6692, null, 4.0833, null, null, null, null, null, 6.2143, null, null, null, null, null, 10.1429, 8.4821, null, null, null, null, 7.1343, 6.5479, null, null, null, null, 5.04, 5.2315, 4.2589, 4.0769, 3.8468, 3.7266, null, null, null, null, 3.2148, 3.1307, 3.0573, 3.0189, 2.963, 2.9277, 3.1412, 2.814, 2.8057, 2.8371, 2.676, 2.6319, 2.6033, 2.5615, null, null, null, null, null, null, 2.6786, 2.4286, 2.5584, 2.8744, 2.5, 2.835, 2.38, 2.535, 2.5124, 2.4129, null, 2.5124, 2.5124, null, 2.3682, 2.3564, 2.3663, 2.3564],
+					"crownBase": [null, null, null, 0.292, null, 0.292, 0.1678, 0.1169, 0.2958, 0.1169, 0.1608, 0.1608, 0.2905, 0.1696, 0.2905, 0.1637, 0.1608, null, null, null, 0.1608, 0.3234, 0.2899, 0.0575, 0.308, 0.1667, 0.0935, 0.0812, 0.3043, null, 0.1768, 0.0594, 0.0614, 0.0481, 0.1268, 0.0594, null, 0.0777, 0.05, 0.3094, 0.0575, 0.0723, 0.0481, 0.0481, 0.0266, 0.0266, 0.0759, 0.1725, null, null, null, 0, null, null, 0.0021, null, null, null, 0.1255, null, null, null, null, null, 0.0346, 0.109, null, 0.1173, 0.2994, 0.1673, 0.2896, 0.2896, null, 0.2881, 0.2881, null, null, 0.1142, 0.1159, 0.2956, 0.2956, null, 0.2956, 0.2956, null, 0.1109, 0.2896, 0.2956, 0.2956, 0.0798, null, null, 0.3015, null, null, 0.1658, null, 0.3006, 0.0578, 0.2962, null, null, null, null, null, null, null, 0.1175, 0.0425, 0.3079, 0.3079, 0.1042, 0.3021, 0.0444, 0.3015, 0.2941, 0.1287, null, null, 0.2956, null, 0.0347, null, null, null, null, null, 0.0939, null, null, null, null, null, 0.1637, 0, null, null, null, null, 0.0042, 0.0084, null, null, null, null, 0.0575, 0.1593, 0.2935, 0.2935, 0.2935, 0.2935, null, null, null, null, 0.2965, 0.2965, 0.2958, 0.2958, 0.2958, 0.3045, 0.1086, 0.3017, 0.0326, 0.0594, 0.2944, 0.2944, 0.2944, 0.2944, null, null, null, null, null, null, 0.0952, 0.2899, 0.0556, 0.1678, 0.048, 0.1605, 0.2899, 0.0611, 0.0574, 0.3031, null, 0.0574, 0.0574, null, 0.2899, 0.2899, 0.2929, 0.2899],
+					"enclosedGap": [null, null, null, 0.1632, null, 0.1599, 0.1383, 0.1375, 0.1592, 0.1338, 0.1329, 0.1321, 0.1539, 0.13, 0.1489, 0.1272, 0.127, null, null, null, 0.1204, 0.1401, 0.1392, 0.1139, 0.1358, 0.1134, 0.1135, 0.1137, 0.1372, null, 0.1113, 0.1096, 0.1095, 0.1048, 0.1015, 0.0957, null, 0.0798, 0.0646, 0.0595, 0.0358, 0.0248, 0.0143, 0.0063, 0.0026, 0.0026, 0.0029, 0.0028, null, null, null, 0.0028, null, null, 0.002, null, null, null, 0.0027, null, null, null, null, null, 0.0413, 0.0485, null, 0.0626, 0.0833, 0.0731, 0.0959, 0.1029, null, 0.1123, 0.1184, null, null, 0.1168, 0.1263, 0.1562, 0.1641, null, 0.1771, 0.1827, null, 0.1636, 0.1947, 0.1994, 0.2045, 0.1755, null, null, 0.2055, null, null, 0.1753, null, 0.1982, 0.1673, 0.1896, null, null, null, null, null, null, null, 0.1119, 0.1037, 0.11, 0.0986, 0.0732, 0.0815, 0.0581, 0.0593, 0.0478, 0.0307, null, null, 0.0129, null, 0.0067, null, null, null, null, null, 0.0017, null, null, null, null, null, 0.0027, 0.0027, null, null, null, null, 0.0022, 0.0024, null, null, null, null, 0.0189, 0.0348, 0.0541, 0.0714, 0.0761, 0.0805, null, null, null, null, 0.0993, 0.1011, 0.1054, 0.105, 0.1055, 0.1073, 0.0915, 0.1093, 0.0929, 0.0932, 0.112, 0.1156, 0.1192, 0.1217, null, null, null, null, null, null, 0.117, 0.1419, 0.1243, 0.1259, 0.1266, 0.1293, 0.1511, 0.1302, 0.1309, 0.154, null, 0.132, 0.1337, null, 0.1565, 0.1563, 0.1571, 0.1565],
+					"lobes": [null, null, null, 3, null, 4, 5, 5, 3, 5, 5, 5, 4, 5, 4, 5, 5, null, null, null, 5, 4, 4, 5, 4, 5, 5, 5, 4, null, 5, 5, 5, 5, 5, 5, null, 5, 5, 3, 5, 5, 4, 4, 4, 3, 3, 2, null, null, null, 1, null, null, 2, null, null, null, 5, null, null, null, null, null, 5, 5, null, 5, 3, 5, 3, 3, null, 3, 3, null, null, 5, 5, 3, 3, null, 3, 3, null, 5, 4, 4, 4, 5, null, null, 4, null, null, 5, null, 4, 5, 5, null, null, null, null, null, null, null, 5, 5, 3, 3, 5, 3, 5, 3, 3, 5, null, null, 3, null, 5, null, null, null, null, null, 4, null, null, null, null, null, 1, 1, null, null, null, null, 3, 3, null, null, null, null, 5, 5, 3, 3, 3, 3, null, null, null, null, 3, 3, 3, 3, 3, 3, 5, 3, 5, 5, 3, 3, 3, 3, null, null, null, null, null, null, 5, 3, 5, 5, 5, 5, 3, 5, 5, 3, null, 5, 5, null, 3, 3, 3, 3]
+				},
+				"missing": {},
+				"hull": {
+					"heights": [0.292, 0.342, 0.393, 0.443, 0.494, 0.545, 0.595, 0.646, 0.696, 0.747, 0.798, 0.848, 0.899, 0.949, 1],
+					"radii": [
+						[0.155, 0.147, 0.113, 0.108, 0.113, 0.095, 0.091, 0.117, 0.146, 0.144, 0.105, 0.102, 0.123, 0.1, 0.087, 0.12],
+						[0.182, 0.173, 0.132, 0.126, 0.133, 0.112, 0.107, 0.138, 0.172, 0.17, 0.123, 0.12, 0.145, 0.117, 0.102, 0.141],
+						[0.2, 0.19, 0.149, 0.14, 0.147, 0.12, 0.114, 0.153, 0.188, 0.173, 0.119, 0.117, 0.14, 0.106, 0.094, 0.151],
+						[0.216, 0.206, 0.154, 0.144, 0.155, 0.129, 0.119, 0.159, 0.201, 0.192, 0.138, 0.094, 0.079, 0.084, 0.106, 0.161],
+						[0.216, 0.206, 0.15, 0.136, 0.152, 0.129, 0.119, 0.159, 0.201, 0.192, 0.138, 0.094, 0.079, 0.084, 0.106, 0.161],
+						[0.216, 0.207, 0.151, 0.107, 0.092, 0.1, 0.119, 0.159, 0.201, 0.192, 0.138, 0.118, 0.126, 0.107, 0.106, 0.161],
+						[0.216, 0.207, 0.151, 0.123, 0.125, 0.116, 0.119, 0.155, 0.193, 0.188, 0.137, 0.124, 0.139, 0.114, 0.106, 0.161],
+						[0.216, 0.207, 0.151, 0.126, 0.132, 0.119, 0.119, 0.155, 0.193, 0.188, 0.137, 0.124, 0.139, 0.114, 0.106, 0.161],
+						[0.199, 0.188, 0.139, 0.121, 0.127, 0.108, 0.103, 0.141, 0.177, 0.164, 0.117, 0.115, 0.136, 0.11, 0.099, 0.151],
+						[0.114, 0.086, 0.059, 0.088, 0.112, 0.078, 0.048, 0.085, 0.122, 0.085, 0.048, 0.085, 0.119, 0.076, 0.037, 0.075],
+						[0.116, 0.086, 0.059, 0.088, 0.112, 0.079, 0.049, 0.085, 0.122, 0.085, 0.047, 0.047, 0.044, 0.038, 0.039, 0.078],
+						[0.045, 0.05, 0.055, 0.058, 0.055, 0.05, 0.048, 0.048, 0.048, 0.045, 0.04, 0.039, 0.041, 0.038, 0.035, 0.039],
+						[0.041, 0.046, 0.048, 0.048, 0.048, 0.048, 0.045, 0.038, 0.035, 0.034, 0.034, 0.037, 0.041, 0.038, 0.034, 0.036],
+						[0.036, 0.041, 0.046, 0.047, 0.044, 0.038, 0.035, 0.034, 0.034, 0.034, 0.034, 0.037, 0.041, 0.038, 0.034, 0.034],
+						0
+					],
+					"aspect": 0.32,
+					"crownBase": 0.292,
+					"consistency": {
+						"lowest": 0.4805,
+						"mean": 0.7196,
+						"highest": 0.8526
+					}
+				},
+				"closing": 0.9763,
+				"problems": ["the envelope's outlines match the views it came from with a mean overlap of only 0.7196: the plant drifts between views, or is too open for a hull to stand for it"]
+			},
+			"missing": {}
+		},
+		"secondary": [
+			{
+				"file": "02-whole-profile.png",
+				"figures": {
+					"heightToWidth": 3.125,
+					"foot": {
+						"belowHorizon": 0.03,
+						"followed": 0.03
+					},
+					"crown": {
+						"heightToWidth": 2.3947,
+						"base": 0.2417,
+						"width": 0.3167
+					},
+					"trunk": {
+						"bareShare": 0.9983,
+						"width": 0.0817,
+						"column": true,
+						"breastHeightWidth": 0.085,
+						"flare": 1,
+						"lean": 0.25,
+						"stems": null
+					},
+					"limbs": null,
+					"envelope": {
+						"left": [0.04, 0.0433, 0.045, 0.0517, 0.0517, 0.1417, 0.155, 0.1567, 0.1567, 0.1233, 0.1333, 0.135, 0.135, 0.035, 0.0317, 0.0317],
+						"right": [0.04, 0.0433, 0.045, 0.1117, 0.1533, 0.16, 0.1617, 0.1467, 0.1333, 0.1467, 0.15, 0.1517, 0.15, 0.0383, 0.0383, 0.0383]
+					},
+					"lobes": {
+						"count": 6,
+						"byDepth": [
+							{
+								"depth": 0.02,
+								"count": 6
+							},
+							{
+								"depth": 0.04,
+								"count": 6
+							},
+							{
+								"depth": 0.08,
+								"count": 5
+							}
+						],
+						"areaShares": [0.36, 0.196, 0.194, 0.125, 0.119, 0.006],
+						"widthShares": [0.4, 0.679, 0.79, 0.337, 0.382, 0.123],
+						"notchDepths": [0.254, 0.235, 0.23, 0.192, 0.058]
+					},
+					"sky": {
+						"enclosedGap": 0.2663,
+						"boxGap": 0.5444,
+						"holes": {
+							"count": 0,
+							"share": 0,
+							"largest": 0,
+							"medianDiameter": 0,
+							"bySize": [0, 0, 0, 0]
+						},
+						"grid": {
+							"enclosed": [
+								[0.4956, 0.0794, 0.5918],
+								[0.3858, 0.1728, 0.3746],
+								[0.3755, 0.0821, 0.414]
+							],
+							"box": [
+								[0.8998, 0.3626, 0.9586],
+								[0.6165, 0.1889, 0.5381],
+								[0.6448, 0.1082, 0.5858]
+							]
+						},
+						"unevenness": 0.514
+					},
+					"missing": {
+						"trunk.stems": "foliage hangs beside the stem down to its foot, so stems cannot be told from it",
+						"limbs": "the stem runs to the top of the plant unforked"
+					}
+				},
+				"missing": {}
+			},
+			{
+				"file": "18-silhouette.png",
+				"figures": {
+					"heightToWidth": 3.3464,
+					"foot": {
+						"belowHorizon": 0,
+						"followed": 0
+					},
+					"crown": {
+						"heightToWidth": 2.2961,
+						"base": 0.3139,
+						"width": 0.2988
+					},
+					"trunk": {
+						"bareShare": 0.3306,
+						"width": 0.0818,
+						"column": false,
+						"breastHeightWidth": 0.0818,
+						"flare": 1,
+						"lean": -0.13,
+						"stems": 1
+					},
+					"limbs": null,
+					"envelope": {
+						"left": [0.0401, 0.0417, 0.0434, 0.0451, 0.0684, 0.1169, 0.1252, 0.1252, 0.1269, 0.1452, 0.1503, 0.1519, 0.1519, 0.1503, 0.0334, 0.0317],
+						"right": [0.0401, 0.0401, 0.0417, 0.0434, 0.0918, 0.1102, 0.1135, 0.1135, 0.1369, 0.1419, 0.1452, 0.1452, 0.1436, 0.1352, 0.0284, 0.0267]
+					},
+					"lobes": {
+						"count": 5,
+						"byDepth": [
+							{
+								"depth": 0.02,
+								"count": 5
+							},
+							{
+								"depth": 0.04,
+								"count": 5
+							},
+							{
+								"depth": 0.08,
+								"count": 3
+							}
+						],
+						"areaShares": [0.288, 0.287, 0.274, 0.088, 0.061],
+						"widthShares": [0.336, 0.877, 0.921, 0.683, 0.474],
+						"notchDepths": [0.277, 0.27, 0.078, 0.065]
+					},
+					"sky": {
+						"enclosedGap": 0.2861,
+						"boxGap": 0.4968,
+						"holes": {
+							"count": 0,
+							"share": 0,
+							"largest": 0,
+							"medianDiameter": 0,
+							"bySize": [0, 0, 0, 0]
+						},
+						"grid": {
+							"enclosed": [
+								[0.5233, 0.1322, 0.5503],
+								[0.379, 0.2566, 0.4542],
+								[0.2608, 0.1037, 0.2225]
+							],
+							"box": [
+								[0.8533, 0.3932, 0.9064],
+								[0.426, 0.2566, 0.4719],
+								[0.5406, 0.105, 0.5235]
+							]
+						},
+						"unevenness": 0.483
+					},
+					"missing": {
+						"limbs": "foliage covers the fork, so the limbs do not show apart"
+					}
+				},
+				"missing": {}
+			}
+		],
+		"others": [],
+		"spread": [
+			{
+				"figure": "heightToWidth",
+				"primary": null,
+				"primaryOutsideTurn": false,
+				"turn": {
+					"min": 2.2394,
+					"low": 2.3682,
+					"median": 2.8948,
+					"high": 6.1,
+					"max": 10.1429
+				},
+				"secondary": {
+					"02-whole-profile.png": 3.125,
+					"18-silhouette.png": 3.3464
+				},
+				"largest": null,
+				"outsideTurn": []
+			},
+			{
+				"figure": "crownHeightToWidth",
+				"primary": null,
+				"primaryOutsideTurn": false,
+				"turn": {
+					"min": 1.5775,
+					"low": 1.6766,
+					"median": 2.3955,
+					"high": 5.5882,
+					"max": 8.4821
+				},
+				"secondary": {
+					"02-whole-profile.png": 2.3947,
+					"18-silhouette.png": 2.2961
+				},
+				"largest": null,
+				"outsideTurn": []
+			},
+			{
+				"figure": "crownBase",
+				"primary": null,
+				"primaryOutsideTurn": false,
+				"turn": {
+					"min": 0,
+					"low": 0.048,
+					"median": 0.1663,
+					"high": 0.3015,
+					"max": 0.3234
+				},
+				"secondary": {
+					"02-whole-profile.png": 0.2417,
+					"18-silhouette.png": 0.3139
+				},
+				"largest": null,
+				"outsideTurn": []
+			},
+			{
+				"figure": "crownWidth",
+				"primary": null,
+				"primaryOutsideTurn": false,
+				"turn": {
+					"min": 0.0986,
+					"low": 0.1703,
+					"median": 0.3452,
+					"high": 0.4223,
+					"max": 0.4444
+				},
+				"secondary": {
+					"02-whole-profile.png": 0.3167,
+					"18-silhouette.png": 0.2988
+				},
+				"largest": null,
+				"outsideTurn": []
+			},
+			{
+				"figure": "bareTrunk",
+				"primary": null,
+				"primaryOutsideTurn": false,
+				"turn": {
+					"min": 0.3002,
+					"low": 0.3025,
+					"median": 0.3215,
+					"high": 0.3711,
+					"max": 0.6143
+				},
+				"secondary": {
+					"02-whole-profile.png": 0.9983,
+					"18-silhouette.png": 0.3306
+				},
+				"largest": null,
+				"outsideTurn": ["02-whole-profile.png"]
+			},
+			{
+				"figure": "trunkWidth",
+				"primary": null,
+				"primaryOutsideTurn": false,
+				"turn": {
+					"min": 0.1071,
+					"low": 0.1107,
+					"median": 0.1134,
+					"high": 0.1174,
+					"max": 0.1186
+				},
+				"secondary": {
+					"02-whole-profile.png": 0.0817,
+					"18-silhouette.png": 0.0818
+				},
+				"largest": null,
+				"outsideTurn": ["02-whole-profile.png", "18-silhouette.png"]
+			},
+			{
+				"figure": "flare",
+				"primary": null,
+				"primaryOutsideTurn": false,
+				"turn": {
+					"min": 1,
+					"low": 1,
+					"median": 1,
+					"high": 1.037,
+					"max": 1.057
+				},
+				"secondary": {
+					"02-whole-profile.png": 1,
+					"18-silhouette.png": 1
+				},
+				"largest": null,
+				"outsideTurn": []
+			},
+			{
+				"figure": "lean",
+				"primary": null,
+				"primaryOutsideTurn": false,
+				"turn": {
+					"min": -0.1,
+					"low": -0.02,
+					"median": 0.23,
+					"high": 0.54,
+					"max": 0.73
+				},
+				"secondary": {
+					"02-whole-profile.png": 0.25,
+					"18-silhouette.png": -0.13
+				},
+				"largest": null,
+				"outsideTurn": ["18-silhouette.png"]
+			},
+			{
+				"figure": "lobes",
+				"primary": null,
+				"primaryOutsideTurn": false,
+				"turn": {
+					"min": 1,
+					"low": 3,
+					"median": 4,
+					"high": 5,
+					"max": 5
+				},
+				"secondary": {
+					"02-whole-profile.png": 6,
+					"18-silhouette.png": 5
+				},
+				"largest": null,
+				"outsideTurn": ["02-whole-profile.png"]
+			},
+			{
+				"figure": "enclosedGap",
+				"primary": null,
+				"primaryOutsideTurn": false,
+				"turn": {
+					"min": 0.0017,
+					"low": 0.0063,
+					"median": 0.1119,
+					"high": 0.1641,
+					"max": 0.2055
+				},
+				"secondary": {
+					"02-whole-profile.png": 0.2663,
+					"18-silhouette.png": 0.2861
+				},
+				"largest": null,
+				"outsideTurn": ["02-whole-profile.png", "18-silhouette.png"]
+			},
+			{
+				"figure": "boxGap",
+				"primary": null,
+				"primaryOutsideTurn": false,
+				"turn": {
+					"min": 0.1831,
+					"low": 0.3,
+					"median": 0.4425,
+					"high": 0.5243,
+					"max": 0.5549
+				},
+				"secondary": {
+					"02-whole-profile.png": 0.5444,
+					"18-silhouette.png": 0.4968
+				},
+				"largest": null,
+				"outsideTurn": []
+			},
+			{
+				"figure": "holeShare",
+				"primary": null,
+				"primaryOutsideTurn": false,
+				"turn": {
+					"min": 0,
+					"low": 0,
+					"median": 0,
+					"high": 0.0002,
+					"max": 0.0015
+				},
+				"secondary": {
+					"02-whole-profile.png": 0,
+					"18-silhouette.png": 0
+				},
+				"largest": null,
+				"outsideTurn": []
+			}
+		]
+	},
+	"wood": {
+		"views": [
+			{
+				"file": "03-whole-from-below.png",
+				"limbs": null,
+				"missing": {
+					"limbs": "the background is not plain"
+				}
+			},
+			{
+				"file": "05-arm-underside.png",
+				"limbs": null,
+				"missing": {
+					"limbs": "the wood runs off the frame's top, so the stem and its limbs do not show whole"
+				}
+			},
+			{
+				"file": "07-arm-junction.png",
+				"limbs": null,
+				"missing": {
+					"limbs": "the wood runs off the frame's top, so the stem and its limbs do not show whole"
+				}
+			},
+			{
+				"file": "08-arm-elbow.png",
+				"limbs": null,
+				"missing": {
+					"limbs": "the wood runs off the frame's top, so the stem and its limbs do not show whole"
+				}
+			},
+			{
+				"file": "17-trunk-taper.png",
+				"limbs": null,
+				"missing": {
+					"limbs": "the wood runs off the frame's bottom, so the stem and its limbs do not show whole"
+				}
+			}
+		]
+	},
+	"pieces": {
+		"stills": [
+			{
+				"file": "09-rib-pattern.png",
+				"view": "bark-mid",
+				"inPlace": true,
+				"figures": {
+					"heightToWidth": 4.0252,
+					"boxShare": 0.3632,
+					"foliageShare": null,
+					"woodShare": null,
+					"branch": null,
+					"droop": null,
+					"clipped": ["top", "bottom"],
+					"missing": {
+						"foliageShare": "too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood",
+						"woodShare": "too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood",
+						"branch": "too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood",
+						"droop": "the piece runs off 2 edges of the frame, so the end that joins the plant is not known"
+					}
+				},
+				"missing": {}
+			},
+			{
+				"file": "10-areoles-and-spines.png",
+				"view": "bark-mid",
+				"inPlace": true,
+				"figures": {
+					"heightToWidth": 4,
+					"boxShare": 0.4208,
+					"foliageShare": null,
+					"woodShare": null,
+					"branch": null,
+					"droop": null,
+					"clipped": ["top", "bottom"],
+					"missing": {
+						"foliageShare": "too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood",
+						"woodShare": "too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood",
+						"branch": "too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood",
+						"droop": "the piece runs off 2 edges of the frame, so the end that joins the plant is not known"
+					}
+				},
+				"missing": {}
+			},
+			{
+				"file": "20-nest-holes.png",
+				"view": "bark-mid",
+				"inPlace": true,
+				"figures": {
+					"heightToWidth": 0.9907,
+					"boxShare": 0.277,
+					"foliageShare": 0,
+					"woodShare": 1,
+					"branch": {
+						"tips": 6,
+						"joints": 9,
+						"woodPerTip": 0.3568,
+						"tipsPerArea": 6.056,
+						"fanShare": 0,
+						"kinksPerLength": 0,
+						"meanKink": null,
+						"woodLength": 2.1409
+					},
+					"droop": null,
+					"clipped": [],
+					"missing": {
+						"droop": "the piece touches no edge of the frame, so the end that joins the plant is not known"
+					}
+				},
+				"missing": {}
+			},
+			{
+				"file": "21-branch-studio.png",
+				"view": "branch",
+				"inPlace": false,
+				"figures": {
+					"heightToWidth": 2.5191,
+					"boxShare": 0.482,
+					"foliageShare": null,
+					"woodShare": null,
+					"branch": null,
+					"droop": null,
+					"clipped": [],
+					"missing": {
+						"foliageShare": "too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood",
+						"woodShare": "too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood",
+						"branch": "too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood",
+						"droop": "the picture stands the cut piece on its cut, so its angle is the photographer's, not the plant's"
+					}
+				},
+				"missing": {}
+			},
+			{
+				"file": "22-subbranch-studio.png",
+				"view": "subbranch",
+				"inPlace": false,
+				"figures": {
+					"heightToWidth": 3.027,
+					"boxShare": 0.748,
+					"foliageShare": null,
+					"woodShare": null,
+					"branch": null,
+					"droop": null,
+					"clipped": [],
+					"missing": {
+						"foliageShare": "too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood",
+						"woodShare": "too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood",
+						"branch": "too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood",
+						"droop": "the picture stands the cut piece on its cut, so its angle is the photographer's, not the plant's"
+					}
+				},
+				"missing": {}
+			},
+			{
+				"file": "23-leaf-cluster-studio.png",
+				"view": "cluster",
+				"inPlace": false,
+				"figures": {
+					"heightToWidth": 2.4085,
+					"boxShare": 0.6923,
+					"foliageShare": null,
+					"woodShare": null,
+					"branch": null,
+					"droop": null,
+					"clipped": ["bottom"],
+					"missing": {
+						"foliageShare": "too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood",
+						"woodShare": "too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood",
+						"branch": "too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood",
+						"droop": "the picture stands the cut piece on its cut, so its angle is the photographer's, not the plant's"
+					}
+				},
+				"missing": {}
+			}
+		],
+		"turns": [
+			{
+				"video": "branch-turntable-halfturn.mp4",
+				"piece": "branch",
+				"arc": 180,
+				"frames": 24,
+				"read": 24,
+				"stats": {
+					"heightToWidth": {
+						"min": 2.4593,
+						"low": 2.5267,
+						"median": 2.9774,
+						"high": 4.3867,
+						"mean": 3.2547,
+						"max": 4.8261,
+						"spread": 0.7272,
+						"frames": 24
+					},
+					"boxShare": {
+						"min": 0.4753,
+						"low": 0.484,
+						"median": 0.5516,
+						"high": 0.7756,
+						"mean": 0.5937,
+						"max": 0.792,
+						"spread": 0.5334,
+						"frames": 24
+					},
+					"foliageShare": null,
+					"woodShare": null,
+					"tips": null,
+					"woodPerTip": null,
+					"tipsPerArea": null,
+					"fanShare": null,
+					"kinksPerLength": null
+				},
+				"missing": {
+					"stats.foliageShare": "no frame gives it: too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood",
+					"stats.woodShare": "no frame gives it: too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood",
+					"stats.tips": "no frame gives it: too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood",
+					"stats.woodPerTip": "no frame gives it: too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood",
+					"stats.tipsPerArea": "no frame gives it: too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood",
+					"stats.fanShare": "no frame gives it: too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood",
+					"stats.kinksPerLength": "no frame gives it: too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood"
+				}
+			},
+			{
+				"video": "leaf-cluster-turntable.mp4",
+				"piece": "cluster",
+				"arc": 360,
+				"frames": 24,
+				"read": 24,
+				"stats": {
+					"heightToWidth": {
+						"min": 2.3636,
+						"low": 2.3803,
+						"median": 2.4143,
+						"high": 2.4599,
+						"mean": 2.4205,
+						"max": 2.4853,
+						"spread": 0.0503,
+						"frames": 24
+					},
+					"boxShare": {
+						"min": 0.6925,
+						"low": 0.6952,
+						"median": 0.7075,
+						"high": 0.7185,
+						"mean": 0.7075,
+						"max": 0.7231,
+						"spread": 0.0433,
+						"frames": 24
+					},
+					"foliageShare": null,
+					"woodShare": null,
+					"tips": null,
+					"woodPerTip": null,
+					"tipsPerArea": null,
+					"fanShare": null,
+					"kinksPerLength": null
+				},
+				"missing": {
+					"stats.foliageShare": "no frame gives it: too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood",
+					"stats.woodShare": "no frame gives it: too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood",
+					"stats.tips": "no frame gives it: too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood",
+					"stats.woodPerTip": "no frame gives it: too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood",
+					"stats.tipsPerArea": "no frame gives it: too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood",
+					"stats.fanShare": "no frame gives it: too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood",
+					"stats.kinksPerLength": "no frame gives it: too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood"
+				}
+			},
+			{
+				"video": "subbranch-turntable.mp4",
+				"piece": "subbranch",
+				"arc": 360,
+				"frames": 24,
+				"read": 24,
+				"stats": {
+					"heightToWidth": {
+						"min": 2.9646,
+						"low": 2.9735,
+						"median": 3.0968,
+						"high": 3.1792,
+						"mean": 3.0816,
+						"max": 3.2,
+						"spread": 0.0764,
+						"frames": 24
+					},
+					"boxShare": {
+						"min": 0.7365,
+						"low": 0.7388,
+						"median": 0.7592,
+						"high": 0.7867,
+						"mean": 0.7614,
+						"max": 0.7898,
+						"spread": 0.07,
+						"frames": 24
+					},
+					"foliageShare": null,
+					"woodShare": null,
+					"tips": null,
+					"woodPerTip": null,
+					"tipsPerArea": null,
+					"fanShare": null,
+					"kinksPerLength": null
+				},
+				"missing": {
+					"stats.foliageShare": "no frame gives it: too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood",
+					"stats.woodShare": "no frame gives it: too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood",
+					"stats.tips": "no frame gives it: too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood",
+					"stats.woodPerTip": "no frame gives it: too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood",
+					"stats.tipsPerArea": "no frame gives it: too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood",
+					"stats.fanShare": "no frame gives it: too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood",
+					"stats.kinksPerLength": "no frame gives it: too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood"
+				}
+			}
+		]
+	},
+	"nulls": [
+		{
+			"path": "stated.flowerStemMetres",
+			"reason": "the fact sheet gives no flowering stem height"
+		},
+		{
+			"path": "stated.crownShare",
+			"reason": "the fact sheet does not state it in words the reader knows"
+		},
+		{
+			"path": "stated.clearTrunkShare",
+			"reason": "the fact sheet does not state it in words the reader knows"
+		},
+		{
+			"path": "stated.leafLengthCm",
+			"reason": "the fact sheet says the plant has no leaves"
+		},
+		{
+			"path": "stated.leafWidthCm",
+			"reason": "the fact sheet says the plant has no leaves"
+		},
+		{
+			"path": "stated.leafletCm",
+			"reason": "the fact sheet describes no leaflet apart from the leaf"
+		},
+		{
+			"path": "stated.arrangement",
+			"reason": "the fact sheet does not state it in words the reader knows"
+		},
+		{
+			"path": "whole.primary.still.figures",
+			"reason": "the review's slot file names the picture's outline as not separable from its backdrop"
+		},
+		{
+			"path": "whole.secondary[02-whole-profile.png].figures.trunk.stems",
+			"reason": "foliage hangs beside the stem down to its foot, so stems cannot be told from it"
+		},
+		{
+			"path": "whole.secondary[02-whole-profile.png].figures.limbs",
+			"reason": "the stem runs to the top of the plant unforked"
+		},
+		{
+			"path": "whole.secondary[18-silhouette.png].figures.limbs",
+			"reason": "foliage covers the fork, so the limbs do not show apart"
+		},
+		{
+			"path": "wood.views[03-whole-from-below.png].limbs",
+			"reason": "the background is not plain"
+		},
+		{
+			"path": "wood.views[05-arm-underside.png].limbs",
+			"reason": "the wood runs off the frame's top, so the stem and its limbs do not show whole"
+		},
+		{
+			"path": "wood.views[07-arm-junction.png].limbs",
+			"reason": "the wood runs off the frame's top, so the stem and its limbs do not show whole"
+		},
+		{
+			"path": "wood.views[08-arm-elbow.png].limbs",
+			"reason": "the wood runs off the frame's top, so the stem and its limbs do not show whole"
+		},
+		{
+			"path": "wood.views[17-trunk-taper.png].limbs",
+			"reason": "the wood runs off the frame's bottom, so the stem and its limbs do not show whole"
+		},
+		{
+			"path": "pieces.stills[09-rib-pattern.png].figures.foliageShare",
+			"reason": "too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood"
+		},
+		{
+			"path": "pieces.stills[09-rib-pattern.png].figures.woodShare",
+			"reason": "too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood"
+		},
+		{
+			"path": "pieces.stills[09-rib-pattern.png].figures.branch",
+			"reason": "too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood"
+		},
+		{
+			"path": "pieces.stills[09-rib-pattern.png].figures.droop",
+			"reason": "the piece runs off 2 edges of the frame, so the end that joins the plant is not known"
+		},
+		{
+			"path": "pieces.stills[10-areoles-and-spines.png].figures.foliageShare",
+			"reason": "too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood"
+		},
+		{
+			"path": "pieces.stills[10-areoles-and-spines.png].figures.woodShare",
+			"reason": "too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood"
+		},
+		{
+			"path": "pieces.stills[10-areoles-and-spines.png].figures.branch",
+			"reason": "too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood"
+		},
+		{
+			"path": "pieces.stills[10-areoles-and-spines.png].figures.droop",
+			"reason": "the piece runs off 2 edges of the frame, so the end that joins the plant is not known"
+		},
+		{
+			"path": "pieces.stills[20-nest-holes.png].figures.droop",
+			"reason": "the piece touches no edge of the frame, so the end that joins the plant is not known"
+		},
+		{
+			"path": "pieces.stills[21-branch-studio.png].figures.foliageShare",
+			"reason": "too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood"
+		},
+		{
+			"path": "pieces.stills[21-branch-studio.png].figures.woodShare",
+			"reason": "too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood"
+		},
+		{
+			"path": "pieces.stills[21-branch-studio.png].figures.branch",
+			"reason": "too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood"
+		},
+		{
+			"path": "pieces.stills[21-branch-studio.png].figures.droop",
+			"reason": "the picture stands the cut piece on its cut, so its angle is the photographer's, not the plant's"
+		},
+		{
+			"path": "pieces.stills[22-subbranch-studio.png].figures.foliageShare",
+			"reason": "too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood"
+		},
+		{
+			"path": "pieces.stills[22-subbranch-studio.png].figures.woodShare",
+			"reason": "too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood"
+		},
+		{
+			"path": "pieces.stills[22-subbranch-studio.png].figures.branch",
+			"reason": "too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood"
+		},
+		{
+			"path": "pieces.stills[22-subbranch-studio.png].figures.droop",
+			"reason": "the picture stands the cut piece on its cut, so its angle is the photographer's, not the plant's"
+		},
+		{
+			"path": "pieces.stills[23-leaf-cluster-studio.png].figures.foliageShare",
+			"reason": "too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood"
+		},
+		{
+			"path": "pieces.stills[23-leaf-cluster-studio.png].figures.woodShare",
+			"reason": "too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood"
+		},
+		{
+			"path": "pieces.stills[23-leaf-cluster-studio.png].figures.branch",
+			"reason": "too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood"
+		},
+		{
+			"path": "pieces.stills[23-leaf-cluster-studio.png].figures.droop",
+			"reason": "the picture stands the cut piece on its cut, so its angle is the photographer's, not the plant's"
+		},
+		{
+			"path": "pieces.turns[branch-turntable-halfturn.mp4].stats.foliageShare",
+			"reason": "no frame gives it: too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood"
+		},
+		{
+			"path": "pieces.turns[branch-turntable-halfturn.mp4].stats.woodShare",
+			"reason": "no frame gives it: too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood"
+		},
+		{
+			"path": "pieces.turns[branch-turntable-halfturn.mp4].stats.tips",
+			"reason": "no frame gives it: too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood"
+		},
+		{
+			"path": "pieces.turns[branch-turntable-halfturn.mp4].stats.woodPerTip",
+			"reason": "no frame gives it: too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood"
+		},
+		{
+			"path": "pieces.turns[branch-turntable-halfturn.mp4].stats.tipsPerArea",
+			"reason": "no frame gives it: too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood"
+		},
+		{
+			"path": "pieces.turns[branch-turntable-halfturn.mp4].stats.fanShare",
+			"reason": "no frame gives it: too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood"
+		},
+		{
+			"path": "pieces.turns[branch-turntable-halfturn.mp4].stats.kinksPerLength",
+			"reason": "no frame gives it: too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood"
+		},
+		{
+			"path": "pieces.turns[leaf-cluster-turntable.mp4].stats.foliageShare",
+			"reason": "no frame gives it: too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood"
+		},
+		{
+			"path": "pieces.turns[leaf-cluster-turntable.mp4].stats.woodShare",
+			"reason": "no frame gives it: too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood"
+		},
+		{
+			"path": "pieces.turns[leaf-cluster-turntable.mp4].stats.tips",
+			"reason": "no frame gives it: too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood"
+		},
+		{
+			"path": "pieces.turns[leaf-cluster-turntable.mp4].stats.woodPerTip",
+			"reason": "no frame gives it: too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood"
+		},
+		{
+			"path": "pieces.turns[leaf-cluster-turntable.mp4].stats.tipsPerArea",
+			"reason": "no frame gives it: too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood"
+		},
+		{
+			"path": "pieces.turns[leaf-cluster-turntable.mp4].stats.fanShare",
+			"reason": "no frame gives it: too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood"
+		},
+		{
+			"path": "pieces.turns[leaf-cluster-turntable.mp4].stats.kinksPerLength",
+			"reason": "no frame gives it: too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood"
+		},
+		{
+			"path": "pieces.turns[subbranch-turntable.mp4].stats.foliageShare",
+			"reason": "no frame gives it: too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood"
+		},
+		{
+			"path": "pieces.turns[subbranch-turntable.mp4].stats.woodShare",
+			"reason": "no frame gives it: too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood"
+		},
+		{
+			"path": "pieces.turns[subbranch-turntable.mp4].stats.tips",
+			"reason": "no frame gives it: too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood"
+		},
+		{
+			"path": "pieces.turns[subbranch-turntable.mp4].stats.woodPerTip",
+			"reason": "no frame gives it: too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood"
+		},
+		{
+			"path": "pieces.turns[subbranch-turntable.mp4].stats.tipsPerArea",
+			"reason": "no frame gives it: too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood"
+		},
+		{
+			"path": "pieces.turns[subbranch-turntable.mp4].stats.fanShare",
+			"reason": "no frame gives it: too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood"
+		},
+		{
+			"path": "pieces.turns[subbranch-turntable.mp4].stats.kinksPerLength",
+			"reason": "no frame gives it: too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood"
+		}
+	],
+	"missing": {}
+}
