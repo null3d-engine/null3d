@@ -270,6 +270,8 @@ export function bakeCards(
 					up: plane.up as unknown as CardCell['planes'][number]['up'],
 					front: rect,
 					back: rect,
+					role: k as 0 | 1 | 2,
+					along: [0, 1] as const,
 				};
 			}),
 		};
