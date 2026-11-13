@@ -46,6 +46,12 @@
 				"figures": {
 					"heightToWidth": 1.2015,
 					"foot": {
+						"rows": {
+							"frame": 688,
+							"horizon": 536,
+							"outline": 616,
+							"foot": 616
+						},
 						"belowHorizon": 0.1524,
 						"followed": 0
 					},
@@ -56,7 +62,7 @@
 					},
 					"trunk": {
 						"bareShare": 0.1921,
-						"width": 0.3445,
+						"width": 0.3415,
 						"column": false,
 						"breastHeightWidth": null,
 						"flare": null,
@@ -117,7 +123,7 @@
 						"trunk.breastHeightWidth": "breast height is not placed on this plant: source.breastHeight gives the reason",
 						"trunk.lean": "the bare stem above its flare is too short to fit a line through",
 						"trunk.stems": "too little bare stem shows below the foliage to tell the stems apart",
-						"limbs": "the counts at 1.5, 2, 2.5 stem widths from the fork disagree (17, 8, 0)"
+						"limbs": "the counts at 1.5, 2, 2.5 stem widths from the fork disagree (17, 5, 0)"
 					}
 				},
 				"missing": {}
@@ -137,6 +143,26 @@
 						"mean": 1.3026,
 						"max": 1.533,
 						"spread": 0.2678,
+						"frames": 193
+					},
+					"footBelowHorizon": {
+						"min": 0.1262,
+						"low": 0.1446,
+						"median": 0.152,
+						"high": 0.1596,
+						"mean": 0.1512,
+						"max": 0.1731,
+						"spread": 0.3102,
+						"frames": 193
+					},
+					"footFollowed": {
+						"min": 0,
+						"low": 0,
+						"median": 0,
+						"high": 0,
+						"mean": 0,
+						"max": 0,
+						"spread": 0,
 						"frames": 193
 					},
 					"crownHeightToWidth": {
@@ -172,34 +198,34 @@
 					"bareTrunk": {
 						"min": 0.1815,
 						"low": 0.1909,
-						"median": 0.2024,
+						"median": 0.2027,
 						"high": 0.2134,
-						"mean": 0.2023,
+						"mean": 0.2024,
 						"max": 0.2182,
 						"spread": 0.1814,
-						"frames": 87
+						"frames": 86
 					},
 					"trunkWidth": {
 						"min": 0.2736,
 						"low": 0.304,
-						"median": 0.3415,
-						"high": 0.3704,
-						"mean": 0.3416,
-						"max": 0.3889,
-						"spread": 0.3376,
-						"frames": 87
+						"median": 0.3389,
+						"high": 0.3631,
+						"mean": 0.337,
+						"max": 0.3861,
+						"spread": 0.3338,
+						"frames": 86
 					},
 					"breastHeightWidth": null,
 					"flare": null,
 					"lean": {
 						"min": -48.35,
-						"low": -19.98,
-						"median": 9.435,
+						"low": -20.02,
+						"median": 8.43,
 						"high": 23.99,
-						"mean": 6.8017,
+						"mean": 6.4654,
 						"max": 38.34,
-						"spread": 12.7454,
-						"frames": 60
+						"spread": 13.4082,
+						"frames": 59
 					},
 					"stems": null,
 					"limbs": null,
@@ -362,6 +388,12 @@
 				"figures": {
 					"heightToWidth": 1.279,
 					"foot": {
+						"rows": {
+							"frame": 1024,
+							"horizon": 837,
+							"outline": 906,
+							"foot": 906
+						},
 						"belowHorizon": 0.0795,
 						"followed": 0
 					},
@@ -445,6 +477,12 @@
 				"figures": {
 					"heightToWidth": 1.4113,
 					"foot": {
+						"rows": {
+							"frame": 1024,
+							"horizon": 805,
+							"outline": 840,
+							"foot": 840
+						},
 						"belowHorizon": 0.0488,
 						"followed": 0
 					},
@@ -455,7 +493,7 @@
 					},
 					"trunk": {
 						"bareShare": 0.0888,
-						"width": 0.1938,
+						"width": 0.1905,
 						"column": false,
 						"breastHeightWidth": null,
 						"flare": null,
@@ -516,7 +554,7 @@
 						"trunk.breastHeightWidth": "breast height is not placed on this plant: source.breastHeight gives the reason",
 						"trunk.lean": "the bare stem above its flare is too short to fit a line through",
 						"trunk.stems": "too little bare stem shows below the foliage to tell the stems apart",
-						"limbs": "the counts at 1.5, 2, 2.5 stem widths from the fork disagree (27, 16, 26)"
+						"limbs": "the counts at 1.5, 2, 2.5 stem widths from the fork disagree (27, 15, 24)"
 					}
 				},
 				"missing": {}
@@ -526,6 +564,12 @@
 				"figures": {
 					"heightToWidth": 1.3089,
 					"foot": {
+						"rows": {
+							"frame": 1024,
+							"horizon": 964,
+							"outline": 956,
+							"foot": 956
+						},
 						"belowHorizon": 0,
 						"followed": 0
 					},
@@ -536,7 +580,7 @@
 					},
 					"trunk": {
 						"bareShare": 0.0892,
-						"width": 0.1573,
+						"width": 0.1561,
 						"column": false,
 						"breastHeightWidth": null,
 						"flare": 1,
@@ -595,7 +639,7 @@
 					"missing": {
 						"trunk.breastHeightWidth": "breast height is not placed on this plant: source.breastHeight gives the reason",
 						"trunk.stems": "foliage hangs beside the stem down to its foot, so stems cannot be told from it",
-						"limbs": "the counts at 1.5, 2, 2.5 stem widths from the fork disagree (16, 29, 21)"
+						"limbs": "the counts at 1.5, 2, 2.5 stem widths from the fork disagree (14, 30, 22)"
 					}
 				},
 				"missing": {}
@@ -686,7 +730,7 @@
 				"turn": {
 					"min": 0.1815,
 					"low": 0.1909,
-					"median": 0.2024,
+					"median": 0.2027,
 					"high": 0.2134,
 					"max": 0.2182
 				},
@@ -700,19 +744,19 @@
 			},
 			{
 				"figure": "trunkWidth",
-				"primary": 0.3445,
+				"primary": 0.3415,
 				"primaryOutsideTurn": false,
 				"turn": {
 					"min": 0.2736,
 					"low": 0.304,
-					"median": 0.3415,
-					"high": 0.3704,
-					"max": 0.3889
+					"median": 0.3389,
+					"high": 0.3631,
+					"max": 0.3861
 				},
 				"secondary": {
 					"02-whole-tuft-profile.png": null,
-					"17-tuft-height-profile.png": 0.1938,
-					"18-silhouette.png": 0.1573
+					"17-tuft-height-profile.png": 0.1905,
+					"18-silhouette.png": 0.1561
 				},
 				"largest": 0.543,
 				"outsideTurn": ["17-tuft-height-profile.png", "18-silhouette.png"]
@@ -736,8 +780,8 @@
 				"primaryOutsideTurn": false,
 				"turn": {
 					"min": -48.35,
-					"low": -19.98,
-					"median": 9.435,
+					"low": -20.02,
+					"median": 8.43,
 					"high": 23.99,
 					"max": 38.34
 				},
@@ -1269,7 +1313,7 @@
 		},
 		{
 			"path": "whole.primary.still.figures.limbs",
-			"reason": "the counts at 1.5, 2, 2.5 stem widths from the fork disagree (17, 8, 0)"
+			"reason": "the counts at 1.5, 2, 2.5 stem widths from the fork disagree (17, 5, 0)"
 		},
 		{
 			"path": "whole.primary.turn.stats.breastHeightWidth",
@@ -1333,7 +1377,7 @@
 		},
 		{
 			"path": "whole.secondary[17-tuft-height-profile.png].figures.limbs",
-			"reason": "the counts at 1.5, 2, 2.5 stem widths from the fork disagree (27, 16, 26)"
+			"reason": "the counts at 1.5, 2, 2.5 stem widths from the fork disagree (27, 15, 24)"
 		},
 		{
 			"path": "whole.secondary[18-silhouette.png].figures.trunk.breastHeightWidth",
@@ -1345,7 +1389,7 @@
 		},
 		{
 			"path": "whole.secondary[18-silhouette.png].figures.limbs",
-			"reason": "the counts at 1.5, 2, 2.5 stem widths from the fork disagree (16, 29, 21)"
+			"reason": "the counts at 1.5, 2, 2.5 stem widths from the fork disagree (14, 30, 22)"
 		},
 		{
 			"path": "wood.views[03-whole-from-below.png].limbs",
