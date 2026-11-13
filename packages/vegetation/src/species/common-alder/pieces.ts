@@ -247,5 +247,7 @@ export const FRUIT_PIECES: readonly PieceRule[] = PIECES.map((rule) =>
 /** The studio photographs of the alder's cut wood, each one piece standing on its cut. */
 export const STUDIO: readonly PieceStudio[] = [
 	{ still: 21, piece: 'branch-end' },
-	{ still: 22, piece: 'twig' },
+	// Still 22: the twig stands upright in its clamp and its cones hang down beside the right arm,
+	// along the twig's line, where a socket would hang them to the twig's ground side.
+	{ still: 22, piece: 'twig', fall: [0, -1, 0] },
 ];

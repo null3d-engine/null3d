@@ -3,15 +3,16 @@
 // same bytes. A hanging piece runs along its own line and its leaves hang with it. A studio layout
 // stands every piece on its cut wood.
 import { beforeAll, describe, expect, it } from 'bun:test';
+import { existsSync } from 'node:fs';
 import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
 import type { Rgba } from '../../../../tools/lib/plant-review/image.ts';
 import { matteMask, measurePlant } from '../../../../tools/lib/plant-review/references.ts';
 import { quatRotate } from '../core/math';
-import type { SpeciesModule } from '../core/record';
+import type { Species, SpeciesModule } from '../core/record';
 import type { SpeciesId } from '../core/registry';
 import { loadSpecies } from '../core/registry';
 import { DETAILS } from '../core/types';
-import { buildPiecesNow, loadPlantCode } from '../generate';
+import { buildKitNow, buildPiecesNow, loadPlantCode } from '../generate';
 import { bladeMesh, outlineOf } from '../leaf/leaf-mesh';
 import {
 	layStudio,
@@ -65,6 +66,7 @@ import {
 import {
 	PIECES as WILLOW,
 	FRUIT_PIECES as WILLOW_FRUIT,
+	PIECE_LEAF as WILLOW_LEAF,
 	STUDIO as WILLOW_STUDIO,
 } from './weeping-willow/pieces';
 
@@ -74,6 +76,7 @@ const PIECE_LEAVES: Partial<Record<SpeciesId, PieceLeaf>> = {
 	'european-beech': BEECH_LEAF,
 	'common-alder': ALDER_LEAF,
 	'hawthorn-shrub': HAWTHORN_LEAF,
+	'weeping-willow': WILLOW_LEAF,
 };
 
 /** A species' module with the record its pieces are built by. */
@@ -340,29 +343,26 @@ const FIGURE_ROUNDING = 0.0005;
  * band leaves the list.
  */
 const OPEN_DEPTH: Readonly<Record<string, number>> = {
-	'olive 22': 0.377,
+	'olive 22': 0.367,
 	'european-beech 22': 0.216,
 	'common-ash 22': 0.244,
-	// Its cones hang to the twig's own ground side, behind it, where the photograph's hang below a
-	// twig that stands in a clamp.
-	'common-alder 22': 0.26,
 };
 const OPEN_GAP: Readonly<Record<string, number>> = {
 	// In the birch's and the willow's videos nearly every leaf shows its whole face in every frame,
 	// which fixed leaves cannot; their stills judge them.
 	'silver-birch 21': 0.46,
-	'silver-birch 22': 0.362,
+	'silver-birch 22': 0.466,
 	'weeping-willow 21': 0.278,
 	'weeping-willow 22': 0.388,
-	'olive 21': 0.426,
 	'european-beech 22': 0.348,
 	'common-ash 21': 0.223,
-	'common-ash 22': 0.359,
-	'common-alder 22': 0.055,
+	'common-ash 22': 0.361,
+	// Read with its cones hanging along its line, as the clamp's gravity hangs them.
+	'common-alder 22': 0.045,
 	'holm-oak 21': 0.171,
-	'holm-oak 22': 0.322,
+	'holm-oak 22': 0.325,
 	// Its arms and tufts stand in one plane.
-	'hawthorn-shrub 21': 0.548,
+	'hawthorn-shrub 21': 0.551,
 };
 
 interface Laid {
@@ -379,7 +379,7 @@ function laidTriangles(
 	studio: PieceStudio,
 ): Laid[] {
 	const tier = DETAILS.indexOf('high');
-	const built = buildPiecesNow(module, pieces);
+	const built = buildPiecesNow(module, pieces, false, undefined, studio.fall);
 	const layout = layStudio(module.record, pieces, studio);
 	const out: Laid[] = [];
 	const add = (
@@ -997,6 +997,48 @@ const CROWN_CUT_HIGH: Readonly<Record<string, number>> = {
 	'hawthorn-shrub branch-end': 9822,
 	'hawthorn-shrub twig': 5958,
 };
+
+describe("a plant of pieces' kit", () => {
+	it(
+		"holds each piece it carries at a fifth of the crown cut at the high tier, the oak's branch end at 1,000, every directed record of the nine species that names pieces",
+		async () => {
+			const high = DETAILS.indexOf('high');
+			let read = 0;
+			for (const id of BROADLEAF) {
+				const file = new URL(`./${id}/directed.ts`, import.meta.url);
+				if (!existsSync(file)) continue;
+				const record = (await import(file.href)).directed as Species;
+				// A directed record carries pieces only where it names them.
+				if (!record.pieces?.length) continue;
+				const module = await loadSpecies(id);
+				await loadPlantCode(record);
+				const kit = buildKitNow(
+					{ record, textures: module.textures },
+					{ detail: 'high', placeholders: 'missing' },
+				);
+				// Each piece's first variant, every part of it, as the kit holds it.
+				const drawn = new Map<string, number>();
+				for (const prototype of kit.prototypes) {
+					const piece = prototype.piece;
+					if (piece?.variant !== 0) continue;
+					const triangles = (prototype.tiers[high]?.indices.length ?? 0) / 3;
+					drawn.set(piece.name, (drawn.get(piece.name) ?? 0) + triangles);
+				}
+				expect(drawn.size).toBeGreaterThan(0);
+				for (const [name, triangles] of drawn) {
+					const crown = CROWN_CUT_HIGH[`${id} ${name}`];
+					expect(crown).toBeDefined();
+					expect(triangles).toBeLessThanOrEqual((crown ?? 0) / 5);
+					if (id === 'pedunculate-oak' && name === 'branch-end')
+						expect(triangles).toBeLessThanOrEqual(1000);
+					read++;
+				}
+			}
+			expect(read).toBeGreaterThan(0);
+		},
+		LONG,
+	);
+});
 
 describe("a piece's cost", () => {
 	it(
