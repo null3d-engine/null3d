@@ -23,6 +23,7 @@ import {
 	withLimbs,
 } from './generate';
 import type { PlantTaskInput } from './generate-task';
+import { loadFarBaker } from './lod/impostor';
 
 /** The growth tests grow a real species, which a busy machine draws in tens of seconds. */
 const LONG = scaledBudget(180_000);
@@ -124,8 +125,9 @@ describe('the plant core with stand-ins', () => {
 		expect(wood[0]?.arrays.positions).toEqual(atOnce?.arrays.positions as Uint16Array);
 	});
 
-	it('bakes the far cards and cuts the review pieces', () => {
+	it('bakes the far cards and cuts the review pieces', async () => {
 		const asset = growPlantNow(kit, { seed: 11, variant: 0, near: true });
+		await loadFarBaker();
 		const far = bakeFarNow(kit, asset);
 		expect(far.views).toBe(stub.record.lod.impostor.views);
 		expect(far.color.length).toBe((far.views * far.texels) ** 2 * 4);

@@ -1018,7 +1018,7 @@ export function growNearWoodNow(kit: SpeciesKitData, options: GrowOptions): read
 
 /**
  * Bakes a variant's far cards on this thread: the impostor atlases from its first card level. Call
- * `loadPlantCode` first.
+ * `loadPlantCode` and `loadFarBaker` first.
  *
  * @param kit The species' kit.
  * @param asset The grown variant.

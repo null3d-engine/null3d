@@ -19,6 +19,7 @@ import {
 	type KitSource,
 	loadPlantCode,
 } from './generate';
+import { loadFarBaker } from './lod/impostor';
 import type { FarBake } from './stages';
 
 /**
@@ -100,6 +101,7 @@ export async function run(input: unknown): Promise<PlantTaskOutput> {
 			return { output: parts, transfer: parts.flatMap((part) => plantPartBuffers(part)) };
 		}
 		case 'far': {
+			await loadFarBaker();
 			const far = bakeFarNow(request.kit, request.asset);
 			return {
 				output: far,
