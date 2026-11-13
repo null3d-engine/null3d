@@ -762,6 +762,7 @@ function dress(kit: SpeciesKitData, options: GrowOptions): MeshInput {
 		// The coarseness dial changes how smoothly the wood is meshed, never what the plant grows.
 		skeleton: cutSkeleton(kit, calibrated, options.cutting),
 		coarseness,
+		cutting: options.cutting,
 		sections: options.sections,
 		cards: options.cards,
 		cardJoin: options.cardJoin,

@@ -752,6 +752,8 @@ export default defineSketch(async (ctx) => {
 		part: cuttingPart,
 		...(QUERY.cut !== undefined && { length: QUERY.cut }),
 		...(QUERY.pick !== undefined && { pick: QUERY.pick }),
+		...(QUERY.cutFrom !== undefined && { from: QUERY.cutFrom }),
+		...(QUERY.cutSpan !== undefined && { span: QUERY.cutSpan }),
 		...(QUERY.shoots !== undefined && { shoots: QUERY.shoots }),
 		...(QUERY.shoot !== undefined && { shoot: QUERY.shoot }),
 		...(QUERY.ring !== undefined && { ring: QUERY.ring }),

@@ -13,6 +13,7 @@ import type { MeshArrays } from '../asset';
 import {
 	AXIS_ARM,
 	AXIS_LIMB,
+	AXIS_RACHIS,
 	AXIS_STEM,
 	AXIS_STIPE,
 	type MacroSkeleton,
@@ -177,18 +178,20 @@ function woodAxes(input: MeshInput, keep: number, level: MeshLevel): WoodAxis[] 
 			? supportAxes(input as MeshInput, level as 1 | 2)
 			: undefined;
 	// Axes rooted at the ground, stems and a frond colony's stipes, take the stem base's flare,
-	// lobes and roots. A limb without a parent is the cut end of a piece, such as a cut branch, and
-	// starts plain. Any other axis without a parent, such as a ground plant's crown, carries no wood.
+	// lobes and roots. A limb, a rachis or a column's arm without a parent is the cut end of a
+	// piece, such as a cut branch or a cut frond, and starts plain: it is severed wood, and the
+	// piece stands on its cut. Any other axis without a parent, such as a ground plant's crown,
+	// carries no wood.
 	const rooted = (a: number) =>
 		(axes.kind[a] as number) === AXIS_STEM || (axes.kind[a] as number) === AXIS_STIPE;
+	const piece = (a: number) =>
+		(axes.kind[a] as number) === AXIS_LIMB ||
+		(axes.kind[a] as number) === AXIS_RACHIS ||
+		(axes.kind[a] as number) === AXIS_ARM;
 	const meshed = (a: number) =>
 		((axes.order[a] as number) <= keep || support?.[a] === 1) &&
 		(lastKept[a] as number) >= (axes.first[a] as number) &&
-		((axes.parent[a] as number) >= 0 ||
-			rooted(a) ||
-			(axes.kind[a] as number) === AXIS_LIMB ||
-			// A cut arm of a column is severed wood too, and the piece stands on its cut.
-			(axes.kind[a] as number) === AXIS_ARM);
+		((axes.parent[a] as number) >= 0 || rooted(a) || piece(a));
 	// Where each axis divides: the nodes short of its end where a codominant side child leaves.
 	const divides = new Uint8Array(skeleton.nodeCount);
 	if (!single)
