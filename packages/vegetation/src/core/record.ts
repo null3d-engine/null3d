@@ -638,8 +638,17 @@ export interface CrownRosette {
 		 * depth, which suits a tall palm's crown.
 		 */
 		readonly depth?: number;
-		/** Dead fronds: count, how far they hang, and a skirt that hides the stem top (fan palm). */
-		readonly dead: { readonly count: Spread; readonly hang: number; readonly skirt: number };
+		/**
+		 * Dead fronds: count, how far they hang, and a skirt that hides the stem top (fan palm).
+		 * `length` is the share of a living frond's length that a dead frond keeps, above 0 and at
+		 * most 1; absent, a dead frond keeps nearly all of it, as a palm's does.
+		 */
+		readonly dead: {
+			readonly count: Spread;
+			readonly hang: number;
+			readonly skirt: number;
+			readonly length?: number;
+		};
 		/** Young fronds rolled in the centre (tree fern croziers). */
 		readonly croziers?: Spread;
 	};
@@ -698,6 +707,16 @@ export interface PinnaSpec {
 	readonly droop: number;
 	/** Spines in place of the lowest leaflets. */
 	readonly spines: number;
+	/**
+	 * What the species' leaf picture holds, which sets how a crown rosette's frond draws each
+	 * leaflet. `pinna`: a divided leaflet whose picture carries its own lobes, as a tree fern's
+	 * does. Each place on the rachis carries a pair of them at the picture's own width, and the
+	 * picture is sampled across the leaflet. `blade`: one narrow simple leaflet, as a date palm's
+	 * is. Each place carries one, drawn wider than its picture where the frond stands far so the
+	 * crown keeps its cover, its colour comes from the picture's midrib, and a short piece cut
+	 * from the frond sets its leaflets at a close photograph's own spacing. Absent, `pinna`.
+	 */
+	readonly leaflet?: 'pinna' | 'blade';
 	/** The next order down, for bipinnate and tripinnate fronds. */
 	readonly sub?: PinnaSpec;
 }
