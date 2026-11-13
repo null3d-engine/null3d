@@ -91,6 +91,8 @@ function arm(length: number): PieceStem {
 	return {
 		length: { mean: length, spread: length * 0.06 },
 		radius: [0.004, 0.0015],
+		// Still 21 at full size: no bud shows in a tuft, whose leaves hide its tip.
+		bud: false,
 		kink: { length: 0.045, angle: 16 },
 		leaves: tuft(length, 4),
 		marks: [thorns(0.054, 0.75)],
@@ -99,6 +101,7 @@ function arm(length: number): PieceStem {
 				stem: {
 					length: { mean: 0.012, spread: 0.004 },
 					radius: [0.0012, 0.0009],
+					bud: false,
 					leaves: tuft(0.012, 4),
 				},
 				gap: 0.054,

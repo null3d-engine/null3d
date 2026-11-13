@@ -5,7 +5,17 @@
 // names the reference picture it was read on. Shares are of the plant's height. Still 01 and the
 // whole-plant turning video are the one plant the frame follows.
 import { evenOutline, type FrameBranchRule, type FrameSpec, framedRecord } from '../../grow/frame';
+import { pieceRecord } from '../../leaf/piece';
+import { PIECE_LEAF, PIECES } from './pieces';
 import { record } from './record';
+
+/**
+ * The fine wood that clothes a mass, each twig ending in a socket that carries the branch end of
+ * still 21. A branch end is 0.37 m long and 0.33 m wide on a shrub 4 m tall; the sockets stand a
+ * little over its width apart over the mass's surface, so a twig's end stands inside the piece it
+ * carries, and a branch end's reach inside the surface.
+ */
+const ENDS = { pitch: 0.38 / 4, reach: 0.37 / 4 } as const;
 
 /**
  * A leading shoot: a straight leafy shoot that carries on from a branch end and stands outside the
@@ -34,10 +44,12 @@ const shoot: FrameBranchRule = {
 };
 
 /**
- * The mass at a branch end. Stills 06 and 03: tufts fill the dome from its surface inward for about
- * 0.15 of the height.
+ * The mass at a branch end, which fine wood clothes. Stills 06 and 03: tufts fill the dome from its
+ * surface inward for about 0.15 of the height. Still 01 and the turning video: the masses join into
+ * one mound leafy to the ground, so each is about two fifths of the height across; smaller ones
+ * stand apart with sky between.
  */
-const mass = { kind: 'mass', width: 0.2, depth: 0.16 } as const;
+const mass = { kind: 'mass', width: 0.42, depth: 0.32, fill: ENDS } as const;
 
 /**
  * What every side axis of the wood shares. Stills 18 and 08: the wood forks every 0.10 to 0.15 of
@@ -62,7 +74,7 @@ const side = {
 /** The twigs of a limb, each with its own leading shoot. */
 const twig: FrameBranchRule = {
 	...side,
-	name: 'twig',
+	name: 'side',
 	role: 'branch',
 	count: { every: 0.2, least: 1, most: 2 },
 	along: [0.35, 0.8],
@@ -148,9 +160,37 @@ export const frame: FrameSpec = {
 	},
 };
 
+/** The old grower's shoot tips over the frame's sockets at seed 11: 3,762 over 2,175. */
+const TIP_SHARE = 1.73;
+
 /**
- * The hawthorn's record with the frame as its growth. A socket holds four shoot rows that fan 45
- * degrees from its line. These two are working figures, not measured ones: they stand until the
- * species' branch pieces are placed at its sockets, which then state what a socket holds.
+ * The hawthorn's record with the frame as its growth and the branch end of still 21 at each socket,
+ * wearing the leaf on the stalk the pieces were measured with. The shoot rows are working figures,
+ * not measured ones: a kit with no pieces draws them.
  */
-export const directed = framedRecord(record, frame, { rows: { mean: 4, spread: 1 }, fan: 45 });
+export const directed = {
+	...pieceRecord(
+		framedRecord(record, frame, {
+			rows: { mean: 4, spread: 1 },
+			fan: 45,
+			piece: 'branch-end',
+			// With every branch end's flat side to the sky, a mound seen from the side shows most of
+			// its leaves slanted or edge on. Stills 03 and 06: the tufts face every way, so each piece
+			// rolls up to a quarter turn either way about its own line and tilts a little off the
+			// wood's.
+			turn: { roll: 90, tilt: 25 },
+		}),
+		PIECE_LEAF,
+	),
+	pieces: PIECES.filter((piece) => piece.name === 'branch-end'),
+	// The record's haws and blossom stand at a share of the shoot tips, and the old grower's shrub
+	// has 3,762 of them at seed 11, where the frame has a socket for each of about 2,200 branch
+	// ends; each share is raised to keep the record's own totals until a count from a picture
+	// exists. Each branch end draws its own thorns, so the record's thorns at the nodes are left
+	// out.
+	extras: record.extras
+		?.filter((extra) => extra.kind !== 'thorn')
+		.map((extra) =>
+			extra.at === 'shoot-tip' ? { ...extra, share: Math.min(1, extra.share * TIP_SHARE) } : extra,
+		),
+};
