@@ -20,11 +20,16 @@
 // sparsest plant is its trunk and great limbs with a tuft at each end.
 //
 // A plant of sockets thins by whole sockets instead, each with every row it holds, so a piece stays
-// whole or goes whole. The sockets are ranked once across the plant for this: each takes the
-// earliest place any of its rows takes in the walk's order, so the kept sockets stand as evenly
-// spread as the rows would. The grower's own rank of its sockets serves its levels and is less even
-// round the crown. The sockets that hold a carrier that never goes come first. Wood that carries no
-// kept socket goes with the rest, and the stems and great limbs stay.
+// whole or goes whole, and by whole branches first. Each branch that leaves a stem or a great limb
+// is a unit, and the sockets on a stem or limb itself are one more. A branch too large for the
+// sparsest plant to keep about eight clothed branches in every octant splits into the sockets on
+// its own axis and the branches that leave it. The units stand in the
+// walk's order and take places by reversed bits, so the kept units stand spread along every limb
+// and round the plant. Each axis of a kept unit keeps at least half its pieces, spread along it by
+// the same rule; past that the units go whole, the last of the order first. So the sparsest plant
+// is the trunk, the great limbs and a few clothed branches. Each axis is cut back to the last piece
+// it keeps, or the last branch that leaves it, so nothing kept ends in bare wood.
+
 import type { ShootRows } from '../asset';
 import { AXIS_ARM, AXIS_LIMB, AXIS_ROOT, AXIS_STEM, type MacroSkeleton } from '../core/graph';
 import { hashAt } from '../core/hash';
@@ -68,12 +73,25 @@ export interface SparseOrder {
 	readonly barePlace: Uint32Array;
 	/** Per axis: 1 for a stem or a great limb, which stays at every sparseness. */
 	readonly structural: Uint8Array;
+	/**
+	 * Per axis: 1 for wood that stays whole at every sparseness: the stems, the great limbs, the
+	 * wood to the plant's highest node and the wood under each pinned row.
+	 */
+	readonly whole: Uint8Array;
 	/** Per axis: the carriers on it and on every branch that leaves it. */
 	readonly carried: Uint32Array;
 	/** The fewest carriers the plant may keep: the outermost of each stem, great limb and pinned axis. */
 	readonly least: number;
 	/** Whether the carriers are the plant's sockets, each with all of its rows. */
 	readonly bySockets: boolean;
+	/** Each row's socket, on a plant of sockets. */
+	readonly socketOf?: Uint32Array;
+	/**
+	 * On a plant of sockets, for each place, the end of the run of places that stays or goes with
+	 * it: a unit's clothed sockets keep or go together, so a thinning that cuts into them keeps the
+	 * whole run.
+	 */
+	readonly runEnd?: Uint32Array;
 }
 
 /**
@@ -164,6 +182,8 @@ export function woodParts(skeleton: MacroSkeleton, share: number = GREAT_LIMB_SH
  * @param rows The shoot rows as grown, each with its node and, as its record, its axis.
  * @param limbs The least share of the thickest limb's radius that makes a limb great.
  * @param pinned Rows that stay at every sparseness, such as the row that holds the plant's top.
+ * @param floor The share of its foliage the sparsest plant keeps, which sets how large a branch a
+ *   plant of sockets keeps or drops whole.
  * @returns The order.
  * @category api/vegetation
  */
@@ -172,6 +192,7 @@ export function sparseOrder(
 	rows: ShootRows,
 	limbs: number = GREAT_LIMB_SHARE,
 	pinned: readonly number[] = [],
+	floor: number = FOLIAGE_FLOOR,
 ): SparseOrder {
 	const { axes, position, nodeCount } = skeleton;
 	const count = axes.count;
@@ -319,7 +340,16 @@ export function sparseOrder(
 	});
 	const sockets = byRows ? rowSockets(skeleton, rows) : undefined;
 	if (sockets) {
-		const thinned = socketPlaces(sockets, list, least, stays, place, barePlace);
+		const thinned = socketPlaces(
+			skeleton,
+			sockets,
+			list,
+			least,
+			structural,
+			floor,
+			place,
+			barePlace,
+		);
 		return {
 			byRows,
 			carriers: thinned.carriers,
@@ -327,9 +357,12 @@ export function sparseOrder(
 			list: Uint32Array.from(list),
 			barePlace,
 			structural,
+			whole: stays,
 			carried,
 			least: thinned.least,
 			bySockets: true,
+			socketOf: sockets,
+			runEnd: thinned.runEnd,
 		};
 	}
 	return {
@@ -339,6 +372,7 @@ export function sparseOrder(
 		list: Uint32Array.from(list),
 		barePlace,
 		structural,
+		whole: stays,
 		carried,
 		least,
 		bySockets: false,
@@ -346,18 +380,73 @@ export function sparseOrder(
 }
 
 /**
- * Each row's socket on a plant of sockets: the socket at the row's node that stands nearest the
- * row, since every row of a socket stands at the socket's own place.
- *
- * @param skeleton The skeleton as grown.
- * @param rows The shoot rows as grown, each with its node.
- * @returns One socket per row, or undefined on a plant without sockets.
- * @category api/vegetation
+ * Cuts each axis of a plant of sockets that carries foliage back to the last node that holds a kept
+ * piece or that a kept branch leaves, so no kept axis ends in bare wood. The wood that stays whole
+ * at every sparseness stays whole, and so does wood that never carried foliage. An axis whose node
+ * of leaving was cut goes.
  */
-export function rowSockets(skeleton: MacroSkeleton, rows: ShootRows): Uint32Array | undefined {
+function cutBack(
+	skeleton: MacroSkeleton,
+	rows: ShootRows,
+	order: SparseOrder,
+	kept: number,
+	keepTo: Int32Array,
+): void {
+	const { axes, axisOf } = skeleton;
+	const nodes = rows.node as Uint32Array;
+	const last = new Int32Array(axes.count).fill(-1);
+	for (let r = 0; r < rows.count; r++) {
+		if ((order.place[r] as number) >= kept) continue;
+		const node = nodes[r] as number;
+		const axis = axisOf[node] as number;
+		if (node > (last[axis] as number)) last[axis] = node;
+	}
+	for (let a = axes.count - 1; a >= 0; a--) {
+		if ((keepTo[a] as number) < 0) continue;
+		const own = order.whole[a] || (order.carried[a] as number) === 0;
+		if (!own) keepTo[a] = Math.min(keepTo[a] as number, last[a] as number);
+		const parent = axes.parent[a] as number;
+		if ((keepTo[a] as number) >= 0 && parent >= 0 && (order.carried[a] as number) > 0) {
+			const from = axes.parentNode[a] as number;
+			if (from > (last[parent] as number)) last[parent] = from;
+		}
+	}
+	// A cut can reach a node that a later axis leaves; children follow their parents in the table.
+	for (let a = 0; a < axes.count; a++) {
+		const parent = axes.parent[a] as number;
+		if ((keepTo[a] as number) < 0 || parent < 0) continue;
+		if ((keepTo[parent] as number) < (axes.parentNode[a] as number)) keepTo[a] = -1;
+	}
+}
+
+/**
+ * The first socket of each socket's shoot, on a plant of sockets: the sockets at one node that the
+ * grower gave one group, such as a tuft's sheath, blades and flowering stem, are one shoot, which
+ * thins whole. Undefined on a plant without sockets.
+ */
+function shootOf(skeleton: MacroSkeleton): Uint32Array | undefined {
 	const { buds } = skeleton;
-	const nodes = rows.node;
-	if (!buds.sockets || !nodes || rows.count === 0) return undefined;
+	const sockets = buds.sockets;
+	if (!sockets) return undefined;
+	const first = new Map<string, number>();
+	const out = new Uint32Array(buds.count);
+	for (let b = 0; b < buds.count; b++) {
+		const key = `${buds.node[b] as number}:${sockets.lobe[b] as number}`;
+		const at = first.get(key);
+		if (at === undefined) first.set(key, b);
+		out[b] = at ?? b;
+	}
+	return out;
+}
+
+/**
+ * The socket a point at a node stands at, for rows that name no socket: the socket at that node
+ * that stands nearest it.
+ */
+function socketFinder(
+	skeleton: MacroSkeleton,
+): (node: number, x: number, y: number, z: number) => number {
+	const { buds } = skeleton;
 	const atNode = new Map<number, number[]>();
 	for (let b = 0; b < buds.count; b++) {
 		const node = buds.node[b] as number;
@@ -365,58 +454,264 @@ export function rowSockets(skeleton: MacroSkeleton, rows: ShootRows): Uint32Arra
 		if (list) list.push(b);
 		else atNode.set(node, [b]);
 	}
-	const out = new Uint32Array(rows.count);
-	for (let r = 0; r < rows.count; r++) {
-		const candidates = atNode.get(nodes[r] as number);
-		if (!candidates) return undefined;
+	return (node, x, y, z) => {
+		const candidates = atNode.get(node);
+		if (!candidates) return -1;
 		let best = candidates[0] as number;
 		let nearest = Number.POSITIVE_INFINITY;
 		for (const b of candidates) {
-			const dx = (buds.position[b * 3] as number) - (rows.position[r * 3] as number);
-			const dy = (buds.position[b * 3 + 1] as number) - (rows.position[r * 3 + 1] as number);
-			const dz = (buds.position[b * 3 + 2] as number) - (rows.position[r * 3 + 2] as number);
+			const dx = (buds.position[b * 3] as number) - x;
+			const dy = (buds.position[b * 3 + 1] as number) - y;
+			const dz = (buds.position[b * 3 + 2] as number) - z;
 			const d = dx * dx + dy * dy + dz * dz;
 			if (d < nearest) {
 				nearest = d;
 				best = b;
 			}
 		}
-		out[r] = best;
+		return best;
+	};
+}
+
+/**
+ * Each row's shoot on a plant of sockets, as the first socket of that shoot: the socket the row
+ * names, or for rows that name none the socket at the row's node that stands nearest it. The sockets
+ * at one node that the grower gave one group are one shoot, so a shoot thins whole, and two pieces
+ * of different groups thin apart even where they stand at one place.
+ *
+ * @param skeleton The skeleton the rows stand on.
+ * @param rows The shoot rows, each with its node.
+ * @returns One shoot per row, or undefined on a plant without sockets.
+ * @category api/vegetation
+ */
+export function rowSockets(skeleton: MacroSkeleton, rows: ShootRows): Uint32Array | undefined {
+	const nodes = rows.node;
+	const shoots = shootOf(skeleton);
+	if (!shoots || !nodes || rows.count === 0) return undefined;
+	const named = rows.socket;
+	const find = named ? undefined : socketFinder(skeleton);
+	const out = new Uint32Array(rows.count);
+	for (let r = 0; r < rows.count; r++) {
+		const socket = named
+			? (named[r] as number)
+			: (find as ReturnType<typeof socketFinder>)(
+					nodes[r] as number,
+					rows.position[r * 3] as number,
+					rows.position[r * 3 + 1] as number,
+					rows.position[r * 3 + 2] as number,
+				);
+		if (socket < 0 || socket >= shoots.length) return undefined;
+		out[r] = shoots[socket] as number;
 	}
 	return out;
 }
 
+/** The least share of its pieces that a kept unit of a plant of sockets keeps before it goes whole. */
+const CLOTHED = 0.5;
+
+/** The fewest sockets a unit of a plant of sockets may hold before a larger branch splits. */
+const UNIT_LEAST = 6;
+
 /**
- * The places of a plant of sockets: each socket takes the earliest place any of its rows holds in
- * the walk's order, and every row of it takes the socket's place. The sockets that hold a carrier
- * that never goes therefore come first. A branch that carries no socket goes at any sparseness
- * unless it is a stem, a great limb or the wood to a carrier that never goes. Writes the rows'
- * places and the bare branches' places in place.
+ * The places of a plant of sockets, by whole branches first. Every row takes its socket's place,
+ * and the sockets stand in three runs: those that hold a carrier that never goes; then the clothed
+ * part of every unit, unit by unit in the units' order, so whole units go from its end; then the
+ * rest of every unit, by its share along the unit, so each unit thins evenly down to its clothed
+ * part. A unit's sockets stand in the walk's order and take places by reversed bits, spread from its
+ * base to its tips. The bare branches keep their own spread, counted in sockets. Writes the rows' and the bare branches'
+ * places in place.
  *
  * @returns The sockets that hold rows, and how many of them never go.
  */
 function socketPlaces(
+	skeleton: MacroSkeleton,
 	sockets: Uint32Array,
 	list: readonly number[],
 	leastRows: number,
-	stays: Uint8Array,
+	structural: Uint8Array,
+	floor: number,
 	place: Uint32Array,
 	barePlace: Uint32Array,
-): { readonly carriers: number; readonly least: number } {
+): { readonly carriers: number; readonly least: number; readonly runEnd: Uint32Array } {
+	const { axes, buds } = skeleton;
+	// Each socket's earliest place among its rows, and its unit: the branch that leaves a stem or a
+	// great limb and holds it, or, for the sockets on a stem or great limb itself, that axis's own.
 	const earliest = new Map<number, number>();
+	const unitOf = new Map<number, number>();
+	const units: number[][] = [];
+	const unitKeys: number[] = [];
+	const unitIndex = new Map<number, number>();
+	// The sockets on each axis and on every branch that leaves it.
+	const held = new Uint32Array(axes.count);
+	const counted = new Set<number>();
+	for (const row of list) {
+		const socket = sockets[row] as number;
+		if (counted.has(socket)) continue;
+		counted.add(socket);
+		const axis = buds.axis[socket] as number;
+		held[axis] = (held[axis] as number) + 1;
+	}
+	for (let a = axes.count - 1; a >= 0; a--) {
+		const parent = axes.parent[a] as number;
+		if (parent >= 0) held[parent] = (held[parent] as number) + (held[a] as number);
+	}
+	// The largest branch that keeps or goes whole: the sparsest plant keeps about eight clothed
+	// branches for each octant of its crown, so the units that go at every value are small beside
+	// any octant.
+	const most = Math.max(UNIT_LEAST, Math.floor((floor * counted.size) / (64 * CLOTHED)));
 	for (const row of list) {
 		const socket = sockets[row] as number;
 		earliest.set(socket, Math.min(earliest.get(socket) ?? NO_PLACE, place[row] as number));
+		if (unitOf.has(socket)) continue;
+		let axis = buds.axis[socket] as number;
+		let key = axes.count + axis;
+		if (!structural[axis] && (held[axis] as number) <= most) {
+			for (
+				let parent = axes.parent[axis] as number;
+				parent >= 0 && !structural[parent] && (held[parent] as number) <= most;
+				parent = axes.parent[axis] as number
+			)
+				axis = parent;
+			key = axis;
+		}
+		let unit = unitIndex.get(key);
+		if (unit === undefined) {
+			unit = units.length;
+			unitIndex.set(key, unit);
+			unitKeys.push(key);
+			units.push([]);
+		}
+		unitOf.set(socket, unit);
+		(units[unit] as number[]).push(socket);
 	}
-	const ordered = [...earliest.keys()].sort(
-		(a, b) => (earliest.get(a) as number) - (earliest.get(b) as number),
+	const forced = (socket: number) => (earliest.get(socket) as number) < leastRows;
+	// Sockets that leave one node, such as a tuft's shoots from its stool, stand by their bearing
+	// round the plant, so the ones a unit keeps stand spread round it.
+	const centreX = (skeleton.bounds.min[0] + skeleton.bounds.max[0]) / 2;
+	const centreZ = (skeleton.bounds.min[2] + skeleton.bounds.max[2]) / 2;
+	const bearing = (socket: number) =>
+		atan2(
+			(buds.position[socket * 3 + 2] as number) - centreZ,
+			(buds.position[socket * 3] as number) - centreX,
+		);
+	const walkAt = new Map<number, number>();
+	list.forEach((row, i) => {
+		const node = buds.node[sockets[row] as number] as number;
+		if (!walkAt.has(node)) walkAt.set(node, i);
+	});
+	// The units take places by the reversed bits of their place in the walk, and the units that
+	// leave one node, such as a tuft's shoots, by their bearing round the plant among themselves; a
+	// unit that holds a socket that never goes comes first.
+	const leaves = (u: number) => {
+		const key = unitKeys[u] as number;
+		return key < axes.count
+			? (axes.parentNode[key] as number)
+			: (buds.node[(units[u] as number[])[0] as number] as number);
+	};
+	const firstAt = new Map<number, number>();
+	units.forEach((_, u) => {
+		const node = leaves(u);
+		if (!firstAt.has(node)) firstAt.set(node, u);
+	});
+	const inWalk = units
+		.map((_, u) => u)
+		.sort(
+			(a, b) =>
+				(firstAt.get(leaves(a)) as number) - (firstAt.get(leaves(b)) as number) ||
+				bearing((units[a] as number[])[0] as number) -
+					bearing((units[b] as number[])[0] as number) ||
+				a - b,
+		);
+	const spread = reversedPlaces(units.length);
+	const unitPlace = new Float64Array(units.length);
+	inWalk.forEach((u, i) => {
+		unitPlace[u] =
+			((units[u] as number[]).some(forced) ? -units.length : 0) + (spread[i] as number);
+	});
+	const always: number[] = [];
+	const clothed: { socket: number; unit: number; rank: number }[] = [];
+	const rest: { socket: number; unit: number; share: number }[] = [];
+	units.forEach((members, u) => {
+		members.sort(
+			(a, b) =>
+				(walkAt.get(buds.node[a] as number) as number) -
+					(walkAt.get(buds.node[b] as number) as number) ||
+				bearing(a) - bearing(b) ||
+				a - b,
+		);
+		// Each axis of a unit keeps at least half its own sockets while the unit stays, so no kept
+		// axis stands bare for one piece. An axis's sockets stand in the walk's order along it, and
+		// take places by reversed bits from a start of their own, so the pieces it keeps stand spread
+		// from its base to its tip and no place along it, such as its tip, is always kept.
+		const byAxis = new Map<number, number[]>();
+		for (const socket of members) {
+			const axis = buds.axis[socket] as number;
+			const own = byAxis.get(axis);
+			if (own) own.push(socket);
+			else byAxis.set(axis, [socket]);
+		}
+		const ranks = buds.sockets?.rank;
+		for (const [axis, own] of byAxis) {
+			// The sockets on a stem or great limb itself, such as a palm's or a fern's crown of fronds,
+			// go in the rank their grower gave them, which spreads the kept ones round the crown.
+			const byRank = structural[axis] === 1 && ranks !== undefined;
+			if (byRank) own.sort((a, b) => (ranks[a] as number) - (ranks[b] as number) || a - b);
+			const along = byRank ? own.map((_, i) => i) : reversedPlaces(own.length);
+			const start = byRank ? 0 : hashAt(own[0] as number, 3) % own.length;
+			// An axis of three sockets or more keeps at least half; a shorter one keeps one of two, or,
+			// inside a larger unit, its one socket by a draw of its own, so short axes are not kept
+			// before long ones. A unit of one socket keeps it until the unit goes.
+			const core =
+				own.length >= 3
+					? Math.ceil(own.length * CLOTHED)
+					: own.length === 2 || members.length === 1
+						? 1
+						: hashAt(own[0] as number, 5) % 2;
+			own.forEach((socket, i) => {
+				const rank = along[(i + start) % own.length] as number;
+				if (forced(socket)) always.push(socket);
+				else if (rank < core) clothed.push({ socket, unit: u, rank });
+				// The rest go by their share along their axis; an axis's one socket takes a share drawn
+				// for it, so it goes no later than the sockets of longer axes.
+				else
+					rest.push({
+						socket,
+						unit: u,
+						share: own.length === 1 ? (hashAt(socket, 7) % 1024) / 1024 : rank / own.length,
+					});
+			});
+		}
+	});
+	always.sort((a, b) => (earliest.get(a) as number) - (earliest.get(b) as number));
+	clothed.sort(
+		(a, b) => (unitPlace[a.unit] as number) - (unitPlace[b.unit] as number) || a.rank - b.rank,
 	);
-	const socketPlace = new Map<number, number>(ordered.map((socket, at) => [socket, at]));
+	rest.sort(
+		(a, b) => a.share - b.share || (unitPlace[a.unit] as number) - (unitPlace[b.unit] as number),
+	);
+	const socketPlace = new Map<number, number>();
+	for (const socket of always) socketPlace.set(socket, socketPlace.size);
+	for (const { socket } of clothed) socketPlace.set(socket, socketPlace.size);
+	for (const { socket } of rest) socketPlace.set(socket, socketPlace.size);
+	// Each place's run: the clothed sockets of one unit stand together and keep or go together.
+	const runEnd = new Uint32Array(socketPlace.size);
+	for (let at = 0; at < runEnd.length; at++) runEnd[at] = at + 1;
+	for (let i = 0; i < clothed.length; ) {
+		let j = i;
+		while (
+			j < clothed.length &&
+			(clothed[j] as (typeof clothed)[number]).unit ===
+				(clothed[i] as (typeof clothed)[number]).unit
+		)
+			j++;
+		for (let k = i; k < j; k++) runEnd[always.length + k] = always.length + j;
+		i = j;
+	}
 	for (const row of list) place[row] = socketPlace.get(sockets[row] as number) as number;
-	for (let a = 0; a < barePlace.length; a++) barePlace[a] = stays[a] ? 0 : ordered.length;
-	let least = 0;
-	for (const first of earliest.values()) if (first < leastRows) least++;
-	return { carriers: ordered.length, least };
+	const carriers = socketPlace.size;
+	for (let a = 0; a < barePlace.length; a++)
+		barePlace[a] = Math.floor(((barePlace[a] as number) * carriers) / Math.max(1, list.length));
+	return { carriers, least: always.length, runEnd };
 }
 
 /**
@@ -464,7 +759,9 @@ export function sparsePlant(
 	keep: number,
 	least: number = order.least,
 ): SparsePlant | undefined {
-	const kept = Math.min(order.carriers, Math.max(least, Math.round(keep)));
+	let kept = Math.min(order.carriers, Math.max(least, Math.round(keep)));
+	// A thinning that cuts into a run that keeps or goes together keeps the whole run.
+	if (order.runEnd && kept > 0) kept = Math.max(kept, order.runEnd[kept - 1] as number);
 	if (kept >= order.carriers) return undefined;
 	const { axes, buds } = skeleton;
 	const count = axes.count;
@@ -492,11 +789,32 @@ export function sparsePlant(
 	}
 	const keepTo = new Int32Array(count);
 	for (let a = 0; a < count; a++) keepTo[a] = stays[a] ? (axes.last[a] as number) : -1;
+	if (order.bySockets && nodes) cutBack(skeleton, rows, order, kept, keepTo);
+	// On a plant of sockets the bud sites are its sockets, and a socket whose shoot holds no kept
+	// piece leaves with it.
+	let budKept: Uint8Array | undefined;
+	const shoots = order.socketOf ? shootOf(skeleton) : undefined;
+	if (order.socketOf && shoots && nodes) {
+		const held = new Uint8Array(buds.count);
+		const grown = new Uint8Array(buds.count);
+		for (let r = 0; r < rows.count; r++) {
+			grown[order.socketOf[r] as number] = 1;
+			if ((order.place[r] as number) < kept) held[order.socketOf[r] as number] = 1;
+		}
+		// A bud site whose shoot never held a row, such as a palm's flower site, is no socket: it
+		// stays while its node stays.
+		budKept = new Uint8Array(buds.count);
+		for (let b = 0; b < buds.count; b++) {
+			const shoot = shoots[b] as number;
+			budKept[b] = grown[shoot] === 1 ? (held[shoot] as number) : 1;
+		}
+	}
 	const {
 		skeleton: thinned,
 		axisOut,
 		nodeOut,
-	} = keptSkeleton(skeleton, keepTo, skeleton.crownBase);
+		budOut,
+	} = keptSkeleton(skeleton, keepTo, skeleton.crownBase, budKept);
 	const axisOrigin = new Uint32Array(thinned.axes.count);
 	for (let a = 0; a < count; a++) {
 		const out = axisOut[a] as number;
@@ -507,7 +825,8 @@ export function sparsePlant(
 	for (let b = 0; b < buds.count; b++)
 		if (
 			(axisOut[buds.axis[b] as number] as number) >= 0 &&
-			(nodeOut[buds.node[b] as number] as number) >= 0
+			(nodeOut[buds.node[b] as number] as number) >= 0 &&
+			(!budKept || budKept[b] === 1)
 		)
 			budOrigin[bud++] = buds.origin?.[b] ?? b;
 	const frame: MacroSkeleton = {
@@ -536,6 +855,7 @@ export function sparsePlant(
 		...(rows.back ? { back: new Float32Array(held * 3) } : {}),
 		node: new Uint32Array(held),
 		id: new Uint32Array(held),
+		...(rows.socket ? { socket: new Uint32Array(held) } : {}),
 	};
 	let at = 0;
 	for (let r = 0; r < rows.count; r++) {
@@ -552,6 +872,7 @@ export function sparsePlant(
 		if (rows.back && out.back) out.back.set(rows.back.subarray(r * 3, r * 3 + 3), at * 3);
 		out.node[at] = nodeOut[nodes[r] as number] as number;
 		out.id[at] = rows.id?.[r] ?? r;
+		if (rows.socket && out.socket) out.socket[at] = budOut[rows.socket[r] as number] as number;
 		at++;
 	}
 	return { skeleton: frame, rows: out };

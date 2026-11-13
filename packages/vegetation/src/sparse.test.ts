@@ -62,6 +62,23 @@ const OCTANT_SLACK = 0.12;
 /** The fewest carriers an octant holds before its share is judged; a smaller octant is noise. */
 const OCTANT_LEAST = 40;
 
+/**
+ * How far a quarter round a plant of sockets may stand from the plant's kept share, and the fewest
+ * sockets a quarter holds before it is judged: a plant thinned from one side stands half a share
+ * off.
+ */
+const QUARTER_SLACK = 0.2;
+const QUARTER_LEAST = 8;
+
+/** The least share of the plant's kept share that a quarter round it keeps of its own sockets. */
+const QUARTER_RATIO = 0.5;
+
+/**
+ * How far apart the kept shares of the sockets at the axes' tips and the sockets along the axes may
+ * stand at half sparseness: a plant that keeps its tips and strips its limbs stands 0.58 apart.
+ */
+const ALONG_SLACK = 0.3;
+
 const kits = new Map<string, SpeciesKitData>();
 
 /** A species' kit at the low tier, built once. */
@@ -132,16 +149,27 @@ function axisKeys(asset: PlantAsset): Map<number, string> {
 	for (let a = 0; a < axes.count; a++) {
 		const first = axes.first[a] as number;
 		const last = axes.last[a] as number;
+		const nodes: string[] = [];
+		for (let n = first; n <= last; n++)
+			nodes.push(keyOf(position.subarray(n * 3, n * 3 + 3), radius.subarray(n, n + 1)));
 		out.set(
 			axes.origin?.[a] ?? a,
-			keyOf(position.subarray(first * 3, last * 3 + 3), radius.subarray(first, last + 1), [
-				axes.kind[a] as number,
-				axes.order[a] as number,
-				axes.parentT[a] as number,
-			]),
+			`${keyOf([axes.kind[a] as number, axes.order[a] as number, axes.parentT[a] as number])}#${nodes.join(';')}`,
 		);
 	}
 	return out;
+}
+
+/**
+ * Whether an axis of a sparser plant is one the denser plant holds: the same axis from its base,
+ * to the bit, ending at or before the denser one's end, since a plant of sockets cuts an axis back
+ * to its last kept piece.
+ */
+function sameAxis(sparser: string, denser: string | undefined): boolean {
+	if (denser === undefined) return false;
+	const [head, nodes] = sparser.split('#') as [string, string];
+	const [denserHead, denserNodes] = denser.split('#') as [string, string];
+	return head === denserHead && (denserNodes === nodes || denserNodes.startsWith(`${nodes};`));
 }
 
 /** The triangles of a level's parts of one name. */
@@ -245,7 +273,7 @@ for (const id of SPECIES) {
 						const denserAxes = axisKeys(before);
 						const axes = axisKeys(plant);
 						for (const [axis, key] of axes)
-							expect([at, axis, denserAxes.get(axis)]).toEqual([at, axis, key]);
+							expect([at, axis, sameAxis(key, denserAxes.get(axis))]).toEqual([at, axis, true]);
 						// It falls: fewer carriers, no more axes, no more wood, cards or extras.
 						expect([at, carriers(plant).size < carriers(before).size]).toEqual([at, true]);
 						expect([at, axes.size <= denserAxes.size]).toEqual([at, true]);
@@ -366,17 +394,14 @@ for (const id of SPECIES) {
 				const kit = await kitOf(id);
 				forgetGrownPlants();
 				const options = { seed: 5, variant: 1, near: false } as const;
-				const started = performance.now();
 				const full = growPlantNow(kit, options);
-				const grew = performance.now() - started;
 				const grown = plantsGrown();
-				// A change of sparseness cuts the kept plant: no growth, and less time than the growth.
-				const cutStarted = performance.now();
+				// A change of sparseness cuts the kept plant: the count of growths shows no new one. Its
+				// time is no proof on a shared machine, where a cheap plant's growth and cut both swing
+				// by several times between runs.
 				const half = growPlantNow(kit, { ...options, sparse: 0.5 });
-				const cut = performance.now() - cutStarted;
 				const sparsest = growPlantNow(kit, { ...options, sparse: 1 });
 				expect(plantsGrown()).toBe(grown);
-				expect([id, cut < grew]).toEqual([id, true]);
 				// The same bytes again, from the kept plant and from a growth that starts at the seed.
 				expect(plantAssetDigest(growPlantNow(kit, { ...options, sparse: 0.5 }))).toBe(
 					plantAssetDigest(half),
@@ -429,8 +454,23 @@ for (const [name, load] of SOCKET_PLANTS)
 				expect([name, sockets !== undefined]).toEqual([name, true]);
 				const rank = skeleton.buds.sockets?.rank as Uint32Array;
 				const limbs = kit.record.sparse?.limbs ?? GREAT_LIMB_SHARE;
-				const order = sparseOrder(skeleton, shoots, limbs);
+				const floor = kit.record.sparse?.foliage ?? FOLIAGE_FLOOR;
+				const order = sparseOrder(skeleton, shoots, limbs, [], floor);
 				expect(order.bySockets).toBe(true);
+				// Each row's shoot is the shoot of the socket it names: the same node and the same group,
+				// so two pieces of different groups at one place thin apart.
+				const named = shoots.socket;
+				if (named)
+					for (let r = 0; r < shoots.count; r++) {
+						const own = named[r] as number;
+						const shoot = sockets[r] as number;
+						expect([
+							name,
+							r,
+							skeleton.buds.node[shoot],
+							skeleton.buds.sockets?.lobe[shoot],
+						]).toEqual([name, r, skeleton.buds.node[own], skeleton.buds.sockets?.lobe[own]]);
+					}
 				const rowsOf = new Map<number, number>();
 				for (let r = 0; r < shoots.count; r++)
 					rowsOf.set(sockets[r] as number, (rowsOf.get(sockets[r] as number) ?? 0) + 1);
@@ -477,15 +517,119 @@ for (const [name, load] of SOCKET_PLANTS)
 						const off = Math.abs((keptIn[octant] as number) / grown - share);
 						expect([at, octant, off <= OCTANT_SLACK]).toEqual([at, octant, true]);
 					}
-					// The sockets that stay keep their sockets' records.
+					// The sockets that stay keep their records: size, rank, mass and piece. A socket whose
+					// place holds no kept piece leaves with it.
 					const buds = thinned.skeleton.buds;
+					const grownSockets = skeleton.buds.sockets as NonNullable<typeof skeleton.buds.sockets>;
 					expect([at, buds.sockets?.rank.length]).toEqual([at, buds.count]);
 					for (let b = 0; b < buds.count; b++) {
 						const origin = buds.origin?.[b] ?? b;
-						expect([at, buds.sockets?.rank[b]]).toEqual([at, rank[origin]]);
+						expect([
+							at,
+							b,
+							buds.sockets?.scale[b],
+							buds.sockets?.rank[b],
+							buds.sockets?.lobe[b],
+							buds.sockets?.piece?.[b],
+						]).toEqual([
+							at,
+							b,
+							grownSockets.scale[origin],
+							rank[origin],
+							grownSockets.lobe[origin],
+							grownSockets.piece?.[origin],
+						]);
 					}
-					// The wood: every axis is a stem or a great limb, lies under the plant's top, or
-					// carries a kept socket on itself or on a branch that leaves it.
+					const emptied = rowSockets(thinned.skeleton, thinned.rows) as Uint32Array;
+					expect([at, new Set(emptied).size]).toEqual([at, kept.size]);
+					// Not from one side: each quarter round the plant, by bearing, keeps its share of its
+					// sockets within the band, and at the sparsest no octant whose share is two sockets or
+					// more is stripped bare.
+					const quarterOf = (socket: number) => {
+						const x = (skeleton.buds.position[socket * 3] as number) - (middle[0] as number);
+						const z = (skeleton.buds.position[socket * 3 + 2] as number) - (middle[2] as number);
+						return (x >= 0 ? 1 : 0) + (z >= 0 ? 2 : 0);
+					};
+					const quarterGrown = [0, 0, 0, 0];
+					const quarterKept = [0, 0, 0, 0];
+					for (const socket of rowsOf.keys()) {
+						const q = quarterOf(socket);
+						quarterGrown[q] = (quarterGrown[q] as number) + 1;
+						if (kept.has(socket)) quarterKept[q] = (quarterKept[q] as number) + 1;
+					}
+					for (let q = 0; q < 4; q++) {
+						const grown = quarterGrown[q] as number;
+						if (grown < QUARTER_LEAST) continue;
+						const keptShare = (quarterKept[q] as number) / grown;
+						const off = Math.abs(keptShare - share);
+						expect([at, 'quarter', q, off <= QUARTER_SLACK]).toEqual([at, 'quarter', q, true]);
+						// A quarter whose share is a socket or more keeps at least half the plant's share
+						// of its own, so a side kept bare fails at any sparseness.
+						if (grown * share >= 1)
+							expect([at, 'quarter', q, keptShare >= QUARTER_RATIO * share]).toEqual([
+								at,
+								'quarter',
+								q,
+								true,
+							]);
+					}
+					if (sparse === 1)
+						for (let octant = 0; octant < 8; octant++)
+							if ((grownIn[octant] as number) * share >= 2)
+								expect([at, 'octant', octant, (keptIn[octant] as number) > 0]).toEqual([
+									at,
+									'octant',
+									octant,
+									true,
+								]);
+					// No branch kept bare for one piece: an axis that grew three sockets or more keeps none of
+					// them or at least half. The stems and great limbs stay at every sparseness.
+					const perAxis = new Map<number, [number, number]>();
+					for (const socket of rowsOf.keys()) {
+						const axis = skeleton.buds.axis[socket] as number;
+						const count = perAxis.get(axis) ?? [0, 0];
+						count[0]++;
+						if (kept.has(socket)) count[1]++;
+						perAxis.set(axis, count);
+					}
+					for (const [axis, [grown, held]] of perAxis) {
+						if (grown < 3 || structural[axis] === 1) continue;
+						expect([at, 'axis', axis, grown, held === 0 || held >= Math.ceil(grown / 2)]).toEqual([
+							at,
+							'axis',
+							axis,
+							grown,
+							true,
+						]);
+					}
+					// Clothed along its length: at half, the sockets at the axes' tips and the sockets
+					// along them keep shares near each other, not the tips alone.
+					if (sparse === 0.5) {
+						const { axes } = skeleton;
+						let tips = 0;
+						let tipsKept = 0;
+						let others = 0;
+						let othersKept = 0;
+						for (const socket of rowsOf.keys()) {
+							const node = skeleton.buds.node[socket] as number;
+							const isTip = node === (axes.last[skeleton.axisOf[node] as number] as number);
+							if (isTip) {
+								tips++;
+								if (kept.has(socket)) tipsKept++;
+							} else {
+								others++;
+								if (kept.has(socket)) othersKept++;
+							}
+						}
+						if (tips >= QUARTER_LEAST && others >= QUARTER_LEAST)
+							expect([
+								at,
+								'along',
+								Math.abs(tipsKept / tips - othersKept / others) <= ALONG_SLACK,
+							]).toEqual([at, 'along', true]);
+					}
+					// The wood: every axis is a stem or a great limb, lies under the plant's top, carries
+					// a kept socket on itself or on a branch that leaves it, or never carried foliage.
 					const axes = thinned.skeleton.axes;
 					const carries = new Uint8Array(axes.count);
 					for (let r = 0; r < thinned.rows.count; r++)
@@ -508,16 +652,37 @@ for (const [name, load] of SOCKET_PLANTS)
 						a = axes.parent[a] as number
 					)
 						carries[a] = 1;
-					for (let a = 0; a < axes.count; a++)
-						expect([at, a, carries[a] === 1 || structural[axes.origin?.[a] ?? a] === 1]).toEqual([
+					for (let a = 0; a < axes.count; a++) {
+						const origin = axes.origin?.[a] ?? a;
+						expect([
 							at,
 							a,
-							true,
-						]);
+							carries[a] === 1 || structural[origin] === 1 || order.carried[origin] === 0,
+						]).toEqual([at, a, true]);
+					}
 				}
-				// The grown plant at its sparsest keeps the sockets' records too.
-				const sparsest = growPlantNow(kit, { seed: 11, variant: 0, sparse: 1 });
-				expect(sparsest.skeleton.buds.sockets?.rank.length).toBe(sparsest.skeleton.buds.count);
+				// The levels as the engine grows them: a sparser plant's card levels never draw more cards,
+				// and every level stays within its cap.
+				const budget = kit.record.lod.budget;
+				let denser = full;
+				for (const sparse of [0.25, 0.5, 1]) {
+					const plant = growPlantNow(kit, { seed: 11, variant: 0, sparse });
+					const at = `${name} sparse ${sparse}`;
+					for (const level of [1, 2] as const) {
+						expect([
+							at,
+							level,
+							trianglesOf(plant, level, 'cards') <= trianglesOf(denser, level, 'cards'),
+						]).toEqual([at, level, true]);
+						const cap = level === 1 ? budget.lod1Triangles : budget.lod2Triangles;
+						expect([at, level, plant.levels[level].triangles <= cap]).toEqual([at, level, true]);
+					}
+					expect([at, plant.skeleton.buds.sockets?.rank.length]).toEqual([
+						at,
+						plant.skeleton.buds.count,
+					]);
+					denser = plant;
+				}
 			},
 			LONG,
 		);

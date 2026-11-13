@@ -738,6 +738,13 @@ export interface Framed {
 		 * socket holds shoot rows.
 		 */
 		readonly piece?: string;
+		/**
+		 * The most degrees each piece turns at its socket: its roll about its own line, from the
+		 * side toward the sky, and its tilt off the wood's line. Each is a share spread evenly over
+		 * the sockets in their order, so no two neighbours turn alike and the crown's leaf faces
+		 * every way. Absent, every piece's flat side faces the sky.
+		 */
+		readonly turn?: { readonly roll: number; readonly tilt: number };
 	};
 }
 
@@ -1402,11 +1409,15 @@ export interface Column {
 		readonly plane: number;
 		/** Ribs round an arm, which carries fewer than the column does. */
 		readonly ribs: Spread;
-		/** Degrees above the horizontal that an arm leaves the column at; a negative angle sags. */
+		/**
+		 * Degrees above the horizontal that an arm leaves the column at, where its reach leaves room
+		 * to turn plumb from there on its elbow; a negative angle sags. An arm with less room leaves
+		 * rising, at the angle that turns it plumb on its elbow within its reach.
+		 */
 		readonly leave: number;
 		/**
-		 * The radius of an arm's elbow at its centre line, in arm widths. An arm whose reach leaves
-		 * less room than that turns as tightly as its own girth allows.
+		 * The radius of an arm's elbow at its centre line, in arm widths, from 1: a bend tighter than
+		 * the arm's own width reads as a square corner.
 		 */
 		readonly elbow: number;
 		/** An arm's girth where it meets the column, as a share of its girth above the bend. */
@@ -1920,6 +1931,11 @@ export interface LeafShape {
 	 * texture leaf.
 	 */
 	readonly breadth?: number;
+	/**
+	 * Bands a cut-out card of the leaf takes along its length where a tier bends its cards, so a long
+	 * curled blade keeps its curl; one where absent.
+	 */
+	readonly cardBands?: number;
 	/** The leaf stalk. */
 	readonly petiole: {
 		/** Metres long. */

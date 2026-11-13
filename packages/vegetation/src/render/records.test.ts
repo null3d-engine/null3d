@@ -440,7 +440,7 @@ describe('the plant shader', () => {
 		// the fragments it shows, and a matte that kept every texel's soft coverage drew the blur as
 		// a smear. The matte keeps a texel's own coverage only where the sharpened coverage, the
 		// colour picture's, draws it.
-		expect(wgsl).toMatch(/let drawn = sharpen\(alpha, width\);/);
+		expect(wgsl).toMatch(/let drawn = sharpen\(cut, width\);/);
 		expect(wgsl).toMatch(/s\.alpha = select\(drawn, select\(0\.0, alpha, drawn > 0\.0\), matte\);/);
 		// A placed piece's fine edges draw a pixel wide in the matte, as merged foliage's do.
 		expect(wgsl).toMatch(

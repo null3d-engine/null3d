@@ -73,7 +73,6 @@ const NEAR_OVER: Readonly<Record<string, number>> = {
 	'european-beech': 15_687_335,
 	'giant-sequoia': 53_398_951,
 	'hawthorn-shrub': 22_401_474,
-	'holm-oak': 30_797_531,
 	'italian-cypress': 105_831_631,
 	olive: 30_065_894,
 	'pedunculate-oak': 43_550_406,
