@@ -624,9 +624,11 @@ export function simplifyStep(meshopt, lists, from, share, limit, flags, every) {
 /**
  * One lower level of a mesh: its indices for each triangle list, the positions of the lists whose
  * vertices the step moved, its error and its triangles. A list of cards keeps its own positions,
- * with each kept card grown; the other lists share the mesh's. The error is the largest distance
- * between the level's surface and the full mesh's, in the units of the positions that the planner
- * read.
+ * with each kept card grown; the other lists share the mesh's. The error estimates the level's
+ * distance from the full mesh, in the units of the positions that the planner read: each step
+ * reports its distance from the level above, and the plan keeps at least half again the value
+ * before. It is not measured against the base mesh, so a chain of steps can lie farther from the
+ * base than the stored value.
  *
  * @typedef {object} PlannedLevel
  * @property {Uint32Array[]} indices
@@ -639,7 +641,9 @@ export function simplifyStep(meshopt, lists, from, share, limit, flags, every) {
  * Plans the levels of detail of one mesh from its welded triangle lists. Each level simplifies the
  * level above toward half its triangles, with no error limit short of the mesh's size: the engine
  * draws a level only where its error spans under a pixel, so a coarse level only draws far away.
- * Each level's error is at least 1.5 times the level above's. The levels stop at the floor, after
+ * Each level's error is at least 1.5 times the level above's, grown from the errors that the
+ * simplifier reports for its step; it is an estimate rather than a measurement of the level
+ * against the base mesh. The levels stop at the floor, after
  * `maxLevels` levels, when one keeps more than three quarters of the triangles above it, or when
  * its error reaches the mesh's size. They share the mesh's vertices: only their indices are new,
  * each list's in the order of the GPU's vertex cache.

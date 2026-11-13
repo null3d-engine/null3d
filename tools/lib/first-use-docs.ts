@@ -67,7 +67,8 @@ export const FIRST_USE_DOWNLOADS: Readonly<Record<string, string>> = {
 		'the first time custom effects join into one pass, or fold into the final pass. Until its shaders are built, each effect draws a pass of its own',
 	row_values:
 		'with the first instance batch whose rows have colors or values (`colors: true` or `values: true`)',
-	lod_fade: 'with the first mesh whose levels of detail fade (the quality setting `lodFade`)',
+	lod_fade:
+		"with the first mesh whose levels of detail fade, or whose distance bands fade. The quality setting `lodFade` turns the bands' fades off on Low, not a level's fade",
 	texcoords:
 		"only in the engine's own tests, which draw meshes colored by their texture coordinates",
 	instance_index: "only in the engine's own tests, through a test switch of WebGPU's instance data",
