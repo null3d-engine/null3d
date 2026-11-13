@@ -16,8 +16,9 @@
 import type { InstanceBatch, Material, MeshGeometry, SketchContext, Texture } from '@null3d/engine';
 import type { ImpostorBatch } from '@null3d/impostors';
 import type { PlantAsset, PlantPart } from '../asset';
-import { DETAILS, type Detail, type Season, spreadMax } from '../core/types';
-import { REFERENCE_VIEW } from '../lod/levels';
+import { DETAILS, type Detail, type Season } from '../core/types';
+import { SHOOT_REACH, switchScale } from '../lod/drawn';
+import { firstCardStart, REFERENCE_VIEW } from '../lod/levels';
 import { EDGE_BAND, handOverToCards } from './hand-over';
 import {
 	type PlantMaterials,
@@ -26,7 +27,7 @@ import {
 	prototypeGeometry,
 	setPlacedUniforms,
 } from './material';
-import { type PlacedPlants, type PlaceOptions, type PlantCopies, switchScale } from './place';
+import type { PlacedPlants, PlaceOptions, PlantCopies } from './place';
 import { toHalf, writeShootRow } from './records';
 import { farCards } from './stand-in';
 import { NEAR_SLOT_TEXELS, NEAR_SLOTS, type SpeciesKit, writePlantWind } from './textures';
@@ -39,9 +40,6 @@ const SEASON_KIND: Readonly<Record<Season, number>> = {
 	blossom: 3,
 };
 
-/** How far past the switch distance a shoot row draws, and how far inside it a card gives way. */
-const SHOOT_REACH = 1.04;
-
 /** The far edge of a band with no end, in metres. */
 const FAR = 1e9;
 
@@ -53,23 +51,6 @@ function viewScale(view: PlaceOptions['view']): number {
 	const page = view.height / Math.tan((view.fov * Math.PI) / 360);
 	const reference = REFERENCE_VIEW.height / Math.tan((REFERENCE_VIEW.fov * Math.PI) / 360);
 	return page / reference;
-}
-
-/**
- * The distance at which a copy hands its shoots to its first card level: where the species'
- * longest shoot, at its largest scale, covers the record's first switch pixels at the page's view.
- *
- * @param kit The species' kit.
- * @param view The page's render height and vertical field of view.
- * @returns Metres, at a copy's scale of 1.
- */
-export function shootSwitchDistance(kit: SpeciesKit, view: PlaceOptions['view']): number {
-	let longest = 0;
-	for (const prototype of kit.prototypes) longest = Math.max(longest, prototype.length);
-	const scale = kit.record.shoots ? spreadMax(kit.record.shoots.placement.scale) : 1;
-	longest *= scale;
-	const pixels = kit.record.lod.switchPixels[0];
-	return (longest * view.height) / (2 * Math.tan((view.fov * Math.PI) / 360) * pixels);
 }
 
 /**
@@ -185,7 +166,7 @@ export function drawnLevel(
 	const bias = switchScale(view.switchBias);
 	const scale = viewScale(view) * bias;
 	const impostor = far ? asset.impostor.from * scale : FAR;
-	const bands = levelBands(asset, shootSwitchDistance(kit, view) * bias, scale, impostor);
+	const bands = levelBands(asset, firstCardStart(kit, view) * bias, scale, impostor);
 	let level: 0 | 1 | 2 | 3 = 0;
 	bands.forEach((band, index) => {
 		if (band.parts.length > 0 && distance >= band.from) level = Math.min(index, 2) as 0 | 1 | 2;
@@ -221,7 +202,8 @@ export function placeStaticPlants(
 	// The page's switch bias moves every switch distance by one factor.
 	const bias = switchScale(options.view.switchBias);
 	const scale = viewScale(options.view) * bias;
-	const near = shootSwitchDistance(kit, options.view) * bias;
+	// The shoots hand over to the first card level by the rule that sets the asset's own start.
+	const near = firstCardStart(kit, options.view) * bias;
 	writePlantWind(kit, assets);
 	setPlacedUniforms([materials.cards], { nearDistance: near });
 	// The season the copies stand in, which a stem whose colour turns reads for its bark, and the
@@ -238,7 +220,6 @@ export function placeStaticPlants(
 	const cards: ImpostorBatch[] = [];
 	const meshes: MeshGeometry[] = [];
 	const widest = copies.scale.reduce((most, s) => Math.max(most, s), 0);
-	const bound = plantBoundingRadius(kit.box) * widest;
 	const castShadows = options.castShadows ?? true;
 	const slots = takeNearSlots(kit, copies);
 
@@ -246,6 +227,8 @@ export function placeStaticPlants(
 		const rows = copiesOf(copies, variant);
 		if (rows.length === 0) return;
 		const impostor = options.far ? asset.impostor.from * scale : FAR;
+		// Each variant's parts share one sphere of its own reach, so its levels switch together.
+		const bound = plantBoundingRadius(kit, asset) * widest;
 		const bands = levelBands(asset, near, scale, impostor);
 		const placed: InstanceBatch[] = [];
 		// The batches of the band that reaches the impostor's distance, with the distance they start at.

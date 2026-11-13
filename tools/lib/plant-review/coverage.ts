@@ -15,6 +15,8 @@ import type { ReferenceSet } from './references.ts';
  *   standard states none for its view. The eye judges it, and it passes no row alone.
  * - `unmeasured`: its picture was drawn and gave no figure where its view has one, or was not
  *   checked for its subject. That is a fault of the tool.
+ * - `plant fault`: its picture was drawn and read, and the plant lacks or hides the subject its
+ *   photograph shows. The picture is judged, and its rows fail on it.
  * - `partial`, `missing`: compared in part, or not at all.
  * - `void`: its picture shows no subject, which compares nothing.
  * - `not judged`: it shows a stand of plants that one plant cannot draw.
@@ -23,6 +25,7 @@ export type CoverageStatus =
 	| 'compared'
 	| 'drawn'
 	| 'unmeasured'
+	| 'plant fault'
 	| 'partial'
 	| 'missing'
 	| 'void'
@@ -49,7 +52,7 @@ export interface Coverage {
 	readonly inUse: number;
 	/**
 	 * True when every file in use was compared in full, or was drawn for the eye where the standard
-	 * states no figure, or shows a stand that is not judged.
+	 * states no figure, or was read and failed the plant, or shows a stand that is not judged.
 	 */
 	readonly complete: boolean;
 }
@@ -82,6 +85,15 @@ function stillLine(file: string, kind: string, result: StillResult | undefined):
 			status: 'not judged',
 			render: `${result.renderFile} (view ${result.view})`,
 			result: result.standing.reason,
+		};
+	// A picture whose plant lacks or hides the subject was read, and judged against the plant.
+	if (result.lacks !== undefined)
+		return {
+			file,
+			kind,
+			status: 'plant fault',
+			render: `${result.renderFile} (view ${result.view})`,
+			result: `the plant lacks or hides the subject: ${result.lacks}`,
 		};
 	// A picture whose subject is missing was drawn and compares nothing: the tool's camera, or the
 	// file's mapping to a view, is what needs mending before the file counts as compared.
@@ -206,7 +218,9 @@ export function coverageOf(
 	}
 	const compared = lines.filter((line) => line.status === 'compared').length;
 	const drawn = lines.filter((line) => line.status === 'drawn').map((line) => line.file);
-	const waived = lines.filter((line) => line.status === 'not judged').length;
+	const waived = lines.filter(
+		(line) => line.status === 'not judged' || line.status === 'plant fault',
+	).length;
 	return {
 		lines,
 		superseded,
