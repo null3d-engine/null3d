@@ -67,9 +67,9 @@ const UNDER_PASSES = 10;
 const WANDER_SIDE = 0.8;
 const WANDER_NOD = 0.5;
 /**
- * Axes that keep apart: the share of an axis's length past which its wood is held clear of other
- * wood (nearer its base it stands beside the wood it leaves), how many times an axis may be shaped,
- * and the step between one shaping's hash keys and the next's.
+ * Axes that keep apart: the share of an axis's length over which it stands beside the wood it
+ * leaves, and is held clear only of other wood, how many times an axis may be shaped, and the step
+ * between one shaping's hash keys and the next's.
  */
 const OUTER_FROM = 0.2;
 const APART_TRIES = 8;
@@ -86,13 +86,15 @@ const WOOD_CELLS = 4096;
  * Fine wood that fills a patch. A twig's piece runs this share of the pitch; a socket stands this
  * share of the piece's length inside the patch's surface, since a piece lies out at an angle; a
  * point of the surface is inside another patch under this share of that patch's own radius; a
- * twig is this share of the wood it leaves at most, and stands this share of the height clear of
- * other wood; and the twigs grow for this many rounds at most.
+ * twig is this share of the wood it leaves at most, and this many times its own end's radius at
+ * most; it stands this share of the height clear of other wood; and the twigs grow for this many
+ * rounds at most.
  */
 const FILL_STEP = 0.6;
 const FILL_INSET = 0.7;
 const FILL_INSIDE = 0.8;
 const FILL_SHARE = 0.7;
+const FILL_STOUT = 3;
 const FILL_CLEAR = 0.001;
 const FILL_ROUNDS = 16;
 const SHAPE_STEP = 16384;
@@ -776,14 +778,19 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 	const cellKey = (i: number, j: number, k: number): number =>
 		((i + WOOD_CELLS) * 2 * WOOD_CELLS + j + WOOD_CELLS) * 2 * WOOD_CELLS + k + WOOD_CELLS;
 	/**
-	 * The least gap between wood of a radius at a point and the wood built so far, one axis apart:
-	 * the distance between their lines less both radii. Where no wood stands nearer than the gap
-	 * asked for, the figure is only known to be at least that gap.
+	 * The least gap between wood of a radius at a point and the wood built so far, apart from the
+	 * axes asked to be left out: the distance between their lines less both radii. Where no wood
+	 * stands nearer than the gap asked for, the figure is only known to be at least that gap.
 	 */
-	const gapAt = (point: Readonly<Vector3>, own: number, except: number, asked: number): number => {
+	const gapAt = (
+		point: Readonly<Vector3>,
+		own: number,
+		except: number | ReadonlySet<number>,
+		asked: number,
+	): number => {
 		let least = Number.POSITIVE_INFINITY;
 		const gap = (other: WoodPoint): void => {
-			if (other.axis === except) return;
+			if (typeof except === 'number' ? other.axis === except : except.has(other.axis)) return;
 			const dx = point[0] - other.at[0];
 			const dy = point[1] - other.at[1];
 			const dz = point[2] - other.at[2];
@@ -1026,16 +1033,29 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 			shaped(length);
 			/**
 			 * The length, up to a stated one, at which a course that runs down first takes its tip
-			 * under the crown's lower boundary, or deeper under it than where it left. A course that
-			 * does not run down keeps its length, since wood may run along the boundary.
+			 * under the crown's lower boundary, or deeper under it than where it left; for an axis
+			 * whose patch is clothed with pieces, where the piece at its end first would. A course
+			 * that does not run down keeps its length, since wood may run along the boundary.
 			 */
 			const aboveUnder = (most: number): number => {
 				// A tip stands a length along the course's mean heading, whatever the length.
 				const run = tipOf([0, 0, 0], tangent, 1);
 				if (run[1] >= 0) return most;
+				// The piece at the end of a clothed axis lies out along the axis's last run, so the course
+				// ends where that piece's foot stands on the boundary, read under the piece's middle.
+				const fill = rule.patch?.fill;
+				const last = tangent(1);
+				const drop = clamp(-last[1], 0, 1);
+				const reach = (fill?.reach ?? 0) * scale;
+				const hang = fill ? drop * reach + (fill.pitch * scale * (1 - drop)) / 6 : 0;
 				const under = (trial: number): number =>
-					outlineUnder(spec, scale, start[0] + run[0] * trial, start[2] + run[2] * trial) -
-					(start[1] + run[1] * trial);
+					outlineUnder(
+						spec,
+						scale,
+						start[0] + run[0] * trial + (last[0] * reach) / 2,
+						start[2] + run[2] * trial + (last[2] * reach) / 2,
+					) -
+					(start[1] + run[1] * trial - hang);
 				const from = Math.max(0, under(0));
 				let clear = 0;
 				for (let k = 1; k <= UNDER_STEPS; k++) {
@@ -1193,18 +1213,29 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 		let pick = drawn(0);
 		const apart = 'apart' in rule && rule.apart ? rule.apart * scale : 0;
 		/**
-		 * The least gap between the wood of an attempt's outer half and the wood of every axis built
-		 * before it, the axis it leaves apart: the distance between their lines less both radii. The
-		 * wood its parent grew from counts, so a branch does not end against its bough's own limb.
+		 * The wood an axis stands beside where it leaves: its parent, the wood its parent leaves and
+		 * the axes that leave its parent too, which stand together with it at its base.
+		 */
+		const beside = new Set<number>([parent]);
+		const grand = axes[parent]?.parent ?? -1;
+		if (grand >= 0) beside.add(grand);
+		axes.forEach((other, k) => {
+			if (other.parent === parent) beside.add(k);
+		});
+		/**
+		 * The least gap between the wood of an attempt and the wood of every axis built before it,
+		 * the axis it leaves apart: the distance between their lines less both radii. Over its first
+		 * stretch an axis stands beside the wood it leaves, so there the wood beside it is left out.
+		 * The wood its parent grew from counts past that stretch, so a branch does not end against
+		 * its bough's own limb.
 		 */
 		const room = (attempt: typeof pick): number => {
 			let least = Number.POSITIVE_INFINITY;
 			const taper = clamp((rule as FrameBranchRule).taper, 0.02, 1);
 			attempt.laid.points.forEach((point, k) => {
 				const share = attempt.laid.along[k] as number;
-				if (share < OUTER_FROM) return;
 				const own = baseRadius * (1 - (1 - taper) * share);
-				least = Math.min(least, gapAt(point, own, parent, apart));
+				least = Math.min(least, gapAt(point, own, share < OUTER_FROM ? beside : parent, apart));
 			});
 			return least;
 		};
@@ -1220,6 +1251,17 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 			}
 		}
 		const { laid, seats, length, tangent, stem, kept } = pick;
+		// An axis that carries foliage and no other axis, and ends under the crown's lower boundary,
+		// would hang its foliage under it, so it is not grown.
+		const tip = laid.points[laid.points.length - 1];
+		if (
+			!stem &&
+			rule.patch &&
+			seats.length === 0 &&
+			tip &&
+			tip[1] < outlineUnder(spec, scale, tip[0], tip[2])
+		)
+			return;
 		const taper = stem ? 1 : clamp((rule as FrameBranchRule).taper, 0.02, 1);
 		const radiusAt = (share: number): number =>
 			Math.max(
@@ -1538,7 +1580,7 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 				const nz = (node.z - cz) / a;
 				if (k !== last && nx * nx + ny * ny + nz * nz >= 1) return;
 				tree.push({ at: [node.x, node.y, node.z], from: -1, seed: k, socket: false });
-				stout = Math.max(stout, node.radius * FILL_SHARE);
+				stout = Math.max(stout, Math.min(node.radius * FILL_SHARE, tip * FILL_STOUT));
 			});
 			let open = goals;
 			for (let round = 0; round < FILL_ROUNDS && open.length > 0; round++) {
@@ -1634,7 +1676,7 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 			for (let next = 0; next < starts.length; next++) {
 				const { first, parent, node, from } = starts[next] as (typeof starts)[number];
 				const id = axes.length;
-				const cap = from.radius * FILL_SHARE;
+				const cap = Math.min(from.radius * FILL_SHARE, tip * FILL_STOUT);
 				const run: number[] = [first];
 				for (let at = first; (kids[at] as number[]).length > 0; ) {
 					at = (kids[at] as number[])[0] as number;
