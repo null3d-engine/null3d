@@ -25,7 +25,7 @@ import {
 	type Vector3,
 } from '../core/math';
 import type { LeafShape, Phyllotaxis, Species } from '../core/record';
-import { type Curve, curveAt, type Spread, spreadAt, spreadMean } from '../core/types';
+import { type Curve, curveAt, type Detail, type Spread, spreadAt, spreadMean } from '../core/types';
 import {
 	type AxisPoint,
 	addBudCluster,
@@ -36,11 +36,33 @@ import {
 	type PlannedBud,
 	type PlannedLeaf,
 	placeNodeLeaves,
+	SHOOT_CUTS,
+	type ShootCut,
 	type ShootPlan,
 	square,
 	turn,
 	type UncardedPrototype,
 } from './shoot';
+
+/**
+ * How each tier meshes a piece's wood and buds. A tree carries thousands of pieces, so a piece's
+ * wood is no finer than a close view of it needs: four sides at the high tier, where a twig a few
+ * millimetres thick spans a few pixels, and a ring only where the stem bends, 8 degrees at the high
+ * tier and 15 at the medium. An axil's bud hides under its leaf, so the medium tier draws none and
+ * the high tier draws a plain three-sided cone of one band. The tip clusters, which mark a species, stay separate
+ * pointed buds at the high tier. The ultra tier keeps the crown's finest cut.
+ */
+export const PIECE_CUTS: Readonly<Record<Detail, ShootCut>> = {
+	low: SHOOT_CUTS.low,
+	medium: { stemSides: 4, ringTurn: 15, cluster: { sides: 3, round: false }, clusterCone: true },
+	high: {
+		stemSides: 4,
+		ringTurn: 8,
+		cluster: { sides: 4, round: false },
+		axil: { sides: 3, round: false, cone: true },
+	},
+	ultra: SHOOT_CUTS.ultra,
+};
 
 /**
  * How a piece is turned where a socket carries it: along the socket's own direction, hanging plumb,
@@ -981,7 +1003,8 @@ export function splitPlan(
 	leaves: readonly PrototypeArrays[],
 	most = PART_VERTICES_MOST,
 ): ShootPlan[] {
-	const vertices = (part: ShootPlan): number => meshShoot(part, leaves, 'ultra').vertices;
+	const vertices = (part: ShootPlan): number =>
+		meshShoot(part, leaves, 'ultra', PIECE_CUTS.ultra).vertices;
 	if (vertices(plan) <= most) return [plan];
 	const near = (a: readonly number[], b: readonly number[]): number =>
 		length3(
@@ -1089,7 +1112,7 @@ export function piecePrototypes(
 					part,
 					parts: parts.length,
 					sites: pieceSites(plan),
-					...meshedPlan(plan, own),
+					...meshedPlan(plan, own, PIECE_CUTS),
 				});
 		}
 	}
