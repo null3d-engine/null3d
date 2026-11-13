@@ -317,7 +317,7 @@ const HELD: readonly Held[] = [
 			branch: [32, 42],
 			side: [150, 190],
 			spur: [28, 40],
-			twig: [2800, 3400],
+			twig: [3400, 4100],
 		},
 		// Two crossed pairs stand a quarter turn apart.
 		round: { rule: 'limb', gap: 110, lean: 0.2 },
