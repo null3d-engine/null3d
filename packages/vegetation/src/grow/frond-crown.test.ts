@@ -252,6 +252,22 @@ describe('the frond-crown grower', () => {
 				}
 			});
 
+			it('spaces each rank evenly round the trunk where the record lays its fronds in rings', () => {
+				const { kit, growth, record } = of(id);
+				if (growth.fronds.layout !== 'rings') return;
+				for (const variant of VARIANTS) {
+					const { skeleton } = growPlantNow(kit, { seed: 11, variant, near: true });
+					growth.fronds.ranks.forEach((_, r) => {
+						const bearings = socketsOf(skeleton, record)
+							.filter((s) => s.group === r)
+							.map((s) => azimuthOf(skeleton, s.bud));
+						if (bearings.length < 3) return;
+						// One even step, and a few degrees of stray on either neighbour.
+						expect(largestGap(bearings)).toBeLessThan(360 / bearings.length + 13);
+					});
+				}
+			});
+
 			it("stands the drawn top at the variant's height, the trunk taking the difference", () => {
 				const { kit, record } = of(id);
 				const rises: number[] = [];
