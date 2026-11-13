@@ -24,7 +24,9 @@ import {
 	atan2,
 	cos,
 	PI,
+	quatAxisAngle,
 	quatFromFrame,
+	quatMultiply,
 	radians,
 	sin,
 	tan,
@@ -141,7 +143,14 @@ const Purpose = {
 	Spot: 12,
 	Nod: 13,
 	Fill: 14,
+	Turn: 15,
 } as const;
+/**
+ * The steps of the plastic number's sequence, which spreads pairs of shares evenly over a run of
+ * any length: a piece's roll takes the first and its tilt the second.
+ */
+const SPREAD_ROLL = 0.7548776662466927;
+const SPREAD_TILT = 0.5698402909980532;
 
 /**
  * What an axis of a frame is.
@@ -2155,13 +2164,28 @@ export function growFrame(input: GrowInput): MacroSkeleton {
 			? plan.scale / Math.max(1e-6, spreadMean(input.record.size.height))
 			: 1;
 	const frame = new Float32Array(4);
-	for (const socket of frameSockets(plan)) {
+	const spin = new Float32Array(4);
+	// Each piece's roll and tilt are its socket's place in two evenly spread runs of shares, each
+	// started at the plant's own draw.
+	const turn = growth.sockets.turn;
+	const seed = input.seed >>> 0;
+	const salt = input.record.seedSalt >>> 0;
+	const rollFrom = unitAt(seed, salt, input.variant, Purpose.Turn, 0);
+	const tiltFrom = unitAt(seed, salt, input.variant, Purpose.Turn, 1);
+	frameSockets(plan).forEach((socket, k) => {
 		const wood = written[socket.axis] as Written;
 		quatFromFrame(
 			socket.heading,
 			Math.abs(socket.heading[1]) > 0.99 ? [1, 0, 0] : [0, 1, 0],
 			frame,
 		);
+		if (turn) {
+			const share = (from: number, step: number): number => ((from + k * step) % 1) * 2 - 1;
+			quatAxisAngle([0, 1, 0], radians(share(rollFrom, SPREAD_ROLL) * turn.roll), spin);
+			quatMultiply(frame, 0, spin, 0, frame);
+			quatAxisAngle([1, 0, 0], radians(share(tiltFrom, SPREAD_TILT) * turn.tilt), spin);
+			quatMultiply(frame, 0, spin, 0, frame);
+		}
 		builder.addBud({
 			node: wood.nodes[socket.node] as number,
 			x: socket.at[0],
@@ -2175,7 +2199,7 @@ export function growFrame(input: GrowInput): MacroSkeleton {
 			woodRadius: ((plan.axes[socket.axis] as FrameAxis).nodes[socket.node] as FrameNode).radius,
 			socket: { scale, rank: socket.rank, lobe: socket.patch },
 		});
-	}
+	});
 	return builder.finish(plan.crownBase);
 }
 

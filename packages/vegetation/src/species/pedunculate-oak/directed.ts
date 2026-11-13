@@ -471,7 +471,16 @@ const base = {
  * a kit with no pieces draws them.
  */
 export const directed = {
-	...framedRecord(record, frame, { rows: { mean: 5, spread: 1 }, fan: 45, piece: 'branch-end' }),
+	...framedRecord(record, frame, {
+		rows: { mean: 5, spread: 1 },
+		fan: 45,
+		piece: 'branch-end',
+		// The bake worker's reading of round `pedunculate-oak-ef69fe7b9`: with every branch end's
+		// flat side to the sky, a crown seen from the side shows most of its cards slanted or edge
+		// on, and the sky shows through. A real crown's rosettes face every way, so each piece rolls
+		// up to a quarter turn either way about its own line and tilts a little off the wood's.
+		turn: { roll: 90, tilt: 25 },
+	}),
 	base,
 	pieces: PIECES.filter((piece) => piece.name === 'branch-end'),
 };
