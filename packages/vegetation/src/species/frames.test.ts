@@ -14,6 +14,7 @@ import { curveAt, spreadMean } from '../core/types';
 import {
 	evenOutline,
 	FRAME_TURN_MOST,
+	type FrameNode,
 	type FramePatch,
 	type FramePlan,
 	type FrameSpec,
@@ -323,8 +324,16 @@ const HELD: readonly Held[] = [
 		directed: pedunculateOakDirected,
 		heightMean: spreadMean(pedunculateOakDirected.size.height),
 		record: pedunculateOakRecord,
-		counts: { trunk: 1, limb: 7, bough: [35, 56], branch: [70, 224], twig: [3500, 6500] },
-		// Seven limbs at their own stated directions: six an eighth of a turn apart and one gap of two.
+		counts: {
+			trunk: 1,
+			limb: 6,
+			crown: 3,
+			bough: [45, 72],
+			branch: [90, 288],
+			twig: [3500, 6500],
+		},
+		// Six low limbs at their own stated directions: five a seventh of a turn apart and one gap of
+		// two.
 		round: { rule: 'limb', gap: 112, lean: 0.25 },
 		// A limb's share runs from 0.42 at the lowest to 0.5 at the highest, so it is not held here.
 		base: { bough: 0.5, branch: 0.55 },
@@ -921,11 +930,12 @@ describe('the crown test, on crowns made by hand', () => {
 });
 
 /**
- * The pedunculate oak against what its photographs show and a smooth dome does not. Four things
+ * The pedunculate oak against what its photographs show and a smooth dome does not. Five things
  * are held: no foliage under the fork near the bole, a rim broken into lumps with sky bays
- * between, great limbs of the thickness each has in the view from below, and the reach of the long
- * low limb the tree is known by. The oak built with its clumps placed first passed every test of
- * its day and read as a clipped dome; its patches are kept beside the record, and it must fail.
+ * between, great limbs of the thickness each has in the view from below, the reach of the long low
+ * limb the tree is known by, and a bole that divides with no limb running on as a stem. The oak
+ * built with its clumps placed first passed every test of its day and read as a clipped dome; its
+ * patches are kept beside the record, and it must fail three of the first four.
  */
 describe("the pedunculate oak's frame against its photographs", () => {
 	const oak = HELD.find((held) => held.id === 'pedunculate-oak') as Held;
@@ -948,7 +958,8 @@ describe("the pedunculate oak's frame against its photographs", () => {
 	/**
 	 * Each great limb's thickness over the low left limb's, lowest first, from still 03: the limb
 	 * toward the camera, the one away from it, a steeper one, the long low right limb, the low left
-	 * limb, the other steeper one and the trunk's upright continuation.
+	 * limb and the other steeper one; and last the trunk's upright continuation above them, read
+	 * half way from the highest low limb to where the trunk divides.
 	 */
 	const LIMB_THICKNESS = [0.6, 0.6, 0.67, 0.86, 1, 0.57, 1.53] as const;
 	const THICKNESS_WITHIN = 0.05;
@@ -957,6 +968,13 @@ describe("the pedunculate oak's frame against its photographs", () => {
 	const LANDMARK = 3;
 	const LANDMARK_REACH = 0.89;
 	const REACH_WITHIN = 0.05;
+	/**
+	 * Stills 01 and 03: where the trunk ends it divides into at least this many rising limbs, and
+	 * no limb that leaves it is thicker than this share of the trunk where it leaves, so none runs
+	 * on as a stem.
+	 */
+	const DIVIDES_INTO = 3;
+	const LIMB_MOST = 0.65;
 
 	/** What these tests read of one tree. */
 	interface Facts {
@@ -967,8 +985,25 @@ describe("the pedunculate oak's frame against its photographs", () => {
 		readonly landmark: readonly FramePatch[];
 	}
 
+	/** An axis's radius at a share of its length, between the nodes either side. */
+	function radiusAlong(axis: FramePlan['axes'][number], share: number): number {
+		for (let k = 1; k < axis.nodes.length; k++) {
+			const from = axis.along[k - 1] as number;
+			const to = axis.along[k] as number;
+			if (share > to) continue;
+			const u = to > from ? (share - from) / (to - from) : 0;
+			const a = (axis.nodes[k - 1] as FrameNode).radius;
+			return a + ((axis.nodes[k] as FrameNode).radius - a) * u;
+		}
+		return (axis.nodes[axis.nodes.length - 1] as FrameNode).radius;
+	}
+
 	function factsOf(plan: FramePlan): Facts {
-		const limbs = plan.axes.filter((axis) => axis.order === 1).sort((a, b) => a.place - b.place);
+		const trunk = plan.axes[0] as FramePlan['axes'][number];
+		const limbs = plan.axes
+			.filter((axis) => axis.rule === 'limb')
+			.sort((a, b) => a.place - b.place);
+		const highest = Math.max(...limbs.map((limb) => trunk.along[limb.parentNode] as number));
 		const limbOf = (index: number): number => {
 			let at = index;
 			while ((plan.axes[at]?.order ?? 0) > 1) at = plan.axes[at]?.parent ?? -1;
@@ -977,7 +1012,7 @@ describe("the pedunculate oak's frame against its photographs", () => {
 		const landmark = plan.axes.indexOf(limbs[LANDMARK] as FramePlan['axes'][number]);
 		return {
 			crown: plan,
-			radii: limbs.map((limb) => limb.base),
+			radii: [...limbs.map((limb) => limb.base), radiusAlong(trunk, (highest + 1) / 2)],
 			landmark: plan.patches.filter((patch) => limbOf(patch.axis) === landmark),
 		};
 	}
@@ -1042,6 +1077,22 @@ describe("the pedunculate oak's frame against its photographs", () => {
 				...facts.crown.patches.map((patch) => patch.centre[0] + patch.width / 2),
 			);
 			expect(reach(facts) * facts.crown.scale).toBeCloseTo(widest, 9);
+		}
+	});
+
+	it('divides its bole into rising limbs, and runs no limb on as a stem', () => {
+		for (const seed of SEEDS) {
+			const plan = planOf(oak, seed);
+			const trunk = plan.axes[0] as FramePlan['axes'][number];
+			const end = trunk.nodes.length - 1;
+			const limbs = plan.axes.filter((axis) => axis.parent === 0);
+			expect(limbs.filter((limb) => limb.parentNode === end).length).toBeGreaterThanOrEqual(
+				DIVIDES_INTO,
+			);
+			for (const limb of limbs)
+				expect(limb.base / (trunk.nodes[limb.parentNode] as FrameNode).radius).toBeLessThanOrEqual(
+					LIMB_MOST,
+				);
 		}
 	});
 
