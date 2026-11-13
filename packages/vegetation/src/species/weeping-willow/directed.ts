@@ -5,19 +5,25 @@
 // reference picture it was read on. Shares are of the tree's height. Still 01 and the whole-tree
 // turning video are the one tree the frame follows; still 18 shows the limbs' course best.
 import {
-	evenOutline,
 	type FrameBranchRule,
 	type FrameLength,
+	type FrameSide,
 	type FrameSpec,
 	framedRecord,
 } from '../../grow/frame';
+import { PIECES } from './pieces';
 import { record } from './record';
+
+/** A long strand's length over the tree's height: still 19's 1.6 m on a tree 13 m tall. */
+const STRAND = 1.6 / 13;
 
 /**
  * A whip: a hanging axis of the frame, which carries the strands at sockets along it. Stills 19 and
  * 21: it leaves the upper side or the flank of its branch and is plumb within a few centimetres.
  * Still 01: a single fall can be followed for 0.25 to 0.35 of the height, and the hem stands 0.03 to
- * 0.08 above the ground, so a whip runs to the hem or to its greatest length, whichever is shorter.
+ * 0.08 above the ground; from the high arches the falls run longer. A whip ends a strand's length
+ * above the hem, since the strand at its end hangs on to the hem, or at its greatest length,
+ * whichever is shorter.
  */
 function whips(along: readonly [number, number], every: number, most: number): FrameBranchRule {
 	return {
@@ -28,26 +34,34 @@ function whips(along: readonly [number, number], every: number, most: number): F
 		stagger: 0.3,
 		around: 'spiral',
 		// It leaves hanging, a little off plumb, on every side of its branch in turn.
-		angle: 165,
+		angle: 172,
 		from: 'plumb',
 		angleSpread: 6,
 		length: {
 			height: [
-				[0, 0.04],
-				[1, 0.07],
+				[0, 0.04 + STRAND],
+				[1, 0.07 + STRAND],
 			],
 		},
 		vary: 0.06,
-		most: 0.35,
+		most: 0.4,
 		// Still 10: a strand's stem is 2 mm; a whip is the thicker axis that carries them.
 		radius: 0.3,
 		taper: 0.4,
 		bends: [{ from: 0, to: 0.12, level: -90 }],
-		// A whip hangs by its own weight, so it runs plumb and straight.
+		// A whip hangs by its own weight, so it runs plumb and straight, clear of the wood below.
 		sway: 0,
 		elbows: 1,
-		// Still 09: side strands 0.45 to 0.5 m long leave a whip to both sides along its whole run.
-		patch: { kind: 'hang', width: 0.07, depth: 0.1, along: 0 },
+		apart: 0.002,
+		// Still 09: side strands leave a whip along its whole run. A socket stands each 1.2 m down
+		// the whip, so its strands hang end to end with a little overlap.
+		patch: {
+			kind: 'hang',
+			width: 0.07,
+			depth: 0.1,
+			along: 0,
+			sockets: { every: STRAND * 0.75, angle: 10 },
+		},
 	};
 }
 
@@ -66,7 +80,7 @@ function branches(
 	return {
 		name: 'branch',
 		role: 'branch',
-		count: { every: 0.05, least: 2, most: 6 },
+		count: { every: 0.016, least: 5, most: 18 },
 		along,
 		stagger: 0.25,
 		around,
@@ -87,42 +101,89 @@ function branches(
 		bends: [{ from: 0.1, to: 0.8, level: -68 }],
 		sway: 10,
 		elbows: 4,
-		children: [whips([0.3, 1], 0.04, 6)],
+		// A branch's wood passes through no other wood.
+		apart: 0.01,
+		// Stills 01 and 18: strands hang from the whole arching run of a branch, over the crown's
+		// top as well as at its rim, each leaving the branch's upper side or flank and turning plumb.
+		patch: {
+			kind: 'hang',
+			width: 0.07,
+			depth: 0.1,
+			along: 0.25,
+			sockets: { every: 0.35 / 13, angle: 70 },
+		},
+		children: [whips([0.3, 1], 0.035, 8)],
+	};
+}
+
+/**
+ * One side of the crown as a whole still shows it, from the species' measured targets: the
+ * greatest reach from the trunk's line in bands a sixteenth of the height deep, from the band
+ * where the curtain's hem stands to the top band. Every figure is a share of the tree's height in
+ * that still. The turning video agrees with both stills: 1.43 wide over tall at still 01's turn and
+ * 1.27 a quarter turn on, where still 02 reads 1.35.
+ */
+interface Reading {
+	/** The band, from 1 at the foot to 16 at the top, where the hem stands on this side. */
+	readonly from: number;
+	readonly reach: readonly number[];
+}
+
+// Still 01, right of the trunk's line, and left of it. The curtain hangs to the lowest band.
+const STILL_01_RIGHT: Reading = {
+	from: 1,
+	reach: [
+		0.633, 0.643, 0.646, 0.711, 0.711, 0.704, 0.694, 0.694, 0.691, 0.691, 0.65, 0.561, 0.507, 0.463,
+		0.313, 0.221,
+	],
+};
+const STILL_01_LEFT: Reading = {
+	from: 1,
+	reach: [
+		0.605, 0.629, 0.629, 0.684, 0.687, 0.708, 0.704, 0.687, 0.657, 0.643, 0.629, 0.554, 0.531,
+		0.435, 0.381, 0.235,
+	],
+};
+// Still 02, a quarter turn on: the hem stands a little above the lowest band.
+const STILL_02_LEFT: Reading = {
+	from: 2,
+	reach: [
+		0.607, 0.638, 0.665, 0.668, 0.685, 0.685, 0.682, 0.677, 0.634, 0.621, 0.58, 0.546, 0.466, 0.376,
+		0.284,
+	],
+};
+const STILL_02_RIGHT: Reading = {
+	from: 2,
+	reach: [
+		0.595, 0.597, 0.653, 0.655, 0.665, 0.665, 0.66, 0.636, 0.621, 0.575, 0.556, 0.481, 0.435, 0.291,
+		0.138,
+	],
+};
+
+/** A side of the outline, from its reading on a still. */
+function side(toward: number, read: Reading): FrameSide {
+	return {
+		toward,
+		reach: [
+			[(read.from - 1) / 16, read.reach[0] as number],
+			...read.reach.map((reach, band) => [(read.from + band - 0.5) / 16, reach] as const),
+			[1, 0],
+		],
+		// Stills 01 and 02: the curtain hangs to a hem a little above the ground on every side.
+		under: 0.03,
 	};
 }
 
 /** The weeping willow's frame. */
 export const frame: FrameSpec = {
-	// Still 18, the outline's half width in 24 bands from the top down, each at its own height.
-	outline: evenOutline(
-		[
-			[0, 0.5],
-			[0.021, 0.555],
-			[0.063, 0.66],
-			[0.146, 0.675],
-			[0.229, 0.695],
-			[0.313, 0.7],
-			[0.354, 0.715],
-			[0.396, 0.715],
-			[0.438, 0.705],
-			[0.479, 0.685],
-			[0.521, 0.665],
-			[0.563, 0.655],
-			[0.604, 0.65],
-			[0.646, 0.615],
-			[0.688, 0.555],
-			[0.729, 0.54],
-			[0.771, 0.515],
-			[0.813, 0.465],
-			[0.854, 0.405],
-			[0.896, 0.31],
-			[0.938, 0.21],
-			[0.979, 0.16],
-			[1, 0],
-		],
-		// The crown is built nearly round. Still 01 looks across the wide side.
-		0.8,
-	),
+	// The outline, side by side: still 01 gives the two sides it looks across, and still 02, a
+	// quarter turn on, the two it looks along.
+	outline: [
+		side(0, STILL_01_RIGHT),
+		side(90, STILL_02_LEFT),
+		side(180, STILL_01_LEFT),
+		side(270, STILL_02_RIGHT),
+	],
 	stems: {
 		name: 'trunk',
 		count: 1,
@@ -145,9 +206,11 @@ export const frame: FrameSpec = {
 				// Stills 01 and 02: three great limbs, all from the one fork.
 				count: 3,
 				along: [1, 1],
-				// Stills 06 and 03: the limbs stand round the trunk.
+				// Stills 06 and 03: the limbs stand round the trunk. Still 01: one leans toward the
+				// camera's side of the view and the other two to its left and right, so the crown
+				// is as wide to each side.
 				around: 'ring',
-				first: 0,
+				first: 90,
 				jitter: 10,
 				// Still 01: 160 px out for 270 px up.
 				angle: 31,
@@ -181,9 +244,9 @@ export const frame: FrameSpec = {
 						angle: 36,
 						from: 'parent',
 						angleSpread: 4,
-						// Still 18: the highest wood arches over the tree's middle just under the crown's
-						// top.
-						length: { height: 0.95 },
+						// Still 18: the highest wood arches over the tree's middle under the crown's top,
+						// where the strands that hang from it close over it.
+						length: { height: 0.94 },
 						radius: 0.55,
 						taper: 0.2,
 						bends: [{ from: 0.45, to: 1, by: 55 }],
@@ -204,9 +267,10 @@ export const frame: FrameSpec = {
 					{
 						name: 'secondary',
 						role: 'limb',
-						// Still 18: 6 to 8 secondary limbs in one view. Two leave each great limb, one to
-						// each side, so the six stand evenly round the tree.
-						count: 2,
+						// Still 18: 6 to 8 secondary limbs in one view, a profile count, so the tree has
+						// about half as many again round its near and far sides. Three leave each great
+						// limb, to one side and the other in turn, so the nine stand round the tree.
+						count: 3,
 						along: [1, 1],
 						around: 'sides',
 						lift: -10,
@@ -224,6 +288,8 @@ export const frame: FrameSpec = {
 						bends: [{ from: 0.3, to: 0.95, level: 5 }],
 						sway: 10,
 						elbows: 5,
+						// Still 18: the limbs spread round the tree and none lies along another.
+						apart: 0.015,
 						children: [
 							branches('sides', 45, [0.3, 0.92], { outline: 0.97 }),
 							whips([0.55, 1], 0.045, 6),
@@ -236,8 +302,11 @@ export const frame: FrameSpec = {
 };
 
 /**
- * The weeping willow's record with the frame as its growth. A socket holds four shoot rows that fan 45
- * degrees from its line. These two are working figures, not measured ones: they stand until the
- * species' branch pieces are placed at its sockets, which then state what a socket holds.
+ * The weeping willow's record with the frame as its growth and the long hanging strand of still 19
+ * at each socket. The shoot rows are working figures, not measured ones: a kit with no pieces draws
+ * them.
  */
-export const directed = framedRecord(record, frame, { rows: { mean: 4, spread: 1 }, fan: 45 });
+export const directed = {
+	...framedRecord(record, frame, { rows: { mean: 4, spread: 1 }, fan: 45, piece: 'strand-long' }),
+	pieces: PIECES.filter((piece) => piece.name === 'strand-long'),
+};
