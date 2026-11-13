@@ -1,9 +1,9 @@
-// Brush cards: below its finest tier, a piece draws each dense run of its leaves as three crossed
-// quads that carry a picture of a run's own leaves, so a bough keeps the cover of its brushes at a
-// small share of their triangles. The card bake draws each picture into the card atlas beside the
-// prototypes' own cells, as it draws a prototype: two planes along the run, crossed, and one across
-// it. Each tier then keeps its wood, stems and buds, and its leaves give way to the quads, laid
-// along each run's stem and stretched to its length. A prototype's own cells are baked from its
+// Brush cards: below its finest tier, a piece draws each dense run of its leaves as crossed quads
+// that carry a picture of a run's own leaves, so a bough keeps the cover of its brushes at a small
+// share of their triangles. The card bake draws each picture into the card atlas beside the
+// prototypes' own cells, as it draws a prototype: planes along the run, crossed, and one across it,
+// a long run's cut into stretches along its length. Each tier then keeps its wood, stems and buds,
+// and its leaves give way to the quads, laid along each run's stem and stretched to its length. A prototype's own cells are baked from its
 // leaves, before the quads take their place, so its card at the far levels pictures the leaves.
 
 import type { CardCell, PrototypeArrays } from '../asset';
@@ -73,7 +73,7 @@ export function bakeWithBrushes(
 
 /**
  * A tier's mesh with its leaves given way to brush quads: its wood, stems and buds as they are, and
- * three quads for each run, one for each plane of its picture's cell.
+ * a quad for each plane of each run's picture's cell.
  */
 function brushed(
 	mesh: PrototypeArrays,
@@ -98,7 +98,13 @@ function brushed(
 			indices.push(keep[v] as number);
 		}
 	}
-	const quads = brushes.runs.length * 3;
+	// One quad for each plane of each run's picture: a long picture's cell is cut into stretches,
+	// each with planes of its own.
+	let quads = 0;
+	for (const run of brushes.runs) {
+		const picture = brushes.pictures[run.picture];
+		if (picture) quads += cellOf(picture).planes.length;
+	}
 	const total = kept.length + quads * 4;
 	if (total > 65536)
 		throw new Error(
