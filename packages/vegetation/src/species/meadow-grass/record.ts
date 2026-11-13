@@ -24,9 +24,11 @@ export const record: Species = {
 		model: 'tuft',
 		// Still 01: the leaf mound is 262 px tall under heads that reach 525 px.
 		mound: 0.5,
-		// Still 01: twelve flowering stems; still 04: about forty-five blades at its fullest ring,
-		// three or four to a shoot. So about sixteen shoots.
-		shoots: { mean: 16, spread: 3 },
+		// Still 01: twelve flowering stems. Still 04 shows about forty-five blades at its fullest
+		// ring, but from above only the outer ring shows: still 01 shows forty to fifty blades in
+		// the tuft's front alone, and sixteen shoots of three or four blades drew 0.85 of sky inside
+		// its outline against the photograph's 0.49. Still 01's cover asks for three times that.
+		shoots: { mean: 48, spread: 9 },
 		// Still 01: the sheath bases span 96 px at the soil against a mound of 262 px.
 		stool: 0.36,
 		// Stills 01 and 03: pale green sheath columns stand 0.12 to 0.15 of the mound's height, each
@@ -79,6 +81,14 @@ export const record: Species = {
 		},
 		// The least plant that still reads as the species: seven shoots of two blades and four stems.
 		least: { shoots: 7, blades: 2, stalks: 4 },
+		soil: {
+			// Still 14: dense fine pale roots leave the crown straight down and out, with no rhizome.
+			// Still 21: lifted, they hold a ball of soil about 0.11 m across and 0.1 m deep.
+			roots: { mean: 32, spread: 5 },
+			rootLength: { mean: 0.1, spread: 0.02 },
+			rootRadius: 0.002,
+			droop: { mean: 60, spread: 15 },
+		},
 	},
 	foliage: {
 		kind: 'grass-blade',
@@ -99,7 +109,10 @@ export const record: Species = {
 			tip: 'hooded',
 			tipLength: 0.04,
 			fold: 18,
-			twist: 30,
+			// Still 01: blades that arch out to either side show their faces along most of their
+			// length, where a blade held face up in the plane it arches in shows only its edge to a
+			// side view. Each turns a quarter turn from collar to tip.
+			twist: 90,
 			arch: { mean: 34, spread: 8 },
 			// Stills 02 and 06: the old outer blades carry dry brown tips.
 			dryTip: 0.03,
@@ -157,13 +170,16 @@ export const record: Species = {
 			kitBytes: { low: 821_000, medium: 1_031_000, high: 1_293_000, ultra: 1_626_000 },
 			// A plant is rows of the kit's pieces, so a variant's bytes are the same at every tier.
 			// Measured over the four variants at seed 11, in summer and in blossom: the largest reads
-			// 43,435 bytes; 20,756 triangles at the nearest level at the high tier and 29,284 at the
-			// ultra; and 586 and 300 at the two card levels. Each cap keeps about fifteen per cent
-			// above its read, and the nearest level's holds the ultra tier.
-			variantBytes: { low: 50_000, medium: 50_000, high: 50_000, ultra: 50_000 },
-			lod0Triangles: 33_700,
-			lod1Triangles: 680,
-			lod2Triangles: 350,
+			// 140,151 bytes with the root ball of stills 14 and 21 and the forty-eight shoots still
+			// 01's cover asks for, and the two card levels 1,624 and 822 triangles. Those three caps
+			// keep a twentieth above their reads, as the lead ruled. Drawn at once at the tallest
+			// view, the first variant reads 30,268 triangles at the high tier and 49,148 at the ultra,
+			// and the nearest level's cap keeps a twentieth above the ultra's read, so it holds at
+			// every tier.
+			variantBytes: { low: 147_200, medium: 147_200, high: 147_200, ultra: 147_200 },
+			lod0Triangles: 51_610,
+			lod1Triangles: 1_706,
+			lod2Triangles: 864,
 			downloadBytes: 350_000,
 			downloadHalfBytes: 120_000,
 			growMilliseconds: 150,

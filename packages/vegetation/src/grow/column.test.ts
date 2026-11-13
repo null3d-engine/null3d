@@ -10,6 +10,7 @@ import { acos } from '../core/math';
 import type { Column } from '../core/record';
 import { loadSpecies } from '../core/registry';
 import { buildKitNow, growPlantNow, loadPlantCode } from '../generate';
+import { zoneHolds } from '../wood/uv';
 import { toTriangle } from './body.fixture';
 
 /** The saguaro's kit, with its grown variants. */
@@ -39,6 +40,30 @@ function armsOf(skeleton: MacroSkeleton): number[] {
 	for (let a = 0; a < skeleton.axes.count; a++)
 		if ((skeleton.axes.kind[a] as number) === AXIS_ARM) arms.push(a);
 	return arms;
+}
+
+/**
+ * The tightest radius a run of points turns on: the least circle through any three neighbours,
+ * where they do not stand in a line.
+ */
+function leastBend(points: readonly number[][]): number {
+	let least = Number.POSITIVE_INFINITY;
+	for (let i = 1; i + 1 < points.length; i++) {
+		const [p, q, r] = [points[i - 1], points[i], points[i + 1]] as [number[], number[], number[]];
+		const pq = Math.hypot(...[0, 1, 2].map((k) => (q[k] as number) - (p[k] as number)));
+		const qr = Math.hypot(...[0, 1, 2].map((k) => (r[k] as number) - (q[k] as number)));
+		const rp = Math.hypot(...[0, 1, 2].map((k) => (p[k] as number) - (r[k] as number)));
+		const u = [0, 1, 2].map((k) => (q[k] as number) - (p[k] as number));
+		const v = [0, 1, 2].map((k) => (r[k] as number) - (p[k] as number));
+		const cross = Math.hypot(
+			(u[1] as number) * (v[2] as number) - (u[2] as number) * (v[1] as number),
+			(u[2] as number) * (v[0] as number) - (u[0] as number) * (v[2] as number),
+			(u[0] as number) * (v[1] as number) - (u[1] as number) * (v[0] as number),
+		);
+		if (cross < 1e-9) continue;
+		least = Math.min(least, (pq * qr * rp) / (2 * cross));
+	}
+	return least;
 }
 
 /** Degrees between each pair of neighbouring segments of a run of points. */
@@ -74,7 +99,7 @@ describe('the saguaro frame', () => {
 				const tip = (nodes[nodes.length - 1] as number[])[1] as number;
 				const at = tier.at as { mean: number; spread: number };
 				const top = tier.top as { mean: number; spread: number };
-				// An arm leaves from the stem's node nearest its height, a node's spacing away at most.
+				// An arm leaves at its own height on the stem.
 				expect(Math.abs(base / skeleton.height - at.mean)).toBeLessThanOrEqual(at.spread + 0.02);
 				expect(Math.abs(tip / skeleton.height - top.mean)).toBeLessThanOrEqual(top.spread + 0.01);
 			});
@@ -103,14 +128,14 @@ describe('the saguaro frame', () => {
 	});
 
 	it('stands the first variant in one plane and spreads the others round the stem', async () => {
+		// An arm's heading is the level line from its first node to its next.
 		const headingsOf = (skeleton: MacroSkeleton): number[] =>
 			armsOf(skeleton).map((arm) => {
 				const first = skeleton.axes.first[arm] as number;
-				const joint = skeleton.axes.parentNode[arm] as number;
 				return Math.atan2(
-					(skeleton.position[first * 3 + 2] as number) -
-						(skeleton.position[joint * 3 + 2] as number),
-					(skeleton.position[first * 3] as number) - (skeleton.position[joint * 3] as number),
+					(skeleton.position[first * 3 + 5] as number) -
+						(skeleton.position[first * 3 + 2] as number),
+					(skeleton.position[first * 3 + 3] as number) - (skeleton.position[first * 3] as number),
 				);
 			});
 		const { grow, growth } = await saguaro();
@@ -313,6 +338,70 @@ describe('the saguaro frame', () => {
 		);
 		expect(rise).toBeGreaterThan(0);
 		expect(aside / rise).toBeLessThan(0.02);
+		// Still 21 lays the arm with its cut to the left: it reaches toward +X, which a studio
+		// picture taken from +Z shows to the right.
+		expect(b[0] as number).toBeGreaterThan(1);
+		// It stands on the studio floor, and the corky foot's colour holds only on the stem's foot,
+		// so the arm is green down to its cut.
+		const zones = kit.record.bark?.zones ?? [];
+		const cork = zones.filter((zone) => zone.layer === 1);
+		expect(cork.length).toBeGreaterThan(0);
+		for (let n = 0; n < arm.skeleton.nodeCount; n++)
+			for (const zone of cork)
+				expect(
+					zoneHolds(
+						zone,
+						arm.skeleton.radius[n] as number,
+						arm.skeleton.position[n * 3 + 1] as number,
+					),
+				).toBe(false);
+		const whole = growPlantNow(kit, { seed: 11, variant: 0, near: true }).skeleton;
+		expect(cork.some((zone) => zoneHolds(zone, whole.radius[0] as number, 0.5))).toBe(true);
+	});
+
+	it("climbs each of the primary plant's arms out of its joint on the record's elbow", async () => {
+		const { grow, growth } = await saguaro();
+		const { skeleton } = grow(0);
+		const stem = nodesOf(skeleton, 0);
+		// The stem's axis at a height, between the stem's nodes: it leans a little.
+		const axisAt = (y: number): number[] => {
+			const above = stem.findIndex((point) => (point[1] as number) >= y);
+			const [low, high] = [stem[above - 1], stem[above]] as [number[], number[]];
+			const t = (y - (low[1] as number)) / ((high[1] as number) - (low[1] as number));
+			return [0, 1, 2].map(
+				(k) => (low[k] as number) + t * ((high[k] as number) - (low[k] as number)),
+			);
+		};
+		armsOf(skeleton).forEach((arm, k) => {
+			const tier = growth.arms.tiers[k % growth.arms.tiers.length];
+			if (!tier) throw new Error('the record names no tier');
+			const points = nodesOf(skeleton, arm);
+			const [first, second, last] = [points[0], points[1], points[points.length - 1]] as [
+				number[],
+				number[],
+				number[],
+			];
+			// No arm of the photographed plant has room to turn from the record's angle, so each
+			// leaves rising.
+			const rise = (second[1] as number) - (first[1] as number);
+			const out = Math.hypot(
+				(second[0] as number) - (first[0] as number),
+				(second[2] as number) - (first[2] as number),
+			);
+			expect((Math.atan2(rise, out) * 180) / Math.PI).toBeGreaterThan(
+				Math.max(0, growth.arms.leave),
+			);
+			// Its upright part stands at its tier's mean reach from the stem's axis at its joint.
+			const joint = axisAt(first[1] as number);
+			const reach = Math.hypot(
+				(last[0] as number) - (joint[0] as number),
+				(last[2] as number) - (joint[2] as number),
+			);
+			expect(Math.abs(reach - (tier.reach as { mean: number }).mean)).toBeLessThan(0.01);
+			// Its bend turns on the record's elbow, in widths of the arm above its bend.
+			const width = 2 * tier.radius[0];
+			expect(leastBend(points)).toBeGreaterThanOrEqual(0.95 * growth.arms.elbow * width);
+		});
 	});
 
 	it("turns every arm's elbow on a radius of at least the arm's own width", async () => {
@@ -330,27 +419,7 @@ describe('the saguaro frame', () => {
 					radii.push(skeleton.radius[n] as number);
 				radii.sort((x, y) => x - y);
 				const width = 2 * (radii[radii.length >> 1] as number);
-				let least = Number.POSITIVE_INFINITY;
-				for (let i = 1; i + 1 < points.length; i++) {
-					const [p, q, r] = [points[i - 1], points[i], points[i + 1]] as [
-						number[],
-						number[],
-						number[],
-					];
-					const pq = Math.hypot(...[0, 1, 2].map((k) => (q[k] as number) - (p[k] as number)));
-					const qr = Math.hypot(...[0, 1, 2].map((k) => (r[k] as number) - (q[k] as number)));
-					const rp = Math.hypot(...[0, 1, 2].map((k) => (p[k] as number) - (r[k] as number)));
-					const u = [0, 1, 2].map((k) => (q[k] as number) - (p[k] as number));
-					const v = [0, 1, 2].map((k) => (r[k] as number) - (p[k] as number));
-					const cross = Math.hypot(
-						(u[1] as number) * (v[2] as number) - (u[2] as number) * (v[1] as number),
-						(u[2] as number) * (v[0] as number) - (u[0] as number) * (v[2] as number),
-						(u[0] as number) * (v[1] as number) - (u[1] as number) * (v[0] as number),
-					);
-					if (cross < 1e-9) continue;
-					least = Math.min(least, (pq * qr * rp) / (2 * cross));
-				}
-				expect([variant, arm, least >= 0.95 * width]).toEqual([variant, arm, true]);
+				expect([variant, arm, leastBend(points) >= 0.95 * width]).toEqual([variant, arm, true]);
 			}
 		}
 	});
