@@ -45,11 +45,14 @@ export const record: Species = {
 		// Still 01, read on a 2.6 times crop, in mound heights. The inner blades stand within 10
 		// degrees of plumb; the middle ones leave at 20 to 30 degrees from plumb and end 0.6 to 0.8
 		// high; the outer ones leave at 45 to 60 degrees, arch at 0.4 to 0.5 and end 0.1 to 0.35 above
-		// the soil, 0.7 to 0.8 out. The outer pose takes the upper part of that: it arches out low and
-		// ends 0.3 above the soil, 0.75 out, where the low end drew the blades lying on the soil.
+		// the soil, 0.7 to 0.8 out. Still 02's vase is taller: most of its blades reach the vase's
+		// top at about half the plant's height, so the inner blades end at the mound's top and the
+		// middle ones at 0.85 of it, where 0.72 drew a vase a third of the height. The outer pose
+		// takes the upper part of still 01's range: it arches out low and ends 0.3 above the soil,
+		// 0.75 out, where the low end drew the blades lying on the soil.
 		poses: [
-			{ share: 0.4, leave: 85, apex: 0.95, drop: 0, reach: 0.08 },
-			{ share: 0.35, leave: 65, apex: 0.72, drop: 0.02, reach: 0.4 },
+			{ share: 0.4, leave: 85, apex: 1, drop: 0, reach: 0.08 },
+			{ share: 0.35, leave: 65, apex: 0.85, drop: 0.02, reach: 0.4 },
 			{ share: 0.25, leave: 38, apex: 0.45, drop: 0.15, reach: 0.75 },
 		],
 		bladeSpread: 0.12,
