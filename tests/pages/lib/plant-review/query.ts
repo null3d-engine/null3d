@@ -140,6 +140,11 @@ export interface PlantReviewQuery {
 	/** Whether a placed piece's view looks along the piece's side, so an arching piece shows its arch. */
 	readonly edge?: boolean;
 	/**
+	 * Whether a whole view's photograph has lost the plant's foot below its horizon: the view then
+	 * stands the plant by its top row and its share of the width, with no foot row.
+	 */
+	readonly footLost?: boolean;
+	/**
 	 * The radius of the ring a branch or sub-branch cutting's shoots stand on, as a share of the
 	 * piece's height, in place of the record hint's. A wide ring separates the shoots.
 	 */
@@ -473,6 +478,7 @@ const SWITCHES = [
 	'fruit',
 	'surface',
 	'edge',
+	'footLost',
 	'lifted',
 	'barkMask',
 	'leafyBark',
@@ -703,5 +709,6 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 		fruit: params.get('fruit') === '1',
 		surface: params.get('surface') === '1',
 		edge: params.get('edge') === '1',
+		footLost: params.get('footLost') === '1',
 	};
 }

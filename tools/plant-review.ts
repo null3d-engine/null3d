@@ -27,6 +27,7 @@ import {
 } from '../tests/pages/lib/plant-review/views.ts';
 import { flag, option, positional } from './lib/plant-review/cli.ts';
 import {
+	anchorColumn,
 	type CameraStand,
 	cameraWidthShare,
 	compareStills,
@@ -91,6 +92,7 @@ import {
 	VERDICT_FILE,
 	type Verdict,
 } from './lib/plant-review/verdict.ts';
+import { footLost } from './plant-targets/foot.ts';
 
 /** Where runs go by default. */
 const RENDERS = join(REPO_ROOT, '.internal/coordination/tree-renders');
@@ -251,6 +253,17 @@ function stillShot(
 				...framing
 			} = framingQuery(estimateFraming([measures], [plant]));
 			query = { ...query, ...framing };
+			// An outline that ends at the horizon on a mass has lost the plant's foot, so its last row
+			// is the horizon and not a foot: the view stands the plant by its top row and its width.
+			const axis = anchorColumn(plant.mask, plant.width, plant.height, measures.box);
+			if (footLost(image, plant, measures.box, measures.horizon, axis)) {
+				const { fill: _fill, targetY: _targetY, ...kept } = query;
+				query = {
+					...kept,
+					top: measures.box.top / plant.height,
+					footLost: true,
+				};
+			}
 		}
 		// A close view of the crown's outside keeps the same margin its whole views do, so the run
 		// measures its render against the photograph's width share too and redraws it if it crops.
