@@ -152,6 +152,12 @@ export interface PieceStem {
 	readonly droop?: number;
 	/** The shares of its length between which it droops; its whole length where absent. */
 	readonly droopOver?: readonly [from: number, to: number];
+	/**
+	 * Degrees it turns away from the piece's own line over its length, in the plane it shares with
+	 * that line; below 0 it turns toward the line. A limb that leaves steeply and levels out arcs
+	 * this way.
+	 */
+	readonly arc?: number;
 	/** Degrees it turns at each node, to one side and the other in turn. */
 	readonly zigzag?: number;
 	/**
@@ -359,6 +365,8 @@ export function planPiece(
 		(rule.attitude === 'plumb' ? [0, 1, 0] : rule.attitude === 'upright' ? [0, -1, 0] : [0, 0, -1]);
 	const leafSpread = foliage.leaf.length;
 	const leafMean = spreadMean(leafSpread);
+	/** The piece's own line. */
+	const line: Readonly<Vector3> = [sin(radians(lean)), cos(radians(lean)), 0];
 	const axes: AxisPoint[][] = [];
 	const leaves: PlannedLeaf[] = [];
 	const buds: PlannedBud[] = [];
@@ -541,6 +549,7 @@ export function planPiece(
 			const mid = from + run / 2;
 			if (stem.droop && mid >= droopFrom * length && mid <= droopTo * length)
 				direction = toward(direction, down, (stem.droop * run) / droopSpan);
+			if (stem.arc) direction = toward(direction, line, (-stem.arc * run) / length);
 			const atNode = gap > 0 && (k + 1) % perNode === 0;
 			if (atNode && stem.zigzag) {
 				// A zigzag is a bend at each node, owed over the runs to the next node.
@@ -727,7 +736,7 @@ export function planPiece(
 
 	grow(rule.stem, {
 		at: [0, 0, 0],
-		line: [sin(radians(lean)), cos(radians(lean)), 0],
+		line: [...line],
 		sky: [0, 0, 1],
 		along: 0,
 		scale: 1,

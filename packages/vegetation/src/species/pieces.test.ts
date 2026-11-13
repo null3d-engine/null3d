@@ -622,6 +622,47 @@ describe("the ash's branch end, as still 21 and its turning video count it", () 
 	});
 });
 
+describe("the beech's branch end, as still 21 shows it at full size", () => {
+	it('is a bare forked stem whose leaves stand on thin twigs, 45 to 95 degrees out', async () => {
+		const module = await loadSpecies('european-beech');
+		await loadPlantCode(module.record);
+		const rule = BEECH[0] as PieceRule;
+		const scale = rule.scale ?? 1;
+		for (let variant = 0; variant < rule.variants; variant++) {
+			const plan = planPiece(module.record, rule, pieceKey(0, variant), 4);
+			// The photograph holds 100 to 120 leaves; the piece's leaf is rounder, so it holds fewer.
+			expect(plan.leaves.length).toBeGreaterThanOrEqual(75);
+			expect(plan.leaves.length).toBeLessThanOrEqual(120);
+			const points = plan.axes.flat();
+			for (const leaf of plan.leaves) {
+				// The wood a leaf stands on is thin: under seven millimetres through.
+				let nearest = Number.POSITIVE_INFINITY;
+				let radius = 0;
+				for (const point of points) {
+					const d = distance(point.at, leaf.at);
+					if (d < nearest) {
+						nearest = d;
+						radius = point.radius;
+					}
+				}
+				expect(radius).toBeLessThan(0.0035 * scale);
+				const along =
+					(leaf.direction[0] as number) * (leaf.stem[0] as number) +
+					(leaf.direction[1] as number) * (leaf.stem[1] as number) +
+					(leaf.direction[2] as number) * (leaf.stem[2] as number);
+				expect(along).toBeLessThan(0.71);
+				expect(along).toBeGreaterThan(-0.09);
+			}
+			// The stem and its upper part end in forks and carry no leaf: the first stem is bare.
+			const stem = plan.axes[0] ?? [];
+			const top = stem[stem.length - 1]?.at ?? [0, 0, 0];
+			expect(
+				plan.axes.filter((other) => distance(other[0]?.at ?? [9, 9, 9], top) < SAME).length,
+			).toBe(2);
+		}
+	});
+});
+
 describe("a species' marks", () => {
 	it(
 		"stands a straight thorn of one to four centimetres at most nodes of the hawthorn's branch",
