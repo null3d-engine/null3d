@@ -5,7 +5,7 @@
 import type { SpeciesKitData } from '../asset';
 import { radians, tan } from '../core/math';
 import { notBuilt } from '../core/not-built';
-import { spreadMax } from '../core/types';
+import { type Detail, spreadMax } from '../core/types';
 import type { MeshInput } from '../stages';
 
 /**
@@ -56,6 +56,41 @@ export function firstCardStart(
 		(shootReach(kit) * view.height) /
 		(2 * tan(radians(view.fov / 2)) * kit.record.lod.switchPixels[0])
 	);
+}
+
+/**
+ * Texels a side of one card cell by tier. The first card level starts where its longest shoot spans
+ * the record's first switch pixels, which on most species is more than a cell holds, so near its
+ * start a card is drawn larger than its picture; a finer cell costs four times the atlas memory. A
+ * prototype without leaves (a bare winter twin) takes a cell of half the side: its card holds thin
+ * stems and buds.
+ *
+ * @category api/vegetation
+ */
+export const CARD_CELL: Readonly<Record<Detail, number>> = {
+	low: 64,
+	medium: 64,
+	high: 64,
+	ultra: 64,
+};
+
+/**
+ * Metres at which the first card level draws its cards' cells at their own texels: where the
+ * longest shoot, at its largest placement scale, spans one card cell, and never nearer than the first
+ * card level's start. Between the two a card is drawn larger than its picture, so a page with room in
+ * its budget of real pieces draws the plant's pieces there instead.
+ *
+ * @param kit The species' kit.
+ * @param view The render height in pixels and the vertical field of view in degrees.
+ * @returns Metres, at a copy's scale of 1.
+ * @category api/vegetation
+ */
+export function texelStart(
+	kit: Pick<SpeciesKitData, 'record' | 'prototypes' | 'detail'>,
+	view: { readonly height: number; readonly fov: number },
+): number {
+	const cell = kit.record.lod.cardCell?.[kit.detail] ?? CARD_CELL[kit.detail];
+	return firstCardStart(kit, view) * Math.max(1, kit.record.lod.switchPixels[0] / cell);
 }
 
 /**

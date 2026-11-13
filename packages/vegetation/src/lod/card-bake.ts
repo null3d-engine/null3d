@@ -31,23 +31,8 @@ import { outlineMask, textureOutline } from '../leaf/outline';
 import type { UncardedPrototype } from '../leaf/shoot';
 import { leafSurface, SURFACE_EXTRA, SURFACE_PIECE_SHEATH } from '../leaf/writer';
 import type { CardAtlas } from '../stages';
+import { CARD_CELL } from './levels';
 import { rasterise, rasterTarget } from './raster';
-
-/**
- * Texels a side of one card cell by tier. The first card level starts where its longest shoot spans
- * the record's first switch pixels, which on most species is more than a cell holds, so near its
- * start a card is drawn larger than its picture; a finer cell costs four times the atlas memory. A
- * prototype without leaves (a bare winter twin) takes a cell of half the side: its card holds thin
- * stems and buds.
- *
- * @category api/vegetation
- */
-export const CARD_CELL: Readonly<Record<Detail, number>> = {
-	low: 64,
-	medium: 64,
-	high: 64,
-	ultra: 64,
-};
 
 /** Texels of each cell's border that stay empty, so mip levels never bleed one cell into the next. */
 const BORDER = 2;
