@@ -562,7 +562,8 @@ export interface UnderFault {
  * stated side is read as the view that looks across it shows it: a patch stands as far from the
  * trunk's line as its centre does along the side's direction, whatever its depth in the view, and
  * it is under the boundary when its rounded body's foot is lower than the boundary there. So a
- * patch that hangs in front of the bole is read against the boundary at the bole.
+ * patch that hangs in front of the bole is read against the boundary at the bole, and one whose
+ * middle stands behind the trunk from a side's view, inside the trunk's width, is not read there.
  *
  * @param crown The frame, or any set of patches at a stated height.
  * @param spec The species' frame.
@@ -584,9 +585,19 @@ export function underBoundary(
 		const toward = radians(side.toward);
 		const c = cos(toward);
 		const s = sin(toward);
+		const from = side.seen === undefined ? undefined : radians(side.seen);
+		const hidden =
+			side.seen === undefined ? 0 : curveAt(spec.stems.width, curveAt(side.under, 0)) / 2;
 		for (const patch of crown.patches) {
 			const reach = (patch.centre[0] * c + patch.centre[2] * s) / crown.scale;
 			if (reach < 0 || reach > within) continue;
+			// Behind the trunk from the side's view, inside its width, the view sees the trunk.
+			if (
+				from !== undefined &&
+				patch.centre[0] * cos(from) + patch.centre[2] * sin(from) < 0 &&
+				reach < hidden
+			)
+				continue;
 			read++;
 			const by = curveAt(side.under, reach) - (patch.centre[1] - patch.depth / 2) / crown.scale;
 			// A foot that stands on the boundary is not under it, whatever the last digit says.
