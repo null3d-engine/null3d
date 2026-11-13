@@ -192,6 +192,12 @@ export interface AxisTable {
 	/** Whether each axis draws the grown bark layer rather than the young bark; 0 for young bark. */
 	readonly grownBark: Uint8Array;
 	/**
+	 * Whether each axis is the finest wood, grown to clothe a foliage patch, which the wood mesh
+	 * draws as straight runs of the fewest sides with no blend onto its parent; 0 for any other.
+	 * Absent, no axis is.
+	 */
+	readonly fine?: Uint8Array;
+	/**
 	 * Each axis's index in the plant as grown, on a skeleton that axes were removed from, so a choice
 	 * keyed on an axis stays the same on the sparser plant. Absent on a skeleton as grown.
 	 */
@@ -336,6 +342,11 @@ export interface AxisInput {
 	 * default, for every axis grown in place.
 	 */
 	readonly grownBark?: boolean;
+	/**
+	 * Whether the axis is the finest wood, grown to clothe a foliage patch, which the wood mesh
+	 * draws as straight runs of the fewest sides with no blend onto its parent. False, the default.
+	 */
+	readonly fine?: boolean;
 }
 
 /**
@@ -413,6 +424,7 @@ export class SkeletonBuilder {
 	private axisCutFrom = new Float32Array(16);
 	private axisCutTo = new Float32Array(16);
 	private axisGrownBark = new Uint8Array(16);
+	private axisFine = new Uint8Array(16);
 	private budNode = new Uint32Array(64);
 	private budPosition = new Float32Array(3 * 64);
 	private budFrame = new Float32Array(4 * 64);
@@ -449,6 +461,7 @@ export class SkeletonBuilder {
 			this.axisCutFrom = grown(this.axisCutFrom, size);
 			this.axisCutTo = grown(this.axisCutTo, size);
 			this.axisGrownBark = grown(this.axisGrownBark, size);
+			this.axisFine = grown(this.axisFine, size);
 		}
 		this.axisFirst[index] = 0xffffffff;
 		this.axisLast[index] = 0;
@@ -463,6 +476,7 @@ export class SkeletonBuilder {
 		this.axisCutFrom[index] = axis.cutFrom ?? 0;
 		this.axisCutTo[index] = axis.cutTo ?? 1;
 		this.axisGrownBark[index] = axis.grownBark ? 1 : 0;
+		this.axisFine[index] = axis.fine ? 1 : 0;
 		this.axisCount++;
 		return index;
 	}
@@ -609,6 +623,7 @@ export class SkeletonBuilder {
 				cutFrom: trimmed(this.axisCutFrom, axes),
 				cutTo: trimmed(this.axisCutTo, axes),
 				grownBark: trimmed(this.axisGrownBark, axes),
+				fine: trimmed(this.axisFine, axes),
 			},
 			buds: {
 				count: buds,
