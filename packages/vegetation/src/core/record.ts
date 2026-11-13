@@ -1958,6 +1958,11 @@ export interface LeafShape {
 	 * curled blade keeps its curl; one where absent.
 	 */
 	readonly cardBands?: number;
+	/**
+	 * Whether a cut-out card of the leaf draws the stalk that runs past it at the high tier alone,
+	 * where a close view holds the blade to its twig; absent, every card tier draws it.
+	 */
+	readonly cardStalkHighOnly?: boolean;
 	/** The leaf stalk. */
 	readonly petiole: {
 		/** Metres long. */

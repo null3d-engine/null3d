@@ -431,12 +431,13 @@ export const record: Species = {
 			// The six variants measure 5.1 to 9.1 MB in leaf, and the blossom season reaches 13.93 MB
 			// with the flowers' own mesh; each cap sits above the largest, under the class's own ceiling.
 			variantBytes: { low: 14_000_000, medium: 14_000_000, high: 14_000_000, ultra: 14_000_000 },
-			// The near band measures 483,068 triangles once the height calibration's scale is applied
-			// before the light grid, so the cap keeps its 17,728-triangle spare above that read, 3.67
-			// per cent of it; the earlier 481,806 stood the same spare, 3.82 per cent, above the
-			// pre-calibration 464,078. The first card level measures at most 152,498 and the second at
-			// most 22,761 over the variants and seasons, under the class's shared card caps.
-			lod0Triangles: 500_796,
+			// The shrub as its frame of branch ends, measured on 13 November 2026 at seed 11: its leaf
+			// form is 1,313,814 triangles and 819,825 of them draw at once at the reference view. The
+			// reviewer judged the joined mound of every branch end the photograph's build, so the cap is
+			// that measure and a twentieth, by the lead's ruling of that night, its ceiling through its
+			// round. The first card level measures at most 152,498 and the second at most 22,761 over
+			// the old grower's variants and seasons, under the class's shared card caps.
+			lod0Triangles: 1_380_000,
 			lod1Triangles: 155_000,
 			lod2Triangles: 25_000,
 			downloadBytes: 1_000_000,
