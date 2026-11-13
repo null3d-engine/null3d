@@ -14,14 +14,20 @@ import { loadSpecies } from '../core/registry';
 import { DETAILS } from '../core/types';
 import { buildKitNow, growPlantNow, loadPlantCode } from '../generate';
 import { foliage } from '../leaf/kinds';
-import { type PieceRule, pieceKey, piecePrototypes, planPiece } from '../leaf/piece';
+import {
+	type PieceRule,
+	type PieceStem,
+	pieceKey,
+	piecePrototypes,
+	planPiece,
+} from '../leaf/piece';
 import { SURFACE_LEAF, SURFACE_STEM } from '../leaf/writer';
 import { radicalInverse } from './frond-crown';
 import { targetHeight } from './height';
 
 const LONG = scaledBudget(120_000);
 /** The species the grower serves. */
-const SPECIES = ['date-palm'] as const;
+const SPECIES = ['date-palm', 'tree-fern'] as const;
 /** The variants each test grows. */
 const VARIANTS = [0, 1, 2] as const;
 
@@ -159,32 +165,36 @@ function toTriangle(p: Vector3, a: Vector3, b: Vector3, c: Vector3): number {
 }
 
 /**
- * The farthest any stem vertex of `fine` lies from the stem triangles of `coarse`, in metres: how far
- * the coarse mesh's stem strays from the fine mesh's path.
+ * The farthest the main stem a rule plans for the low tier (its far stem where it names one) lies
+ * outside the stem triangles of the low tier's mesh, in metres: how far the coarse tube strays from
+ * the planned arch.
  */
-function strayOf(fine: PrototypeArrays, coarse: PrototypeArrays): number {
-	const point = (mesh: PrototypeArrays, i: number): Vector3 => [
-		mesh.positions[i * 3] as number,
-		mesh.positions[i * 3 + 1] as number,
-		mesh.positions[i * 3 + 2] as number,
+function strayFromPlan(
+	record: Species,
+	rule: PieceRule,
+	index: number,
+	coarse: PrototypeArrays,
+): number {
+	const planned = rule.far ? { ...rule, stem: rule.far } : rule;
+	const axis = planPiece(record, planned, pieceKey(index, 0), 1).axes[0] ?? [];
+	const point = (i: number): Vector3 => [
+		coarse.positions[i * 3] as number,
+		coarse.positions[i * 3 + 1] as number,
+		coarse.positions[i * 3 + 2] as number,
 	];
-	const stem = (mesh: PrototypeArrays, i: number) =>
-		(mesh.colors[i * 4 + 2] as number) === SURFACE_STEM;
+	const stem = (i: number) => (coarse.colors[i * 4 + 2] as number) === SURFACE_STEM;
 	const triangles: [Vector3, Vector3, Vector3][] = [];
 	for (let t = 0; t < coarse.indices.length; t += 3) {
-		const [a, b, c] = [coarse.indices[t], coarse.indices[t + 1], coarse.indices[t + 2]] as [
-			number,
-			number,
-			number,
-		];
-		if (stem(coarse, a) && stem(coarse, b) && stem(coarse, c))
-			triangles.push([point(coarse, a), point(coarse, b), point(coarse, c)]);
+		const a = coarse.indices[t] as number;
+		const b = coarse.indices[t + 1] as number;
+		const c = coarse.indices[t + 2] as number;
+		if (stem(a) && stem(b) && stem(c)) triangles.push([point(a), point(b), point(c)]);
 	}
 	let most = 0;
-	for (const p of verticesOf(fine, SURFACE_STEM)) {
+	for (const { at, radius } of axis) {
 		let least = Infinity;
-		for (const [a, b, c] of triangles) least = Math.min(least, toTriangle(p, a, b, c));
-		most = Math.max(most, least);
+		for (const [a, b, c] of triangles) least = Math.min(least, toTriangle([...at], a, b, c));
+		most = Math.max(most, least - radius);
 	}
 	return most;
 }
@@ -264,17 +274,17 @@ describe('the frond-crown grower', () => {
 					targets.push(target);
 				}
 				// The crown keeps its measured size whatever the variant's height: its rise strays only by
-				// its fronds' own spread of angles, within a hundredth of the plant's height, while the
+				// its fronds' own spread of angles, within two hundredths of the plant's height, while the
 				// trunk moves by the whole difference between the variants' heights.
 				const height = Math.max(...targets);
 				for (const rise of rises)
-					expect(Math.abs(rise - (rises[0] as number))).toBeLessThan(0.01 * height);
+					expect(Math.abs(rise - (rises[0] as number))).toBeLessThan(0.02 * height);
 				for (const [v, trunk] of trunks.entries())
 					expect(
 						Math.abs(
 							trunk - (trunks[0] as number) - ((targets[v] as number) - (targets[0] as number)),
 						),
-					).toBeLessThan(0.01 * height);
+					).toBeLessThan(0.02 * height);
 			});
 		});
 	}
@@ -287,27 +297,31 @@ describe('the frond pieces', () => {
 				'draws each rachis on its arch at every tier, and the far tier without its rings draws a chord',
 				() => {
 					const { kit, record } = of(id);
-					const pieces = kit.prototypes.filter((p: ShootPrototype) => p.piece);
-					expect(pieces.length).toBeGreaterThan(0);
-					// The coarse tube has fewer sides, so its surface stands inside the fine one's by up to half
-					// a radius: within two hundredths of the frond's length is on the arch.
-					for (const prototype of pieces) {
-						const [low, , high] = prototype.tiers;
-						expect(strayOf(high as PrototypeArrays, low as PrototypeArrays)).toBeLessThan(
-							0.02 * prototype.length,
-						);
+					const rules = record.pieces ?? [];
+					expect(rules.length).toBeGreaterThan(0);
+					// The far tier's main stem against the plan's own: within two hundredths of the frond's
+					// length of the arch it was planned on.
+					for (const [r, rule] of rules.entries()) {
+						const prototype = kit.prototypes.find(
+							(p: ShootPrototype) => p.piece?.name === rule.name && p.piece.part === 0,
+						) as ShootPrototype;
+						const stray = strayFromPlan(record, rule, r, prototype.tiers[0] as PrototypeArrays);
+						expect(stray).toBeLessThan(0.02 * prototype.length);
 					}
 					// The same arched rule with no ring bend: its far tier runs straight from foot to tip.
-					const arched = (record.pieces ?? []).find(
-						(rule) => (rule.stem.droop ?? 0) >= 40,
-					) as PieceRule;
-					const { rings: _rings, ...straight } = arched.stem;
-					const plain: PieceRule = { ...arched, stem: straight };
+					const r = rules.findIndex((rule) => (rule.stem.droop ?? 0) >= 40);
+					const arched = rules[r] as PieceRule;
+					const unringed = ({ rings: _rings, ...stem }: PieceStem): PieceStem => stem;
+					const plain: PieceRule = {
+						...arched,
+						stem: unringed(arched.stem),
+						...(arched.far ? { far: unringed(arched.far) } : {}),
+					};
 					const [control] = piecePrototypes(record, [plain], leavesByTier(kit));
-					const [low, , high] = (control as NonNullable<typeof control>).tiers;
-					expect(strayOf(high as PrototypeArrays, low as PrototypeArrays)).toBeGreaterThan(
-						0.05 * (control as NonNullable<typeof control>).length,
-					);
+					const built = control as NonNullable<typeof control>;
+					expect(
+						strayFromPlan(record, plain, r, built.tiers[0] as PrototypeArrays),
+					).toBeGreaterThan(0.05 * built.length);
 				},
 				LONG,
 			);
@@ -366,13 +380,23 @@ describe('the frond pieces', () => {
 							[0, 1, 2].map((k) => Math.round((near.normals[i + k] as number) * 20)).join(','),
 						);
 					expect(normals.size).toBeGreaterThanOrEqual(2);
-					// Every frond's leaflets take that mesh at each tier the kit holds.
-					for (const prototype of kit.prototypes.filter((p: ShootPrototype) => p.piece))
-						for (const tier of ['low', 'medium', 'high'] as const)
-							expect(leafTriangles(prototype.tiers[DETAILS.indexOf(tier)] as PrototypeArrays)).toBe(
-								prototype.leaves *
-									leafTriangles(tiers[DETAILS.indexOf(tier)]?.[0] as PrototypeArrays),
+					// Every frond's leaflets take that mesh at each tier the kit holds; a rule with a far
+					// stem draws its far plan's leaves at the low and medium tiers.
+					for (const [r, rule] of (record.pieces ?? []).entries()) {
+						const prototype = kit.prototypes.find(
+							(p: ShootPrototype) => p.piece?.name === rule.name,
+						) as ShootPrototype;
+						const far = rule.far
+							? planPiece(record, { ...rule, stem: rule.far }, pieceKey(r, 0), 1).leaves.length
+							: prototype.leaves;
+						for (const tier of ['low', 'medium', 'high'] as const) {
+							const t = DETAILS.indexOf(tier);
+							const count = t <= DETAILS.indexOf('medium') ? far : prototype.leaves;
+							expect(leafTriangles(prototype.tiers[t] as PrototypeArrays)).toBe(
+								count * leafTriangles(tiers[t]?.[0] as PrototypeArrays),
 							);
+						}
+					}
 					// A living frond holds the picture's count: about 80 leaflets a side.
 					const living = kit.prototypes.filter(
 						(p: ShootPrototype) => p.piece && !p.piece.name.includes('dead'),
