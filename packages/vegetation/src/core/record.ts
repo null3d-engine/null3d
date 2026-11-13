@@ -1010,10 +1010,12 @@ export interface Column {
 		/** The tiers, lowest first. The grower deals the arms among them in turn. */
 		readonly tiers: readonly ColumnArmTier[];
 		/**
-		 * How the arms stand round the column: 'round' spreads them evenly through the full circle,
-		 * and 'plane' stands them in one upright plane, a tier's worth to each side. Left out, 'round'.
+		 * How many of the species' variants, from the first, stand their arms in one upright plane, a
+		 * tier's worth to one side and the next to the other. The rest spread their arms evenly
+		 * through the full circle. A variant in one plane is not balanced round its column, so a
+		 * record that names any says in its comment which photograph shows it.
 		 */
-		readonly spread?: 'round' | 'plane';
+		readonly plane: number;
 		/** Degrees above the horizontal that an arm leaves the column at; a negative angle sags. */
 		readonly leave: number;
 		/**
