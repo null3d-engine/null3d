@@ -156,6 +156,11 @@ export interface Row {
 	 * place in the space-filling order, so a card level keeps or drops the piece whole.
 	 */
 	socket?: number;
+	/**
+	 * The socket a row of a plant of sockets stands at, where the row is a shoot of its own rather
+	 * than a part of a piece, so it takes a place of its own in the space-filling order.
+	 */
+	site?: number;
 }
 
 /** A variant's shoot rows and the skeleton they stand on, its bare wood trimmed where the record asks. */
@@ -369,12 +374,14 @@ export function dressShoots(input: DressInput): DressedShoots {
 				: input.skeleton;
 		return { rows: finishedRows(rows, skeleton), skeleton };
 	}
-	const { skeleton, axisOut, nodeOut } = trimmed;
+	const { skeleton, axisOut, nodeOut, budOut } = trimmed;
 	for (const row of rows) {
 		const axis = axisOut[row.axis] as number;
 		row.axis = axis;
 		row.node = nodeOut[row.node] as number;
 		row.record = skeleton.axes.record[axis] as number;
+		if (row.socket !== undefined) row.socket = budOut[row.socket] as number;
+		if (row.site !== undefined) row.site = budOut[row.site] as number;
 	}
 	return { rows: finishedRows(rows, skeleton), skeleton };
 }
@@ -843,6 +850,7 @@ function socketRows(
 				node,
 				axis,
 				back,
+				site: b,
 			});
 		}
 	}
@@ -902,7 +910,11 @@ function packRows(rows: readonly Row[], bounds: DressInput['skeleton']['bounds']
 		back: new Float32Array(count * 3),
 		node: new Uint32Array(count),
 	};
+	const sockets = rows.some((row) => (row.socket ?? row.site) !== undefined)
+		? new Uint32Array(count)
+		: undefined;
 	rows.forEach((row, r) => {
+		if (sockets) sockets[r] = row.socket ?? row.site ?? 0;
 		out.prototype[r] = row.prototype;
 		out.position.set(row.position, r * 3);
 		out.rotation.set(row.rotation, r * 4);
@@ -913,5 +925,5 @@ function packRows(rows: readonly Row[], bounds: DressInput['skeleton']['bounds']
 		out.node[r] = row.node;
 	});
 	out.order.set(rowOrder(rows, bounds));
-	return out;
+	return sockets ? { ...out, socket: sockets } : out;
 }
