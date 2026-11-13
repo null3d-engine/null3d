@@ -138,6 +138,27 @@ describe('the flower sites', () => {
 				axis: stem,
 				woodRadius: 0.2,
 			});
+		// An arm's own ring stands lower, and the crown's ring is the stem's top.
+		const arm = b.addAxis({
+			parent: stem,
+			parentNode: nodes[2] as number,
+			order: 1,
+			kind: AXIS_LIMB,
+		});
+		const armNodes = run(b, arm, nodes[2] as number, [0.2, 0.8, 0], [0.3, 0.2, 0], 4, 0.1, 0.15);
+		for (const x of [1.3, 1.5])
+			b.addBud({
+				node: armNodes[armNodes.length - 1] as number,
+				x,
+				y: 1.6,
+				z: 0,
+				frame: [0, 0, 0, 1],
+				kind: BUD_FLOWER,
+				vigor: 0.5,
+				light: 1,
+				axis: arm,
+				woodRadius: 0.1,
+			});
 		const ring = flowerSites(b.finish(0));
 		expect(ring?.sites.length).toBe(4);
 		expect(ring?.radius as number).toBeCloseTo(0.3, 5);

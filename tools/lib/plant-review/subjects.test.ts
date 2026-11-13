@@ -325,7 +325,7 @@ describe('the placed pieces of a plant', () => {
 			prototype(0, 'piece', [0, 0, 0, 0, 0.5, 0, 0.1, 0.4, 0], 'bough'),
 			prototype(1, 'piece', [0, 0, 0, 0, 0.55, 0, -0.2, 0.3, 0], 'bough'),
 			// A kit built before the shared piece design named a ground piece in its class.
-			prototype(2, 'piece-stalk-0' as ShootPrototype['class'], [0, 0, 0, 0, 0.5, 0.1, 0, 0.6, 0.5]),
+			prototype(2, 'piece', [0, 0, 0, 0, 0.5, 0.1, 0, 0.6, 0.5], 'stalk-0'),
 			prototype(3, 'twig' as ShootPrototype['class'], [0, 0, 0, 0, 0.3, 0]),
 		],
 	};

@@ -398,16 +398,28 @@ export interface FlowerSites {
  */
 export function flowerSites(skeleton: MacroSkeleton): FlowerSites | undefined {
 	const { buds } = skeleton;
-	const sites: V3[] = [];
+	// Each axis that flowers carries its own ring at its top; the crown's is the highest.
+	const rings = new Map<number, V3[]>();
 	for (let b = 0; b < buds.count; b++) {
 		if ((buds.kind[b] as number) !== BUD_FLOWER) continue;
-		sites.push([
+		const axis = buds.axis[b] as number;
+		let ring = rings.get(axis);
+		if (!ring) {
+			ring = [];
+			rings.set(axis, ring);
+		}
+		ring.push([
 			buds.position[b * 3] as number,
 			buds.position[b * 3 + 1] as number,
 			buds.position[b * 3 + 2] as number,
 		]);
 	}
-	if (sites.length === 0) return undefined;
+	const meanHeight = (ring: readonly V3[]) =>
+		ring.reduce((sum, site) => sum + site[1], 0) / ring.length;
+	let sites: V3[] | undefined;
+	for (const ring of rings.values())
+		if (!sites || meanHeight(ring) > meanHeight(sites)) sites = ring;
+	if (!sites) return undefined;
 	const centre: V3 = [0, 0, 0];
 	for (const site of sites)
 		for (let k = 0; k < 3; k++)

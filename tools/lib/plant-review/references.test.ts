@@ -17,6 +17,7 @@ import {
 	filledSpans,
 	findHorizon,
 	greenLeaves,
+	halfDarkMask,
 	hangingParts,
 	matteMask,
 	matteOwnMask,
@@ -1016,6 +1017,21 @@ function mattePlant(
 		background: { horizon: null, sky: flat, plain: true },
 	};
 }
+
+describe("a silhouette photograph read by the matte's rule", () => {
+	test('keeps only the texels darker than half of what the photograph mask counts as plant', () => {
+		const image = blank(4, 1, [255, 255, 255]);
+		put(image, 0, 0, [10, 10, 10]);
+		put(image, 1, 0, [120, 120, 120]);
+		put(image, 2, 0, [170, 170, 170]);
+		put(image, 3, 0, [0, 0, 0]);
+		// The photograph mask counts the three darkened texels; the fourth it left out stays out.
+		const photograph = mattePlant(4, 1, Uint8Array.from([1, 1, 1, 0]));
+		const read = halfDarkMask(photograph, image);
+		expect([...read.mask]).toEqual([1, 1, 0, 0]);
+		expect([...photograph.mask]).toEqual([1, 1, 1, 0]);
+	});
+});
 
 describe('the coverage matte', () => {
 	test("keeps a texel's own coverage beside the half-black mask", () => {
