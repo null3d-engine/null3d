@@ -553,6 +553,29 @@ For each species: pass or fail, row by row, with the picture that shows it and t
 number exists. Then one sentence for the species as a whole. Faults are listed in the order the owner
 would notice them, not the order they are cheapest to fix.
 
+The reviewer writes the rows into the run's verdict file, `verdict.json`, beside the tool's own.
+Each row is `pass`, `fail`, `void` or `unjudged`. It names its pictures, its figures and their
+bands, and its judge. The file names the run and the commit the pictures were drawn at. The tool
+fills the rows whose band this page states: rows 6, 8 and 10 from their figures. It fails row 12
+where a piece hangs free. The reviewer fills every other row, and may overrule the tool's with a
+reason.
+
+## The count is generated
+
+Every count of passing rows comes from `bun run plants:ledger`, which reads the verdict files and
+prints the species by row table and the total. No count is kept by hand in a report, a record or a
+handoff. Discard any count that the command cannot rebuild from the files it names.
+
+The command refuses to count in each of these cases:
+
+- A verdict lacks a row.
+- A figure names another run than its file.
+- A judged row names no judge, or a failed row gives no reason.
+- A pass rests on no picture, or only on void ones.
+- Two files name one species.
+
+A report quotes the command's total with the folder it read.
+
 A reviewer does not accept an argument about what a species should look like without a reference
 picture or a measurement that shows it. A claim without evidence is a row left unjudged, and unjudged
 is not passed.
@@ -572,8 +595,10 @@ limit is never a reason to stop work on the pictures it names.
 4. **Judge** row by row, against the run's own figures and the reference pictures. Where a figure and
    the eye disagree, the eye wins and the figure is explained. Read the void pictures first: a row
    that rests on one waits for the camera's fix and is not judged on it.
-5. **Write the verdict** to the species review file, with the pass list for the next round in priority
-   order. Name every stray part, crossing and loose shape you saw, with the picture it appears in.
+5. **Write the verdict** to the run's `verdict.json` and to the species review file. Add the pass
+   list for the next round in priority order. Name every stray part, crossing and loose shape you
+   saw, with the picture it appears in. Run `bun run plants:ledger` on the run folder: it must
+   accept the file.
 6. **Hand back.** A species is done when every row passes, or when each limit it misses is stated with
    its measured reason. The reviewer accepts a limit; it does not accept a limit as a reason to stop,
    and it never accepts one for row 12: a picture that is a tangle or a pile of shapes is a fault to

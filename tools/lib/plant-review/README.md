@@ -30,6 +30,7 @@ The run folder holds:
 - `manifest.json`: the commit, the species, the references, and each frame's query, hash, time and the facts the page posted, its measures among them.
 - `sheet-*.png`: the contact sheets. The still sheets show each reference, its render and their outline overlay in a row. The turn and wind sheets show a grid of tiles: the reference frame over the render matched to it, then the outlines.
 - `metrics.json`, `summary.md`, `coverage.json` and `coverage.md`.
+- `verdict.json`: the run's verdict for each of the twelve rows, which `bun run plants:ledger` counts.
 
 Look at the sheets first. In an outline overlay, the reference is magenta and the render green, and grey is where both have plant.
 
@@ -143,3 +144,35 @@ The page posts a `plant-review` message with the form it grew, the plant's drawn
   and a view up the stem stands at a low eye beside the plant instead of at a person's eye height,
   since the plant has no stem to look up. A bark view of such a plant is void: its slot must name
   the view of the surface that the photograph shows.
+
+## The verdict and the ledger
+
+A run writes `verdict.json` into its folder. The file holds one entry for each of the twelve rows
+of the [plant review standard](../../../.dev/plant-review.md): `pass`, `fail`, `void` or `unjudged`,
+the pictures the row rests on, each figure with its band, who judged the row, and the run and commit
+the pictures were drawn at.
+
+- The tool judges the rows whose band the standard states. Row 6 passes when every whole view's sky
+  gap lies from 0.02 below its reference's to 0.05 above it. Rows 8 and 10 pass at a color
+  difference of 3 or less. Row 12 fails when a picture draws a piece that hangs free.
+- The tool writes the figures of rows 4 and 9 with no band, since the standard states none, and
+  leaves those rows and the rows the eye judges as `unjudged`.
+- A row whose pictures are all void is `void`. A row with some void pictures names them beside its
+  evidence.
+- A reviewer edits the file: sets a row's `verdict`, sets `judge` to `reviewer`, and gives a
+  `reason` for a fail or a void. Row 11 names its `neighbour`. A run compared again keeps every row
+  a reviewer judged and refreshes the rest.
+
+`bun run plants:ledger <path...>` reads verdict files and prints the species by row table and the
+total. A path is a verdict file, a run folder, or a folder of either.
+
+```sh
+bun run plants:ledger /tmp/plant-renders --species pedunculate-oak,silver-birch
+```
+
+The command ends with status 1 and prints no total when a verdict is unsound. A verdict is unsound
+when a row is missing, a judged row names no judge, a fail gives no reason, a figure names another
+run than the file's, a pass rests on no picture or only on void ones, the tool's pass has a figure
+outside its band, or the run folder's manifest names another run or commit. Two verdict files for
+one species stop the count too, and so does a species that `--species` names and no file holds.
+Quote a count of passing rows only from this command's output.
