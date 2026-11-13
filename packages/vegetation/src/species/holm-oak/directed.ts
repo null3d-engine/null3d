@@ -66,7 +66,7 @@ const branches: FrameBranchRule = {
 const sides: FrameBranchRule = {
 	name: 'side',
 	role: 'branch',
-	count: { every: 0.035, least: 1, most: 4 },
+	count: { every: 0.03, least: 1, most: 4 },
 	along: [0.4, 0.95],
 	stagger: 0.3,
 	around: 'spiral',
@@ -114,7 +114,7 @@ function fork(
 		angleSpread: 5,
 		length,
 		vary: 0.15,
-		least: 0.07,
+		least: 0.08,
 		most: 0.16,
 		radius: 0.65,
 		taper: 0.7,
@@ -169,8 +169,8 @@ const STILL_02_LEFT: Reading = {
 	from: 5,
 	reach: [0.737, 0.759, 0.772, 0.788, 0.769, 0.761, 0.7, 0.692, 0.546, 0.48, 0.462, 0.324],
 	under: [
-		[0, 0.45],
-		[0.15, 0.42],
+		[0, 0.42],
+		[0.15, 0.4],
 		[0.35, 0.25],
 		[0.7, 0.25],
 		[0.75, 0.31],
@@ -181,8 +181,8 @@ const STILL_02_RIGHT: Reading = {
 	from: 5,
 	reach: [0.759, 0.791, 0.825, 0.814, 0.783, 0.783, 0.74, 0.719, 0.663, 0.552, 0.424, 0.122],
 	under: [
-		[0, 0.45],
-		[0.15, 0.42],
+		[0, 0.42],
+		[0.15, 0.4],
 		[0.35, 0.25],
 		[0.75, 0.25],
 		[0.8, 0.31],
@@ -228,21 +228,24 @@ export const frame: FrameSpec = {
 			[0.2, 0.03],
 			[1, 0.03],
 		],
-		// Still 01: the inner stems lean 5 to 15 degrees, and the outer ones toward its two sides
-		// about 28. Still 02: the outer ones toward the crown's wide sides lean about 42 and carry its
-		// rim out and down to a quarter of the height. The eight outer stems stand at places 2 to 9
-		// of 9, from the side still 01's right looks across, a turn round.
+		// Each stem's lean from plumb where it leaves the stool. Still 01: the inner stems lean 5 to
+		// 15 degrees, and the outer ones toward its two sides about 32. Still 18, at still 01's turn:
+		// the outer ones lean 25 to 35. Still 02: the outer ones toward the crown's wide sides lean
+		// about 40 and carry its rim out and down to a quarter of the height; those between lean 35,
+		// so the crown's plan is the turning video's oval and no rounder. The record's single lean
+		// is the old grower's mean over every stem. The eight outer stems stand at places 2 to 9 of
+		// 9, from the side still 01's right looks across, a turn round.
 		lean: [
 			[0, 6],
 			[1 / 9, 13],
-			[2 / 9, 28],
-			[3 / 9, 34],
-			[4 / 9, 42],
-			[5 / 9, 34],
-			[6 / 9, 28],
-			[7 / 9, 34],
-			[8 / 9, 42],
-			[1, 34],
+			[2 / 9, 32],
+			[3 / 9, 35],
+			[4 / 9, 40],
+			[5 / 9, 35],
+			[6 / 9, 32],
+			[7 / 9, 35],
+			[8 / 9, 40],
+			[1, 35],
 		],
 		// Stills 01 and 17: a stem is 0.026 to 0.03 of the height wide above its foot and holds
 		// its width to its fork.
@@ -251,12 +254,12 @@ export const frame: FrameSpec = {
 			[0.03, 0.03],
 			[0.5, 0.026],
 		],
-		// Stills 01 and 18: a stem forks between 0.33 and 0.52 of the height, the middle ones highest.
+		// Stills 01 and 18: a stem forks between 0.35 and 0.52 of the height, the middle ones highest.
 		length: {
 			height: [
 				[0, 0.46],
 				[0.2, 0.42],
-				[1, 0.38],
+				[1, 0.4],
 			],
 		},
 		vary: 0.12,
