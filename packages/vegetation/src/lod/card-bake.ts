@@ -701,6 +701,42 @@ const CUT_OFFSETS = 4;
 /** The lowest coverage a card's texel must reach at any mip level, so faint averages never draw. */
 export const CARD_CUT_LEAST = 0.08;
 
+/** Texels a side that a leaf cell keeps at the coarsest mip level a card reads. */
+const LEVEL_TEXELS = 4;
+
+/**
+ * The coarsest mip level a species' cards read: the deepest at which its smallest leaf cell, with
+ * its border, still holds four texels a side. Past it a cell's average takes in its empty border and the cells beside
+ * it, so a card seen at a slant, whose footprint runs long, would lose its cover. The plant shader
+ * holds each card's sample and cut there. Prototypes that hold no leaves, or that only a cutting
+ * draws, do not count; with no leaf cell at all it is 0, which holds nothing.
+ *
+ * @param prototypes The kit's prototypes with their cells.
+ * @returns The level.
+ */
+export function cardLevelMost(
+	prototypes: readonly {
+		readonly leaves: number;
+		readonly cutting?: boolean;
+		readonly card: CardCell;
+	}[],
+): number {
+	let side = Number.POSITIVE_INFINITY;
+	for (const prototype of prototypes) {
+		if (prototype.leaves === 0 || prototype.cutting) continue;
+		for (const plane of prototype.card.planes)
+			side = Math.min(
+				side,
+				(plane.front[2] as number) + 2 * BORDER,
+				(plane.front[3] as number) + 2 * BORDER,
+			);
+	}
+	if (!Number.isFinite(side)) return 0;
+	let level = 0;
+	while (side >> (level + 1) >= LEVEL_TEXELS) level++;
+	return level;
+}
+
 /** Falls a cell's search tries, evenly from none to `CARD_CUT_FALL_MOST`. */
 const FALL_STEPS = 60;
 
