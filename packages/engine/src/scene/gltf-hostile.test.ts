@@ -12,7 +12,14 @@ import {
 	webpHeader,
 } from '../../../../tests/pages/lib/image-headers';
 import { modelAllowance } from './file-limits';
-import { type GltfData, GltfError, parseGltf, readContainer } from './gltf-parse';
+import {
+	CLUSTERS_VERSION,
+	type GltfData,
+	GltfError,
+	MAX_PATCH_DEPTH,
+	parseGltf,
+	readContainer,
+} from './gltf-parse';
 
 const URL_OF = 'https://example.com/models/hostile.glb';
 
@@ -192,6 +199,39 @@ describe('the parent loop check', () => {
 		const [code, message] = refusal(b.gltf());
 		expect(code).toBe('E1416');
 		expect(message).toMatch(/^node 5000[012] is in a loop of parents$/);
+	});
+});
+
+describe('a hostile tree of cluster patches', () => {
+	/** A triangle with a tree of `count` patches, each the child of the one before. */
+	function chainTree(count: number): Uint8Array {
+		const { b } = triangle();
+		const indices = new Uint32Array(count * 3);
+		const bounds = new Float32Array(count * 4);
+		const words = new Uint32Array(count * 4);
+		for (let k = 0; k < count; k++) {
+			indices.set([0, 1, 2], k * 3);
+			bounds[k * 4 + 3] = 1;
+			// The root's parent is 0; each other patch names the place of the one before, plus one.
+			words.set([k * 3, 3, k, 0], k * 4);
+		}
+		const primitive = (b.json.meshes[0] as GltfJson).primitives[0] as GltfJson;
+		primitive.extensions = {
+			NULL3D_clusters: {
+				indices: b.accessor(indices, 1),
+				bounds: b.accessor(bounds, 4),
+				patches: b.accessor(words, 4),
+				root: 0,
+				version: CLUSTERS_VERSION,
+			},
+		};
+		return b.glb();
+	}
+
+	test('a chain of patches past the depth bound fails fast', () => {
+		const [code, message] = refusal(chainTree(MAX_PATCH_DEPTH + 2));
+		expect(code).toBe('E1416');
+		expect(message).toMatch(/deeper than 64/);
 	});
 });
 

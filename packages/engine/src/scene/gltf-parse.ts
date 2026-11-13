@@ -689,6 +689,12 @@ export const PIECES_VERSION = 2;
  * and its error is at least theirs. An older tree draws its mesh whole.
  */
 export const CLUSTERS_VERSION = 2;
+/**
+ * The deepest chain of patches that a tree may hold. Every tree that the asset tool builds is
+ * shallower, and the engine's walk needs a bound so that a file cannot make it descend without
+ * end. The patch check refuses a deeper chain, as the engine's own check does.
+ */
+export const MAX_PATCH_DEPTH = 64;
 
 /**
  * A primitive that carries an extension which an add-on's handler reads. The loader hands the
@@ -2264,14 +2270,39 @@ function patchesOf(extension: Entry, what: string, read: Reader, vertices: numbe
 	if (words.count === 0 || root >= words.count)
 		broken(`${what}'s patch tree has no root among its patches`);
 	const patch = words.array as Uint32Array;
+	const depths = new Uint32Array(words.count);
 	for (let k = 0; k < words.count; k++) {
 		const first = patch[k * 4] as number;
 		const size = patch[k * 4 + 1] as number;
 		const parent = patch[k * 4 + 2] as number;
 		if (size === 0 || size % 3 !== 0 || first + size > indices.count)
 			broken(`${what}'s patch ${k} names no whole triangles of its tree`);
-		if (parent > words.count || parent === k + 1)
-			broken(`${what}'s patch ${k} names the patch ${parent} as its parent`);
+		// A parent comes before its child, so the tree holds no cycle.
+		if (parent > k) broken(`${what}'s patch ${k} names the patch ${parent} as its parent`);
+		if (parent !== 0) {
+			const depth = (depths[parent - 1] as number) + 1;
+			if (depth > MAX_PATCH_DEPTH)
+				broken(
+					`${what}'s patch ${k} lies ${depth} patches below its root, deeper than ${MAX_PATCH_DEPTH}`,
+				);
+			depths[k] = depth;
+		}
+	}
+	// No two patches name one index of the tree, so a view cannot draw one triangle twice and
+	// grow its list past the size that the layout sized for it.
+	const starts = new Uint32Array(words.count);
+	const ends = new Uint32Array(words.count);
+	for (let k = 0; k < words.count; k++) {
+		starts[k] = patch[k * 4] as number;
+		ends[k] = (starts[k] as number) + (patch[k * 4 + 1] as number);
+	}
+	const order = Array.from(starts.keys());
+	order.sort((a, b) => (starts[a] as number) - (starts[b] as number));
+	for (let k = 1; k < order.length; k++) {
+		const before = order[k - 1] as number;
+		const after = order[k] as number;
+		if ((ends[before] as number) > (starts[after] as number))
+			broken(`${what}'s patches ${before} and ${after} name one index of its tree`);
 	}
 	indicesWithin(
 		indices.array,
