@@ -1,51 +1,186 @@
-// The near pool: one per scene. It reads the camera once a frame and, when the camera has moved
-// half a metre or turned five degrees, starts the near task that picks the copies nearest the camera
-// within the preset's caps and composes their shoot rows. Until the pool is built, a page that asks
-// for `placeholders` gets a pool that draws no real shoots, and any other page an error.
-import type { SketchContext } from '@null3d/engine';
-import { notBuilt } from '../core/not-built';
+// The near pool: one per scene, the scene's budget of real pieces. The page gives it its camera and
+// calls `update` once a frame; when the camera has moved half a metre, the pool hands its budget out
+// over every placement that joined it, nearest copy first, and each placement writes the grants
+// into its pools of slots and its copies' card edges. A stand-in kit's pool draws no real shoots.
+import type { SketchContext, Vec3Like } from '@null3d/engine';
+import { NEAR_CAPS } from '../core/caps';
+import {
+	type BudgetCandidate,
+	GRANT_NONE,
+	GRANT_SWITCH,
+	GRANT_TEXEL,
+	handOut,
+	nearestFirst,
+} from './plant-budget';
+import type { PoolMember } from './pooled-shoots';
 import { standInNearPool } from './stand-in';
 
+/** Metres the camera moves before the pool hands its budget out again. */
+const MOVE = 0.5;
+
 /**
- * The near pool's caps; the preset's by default.
+ * The near pool's caps, the preset's by default, and the camera it hands pieces out from.
  *
  * @category api/vegetation
  */
 export interface NearPoolOptions {
-	/** Copies that draw real shoots. */
+	/** Copies that draw real pieces at once. */
 	readonly copies?: number;
-	/** Triangles those copies' shoots may draw together. */
+	/** Triangles those copies' pieces may draw together: the scene's budget of real pieces. */
 	readonly triangles?: number;
-	/** A pool for stand-in kits, which draws no real shoots while the near pool is not built. */
+	/** The camera the page draws from, whose place sets the nearest copies. */
+	readonly camera?: { getWorldPosition(out: Vec3Like): void };
+	/** A pool for stand-in kits, which draws no real shoots. */
 	readonly placeholders?: boolean;
 }
 
 /**
- * The scene's near pool: which copies draw real shoots.
+ * The scene's near pool: which copies draw real pieces.
  *
  * @category api/vegetation
  */
 export interface NearPool {
-	/** Reads the camera; starts the near task when it has moved 0.5 m or turned 5 degrees. Allocates nothing. */
+	/** Reads the camera; hands the budget out again when it has moved 0.5 m. Allocates nothing else. */
 	update(): void;
-	/** Copies drawing real shoots now, for the stats overlay and the tests. */
+	/** Copies drawing real pieces now, for the stats overlay and the tests. */
 	readonly copies: number;
-	/** Triangles of real shoots drawn now. */
+	/** Triangles of real pieces drawn now, by each copy's own count drawn at once. */
 	readonly triangles: number;
 	/** Removes the pool's batches and stops its task. */
 	destroy(): void;
+}
+
+/** The pool as a placement joins it. */
+export interface NearPoolHost extends NearPool {
+	/** The scene's budget of real pieces. */
+	readonly budget: number;
+	/**
+	 * Adds a placement's copies to the hand-out.
+	 *
+	 * @returns A call that takes them out again.
+	 */
+	join(member: PoolMember): () => void;
+}
+
+/**
+ * Whether a pool is one that placements join, not a stand-in kit's.
+ *
+ * @param pool The pool.
+ * @returns Whether it hands out real pieces.
+ */
+export function isPoolHost(pool: NearPool | undefined): pool is NearPoolHost {
+	return pool !== undefined && 'join' in pool;
 }
 
 /**
  * Makes the scene's near pool.
  *
  * @param ctx The sketch's context.
- * @param options The caps; the preset's by default.
+ * @param options The caps, the preset's by default, and the camera.
  * @returns The pool.
  * @category api/vegetation
  */
-export function createNearPool(ctx: SketchContext, options?: NearPoolOptions): NearPool {
-	void ctx;
-	if (options?.placeholders) return standInNearPool();
-	throw notBuilt('the near pool');
+export function createNearPool(ctx: SketchContext, options: NearPoolOptions = {}): NearPool {
+	if (options.placeholders) return standInNearPool();
+	const camera = options.camera;
+	if (!camera)
+		throw new Error('@null3d/vegetation: a near pool needs the camera the page draws from.');
+	const caps = NEAR_CAPS[ctx.quality.preset];
+	const budget = options.triangles ?? caps.triangles;
+	const most = options.copies ?? caps.copies;
+	if (!Number.isFinite(budget) || budget < 0)
+		throw new Error(`@null3d/vegetation: a near pool of ${budget} triangles is no budget.`);
+	const members: { member: PoolMember; last: Uint8Array }[] = [];
+	const eye = new Float64Array(3);
+	const handed = new Float64Array(3);
+	let fresh = true;
+	let copies = 0;
+	let triangles = 0;
+
+	const handAll = () => {
+		const list: BudgetCandidate[] = [];
+		const owner: number[] = [];
+		const last: number[] = [];
+		members.forEach(({ member, last: held }, m) => {
+			const place = member.copies.position;
+			for (let copy = 0; copy < member.copies.count; copy++) {
+				const costs = member.costOf(copy);
+				list.push({
+					distance: Math.hypot(
+						(place[copy * 3] as number) - (eye[0] as number),
+						(place[copy * 3 + 1] as number) - (eye[1] as number),
+						(place[copy * 3 + 2] as number) - (eye[2] as number),
+					),
+					toSwitch: costs.toSwitch,
+					toTexel: costs.toTexel,
+				});
+				owner.push(m);
+				last.push(held[copy] as number);
+			}
+		});
+		const grants = handOut(list, budget, Uint8Array.from(last));
+		// The nearest copies first, and no more of them than the pool's count of copies.
+		const order = nearestFirst(list);
+		let granted = 0;
+		for (const i of order) {
+			if (grants[i] === GRANT_NONE) continue;
+			if (granted >= most) grants[i] = GRANT_NONE;
+			else granted++;
+		}
+		copies = 0;
+		triangles = 0;
+		let first = 0;
+		members.forEach((entry) => {
+			const count = entry.member.copies.count;
+			const own = grants.subarray(first, first + count);
+			const ownOrder = order.filter((i) => i >= first && i < first + count).map((i) => i - first);
+			entry.last = entry.member.apply(own, ownOrder);
+			entry.last.forEach((grant, copy) => {
+				if (grant === GRANT_NONE) return;
+				const costs = entry.member.costOf(copy);
+				copies++;
+				triangles +=
+					grant === GRANT_TEXEL ? costs.toTexel : grant === GRANT_SWITCH ? costs.toSwitch : 0;
+			});
+			first += count;
+		});
+	};
+
+	const pool: NearPoolHost = {
+		budget,
+		get copies() {
+			return copies;
+		},
+		get triangles() {
+			return triangles;
+		},
+		join(member) {
+			const entry = { member, last: new Uint8Array(member.copies.count) };
+			members.push(entry);
+			fresh = true;
+			return () => {
+				const at = members.indexOf(entry);
+				if (at >= 0) members.splice(at, 1);
+				fresh = true;
+			};
+		},
+		update() {
+			camera.getWorldPosition(eye);
+			const moved = Math.hypot(
+				(eye[0] as number) - (handed[0] as number),
+				(eye[1] as number) - (handed[1] as number),
+				(eye[2] as number) - (handed[2] as number),
+			);
+			if (!fresh && moved < MOVE) return;
+			fresh = false;
+			handed.set(eye);
+			handAll();
+		},
+		destroy() {
+			members.length = 0;
+			copies = 0;
+			triangles = 0;
+		},
+	};
+	return pool;
 }

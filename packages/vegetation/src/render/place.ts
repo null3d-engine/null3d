@@ -1,14 +1,13 @@
 // Placing plants: meshes with their levels, copy rows, shoot batches in the near pool, impostor cards
 // and their hand-over. A stand-in kit's copies draw as render/stand-in.ts places them. A real kit's
-// copies draw at fixed places with their shoots composed once, as render/static-shoots.ts places
-// them, until the near pool is built.
+// copies draw at fixed places, as render/static-shoots.ts places them, with their pieces in the near
+// pool when the page gives one (render/pooled-shoots.ts).
 import type { SketchContext } from '@null3d/engine';
 import type { PlantAsset } from '../asset';
-import { notBuilt } from '../core/not-built';
 import type { PlantView } from '../lod/drawn';
 import type { FarPlant } from '../lod/impostor';
 import type { PlantMaterials } from './material';
-import type { NearPool } from './near-pool';
+import { isPoolHost, type NearPool } from './near-pool';
 import { standInPlace } from './stand-in';
 import { placeStaticPlants } from './static-shoots';
 import type { SpeciesKit } from './textures';
@@ -41,7 +40,11 @@ export type { PlantView };
 export interface PlaceOptions {
 	/** The species' materials. */
 	readonly materials: PlantMaterials;
-	/** The scene's near pool; without one, no copy draws real shoots. */
+	/**
+	 * The scene's near pool, its budget of real pieces: the nearest copies of every placement that
+	 * joins it draw their pieces while the budget lasts. Without one, a placement's first copies, up
+	 * to the species' near slots, draw their shoots to the switch.
+	 */
 	readonly near?: NearPool;
 	/** The far cards, one per variant; without them, the second card level draws to the horizon. */
 	readonly far?: readonly FarPlant[];
@@ -85,6 +88,7 @@ export function placePlants(
 	options: PlaceOptions,
 ): PlacedPlants {
 	if (kit.placeholders === true) return standInPlace(ctx, kit, assets, copies, options);
-	if (options.near) throw notBuilt('placing plants in a near pool');
+	if (options.near && !isPoolHost(options.near))
+		throw new Error('@null3d/vegetation: a real kit needs a near pool made without placeholders.');
 	return placeStaticPlants(ctx, kit, assets, copies, options);
 }

@@ -36,9 +36,24 @@ export interface BudgetCandidate {
 }
 
 /**
- * Hands out a scene's budget of real pieces, nearest copy first. Copies are ordered by their distance
- * to the whole metre, then by their place in the list, so two copies at nearly one distance do not
- * trade places at every step of the eye.
+ * The copies nearest first: by their distance to the whole metre, then by their place in the list,
+ * so two copies at nearly one distance do not trade places at every step of the eye.
+ *
+ * @param candidates The copies.
+ * @returns Their indices, nearest first.
+ */
+export function nearestFirst(candidates: readonly { readonly distance: number }[]): number[] {
+	const order = candidates.map((_, i) => i);
+	order.sort(
+		(a, b) =>
+			Math.floor((candidates[a] as { distance: number }).distance) -
+				Math.floor((candidates[b] as { distance: number }).distance) || a - b,
+	);
+	return order;
+}
+
+/**
+ * Hands out a scene's budget of real pieces, nearest copy first (`nearestFirst`).
  *
  * @param candidates The copies that may draw real pieces.
  * @param budget The scene's triangles for real pieces.
@@ -52,12 +67,7 @@ export function handOut(
 ): Uint8Array {
 	if (!Number.isFinite(budget) || budget < 0)
 		throw new Error(`@null3d/vegetation: a pieces budget of ${budget} is no count of triangles.`);
-	const order = candidates.map((_, i) => i);
-	order.sort((a, b) => {
-		const da = Math.floor((candidates[a] as BudgetCandidate).distance);
-		const db = Math.floor((candidates[b] as BudgetCandidate).distance);
-		return da - db || a - b;
-	});
+	const order = nearestFirst(candidates);
 	const grants = new Uint8Array(candidates.length);
 	// A grant the copy held is kept to the whole budget; a new one must fit a twentieth inside it.
 	const limit = (i: number, grant: number) =>

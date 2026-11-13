@@ -1,5 +1,7 @@
 // Plants at fixed places, drawn with real shoots near the camera: a review page, a hero tree, a
-// garden of a few copies. Everything is composed once at setup, so no work runs per frame.
+// garden, a stand. Every batch is composed once at setup. Without a near pool, the first copies hold
+// the species' near slots for good and no work runs per frame; with one, the pool hands the copies
+// their pieces as the camera moves and writes them into pools of slots (render/pooled-shoots.ts).
 //
 // Each level of each variant draws as instance batches of its own, one per part, over the band of
 // distance in which the level shows: the nearest wood from the copy out to the shoots' switch, the
@@ -13,12 +15,12 @@
 // copy's first card level draws from the copy out, and gives way to the shoots, pixel by pixel,
 // inside the switch distance. So a copy that straddles the switch shows real leaves on its near
 // side and cards on its far side, and no pixel drops out of both.
-import type { InstanceBatch, Material, MeshGeometry, SketchContext, Texture } from '@null3d/engine';
+import type { InstanceBatch, Material, MeshGeometry, SketchContext } from '@null3d/engine';
 import type { ImpostorBatch } from '@null3d/impostors';
 import type { PlantAsset, PlantPart } from '../asset';
 import { DETAILS, type Detail, type Season } from '../core/types';
 import { SHOOT_REACH, switchScale } from '../lod/drawn';
-import { firstCardStart, REFERENCE_VIEW } from '../lod/levels';
+import { firstCardStart, REFERENCE_VIEW, texelStart } from '../lod/levels';
 import { EDGE_BAND, handOverToCards } from './hand-over';
 import {
 	type PlantMaterials,
@@ -27,10 +29,12 @@ import {
 	prototypeGeometry,
 	setPlacedUniforms,
 } from './material';
+import { isPoolHost } from './near-pool';
+import { nearTable, writeCopyRows, writeSlotPlace } from './near-table';
 import type { PlacedPlants, PlaceOptions, PlantCopies } from './place';
-import { toHalf, writeShootRow } from './records';
+import { type CardRow, pooledShoots } from './pooled-shoots';
 import { farCards } from './stand-in';
-import { NEAR_SLOT_TEXELS, NEAR_SLOTS, type SpeciesKit, writePlantWind } from './textures';
+import { NEAR_SLOTS, type SpeciesKit, writePlantWind } from './textures';
 
 /** The number the shader knows each season by. */
 const SEASON_KIND: Readonly<Record<Season, number>> = {
@@ -221,7 +225,11 @@ export function placeStaticPlants(
 	const meshes: MeshGeometry[] = [];
 	const widest = copies.scale.reduce((most, s) => Math.max(most, s), 0);
 	const castShadows = options.castShadows ?? true;
-	const slots = takeNearSlots(kit, copies);
+	// A near pool hands the copies their pieces as the camera moves; without one, the first copies
+	// hold the species' near slots for good.
+	const pool = isPoolHost(options.near) ? options.near : undefined;
+	const slots = pool ? new Map<number, number>() : takeNearSlots(kit, copies);
+	const cardRows = new Map<number, CardRow>();
 
 	assets.forEach((asset, variant) => {
 		const rows = copiesOf(copies, variant);
@@ -256,10 +264,11 @@ export function placeStaticPlants(
 				batch.setBoundingRadius(bound);
 				if (nearCards) {
 					const values = batch.values as Float32Array;
-					// Value x is the split distance in metres, the distance the shoot rows draw to, and
-					// 0 for a copy with no shoots.
+					// Value x is the copy's near edge in metres, the distance its pieces draw to, and 0
+					// for a copy with none; the near pool writes it as it hands the pieces out.
 					rows.forEach((copy, row) => {
 						values[row * 4] = slots.has(copy) ? near : 0;
+						cardRows.set(copy, { batch, row });
 					});
 					batch.setDrawRange(0, band.to);
 				} else batch.setDrawRange(band.from, band.to);
@@ -268,7 +277,8 @@ export function placeStaticPlants(
 			}
 		}
 		batches.push(...placed);
-		batches.push(...shootBatches(ctx, kit, asset, copies, rows, slots, near, materials.shoots));
+		if (!pool)
+			batches.push(...shootBatches(ctx, kit, asset, copies, rows, slots, near, materials.shoots));
 		const far = options.far?.find((plant) => plant.variant === asset.variant);
 		if (far) {
 			const batch = farCards(ctx, asset, far.bake, copies, rows);
@@ -278,9 +288,25 @@ export function placeStaticPlants(
 			cards.push(batch);
 		}
 	});
+	const member = pool
+		? pooledShoots(
+				ctx,
+				kit,
+				assets,
+				copies,
+				cardRows,
+				{ switch: near, texel: texelStart(kit, options.view) * bias },
+				options.view,
+				pool.budget,
+				materials.shoots,
+			)
+		: undefined;
+	const leave = member && pool ? pool.join(member) : undefined;
 	return {
 		copies: copies.count,
 		destroy() {
+			leave?.();
+			member?.destroy();
 			for (const batch of batches) batch.destroy();
 			for (const batch of cards) batch.destroy();
 			for (const mesh of meshes) mesh.destroy();
@@ -306,50 +332,32 @@ function materialOf(materials: PlantMaterials, name: PlantPart['name'], far = fa
 	}
 }
 
-/** Each species' near table on the CPU, and the next slot that no placement holds. */
-const NEAR_TABLES = new WeakMap<Texture, { readonly data: Float32Array; next: number }>();
-
-/**
- * The near slots of a species that fixed placements hold, which the scene's near pool leaves to
- * them: slots 0 up to this count.
- *
- * @param kit The species' kit.
- * @returns The slots held.
- */
-export function staticNearSlots(kit: SpeciesKit): number {
-	return NEAR_TABLES.get(kit.textures.near)?.next ?? 0;
-}
-
 /**
  * Gives the first copies of a placement the species' free near slots, in order, and writes each
- * one's place into the near table: the place's high halves and the copy's turn, then the place's
- * remainders and its scale, so the shader finds a shoot's base in the copy's own space. Placements
- * of one species share the table, so the copies past its last slot draw no real shoots.
+ * one's place into the near table, so the shader finds a shoot's base in the copy's own space.
+ * Placements of one species share the table, so the copies past its last slot draw no real shoots.
  *
  * @returns Each copy with a slot, and its slot.
  */
 function takeNearSlots(kit: SpeciesKit, copies: PlantCopies): Map<number, number> {
-	const texture = kit.textures.near;
-	let table = NEAR_TABLES.get(texture);
-	if (!table) {
-		table = { data: new Float32Array(NEAR_SLOTS * NEAR_SLOT_TEXELS * 4), next: 0 };
-		NEAR_TABLES.set(texture, table);
-	}
+	const table = nearTable(kit);
 	const slots = new Map<number, number>();
 	for (let copy = 0; copy < copies.count && table.next < NEAR_SLOTS; copy++) {
 		const slot = table.next++;
 		slots.set(copy, slot);
-		const at = slot * NEAR_SLOT_TEXELS * 4;
-		for (let k = 0; k < 3; k++) {
-			const p = copies.position[copy * 3 + k] as number;
-			const high = toHalf(p);
-			table.data[at + k] = high;
-			table.data[at + 4 + k] = p - high;
-		}
-		table.data[at + 3] = copies.turn[copy] as number;
-		table.data[at + 7] = copies.scale[copy] as number;
+		writeSlotPlace(
+			table,
+			slot,
+			[
+				copies.position[copy * 3] as number,
+				copies.position[copy * 3 + 1] as number,
+				copies.position[copy * 3 + 2] as number,
+			],
+			copies.turn[copy] as number,
+			copies.scale[copy] as number,
+		);
 	}
-	if (slots.size > 0) texture.update(table.data);
+	if (slots.size > 0) kit.textures.near.update(table.data);
 	return slots;
 }
 
@@ -379,7 +387,6 @@ function shootBatches(
 		counts[p] = (counts[p] as number) + 1;
 	}
 	const batches: InstanceBatch[] = [];
-	const q = [0, 0, 0, 1];
 	kit.prototypes.forEach((prototype, p) => {
 		const count = (counts[p] as number) * nearCopies.length;
 		const arrays = prototype.tiers[tier];
@@ -390,66 +397,12 @@ function shootBatches(
 			receiveShadows: true,
 			values: true,
 		});
-		const { positions, rotations, scales } = batch;
-		const values = batch.values as Float32Array;
 		let row = 0;
-		for (const copy of nearCopies) {
-			const slot = slots.get(copy) as number;
-			const cx = copies.position[copy * 3] as number;
-			const cy = copies.position[copy * 3 + 1] as number;
-			const cz = copies.position[copy * 3 + 2] as number;
-			const turn = copies.turn[copy] as number;
-			const size = copies.scale[copy] as number;
-			const c = Math.cos(turn);
-			const s = Math.sin(turn);
-			const half = turn / 2;
-			q[1] = Math.sin(half);
-			q[3] = Math.cos(half);
-			for (let r = 0; r < shoots.count; r++) {
-				if ((shoots.prototype[r] as number) !== p) continue;
-				const x = (shoots.position[r * 3] as number) * size;
-				const y = (shoots.position[r * 3 + 1] as number) * size;
-				const z = (shoots.position[r * 3 + 2] as number) * size;
-				positions[row * 3] = cx + x * c + z * s;
-				positions[row * 3 + 1] = cy + y;
-				positions[row * 3 + 2] = cz - x * s + z * c;
-				turnQuaternion(q, shoots.rotation, r * 4, rotations, row * 4);
-				scales.fill((shoots.scale[r] as number) * size, row * 3, row * 3 + 3);
-				writeShootRow(
-					values,
-					row,
-					asset.wind.base + (shoots.record[r] as number),
-					shoots.phase[r] as number,
-					shoots.sky[r] as number,
-					shoots.bent[r] as number,
-					slot,
-				);
-				row++;
-			}
-		}
+		for (const copy of nearCopies)
+			row = writeCopyRows(batch, row, asset, copies, copy, p, slots.get(copy) as number);
 		batch.markDirty();
 		batch.setDrawRange(0, near * SHOOT_REACH);
 		batches.push(batch);
 	});
 	return batches;
-}
-
-/** Writes the turn `a` (about +Y only) times the quaternion at `b[bo]` into `out[oo]`. */
-function turnQuaternion(
-	a: readonly number[],
-	b: Float32Array,
-	bo: number,
-	out: Float32Array,
-	oo: number,
-): void {
-	const ay = a[1] as number;
-	const aw = a[3] as number;
-	const bx = b[bo] as number;
-	const by = b[bo + 1] as number;
-	const bz = b[bo + 2] as number;
-	const bw = b[bo + 3] as number;
-	out[oo] = aw * bx + ay * bz;
-	out[oo + 1] = aw * by + ay * bw;
-	out[oo + 2] = aw * bz - ay * bx;
-	out[oo + 3] = aw * bw - ay * by;
 }
