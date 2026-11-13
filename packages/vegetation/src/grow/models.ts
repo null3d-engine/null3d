@@ -24,6 +24,7 @@ export interface Grower {
 /** Each model's grower, as a lazy chunk. */
 const GROWERS: Readonly<Record<GrowthModel, () => Promise<{ readonly grower: Grower }>>> = {
 	'self-organizing': () => import('./self-organizing'),
+	scaffold: () => import('./scaffold'),
 	architectural: () => import('./architectural'),
 	'crown-rosette': () => import('./crown-rosette'),
 	culm: () => import('./culm'),

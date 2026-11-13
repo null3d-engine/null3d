@@ -282,7 +282,10 @@ export function withLimbs(
 	if (limbs === undefined || limbs === 1) return record;
 	checkShare('limbs', limbs, least, LIMBS_MOST);
 	const thin = Math.min(1, limbs);
-	const growth = thinnedGrowth(record.growth, thin);
+	// A scaffold plant's sockets are its shoots' places, so a share above the record's own adds
+	// sockets as a share below it takes them away. Every other model keeps the shoots its own
+	// shade line drops, below.
+	const growth = thinnedGrowth(record.growth, record.growth.model === 'scaffold' ? limbs : thin);
 	const shoots = record.shoots;
 	if (!shoots) return { ...record, growth };
 	const placement = shoots.placement;
@@ -314,13 +317,23 @@ function checkShare(name: string, share: number, least: number, most: number): v
 	);
 }
 
-/** A growth spec with a share of its model's own limbs removed: the wood a sparse plant keeps. */
+/**
+ * A growth spec with a share of its model's own limbs removed: the wood a sparse plant keeps. A
+ * scaffold plant takes a share above one too.
+ */
 function thinnedGrowth(growth: Species['growth'], thin: number): Species['growth'] {
 	switch (growth.model) {
 		// The branching multiplier is 1 where a record does not give one, so a share moves it
 		// whatever the record says: this is the dial that decides how many limbs a crown puts out.
 		case 'self-organizing':
 			return { ...growth, branching: (growth.branching ?? 1) * thin };
+		// A scaffold plant's branches end at its sockets, so the share moves the sockets on each
+		// foliage mass: fewer sockets are fewer branches, and the masses keep the crown's outline.
+		case 'scaffold':
+			return {
+				...growth,
+				sockets: { ...growth.sockets, spacing: growth.sockets.spacing / Math.sqrt(thin) },
+			};
 		// A conifer's limbs are its boughs, so the share moves the boughs at the leader and leaves
 		// the orders below them their own division.
 		case 'architectural':
