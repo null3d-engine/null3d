@@ -1316,7 +1316,7 @@ export function plantMask(image: Rgba, workWidth = WORK_WIDTH): PlantMask {
 	const footFollowedFrom =
 		background.ground &&
 		(surfaceAt(background.ground, 0.5, (horizon / height + 1) / 2)[0] as number) > FOOT_GROUND_LIGHT
-			? followStemFoot(mask, lab, width, height, horizon)
+			? followStemFoot({ width, height, mask, background }, lab)
 			: undefined;
 	if (!background.plain) {
 		let kept = 0;
@@ -1513,7 +1513,13 @@ export function followStem(
 		close();
 		let run = best as [number, number] | null;
 		const length = run ? run[1] - run[0] + 1 : 0;
-		if (!run || length < Math.max(2, across * FOOT_RUN_LEAST) || length > across * FOOT_RUN_MOST) {
+		// A run that covers less than half the run above it has stepped off the stem to one side.
+		if (
+			!run ||
+			length < Math.max(2, across * FOOT_RUN_LEAST) ||
+			length > across * FOOT_RUN_MOST ||
+			bestOver * 2 < right - left + 1
+		) {
 			// A foot whose bark is too mottled to hold pixel by pixel can still hold as a whole: the
 			// column under the run above, taken together, against the ground beside it.
 			run = null;
@@ -1549,6 +1555,35 @@ export function followStem(
 	return foot > box.bottom ? { kind: 'stem', foot, runs: followed } : { kind: 'none' };
 }
 
+/** The share of the plant's height, from the ground, in which thin horizontal runs are dropped. */
+const LOW_SHARE = 0.2;
+/** The least run up and down, as a share of the plant's height, through a pixel of that share. */
+const LOW_RUN = 1 / 32;
+
+/**
+ * A mask without the thin horizontal runs of the plant's lowest share: a pixel there stays only
+ * where the outline runs a set share of the plant's height up or down through it, as a trunk or a
+ * tuft does and a horizon line or a ground strip does not.
+ */
+export function dropThinLowRuns(plant: PlantMask, box: Box): PlantMask {
+	const { width, height } = plant;
+	const tall = box.bottom - box.top + 1;
+	const run = Math.max(2, Math.round(LOW_RUN * tall));
+	const from = box.bottom - Math.round(LOW_SHARE * tall);
+	const mask = plant.mask.slice();
+	for (let y = Math.max(0, from); y <= box.bottom; y++)
+		for (let x = 0; x < width; x++) {
+			const at = y * width + x;
+			if (!plant.mask[at]) continue;
+			let length = 1;
+			for (let d = 1; d < run && y + d < height && plant.mask[at + d * width]; d++) length++;
+			for (let d = 1; d < run && y - d >= 0 && plant.mask[at - d * width]; d++) length++;
+			if (length < run) mask[at] = 0;
+		}
+	keepPlantParts(mask, width, height, plant.background.horizon ?? height);
+	return { ...plant, mask };
+}
+
 /** The share of the outline's height, from its lowest row up, whose runs place the stem's column. */
 const FOOT_AXIS_BAND = 0.15;
 
@@ -1572,33 +1607,33 @@ function stemColumn(mask: Uint8Array, width: number, box: Box): number {
  * Follows a stem from the outline's lowest row down to its foot, in the mask. The ground's fitted
  * colour cannot tell a dark foot from dark ground, so an outline can end at the horizon, or in the
  * ground below it, while the stem runs on to its root collar, and every figure that is a share of the
- * plant's height then counts from the wrong base. `followStem` follows the stem down from its column.
+ * plant's height then counts from the wrong base. The stem is read on the outline without the thin
+ * runs along its foot, a horizon line or a strip of grass that the mask kept, and `followStem`
+ * follows it down from its column; the followed rows join the mask.
  *
- * @returns The row where the outline ended before the stem was followed, or undefined where no
+ * @returns The row where the stem's outline ended before it was followed, or undefined where no
  *   stem was followed.
  */
-function followStemFoot(
-	mask: Uint8Array,
-	lab: Float32Array,
-	width: number,
-	height: number,
-	horizon: number,
-): number | undefined {
-	const box = boxOf(mask, width, height);
+function followStemFoot(plant: PlantMask, lab: Float32Array): number | undefined {
+	const { mask, width, height } = plant;
+	const whole = boxOf(mask, width, height);
+	if (!whole) return undefined;
+	const cleaned = dropThinLowRuns(plant, whole).mask;
+	const box = boxOf(cleaned, width, height);
 	// An outline that ends above the horizon stands on its own foot.
+	const horizon = plant.background.horizon ?? height;
 	if (!box || box.bottom < horizon - Math.max(2, Math.round(height * 0.01))) return undefined;
-	// The stem is followed from its own lowest row, which a speck in the ground beside it can stand
-	// below; the followed rows then join the stem and are not a loose piece under the speck.
-	const column = stemColumn(mask, width, box);
-	const runs = axisRuns(mask, width, box, column);
+	// The stem is followed from its own lowest row, which a speck beside it can stand below; the
+	// followed rows then join the stem and are not a loose piece under the speck.
+	const column = stemColumn(cleaned, width, box);
+	const runs = axisRuns(cleaned, width, box, column);
 	const holds = (y: number): boolean =>
 		(runs[y * 2] as number) >= 0 &&
 		(runs[y * 2] as number) <= column + 1 &&
 		(runs[y * 2 + 1] as number) >= column - 1;
 	let last = box.bottom;
 	while (last > box.top && !holds(last)) last--;
-	const stemBox = { ...box, bottom: last };
-	const stem = followStem(lab, width, height, mask, stemBox, column);
+	const stem = followStem(lab, width, height, cleaned, { ...box, bottom: last }, column);
 	if (stem.kind !== 'stem') return undefined;
 	stem.runs.forEach(([from, to], k) => {
 		mask.fill(1, (last + 1 + k) * width + from, (last + 1 + k) * width + to + 1);
