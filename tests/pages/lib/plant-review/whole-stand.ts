@@ -208,6 +208,7 @@ export function wholeStand(
 		}
 	};
 	let held: WholeStand['held'] = 'rows';
+	let lostFoot = false;
 	if (askedBase !== undefined) {
 		// Two rows asked: the span between them sets the distance and their middle the height.
 		const askedSpan = askedBase - framing.top;
@@ -222,8 +223,12 @@ export function wholeStand(
 		}
 	} else if (framing.eye === undefined && framing.widthShare !== undefined) {
 		// The photograph's foot is lost below its horizon, so no row marks it: the plant takes its
-		// photograph's share of the width, and its highest point lands on the asked top row.
-		const share = Math.min(WIDEST, framing.widthShare);
+		// photograph's share of the width, and its highest point lands on the asked top row. The
+		// stand is held by that width, so a redraw's scale corrects the share its points take: a
+		// plant whose drawn edges stand inside its points, as fading blade tips do, takes more.
+		lostFoot = true;
+		held = 'width';
+		const share = Math.min(WIDEST, framing.widthShare / (framing.scale ?? 1));
 		for (let pass = 0; pass < 24; pass++) {
 			const at = extentAt(distance, eye);
 			const scale = (at.right - at.left) / share;
@@ -244,10 +249,11 @@ export function wholeStand(
 		}
 		distance = Math.sqrt(near * far);
 	}
-	// The plant takes no more of the frame's width than its photograph's does.
+	// The plant takes no more of the frame's width than its photograph's does; a stand on a lost
+	// foot already set its width.
 	const rows = distance;
 	const widest = Math.min(WIDEST, framing.widthShare ?? WIDEST);
-	for (let pass = 0; pass < 8; pass++) {
+	for (let pass = 0; pass < 8 && !lostFoot; pass++) {
 		const at = extentAt(distance, eye);
 		const over = (at.right - at.left) / widest;
 		if (over <= 1 + NEAR) break;
@@ -255,7 +261,7 @@ export function wholeStand(
 		pinFoot();
 		held = 'width';
 	}
-	if (framing.scale !== undefined && framing.scale > 0 && framing.scale !== 1) {
+	if (!lostFoot && framing.scale !== undefined && framing.scale > 0 && framing.scale !== 1) {
 		// A redraw corrects the drawn width by what its picture measured, from the stand that drew
 		// it: out, or in no nearer than the stand on the asked rows. A nearer camera would draw the
 		// plant taller than its photograph's share of the frame, so a plant narrower than its

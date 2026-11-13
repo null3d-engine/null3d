@@ -262,6 +262,25 @@ describe('the stand of a whole view', () => {
 		}
 	});
 
+	test("widens a lost-foot stand's width share by a redraw's scale, its top still on its row", () => {
+		const mound = crown(5, 6, 0, 0.5);
+		const framing: WholeFraming = {
+			fov: 30,
+			aspect: 1.5,
+			horizon: 0.52,
+			top: 0.05,
+			targetX: 0.5,
+			widthShare: 0.6,
+		};
+		const first = wholeStand(mound, [0, 0, 0], 0, framing, 6);
+		expect(first.held).toBe('width');
+		// The drawing measured 0.5 of the width where its photograph takes 0.6.
+		const redrawn = wholeStand(mound, [0, 0, 0], 0, { ...framing, scale: 0.5 / 0.6 }, 6);
+		expect(redrawn.extent.right - redrawn.extent.left).toBeCloseTo(0.72, 2);
+		expect(redrawn.extent.top).toBeCloseTo(0.05, 2);
+		expect(redrawn.distance).toBeLessThan(first.distance);
+	});
+
 	test('reads a blade that dips through the ground in front of a low camera where it meets the ground', () => {
 		// A tuft whose front blade runs toward the camera and dips under the ground near its tip.
 		const tuft = crown(0.5, 0.6, 0, 0.05);
