@@ -1932,8 +1932,21 @@ function meanColour(
 	return { lab: mean.map((v) => Number(v.toFixed(2))), hex: hexOf(srgbOf(mean)) };
 }
 
-/** Measures a plant from its outline in a picture. */
-export function measurePlant(image: Rgba, plant: PlantMask, moundForm = false): PlantMeasures {
+/**
+ * Measures a plant from its outline in a picture.
+ *
+ * A cut piece's crown bottom is its reference picture's own crown share of the plant's height: the
+ * same share on both sides bounds the same part of the piece, so a stem outside the picture's
+ * subject stays out of the box. A piece with no share takes its whole box. A mound's crown start
+ * stays at its foot.
+ */
+export function measurePlant(
+	image: Rgba,
+	plant: PlantMask,
+	piece = false,
+	subject?: number,
+	moundForm = false,
+): PlantMeasures {
 	const { width, height, mask, coverage, background } = plant;
 	const work = image.width === width ? image : resizeToWidth(image, width);
 	const lab = labImage(work);
@@ -1971,8 +1984,12 @@ export function measurePlant(image: Rgba, plant: PlantMask, moundForm = false): 
 			light: null,
 		};
 	const spans = rowSpans(mask, width, height);
-	const start = crownStartRow(spans, box, centralRuns(mask, width, box), moundForm);
 	const tall = box.bottom - box.top + 1;
+	const start = piece
+		? subject !== undefined
+			? Math.min(box.bottom, box.top + Math.max(1, Math.round(subject * tall)) - 1)
+			: box.bottom
+		: crownStartRow(spans, box, centralRuns(mask, width, box), moundForm);
 	// The crown's outline: in each crown row, everything between the row's outermost plant pixels.
 	let hull = 0;
 	let gaps = 0;

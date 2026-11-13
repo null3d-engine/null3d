@@ -5,10 +5,11 @@
 //
 // Outlines are compared after each is scaled to the same height and centred on its trunk, so the
 // overlap measures shape rather than framing; the frame overlap, as framed, is reported beside it.
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { writePng } from '../../../packages/cli/src/png.js';
 import type { PlantReviewQuery } from '../../../tests/pages/lib/plant-review/query.ts';
+import { VIEW_SPECS } from '../../../tests/pages/lib/plant-review/views.ts';
 import {
 	blank,
 	deltaE2000,
@@ -522,11 +523,13 @@ function renderSide(
 	file: string,
 	matte: string | undefined,
 	bottomCut: boolean,
+	piece = false,
+	subject?: number,
 	moundForm = false,
 ): Side {
 	const image = readImage(file);
 	const plant = matte && existsSync(matte) ? matteMask(readImage(matte)) : plantMask(image);
-	return side(label, image, plant, bottomCut, moundForm);
+	return side(label, image, plant, bottomCut, piece, subject, moundForm);
 }
 
 /** A side of a comparison from a picture and its outline. */
@@ -535,9 +538,11 @@ function side(
 	image: Rgba,
 	plant: PlantMask,
 	bottomCut: boolean,
+	piece = false,
+	subject?: number,
 	moundForm = false,
 ): Side {
-	const measures = measurePlant(image, plant, moundForm);
+	const measures = measurePlant(image, plant, piece, subject, moundForm);
 	const box = measures.box;
 	if (!box) return { label, image, plant, measures };
 	const bottom = bottomCut ? plant.height - 1 : box.bottom;
@@ -1167,6 +1172,8 @@ function renderSideOf(
 	frame: RunFrame,
 	label: string,
 	bottomCut: boolean,
+	piece = false,
+	subject?: number,
 	moundForm = false,
 ): Side {
 	return renderSide(
@@ -1174,6 +1181,8 @@ function renderSideOf(
 		join(runDir, frame.file),
 		frame.matte ? join(runDir, frame.matte) : undefined,
 		bottomCut,
+		piece,
+		subject,
 		moundForm,
 	);
 }
@@ -1238,10 +1247,18 @@ export function compareTurn(
 		sheets: [],
 	};
 	if (m === 0) return { ...empty, error: 'the run drew no frame of this turn' };
+	// A turn of a cut piece takes its subject share from the first reference frame, so every frame
+	// of the turn bounds the same part of the piece.
+	const piece = video.piece !== 'whole';
 	const refMasks = references.map((image) => plantMask(image));
 	const refMeasures = refMasks.map((mask, k) =>
-		measurePlant(references[k] as Rgba, mask, moundForm),
+		measurePlant(references[k] as Rgba, mask, false, undefined, moundForm),
 	);
+	const firstBox = refMeasures[0]?.box;
+	const subject =
+		piece && firstBox
+			? refMeasures[0]!.crownBox.height / (firstBox.bottom - firstBox.top + 1)
+			: undefined;
 	const bottomCut = refMeasures.filter((measure) => measure.clipped.bottom).length > n / 2;
 	const refSides = references.map((image, k) =>
 		side(
@@ -1249,11 +1266,21 @@ export function compareTurn(
 			image,
 			refMasks[k] as PlantMask,
 			bottomCut,
+			piece,
+			subject,
 			moundForm,
 		),
 	);
 	const renderSides = usable.map((frame) =>
-		renderSideOf(runDir, frame, `RENDER ${frame.turn.toFixed(1)}`, bottomCut, moundForm),
+		renderSideOf(
+			runDir,
+			frame,
+			`RENDER ${frame.turn.toFixed(1)}`,
+			bottomCut,
+			piece,
+			subject,
+			moundForm,
+		),
 	);
 	const checks = usable.flatMap((frame, j) => {
 		if (!frame.matte) return [];
@@ -1788,6 +1815,20 @@ function referencePicture(path: string): Rgba {
 	return onColour(readImage(path), [255, 255, 255]);
 }
 
+/** The cut subjects a species' reference pass wrote, or undefined when it has none. */
+function subjectLoader(
+	species: string | undefined,
+): Record<string, { readonly bottom: number }> | undefined {
+	if (!species) return undefined;
+	try {
+		return JSON.parse(
+			readFileSync(join('tools/lib/plant-review/slots', `${species}-subjects.json`), 'utf8'),
+		) as Record<string, { readonly bottom: number }>;
+	} catch {
+		return undefined;
+	}
+}
+
 /** Compares each in-use still and texture source with the render of its view, and writes sheets. */
 export function compareStills(
 	runDir: string,
@@ -1800,6 +1841,7 @@ export function compareStills(
 	const byReference = new Map(
 		frames.flatMap((frame) => (frame.reference ? [[frame.reference, frame]] : [])),
 	);
+	const subjectFile = subjectLoader(frames[0]?.query?.species);
 	const results: StillResult[] = [];
 	const rows: SheetRow[] = [];
 	for (const slot of set.stills) {
@@ -1838,9 +1880,13 @@ export function compareStills(
 			rows.push({ reference: refImage, lines: [...head, 'NO RENDER', error.slice(0, 18)] });
 			continue;
 		}
+		// A cut piece is measured on its picture's own subject share, written by --subjects.
+		const drawnEarly = frame.query?.view ?? slot.view;
+		const piece = VIEW_SPECS[drawnEarly]?.cutting !== undefined;
+		const subject = piece ? subjectFile?.[slot.file]?.bottom : undefined;
 		const refPlant = plantMask(refImage);
-		const refSide = side(slot.file, refImage, refPlant, false, moundForm);
-		const render = renderSideOf(runDir, frame, frame.file, false, moundForm);
+		const refSide = side(slot.file, refImage, refPlant, false, piece, subject, moundForm);
+		const render = renderSideOf(runDir, frame, frame.file, false, piece, subject, moundForm);
 		// A bark close view photographs the bark against bark, and a bark texture is a cut-out of
 		// the material, so neither separates a plant from a background. Their rows read colour,
 		// never an outline: a mask fitted to a picture with no plain border invents one.

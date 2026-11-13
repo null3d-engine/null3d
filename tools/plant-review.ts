@@ -1129,6 +1129,40 @@ async function main(): Promise<void> {
 		if (!complete) process.exitCode = 1;
 		return;
 	}
+	if (flag('subjects')) {
+		const named = positional(0) ?? option('species');
+		if (!named) throw new Error('--subjects needs a species');
+		const where = referenceFolder(named);
+		if (!where) throw new Error(`--subjects found no reference folder for ${named}`);
+		const cutSet = readReferenceSet(where, await formsOf(named));
+		const subjects: Record<string, { readonly bottom: number }> = {};
+		for (const slot of cutSet.stills) {
+			if (VIEW_SPECS[slot.view].cutting === undefined) continue;
+			const image = onColour(readImage(join(cutSet.folder, slot.file)), [255, 255, 255]);
+			const plant = plantMask(image);
+			if (!plant.background.plain) {
+				console.log(`${slot.file}: the picture does not separate from its background`);
+				continue;
+			}
+			const measures = measurePlant(image, plant);
+			const box = measures.box;
+			if (!box) {
+				console.log(`${slot.file}: no box`);
+				continue;
+			}
+			const tall = box.bottom - box.top + 1;
+			const bottom = measures.crownBox.height / tall;
+			subjects[slot.file] = { bottom: Number(bottom.toFixed(4)) };
+			console.log(
+				`${slot.file}: plant ${box.right - box.left + 1}x${tall}, crown ${measures.crownBox.width}x${measures.crownBox.height}, subject bottom share ${bottom.toFixed(4)}`,
+			);
+		}
+		writeFileSync(
+			join('tools/lib/plant-review/slots', `${named}-subjects.json`),
+			`${JSON.stringify(subjects, null, '\t')}\n`,
+		);
+		return;
+	}
 	const species = positional(0) ?? option('species');
 	const folder = referenceFolder(species);
 	const set = folder ? readReferenceSet(folder, await formsOf(species)) : undefined;
