@@ -6,12 +6,12 @@ import { oakRecord } from '../../packages/vegetation/src/grow/oak.fixture.ts';
 import { scaledBudget } from '../../tests/lib/run-budget.ts';
 import { iou } from '../lib/plant-review/compare.ts';
 import { probeVideo, readImage, videoFrames } from '../lib/plant-review/image.ts';
-import { readReferenceSet, WORK_WIDTH } from '../lib/plant-review/references.ts';
+import { dropThinLowRuns, readReferenceSet, WORK_WIDTH } from '../lib/plant-review/references.ts';
 import { REFERENCES } from '../lib/plant-review/store.ts';
 import { AZIMUTHS, crownBaseRow, type HullView, hullEnvelope, nearSilhouette } from './envelope.ts';
 import { roundBandOf } from './fit-file.ts';
 import { checkLeaf } from './leaf.ts';
-import { CELLS, COLUMNS, closingOverlap, columnX, dropThinLowRuns } from './silhouettes.ts';
+import { CELLS, COLUMNS, closingOverlap, columnX } from './silhouettes.ts';
 import { fitTurn, type TurnFit } from './turn.ts';
 
 /** A crown's radius in plant heights at a height share and an azimuth: an egg on a bare stem. */

@@ -15,7 +15,8 @@ export interface WholeFraming extends ScreenFraming {
 	readonly widthShare?: number;
 	/**
 	 * A factor on the camera's distance from a redraw that corrects the drawn width by what the
-	 * picture itself measured. The foot stays on its row, and the plant stays inside the frame.
+	 * picture itself measured. It only moves the camera out: below 1 it keeps the asked rows'
+	 * stand. The foot stays on its row, and the plant stays inside the frame.
 	 */
 	readonly scale?: number;
 }
@@ -45,8 +46,13 @@ export interface WholeStand {
 	readonly held: 'rows' | 'width' | 'scale' | 'frame';
 }
 
-/** The least height a camera stands at, in metres. */
+/**
+ * The least height a camera stands at: a tenth of a metre, or a fiftieth of a low plant's height,
+ * since a low plant's photograph is taken from near the ground and a higher lens sees the blades
+ * that lie toward it far below its foot.
+ */
 const LOWEST_EYE = 0.1;
+const LOWEST_EYE_SHARE = 0.02;
 /** The margin the plant keeps from every edge of the frame, as a share of it. */
 const EDGE = 0.01;
 /** The most of the frame's width a plant takes where its photograph states no share. */
@@ -122,14 +128,38 @@ export function frameExtent(
 }
 
 /**
+ * Foliage points with those under the ground lifted onto it. A leaf never grows in the soil, so a
+ * leaf point under the ground belongs to a blade that dips through it, and the blade is drawn down
+ * to where it meets the ground. Close to a low camera that meeting can stand far out in the frame
+ * from the blade's last point above the ground, so the point counts at the ground, where it stood
+ * over: never nearer the plant than the blade's own meeting. Wood is not lifted: roots grow in the
+ * soil, and the ground hides them whole.
+ *
+ * @param points Foliage points as x, y and z.
+ * @param ground The ground's height.
+ * @returns The points, or a copy with every point under the ground lifted onto it.
+ */
+export function liftedToGround(points: Float32Array, ground: number): Float32Array {
+	let below = -1;
+	for (let i = 1; i < points.length && below < 0; i += 3)
+		if ((points[i] as number) < ground) below = i;
+	if (below < 0) return points;
+	const out = new Float32Array(points);
+	for (let i = below; i < out.length; i += 3) if ((out[i] as number) < ground) out[i] = ground;
+	return out;
+}
+
+/**
  * The stand of a whole view of a plant on the points it draws.
  *
  * The horizon's row sets the camera's pitch. The camera then stands where the highest drawn point
  * lands on the asked top row and the lowest lands on the asked foot row, or, where the framing
  * names an eye height in place of a foot row, at that height where the highest point lands on the
- * top row. If the plant is then wider than its photograph's share of the frame, the camera stands
- * back until it is not, and keeps the foot on its row. A redraw's scale moves the camera in or out
- * the same way. Last, the camera stands back as far as holds every drawn point inside the frame.
+ * top row. A framing that names neither, since its photograph lost the plant's foot below the
+ * horizon, stands the plant at its photograph's share of the width with its top on the top row. If the plant is then wider than its photograph's share of the frame, the camera stands
+ * back until it is not, and keeps the foot on its row. A redraw's scale moves the camera out the
+ * same way, never in. Last, the camera stands back as little as holds every drawn point inside the
+ * frame.
  *
  * @param points The points the plant draws at the level the view draws, as x, y and z.
  * @param foot Where the plant stands.
@@ -146,6 +176,7 @@ export function wholeStand(
 	height: number,
 ): WholeStand {
 	const first = standCamera(framing, height);
+	const lowest = Math.min(LOWEST_EYE, LOWEST_EYE_SHARE * height);
 	const { pitch, yaw } = first;
 	const half = Math.tan((framing.fov * Math.PI) / 360);
 	const ground = foot[1] - 1e-3;
@@ -170,7 +201,7 @@ export function wholeStand(
 		for (let pass = 0; pass < 12; pass++) {
 			const off = extentAt(distance, eye).base - askedBase;
 			if (Math.abs(off) < NEAR) return;
-			const next = Math.max(LOWEST_EYE, eye - off * 2 * distance * half);
+			const next = Math.max(lowest, eye - off * 2 * distance * half);
 			if (next === eye) return;
 			eye = next;
 		}
@@ -185,8 +216,20 @@ export function wholeStand(
 			const scale = askedSpan > 1e-4 ? (at.base - at.top) / askedSpan : 1;
 			const off = (at.base + at.top) / 2 - askedMiddle;
 			if (Math.abs(scale - 1) < NEAR && Math.abs(off) < NEAR) break;
-			eye = Math.max(LOWEST_EYE, eye - off * 2 * distance * half);
+			eye = Math.max(lowest, eye - off * 2 * distance * half);
 			distance *= Math.max(0.2, Math.min(5, scale));
+		}
+	} else if (framing.eye === undefined && framing.widthShare !== undefined) {
+		// The photograph's foot is lost below its horizon, so no row marks it: the plant takes its
+		// photograph's share of the width, and its highest point lands on the asked top row.
+		const share = Math.min(WIDEST, framing.widthShare);
+		for (let pass = 0; pass < 24; pass++) {
+			const at = extentAt(distance, eye);
+			const scale = (at.right - at.left) / share;
+			const off = at.top - framing.top;
+			if (Math.abs(scale - 1) < NEAR && Math.abs(off) < NEAR) break;
+			distance *= Math.max(0.2, Math.min(5, scale));
+			eye = Math.max(lowest, eye - off * 2 * distance * half);
 		}
 	} else {
 		// An eye height asked: the highest point's row falls as the camera steps back, so one
@@ -201,7 +244,10 @@ export function wholeStand(
 		distance = Math.sqrt(near * far);
 	}
 	if (framing.scale !== undefined && framing.scale > 0 && framing.scale !== 1) {
-		distance *= framing.scale;
+		// A redraw moves the camera out from the stand on the asked rows, never in: a nearer camera
+		// draws the plant taller than its photograph's share of the frame, so a plant narrower than
+		// its photograph keeps the rows' stand, and its width error is the plant's own.
+		distance *= Math.max(1, framing.scale);
 		pinFoot();
 		held = 'scale';
 	} else {
@@ -216,24 +262,44 @@ export function wholeStand(
 			held = 'width';
 		}
 	}
-	// No drawn point leaves the frame, whatever the rows and the width asked for.
-	for (let pass = 0; pass < 12; pass++) {
-		const at = extentAt(distance, eye);
-		const reach = 0.5 - EDGE;
-		const over = Math.max(
+	// No drawn point leaves the frame, whatever the rows and the width asked for. The camera stands
+	// back as little as holds every point: a step by the share a point runs over overshoots, since
+	// the near side of a broad crown grows in the frame faster than the plant as the camera comes in.
+	const reach = 0.5 - EDGE;
+	const overAt = (at: FrameExtent): number =>
+		Math.max(
 			(0.5 - at.top) / reach,
 			(at.base - 0.5) / reach,
 			(0.5 - at.left) / reach,
 			(at.right - 0.5) / reach,
 		);
-		if (over <= 1 + NEAR) break;
-		distance *= over;
+	// The camera at a distance with the foot on its row, or, where the frame's lower edge still cuts
+	// the foot, held up by the camera's height alone; how far the points then run over the frame.
+	const startEye = eye;
+	const settle = (d: number): number => {
+		distance = d;
+		eye = startEye;
 		pinFoot();
-		// A foot that the frame's lower edge still cuts is held by the camera's height alone.
 		const base = extentAt(distance, eye).base;
-		if (base > 1 - EDGE)
-			eye = Math.max(LOWEST_EYE, eye - (base - (1 - EDGE)) * 2 * distance * half);
+		if (base > 1 - EDGE) eye = Math.max(lowest, eye - (base - (1 - EDGE)) * 2 * distance * half);
+		return overAt(extentAt(distance, eye));
+	};
+	let over = overAt(extentAt(distance, eye));
+	if (over > 1 + NEAR) {
 		held = 'frame';
+		let near = distance;
+		let far = distance;
+		for (let pass = 0; pass < 12 && over > 1 + NEAR; pass++) {
+			near = far;
+			far *= Math.max(1.05, over);
+			over = settle(far);
+		}
+		for (let pass = 0; pass < 24 && far - near > far * 1e-4; pass++) {
+			const middle = (near + far) / 2;
+			if (settle(middle) > 1 + NEAR) near = middle;
+			else far = middle;
+		}
+		settle(far);
 	}
 	const camera = cameraOf(foot, turn, distance, eye, pitch, yaw);
 	return {

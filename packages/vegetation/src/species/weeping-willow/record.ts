@@ -521,9 +521,6 @@ export const record: Species = {
 		// A hanging shoot's card stands its whole length ahead of the row that draws it, so the
 		// stalk runs on to the card's centre and the curtain meets the wood it grows from.
 		cardStalkToFoliage: true,
-		// Stills 01 and 02: the card's leaves scatter into separate islands at a whole view, so each
-		// card also draws its shoot's own axis as one connected strand for the leaves to join.
-		cardStrand: 1,
 		woodOrders: [2, 1],
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,

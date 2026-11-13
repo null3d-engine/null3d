@@ -75,6 +75,10 @@ export const PIECES: readonly PieceRule[] = [
 		name: 'bough',
 		attitude: 'up',
 		variants: 3,
+		// A brush's needles stand within two stem radii of each other and close round its stem, so
+		// below the finest tier each brush draws as a card of its own picture: the bough keeps its
+		// brushes' cover at a small share of their triangles.
+		brushCards: true,
 		ground: [0, -1, 0],
 		// The fan lies in the plane of the bough's line and its sides.
 		plane: [0, 0, 1],

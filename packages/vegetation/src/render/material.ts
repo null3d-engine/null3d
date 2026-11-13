@@ -5,8 +5,11 @@
 // record's colours instead, which no wind moves.
 import type { Material, MeshGeometry, SketchContext, Texture, Textures } from '@null3d/engine';
 import type { WindField } from '@null3d/wind';
-import type { PrototypeArrays, QuantisedArrays } from '../asset';
+import type { PlantAsset, PrototypeArrays, QuantisedArrays, SpeciesKitData } from '../asset';
 import type { SpeciesBox } from '../core/box';
+import { DETAILS } from '../core/types';
+import { leafSurface, SURFACE_BRUSH } from '../leaf/writer';
+import { dequantisePosition } from '../lod/quantise';
 import plantShader from './plant.wgsl';
 import viewFaceShader from './plant-viewface.wgsl';
 import { foliageOptics, transmissionShare } from './records';
@@ -202,9 +205,12 @@ export function plantMaterials(
 			{ colour: t.barkColor, relief: t.barkNormal, second: t.youngColor, third: t.youngNormal },
 			false,
 		),
+		// Shoot rows that draw brush cards draw no leaf, so they read the card atlas in its place.
 		shoots: make(
 			'shoots',
-			{ colour: t.leafColor, relief: t.leafNormal, second: t.near, third: t.youngColor },
+			drawsBrushes(kit)
+				? { colour: t.cardColor, relief: t.cardSurface, second: t.near, third: t.youngColor }
+				: { colour: t.leafColor, relief: t.leafNormal, second: t.near, third: t.youngColor },
 			true,
 		),
 		cards: make('cards', { colour: t.cardColor, relief: t.cardSurface }, true),
@@ -217,6 +223,33 @@ export function plantMaterials(
 		foliageFar: make('foliage', { colour: t.leafColor, relief: t.leafNormal }, true),
 		extras: make('extras', { colour: t.leafColor, relief: t.leafNormal }, true),
 	};
+}
+
+/**
+ * Whether a kit's shoot rows draw brush cards at its tier. A kit's pieces draw either brush cards or
+ * leaves at a tier, since the shoots' material reads one texture or the other.
+ *
+ * @param kit The species' kit.
+ * @returns Whether its rows draw brush cards.
+ */
+function drawsBrushes(kit: SpeciesKit): boolean {
+	const tier = DETAILS.indexOf(kit.detail);
+	let brushes = false;
+	let leaves = false;
+	for (const prototype of kit.prototypes) {
+		const colors = prototype.tiers[tier]?.colors;
+		if (!colors) continue;
+		for (let v = 2; v < colors.length; v += 4) {
+			const kind = colors[v] as number;
+			if (kind === SURFACE_BRUSH) brushes = true;
+			else if (leafSurface(kind)) leaves = true;
+		}
+	}
+	if (brushes && leaves)
+		throw new Error(
+			`@null3d/vegetation: '${kit.record.id}' draws brush cards and leaves at its ${kit.detail} tier; a kit's rows draw one or the other`,
+		);
+	return brushes;
 }
 
 /**
@@ -331,19 +364,44 @@ export function plantBounds(box: SpeciesBox): { center: [number, number, number]
 	return { center, radius: radius / 2 };
 }
 
+/** The room a variant's sphere leaves round its own reach for the wind's sway: a share and metres. */
+const SWAY_SHARE = 0.1;
+const SWAY_ROOM = 0.5;
+
 /**
- * The radius about a copy's origin that holds the whole species box, which a batch of quantised
- * parts gives `setBoundingRadius`: the mesh's own sphere holds the positions as the shader reads
- * them, fractions of the box, not metres. The engine keeps that sphere's center, under a metre from
- * the origin, and grows the radius by its distance, so each copy's sphere holds its box.
+ * The radius about a copy's origin that holds everything one variant draws, which a batch of its
+ * quantised parts gives `setBoundingRadius`: every vertex of each level's parts and the reach of
+ * each shoot row, with room for the wind's sway. The mesh's own sphere holds the positions as the
+ * shader reads them, fractions of the species box, not metres. The engine keeps that sphere's
+ * center, under a metre from the origin, and grows the radius by its distance, so each copy's
+ * sphere holds its plant. Culling and the level bands both read the sphere's nearest point, so a
+ * camera inside or beside the crown draws the nearest level, and the next level starts by the
+ * plant's own reach, not by the species box, which holds every variant with room to spare.
  *
- * @param box The species box.
+ * @param kit The species' kit.
+ * @param asset The grown variant.
  * @returns The radius in metres at scale 1.
  */
-export function plantBoundingRadius(box: SpeciesBox): number {
-	let widest = 0;
-	for (const x of [box.min[0], box.max[0]])
-		for (const y of [box.min[1], box.max[1]])
-			for (const z of [box.min[2], box.max[2]]) widest = Math.max(widest, Math.hypot(x, y, z));
-	return widest;
+export function plantBoundingRadius(kit: SpeciesKitData, asset: PlantAsset): number {
+	let farthest = 0;
+	const at: [number, number, number] = [0, 0, 0];
+	for (const level of asset.levels)
+		for (const part of level.parts) {
+			const positions = part.arrays.positions;
+			for (let i = 0; i < positions.length / 3; i++) {
+				dequantisePosition(positions, i, kit.box, at);
+				farthest = Math.max(farthest, at[0] * at[0] + at[1] * at[1] + at[2] * at[2]);
+			}
+		}
+	let reach = Math.sqrt(farthest);
+	const rows = asset.shoots;
+	for (let r = 0; r < rows.count; r++) {
+		const x = rows.position[r * 3] as number;
+		const y = rows.position[r * 3 + 1] as number;
+		const z = rows.position[r * 3 + 2] as number;
+		const shoot =
+			(kit.prototypes[rows.prototype[r] as number]?.radius ?? 0) * (rows.scale[r] as number);
+		reach = Math.max(reach, Math.hypot(x, y, z) + shoot);
+	}
+	return reach * (1 + SWAY_SHARE) + SWAY_ROOM;
 }

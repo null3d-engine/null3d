@@ -654,6 +654,13 @@ function growthProblems(record: Species, out: string[]): void {
 		if (!(growth.areoles > 0))
 			out.push(`growth.areoles is ${growth.areoles}; it is metres and must be above 0`);
 	}
+	if (record.foliage.kind === 'blade') {
+		const breadth = record.foliage.leaf.breadth;
+		if (breadth !== undefined && !(breadth > 0 && breadth <= 2))
+			out.push(
+				`foliage.leaf.breadth is ${breadth}; it is a share of the outline's width, above 0 and at most 2`,
+			);
+	}
 	if (record.foliage.kind === 'blade' && record.foliage.compound) {
 		const compound = record.foliage.compound;
 		spreadProblems(compound.leaflets, 'foliage.compound.leaflets', true, out);
@@ -752,6 +759,12 @@ function growthProblems(record: Species, out: string[]): void {
 		if (!(patch.width[0] > 0 && patch.width[1] >= patch.width[0]))
 			out.push('growth.patch.width needs the shortest limb above 0 and the longest no smaller');
 		if (!(patch.depth > 0)) out.push(`growth.patch.depth is ${patch.depth}; it must be above 0`);
+		if (patch.along !== undefined) {
+			if (!(patch.along > 0 && patch.along <= 1))
+				out.push(`growth.patch.along is ${patch.along}; it is above 0 and at most 1`);
+			if (patch.each !== 'limb')
+				out.push("growth.patch.along is given but growth.patch.each is not 'limb'");
+		}
 	}
 	if (growth.model === 'architectural') {
 		if (growth.orders.length === 0)
@@ -1081,8 +1094,6 @@ export function speciesProblems(record: Species): string[] {
 		out.push('lod.woodOrders keeps more orders at the second card level than at the first');
 	if (lod.cardStalk !== undefined && !(lod.cardStalk >= 0 && lod.cardStalk <= 8))
 		out.push(`lod.cardStalk is ${lod.cardStalk}; it is pixels from 0 to 8`);
-	if (lod.cardStrand !== undefined && !(lod.cardStrand >= 0 && lod.cardStrand <= 4))
-		out.push(`lod.cardStrand is ${lod.cardStrand}; it is texels from 0 to 4`);
 	const cardCell = lod.cardCell;
 	if (cardCell)
 		for (const detail of ['low', 'medium', 'high', 'ultra'] as const) {

@@ -62,6 +62,8 @@ export function statOf(values: readonly (number | null | undefined)[]): Stat | n
 /** The scalar figures of a view that a turn gives the range of, by name. */
 export const TURN_FIGURES = {
 	heightToWidth: (f: ViewFigures) => f.heightToWidth,
+	footBelowHorizon: (f: ViewFigures) => f.foot.belowHorizon,
+	footFollowed: (f: ViewFigures) => f.foot.followed,
 	crownHeightToWidth: (f: ViewFigures) => f.crown.heightToWidth,
 	crownBase: (f: ViewFigures) => f.crown.base,
 	crownWidth: (f: ViewFigures) => f.crown.width,
