@@ -23,6 +23,7 @@ import {
 	project,
 	type Solved,
 	type SubjectShot,
+	underRimShot,
 } from '../../../tests/pages/lib/plant-review/subject-shots.ts';
 import {
 	type AxisSample,
@@ -304,23 +305,41 @@ describe('the view up the trunk', () => {
 		expect(isAbsent(neither)).toBe(true);
 	});
 
-	test('sees a plant with no trunk from a low eye, its foot and its top on their rows', () => {
-		const tuft: PlantSubjects = {
-			...tree(),
-			height: 0.9,
-			reach: 0.6,
-			crownBase: 0,
-			trunk: absent('a tuft'),
-			limbs: absent('a tuft'),
-		};
+	const tuft: PlantSubjects = {
+		...tree(),
+		height: 0.9,
+		reach: 0.6,
+		crownBase: 0,
+		trunk: absent('a tuft'),
+		limbs: absent('a tuft'),
+	};
+
+	test('sees a plant with no trunk from a low eye inside its rim, its foot at the lower edge', () => {
 		const lens = { fov: 70, aspect: 3 / 4 };
 		const shot = shotOf(belowShot(tuft, lens, { turn: 0 }));
-		expect(shot.kind).toBe('the plant from a low eye beside it');
-		expect(shot.camera.position[1]).toBeCloseTo(0.15 * 0.9, 9);
-		expect(landing(shot, lens, "the plant's foot").y).toBeCloseTo(0.95, 4);
-		expect(landing(shot, lens, "the plant's top").y).toBeCloseTo(0.08, 4);
+		expect(shot.kind).toBe('the plant from a low eye inside its rim');
+		// The lens stands just above the ground, nearer the foot than the plant is tall.
+		expect(shot.camera.position[1]).toBeCloseTo(0.07 * 0.9, 9);
+		expect(Math.hypot(shot.camera.position[0], shot.camera.position[2])).toBeCloseTo(0.45 * 0.9, 9);
+		expect(landing(shot, lens, "the plant's foot").y).toBeCloseTo(0.92, 6);
+		// It looks up, so the leaves stand over the frame and the sky above them.
+		expect(pitchOf(shot.camera)).toBeGreaterThan(15);
+		expect(pitchOf(shot.camera)).toBeLessThan(35);
+		expect(landing(shot, lens, "the plant's top").y).toBeLessThan(0.4);
 		expect(checkShot(shot, lens).present).toBe(true);
 		expect(isAbsent(lowShot({ ...tuft, height: 0 }, lens, 0))).toBe(true);
+	});
+
+	test("looks out and up at the leaves' arch from under a trunkless plant's rim", () => {
+		const lens = { fov: 70, aspect: 3 / 4 };
+		const shot = shotOf(underRimShot(tuft, 90 * DEG));
+		// Under the leaves, a third of the way out on the side the turn faces, looking outward.
+		expect(shot.camera.position[0]).toBeCloseTo(0.3 * 0.6, 9);
+		expect(shot.camera.position[1]).toBeCloseTo(0.12 * 0.9, 9);
+		expect(cameraAxes(shot.camera).forward[0]).toBeGreaterThan(0);
+		expect(pitchOf(shot.camera)).toBeGreaterThan(40);
+		expect(checkShot(shot, lens).present).toBe(true);
+		expect(isAbsent(underRimShot({ ...tuft, reach: 0 }, 0))).toBe(true);
 	});
 });
 
