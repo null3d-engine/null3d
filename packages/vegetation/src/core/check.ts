@@ -546,6 +546,8 @@ function growthProblems(record: Species, out: string[]): void {
 				out.push(`${path}.radius is ${tier.radius}; each radius is metres and above 0`);
 		});
 		wholeProblem(arms.plane, 'growth.arms.plane', 0, 8, out);
+		spreadProblems(arms.ribs, 'growth.arms.ribs', false, out);
+		wholeProblem(Math.round(spreadMean(arms.ribs)), 'growth.arms.ribs', 3, 40, out);
 		if (!(arms.leave > -90 && arms.leave < 90))
 			out.push(`growth.arms.leave is ${arms.leave}; it lies between -90 and 90 degrees`);
 		if (!(arms.elbow > 0))

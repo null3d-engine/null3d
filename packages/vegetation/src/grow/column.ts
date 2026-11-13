@@ -472,7 +472,7 @@ export function growColumn(input: GrowInput): MacroSkeleton {
 		domeAt: arcAt(stemPath.path, (trunk[shaftNodes - 1] as Laid).at),
 		domeHeight: stemDome,
 		domeRadius: topRadius,
-		ribs: ribPlan(growth, input.seed, salt, input.variant, stemAxis, (trunk[0] as Laid).radius),
+		ribs: ribPlan(growth, input.seed, salt, input.variant, stemAxis, false),
 	};
 	placeFlowerRing(builder, stem, frame);
 	// Arms leave the stem, each on an axis of its own from the node nearest its height.
@@ -558,7 +558,7 @@ export function growColumn(input: GrowInput): MacroSkeleton {
 			domeAt: arcAt(armPath.path, (arm[shaftCount - 1] as Laid).at),
 			domeHeight,
 			domeRadius: tipRadius,
-			ribs: ribPlan(growth, input.seed, salt, input.variant, armAxis, (arm[0] as Laid).radius),
+			ribs: ribPlan(growth, input.seed, salt, input.variant, armAxis, true),
 		};
 		placeFlowerRing(builder, run, frame);
 		// The arm's first stretch stands inside the weld to the stem, so its areoles start past it.

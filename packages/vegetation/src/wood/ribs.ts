@@ -5,7 +5,7 @@
 import { unitAt } from '../core/hash';
 import { cos } from '../core/math';
 import type { Column } from '../core/record';
-import { curveAt, spreadAt } from '../core/types';
+import { spreadAt } from '../core/types';
 import type { StemSection } from './flare';
 
 /** Purposes of the ribs' hash keys, so no two draws share one. */
@@ -13,9 +13,6 @@ const Purpose = {
 	Count: 0x71,
 	Phase: 0x72,
 } as const;
-
-/** The fewest ribs an arm may carry, where its girth asks for fewer than a trunk's. */
-const FEWEST_RIBS = 12;
 
 /**
  * One axis's ribs: how many run round it, how deep a groove cuts, and where a crest stands round the
@@ -30,20 +27,16 @@ export interface RibPlan {
 	readonly phase: number;
 }
 
-/** The pipe radius at the middle of the trunk, which the record's rib depth is stated at. */
-export function ribReferenceRadius(growth: Column): number {
-	return Math.max(1e-3, curveAt(growth.radius, 0.5));
-}
-
 /**
- * The ribs of one axis of a column.
+ * The ribs of one axis of a column: the record's count for the stem or for an arm, and a turn of
+ * the axis's own.
  *
  * @param growth The record's column growth.
  * @param seed The scene's seed.
  * @param salt The species' salt.
  * @param variant The variant.
  * @param axis The skeleton axis, which keys the draws.
- * @param baseRadius The axis's pipe radius at its base, in metres.
+ * @param arm Whether the axis is an arm; the stem otherwise.
  * @returns The plan.
  */
 export function ribPlan(
@@ -52,16 +45,17 @@ export function ribPlan(
 	salt: number,
 	variant: number,
 	axis: number,
-	baseRadius: number,
+	arm: boolean,
 ): RibPlan {
-	const trunk = Math.max(
+	// The stem's count is one draw for the plant; each arm draws its own.
+	const count = Math.max(
 		3,
-		Math.round(spreadAt(growth.ribs, unitAt(seed, salt, variant, Purpose.Count, 0))),
+		Math.round(
+			arm
+				? spreadAt(growth.arms.ribs, unitAt(seed, salt, variant, Purpose.Count, axis + 1))
+				: spreadAt(growth.ribs, unitAt(seed, salt, variant, Purpose.Count, 0)),
+		),
 	);
-	// An arm carries fewer ribs than the trunk: a crest stands about as far round the stem, so the
-	// count follows the girth. The reference's arms show twelve to twenty where its trunk shows more.
-	const share = Math.min(1, Math.max(0.35, baseRadius / ribReferenceRadius(growth)));
-	const count = Math.max(FEWEST_RIBS, Math.min(trunk, Math.round(trunk * share)));
 	const phase = unitAt(seed, salt, variant, Purpose.Phase, axis) * 2 * Math.PI;
 	return { count, depth: growth.ribDepth, phase };
 }
