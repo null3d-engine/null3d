@@ -4,7 +4,7 @@
 // decides and the evidence of every row, and a reviewer fills the rows the eye decides. The ledger
 // counts from these files alone, so no count is kept by hand.
 
-import type { StillResult } from './compare.ts';
+import { rowGap, type StillResult } from './compare.ts';
 import type { Coverage } from './coverage.ts';
 import type { Slot } from './references.ts';
 import type { PictureRuling, Standing } from './review-data.ts';
@@ -325,16 +325,22 @@ function figuresOf(row: number, pair: StillResult, run: string): Figure[] {
 			return pair.shapeIou === null
 				? []
 				: [{ ...base, name: 'leaf outline overlap', value: pair.shapeIou, band: null }];
-		case 6:
+		case 6: {
 			// The sky seen through the crown: the gap enclosed by the plant's own outline, read on the
 			// matte. The crown box's sky share is not this figure: on a plant that does not fill its
 			// box by shape, such as a spire or a cone, it measures the taper.
+			if (!pair.gap) return [];
+			// The matte's gap, or the colour still's where the two part by more than the colour band.
+			const read = rowGap(pair.gap);
 			return pair.gap
 				? [
 						{
 							...base,
-							name: 'sky gap enclosed by the crown outline',
-							value: pair.gap.render,
+							name:
+								read.read === 'matte'
+									? 'sky gap enclosed by the crown outline'
+									: 'sky gap enclosed by the crown outline, read on the colour still',
+							value: read.value,
 							reference: pair.gap.reference,
 							band: {
 								min: rounded(pair.gap.reference - GAP_BELOW),
@@ -343,6 +349,7 @@ function figuresOf(row: number, pair: StillResult, run: string): Figure[] {
 						},
 					]
 				: [];
+		}
 		case 8: {
 			const value = pair.surfaceDeltaE ?? pair.barkDeltaE;
 			return value === null
@@ -361,7 +368,7 @@ function figuresOf(row: number, pair: StillResult, run: string): Figure[] {
 				? [
 						{
 							...base,
-							name: 'crown width over height',
+							name: 'crown width over height, in the picture',
 							value: rounded(pair.crownBox.render.width / pair.crownBox.render.height),
 							reference: rounded(pair.crownBox.reference.width / pair.crownBox.reference.height),
 							band: null,

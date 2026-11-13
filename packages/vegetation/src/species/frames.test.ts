@@ -238,14 +238,14 @@ const HELD: readonly Held[] = [
 		// Nine level limbs, three to each great limb, leave no gap wider than a great limb's share
 		// and its jitter.
 		round: { rule: 'secondary', gap: 110, lean: 0.25 },
-		base: { great: 0.5, upper: 0.55, secondary: 0.55, branch: 0.5, whip: 0.3 },
+		base: { great: 0.5, upper: 0.55, secondary: 0.55, branch: 0.5, whip: 0.18 },
 		// A whip hangs by its own weight.
 		plumb: ['trunk', 'whip'],
 		// The heads' foliage stands above the highest wood.
 		through: 13,
-		// Every whip and branch carries strands along it, so an axis carries several sockets.
 		crossings: [30, 4],
-		axesPerSocket: 0.184,
+		// Every whip and branch carries strands along it, so an axis carries several sockets.
+		axesPerSocket: 0.195,
 		tall: [0.93, 1.02],
 	},
 	{
@@ -260,10 +260,12 @@ const HELD: readonly Held[] = [
 		round: { rule: 'stem', gap: 80, lean: 0.2 },
 		base: { arm: 0.65, fork: 0.65, branch: 0.65, side: 0.5 },
 		plumb: [],
-		through: 2,
+		// Raised from 2 with the crown drawn in a quarter turn on to its turning video's width: the
+		// same wood stands nearer together there.
+		through: 3,
+		crossings: [11, 0],
 		// Every twig that clothes a clump is an axis that ends in a socket.
-		crossings: [14, 5],
-		axesPerSocket: 1.079,
+		axesPerSocket: 1.08,
 		fine: ['twig'],
 		tall: [0.97, 1.06],
 	},
@@ -706,14 +708,12 @@ for (const held of HELD)
 					const piece = growth.model === 'frame' && growth.sockets.piece !== undefined;
 					expect(table.scale[b]).toBeCloseTo(piece ? 1 : plan.scale / held.heightMean, 5);
 					expect(skeleton.buds.position[b * 3 + 1]).toBeCloseTo(socket.at[1], 4);
-					// The bud runs along its socket's heading, or within the tilt the record states.
 					quatRotate(skeleton.buds.frame, b * 4, [0, 1, 0], along);
-					const tilt = growth.model === 'frame' ? (growth.sockets.turn?.tilt ?? 0) : 0;
 					expect(
 						along[0] * socket.heading[0] +
 							along[1] * socket.heading[1] +
 							along[2] * socket.heading[2],
-					).toBeGreaterThan(Math.min(0.999, Math.cos((tilt * Math.PI) / 180) - 1e-6));
+					).toBeGreaterThan(0.999);
 				});
 				// The first quarter of the ranks stands in every quarter round the trunk that any
 				// socket stands in, so a plant thinned to it keeps every side.
@@ -1249,9 +1249,8 @@ describe("the pedunculate oak's frame against its photographs", () => {
 
 	it('fails the oak built with its clumps first on three of the four', () => {
 		expect(clumpsFirst.commit).toBe('5b5c56272');
-		// Eighteen patches that a view shows near the trunk's line hang under the boundary; those the
-		// trunk hides behind it in a view are not read there.
-		expect(underFork(clumps)).toBe(18);
+		// One patch in eight that a view shows near the trunk's line hangs under the boundary.
+		expect(underFork(clumps)).toBe(26);
 		expect(lumps(clumps)).toEqual([2, 1]);
 		expect(lumpsHold(clumps)).toBe(false);
 		const shares = thickness(clumps);

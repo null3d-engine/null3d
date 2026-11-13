@@ -13,6 +13,12 @@
 import type { Species } from '../../core/record';
 import { aspect, roundBand } from './fit';
 
+/**
+ * The radii of the stem's foot, in metres: above the thickest arm's girth in its bend and below
+ * any stem's.
+ */
+const STEM_GIRTH = { from: 0.42, to: 2, blend: 0.04 };
+
 /** The saguaro's record. */
 export const record: Species = {
 	id: 'saguaro',
@@ -41,15 +47,24 @@ export const record: Species = {
 		ribs: { mean: 18, spread: 1 },
 		ribDepth: 0.17,
 		// Still 01 and the turning video: four arms in two tiers. On still 01 read from its true foot
-		// the arms' lowest point stands at 0.40 to 0.44 of the height, so the lower pair leaves at
-		// 0.42 and stands 0.145 of the height out from the stem's axis, and the upper pair leaves
-		// at 0.47 and stands 0.081 out, close beside the stem. All four tips end at 0.78. An arm is
-		// 0.054 of the height across above its bend and 0.042 at its tip (0.0485 and 0.038 on the
-		// upper pair) and 0.063 across in the bend. Where it meets the stem it is 0.65 of its girth
-		// on stills 07 and 21 and nearly its full girth on still 08, so the joint takes a value
-		// between them. Its underside sags a little below its joint (stills 01 and 05), so it
-		// leaves a few degrees below level, and its elbow turns on a radius of one and a half arm
-		// widths at the centre line (stills 01, 08 and 21) where its reach leaves room.
+		// the stem stands alone to 0.42 of the height, the lower pair's undersides first show at
+		// 0.43, and the upper pair parts from the stem at 0.51. Still 01's camera looks up from a
+		// fifth of the height, as the review's copy of it does, so the middle of the plant reads
+		// higher on the picture than it stands: an arm climbing out of its joint first shows where it
+		// parts from the stem, and the review's drawing of the plant reads its joints 0.035 higher
+		// and its tips 0.02 higher than they stand. So the lower pair leaves at 0.41 and the upper
+		// pair at 0.45, and all four tips end at 0.78. The lower pair stands 0.142 of the height out
+		// from the stem's axis (0.139 at 0.56 to 0.145 at 0.74, leaning out a little as it rises),
+		// and the upper pair 0.081 out, close beside the stem. An arm is 0.054 of the height across
+		// above its bend and 0.042 at its tip (0.0485 and 0.038 on the upper pair). A row through the
+		// bend reads 0.062 across at 0.50 and narrows to 0.054 as the arm turns plumb: the arm's own
+		// girth cut slantwise, so the bend keeps that girth. Where it meets the stem it is 0.65 of its
+		// girth on stills 07 and 21 and nearly its full girth on still 08, so the joint takes a value
+		// between them. The lower pair's outer edge stands 0.113 of the height out at 0.44, 0.151 at
+		// 0.48 and 0.165 at 0.52 on the picture, and plumb from 0.55: the outer side of an elbow two
+		// arm widths in radius at the centre line, which the arm climbs into from its joint because
+		// its reach leaves no room to turn from level. An arm with room leaves a few degrees below
+		// level, as an underside sags below its joint (stills 01 and 05).
 		// The turning video and still 01 show the primary plant's four arms in one upright plane: the
 		// arms close up edge on twice in the turn. That plant is the first variant, and it is the
 		// species' named exception to the rule that a plant is balanced round its stem. The other
@@ -58,13 +73,13 @@ export const record: Species = {
 			count: { mean: 4, spread: 1 },
 			tiers: [
 				{
-					at: { mean: 0.42, spread: 0.03 },
-					reach: { mean: 1.74, spread: 0.12 },
+					at: { mean: 0.41, spread: 0.03 },
+					reach: { mean: 1.7, spread: 0.12 },
 					top: { mean: 0.78, spread: 0.03 },
 					radius: [0.324, 0.252],
 				},
 				{
-					at: { mean: 0.47, spread: 0.03 },
+					at: { mean: 0.45, spread: 0.03 },
 					reach: { mean: 0.97, spread: 0.08 },
 					top: { mean: 0.78, spread: 0.03 },
 					radius: [0.304, 0.239],
@@ -74,9 +89,9 @@ export const record: Species = {
 			// Stills 04 and 16: fourteen ribs round an arm.
 			ribs: { mean: 14, spread: 1 },
 			leave: -5,
-			elbow: 1.5,
+			elbow: 2,
 			pinch: 0.75,
-			swell: 1.17,
+			swell: 1,
 		},
 		// Still 15: the areoles stand 0.45 of the gap between two crests apart along a crest.
 		areoles: 0.084,
@@ -166,16 +181,34 @@ export const record: Species = {
 		},
 	},
 	bark: {
+		// The foot's two bands hold only on wood as thick as the stem's foot, so a cut arm stood on
+		// the studio floor keeps the green it grew with down to its cut (still 21).
 		zones: [
 			// Still 14: the foot is grey-brown, corky and scarred, its ribs worn, for the lowest metre
 			// and a half of the stem.
-			{ layer: 1, by: 'height', from: 0, to: 1.6, blend: 0.8, tint: [0.68, 0.68, 0.68] },
+			{
+				layer: 1,
+				by: 'height',
+				from: 0,
+				to: 1.6,
+				blend: 0.8,
+				tint: [0.68, 0.68, 0.68],
+				second: STEM_GIRTH,
+			},
 			// Still 14: the green above the corky foot reads paler and bluer than the photograph, so
 			// the lowest band of green takes a tint that darkens it toward the picture's own tone.
-			{ layer: 0, by: 'height', from: 1.6, to: 3.2, blend: 0.8, tint: [0.88, 0.83, 0.72] },
+			{
+				layer: 0,
+				by: 'height',
+				from: 1.6,
+				to: 3.2,
+				blend: 0.8,
+				tint: [0.88, 0.83, 0.72],
+				second: STEM_GIRTH,
+			},
 			// Stills 09 and 15: waxy grey-green skin on rounded ribs and deep pleated grooves up the
-			// whole stem.
-			{ layer: 0, by: 'height', from: 3.2, to: 40, blend: 0.5, tint: [1, 1, 1] },
+			// whole stem and every arm.
+			{ layer: 0, by: 'height', from: -1, to: 40, blend: 0.5, tint: [1, 1, 1] },
 		],
 		// Every wood above the corky foot takes the stem's skin. The arm's own picture (still 16) is a
 		// crop of a lit arm whose seams and waxy highlight repeat as tiles and a white stripe when

@@ -9,6 +9,7 @@
 
 import { across, cross, dot, facing, normalize, step, turnedAbout, type V3 } from './anatomy';
 import type { Lens } from './close';
+import type { CutPlane } from './cut-face';
 import { rowAngle } from './framing';
 import { lensAxes } from './sight';
 import {
@@ -2071,6 +2072,68 @@ export function siteShot(
 			},
 		],
 		facts: { class: name, height: site.at[1], radius: site.radius, sites: sites.length },
+	};
+}
+
+/** The share of the frame's width that the section's outline takes, as a cut's photograph frames it. */
+const SECTION_FILL = 0.88;
+/** The stem's length below the cut that a section draws, as a share of its radius. */
+const SECTION_SLAB = 0.6;
+/**
+ * How far past its radius a stem's own skin reaches at a cut, as a share of the radius: a column's
+ * ribs stand proud of its mean radius by less than half of it. The frame shows little more.
+ */
+const SECTION_REACH = 1.5;
+
+/** Where a stem is cut across for its section: the cut's plane, and the stem's radius there. */
+export interface SectionCut extends CutPlane {
+	/** The stem's radius at the cut, in metres. */
+	readonly radius: number;
+}
+
+/**
+ * Where the stem is cut across at a height: a point on its line, the cut face's normal along the
+ * stem's line at its foot, and the reach of the stem's own skin there.
+ */
+export function sectionCut(subjects: PlantSubjects, height: number): Maybe<SectionCut> {
+	if (isAbsent(subjects.trunk)) return subjects.trunk;
+	const at = sampleAtHeight(subjects.trunk.axis, height);
+	if (!at) return lacking(`the stem does not reach ${height.toFixed(2)} m, where the cut stands`);
+	return {
+		at: at.at,
+		normal: sampleAlong(subjects.trunk.axis, 0).direction,
+		reach: SECTION_REACH * at.radius,
+		radius: at.radius,
+	};
+}
+
+/**
+ * The view of the stem cut across at a height: the camera looks straight down the stem's line at
+ * the cut, and only a short slab of the stem below it is drawn. The page lays the cut's face over
+ * the cut, so the outline, the ribs of a column, draws filled as the photograph's cut face does.
+ */
+export function sectionShot(subjects: PlantSubjects, lens: Lens, height: number): Solved {
+	const cut = sectionCut(subjects, height);
+	if (isAbsent(cut)) return cut;
+	const forward: V3 = [-cut.normal[0], -cut.normal[1], -cut.normal[2]];
+	const tall = (2 * cut.radius) / (SECTION_FILL * lens.aspect);
+	const camera = aim(cut.at, 0.5, 0.5, forward, tall, lens);
+	const distance = tall / 2 / tanHalf(lens);
+	return {
+		kind: `the stem cut across at ${height.toFixed(2)} m, seen down its line`,
+		camera,
+		near: Math.max(0.01, distance - 0.01 * cut.radius),
+		far: distance + SECTION_SLAB * cut.radius,
+		points: [
+			{
+				name: 'the cut',
+				at: cut.at,
+				within: [0.4, 0.4, 0.6, 0.6],
+				size: { metres: 2 * cut.radius, of: 'width', min: 0.7, max: 0.95 },
+			},
+		],
+		regions: [{ name: "the cut face's rim", box: [0.04, 0.4, 0.2, 0.6], of: 'wood', min: 0.05 }],
+		facts: { height, radius: cut.radius },
 	};
 }
 

@@ -12,7 +12,11 @@ import type {
 import type { MacroSkeleton } from '../../../packages/vegetation/src/core/graph.ts';
 import { DETAILS } from '../../../packages/vegetation/src/core/types.ts';
 import { leafSurface, SURFACE_BRUSH } from '../../../packages/vegetation/src/leaf/writer.ts';
-import { paletteOf } from '../../../packages/vegetation/src/lod/card-bake.ts';
+import {
+	CARD_CUT_FALL_MOST,
+	CARD_CUT_LEAST,
+	paletteOf,
+} from '../../../packages/vegetation/src/lod/card-bake.ts';
 import {
 	type RasterTarget,
 	rasterise,
@@ -300,56 +304,14 @@ export function drawShoots(
 
 /** The second texture coordinate that marks a card's stalk, and how near it a vertex must stand. */
 const STALK_PLANE = 0.75;
-/** The coverage at which a card's texel counts as leaf: the plant material's own cutoff. */
+/** The coverage at which a card's texel counts as leaf at full size: the plant material's own cutoff. */
 const CARD_CUTOFF = 0.5;
 /** How much a card's coverage rises for each mip level its sample reads, as the material raises it. */
 const CARD_MIP_LIFT = 0.05;
 /** The width in pixels of the still a review draws, which sets the mip level a card's sample reads. */
-const STILL_WIDTH = 768;
-/** The mip levels of the card atlas that a whole view can reach. */
-const MIP_LEVELS = 4;
+export const STILL_WIDTH = 768;
 /** The largest step of a quantised position or texture coordinate. */
 const TOP = 65535;
-
-/**
- * The mip level a part's cards read at a still: the base-two log of the atlas texels that one of
- * the still's pixels spans, from the part's median triangle, and never below the atlas's own level.
- */
-function mipLevel(
-	points: Float64Array,
-	uvs: Uint16Array,
-	indices: ArrayLike<number>,
-	size: number,
-	canvasPerStill: number,
-): number {
-	const spans: number[] = [];
-	const step = Math.max(3, Math.floor(indices.length / 3 / 400) * 3);
-	for (let t = 0; t + 2 < indices.length; t += step) {
-		const a = indices[t] as number;
-		const b = indices[t + 1] as number;
-		const c = indices[t + 2] as number;
-		const pixels = Math.abs(
-			((points[b * 3] as number) - (points[a * 3] as number)) *
-				((points[c * 3 + 1] as number) - (points[a * 3 + 1] as number)) -
-				((points[b * 3 + 1] as number) - (points[a * 3 + 1] as number)) *
-					((points[c * 3] as number) - (points[a * 3] as number)),
-		);
-		const texels =
-			Math.abs(
-				((uvs[b * 2] as number) - (uvs[a * 2] as number)) *
-					((uvs[c * 2 + 1] as number) - (uvs[a * 2 + 1] as number)) -
-					((uvs[b * 2 + 1] as number) - (uvs[a * 2 + 1] as number)) *
-						((uvs[c * 2] as number) - (uvs[a * 2] as number)),
-			) *
-			(size / TOP) *
-			(size / TOP);
-		if (pixels > 1e-6 && Number.isFinite(pixels)) spans.push(Math.sqrt(texels / pixels));
-	}
-	if (spans.length === 0) return 0;
-	spans.sort((x, y) => x - y);
-	const perCanvasPixel = spans[spans.length >> 1] as number;
-	return Math.max(0, Math.log2(Math.max(1, perCanvasPixel * canvasPerStill)));
-}
 
 /** A quantised part's points for a camera, and each vertex's height in metres. */
 function partPoints(
@@ -423,36 +385,107 @@ export function drawLevelWood(
 }
 
 /**
- * Draws a card level's cards as the plant's material draws them: each card's quad, read back from
- * the level's own quantised part, with the card atlas's coverage at the mip level a review's still
- * reads. A whole view of a tree stands past the distance where its shoots hand over to their cards,
- * so this is the foliage a review's whole view shows. The colours keep a card where its coverage
- * passes the material's cutoff; the matte takes every card's own coverage, one over another, as the
- * matte material blends them. A card's tone is its row's sky.
+ * Draws a card level's wood: the level's own mesh, or the skeleton's strokes of the orders the level
+ * keeps where the level holds no wood mesh.
  *
  * @param into The canvas.
  * @param camera The camera.
- * @param kit The species' kit, whose card atlas the cards read.
+ * @param kit The species' kit.
  * @param asset The grown variant.
  * @param level The card level.
  */
-export function drawCards(
+export function drawCardLevelWood(
 	into: Canvas,
 	camera: PreviewCamera,
 	kit: SpeciesKitData,
 	asset: PlantAsset,
 	level: 1 | 2,
 ): void {
-	const { size, color } = kit.cards;
-	if (size === 0) return;
-	// The front layer's coverage and its mip levels, each the mean of four texels of the one below,
-	// as the GPU's sampler reads a card that spans fewer pixels than its cell holds texels.
-	const levels: { readonly side: number; readonly alpha: Float32Array }[] = [];
+	if (drawLevelWood(into, camera, kit, asset, level)) return;
+	const orders = kit.record.lod.woodOrders[level - 1];
+	drawWood(into, camera, asset.skeleton, orders !== undefined ? { orders } : {});
+}
+
+/**
+ * Draws a card level's stalks as the material draws them: each stalk's quad stands on its two ends
+ * with no width, and the material widens it to the record's least width on the screen, solid.
+ */
+function drawStalks(
+	into: Canvas,
+	points: Float64Array,
+	uvs1: Uint16Array,
+	indices: ArrayLike<number>,
+	width: number,
+): void {
+	const quad = new Float64Array(12);
+	const shade = (f: { x: number; y: number }): boolean => {
+		const at = f.y * into.width + f.x;
+		into.cover[at] = COVER_WOOD;
+		into.tone[at] = 70;
+		into.clear[at] = 0;
+		return true;
+	};
+	for (let t = 0; t + 2 < indices.length; t += 3) {
+		const corners = [indices[t], indices[t + 1], indices[t + 2]] as number[];
+		if (Math.abs((uvs1[(corners[0] as number) * 2 + 1] as number) / TOP - STALK_PLANE) >= 0.1)
+			continue;
+		// The two corners farthest apart are the stalk's ends; the third stands on one of them.
+		let from = corners[0] as number;
+		let to = corners[1] as number;
+		let longest = -1;
+		for (let i = 0; i < 3; i++)
+			for (let j = i + 1; j < 3; j++) {
+				const p = corners[i] as number;
+				const q = corners[j] as number;
+				const d = Math.hypot(
+					(points[q * 3] as number) - (points[p * 3] as number),
+					(points[q * 3 + 1] as number) - (points[p * 3 + 1] as number),
+				);
+				if (d > longest) {
+					longest = d;
+					from = p;
+					to = q;
+				}
+			}
+		if (!(longest > 1e-6)) continue;
+		const dx = ((points[to * 3] as number) - (points[from * 3] as number)) / longest;
+		const dy = ((points[to * 3 + 1] as number) - (points[from * 3 + 1] as number)) / longest;
+		const nx = (-dy * width) / 2;
+		const ny = (dx * width) / 2;
+		[
+			[from, 1],
+			[from, -1],
+			[to, -1],
+			[to, 1],
+		].forEach(([end, side], k) => {
+			quad[k * 3] = (points[(end as number) * 3] as number) + nx * (side as number);
+			quad[k * 3 + 1] = (points[(end as number) * 3 + 1] as number) + ny * (side as number);
+			quad[k * 3 + 2] = points[(end as number) * 3 + 2] as number;
+		});
+		rasterise(into.target, quad, [0, 1, 2, 0, 2, 3], shade);
+	}
+}
+
+/** One mip level of a card atlas layer's coverage. */
+interface CoverageLevel {
+	readonly side: number;
+	readonly alpha: Float32Array;
+}
+
+/**
+ * A card atlas layer's coverage and its whole mip chain down to one texel, each level the mean of
+ * four texels of the one below, as the GPU builds an atlas's mips.
+ */
+function coverageChain(color: Uint8Array, size: number, layer: number): CoverageLevel[] {
 	const base = new Float32Array(size * size);
-	for (let i = 0; i < size * size; i++) base[i] = (color[i * 4 + 3] as number) / 255;
-	levels.push({ side: size, alpha: base });
-	for (let k = 1; k <= MIP_LEVELS && size >> k >= 1; k++) {
-		const below = levels[k - 1] as { readonly side: number; readonly alpha: Float32Array };
+	const from = layer * size * size;
+	for (let i = 0; i < size * size; i++) base[i] = (color[(from + i) * 4 + 3] as number) / 255;
+	const chain: CoverageLevel[] = [{ side: size, alpha: base }];
+	for (
+		let below = chain[0] as CoverageLevel;
+		below.side > 1;
+		below = chain[chain.length - 1] as CoverageLevel
+	) {
 		const side = below.side >> 1;
 		const alpha = new Float32Array(side * side);
 		for (let y = 0; y < side; y++)
@@ -465,50 +498,137 @@ export function drawCards(
 						(below.alpha[at + below.side + 1] as number)) /
 					4;
 			}
-		levels.push({ side, alpha });
+		chain.push({ side, alpha });
 	}
-	/** One mip level's coverage at a point of the texture, between its four nearest texels. */
-	const sample = (k: number, u: number, v: number): number => {
-		const { side, alpha } = levels[k] as { readonly side: number; readonly alpha: Float32Array };
-		const x = Math.min(side - 1.001, Math.max(0, u * side - 0.5));
-		const y = Math.min(side - 1.001, Math.max(0, v * side - 0.5));
-		const x0 = Math.floor(x);
-		const y0 = Math.floor(y);
-		const fx = x - x0;
-		const fy = y - y0;
-		const at = y0 * side + x0;
-		return (
-			((alpha[at] as number) * (1 - fx) + (alpha[at + 1] as number) * fx) * (1 - fy) +
-			((alpha[at + side] as number) * (1 - fx) + (alpha[at + side + 1] as number) * fx) * fy
-		);
-	};
-	let mip = 0;
-	/** The atlas's coverage at a point of the texture, between the two mip levels a card reads. */
-	const coverage = (u: number, v: number): number => {
-		const low = Math.min(levels.length - 1, Math.floor(mip));
-		const high = Math.min(levels.length - 1, low + 1);
-		const share = mip - low;
-		return share > 0 && high !== low
-			? sample(low, u, v) * (1 - share) + sample(high, u, v) * share
-			: sample(low, u, v);
-	};
-	// The mip level a card's sample reads at the review's still: the atlas texels one of the still's
-	// pixels spans, from the texels a canvas pixel spans on a card of the mean row's size.
+	return chain;
+}
+
+/** One mip level's coverage at a point of the texture, between its four nearest texels. */
+function sampleLevel({ side, alpha }: CoverageLevel, u: number, v: number): number {
+	if (side === 1) return alpha[0] as number;
+	const x = Math.min(side - 1.001, Math.max(0, u * side - 0.5));
+	const y = Math.min(side - 1.001, Math.max(0, v * side - 0.5));
+	const x0 = Math.floor(x);
+	const y0 = Math.floor(y);
+	const fx = x - x0;
+	const fy = y - y0;
+	const at = y0 * side + x0;
+	return (
+		((alpha[at] as number) * (1 - fx) + (alpha[at + 1] as number) * fx) * (1 - fy) +
+		((alpha[at + side] as number) * (1 - fx) + (alpha[at + side + 1] as number) * fx) * fy
+	);
+}
+
+/** A mip chain's coverage at a point, between the two whole levels about a level, as a trilinear sampler reads it. */
+function sampleChain(chain: readonly CoverageLevel[], level: number, u: number, v: number): number {
+	const last = chain.length - 1;
+	const low = Math.min(last, Math.floor(level));
+	const high = Math.min(last, low + 1);
+	const share = level - low;
+	const below = sampleLevel(chain[low] as CoverageLevel, u, v);
+	return share > 0 && high !== low
+		? below * (1 - share) + sampleLevel(chain[high] as CoverageLevel, u, v) * share
+		: below;
+}
+
+/**
+ * The mip level a card triangle's sample reads at a still, and whether its back faces the camera.
+ * The level is the base-two log of the atlas texels that one of the still's pixels spans along the
+ * longer of the picture's two axes, as the material reads its footprint from its texture
+ * coordinates' change across a pixel, and never below the atlas's own level; the coordinates run
+ * linearly over the triangle's projected corners. The picture's rows count down, so a triangle
+ * wound counter-clockwise toward the camera, the face the material draws as its front, has a
+ * negative signed area there.
+ *
+ * @param points The projected corners, three numbers each: column, row and depth.
+ * @param uvs The quantised texture coordinates, two each.
+ * @param a The triangle's first corner.
+ * @param b Its second.
+ * @param c Its third.
+ * @param size The atlas's texels a side.
+ * @param canvasPerStill Canvas pixels that one of the still's pixels spans, a side.
+ * @returns The level and the facing.
+ */
+export function cardFootprint(
+	points: ArrayLike<number>,
+	uvs: ArrayLike<number>,
+	a: number,
+	b: number,
+	c: number,
+	size: number,
+	canvasPerStill: number,
+): { readonly level: number; readonly back: boolean } {
+	const ex1 = (points[b * 3] as number) - (points[a * 3] as number);
+	const ey1 = (points[b * 3 + 1] as number) - (points[a * 3 + 1] as number);
+	const ex2 = (points[c * 3] as number) - (points[a * 3] as number);
+	const ey2 = (points[c * 3 + 1] as number) - (points[a * 3 + 1] as number);
+	const det = ex1 * ey2 - ex2 * ey1;
+	if (!(Math.abs(det) > 1e-12)) return { level: 0, back: false };
+	const du1 = ((uvs[b * 2] as number) - (uvs[a * 2] as number)) / TOP;
+	const dv1 = ((uvs[b * 2 + 1] as number) - (uvs[a * 2 + 1] as number)) / TOP;
+	const du2 = ((uvs[c * 2] as number) - (uvs[a * 2] as number)) / TOP;
+	const dv2 = ((uvs[c * 2 + 1] as number) - (uvs[a * 2 + 1] as number)) / TOP;
+	// The texture coordinates' change across one canvas pixel, along the columns and the rows.
+	const dudx = (du1 * ey2 - du2 * ey1) / det;
+	const dvdx = (dv1 * ey2 - dv2 * ey1) / det;
+	const dudy = (du2 * ex1 - du1 * ex2) / det;
+	const dvdy = (dv2 * ex1 - dv1 * ex2) / det;
+	const footprint =
+		Math.max(Math.hypot(dudx, dvdx), Math.hypot(dudy, dvdy)) * size * canvasPerStill;
+	return { level: Math.max(0, Math.log2(Math.max(1, footprint))), back: det > 0 };
+}
+
+/**
+ * Draws a card level's cards as the plant's material draws them: each card's quad, read back from
+ * the level's own quantised part. A whole view of a tree stands past the distance where its shoots
+ * hand over to their cards, so this is the foliage a review's whole view shows. Each triangle reads
+ * the card atlas at its own mip level, from its footprint at the review's still, through the whole
+ * mip chain, and a card seen from behind reads the atlas's back layer. The colour picture keeps a
+ * texel where its coverage reaches the cell's own cut at that level: one half at full size, lower by
+ * the fall the bake measured for the cell at each coarser level. The matte takes each kept texel's
+ * coverage, raised with the level as the material raises it, one card over another as the matte
+ * material blends them; a texel the colour picture drops adds nothing to the matte. A card's tone is
+ * its row's sky.
+ *
+ * @param into The canvas.
+ * @param camera The camera.
+ * @param kit The species' kit, whose card atlas the cards read.
+ * @param asset The grown variant.
+ * @param level The card level.
+ * @param stillWidth The width in pixels of the still whose mip levels the cards read.
+ */
+export function drawCards(
+	into: Canvas,
+	camera: PreviewCamera,
+	kit: SpeciesKitData,
+	asset: PlantAsset,
+	level: 1 | 2,
+	stillWidth = STILL_WIDTH,
+): void {
+	const { size, color, surface } = kit.cards;
+	if (size === 0) return;
+	const chains = [coverageChain(color, size, 0), coverageChain(color, size, 1)] as const;
+	const canvasPerStill = into.width / stillWidth;
 	const shown = new Float32Array(into.width * into.height).fill(Infinity);
-	let lift = 1;
 	for (const part of asset.levels[level].parts) {
 		if (part.name !== 'cards') continue;
 		const { uvs, uvs1, colors, indices } = part.arrays;
 		const { points } = partPoints(camera, kit, part.arrays.positions);
-		mip = mipLevel(points, uvs, indices, size, into.width / STILL_WIDTH);
-		lift = 1 + CARD_MIP_LIFT * mip;
+		const stalk = (kit.record?.lod?.cardStalk ?? 0) * canvasPerStill;
+		if (stalk > 0) drawStalks(into, points, uvs1, indices, stalk);
+		let triangle = -1;
+		let read = { level: 0, back: false };
 		rasterise(into.target, points, indices, (f) => {
 			const t = f.triangle * 3;
 			const a = indices[t] as number;
 			const b = indices[t + 1] as number;
 			const c = indices[t + 2] as number;
-			// A stalk is a line the material widens on screen; its quad has no area here.
+			// A stalk's quad has no area; its stroke is drawn above.
 			if (Math.abs((uvs1[a * 2 + 1] as number) / TOP - STALK_PLANE) < 0.1) return false;
+			if (f.triangle !== triangle) {
+				triangle = f.triangle;
+				read = cardFootprint(points, uvs, a, b, c, size, canvasPerStill);
+			}
 			const u =
 				((uvs[a * 2] as number) * f.w0 +
 					(uvs[b * 2] as number) * f.w1 +
@@ -519,10 +639,17 @@ export function drawCards(
 					(uvs[b * 2 + 1] as number) * f.w1 +
 					(uvs[c * 2 + 1] as number) * f.w2) /
 				TOP;
+			const layer = read.back ? 1 : 0;
+			const coverage = sampleChain(chains[layer], read.level, u, v);
+			const tx = Math.min(size - 1, Math.max(0, Math.floor(u * size)));
+			const ty = Math.min(size - 1, Math.max(0, Math.floor(v * size)));
+			const fall =
+				((surface[(layer * size * size + ty * size + tx) * 4 + 2] as number) / 255) *
+				CARD_CUT_FALL_MOST;
+			if (coverage < Math.max(CARD_CUT_LEAST, CARD_CUTOFF - fall * read.level)) return false;
 			const at = f.y * into.width + f.x;
-			const alpha = Math.min(1, coverage(u, v) * lift);
-			into.clear[at] = (into.clear[at] as number) * (1 - alpha);
-			if (alpha < CARD_CUTOFF) return false;
+			const lifted = Math.min(1, coverage * (1 + CARD_MIP_LIFT * read.level));
+			into.clear[at] = (into.clear[at] as number) * (1 - lifted);
 			// A card nearer than the leaf already drawn here takes the pixel's colour; the depth stays
 			// the wood's, so every card in front of the wood adds its coverage whatever their order.
 			if (f.depth < (shown[at] as number)) {

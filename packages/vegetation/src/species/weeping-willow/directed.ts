@@ -45,14 +45,15 @@ function whips(along: readonly [number, number], every: number, most: number): F
 		},
 		vary: 0.06,
 		most: 0.4,
-		// Still 10: a strand's stem is 2 mm; a whip is the thicker axis that carries them.
-		radius: 0.3,
+		// Still 10: a strand's stem is 2 mm; a whip is the thicker axis that carries them, a few
+		// millimetres where it leaves its branch.
+		radius: 0.18,
 		taper: 0.4,
 		bends: [{ from: 0, to: 0.12, level: -90 }],
-		// A whip hangs by its own weight, so it runs plumb and straight, clear of the wood below.
-		sway: 0,
-		elbows: 1,
-		apart: 0.002,
+		// A whip hangs by its own weight, nearly plumb, and swings a little round the wood below it.
+		sway: 6,
+		elbows: 3,
+		apart: 0.005,
 		// Still 09: side strands leave a whip along its whole run. A socket stands each 1.2 m down
 		// the whip, so its strands hang end to end with a little overlap.
 		patch: {
@@ -71,20 +72,17 @@ function whips(along: readonly [number, number], every: number, most: number): F
  * 01 and 18: the crown's top is a row of rounded heads where branches arch over, and below the
  * widest row the curtain's sides are plumb, so the outermost wood stands at the crown's edge.
  */
-function branches(
-	around: FrameBranchRule['around'],
-	lift: number,
-	along: readonly [number, number],
-	length: FrameLength,
-): FrameBranchRule {
+function branches(along: readonly [number, number], length: FrameLength): FrameBranchRule {
 	return {
 		name: 'branch',
 		role: 'branch',
 		count: { every: 0.016, least: 5, most: 18 },
 		along,
 		stagger: 0.25,
-		around,
-		lift,
+		// Each turned on round its limb from the last, so no two leave together, and none from a
+		// level limb's underside: the limb's strands hang from its own run there.
+		around: 'spiral',
+		clear: 100,
 		jitter: 15,
 		// Still 08: an arm leaves at about 55 degrees and arches to level and on over.
 		angle: [
@@ -112,7 +110,9 @@ function branches(
 			along: 0.25,
 			sockets: { every: 0.35 / 13, angle: 70 },
 		},
-		children: [whips([0.3, 1], 0.035, 8)],
+		// Stills 02 and 18: the falls hang from a branch's outer arch, at the curtain, and the crown
+		// stands open under it, where the trunk and the limbs show.
+		children: [whips([0.6, 1], 0.025, 8)],
 	};
 }
 
@@ -253,15 +253,15 @@ export const frame: FrameSpec = {
 						sway: 10,
 						elbows: 5,
 						// The top limbs stand at the crown's edge already, so their branches take a share
-						// of the limb's own length.
+						// of the limb's own length. They arch over the tree's middle, so their own wood
+						// carries no falls: those would hang in front of the trunk.
 						children: [
-							branches('sides', 15, [0.45, 0.9], {
+							branches([0.45, 1], {
 								parent: [
 									[0, 0.45],
 									[1, 0.3],
 								],
 							}),
-							whips([0.6, 1], 0.04, 5),
 						],
 					},
 					{
@@ -290,10 +290,7 @@ export const frame: FrameSpec = {
 						elbows: 5,
 						// Still 18: the limbs spread round the tree and none lies along another.
 						apart: 0.015,
-						children: [
-							branches('sides', 45, [0.3, 0.92], { outline: 0.97 }),
-							whips([0.55, 1], 0.045, 6),
-						],
+						children: [branches([0.3, 0.92], { outline: 0.97 }), whips([0.75, 1], 0.045, 4)],
 					},
 				],
 			},

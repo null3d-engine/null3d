@@ -5,7 +5,7 @@
 // the true metres round, with the one seam on the underside. The tile count holds along an axis
 // while it stays within that quarter, and changes at a ring that the mesher doubles. The girth scale
 // shrinks the figure on young wood: a metre of real wood is 1 / scale metres of bark.
-import type { Species } from '../core/record';
+import type { BarkZone, Species } from '../core/record';
 import type { TextureManifest } from '../core/textures';
 import { curveAt } from '../core/types';
 
@@ -80,6 +80,21 @@ function repeatOf(tiles: readonly number[]): number {
 }
 
 /**
+ * Whether a bark zone holds at a point of the wood: inside its range on its own axis, and inside
+ * its band on the other axis where it names one.
+ *
+ * @param zone The zone.
+ * @param radius The wood's pipe radius at the point, in metres.
+ * @param height The point's height in the plant's space, in metres.
+ * @returns Whether it holds.
+ */
+export function zoneHolds(zone: BarkZone, radius: number, height: number): boolean {
+	const [own, other] = zone.by === 'height' ? [height, radius] : [radius, height];
+	if (own < zone.from || own >= zone.to) return false;
+	return !zone.second || (other >= zone.second.from && other < zone.second.to);
+}
+
+/**
  * The bark scale of a plant.
  *
  * @param record The species record.
@@ -107,12 +122,12 @@ export function barkScale(record: Species, manifest: TextureManifest, largest: n
 		]),
 		width(r: number, y: number): number {
 			if (r < youngRadius) return youngWidth;
-			for (const zone of zones) {
-				const at = zone.by === 'height' ? y : r;
-				if (at >= zone.from && at < zone.to) return layerWidth(zone.layer);
-			}
-			const last = zones[zones.length - 1];
-			return last ? layerWidth(last.layer) : DEFAULT_BARK_TILE;
+			// A zone that holds on both its axes wins over one that holds on its own axis alone, as
+			// the shader weighs them.
+			const both = zones.find((zone) => zone.second && zoneHolds(zone, r, y));
+			const one = both ?? zones.find((zone) => !zone.second && zoneHolds(zone, r, y));
+			const zone = one ?? zones[zones.length - 1];
+			return zone ? layerWidth(zone.layer) : DEFAULT_BARK_TILE;
 		},
 		scale(r: number): number {
 			return Math.max(0.05, curveAt(girth, Math.min(1, r / span)));
