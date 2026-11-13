@@ -723,14 +723,13 @@ export interface Conifer {
 		readonly depth: number;
 		/**
 		 * The sockets that fill a patch: the piece each carries, by its name among the record's
-		 * pieces, the metres between one socket and the next, the degrees a side twig leaves at from
-		 * the wood under the patch, and the degrees it rises above level. Absent, a patch carries no
-		 * socket.
+		 * pieces, the metres between one socket and the next over the patch's dome, and the most
+		 * degrees above level that a piece leaves its socket at, where the dome faces the sky.
+		 * Absent, a patch carries no socket.
 		 */
 		readonly sockets?: {
 			readonly piece: string;
 			readonly pitch: number;
-			readonly twig: number;
 			readonly lift: number;
 		};
 	};

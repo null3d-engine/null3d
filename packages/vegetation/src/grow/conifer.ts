@@ -74,12 +74,35 @@ const ARM_LIFT_STEP = 10;
 /** The least share of its reach that a limb keeps where the plant's height cuts it short. */
 const REACH_LEAST = 0.1;
 /**
- * The share of its length that a piece rises above its socket: a piece stands on a level socket
- * tilted up, and its foliage ends a little under its tip's height.
+ * The share of its length that a piece reaches from its socket to the outside of its foliage, and
+ * the least share of a patch's half width or depth that the dome of its sockets keeps.
  */
-const PIECE_RISE = 0.5;
-/** The most socket steps one twig runs. */
-const TWIG_STEPS_MOST = 5;
+const PIECE_REACH = 0.85;
+const SHELL_LEAST = 0.3;
+/** The most degrees a piece's line swings from the way its patch faces, to one side or the other. */
+const BOUGH_SWING = 35;
+/** The least and the most size of a piece in a patch over the piece's own. */
+const BOUGH_SIZE = [0.8, 1.2] as const;
+/** The most degrees above level that a piece's wood arrives at, which leaves a piece room to turn up. */
+const LIFT_MOST = 55;
+/** The wood order of a twig that leaves a limb or an arm. */
+const TWIG_ORDER = 3;
+/** How many twigs deep the wood of a patch divides: a twig, and a twig that leaves it. */
+const TWIG_ORDERS = 2;
+/**
+ * How much longer a twig counts for each unit that the way to its socket lies off the way the
+ * piece leaves there, from none along it to two against it.
+ */
+const TWIG_ASIDE = 1;
+/** The most degrees a twig arrives off the straight way from its foot to its socket. */
+const TWIG_ARRIVE = 30;
+/** The share of the turn bound at which a piece of a twig ends: its curve is walked in fine steps. */
+const TWIG_TURN_SHARE = 0.9;
+/** The longest piece of a twig in metres, and the distance under which a socket stands on its foot. */
+const TWIG_STEP = 0.3;
+const TWIG_NONE = 0.05;
+/** Steps a patch's dome is measured in. */
+const DOME_STEPS = 64;
 /** The least distance between two sockets of one patch, as a share of the pitch. */
 const SOCKET_APART = 0.7;
 /** A twig's radius where it leaves over its parent's radius there, at most. */
@@ -181,14 +204,17 @@ export interface ConiferLimb {
 }
 
 /**
- * A twig of the frame: a short level branch that leaves the wood under a patch and carries sockets.
+ * A twig of the frame: a short curved branch inside a patch that ends in a socket.
  *
  * @category api/vegetation
  */
 export interface ConiferTwig {
-	/** The limb it belongs to, the arm of that limb it leaves (-1 for the limb itself) and the node. */
+	/** The limb it belongs to, and the arm of that limb whose wood it grows from (-1 for the limb itself). */
 	readonly limb: number;
 	readonly arm: number;
+	/** The twig it leaves, by its index in the plan's twigs, or -1 where it leaves the limb or the arm. */
+	readonly twig: number;
+	/** The node it leaves, of that twig, arm or limb. */
 	readonly node: number;
 	/** Its nodes from the first past its parent to its end. */
 	readonly nodes: readonly ConiferNode[];
@@ -203,10 +229,13 @@ export interface ConiferSocket {
 	/** The patch it fills, by its index in the plan's patches. */
 	readonly patch: number;
 	/**
-	 * Its rank in its patch, from 0. The sockets below any rank stand spread over the patch, and the
-	 * ends of the limb and its arms take the lowest ranks, so a thinned patch keeps its ends clothed.
+	 * Its rank in the plant, from 0, with no rank repeated. The sockets below any rank stand spread
+	 * through the crown: they are the same share of every patch and spread over each. The ends of
+	 * the limbs and their arms take the lowest ranks, so a thinned plant keeps every end clothed.
 	 */
 	readonly rank: number;
+	/** The size of its piece over the piece's own. */
+	readonly scale: number;
 	/** The wood it stands on: a twig by its index, or with no twig a limb and its arm (-1 for the limb). */
 	readonly twig: number;
 	readonly limb: number;
@@ -411,19 +440,162 @@ function courseTo(course: Course, height: number): Path {
 	return path;
 }
 
-/** The reversed bits of an index below a power of two, which spreads a run of ranks evenly. */
-function reversedBits(index: number, bits: number): number {
-	let out = 0;
-	for (let k = 0; k < bits; k++) if (index & (1 << k)) out |= 1 << (bits - 1 - k);
-	return out;
+/** `size` less a piece's reach, and no less than a share of itself. */
+function shellInside(size: number, reach: number): number {
+	return Math.max(size - reach, size * SHELL_LEAST);
+}
+
+/**
+ * The area of each band of a dome, from its rim up: half a spheroid of half width `half` and height
+ * `tall`, cut into level bands of equal height.
+ */
+function domeBands(half: number, tall: number): number[] {
+	const bands: number[] = [];
+	for (let k = 0; k < DOME_STEPS; k++) {
+		const t = (k + 0.5) / DOME_STEPS;
+		bands.push(
+			(2 * PI * half * Math.sqrt(half * half * t * t + tall * tall * (1 - t * t))) / DOME_STEPS,
+		);
+	}
+	return bands;
+}
+
+/** The area of a dome in square metres. */
+function domeArea(half: number, tall: number): number {
+	return domeBands(half, tall).reduce((sum, band) => sum + band, 0);
+}
+
+/**
+ * The heights of `count` places on a dome as shares of its height, the highest first, with the same
+ * area of the dome to each.
+ */
+function domeHeights(half: number, tall: number, count: number): number[] {
+	const bands = domeBands(half, tall);
+	const whole = bands.reduce((sum, band) => sum + band, 0);
+	const heights: number[] = [];
+	let band = DOME_STEPS - 1;
+	let above = 0;
+	for (let i = 0; i < count; i++) {
+		// The area that lies above this place.
+		const want = ((i + 0.5) / count) * whole;
+		while (band > 0 && above + (bands[band] as number) < want) {
+			above += bands[band] as number;
+			band--;
+		}
+		const into = clamp((want - above) / (bands[band] as number), 0, 1);
+		heights.push((band + 1 - into) / DOME_STEPS);
+	}
+	return heights;
+}
+
+/** A place on a patch's wood where a twig can leave. */
+interface Foot {
+	readonly at: Vector3;
+	readonly radius: number;
+	/** The twig it is a node of, or -1 on the limb or an arm, the arm, and the node. */
+	readonly twig: number;
+	readonly arm: number;
+	readonly node: number;
+	/** How many twigs lie between it and the limb or arm. */
+	readonly depth: number;
+}
+
+/** A twig's course as points past its foot, the way it arrives, and the metres to each point. */
+interface TwigPath {
+	readonly points: Vector3[];
+	readonly along: number[];
+	readonly length: number;
+	readonly arrives: Vector3;
+}
+
+/**
+ * One curved twig from a foot to a socket: it arrives the way the piece leaves, or as near that
+ * way as a stated turn off the straight way allows, and bends evenly on the way there. Its pieces
+ * end where it has turned by a share of the bound or run a full step. A socket on its foot needs
+ * no twig.
+ */
+function twigPath(
+	from: Readonly<Vector3>,
+	to: Readonly<Vector3>,
+	heading: Readonly<Vector3>,
+): TwigPath | undefined {
+	const x = to[0] - from[0];
+	const y = to[1] - from[1];
+	const z = to[2] - from[2];
+	const far = Math.sqrt(x * x + y * y + z * z);
+	if (far < TWIG_NONE) return undefined;
+	const straight: Vector3 = [x / far, y / far, z / far];
+	// The way it arrives: the piece's own way, turned toward the straight way where it lies too far off.
+	let arrives: Vector3 = [heading[0], heading[1], heading[2]];
+	const off = between(straight, heading);
+	if (off > TWIG_ARRIVE) {
+		const whole = radians(off);
+		const share = TWIG_ARRIVE / off;
+		const span = sin(whole);
+		if (span < 1e-3) arrives = straight;
+		else {
+			const a = sin((1 - share) * whole) / span;
+			const b = sin(share * whole) / span;
+			arrives = [
+				straight[0] * a + heading[0] * b,
+				straight[1] * a + heading[1] * b,
+				straight[2] * a + heading[2] * b,
+			];
+		}
+	}
+	// A curve through one middle point, which stands back from the socket along the way it arrives.
+	const middle: Vector3 = [
+		to[0] - (arrives[0] * far) / 2,
+		to[1] - (arrives[1] * far) / 2,
+		to[2] - (arrives[2] * far) / 2,
+	];
+	const wayAt = (s: number): Vector3 => {
+		const wx = (1 - s) * (middle[0] - from[0]) + s * (to[0] - middle[0]);
+		const wy = (1 - s) * (middle[1] - from[1]) + s * (to[1] - middle[1]);
+		const wz = (1 - s) * (middle[2] - from[2]) + s * (to[2] - middle[2]);
+		const w = Math.sqrt(wx * wx + wy * wy + wz * wz);
+		return w > 1e-9 ? [wx / w, wy / w, wz / w] : arrives;
+	};
+	const placeAt = (s: number): Vector3 => [
+		(1 - s) * (1 - s) * from[0] + 2 * s * (1 - s) * middle[0] + s * s * to[0],
+		(1 - s) * (1 - s) * from[1] + 2 * s * (1 - s) * middle[1] + s * s * to[1],
+		(1 - s) * (1 - s) * from[2] + 2 * s * (1 - s) * middle[2] + s * s * to[2],
+	];
+	const steps = clamp(Math.ceil(between(wayAt(0), wayAt(1)) * 16), 16, FINE_MOST);
+	const points: Vector3[] = [];
+	const along: number[] = [];
+	let length = 0;
+	let since = 0;
+	let held = wayAt(0);
+	let before: Vector3 = [from[0], from[1], from[2]];
+	for (let k = 1; k <= steps; k++) {
+		const here = placeAt(k / steps);
+		const run = Math.sqrt(
+			(here[0] - before[0]) * (here[0] - before[0]) +
+				(here[1] - before[1]) * (here[1] - before[1]) +
+				(here[2] - before[2]) * (here[2] - before[2]),
+		);
+		length += run;
+		since += run;
+		before = here;
+		const next = wayAt(Math.min(1, (k + 0.5) / steps));
+		if (k === steps || since >= TWIG_STEP || between(held, next) >= TURN_MOST * TWIG_TURN_SHARE) {
+			points.push(here);
+			along.push(length);
+			since = 0;
+			held = next;
+		}
+	}
+	return { points, along, length, arrives: wayAt(1) };
 }
 
 /**
  * The sockets of a frame and the twigs that carry them. A patch that every end carries holds one
- * socket, on its end. A patch that a limb's arms spread under is filled: a pair of side twigs, one
- * to each side, leaves the limb's run and each arm every pitch, rising at the record's lift, and
- * each twig carries a socket every pitch along it. No two sockets of a patch stand nearer than a
- * share of the pitch, and a twig that would carry none is not grown, so no wood ends bare.
+ * socket, on its end. A patch that a limb's arms spread under is filled from its outside in: its
+ * sockets stand evenly over a dome inside the patch's own, one to each square pitch, and each pulls
+ * one curved twig from the nearest wood, the nearest socket first. Every twig ends in a socket, so
+ * no wood ends bare. Each patch orders its sockets so that any first share of them is spread over
+ * it, and the plant's one rank takes the same share of every patch.
  */
 function socketsOf(
 	record: Species,
@@ -438,26 +610,47 @@ function socketsOf(
 	const rule = g.patch.sockets;
 	if (!rule) return { twigs, sockets };
 	const pitch = Math.max(0.05, rule.pitch);
-	const lift = radians(clamp(rule.lift, 0, 60));
 	// A twig thins to the radius of the piece's own cut end.
 	const piece = record.pieces?.find((candidate) => candidate.name === rule.piece);
 	const tipRadius = piece?.stem.radius[0] ?? 0.01;
+	const pieceReach = piece ? spreadMean(piece.stem.length) * PIECE_REACH : 0;
+	const steepest = clamp(rule.lift, 0, LIFT_MOST);
 	const filled = g.patch.each === 'limb';
 	/** One patch's sockets before their ranks: the ends first. */
 	interface Draft extends Omit<ConiferSocket, 'rank' | 'patch'> {
 		readonly end: boolean;
 	}
+	/** Each patch's sockets in the patch's own order, with how many of them are ends. */
+	const ordered: { patch: number; drafts: Draft[]; ends: number }[] = [];
+	// A patch's own order: the ends of its limb and arms first, then each next socket the one that
+	// stands farthest from every socket before it, so any first share of the order is spread over
+	// the whole patch.
 	const rankInto = (patch: number, drafts: readonly Draft[]): void => {
-		const ends = drafts.filter((draft) => draft.end);
+		const chosen = drafts.filter((draft) => draft.end);
+		const ends = chosen.length;
 		const rest = drafts.filter((draft) => !draft.end);
-		let bits = 0;
-		while (1 << bits < rest.length) bits++;
-		const order = rest
-			.map((draft, i) => ({ draft, key: reversedBits(i, bits) }))
-			.sort((a, b) => a.key - b.key);
-		[...ends, ...order.map((entry) => entry.draft)].forEach(({ end: _end, ...socket }, rank) => {
-			sockets.push({ ...socket, patch, rank });
-		});
+		const apart = (a: Draft, b: Draft): number =>
+			(a.at[0] - b.at[0]) * (a.at[0] - b.at[0]) +
+			(a.at[1] - b.at[1]) * (a.at[1] - b.at[1]) +
+			(a.at[2] - b.at[2]) * (a.at[2] - b.at[2]);
+		const near = rest.map((draft) =>
+			chosen.reduce(
+				(least, other) => Math.min(least, apart(draft, other)),
+				Number.POSITIVE_INFINITY,
+			),
+		);
+		const left = rest.map((_, i) => i);
+		while (left.length > 0) {
+			let best = 0;
+			for (let k = 1; k < left.length; k++)
+				if ((near[left[k] as number] as number) > (near[left[best] as number] as number)) best = k;
+			const [taken] = left.splice(best, 1) as [number];
+			const draft = rest[taken] as Draft;
+			chosen.push(draft);
+			for (const other of left)
+				near[other] = Math.min(near[other] as number, apart(rest[other] as Draft, draft));
+		}
+		ordered.push({ patch, drafts: chosen, ends });
 	};
 	const patchIndex = new Map<ConiferPatch, number>();
 	patches.forEach((patch, i) => {
@@ -470,6 +663,7 @@ function socketsOf(
 		rankInto(i, [
 			{
 				end: true,
+				scale: 1,
 				twig: -1,
 				limb: -1,
 				arm: -1,
@@ -506,6 +700,7 @@ function socketsOf(
 			);
 			return {
 				end: true,
+				scale: 1,
 				twig: -1,
 				limb: l,
 				arm,
@@ -530,114 +725,227 @@ function socketsOf(
 			});
 			return;
 		}
-		const { centre, width } = limb.patch;
-		const inside = (x: number, z: number): boolean => {
-			const dx = x - centre[0];
-			const dz = z - centre[2];
-			return dx * dx + dz * dz <= (width / 2) * (width / 2);
-		};
+		const { centre, width, depth } = limb.patch;
+		const floor = centre[1] - depth / 2;
 		const drafts: Draft[] = [
 			endOf(limb.nodes, -1, trunkFrom),
 			...limb.arms.map((arm, a) => endOf(arm.nodes, a, limb.nodes[arm.node] as ConiferNode)),
 		];
+		/** A socket the dome asks for, before wood reaches it. */
+		const wanted: { at: Vector3; heading: Vector3; scale: number }[] = [];
+		const least = pitch * SOCKET_APART * (pitch * SOCKET_APART);
+		const apart = (a: Readonly<Vector3>, b: Readonly<Vector3>): boolean =>
+			(a[0] - b[0]) * (a[0] - b[0]) +
+				(a[1] - b[1]) * (a[1] - b[1]) +
+				(a[2] - b[2]) * (a[2] - b[2]) >=
+			least;
 		const clear = (at: Readonly<Vector3>): boolean =>
-			drafts.every((draft) => {
-				const dx = draft.at[0] - at[0];
-				const dy = draft.at[1] - at[1];
-				const dz = draft.at[2] - at[2];
-				return dx * dx + dy * dy + dz * dz >= pitch * SOCKET_APART * (pitch * SOCKET_APART);
+			drafts.every((draft) => apart(draft.at, at)) && wanted.every((want) => apart(want.at, at));
+		// The patch is a dome on a level floor: as wide as the patch, as deep at its middle. The
+		// pieces' tips stand on the dome, so their sockets stand on a dome inside it, a piece's
+		// reach smaller.
+		const half = shellInside(width / 2, pieceReach);
+		const tall = shellInside(depth, pieceReach);
+		// One socket to each square pitch of the dome that passes midway through the pieces.
+		const midHalf = (width / 2 + half) / 2;
+		const midTall = (depth + tall) / 2;
+		const count = Math.max(1, Math.round(domeArea(midHalf, midTall) / (pitch * pitch)));
+		const heights = domeHeights(half, tall, count);
+		const phase = draw(l, 63) * 2 * PI;
+		for (let i = 0; i < count; i++) {
+			const t = heights[i] as number;
+			const ring = Math.sqrt(Math.max(0, 1 - t * t));
+			const turn = phase + i * radians(GOLDEN);
+			const at: Vector3 = [
+				centre[0] + half * ring * cos(turn),
+				floor + tall * t,
+				centre[2] + half * ring * sin(turn),
+			];
+			if (!clear(at)) continue;
+			// A piece leaves the dome the way the dome faces, no steeper than the record's lift, and
+			// swung to one side or the other by its own share of the most, so neighbours do not stand
+			// as a comb. Each piece takes its own size.
+			const faceUp = (atan2(t / tall, ring / half) * 180) / PI;
+			const lift = radians(Math.min(faceUp, steepest));
+			const swing = radians(
+				(draw(l * 64 + 1, 4096 + i) < 0.5 ? 1 : -1) *
+					BOUGH_SWING *
+					(0.3 + 0.7 * draw(l * 64 + 2, 4096 + i)),
+			);
+			wanted.push({
+				at,
+				heading: [cos(lift) * cos(turn + swing), sin(lift), cos(lift) * sin(turn + swing)],
+				scale: BOUGH_SIZE[0] + (BOUGH_SIZE[1] - BOUGH_SIZE[0]) * draw(l * 64 + 3, 8192 + i),
 			});
-		// The wood that carries twigs: the limb's run under the patch, then each arm.
-		const carriers: {
-			readonly arm: number;
-			readonly nodes: readonly ConiferNode[];
-			readonly from: ConiferNode;
-			readonly taken: ReadonlySet<number>;
-		}[] = [
-			{
-				arm: -1,
-				nodes: limb.nodes,
-				from: trunkFrom,
-				taken: new Set(limb.arms.map((arm) => arm.node)),
-			},
-			...limb.arms.map((arm, a) => ({
-				arm: a,
-				nodes: arm.nodes,
-				from: limb.nodes[arm.node] as ConiferNode,
-				taken: new Set<number>(),
-			})),
-		];
-		carriers.forEach((carrier, c) => {
-			let side = draw(l, c) < 0.5 ? 1 : -1;
-			let since = pitch / 2;
-			let before = carrier.from;
-			// The carrier's own end carries a socket, so its last node grows no twig.
-			for (let i = 0; i < carrier.nodes.length - 1; i++) {
-				const node = carrier.nodes[i] as ConiferNode;
-				since += Math.sqrt(
-					(node.x - before.x) * (node.x - before.x) + (node.z - before.z) * (node.z - before.z),
-				);
-				before = node;
-				if (since < pitch || carrier.taken.has(i) || !inside(node.x, node.z)) continue;
-				const along = headingAt(carrier.nodes, i, carrier.from);
-				since = 0;
-				// A pair of twigs leaves each such node, one to each side, as a pine's side branches
-				// leave in a ring at a year's end. The side that leads swaps from one node to the next.
-				for (const flank of [side, -side]) {
-					const turn = flank * radians(rule.twig);
-					const dir: Vector3 = [
-						along[0] * cos(turn) - along[2] * sin(turn),
-						0,
-						along[0] * sin(turn) + along[2] * cos(turn),
-					];
-					// The twig rises at the record's lift toward the patch's rim, in whole steps of a pitch,
-					// a few at most, so its sockets stand a pitch apart along it.
-					const run = pitch * cos(lift);
-					const rise = pitch * sin(lift);
-					let steps = 0;
-					while (
-						steps < TWIG_STEPS_MOST &&
-						inside(node.x + dir[0] * run * (steps + 1), node.z + dir[2] * run * (steps + 1))
-					)
-						steps++;
-					const foot = Math.max(tipRadius, Math.min(node.radius * TWIG_FOOT, tipRadius * 2));
-					const nodes: ConiferNode[] = [];
-					const made: Draft[] = [];
-					for (let k = 1; k <= steps; k++) {
-						const at: Vector3 = [
-							node.x + dir[0] * run * k,
-							node.y + rise * k,
-							node.z + dir[2] * run * k,
-						];
-						nodes.push({
-							x: at[0],
-							y: at[1],
-							z: at[2],
-							radius: Math.min(node.radius, foot + (tipRadius - foot) * (k / steps)),
-						});
-						if (!clear(at) || made.some((other) => other.node === k - 1)) continue;
-						made.push({
-							end: false,
-							twig: twigs.length,
-							limb: l,
-							arm: carrier.arm,
-							node: k - 1,
-							radius: (nodes[k - 1] as ConiferNode).radius,
-							at,
-							heading: dir,
-						});
-					}
-					// The twig ends at its last socket, and a twig with none is not grown.
-					const last = made[made.length - 1];
-					if (!last) continue;
-					twigs.push({ limb: l, arm: carrier.arm, node: i, nodes: nodes.slice(0, last.node + 1) });
-					drafts.push(...made);
-				}
-				side = -side;
-			}
+		}
+		// The wood a twig can leave: the limb's run under the patch and each arm, then each twig
+		// that leaves them. A twig that leaves a twig carries no twig of its own.
+		const inside = (node: ConiferNode): boolean =>
+			(node.x - centre[0]) * (node.x - centre[0]) + (node.z - centre[2]) * (node.z - centre[2]) <=
+			(width / 2) * (width / 2);
+		const feet: Foot[] = [];
+		limb.nodes.forEach((node, i) => {
+			if (inside(node))
+				feet.push({
+					at: [node.x, node.y, node.z],
+					radius: node.radius,
+					twig: -1,
+					arm: -1,
+					node: i,
+					depth: 0,
+				});
 		});
+		limb.arms.forEach((arm, a) => {
+			arm.nodes.forEach((node, i) => {
+				feet.push({
+					at: [node.x, node.y, node.z],
+					radius: node.radius,
+					twig: -1,
+					arm: a,
+					node: i,
+					depth: 0,
+				});
+			});
+		});
+		if (feet.length === 0) {
+			const last = limb.nodes[limb.nodes.length - 1] as ConiferNode;
+			feet.push({
+				at: [last.x, last.y, last.z],
+				radius: last.radius,
+				twig: -1,
+				arm: -1,
+				node: limb.nodes.length - 1,
+				depth: 0,
+			});
+		}
+		// The way a piece leaves its socket: the way its twig arrives, held between level and the
+		// record's lift, so a piece on a twig that comes down to it still turns up.
+		const leaves = (arrives: Readonly<Vector3>, wanted: Readonly<Vector3>): Vector3 => {
+			const flat = Math.sqrt(arrives[0] * arrives[0] + arrives[2] * arrives[2]);
+			if (flat < 1e-4) return [wanted[0], wanted[1], wanted[2]];
+			const lift = radians(clamp((atan2(arrives[1], flat) * 180) / PI, 0, steepest));
+			return [(cos(lift) * arrives[0]) / flat, sin(lift), (cos(lift) * arrives[2]) / flat];
+		};
+		// What a twig from a foot to a wanted socket costs: its length, and more the further the way
+		// to the socket lies from the way the piece leaves, so wood runs on into its piece.
+		const costOf = (foot: Foot, want: (typeof wanted)[number]): number => {
+			const x = want.at[0] - foot.at[0];
+			const y = want.at[1] - foot.at[1];
+			const z = want.at[2] - foot.at[2];
+			const far = Math.sqrt(x * x + y * y + z * z);
+			if (far < 1e-6) return 0;
+			const along = (x * want.heading[0] + y * want.heading[1] + z * want.heading[2]) / far;
+			return far * (1 + TWIG_ASIDE * (1 - along));
+		};
+		const best = wanted.map((want) => {
+			let foot = 0;
+			let cost = Number.POSITIVE_INFINITY;
+			feet.forEach((candidate, f) => {
+				const c = costOf(candidate, want);
+				if (c < cost) {
+					cost = c;
+					foot = f;
+				}
+			});
+			return { foot, cost };
+		});
+		// Each socket in turn, the cheapest first, pulls one curved twig from its best foot, so the
+		// wood grows outward from the limb and its arms and later twigs leave earlier ones.
+		const left = wanted.map((_, i) => i);
+		while (left.length > 0) {
+			let pick = 0;
+			for (let k = 1; k < left.length; k++)
+				if (
+					(best[left[k] as number] as (typeof best)[number]).cost <
+					(best[left[pick] as number] as (typeof best)[number]).cost
+				)
+					pick = k;
+			const [w] = left.splice(pick, 1) as [number];
+			const want = wanted[w] as (typeof wanted)[number];
+			const foot = feet[(best[w] as (typeof best)[number]).foot] as Foot;
+			const path = twigPath(foot.at, want.at, want.heading);
+			if (!path) {
+				// The socket stands on the wood itself.
+				drafts.push({
+					end: false,
+					scale: want.scale,
+					twig: foot.twig,
+					limb: l,
+					arm: foot.arm,
+					node: foot.node,
+					radius: foot.radius,
+					at: [foot.at[0], foot.at[1], foot.at[2]],
+					heading: want.heading,
+				});
+				continue;
+			}
+			const thick = Math.max(tipRadius, Math.min(foot.radius * TWIG_FOOT, tipRadius * 2));
+			const nodes: ConiferNode[] = path.points.map((point, k) => ({
+				x: point[0],
+				y: point[1],
+				z: point[2],
+				radius: Math.min(
+					foot.radius,
+					thick + (tipRadius - thick) * ((path.along[k] as number) / path.length),
+				),
+			}));
+			const twig = twigs.length;
+			twigs.push({ limb: l, arm: foot.arm, twig: foot.twig, node: foot.node, nodes });
+			drafts.push({
+				end: false,
+				scale: want.scale,
+				twig,
+				limb: l,
+				arm: foot.arm,
+				node: nodes.length - 1,
+				radius: (nodes[nodes.length - 1] as ConiferNode).radius,
+				at: [want.at[0], want.at[1], want.at[2]],
+				heading: leaves(path.arrives, want.heading),
+			});
+			if (foot.depth + 1 >= TWIG_ORDERS) continue;
+			const from = feet.length;
+			nodes.forEach((node, i) => {
+				feet.push({
+					at: [node.x, node.y, node.z],
+					radius: node.radius,
+					twig,
+					arm: foot.arm,
+					node: i,
+					depth: foot.depth + 1,
+				});
+			});
+			for (const other of left) {
+				const held = best[other] as (typeof best)[number];
+				for (let f = from; f < feet.length; f++) {
+					const c = costOf(feet[f] as Foot, wanted[other] as (typeof wanted)[number]);
+					if (c < held.cost) {
+						held.cost = c;
+						held.foot = f;
+					}
+				}
+			}
+		}
 		rankInto(patchIndex.get(limb.patch) as number, drafts);
 	});
+	// One order across the plant. Every end comes first. Each other socket then stands at its share
+	// of its own patch's order, so the sockets below any rank are the same share of every patch,
+	// spread over each.
+	const keyed = ordered.flatMap(({ patch, drafts, ends }) =>
+		drafts.map((draft, i) => ({
+			draft,
+			patch,
+			key: i < ends ? -1 : (i - ends + 0.5) / Math.max(1, drafts.length - ends),
+		})),
+	);
+	keyed
+		.map((entry, i) => ({ entry, i }))
+		.sort((a, b) => a.entry.key - b.entry.key || a.i - b.i)
+		.forEach(({ entry }, rank) => {
+			const { end: _end, ...socket } = entry.draft;
+			sockets.push({ ...socket, patch: entry.patch, rank });
+		});
+	// The sockets stand in their patches' order, as the bud sites are written.
+	sockets.sort((a, b) => a.patch - b.patch || a.rank - b.rank);
 	return { twigs, sockets };
 }
 
@@ -877,17 +1185,6 @@ export function planConifer(input: GrowInput): ConiferPlan {
 		across = clamp((across * narrow * wide) / cross, 0.5, 2);
 	}
 
-	// The most a patch's foliage rises above its wood: its twigs' rise and the rise of the piece on
-	// the highest socket. A patch with no sockets is as deep as the record says.
-	const socketRule = g.patch.each === 'limb' ? g.patch.sockets : undefined;
-	const socketPiece = record.pieces?.find((candidate) => candidate.name === socketRule?.piece);
-	const builtRise = socketRule
-		? TWIG_STEPS_MOST *
-				Math.max(0.05, socketRule.pitch) *
-				sin(radians(clamp(socketRule.lift, 0, 60))) +
-			(socketPiece ? spreadMean(socketPiece.stem.length) * PIECE_RISE : 0)
-		: Number.POSITIVE_INFINITY;
-
 	const limbs: ConiferLimb[] = [];
 	/** Adds one limb from its seat, its place in the length order and its course. */
 	const addLimb = (
@@ -906,9 +1203,7 @@ export function planConifer(input: GrowInput): ConiferPlan {
 		const start = trunk[node] as ConiferNode;
 		const reach = Math.max(start.radius * 2, span * stretch(azimuth));
 		const width = patchWidth(place, reach, top);
-		// A patch is as deep as its foliage builds: the record's share of its width, and no more than
-		// its twigs and pieces rise.
-		const depth = Math.min(width * g.patch.depth, builtRise);
+		const depth = width * g.patch.depth;
 		// Under one patch a limb, the wood runs on past the patch's middle. With a patch at each end,
 		// the limb stops at the middle of its own.
 		const perEnd = g.patch.each === 'end';
@@ -1255,14 +1550,20 @@ export function growConifer(input: GrowInput): MacroSkeleton {
 			armsAt.push({ axis: armAxis, nodes: armNodes });
 		});
 	}
-	const twigAt = plan.twigs.map((twig) => {
+	// A twig leaves a limb, an arm or an earlier twig. Its order names its kind of wood: a twig, or
+	// a twig that leaves a twig.
+	const twigAt: { axis: number; nodes: number[]; order: number }[] = [];
+	for (const twig of plan.twigs) {
 		const limb = limbAt[twig.limb] as (typeof limbAt)[number];
-		const carrier = twig.arm < 0 ? limb : (limb.arms[twig.arm] as (typeof limb.arms)[number]);
+		const parent = twigAt[twig.twig];
+		const carrier =
+			parent ?? (twig.arm < 0 ? limb : (limb.arms[twig.arm] as (typeof limb.arms)[number]));
 		const parentNode = carrier.nodes[twig.node] as number;
+		const order = parent ? parent.order + 1 : TWIG_ORDER;
 		const axis = builder.addAxis({
 			parent: carrier.axis,
 			parentNode,
-			order: twig.arm < 0 ? 2 : 3,
+			order,
 			kind: AXIS_LIMB,
 		});
 		const nodes: number[] = [];
@@ -1280,8 +1581,8 @@ export function growConifer(input: GrowInput): MacroSkeleton {
 			});
 			nodes.push(last);
 		}
-		return { axis, nodes };
-	});
+		twigAt.push({ axis, nodes, order });
+	}
 	// Each socket is a bud site: its frame runs along its wood, its sky side up.
 	const frame = [0, 0, 0, 1];
 	for (const socket of plan.sockets) {
@@ -1310,7 +1611,7 @@ export function growConifer(input: GrowInput): MacroSkeleton {
 			light: 1,
 			axis: wood.axis,
 			woodRadius: socket.radius,
-			socket: { scale: 1, rank: socket.rank, lobe: socket.patch },
+			socket: { scale: socket.scale, rank: socket.rank, lobe: socket.patch },
 		});
 	}
 	return builder.finish(plan.crownBase);
