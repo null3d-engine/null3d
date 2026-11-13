@@ -1,0 +1,429 @@
+// The subjects of a plant that the review's close cameras frame: the trunk, the great limbs and
+// their joints, the forks, the crown's lobes, twig tips, branch pieces and a leaf. A camera reads
+// only this interface, so it holds for any generator that can fill it. A generator that cannot name
+// a subject reports it as absent with its reason, and a camera that needs it then draws no picture
+// to judge. The adapter at the foot fills the interface from a macro skeleton.
+
+import { BUD_TERMINAL } from '../../../../packages/vegetation/src/core/graph';
+import {
+	chainOf,
+	dot,
+	firstForkHeight,
+	mainStem,
+	nodeAt,
+	normalize,
+	stemFoot,
+	type V3,
+} from './anatomy';
+import { departures, forks } from './close';
+import type { MacroSkeleton } from './plant-types';
+
+/** A subject the generator cannot name, with the reason. */
+export interface Absent {
+	readonly absent: string;
+}
+
+/** A subject, or why the generator cannot name it. */
+export type Maybe<T> = T | Absent;
+
+/** A subject marked absent for a reason. */
+export function absent(why: string): Absent {
+	return { absent: why };
+}
+
+/** Whether a subject is absent. */
+export function isAbsent<T>(value: Maybe<T>): value is Absent {
+	return typeof value === 'object' && value !== null && 'absent' in value;
+}
+
+/** One sample of a wood axis: where its centre line is and how thick the wood is there. */
+export interface AxisSample {
+	readonly at: V3;
+	readonly radius: number;
+}
+
+/** The trunk: its foot, its centre line, and where it first divides. */
+export interface TrunkSubject {
+	/** Where the trunk meets the ground. */
+	readonly base: V3;
+	/** The centre line from the foot to the trunk's top, in order. */
+	readonly axis: readonly AxisSample[];
+	/** The trunk at breast height, or a third of the way up a trunk shorter than that. */
+	readonly breast: AxisSample;
+	/** Where the trunk first divides: the lowest joint of a limb that takes a real share of it. */
+	readonly firstFork: Maybe<AxisSample>;
+}
+
+/** A great limb: where it leaves the trunk, which way, and its centre line. */
+export interface GreatLimb {
+	/** The generator's own name for the limb, which a slot can ask for. */
+	readonly id: number;
+	/** The joint, on the trunk's centre line. */
+	readonly joint: V3;
+	/** The trunk's radius and direction at the joint. */
+	readonly trunkRadius: number;
+	readonly trunkDirection: V3;
+	/** The limb's direction once it is clear of the collar. */
+	readonly direction: V3;
+	/** The limb's radius at its base. */
+	readonly radius: number;
+	/** Metres the limb runs. */
+	readonly length: number;
+	/** The centre line from the joint outward, in order. */
+	readonly axis: readonly AxisSample[];
+}
+
+/** A fork: a limb of one order dividing into two arms. */
+export interface ForkSubject {
+	readonly at: V3;
+	/** The order of the limb that divides: 1 for a great limb. */
+	readonly order: number;
+	/** The limb's direction into the fork. */
+	readonly into: V3;
+	/** The two arms' directions out of it. */
+	readonly arms: readonly [V3, V3];
+	/** The limb's radius at the fork, and each arm's. */
+	readonly radius: number;
+	readonly armRadii: readonly [number, number];
+}
+
+/** A crown lobe: one foliage mass. */
+export interface Lobe {
+	readonly centre: V3;
+	readonly radius: number;
+	/** The great limb that carries it, by its id, where one does. */
+	readonly limb?: number;
+}
+
+/** A twig's tip: where the twig ends, which way it grows and how thick it is there. */
+export interface TwigTip {
+	readonly at: V3;
+	readonly direction: V3;
+	readonly radius: number;
+}
+
+/** One branch piece as the plant carries it: a branch end with its twigs and leaves at a socket. */
+export interface BranchPiece {
+	/** The socket: the piece's cut end. */
+	readonly socket: V3;
+	/** The direction the piece runs from its socket. */
+	readonly direction: V3;
+	/** Metres from the socket to the farthest tip. */
+	readonly length: number;
+	/** Metres the piece spreads to either side of its line. */
+	readonly spread: number;
+	/** The side of the piece its leaves face, where it has one. */
+	readonly face?: V3;
+}
+
+/** A leaf's size. */
+export interface LeafSubject {
+	readonly length: number;
+}
+
+/** Everything a close camera may frame, each subject present or absent with its reason. */
+export interface PlantSubjects {
+	/** Which generator filled the subjects. */
+	readonly source: string;
+	/** The point on the ground the plant stands on. */
+	readonly foot: V3;
+	/** Metres from the ground to the plant's top. */
+	readonly height: number;
+	/** Metres the plant reaches from its foot across the ground. */
+	readonly reach: number;
+	/** Metres from the ground to the lowest foliage. */
+	readonly crownBase: Maybe<number>;
+	readonly trunk: Maybe<TrunkSubject>;
+	/** The great limbs, the thickest first. */
+	readonly limbs: Maybe<readonly GreatLimb[]>;
+	readonly forks: Maybe<readonly ForkSubject[]>;
+	readonly lobes: Maybe<readonly Lobe[]>;
+	readonly twigTips: Maybe<readonly TwigTip[]>;
+	readonly pieces: Maybe<readonly BranchPiece[]>;
+	readonly leaf: Maybe<LeafSubject>;
+}
+
+/** The sample of an axis at a height above the ground, or undefined when the axis misses it. */
+export function sampleAtHeight(
+	axis: readonly AxisSample[],
+	height: number,
+): AxisSample | undefined {
+	for (let k = 1; k < axis.length; k++) {
+		const a = axis[k - 1] as AxisSample;
+		const b = axis[k] as AxisSample;
+		if (height < a.at[1] || height > b.at[1] || b.at[1] <= a.at[1]) continue;
+		const t = (height - a.at[1]) / (b.at[1] - a.at[1]);
+		return {
+			at: [a.at[0] + (b.at[0] - a.at[0]) * t, height, a.at[2] + (b.at[2] - a.at[2]) * t],
+			radius: a.radius + (b.radius - a.radius) * t,
+		};
+	}
+	return undefined;
+}
+
+/** The sample a share of the way along an axis, and the axis's direction there. */
+export function sampleAlong(
+	axis: readonly AxisSample[],
+	share: number,
+): AxisSample & { readonly direction: V3 } {
+	const first = axis[0] as AxisSample;
+	if (axis.length < 2) return { ...first, direction: [0, 1, 0] };
+	let total = 0;
+	for (let k = 1; k < axis.length; k++)
+		total += Math.hypot(
+			(axis[k] as AxisSample).at[0] - (axis[k - 1] as AxisSample).at[0],
+			(axis[k] as AxisSample).at[1] - (axis[k - 1] as AxisSample).at[1],
+			(axis[k] as AxisSample).at[2] - (axis[k - 1] as AxisSample).at[2],
+		);
+	const want = Math.max(0, Math.min(1, share)) * total;
+	let walked = 0;
+	for (let k = 1; k < axis.length; k++) {
+		const a = axis[k - 1] as AxisSample;
+		const b = axis[k] as AxisSample;
+		const d = Math.hypot(b.at[0] - a.at[0], b.at[1] - a.at[1], b.at[2] - a.at[2]);
+		if (walked + d >= want || k === axis.length - 1) {
+			const t = d > 0 ? Math.min(1, (want - walked) / d) : 0;
+			return {
+				at: [
+					a.at[0] + (b.at[0] - a.at[0]) * t,
+					a.at[1] + (b.at[1] - a.at[1]) * t,
+					a.at[2] + (b.at[2] - a.at[2]) * t,
+				],
+				radius: a.radius + (b.radius - a.radius) * t,
+				direction: normalize([b.at[0] - a.at[0], b.at[1] - a.at[1], b.at[2] - a.at[2]]),
+			};
+		}
+		walked += d;
+	}
+	return { ...first, direction: [0, 1, 0] };
+}
+
+/** What the skeleton adapter is told beside the skeleton. */
+export interface SkeletonSubjectOptions {
+	/** A leaf's length in metres, from the species' record. */
+	readonly leafLength?: number;
+}
+
+/** The least radius of a great limb, against the thickest limb that leaves the trunk. */
+const GREAT = 0.35;
+/** The fewest bud sites a branch carries for its foliage to count as a lobe. */
+const LOBE_BUDS = 8;
+/** The most radius a lobe may have, as a share of the plant's height, and the least that most may be, in metres. */
+const LOBE_HEIGHT_SHARE = 0.12;
+const LOBE_LEAST_RADIUS = 0.3;
+/** A solid ball's radius over the root mean square distance of its points from its middle. */
+const BALL = Math.sqrt(5 / 3);
+/** The most twig tips the adapter names, the best lit and farthest out first. */
+const MOST_TIPS = 64;
+/** The least a stem reaches for the plant to have a trunk: a share of its height, and in metres. */
+const TRUNK_HEIGHT_SHARE = 0.1;
+const TRUNK_LEAST = 0.15;
+/** The height of a person's chest, in metres, where a trunk's thickness is read. */
+const BREAST = 1.3;
+
+/** An axis's chain as samples. */
+function samplesOf(skeleton: MacroSkeleton, nodes: readonly number[]): AxisSample[] {
+	return nodes.map((n) => ({ at: nodeAt(skeleton, n), radius: skeleton.radius[n] as number }));
+}
+
+/**
+ * The lobes of a skeleton. The skeleton names no lobes of its own, so the bud sites that one limb's
+ * subtree carries stand in for one: a bud site is where a shoot draws its leaves, and a branch's
+ * sites are one foliage mass. Each lobe is the largest subtree whose sites fit a ball of the most
+ * radius a lobe may have, so a great limb's whole side of the crown divides into the masses its
+ * branches carry. Sites on wood too large to be one lobe belong to none.
+ */
+function lobesOf(skeleton: MacroSkeleton, stem: number): Lobe[] {
+	const { axes, buds } = skeleton;
+	const most = Math.max(LOBE_LEAST_RADIUS, LOBE_HEIGHT_SHARE * skeleton.height);
+	// Each axis's own sites: their count, the sum of their places and of their squared distances
+	// from the origin, which together give a subtree's middle and spread without a second pass.
+	const sums = new Float64Array(axes.count * 5);
+	for (let b = 0; b < buds.count; b++) {
+		const at = (buds.axis[b] as number) * 5;
+		const x = buds.position[b * 3] as number;
+		const y = buds.position[b * 3 + 1] as number;
+		const z = buds.position[b * 3 + 2] as number;
+		sums[at] = (sums[at] as number) + 1;
+		sums[at + 1] = (sums[at + 1] as number) + x;
+		sums[at + 2] = (sums[at + 2] as number) + y;
+		sums[at + 3] = (sums[at + 3] as number) + z;
+		sums[at + 4] = (sums[at + 4] as number) + x * x + y * y + z * z;
+	}
+	// Parents come before their children in the axis table, so one pass from the end carries each
+	// subtree's sums up to its root.
+	for (let a = axes.count - 1; a >= 0; a--) {
+		const parent = axes.parent[a] as number;
+		if (parent < 0 || parent === stem) continue;
+		for (let k = 0; k < 5; k++)
+			sums[parent * 5 + k] = (sums[parent * 5 + k] as number) + (sums[a * 5 + k] as number);
+	}
+	const radiusOf = (a: number): number => {
+		const n = sums[a * 5] as number;
+		if (n === 0) return 0;
+		const x = (sums[a * 5 + 1] as number) / n;
+		const y = (sums[a * 5 + 2] as number) / n;
+		const z = (sums[a * 5 + 3] as number) / n;
+		return Math.sqrt(Math.max(0, (sums[a * 5 + 4] as number) / n - x * x - y * y - z * z)) * BALL;
+	};
+	// The first-order limb each axis grows from, which names a lobe's great limb.
+	const limbOf = new Int32Array(axes.count).fill(-1);
+	// Whether an axis already belongs to a lobe that an ancestor of it makes.
+	const held = new Uint8Array(axes.count);
+	const lobes: Lobe[] = [];
+	for (let a = 0; a < axes.count; a++) {
+		const parent = axes.parent[a] as number;
+		if (parent < 0) continue;
+		limbOf[a] = parent === stem ? a : (limbOf[parent] as number);
+		if (parent !== stem && held[parent] === 1) {
+			held[a] = 1;
+			continue;
+		}
+		const n = sums[a * 5] as number;
+		const radius = radiusOf(a);
+		if (n < LOBE_BUDS || radius > most) continue;
+		held[a] = 1;
+		lobes.push({
+			centre: [
+				(sums[a * 5 + 1] as number) / n,
+				(sums[a * 5 + 2] as number) / n,
+				(sums[a * 5 + 3] as number) / n,
+			],
+			radius,
+			...((limbOf[a] as number) >= 0 && { limb: limbOf[a] as number }),
+		});
+	}
+	return lobes;
+}
+
+/** The twig tips of a skeleton: its terminal buds, the best lit and farthest out first. */
+function tipsOf(skeleton: MacroSkeleton, foot: V3, reach: number): TwigTip[] {
+	const { buds } = skeleton;
+	const ranked: { readonly bud: number; readonly score: number }[] = [];
+	for (let b = 0; b < buds.count; b++) {
+		if ((buds.kind[b] as number) !== BUD_TERMINAL) continue;
+		const out = Math.hypot(
+			(buds.position[b * 3] as number) - foot[0],
+			(buds.position[b * 3 + 2] as number) - foot[2],
+		);
+		ranked.push({ bud: b, score: (buds.light[b] as number) + out / Math.max(reach, 1e-6) });
+	}
+	ranked.sort((a, b) => b.score - a.score || a.bud - b.bud);
+	return ranked.slice(0, MOST_TIPS).map(({ bud }) => {
+		const q = buds.frame.subarray(bud * 4, bud * 4 + 4);
+		const [x, y, z, w] = [q[0] as number, q[1] as number, q[2] as number, q[3] as number];
+		return {
+			at: [
+				buds.position[bud * 3] as number,
+				buds.position[bud * 3 + 1] as number,
+				buds.position[bud * 3 + 2] as number,
+			],
+			// The frame's +Y, the shoot's direction.
+			direction: normalize([2 * (x * y - w * z), 1 - 2 * (x * x + z * z), 2 * (y * z + w * x)]),
+			radius: buds.woodRadius[bud] as number,
+		};
+	});
+}
+
+/**
+ * The subjects of a plant grown as a macro skeleton. The skeleton names a trunk, the limbs that
+ * leave it and the places a limb divides. It names no lobes, so the bud sites of each branch stand
+ * in for one, and it instances no branch pieces, so those are absent.
+ */
+export function subjectsOfSkeleton(
+	skeleton: MacroSkeleton,
+	options: SkeletonSubjectOptions = {},
+): PlantSubjects {
+	const foot = stemFoot(skeleton);
+	const reach = Math.max(
+		Math.abs((skeleton.bounds.max[0] as number) - foot[0]),
+		Math.abs((skeleton.bounds.min[0] as number) - foot[0]),
+		Math.abs((skeleton.bounds.max[2] as number) - foot[2]),
+		Math.abs((skeleton.bounds.min[2] as number) - foot[2]),
+	);
+	const stem = mainStem(skeleton);
+	const { limbs: leaving, leader } = stem >= 0 ? departures(skeleton) : { limbs: [] };
+	// The trunk runs on through the limb that carries its line past the first fork.
+	const nodes = stem >= 0 ? chainOf(skeleton, stem) : [];
+	if (leader) nodes.push(...chainOf(skeleton, leader.axis).slice(1));
+	const axis = samplesOf(skeleton, nodes);
+	const top = axis.length > 0 ? (axis[axis.length - 1] as AxisSample).at[1] : 0;
+	// A ground plant's crown axis looks like a stem at its base but reaches no height, where a tree
+	// that forks low still carries its stem a real share of the way up.
+	const hasTrunk = top >= Math.max(TRUNK_LEAST, TRUNK_HEIGHT_SHARE * skeleton.height);
+	const noTrunk = absent('the plant has no stem that reaches a tenth of its height');
+
+	let trunk: Maybe<TrunkSubject> = noTrunk;
+	if (hasTrunk) {
+		const breast = sampleAtHeight(axis, Math.min(BREAST, top * 0.3)) ?? (axis[0] as AxisSample);
+		const fork = firstForkHeight(skeleton);
+		const forkAt = fork === undefined ? undefined : sampleAtHeight(axis, fork);
+		trunk = {
+			base: foot,
+			axis,
+			breast,
+			firstFork: forkAt ?? absent("no limb takes a fifth of the trunk's cross-section"),
+		};
+	}
+
+	const thickest = leaving[0]?.radius ?? 0;
+	const limbs: Maybe<readonly GreatLimb[]> = hasTrunk
+		? leaving
+				.filter((d) => d.radius >= GREAT * thickest)
+				.map((d) => ({
+					id: d.axis,
+					joint: d.at,
+					trunkRadius: d.stem.radius,
+					trunkDirection: d.stem.direction,
+					direction: d.direction,
+					radius: d.radius,
+					length: d.length,
+					axis: samplesOf(skeleton, chainOf(skeleton, d.axis)),
+				}))
+		: noTrunk;
+
+	const divisions: Maybe<readonly ForkSubject[]> = hasTrunk
+		? forks(skeleton).map((f) => ({
+				at: f.at,
+				order: skeleton.axes.order[f.limb] as number,
+				into: f.into,
+				// The limb runs on as one arm at its own thickness, and the axis that leaves is the other.
+				arms: [f.on, f.out] as const,
+				radius: f.radius,
+				armRadii: [f.radius, f.armRadius] as const,
+			}))
+		: noTrunk;
+
+	const lobes: Maybe<readonly Lobe[]> =
+		skeleton.buds.count === 0
+			? absent('the skeleton carries no bud sites, so it names no foliage mass')
+			: hasTrunk
+				? lobesOf(skeleton, stem)
+				: noTrunk;
+
+	const tips = tipsOf(skeleton, foot, reach);
+	return {
+		source: 'macro skeleton',
+		foot,
+		height: skeleton.height,
+		reach,
+		crownBase: skeleton.crownBase,
+		trunk,
+		limbs,
+		forks: divisions,
+		lobes,
+		twigTips: tips.length > 0 ? tips : absent('the skeleton carries no terminal bud'),
+		pieces: absent('the skeleton instances no branch piece: the cut views draw the review cutting'),
+		leaf:
+			options.leafLength === undefined
+				? absent("the species' foliage has no single leaf length")
+				: { length: options.leafLength },
+	};
+}
+
+/** The degrees between a limb's line and the trunk's where the limb leaves. */
+export function departureAngle(limb: GreatLimb): number {
+	return (
+		(Math.acos(Math.max(-1, Math.min(1, dot(limb.direction, limb.trunkDirection)))) * 180) / Math.PI
+	);
+}
