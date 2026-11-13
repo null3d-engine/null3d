@@ -80,6 +80,7 @@ import { extrasMesh } from './leaf/extras';
 import { dressShoots, pruneLight } from './leaf/instancer';
 import { foliage, loadFoliage } from './leaf/kinds';
 import { type PiecePrototype, type PieceRule, piecePrototypes } from './leaf/piece';
+import { carriesPieces, kitPiece, PROTOTYPES_MOST } from './leaf/piece-rows';
 import { inLeaf } from './leaf/season';
 import { shootPrototypes } from './leaf/shoot';
 import { bakeCards } from './lod/card-bake';
@@ -562,11 +563,21 @@ export function buildKitNow(source: KitSource, options: KitOptions = {}): Specie
 		surface: new Uint8Array(0),
 	};
 	if (record.shoots) {
+		// A plant that carries pieces at its sockets keeps its pieces in the kit, each part a
+		// prototype of its own; any other keeps its shoot prototypes.
+		const pieces = !cutting && carriesPieces(record) ? record.pieces : undefined;
 		const uncarded = stage(
 			placeholders,
-			() => shootPrototypes(record, manifest, leavesByTier, cutting),
+			() =>
+				pieces
+					? piecePrototypes(record, pieces, leavesByTier).map(kitPiece)
+					: shootPrototypes(record, manifest, leavesByTier, cutting),
 			() => placeholderPrototypes(record, leavesByTier),
 		);
+		if (uncarded.length > PROTOTYPES_MOST)
+			throw new Error(
+				`@null3d/vegetation: '${record.id}' builds ${uncarded.length} prototypes; a kit holds ${PROTOTYPES_MOST} at most`,
+			);
 		// A cutting kit holds no card levels: its pieces are drawn at the nearest level alone.
 		const baked = cutting
 			? { atlas: cards, cells: uncarded.map(() => ({ planes: [] })) }
