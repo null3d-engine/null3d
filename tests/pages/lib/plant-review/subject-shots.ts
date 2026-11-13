@@ -1217,10 +1217,11 @@ const CROWN_SIDE_MOST = 0.92;
 const LOBE_LEAST = 0.25;
 
 /** How far along the great limb that carries a lobe a crown view frames it. */
-const CARRIER_ALONG = 0.6;
+const CARRIER_ALONG = 0.85;
 
 /**
- * The great limb that carries a lobe, far out along its run where its leaves hang over it: the
+ * The great limb that carries a lobe, near the end of its run at the crown's rim, where its leaves
+ * hang over it and the sky stands behind them: the
  * limb the lobe names, or failing that the thickest great limb.
  */
 function carrierOf(
