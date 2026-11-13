@@ -193,6 +193,13 @@ export const directed: Species = {
 		// stood at 1.30 / 0.99 / 0.98, tan; this tint takes it to the photograph's pale yellow-green.
 		youngTint: [1.16, 1.3, 0.66],
 	},
+	seasons: {
+		...record.seasons,
+		// The dead fronds' brown, which their browning mixes toward: against each picture's leaflets,
+		// in linear light, picture 01 shows 1.43 / 0.76 / 0.65, 02 0.84 / 0.49 / 0.36, 05 1.18 / 0.67 /
+		// 0.65 and 20 1.00 / 0.55 / 0.62; their mean, 1.11 / 0.62 / 0.57, on the leaflets' own light.
+		autumn: { reflectance: [0.18, 0.125, 0.078], transmittance: [0.1, 0.081, 0.034] },
+	},
 	base: {
 		// Picture 01: the foot flares to 0.078 of the height over its lowest 0.06; still 14: short
 		// roots run out between the lowest stubs.
