@@ -18,6 +18,7 @@ import {
 	planPiece,
 } from '../leaf/piece';
 import type { ShootPlan } from '../leaf/shoot';
+import { bakeCards } from '../lod/card-bake';
 import { PIECES as ALDER, STUDIO as ALDER_STUDIO } from './common-alder/pieces';
 import { PIECES as ASH, STUDIO as ASH_STUDIO } from './common-ash/pieces';
 import { PIECES as BEECH, STUDIO as BEECH_STUDIO } from './european-beech/pieces';
@@ -203,6 +204,46 @@ describe('a flat rosette', () => {
 			const own = plan.leaves.filter((leaf) => leaf.axis === 0);
 			expect(own.some((leaf) => leaf.direction[0] > 0.5)).toBe(true);
 			expect(own.some((leaf) => leaf.direction[0] < -0.5)).toBe(true);
+		},
+		LONG,
+	);
+});
+
+describe('a piece through the card bake', () => {
+	it(
+		"gives the oak's branch end three planes whose front cell holds its leaf tufts",
+		async () => {
+			const module = await loadSpecies('pedunculate-oak');
+			await loadPlantCode(module.record);
+			const built = buildPiecesNow(module, OAK);
+			const { atlas, cells } = bakeCards(
+				module.record,
+				module.textures.manifest,
+				'high',
+				built.map((piece, index) => ({
+					index,
+					class: 'cut' as const,
+					vigor: [0, 1] as const,
+					length: piece.length,
+					radius: piece.radius,
+					leaves: piece.leaves,
+					tiers: piece.tiers,
+				})),
+			);
+			expect(cells.length).toBe(built.length);
+			for (const cell of cells) {
+				expect(cell.planes.length).toBe(3);
+				// The share of each plane's cell that the piece covers: some, and not all of it.
+				for (const plane of cell.planes.slice(0, 1)) {
+					const [x, y, w, h] = plane.front;
+					let covered = 0;
+					for (let row = y; row < y + h; row++)
+						for (let column = x; column < x + w; column++)
+							if ((atlas.color[(row * atlas.size + column) * 4 + 3] as number) >= 128) covered++;
+					expect(covered / (w * h)).toBeGreaterThan(0.05);
+					expect(covered / (w * h)).toBeLessThan(0.9);
+				}
+			}
 		},
 		LONG,
 	);
