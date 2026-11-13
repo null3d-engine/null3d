@@ -149,13 +149,22 @@ export const directed: Species = {
 				// Picture 04: about twenty fans round the column where it is widest, each as wide as
 				// its spacing, and the rows' tips 0.23 to 0.29 of the column's width apart up it, 0.74
 				// of a fan's height. The fan of picture 21 is 0.38 of its length wide, so at 0.52 m a
-				// row's fans stand 0.2 m apart and the rows 0.38 m.
+				// row's fans stand 0.2 m apart and the rows 0.38 m. The fan's length is its cones':
+				// picture 04's fans read 1.0 m only on a tree 17 m tall, a height no fact sheet gives,
+				// so the shell holds about four times the fans picture 04 counts.
 				pitch: 0.2,
 				rise: 0.38,
 				// Pictures 04, 10 and 03: each fan stands upright, tip up, pressed to the surface.
 				lift: 10,
 			},
 		},
+	},
+	lod: {
+		...record.lod,
+		// A fan's card joins the plant through its twig's bough, so no card draws a stalk: on a
+		// closed column every card's stalk would draw a pale line over the fans.
+		cardStalk: 0,
+		cardStalkToFoliage: false,
 	},
 	bark: {
 		...(record.bark as BarkSpec),

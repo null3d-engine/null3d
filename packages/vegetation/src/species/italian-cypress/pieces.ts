@@ -5,12 +5,19 @@
 import type { PieceRule, PieceStudio } from '../../leaf/piece';
 
 /**
- * The scale cords along a stem. Still 21: 6 to 10 cords on a branchlet, alternate, in two ranks, so
- * a cord each 1.6 cm of a branchlet 0.14 m long. The ranks lie half way into the fan's plane, by
- * eye.
+ * The scale cords along a stem, in two ranks that lie half way into the fan's plane, by eye. Still
+ * 21's core is closed and shows its background only between the tips at its edge. Read by the piece
+ * preview's sky inside the outline (photograph 0.157, band 0.137 to 0.207): the 6 to 10 cords a
+ * branchlet that still 21 seems to show, a cord each 1.6 cm, leave 0.647; a cord each 5 mm 0.444,
+ * at half again the spray's size 0.263, with the branchlets of the figures below 0.236, and a cord
+ * each 4 mm 0.198. That fan's kit holds 48 MB at the finest tier, where every cord draws whole,
+ * against a cap of 22.6 MB, so the cords stand each 6 mm at 1.85 times the spray's size, about the
+ * same cover a stem: 0.212 drawn and 0.127 as cards, its face covering 0.420 of its box against the
+ * turning video's 0.442.
  */
 const CORDS = {
-	gap: 0.016,
+	gap: 0.006,
+	scale: 1.85,
 	phyllotaxis: { kind: 'distichous', flatten: 0.5 },
 	from: 0,
 	angle: [
@@ -27,7 +34,8 @@ export const PIECES: readonly PieceRule[] = [
 		// The fan stands along its socket's line, which runs up the column's surface, so its flat
 		// face looks out of the column.
 		attitude: 'along',
-		variants: 3,
+		// Two variants keep the kit inside its cap at the finest tier; each socket sizes its fan.
+		variants: 2,
 		// Each run of cords draws as a card of its own picture below the finest tier. A cord's spray
 		// is longer than the step between cords, so neighbours overlap along their stem.
 		brushCards: true,
@@ -49,8 +57,10 @@ export const PIECES: readonly PieceRule[] = [
 			sides: [
 				{
 					stem: {
-						// 0.20 to 0.32 of the axis low and in the middle, 0.10 to 0.15 near the top.
-						length: { mean: 0.14, spread: 0.02 },
+						// 0.20 to 0.32 of the axis low and in the middle, 0.10 to 0.15 near the top:
+						// the short end of that range, which with the cords' own reach keeps the fan
+						// 0.46 as wide as long against still 21's 0.39.
+						length: { mean: 0.115, spread: 0.015 },
 						radius: [0.0025, 0.0012],
 						leaves: CORDS,
 						bud: false,
@@ -61,8 +71,8 @@ export const PIECES: readonly PieceRule[] = [
 					to: 0.95,
 					arrangement: 'alternate',
 					out: 8,
-					// 35 to 50 degrees from the axis, ascending.
-					angle: { mean: 42, spread: 7 },
+					// 35 to 50 degrees from the axis, ascending; the steep end of that range.
+					angle: { mean: 38, spread: 5 },
 					lengthAlong: [
 						[0.08, 0.85],
 						[0.45, 1],
@@ -75,5 +85,5 @@ export const PIECES: readonly PieceRule[] = [
 	},
 ];
 
-/** The studio photographs of cut wood that the pieces lay out; none is laid out yet. */
-export const STUDIO: readonly PieceStudio[] = [];
+/** The studio photographs the pieces are drawn beside. */
+export const STUDIO: readonly PieceStudio[] = [{ still: 21, piece: 'fan' }];
