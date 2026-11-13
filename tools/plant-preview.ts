@@ -154,12 +154,23 @@ const asset = growPlantNow(kit, { seed, variant, season, near: true });
 const grown = performance.now() - started;
 const { skeleton } = asset;
 const top = Math.max(skeleton.height, drawShoots(canvas(1, 1), undefined, kit, asset.shoots));
-const reach = Math.max(
+// The crown's reach from the plant's axis: the shoot rows stand past the wood that carries them.
+let reach = Math.max(
 	Math.abs(skeleton.bounds.min[0]),
 	Math.abs(skeleton.bounds.max[0]),
 	Math.abs(skeleton.bounds.min[2]),
 	Math.abs(skeleton.bounds.max[2]),
 );
+for (let r = 0; r < asset.shoots.count; r++) {
+	const length =
+		(kit.prototypes[asset.shoots.prototype[r] as number]?.radius ?? 0) *
+		(asset.shoots.scale[r] as number);
+	reach = Math.max(
+		reach,
+		Math.abs(asset.shoots.position[r * 3] as number) + length,
+		Math.abs(asset.shoots.position[r * 3 + 2] as number) + length,
+	);
+}
 const bounds: Bounds = { min: [-reach, 0, -reach], max: [reach, top, reach] };
 const size = PANEL * FACTOR;
 const under = upwardCamera(
