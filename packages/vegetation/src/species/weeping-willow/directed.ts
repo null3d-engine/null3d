@@ -4,7 +4,13 @@
 // the arching wood to the hem. Each figure names the
 // reference picture it was read on. Shares are of the tree's height. Still 01 and the whole-tree
 // turning video are the one tree the frame follows; still 18 shows the limbs' course best.
-import type { FrameBranchRule, FrameLength, FrameSpec } from '../../grow/frame';
+import {
+	type FrameBranchRule,
+	type FrameLength,
+	type FrameSpec,
+	framedRecord,
+} from '../../grow/frame';
+import { record } from './record';
 
 /**
  * A whip: a hanging axis of the frame, which carries the strands at sockets along it. Stills 19 and
@@ -225,3 +231,10 @@ export const frame: FrameSpec = {
 		],
 	},
 };
+
+/**
+ * The weeping willow's record with the frame as its growth. A socket holds four shoot rows that fan 45
+ * degrees from its line. These two are working figures, not measured ones: they stand until the
+ * species' branch pieces are placed at its sockets, which then state what a socket holds.
+ */
+export const directed = framedRecord(record, frame, { rows: { mean: 4, spread: 1 }, fan: 45 });

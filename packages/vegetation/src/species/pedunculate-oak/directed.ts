@@ -5,7 +5,8 @@
 // from the species' measured targets (still 01, the primary tree) and from the description of the
 // real tree in the first review of its frame, which read stills 01, 02, 03, 04, 18 and 20, the
 // whole-tree turning video and the winter oak. Shares are of the tree's height.
-import type { FrameBranchRule, FrameSpec } from '../../grow/frame';
+import { type FrameBranchRule, type FrameSpec, framedRecord } from '../../grow/frame';
+import { record } from './record';
 
 /** A rounded clump of foliage. The real tree's rim is ten to twelve clumps with sky bays between. */
 const clump = (width: number) => ({ kind: 'clump', width, depth: width * 0.7 }) as const;
@@ -172,3 +173,9 @@ export const frame: FrameSpec = {
 		],
 	},
 };
+
+/**
+ * The pedunculate oak's record with the frame as its growth. A socket holds five shoot rows that fan
+ * 45 degrees from its line: the figures the scaffold build's oak states for the same branch ends.
+ */
+export const directed = framedRecord(record, frame, { rows: { mean: 5, spread: 1 }, fan: 45 });

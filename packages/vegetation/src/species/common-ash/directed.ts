@@ -4,7 +4,8 @@
 // bunches stand. Each figure names the reference picture it was read on. Shares are of the tree's
 // height, measured from the true foot. Still 01 and the whole-tree turning video are the one tree
 // the frame follows.
-import type { FrameBranchRule, FrameSpec } from '../../grow/frame';
+import { type FrameBranchRule, type FrameSpec, framedRecord } from '../../grow/frame';
+import { record } from './record';
 
 /**
  * A bunch of leaves at a shoot tip. Still 01: nine or ten separate masses show in one view, each a
@@ -180,3 +181,10 @@ export const frame: FrameSpec = {
 		],
 	},
 };
+
+/**
+ * The common ash's record with the frame as its growth. A socket holds four shoot rows that fan 45
+ * degrees from its line. These two are working figures, not measured ones: they stand until the
+ * species' branch pieces are placed at its sockets, which then state what a socket holds.
+ */
+export const directed = framedRecord(record, frame, { rows: { mean: 4, spread: 1 }, fan: 45 });

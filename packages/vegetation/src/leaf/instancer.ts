@@ -455,7 +455,8 @@ function placedRows(input: DressInput, bySky = true): Row[] {
 	if (!shoots || kit.prototypes.length === 0) return rows;
 	// A scaffold plant's foliage stands at its sockets, where its foliage masses put it: no shade or
 	// sky line thins it afterwards.
-	if (record.growth.model === 'scaffold') return socketRows(input, record.growth);
+	if (record.growth.model === 'scaffold' || record.growth.model === 'frame')
+		return socketRows(input, record.growth);
 	const salt = record.seedSalt;
 	const draw = (purpose: number, a = 0, b = 0) => unitAt(seed, salt, variant * 64 + purpose, a, b);
 	const pick = (purpose: number, a = 0, b = 0) => hashAt(seed, salt, variant * 64 + purpose, a, b);
@@ -748,7 +749,10 @@ function placedRows(input: DressInput, bySky = true): Row[] {
  * vigor of their own, so one socket carries shoots of several classes as a branch end does. Each
  * row's scale is the record's, times its socket's own.
  */
-function socketRows(input: DressInput, growth: Scaffold): Row[] {
+function socketRows(
+	input: DressInput,
+	growth: { readonly sockets: Pick<Scaffold['sockets'], 'rows' | 'fan'> },
+): Row[] {
 	const { record, seed, variant, skeleton, kit } = input;
 	const rows: Row[] = [];
 	const shoots = record.shoots;

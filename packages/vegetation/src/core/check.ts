@@ -17,6 +17,7 @@ import {
 const MODELS: readonly GrowthModel[] = [
 	'self-organizing',
 	'scaffold',
+	'frame',
 	'architectural',
 	'conifer',
 	'crown-rosette',
@@ -644,6 +645,16 @@ function growthProblems(record: Species, out: string[]): void {
 		shareProblem(ribs.start, 'foliage.leaf.ribs.start', out);
 		if (ribs.depth < 0 || ribs.sweep <= 0)
 			out.push('foliage.leaf.ribs needs a depth from 0 and a sweep above 0');
+	}
+	if (growth.model === 'frame') {
+		spreadProblems(growth.sockets.rows, 'growth.sockets.rows', true, out);
+		if (!(growth.sockets.fan >= 0 && growth.sockets.fan <= 120))
+			out.push(`growth.sockets.fan is ${growth.sockets.fan}; it is degrees from 0 to 120`);
+		curveProblems(growth.frame.outline, 'growth.frame.outline', out);
+		if (!(growth.frame.stems.count >= 1))
+			out.push(
+				`growth.frame.stems.count is ${growth.frame.stems.count}; a plant has one stem or more`,
+			);
 	}
 	if (growth.model === 'conifer') {
 		const { trunk, limbs, top, patch } = growth;
