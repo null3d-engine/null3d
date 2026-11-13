@@ -422,3 +422,49 @@ fn the_cluster_pass_binds_the_buffers_that_a_jump_makes_again() {
         "the camera's view and the cascade grow"
     );
 }
+
+#[test]
+fn a_structure_change_that_leaves_the_tree_alone_writes_only_the_records() {
+    let mut world = World::new();
+    let mut mock = MockBackend::default();
+    let mesh = world.add_object(&grid(1, 1), Shading::Lit);
+    world
+        .renderer
+        .set_mesh_patches(mesh, Some(one_patch()))
+        .unwrap();
+    world.record(true);
+    mock.replay(world.renderer.list(world.frame).words())
+        .unwrap();
+    // The scene's patch table is the one that the cluster pass binds at binding 1.
+    let table = world
+        .commands()
+        .iter()
+        .find(|(op, o)| *op == Op::CreateBindGroup && o[1] == layout::CLUSTER_CULL)
+        .and_then(|(_, o)| {
+            o[3..]
+                .chunks(5)
+                .find(|entry| entry[0] == 1)
+                .map(|entry| entry[2])
+        })
+        .expect("the cluster pass binds the scene's patch table");
+    // A second object of a mesh without a tree changes the buckets, not the tree.
+    world.add_object(&grid(2, 2), Shading::Lit);
+    world.frame += 1;
+    world.record(true);
+    mock.replay(world.renderer.list(world.frame).words())
+        .unwrap();
+    let writes: Vec<u32> = world
+        .commands()
+        .iter()
+        .filter(|(op, o)| *op == Op::WriteBuffer && o[0] == table)
+        .map(|(_, o)| o[1])
+        .collect();
+    assert!(
+        writes.iter().any(|&offset| offset > 0),
+        "the mesh records follow the patches and upload again: {writes:?}"
+    );
+    assert!(
+        !writes.contains(&0),
+        "the patch table uploaded again though the tree did not change: {writes:?}"
+    );
+}
