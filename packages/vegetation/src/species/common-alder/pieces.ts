@@ -11,11 +11,12 @@ import type { PieceLeaves, PieceRule, PieceStem, PieceStudio } from '../../leaf/
 const LEAF_SCALE = 1.3;
 
 /**
- * The leaves along a shoot. Still 21: alternate, one each 5 to 7 centimetres, held 50 to 70 degrees
- * off the shoot, their faces open to the branch's sky side.
+ * The leaves along a shoot. Still 21: alternate, four to six on a side shoot of 15 to 25 centimetres,
+ * one each 4.5 centimetres, held 50 to 70 degrees off the shoot, their faces open to the branch's sky
+ * side. About forty leaves on the branch.
  */
-function leaves(from: number): PieceLeaves {
-	return { gap: 0.06, from, angle: 60, angleSpread: 10, skyward: 0.9, scale: LEAF_SCALE };
+function leaves(from: number, scale = LEAF_SCALE): PieceLeaves {
+	return { gap: 0.045, from, angle: 60, angleSpread: 10, skyward: 0.9, scale };
 }
 
 /** A side shoot. Still 21: 15 to 25 centimetres long with four to six leaves. */
@@ -71,30 +72,32 @@ export const PIECES: readonly PieceRule[] = [
 					from: 0.42,
 					to: 0.9,
 					arrangement: 'alternate',
+					// The arm leaves to the right, so the stem's own shoots start on the left.
+					turn: 180,
 					angle: { mean: 45, spread: 5 },
 				},
 			],
 		},
 	},
-	// Still 22: a twig 35 centimetres long, forked once, with eleven leaves.
+	// Still 22: a twig 35 centimetres long, forked once at a third of its length, with eleven leaves,
+	// each a fifth of the twig long: 7 centimetres, the record's own leaf.
 	{
 		name: 'twig',
 		attitude: 'along',
 		variants: 2,
-		scale: 1 / LEAF_SCALE,
 		stem: {
 			length: { mean: 0.35, spread: 0.03 },
 			radius: [0.0025, 0.001],
-			leaves: leaves(0.2),
+			leaves: leaves(0.2, 1),
 			sides: [
 				{
 					stem: {
 						length: { mean: 0.2, spread: 0.02 },
 						radius: [0.002, 0.001],
-						leaves: leaves(0.15),
+						leaves: leaves(0.15, 1),
 					},
-					gap: 0.3,
-					from: 0.1,
+					gap: 0.1,
+					from: 0.25,
 					to: 0.45,
 					arrangement: 'alternate',
 					angle: { mean: 40, spread: 4 },
