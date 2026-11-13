@@ -154,6 +154,8 @@ export const PIECES: readonly PieceRule[] = [
 		attitude: 'along',
 		variants: 1,
 		lengthwise: true,
+		// A dead frond is brown to the tips (pictures 01, 05 and 20).
+		browning: 1,
 		stem: {
 			...rachis(8, [0, 1], false),
 			leaves: { ...PINNA_LEAVES, ranked: [20], angle: 25, angleSpread: 6 },
