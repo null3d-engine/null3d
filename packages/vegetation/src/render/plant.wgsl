@@ -791,6 +791,17 @@ fn plant_offset(input: VertexInput, mode: i32) -> vec3f {
     if (mode == MODE_FOLIAGE && material.matte > 0.5 && material.matte < 1.5) {
         moved += foliage_widen(input, moved);
     }
+    // A placed piece draws its fine edges a pixel wide in the matte too, as merged foliage does:
+    // under that, a flowering stalk thinner than a pixel rasterises as dots, and the heads that hang
+    // from it read as pieces in air while the colour picture draws the stalk whole.
+    if (
+        mode == MODE_SHOOTS &&
+        material.matte > 0.5 &&
+        material.matte < 1.5 &&
+        abs(input.colors.b * 255.0 - KIND_PIECE) < 0.5
+    ) {
+        moved += foliage_widen(input, moved);
+    }
     // A shoot's stem is drawn a pixel wide too: under that, the matte drops the stalk a leaf
     // cluster hangs from and the cluster reads as a piece in air.
     if (mode == MODE_SHOOTS && input.colors.b * 255.0 >= KIND_STEM * 0.5) {
