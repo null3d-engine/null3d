@@ -97,9 +97,15 @@ const TWIG_ORDERS = 2;
  * How much longer a twig counts for each unit that the way to its socket lies off the way the
  * piece leaves there, from none along it to two against it.
  */
-const TWIG_ASIDE = 1;
+const TWIG_ASIDE = 0.25;
 /** The most degrees a twig arrives off the straight way from its foot to its socket. */
 const TWIG_ARRIVE = 30;
+/**
+ * The most degrees the way to a socket lies off the way a twig arrives at its end, and off the
+ * straight way from the twig's foot to its end, for the twig to run on to it.
+ */
+const TWIG_ON = 60;
+const TWIG_LINE = 45;
 /** The share of the turn bound at which a piece of a twig ends: its curve is walked in fine steps. */
 const TWIG_TURN_SHARE = 0.9;
 /** The longest piece of a twig in metres, and the distance under which a socket stands on its foot. */
@@ -500,9 +506,10 @@ function domeHeights(half: number, tall: number, count: number): number[] {
 	return heights;
 }
 
-/** A place on a patch's wood where a twig can leave. */
+/** A place on a patch's wood where a twig can leave, or where a twig can run on. */
 interface Foot {
 	readonly at: Vector3;
+	/** The wood's radius there on the limb or an arm; a twig's is found once the patch is grown. */
 	readonly radius: number;
 	/** The twig it is a node of, or -1 on the limb or an arm, the arm, and the node. */
 	readonly twig: number;
@@ -510,6 +517,12 @@ interface Foot {
 	readonly node: number;
 	/** How many twigs lie between it and the limb or arm. */
 	readonly depth: number;
+	/** Whether a new twig may leave here. */
+	readonly forks: boolean;
+	/** On a twig's end, the way the twig arrives there, until the twig runs on. */
+	runs?: Vector3;
+	/** On a twig's end, the straight way from where the twig leaves to that end. */
+	readonly line?: Vector3;
 }
 
 /** A twig's course as points past its foot, the way it arrives, and the metres to each point. */
@@ -521,15 +534,17 @@ interface TwigPath {
 }
 
 /**
- * One curved twig from a foot to a socket: it arrives the way the piece leaves, or as near that
- * way as a stated turn off the straight way allows, and bends evenly on the way there. Its pieces
- * end where it has turned by a share of the bound or run a full step. A socket on its foot needs
- * no twig.
+ * One curved run of a twig from a foot to a socket. A new twig arrives the way the piece leaves,
+ * or as near that way as a stated turn off the straight way allows. A twig that runs on from its
+ * own end leaves the way it arrived there, so it has no corner. Either bends evenly on the way.
+ * Its pieces end where it has turned by a share of the bound or run a full step. A socket on its
+ * foot needs no twig.
  */
 function twigPath(
 	from: Readonly<Vector3>,
 	to: Readonly<Vector3>,
 	heading: Readonly<Vector3>,
+	leave?: Readonly<Vector3>,
 ): TwigPath | undefined {
 	const x = to[0] - from[0];
 	const y = to[1] - from[1];
@@ -555,12 +570,19 @@ function twigPath(
 			];
 		}
 	}
-	// A curve through one middle point, which stands back from the socket along the way it arrives.
-	const middle: Vector3 = [
-		to[0] - (arrives[0] * far) / 2,
-		to[1] - (arrives[1] * far) / 2,
-		to[2] - (arrives[2] * far) / 2,
-	];
+	// A curve through one middle point: it stands back from the socket along the way a new twig
+	// arrives, or forward from the foot along the way a twig runs on.
+	const middle: Vector3 = leave
+		? [
+				from[0] + (leave[0] * far) / 2,
+				from[1] + (leave[1] * far) / 2,
+				from[2] + (leave[2] * far) / 2,
+			]
+		: [
+				to[0] - (arrives[0] * far) / 2,
+				to[1] - (arrives[1] * far) / 2,
+				to[2] - (arrives[2] * far) / 2,
+			];
 	const wayAt = (s: number): Vector3 => {
 		const wx = (1 - s) * (middle[0] - from[0]) + s * (to[0] - middle[0]);
 		const wy = (1 - s) * (middle[1] - from[1]) + s * (to[1] - middle[1]);
@@ -805,6 +827,7 @@ function socketsOf(
 					arm: -1,
 					node: i,
 					depth: 0,
+					forks: true,
 				});
 		});
 		limb.arms.forEach((arm, a) => {
@@ -816,6 +839,7 @@ function socketsOf(
 					arm: a,
 					node: i,
 					depth: 0,
+					forks: true,
 				});
 			});
 		});
@@ -828,6 +852,7 @@ function socketsOf(
 				arm: -1,
 				node: limb.nodes.length - 1,
 				depth: 0,
+				forks: true,
 			});
 		}
 		// The way a piece leaves its socket: the way its twig arrives, held between level and the
@@ -838,31 +863,63 @@ function socketsOf(
 			const lift = radians(clamp((atan2(arrives[1], flat) * 180) / PI, 0, steepest));
 			return [(cos(lift) * arrives[0]) / flat, sin(lift), (cos(lift) * arrives[2]) / flat];
 		};
-		// What a twig from a foot to a wanted socket costs: its length, and more the further the way
-		// to the socket lies from the way the piece leaves, so wood runs on into its piece.
-		const costOf = (foot: Foot, want: (typeof wanted)[number]): number => {
+		type Want = (typeof wanted)[number];
+		/** The way from a foot to a wanted socket, a unit vector, and its length. */
+		const wayTo = (foot: Foot, want: Want): { way: Vector3; far: number } => {
 			const x = want.at[0] - foot.at[0];
 			const y = want.at[1] - foot.at[1];
 			const z = want.at[2] - foot.at[2];
 			const far = Math.sqrt(x * x + y * y + z * z);
-			if (far < 1e-6) return 0;
-			const along = (x * want.heading[0] + y * want.heading[1] + z * want.heading[2]) / far;
+			return { way: far < 1e-6 ? [0, 1, 0] : [x / far, y / far, z / far], far };
+		};
+		/**
+		 * Whether the twig that ends at a foot can run on to a wanted socket: without a sharp turn,
+		 * and on outward along the line from where the twig leaves to its end, so a twig reaches
+		 * out from its wood and does not wind over the patch.
+		 */
+		const runsOn = (foot: Foot, want: Want): boolean => {
+			if (foot.runs === undefined || foot.line === undefined) return false;
+			const { way } = wayTo(foot, want);
+			return between(way, foot.runs) <= TWIG_ON && between(way, foot.line) <= TWIG_LINE;
+		};
+		// What a twig from a foot to a wanted socket costs: its length, and more the further the way
+		// to the socket lies from the way the piece leaves, so wood runs on into its piece. A foot
+		// that no new twig may leave serves only the twig that ends there.
+		const costOf = (foot: Foot, want: Want): number => {
+			if (!foot.forks && !runsOn(foot, want)) return Number.POSITIVE_INFINITY;
+			const { way, far } = wayTo(foot, want);
+			const along = way[0] * want.heading[0] + way[1] * want.heading[1] + way[2] * want.heading[2];
 			return far * (1 + TWIG_ASIDE * (1 - along));
 		};
-		const best = wanted.map((want) => {
+		const bestOf = (want: Want, from = 0): { foot: number; cost: number } => {
 			let foot = 0;
 			let cost = Number.POSITIVE_INFINITY;
-			feet.forEach((candidate, f) => {
-				const c = costOf(candidate, want);
+			for (let f = from; f < feet.length; f++) {
+				const c = costOf(feet[f] as Foot, want);
 				if (c < cost) {
 					cost = c;
 					foot = f;
 				}
-			});
+			}
 			return { foot, cost };
-		});
-		// Each socket in turn, the cheapest first, pulls one curved twig from its best foot, so the
-		// wood grows outward from the limb and its arms and later twigs leave earlier ones.
+		};
+		const best = wanted.map((want) => bestOf(want));
+		/** A twig as it grows: where it leaves, its nodes, the metres to each, and what stands on it. */
+		interface Growing {
+			readonly foot: Foot;
+			readonly depth: number;
+			readonly points: Vector3[];
+			readonly along: number[];
+			/** The drafts of the sockets on it, and the node each stands at. */
+			readonly carries: { draft: number; node: number }[];
+			/** The foot at its end, which runs on while the twig does. */
+			end: Foot;
+		}
+		const growing: Growing[] = [];
+		const first = twigs.length;
+		// Each socket in turn, the cheapest first, pulls wood from its best foot: the twig that ends
+		// there runs on to it where that needs no sharp turn, and a new twig leaves otherwise. So
+		// the wood grows outward from the limb and its arms, and one twig carries several pieces.
 		const left = wanted.map((_, i) => i);
 		while (left.length > 0) {
 			let pick = 0;
@@ -872,10 +929,18 @@ function socketsOf(
 					(best[left[pick] as number] as (typeof best)[number]).cost
 				)
 					pick = k;
-			const [w] = left.splice(pick, 1) as [number];
-			const want = wanted[w] as (typeof wanted)[number];
-			const foot = feet[(best[w] as (typeof best)[number]).foot] as Foot;
-			const path = twigPath(foot.at, want.at, want.heading);
+			const w = left[pick] as number;
+			const want = wanted[w] as Want;
+			const held = best[w] as (typeof best)[number];
+			const foot = feet[held.foot] as Foot;
+			// A foot whose twig has run on since it was chosen is chosen again.
+			if (costOf(foot, want) > held.cost + 1e-9) {
+				best[w] = bestOf(want);
+				continue;
+			}
+			left.splice(pick, 1);
+			const on = runsOn(foot, want) ? (growing[foot.twig - first] as Growing) : undefined;
+			const path = twigPath(foot.at, want.at, want.heading, on ? foot.runs : undefined);
 			if (!path) {
 				// The socket stands on the wood itself.
 				drafts.push({
@@ -891,52 +956,107 @@ function socketsOf(
 				});
 				continue;
 			}
-			const thick = Math.max(tipRadius, Math.min(foot.radius * TWIG_FOOT, tipRadius * 2));
-			const nodes: ConiferNode[] = path.points.map((point, k) => ({
-				x: point[0],
-				y: point[1],
-				z: point[2],
-				radius: Math.min(
-					foot.radius,
-					thick + (tipRadius - thick) * ((path.along[k] as number) / path.length),
-				),
-			}));
-			const twig = twigs.length;
-			twigs.push({ limb: l, arm: foot.arm, twig: foot.twig, node: foot.node, nodes });
+			const twig = on ? foot.twig : first + growing.length;
+			const grown: Growing =
+				on ??
+				({
+					foot,
+					depth: foot.depth + 1,
+					points: [],
+					along: [],
+					carries: [],
+					end: foot,
+				} satisfies Growing);
+			if (!on) growing.push(grown);
+			const before = grown.along[grown.along.length - 1] ?? 0;
+			const start = grown.points.length;
+			for (let k = 0; k < path.points.length; k++) {
+				grown.points.push(path.points[k] as Vector3);
+				grown.along.push(before + (path.along[k] as number));
+			}
+			grown.carries.push({ draft: drafts.length, node: grown.points.length - 1 });
 			drafts.push({
 				end: false,
 				scale: want.scale,
 				twig,
 				limb: l,
 				arm: foot.arm,
-				node: nodes.length - 1,
-				radius: (nodes[nodes.length - 1] as ConiferNode).radius,
+				node: grown.points.length - 1,
+				radius: tipRadius,
 				at: [want.at[0], want.at[1], want.at[2]],
 				heading: leaves(path.arrives, want.heading),
 			});
-			if (foot.depth + 1 >= TWIG_ORDERS) continue;
+			// The twig's old end no longer runs on; its new end does. Every new node below the
+			// deepest order is a place a new twig may leave.
+			if (on) grown.end.runs = undefined;
+			const forks = grown.depth < TWIG_ORDERS;
 			const from = feet.length;
-			nodes.forEach((node, i) => {
-				feet.push({
-					at: [node.x, node.y, node.z],
-					radius: node.radius,
+			for (let k = start; k < grown.points.length; k++) {
+				const last = k === grown.points.length - 1;
+				if (!forks && !last) continue;
+				const made: Foot = {
+					at: grown.points[k] as Vector3,
+					radius: 0,
 					twig,
 					arm: foot.arm,
-					node: i,
-					depth: foot.depth + 1,
-				});
-			});
+					node: k,
+					depth: grown.depth,
+					forks,
+					...(last ? { runs: path.arrives, line: wayTo(grown.foot, want).way } : {}),
+				};
+				feet.push(made);
+				if (last) grown.end = made;
+			}
 			for (const other of left) {
-				const held = best[other] as (typeof best)[number];
-				for (let f = from; f < feet.length; f++) {
-					const c = costOf(feet[f] as Foot, wanted[other] as (typeof wanted)[number]);
-					if (c < held.cost) {
-						held.cost = c;
-						held.foot = f;
-					}
-				}
+				const now = bestOf(wanted[other] as Want, from);
+				if (now.cost < (best[other] as (typeof best)[number]).cost) best[other] = now;
 			}
 		}
+		// A twig is as thick at each place as the pieces it carries past there ask: a piece's own
+		// stem for one, and the cross-sections add. It is no thicker than a share of the wood it
+		// leaves. The twigs are taken last first, so each has its own twigs' loads.
+		const loads = growing.map((grown) => new Array<number>(grown.points.length).fill(0));
+		for (let g = growing.length - 1; g >= 0; g--) {
+			const grown = growing[g] as Growing;
+			const load = loads[g] as number[];
+			for (const carried of grown.carries) (load[carried.node] as number) += 1;
+			for (let k = load.length - 2; k >= 0; k--) (load[k] as number) += load[k + 1] as number;
+			if (grown.foot.twig >= first)
+				((loads[grown.foot.twig - first] as number[])[grown.foot.node] as number) +=
+					load[0] as number;
+		}
+		const radii: number[][] = [];
+		growing.forEach((grown, g) => {
+			const parent =
+				grown.foot.twig >= first
+					? ((radii[grown.foot.twig - first] as number[])[grown.foot.node] as number)
+					: grown.foot.radius;
+			const most = Math.min(parent, Math.max(tipRadius, parent * TWIG_FOOT));
+			const load = loads[g] as number[];
+			radii.push(
+				load.map((carried) => Math.min(most, tipRadius * Math.sqrt(Math.max(1, carried)))),
+			);
+		});
+		growing.forEach((grown, g) => {
+			const radius = radii[g] as number[];
+			twigs.push({
+				limb: l,
+				arm: grown.foot.arm,
+				twig: grown.foot.twig,
+				node: grown.foot.node,
+				nodes: grown.points.map((point, k) => ({
+					x: point[0],
+					y: point[1],
+					z: point[2],
+					radius: radius[k] as number,
+				})),
+			});
+			for (const carried of grown.carries)
+				drafts[carried.draft] = {
+					...(drafts[carried.draft] as Draft),
+					radius: radius[carried.node] as number,
+				};
+		});
 		rankInto(patchIndex.get(limb.patch) as number, drafts);
 	});
 	// One order across the plant. Every end comes first. Each other socket then stands at its share
