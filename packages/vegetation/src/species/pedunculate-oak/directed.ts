@@ -307,11 +307,13 @@ export const frame: FrameSpec = {
 				angleSpread: 2,
 				// Still 01: the right limb's foliage is the crown's widest reach, and its bare wood
 				// shows two thirds of the way out. Its wood ends half a clump short of the outline, so
-				// the clump at its end stands on the outline. The others' wood runs out nearly to the rim.
+				// the clump at its end stands on the outline. The others' wood runs out nearly to the rim,
+				// and still 02 shows the two toward and away from still 01's camera carrying its widest
+				// reach on both sides, so theirs runs out furthest.
 				length: {
 					outline: [
-						[0, 0.9],
-						[0.2, 0.9],
+						[0, 0.95],
+						[0.2, 0.95],
 						[0.4, 0.84],
 						[0.6, 0.89],
 						[0.8, 0.9],
@@ -337,14 +339,16 @@ export const frame: FrameSpec = {
 				shed: 0.7,
 				// Still 01: the right limb rises to 0.29 of the height over its first third, then runs
 				// level and dips a little at its end. The real tree: the low limbs run out near level
-				// and dip at their ends, and no foliage lies on the ground.
+				// and dip at their ends, and no foliage lies on the ground. Still 02 shows the two
+				// toward and away from still 01's camera in profile, rising a little more, to the
+				// crown's widest band a third of the way up.
 				bends: [
 					{
 						from: 0.1,
 						to: 0.4,
 						level: [
-							[0, 12],
-							[0.2, 10],
+							[0, 18],
+							[0.2, 16],
 							[0.4, 50],
 							[0.6, 4],
 							[0.8, 6],
