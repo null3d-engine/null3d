@@ -131,6 +131,13 @@ interface FrameAxisRule {
 	readonly sway: number;
 	/** The arches the course is made of: the sway's turns. */
 	readonly elbows: number;
+	/**
+	 * The share an axis's length may differ by, either way, and the shortest and the longest it may
+	 * run as shares of the height, by its place.
+	 */
+	readonly vary?: number;
+	readonly least?: Curve;
+	readonly most?: Curve;
 	/** The foliage patch each axis carries. */
 	readonly patch?: FramePatchRule;
 	/** The axes that leave each axis. */
@@ -198,14 +205,8 @@ export interface FrameBranchRule extends FrameAxisRule {
 	readonly from: 'plumb' | 'parent';
 	/** Degrees the leaving angle may differ, either way. */
 	readonly angleSpread?: number;
-	/**
-	 * How long each runs, the share its length may differ by, either way, and the shortest and the
-	 * longest it may run as shares of the height, by its place.
-	 */
+	/** How long each runs. */
 	readonly length: FrameLength;
-	readonly vary?: number;
-	readonly least?: Curve;
-	readonly most?: Curve;
 	/** Its radius where it leaves as a share of the parent's radius there, by its place. */
 	readonly radius: Curve;
 	/** Its radius at its tip as a share of its radius where it leaves. */
@@ -455,6 +456,9 @@ interface Built {
  * @category api/vegetation
  */
 export function outlineRadius(spec: FrameSpec, scale: number, y: number, azimuth: number): number {
+	// Above the outline's last stated height there is no crown.
+	const last = typeof spec.outline === 'number' ? undefined : spec.outline[spec.outline.length - 1];
+	if (last && y / scale > last[0]) return 0;
 	const wide = curveAt(spec.outline, y / scale) * scale;
 	const off = azimuth - radians(spec.plan.turn);
 	const narrow = clamp(spec.plan.narrow, 0.5, 1);
@@ -567,11 +571,9 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 			}
 			length = (low + high) / 2;
 		}
-		if ('vary' in rule && rule.vary) length *= 1 + (draw(Purpose.Vary, id) * 2 - 1) * rule.vary;
-		if ('most' in rule && rule.most !== undefined)
-			length = Math.min(length, curveAt(rule.most, place) * scale);
-		if ('least' in rule && rule.least !== undefined)
-			length = Math.max(length, curveAt(rule.least, place) * scale);
+		if (rule.vary) length *= 1 + (draw(Purpose.Vary, id) * 2 - 1) * rule.vary;
+		if (rule.most !== undefined) length = Math.min(length, curveAt(rule.most, place) * scale);
+		if (rule.least !== undefined) length = Math.max(length, curveAt(rule.least, place) * scale);
 		length = Math.max(length, 0.01 * scale);
 
 		// Where each child leaves, as shares of this axis's length.

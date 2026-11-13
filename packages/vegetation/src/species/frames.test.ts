@@ -28,6 +28,8 @@ import {
 } from '../grow/frame-measure';
 import { frame as commonAlder } from './common-alder/directed';
 import { record as commonAlderRecord } from './common-alder/record';
+import { frame as hawthornShrub } from './hawthorn-shrub/directed';
+import { record as hawthornShrubRecord } from './hawthorn-shrub/record';
 import { frame as holmOak } from './holm-oak/directed';
 import { record as holmOakRecord } from './holm-oak/record';
 import { frame as silverBirch } from './silver-birch/directed';
@@ -55,7 +57,7 @@ interface Held {
 	readonly round: { readonly rule: string; readonly gap: number; readonly lean: number };
 	/** Each rule's radius where it leaves, as a share of its parent's there. */
 	readonly base: Readonly<Record<string, number>>;
-	/** The rules whose axes hang or stand plumb, which may run straight. */
+	/** The rules whose axes may run straight: a plumb stem, a hanging whip, a leading shoot. */
 	readonly plumb: readonly string[];
 	/** The plant's height over the record's, as the least and the most. */
 	readonly tall: readonly [number, number];
@@ -108,6 +110,19 @@ const HELD: readonly Held[] = [
 		plumb: [],
 		// The top masses' foliage stands above the highest twig.
 		tall: [0.97, 1.06],
+	},
+	{
+		id: 'hawthorn-shrub',
+		spec: hawthornShrub,
+		record: hawthornShrubRecord,
+		counts: { stem: 8, limb: [24, 32], twig: [24, 64], shoot: [56, 104] },
+		// Seven outer stems stand a seventh of a turn apart round the one at the middle.
+		round: { rule: 'stem', gap: 75, lean: 0.2 },
+		base: { limb: 0.7, twig: 0.7, shoot: 0.7 },
+		// A leading shoot is straight: the owner's ruling passes it.
+		plumb: ['shoot'],
+		// The leading shoots' tips are the plant's top.
+		tall: [0.95, 1.08],
 	},
 ];
 
