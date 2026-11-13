@@ -79,6 +79,12 @@ export interface DressInput extends GrowInput {
 	 * Absent, the prune lights the crown of the rows it is given.
 	 */
 	readonly pruneLight?: CrownLight;
+	/**
+	 * The plant as grown, on a plant that sparseness took foliage from: its skeleton and its rows
+	 * before the thinning. They keep the number each site and stem had as grown, so a choice keyed
+	 * on one falls the same way on the sparser plant. Absent on a plant as grown.
+	 */
+	readonly grown?: { readonly skeleton: MacroSkeleton; readonly rows: ShootRows };
 }
 
 /**

@@ -127,7 +127,25 @@ console.log(crowd.coarseness, nearTriangles(kit, crowd));
 
 Give `triangles` in place of `coarseness` to set a target for one copy's nearest level: its wood, its shoots at the variant's tier and its extras. The variant grows at the coarseness that comes nearest, and the asset's `coarseness` says which one. The core finds it by counting the shoots and the wood at a few values of coarseness, before it builds any mesh. A target above the plant as grown gives the plant as grown, and a target below the coarsest wood mesh gives the coarsest. Give one of the two options, not both.
 
-Options given to `prepareSpecies` apply to every variant that grows from its kit, and a variant's own options replace them. A coarseness of 0 grows the same bytes as no coarseness. Stand-ins grow the same at every coarseness. On a grown oak at the high tier, coarseness 1 cuts the nearest level's wood from 761,551 triangles to 576,720, while its 3,771 shoot rows and its cards stay as grown. To grow a sparser plant, use `sparse`.
+Options given to `prepareSpecies` apply to every variant that grows from its kit, and a variant's own options replace them. A coarseness of 0 grows the same bytes as no coarseness. Stand-ins grow the same at every coarseness. On a grown oak at the high tier, coarseness 1 cuts the nearest level's wood from 761,551 triangles to 576,720, while its 3,771 shoot rows and its cards stay as grown.
+
+### Sparser plants
+
+The `sparse` option takes foliage out of a plant, and the branches that carried it. It runs from 0, the plant as grown, to 1, the sparsest. The default is 0, where the foliage is as dense as the species' reference shows.
+
+```ts
+const full = await growPlant(kit, { seed: 7, variant: 0 });
+const thin = await growPlant(kit, { seed: 7, variant: 0, sparse: 0.6 });
+console.log(full.shoots.count, thin.shoots.count);
+```
+
+- **The same plant.** The plant grows once, at its full density. A sparser plant is that plant with shoots and branches removed. Nothing moves, and no leaf is scaled. Every shoot and branch of a sparser plant is also in every denser one.
+- **One body.** A branch goes only when all its foliage has gone, so no branch ends bare and no piece hangs free. Each branch that stays keeps its whole length and its outermost shoot, so the crown keeps its outline and its height.
+- **Even.** Every limb, branch and twig keeps the plant's share of its own foliage. The crown thins evenly round the plant and through its height.
+- **The sparsest plant.** At 1, the plant keeps its trunk, its great limbs and the share of its foliage that its record's `sparse.foliage` names, 0.1 when the record names none. A great limb is a limb that leaves the trunk with at least half the radius of the thickest one, or the share that `sparse.limbs` names.
+- **Every level.** The card levels and the far cards draw the same sparse plant.
+
+A plant with no shoots, such as a hosta or a sedge, loses whole leaves in the same way. A stand-in species and a cut piece grow as they are at every sparseness. A change of sparseness alone does not grow the plant again while the thread that grew it still keeps it. `sparse` changes what the plant holds, and `coarseness` changes how finely that is drawn: neither moves the other.
 
 A page can also move the level switches of all its species at once. Give `switchBias` in the view that every `placePlants` call takes. It counts in stops: each switch distance is multiplied by two to the power of minus the bias. A bias of 1 switches every level at half its distance, and a bias of -1 at twice its distance. `switchScale(bias)` gives that factor.
 

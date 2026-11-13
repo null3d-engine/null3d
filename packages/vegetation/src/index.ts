@@ -55,9 +55,7 @@ export {
 	type KitSource,
 	kitKey,
 	loadPlantCode,
-	SPARSE_LEAST,
 	variantKey,
-	withSparse,
 } from './generate';
 export * from './grass/public';
 export * from './grid/public';

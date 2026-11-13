@@ -51,47 +51,145 @@ export function cardKeep(order: number, level: 1 | 2, share = 1): number {
 }
 
 /**
- * The branches the cards of a level stand on: for each kept card row, the skeleton axis of its
- * nearest node, and every axis above it. A level that draws these branches keeps its cards joined
- * without dropping them.
- *
- * @param input The dressed variant.
- * @param level The card level.
- * @returns One flag per axis, 1 for a branch a card stands on.
- * @category api/vegetation
+ * How a level joins its cards to the plant. A plant that sparseness took foliage from keeps every
+ * card its level keeps, and draws the branch under each card that would otherwise hang free: the
+ * sparseness has chosen what the plant holds, and every level shows that same plant. A plant as
+ * grown drops such a card unless its options say otherwise.
  */
-export function supportAxes(input: MeshInput, level: 1 | 2): Uint8Array {
-	const { skeleton, rows } = input;
-	const { position, axisOf, nodeCount, axes } = skeleton;
-	const out = new Uint8Array(axes.count);
+type CardJoin = NonNullable<MeshInput['cardJoin']> | 'support';
+
+/**
+ * The join rule of a dressed variant. A skeleton that names where its axes stood as grown is one
+ * that sparseness took foliage from.
+ */
+function joinOf(input: MeshInput): CardJoin {
+	return input.cardJoin ?? (input.skeleton.axes.origin ? 'support' : 'remove');
+}
+
+/** The card rows a level keeps, by the level's share of the rows' space-filling order. */
+function keptRows(input: MeshInput, level: 1 | 2): number[] {
+	const { rows, kit } = input;
+	const kept: number[] = [];
 	for (let r = 0; r < rows.count; r++) {
 		if (cardKeep(rows.order[r] as number, level, input.cards ?? 1) === 0) continue;
+		if (!kit.prototypes[rows.prototype[r] as number]) continue;
+		kept.push(r);
+	}
+	return kept;
+}
+
+/**
+ * Of some card rows, those joined to the plant: a card joins where its own leaves reach a branch
+ * that is drawn, or another joined card.
+ *
+ * @param input The dressed variant.
+ * @param kept The card rows a level keeps.
+ * @param drawn Whether the level draws an axis.
+ * @returns One flag per row of the variant, 1 for a joined card.
+ */
+function joinedCards(
+	input: MeshInput,
+	kept: readonly number[],
+	drawn: (axis: number) => boolean,
+): Uint8Array {
+	const { skeleton, rows } = input;
+	const { position, axisOf, nodeCount } = skeleton;
+	const joined = new Uint8Array(rows.count);
+	const queue: number[] = [];
+	const seedReach = SEED_REACH * SEED_REACH;
+	for (const r of kept) {
 		const x = rows.position[r * 3] as number;
 		const y = rows.position[r * 3 + 1] as number;
 		const z = rows.position[r * 3 + 2] as number;
 		let best = Number.POSITIVE_INFINITY;
-		let axis = -1;
 		for (let n = 0; n < nodeCount; n++) {
+			if (!drawn(axisOf[n] as number)) continue;
 			const dx = (position[n * 3] as number) - x;
 			const dy = (position[n * 3 + 1] as number) - y;
 			const dz = (position[n * 3 + 2] as number) - z;
 			const d = dx * dx + dy * dy + dz * dz;
-			if (d < best) {
-				best = d;
-				axis = axisOf[n] as number;
+			if (d < best) best = d;
+		}
+		if (best <= seedReach) {
+			joined[r] = 1;
+			queue.push(r);
+		}
+	}
+	const cardReach = CARD_REACH * CARD_REACH;
+	while (queue.length > 0) {
+		const r = queue.pop() as number;
+		const x = rows.position[r * 3] as number;
+		const y = rows.position[r * 3 + 1] as number;
+		const z = rows.position[r * 3 + 2] as number;
+		for (const other of kept) {
+			if (joined[other]) continue;
+			const dx = (rows.position[other * 3] as number) - x;
+			const dy = (rows.position[other * 3 + 1] as number) - y;
+			const dz = (rows.position[other * 3 + 2] as number) - z;
+			if (dx * dx + dy * dy + dz * dz <= cardReach) {
+				joined[other] = 1;
+				queue.push(other);
 			}
 		}
-		if (axis >= 0) out[axis] = 1;
 	}
-	for (let a = axes.count - 1; a >= 0; a--) {
-		if (out[a] !== 1) continue;
-		let parent = axes.parent[a] as number;
-		while (parent >= 0) {
-			out[parent] = 1;
-			parent = axes.parent[parent] as number;
+	return joined;
+}
+
+/**
+ * The branches some card rows stand on: for each row, the axis of its node, or of the nearest node
+ * where the rows name none, and every axis above it.
+ */
+function branchesUnder(input: MeshInput, cards: readonly number[]): Uint8Array {
+	const { skeleton, rows } = input;
+	const { position, axisOf, nodeCount, axes } = skeleton;
+	const out = new Uint8Array(axes.count);
+	for (const r of cards) {
+		let axis = -1;
+		if (rows.node) axis = axisOf[rows.node[r] as number] as number;
+		else {
+			const x = rows.position[r * 3] as number;
+			const y = rows.position[r * 3 + 1] as number;
+			const z = rows.position[r * 3 + 2] as number;
+			let best = Number.POSITIVE_INFINITY;
+			for (let n = 0; n < nodeCount; n++) {
+				const dx = (position[n * 3] as number) - x;
+				const dy = (position[n * 3 + 1] as number) - y;
+				const dz = (position[n * 3 + 2] as number) - z;
+				const d = dx * dx + dy * dy + dz * dz;
+				if (d < best) {
+					best = d;
+					axis = axisOf[n] as number;
+				}
+			}
 		}
+		for (let a = axis; a >= 0 && out[a] !== 1; a = axes.parent[a] as number) out[a] = 1;
 	}
 	return out;
+}
+
+/**
+ * The branches a level draws beside its own orders so its cards stay joined: with a `branch` join,
+ * the branches under every card the level keeps; on a plant that sparseness took foliage from, the
+ * branches under each card that reaches neither the level's wood nor a joined card.
+ *
+ * @param input The dressed variant.
+ * @param level The card level.
+ * @returns One flag per axis, 1 for a branch the level draws for its cards; undefined when the
+ *   level draws its own orders alone.
+ * @category api/vegetation
+ */
+export function supportAxes(input: MeshInput, level: 1 | 2): Uint8Array | undefined {
+	const join = joinOf(input);
+	if (join === 'branch') return branchesUnder(input, keptRows(input, level));
+	if (join !== 'support') return undefined;
+	const kept = keptRows(input, level);
+	const keep = input.record.lod.woodOrders[level - 1] ?? 255;
+	const orders = input.skeleton.axes.order;
+	const joined = joinedCards(input, kept, (axis) => (orders[axis] as number) <= keep);
+	return branchesUnder(
+		input,
+		kept.filter((r) => joined[r] === 0),
+	);
 }
 
 /**
@@ -104,61 +202,18 @@ export function supportAxes(input: MeshInput, level: 1 | 2): Uint8Array {
  * @category api/vegetation
  */
 export function cardTwigs(input: MeshInput, level: 1 | 2): number[] {
-	const { skeleton, rows, kit } = input;
 	const keep = input.record.lod.woodOrders[level - 1] ?? 255;
-	const { position, axisOf, nodeCount } = skeleton;
-	const kept: number[] = [];
-	for (let r = 0; r < rows.count; r++) {
-		if (cardKeep(rows.order[r] as number, level, input.cards ?? 1) === 0) continue;
-		if (!kit.prototypes[rows.prototype[r] as number]) continue;
-		kept.push(r);
-	}
-	const connected = new Uint8Array(rows.count);
-	const queue: number[] = [];
-	const seedReach = SEED_REACH * SEED_REACH;
-	for (const r of kept) {
-		const x = rows.position[r * 3] as number;
-		const y = rows.position[r * 3 + 1] as number;
-		const z = rows.position[r * 3 + 2] as number;
-		let best = Number.POSITIVE_INFINITY;
-		for (let n = 0; n < nodeCount; n++) {
-			const axis = axisOf[n] as number;
-			if ((skeleton.axes.order[axis] as number) > keep) continue;
-			const dx = (position[n * 3] as number) - x;
-			const dy = (position[n * 3 + 1] as number) - y;
-			const dz = (position[n * 3 + 2] as number) - z;
-			const d = dx * dx + dy * dy + dz * dz;
-			if (d < best) best = d;
-		}
-		if (best <= seedReach) {
-			connected[r] = 1;
-			queue.push(r);
-		}
-	}
-	const cardReach = CARD_REACH * CARD_REACH;
-	while (queue.length > 0) {
-		const r = queue.pop() as number;
-		const x = rows.position[r * 3] as number;
-		const y = rows.position[r * 3 + 1] as number;
-		const z = rows.position[r * 3 + 2] as number;
-		for (const other of kept) {
-			if (connected[other]) continue;
-			const dx = (rows.position[other * 3] as number) - x;
-			const dy = (rows.position[other * 3 + 1] as number) - y;
-			const dz = (rows.position[other * 3 + 2] as number) - z;
-			if (dx * dx + dy * dy + dz * dz <= cardReach) {
-				connected[other] = 1;
-				queue.push(other);
-			}
-		}
-	}
-	return kept.filter((r) => connected[r] === 0);
+	const orders = input.skeleton.axes.order;
+	const kept = keptRows(input, level);
+	const joined = joinedCards(input, kept, (axis) => (orders[axis] as number) <= keep);
+	return kept.filter((r) => joined[r] === 0);
 }
 
 /**
  * The card rows a level draws, each joined to the plant: a card joins where its own leaves reach a
  * branch the level draws, or another joined card, so no clump of cards hangs free. A level that
- * thins the wood as well as the cards drops the cards whose branch went with it.
+ * thins the wood as well as the cards drops the cards whose branch went with it, unless its join
+ * rule draws that branch or a twig to it.
  *
  * @param input The dressed variant.
  * @param level The card level.
@@ -166,67 +221,23 @@ export function cardTwigs(input: MeshInput, level: 1 | 2): number[] {
  * @category api/vegetation
  */
 export function connectedCards(input: MeshInput, level: 1 | 2): Uint8Array {
-	const { skeleton, rows, kit } = input;
 	const keep = input.record.lod.woodOrders[level - 1] ?? 255;
-	const join = input.cardJoin ?? 'remove';
-	const support = join === 'branch' ? supportAxes(input, level) : undefined;
-	const drawnAxis = (axis: number) =>
-		(skeleton.axes.order[axis] as number) <= keep || support?.[axis] === 1;
-	const { position, axisOf, nodeCount } = skeleton;
-	const keptRows: number[] = [];
-	for (let r = 0; r < rows.count; r++) {
-		if (cardKeep(rows.order[r] as number, level, input.cards ?? 1) === 0) continue;
-		if (!kit.prototypes[rows.prototype[r] as number]) continue;
-		keptRows.push(r);
+	const orders = input.skeleton.axes.order;
+	const join = joinOf(input);
+	const kept = keptRows(input, level);
+	// A twig join keeps every kept card, and the mesh draws the unjoined ones a line to the wood.
+	// A level that draws the branch under each card it keeps holds them all too.
+	if (join === 'twig' || join === 'support') {
+		const all = new Uint8Array(input.rows.count);
+		for (const r of kept) all[r] = 1;
+		return all;
 	}
-	const connected = new Uint8Array(rows.count);
-	const queue: number[] = [];
-	const seedReach = SEED_REACH * SEED_REACH;
-	for (const r of keptRows) {
-		const x = rows.position[r * 3] as number;
-		const y = rows.position[r * 3 + 1] as number;
-		const z = rows.position[r * 3 + 2] as number;
-		let best = Number.POSITIVE_INFINITY;
-		for (let n = 0; n < nodeCount; n++) {
-			const axis = axisOf[n] as number;
-			if (!drawnAxis(axis)) continue;
-			const dx = (position[n * 3] as number) - x;
-			const dy = (position[n * 3 + 1] as number) - y;
-			const dz = (position[n * 3 + 2] as number) - z;
-			const d = dx * dx + dy * dy + dz * dz;
-			if (d < best) best = d;
-		}
-		if (best <= seedReach) {
-			connected[r] = 1;
-			queue.push(r);
-		}
-	}
-	// A twig join keeps every kept card; the mesh later draws the unjoined ones a line to the wood.
-	const twigRows: number[] = [];
-	if (join === 'twig')
-		for (const r of keptRows)
-			if (connected[r] === 0) {
-				connected[r] = 1;
-				twigRows.push(r);
-			}
-	const cardReach = CARD_REACH * CARD_REACH;
-	while (queue.length > 0) {
-		const r = queue.pop() as number;
-		const x = rows.position[r * 3] as number;
-		const y = rows.position[r * 3 + 1] as number;
-		const z = rows.position[r * 3 + 2] as number;
-		for (const other of keptRows) {
-			if (connected[other]) continue;
-			const dx = (rows.position[other * 3] as number) - x;
-			const dy = (rows.position[other * 3 + 1] as number) - y;
-			const dz = (rows.position[other * 3 + 2] as number) - z;
-			if (dx * dx + dy * dy + dz * dz <= cardReach) {
-				connected[other] = 1;
-				queue.push(other);
-			}
-		}
-	}
-	return connected;
+	const support = join === 'branch' ? branchesUnder(input, kept) : undefined;
+	return joinedCards(
+		input,
+		kept,
+		(axis) => (orders[axis] as number) <= keep || support?.[axis] === 1,
+	);
 }
 
 /**

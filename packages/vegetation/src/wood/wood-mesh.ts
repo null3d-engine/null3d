@@ -106,6 +106,12 @@ const FACING = 0.15;
 /** The most blend rings at each level. */
 const BLEND_RINGS = [5, 3, 2] as const;
 
+/**
+ * The section sparsity of a branch that a card level draws only to hold a card: one straight run of
+ * three sides, with square ends and no blend onto its parent.
+ */
+const SUPPORT_SECTIONS = 1;
+
 /** One axis to mesh: its points from base to tip, and where it hangs. */
 interface WoodAxis {
 	/** The skeleton's axis. */
@@ -115,6 +121,11 @@ interface WoodAxis {
 	 * axes for the wood that runs on past a fork where the axis divides.
 	 */
 	readonly key: number;
+	/**
+	 * The number that keys the piece's random choices: its axis's index in the plant as grown, so a
+	 * sparser plant draws the same choices on the wood it keeps.
+	 */
+	readonly seedKey: number;
 	/** The index of its parent in the list, or −1 for a stem. */
 	readonly parent: number;
 	/** The global wind record. */
@@ -133,6 +144,8 @@ interface WoodAxis {
 	readonly stub: boolean;
 	/** Whether it is the cut end of a piece: a limb with no parent, such as a cut branch. */
 	readonly cut: boolean;
+	/** How finely the piece is meshed, where it differs from its level's own detail. */
+	readonly tube?: TubeDetail;
 }
 
 /** The skeleton's largest pipe radius. */
@@ -171,11 +184,13 @@ function woodAxes(input: MeshInput, keep: number, level: MeshLevel): WoodAxis[] 
 	const lastKept = keptNodes(skeleton);
 	// The thinnest sections draw an axis as one run: its wood does not divide at a codominant child.
 	const single = (input.sections ?? 0) >= 1;
-	// A card join of `branch` draws the branches the cards stand on, so no card is dropped.
-	const support =
-		level > 0 && input.cardJoin === 'branch'
-			? supportAxes(input as MeshInput, level as 1 | 2)
-			: undefined;
+	// The branches a card level draws beside its own orders, so the cards it keeps stay joined. Such
+	// a branch is finer than the level's wood and stands under a far card, so it draws as one
+	// straight run of the fewest sides.
+	const support = level > 0 ? supportAxes(input, level as 1 | 2) : undefined;
+	const supportTube = support
+		? tubeDetail(level, input.detail, input.coarseness ?? 0, SUPPORT_SECTIONS)
+		: undefined;
 	// Axes rooted at the ground, stems and a frond colony's stipes, take the stem base's flare,
 	// lobes and roots. A limb without a parent is the cut end of a piece, such as a cut branch, and
 	// starts plain. Any other axis without a parent, such as a ground plant's crown, carries no wood.
@@ -276,6 +291,17 @@ function woodAxes(input: MeshInput, keep: number, level: MeshLevel): WoodAxis[] 
 	}
 	const list: WoodAxis[] = [];
 	const indexOf = new Int32Array(pieces).fill(-1);
+	// A stem's number among the plant's rooted axes as grown, which a sparser plant keeps.
+	const grown = input.grown?.skeleton.axes;
+	const stemNumber = new Map<number, number>();
+	if (grown) {
+		let number = 0;
+		for (let a = 0; a < grown.count; a++) {
+			const kind = grown.kind[a] as number;
+			if ((grown.parent[a] as number) < 0 && (kind === AXIS_STEM || kind === AXIS_STIPE))
+				stemNumber.set(a, number++);
+		}
+	}
 	let stems = 0;
 	for (let q = 0; q < queue.length; q++) {
 		const k = queue[q] as number;
@@ -350,16 +376,18 @@ function woodAxes(input: MeshInput, keep: number, level: MeshLevel): WoodAxis[] 
 		list.push({
 			axis: a,
 			key: firstPiece[a] === k ? a : axes.count + k,
+			seedKey: firstPiece[a] === k ? (axes.origin?.[a] ?? a) : axes.count + k,
 			parent: parentIndex,
 			record: base + (axes.record[a] as number),
 			points: path.points,
 			radii: path.radii,
 			count: path.count,
-			stem: stem ? stems++ : -1,
+			stem: stem ? (stemNumber.get(axes.origin?.[a] ?? a) ?? stems++) : -1,
 			fork: false,
 			leader: leads[k] === 1,
 			stub: ((skeleton.flags[first] as number) & NODE_STUB) !== 0,
 			cut: parent < 0 && (axes.kind[a] as number) === AXIS_LIMB,
+			...(supportTube && (axes.order[a] as number) > keep ? { tube: supportTube } : {}),
 		});
 		// Roots lie in the soil, below the ground the far views stand on, so only the nearest level draws them.
 		if (stem && level === 0)
@@ -417,6 +445,7 @@ function addRoots(input: MeshInput, list: WoodAxis[], stemIndex: number, record:
 		list.push({
 			axis: -1 - (stem.stem * 64 + k),
 			key: -1 - (stem.stem * 64 + k),
+			seedKey: -1 - (stem.stem * 64 + k),
 			parent: stemIndex,
 			record,
 			points: root.points,
@@ -648,7 +677,10 @@ export interface WoodWelds {
 class Mesher {
 	private readonly record: Species;
 	private readonly bark: BarkScale;
-	private readonly tube: TubeDetail;
+	/** The detail of the piece being meshed: the level's own, or the piece's. */
+	private tube: TubeDetail;
+	/** The level's own detail. */
+	private readonly levelTube: TubeDetail;
 	private readonly seed: number;
 	private readonly variant: number;
 	private readonly crown: CrownLight;
@@ -673,7 +705,8 @@ class Mesher {
 		this.crown = input.crown;
 		this.kinds = input.skeleton.axes.kind;
 		this.bark = barkScale(input.record, input.kit.manifest, largestRadius(input.skeleton));
-		this.tube = tubeDetail(level, input.detail, input.coarseness ?? 0, input.sections ?? 0);
+		this.levelTube = tubeDetail(level, input.detail, input.coarseness ?? 0, input.sections ?? 0);
+		this.tube = this.levelTube;
 		this.rings = report
 			? {
 					axis: [],
@@ -845,6 +878,7 @@ class Mesher {
 	/** Meshes one axis and keeps its rings. */
 	private axis(axes: readonly WoodAxis[], index: number, variant: number): void {
 		const wood = axes[index] as WoodAxis;
+		this.tube = wood.tube ?? this.levelTube;
 		const parentRings = wood.parent >= 0 ? this.built[wood.parent] : undefined;
 		const parentContext = wood.parent >= 0 ? this.contexts[wood.parent] : undefined;
 		if (wood.parent >= 0 && (!parentRings || !parentContext)) return;
@@ -1894,7 +1928,7 @@ class Mesher {
 			this.seed,
 			this.record.seedSalt,
 			this.variant,
-			wood.key & 0xffff,
+			wood.seedKey & 0xffff,
 		]);
 		const writer = this.writer;
 		const base = writer.vertices;
