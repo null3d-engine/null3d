@@ -944,6 +944,23 @@ describe('the view of one branch piece', () => {
 		expect(cameraAxes(faced.camera).forward[0]).toBeCloseTo(0, 6);
 	});
 
+	test('frames a span of a placed piece round the share of its run asked', () => {
+		const head = shotOf(
+			placedPieceShot(tree({ pieces: [piece] }), 'bough', TALL, { span: 0.3, along: 0.85 }),
+		);
+		const at: V3 = [
+			piece.socket[0] + (piece.direction[0] as number) * 1.1 * 0.85,
+			piece.socket[1] + (piece.direction[1] as number) * 1.1 * 0.85,
+			piece.socket[2] + (piece.direction[2] as number) * 1.1 * 0.85,
+		];
+		const landed = project(head.camera, TALL, at);
+		expect(landed.x).toBeCloseTo(0.5, 6);
+		expect(landed.y).toBeCloseTo(0.5, 6);
+		// The frame is the span wide at the piece.
+		expect(2 * landed.depth * Math.tan((TALL.fov * DEG) / 2) * TALL.aspect).toBeCloseTo(0.3, 6);
+		expect(checkShot(head, TALL).present).toBe(true);
+	});
+
 	test('fails the plant that places pieces but none of the class its photograph shows', () => {
 		const plant = tree({ pieces: [piece] });
 		const missing = placedPieceShot(plant, 'cone', TALL);

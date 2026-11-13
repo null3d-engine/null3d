@@ -450,12 +450,6 @@ export function subjectsOfSkeleton(
 	};
 }
 
-/** A prototype's class as a placed piece: a branch piece's name, or a ground piece's class less its prefix. */
-function pieceClass(prototype: ShootPrototype): string | undefined {
-	if (prototype.piece) return prototype.piece.name;
-	return prototype.class.startsWith('piece-') ? prototype.class.slice('piece-'.length) : undefined;
-}
-
 /** A vector of a piece's own frame, turned as one of the plant's rows turns its prototype. */
 function turnedBy(rows: ShootRows, r: number, x: number, y: number, z: number): V3 {
 	const out: [number, number, number] = [0, 0, 0];
@@ -556,7 +550,7 @@ export function piecesOfRows(
 		rows.position[a * 3 + 2] === rows.position[b * 3 + 2];
 	for (let r = 0; r < rows.count; ) {
 		const prototype = kit.prototypes[rows.prototype[r] as number];
-		const name = prototype ? pieceClass(prototype) : undefined;
+		const name = prototype?.piece?.name;
 		let end = r + 1;
 		while (end < rows.count && sameSocket(r, end)) end++;
 		if (name !== undefined) {

@@ -2111,6 +2111,12 @@ export interface BranchPieceOptions {
 	readonly laid?: boolean;
 	/** Whether the camera looks along the piece's side, so an arching piece shows its arch, in place of its face. */
 	readonly edge?: boolean;
+	/**
+	 * The metres the frame's width shows, where the view frames a part of the piece rather than the
+	 * whole of it: the frame's middle then stands on the piece at the share `along` of its run.
+	 */
+	readonly span?: number;
+	readonly along?: number;
 }
 
 /**
@@ -2134,6 +2140,21 @@ export function branchPieceShot(
 	const tall = laid
 		? Math.max(piece.length / (fill * lens.aspect), (2 * piece.spread) / fill)
 		: Math.max(piece.length / fill, (2 * piece.spread) / (fill * lens.aspect));
+	if (options.span !== undefined) {
+		// A part of the piece, the span wide, round the share of its run asked.
+		const share = Math.max(0, Math.min(1, options.along ?? 0.5));
+		const at = step(piece.socket, piece.direction, piece.length * share);
+		const high = options.span / lens.aspect;
+		return {
+			kind: `one branch piece, ${options.span} m of it round ${Math.round(share * 100)} per cent along it`,
+			camera: aim(at, 0.5, 0.5, forward, high, lens, roll),
+			points: [{ name: 'the piece', at, within: [0.35, 0.35, 0.65, 0.65] }],
+			regions: [
+				{ name: 'the plain ground round the piece', box: [0, 0, 1, 1], min: 0.03, max: 0.9 },
+			],
+			facts: { length: piece.length, spread: piece.spread, frame: high, laid, span: options.span },
+		};
+	}
 	const middle = step(piece.socket, piece.direction, piece.length / 2);
 	const camera = aim(middle, 0.5, 0.5, forward, tall, lens, roll);
 	// The piece's run as a share of the frame's side it lies along.
@@ -2178,11 +2199,10 @@ export function placedPieceShot(
 	const piece = pieces[0] as BranchPiece;
 	const shot = branchPieceShot(piece, lens, options);
 	if (isAbsent(shot)) return shot;
-	const middle = step(piece.socket, piece.direction, piece.length / 2);
 	const distance = Math.hypot(
-		middle[0] - shot.camera.position[0],
-		middle[1] - shot.camera.position[1],
-		middle[2] - shot.camera.position[2],
+		shot.camera.target[0] - shot.camera.position[0],
+		shot.camera.target[1] - shot.camera.position[1],
+		shot.camera.target[2] - shot.camera.position[2],
 	);
 	// The slab is the piece's own depth along the line of sight, so what stands beside it in the
 	// plant is cut away; a piece that states no depth takes its spread.
@@ -2190,7 +2210,10 @@ export function placedPieceShot(
 	const slab = Math.max(deep, 0.05 * piece.length);
 	return {
 		...shot,
-		kind: `one placed ${piece.class} from its socket to its tips`,
+		kind:
+			options.span === undefined
+				? `one placed ${piece.class} from its socket to its tips`
+				: `${options.span} m of one placed ${piece.class}, round ${Math.round((options.along ?? 0.5) * 100)} per cent along it`,
 		near: Math.max(0.02, distance - slab),
 		far: distance + slab,
 		facts: { ...shot.facts, class: piece.class, socket: piece.socket, of: pieces.length },
