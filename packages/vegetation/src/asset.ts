@@ -11,6 +11,7 @@ import type { ShootClass, Species } from './core/record';
 import type { TextureManifest } from './core/textures';
 import type { Detail, Season, Vec3 } from './core/types';
 import type { CuttingOptions } from './cutting';
+import type { PieceAttitude } from './leaf/piece';
 
 /**
  * One mesh before quantisation, in floats: what the meshers and the leaf builders write.
@@ -68,8 +69,11 @@ export interface PrototypeArrays {
 export interface ShootPrototype {
 	/** Its index in the kit. */
 	readonly index: number;
-	/** The shoot class it belongs to, or the name of its class of piece, which starts `piece-`. */
-	readonly class: ShootClass['name'] | `piece-${string}`;
+	/**
+	 * The shoot class it belongs to, `piece` for a part of a branch piece, or the name of a ground
+	 * form's class of piece, which starts `piece-`.
+	 */
+	readonly class: ShootClass['name'] | 'piece' | `piece-${string}`;
 	/**
 	 * Set on a shoot that only a cutting draws. The crown never offers one, whatever vigor its buds
 	 * carry, so adding a cutting class leaves the crown's shoots as they were.
@@ -87,6 +91,32 @@ export interface ShootPrototype {
 	readonly tiers: readonly [PrototypeArrays, PrototypeArrays, PrototypeArrays, PrototypeArrays];
 	/** Its six cells in the card atlas: three planes, two faces each. */
 	readonly card: CardCell;
+	/**
+	 * The branch piece this prototype is one part of, in a kit whose plant carries pieces at its
+	 * sockets. Absent on a shoot prototype.
+	 */
+	readonly piece?: PrototypePiece;
+}
+
+/**
+ * What a kit keeps of a branch piece on each of its prototypes: the piece's name and variant, which
+ * part of the variant the prototype is, how a socket holds the piece, and its flat plane.
+ *
+ * @category api/vegetation
+ */
+export interface PrototypePiece {
+	/** The piece's name, unique in its species. */
+	readonly name: string;
+	/** Which of the piece's variants this is. */
+	readonly variant: number;
+	/** Which part of the variant this is. */
+	readonly part: number;
+	/** How many parts the variant has. */
+	readonly parts: number;
+	/** How a socket turns the piece. */
+	readonly attitude: PieceAttitude;
+	/** The unit normal of the piece's flat plane in its rest frame, where it has one. */
+	readonly plane?: Vec3;
 }
 
 /**

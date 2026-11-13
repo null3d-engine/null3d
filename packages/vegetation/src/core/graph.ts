@@ -189,6 +189,18 @@ export interface AxisTable {
 	readonly barkV: Float32Array;
 	/** Radians about the parent where the axis leaves, so the child's bark starts where the parent's is. */
 	readonly barkU: Float32Array;
+	/**
+	 * The share along the original axis where each axis's first node stands, where a cut took a
+	 * span of one axis; 0 for an axis grown in place.
+	 */
+	readonly cutFrom: Float32Array;
+	/**
+	 * The share along the original axis where each axis's last node stands, so a cut piece reads
+	 * its shoot's curves between the two shares; 1 for an axis grown in place.
+	 */
+	readonly cutTo: Float32Array;
+	/** Whether each axis draws the grown bark layer rather than the young bark; 0 for young bark. */
+	readonly grownBark: Uint8Array;
 }
 
 /**
@@ -215,6 +227,29 @@ export interface BudSites {
 	readonly axis: Uint32Array;
 	/** Wood radius at the bud, so the shoot's stem base matches it. */
 	readonly woodRadius: Float32Array;
+	/**
+	 * What each bud site holds when the sites are sockets, the ends of a scaffold plant's branches,
+	 * each of which carries one piece of foliage. Absent on every other skeleton.
+	 */
+	readonly sockets?: SocketSites;
+}
+
+/**
+ * The sockets of a scaffold plant, one per bud site in the same order. A socket's place, its frame,
+ * its axis and its wood are its bud site's; these are what a piece of foliage needs beside them.
+ *
+ * @category api/vegetation
+ */
+export interface SocketSites {
+	/** The size of the socket's piece against the species' own, 1 for the record's. */
+	readonly scale: Float32Array;
+	/**
+	 * A rank from 0 that orders the sockets for thinning: the sockets below any rank stand spread
+	 * through the crown, so a level that keeps only those keeps the crown's shape.
+	 */
+	readonly rank: Uint32Array;
+	/** The foliage mass the socket belongs to. */
+	readonly lobe: Uint16Array;
 }
 
 /** A typed array type that the builder can grow. */
@@ -278,6 +313,22 @@ export interface AxisInput {
 	readonly barkV?: number;
 	/** Radians about the parent where it leaves. */
 	readonly barkU?: number;
+	/**
+	 * The share along the original axis where this piece's first node stands, for a cut that took
+	 * a span of one axis. 0, the default, for an axis grown in place.
+	 */
+	readonly cutFrom?: number;
+	/**
+	 * The share along the original axis where this piece's last node stands: the shoot's curves
+	 * are read between the two shares. 1, the default, for an axis grown in place.
+	 */
+	readonly cutTo?: number;
+	/**
+	 * Whether the axis draws the grown bark layer rather than the young bark a thin shoot takes:
+	 * a rolled young frond is fleshy and hairy, not the smooth young wood of a twig. False, the
+	 * default, for every axis grown in place.
+	 */
+	readonly grownBark?: boolean;
 }
 
 /**
@@ -306,6 +357,8 @@ export interface BudInput {
 	readonly axis: number;
 	/** Wood radius at the bud. */
 	readonly woodRadius: number;
+	/** The socket the bud site is, on a scaffold plant: its piece's size, its rank and its mass. */
+	readonly socket?: { readonly scale: number; readonly rank: number; readonly lobe: number };
 }
 
 /**
@@ -345,6 +398,9 @@ export class SkeletonBuilder {
 	private axisRecord = new Uint16Array(16);
 	private axisBarkV = new Float32Array(16);
 	private axisBarkU = new Float32Array(16);
+	private axisCutFrom = new Float32Array(16);
+	private axisCutTo = new Float32Array(16);
+	private axisGrownBark = new Uint8Array(16);
 	private budNode = new Uint32Array(64);
 	private budPosition = new Float32Array(3 * 64);
 	private budFrame = new Float32Array(4 * 64);
@@ -353,6 +409,9 @@ export class SkeletonBuilder {
 	private budLight = new Float32Array(64);
 	private budAxis = new Uint32Array(64);
 	private budRadius = new Float32Array(64);
+	private socketScale: Float32Array | undefined;
+	private socketRank: Uint32Array | undefined;
+	private socketLobe: Uint16Array | undefined;
 
 	/**
 	 * Adds an axis and returns its index. Its first and last nodes follow from the nodes added to it.
@@ -374,6 +433,9 @@ export class SkeletonBuilder {
 			this.axisRecord = grown(this.axisRecord, size);
 			this.axisBarkV = grown(this.axisBarkV, size);
 			this.axisBarkU = grown(this.axisBarkU, size);
+			this.axisCutFrom = grown(this.axisCutFrom, size);
+			this.axisCutTo = grown(this.axisCutTo, size);
+			this.axisGrownBark = grown(this.axisGrownBark, size);
 		}
 		this.axisFirst[index] = 0xffffffff;
 		this.axisLast[index] = 0;
@@ -385,6 +447,9 @@ export class SkeletonBuilder {
 		this.axisRecord[index] = index;
 		this.axisBarkV[index] = axis.barkV ?? 0;
 		this.axisBarkU[index] = axis.barkU ?? 0;
+		this.axisCutFrom[index] = axis.cutFrom ?? 0;
+		this.axisCutTo[index] = axis.cutTo ?? 1;
+		this.axisGrownBark[index] = axis.grownBark ? 1 : 0;
 		this.axisCount++;
 		return index;
 	}
@@ -440,6 +505,9 @@ export class SkeletonBuilder {
 			this.budLight = grown(this.budLight, size);
 			this.budAxis = grown(this.budAxis, size);
 			this.budRadius = grown(this.budRadius, size);
+			if (this.socketScale) this.socketScale = grown(this.socketScale, size);
+			if (this.socketRank) this.socketRank = grown(this.socketRank, size);
+			if (this.socketLobe) this.socketLobe = grown(this.socketLobe, size);
 		}
 		this.budNode[index] = bud.node;
 		this.budPosition[index * 3] = bud.x;
@@ -451,6 +519,16 @@ export class SkeletonBuilder {
 		this.budLight[index] = bud.light;
 		this.budAxis[index] = bud.axis;
 		this.budRadius[index] = bud.woodRadius;
+		if (bud.socket) {
+			// A socket's size is 1 until a site says otherwise, so a skeleton may mix the two.
+			const room = this.budNode.length;
+			this.socketScale ??= new Float32Array(room).fill(1);
+			this.socketRank ??= new Uint32Array(room);
+			this.socketLobe ??= new Uint16Array(room);
+			this.socketScale[index] = bud.socket.scale;
+			this.socketRank[index] = bud.socket.rank;
+			this.socketLobe[index] = bud.socket.lobe;
+		} else if (this.socketScale) this.socketScale[index] = 1;
 		this.budCount++;
 		return index;
 	}
@@ -510,6 +588,9 @@ export class SkeletonBuilder {
 				record: trimmed(this.axisRecord, axes),
 				barkV: trimmed(this.axisBarkV, axes),
 				barkU: trimmed(this.axisBarkU, axes),
+				cutFrom: trimmed(this.axisCutFrom, axes),
+				cutTo: trimmed(this.axisCutTo, axes),
+				grownBark: trimmed(this.axisGrownBark, axes),
 			},
 			buds: {
 				count: buds,
@@ -521,6 +602,15 @@ export class SkeletonBuilder {
 				light: trimmed(this.budLight, buds),
 				axis: trimmed(this.budAxis, buds),
 				woodRadius: trimmed(this.budRadius, buds),
+				...(this.socketScale && this.socketRank && this.socketLobe
+					? {
+							sockets: {
+								scale: trimmed(this.socketScale, buds),
+								rank: trimmed(this.socketRank, buds),
+								lobe: trimmed(this.socketLobe, buds),
+							},
+						}
+					: {}),
 			},
 			bounds: {
 				min: [min[0] as number, min[1] as number, min[2] as number],
@@ -567,5 +657,6 @@ export function skeletonBuffers(skeleton: MacroSkeleton): ArrayBuffer[] {
 		buds.light,
 		buds.axis,
 		buds.woodRadius,
+		...(buds.sockets ? [buds.sockets.scale, buds.sockets.rank, buds.sockets.lobe] : []),
 	].map((array) => array.buffer as ArrayBuffer);
 }

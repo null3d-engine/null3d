@@ -5,12 +5,14 @@
 
 import type { ShootPrototype } from '../asset';
 import type { EcoRule } from '../ecology/ecology';
+import type { FrameSpec } from '../grow/frame';
+import type { PieceRule } from '../leaf/piece';
 import type { MacroSkeleton } from './graph';
 import type { SpeciesTextureFiles } from './textures';
 import type { Curve, Detail, Rgb, Season, Spread, Vec2, Vec3 } from './types';
 
 /**
- * One species: the folder of its own under `species/`, grown by one of the eight growth models.
+ * One species: the folder of its own under `species/`, grown by one of the growth models.
  *
  * @category api/vegetation
  */
@@ -34,8 +36,17 @@ export interface Species {
 	readonly size: PlantSize;
 	/** How the large structure grows: the model and its numbers. */
 	readonly growth: Growth;
-	/** The outline the plant fills. Required for 'self-organizing'; a cap for the other models. */
+	/**
+	 * The outline the plant fills. Required for 'self-organizing' and 'scaffold'; a cap for the other
+	 * models.
+	 */
 	readonly envelope?: Envelope;
+	/**
+	 * The branch pieces that the plant's sockets carry, each a measured rule. A species that grows
+	 * by a directed model builds its kit from these, and its shoot classes then serve only as the
+	 * source of its twig, bud and leaf figures. Another model ignores them.
+	 */
+	readonly pieces?: readonly PieceRule[];
 	/** The shoot prototypes that carry the finest orders, buds and leaves. */
 	readonly shoots?: ShootSpec;
 	/** What the leaves are. */
@@ -190,13 +201,16 @@ export interface PlantSize {
 }
 
 /**
- * How the large structure of a plant grows: one of eight models, each with its own numbers.
+ * How the large structure of a plant grows: one model of several, each with its own numbers.
  *
  * @category api/vegetation
  */
 export type Growth =
 	| SelfOrganizing
+	| Scaffold
+	| Framed
 	| Architectural
+	| Conifer
 	| CrownRosette
 	| Culm
 	| Rosette
@@ -458,7 +472,108 @@ export interface SelfOrganizing {
 }
 
 /**
- * The stems of a self-organizing plant: one, or a stool of several.
+ * A tree built in a set order, each step from the record alone: the stem, the foliage masses of the
+ * crown packed inside the envelope, the great limbs that carry them, the branches that divide
+ * inside each mass, and a socket at every branch end, which holds the foliage. The gaps between the
+ * masses are the sky a viewer sees through the crown, and the socket count is the branch count.
+ *
+ * @category api/vegetation
+ */
+export interface Scaffold {
+	/** The model's name. */
+	readonly model: 'scaffold';
+	/** One stem, or a stool of several that share the crown. */
+	readonly stems: StemSpec;
+	/** The stem below and through its division into great limbs. */
+	readonly trunk: {
+		/**
+		 * The shares of the plant's height between which the great limbs leave the stem, lowest then
+		 * highest. The stem ends at the highest: a low pair divides a short bole into a spreading
+		 * crown, and a pair that runs to the top keeps one leader with limbs along it.
+		 */
+		readonly fork: readonly [from: number, to: number];
+		/** Degrees the stem strays from its line as it rises, in slow curves. */
+		readonly wander: number;
+	};
+	/** The crown's foliage masses: ellipsoids that stand against the envelope from inside. */
+	readonly lobes: {
+		/** Masses per plant. */
+		readonly count: Spread;
+		/**
+		 * The share of the distance between two neighbouring masses that stays open, from 0, where
+		 * neighbours touch, to 0.8. The open share is what shows sky through the crown and breaks its
+		 * outline into lumps.
+		 */
+		readonly gap: number;
+		/**
+		 * The share of the masses that stand inside the crown, behind the gaps the outer ones leave,
+		 * from 0, a hollow shell of foliage, to 0.5. They close the crown's middle to the sky without
+		 * closing its outline.
+		 */
+		readonly inner: number;
+		/** A mass's height over its width: below 1 a flat pad, above 1 a hanging strand. */
+		readonly flatten: number;
+		/** How much a mass's size varies from its neighbours', as a share of it, from 0 to 0.5. */
+		readonly vary: number;
+		/**
+		 * The share of the plant's height below which no mass stands, from 0 to 0.9: the crown's
+		 * underside, with sky and bare limbs under it.
+		 */
+		readonly floor: number;
+	};
+	/** The great limbs that leave the stem, each of which carries one group of masses. */
+	readonly limbs: {
+		/** Limbs per stem. */
+		readonly count: Spread;
+		/** How the limbs stand round the stem: a spiral by its divergence, or whorls of a count. */
+		readonly arrangement: Phyllotaxis;
+		/** Degrees the limbs' places round the stem vary by. */
+		readonly jitter: number;
+		/** Degrees between a limb and the stem's line where it leaves (t = 0 lowest limb, 1 highest). */
+		readonly angle: Curve;
+		/**
+		 * Degrees above level that a limb runs at its end (t = 0 lowest limb, 1 highest). Below 0 the
+		 * end dips.
+		 */
+		readonly end: Curve;
+		/** How far a limb strays sideways from its curve, as a share of its length, in slow bends. */
+		readonly wander: number;
+	};
+	/** The branches that run from a limb to each mass and divide inside it. */
+	readonly branches: {
+		/** The most degrees between a branch and its parent where it leaves. */
+		readonly angle: number;
+		/** Metres of one internode. */
+		readonly step: number;
+		/** The most degrees one internode turns from the last. */
+		readonly turn: number;
+		/** The least metres along a parent between two branches that leave it. */
+		readonly spacing: number;
+		/** How far each branch end turns toward the sky, from -1, hanging, through 0 to 1, upright. */
+		readonly lift: number;
+	};
+	/** The sockets at the branch ends, each of which holds one piece of foliage. */
+	readonly sockets: {
+		/**
+		 * Metres between two sockets, measured over the mass's surface, which their foliage covers.
+		 * Fewer sockets are fewer branches.
+		 */
+		readonly spacing: number;
+		/** Metres a socket stands inside its mass's surface: how far its foliage reaches past it. */
+		readonly inset: number;
+		/** The share of a mass's surface that carries sockets, its lit side, from 0.2 to 1. */
+		readonly lit: number;
+		/** Shoot rows that one socket holds. */
+		readonly rows: Spread;
+		/** Degrees the rows of one socket fan from its line. */
+		readonly fan: number;
+	};
+	/** Pipe model: a parent's diameter to the exponent is the sum of its children's, and a socket twig's radius in metres. */
+	readonly pipe: { readonly exponent: number; readonly tipRadius: number };
+}
+
+/**
+ * The stems of a self-organizing or scaffold plant: one, or a stool of several.
  *
  * @category api/vegetation
  */
@@ -602,6 +717,155 @@ export interface ArchitecturalOrder {
 }
 
 /**
+ * A plant built in a set order from a tree of axis rules: its stems and, under each, the axes that
+ * leave it, with their counts, places, angles, bends, lengths and widths as the species measured
+ * them, and a foliage patch on each axis whose rule states one. Every wood end that carries a patch
+ * is a socket, in the scaffold model's own socket record.
+ *
+ * @category api/vegetation
+ */
+export interface Framed {
+	/** The model's name. */
+	readonly model: 'frame';
+	/** The stems, the axes under them and the crown outline. */
+	readonly frame: FrameSpec;
+	/** What each socket holds, as the scaffold model states it. */
+	readonly sockets: {
+		/** Shoot rows that one socket holds. */
+		readonly rows: Spread;
+		/** Degrees the rows of one socket fan from its line. */
+		readonly fan: number;
+	};
+}
+
+/**
+ * A conifer built in a set order from measured figures: one plumb trunk of a stated width at each
+ * height, limbs at stated levels spread round it, each limb one smooth course through the direction
+ * it leaves in, the direction it runs in and the direction it ends in, and a foliage patch at each
+ * limb's end. The limb count is the record's own, so a check can hold it. Heights are shares of the
+ * plant's height, from 0 at the ground to 1 at its top.
+ *
+ * @category api/vegetation
+ */
+export interface Conifer {
+	/** The model's name. */
+	readonly model: 'conifer';
+	/** The trunk. */
+	readonly trunk: {
+		/** The trunk's width over the plant's height, by height. */
+		readonly width: Curve;
+		/**
+		 * The height where the trunk ends and the top limbs carry on from it. At 1 the trunk runs to
+		 * the plant's tip as one leader.
+		 */
+		readonly dividesAt: number;
+		/** Degrees the trunk strays from plumb, in slow curves. */
+		readonly wander: number;
+	};
+	/** The limbs that leave the trunk. */
+	readonly limbs: {
+		/** The heights of the limb levels, rising. */
+		readonly levels: readonly number[];
+		/** Limbs on the trunk, shared out over the levels as evenly as whole numbers allow. */
+		readonly count: number;
+		/** How far a limb may stand above or below its level, as a share of the plant's height. */
+		readonly stagger: number;
+		/** Degrees a limb's place round the trunk may stand off its level's even spacing. */
+		readonly jitter: number;
+		/** Degrees above level that a limb leaves the trunk at, by its height. Below 0 it leaves downward. */
+		readonly leave: Curve;
+		/** Degrees above level that a limb runs at through its middle, by its height. */
+		readonly run: Curve;
+		/** Degrees above level that a limb ends at, by its height. */
+		readonly end: Curve;
+		/**
+		 * The distance from the trunk over which a limb turns from the way it leaves to the way it
+		 * runs, as a share of the plant's height. A short limb takes at most half its length.
+		 */
+		readonly riseOver: number;
+		/** The share of a limb's length, at its outer end, over which it turns to the way it ends. */
+		readonly endOver: number;
+		/**
+		 * The crown's reach from the trunk's line on its wide side, over the plant's height, by
+		 * height: the far edge of the longest limb's foliage at that height.
+		 */
+		readonly reach: Curve;
+		/**
+		 * The share of that reach a limb takes, by its place among the plant's limbs from the shortest
+		 * (0) to the longest (1). The curve is the measured spread of limb lengths, so a crown keeps
+		 * its few long limbs and its many short ones.
+		 */
+		readonly reachShare: Curve;
+		/**
+		 * The crown's plan: the built crown's narrow side over its wide side, from 0.5 to 1, measured
+		 * over the foliage patches' far edges, and the degrees the wide side stands from +X. The
+		 * grower stretches each limb's reach by its direction until the built crown has this share.
+		 */
+		readonly plan: { readonly narrow: number; readonly turn: number };
+		/**
+		 * A limb's radius beside the trunk over the trunk's radius at that height, for the shortest
+		 * limb and for the longest.
+		 */
+		readonly radius: readonly [short: number, long: number];
+		/**
+		 * The swelling where a limb meets the trunk: how many times the limb's own radius it is
+		 * there, and the distance over which it fades, as a share of the plant's height.
+		 */
+		readonly collar: { readonly swell: number; readonly over: number };
+		/** A limb's radius where its foliage patch begins, over its radius past the collar. */
+		readonly taper: number;
+		/** The most degrees a limb's sideways sway turns it from its course, in slow bends. */
+		readonly wander: number;
+		/**
+		 * The arms a limb divides into under its foliage patch: how many, the degrees each leaves at
+		 * from the limb, to one side and the other in turn, and its radius over the limb's there.
+		 */
+		readonly arms: { readonly count: number; readonly angle: number; readonly radius: number };
+	};
+	/**
+	 * The limbs that carry on where the trunk divides, spread evenly round it: how many, the degrees
+	 * above level they leave and end at, and each one's radius over the trunk's where it divides.
+	 * The way each runs through its middle is solved so that its foliage patch's top stands at the
+	 * plant's height. Absent on a plant whose trunk runs to its tip.
+	 */
+	readonly top?: {
+		readonly limbs: number;
+		readonly leave: number;
+		readonly end: number;
+		readonly radius: number;
+	};
+	/** The foliage patch at a limb's end, which the sockets of its foliage fill. */
+	readonly patch: {
+		/** A level plate on top of the limb's end, a dome round it, or a tile of a closed shell. */
+		readonly kind: 'pad' | 'dome' | 'shell';
+		/**
+		 * One patch a limb, which the limb's arms spread under, or one patch at the limb's end and one
+		 * at each arm's end, each apart from the next.
+		 */
+		readonly each: 'limb' | 'end';
+		/**
+		 * The patch's width over the plant's height, for the shortest limb and for the longest. A
+		 * patch takes at most seven tenths of its limb's reach.
+		 */
+		readonly width: readonly [short: number, long: number];
+		/** The patch's depth over its width. */
+		readonly depth: number;
+		/**
+		 * The sockets that fill a patch: the piece each carries, by its name among the record's
+		 * pieces, the metres between one socket and the next, the degrees a side twig leaves at from
+		 * the wood under the patch, and the degrees it rises above level. Absent, a patch carries no
+		 * socket.
+		 */
+		readonly sockets?: {
+			readonly piece: string;
+			readonly pitch: number;
+			readonly twig: number;
+			readonly lift: number;
+		};
+	};
+}
+
+/**
  * A stem crowned by a spiral of large leaves: palms and tree ferns.
  *
  * @category api/vegetation
@@ -632,10 +896,49 @@ export interface CrownRosette {
 		readonly divergence: number;
 		/** Degrees from vertical by frond age (t = 0 youngest, 1 oldest living). */
 		readonly tilt: Curve;
-		/** Dead fronds: count, how far they hang, and a skirt that hides the stem top (fan palm). */
-		readonly dead: { readonly count: Spread; readonly hang: number; readonly skirt: number };
-		/** Young fronds rolled in the centre (tree fern croziers). */
-		readonly croziers?: Spread;
+		/**
+		 * Metres of the stem over which the frond bases clasp it, newest lowest: a crown springing
+		 * from a band of the stem, or from a single growing point at 0. Absent, the model's own
+		 * depth, which suits a tall palm's crown.
+		 */
+		readonly depth?: number;
+		/**
+		 * Croziers: a fern's young fronds, still rolled at their tips. Their number, the length of
+		 * their stalk in metres, and the degrees their head coils through as it unrolls. Absent,
+		 * the crown carries none, as a palm's does.
+		 */
+		readonly croziers?: {
+			readonly count: Spread;
+			readonly length: Spread;
+			readonly coil?: number;
+			/**
+			 * Metres of radius at a crozier's foot: a fiddlehead is thick and fleshy, wider than the
+			 * stipe of the frond it will become. Absent, it takes the frond's own stipe width.
+			 */
+			readonly radius?: number;
+			/**
+			 * What a crozier's skin draws: `young`, the smooth young bark a thin shoot takes, or
+			 * `grown`, the species' grown bark layer with its zones, tint and hollows. A rolled
+			 * young frond is fleshy and hairy rather than smooth, so `grown` is what a fern's
+			 * fiddlehead takes. Absent, `young`, which changes no record that names no croziers.
+			 */
+			readonly bark?: 'young' | 'grown';
+		};
+		/**
+		 * Dead fronds: count, how far they hang, and a skirt that hides the stem top (fan palm).
+		 * `blades` keeps a dead frond's leaflets at the level's detail, as a tree fern's dead skirt
+		 * shows its pinnae; absent, a dead frond reads as a brown mass at the coarsest detail, as a
+		 * palm's skirt does. `length` is the share of a living frond's length that a dead frond
+		 * keeps, above 0 and at most 1; absent, a dead frond keeps nearly all of it, as a palm's
+		 * does.
+		 */
+		readonly dead: {
+			readonly count: Spread;
+			readonly hang: number;
+			readonly skirt: number;
+			readonly blades?: boolean;
+			readonly length?: number;
+		};
 	};
 	/** One frond. */
 	readonly frond: FrondShape;
@@ -692,6 +995,17 @@ export interface PinnaSpec {
 	readonly droop: number;
 	/** Spines in place of the lowest leaflets. */
 	readonly spines: number;
+	/**
+	 * What the species' leaf picture holds, which sets how a crown rosette's frond draws each
+	 * leaflet. `pinna`: a divided leaflet whose picture carries its own lobes, as a tree fern's
+	 * does. Each place on the rachis carries a pair of them at the picture's own width, the
+	 * picture is sampled across the leaflet, and a piece cut from the frond keeps the leaflets
+	 * of the place it was cut from. `blade`: one narrow simple leaflet, as a date palm's is.
+	 * Each place carries one, drawn wider than its picture where the frond stands far so the
+	 * crown keeps its cover, its colour comes from the picture's midrib, and a short piece cut
+	 * from the frond sets its leaflets at a close photograph's own spacing. Absent, `pinna`.
+	 */
+	readonly leaflet?: 'pinna' | 'blade';
 	/** The next order down, for bipinnate and tripinnate fronds. */
 	readonly sub?: PinnaSpec;
 }
@@ -1442,6 +1756,12 @@ export interface ShootClass {
 	 * down the stem. Absent, each shoot takes a turn of its own from the hash.
 	 */
 	readonly azimuth?: number;
+	/**
+	 * Degrees each leaf's azimuth varies from the arrangement's own, from 0 to 90: a two-ranked
+	 * shoot's leaves then lie in a shallow cup rather than one plane, so its fan keeps a width as it
+	 * turns edge-on.
+	 */
+	readonly leafAzimuthSpread?: number;
 	/** Degrees the shoot hangs over its length (willow whips, birch). */
 	readonly droop: number;
 	/**
@@ -1580,6 +1900,16 @@ export interface LeafShape {
 	readonly wave: readonly [amplitude: number, count: number];
 	/** How the leaf looks under light. */
 	readonly optics: LeafOptics;
+	/**
+	 * The spore cases a fern's leaf carries under its lobes: how many stand along the midrib, their
+	 * radius in metres, and the spot of the leaf texture they take their colour from, as u and v.
+	 * A leaf that names none carries none.
+	 */
+	readonly sori?: {
+		readonly count: number;
+		readonly size: number;
+		readonly at: readonly [number, number];
+	};
 }
 
 /**
@@ -1680,7 +2010,7 @@ export interface NeedleShape {
  * @category api/vegetation
  */
 export interface ScaleSpray {
-	/** Orders of branchlets in one spray, 2 to 4. */
+	/** Orders of branchlets in one spray, 1 to 4: 1 for a single cord, as a cypress's shoot carries. */
 	readonly orders: number;
 	/** Segment length in metres. */
 	readonly segment: number;
@@ -1977,7 +2307,8 @@ export interface ExtraSpec {
 		| 'spike'
 		| 'thorn'
 		| 'spine-cluster'
-		| 'berry';
+		| 'berry'
+		| 'sheath';
 	/**
 	 * Which bud sites carry it: 'flower' takes the grower's flower sites (a head's spikelets,
 	 * florets or hanging spikes), 'stem-tip' the tip of each flowering stem.
@@ -1990,7 +2321,8 @@ export interface ExtraSpec {
 		| 'areole'
 		| 'crown-top'
 		| 'flower'
-		| 'stem-tip';
+		| 'stem-tip'
+		| 'culm-node';
 	/** Share of matching bud sites that carry one. */
 	readonly share: number;
 	/** How many stand at one site, 1 by default: an oak's acorns share a stalk in ones to threes. */
@@ -2344,7 +2676,8 @@ export interface CuttingHints {
 	/**
 	 * The shoots a cutting kit places over the crown's own, from 0.25 to 8, where a piece cut for
 	 * close review carries a denser covering than the crown can afford. The crown's kit is unchanged:
-	 * the piece is drawn at the nearest level alone, so its kit pays for no card levels.
+	 * the piece is drawn at the nearest level alone, so its kit pays for no card levels. A piece's
+	 * own hint may give a density of its own in place of this one.
 	 */
 	readonly density?: number;
 	/**
@@ -2354,8 +2687,8 @@ export interface CuttingHints {
 	readonly branch?: CutFromPlant | CutFromShoots;
 	/** A sub-branch about 0.35 m long, in either form. */
 	readonly subbranch?: CutFromPlant | CutFromShoots;
-	/** A leaf cluster: the shoot class to cut. */
-	readonly cluster?: CutFromShoots;
+	/** A leaf cluster: the shoot class to cut, or a length of a frond's rachis. */
+	readonly cluster?: CutFromPlant | CutFromShoots;
 	/** A single leaf: how it lies. */
 	readonly leaf?: CutLeaf;
 }
@@ -2400,6 +2733,22 @@ export interface CutFromPlant {
 	/** Metres of wood from the cut to the farthest tip. */
 	readonly length: number;
 	/**
+	 * The shoots this piece places over the crown's own, from 0.25 to 8: a density of its own, where
+	 * the piece covers more or less than the species' `cuttings.density`, which applies where it
+	 * names none. A piece cut from the grown plant takes the kit this reshapes.
+	 */
+	readonly density?: number;
+	/**
+	 * Metres of the axis that the piece keeps from its cut, for a plant whose pieces are lengths of
+	 * a single long axis, such as a palm's frond. Without it the piece keeps the whole axis.
+	 */
+	readonly span?: number;
+	/**
+	 * Metres along the axis where the piece starts, for a piece cut from the middle of one long
+	 * axis rather than its base. The cut face stands there. 0 by default.
+	 */
+	readonly from?: number;
+	/**
 	 * The piece's leaf size over the crown's, where a piece cut from the plant wants leaves of its
 	 * own. A rosette's piece carries the crown's leaves at the crown's size, so a piece that stands
 	 * a little too dense for its photograph is opened by shrinking its leaves rather than by taking
@@ -2422,6 +2771,12 @@ export interface CutFromShoots {
 	 * class and still be different pieces, as a sub-branch and a leaf cluster are.
 	 */
 	readonly pick?: number;
+	/**
+	 * A density here does nothing: a piece taken from a shoot prototype carries the prototype's own
+	 * covering, and only a piece cut from the grown plant has placement to reshape. Thin a shoot-cut
+	 * piece with a class of its own instead, or leave the field out.
+	 */
+	readonly density?: number;
 	/**
 	 * How many shoots the piece carries, fanned about its own upright axis, where a branch photograph
 	 * shows a divided, hanging branch: one shoot is a class prototype, and a branch needs more. 1 by

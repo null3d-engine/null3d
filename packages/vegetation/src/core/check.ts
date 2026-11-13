@@ -20,7 +20,10 @@ const SOCKET_MODELS: readonly GrowthModel[] = ['tuft'];
 
 const MODELS: readonly GrowthModel[] = [
 	'self-organizing',
+	'scaffold',
+	'frame',
 	'architectural',
+	'conifer',
 	'crown-rosette',
 	'culm',
 	'rosette',
@@ -218,6 +221,8 @@ function shootClassProblems(
 		if (!(shoot.bend.angle >= 0 && shoot.bend.angle <= 60))
 			out.push(`${path}.bend.angle is ${shoot.bend.angle}; it is degrees from 0 to 60`);
 	}
+	if (shoot.leafAzimuthSpread !== undefined)
+		wholeProblem(shoot.leafAzimuthSpread, `${path}.leafAzimuthSpread`, 0, 90, out);
 	if (shoot.skyward !== undefined) shareProblem(shoot.skyward, `${path}.skyward`, out);
 	if (shoot.phyllotaxis?.kind === 'spiral')
 		wholeProblem(shoot.phyllotaxis.divergence, `${path}.phyllotaxis.divergence`, 0, 360, out);
@@ -419,6 +424,59 @@ function growthProblems(record: Species, out: string[]): void {
 				`growth.pipe.leader is ${leader}; a stem keeps a share of its girth from 0.5 to 1 from node to node`,
 			);
 	}
+	if (growth.model === 'scaffold') {
+		if (!record.envelope) out.push('a scaffold species needs an envelope');
+		spreadProblems(growth.stems.count, 'growth.stems.count', true, out);
+		const [from, to] = growth.trunk.fork;
+		if (!(from > 0 && from <= to && to < 1))
+			out.push(
+				`growth.trunk.fork is ${from} to ${to}; give two shares of the height above 0 and below 1, lowest first`,
+			);
+		if (!(growth.trunk.wander >= 0 && growth.trunk.wander <= 30))
+			out.push(`growth.trunk.wander is ${growth.trunk.wander}; it is degrees from 0 to 30`);
+		spreadProblems(growth.lobes.count, 'growth.lobes.count', true, out);
+		if (!(growth.lobes.gap >= 0 && growth.lobes.gap <= 0.8))
+			out.push(`growth.lobes.gap is ${growth.lobes.gap}; it is a share from 0 to 0.8`);
+		if (!(growth.lobes.inner >= 0 && growth.lobes.inner <= 0.5))
+			out.push(`growth.lobes.inner is ${growth.lobes.inner}; it is a share from 0 to 0.5`);
+		if (!(growth.lobes.flatten > 0))
+			out.push(`growth.lobes.flatten is ${growth.lobes.flatten}; it must be above 0`);
+		if (!(growth.lobes.vary >= 0 && growth.lobes.vary <= 0.5))
+			out.push(`growth.lobes.vary is ${growth.lobes.vary}; it is a share from 0 to 0.5`);
+		if (!(growth.lobes.floor >= 0 && growth.lobes.floor <= 0.9))
+			out.push(
+				`growth.lobes.floor is ${growth.lobes.floor}; it is a share of the height from 0 to 0.9`,
+			);
+		spreadProblems(growth.limbs.count, 'growth.limbs.count', true, out);
+		notNegative(growth.limbs.jitter, 'growth.limbs.jitter', out);
+		curveProblems(growth.limbs.angle, 'growth.limbs.angle', out);
+		curveProblems(growth.limbs.end, 'growth.limbs.end', out);
+		if (!(growth.limbs.wander >= 0 && growth.limbs.wander <= 0.2))
+			out.push(
+				`growth.limbs.wander is ${growth.limbs.wander}; it is a share of a limb's length from 0 to 0.2`,
+			);
+		if (!(growth.branches.angle >= 5 && growth.branches.angle <= 90))
+			out.push(`growth.branches.angle is ${growth.branches.angle}; it is degrees from 5 to 90`);
+		if (!(growth.branches.step > 0))
+			out.push(`growth.branches.step is ${growth.branches.step}; it is metres and must be above 0`);
+		if (!(growth.branches.turn >= 2 && growth.branches.turn <= 90))
+			out.push(`growth.branches.turn is ${growth.branches.turn}; it is degrees from 2 to 90`);
+		notNegative(growth.branches.spacing, 'growth.branches.spacing', out);
+		if (!(growth.branches.lift >= -1 && growth.branches.lift <= 1))
+			out.push(`growth.branches.lift is ${growth.branches.lift}; it lies from -1 to 1`);
+		if (!(growth.sockets.spacing > 0))
+			out.push(
+				`growth.sockets.spacing is ${growth.sockets.spacing}; it is metres and must be above 0`,
+			);
+		notNegative(growth.sockets.inset, 'growth.sockets.inset', out);
+		if (!(growth.sockets.lit >= 0.2 && growth.sockets.lit <= 1))
+			out.push(`growth.sockets.lit is ${growth.sockets.lit}; it is a share from 0.2 to 1`);
+		spreadProblems(growth.sockets.rows, 'growth.sockets.rows', true, out);
+		if (!(growth.sockets.fan >= 0 && growth.sockets.fan <= 120))
+			out.push(`growth.sockets.fan is ${growth.sockets.fan}; it is degrees from 0 to 120`);
+		if (growth.pipe.exponent <= 0 || growth.pipe.tipRadius <= 0)
+			out.push('growth.pipe needs an exponent and a tip radius above 0');
+	}
 	if (growth.model === 'frond-colony') {
 		const clump = growth.rhizome.clump;
 		if (clump !== undefined) {
@@ -444,6 +502,27 @@ function growthProblems(record: Species, out: string[]): void {
 			spreadProblems(growth.scapes.flowers, 'growth.scapes.flowers', true, out);
 			shareProblem(growth.scapes.raceme, 'growth.scapes.raceme', out);
 		}
+	}
+	if (growth.model === 'culm') {
+		spreadProblems(growth.culms, 'growth.culms', true, out);
+		if (!(growth.spacing > 0))
+			out.push(`growth.spacing is ${growth.spacing}; it is metres and must be above 0`);
+		spreadProblems(growth.height, 'growth.height', true, out);
+		spreadProblems(growth.diameter, 'growth.diameter', true, out);
+		curveProblems(growth.internode, 'growth.internode', out);
+		notNegative(growth.node.ridge, 'growth.node.ridge', out);
+		notNegative(growth.node.waxBand, 'growth.node.waxBand', out);
+		notNegative(growth.node.sheathScar, 'growth.node.sheathScar', out);
+		shareProblem(growth.branches.from, 'growth.branches.from', out);
+		spreadProblems(growth.branches.perNode, 'growth.branches.perNode', false, out);
+		curveProblems(growth.branches.length, 'growth.branches.length', out);
+		wholeProblem(growth.branches.angle, 'growth.branches.angle', 0, 90, out);
+		wholeProblem(growth.branches.orders, 'growth.branches.orders', 1, 3, out);
+		shareProblem(growth.sulcus, 'growth.sulcus', out);
+		shareProblem(growth.sheaths.upTo, 'growth.sheaths.upTo', out);
+		if (!(growth.sheaths.length >= 0))
+			out.push(`growth.sheaths.length is ${growth.sheaths.length}; a length is not negative`);
+		spreadProblems(growth.arch, 'growth.arch', false, out);
 	}
 	if (growth.model === 'tuft') {
 		if (record.foliage.kind !== 'grass-blade') out.push("a tuft's foliage is 'grass-blade'");
@@ -584,6 +663,69 @@ function growthProblems(record: Species, out: string[]): void {
 		if (ribs.depth < 0 || ribs.sweep <= 0)
 			out.push('foliage.leaf.ribs needs a depth from 0 and a sweep above 0');
 	}
+	if (growth.model === 'frame') {
+		spreadProblems(growth.sockets.rows, 'growth.sockets.rows', true, out);
+		if (!(growth.sockets.fan >= 0 && growth.sockets.fan <= 120))
+			out.push(`growth.sockets.fan is ${growth.sockets.fan}; it is degrees from 0 to 120`);
+		curveProblems(growth.frame.outline, 'growth.frame.outline', out);
+		if (!(growth.frame.stems.count >= 1))
+			out.push(
+				`growth.frame.stems.count is ${growth.frame.stems.count}; a plant has one stem or more`,
+			);
+	}
+	if (growth.model === 'conifer') {
+		const { trunk, limbs, top, patch } = growth;
+		curveProblems(trunk.width, 'growth.trunk.width', out);
+		if (!(trunk.dividesAt > 0 && trunk.dividesAt <= 1))
+			out.push(
+				`growth.trunk.dividesAt is ${trunk.dividesAt}; it is a share of the height above 0, and 1 for a trunk that runs to the tip`,
+			);
+		if (limbs.levels.length === 0)
+			out.push('growth.limbs.levels is empty; give one level at least');
+		limbs.levels.forEach((level, i) => {
+			if (!(level > 0 && level <= trunk.dividesAt))
+				out.push(
+					`growth.limbs.levels[${i}] is ${level}; a level stands above the ground and no higher than growth.trunk.dividesAt (${trunk.dividesAt})`,
+				);
+			if (i > 0 && level <= (limbs.levels[i - 1] as number))
+				out.push(`growth.limbs.levels falls at entry ${i}; the levels rise`);
+		});
+		if (!Number.isInteger(limbs.count) || limbs.count < limbs.levels.length)
+			out.push(
+				`growth.limbs.count is ${limbs.count}; it is a whole number, one limb a level at least (${limbs.levels.length})`,
+			);
+		for (const name of ['leave', 'run', 'end', 'reach', 'reachShare'] as const)
+			curveProblems(limbs[name], `growth.limbs.${name}`, out);
+		shareProblem(limbs.stagger, 'growth.limbs.stagger', out);
+		shareProblem(limbs.riseOver, 'growth.limbs.riseOver', out);
+		shareProblem(limbs.endOver, 'growth.limbs.endOver', out);
+		shareProblem(limbs.taper, 'growth.limbs.taper', out);
+		if (!(limbs.plan.narrow >= 0.5 && limbs.plan.narrow <= 1))
+			out.push(
+				`growth.limbs.plan.narrow is ${limbs.plan.narrow}; the narrow side is from 0.5 to 1 of the wide side`,
+			);
+		if (!(limbs.radius[0] > 0 && limbs.radius[1] >= limbs.radius[0] && limbs.radius[1] <= 1))
+			out.push(
+				'growth.limbs.radius needs the shortest limb above 0, and the longest no thinner than it and no thicker than the trunk',
+			);
+		wholeProblem(limbs.arms.count, 'growth.limbs.arms.count', 0, 6, out);
+		if (!(limbs.arms.radius > 0 && limbs.arms.radius <= 1))
+			out.push(`growth.limbs.arms.radius is ${limbs.arms.radius}; it is above 0 and at most 1`);
+		if (!(limbs.collar.swell >= 1))
+			out.push(`growth.limbs.collar.swell is ${limbs.collar.swell}; it is 1 or more`);
+		if (top) {
+			wholeProblem(top.limbs, 'growth.top.limbs', 1, 8, out);
+			if (!(top.radius > 0 && top.radius <= 1))
+				out.push(`growth.top.radius is ${top.radius}; it is above 0 and at most 1`);
+			if (trunk.dividesAt >= 1)
+				out.push(
+					'growth.top is given but growth.trunk.dividesAt is 1; a trunk that runs to the tip has no top limbs',
+				);
+		}
+		if (!(patch.width[0] > 0 && patch.width[1] >= patch.width[0]))
+			out.push('growth.patch.width needs the shortest limb above 0 and the longest no smaller');
+		if (!(patch.depth > 0)) out.push(`growth.patch.depth is ${patch.depth}; it must be above 0`);
+	}
 	if (growth.model === 'architectural') {
 		if (growth.orders.length === 0)
 			out.push('growth.orders is empty; give the bough order at least');
@@ -713,6 +855,8 @@ function cuttingProblems(record: Species, out: string[]): void {
 	for (const part of ['branch', 'subbranch', 'cluster'] as const) {
 		const hint = record.cuttings?.[part];
 		if (!hint) continue;
+		if (hint.density !== undefined && !(hint.density >= 0.25 && hint.density <= 8))
+			out.push(`cuttings.${part}.density is ${hint.density}; it is a share from 0.25 to 8`);
 		if ('shoot' in hint) {
 			if (!names.has(hint.shoot))
 				out.push(`cuttings.${part}.shoot '${hint.shoot}' names no class in shoots.classes`);

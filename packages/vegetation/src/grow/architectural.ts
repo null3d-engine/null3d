@@ -34,7 +34,7 @@ import {
 import type { Architectural, ArchitecturalOrder, Phyllotaxis, Species } from '../core/record';
 import { curveAt, spreadAt, spreadMean } from '../core/types';
 import type { GrowInput } from '../stages';
-import { type EnvelopeVolume, envelopeVolume, insetVolume } from './envelope';
+import { type EnvelopeVolume, envelopeVolume, insetVolume, smoothedVolume } from './envelope';
 import type { Grower } from './models';
 
 /** The golden angle in degrees, which spreads successive children round their parent. */
@@ -60,6 +60,8 @@ const UPTURN_FROM = 0.55;
 const TOP_WHORL = 0.97;
 /** The most children one parent node puts out from a whorled arrangement. */
 const MOST_WHORL = 8;
+/** The share of the way each measured height is rounded toward its azimuthal mean. */
+export const ENVELOPE_ROUND = 0.35;
 
 /** The choices an axis makes, each its own hash purpose. */
 const Purpose = {
@@ -265,10 +267,15 @@ export function growArchitectural(input: GrowInput): MacroSkeleton {
 	const crownSpan = Math.max(0.001, height - crownBase);
 
 	// The outline caps the wood, with room left for the shoots that attach beyond it.
+	// The measured hull is as irregular as its views. Rounding each height toward its mean by this
+	// share keeps the widest side and lifts the narrow ones, so no single view draws a thin crown.
 	const volume: EnvelopeVolume | undefined = record.envelope
-		? insetVolume(
-				envelopeVolume(record.envelope, height, turn),
-				Math.max(0, shootReach(record) * 0.6),
+		? smoothedVolume(
+				insetVolume(
+					envelopeVolume(record.envelope, height, turn),
+					Math.max(0, shootReach(record) * 0.6),
+				),
+				ENVELOPE_ROUND,
 			)
 		: undefined;
 
@@ -441,15 +448,15 @@ export function growArchitectural(input: GrowInput): MacroSkeleton {
 		}
 		const grown = axes[axis] as GrownAxis;
 		if (grown.nodes.length < 2) {
-			// An axis the outline leaves no room for draws one short piece, so its join still shows.
-			pushNode(
-				axis,
+			// An axis whose parent stands on the outline may take no step out. It keeps the one node
+			// that the cap placed: a short piece added beyond it would stand outside the outline.
+			const half: Vector3 = [
 				from[0] + direction[0] * step * 0.5,
 				from[1] + direction[1] * step * 0.5,
 				from[2] + direction[2] * step * 0.5,
-				direction,
-				0,
-			);
+			];
+			if (!volume || volume.room(half[0], half[1], half[2]) >= 0)
+				pushNode(axis, half[0], half[1], half[2], direction, 0);
 		}
 		const nodes = (axes[axis] as GrownAxis).nodes;
 
@@ -690,7 +697,7 @@ export function growArchitectural(input: GrowInput): MacroSkeleton {
 
 	// The leader's own tip carries a tuft, so the crown's top is not a bare spike; the upper whorls
 	// build the flat plate around it.
-	const topFrom = height * 0.95;
+	const topFrom = height * 0.86;
 	for (let i = 0; i < leaderNodes.length; i++) {
 		const node = (axes[leader] as GrownAxis).nodes[leaderNodes[i] as number] as GrownNode;
 		if (node.y < topFrom) continue;

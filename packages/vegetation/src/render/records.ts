@@ -434,7 +434,9 @@ function leafLength(record: Species): number {
 			? foliage.leaf.length
 			: foliage.kind === 'needle' || foliage.kind === 'fascicle'
 				? foliage.needle.length
-				: undefined;
+				: foliage.kind === 'scale-spray'
+					? { mean: foliage.spray.segment, spread: 0 }
+					: undefined;
 	return length === undefined ? 0 : spreadMean(length);
 }
 

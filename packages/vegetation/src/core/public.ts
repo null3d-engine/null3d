@@ -41,6 +41,7 @@ export {
 	NODE_PILLAR,
 	NODE_SHED,
 	NODE_STUB,
+	type SocketSites,
 } from './graph';
 export { NotBuiltError } from './not-built';
 export type {
@@ -54,6 +55,7 @@ export type {
 	Column,
 	ColumnArmTier,
 	CompoundLeaf,
+	Conifer,
 	CrownRosette,
 	Culm,
 	CutFromPlant,
@@ -83,6 +85,7 @@ export type {
 	RadialEnvelope,
 	RecordChanges,
 	Rosette,
+	Scaffold,
 	ScaleSpray,
 	ScarSpec,
 	Sdf,

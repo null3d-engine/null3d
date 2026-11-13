@@ -17,6 +17,8 @@ export const SURFACE_STEM = 85;
 export const SURFACE_PIECE = 16;
 /** A placed piece's sheath column: drawn in the record's sheath colour, and it does not flutter. */
 export const SURFACE_PIECE_SHEATH = 32;
+/** The leaf's own petiole: a stalk thin enough that the shader widens it like fine wood. */
+export const SURFACE_PETIOLE = 42;
 /** A shoot's bud: drawn as its stem, in the record's bud colour where it gives one. */
 export const SURFACE_BUD = 128;
 export const SURFACE_EXTRA = 170;
@@ -230,6 +232,7 @@ export function tube(
 	colour: (ring: number) => ArrayLike<number>,
 	closeTip = false,
 	uv?: (around: number, ring: number) => readonly [number, number],
+	second?: (ring: number, radius: number) => readonly [number, number],
 ): void {
 	if (path.length < 2) return;
 	let previous = -1;
@@ -260,7 +263,7 @@ export function tube(
 				],
 				n,
 				uv ? uv(j, r) : [(j / sides) * around, point.along],
-				[0, 0],
+				second ? second(r, point.radius) : [0, 0],
 				colour(r),
 			);
 		}

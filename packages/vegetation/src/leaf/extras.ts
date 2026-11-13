@@ -286,6 +286,10 @@ function sitesOf(input: MeshInput, extra: ExtraSpec): Site[] {
 			case 'stem-tip':
 				take = kind === BUD_TERMINAL && (axes.kind[buds.axis[b] as number] as number) === AXIS_CULM;
 				break;
+			case 'culm-node':
+				// The dormant buds a culm grower leaves along its lower nodes carry the sheaths.
+				take = kind === BUD_DORMANT && (axes.kind[buds.axis[b] as number] as number) === AXIS_CULM;
+				break;
 			default:
 				take = kind === BUD_TERMINAL && y > skeleton.height * 0.85;
 		}

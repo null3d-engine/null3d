@@ -166,7 +166,15 @@ export function walkSpecies(walked: Walked): void {
 					const cutOnly = (record.shoots?.cuttingClasses ?? []).some(
 						(shoot) => shoot.cutOnly === true,
 					);
-					if (!cutOnly && record.cuttings?.density === undefined) return;
+					const hinted = ['branch', 'subbranch', 'cluster'].some(
+						(part) =>
+							(
+								record.cuttings?.[part as 'branch' | 'subbranch' | 'cluster'] as
+									| { readonly density?: number }
+									| undefined
+							)?.density !== undefined,
+					);
+					if (!cutOnly && record.cuttings?.density === undefined && !hinted) return;
 					const kit = buildKitNow(module, {
 						placeholders: walked.placeholders,
 						detail,

@@ -6,6 +6,7 @@ import type { MeshArrays, ShootRows, SpeciesKitData } from './asset';
 import type { MacroSkeleton } from './core/graph';
 import type { Species } from './core/record';
 import type { Detail, Season, Vec3 } from './core/types';
+import type { CuttingOptions } from './cutting';
 
 /**
  * What a grower takes: the record, the seed, the variant and the season.
@@ -79,6 +80,8 @@ export interface DressInput extends GrowInput {
 	 * Absent, the prune lights the crown of the rows it is given.
 	 */
 	readonly pruneLight?: CrownLight;
+	/** The cutting this variant is, where it is a piece rather than a whole plant. */
+	readonly cutting?: CuttingOptions;
 }
 
 /**
