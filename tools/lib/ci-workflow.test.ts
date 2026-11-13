@@ -443,6 +443,28 @@ describe("CI's workflow", () => {
 		expect(browser).not.toContain('package.json');
 	});
 
+	it('builds the packages a spec loads in every job that runs one', () => {
+		// A spec's import of a package's sub-path resolves to its built `lib` in the bare Bun loader
+		// that Playwright's runner uses, and only the pack step makes that `lib`. The browser jobs
+		// build it by hand, so a job that gains the browser action without the build fails every
+		// spec it runs at once, which is how drawn run 43336665928 lost 55 shards.
+		const runners = Object.entries(jobs).filter(([, job]) =>
+			(job.steps ?? []).some(
+				(step) =>
+					step.uses === './.github/actions/playwright-chromium' &&
+					step.with?.['cache-only'] !== 'true',
+			),
+		);
+		expect(runners.length).toBeGreaterThan(0);
+		for (const [name, job] of runners)
+			expect(
+				(job.steps ?? []).some(
+					(step) => typeof step.run === 'string' && step.run.includes('tools/build-package.ts'),
+				),
+				name,
+			).toBe(true);
+	});
+
 	it('makes each load build in a job of its own, which every job that serves it waits for', () => {
 		/** The load build of each job, by the folder that its command names. */
 		const loadJobs: Record<string, string> = {
