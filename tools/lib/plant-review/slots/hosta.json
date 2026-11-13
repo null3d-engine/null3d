@@ -28,6 +28,17 @@
 	"07-leaf-base-and-petiole.png": {
 		"view": "leaf-under"
 	},
+	"08-leaf-surface-ribs.png": {
+		"view": "leaf-upper",
+		"span": 0.2,
+		"along": 0.5
+	},
+	"09-vein-network.png": {
+		"view": "leaf-upper",
+		"span": 0.18,
+		"along": 0.65,
+		"roll": -90
+	},
 	"14-petiole-section.png": {
 		"view": "cluster",
 		"pick": 0,
