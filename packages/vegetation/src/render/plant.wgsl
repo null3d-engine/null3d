@@ -73,6 +73,9 @@ var relief: texture_2d_array<f32>;
 var second: texture_2d<f32>;
 // Young bark normal for wood; young bark colour for the stems and buds of shoot rows.
 var third: texture_2d<f32>;
+// The card atlas's colour and surface (front, back), which a shoot row's brush cards read.
+var fourth: texture_2d_array<f32>;
+var fifth: texture_2d_array<f32>;
 
 const MODE_WOOD: i32 = 0;
 const MODE_SHOOTS: i32 = 1;
@@ -192,6 +195,8 @@ const KIND_SHEATH: f32 = 240.0;
 const KIND_PIECE: f32 = 16.0;
 /// A placed piece's sheath column, which draws in the record's sheath colour and does not flutter.
 const KIND_PIECE_SHEATH: f32 = 32.0;
+// A brush card of a piece: crossed quads that picture a dense run of its leaves from the card atlas.
+const KIND_BRUSH: f32 = 8.0;
 // Texels across the near table: two for each of its sixteen slots.
 const NEAR_TEXELS: f32 = 32.0;
 // A leaf's reflectance at normal incidence and at grazing, as the plant materials set them.
@@ -967,7 +972,11 @@ fn uv_scale(mode: i32) -> f32 {
 /// leaves would vanish; raising it by a quarter for each level keeps the share of the card that
 /// leaves cover near the full-size texture's.
 fn card_alpha(alpha: f32, gx: vec2f, gy: vec2f) -> f32 {
-    let texels = vec2f(textureDimensions(colour).xy);
+    return atlas_alpha(alpha, gx, gy, vec2f(textureDimensions(colour).xy));
+}
+
+/// A card's alpha raised as `card_alpha` raises it, for an atlas of `texels` a side.
+fn atlas_alpha(alpha: f32, gx: vec2f, gy: vec2f, texels: vec2f) -> f32 {
     let footprint = max(length(gx * texels), length(gy * texels));
     let level = max(log2(max(footprint, 1.0)), 0.0);
     return saturate(alpha * (1.0 + level * CARD_MIP_LIFT));
@@ -987,6 +996,10 @@ fn coverage(input: SurfaceInput) -> f32 {
             let layer = select(1, 0, input.frontFacing);
             alpha = card_alpha(textureSampleGrad(colour, colourSampler, uv, layer, gx, gy).a, gx, gy);
         }
+    } else if (mode == MODE_SHOOTS && abs(input.vertexColor.b * 255.0 - KIND_BRUSH) < 0.5) {
+        let layer = select(1, 0, input.frontFacing);
+        let texel = textureSampleGrad(fourth, fourthSampler, uv, layer, gx, gy);
+        alpha = atlas_alpha(texel.a, gx, gy, vec2f(textureDimensions(fourth).xy));
     } else if (mode == MODE_FOLIAGE
         || (mode == MODE_SHOOTS && input.vertexColor.b * 255.0 < KIND_STEM * 0.5)) {
         let layer = select(1, 0, input.frontFacing);
@@ -1344,6 +1357,28 @@ fn surface(input: SurfaceInput) -> Surface {
             let face = max(header(HEADER_UPPER_MEAN).rgb, vec3f(0.0001));
             base = sheath_colour * clamp(strip / face, vec3f(0.55), vec3f(1.45));
             roughness = max(foot.w, 0.5);
+        } else if (mode == MODE_SHOOTS && abs(input.vertexColor.b * 255.0 - KIND_BRUSH) < 0.5) {
+            // A brush card: the card atlas's picture of a run of the piece's leaves, lit as a card
+            // of the first card level is, with the picture's own normals and shade.
+            let layer = select(1, 0, upper);
+            let texel = textureSampleGrad(fourth, fourthSampler, uv, layer, gx, gy);
+            let surface_texel = textureSampleGrad(fifth, fifthSampler, uv, layer, gx, gy);
+            let brush_kind = surface_texel.a * 255.0;
+            let brush_leaf = brush_kind >= 127.5;
+            let self_shade = (brush_kind - select(0.0, 128.0, brush_leaf)) * 2.0 / 255.0;
+            if (brush_leaf) {
+                let light = leaf_light(texel.rgb, upper, 0.0);
+                base = light.base;
+                share = light.share;
+                through = light.through;
+                roughness = light.roughness;
+            } else {
+                base = texel.rgb;
+            }
+            alpha = atlas_alpha(texel.a, gx, gy, vec2f(textureDimensions(fourth).xy));
+            let e = (surface_texel.xy * 255.0 - vec2f(128.0)) / 127.0;
+            mapped = octahedral(clamp(e, vec2f(-1.0), vec2f(1.0)));
+            occlusion = mix(input.vertexColor.a * saturate(self_shade), 1.0, leaf_sky);
         } else {
             let layer = select(1, 0, upper);
             let texel = textureSampleGrad(colour, colourSampler, uv, layer, gx, gy);

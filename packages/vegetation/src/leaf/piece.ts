@@ -25,17 +25,30 @@ import {
 	type Vector3,
 } from '../core/math';
 import type { LeafShape, Phyllotaxis, Species } from '../core/record';
-import { type Curve, curveAt, type Spread, spreadAt, spreadMean, type Vec3 } from '../core/types';
+import {
+	type Curve,
+	curveAt,
+	DETAILS,
+	type Detail,
+	type Spread,
+	spreadAt,
+	spreadMean,
+	type Vec3,
+} from '../core/types';
 import {
 	type AxisPoint,
 	addBudCluster,
+	type BrushPicture,
+	brushPicture,
 	type LeafRule,
 	leafTurn,
 	meshedPlan,
 	meshShoot,
+	type PlannedBrush,
 	type PlannedBud,
 	type PlannedLeaf,
 	placeNodeLeaves,
+	plannedBrushes,
 	type ShootPlan,
 	square,
 	turn,
@@ -275,6 +288,12 @@ export interface PieceRule {
 	 * degrees and no farther than the ground side. A hanging blade then stays in the plane it lies in.
 	 */
 	readonly leafDroop?: 'plane';
+	/**
+	 * Whether each dense run of the piece's leaves draws as a brush card below the finest tier:
+	 * three crossed quads that carry a picture of a run's own leaves, which the card bake draws into
+	 * the card atlas. The finest tier keeps every leaf. Absent, every tier draws its leaves.
+	 */
+	readonly brushCards?: boolean;
 }
 
 /**
@@ -328,7 +347,7 @@ export function pieceRecord(record: Species, leaf: PieceLeaf | undefined): Speci
 
 /** A piece's prototype: its meshes at every tier, with how a socket holds it. */
 export interface PiecePrototype
-	extends Pick<UncardedPrototype, 'length' | 'radius' | 'leaves' | 'tiers'> {
+	extends Pick<UncardedPrototype, 'length' | 'radius' | 'leaves' | 'tiers' | 'brushes'> {
 	/** The rule it was planned by, and which of the rule's variants it is. */
 	readonly piece: string;
 	readonly variant: number;
@@ -1128,14 +1147,43 @@ export function piecePrototypes(
 	leaves: readonly (readonly PrototypeArrays[])[],
 	straight: readonly (readonly PrototypeArrays[])[] = leaves,
 ): PiecePrototype[] {
+	const pictureTier = DETAILS.indexOf(BRUSH_PICTURE_TIER);
 	const out: PiecePrototype[] = [];
 	for (const [r, rule] of rules.entries()) {
 		const own = rule.leafDroop === 'plane' ? straight : leaves;
 		const leafMeshes = Math.min(...own.map((tier) => tier.length));
 		const finest = own[own.length - 1] ?? [];
+		// A piece that draws brush cards pictures two runs of its first variant: its own stem's
+		// longest, and its side stems' longest. Every run draws from the one of its kind.
+		let pictures: BrushPicture[] | undefined;
 		for (let variant = 0; variant < Math.min(16, Math.max(1, rule.variants)); variant++) {
-			const parts = splitPlan(planPiece(record, rule, pieceKey(r, variant), leafMeshes), finest);
-			for (const [part, plan] of parts.entries())
+			const whole = planPiece(record, rule, pieceKey(r, variant), leafMeshes);
+			if (rule.brushCards && !pictures) {
+				const runs = plannedBrushes(whole);
+				const longest = (own: boolean) =>
+					runs
+						.filter((run) => (run.axis === 0) === own)
+						.reduce<PlannedBrush | undefined>(
+							(best, run) => (!best || run.length > best.length ? run : best),
+							undefined,
+						);
+				pictures = [longest(true), longest(false)]
+					.filter((run): run is PlannedBrush => run !== undefined)
+					.map((run) => brushPicture(whole, run, own[pictureTier] ?? [], BRUSH_PICTURE_TIER));
+			}
+			const parts = splitPlan(whole, finest);
+			for (const [part, plan] of parts.entries()) {
+				const drawn = pictures ?? [];
+				const brushes =
+					drawn.length > 0
+						? {
+								runs: plannedBrushes(plan).map(({ axis, leaves: _leaves, ...run }) => ({
+									...run,
+									picture: Math.min(drawn.length - 1, axis === 0 ? 0 : 1),
+								})),
+								pictures: drawn,
+							}
+						: undefined;
 				out.push({
 					piece: rule.name,
 					variant,
@@ -1147,7 +1195,9 @@ export function piecePrototypes(
 					// A piece's leaves close round its stems where they stand densely, and no ring of
 					// the wood they hide shows.
 					...meshedPlan(plan, own, true),
+					...(brushes ? { brushes } : {}),
 				});
+			}
 		}
 	}
 	return out;
@@ -1205,6 +1255,8 @@ export interface StudioLayout {
 	readonly placed: readonly PlacedPiece[];
 }
 
+/** The tier whose leaf meshes a brush card pictures: the finest a kit below ultra builds. */
+const BRUSH_PICTURE_TIER: Detail = 'high';
 /** Degrees a piece that turns up stands above its socket's own direction. */
 const UP_LIFT = 30;
 /** The most metres from a stem's tip within which another stem's foot means the tip forks and carries no piece. */
