@@ -198,6 +198,12 @@ export interface PlantReviewQuery {
 	 * does: no ground plane is drawn, so the rhizome and the roots below the crown stay in view.
 	 */
 	readonly lifted?: boolean;
+	/**
+	 * Whether a cut piece stands on the meadow, as a photograph of one frond standing alone in its
+	 * field shows it: the ground plane is drawn under the cut, where a cut piece otherwise stands on
+	 * its background alone.
+	 */
+	readonly meadow?: boolean;
 	/** Whether the page draws a 1 m scale bar beside the view's target. */
 	readonly scale?: boolean;
 	/**
@@ -494,6 +500,7 @@ const SWITCHES = [
 	'footLost',
 	'toward',
 	'lifted',
+	'meadow',
 	'barkMask',
 	'leafyBark',
 	'noOutline',
@@ -716,6 +723,7 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 		...(pressed !== null && { pressed: pressed === '1' }),
 		measure: params.get('measure') === '1',
 		lifted: params.get('lifted') === '1',
+		meadow: params.get('meadow') === '1',
 		barkMask: params.get('barkMask') === '1',
 		leafyBark: params.get('leafyBark') === '1',
 		noOutline: params.get('noOutline') === '1',

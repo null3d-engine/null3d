@@ -477,7 +477,12 @@ export function belowShot(subjects: PlantSubjects, lens: Lens, options: BelowOpt
 	const trunkShare = options.trunkShare ?? 0.42;
 	const ground = trunk.base[1];
 	const rise = top.at[1] - ground;
-	if (rise < LEAST_BOLE) return lowShot(subjects, lens, options.turn);
+	// A crown that reaches the ground leaves no bole to look up: a tall one is looked up along its
+	// face, a low one from a low eye inside its rim.
+	if (rise < LEAST_BOLE)
+		return subjects.height >= FACE_LEAST_HEIGHT
+			? faceShot(subjects, lens, options.turn)
+			: lowShot(subjects, lens, options.turn);
 	// The eye stays under the joints on the trunk's centre line, so it never stands among the limbs.
 	const eye = Math.max(LOWEST_EYE, Math.min(EYE, BELOW_EYE_SHARE * (ended.at[1] - ground)));
 	const radius = trunkRadius(trunk, ground + eye);
@@ -609,6 +614,41 @@ export function belowShot(subjects: PlantSubjects, lens: Lens, options: BelowOpt
 				warning: 'no stand round the trunk is clear of the limbs, so the camera keeps its turn',
 			}),
 		},
+	};
+}
+
+/** The row share on which a tall crown's top lands, seen up its face from its foot. */
+const FACE_TOP_ROW = 0.06;
+/** The least height in metres of a crown whose face a view up its side climbs; under it the low eye frames it whole. */
+const FACE_LEAST_HEIGHT = 3;
+
+/**
+ * The view up a crown's face from its foot, as a photograph of a column whose foliage reaches the
+ * ground looks up it: the camera stands at a person's eye just outside the crown's widest reach and
+ * looks steeply up, so the top lands near the frame's top edge and the face fills the frame below it,
+ * narrowing toward the top.
+ */
+export function faceShot(subjects: PlantSubjects, lens: Lens, turn: number): Solved {
+	const tall = subjects.height;
+	if (!(tall > 0)) return absent('the plant has no height to look up');
+	const foot = subjects.foot;
+	const distance = subjects.reach + CLEARANCE;
+	const eye = Math.min(EYE, tall / 2);
+	const top: V3 = [foot[0], foot[1] + tall, foot[2]];
+	const pitch = Math.min(
+		STEEPEST * DEG,
+		Math.atan2(tall - eye, distance) - rowAngle(FACE_TOP_ROW, lens.fov),
+	);
+	const out = facing(turn);
+	const position: V3 = [foot[0] + out[0] * distance, foot[1] + eye, foot[2] + out[2] * distance];
+	return {
+		kind: "the crown's face from its foot, looking up it",
+		camera: pitched(position, [-out[0], 0, -out[2]], pitch, Math.hypot(distance, tall - eye)),
+		points: [{ name: "the plant's top", at: top, within: [0.3, -0.02, 0.7, 0.2] }],
+		regions: [
+			{ name: "the crown's face over the lower frame", box: [0.25, 0.7, 0.75, 1], min: 0.5 },
+		],
+		facts: { eye, stand: distance, pitch: pitch / DEG },
 	};
 }
 
@@ -1550,6 +1590,24 @@ export function crownUndersideShot(
 	};
 }
 
+/** The share of the trunk's height under which a crown's base stands on a trunk the crown clothes. */
+const CLOTHED_BASE_SHARE = 0.5;
+
+/**
+ * Whether a view from inside the crown stands beside the trunk: a tree whose great limbs leave its
+ * trunk, or a trunk its crown clothes from low down, as a column's fine branches do. A plant with no
+ * trunk, or a trunk whose crown stands only at its top, as a palm's, keeps its stalks at the crown's
+ * own centre, and its inside photograph is of that bundle.
+ */
+export function insideBesideTrunk(subjects: PlantSubjects): boolean {
+	if (isAbsent(subjects.trunk)) return false;
+	if (!isAbsent(subjects.limbs) && subjects.limbs.length > 0) return true;
+	const axis = subjects.trunk.axis;
+	const ground = subjects.trunk.base[1];
+	const top = (axis[axis.length - 1] as AxisSample).at[1] - ground;
+	return !isAbsent(subjects.crownBase) && subjects.crownBase < CLOTHED_BASE_SHARE * top;
+}
+
 /** How a view from inside the crown frames the wood it looks along. */
 export interface InsideOptions {
 	readonly turn: number;
@@ -1579,9 +1637,9 @@ const INSIDE_MOST_TRUNK = 0.5;
  */
 export function insideShot(subjects: PlantSubjects, lens: Lens, options: InsideOptions): Solved {
 	if (isAbsent(subjects.trunk)) return subjects.trunk;
-	if (isAbsent(subjects.limbs)) return subjects.limbs;
 	const trunk = subjects.trunk;
-	const limbs = subjects.limbs;
+	// A trunk clothed in fine branches has no great limb to set the camera's turn by.
+	const limbs = isAbsent(subjects.limbs) ? [] : subjects.limbs;
 	const ground = trunk.base[1];
 	const pitch = (options.pitch ?? 40) * DEG;
 	const share = options.share ?? 0.28;
