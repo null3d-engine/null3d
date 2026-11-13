@@ -65,6 +65,8 @@ export const PIECES: readonly PieceRule[] = [
 		// The photograph's branch stands upright and its sprays arch down round it.
 		attitude: 'upright',
 		variants: 2,
+		// The turning video of the cut branch: edge on it is 0.38 as wide as face on.
+		depth: 26,
 		stem: {
 			length: { mean: 0.95, spread: 0.05 },
 			radius: [0.005, 0.0015],

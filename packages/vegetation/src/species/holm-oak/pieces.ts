@@ -49,7 +49,10 @@ function arm(length: number, radius: number, forks: PieceStem['sides'] = []): Pi
 				gap: 0.035,
 				from: 1 - 0.2 / length,
 				to: 0.97,
-				arrangement: 'spiral',
+				// The cut branch's turning video: edge on it is 0.30 as wide as face on, so a tuft's side
+				// twigs stand nearer the branch's plane than round it.
+				arrangement: 'alternate',
+				spread: 40,
 				angle: { mean: 60, spread: 10 },
 			},
 			...(forks ?? []),
@@ -107,18 +110,28 @@ export const PIECES: readonly PieceRule[] = [
 		stem: {
 			length: { mean: 0.35, spread: 0.03 },
 			radius: [0.0025, 0.001],
-			leaves: { gap: 0.016, from: 0.2, angle: 52, angleSpread: 8, scale: LEAF_SCALE },
+			// The sub-branch's turning video: edge on it is 0.35 as wide as face on.
+			leaves: { gap: 0.016, from: 0.2, angle: 52, angleSpread: 8, scale: LEAF_SCALE, flat: 0.6 },
 			sides: [
 				{
 					stem: {
 						length: { mean: 0.1, spread: 0.02 },
 						radius: [0.0015, 0.001],
-						leaves: { gap: 0.016, from: 0.2, angle: 52, angleSpread: 8, scale: LEAF_SCALE },
+						// The sub-branch's turning video: edge on it is 0.35 as wide as face on.
+						leaves: {
+							gap: 0.016,
+							from: 0.2,
+							angle: 52,
+							angleSpread: 8,
+							scale: LEAF_SCALE,
+							flat: 0.6,
+						},
 					},
 					gap: 0.055,
 					from: 0.3,
 					to: 0.8,
-					arrangement: 'spiral',
+					arrangement: 'alternate',
+					spread: 20,
 					angle: { mean: 45, spread: 5 },
 				},
 			],

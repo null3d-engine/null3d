@@ -69,6 +69,8 @@ export const PIECES: readonly PieceRule[] = [
 		attitude: 'along',
 		variants: 2,
 		scale: 1 / LEAF_SCALE,
+		// The turning video of the cut branch: edge on it is 0.33 as wide as face on.
+		depth: 22,
 		stem: {
 			length: { mean: 1, spread: 0.06 },
 			radius: [0.006, 0.0025],
@@ -101,6 +103,8 @@ export const PIECES: readonly PieceRule[] = [
 		attitude: 'along',
 		variants: 2,
 		scale: 1 / TWIG_LEAF_SCALE,
+		// The turning video of the sub-branch: edge on it is 0.37 as wide as face on.
+		depth: 34,
 		stem: {
 			length: { mean: 0.35, spread: 0.03 },
 			radius: [0.004, 0.002],

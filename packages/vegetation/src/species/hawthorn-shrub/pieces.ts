@@ -18,7 +18,7 @@ function spurs(gap: number, from: number): PieceSides {
 		stem: {
 			length: { mean: 0.02, spread: 0.008 },
 			radius: [0.0015, 0.001],
-			leaves: { gap: 0.0028, from: 0.25, angle: 58, angleSpread: 12 },
+			leaves: tuft(0.02, 4),
 		},
 		gap,
 		from,
@@ -96,6 +96,8 @@ export const PIECES: readonly PieceRule[] = [
 		name: 'branch-end',
 		attitude: 'along',
 		variants: 2,
+		// The turning video of the cut branch: edge on it is 0.22 as wide as face on.
+		depth: 20,
 		stem: {
 			length: 0.155,
 			radius: [0.0065, 0.004],
@@ -113,6 +115,8 @@ export const PIECES: readonly PieceRule[] = [
 		name: 'twig',
 		attitude: 'along',
 		variants: 2,
+		// The turning video of the sub-branch: edge on it is 0.39 as wide as face on.
+		depth: 10,
 		stem: {
 			length: { mean: 0.33, spread: 0.03 },
 			radius: [0.0025, 0.001],

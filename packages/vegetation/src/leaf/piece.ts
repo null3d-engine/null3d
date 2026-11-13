@@ -86,9 +86,10 @@ export interface PieceLeaves {
 		readonly inPlane?: boolean;
 	};
 	/**
-	 * The share by which a leaf is laid into the piece's own plane, the plane that faces the rest
-	 * frame's +Z: at 1 its midrib lies in that plane and its blade faces +Z. A spray whose leaf
-	 * pairs all show beside their stem lies this way.
+	 * The share by which a leaf is laid into the piece's own plane: at 1 its midrib lies in that
+	 * plane and its blade faces out of it. A hanging piece's plane holds its line and its sky side,
+	 * the plane its hook turns in; any other piece's plane faces its sky side. The share is set from
+	 * the depth the species' turning video shows, never from one face-on view.
 	 */
 	readonly flat?: number;
 	/**
@@ -110,16 +111,21 @@ export interface PieceSides {
 	readonly to?: number;
 	/**
 	 * Where each side stem stands round its parent: `alternate` to one side and the other in turn, in
-	 * the parent's own plane; `opposite` in pairs, each pair a quarter turn from the last; `spiral` by
-	 * the golden angle.
+	 * the parent's own plane; `paired` in pairs that lie in that plane; `opposite` in pairs, each
+	 * pair a quarter turn from the last; `spiral` by the golden angle.
 	 */
-	readonly arrangement: 'alternate' | 'opposite' | 'spiral';
+	readonly arrangement: 'alternate' | 'paired' | 'opposite' | 'spiral';
 	/** Degrees a side stem leaves at from its parent. */
 	readonly angle: Spread;
 	/** A side stem's length over its rule's, by its place along the parent, foot to tip. */
 	readonly lengthAlong?: Curve;
 	/** Degrees added to every side stem's place round the parent; 180 starts on the other side. */
 	readonly turn?: number;
+	/**
+	 * Degrees either side of its arrangement's own place within which a side stem stands round its
+	 * parent; the piece's own depth where absent.
+	 */
+	readonly spread?: number;
 }
 
 /** One stem of a piece. */
@@ -171,6 +177,12 @@ export interface PieceRule {
 	readonly scale?: number;
 	/** Its main stem. */
 	readonly stem: PieceStem;
+	/**
+	 * Degrees either side of the piece's plane within which its side stems stand. It sets how deep
+	 * the piece is against its width, which the species' turning video of its cut branch measures:
+	 * a piece that is a third as deep as it is wide stands its side stems within about 20 degrees.
+	 */
+	readonly depth?: number;
 }
 
 /** A piece's prototype: its meshes at every tier, with how a socket holds it. */
@@ -214,12 +226,16 @@ export interface PieceSite {
 
 /** The golden angle in degrees. */
 const GOLDEN = 137.50776405;
+/** The golden ratio's fraction, whose multiples fill a unit range evenly. */
+const GOLDEN_SHARE = 0.6180339887;
 /** The longest straight run of a stem in metres, so a curve reads as a curve. */
 const STEP_MOST = 0.025;
 /** The fewest straight runs of a stem. */
 const STEPS_LEAST = 6;
-/** Degrees a side stem's place round its parent may move from its arrangement. */
-const SIDE_WANDER = 14;
+/** Degrees either side of its arrangement's place a side stem stands, where no rule names a depth. */
+const SIDE_SPREAD = 7;
+/** The share of a kink's angle by which it also turns out of the stem's plane. */
+const KINK_OUT = 0.4;
 /** The most stems a plan may hold, which guards a rule that would never end. */
 const STEMS_MOST = 4096;
 /** The hash key of the first piece, clear of the shoot prototypes' keys. */
@@ -351,22 +367,30 @@ export function planPiece(
 		return { ...leaf, direction, rotation };
 	};
 
-	/** A leaf laid into the plane that faces the rest frame's +Z, by a share. */
+	/** The way out of the piece's own plane: its flank for a hanging piece, else its sky side. */
+	const outOfPlane: Readonly<Vector3> = rule.attitude === 'plumb' ? [1, 0, 0] : [0, 0, 1];
+
+	/** A leaf laid into the piece's own plane, by a share. */
 	const flattened = (leaf: PlannedLeaf, share: number): PlannedLeaf => {
 		const s = Math.min(1, Math.max(0, share));
 		const d = leaf.direction;
-		const laid: Vector3 = [d[0], d[1], d[2] * (1 - s)];
+		const out = d[0] * outOfPlane[0] + d[1] * outOfPlane[1] + d[2] * outOfPlane[2];
+		const laid: Vector3 = [
+			d[0] - outOfPlane[0] * out * s,
+			d[1] - outOfPlane[1] * out * s,
+			d[2] - outOfPlane[2] * out * s,
+		];
 		// A leaf that pointed straight out of the plane lies along its stem.
 		const direction =
 			length3(laid[0], laid[1], laid[2]) < 1e-3
-				? square(leaf.stem, [0, 0, 1], [0, 1, 0])
+				? square(leaf.stem, outOfPlane, [0, 1, 0])
 				: normalize3(laid);
 		const before = square(leaf.stem, direction, leaf.radial);
-		const out = square([0, 0, 1], direction, before);
+		const facing = square(outOfPlane, direction, before);
 		const face = normalize3([
-			before[0] * (1 - s) + out[0] * s,
-			before[1] * (1 - s) + out[1] * s,
-			before[2] * (1 - s) + out[2] * s,
+			before[0] * (1 - s) + facing[0] * s,
+			before[1] * (1 - s) + facing[1] * s,
+			before[2] * (1 - s) + facing[2] * s,
 		]);
 		const rotation = [0, 0, 0, 1];
 		quatFromFrame(direction, face, rotation);
@@ -465,7 +489,7 @@ export function planPiece(
 				direction = turn(
 					direction,
 					normalize3(cross3(direction, sky, [0, 0, 0])),
-					(draw(Purpose.Kink, axis, turned + 512) - 0.5) * kink.angle,
+					(draw(Purpose.Kink, axis, turned + 512) - 0.5) * kink.angle * KINK_OUT,
 				);
 			}
 			if (atNode && stem.zigzag) {
@@ -520,14 +544,19 @@ export function planPiece(
 				const frame = frames[Math.min(steps - 1, Math.max(0, Math.round(place / run) - 1))];
 				if (!frame) continue;
 				const t = place / length;
+				// Each side stem's place off its arrangement's own: an even sequence from a drawn start,
+				// so a piece's side stems fill its depth evenly and no draw leaves it flat or lopsided.
+				const off = (sideStart / 360 + n * GOLDEN_SHARE) % 1;
 				const wander =
-					(draw(Purpose.SideTurn, axis, s * 4096 + n) - 0.5) * SIDE_WANDER + (sides.turn ?? 0);
+					(off - 0.5) * 2 * (sides.spread ?? rule.depth ?? SIDE_SPREAD) + (sides.turn ?? 0);
 				const azimuths =
 					sides.arrangement === 'alternate'
 						? [90 + (n % 2) * 180 + wander]
-						: sides.arrangement === 'opposite'
-							? [sideStart + (n % 2) * 90 + wander, sideStart + (n % 2) * 90 + 180 + wander]
-							: [sideStart + n * GOLDEN + wander];
+						: sides.arrangement === 'paired'
+							? [90 + wander, 270 - wander]
+							: sides.arrangement === 'opposite'
+								? [sideStart + (n % 2) * 90 + wander, sideStart + (n % 2) * 90 + 180 + wander]
+								: [sideStart + n * GOLDEN + wander];
 				for (const [k, azimuth] of azimuths.entries()) {
 					const outward = turn(frame.sky, frame.direction, azimuth);
 					const lean = radians(
@@ -805,6 +834,8 @@ export interface PieceStudio {
 	readonly turn?: number;
 	/** The stand's real size over the lengths it states, as a piece rule's `scale` is. */
 	readonly scale?: number;
+	/** Degrees either side of the stand's plane its arms stand, as a piece rule's `depth` is. */
+	readonly depth?: number;
 }
 
 /** One piece of a layout: which piece, and where it stands in the layout's space, +Y up. */
@@ -895,6 +926,7 @@ export function layStudio(
 			variants: 1,
 			stem: studio.stand.stem,
 			...(studio.scale === undefined ? {} : { scale: studio.scale }),
+			...(studio.depth === undefined ? {} : { depth: studio.depth }),
 		},
 		pieceKey(15, studio.still % 16),
 		0,

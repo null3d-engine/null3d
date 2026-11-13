@@ -25,6 +25,9 @@ function bunch(length: number, pairs: number): PieceLeaves {
 		angle: 60,
 		angleSpread: 8,
 		scale: LEAF_SCALE,
+		// The sub-branch's turning video: edge on it is a third as wide as face on, so its crossed
+		// pairs lean most of the way into the twig's plane.
+		flat: 0.9,
 	};
 }
 
@@ -35,9 +38,12 @@ export const PIECES: readonly PieceRule[] = [
 	// long at 60 to 70 degrees and ends in a bud. Still 04: every end turns up and carries a bunch.
 	{
 		name: 'branch-end',
-		attitude: 'up',
+		// The cut branch stands upright and its side twigs turn up toward its tip, in its own plane.
+		attitude: 'upright',
 		variants: 2,
 		scale: 1 / LEAF_SCALE,
+		// The turning video of the cut branch: edge on it is 0.18 as wide as face on.
+		depth: 5,
 		stem: {
 			length: { mean: 0.6, spread: 0.05 },
 			radius: [0.006, 0.004],
@@ -53,7 +59,9 @@ export const PIECES: readonly PieceRule[] = [
 					gap: 0.13,
 					from: 0.2,
 					to: 0.85,
-					arrangement: 'opposite',
+					// The cut branch's turning video: every pair goes edge on together, so the side twigs
+					// lie in one plane.
+					arrangement: 'paired',
 					angle: { mean: 65, spread: 5 },
 				},
 			],

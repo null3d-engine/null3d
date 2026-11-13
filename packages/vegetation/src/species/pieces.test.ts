@@ -209,20 +209,64 @@ for (const { id, pieces, studio } of SPECIES)
 		});
 	});
 
-describe('a flat rosette', () => {
+/**
+ * How deep each species' cut branch is against its width, read from its turning video as its
+ * narrowest outline over its widest: the branch-turntable video for a branch end and the
+ * subbranch-turntable video for a twig.
+ */
+const DEPTH_OVER_WIDTH: readonly {
+	readonly id: SpeciesId;
+	readonly pieces: readonly PieceRule[];
+	readonly piece: string;
+	readonly video: number;
+}[] = [
+	{ id: 'pedunculate-oak', pieces: OAK, piece: 'branch-end', video: 0.33 },
+	{ id: 'pedunculate-oak', pieces: OAK, piece: 'twig', video: 0.37 },
+	{ id: 'olive', pieces: OLIVE, piece: 'branch-end', video: 0.38 },
+	{ id: 'olive', pieces: OLIVE, piece: 'twig', video: 0.31 },
+	{ id: 'european-beech', pieces: BEECH, piece: 'branch-end', video: 0.24 },
+	{ id: 'european-beech', pieces: BEECH, piece: 'twig', video: 0.29 },
+	{ id: 'common-ash', pieces: ASH, piece: 'branch-end', video: 0.18 },
+	{ id: 'common-ash', pieces: ASH, piece: 'twig', video: 0.33 },
+	{ id: 'common-alder', pieces: ALDER, piece: 'branch-end', video: 0.29 },
+	{ id: 'common-alder', pieces: ALDER, piece: 'twig', video: 0.2 },
+	{ id: 'holm-oak', pieces: HOLM, piece: 'branch-end', video: 0.3 },
+	{ id: 'holm-oak', pieces: HOLM, piece: 'twig', video: 0.35 },
+	{ id: 'hawthorn-shrub', pieces: HAWTHORN, piece: 'branch-end', video: 0.22 },
+];
+/** How far a built piece's depth over width may stand from its video's. */
+const DEPTH_BAND = 0.12;
+
+describe('a piece keeps the depth its turning video shows', () => {
 	it(
-		"lays the oak's tuft leaves in the plane that faces the sky side, spread to both sides",
+		'is as deep against its width as its cut branch, in every variant, read from the built mesh',
 		async () => {
-			const module = await loadSpecies('pedunculate-oak');
-			await loadPlantCode(module.record);
-			const rule = OAK[0] as PieceRule;
-			const plan = planPiece(module.record, rule, pieceKey(0, 0), 4);
-			expect(plan.leaves.length).toBeGreaterThan(40);
-			for (const leaf of plan.leaves) expect(Math.abs(leaf.direction[2])).toBeLessThan(1e-6);
-			// The main stem's own tuft fans to both sides of the stem's line.
-			const own = plan.leaves.filter((leaf) => leaf.axis === 0);
-			expect(own.some((leaf) => leaf.direction[0] > 0.5)).toBe(true);
-			expect(own.some((leaf) => leaf.direction[0] < -0.5)).toBe(true);
+			for (const { id, pieces, piece, video } of DEPTH_OVER_WIDTH) {
+				const module = await loadSpecies(id);
+				await loadPlantCode(module.record);
+				const built = buildPiecesNow(module, pieces).filter((part) => part.piece === piece);
+				const variants = new Set(built.map((part) => part.variant));
+				expect(variants.size).toBeGreaterThan(0);
+				for (const variant of variants) {
+					// The extent of every part of the variant across its plane and through it.
+					let left = Infinity;
+					let right = -Infinity;
+					let back = Infinity;
+					let front = -Infinity;
+					for (const part of built.filter((candidate) => candidate.variant === variant)) {
+						const positions = part.tiers[DETAILS.indexOf('high')]?.positions ?? [];
+						for (let i = 0; i < positions.length; i += 3) {
+							left = Math.min(left, positions[i] as number);
+							right = Math.max(right, positions[i] as number);
+							back = Math.min(back, positions[i + 2] as number);
+							front = Math.max(front, positions[i + 2] as number);
+						}
+					}
+					const depth = (front - back) / (right - left);
+					// A piece laid flat to win a face-on figure fails here, and so does a round bush.
+					expect(Math.abs(depth - video)).toBeLessThan(DEPTH_BAND);
+				}
+			}
 		},
 		LONG,
 	);

@@ -6,9 +6,12 @@
 // cut-branch figures of the photograph and of the drawing, read by the targets tool's measure.
 //
 //   bun run plants:piece <species> [--still <n,n>] [--refs <folder or slug>] [--out <dir>]
-//     [--name <prefix>] [--bare]
+//     [--name <prefix>] [--bare] [--turns]
 //
-// `--bare` draws the pieces without their leaves, for the photographs of a leafless plant.
+// `--bare` draws the pieces without their leaves, for the photographs of a leafless plant. `--turns`
+// also writes `<prefix>-turns.png`: each cut whose turning video the folder holds, drawn face on, at
+// an eighth of a turn and edge on, beside the video's widest, middle and narrowest frames, with each
+// one's width over height and the depth over width of both.
 //
 // A species' pieces and layouts are `PIECES` and `STUDIO` in its `pieces.ts`. Its reference folder
 // is `<id>` under the corpus that NULL3D_PLANT_REFERENCES names, or the repository's
@@ -36,14 +39,22 @@ import { REPO_ROOT } from '../tests/lib/server.ts';
 import { matchFigures, matchStrip, referenceView, stacked } from './lib/plant-preview/match.ts';
 import { pieceCards, studioScene, studioView } from './lib/plant-preview/piece.ts';
 import { flag, option, positionals } from './lib/plant-review/cli.ts';
-import { blank, drawText, paste, type Rgba, readImage } from './lib/plant-review/image.ts';
+import {
+	blank,
+	drawText,
+	paste,
+	probeVideo,
+	type Rgba,
+	readImage,
+	videoFrames,
+} from './lib/plant-review/image.ts';
 import { measurePiece, type PieceFigures } from './plant-targets/piece.ts';
 
 const REFERENCES =
 	process.env.NULL3D_PLANT_REFERENCES ??
 	join(REPO_ROOT, '.internal/coordination/tree-corpus/generated');
 
-const [named] = positionals(new Set(['--bare']));
+const [named] = positionals(new Set(['--bare', '--turns']));
 if (!named || !isSpeciesId(named)) {
 	console.error(
 		`Name a species: bun run plants:piece <species> [--still <n,n>] [--refs <folder or slug>] [--out <dir>] [--name <prefix>]\n\nspecies: ${speciesIds().join(', ')}`,
@@ -176,7 +187,107 @@ for (const studio of STUDIO) {
 			`  ${file}: ${scene.pieces} pieces, ${scene.leaves} leaves, outline overlap ${match.shapeIou} (as framed ${match.frameIou}), width over height ${match.plantAspect.render} against ${match.plantAspect.reference}, enclosed gap ${match.gap.render} against ${match.gap.reference}${cardMatch ? `; as cards: gap ${cardMatch.gap.render}, width over height ${cardMatch.plantAspect.render}, overlap ${cardMatch.shapeIou}` : ''}`,
 		);
 }
+// The turning videos: a cut's depth is its narrowest width over its widest as it turns.
+const TURN_VIDEOS: Readonly<Record<number, string>> = {
+	21: 'branch-turntable',
+	22: 'subbranch-turntable',
+};
+const turnStrips: Rgba[] = [];
+const depths: Record<string, unknown> = {};
+if (flag('turns'))
+	for (const studio of STUDIO) {
+		if (only && !only.has(studio.still)) continue;
+		const lead = TURN_VIDEOS[studio.still];
+		const file = lead
+			? readdirSync(folder).find((entry) => entry.startsWith(lead) && entry.endsWith('.mp4'))
+			: undefined;
+		if (!file) continue;
+		const video = join(folder, file);
+		const all = videoFrames(video, probeVideo(video), 640);
+		// Every fourth frame, each with its outline's width over its height.
+		const views: {
+			readonly view: NonNullable<ReturnType<typeof referenceView>>;
+			readonly aspect: number;
+		}[] = [];
+		for (let k = 0; k < all.length; k += 4) {
+			const view = referenceView(all[k] as Rgba);
+			const box = view?.measures.box;
+			if (view && box)
+				views.push({ view, aspect: (box.right - box.left + 1) / (box.bottom - box.top + 1) });
+		}
+		if (views.length < 3) continue;
+		let wide = 0;
+		let narrow = 0;
+		for (const [k, entry] of views.entries()) {
+			if (entry.aspect > (views[wide] as (typeof views)[number]).aspect) wide = k;
+			if (entry.aspect < (views[narrow] as (typeof views)[number]).aspect) narrow = k;
+		}
+		const face = views[wide] as (typeof views)[number];
+		const edge = views[narrow] as (typeof views)[number];
+		const between = views[Math.round((wide + narrow) / 2)] as (typeof views)[number];
+		const scene = studioScene(kit, pieces, layStudio(module.record, PIECES, studio));
+		const drawn = [0, 45, 90].map((turn) => {
+			const render = studioView(scene, face.view, (studio.turn ?? 0) + turn);
+			const box = render.measures.box;
+			return {
+				turn,
+				render,
+				aspect: box ? (box.right - box.left + 1) / (box.bottom - box.top + 1) : 0,
+				gap: render.measures.gapFraction,
+			};
+		});
+		const { width, height } = face.view.plant;
+		const strip = blank(width * 6 + 20, height + 44, [255, 255, 255]);
+		[face, between, edge].forEach((entry, k) => {
+			paste(strip, entry.view.image, k * (width + 4), 0);
+		});
+		drawn.forEach((entry, k) => {
+			paste(strip, entry.render.colour, (3 + k) * (width + 4), 0);
+		});
+		const referenceDepth = edge.aspect / face.aspect;
+		const drawnDepth = (drawn[2]?.aspect ?? 0) / Math.max(1e-6, drawn[0]?.aspect ?? 0);
+		drawText(
+			strip,
+			`${file}: widest frame w/h ${face.aspect.toFixed(3)} gap ${face.view.measures.gapFraction.toFixed(3)}, between ${between.aspect.toFixed(3)}, narrowest ${edge.aspect.toFixed(3)} gap ${edge.view.measures.gapFraction.toFixed(3)}: depth over width ${referenceDepth.toFixed(2)}`,
+			6,
+			height + 4,
+			2,
+			[20, 20, 20],
+		);
+		drawText(
+			strip,
+			`drawing of still ${studio.still}: face on w/h ${drawn[0]?.aspect.toFixed(3)} gap ${drawn[0]?.gap.toFixed(3)}, at 45 degrees ${drawn[1]?.aspect.toFixed(3)} gap ${drawn[1]?.gap.toFixed(3)}, edge on ${drawn[2]?.aspect.toFixed(3)} gap ${drawn[2]?.gap.toFixed(3)}: depth over width ${drawnDepth.toFixed(2)}`,
+			6,
+			height + 22,
+			2,
+			[20, 20, 20],
+		);
+		turnStrips.push(strip);
+		depths[file] = {
+			still: studio.still,
+			reference: {
+				face: face.aspect,
+				between: between.aspect,
+				edge: edge.aspect,
+				depth: referenceDepth,
+			},
+			drawing: {
+				face: drawn[0]?.aspect,
+				eighth: drawn[1]?.aspect,
+				edge: drawn[2]?.aspect,
+				depth: drawnDepth,
+			},
+		};
+		console.log(
+			`  ${file} (still ${studio.still}): depth over width ${drawnDepth.toFixed(2)} drawn against ${referenceDepth.toFixed(2)} in the video; edge-on sky gap ${drawn[2]?.gap.toFixed(3)} against ${edge.view.measures.gapFraction.toFixed(3)}`,
+		);
+	}
 mkdirSync(out, { recursive: true });
+if (turnStrips.length > 0) {
+	const path = join(out, `${prefix}-turns.png`);
+	writePng(path, stacked(turnStrips));
+	console.log(`  ${path}`);
+}
 const { commit, dirty } = provenance();
 if (strips.length > 0) {
 	const path = join(out, `${prefix}-pieces.png`);
@@ -202,6 +313,7 @@ writeFileSync(
 				vertices: piece.tiers.map((tier) => tier.positions.length / 3),
 			})),
 			stills: figures,
+			depths,
 		},
 		null,
 		'\t',
