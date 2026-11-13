@@ -419,6 +419,19 @@ describe('the plant shader', () => {
 		return Number(match[1]);
 	};
 
+	test("draws the review matte's soft coverage only where the colour picture draws", () => {
+		// A card drawn larger than its texels blurs: the colour picture cuts it at the cutoff into
+		// the fragments it shows, and a matte that kept every texel's soft coverage drew the blur as
+		// a smear. The matte keeps a texel's own coverage only where the sharpened coverage, the
+		// colour picture's, draws it.
+		expect(wgsl).toMatch(/let drawn = sharpen\(alpha, width\);/);
+		expect(wgsl).toMatch(/s\.alpha = select\(drawn, select\(0\.0, alpha, drawn > 0\.0\), matte\);/);
+		// A placed piece's fine edges draw a pixel wide in the matte, as merged foliage's do.
+		expect(wgsl).toMatch(
+			/mode == MODE_SHOOTS &&\s*material\.matte > 0\.5 &&\s*material\.matte < 1\.5 &&\s*abs\(input\.colors\.b \* 255\.0 - KIND_PIECE\) < 0\.5/,
+		);
+	});
+
 	test('reads the texels that the header writes', () => {
 		const names: Record<string, number> = {
 			HEADER_UPPER: HEADER.upper,
