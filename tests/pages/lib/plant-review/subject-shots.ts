@@ -82,6 +82,11 @@ export interface ContractRegion {
 	readonly thick?: number;
 	/** For wood, the greatest radius in metres that counts, so a trunk is not taken for a limb. */
 	readonly thickMost?: number;
+	/**
+	 * Whether the area is only reported: its cover is a figure for the eye beside the photograph,
+	 * and it neither voids the picture nor fails the plant.
+	 */
+	readonly report?: boolean;
 }
 
 /**
@@ -579,11 +584,13 @@ export function belowShot(subjects: PlantSubjects, lens: Lens, options: BelowOpt
 			},
 			// Above the fork stand the crown and the sky. A dense crown may fill it; wood may not.
 			{ name: 'the crown above the fork', box: [0, 0, 1, forkRow - 0.1], min: 0.05 },
+			// How much of that area is wood is a figure for the eye beside the photograph: a hub of
+			// limbs that fills it is the plant's form, which rows 1 and 2 judge.
 			{
 				name: 'the wood above the fork',
 				box: [0, 0, 1, forkRow - 0.1],
-				max: MOST_WOOD,
 				of: 'wood',
+				report: true,
 			},
 		],
 		facts: {
@@ -988,7 +995,9 @@ export function junctionShot(
 				box: [column - 0.17, 0.6, column - 0.02, 0.95],
 				min: 0.7,
 				of: 'wood',
-				thick: SUBJECT_WOOD * limb.trunkRadius,
+				// The trunk's bark and the limb's collar both stand here, and the collar is the
+				// limb's own wood: the area asks for wood no thinner than the limb.
+				thick: SUBJECT_WOOD * limb.radius,
 			},
 			// The limb itself where it leaves the trunk: thinner wood or leaves across it hide it.
 			{
