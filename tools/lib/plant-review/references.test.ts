@@ -170,6 +170,46 @@ describe('the plant mask', () => {
 		expect(plantMask(wide).mask[60 * W + 2]).toBe(1);
 	});
 
+	test("clears the ground's top edge where it stands above the horizon's row", () => {
+		// A field whose edge rises four rows above the horizon's row across the middle of the frame,
+		// clear of both sides, as a ploughed field's clods lift it.
+		const frame = scene();
+		for (let y = HORIZON - 4; y < HORIZON; y++)
+			for (let x = 20; x < W - 20; x++) if (!inPlant(x, y)) put(frame, x, y, [150, 160, 95]);
+		// The plant's shadow along the lifted edge beside the trunk.
+		for (let y = HORIZON - 2; y < HORIZON; y++)
+			for (let x = TRUNK.right + 1; x < 140; x++) put(frame, x, y, [80, 88, 48]);
+		const field = plantMask(frame);
+		expect(Math.abs((field.background.horizon as number) - HORIZON)).toBeLessThanOrEqual(1);
+		expect(field.mask[(HORIZON - 3) * W + 30]).toBe(0);
+		expect(field.mask[(HORIZON - 3) * W + 160]).toBe(0);
+		expect(field.mask[(HORIZON - 1) * W + 120]).toBe(0);
+		// The trunk keeps its rows through the lifted edge.
+		expect(field.mask[(HORIZON - 3) * W + 100]).toBe(1);
+		const box = boxOf(field.mask, W, H);
+		expect(box?.left).toBeGreaterThanOrEqual(48);
+		expect(box?.right).toBeLessThanOrEqual(152);
+	});
+
+	test("keeps the foot of a plant of its ground's own colour above the horizon's row", () => {
+		// A tuft of the meadow's own colour standing on the horizon: its foot could be the ground's
+		// lifted edge, so it stays plant.
+		const frame = blank(W, H, [0, 0, 0]);
+		for (let y = 0; y < H; y++)
+			for (let x = 0; x < W; x++)
+				put(
+					frame,
+					x,
+					y,
+					y < HORIZON ? [170 + Math.round((y / HORIZON) * 30), 205, 235] : [150, 160, 95],
+				);
+		for (let y = 70; y < HORIZON; y++)
+			for (let x = 80; x < 120; x++) put(frame, x, y, [140, 152, 90]);
+		const tuft = plantMask(frame);
+		expect(tuft.mask[(HORIZON - 3) * W + 100]).toBe(1);
+		expect(tuft.mask[80 * W + 100]).toBe(1);
+	});
+
 	test('refuses a fitted background that finds only a few specks', () => {
 		// A textured backdrop that a smooth surface still models, with a dark subject under a
 		// fiftieth of the frame: the surface marks the subject's specks, not a plant.
