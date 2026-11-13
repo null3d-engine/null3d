@@ -151,7 +151,9 @@ describe('the stand of a whole view', () => {
 					if (stand.held === 'frame')
 						expect(Math.min(top, 1 - base, left, 1 - right)).toBeLessThan(0.0125);
 					// The camera stands above the ground and looks at the plant.
-					expect(stand.position[1]).toBeGreaterThanOrEqual(0.1 - 1e-9);
+					expect(stand.position[1]).toBeGreaterThanOrEqual(
+						Math.min(0.1, 0.02 * habit.height) - 1e-9,
+					);
 					expect(stand.distance).toBeGreaterThan(0);
 				}
 			});

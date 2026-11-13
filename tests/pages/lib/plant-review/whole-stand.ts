@@ -46,8 +46,13 @@ export interface WholeStand {
 	readonly held: 'rows' | 'width' | 'scale' | 'frame';
 }
 
-/** The least height a camera stands at, in metres. */
+/**
+ * The least height a camera stands at: a tenth of a metre, or a fiftieth of a low plant's height,
+ * since a low plant's photograph is taken from near the ground and a higher lens sees the blades
+ * that lie toward it far below its foot.
+ */
 const LOWEST_EYE = 0.1;
+const LOWEST_EYE_SHARE = 0.02;
 /** The margin the plant keeps from every edge of the frame, as a share of it. */
 const EDGE = 0.01;
 /** The most of the frame's width a plant takes where its photograph states no share. */
@@ -170,6 +175,7 @@ export function wholeStand(
 	height: number,
 ): WholeStand {
 	const first = standCamera(framing, height);
+	const lowest = Math.min(LOWEST_EYE, LOWEST_EYE_SHARE * height);
 	const { pitch, yaw } = first;
 	const half = Math.tan((framing.fov * Math.PI) / 360);
 	const ground = foot[1] - 1e-3;
@@ -194,7 +200,7 @@ export function wholeStand(
 		for (let pass = 0; pass < 12; pass++) {
 			const off = extentAt(distance, eye).base - askedBase;
 			if (Math.abs(off) < NEAR) return;
-			const next = Math.max(LOWEST_EYE, eye - off * 2 * distance * half);
+			const next = Math.max(lowest, eye - off * 2 * distance * half);
 			if (next === eye) return;
 			eye = next;
 		}
@@ -209,7 +215,7 @@ export function wholeStand(
 			const scale = askedSpan > 1e-4 ? (at.base - at.top) / askedSpan : 1;
 			const off = (at.base + at.top) / 2 - askedMiddle;
 			if (Math.abs(scale - 1) < NEAR && Math.abs(off) < NEAR) break;
-			eye = Math.max(LOWEST_EYE, eye - off * 2 * distance * half);
+			eye = Math.max(lowest, eye - off * 2 * distance * half);
 			distance *= Math.max(0.2, Math.min(5, scale));
 		}
 	} else {
@@ -262,8 +268,7 @@ export function wholeStand(
 		eye = startEye;
 		pinFoot();
 		const base = extentAt(distance, eye).base;
-		if (base > 1 - EDGE)
-			eye = Math.max(LOWEST_EYE, eye - (base - (1 - EDGE)) * 2 * distance * half);
+		if (base > 1 - EDGE) eye = Math.max(lowest, eye - (base - (1 - EDGE)) * 2 * distance * half);
 		return overAt(extentAt(distance, eye));
 	};
 	let over = overAt(extentAt(distance, eye));
