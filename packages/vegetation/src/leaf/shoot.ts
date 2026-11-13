@@ -1131,9 +1131,9 @@ function turnsPast(
 	const bx = to[0] - at[0];
 	const by = to[1] - at[1];
 	const bz = to[2] - at[2];
-	const lengths = Math.hypot(ax, ay, az) * Math.hypot(bx, by, bz);
+	const lengths = length3(ax, ay, az) * length3(bx, by, bz);
 	if (lengths <= 0) return false;
-	return (ax * bx + ay * by + az * bz) / lengths <= Math.cos((degrees * Math.PI) / 180);
+	return (ax * bx + ay * by + az * bz) / lengths <= cos(radians(degrees));
 }
 
 /** The bend weight byte of a point along the shoot. */
@@ -1187,7 +1187,7 @@ export function meshShoot(
 	const mesh = new MeshWriter();
 	const sides = cut.stemSides;
 	// A regular polygon on a radius is, averaged over a turn, as wide as a circle that much smaller.
-	const widen = cut.meanWidth ? Math.PI / (sides * Math.sin(Math.PI / sides)) : 1;
+	const widen = cut.meanWidth ? PI / (sides * sin(PI / sides)) : 1;
 	const hidden = cut.thinHidden ? hiddenRuns(plan) : undefined;
 	plan.axes.forEach((points, axis) => {
 		const runs = hidden?.[axis] ?? [];
