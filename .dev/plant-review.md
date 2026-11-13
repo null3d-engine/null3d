@@ -594,6 +594,7 @@ pedunculate oak's ([D-330](decisions/D-330-oak-crown-by-its-own-light.md)).
 | Twigs fan from one point | `laterals` with a `lateralGap` of 0.3 | The winter branch's fan share falls from 0.42 to 0.09 |
 | Twigs read as straight rods | `bend` at 34 degrees | 26 degrees fails the kink band |
 | Kit over its cap | Longer `bend` pieces, `leafYears` 1, or fewer rosette leaves | Fuller rosettes cost 18 to 33 % of the kit |
+| A crown that draws as bare stalks at distance | The leaf ribbon's colour sample | A thin leaf ribbon sampled at the picture's silhouette loses its alpha to the coarse mip, so the leaf vanishes and the crown reads as wood. Sample where the picture is solid, at the midrib or inside the blade, and let the ribbon's own columns give the leaf's shape |
 | A rosette that reads as a heap of blades | `shoots.placement.rosette` 'fan' | The tip stops spreading its leaves round the stem and stands them in one face, as the close photographs show. Outlines rise 0.02 to 0.05 at the cut views: 10 to 0.39, 22 to 0.39, 23 to 0.55 |
 | Blades drawn smaller than the record's leaf | The shoot class's `leafScale` to 1.0 | Every blade at the record's own length. Raise the scale, never the leaf: a longer leaf takes row 4 past the species' own size |
 | A cut piece that reads as one bare stem | The cutting class's `laterals`, with `lateralGap` at its most | The sub-branch forks into shoots with a rosette at each end, as its photograph shows. Its sky gap opens from 0.14 to 0.21 against the photograph's 0.26 |

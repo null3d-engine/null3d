@@ -119,6 +119,10 @@ export interface PlantReviewQuery {
 	readonly cut?: number;
 	/** Metres above the ground where a mid-trunk bark view stands, where the species' trunk is tall. */
 	readonly barkHeight?: number;
+	/** Metres along the axis where a spanned piece starts, in place of the record's hint. */
+	readonly cutFrom?: number;
+	/** Metres of the axis a spanned piece keeps, in place of the record's hint. */
+	readonly cutSpan?: number;
 	/**
 	 * The shoots a branch or sub-branch cutting carries, in place of the record hint's count, so two
 	 * pictures of one species can show different numbers of side shoots.
@@ -354,6 +358,8 @@ const NUMBER_FIELDS = [
 	'pick',
 	'cut',
 	'barkHeight',
+	'cutFrom',
+	'cutSpan',
 	'shoots',
 	'ring',
 	'lean',
@@ -547,6 +553,12 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 		throw new Error(
 			`girth=${numbers.girth} is a share of the frame that a limb fills: give a number above 0, up to 1.`,
 		);
+	if (numbers.cutFrom !== undefined && numbers.cutFrom < 0)
+		throw new Error(
+			`cutFrom=${numbers.cutFrom} is a distance along the axis: give a number of 0 or more.`,
+		);
+	if (numbers.cutSpan !== undefined && numbers.cutSpan <= 0)
+		throw new Error(`cutSpan=${numbers.cutSpan} is a length of axis: give a number above 0.`);
 	if (numbers.leaves !== undefined && numbers.leaves <= 0)
 		throw new Error(`leaves=${numbers.leaves} is a frame in leaf lengths: give a number above 0.`);
 	if (

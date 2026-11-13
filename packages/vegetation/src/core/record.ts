@@ -632,6 +632,12 @@ export interface CrownRosette {
 		readonly divergence: number;
 		/** Degrees from vertical by frond age (t = 0 youngest, 1 oldest living). */
 		readonly tilt: Curve;
+		/**
+		 * Metres of the stem over which the frond bases clasp it, newest lowest: a crown springing
+		 * from a band of the stem, or from a single growing point at 0. Absent, the model's own
+		 * depth, which suits a tall palm's crown.
+		 */
+		readonly depth?: number;
 		/** Dead fronds: count, how far they hang, and a skirt that hides the stem top (fan palm). */
 		readonly dead: { readonly count: Spread; readonly hang: number; readonly skirt: number };
 		/** Young fronds rolled in the centre (tree fern croziers). */
@@ -2293,8 +2299,8 @@ export interface CuttingHints {
 	readonly branch?: CutFromPlant | CutFromShoots;
 	/** A sub-branch about 0.35 m long, in either form. */
 	readonly subbranch?: CutFromPlant | CutFromShoots;
-	/** A leaf cluster: the shoot class to cut. */
-	readonly cluster?: CutFromShoots;
+	/** A leaf cluster: the shoot class to cut, or a length of a frond's rachis. */
+	readonly cluster?: CutFromPlant | CutFromShoots;
 	/** A single leaf: how it lies. */
 	readonly leaf?: CutLeaf;
 }
@@ -2339,12 +2345,21 @@ export interface CutFromPlant {
 	/** Metres of wood from the cut to the farthest tip. */
 	readonly length: number;
 	/**
-	/**
 	 * The shoots this piece places over the crown's own, from 0.25 to 8: a density of its own, where
 	 * the piece covers more or less than the species' `cuttings.density`, which applies where it
 	 * names none. A piece cut from the grown plant takes the kit this reshapes.
 	 */
 	readonly density?: number;
+	/**
+	 * Metres of the axis that the piece keeps from its cut, for a plant whose pieces are lengths of
+	 * a single long axis, such as a palm's frond. Without it the piece keeps the whole axis.
+	 */
+	readonly span?: number;
+	/**
+	 * Metres along the axis where the piece starts, for a piece cut from the middle of one long
+	 * axis rather than its base. The cut face stands there. 0 by default.
+	 */
+	readonly from?: number;
 	/**
 	 * The piece's leaf size over the crown's, where a piece cut from the plant wants leaves of its
 	 * own. A rosette's piece carries the crown's leaves at the crown's size, so a piece that stands
