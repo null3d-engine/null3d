@@ -72,7 +72,10 @@ function loose(plan: ShootPlan): number[] {
 	return out;
 }
 
-/** The stems of a plan whose tip carries neither a bud nor a leaf within `reach` metres. */
+/**
+ * The stems of a plan whose tip carries neither a bud nor a leaf within `reach` metres. A tip that
+ * another stem grows from is a fork, not an end.
+ */
 function bareTips(plan: ShootPlan, reach: number): number[] {
 	const out: number[] = [];
 	for (const [a, points] of plan.axes.entries()) {
@@ -81,7 +84,10 @@ function bareTips(plan: ShootPlan, reach: number): number[] {
 		const leaf = plan.leaves.some(
 			(candidate) => candidate.axis === a && distance(candidate.at, tip) < reach,
 		);
-		if (!bud && !leaf) out.push(a);
+		const forks = plan.axes.some(
+			(other, b) => b !== a && distance(other[0]?.at ?? [0, 0, 0], tip) < SAME,
+		);
+		if (!bud && !leaf && !forks) out.push(a);
 	}
 	return out;
 }
