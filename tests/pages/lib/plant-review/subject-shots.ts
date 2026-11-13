@@ -2024,6 +2024,85 @@ export function barkLimbShot(
 	};
 }
 
+/** How a view of one great limb frames it. */
+export interface LimbOptions {
+	/** The limb by its rank among the great limbs, the thickest first: 1 for the thickest. */
+	readonly rank: number;
+	/** The share of the way along the limb that the frame's middle stands on. */
+	readonly along: number;
+	/** The metres the frame's width shows at the limb. */
+	readonly span: number;
+	/** Degrees the camera looks down at the limb; a negative angle looks up at it from below. */
+	readonly elevation: number;
+	/** Radians round the plant the camera prefers: it stands on the side of the limb nearer this turn. */
+	readonly turn: number;
+}
+
+/**
+ * The view of one great limb across its run, as a photograph of a cactus's arm or a limb's elbow
+ * shows it: the camera stands to the side of the plane that holds the trunk and the limb, so the
+ * limb's run, its bend and its rise show in profile, with the trunk beside it. The frame's middle
+ * stands on the limb at the share of its length asked, the frame is the span asked wide there, and
+ * the camera looks down at it, or up from below, by the elevation asked.
+ */
+export function limbShot(subjects: PlantSubjects, lens: Lens, options: LimbOptions): Solved {
+	if (isAbsent(subjects.limbs)) return subjects.limbs;
+	const limbs = subjects.limbs;
+	const limb = limbs[options.rank - 1];
+	if (!limb)
+		return lacking(
+			`the plant has ${limbs.length} great limb${limbs.length === 1 ? '' : 's'}, so it has no limb of rank ${options.rank}`,
+		);
+	const at = sampleAlong(limb.axis, options.along);
+	// The plane of the trunk and the limb: the limb runs outward along it from its joint, which
+	// stands on the trunk's centre line, to the framed point.
+	const run: V3 = [at.at[0] - limb.joint[0], 0, at.at[2] - limb.joint[2]];
+	const outward: V3 =
+		Math.hypot(run[0], run[2]) > 1e-3
+			? normalize(run)
+			: normalize([limb.direction[0], 0, limb.direction[2]]);
+	const flank = normalize(cross([0, 1, 0], outward));
+	const preferred = facing(options.turn);
+	const side = dot(flank, preferred) >= 0 ? flank : ([-flank[0], 0, -flank[2]] as V3);
+	const pitch = (options.elevation * Math.PI) / 180;
+	const forward: V3 = normalize([
+		-side[0] * Math.cos(pitch),
+		-Math.sin(pitch),
+		-side[2] * Math.cos(pitch),
+	]);
+	const tall = options.span / lens.aspect;
+	const camera = aim(at.at, 0.5, 0.5, forward, tall, lens);
+	const depth = tall / 2 / tanHalf(lens);
+	return {
+		kind: `great limb ${options.rank} across its run, ${Math.round(options.along * 100)} per cent along it`,
+		camera,
+		points: [
+			{
+				name: 'the limb',
+				at: at.at,
+				within: [0.3, 0.3, 0.7, 0.7],
+				size: {
+					metres: 2 * at.radius,
+					of: 'width',
+					min: Math.min(0.03, shareAt(2 * at.radius, depth, lens, 'width') / 2),
+					max: 1,
+				},
+			},
+		],
+		regions: [
+			{
+				name: 'the limb at the middle of the frame',
+				box: [0.42, 0.42, 0.58, 0.58],
+				of: 'wood',
+				min: 0.3,
+				thick: SUBJECT_WOOD * at.radius,
+				thickMost: SUBJECT_WOOD_MOST * at.radius,
+			},
+		],
+		facts: { limb: limb.id, rank: options.rank, radius: at.radius, span: options.span },
+	};
+}
+
 /** How a view of one branch piece frames it. */
 export interface BranchPieceOptions {
 	/** The share of the frame that the piece takes from its cut to its tip. */
