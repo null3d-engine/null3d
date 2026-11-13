@@ -9,7 +9,7 @@
 // stands.
 import type { ShootPrototype } from '../asset';
 import { hashAt } from '../core/hash';
-import { quatRotate, type Vector3 } from '../core/math';
+import { quatAxisAngle, quatMultiply, quatRotate, radians, type Vector3 } from '../core/math';
 import type { GrowthModel, Species } from '../core/record';
 import type { DressInput } from '../stages';
 import type { Row } from './instancer';
@@ -22,7 +22,7 @@ export const PROTOTYPES_MOST = 255;
 /** The growth models that end their wood in sockets. */
 const DIRECTED: readonly GrowthModel[] = ['conifer', 'frame'];
 /** The growth models whose growers write the pieces their sockets carry. */
-const WRITTEN: readonly GrowthModel[] = ['tuft'];
+const WRITTEN: readonly GrowthModel[] = ['tuft', 'frond-colony'];
 
 /** The hash purposes of a socket's choices, apart from the shoot rows' own. */
 const Purpose = { Variant: 0x31, Phase: 0x32 } as const;
@@ -68,6 +68,7 @@ export function kitPiece(piece: PiecePrototype, index: number): UncardedPrototyp
 		radius: piece.radius,
 		leaves: piece.leaves,
 		tiers: piece.tiers,
+		...(piece.brushes ? { brushes: piece.brushes } : {}),
 		piece: {
 			name: piece.piece,
 			variant: piece.variant,
@@ -75,6 +76,7 @@ export function kitPiece(piece: PiecePrototype, index: number): UncardedPrototyp
 			parts: piece.parts,
 			attitude: piece.attitude,
 			...(piece.plane ? { plane: piece.plane } : {}),
+			...(piece.roll ? { roll: piece.roll } : {}),
 		},
 	};
 }
@@ -155,7 +157,7 @@ export function pieceRows(input: DressInput): Row[] {
 						(position[parentNode * 3 + 2] as number) - at[2],
 					]
 				: [0, 0, 0];
-		const rotation = first.piece
+		const held = first.piece
 			? pieceTurn(first.piece.attitude, heading)
 			: [
 					buds.frame[b * 4] as number,
@@ -163,6 +165,15 @@ export function pieceRows(input: DressInput): Row[] {
 					buds.frame[b * 4 + 2] as number,
 					buds.frame[b * 4 + 3] as number,
 				];
+		// A piece whose rule states a roll turns about its own line, its +Y.
+		const roll = first.piece?.roll;
+		let rotation = held;
+		if (roll) {
+			const turn = [0, 0, 0, 1];
+			quatAxisAngle([0, 1, 0], radians(roll), turn);
+			rotation = [0, 0, 0, 1];
+			quatMultiply(held, 0, turn, 0, rotation);
+		}
 		const phase = pick(Purpose.Phase, b) & 255;
 		for (const part of parts)
 			rows.push({

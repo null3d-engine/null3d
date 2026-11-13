@@ -18,24 +18,25 @@ const kit = buildKitNow(source, { placeholders: 'missing' });
 const options = { seed: 11, variant: 0, near: true };
 
 describe('bracken through the plant core', () => {
-	it('builds a kit of one whole frond and no shoots', () => {
-		expect(kit.prototypes).toHaveLength(0);
+	it('builds a kit of one whole frond for the leaf piece, and the leaves its sockets carry', () => {
+		expect(kit.prototypes.length).toBeGreaterThan(0);
+		for (const prototype of kit.prototypes) expect(prototype.piece?.name ?? '').toMatch(/^leaf-/);
 		expect(kit.leaves).toHaveLength(1);
 		expect((kit.leaves[0]?.indices.length ?? 0) / 3).toBeGreaterThan(100);
 	});
 
-	it('grows a colony whose levels hold its stipes as wood and its fronds as foliage', () => {
+	it('grows a colony whose levels hold its stipes as wood, its rhizome and its leaves as rows', () => {
 		const asset = growPlantNow(kit, options);
 		expect(asset.skeleton.buds.count).toBeGreaterThan(8);
-		expect(asset.shoots.count).toBe(0);
-		for (const level of asset.levels) {
+		expect(asset.shoots.count).toBe(asset.skeleton.buds.count);
+		asset.levels.forEach((level, at) => {
 			const names = new Set(level.parts.map((part) => part.name));
 			expect(names.has('wood')).toBe(true);
 			expect(names.has('foliage')).toBe(true);
-			expect(names.has('cards')).toBe(false);
-		}
-		expect(asset.levels[1].triangles).toBeLessThan(asset.levels[0].triangles);
-		expect(asset.levels[2].triangles).toBeLessThan(asset.levels[1].triangles);
+			// The card levels draw each leaf as its cards.
+			expect(names.has('cards')).toBe(at > 0);
+		});
+		expect(asset.levels[2].triangles).toBeLessThanOrEqual(asset.levels[1].triangles);
 	});
 
 	it('grows the same bytes from the same seed and variant, and other bytes from another', () => {
@@ -49,7 +50,7 @@ describe('bracken through the plant core', () => {
 		const leaf = growPlantNow(kit, { ...options, cutting: { part: 'leaf' } });
 		expect(leaf.levels[0].triangles).toBeGreaterThan(100);
 		const branch = growPlantNow(kit, { ...options, cutting: { part: 'branch' } });
-		expect(branch.levels[0].parts.some((part) => part.name === 'foliage')).toBe(true);
+		expect(branch.levels[0].parts.some((part) => part.name === 'wood')).toBe(true);
 	});
 
 	it('grows the same bytes in a worker that runs the job-worker task', async () => {

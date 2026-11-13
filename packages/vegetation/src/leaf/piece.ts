@@ -25,22 +25,72 @@ import {
 	type Vector3,
 } from '../core/math';
 import type { LeafShape, Phyllotaxis, Species } from '../core/record';
-import { type Curve, curveAt, type Spread, spreadAt, spreadMean, type Vec3 } from '../core/types';
+import {
+	type Curve,
+	curveAt,
+	DETAILS,
+	type Detail,
+	type Spread,
+	spreadAt,
+	spreadMean,
+	type Vec3,
+} from '../core/types';
 import {
 	type AxisPoint,
 	addBudCluster,
+	type BrushPicture,
+	brushPicture,
 	type LeafRule,
 	leafTurn,
 	meshedPlan,
 	meshShoot,
+	type PlannedBrush,
 	type PlannedBud,
 	type PlannedLeaf,
 	placeNodeLeaves,
+	plannedBrushes,
+	SHOOT_CUTS,
+	type ShootCut,
 	type ShootPlan,
 	square,
 	turn,
 	type UncardedPrototype,
 } from './shoot';
+
+/**
+ * How each tier meshes a piece's wood and buds. A tree carries thousands of pieces, so a piece's
+ * wood has the fewest sides a twig needs, three, widened to the round stem's mean width, with a ring
+ * only where the stem bends: 8 degrees at the high tier and 15 at the medium. Where a piece's leaves
+ * close round its stem, at every tier, no ring of the wood they hide shows, so its rings stand far
+ * apart. An axil's bud hides under its leaf, so the medium tier draws none and the high tier only
+ * one long enough to show, as the beech's long buds are. The tip clusters, which mark a species, are
+ * separate three-sided buds at the high tier and one cone at the medium. Thorns are three-sided at
+ * both, and a fruiting body is round at the high tier. The ultra tier keeps the crown's finest cut.
+ */
+export const PIECE_CUTS: Readonly<Record<Detail, ShootCut>> = {
+	low: { ...SHOOT_CUTS.low, thinHidden: true },
+	medium: {
+		stemSides: 3,
+		thinHidden: true,
+		meanWidth: true,
+		ringTurn: 15,
+		cluster: { sides: 3, round: false },
+		clusterCone: true,
+		thorn: { sides: 3, round: false },
+	},
+	high: {
+		stemSides: 3,
+		thinHidden: true,
+		meanWidth: true,
+		ringTurn: 8,
+		cluster: { sides: 3, round: false },
+		axil: { sides: 3, round: false },
+		axilLeast: 0.015,
+		thorn: { sides: 3, round: false },
+		body: { sides: 4, round: true },
+	},
+	ultra: { ...SHOOT_CUTS.ultra, thinHidden: true },
+};
 
 /**
  * How a piece is turned where a socket carries it: along the socket's own direction, hanging plumb,
@@ -248,6 +298,12 @@ export interface PieceRule {
 	 */
 	readonly plane?: Vec3;
 	/**
+	 * Degrees the piece is turned about its own line at every socket, from its sky side up toward its
+	 * right. A living fern frond's flat blade stands rolled on the plant, so a frond seen from the
+	 * crown's side shows its face rather than its edge. Absent, 0.
+	 */
+	readonly roll?: number;
+	/**
 	 * The ground side in the piece's frame, where it is not its attitude's own: a piece that stands
 	 * upright on its socket names the way back along its line, so its side stems lift toward its tip.
 	 */
@@ -269,12 +325,24 @@ export interface PieceRule {
 	 */
 	readonly depth?: number;
 	/**
+	 * The least metres between two leaf nodes of the piece's stems, however close a stem's leaves
+	 * are set: 2 mm where absent. A rule states a smaller one where its photographs measure leaves
+	 * closer than that.
+	 */
+	readonly nodeLeast?: number;
+	/**
 	 * How the piece's blades bend at their stalks. Where absent a blade bends out of its own face,
 	 * as the species' leaf does. With `plane` the piece's leaves are built with no bend at the stalk,
 	 * and each blade turns about its own normal instead, toward the ground side, by the species' own
 	 * degrees and no farther than the ground side. A hanging blade then stays in the plane it lies in.
 	 */
 	readonly leafDroop?: 'plane';
+	/**
+	 * Whether each dense run of the piece's leaves draws as a brush card below the finest tier:
+	 * three crossed quads that carry a picture of a run's own leaves, which the card bake draws into
+	 * the card atlas. The finest tier keeps every leaf. Absent, every tier draws its leaves.
+	 */
+	readonly brushCards?: boolean;
 }
 
 /**
@@ -328,7 +396,7 @@ export function pieceRecord(record: Species, leaf: PieceLeaf | undefined): Speci
 
 /** A piece's prototype: its meshes at every tier, with how a socket holds it. */
 export interface PiecePrototype
-	extends Pick<UncardedPrototype, 'length' | 'radius' | 'leaves' | 'tiers'> {
+	extends Pick<UncardedPrototype, 'length' | 'radius' | 'leaves' | 'tiers' | 'brushes'> {
 	/** The rule it was planned by, and which of the rule's variants it is. */
 	readonly piece: string;
 	readonly variant: number;
@@ -342,6 +410,8 @@ export interface PiecePrototype
 	readonly parts: number;
 	/** The unit normal of the piece's flat plane in its rest frame, where its rule names one. */
 	readonly plane?: Vec3;
+	/** Degrees it is turned about its own line at every socket, where its rule says so. */
+	readonly roll?: number;
 	/** Where the part may carry an extra, in the piece's rest frame, in rank order. */
 	readonly sites: readonly PieceSite[];
 }
@@ -628,7 +698,7 @@ export function planPiece(
 		const points: AxisPoint[] = [{ at: [...start.at], radius: footRadius, along: start.along }];
 		axes.push(points);
 		const leavesBy = leafRule(stem);
-		const gap = stem.leaves ? Math.max(0.002, stem.leaves.gap) : 0;
+		const gap = stem.leaves ? Math.max(rule.nodeLeast ?? NODE_LEAST, stem.leaves.gap) : 0;
 		// A stem runs in straight steps short enough to read as a curve, and a node falls on a step's end.
 		// A hook turns at most a few degrees a step, so a strand leaves its branch on a curve.
 		const most = stem.hook
@@ -784,6 +854,7 @@ export function planPiece(
 						width: mark.width,
 						along: frame.along,
 						cluster: false,
+						mark: 'thorn',
 					});
 					continue;
 				}
@@ -819,6 +890,7 @@ export function planPiece(
 						along: frame.along + stalk,
 						cluster: true,
 						stack: size,
+						mark: 'body',
 					});
 				}
 			}
@@ -1035,7 +1107,8 @@ export function splitPlan(
 	leaves: readonly PrototypeArrays[],
 	most = PART_VERTICES_MOST,
 ): ShootPlan[] {
-	const vertices = (part: ShootPlan): number => meshShoot(part, leaves, 'ultra').vertices;
+	const vertices = (part: ShootPlan): number =>
+		meshShoot(part, leaves, 'ultra', PIECE_CUTS.ultra).vertices;
 	if (vertices(plan) <= most) return [plan];
 	const near = (a: readonly number[], b: readonly number[]): number =>
 		length3(
@@ -1128,14 +1201,43 @@ export function piecePrototypes(
 	leaves: readonly (readonly PrototypeArrays[])[],
 	straight: readonly (readonly PrototypeArrays[])[] = leaves,
 ): PiecePrototype[] {
+	const pictureTier = DETAILS.indexOf(BRUSH_PICTURE_TIER);
 	const out: PiecePrototype[] = [];
 	for (const [r, rule] of rules.entries()) {
 		const own = rule.leafDroop === 'plane' ? straight : leaves;
 		const leafMeshes = Math.min(...own.map((tier) => tier.length));
 		const finest = own[own.length - 1] ?? [];
+		// A piece that draws brush cards pictures two runs of its first variant: its own stem's
+		// longest, and its side stems' longest. Every run draws from the one of its kind.
+		let pictures: BrushPicture[] | undefined;
 		for (let variant = 0; variant < Math.min(16, Math.max(1, rule.variants)); variant++) {
-			const parts = splitPlan(planPiece(record, rule, pieceKey(r, variant), leafMeshes), finest);
-			for (const [part, plan] of parts.entries())
+			const whole = planPiece(record, rule, pieceKey(r, variant), leafMeshes);
+			if (rule.brushCards && !pictures) {
+				const runs = plannedBrushes(whole);
+				const longest = (own: boolean) =>
+					runs
+						.filter((run) => (run.axis === 0) === own)
+						.reduce<PlannedBrush | undefined>(
+							(best, run) => (!best || run.length > best.length ? run : best),
+							undefined,
+						);
+				pictures = [longest(true), longest(false)]
+					.filter((run): run is PlannedBrush => run !== undefined)
+					.map((run) => brushPicture(whole, run, own[pictureTier] ?? [], BRUSH_PICTURE_TIER));
+			}
+			const parts = splitPlan(whole, finest);
+			for (const [part, plan] of parts.entries()) {
+				const drawn = pictures ?? [];
+				const brushes =
+					drawn.length > 0
+						? {
+								runs: plannedBrushes(plan).map(({ axis, leaves: _leaves, ...run }) => ({
+									...run,
+									picture: Math.min(drawn.length - 1, axis === 0 ? 0 : 1),
+								})),
+								pictures: drawn,
+							}
+						: undefined;
 				out.push({
 					piece: rule.name,
 					variant,
@@ -1143,11 +1245,12 @@ export function piecePrototypes(
 					part,
 					parts: parts.length,
 					...(rule.plane ? { plane: rule.plane } : {}),
+					...(rule.roll ? { roll: rule.roll } : {}),
 					sites: pieceSites(plan),
-					// A piece's leaves close round its stems where they stand densely, and no ring of
-					// the wood they hide shows.
-					...meshedPlan(plan, own, true),
+					...meshedPlan(plan, own, PIECE_CUTS),
+					...(brushes ? { brushes } : {}),
 				});
+			}
 		}
 	}
 	return out;
@@ -1205,6 +1308,10 @@ export interface StudioLayout {
 	readonly placed: readonly PlacedPiece[];
 }
 
+/** The least metres between two leaf nodes of a stem, where its rule states none. */
+const NODE_LEAST = 0.002;
+/** The tier whose leaf meshes a brush card pictures: the finest a kit below ultra builds. */
+const BRUSH_PICTURE_TIER: Detail = 'high';
 /** Degrees a piece that turns up stands above its socket's own direction. */
 const UP_LIFT = 30;
 /** The most metres from a stem's tip within which another stem's foot means the tip forks and carries no piece. */

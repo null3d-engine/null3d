@@ -18,6 +18,13 @@
 // Each axis's first carrier in the list, the one nearest its tip, takes the earliest place its run
 // holds, so an axis that stays keeps its whole length and ends in the foliage it grew. The
 // sparsest plant is its trunk and great limbs with a tuft at each end.
+//
+// A plant of sockets thins by whole sockets instead, each with every row it holds, so a piece stays
+// whole or goes whole. The sockets are ranked once across the plant for this: each takes the
+// earliest place any of its rows takes in the walk's order, so the kept sockets stand as evenly
+// spread as the rows would. The grower's own rank of its sockets serves its levels and is less even
+// round the crown. The sockets that hold a carrier that never goes come first. Wood that carries no
+// kept socket goes with the rest, and the stems and great limbs stay.
 import type { ShootRows } from '../asset';
 import { AXIS_ARM, AXIS_LIMB, AXIS_ROOT, AXIS_STEM, type MacroSkeleton } from '../core/graph';
 import { hashAt } from '../core/hash';
@@ -65,6 +72,8 @@ export interface SparseOrder {
 	readonly carried: Uint32Array;
 	/** The fewest carriers the plant may keep: the outermost of each stem, great limb and pinned axis. */
 	readonly least: number;
+	/** Whether the carriers are the plant's sockets, each with all of its rows. */
+	readonly bySockets: boolean;
 }
 
 /**
@@ -308,6 +317,21 @@ export function sparseOrder(
 			? 0
 			: Math.floor(((bareAt[i] as number) * list.length) / Math.max(1, bare.length));
 	});
+	const sockets = byRows ? rowSockets(skeleton, rows) : undefined;
+	if (sockets) {
+		const thinned = socketPlaces(sockets, list, least, stays, place, barePlace);
+		return {
+			byRows,
+			carriers: thinned.carriers,
+			place,
+			list: Uint32Array.from(list),
+			barePlace,
+			structural,
+			carried,
+			least: thinned.least,
+			bySockets: true,
+		};
+	}
 	return {
 		byRows,
 		carriers: list.length,
@@ -317,7 +341,82 @@ export function sparseOrder(
 		structural,
 		carried,
 		least,
+		bySockets: false,
 	};
+}
+
+/**
+ * Each row's socket on a plant of sockets: the socket at the row's node that stands nearest the
+ * row, since every row of a socket stands at the socket's own place.
+ *
+ * @param skeleton The skeleton as grown.
+ * @param rows The shoot rows as grown, each with its node.
+ * @returns One socket per row, or undefined on a plant without sockets.
+ * @category api/vegetation
+ */
+export function rowSockets(skeleton: MacroSkeleton, rows: ShootRows): Uint32Array | undefined {
+	const { buds } = skeleton;
+	const nodes = rows.node;
+	if (!buds.sockets || !nodes || rows.count === 0) return undefined;
+	const atNode = new Map<number, number[]>();
+	for (let b = 0; b < buds.count; b++) {
+		const node = buds.node[b] as number;
+		const list = atNode.get(node);
+		if (list) list.push(b);
+		else atNode.set(node, [b]);
+	}
+	const out = new Uint32Array(rows.count);
+	for (let r = 0; r < rows.count; r++) {
+		const candidates = atNode.get(nodes[r] as number);
+		if (!candidates) return undefined;
+		let best = candidates[0] as number;
+		let nearest = Number.POSITIVE_INFINITY;
+		for (const b of candidates) {
+			const dx = (buds.position[b * 3] as number) - (rows.position[r * 3] as number);
+			const dy = (buds.position[b * 3 + 1] as number) - (rows.position[r * 3 + 1] as number);
+			const dz = (buds.position[b * 3 + 2] as number) - (rows.position[r * 3 + 2] as number);
+			const d = dx * dx + dy * dy + dz * dz;
+			if (d < nearest) {
+				nearest = d;
+				best = b;
+			}
+		}
+		out[r] = best;
+	}
+	return out;
+}
+
+/**
+ * The places of a plant of sockets: each socket takes the earliest place any of its rows holds in
+ * the walk's order, and every row of it takes the socket's place. The sockets that hold a carrier
+ * that never goes therefore come first. A branch that carries no socket goes at any sparseness
+ * unless it is a stem, a great limb or the wood to a carrier that never goes. Writes the rows'
+ * places and the bare branches' places in place.
+ *
+ * @returns The sockets that hold rows, and how many of them never go.
+ */
+function socketPlaces(
+	sockets: Uint32Array,
+	list: readonly number[],
+	leastRows: number,
+	stays: Uint8Array,
+	place: Uint32Array,
+	barePlace: Uint32Array,
+): { readonly carriers: number; readonly least: number } {
+	const earliest = new Map<number, number>();
+	for (const row of list) {
+		const socket = sockets[row] as number;
+		earliest.set(socket, Math.min(earliest.get(socket) ?? NO_PLACE, place[row] as number));
+	}
+	const ordered = [...earliest.keys()].sort(
+		(a, b) => (earliest.get(a) as number) - (earliest.get(b) as number),
+	);
+	const socketPlace = new Map<number, number>(ordered.map((socket, at) => [socket, at]));
+	for (const row of list) place[row] = socketPlace.get(sockets[row] as number) as number;
+	for (let a = 0; a < barePlace.length; a++) barePlace[a] = stays[a] ? 0 : ordered.length;
+	let least = 0;
+	for (const first of earliest.values()) if (first < leastRows) least++;
+	return { carriers: ordered.length, least };
 }
 
 /**
@@ -420,20 +519,23 @@ export function sparsePlant(
 		crownBase: skeleton.crownBase,
 	};
 	if (!order.byRows || !nodes) return { skeleton: frame, rows };
+	// A carrier is one row, or on a plant of sockets one socket with all of its rows.
+	let held = 0;
+	for (let r = 0; r < rows.count; r++) if ((order.place[r] as number) < kept) held++;
 	const out = {
-		count: kept,
-		prototype: new Uint8Array(kept),
-		position: new Float32Array(kept * 3),
-		rotation: new Float32Array(kept * 4),
-		scale: new Float32Array(kept),
-		record: new Uint16Array(kept),
-		phase: new Uint8Array(kept),
-		sky: new Uint8Array(kept),
-		bent: new Uint8Array(kept),
-		order: new Uint32Array(kept),
-		...(rows.back ? { back: new Float32Array(kept * 3) } : {}),
-		node: new Uint32Array(kept),
-		id: new Uint32Array(kept),
+		count: held,
+		prototype: new Uint8Array(held),
+		position: new Float32Array(held * 3),
+		rotation: new Float32Array(held * 4),
+		scale: new Float32Array(held),
+		record: new Uint16Array(held),
+		phase: new Uint8Array(held),
+		sky: new Uint8Array(held),
+		bent: new Uint8Array(held),
+		order: new Uint32Array(held),
+		...(rows.back ? { back: new Float32Array(held * 3) } : {}),
+		node: new Uint32Array(held),
+		id: new Uint32Array(held),
 	};
 	let at = 0;
 	for (let r = 0; r < rows.count; r++) {

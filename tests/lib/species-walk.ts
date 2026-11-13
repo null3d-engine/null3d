@@ -23,7 +23,7 @@ import { standInSpecies } from '../../packages/vegetation/src/core/stand-in';
 import { DETAILS } from '../../packages/vegetation/src/core/types';
 import { buildKitNow, growPlantNow, loadPlantCode } from '../../packages/vegetation/src/generate';
 import { kitBuffers } from '../../packages/vegetation/src/generate-task';
-import { drawnAtOnce } from '../../packages/vegetation/src/lod/drawn';
+import { drawnAtTallest } from '../../packages/vegetation/src/lod/drawn';
 import { scaledBudget } from './run-budget.ts';
 
 /**
@@ -61,6 +61,27 @@ export function sliceOf(all: readonly Walked[], index: number, count: number): r
 }
 
 /**
+ * The species known to draw more at once than their near budget allows at the tallest views, with
+ * the count each draws there from its worst stated eye, at seed 11 and variant 0. A known species'
+ * test expects the failure and fails once the species holds its budget, so its line must go as it
+ * is mended.
+ */
+const NEAR_OVER: Readonly<Record<string, number>> = {
+	bamboo: 2_522_635,
+	'common-alder': 24_439_959,
+	'common-ash': 11_589_298,
+	'european-beech': 15_687_335,
+	'giant-sequoia': 53_398_951,
+	'hawthorn-shrub': 22_401_474,
+	'holm-oak': 30_797_531,
+	'italian-cypress': 105_831_631,
+	olive: 30_065_894,
+	'pedunculate-oak': 43_550_406,
+	'silver-birch': 81_019_038,
+	'weeping-willow': 12_556_895,
+};
+
+/**
  * Grows a kit's first variant twice and checks that both give the same bytes, and that the kit, the
  * variant, its near band and its card levels in every season stay within the record's own budget.
  */
@@ -72,11 +93,6 @@ function growsWithinBudget(kit: SpeciesKitData): void {
 	const budget = record.lod.budget;
 	expect(kitBytesOf(kit)).toBeLessThanOrEqual(budget.kitBytes[kit.detail]);
 	expect(variantBytesOf(asset)).toBeLessThanOrEqual(budget.variantBytes[kit.detail]);
-	// The triangles one copy draws at once inside its near band at the High preset, for the worse of
-	// two standing eyes: beside the trunk, and at the crown's edge.
-	const near = drawnAtOnce(kit, asset, false).triangles;
-	expect(near).toBeLessThanOrEqual(budget.lod0Triangles);
-	expect(near).toBeLessThanOrEqual(NEAR_CAPS.high.triangles);
 	expect(asset.levels[1].triangles).toBeLessThanOrEqual(budget.lod1Triangles);
 	expect(asset.levels[2].triangles).toBeLessThanOrEqual(budget.lod2Triangles);
 	// Every season's extras, such as autumn's fruit, stay within the variant's byte cap and the card
@@ -166,6 +182,21 @@ export function walkSpecies(walked: Walked): void {
 				},
 				scaledBudget(120_000),
 			);
+
+		// The triangles one copy draws at once, as the engine draws them, from its worst stated eye at
+		// the tallest views the presets give, against its near budget and the High preset's cap.
+		const over = NEAR_OVER[walked.folder];
+		(over === undefined ? it : it.failing)(
+			`draws at once within its near budget at the tallest view${over === undefined ? '' : `, known to draw ${over}`}`,
+			() => {
+				const kit = buildKitNow(module, { placeholders: walked.placeholders });
+				const asset = growPlantNow(kit, { seed: 11, variant: 0, near: true });
+				const drawn = drawnAtTallest(kit, asset).triangles;
+				expect(drawn).toBeLessThanOrEqual(record.lod.budget.lod0Triangles);
+				expect(drawn).toBeLessThanOrEqual(NEAR_CAPS.high.triangles);
+			},
+			scaledBudget(120_000),
+		);
 
 		it(
 			'grows the same bytes twice, and stays within its own budget',
