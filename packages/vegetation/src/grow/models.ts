@@ -25,6 +25,7 @@ export interface Grower {
 const GROWERS: Readonly<Record<GrowthModel, () => Promise<{ readonly grower: Grower }>>> = {
 	'self-organizing': () => import('./self-organizing'),
 	scaffold: () => import('./scaffold'),
+	frame: () => import('./frame'),
 	architectural: () => import('./architectural'),
 	conifer: () => import('./conifer'),
 	'crown-rosette': () => import('./crown-rosette'),

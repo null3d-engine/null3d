@@ -5,14 +5,36 @@
 // joined where their tangents match, so a limb bends gently and never runs dead straight, and each
 // axis thins evenly from the measured share of its parent's radius.
 //
-// `planFrame` gives the frame as plain data with the foliage patches beside it, which the foliage's
-// sockets are set from; `frameSkeleton` writes the same frame into a skeleton.
+// `planFrame` gives the frame as plain data with the foliage patches beside it; `frameSockets` gives
+// the wood ends that carry foliage, ranked once across the plant; `frameSkeleton` writes the frame
+// into a skeleton, and `growFrame` writes it with its sockets as bud sites, for a record that
+// states its frame as its growth.
 import { archPath } from '../core/arch';
-import { AXIS_LIMB, AXIS_STEM, type MacroSkeleton, SkeletonBuilder } from '../core/graph';
+import {
+	AXIS_LIMB,
+	AXIS_STEM,
+	BUD_TERMINAL,
+	type MacroSkeleton,
+	SkeletonBuilder,
+} from '../core/graph';
 import { unitAt } from '../core/hash';
-import { acos, asin, atan2, cos, PI, radians, sin, tan, type Vector3 } from '../core/math';
-import { type Curve, curveAt, spreadAt } from '../core/types';
+import {
+	acos,
+	asin,
+	atan2,
+	cos,
+	PI,
+	quatFromFrame,
+	radians,
+	sin,
+	tan,
+	type Vector3,
+} from '../core/math';
+import { thinningRanks } from '../core/rank';
+import type { Framed, Species } from '../core/record';
+import { type Curve, curveAt, spreadAt, spreadMean } from '../core/types';
 import type { GrowInput } from '../stages';
+import type { Grower } from './models';
 
 /** The golden angle in degrees, which turns each axis of a spiral on from the last. */
 const GOLDEN = 137.50776405;
@@ -943,19 +965,18 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 	};
 }
 
-/**
- * Writes a frame's axes into a skeleton. The foliage patches stay in the plan.
- *
- * @param plan The frame.
- * @returns The skeleton.
- * @category api/vegetation
- */
-export function frameSkeleton(plan: FramePlan): MacroSkeleton {
-	const builder = new SkeletonBuilder();
+/** What a frame's axes are in a skeleton: each axis's index, its nodes and the metres along it. */
+interface Written {
+	readonly axis: number;
+	readonly nodes: number[];
+	readonly runs: number[];
+}
+
+/** Writes a frame's axes into a skeleton builder, every parent before its children. */
+function writeAxes(plan: FramePlan, builder: SkeletonBuilder): Written[] {
 	const ageAt = (y: number): number =>
 		Math.round(clamp((plan.height - y) / Math.max(1, plan.height), 0, 1) * AGE_MOST);
-	/** Each axis's skeleton index, its nodes' skeleton indices and the metres along it to each. */
-	const written: { axis: number; nodes: number[]; runs: number[] }[] = [];
+	const written: Written[] = [];
 	for (const axis of plan.axes) {
 		const parent = axis.parent < 0 ? undefined : written[axis.parent];
 		const parentNode = parent ? (parent.nodes[axis.parentNode] as number) : -1;
@@ -986,5 +1007,134 @@ export function frameSkeleton(plan: FramePlan): MacroSkeleton {
 		});
 		written.push({ axis: index, nodes, runs });
 	}
+	return written;
+}
+
+/**
+ * Writes a frame's axes into a skeleton. The foliage patches stay in the plan.
+ *
+ * @param plan The frame.
+ * @returns The skeleton.
+ * @category api/vegetation
+ */
+export function frameSkeleton(plan: FramePlan): MacroSkeleton {
+	const builder = new SkeletonBuilder();
+	writeAxes(plan, builder);
 	return builder.finish(plan.crownBase);
 }
+
+/**
+ * A socket of a frame: the end of the wood under a foliage patch, which carries one piece.
+ *
+ * @category api/vegetation
+ */
+export interface FrameSocket {
+	/** The patch it carries the foliage of, by its index in the plan: the socket's mass. */
+	readonly patch: number;
+	/** The axis whose end it is, by its index in the plan. */
+	readonly axis: number;
+	/** Where it stands, in metres. */
+	readonly at: Vector3;
+	/** The direction the wood runs in at its end, a unit vector: the way its piece grows. */
+	readonly heading: Vector3;
+	/**
+	 * Its rank across the whole plant, from 0: the sockets below any rank stand spread through the
+	 * crown, so a plant thinned to a rank keeps its outline.
+	 */
+	readonly rank: number;
+}
+
+/**
+ * The sockets of a frame: one at the end of every axis that carries a foliage patch, ranked once
+ * across the whole plant.
+ *
+ * @param plan The frame.
+ * @returns The sockets, in the patches' order.
+ * @category api/vegetation
+ */
+export function frameSockets(plan: FramePlan): FrameSocket[] {
+	const ends = plan.patches.map((patch, index) => {
+		const axis = plan.axes[patch.axis] as FrameAxis;
+		const last = axis.nodes.length - 1;
+		const end = axis.nodes[last] as FrameNode;
+		const from =
+			last > 0
+				? (axis.nodes[last - 1] as FrameNode)
+				: ((plan.axes[axis.parent]?.nodes[axis.parentNode] as FrameNode | undefined) ?? end);
+		return {
+			patch: index,
+			axis: patch.axis,
+			at: [end.x, end.y, end.z] as Vector3,
+			heading: unit(end.x - from.x, end.y - from.y, end.z - from.z),
+		};
+	});
+	const ranks = thinningRanks(ends.map((socket) => socket.at));
+	return ends.map((socket, k) => ({ ...socket, rank: ranks[k] as number }));
+}
+
+/**
+ * Grows one plant whose record states its frame as its growth: the frame's axes as a skeleton, and
+ * each socket as a bud site with the socket record. A socket's frame has +Y along the wood's end
+ * and +Z toward the sky; its scale is the plant's own height over the species' middle height, so a
+ * taller plant carries larger pieces; its mass is its patch.
+ *
+ * @param input The record, the seed, the variant and the season.
+ * @returns The skeleton.
+ */
+export function growFrame(input: GrowInput): MacroSkeleton {
+	const growth = input.record.growth;
+	if (growth.model !== 'frame')
+		throw new Error(`@null3d/vegetation: ${input.record.id} does not grow by the frame model`);
+	const plan = planFrame(growth.frame, input);
+	const builder = new SkeletonBuilder();
+	const written = writeAxes(plan, builder);
+	const scale = plan.scale / Math.max(1e-6, spreadMean(input.record.size.height));
+	const frame = new Float32Array(4);
+	for (const socket of frameSockets(plan)) {
+		const wood = written[socket.axis] as Written;
+		const end = (plan.axes[socket.axis] as FrameAxis).nodes.length - 1;
+		quatFromFrame(
+			socket.heading,
+			Math.abs(socket.heading[1]) > 0.99 ? [1, 0, 0] : [0, 1, 0],
+			frame,
+		);
+		builder.addBud({
+			node: wood.nodes[end] as number,
+			x: socket.at[0],
+			y: socket.at[1],
+			z: socket.at[2],
+			frame,
+			kind: BUD_TERMINAL,
+			vigor: 1,
+			light: 1,
+			axis: wood.axis,
+			woodRadius: ((plan.axes[socket.axis] as FrameAxis).nodes[end] as FrameNode).radius,
+			socket: { scale, rank: socket.rank, lobe: socket.patch },
+		});
+	}
+	return builder.finish(plan.crownBase);
+}
+
+/**
+ * A species' record with a frame as its growth, in place of the growth it is registered with. Its
+ * forms state the registered growth's figures, so they are left out.
+ *
+ * @param record The species' registered record.
+ * @param frame The species' frame.
+ * @param sockets What each socket holds.
+ * @returns The record that grows by the frame.
+ * @category api/vegetation
+ */
+export function framedRecord(
+	record: Species,
+	frame: FrameSpec,
+	sockets: Framed['sockets'],
+): Species {
+	const { forms: _forms, ...own } = record;
+	return { ...own, growth: { model: 'frame', frame, sockets } };
+}
+
+/** The frame grower. */
+export const grower: Grower = {
+	grow: growFrame,
+};

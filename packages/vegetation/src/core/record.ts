@@ -5,6 +5,7 @@
 
 import type { ShootPrototype } from '../asset';
 import type { EcoRule } from '../ecology/ecology';
+import type { FrameSpec } from '../grow/frame';
 import type { MacroSkeleton } from './graph';
 import type { SpeciesTextureFiles } from './textures';
 import type { Curve, Detail, Rgb, Season, Spread, Vec2, Vec3 } from './types';
@@ -200,6 +201,7 @@ export interface PlantSize {
 export type Growth =
 	| SelfOrganizing
 	| Scaffold
+	| Framed
 	| Architectural
 	| Conifer
 	| CrownRosette
@@ -705,6 +707,28 @@ export interface ArchitecturalOrder {
 	readonly upturn: number;
 	/** Degrees it bends over its length. */
 	readonly curve: number;
+}
+
+/**
+ * A plant built in a set order from a tree of axis rules: its stems and, under each, the axes that
+ * leave it, with their counts, places, angles, bends, lengths and widths as the species measured
+ * them, and a foliage patch on each axis whose rule states one. Every wood end that carries a patch
+ * is a socket, in the scaffold model's own socket record.
+ *
+ * @category api/vegetation
+ */
+export interface Framed {
+	/** The model's name. */
+	readonly model: 'frame';
+	/** The stems, the axes under them and the crown outline. */
+	readonly frame: FrameSpec;
+	/** What each socket holds, as the scaffold model states it. */
+	readonly sockets: {
+		/** Shoot rows that one socket holds. */
+		readonly rows: Spread;
+		/** Degrees the rows of one socket fan from its line. */
+		readonly fan: number;
+	};
 }
 
 /**

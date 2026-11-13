@@ -2,7 +2,8 @@
 // one at a time, and the side branches whose ends arch over and hang. Each figure names the
 // reference picture it was read on. Shares are of the tree's height, measured from the true foot of
 // each picture. Still 01 and the whole-tree turning video are the one tree the frame follows.
-import type { FrameSpec } from '../../grow/frame';
+import { type FrameSpec, framedRecord } from '../../grow/frame';
+import { record } from './record';
 
 /** The silver birch's frame. */
 export const frame: FrameSpec = {
@@ -196,3 +197,10 @@ export const frame: FrameSpec = {
 		],
 	},
 };
+
+/**
+ * The silver birch's record with the frame as its growth. A socket holds four shoot rows that fan 45
+ * degrees from its line. These two are working figures, not measured ones: they stand until the
+ * species' branch pieces are placed at its sockets, which then state what a socket holds.
+ */
+export const directed = framedRecord(record, frame, { rows: { mean: 4, spread: 1 }, fan: 45 });

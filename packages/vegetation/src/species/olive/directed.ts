@@ -8,7 +8,8 @@
 // work: six columns wound half a turn from the ground to the fork, each 0.3 of the waist wide, with
 // grooves 0.4 of a column deep, a dark opening 0.05 wide and 0.075 tall at 0.20 of the height, two
 // or three burrs on the lower bole, and one or two roots from each column.
-import type { FrameBranchRule, FrameSpec } from '../../grow/frame';
+import { type FrameBranchRule, type FrameSpec, framedRecord } from '../../grow/frame';
+import { record } from './record';
 
 /**
  * What a great limb's own wood shares. Stills 05, 01 and 18: a limb is crooked, with two or three
@@ -161,3 +162,10 @@ export const frame: FrameSpec = {
 		],
 	},
 };
+
+/**
+ * The olive's record with the frame as its growth. A socket holds four shoot rows that fan 45
+ * degrees from its line. These two are working figures, not measured ones: they stand until the
+ * species' branch pieces are placed at its sockets, which then state what a socket holds.
+ */
+export const directed = framedRecord(record, frame, { rows: { mean: 4, spread: 1 }, fan: 45 });

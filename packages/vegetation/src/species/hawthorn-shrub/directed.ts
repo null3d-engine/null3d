@@ -4,7 +4,8 @@
 // of the mass. Each figure
 // names the reference picture it was read on. Shares are of the plant's height. Still 01 and the
 // whole-plant turning video are the one plant the frame follows.
-import type { FrameBranchRule, FrameSpec } from '../../grow/frame';
+import { type FrameBranchRule, type FrameSpec, framedRecord } from '../../grow/frame';
+import { record } from './record';
 
 /**
  * A leading shoot: a straight leafy shoot that carries on from a branch end and stands outside the
@@ -144,3 +145,10 @@ export const frame: FrameSpec = {
 		children: [limb, shoot],
 	},
 };
+
+/**
+ * The hawthorn's record with the frame as its growth. A socket holds four shoot rows that fan 45
+ * degrees from its line. These two are working figures, not measured ones: they stand until the
+ * species' branch pieces are placed at its sockets, which then state what a socket holds.
+ */
+export const directed = framedRecord(record, frame, { rows: { mean: 4, spread: 1 }, fan: 45 });

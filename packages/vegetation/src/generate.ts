@@ -328,6 +328,9 @@ function thinnedGrowth(growth: Species['growth'], thin: number): Species['growth
 		// whatever the record says: this is the dial that decides how many limbs a crown puts out.
 		case 'self-organizing':
 			return { ...growth, branching: (growth.branching ?? 1) * thin };
+		// A frame stated as axis rules keeps every axis; its sockets carry their rank for thinning.
+		case 'frame':
+			return growth;
 		// A scaffold plant's branches end at its sockets, so the share moves the sockets on each
 		// foliage mass: fewer sockets are fewer branches, and the masses keep the crown's outline.
 		case 'scaffold':
