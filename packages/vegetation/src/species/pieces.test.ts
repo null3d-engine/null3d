@@ -25,6 +25,7 @@ import { PIECES as HAWTHORN, STUDIO as HAWTHORN_STUDIO } from './hawthorn-shrub/
 import { PIECES as HOLM, STUDIO as HOLM_STUDIO } from './holm-oak/pieces';
 import { PIECES as OLIVE, STUDIO as OLIVE_STUDIO } from './olive/pieces';
 import { PIECES as OAK, STUDIO as OAK_STUDIO } from './pedunculate-oak/pieces';
+import { PIECES as PINE, STUDIO as PINE_STUDIO } from './scots-pine/pieces';
 import { PIECES as BIRCH, STUDIO as BIRCH_STUDIO } from './silver-birch/pieces';
 import { PIECES as WILLOW, STUDIO as WILLOW_STUDIO } from './weeping-willow/pieces';
 
@@ -48,6 +49,7 @@ const SPECIES: readonly {
 	{ id: 'common-alder', pieces: ALDER, studio: ALDER_STUDIO },
 	{ id: 'holm-oak', pieces: HOLM, studio: HOLM_STUDIO },
 	{ id: 'hawthorn-shrub', pieces: HAWTHORN, studio: HAWTHORN_STUDIO },
+	{ id: 'scots-pine', pieces: PINE, studio: PINE_STUDIO },
 ];
 
 const distance = (a: readonly number[], b: readonly number[]): number =>
