@@ -160,7 +160,7 @@ export const frame: FrameSpec = {
 						radius: 0.45,
 						taper: 0.3,
 						// Stills 21 and 22: an arm rises, arches over and ends pointing down.
-						bends: [{ from: 0.3, to: 1, level: -65 }],
+						bends: [{ from: 0.12, to: 1, level: -65 }],
 						sway: 9,
 						elbows: 4,
 						// Still 09: a side branch carries strands 17 to 28 cm long, and still 19 up to a
@@ -187,6 +187,8 @@ export const frame: FrameSpec = {
 				// Still 01: the crown is 0.13 of the height in half width at 0.90 and 0.04 at 0.98.
 				length: { outline: 0.7 },
 				vary: 0.08,
+				// Still 19: a branch end is half a metre long at the least.
+				least: 0.025,
 				radius: 0.4,
 				taper: 0.3,
 				bends: [{ from: 0.5, to: 1, level: -30 }],
