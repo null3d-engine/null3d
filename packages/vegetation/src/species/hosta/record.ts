@@ -22,10 +22,13 @@ export const record: Species = {
 	growth: {
 		model: 'rosette',
 		// Still 04 from above: the crown has divided into several eyes, each a golden-angle spiral
-		// of leaves, the outermost of each eye its oldest and lowest.
-		shoots: { mean: 6, spread: 1 },
+		// of leaves, the outermost of each eye its oldest and lowest. About forty leaves show from
+		// above, and still 17's dome is closed to the soil, so the plant carries about a hundred and
+		// twenty: nine eyes of twelve, where six of nine drew half the photograph's leaves and the
+		// stalks showing in the middle.
+		shoots: { mean: 9, spread: 1 },
 		crown: 0.04,
-		leaves: { mean: 9, spread: 1 },
+		leaves: { mean: 12, spread: 1 },
 		divergence: 137.5,
 		// Still 21: the youngest leaves stand nearly upright at the shoot's heart, the oldest lean
 		// out over the mound.
@@ -79,8 +82,8 @@ export const record: Species = {
 	foliage: {
 		kind: 'thick',
 		leaf: {
-			// Still 11: a blade near its largest size, widest below its middle.
-			length: { mean: 0.32, spread: 0.03 },
+			// The fact sheet: a blade 20 to 30 cm long, widest below its middle (still 11).
+			length: { mean: 0.25, spread: 0.03 },
 			outline: 'texture',
 			// Stills 08 and 09: eight to ten pairs of veins, sunk into the blade, between them the
 			// blade puffs up, the innermost pair leaving the midrib past its middle.
@@ -139,15 +142,18 @@ export const record: Species = {
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
-			kitBytes: { low: 40_000, medium: 65_000, high: 65_000, ultra: 100_000 },
-			// The densest variant's season sets each tier: 0.60, 1.46, 1.41 and 2.77 MB with its
-			// flower scapes standing. Each cap sits just above its figure, under the owner's.
-			variantBytes: { low: 600_000, medium: 1_470_000, high: 1_420_000, ultra: 2_780_000 },
-			// The densest variant's nearest level measures 57,456 triangles.
-			lod0Triangles: 60_000,
-			// The first card level measures 9,810 triangles and the second 3,060.
-			lod1Triangles: 9_900,
-			lod2Triangles: 3_100,
+			// Measured over the four variants at seed 11, in summer and in blossom, with the nine
+			// eyes of twelve leaves of stills 04 and 17: the kit reads 39,504, 63,172, 61,648 and
+			// 80,200 bytes at the four tiers; the largest variant 1,068,630, 2,724,037, 2,614,396
+			// and 3,924,478; its nearest level 23,260, 118,124, 111,348 and 187,336 triangles, the
+			// last under the ground class's 200,000 by the ultra tier's own leaf grid; and the card
+			// levels 18,278 and 5,302. Each cap keeps a twentieth above its read, the nearest level's
+			// above the ultra tier's, as the lead ruled.
+			kitBytes: { low: 41_480, medium: 66_340, high: 64_740, ultra: 84_210 },
+			variantBytes: { low: 1_122_070, medium: 2_860_240, high: 2_745_120, ultra: 4_120_710 },
+			lod0Triangles: 196_710,
+			lod1Triangles: 19_200,
+			lod2Triangles: 5_570,
 			downloadBytes: 350_000,
 			downloadHalfBytes: 120_000,
 			growMilliseconds: 150,
@@ -159,7 +165,7 @@ export const record: Species = {
 	roundBand,
 	cuttings: {
 		// Stills 21 to 23: a lifted piece is one eye of the crown, and the photographs show six or
-		// seven leaves on it, against the nine each eye of the crown carries.
+		// seven leaves on it, against the twelve each eye of the crown carries.
 		leaves: { mean: 8, spread: 1 },
 		// Still 21: one eye lifted from the crown, its leaves on their long stalks, its blades a
 		// seventh smaller than the crown's so the piece's gaps match the photograph's.
