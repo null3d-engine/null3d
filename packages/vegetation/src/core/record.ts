@@ -2729,6 +2729,12 @@ export interface CutFromPlant {
 	/** Metres of wood from the cut to the farthest tip. */
 	readonly length: number;
 	/**
+	 * How the piece's photograph stands it: `as-grown` keeps the turn it grew with, as a saguaro's
+	 * arm stands on its elbow with its upright part plumb. Where it names none, the piece stands as
+	 * the cutting asks, upright on the line from its cut.
+	 */
+	readonly stands?: 'as-grown';
+	/**
 	 * The shoots this piece places over the crown's own, from 0.25 to 8: a density of its own, where
 	 * the piece covers more or less than the species' `cuttings.density`, which applies where it
 	 * names none. A piece cut from the grown plant takes the kit this reshapes.

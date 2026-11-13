@@ -303,6 +303,56 @@ describe('the saguaro frame', () => {
 		expect(arm.skeleton.axes.count).toBe(1);
 		expect(arm.skeleton.axes.kind[0]).toBe(AXIS_ARM);
 		expect((wood?.arrays.indices.length ?? 0) / 3).toBeGreaterThan(1000);
+		// Still 21: it stands as it grew, its upright part plumb above its elbow.
+		const points = nodesOf(arm.skeleton, 0);
+		const [a, b] = [points[points.length - 3], points[points.length - 1]] as [number[], number[]];
+		const rise = (b[1] as number) - (a[1] as number);
+		const aside = Math.hypot(
+			(b[0] as number) - (a[0] as number),
+			(b[2] as number) - (a[2] as number),
+		);
+		expect(rise).toBeGreaterThan(0);
+		expect(aside / rise).toBeLessThan(0.02);
+	});
+
+	it("turns every arm's elbow on a radius of at least the arm's own width", async () => {
+		const { grow } = await saguaro();
+		for (let variant = 0; variant < 6; variant++) {
+			const { skeleton } = grow(variant);
+			for (const arm of armsOf(skeleton)) {
+				const points = nodesOf(skeleton, arm);
+				const radii: number[] = [];
+				for (
+					let n = skeleton.axes.first[arm] as number;
+					n <= (skeleton.axes.last[arm] as number);
+					n++
+				)
+					radii.push(skeleton.radius[n] as number);
+				radii.sort((x, y) => x - y);
+				const width = 2 * (radii[radii.length >> 1] as number);
+				let least = Number.POSITIVE_INFINITY;
+				for (let i = 1; i + 1 < points.length; i++) {
+					const [p, q, r] = [points[i - 1], points[i], points[i + 1]] as [
+						number[],
+						number[],
+						number[],
+					];
+					const pq = Math.hypot(...[0, 1, 2].map((k) => (q[k] as number) - (p[k] as number)));
+					const qr = Math.hypot(...[0, 1, 2].map((k) => (r[k] as number) - (q[k] as number)));
+					const rp = Math.hypot(...[0, 1, 2].map((k) => (p[k] as number) - (r[k] as number)));
+					const u = [0, 1, 2].map((k) => (q[k] as number) - (p[k] as number));
+					const v = [0, 1, 2].map((k) => (r[k] as number) - (p[k] as number));
+					const cross = Math.hypot(
+						(u[1] as number) * (v[2] as number) - (u[2] as number) * (v[1] as number),
+						(u[2] as number) * (v[0] as number) - (u[0] as number) * (v[2] as number),
+						(u[0] as number) * (v[1] as number) - (u[1] as number) * (v[0] as number),
+					);
+					if (cross < 1e-9) continue;
+					least = Math.min(least, (pq * qr * rp) / (2 * cross));
+				}
+				expect([variant, arm, least >= 0.95 * width]).toEqual([variant, arm, true]);
+			}
+		}
 	});
 
 	it('draws one spine cluster at each areole and no shoot at a flower site', async () => {
