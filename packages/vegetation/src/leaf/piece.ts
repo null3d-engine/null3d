@@ -75,7 +75,16 @@ export interface PieceLeaves {
 	 * of an even spread on them. A hanging leaf faces away from its twig, at 180. Where this or
 	 * `hang` is named, the leaf takes no turn toward the sky side.
 	 */
-	readonly face?: { readonly turn: number; readonly spread: number };
+	readonly face?: {
+		readonly turn: number;
+		readonly spread: number;
+		/**
+		 * Whether the blade lies in the piece's own plane, the plane of its line and its sky side,
+		 * so that it shows its whole face from the piece's flank. The turn and its spread then count
+		 * from that plane. A hanging strand's leaves lie this way: the strand is flat.
+		 */
+		readonly inPlane?: boolean;
+	};
 	/**
 	 * A flat rosette: the stem's leaves fan out in the plane that faces the piece's sky side, spread
 	 * evenly to `reach` degrees either side of the stem, the lowest leaf the widest, and each blade
@@ -295,7 +304,11 @@ export function planPiece(
 			length3(mixed[0], mixed[1], mixed[2]) < 1e-6 ? leaf.direction : normalize3(mixed);
 		const roll =
 			(own.face?.turn ?? 0) + (draw(Purpose.Roll, axis, index) * 2 - 1) * (own.face?.spread ?? 0);
-		const face = turn(square(leaf.stem, direction, leaf.radial), direction, roll);
+		// A blade in the piece's plane faces the piece's flank, to one side or the other.
+		const flank: Vector3 = [draw(Purpose.Roll, axis, index + 4096) < 0.5 ? 1 : -1, 0, 0];
+		const face = own.face?.inPlane
+			? turn(square(flank, direction, leaf.radial), direction, roll - (own.face?.turn ?? 0))
+			: turn(square(leaf.stem, direction, leaf.radial), direction, roll);
 		const rotation = [0, 0, 0, 1];
 		quatFromFrame(direction, face, rotation);
 		return { ...leaf, direction, rotation };
@@ -784,6 +797,17 @@ export function layStudio(
 				point.at[1] - last.at[1],
 				point.at[2] - last.at[2],
 			]);
+			// A hanging piece hangs in the plane of its branch, so it heads the way the branch runs.
+			if (attitudeOf(along.piece) === 'plumb') {
+				placed.push({
+					piece: along.piece,
+					pick: a * 64 + k,
+					position: [...point.at],
+					rotation: pieceTurn('plumb', run),
+				});
+				next += along.gap;
+				continue;
+			}
 			// A side piece leaves to one side of its stem and the other in turn, level with the ground.
 			const flat = level(run, [0, 0, 1]);
 			const across: Vector3 = [-flat[2] * side, 0, flat[0] * side];
