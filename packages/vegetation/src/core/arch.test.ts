@@ -7,11 +7,14 @@ import {
 	type Arch,
 	type ArchChain,
 	archFromFigures,
+	archLeastRadius,
 	archPath,
 	archSegments,
 	chainArches,
+	chainLeastRadius,
 	chainLength,
 	chainPath,
+	chainPath3,
 	MOST_TURN,
 } from './arch';
 import { unitAt } from './hash';
@@ -289,6 +292,145 @@ describe('a chain of arches', () => {
 	it('is the same path each time', () => {
 		const chain = drawnChain(9);
 		expect([...chainPath(chain, 2, 5).out]).toEqual([...chainPath(chain, 2, 5).out]);
+	});
+});
+
+/** The least radius of a path's turns, from the circle through each three neighbouring points. */
+function leastRadiusOf(path: ReturnType<typeof archPath>): number {
+	let least = Number.POSITIVE_INFINITY;
+	for (let i = 1; i < path.segments; i++) {
+		const ax = path.out[i - 1] as number;
+		const ay = path.up[i - 1] as number;
+		const bx = path.out[i] as number;
+		const by = path.up[i] as number;
+		const cx = path.out[i + 1] as number;
+		const cy = path.up[i + 1] as number;
+		const area = Math.abs((bx - ax) * (cy - ay) - (by - ay) * (cx - ax)) / 2;
+		if (area < 1e-15) continue;
+		const ab = Math.hypot(bx - ax, by - ay);
+		const bc = Math.hypot(cx - bx, cy - by);
+		const ca = Math.hypot(ax - cx, ay - cy);
+		least = Math.min(least, (ab * bc * ca) / (4 * area));
+	}
+	return least;
+}
+
+describe("a part's least bend radius", () => {
+	it('is the radius of an even turn', () => {
+		// A quarter turn on a length of pi is an arc of radius 2.
+		expect(archLeastRadius({ length: Math.PI, leave: 0, turn: -90 })).toBeCloseTo(2, 9);
+		expect(archLeastRadius({ length: 3, leave: 40, turn: 0 })).toBe(Number.POSITIVE_INFINITY);
+	});
+
+	it('is the radius the path bends on at its tightest, for any stretch and power', () => {
+		for (let seed = 0; seed < 60; seed++) {
+			const arch = drawn(seed);
+			if (Math.abs(arch.turn) < 5) continue;
+			const read = leastRadiusOf(archPath(arch, 0, 400));
+			expect(Math.abs(read - archLeastRadius(arch)) / archLeastRadius(arch)).toBeLessThan(0.05);
+		}
+	});
+
+	it("is a chain's tightest link's", () => {
+		const chain: ArchChain = {
+			leave: 60,
+			links: [
+				{ length: 1, turn: 40 },
+				{ length: 0.2, turn: -60, power: 2 },
+			],
+		};
+		const radii = chainArches(chain).map(archLeastRadius);
+		expect(chainLeastRadius(chain)).toBe(Math.min(...radii));
+		expect(chainLeastRadius(chain)).toBeCloseTo(0.2 / (2 * radians(60)), 9);
+	});
+});
+
+/** Degrees between each pair of neighbouring segments of a path in space. */
+function turns3(path: ReturnType<typeof chainPath3>): number[] {
+	const p = path.points;
+	const found: number[] = [];
+	for (let i = 1; i < path.segments; i++) {
+		const a = [0, 1, 2].map((k) => (p[i * 3 + k] as number) - (p[(i - 1) * 3 + k] as number));
+		const b = [0, 1, 2].map((k) => (p[(i + 1) * 3 + k] as number) - (p[i * 3 + k] as number));
+		const dot =
+			((a[0] as number) * (b[0] as number) +
+				(a[1] as number) * (b[1] as number) +
+				(a[2] as number) * (b[2] as number)) /
+			(Math.hypot(a[0] as number, a[1] as number, a[2] as number) *
+				Math.hypot(b[0] as number, b[1] as number, b[2] as number));
+		found.push((acos(Math.min(1, Math.max(-1, dot))) * 180) / Math.PI);
+	}
+	return found;
+}
+
+describe('a chain of arches in space', () => {
+	it('lies in its upright plane, as the flat chain does, when no link rolls', () => {
+		for (let seed = 0; seed < 30; seed++) {
+			const chain = drawnChain(seed);
+			const flat = chainPath(chain, 1, 9);
+			const space = chainPath3(chain, 1, 9);
+			expect(space.segments).toBe(flat.segments);
+			for (let i = 0; i <= flat.segments; i++) {
+				expect(space.points[i * 3] as number).toBeCloseTo(flat.out[i] as number, 6);
+				expect(space.points[i * 3 + 1] as number).toBeCloseTo(flat.up[i] as number, 6);
+				expect(space.points[i * 3 + 2] as number).toBeCloseTo(0, 9);
+			}
+		}
+	});
+
+	it('never turns more between two segments than its level allows, rolled joins included', () => {
+		for (let seed = 0; seed < 200; seed++) {
+			const base = drawnChain(seed);
+			const chain: ArchChain = {
+				...base,
+				links: base.links.map((link, k) => ({ ...link, roll: -180 + 360 * unitAt(seed, 40 + k) })),
+			};
+			for (const level of LEVELS) {
+				const path = chainPath3(chain, level);
+				expect(Math.max(...turns3(path))).toBeLessThanOrEqual(MOST_TURN[level] + 1e-6);
+			}
+		}
+	});
+
+	it('elbows to the side where a link rolls a quarter turn, with no corner in plan', () => {
+		// A limb runs level, then turns 60 degrees in a plane rolled a quarter turn: to the side.
+		const chain: ArchChain = {
+			leave: 0,
+			links: [
+				{ length: 1, turn: 0 },
+				{ length: 1, turn: 60, roll: 90 },
+			],
+		};
+		const path = chainPath3(chain, 0);
+		const tip = path.segments;
+		// The elbow turns in the level plane: the tip stays at the base's height, off to the side.
+		expect(path.points[tip * 3 + 1] as number).toBeCloseTo(0, 9);
+		expect(Math.abs(path.points[tip * 3 + 2] as number)).toBeGreaterThan(0.4);
+		// The tip's line has turned 60 degrees from +X, in the level plane.
+		expect(path.tangents[tip * 3] as number).toBeCloseTo(Math.cos(radians(60)), 6);
+		expect(path.tangents[tip * 3 + 1] as number).toBeCloseTo(0, 9);
+		expect(Math.max(...turns3(path))).toBeLessThanOrEqual(MOST_TURN[0] + 1e-6);
+	});
+
+	it('keeps its length and is the same path each time', () => {
+		const base = drawnChain(5);
+		const chain: ArchChain = { ...base, links: base.links.map((link) => ({ ...link, roll: 35 })) };
+		const path = chainPath3(chain, 0, 64);
+		let sum = 0;
+		for (let i = 0; i < path.segments; i++)
+			sum += Math.hypot(
+				(path.points[(i + 1) * 3] as number) - (path.points[i * 3] as number),
+				(path.points[(i + 1) * 3 + 1] as number) - (path.points[i * 3 + 1] as number),
+				(path.points[(i + 1) * 3 + 2] as number) - (path.points[i * 3 + 2] as number),
+			);
+		expect(sum).toBeLessThanOrEqual(chainLength(chain) * (1 + 1e-9));
+		expect(sum).toBeGreaterThan(chainLength(chain) * 0.995);
+		expect([...chainPath3(chain, 2, 5).points]).toEqual([...chainPath3(chain, 2, 5).points]);
+	});
+
+	it('is refused by the flat chain when a link rolls', () => {
+		const chain: ArchChain = { leave: 10, links: [{ length: 1, turn: 20, roll: 30 }] };
+		expect(() => chainPath(chain, 0)).toThrow('chainPath3');
 	});
 });
 

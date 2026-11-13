@@ -410,13 +410,16 @@ for (const id of TUFTS) {
 				let tip = 0;
 				for (let i = 0; i < mesh.positions.length; i += 3)
 					if ((mesh.positions[i + 2] as number) > (mesh.positions[tip + 2] as number)) tip = i;
-				if ((mesh.positions[tip + 1] as number) > blade.width) continue;
+				// A blade that ends in the air, however near the soil, has not come to rest.
+				if (Math.abs(mesh.positions[tip + 1] as number) > 0.002) continue;
 				landing++;
-				// Its point lies on the soil: every vertex of it within half a blade's width of the
-				// ground. Its bend weight is at most three hundredths of a free tip's, and the wind
+				// Its tip lies on the soil: every vertex of the run it lies along within half a blade's
+				// width of the ground. Its bend weight is at most three hundredths of a free tip's, and the wind
 				// bends a vertex by that weight squared, so the point holds still.
+				// The run it lies along is a blade's width long, as the prototype is grown.
+				const lying = (blade.width * (1 + growth.bladeSpread)) / prototype.length;
 				for (let i = 0; i < mesh.positions.length / 3; i++) {
-					if ((mesh.uvs1[i * 2] as number) < 1 - 0.9 * blade.tipLength) continue;
+					if ((mesh.uvs1[i * 2] as number) < 1 - 0.9 * lying) continue;
 					expect(Math.abs(mesh.positions[i * 3 + 1] as number)).toBeLessThanOrEqual(
 						blade.width / 2 + 1e-6,
 					);
