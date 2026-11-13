@@ -858,11 +858,17 @@ export default defineSketch(async (ctx) => {
 		}
 		return out;
 	})();
-	/** The drawn plant's own points, which a framed view holds between its asked rows. */
+	/**
+	 * The drawn plant's own points, which a framed view holds between its asked rows. A plant built
+	 * of pieces placed at sockets draws nearly all of itself as rows, so its rows' points count
+	 * too: its own mesh is only the stool at its foot.
+	 */
 	const plantPoints = ((): Float32Array | undefined => {
 		const parts = main.levels[0]?.parts ?? [];
-		if (parts.length === 0) return undefined;
+		const pieces = !record.shoots && main.shoots.count > 0;
+		if (parts.length === 0 && !pieces) return undefined;
 		const lists = parts.map((part) => partPositions(part, kit.box));
+		if (pieces) lists.push(shootPositions(main, mainKit));
 		const out = new Float32Array(lists.reduce((n, list) => n + list.length, 0));
 		let at = 0;
 		for (const list of lists) {
