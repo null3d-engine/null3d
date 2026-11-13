@@ -9,8 +9,8 @@
 import { BUD_FLOWER } from '../../../../packages/vegetation/src/core/graph';
 import {
 	type AxisPoint,
+	across,
 	chainOf,
-	cross,
 	dot,
 	lengthOf,
 	mainStem,
@@ -18,6 +18,7 @@ import {
 	normalize,
 	pointAlong,
 	stemFoot,
+	step,
 	turnedAbout,
 	type V3,
 } from './anatomy';
@@ -102,15 +103,6 @@ function yawed(v: readonly number[], angle: number): V3 {
 	];
 }
 
-/** The point `metres` from `at` along a direction. */
-function step(at: readonly number[], direction: readonly number[], metres: number): V3 {
-	return [
-		(at[0] as number) + (direction[0] as number) * metres,
-		(at[1] as number) + (direction[1] as number) * metres,
-		(at[2] as number) + (direction[2] as number) * metres,
-	];
-}
-
 /** The camera distance at which a frame `height` metres tall at the target fills a lens. */
 function distanceFor(height: number, fov: number): number {
 	return height / 2 / Math.tan((fov * DEG) / 2);
@@ -121,12 +113,6 @@ function between(skeleton: MacroSkeleton, a: number, b: number): V3 {
 	const p = nodeAt(skeleton, a);
 	const q = nodeAt(skeleton, b);
 	return normalize([q[0] - p[0], q[1] - p[1], q[2] - p[2]]);
-}
-
-/** A unit vector square to `v`, level where it can be: across a direction's run. */
-function across(v: V3): V3 {
-	const level = cross([0, 1, 0], v);
-	return Math.hypot(...level) > 1e-3 ? normalize(level) : [1, 0, 0];
 }
 
 /**
