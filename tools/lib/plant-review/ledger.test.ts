@@ -145,7 +145,14 @@ describe('the ledger of a folder of runs', () => {
 
 	test('prints the pictures taken out of each row, so none leaves without a trace', () => {
 		const folder = join(root, 'taken');
-		const verdict = verdictOf('olive', 'olive-3', '-'.repeat(12));
+		const verdict = verdictOf('olive', 'olive-3', '-'.repeat(12), {
+			coverage: {
+				complete: true,
+				compared: 28,
+				inUse: 30,
+				drawn: ['07-limb-leaving-trunk.png', '17-trunk-taper.png'],
+			},
+		});
 		runFolder(folder, {
 			...verdict,
 			rows: verdict.rows.map((row) =>
@@ -166,6 +173,9 @@ describe('the ledger of a folder of runs', () => {
 		});
 		expect(ledgerText(ledgerOf([folder]))).toContain(
 			'pictures out of the rows: row 3: 1 void, 2 with no subject check; row 6: 1 not compared, 1 set aside',
+		);
+		expect(ledgerText(ledgerOf([folder]))).toContain(
+			'2 drawn and not measured, for the eye: 07-limb-leaving-trunk.png, 17-trunk-taper.png',
 		);
 	});
 

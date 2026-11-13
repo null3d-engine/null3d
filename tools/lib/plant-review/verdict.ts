@@ -152,6 +152,11 @@ export interface Verdict {
 		readonly complete: boolean;
 		readonly compared: number;
 		readonly inUse: number;
+		/**
+		 * The files drawn and not measured, because the standard states no figure for their view. The
+		 * eye judges them: each counts toward a complete run and passes no row alone.
+		 */
+		readonly drawn?: readonly string[];
 	};
 	/** The plant's balance through eight angles, from the whole-plant turning video. */
 	readonly balance: Balance;
@@ -206,7 +211,8 @@ export interface VerdictInput {
 	readonly seed: number;
 	readonly variant: number;
 	readonly preset: string;
-	readonly coverage: Pick<Coverage, 'complete' | 'compared' | 'inUse'>;
+	readonly coverage: Pick<Coverage, 'complete' | 'compared' | 'inUse'> &
+		Partial<Pick<Coverage, 'drawn'>>;
 	/** The set's stills and texture sources, and each one's comparison. */
 	readonly slots: readonly Slot[];
 	readonly stills: ReadonlyMap<string, StillResult>;
@@ -488,6 +494,8 @@ export function toolVerdict(input: VerdictInput): Verdict {
 			complete: input.coverage.complete,
 			compared: input.coverage.compared,
 			inUse: input.coverage.inUse,
+			...(input.coverage.drawn &&
+				input.coverage.drawn.length > 0 && { drawn: input.coverage.drawn }),
 		},
 		balance: toolBalance(input),
 		rows,

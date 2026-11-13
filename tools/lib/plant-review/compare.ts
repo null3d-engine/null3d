@@ -86,6 +86,64 @@ const BARK_VIEWS: ReadonlySet<string> = new Set([
 const LEAF_GREEN = -5;
 
 /**
+ * The close views of the wood from among the plant's own parts: a limb's join, a fork, the trunk
+ * inside the crown and the bole. Their photographs stand against leaves, woodland or the plant
+ * itself, so a sky or a ground fitted to such a picture's border is not there to find. Only a
+ * plain studio background gives one of them an outline.
+ */
+export const WOOD_CLOSE_VIEWS: ReadonlySet<string> = new Set([
+	'junction',
+	'fork',
+	'inside',
+	'trunk',
+]);
+
+/**
+ * The views for which the standard states no figure: their rows are judged on them by eye. A picture
+ * of one of them that gives no figure is drawn and not measured, which is its proper state. A
+ * picture of any other view that gives no figure is a fault of the tool.
+ */
+export const EYE_VIEWS: ReadonlySet<string> = new Set([
+	'below',
+	'limb',
+	'crown-underside',
+	'inside',
+	'junction',
+	'fork',
+	'trunk',
+]);
+
+/**
+ * The views whose camera is solved from the plant's subjects, each with a contract. A picture of
+ * one draws its matte too, so the contract's regions are checked on what was drawn.
+ */
+export const SOLVED_VIEWS: ReadonlySet<string> = new Set([
+	...EYE_VIEWS,
+	'bark-base',
+	'bark-mid',
+	'bark-limb',
+]);
+
+/**
+ * Whether a comparison read any figure of its picture against its photograph: an outline, a
+ * surface or bark colour, or a leaf colour. The edge-direction share is not one: it is a note for
+ * the eye and no row's band.
+ */
+export function measured(pair: {
+	readonly masked: boolean;
+	readonly surfaceDeltaE: number | null;
+	readonly foliageDeltaE: number | null;
+	readonly barkDeltaE: number | null;
+}): boolean {
+	return (
+		pair.masked ||
+		pair.surfaceDeltaE !== null ||
+		pair.foliageDeltaE !== null ||
+		pair.barkDeltaE !== null
+	);
+}
+
+/**
  * Whether a picture separates a plant from a plain background, so its outline can be read. A bark
  * close view photographs the bark against bark, and a bark texture is a cut-out of the material:
  * neither has a plant outline, and their rows read colour. A leaf texture is a cut-out on white
@@ -2032,17 +2090,22 @@ export function compareStills(
 			slot.kind,
 			frame.query?.noOutline === true || pictureNote?.outline !== undefined,
 		);
-		const fittedKind = refPlant.background.plain
-			? null
-			: skyMaskable(refPlant.background)
-				? ('sky' as const)
-				: soilMaskable(refPlant.background, refPlant.height)
-					? ('ground' as const)
-					: null;
+		// A close view of the wood takes no fitted sky or ground: its photograph has neither.
+		const fittedKind =
+			refPlant.background.plain || WOOD_CLOSE_VIEWS.has(drawn)
+				? null
+				: skyMaskable(refPlant.background)
+					? ('sky' as const)
+					: soilMaskable(refPlant.background, refPlant.height)
+						? ('ground' as const)
+						: null;
+		// An outline is compared only where the photograph separates its plant: on a plain
+		// background, or on a sky or a ground that the fit found.
+		const separable = refPlant.background.plain || fittedKind !== null;
 		const masked =
 			!noOutline &&
-			((fittedKind === null && frame.matte !== undefined) ||
-				(fittedKind !== null && (frame.matte !== undefined || render.measures.box !== undefined)));
+			separable &&
+			(frame.matte !== undefined || (fittedKind !== null && render.measures.box !== undefined));
 		const pair = pairMetrics(masked ? refSide : { ...refSide, normal: undefined }, render);
 		const bark = slot.kind === 'texture' && !slot.view.startsWith('leaf');
 		// The shot carries the query the page was asked for, which is where a species' slot file
@@ -2099,14 +2162,14 @@ export function compareStills(
 		// The connectivity gate reads the matte at the picture's own width: a downscale to the work
 		// width can drop a hairline shoot the picture keeps and so invent a piece hanging free. The
 		// work-width read is kept beside it as a second figure.
-		const ownParts = own ? piecePartsAtOwnWidth(own.mask, own.width, own.height) : null;
+		// A fork's picture draws only the wood near the joint's depth, so the cut leaves pieces that
+		// hang free in it by design, and the gate does not read it.
+		const ownParts =
+			own && drawn !== 'fork' ? piecePartsAtOwnWidth(own.mask, own.width, own.height) : null;
 		const pieces = parts
 			? {
 					reference:
-						refSide.measures.box !== null &&
-						(refPlant.background.plain ||
-							skyMaskable(refPlant.background) ||
-							soilMaskable(refPlant.background, refPlant.height))
+						refSide.measures.box !== null && separable
 							? pieceCount(anyPlantMask(refPlant), refPlant.width, refPlant.height, PIECE_AREA)
 							: null,
 					render: parts.length,
@@ -2141,7 +2204,8 @@ export function compareStills(
 					foliageDeltaE: refPlant.background.plain ? pair.foliageDeltaE : null,
 				};
 		const framing = closeFraming(frame.facts);
-		const note = crownNote(refSide.measures, render.measures) ?? slot.note;
+		// The crown's box is read from an outline, so only a picture compared by outline has its note.
+		const note = (masked ? crownNote(refSide.measures, render.measures) : undefined) ?? slot.note;
 		results.push({
 			...shown,
 			file: slot.file,

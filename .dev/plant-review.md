@@ -395,6 +395,18 @@ and a whole view by the crop and size checks. A view with neither may show anoth
 photograph. The verdict lists such pictures as not checked, and a row that rests only on them cannot
 pass.
 
+**A picture with no figure is drawn, not compared.** Some pictures have no figure to give: a limb's
+join against leaves has no outline and no band. The tool lists such a picture as drawn and not
+measured, and the eye judges it. Two limits hold:
+
+- The state applies only where this standard states no figure for the picture's view: the view up
+  the trunk, the crown's outside and underside, the inside of the crown, a limb's join, a fork and
+  the bole. Where a figure exists and the tool did not read it, that is a fault of the tool, and
+  the run is not complete.
+- Such a picture never carries a pass alone. Its row needs the named reviewer's reading in the
+  review file, as every pass does. The count prints how many such pictures a species has and names
+  them.
+
 **A same-angle conflict is a reference conflict; a cross-angle comparison is not.** When two
 reference pictures disagree, read the turn each is drawn at. Compare only figures at the same turn,
 and intersect their bands. A figure at turn 0 and a figure at turn 90 do not bind one projection.
