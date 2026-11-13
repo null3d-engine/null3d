@@ -133,6 +133,19 @@ for (const { id, pieces, studio } of SPECIES)
 				}
 		});
 
+		it('records a site at every stem end and every leafy node, ranked within its kind', () => {
+			for (const piece of built) {
+				const tips = piece.sites.filter((site) => site.kind === 'tip');
+				const nodes = piece.sites.filter((site) => site.kind === 'node');
+				expect(tips.length).toBeGreaterThan(0);
+				expect(nodes.length).toBeGreaterThan(0);
+				expect(nodes.length).toBeLessThanOrEqual(piece.leaves);
+				for (const kind of [tips, nodes])
+					expect(kind.map((site) => site.rank)).toEqual(kind.map((_, index) => index));
+				for (const site of piece.sites) expect(Math.hypot(...site.direction)).toBeCloseTo(1, 5);
+			}
+		});
+
 		it('stays under the prototype vertex limit at every tier', () => {
 			for (const piece of built)
 				for (const [tier, mesh] of piece.tiers.entries()) {
