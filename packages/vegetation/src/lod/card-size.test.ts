@@ -102,13 +102,13 @@ describe('a card level keeps the plant size', () => {
 			LONG,
 		);
 
-	it(
-		'keeps the sky inside the crown outline within the review band of the leaf form',
-		async () => {
-			// The medium tier's leaves are meshes of their own outline, so the leaf form's matte is the
-			// leaves themselves and not a card's picture of them. These species' card levels draw every
-			// part of the leaf form but its finer wood, which their cards grow to make up.
-			for (const id of SKY_SPECIES) {
+	// The medium tier's leaves are meshes of their own outline, so the leaf form's matte is the
+	// leaves themselves and not a card's picture of them. These species' card levels draw every
+	// part of the leaf form but its finer wood, which their cards grow to make up.
+	for (const id of SKY_SPECIES)
+		it(
+			`keeps the sky inside the crown outline of the ${id} within the review band`,
+			async () => {
 				const kit = await kitOf(id, 'medium');
 				const asset = growPlantNow(kit, { seed: 11, variant: 0, near: true });
 				const leaf = outlineMatte(kit, asset, 0, 192, 'leaves');
@@ -118,10 +118,9 @@ describe('a card level keeps the plant size', () => {
 					const at = `${id} level ${level}: leaf form ${own.toFixed(4)}, level ${sky.toFixed(4)}`;
 					expect([at, sky - own <= SKY_MORE, own - sky <= SKY_LESS]).toEqual([at, true, true]);
 				}
-			}
-		},
-		LONG,
-	);
+			},
+			LONG,
+		);
 
 	it('names no card growth in any record', async () => {
 		const { speciesIds } = await import('../core/registry');

@@ -42,7 +42,9 @@ describe('the leaf-card level rule, which the vegetation add-on and the asset to
 		expect(cardKeep(2, 2)).toBeCloseTo(Math.SQRT2, 12);
 		// The add-on scales each plane's half-extents about the plane's centre, by that factor where
 		// the leaf form has the room; the tool rewrites the vertices around the card's middle by it.
-		expect(CARDS).toContain('const grow = growthInHull(input, r, most);');
+		expect(CARDS).toContain(
+			'const grow = growthInHull(input, r, most, undefined, NO_SHIFT, back);',
+		);
 		expect(CARDS).toContain(
 			'grow * (sx * (plane.right[c] as number) + sy * (plane.up[c] as number))',
 		);
