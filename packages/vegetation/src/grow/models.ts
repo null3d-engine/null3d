@@ -7,7 +7,7 @@ import type { MeshArrays } from '../asset';
 import type { MacroSkeleton } from '../core/graph';
 import type { GrowthModel, Species } from '../core/record';
 import type { TextureManifest } from '../core/textures';
-import type { PieceClass } from '../leaf/ground-piece';
+import type { WrittenPiece } from '../leaf/ground-piece';
 import type { GrowInput, MeshInput, MeshLevel } from '../stages';
 
 /**
@@ -23,10 +23,10 @@ export interface Grower {
 	/** Meshes a 'merged' species' foliage at a level: fronds, rosette leaves, blades. */
 	foliage?(input: MeshInput, level: MeshLevel): MeshArrays;
 	/**
-	 * The classes of piece the model's sockets name, in the order their vigor bands stand: the kit
-	 * builds a prototype of each, as it builds a tree's shoots.
+	 * The pieces the model's sockets carry, which its grower writes itself, in the order a socket
+	 * names them by: the kit holds each part as a prototype, as it holds a tree's branch pieces.
 	 */
-	pieces?(record: Species, manifest: TextureManifest): readonly PieceClass[];
+	pieces?(record: Species, manifest: TextureManifest): readonly WrittenPiece[];
 }
 
 /** Each model's grower, as a lazy chunk. */

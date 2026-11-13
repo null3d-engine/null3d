@@ -1,8 +1,13 @@
 // The bands of distance that a fixed plant's levels draw in: each level hands over to the next
 // with the next at full coverage before its own edge thins, so no pixel drops out of both.
 import { describe, expect, it } from 'bun:test';
+import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
 import type { PlantAsset } from '../asset';
+import { loadSpecies } from '../core/registry';
+import { buildKitNow, growPlantNow, loadPlantCode } from '../generate';
+import { dequantisePosition } from '../lod/quantise';
 import { EDGE_BAND } from './hand-over';
+import { plantBoundingRadius } from './material';
 import { levelBands } from './static-shoots';
 
 /** An asset with three levels of the given starts, and shoot rows or none. */
@@ -45,4 +50,46 @@ describe('the level bands of a fixed plant', () => {
 		const short = levelBands(asset([0, 30, 80], [2, 2, 2], 10), 12, 1, 82);
 		expect(short[1]?.to).toBe(82);
 	});
+});
+
+describe("a fixed plant's sphere", () => {
+	it(
+		'holds everything its variant draws, inside the species box',
+		async () => {
+			const module = await loadSpecies('hawthorn-shrub');
+			await loadPlantCode(module.record);
+			const kit = buildKitNow(module, { placeholders: 'missing', detail: 'low' });
+			const plant = growPlantNow(kit, { seed: 11, variant: 0, near: true });
+			const radius = plantBoundingRadius(kit, plant);
+			// Every vertex of every level, and every shoot row's reach, stands inside it.
+			let farthest = 0;
+			const at: [number, number, number] = [0, 0, 0];
+			for (const level of plant.levels)
+				for (const part of level.parts)
+					for (let i = 0; i < part.arrays.positions.length / 3; i++) {
+						dequantisePosition(part.arrays.positions, i, kit.box, at);
+						farthest = Math.max(farthest, Math.hypot(...at));
+					}
+			const rows = plant.shoots;
+			for (let r = 0; r < rows.count; r++)
+				farthest = Math.max(
+					farthest,
+					Math.hypot(
+						rows.position[r * 3] as number,
+						rows.position[r * 3 + 1] as number,
+						rows.position[r * 3 + 2] as number,
+					) +
+						(kit.prototypes[rows.prototype[r] as number]?.radius ?? 0) * (rows.scale[r] as number),
+				);
+			expect(farthest).toBeLessThanOrEqual(radius);
+			// The species box holds every variant with room to spare, so its corner is farther.
+			let corner = 0;
+			for (const x of [kit.box.min[0], kit.box.max[0]])
+				for (const y of [kit.box.min[1], kit.box.max[1]])
+					for (const z of [kit.box.min[2], kit.box.max[2]])
+						corner = Math.max(corner, Math.hypot(x, y, z));
+			expect(radius).toBeLessThan(corner);
+		},
+		scaledBudget(60_000),
+	);
 });

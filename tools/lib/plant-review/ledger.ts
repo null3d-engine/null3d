@@ -325,7 +325,7 @@ export function ledgerText(ledger: Ledger): string {
 			const parts = [
 				row.notCompared > 0 ? `${row.notCompared} not compared` : '',
 				row.voided > 0 ? `${row.voided} void` : '',
-				row.lacking > 0 ? `${row.lacking} of a part the plant lacks` : '',
+				row.lacking > 0 ? `${row.lacking} of a part the plant lacks or hides` : '',
 				row.setAside > 0 ? `${row.setAside} set aside` : '',
 				row.unchecked > 0 ? `${row.unchecked} with no subject check` : '',
 			].filter(Boolean);
