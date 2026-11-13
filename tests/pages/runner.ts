@@ -39,6 +39,7 @@ import {
 	type MissingAllowed,
 	needsImageBuffers,
 	pathsToSkip,
+	skippedForBrowserResult,
 	skippedForImages,
 	skippedForImagesResult,
 	skippedPath,
@@ -287,6 +288,12 @@ async function gpuInfo(): Promise<GpuFacts> {
  * What the browser tells about itself and its device: the browser it detects itself to be, and
  * the GPU. Browsers may hide the GPU and the model.
  */
+/** The browser this page runs in, by the name the device record gives it, read once. */
+const browserName = (() => {
+	let name: string | undefined;
+	return () => (name ??= detectBrowser({ userAgent: navigator.userAgent }).name);
+})();
+
 async function deviceInfo(): Promise<Record<string, unknown>> {
 	const nav = navigator as Navigator & {
 		userAgentData?: { getHighEntropyValues(hints: string[]): Promise<UserAgentData> };
@@ -521,12 +528,16 @@ async function runPlan(run: string, from?: number): Promise<void> {
 		if (index < start) continue;
 		report.running(index);
 		show(`${report.counts()}; now ${item.id}`);
+		const without = (item.check as { run?: { without?: readonly string[] } } | undefined)?.run
+			?.without;
 		const skipped =
 			item.gpu && skip.includes(item.gpu)
 				? skippedResult(item.gpu)
 				: imageFault && needsImageBuffers(item)
 					? skippedForImagesResult(imageFault)
-					: undefined;
+					: without?.includes(browserName())
+						? skippedForBrowserResult(browserName())
+						: undefined;
 		if (skipped) {
 			await post(run, item.id, skipped);
 			report.finish(index, skipped);

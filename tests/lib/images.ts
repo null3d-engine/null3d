@@ -146,6 +146,13 @@ interface ImageTestSettings {
 	swiftShaderTolerance?: Partial<Tolerance>;
 	/** How far an image from another browser or device may stray from the real-GPU references. */
 	deviceTolerance?: Partial<Tolerance>;
+	/**
+	 * Browsers that cannot draw this test's picture, by the name the device record gives, such as
+	 * `Firefox`. The test's own comment says why and names the run that showed it. A run on such a
+	 * browser skips the picture and reports the skip, so one browser's rasteriser limit does not
+	 * read as the engine's fault.
+	 */
+	without?: readonly string[];
 	/** Devices whose GPU draws the test differently, which keep their own references, such as 'ipad'. */
 	devices?: readonly string[];
 	/**
@@ -234,6 +241,8 @@ export interface ImageRun {
 	reference: { test: string; tier: Tier; devices: readonly string[] };
 	/** The other accepted drawings that the test records, from its own manifest entry. */
 	otherDrawings?: readonly OtherDrawing[];
+	/** The browsers that cannot draw this picture, as ImageTest.without names them. */
+	without?: readonly string[];
 	/** Another test of the same scene whose reference is the same picture as this run's. */
 	samePicture?: string;
 	/**
@@ -346,6 +355,7 @@ export function imageRuns(tests: readonly ImageTest[]): ImageRun[] {
 					swiftShaderTolerance: { ...TOLERANCE, ...test.tolerance, ...test.swiftShaderTolerance },
 				}),
 				deviceTolerance: { ...DEVICE_TOLERANCE, ...test.deviceTolerance },
+				...(test.without && { without: test.without }),
 				...(index > 0 && { sameAs: idOf(modes[0]) }),
 				swiftShaderSwitches: swiftShaderSwitchesOf(test),
 			}));

@@ -60,6 +60,19 @@ export const skippedResult = (path: GpuPath): ItemResult => ({
 	error: `the device lacks ${GPU_PATH_NAMES[path]}`,
 });
 
+/** The `skipped` value of a page skipped because its picture cannot be drawn in this browser. */
+export const BROWSER_SKIP = 'browser';
+
+/** The result that a runner page posts for a picture that this browser cannot draw. */
+export const skippedForBrowserResult = (browser: string): ItemResult => ({
+	ok: false,
+	skipped: BROWSER_SKIP,
+	error: `this browser cannot draw this picture: ${browser}`,
+});
+
+/** Whether a page was skipped because its picture cannot be drawn in this browser. */
+export const skippedForBrowser = (result: ItemResult): boolean => result.skipped === BROWSER_SKIP;
+
 /** The GPU path of a page that a runner page skipped, or undefined for a page that ran. */
 export function skippedPath(result: ItemResult): GpuPath | undefined {
 	const path = result.skipped;
