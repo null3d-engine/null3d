@@ -147,6 +147,8 @@ export function plantMaterials(
 				wind: field?.texture ?? stillWind(ctx.textures),
 				records: t.records,
 				...textures,
+				// The plant shader reads the card atlas for a shoot row's brush cards.
+				...(wgsl === plantShader ? { fourth: t.cardColor, fifth: t.cardSurface } : {}),
 			},
 			vertexColors: true,
 			roughness: 0.8,
