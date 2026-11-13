@@ -74,5 +74,11 @@
 		"barkMask": true
 	},
 	"15-bark-mid-trunk.png": {},
-	"16-bark-on-limb.png": {}
+	"16-bark-on-limb.png": {},
+	"_pictures": {
+		"21-branch-studio.png": {
+			"standing": "reference-limit",
+			"reason": "the photograph shows a weak cut branch, and stands as a limit of the reference until it is remade"
+		}
+	}
 }

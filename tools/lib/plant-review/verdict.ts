@@ -7,6 +7,7 @@
 import type { StillResult } from './compare.ts';
 import type { Coverage } from './coverage.ts';
 import type { Slot } from './references.ts';
+import type { Standing } from './review-data.ts';
 
 /** The name of the verdict file's format. */
 export const VERDICT_SCHEMA = 'null3d-plant-verdict/1';
@@ -71,6 +72,18 @@ export interface VerdictRow {
 	readonly reason?: string;
 	/** The row's pictures that show no subject, each with its reason: they decide nothing. */
 	readonly voids?: readonly { readonly picture: string; readonly reason: string }[];
+	/**
+	 * The row's pictures that do not judge the primary plant, each with its reason: a second form of
+	 * the species, a recorded limit of the reference set, or a stand of many plants. They are not
+	 * among the row's evidence, and no figure of theirs is among its figures.
+	 */
+	readonly setAside?: readonly {
+		readonly picture: string;
+		readonly kind: Standing;
+		readonly reason: string;
+	}[];
+	/** The row's pictures whose outline cannot be read, each with its reason: their outline figures are absent. */
+	readonly outlineVoids?: readonly { readonly picture: string; readonly reason: string }[];
 	/** The built neighbour that row 11 was judged against. */
 	readonly neighbour?: string;
 }
@@ -119,6 +132,14 @@ export const GAP_ABOVE = 0.05;
 export const GAP_BELOW = 0.02;
 /** The most a color difference may be, in CIEDE2000 steps, for rows 8 and 10. */
 export const COLOUR_MOST = 3;
+/**
+ * A cut branch's four density figures against its photograph's: the wood per tip and the tips per
+ * area within a quarter of it, the share of fan joints at most a tenth above it, and the kinks at
+ * least half of it.
+ */
+export const CUT_WITHIN = 0.25;
+export const CUT_FANS_ABOVE = 0.1;
+export const CUT_KINKS_LEAST = 0.5;
 
 /** Whether a figure lies in its band; a figure with no band is not judged by it. */
 export function inBand(figure: Figure): boolean | null {
@@ -151,17 +172,52 @@ function rounded(value: number): number {
 function figuresOf(row: number, pair: StillResult, run: string): Figure[] {
 	const base = { picture: pair.file, run };
 	switch (row) {
+		case 2: {
+			// A cut branch's density, where the run measured it on both pictures of the piece.
+			const cut = pair.cutBranch;
+			if (!cut) return [];
+			const near = (name: string, value: number, reference: number): Figure => ({
+				...base,
+				name,
+				value,
+				reference,
+				band: {
+					min: rounded(reference * (1 - CUT_WITHIN)),
+					max: rounded(reference * (1 + CUT_WITHIN)),
+				},
+			});
+			return [
+				near('cut branch wood per tip', cut.render.woodPerTip, cut.reference.woodPerTip),
+				near('cut branch tips per area', cut.render.tipsPerArea, cut.reference.tipsPerArea),
+				{
+					...base,
+					name: 'cut branch share of fan joints',
+					value: cut.render.fanShare,
+					reference: cut.reference.fanShare,
+					band: { min: null, max: rounded(cut.reference.fanShare + CUT_FANS_ABOVE) },
+				},
+				{
+					...base,
+					name: 'cut branch kinks',
+					value: cut.render.kinks,
+					reference: cut.reference.kinks,
+					band: { min: rounded(cut.reference.kinks * CUT_KINKS_LEAST), max: null },
+				},
+			];
+		}
 		case 4:
 			return pair.shapeIou === null
 				? []
 				: [{ ...base, name: 'leaf outline overlap', value: pair.shapeIou, band: null }];
 		case 6:
-			// The sky seen through the crown: the enclosed gap, read on the matte.
+			// The sky seen through the crown: the gap enclosed by the plant's own outline, read on the
+			// matte. The crown box's sky share is not this figure: on a plant that does not fill its
+			// box by shape, such as a spire or a cone, it measures the taper.
 			return pair.gap
 				? [
 						{
 							...base,
-							name: 'sky gap through the crown',
+							name: 'sky gap enclosed by the crown outline',
 							value: pair.gap.render,
 							reference: pair.gap.reference,
 							band: {
@@ -212,7 +268,10 @@ function figuresOf(row: number, pair: StillResult, run: string): Figure[] {
 	}
 }
 
-/** The rows the tool decides from figures alone, each with a band the standard states. */
+/**
+ * The rows the tool decides from figures alone, each with a band the standard states. Row 2 holds a
+ * cut branch's four figures with their bands, and stays with the reviewer, who counts the limbs too.
+ */
 const FIGURE_ROWS: ReadonlySet<number> = new Set([6, 8, 10]);
 
 /**
@@ -236,14 +295,30 @@ export function toolVerdict(input: VerdictInput): Verdict {
 			const pair = input.stills.get(slot.file);
 			return pair && !pair.error ? [pair] : [];
 		});
-		const voids = pairs.flatMap((pair) =>
+		// A picture the review data sets aside does not judge the primary plant.
+		const setAside = pairs.flatMap((pair) =>
+			pair.standing === undefined ? [] : [{ picture: pair.file, ...pair.standing }],
+		);
+		const judging = pairs.filter((pair) => pair.standing === undefined);
+		const voids = judging.flatMap((pair) =>
 			pair.void === undefined ? [] : [{ picture: pair.file, reason: pair.void }],
 		);
-		const sound = pairs.filter((pair) => pair.void === undefined);
-		const evidence = pairs.flatMap((pair) => (pair.renderFile ? [pair.renderFile] : []));
+		const outlineVoids = judging.flatMap((pair) =>
+			pair.outlineVoid === undefined ? [] : [{ picture: pair.file, reason: pair.outlineVoid }],
+		);
+		const sound = judging.filter((pair) => pair.void === undefined);
+		const evidence = judging.flatMap((pair) => (pair.renderFile ? [pair.renderFile] : []));
 		const figures = sound.flatMap((pair) => figuresOf(row, pair, input.run));
-		const base = { row, name, evidence, figures, ...(voids.length > 0 && { voids }) };
-		if (pairs.length > 0 && sound.length === 0)
+		const base = {
+			row,
+			name,
+			evidence,
+			figures,
+			...(voids.length > 0 && { voids }),
+			...(setAside.length > 0 && { setAside }),
+			...(outlineVoids.length > 0 && { outlineVoids }),
+		};
+		if (judging.length > 0 && sound.length === 0)
 			return {
 				...base,
 				verdict: 'void',

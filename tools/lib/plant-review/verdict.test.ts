@@ -127,7 +127,7 @@ describe("the tool's verdict of a run", () => {
 		expect(row.figures[0]).toEqual({
 			picture: '01-whole-distant.png',
 			run: 'oak-run-1',
-			name: 'sky gap through the crown',
+			name: 'sky gap enclosed by the crown outline',
 			value: 0.12,
 			reference: 0.1,
 			band: { min: 0.08, max: 0.15 },
@@ -141,7 +141,7 @@ describe("the tool's verdict of a run", () => {
 		);
 		expect(rowOf(open, 6).verdict).toBe('fail');
 		expect(rowOf(open, 6).reason).toBe(
-			'02-whole-profile.png: sky gap through the crown 0.26 outside 0.18 to 0.25',
+			'02-whole-profile.png: sky gap enclosed by the crown outline 0.26 outside 0.18 to 0.25',
 		);
 		const closed = toolVerdict(
 			input({ '02-whole-profile.png': { gap: { reference: 0.2, render: 0.17 }, masked: true } }),
@@ -230,6 +230,77 @@ describe("the tool's verdict of a run", () => {
 	});
 });
 
+describe('the pictures a verdict keeps apart', () => {
+	test('sets a second form aside: it is no evidence, and its figures judge nothing', () => {
+		// The woodland form's whole view is far more open than its band allows.
+		const verdict = toolVerdict(
+			input({
+				'30-woodland-form-whole.png': {
+					gap: { reference: 0.3, render: 0.6 },
+					masked: true,
+					standing: { kind: 'second-form', reason: 'a named second form' },
+				},
+			}),
+		);
+		const row = rowOf(verdict, 6);
+		expect(row.verdict).toBe('pass');
+		expect(row.figures.map((figure) => figure.picture)).not.toContain('30-woodland-form-whole.png');
+		expect(row.evidence).not.toContain('stills/30-woodland-form-whole.png');
+		expect(row.setAside).toEqual([
+			{ picture: '30-woodland-form-whole.png', kind: 'second-form', reason: 'a named second form' },
+		]);
+		expect(verdictFaults(verdict)).toEqual([]);
+	});
+
+	test('names a picture whose outline cannot be read, and reads no outline figure from it', () => {
+		const verdict = toolVerdict(
+			input({
+				'01-whole-distant.png': {
+					gap: null,
+					crownBox: null,
+					foliageDeltaE: 2.1,
+					outlineVoid: 'the far bank joins the outline',
+				},
+			}),
+		);
+		const row = rowOf(verdict, 6);
+		expect(row.outlineVoids).toEqual([
+			{ picture: '01-whole-distant.png', reason: 'the far bank joins the outline' },
+		]);
+		expect(row.figures.map((figure) => figure.picture)).not.toContain('01-whole-distant.png');
+		// Its color still judges row 10.
+		expect(rowOf(verdict, 10).figures.map((figure) => figure.picture)).toContain(
+			'01-whole-distant.png',
+		);
+	});
+
+	test("holds a cut branch's four figures on row 2, each with the band the standard gives", () => {
+		const slots = [...SLOTS, slot(21, 'branch-studio', 'branch')];
+		const base = input();
+		const stills = new Map(base.stills);
+		stills.set(
+			'21-branch-studio.png',
+			pair('21-branch-studio.png', {
+				view: 'branch',
+				cutBranch: {
+					reference: { woodPerTip: 0.2, tipsPerArea: 40, fanShare: 0.1, kinks: 6 },
+					render: { woodPerTip: 0.22, tipsPerArea: 55, fanShare: 0.15, kinks: 2 },
+				},
+			}),
+		);
+		const row = rowOf(toolVerdict({ ...base, slots, stills }), 2);
+		expect(row.figures.map((figure) => [figure.name, figure.value, figure.band])).toEqual([
+			['cut branch wood per tip', 0.22, { min: 0.15, max: 0.25 }],
+			['cut branch tips per area', 55, { min: 30, max: 50 }],
+			['cut branch share of fan joints', 0.15, { min: null, max: 0.2 }],
+			['cut branch kinks', 2, { min: 3, max: null }],
+		]);
+		expect(row.figures.map((figure) => inBand(figure))).toEqual([true, false, true, false]);
+		// The reviewer judges the row: it also counts the limbs.
+		expect(row.verdict).toBe('unjudged');
+	});
+});
+
 describe("a reviewer's rows", () => {
 	const fresh = toolVerdict(input());
 	const judged: Verdict = {
@@ -285,7 +356,7 @@ describe('an unsound verdict', () => {
 			figures: [{ ...(row.figures[0] as (typeof row.figures)[number]), run: 'oak-run-0' }],
 		});
 		expect(verdictFaults(borrowed)).toEqual([
-			"row 6 quotes sky gap through the crown of 01-whole-distant.png from run oak-run-0, not the file's run oak-run-1",
+			"row 6 quotes sky gap enclosed by the crown outline of 01-whole-distant.png from run oak-run-0, not the file's run oak-run-1",
 		]);
 	});
 

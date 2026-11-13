@@ -25,5 +25,11 @@
 	"22-subbranch-studio.png": { "pick": 2 },
 	"23-leaf-cluster-studio.png": { "cut": 0.35 },
 	"24-leaf-texture-upper.png": { "leaves": 0.72, "roll": -45 },
-	"25-leaf-texture-underside.png": { "leaves": 0.72, "roll": -45 }
+	"25-leaf-texture-underside.png": { "leaves": 0.72, "roll": -45 },
+	"_pictures": {
+		"05-beneath-the-tuft.png": {
+			"standing": "stand",
+			"reason": "the photograph shows a far larger and finer tuft than one plant grows"
+		}
+	}
 }
