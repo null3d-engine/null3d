@@ -24,7 +24,7 @@ import {
 	type Vector3,
 } from '../core/math';
 import type { Phyllotaxis, Species } from '../core/record';
-import { type Curve, curveAt, type Spread, spreadAt, spreadMean } from '../core/types';
+import { type Curve, curveAt, type Spread, spreadAt, spreadMean, type Vec3 } from '../core/types';
 import {
 	type AxisPoint,
 	addBudCluster,
@@ -46,10 +46,16 @@ import {
  * standing upright, with its plane level, or with its tip turned up. A hanging piece's ground side
  * is the way its line runs and an upright piece's is the way back along its line, so their stems
  * droop in the piece's own length; every other piece's ground side is opposite its sky side.
+ *
+ * @category api/vegetation
  */
 export type PieceAttitude = 'along' | 'plumb' | 'upright' | 'level' | 'up';
 
-/** The leaves along one stem of a piece. */
+/**
+ * The leaves along one stem of a piece.
+ *
+ * @category api/vegetation
+ */
 export interface PieceLeaves {
 	/** Metres between one node and the next. */
 	readonly gap: number;
@@ -84,14 +90,19 @@ export interface PieceLeaves {
 	readonly fan?: { readonly reach: number; readonly tilt: number };
 }
 
-/** The side stems along one stem of a piece. */
+/**
+ * The side stems along one stem of a piece.
+ *
+ * @category api/vegetation
+ */
 export interface PieceSides {
 	/** The side stem's own rule. */
 	readonly stem: PieceStem;
 	/** Metres along the parent between one side stem, or one pair, and the next. */
 	readonly gap: number;
-	/** The shares of the parent's length between which side stems leave. */
+	/** The share of the parent's length below which no side stem leaves. */
 	readonly from?: number;
+	/** The share of the parent's length past which no side stem leaves. */
 	readonly to?: number;
 	/**
 	 * Where each side stem stands round its parent: `alternate` to one side and the other in turn, in
@@ -103,11 +114,20 @@ export interface PieceSides {
 	readonly angle: Spread;
 	/** A side stem's length over its rule's, by its place along the parent, foot to tip. */
 	readonly lengthAlong?: Curve;
+	/**
+	 * Degrees an `alternate` side stem stands out of its parent's plane: one pair toward the sky
+	 * side, the next pair away from it. It gives a flattened fan its measured depth.
+	 */
+	readonly out?: number;
 	/** Degrees added to every side stem's place round the parent; 180 starts on the other side. */
 	readonly turn?: number;
 }
 
-/** One stem of a piece. */
+/**
+ * One stem of a piece.
+ *
+ * @category api/vegetation
+ */
 export interface PieceStem {
 	/** Metres from its foot to its tip. */
 	readonly length: Spread;
@@ -138,7 +158,11 @@ export interface PieceStem {
 	readonly bud?: boolean;
 }
 
-/** One kind of piece of a species. */
+/**
+ * One kind of piece of a species.
+ *
+ * @category api/vegetation
+ */
 export interface PieceRule {
 	/** The piece's name, unique in its species. */
 	readonly name: string;
@@ -147,10 +171,15 @@ export interface PieceRule {
 	/** How many variants the kit holds, each with its own draws. */
 	readonly variants: number;
 	/**
+	 * The piece's flat plane, where it has one: the unit normal of that plane in the piece's rest
+	 * frame. A flattened fan names it, so its far form may be one card in that plane.
+	 */
+	readonly plane?: Vec3;
+	/**
 	 * The ground side in the piece's frame, where it is not its attitude's own: a piece that stands
 	 * upright on its socket names the way back along its line, so its side stems lift toward its tip.
 	 */
-	readonly ground?: Readonly<Vector3>;
+	readonly ground?: Vec3;
 	/** Its main stem. */
 	readonly stem: PieceStem;
 }
@@ -169,6 +198,8 @@ export interface PiecePrototype
 	 */
 	readonly part: number;
 	readonly parts: number;
+	/** The unit normal of the piece's flat plane in its rest frame, where its rule names one. */
+	readonly plane?: Vec3;
 }
 
 /** The golden angle in degrees. */
@@ -458,7 +489,12 @@ export function planPiece(
 					(draw(Purpose.SideTurn, axis, s * 4096 + n) - 0.5) * SIDE_WANDER + (sides.turn ?? 0);
 				const azimuths =
 					sides.arrangement === 'alternate'
-						? [90 + (n % 2) * 180 + wander]
+						? [
+								90 +
+									(n % 2) * 180 +
+									wander +
+									(sides.out ?? 0) * (n % 4 < 2 ? 1 : -1) * (n % 2 === 0 ? 1 : -1),
+							]
 						: sides.arrangement === 'opposite'
 							? [sideStart + (n % 2) * 90 + wander, sideStart + (n % 2) * 90 + 180 + wander]
 							: [sideStart + n * GOLDEN + wander];
@@ -630,6 +666,7 @@ export function piecePrototypes(
 					attitude: rule.attitude,
 					part,
 					parts: parts.length,
+					...(rule.plane ? { plane: rule.plane } : {}),
 					...meshedPlan(plan, leaves),
 				});
 		}

@@ -5,6 +5,7 @@
 
 import type { ShootPrototype } from '../asset';
 import type { EcoRule } from '../ecology/ecology';
+import type { PieceRule } from '../leaf/piece';
 import type { MacroSkeleton } from './graph';
 import type { SpeciesTextureFiles } from './textures';
 import type { Curve, Detail, Rgb, Season, Spread, Vec2, Vec3 } from './types';
@@ -36,6 +37,12 @@ export interface Species {
 	readonly growth: Growth;
 	/** The outline the plant fills. Required for 'self-organizing'; a cap for the other models. */
 	readonly envelope?: Envelope;
+	/**
+	 * The branch pieces that the plant's sockets carry, each a measured rule. A species that grows
+	 * by a directed model builds its kit from these, and its shoot classes then serve only as the
+	 * source of its twig, bud and leaf figures. Another model ignores them.
+	 */
+	readonly pieces?: readonly PieceRule[];
 	/** The shoot prototypes that carry the finest orders, buds and leaves. */
 	readonly shoots?: ShootSpec;
 	/** What the leaves are. */
@@ -714,6 +721,18 @@ export interface Conifer {
 		readonly width: readonly [short: number, long: number];
 		/** The patch's depth over its width. */
 		readonly depth: number;
+		/**
+		 * The sockets that fill a patch: the piece each carries, by its name among the record's
+		 * pieces, the metres between one socket and the next, the degrees a side twig leaves at from
+		 * the wood under the patch, and the degrees it rises above level. Absent, a patch carries no
+		 * socket.
+		 */
+		readonly sockets?: {
+			readonly piece: string;
+			readonly pitch: number;
+			readonly twig: number;
+			readonly lift: number;
+		};
 	};
 }
 

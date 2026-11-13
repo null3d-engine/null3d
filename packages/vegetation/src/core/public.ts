@@ -40,6 +40,7 @@ export {
 	NODE_PILLAR,
 	NODE_SHED,
 	NODE_STUB,
+	type SocketSites,
 } from './graph';
 export { NotBuiltError } from './not-built';
 export type {
@@ -52,6 +53,7 @@ export type {
 	Clip,
 	Column,
 	CompoundLeaf,
+	Conifer,
 	CrownRosette,
 	Culm,
 	CutFromPlant,
