@@ -36,6 +36,11 @@ export default defineSketch(async ({ scene, assets, geometry, materials, page })
 	}
 	batch.markDirty();
 	scene.instantiate(await assets.loadGltf('assets/models/cluster-terrain.glb'));
+	// A second tree, at its own place, so a jump between them leaves one tree's stale counts
+	// behind and the later tree's list can lose patches.
+	scene.instantiate(await assets.loadGltf('assets/models/cluster-terrain-b.glb'), {
+		position: [-300, 0, 0],
+	});
 	const camera = scene.createPerspectiveCamera({
 		fov: 50,
 		near: 0.5,
@@ -57,7 +62,7 @@ export default defineSketch(async ({ scene, assets, geometry, materials, page })
 			}
 			if (next) {
 				camera.setPosition(...next);
-				camera.lookAt(0, 1, -next[2] * 0.8);
+				camera.lookAt(next[0], 1, -next[2] * 0.8);
 				next = null;
 				answer = true;
 			}

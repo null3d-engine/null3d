@@ -13,7 +13,10 @@ import { run } from './lib/result';
 const PLACES: [number, number, number][] = [
 	[0, 7, 26],
 	[0, 7, 14],
+	[-300, 7, 26],
+	[-300, 7, 14],
 	[0, 7, 20],
+	[-300, 7, 20],
 	[0, 7, 26],
 ];
 
