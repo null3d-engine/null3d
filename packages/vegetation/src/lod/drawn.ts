@@ -6,8 +6,9 @@
 // edge, and, where asked, an eye inside the plant's fullest foliage, where most rows stand within
 // the switch distance at once.
 import type { PlantAsset, SpeciesKitData } from '../asset';
-import { length3, pow, radians, tan } from '../core/math';
-import { DETAILS, spreadMax, type Vec3 } from '../core/types';
+import { length3, pow } from '../core/math';
+import { DETAILS, type Vec3 } from '../core/types';
+import { firstCardStart } from './levels';
 
 /**
  * The page's view, which turns every species' switch pixels into metres. A page gives one view to
@@ -63,12 +64,8 @@ export function switchScale(bias = 0): number {
  * @returns Metres, at a copy's scale of 1.
  */
 export function shootSwitchDistance(kit: SpeciesKitData, view: PlantView): number {
-	let longest = 0;
-	for (const prototype of kit.prototypes) longest = Math.max(longest, prototype.length);
-	const scale = kit.record.shoots ? spreadMax(kit.record.shoots.placement.scale) : 1;
-	longest *= scale;
-	const pixels = kit.record.lod.switchPixels[0];
-	return (longest * view.height) / (2 * tan(radians(view.fov / 2)) * pixels);
+	// The page's hand-over and this count read one rule, so the count is what the page draws.
+	return firstCardStart(kit, view);
 }
 
 /** Where an eye stands. */

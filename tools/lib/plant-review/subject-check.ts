@@ -28,6 +28,8 @@ export interface PostedSubject {
 	readonly lacks?: boolean;
 	/** Whether the subject's points land in the frame as the view's contract asks, and why not. */
 	readonly contract?: { readonly present: boolean; readonly reason?: string };
+	/** What the solve could not do, such as a stand that no turn round the subject leaves clear. */
+	readonly warning?: string;
 	/** The parts of the picture that must show plant or open ground. */
 	readonly regions?: readonly ContractRegion[];
 }
@@ -41,6 +43,7 @@ export function postedSubject(facts: unknown): PostedSubject | undefined {
 		kind: subject.kind,
 		...(typeof subject.missing === 'string' && { missing: subject.missing }),
 		...(subject.lacks === true && { lacks: true }),
+		...(typeof subject.warning === 'string' && { warning: subject.warning }),
 		...(contract &&
 			typeof contract.present === 'boolean' && {
 				contract: {
@@ -176,9 +179,10 @@ function checkCovers(
 	const failures: string[] = [];
 	const covers = read.map(({ region, cover }) => {
 		const shows = `${region.name} shows ${coveredBy(region)} over ${cover.toFixed(2)} of its part of the picture`;
-		if (region.min !== undefined && cover < region.min)
+		// An area that is only reported gives its figure and judges nothing.
+		if (!region.report && region.min !== undefined && cover < region.min)
 			failures.push(`${shows}, under ${region.min}`);
-		if (region.max !== undefined && cover > region.max)
+		if (!region.report && region.max !== undefined && cover > region.max)
 			failures.push(`${shows}, over ${region.max}`);
 		return { name: region.name, cover: Number(cover.toFixed(4)) };
 	});
@@ -216,13 +220,14 @@ export function partsCheck(parts: Parts, regions: readonly ContractRegion[]): Ma
 }
 
 /**
- * Why the plant lacks the part its photograph shows, or undefined when it has the part. A species'
- * reference set holds the picture, so the species has the part: a plant grown without it fails the
- * rows the picture carries. This is a judgement of the plant, where a void is a fault of the tool.
+ * Why the plant fails the picture, or undefined when it does not: it has no such part as its
+ * photograph shows, or the camera holds the part's place and the picture does not show it. A
+ * species' reference set holds the picture, so the species has the part and shows it. This is a
+ * judgement of the plant, where a void is a fault of the tool.
  */
-export function lackReason(facts: unknown): string | undefined {
-	const subject = postedSubject(facts);
-	return subject?.lacks && subject.missing !== undefined ? subject.missing : undefined;
+export function lackReason(facts: unknown, matte?: Matte, parts?: Parts): string | undefined {
+	const fault = subjectFault(facts, matte, parts);
+	return fault?.kind === 'plant' ? fault.reason : undefined;
 }
 
 /** Whether a solved view's camera holds the whole plant in its frame, as the page posted it. */
@@ -242,27 +247,77 @@ export interface Matte {
 	readonly height: number;
 }
 
+/** What a picture's own reading says of its subject, where it says the subject is not shown. */
+export interface SubjectFault {
+	/**
+	 * Whose fault it is. `void`: the camera or the framing failed, so the picture decides nothing.
+	 * `plant`: the camera took its stand and holds the subject's place, and the picture does not
+	 * show the subject there, so the plant lacks it or hides it, and the picture's rows fail.
+	 */
+	readonly kind: 'void' | 'plant';
+	readonly reason: string;
+}
+
 /**
- * Why a picture is void, or undefined when its subject is in it. The page's own statement comes
- * first: the plant has no such subject, or the solved camera does not hold it. Then, where the
- * view names regions, the picture itself is read: from its picture of the parts where the run drew
- * one, and from its matte where not.
+ * Whether a picture shows its subject, and whose fault it is where it does not.
+ *
+ * The page's own statement comes first. A view that cannot name its subject is void, and so is a
+ * camera that does not hold the subject's points. Then the picture is read: from its picture of
+ * the parts where the run drew one, and from its matte where not. An area that fails after the
+ * solve held is the plant's fault: the camera stands where the contract asks and the limb, the
+ * bark or the open sky is not there to see. Where the solve itself said it could take no clear
+ * stand, the failed area is the camera's, and the picture is void.
  */
-export function voidReason(facts: unknown, matte?: Matte, parts?: Parts): string | undefined {
+export function subjectFault(
+	facts: unknown,
+	matte?: Matte,
+	parts?: Parts,
+): SubjectFault | undefined {
 	const subject = postedSubject(facts);
-	if (!subject || subject.lacks) return undefined;
-	if (subject.missing !== undefined) return `the view has no subject: ${subject.missing}`;
+	if (!subject) return undefined;
+	if (subject.missing !== undefined)
+		return subject.lacks
+			? { kind: 'plant', reason: subject.missing }
+			: { kind: 'void', reason: `the view has no subject: ${subject.missing}` };
 	if (subject.contract && !subject.contract.present)
-		return `the subject is not in the frame: ${subject.contract.reason ?? 'no reason given'}`;
+		return {
+			kind: 'void',
+			reason: `the subject is not in the frame: ${subject.contract.reason ?? 'no reason given'}`,
+		};
 	if (!subject.regions || subject.regions.length === 0) return undefined;
 	const read = parts
 		? partsCheck(parts, subject.regions)
 		: matte
 			? matteCheck(matte.mask, matte.width, matte.height, subject.regions)
 			: undefined;
-	return !read || read.present
-		? undefined
-		: `the picture does not show the subject: ${read.reason}`;
+	if (!read || read.present) return undefined;
+	return subject.warning !== undefined
+		? {
+				kind: 'void',
+				reason: `the camera took no clear stand (${subject.warning}), and the picture does not show the subject: ${read.reason}`,
+			}
+		: {
+				kind: 'plant',
+				reason: `the camera holds the subject's place and the picture does not show it: ${read.reason}`,
+			};
+}
+
+/**
+ * Why a picture is void, or undefined when it is not: the camera or the framing failed. A picture
+ * whose plant lacks or hides the subject is not void; `lackReason` gives that.
+ */
+export function voidReason(facts: unknown, matte?: Matte, parts?: Parts): string | undefined {
+	const fault = subjectFault(facts, matte, parts);
+	return fault?.kind === 'void' ? fault.reason : undefined;
+}
+
+/** The cover of each area of a solved view's contract, read from its picture of the parts. */
+export function areaCovers(
+	facts: unknown,
+	parts: Parts | undefined,
+): readonly { readonly name: string; readonly cover: number }[] {
+	const regions = postedSubject(facts)?.regions ?? [];
+	return parts && regions.length > 0 ? partsCheck(parts, regions).covers : [];
 }
 
 /**

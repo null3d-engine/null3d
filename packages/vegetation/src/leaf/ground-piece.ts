@@ -1,33 +1,37 @@
-// Pieces: the parts a ground form builds once and places whole at a socket, such as a blade, a leaf
-// on its stalk, a frond on its stalk or a flowering stem with its heads. A piece is a kit prototype,
-// as a tree's shoot is, so its rows thin, bend in the wind and bake to cards as shoots do.
+// The pieces a ground form writes itself: a blade, a sheath column, a flowering stem and its head,
+// each built once and placed whole at a socket. They are pieces of the same kind as a tree's branch
+// pieces (leaf/piece.ts): the kit holds each part as a prototype, the plant's sockets carry them
+// (leaf/piece-rows.ts), and their rows thin, bend in the wind and bake to cards as shoots do. Only
+// how a piece is drawn differs: a branch piece is a shoot plan, and a ground form's piece is
+// written by the meshers that write a merged plant's foliage.
 //
-// The meshers that write a piece are the ones that write a merged plant's foliage. They give each
-// vertex the share of the way along its part and its browning, which a piece keeps, and a wind
-// record, where a prototype's vertex holds its bend weight, its flutter phase, its surface kind and
-// its shade. `pieceTier` makes that change, so no mesher is written twice. A piece's surface kind
-// is its own (leaf/writer.ts), so the plant material reads its second coordinates as a share and
-// draws its browning, its collar and its sheath's colour as it does a merged plant's.
-//
-// A socket names its piece by its bud's vigor: each class of piece owns one even band of the range
-// from 0 to 1, in the order the grower lists its classes, and a socket's vigor is the middle of its
-// class's band.
+// Those meshers give each vertex the share of the way along its part and its browning, which a
+// piece keeps, and a wind record, where a prototype's vertex holds its bend weight, its flutter
+// phase, its surface kind and its shade. `pieceTier` makes that change, so no mesher is written
+// twice. A piece's surface kind is its own (leaf/writer.ts), so the plant material reads its
+// second coordinates as a share and draws its browning, its collar and its sheath's colour as it
+// does a merged plant's.
 import type { PrototypeArrays } from '../asset';
 import { length3 } from '../core/math';
 import { DETAILS } from '../core/types';
+import { smoothstep } from '../grow/ground';
+import type { PieceAttitude, PiecePrototype } from './piece';
 import type { UncardedPrototype } from './shoot';
 import { MeshWriter, SURFACE_PIECE, SURFACE_PIECE_SHEATH, SURFACE_SHEATH } from './writer';
 
 /**
- * One class of piece: its name, how many prototypes of it the kit holds, and what writes one.
+ * One piece a ground form writes: its name, how a socket turns it, and what writes each of its
+ * parts.
  *
  * @category api/vegetation
  */
-export interface PieceClass {
-	/** The class's name, such as `piece-blade-outer`. */
-	readonly name: `piece-${string}`;
-	/** Prototypes of the class, each written from its own number: its shape variants. */
-	readonly variants: number;
+export interface WrittenPiece {
+	/** The piece's name, unique among the plant's pieces, such as `blade-3`. */
+	readonly name: string;
+	/** How a socket turns it. */
+	readonly attitude: PieceAttitude;
+	/** Degrees it is turned about its own line at every socket. Absent, 0. */
+	readonly roll?: number;
 	/** The piece's length in metres at scale 1, from its attach point to its tip along its curve. */
 	readonly length: number;
 	/**
@@ -36,44 +40,29 @@ export interface PieceClass {
 	 */
 	readonly leaves: number;
 	/**
-	 * Writes one prototype of the class at a detail tier into a mesh, as the merged foliage meshers
-	 * write: its attach point at the origin, +Y the way it leaves, +Z its upper face.
+	 * For a piece whose attach point stands on the soil: the metres above it under which the piece
+	 * lies on the soil, as a blade that has come to rest does. Its bend falls to nothing there, so
+	 * the wind does not lift it off the ground.
 	 */
-	readonly write: (mesh: MeshWriter, tier: number, variant: number) => void;
+	readonly lies?: number;
+	/**
+	 * Writes each part at a detail tier into a mesh, as the merged foliage meshers write: its attach
+	 * point at the origin and +Y the piece's own up. A socket carries every part at one place with
+	 * one turn, so a part drawn apart from another, such as a stem's head, stays on it.
+	 */
+	readonly parts: readonly ((mesh: MeshWriter, tier: number) => void)[];
 }
 
-/**
- * The band of bud vigor that a class of piece owns.
- *
- * @param index The class's place in the grower's list.
- * @param count The classes in the list.
- * @returns The band's ends.
- * @category api/vegetation
- */
-export function pieceBand(index: number, count: number): readonly [number, number] {
-	return [index / count, (index + 1) / count];
-}
-
-/**
- * The bud vigor that names a class of piece: the middle of its band.
- *
- * @param index The class's place in the grower's list.
- * @param count The classes in the list.
- * @returns The vigor.
- * @category api/vegetation
- */
-export function socketVigor(index: number, count: number): number {
-	return (index + 0.5) / count;
-}
-
-/** A written mesh as a prototype's arrays. */
-function pieceTier(mesh: MeshWriter, phase: number): PrototypeArrays {
+/** A written mesh as a prototype's arrays, its colours the row material's. */
+function pieceTier(mesh: MeshWriter, phase: number, lies: number | undefined): PrototypeArrays {
 	const count = mesh.vertices;
 	for (let i = 0; i < count; i++) {
-		// A part bends by how far along it a vertex stands; a sheath column keeps its mark.
+		// A part bends by how far along it a vertex stands, and not where it lies on the soil; a
+		// sheath column keeps its mark.
 		const along = Math.min(1, Math.max(0, mesh.uvs1[i * 2] as number));
+		const held = lies === undefined ? 1 : smoothstep(0, lies, mesh.positions[i * 3 + 1] as number);
 		const sheath = (mesh.colors[i * 4 + 2] as number) === SURFACE_SHEATH;
-		mesh.colors[i * 4] = Math.round(255 * along);
+		mesh.colors[i * 4] = Math.round(255 * along * held);
 		mesh.colors[i * 4 + 1] = phase;
 		mesh.colors[i * 4 + 2] = sheath ? SURFACE_PIECE_SHEATH : SURFACE_PIECE;
 		mesh.colors[i * 4 + 3] = 255;
@@ -82,22 +71,22 @@ function pieceTier(mesh: MeshWriter, phase: number): PrototypeArrays {
 }
 
 /**
- * Builds the prototypes of a grower's classes of piece, in the order of its list: every variant of
- * the first class, then of the second, and so on. Each prototype serves its class's band of vigor.
+ * Writes a ground form's pieces as the kit's piece prototypes, in the order of its list and each
+ * piece's parts in order. Each piece has one variant.
  *
- * @param classes The classes.
- * @returns The prototypes, without their cards.
+ * @param pieces The pieces.
+ * @returns The prototypes, as the piece planner gives a tree's.
  * @category api/vegetation
  */
-export function groundPiecePrototypes(classes: readonly PieceClass[]): UncardedPrototype[] {
-	const out: UncardedPrototype[] = [];
-	classes.forEach((piece, k) => {
-		for (let variant = 0; variant < piece.variants; variant++) {
+export function writtenPieces(pieces: readonly WrittenPiece[]): PiecePrototype[] {
+	const out: PiecePrototype[] = [];
+	for (const piece of pieces)
+		piece.parts.forEach((write, part) => {
 			const tiers = DETAILS.map((_, tier) => {
 				const mesh = new MeshWriter();
-				piece.write(mesh, tier, variant);
-				// Each variant flutters on its own beat, so two blades side by side do not flap as one.
-				return pieceTier(mesh, (out.length * 89) & 255);
+				write(mesh, tier);
+				// Each part flutters on its own beat, so two blades side by side do not flap as one.
+				return pieceTier(mesh, (out.length * 89) & 255, piece.lies);
 			}) as unknown as UncardedPrototype['tiers'];
 			const positions = (tiers[DETAILS.indexOf('high')] as PrototypeArrays).positions;
 			let radius = 0;
@@ -107,15 +96,18 @@ export function groundPiecePrototypes(classes: readonly PieceClass[]): UncardedP
 					length3(positions[i] as number, positions[i + 1] as number, positions[i + 2] as number),
 				);
 			out.push({
-				index: out.length,
-				class: piece.name,
-				vigor: pieceBand(k, classes.length),
+				piece: piece.name,
+				variant: 0,
+				attitude: piece.attitude,
+				...(piece.roll ? { roll: piece.roll } : {}),
+				part,
+				parts: piece.parts.length,
 				length: piece.length,
 				radius,
 				leaves: piece.leaves,
 				tiers,
+				sites: [],
 			});
-		}
-	});
+		});
 	return out;
 }

@@ -1032,6 +1032,11 @@ export interface PlantMask {
 	 * trusting a mask that may merge them.
 	 */
 	readonly plantToGround?: number;
+	/**
+	 * The row where the outline ended at the horizon before its stem was followed down to its foot.
+	 * The rows below it hold the stem's runs alone. Absent where no stem was followed.
+	 */
+	readonly footFollowedFrom?: number;
 }
 
 /** The pixels of the foreground's connected parts, 8-connected, labelled from 1; 0 is background. */
@@ -1375,11 +1380,11 @@ export function plantMask(image: Rgba, workWidth = WORK_WIDTH): PlantMask {
 		);
 	keepPlantParts(mask, width, height, horizon);
 	// A silhouette stands on a black ground line, which holds no foot to tell from its ground.
-	if (
+	const footFollowedFrom =
 		background.ground &&
 		(surfaceAt(background.ground, 0.5, (horizon / height + 1) / 2)[0] as number) > FOOT_GROUND_LIGHT
-	)
-		followStemFoot(mask, lab, width, height, horizon);
+			? followStemFoot({ width, height, mask, background }, lab)
+			: undefined;
 	if (!background.plain) {
 		let kept = 0;
 		for (let at = 0; at < mask.length; at++) kept += mask[at] as number;
@@ -1406,102 +1411,304 @@ export function plantMask(image: Rgba, workWidth = WORK_WIDTH): PlantMask {
 		mask,
 		background,
 		...(plantToGround !== undefined ? { plantToGround } : {}),
+		...(footFollowedFrom !== undefined ? { footFollowedFrom } : {}),
 	};
 }
 
-/** How far below the horizon a stem's foot is followed, as a share of the plant's height above it. */
-const FOOT_REACH = 0.15;
-/** The CIELAB distance between a stem and the ground beside it at which the stem still shows. */
-const FOOT_CONTRAST = 6;
-/** The rows in turn that may lack that contrast before the foot ends. */
-const FOOT_GAP = 2;
-/** The share of the stem's contrast at the horizon under which the rows below are ground. */
-const FOOT_CONTRAST_SHARE = 0.25;
 /** The least CIELAB lightness of a ground on which a foot can be told from it. */
 const FOOT_GROUND_LIGHT = 12;
-/** The most of the frame's width a run at the horizon may take and still be a stem. */
-const FOOT_STEM_SHARE = 0.4;
+/** The rows above the outline's end that give the stem's place, width and colour. */
+const FOOT_STEM_ROWS = 6;
+/** The most of the plant's width that the outline's last rows may span and still be a stem. */
+export const FOOT_STEM_SHARE = 0.25;
+/** The least CIELAB distance between the stem's colour and the ground beside it. */
+const FOOT_CONTRAST = 6;
+/** The most of that distance that a pixel of the stem may stand from the stem's own colour. */
+const FOOT_STEM_NEAR = 0.6;
+/** How far a row's run may reach past the run above it, each side, in stem widths: a root flare. */
+const FOOT_GROW = 0.25;
+/** The least and the most of the stem's width that a row's run may be. */
+const FOOT_RUN_LEAST = 0.5;
+const FOOT_RUN_MOST = 3;
+/** How much of a row's colour the stem's colour takes on, so a foot that darkens is still stem. */
+const FOOT_COLOUR_FOLLOWS = 0.3;
+/** The rows on end that may fail before the stem has ended. */
+const FOOT_MISSES = 3;
 
 /**
- * Follows a stem from the horizon down to its foot. The ground's fitted colour cannot tell a dark
- * foot from dark ground, so an outline can end at the horizon while the stem runs on to its root
- * collar, and every figure that is a share of the plant's height then counts from the wrong base.
- * Where the outline's lowest row stands at the horizon, the widest run of that row is the stem.
- * Each row below is the stem's while the columns under it differ in colour from the ground on
- * either side of them, by a share of what the stem shows at the horizon, and the foot ends where
- * that contrast is lost for a few rows in turn.
+ * Each row's run of plant nearest the axis: its first and last column, or -1 for an empty row.
+ * Below the crown the run is the stem, apart from the boughs and the foliage that hang beside it.
  */
-function followStemFoot(
-	mask: Uint8Array,
+export function axisRuns(mask: Uint8Array, width: number, box: Box, axis: number): Int32Array {
+	const runs = new Int32Array((box.bottom + 1) * 2).fill(-1);
+	for (let y = box.top; y <= box.bottom; y++) {
+		let start = -1;
+		let nearest = Number.POSITIVE_INFINITY;
+		for (let x = box.left; x <= box.right + 1; x++) {
+			const on = x <= box.right && mask[y * width + x] !== 0;
+			if (on && start < 0) start = x;
+			if (!on && start >= 0) {
+				const end = x - 1;
+				const distance = axis < start ? start - axis : axis > end ? axis - end : 0;
+				if (distance < nearest) {
+					nearest = distance;
+					runs[y * 2] = start;
+					runs[y * 2 + 1] = end;
+				}
+				start = -1;
+			}
+		}
+	}
+	return runs;
+}
+
+/** What following a stem below the horizon gives. */
+export type Followed =
+	| {
+			readonly kind: 'stem';
+			/** The row where the stem ends. */
+			readonly foot: number;
+			/** Each followed row's first and last column, from the row below the outline's last. */
+			readonly runs: readonly (readonly [number, number])[];
+	  }
+	| { readonly kind: 'mass' }
+	| { readonly kind: 'none' };
+
+/** The mean colour of a run of pixels in a row, or null for a run off the frame. */
+function rowColour(
+	lab: Float32Array,
+	width: number,
+	y: number,
+	from: number,
+	to: number,
+): number[] | null {
+	const left = Math.max(0, from);
+	const right = Math.min(width - 1, to);
+	if (right < left) return null;
+	const sum = [0, 0, 0];
+	for (let x = left; x <= right; x++)
+		for (let c = 0; c < 3; c++)
+			sum[c] = (sum[c] as number) + (lab[(y * width + x) * 3 + c] as number);
+	return sum.map((v) => v / (right - left + 1));
+}
+
+/**
+ * Follows a stem down from the last row of an outline.
+ *
+ * @param lab The picture's CIELAB colours at the mask's size.
+ * @param width The mask's width.
+ * @param height The mask's height.
+ * @param mask The plant's outline.
+ * @param box The plant's box.
+ * @param axis The column of the plant's foot.
+ * @returns The row where the stem ends with each followed row's run; `mass` where the outline's
+ *   last rows are too wide to be a stem; `none` where no stem runs on below the outline.
+ */
+export function followStem(
 	lab: Float32Array,
 	width: number,
 	height: number,
-	horizon: number,
-): void {
-	const rowHolds = (y: number): boolean => {
-		for (let x = 0; x < width; x++) if (mask[y * width + x]) return true;
-		return false;
-	};
-	let bottom = height - 1;
-	while (bottom >= 0 && !rowHolds(bottom)) bottom--;
-	let top = 0;
-	while (top < bottom && !rowHolds(top)) top++;
-	// An outline that already runs on below the horizon, or ends above it, has its own foot.
-	if (bottom < 0 || Math.abs(bottom - horizon) > Math.max(2, Math.round(height * 0.01))) return;
-	let left = -1;
-	let right = -1;
-	for (let x = 0, start = -1; x <= width; x++) {
-		const on = x < width && mask[bottom * width + x] !== 0;
-		if (on && start < 0) start = x;
-		if (!on && start >= 0) {
-			if (x - start > right - left + 1 || left < 0) {
-				left = start;
-				right = x - 1;
-			}
-			start = -1;
+	mask: Uint8Array,
+	box: Box,
+	axis: number,
+): Followed {
+	const runs = axisRuns(mask, width, box, axis);
+	const lefts: number[] = [];
+	const rights: number[] = [];
+	const colour = [0, 0, 0];
+	let pixels = 0;
+	for (let y = box.bottom; y > Math.max(box.top, box.bottom - FOOT_STEM_ROWS); y--) {
+		const from = runs[y * 2] as number;
+		if (from < 0) continue;
+		const to = runs[y * 2 + 1] as number;
+		lefts.push(from);
+		rights.push(to);
+		for (let x = from; x <= to; x++) {
+			for (let c = 0; c < 3; c++)
+				colour[c] = (colour[c] as number) + (lab[(y * width + x) * 3 + c] as number);
+			pixels++;
 		}
 	}
-	const stem = right - left + 1;
-	if (left < 0 || stem > width * FOOT_STEM_SHARE) return;
-	const flank = Math.max(3, stem);
-	const mean = (y: number, from: number, to: number, into: number[]): number => {
-		let n = 0;
-		for (let x = Math.max(0, from); x <= Math.min(width - 1, to); x++) {
-			for (let c = 0; c < 3; c++)
-				into[c] = (into[c] as number) + (lab[(y * width + x) * 3 + c] as number);
-			n++;
+	if (pixels === 0) return { kind: 'none' };
+	lefts.sort((a, b) => a - b);
+	rights.sort((a, b) => a - b);
+	let left = lefts[lefts.length >> 1] as number;
+	let right = rights[rights.length >> 1] as number;
+	const across = right - left + 1;
+	if (across > (box.right - box.left + 1) * FOOT_STEM_SHARE) return { kind: 'mass' };
+	let stem = colour.map((v) => v / pixels);
+	const beside = Math.max(3, across);
+	const gap = Math.max(1, Math.round(across / 4));
+	const grow = Math.max(1, Math.round(across * FOOT_GROW));
+	const blur = Math.max(1, Math.round(across / 4));
+	const followed: [number, number][] = [];
+	let foot = box.bottom;
+	let misses = 0;
+	for (let y = box.bottom + 1; y < height && misses < FOOT_MISSES; y++) {
+		const from = Math.max(0, left - grow);
+		const to = Math.min(width - 1, right + grow);
+		// The ground on each side of the row's reach; a side off the frame is left out.
+		const grounds = [
+			rowColour(lab, width, y, from - gap - beside, from - gap - 1),
+			rowColour(lab, width, y, to + gap + 1, to + gap + beside),
+		].filter((ground): ground is number[] => ground !== null);
+		const ground =
+			grounds.length === 0 ? 0 : Math.min(...grounds.map((side) => deltaE76(stem, side)));
+		// The run of stem-coloured pixels that lies most under the run above; one pixel bridges.
+		let best: [number, number] | null = null;
+		let bestOver = 0;
+		let start = -1;
+		let last = -1;
+		const close = (): void => {
+			if (start < 0) return;
+			const over = Math.min(last, right) - Math.max(start, left) + 1;
+			if (over > bestOver) {
+				bestOver = over;
+				best = [start, last];
+			}
+			start = -1;
+		};
+		if (ground >= FOOT_CONTRAST)
+			for (let x = from; x <= to; x++) {
+				// Bark is mottled, so a pixel is read with its neighbours across half a stem's width.
+				const here = rowColour(lab, width, y, x - blur, x + blur) as number[];
+				if (deltaE76(stem, here) >= ground * FOOT_STEM_NEAR) continue;
+				if (start >= 0 && x - last > 2) close();
+				if (start < 0) start = x;
+				last = x;
+			}
+		close();
+		let run = best as [number, number] | null;
+		const length = run ? run[1] - run[0] + 1 : 0;
+		// A run that covers less than half the run above it has stepped off the stem to one side.
+		if (
+			!run ||
+			length < Math.max(2, across * FOOT_RUN_LEAST) ||
+			length > across * FOOT_RUN_MOST ||
+			bestOver * 2 < right - left + 1
+		) {
+			// A foot whose bark is too mottled to hold pixel by pixel can still hold as a whole: the
+			// column under the run above, taken together, against the ground beside it.
+			run = null;
+			let least = Number.POSITIVE_INFINITY;
+			for (const shift of [0, -1, 1]) {
+				const inside = rowColour(lab, width, y, left + shift, right + shift);
+				const sides = [
+					rowColour(lab, width, y, left + shift - gap - beside, left + shift - gap - 1),
+					rowColour(lab, width, y, right + shift + gap + 1, right + shift + gap + beside),
+				].filter((side): side is number[] => side !== null);
+				if (!inside || sides.length === 0) continue;
+				const apart = Math.min(...sides.map((side) => deltaE76(stem, side)));
+				const off = deltaE76(stem, inside);
+				if (apart >= FOOT_CONTRAST && off < apart * FOOT_STEM_NEAR && off < least) {
+					least = off;
+					run = [Math.max(0, left + shift), Math.min(width - 1, right + shift)];
+				}
+			}
 		}
-		return n;
-	};
-	const contrastAt = (y: number): number | undefined => {
-		const inside = [0, 0, 0];
-		const beside = [0, 0, 0];
-		const within = mean(y, left, right, inside);
-		const out = mean(y, left - flank, left - 1, beside) + mean(y, right + 1, right + flank, beside);
-		return within === 0 || out === 0
-			? undefined
-			: Math.hypot(
-					(inside[0] as number) / within - (beside[0] as number) / out,
-					(inside[1] as number) / within - (beside[1] as number) / out,
-					(inside[2] as number) / within - (beside[2] as number) / out,
-				);
-	};
-	// The stem shows against the ground beside it as it does at the horizon, or a share less.
-	const least = Math.max(FOOT_CONTRAST, FOOT_CONTRAST_SHARE * (contrastAt(bottom) ?? 0));
-	const last = Math.min(height - 1, bottom + Math.round((bottom - top + 1) * FOOT_REACH));
-	let reached = bottom;
-	for (let y = bottom + 1, misses = 0; y <= last && misses <= FOOT_GAP; y++) {
-		const contrast = contrastAt(y);
-		if (contrast === undefined) break;
-		if (contrast < least) {
+		if (!run) {
 			misses++;
 			continue;
 		}
+		// Rows that failed between two that hold are the stem too: they take the run below them.
+		for (let k = 0; k <= misses; k++) followed.push(run);
 		misses = 0;
-		for (let row = reached + 1; row <= y; row++)
-			for (let x = left; x <= right; x++) mask[row * width + x] = 1;
-		reached = y;
+		left = run[0];
+		right = run[1];
+		foot = y;
+		const here = rowColour(lab, width, y, left, right) as number[];
+		stem = stem.map((v, c) => v + ((here[c] as number) - v) * FOOT_COLOUR_FOLLOWS);
 	}
+	return foot > box.bottom ? { kind: 'stem', foot, runs: followed } : { kind: 'none' };
+}
+
+/** The share of the plant's height, from the ground, in which thin horizontal runs are dropped. */
+const LOW_SHARE = 0.2;
+/** The least run up and down, as a share of the plant's height, through a pixel of that share. */
+const LOW_RUN = 1 / 32;
+
+/**
+ * A mask without the thin horizontal runs of the plant's lowest share: a pixel there stays only
+ * where the outline runs a set share of the plant's height up or down through it, as a trunk or a
+ * tuft does and a horizon line or a ground strip does not.
+ */
+export function dropThinLowRuns(plant: PlantMask, box: Box): PlantMask {
+	const { width, height } = plant;
+	const tall = box.bottom - box.top + 1;
+	const run = Math.max(2, Math.round(LOW_RUN * tall));
+	const from = box.bottom - Math.round(LOW_SHARE * tall);
+	const mask = plant.mask.slice();
+	for (let y = Math.max(0, from); y <= box.bottom; y++)
+		for (let x = 0; x < width; x++) {
+			const at = y * width + x;
+			if (!plant.mask[at]) continue;
+			let length = 1;
+			for (let d = 1; d < run && y + d < height && plant.mask[at + d * width]; d++) length++;
+			for (let d = 1; d < run && y - d >= 0 && plant.mask[at - d * width]; d++) length++;
+			if (length < run) mask[at] = 0;
+		}
+	keepPlantParts(mask, width, height, plant.background.horizon ?? height);
+	return { ...plant, mask };
+}
+
+/** The share of the outline's height, from its lowest row up, whose runs place the stem's column. */
+const FOOT_AXIS_BAND = 0.15;
+
+/**
+ * The stem's column: the middle value of the centres of each row's run nearest the outline's middle,
+ * over the outline's lowest rows. A row at the horizon blends the sky with the ground and can hold a
+ * speck wider than the stem, and a low bough can sweep out beside it, so no one row decides.
+ */
+function stemColumn(mask: Uint8Array, width: number, box: Box): number {
+	const runs = axisRuns(mask, width, box, (box.left + box.right) / 2);
+	const band = Math.max(2, Math.round((box.bottom - box.top + 1) * FOOT_AXIS_BAND));
+	const centres: number[] = [];
+	for (let y = box.bottom; y > Math.max(box.top - 1, box.bottom - band); y--)
+		if ((runs[y * 2] as number) >= 0)
+			centres.push(((runs[y * 2] as number) + (runs[y * 2 + 1] as number)) / 2);
+	centres.sort((a, b) => a - b);
+	return centres[centres.length >> 1] ?? (box.left + box.right) / 2;
+}
+
+/**
+ * Follows a stem from the outline's lowest row down to its foot, in the mask. The ground's fitted
+ * colour cannot tell a dark foot from dark ground, so an outline can end at the horizon, or in the
+ * ground below it, while the stem runs on to its root collar, and every figure that is a share of the
+ * plant's height then counts from the wrong base. The stem is read on the outline without the thin
+ * runs along its foot, a horizon line or a strip of grass that the mask kept, and `followStem`
+ * follows it down from its column; the followed rows join the mask.
+ *
+ * @returns The row where the stem's outline ended before it was followed, or undefined where no
+ *   stem was followed.
+ */
+function followStemFoot(plant: PlantMask, lab: Float32Array): number | undefined {
+	const { mask, width, height } = plant;
+	const whole = boxOf(mask, width, height);
+	if (!whole) return undefined;
+	const cleaned = dropThinLowRuns(plant, whole).mask;
+	const box = boxOf(cleaned, width, height);
+	// An outline that ends above the horizon stands on its own foot.
+	const horizon = plant.background.horizon ?? height;
+	if (!box || box.bottom < horizon - Math.max(2, Math.round(height * 0.01))) return undefined;
+	// The stem is followed from its own lowest row, which a speck beside it can stand below; the
+	// followed rows then join the stem and are not a loose piece under the speck.
+	const column = stemColumn(cleaned, width, box);
+	const runs = axisRuns(cleaned, width, box, column);
+	const holds = (y: number): boolean =>
+		(runs[y * 2] as number) >= 0 &&
+		(runs[y * 2] as number) <= column + 1 &&
+		(runs[y * 2 + 1] as number) >= column - 1;
+	let last = box.bottom;
+	while (last > box.top && !holds(last)) last--;
+	const stem = followStem(lab, width, height, cleaned, { ...box, bottom: last }, column);
+	if (stem.kind !== 'stem') return undefined;
+	// The followed rows would hold up a horizon line or a strip of grass beside them, so the mask
+	// takes the cleaned rows before the stem joins it.
+	mask.set(cleaned);
+	stem.runs.forEach(([from, to], k) => {
+		mask.fill(1, (last + 1 + k) * width + from, (last + 1 + k) * width + to + 1);
+	});
+	return last;
 }
 
 /** How far above the horizon, as a share of the frame's height, a background band may lie. */
@@ -1639,6 +1846,31 @@ export function keepPlantParts(
  * or a clump of several bare stems from one stool.
  */
 export type PlantHabit = 'mound' | 'clump';
+
+/**
+ * A silhouette photograph's plant mask read as the drawn matte is read: a texel is plant only where
+ * it is darker than half, so a texel the plant covers in part counts as the sky it mostly shows.
+ * The photograph's own mask counts any texel the plant darkens at all, which closes a crown's small
+ * gaps where the matte keeps them, and the two sides of a gap figure would then be read by two
+ * rules. The mask keeps its own handling of the ground band and the frame's sides.
+ *
+ * @param plant The photograph's plant mask.
+ * @param image The photograph, at any size: it is read at the mask's.
+ * @returns The mask with every texel lighter than half cleared.
+ */
+export function halfDarkMask(plant: PlantMask, image: Rgba): PlantMask {
+	const work = image.width > plant.width ? resizeToWidth(image, plant.width) : image;
+	const mask = new Uint8Array(plant.mask);
+	for (let at = 0; at < mask.length; at++) {
+		if (!mask[at]) continue;
+		const luma =
+			0.2126 * (work.data[at * 4] as number) +
+			0.7152 * (work.data[at * 4 + 1] as number) +
+			0.0722 * (work.data[at * 4 + 2] as number);
+		if (luma >= 128) mask[at] = 0;
+	}
+	return { ...plant, mask };
+}
 
 /** The plant's outline from a matte: the plant drawn dark on white, as the silhouette view draws it. */
 export function matteMask(image: Rgba): PlantMask {

@@ -31,7 +31,6 @@ export {
 	BUD_DORMANT,
 	BUD_FLOWER,
 	BUD_LATERAL,
-	BUD_SOCKET,
 	BUD_SPUR,
 	BUD_TERMINAL,
 	type BudSites,

@@ -130,30 +130,61 @@ const Purpose = {
 	LeafAzimuth: 14,
 } as const;
 
-/** Sides of stem tubes and buds by tier. */
-const STEM_SIDES: Readonly<Record<Detail, number>> = { low: 3, medium: 4, high: 5, ultra: 6 };
 /** A bud's mesh at a tier: faces around, and whether its profile is rounded or a plain cone. */
-interface BudShape {
+export interface BudShape {
 	readonly sides: number;
 	readonly round: boolean;
 }
+
+/** How a tier meshes a shoot's wood and buds. */
+export interface ShootCut {
+	/** Sides of the stem tubes. */
+	readonly stemSides: number;
+	/** Whether a tube keeps only the rings at each year's end. */
+	readonly yearRings?: boolean;
+	/** A tip cluster's buds; absent, the cluster draws none. */
+	readonly cluster?: BudShape;
+	/** Whether a tip cluster is drawn as one cone over its stack, in the cluster's shape. */
+	readonly clusterCone?: boolean;
+	/** An axil's bud; absent, the axils draw none. */
+	readonly axil?: BudShape;
+	/**
+	 * Metres below which an axil's bud is left out: a smaller one hides under its leaf and spans a
+	 * pixel or two at the distances the tier draws. Absent, every axil's bud is drawn.
+	 */
+	readonly axilLeast?: number;
+	/** A thorn's and a fruiting body's shapes; absent, a thorn takes the axil's and a body the cluster's. */
+	readonly thorn?: BudShape;
+	readonly body?: BudShape;
+	/** Whether a stem run that its leaves hide takes rings far apart, since no ring of it shows. */
+	readonly thinHidden?: boolean;
+	/**
+	 * Whether a tube of few sides stands wider than its stem's radius, so its outline is as wide as
+	 * the round stem's when averaged over a turn: a three-sided tube on the radius reads a sixth thin.
+	 */
+	readonly meanWidth?: boolean;
+	/**
+	 * Degrees a stem turns between two rings. Set, a ring stands only where the run from the last ring
+	 * meets the next run at that angle or more, so a straight run takes no rings between its ends.
+	 */
+	readonly ringTurn?: number;
+}
+
 /**
- * The buds of a tip cluster, which a close view reads, are rounder than those in the leaf axils.
- * The medium tier draws a whole cluster as one cone, and the low tier, whose shoots stand a few
- * pixels long, draws no buds.
+ * The crown's shoots at each tier. The buds of a tip cluster, which a close view reads, are rounder
+ * than those in the leaf axils. The medium tier draws a whole cluster as one cone, and the low tier,
+ * whose shoots stand a few pixels long, keeps one ring a year and draws no buds.
  */
-const CLUSTER_BUD: Readonly<Record<Detail, BudShape | undefined>> = {
-	low: undefined,
-	medium: { sides: 3, round: false },
-	high: { sides: 5, round: true },
-	ultra: { sides: 6, round: true },
-};
-/** An axil's bud hides under its leaf, so the low tier leaves it out. */
-const AXIL_BUD: Readonly<Record<Detail, BudShape | undefined>> = {
-	low: undefined,
-	medium: { sides: 3, round: false },
-	high: { sides: 4, round: false },
-	ultra: { sides: 5, round: true },
+export const SHOOT_CUTS: Readonly<Record<Detail, ShootCut>> = {
+	low: { stemSides: 3, yearRings: true },
+	medium: {
+		stemSides: 4,
+		cluster: { sides: 3, round: false },
+		clusterCone: true,
+		axil: { sides: 3, round: false },
+	},
+	high: { stemSides: 5, cluster: { sides: 5, round: true }, axil: { sides: 4, round: false } },
+	ultra: { stemSides: 6, cluster: { sides: 6, round: true }, axil: { sides: 5, round: true } },
 };
 /** The tier whose vertices cast the shoot's shade rays. */
 const SHADE_TIER = DETAILS.indexOf('medium');
@@ -211,6 +242,8 @@ export interface PlannedBud {
 	 * tip, along which the medium tier draws the whole cluster as one cone.
 	 */
 	readonly stack?: number;
+	/** The species' mark it draws, a thorn or a fruiting body, where it is one and not a bud. */
+	readonly mark?: 'thorn' | 'body';
 }
 
 /**
@@ -1119,6 +1152,27 @@ export function planShoot(
 	return { axes, leaves, buds, reach, span: Math.max(span, 1e-6) };
 }
 
+/** The longest run between two rings of a cut that names a turn, in metres. */
+const RING_RUN_MOST = 0.08;
+
+/** Whether the run from `from` to `at` meets the run from `at` to `to` at `degrees` or more. */
+function turnsPast(
+	from: Readonly<Vector3>,
+	at: Readonly<Vector3>,
+	to: Readonly<Vector3>,
+	degrees: number,
+): boolean {
+	const ax = at[0] - from[0];
+	const ay = at[1] - from[1];
+	const az = at[2] - from[2];
+	const bx = to[0] - at[0];
+	const by = to[1] - at[1];
+	const bz = to[2] - at[2];
+	const lengths = length3(ax, ay, az) * length3(bx, by, bz);
+	if (lengths <= 0) return false;
+	return (ax * bx + ay * by + az * bz) / lengths <= cos(radians(degrees));
+}
+
 /** The bend weight byte of a point along the shoot. */
 function bendByte(along: number, span: number): number {
 	return Math.min(255, Math.max(0, Math.round((along / span) * 255)));
@@ -1281,8 +1335,7 @@ export function brushPicture(
  * @param plan The plan.
  * @param leafMeshes The leaf meshes at this tier.
  * @param detail The tier.
- * @param thinHidden Whether a stem run that its leaves hide takes rings far apart, since no ring
- *   of it shows.
+ * @param cut How the tier meshes the wood and buds; the crown's own cut by default.
  * @returns The mesh.
  * @category api/vegetation
  */
@@ -1290,18 +1343,22 @@ export function meshShoot(
 	plan: ShootPlan,
 	leafMeshes: readonly PrototypeArrays[],
 	detail: Detail,
-	thinHidden = false,
+	cut: ShootCut = SHOOT_CUTS[detail],
 ): MeshWriter {
 	const mesh = new MeshWriter();
-	const sides = STEM_SIDES[detail];
-	const hidden = thinHidden ? hiddenRuns(plan) : undefined;
+	const sides = cut.stemSides;
+	// A regular polygon on a radius is, averaged over a turn, as wide as a circle that much smaller.
+	const widen = cut.meanWidth ? PI / (sides * sin(PI / sides)) : 1;
+	const hidden = cut.thinHidden ? hiddenRuns(plan) : undefined;
 	plan.axes.forEach((points, axis) => {
 		const runs = hidden?.[axis] ?? [];
 		/** Whether the stem between two places along the shoot lies inside one hidden run. */
 		const covered = (from: number, to: number): boolean =>
 			runs.some(([start, end]) => from >= start && to <= end);
-		// Rings no closer than twice the stem's radius, and far apart where leaves hide the stem; the
-		// low tier keeps one ring at each year's end.
+		// Rings no closer than twice the stem's radius, and far apart where leaves hide the stem. A cut
+		// of year rings keeps one at each year's end, and a cut that names a turn keeps one only where
+		// the stem bends that far from its last ring, or where the run from it grows long enough that
+		// wind would bend the stem between two rings.
 		const path: TubePoint[] = [];
 		for (let k = 0; k < points.length; k++) {
 			const point = points[k] as AxisPoint;
@@ -1312,9 +1369,15 @@ export function meshShoot(
 				const least = covered(last.along, point.along)
 					? Math.max(HIDDEN_RING_GAP, point.radius * 2)
 					: point.radius * 2;
-				if (gap < least || (detail === 'low' && !point.unitEnd)) continue;
+				if (gap < least || (cut.yearRings && !point.unitEnd)) continue;
+				if (
+					cut.ringTurn !== undefined &&
+					gap < RING_RUN_MOST &&
+					!turnsPast(last.at, point.at, (points[k + 1] as AxisPoint).at, cut.ringTurn)
+				)
+					continue;
 			}
-			path.push(point);
+			path.push(widen === 1 ? point : { ...point, radius: point.radius * widen });
 		}
 		mesh.mark();
 		tube(
@@ -1330,10 +1393,18 @@ export function meshShoot(
 		);
 	});
 	for (const bud of plan.buds) {
-		const shape = (bud.cluster ? CLUSTER_BUD : AXIL_BUD)[detail];
+		const shape =
+			bud.mark === 'thorn'
+				? (cut.thorn ?? cut.axil)
+				: bud.mark === 'body'
+					? (cut.body ?? cut.cluster)
+					: bud.cluster
+						? cut.cluster
+						: cut.axil;
 		mesh.mark();
 		if (!shape) continue;
-		if (bud.cluster && detail === 'medium') {
+		if (!bud.cluster && !bud.mark && bud.length < (cut.axilLeast ?? 0)) continue;
+		if (bud.cluster && cut.clusterCone) {
 			// The whole cluster as one cone over its stack, drawn on its tip bud's part.
 			if (bud.stack === undefined) continue;
 			const foot = bud.stack - bud.length;
@@ -1411,16 +1482,16 @@ export function meshShoot(
  *
  * @param plan The plan.
  * @param leaves The species' leaf meshes at every tier, low first.
- * @param thinHidden Whether a stem run that its leaves hide takes rings far apart.
+ * @param cuts How each tier meshes the wood and buds; the crown's own cuts by default.
  * @returns The meshes and the measures.
  */
 export function meshedPlan(
 	plan: ShootPlan,
 	leaves: readonly (readonly PrototypeArrays[])[],
-	thinHidden = false,
+	cuts: Readonly<Record<Detail, ShootCut>> = SHOOT_CUTS,
 ): Pick<UncardedPrototype, 'length' | 'radius' | 'leaves' | 'tiers'> {
 	const writers = DETAILS.map((detail, tier) =>
-		meshShoot(plan, leaves[tier] ?? [], detail, thinHidden),
+		meshShoot(plan, leaves[tier] ?? [], detail, cuts[detail]),
 	);
 	shootOcclusion(writers, SHADE_TIER);
 	const tiers = writers.map((writer) =>

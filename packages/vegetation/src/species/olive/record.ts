@@ -434,9 +434,6 @@ export const record: Species = {
 	lod: {
 		nearFoliage: 'instanced',
 		switchPixels: [500, 12, 160],
-		// The cards stand half again larger than the shoots they picture, so a gap between one shoot's
-		// leaves falls on a neighbour's leaves rather than on sky.
-		cardGrow: 2.2,
 		// Stills 01 and 02: a card's twig is thinner than a pixel at a whole view, so its leaves read
 		// as a piece in air. Each draws its twig as a line, and the join shows.
 		cardStalk: 0,
@@ -450,12 +447,12 @@ export const record: Species = {
 			// classes stand in the cutting kit alone, so the plant's kit carries the crown's classes
 			// only, while a studio piece pays for its own leaves and no card levels.
 			kitBytes: { low: 1_150_000, medium: 1_880_000, high: 3_300_000, ultra: 7_650_000 },
-			// The largest of seed 11's six variants measures 6.17, 6.21, 6.25 and 6.30 MB.
-			variantBytes: { low: 6_210_000, medium: 6_250_000, high: 6_290_000, ultra: 6_340_000 },
+			// The largest of seed 11's six variants measures 6.36, 6.40, 6.45 and 6.50 MB.
+			variantBytes: { low: 6_400_000, medium: 6_440_000, high: 6_490_000, ultra: 6_540_000 },
 			lod0Triangles: 2_900_000,
-			// The largest variant draws at most 121,797 triangles at the middle card level and 7,956
+			// The largest variant draws at most 125,499 triangles at the middle card level and 8,066
 			// at the farthest over the four tiers, so each cap sits just above its own figure.
-			lod1Triangles: 124_000,
+			lod1Triangles: 128_000,
 			lod2Triangles: 11_000,
 			downloadBytes: 1_000_000,
 			downloadHalfBytes: 350_000,

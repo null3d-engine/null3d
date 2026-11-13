@@ -1,174 +1,561 @@
-// The sparse form: one level moves the wood, the leaves and the coarseness together toward the
-// floors a species records, and a page cannot reach past those floors with its own shares.
+// Sparseness takes foliage and the branches that carried it out of one grown plant. These tests
+// state its contracts over trees, a shrub, ground plants and a cactus: a sparser plant is a subset
+// of every denser one, it is one body joined to its root, its counts fall, its height and trunk
+// hold, the removal is even round the crown and through its height, and a change of sparseness cuts
+// the plant that is kept as grown and grows nothing again.
 import { describe, expect, it } from 'bun:test';
 import { scaledBudget } from '../../../tests/lib/run-budget.ts';
+import { type PlantAsset, plantAssetDigest, type SpeciesKitData } from './asset';
 import { speciesProblems } from './core/check';
-import type { Species } from './core/record';
+import type { Species, SpeciesModule } from './core/record';
 import { loadSpecies } from './core/registry';
 import {
 	buildKitNow,
+	forgetGrownPlants,
 	growPlantNow,
-	LEAVES_LEAST,
 	loadPlantCode,
-	SPARSE_LEAST,
+	plantsGrown,
 	sparseForDevice,
-	withLeaves,
-	withLimbs,
-	withSparse,
+	variantKey,
 } from './generate';
+import { cardTop } from './grow/height';
+import {
+	FOLIAGE_FLOOR,
+	GREAT_LIMB_SHARE,
+	rowSockets,
+	sparseKeep,
+	sparseOrder,
+	sparsePlant,
+	structuralAxes,
+} from './grow/sparse';
+import { cardRows } from './lod/cards';
 import { connectedBody } from './lod/connect';
 import type { MeshInput } from './stages';
 
-/** The oak's record with sparse floors, so the shares have somewhere to stop. */
-async function floored(): Promise<Species> {
-	const { record } = await loadSpecies('pedunculate-oak');
-	return { ...record, sparse: { limbs: 0.3, leaves: 0.2, coarseness: 0.6 } };
+/** A species grows, meshes and thins at five values; a busy machine takes tens of seconds. */
+const LONG = scaledBudget(180_000);
+
+/** The species the contracts are stated over: three trees, a shrub, two ground plants, a cactus. */
+const SPECIES = [
+	'pedunculate-oak',
+	'scots-pine',
+	'silver-birch',
+	'hawthorn-shrub',
+	'sedge',
+	'hosta',
+	'saguaro',
+] as const;
+
+/** The sparseness values each plant is cut at, rising. */
+const LEVELS = [0, 0.25, 0.5, 0.75, 1] as const;
+
+/** The seeds each species grows from. */
+const SEEDS = [11, 2027] as const;
+
+/**
+ * How far an octant's kept share may stand from the whole plant's, as a share of the octant's own
+ * foliage. The largest measured over twelve species, four seeds and six sparseness values is 0.087,
+ * in a sedge's octant of 116 leaves; no tree's octant passes 0.031.
+ */
+const OCTANT_SLACK = 0.12;
+
+/** The fewest carriers an octant holds before its share is judged; a smaller octant is noise. */
+const OCTANT_LEAST = 40;
+
+const kits = new Map<string, SpeciesKitData>();
+
+/** A species' kit at the low tier, built once. */
+async function kitOf(id: (typeof SPECIES)[number]): Promise<SpeciesKitData> {
+	let kit = kits.get(id);
+	if (!kit) {
+		const module = await loadSpecies(id);
+		await loadPlantCode(module.record);
+		kit = buildKitNow(module, { placeholders: 'missing', detail: 'low' });
+		kits.set(id, kit);
+	}
+	return kit;
 }
 
-describe('the sparse form', () => {
-	it('leaves a record with no floors as it stands', async () => {
-		const { record } = await loadSpecies('pedunculate-oak');
-		const { sparse: _floors, ...bare } = record;
-		const options = { seed: 11, variant: 0, sparse: 1 } as const;
-		expect(withSparse(bare, options)).toBe(options);
-	});
+/** One plant at every sparseness value. */
+function levelsOf(kit: SpeciesKitData, seed: number): PlantAsset[] {
+	return LEVELS.map((sparse) => growPlantNow(kit, { seed, variant: 0, near: true, sparse }));
+}
 
-	it('leaves a level of zero as the record gives it', async () => {
-		const record = await floored();
-		const options = { seed: 11, variant: 0, sparse: 0, leaves: 0.8 } as const;
-		expect(withSparse(record, options)).toBe(options);
-	});
+/** The meshing input of a grown variant, with an open crown: the light moves no vertex. */
+function meshInput(kit: SpeciesKitData, asset: PlantAsset): MeshInput {
+	const { min, max } = asset.skeleton.bounds;
+	return {
+		record: kit.record,
+		seed: asset.seed,
+		variant: asset.variant,
+		season: asset.season,
+		kit,
+		skeleton: asset.skeleton,
+		coarseness: asset.coarseness,
+		rows: asset.shoots,
+		crown: {
+			cells: [1, 1, 1] as const,
+			min,
+			cell: Math.max(max[0] - min[0], max[1] - min[1], max[2] - min[2]),
+			sky: new Float32Array([1]),
+		},
+		detail: 'low' as const,
+	};
+}
 
-	it('moves the three shares to the floors at level one', async () => {
-		const record = await floored();
-		const grown = withSparse(record, { seed: 11, variant: 0, sparse: 1 });
-		expect(grown.leaves).toBeCloseTo(0.2, 10);
-		expect(grown.limbs).toBeCloseTo(0.3, 10);
-		// The shared constant raises every species' coarseness floor above its own.
-		expect(grown.coarseness).toBeCloseTo(0.85, 10);
-	});
+/** A key of some numbers of a typed array, exact to the bit. */
+function keyOf(...parts: readonly ArrayLike<number>[]): string {
+	return parts.map((part) => Array.from(part).join(',')).join('|');
+}
 
-	it('moves the three shares halfway at level a half', async () => {
-		const record = await floored();
-		const grown = withSparse(record, { seed: 11, variant: 0, sparse: 0.5 });
-		expect(grown.leaves).toBeCloseTo(0.6, 10);
-		expect(grown.limbs).toBeCloseTo(0.65, 10);
-		expect(grown.coarseness).toBeCloseTo(0.425, 10);
-	});
+/** Each row's place, turn, scale and prototype, by its index in the plant as grown. */
+function rowKeys(asset: PlantAsset): Map<number, string> {
+	const rows = asset.shoots;
+	const out = new Map<number, string>();
+	for (let r = 0; r < rows.count; r++)
+		out.set(
+			rows.id?.[r] ?? r,
+			keyOf(
+				rows.position.subarray(r * 3, r * 3 + 3),
+				rows.rotation.subarray(r * 4, r * 4 + 4),
+				rows.scale.subarray(r, r + 1),
+				rows.prototype.subarray(r, r + 1),
+			),
+		);
+	return out;
+}
 
-	it('keeps a coarseness the page has already set above the level', async () => {
-		const record = await floored();
-		const grown = withSparse(record, { seed: 11, variant: 0, sparse: 0.25, coarseness: 0.9 });
-		expect(grown.coarseness).toBeCloseTo(0.9, 10);
-	});
+/** Each axis's nodes and radii, its kind and its order, by its index in the plant as grown. */
+function axisKeys(asset: PlantAsset): Map<number, string> {
+	const { axes, position, radius } = asset.skeleton;
+	const out = new Map<number, string>();
+	for (let a = 0; a < axes.count; a++) {
+		const first = axes.first[a] as number;
+		const last = axes.last[a] as number;
+		out.set(
+			axes.origin?.[a] ?? a,
+			keyOf(position.subarray(first * 3, last * 3 + 3), radius.subarray(first, last + 1), [
+				axes.kind[a] as number,
+				axes.order[a] as number,
+				axes.parentT[a] as number,
+			]),
+		);
+	}
+	return out;
+}
 
-	it('refuses a level above one', async () => {
-		const record = await floored();
-		expect(() => withSparse(record, { seed: 11, variant: 0, sparse: 1.5 })).toThrow(
-			/sparse is 1.5/,
+/** The triangles of a level's parts of one name. */
+function trianglesOf(asset: PlantAsset, level: 0 | 1 | 2, name: string): number {
+	let triangles = 0;
+	for (const part of asset.levels[level].parts)
+		if (part.name === name) triangles += part.arrays.indices.length / 3;
+	return triangles;
+}
+
+/** The vertices of a level's parts of one name, each as one number of its three box steps. */
+function vertexSet(asset: PlantAsset, level: 0 | 1 | 2, name: string): Set<number> {
+	const out = new Set<number>();
+	for (const part of asset.levels[level].parts) {
+		if (part.name !== name) continue;
+		const p = part.arrays.positions;
+		for (let i = 0; i < p.length; i += 3)
+			out.add((p[i] as number) + (p[i + 1] as number) * 65536 + (p[i + 2] as number) * 4294967296);
+	}
+	return out;
+}
+
+/**
+ * Where each foliage carrier of a plant stands: its sockets on a plant of sockets, each with all its
+ * rows, its shoot rows, or its end axes' tips. A carrier keeps its number as grown.
+ */
+function carriers(asset: PlantAsset): Map<number, readonly [number, number, number]> {
+	const out = new Map<number, readonly [number, number, number]>();
+	const rows = asset.shoots;
+	const { buds } = asset.skeleton;
+	const sockets = rowSockets(asset.skeleton, rows);
+	if (sockets) {
+		for (let r = 0; r < rows.count; r++) {
+			const b = sockets[r] as number;
+			out.set(buds.origin?.[b] ?? b, [
+				buds.position[b * 3] as number,
+				buds.position[b * 3 + 1] as number,
+				buds.position[b * 3 + 2] as number,
+			]);
+		}
+		return out;
+	}
+	if (rows.count > 0) {
+		for (let r = 0; r < rows.count; r++)
+			out.set(rows.id?.[r] ?? r, [
+				rows.position[r * 3] as number,
+				rows.position[r * 3 + 1] as number,
+				rows.position[r * 3 + 2] as number,
+			]);
+		return out;
+	}
+	const { axes, position } = asset.skeleton;
+	const parents = new Set<number>();
+	for (let a = 0; a < axes.count; a++) parents.add(axes.parent[a] as number);
+	for (let a = 0; a < axes.count; a++) {
+		if (parents.has(a) || (axes.parent[a] as number) < 0) continue;
+		const tip = axes.last[a] as number;
+		out.set(axes.origin?.[a] ?? a, [
+			position[tip * 3] as number,
+			position[tip * 3 + 1] as number,
+			position[tip * 3 + 2] as number,
+		]);
+	}
+	return out;
+}
+
+/** The highest point a plant draws: its top node, or the top of its highest shoot's cards. */
+function drawnTop(kit: SpeciesKitData, asset: PlantAsset): number {
+	let top = Number.NEGATIVE_INFINITY;
+	const { position, nodeCount } = asset.skeleton;
+	for (let n = 0; n < nodeCount; n++) top = Math.max(top, position[n * 3 + 1] as number);
+	return Math.max(top, cardTop(kit, asset.shoots));
+}
+
+for (const id of SPECIES) {
+	describe(`sparseness on the ${id}`, () => {
+		it(
+			'cuts each sparser plant out of every denser one, joined, lighter and as tall',
+			async () => {
+				const kit = await kitOf(id);
+				for (const seed of SEEDS) {
+					const plants = levelsOf(kit, seed);
+					const full = plants[0] as PlantAsset;
+					const fullCarriers = carriers(full);
+					const fullInput = meshInput(kit, full);
+					const fullExtras = vertexSet(full, 0, 'extras');
+					// The stems and great limbs, which every sparseness keeps whole.
+					const great = structuralAxes(full.skeleton, kit.record.sparse?.limbs ?? GREAT_LIMB_SHARE);
+					const fullAxes = axisKeys(full);
+					const fullRows = rowKeys(full);
+					let before = full;
+					for (let k = 1; k < plants.length; k++) {
+						const plant = plants[k] as PlantAsset;
+						const at = `${id} seed ${seed} sparse ${LEVELS[k]}`;
+						// A subset: each row and each axis is one the denser plant holds, to the bit, so
+						// nothing moved and no leaf was scaled.
+						const denserRows = rowKeys(before);
+						const rows = rowKeys(plant);
+						for (const [row, key] of rows)
+							expect([at, row, denserRows.get(row)]).toEqual([at, row, key]);
+						const denserAxes = axisKeys(before);
+						const axes = axisKeys(plant);
+						for (const [axis, key] of axes)
+							expect([at, axis, denserAxes.get(axis)]).toEqual([at, axis, key]);
+						// It falls: fewer carriers, no more axes, no more wood, cards or extras.
+						expect([at, carriers(plant).size < carriers(before).size]).toEqual([at, true]);
+						expect([at, axes.size <= denserAxes.size]).toEqual([at, true]);
+						// A card level may draw more wood for a sparser plant, since it draws the branch
+						// under each card that no longer touches another, so wood is counted where every
+						// axis draws.
+						for (const level of [0, 1, 2] as const)
+							for (const name of ['wood', 'cards', 'foliage', 'extras']) {
+								if (name === 'wood' && level > 0) continue;
+								expect([
+									at,
+									level,
+									name,
+									trianglesOf(plant, level, name) <= trianglesOf(before, level, name),
+								]).toEqual([at, level, name, true]);
+							}
+						// The extras that stay hang where the plant as grown hung them.
+						for (const vertex of vertexSet(plant, 0, 'extras'))
+							expect([at, fullExtras.has(vertex)]).toEqual([at, true]);
+						// One body: every axis leaves an axis the plant holds, every row stands on a node
+						// it holds, and each level counts the roots the plant as grown counts.
+						const skeleton = plant.skeleton;
+						for (let a = 0; a < skeleton.axes.count; a++) {
+							const parent = skeleton.axes.parent[a] as number;
+							const origin = skeleton.axes.origin?.[a] ?? a;
+							const grownParent = full.skeleton.axes.parent[origin] as number;
+							expect([at, a, parent < a, parent < 0]).toEqual([at, a, true, grownParent < 0]);
+							if (parent >= 0)
+								expect([at, a, skeleton.axisOf[skeleton.axes.parentNode[a] as number]]).toEqual([
+									at,
+									a,
+									parent,
+								]);
+						}
+						for (let r = 0; r < plant.shoots.count; r++)
+							expect([at, r, (plant.shoots.node?.[r] ?? -1) < skeleton.nodeCount]).toEqual([
+								at,
+								r,
+								true,
+							]);
+						// Every level shows this same plant: a card level draws each card its share of
+						// the rows keeps, none dropped for want of a branch.
+						const input = meshInput(kit, plant);
+						for (const level of [0, 1, 2] as const) {
+							const body = connectedBody(input, level);
+							const grown = connectedBody(fullInput, level);
+							expect([at, level, body.components, body.reachesRoot]).toEqual([
+								at,
+								level,
+								grown.components,
+								grown.reachesRoot,
+							]);
+							if (level === 0) continue;
+							let share = 0;
+							for (const grow of cardRows(input, level)) if (grow > 0) share++;
+							expect([at, level, body.cards]).toEqual([at, level, share]);
+						}
+						// As tall, on the same trunk and great limbs, in the same frame.
+						expect([at, skeleton.height, skeleton.crownBase]).toEqual([
+							at,
+							full.skeleton.height,
+							full.skeleton.crownBase,
+						]);
+						expect([at, skeleton.bounds]).toEqual([at, full.skeleton.bounds]);
+						expect([at, drawnTop(kit, plant)]).toEqual([at, drawnTop(kit, full)]);
+						for (let a = 0; a < great.length; a++)
+							if (great[a]) expect([at, a, axes.get(a)]).toEqual([at, a, fullAxes.get(a)]);
+						// Even round the crown and through its height: each octant about the middle of the
+						// grown plant's foliage keeps the whole plant's share of its own.
+						const kept = carriers(plant);
+						const share = kept.size / fullCarriers.size;
+						const middle: [number, number, number] = [0, 0, 0];
+						for (const place of fullCarriers.values()) {
+							middle[0] += place[0] / fullCarriers.size;
+							middle[1] += place[1] / fullCarriers.size;
+							middle[2] += place[2] / fullCarriers.size;
+						}
+						const grownIn = new Array<number>(8).fill(0);
+						const keptIn = new Array<number>(8).fill(0);
+						for (const [carrier, place] of fullCarriers) {
+							const octant =
+								(place[0] > middle[0] ? 1 : 0) +
+								(place[1] > middle[1] ? 2 : 0) +
+								(place[2] > middle[2] ? 4 : 0);
+							grownIn[octant] = (grownIn[octant] as number) + 1;
+							if (kept.has(carrier)) keptIn[octant] = (keptIn[octant] as number) + 1;
+						}
+						for (let octant = 0; octant < 8; octant++) {
+							const grown = grownIn[octant] as number;
+							if (grown < OCTANT_LEAST) continue;
+							const off = Math.abs((keptIn[octant] as number) / grown - share);
+							expect([at, octant, off <= OCTANT_SLACK]).toEqual([at, octant, true]);
+						}
+						before = plant;
+					}
+					// The sparsest plant keeps the floor's share of its carriers, to the whole carrier.
+					const floor = kit.record.sparse?.foliage ?? FOLIAGE_FLOOR;
+					const sparsest = carriers(plants[plants.length - 1] as PlantAsset).size;
+					expect([id, seed, sparsest >= Math.floor(fullCarriers.size * floor)]).toEqual([
+						id,
+						seed,
+						true,
+					]);
+					expect([id, seed, sparsest <= Math.round(fullCarriers.size * floor) + 32]).toEqual([
+						id,
+						seed,
+						true,
+					]);
+					expect(fullRows.size).toBe(full.shoots.count);
+				}
+			},
+			LONG,
+		);
+
+		it(
+			'grows once, and gives the same bytes from a kept plant and from a new growth',
+			async () => {
+				const kit = await kitOf(id);
+				forgetGrownPlants();
+				const options = { seed: 5, variant: 1, near: false } as const;
+				const started = performance.now();
+				const full = growPlantNow(kit, options);
+				const grew = performance.now() - started;
+				const grown = plantsGrown();
+				// A change of sparseness cuts the kept plant: no growth, and less time than the growth.
+				const cutStarted = performance.now();
+				const half = growPlantNow(kit, { ...options, sparse: 0.5 });
+				const cut = performance.now() - cutStarted;
+				const sparsest = growPlantNow(kit, { ...options, sparse: 1 });
+				expect(plantsGrown()).toBe(grown);
+				expect([id, cut < grew]).toEqual([id, true]);
+				// The same bytes again, from the kept plant and from a growth that starts at the seed.
+				expect(plantAssetDigest(growPlantNow(kit, { ...options, sparse: 0.5 }))).toBe(
+					plantAssetDigest(half),
+				);
+				forgetGrownPlants();
+				expect(plantAssetDigest(growPlantNow(kit, { ...options, sparse: 1 }))).toBe(
+					plantAssetDigest(sparsest),
+				);
+				expect(plantsGrown()).toBe(grown + 1);
+				expect(plantAssetDigest(growPlantNow(kit, { ...options, sparse: 0 }))).toBe(
+					plantAssetDigest(full),
+				);
+				expect(plantAssetDigest(growPlantNow(kit, options))).toBe(plantAssetDigest(full));
+			},
+			LONG,
+		);
+	});
+}
+
+/** The plants of sockets: a tuft of pieces, and the pine and the oak as directed frames. */
+const SOCKET_PLANTS: readonly (readonly [name: string, load: () => Promise<SpeciesModule>])[] = [
+	['sedge', () => loadSpecies('sedge')],
+	[
+		'directed Scots pine',
+		async () => ({
+			record: (await import('./species/scots-pine/directed')).directed as Species,
+			textures: (await import('@null3d/vegetation-textures/scots-pine')).files,
+		}),
+	],
+	[
+		'directed pedunculate oak',
+		async () => ({
+			record: (await import('./species/pedunculate-oak/directed')).directed as Species,
+			textures: (await import('@null3d/vegetation-textures/pedunculate-oak')).files,
+		}),
+	],
+];
+
+for (const [name, load] of SOCKET_PLANTS)
+	describe(`sparseness on the ${name}, a plant of sockets`, () => {
+		it(
+			'keeps whole sockets, evenly round the crown, and only the wood that carries them',
+			async () => {
+				const module = await load();
+				await loadPlantCode(module.record);
+				const kit = buildKitNow(module, { placeholders: 'missing', detail: 'low' });
+				const full = growPlantNow(kit, { seed: 11, variant: 0 });
+				const { skeleton, shoots } = full;
+				const sockets = rowSockets(skeleton, shoots) as Uint32Array;
+				expect([name, sockets !== undefined]).toEqual([name, true]);
+				const rank = skeleton.buds.sockets?.rank as Uint32Array;
+				const limbs = kit.record.sparse?.limbs ?? GREAT_LIMB_SHARE;
+				const order = sparseOrder(skeleton, shoots, limbs);
+				expect(order.bySockets).toBe(true);
+				const rowsOf = new Map<number, number>();
+				for (let r = 0; r < shoots.count; r++)
+					rowsOf.set(sockets[r] as number, (rowsOf.get(sockets[r] as number) ?? 0) + 1);
+				expect(order.carriers).toBe(rowsOf.size);
+				const structural = structuralAxes(skeleton, limbs);
+				for (const sparse of [0.5, 1]) {
+					const at = `${name} sparse ${sparse}`;
+					const keep = sparseKeep(order, sparse, kit.record.sparse?.foliage ?? FOLIAGE_FLOOR);
+					const thinned = sparsePlant(skeleton, shoots, order, keep);
+					if (!thinned) throw new Error(`${at}: nothing went`);
+					// Whole sockets: each socket that stays keeps every row it held.
+					const kept = new Map<number, number>();
+					for (let r = 0; r < thinned.rows.count; r++) {
+						const socket = sockets[thinned.rows.id?.[r] ?? r] as number;
+						kept.set(socket, (kept.get(socket) ?? 0) + 1);
+					}
+					expect([at, kept.size < rowsOf.size]).toEqual([at, true]);
+					for (const [socket, count] of kept)
+						expect([at, socket, count]).toEqual([at, socket, rowsOf.get(socket) ?? -1]);
+					// Even round the crown: each octant about the foliage's middle keeps the plant's
+					// share of its own sockets.
+					const middle = [0, 0, 0];
+					for (let r = 0; r < shoots.count; r++)
+						for (let k = 0; k < 3; k++)
+							middle[k] =
+								(middle[k] as number) + (shoots.position[r * 3 + k] as number) / shoots.count;
+					const grownIn = new Array<number>(8).fill(0);
+					const keptIn = new Array<number>(8).fill(0);
+					const counted = new Set<number>();
+					for (let r = 0; r < shoots.count; r++) {
+						const socket = sockets[r] as number;
+						if (counted.has(socket)) continue;
+						counted.add(socket);
+						let octant = 0;
+						for (let k = 0; k < 3; k++)
+							if ((shoots.position[r * 3 + k] as number) > (middle[k] as number)) octant += 1 << k;
+						grownIn[octant] = (grownIn[octant] as number) + 1;
+						if (kept.has(socket)) keptIn[octant] = (keptIn[octant] as number) + 1;
+					}
+					const share = kept.size / rowsOf.size;
+					for (let octant = 0; octant < 8; octant++) {
+						const grown = grownIn[octant] as number;
+						if (grown < OCTANT_LEAST) continue;
+						const off = Math.abs((keptIn[octant] as number) / grown - share);
+						expect([at, octant, off <= OCTANT_SLACK]).toEqual([at, octant, true]);
+					}
+					// The sockets that stay keep their sockets' records.
+					const buds = thinned.skeleton.buds;
+					expect([at, buds.sockets?.rank.length]).toEqual([at, buds.count]);
+					for (let b = 0; b < buds.count; b++) {
+						const origin = buds.origin?.[b] ?? b;
+						expect([at, buds.sockets?.rank[b]]).toEqual([at, rank[origin]]);
+					}
+					// The wood: every axis is a stem or a great limb, lies under the plant's top, or
+					// carries a kept socket on itself or on a branch that leaves it.
+					const axes = thinned.skeleton.axes;
+					const carries = new Uint8Array(axes.count);
+					for (let r = 0; r < thinned.rows.count; r++)
+						for (
+							let a = thinned.skeleton.axisOf[thinned.rows.node?.[r] as number] as number;
+							a >= 0 && carries[a] !== 1;
+							a = axes.parent[a] as number
+						)
+							carries[a] = 1;
+					let highest = 0;
+					for (let n = 0; n < thinned.skeleton.nodeCount; n++)
+						if (
+							(thinned.skeleton.position[n * 3 + 1] as number) >
+							(thinned.skeleton.position[highest * 3 + 1] as number)
+						)
+							highest = n;
+					for (
+						let a = thinned.skeleton.axisOf[highest] as number;
+						a >= 0;
+						a = axes.parent[a] as number
+					)
+						carries[a] = 1;
+					for (let a = 0; a < axes.count; a++)
+						expect([at, a, carries[a] === 1 || structural[axes.origin?.[a] ?? a] === 1]).toEqual([
+							at,
+							a,
+							true,
+						]);
+				}
+				// The grown plant at its sparsest keeps the sockets' records too.
+				const sparsest = growPlantNow(kit, { seed: 11, variant: 0, sparse: 1 });
+				expect(sparsest.skeleton.buds.sockets?.rank.length).toBe(sparsest.skeleton.buds.count);
+			},
+			LONG,
 		);
 	});
 
-	it('takes the sparse shares below the bound a page may ask for', async () => {
-		const record = await floored();
-		expect(() => withLeaves(record, 0.2)).toThrow();
-		expect(() => withLimbs(record, 0.3)).toThrow();
-		expect(() => withLeaves(record, 0.2, SPARSE_LEAST)).not.toThrow();
-		expect(() => withLimbs(record, 0.3, SPARSE_LEAST)).not.toThrow();
-		expect(LEAVES_LEAST).toBeGreaterThan(SPARSE_LEAST);
+describe('the sparseness option', () => {
+	it('keys a sparser plant apart from the plant as grown', async () => {
+		const kit = await kitOf('pedunculate-oak');
+		const grown = variantKey(kit, { seed: 11, variant: 0 });
+		expect(variantKey(kit, { seed: 11, variant: 0, sparse: 0 })).toBe(grown);
+		expect(variantKey(kit, { seed: 11, variant: 0, sparse: 1 })).not.toBe(grown);
+		expect(variantKey(kit, { seed: 11, variant: 0, sparse: 0.5 })).not.toBe(
+			variantKey(kit, { seed: 11, variant: 0, sparse: 1 }),
+		);
+		// A cut piece grows as it is, so its key holds no sparseness.
+		const piece = { seed: 11, variant: 0, cutting: { part: 'branch' } } as const;
+		expect(variantKey(kit, { ...piece, sparse: 1 })).toBe(variantKey(kit, piece));
 	});
 
-	it("moves the section sparsity to the floor at level one, and keeps a page's own above it", async () => {
-		const record = await floored();
-		const floor = record.sparse as NonNullable<Species['sparse']>;
-		const withSections: Species = { ...record, sparse: { ...floor, sections: 0.7 } };
-		expect(withSparse(withSections, { seed: 11, variant: 0, sparse: 1 }).sections).toBeCloseTo(
-			0.7,
-			10,
-		);
-		expect(withSparse(withSections, { seed: 11, variant: 0, sparse: 0.5 }).sections).toBeCloseTo(
-			0.35,
-			10,
-		);
-		expect(
-			withSparse(withSections, { seed: 11, variant: 0, sparse: 1, sections: 0.9 }).sections,
-		).toBeCloseTo(0.9, 10);
-		// A record with no section floor keeps the sections its coarseness gives.
-		expect(withSparse(record, { seed: 11, variant: 0, sparse: 1 }).sections).toBe(0);
-	});
-
-	it('refuses a section sparsity outside 0 to 1', async () => {
-		const record = await floored();
-		expect(() => withSparse(record, { seed: 11, variant: 0, sections: 1.2 })).toThrow(
-			/sections is 1.2/,
-		);
-		const floor = record.sparse as NonNullable<Species['sparse']>;
-		expect(speciesProblems({ ...record, sparse: { ...floor, sections: 1.2 } })).toContain(
-			'sparse.sections is 1.2; a share lies from 0 to 1',
+	it('refuses a sparseness outside 0 to 1', async () => {
+		const kit = await kitOf('hosta');
+		expect(() => growPlantNow(kit, { seed: 11, variant: 0, sparse: 1.5 })).toThrow(/sparse is 1.5/);
+		expect(() => growPlantNow(kit, { seed: 11, variant: 0, sparse: -0.1 })).toThrow(
+			/sparse is -0.1/,
 		);
 	});
 
-	it('gives phones and tablets the light form and desktops the record', () => {
+	it('gives phones and tablets the sparsest form and desktops the plant as grown', () => {
 		expect(sparseForDevice('phone')).toBe(1);
 		expect(sparseForDevice('tablet')).toBe(1);
 		expect(sparseForDevice('desktop')).toBe(0);
 	});
 
-	it('rejects floors outside their ranges', async () => {
-		const record = await floored();
-		const problems = speciesProblems({
-			...record,
-			sparse: { limbs: 0.02, leaves: 1.2, coarseness: 1.5 },
-		});
-		expect(problems.join('\n')).toMatch(/sparse\.limbs is 0\.02/);
-		expect(problems.join('\n')).toMatch(/sparse\.leaves is 1\.2/);
-		expect(problems.join('\n')).toMatch(/sparse\.coarseness is 1\.5/);
+	it('checks a record floors: a foliage share from 0 to 1, a limb share above 0', async () => {
+		const { record } = await loadSpecies('pedunculate-oak');
+		expect(speciesProblems({ ...record, sparse: { foliage: 0.2, limbs: 0.4 } })).toEqual([]);
+		const problems = speciesProblems({ ...record, sparse: { foliage: 1.2, limbs: 0 } }).join('\n');
+		expect(problems).toMatch(/sparse\.foliage is 1\.2/);
+		expect(problems).toMatch(/sparse\.limbs is 0/);
 	});
-
-	it('accepts floors inside their ranges', async () => {
-		const record = await floored();
-		expect(speciesProblems(record)).toEqual([]);
-	});
-});
-
-describe('a sparse form is one connected body', () => {
-	it(
-		'keeps one component that reaches the root at every level and sparse setting',
-		async () => {
-			const module = await loadSpecies('pedunculate-oak');
-			await loadPlantCode(module.record);
-			const kit = buildKitNow(module, { placeholders: 'missing', detail: 'high' });
-			for (const sparse of [0, 0.25, 0.5, 0.75, 1]) {
-				const asset = growPlantNow(kit, { seed: 11, variant: 0, near: false, sparse });
-				const { min, max } = asset.skeleton.bounds;
-				const crown = {
-					cells: [1, 1, 1] as const,
-					min,
-					cell: Math.max(max[0] - min[0], max[1] - min[1], max[2] - min[2]),
-					sky: new Float32Array([1]),
-				};
-				const input = {
-					skeleton: asset.skeleton,
-					record: kit.record,
-					detail: 'high' as const,
-					coarseness: asset.coarseness,
-					rows: asset.shoots,
-					crown,
-					seed: 11,
-					variant: 0,
-					season: asset.season,
-					kit,
-				} as unknown as MeshInput;
-				for (const level of [0, 1, 2] as const) {
-					const body = connectedBody(input, level);
-					expect([sparse, level, body.components]).toEqual([sparse, level, 1]);
-					expect([sparse, level, body.reachesRoot]).toEqual([sparse, level, true]);
-					// The card levels keep cards, all joined: a level that drops them all would pass
-					// the count for the wrong reason.
-					if (level > 0) expect([sparse, level, body.cards > 0]).toEqual([sparse, level, true]);
-				}
-			}
-		},
-		scaledBudget(120_000),
-	);
 });

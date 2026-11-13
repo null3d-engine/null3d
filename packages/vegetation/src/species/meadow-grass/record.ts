@@ -25,8 +25,10 @@ export const record: Species = {
 		// Still 01: the leaf mound is 262 px tall under heads that reach 525 px.
 		mound: 0.5,
 		// Still 01: twelve flowering stems; still 04: about forty-five blades at its fullest ring,
-		// three or four to a shoot. So about sixteen shoots.
-		shoots: { mean: 16, spread: 3 },
+		// three or four to a shoot, read at the whole view's 8.5 mm blade. The fact sheet's blade is
+		// 2 to 4 mm, and a 3 mm blade covers a third of the mound that one of 8.5 mm does, so the
+		// mound holds about three times the blades: forty-five shoots.
+		shoots: { mean: 45, spread: 6 },
 		// Still 01: the sheath bases span 96 px at the soil against a mound of 262 px.
 		stool: 0.36,
 		// Stills 01 and 03: pale green sheath columns stand 0.12 to 0.15 of the mound's height, each
@@ -83,11 +85,12 @@ export const record: Species = {
 		kind: 'grass-blade',
 		blade: {
 			// Stills 12 and 24: blades of even width that close in a short blunt hood. Still 01: a
-			// blade is as long as the mound is tall and 9 px across against a mound of 262 px, so
-			// 0.034 of its length. Stills 12 and 24 show a blade's segment, which is broader for its
-			// length than a whole blade.
+			// blade is as long as the mound is tall. The fact sheet: 2 to 4 mm wide. Still 01 reads 9 px
+			// across against a mound of 262 px, 8.5 mm, where a blade spans a few pixels; by the leaf
+			// as the ruler the fact sheet's width holds until full blades are read on a full-size
+			// studio picture, and both figures stand for the owner.
 			length: { mean: 0.26, spread: 0.03 },
-			width: 0.0085,
+			width: 0.003,
 			profile: [
 				[0, 0.85],
 				[0.1, 1],
@@ -146,20 +149,20 @@ export const record: Species = {
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
-			// The kit holds eleven pieces and their card atlas of twenty-four cells of 32 texels. It
-			// reads 531,408, 710,460, 934,072 and 1,215,156 bytes at the four tiers; the three
-			// flowering stems with their panicles are most of what the tiers add. Each cap keeps
-			// about fifteen per cent above its read.
-			kitBytes: { low: 612_000, medium: 818_000, high: 1_075_000, ultra: 1_398_000 },
+			// The kit holds fourteen prototypes, the sheath column, seven blade shapes and three
+			// flowering stems each with its panicle as a part of its own, and their card atlas of
+			// 32-texel cells. It reads 713,148, 896,436, 1,124,308 and 1,413,280 bytes at the four
+			// tiers; the three flowering stems with their panicles are most of what the tiers add.
+			// Each cap keeps about fifteen per cent above its read.
+			kitBytes: { low: 821_000, medium: 1_031_000, high: 1_293_000, ultra: 1_626_000 },
 			// A plant is rows of the kit's pieces, so a variant's bytes are the same at every tier.
-			// Measured over the four variants at seed 11, in summer and in blossom: the largest reads
-			// 43,435 bytes; 20,756 triangles at the nearest level at the high tier and 29,284 at the
-			// ultra; and 586 and 300 at the two card levels. Each cap keeps about fifteen per cent
-			// above its read, and the nearest level's holds the ultra tier.
-			variantBytes: { low: 50_000, medium: 50_000, high: 50_000, ultra: 50_000 },
+			// Measured over the four variants at seed 11, in summer and in blossom, with forty-five
+			// shoots: the largest reads 110,283 bytes, and 1,480 and 756 triangles at the two card
+			// levels. Each cap keeps about fifteen per cent above its read.
+			variantBytes: { low: 127_000, medium: 127_000, high: 127_000, ultra: 127_000 },
 			lod0Triangles: 33_700,
-			lod1Triangles: 680,
-			lod2Triangles: 350,
+			lod1Triangles: 1_700,
+			lod2Triangles: 870,
 			downloadBytes: 350_000,
 			downloadHalfBytes: 120_000,
 			growMilliseconds: 150,

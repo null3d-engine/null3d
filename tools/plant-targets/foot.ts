@@ -1,129 +1,121 @@
-// The foot of a plant whose outline ends at the horizon. The review's outline is reliable above the
-// horizon and not below it: a stem that stands against ground of nearly its own colour is lost
-// there, and the plant then reads shorter than it is. Where the outline ends at the horizon on a
-// stem, this follows the stem down through the ground by its colour against the ground beside it,
-// to the row where it ends.
-import { deltaE76 } from '../lib/plant-review/image.ts';
-import type { Box } from '../lib/plant-review/references.ts';
-import { axisRuns } from './shape.ts';
+// A plant whose outline ends at the horizon on a wide foot. The review's outline follows a stem
+// below the horizon to its foot, and it cannot follow a tuft or a colony there: a mass that stands
+// against ground of nearly its own colour is lost below the horizon line. These helpers tell such
+// an outline, so its figures are refused and not read from half a plant.
+import { deltaE76, labImage, type Rgba, resizeToWidth } from '../lib/plant-review/image.ts';
+import {
+	axisRuns,
+	type Box,
+	FOOT_STEM_SHARE,
+	type PlantMask,
+} from '../lib/plant-review/references.ts';
 
-/** The rows above the outline's end that give the stem's place, width and colour. */
-const STEM_ROWS = 6;
-/** The most of the plant's width that the outline's last rows may span and still be a stem. */
-const STEM_MOST = 0.25;
-/** The least CIELAB distance between the stem's colour and the ground beside it. */
-const CONTRAST = 6;
-/** The most of that distance that a row of the stem may stand from the stem's own colour. */
-const STEM_NEAR = 0.6;
-/** The rows on end that may fail before the stem has ended. */
-const MISSES = 3;
+/** The rows above the outline's end whose run is the foot's. */
+const FOOT_ROWS = 6;
 /** The spread of a ground that is drawn plain, as a CIELAB distance: a silhouette's ground band. */
 export const PLAIN_GROUND = 3;
+/**
+ * The least CIELAB distance between a foot's colour and the ground's under it for the foot to stand
+ * in view: about half the least that a reference's foot standing in view was measured apart, and
+ * five times what a reference's tuft that runs on below the horizon was.
+ */
+const FOOT_IN_VIEW = 15;
 /** Rows either side of the horizon within which an outline's last row ends at it. */
 const AT_HORIZON = 0.015;
-
-/** What following a stem below the horizon gives. */
-export type Followed =
-	| { readonly kind: 'stem'; readonly foot: number; readonly left: number; readonly right: number }
-	| { readonly kind: 'mass' }
-	| { readonly kind: 'none' };
+/** The most of a plant's height that the ground below a wide foot at the horizon may hide before the outline is refused. */
+const MASS_LOSS = 0.1;
 
 /** Whether an outline's last row lies at the horizon rather than in the ground below it. */
 export function endsAtHorizon(box: Box, horizonRow: number, height: number): boolean {
 	return box.bottom <= horizonRow + Math.max(2, Math.round(height * AT_HORIZON));
 }
 
-/** The mean colour of a run of pixels in a row, or null for an empty run. */
-function meanLab(
-	lab: Float32Array,
-	width: number,
-	y: number,
-	from: number,
-	to: number,
-): number[] | null {
-	const left = Math.max(0, from);
-	const right = Math.min(width - 1, to);
-	if (right < left) return null;
-	const sum = [0, 0, 0];
-	for (let x = left; x <= right; x++)
-		for (let c = 0; c < 3; c++)
-			sum[c] = (sum[c] as number) + (lab[(y * width + x) * 3 + c] as number);
-	return sum.map((v) => v / (right - left + 1));
+/** The run nearest the axis in each of the outline's last rows that holds one, lowest first. */
+function footRuns(mask: Uint8Array, width: number, box: Box, axis: number): [number, number][] {
+	const runs = axisRuns(mask, width, box, axis);
+	const found: [number, number][] = [];
+	for (let y = box.bottom; y > Math.max(box.top, box.bottom - FOOT_ROWS); y--)
+		if ((runs[y * 2] as number) >= 0)
+			found.push([runs[y * 2] as number, runs[y * 2 + 1] as number]);
+	return found;
+}
+
+/** The middle value of a list of numbers, or 0 for an empty list. */
+function middle(values: number[]): number {
+	values.sort((a, b) => a - b);
+	return values[values.length >> 1] ?? 0;
 }
 
 /**
- * Follows a stem down from the last row of an outline.
+ * Whether the outline's last rows are too wide to be a stem: the middle width of the run nearest
+ * the axis, against the share of the plant's width that the review's stem follower takes as a stem.
+ */
+export function wideFoot(mask: Uint8Array, width: number, box: Box, axis: number): boolean {
+	const widths = footRuns(mask, width, box, axis).map(([from, to]) => to - from + 1);
+	return middle(widths) > (box.right - box.left + 1) * FOOT_STEM_SHARE;
+}
+
+/**
+ * Whether a foot that ends at the horizon stands in view on the ground: the rows under its run are
+ * of another colour than the foot. A tuft or a colony that runs on below the horizon keeps its own
+ * colour there, where the ground's fitted colour lost it.
  *
  * @param lab The picture's CIELAB colours at the mask's size.
- * @param width The mask's width.
- * @param height The mask's height.
- * @param mask The plant's outline.
- * @param box The plant's box.
- * @param axis The column of the plant's foot.
- * @returns The row where the stem ends and its columns there; `mass` where the outline's last rows
- *   are too wide to be a stem; `none` where no stem runs on below the outline.
  */
-export function followStem(
+export function footInView(
 	lab: Float32Array,
 	width: number,
 	height: number,
 	mask: Uint8Array,
 	box: Box,
 	axis: number,
-): Followed {
-	const runs = axisRuns(mask, width, box, axis);
-	const lefts: number[] = [];
-	const rights: number[] = [];
-	const colour = [0, 0, 0];
-	let pixels = 0;
-	for (let y = box.bottom; y > Math.max(box.top, box.bottom - STEM_ROWS); y--) {
-		const from = runs[y * 2] as number;
-		if (from < 0) continue;
-		const to = runs[y * 2 + 1] as number;
-		lefts.push(from);
-		rights.push(to);
-		for (let x = from; x <= to; x++) {
-			for (let c = 0; c < 3; c++)
-				colour[c] = (colour[c] as number) + (lab[(y * width + x) * 3 + c] as number);
-			pixels++;
-		}
-	}
-	if (pixels === 0) return { kind: 'none' };
-	lefts.sort((a, b) => a - b);
-	rights.sort((a, b) => a - b);
-	let left = lefts[lefts.length >> 1] as number;
-	let right = rights[rights.length >> 1] as number;
-	const across = right - left + 1;
-	if (across > (box.right - box.left + 1) * STEM_MOST) return { kind: 'mass' };
-	const stem = colour.map((v) => v / pixels);
-	const beside = Math.max(3, across);
-	const gap = Math.max(1, Math.round(across / 4));
-	let foot = box.bottom;
-	let misses = 0;
-	for (let y = box.bottom + 1; y < height && misses < MISSES; y++) {
-		let best: { shift: number; off: number } | null = null;
-		for (const shift of [0, -1, 1]) {
-			const inside = meanLab(lab, width, y, left + shift, right + shift);
-			if (!inside) continue;
-			// The ground on each side of the stem in this row; a side off the frame is left out.
-			const grounds = [
-				meanLab(lab, width, y, left + shift - gap - beside, left + shift - gap - 1),
-				meanLab(lab, width, y, right + shift + gap + 1, right + shift + gap + beside),
-			].filter((ground): ground is number[] => ground !== null);
-			if (grounds.length === 0) continue;
-			const ground = Math.min(...grounds.map((g) => deltaE76(stem, g)));
-			const off = deltaE76(stem, inside);
-			if (ground >= CONTRAST && off < ground * STEM_NEAR && (!best || off < best.off))
-				best = { shift, off };
-		}
-		if (!best) {
-			misses++;
-			continue;
-		}
-		misses = 0;
-		left += best.shift;
-		right += best.shift;
-		foot = y;
-	}
-	return foot > box.bottom ? { kind: 'stem', foot, left, right } : { kind: 'none' };
+): boolean {
+	const found = footRuns(mask, width, box, axis);
+	const from = middle(found.map(([left]) => left));
+	const to = middle(found.map(([, right]) => right));
+	const mean = (rows: readonly number[]): number[] | null => {
+		const sum = [0, 0, 0];
+		let pixels = 0;
+		for (const y of rows)
+			for (let x = from; x <= to; x++) {
+				for (let c = 0; c < 3; c++)
+					sum[c] = (sum[c] as number) + (lab[(y * width + x) * 3 + c] as number);
+				pixels++;
+			}
+		return pixels === 0 ? null : sum.map((v) => v / pixels);
+	};
+	const rows = (start: number, end: number): number[] =>
+		Array.from({ length: Math.max(0, end - start + 1) }, (_, k) => start + k);
+	const foot = mean(rows(box.bottom - FOOT_ROWS + 1, box.bottom));
+	const under = mean(rows(box.bottom + 1, Math.min(height - 1, box.bottom + FOOT_ROWS)));
+	return foot !== null && under !== null && deltaE76(foot, under) >= FOOT_IN_VIEW;
+}
+
+/**
+ * Whether a whole plant's outline has lost its foot: it ends at the horizon on a mass too wide to be
+ * a stem, over a photographed ground and not a plain band, a real share of its height above the
+ * frame's foot, and the rows under it keep its own colour. The review's outline follows a stem below
+ * the horizon to its foot and says from which row; it cannot follow a mass.
+ *
+ * @param image The picture.
+ * @param plant Its plant mask, at the work size.
+ * @param box The outline's box in the mask.
+ * @param horizon The horizon as a share of the picture's height, or null where none is in view.
+ * @param axis The column of the plant's axis in the mask.
+ */
+export function footLost(
+	image: Rgba,
+	plant: PlantMask,
+	box: Box,
+	horizon: number | null,
+	axis: number,
+): boolean {
+	const { width, height, background } = plant;
+	if (horizon === null || plant.footFollowedFrom !== undefined) return false;
+	if ((background.ground?.noise ?? 0) < PLAIN_GROUND) return false;
+	if (!endsAtHorizon(box, Math.floor(horizon * height), height)) return false;
+	if (!wideFoot(plant.mask, width, box, axis)) return false;
+	if ((height - 1 - box.bottom) / (box.bottom - box.top + 1) < MASS_LOSS) return false;
+	const lab = labImage(image.width > width ? resizeToWidth(image, width) : image);
+	return !footInView(lab, width, height, plant.mask, box, axis);
 }

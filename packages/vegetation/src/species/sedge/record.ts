@@ -18,19 +18,23 @@ export const record: Species = {
 	name: 'Pendulous sedge',
 	latin: 'Carex pendula',
 	form: 'wide fountain of broad keeled leaves under tall bowed stems with hanging spikes',
-	// The fact sheet: flowering stems 1 to 2 m and a leaf mound 0.6 to 1 m tall. The turning video's
-	// first frame (still 02) stands the tallest stem at 1.69 mound heights, so a mound of 0.60 m puts
-	// the stems' top at 1.01 m: the smallest plant that meets both.
-	size: { height: { mean: 1.01, spread: 0.08 }, aspect },
+	// The scale inside the fact sheet's ranges at which the most of its sizes stand inside theirs,
+	// at still 02's proportions (stems 1.69 mound heights, a blade 1.5, the mound 1.6 as wide as
+	// tall): a mound of 0.625 to 0.667 m holds the mound (0.6 to 1 m), the stems (1 to 2 m), the
+	// blade's length (0.5 to 1 m) and the mound's width (1 to 1.5 m). The record takes 0.643 m, so
+	// the stems stand 1.09 m. The blade's width and the spike's size stay outside theirs, as the
+	// conflicts recorded for the owner.
+	size: { height: { mean: 1.09, spread: 0.08 }, aspect },
 	growth: {
 		model: 'tuft',
 		// Still 02: the highest blade stands 250 px above the soil and the highest stem 423 px.
 		mound: 0.59,
 		// The blades cannot be counted on a photograph, so the shoots are counted by how full the
-		// mound is. Still 02's mound, read as plant or sky in ten bands of height, is 0.71 full; a
-		// drawing of the same size with these blades is as full in its upper half at forty-eight
-		// shoots and as full in all at sixty-eight, so the count is fifty-six, eight either way.
-		// Twenty-two of them flower (still 02).
+		// mound is. Still 02's mound (left tip to right tip, mound top to soil), read as plant or sky
+		// in ten bands of height, is 0.735 full, its upper five bands 0.58 and its lowest two 0.92
+		// and 0.95: its foot is hidden. Fifty-six shoots hide the drawing's foot; with blades that
+		// reach as far out as the photograph's, its upper five bands then read 0.73 and its lowest
+		// two 0.84 and 0.77. Forty-four of them flower.
 		shoots: { mean: 56, spread: 8 },
 		// Fifty-six shoot bases of one and a half blade widths (still 07) pack a disc 0.76 of the
 		// mound's height across; the brown zone at the foot of still 02 spans 0.84 of it.
@@ -46,9 +50,13 @@ export const record: Species = {
 		// Stills 08, 22 and 23: a sedge's leaves leave their shoot in three ranks.
 		ranks: 3,
 		// Still 02, traced on a 3.4 times crop of the mound's left half, in mound heights from each
-		// blade's own shoot. The youngest blade stands near plumb with its tip leaning out. A middle
-		// blade rises steeply, turns right over and hangs plumb. The oldest rises, runs out and
-		// comes down steeply at the mound's rim, its tip about 75 degrees below level.
+		// blade's own shoot. The youngest blade stands near plumb with its tip leaning out. The
+		// oldest rises, runs out and comes down steeply at the mound's rim, its tip about 75 degrees
+		// below level. Still 02's right half on a three times crop: a middle blade stands up and out
+		// at about 75 degrees, arches over and comes down at about 65 degrees; few blades fall plumb,
+		// and the younger blades between end in the air. Still 02's mound is 1.74 times as wide at
+		// its foot as the plant is tall and 1.51 times at 0.45 of its height, so a middle blade
+		// lands 0.9 mound heights out and the oldest 1.35.
 		// A blade that can be traced is one that stands clear of the rest, the largest of its kind:
 		// the young blade traced stands 1.1 high, the middle one arches at 0.98, the mound's own
 		// top, and the oldest rises 0.8 and lands 1.35 out. The oldest blades land from 0.9 to 1.5
@@ -56,13 +64,15 @@ export const record: Species = {
 		// four fifths of its size and a blade's length strays a quarter either side of its pose's.
 		poses: [
 			{ share: 0.25, leave: 85, apex: 0.88, drop: 0.04, reach: 0.16 },
-			{ share: 0.4, leave: 85, apex: 0.78, drop: 0.78, reach: 0.38, tip: 90 },
-			{ share: 0.35, leave: 75, apex: 0.62, drop: 0.62, reach: 1.05, tip: 75 },
+			{ share: 0.4, leave: 75, apex: 0.78, drop: 0.78, reach: 0.9, tip: 65 },
+			{ share: 0.35, leave: 75, apex: 0.62, drop: 0.62, reach: 1.35, tip: 75 },
 		],
 		bladeSpread: 0.25,
 		stalks: {
-			// Still 02: twenty-two stems, thirteen clear of the mound and about nine inside it.
-			count: { mean: 22, spread: 2 },
+			// Still 02: fifteen to twenty stems stand clear of the mound, round the whole tuft, and
+			// more inside it. With the mound as wide and full as the photograph's, the shorter stems
+			// stand inside it, so a stem rises from most shoots: forty-four of the fifty-six.
+			count: { mean: 44, spread: 4 },
 			// The fact sheet: the spikes stand in flower through summer and stay brown into winter.
 			seasons: ['blossom', 'summer', 'autumn', 'winter'],
 			// Still 02: the stems' highest points spread evenly from the mound's top to 1.69 of it.
@@ -78,8 +88,20 @@ export const record: Species = {
 			sides: 3,
 			// Still 02: two to four spikes hang from a stem, each 0.33 of the mound's height long and
 			// 0.028 across, on a thread of 0.04 to 0.1. Still 19: the spike that ends the stem is 0.4
-			// of a hanging spike's length.
-			head: { kind: 'spike', count: 3, length: 0.33, width: 0.028, thread: 0.07, tip: 0.13 },
+			// of a hanging spike's length. Still 02, read on a three times crop of its upper left: the
+			// spikes hang two or three together near the crest of the stem's bow, where it runs from
+			// about 20 degrees above level to 40 below. Still 19 draws its spikes about 0.16 as wide
+			// as they are long, the fact sheet about 0.04; the primary plant's still 02 reads 0.085,
+			// which the record keeps.
+			head: {
+				kind: 'spike',
+				count: 3,
+				length: 0.33,
+				width: 0.028,
+				thread: 0.07,
+				tip: 0.13,
+				hang: [20, -40],
+			},
 		},
 		// The least plant that still reads as the species: eight shoots spread over the stool, each
 		// with three blades, and five stems.
@@ -102,20 +124,20 @@ export const record: Species = {
 		kind: 'grass-blade',
 		blade: {
 			// A middle blade's length on still 02: 1.5 mound heights.
-			length: { mean: 0.9, spread: 0.22 },
+			length: { mean: 0.96, spread: 0.24 },
 			// Still 02: a blade is 16 px across against a mound of 250 px, 0.064 of its height.
-			width: 0.038,
-			// Still 12: the blade is widest in its lower third and narrows toward the long tip.
+			width: 0.041,
+			// Stills 07 and 12: the blade narrows at its foot where it leaves the sheath, and holds
+			// its width to where its point begins.
 			profile: [
 				[0, 0.7],
 				[0.1, 1],
-				[0.7, 0.95],
-				[1, 0.5],
+				[1, 0.95],
 			],
-			// Stills 10 and 12: the blade ends in a fine point whose taper runs about four times the
-			// blade's width, so a metre of blade closes over a short last share of it.
+			// Still 12: the leaf holds its full width to four and a half widths from its tip, then
+			// closes to a fine point; on the record's blade of 0.96 m that is 0.19 of its length.
 			tip: 'pointed',
-			tipLength: 0.08,
+			tipLength: 0.19,
 			// Stills 08, 12 and 16: the blade is a shallow open V, about 15 degrees each side of flat.
 			fold: 15,
 			// Still 12: the upper face twists part way along the blade.
@@ -179,11 +201,11 @@ export const record: Species = {
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
-			// The kit holds eleven pieces, the sheath column, seven blade shapes and three flowering
-			// stems, and their card atlas of twenty-four cells of 32 texels. It reads 470,732,
-			// 510,572, 572,732 and 663,912 bytes at the four tiers, and each cap keeps about fifteen
-			// per cent above its read.
-			kitBytes: { low: 542_000, medium: 588_000, high: 659_000, ultra: 764_000 },
+			// The kit holds fourteen prototypes, the sheath column, seven blade shapes and three
+			// flowering stems each with its spikes as a part of its own, and their card atlas of
+			// 32-texel cells. It reads 655,436, 703,880, 778,100 and 890,836 bytes at the four
+			// tiers, and each cap keeps about fifteen per cent above its read.
+			kitBytes: { low: 754_000, medium: 810_000, high: 895_000, ultra: 1_025_000 },
 			// A plant is rows of the kit's pieces, so a variant's bytes are the same at every tier.
 			// Measured over the six variants at seed 11, in summer and in blossom: the largest reads
 			// 218,144 bytes; 41,224 triangles at the nearest level at the high tier and 77,360 at
@@ -208,9 +230,9 @@ export const record: Species = {
 		subbranch: { order: 1, length: 0.4 },
 		// Stills 12, 13, 24 and 25: a picked blade lies on the copy stand, so its fold and twist
 		// straighten and the pictures show the blade's own width rather than its edge-on projection.
-		// Stills 12 and 13 measure a young blade: about 0.2 m long at the record's 2 cm width, an
-		// aspect of 0.1 where the mature metre-long blade stands at 0.02. The piece draws that
-		// length with the width unchanged.
-		leaf: { pressed: true, length: 0.2 },
+		// Still 12 frames the upper part of a long leaf, which runs out of the frame at its foot:
+		// its last six and a half widths, the point among them. The piece is the record's whole
+		// blade.
+		leaf: { pressed: true },
 	},
 };
