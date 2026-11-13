@@ -347,6 +347,13 @@ export interface FrameBranchRule extends FrameAxisRule {
 	readonly clear?: number;
 	/** Degrees each may stand off its place round the parent. */
 	readonly jitter?: number;
+	/**
+	 * For a hanging axis, the share of the plant's height that the piece at its end hangs below it.
+	 * Stated, the axis ends that far above the first wood its course would pass through, so the
+	 * piece hangs on to that wood and the axis never runs through it; one that is left shorter than
+	 * its least is not grown. Left out, a hanging axis runs to its stated length.
+	 */
+	readonly clears?: number;
 	/** Degrees each leaves at, by its place, measured from plumb or from the parent's own direction. */
 	readonly angle: Curve;
 	readonly from: 'plumb' | 'parent';
@@ -437,6 +444,8 @@ export interface FrameAxis {
 	readonly nodes: readonly FrameNode[];
 	/** The share of its length at each node. */
 	readonly along: readonly number[];
+	/** Whether it is the finest wood, a twig grown to clothe a patch. */
+	readonly fine?: true;
 }
 
 /**
@@ -688,6 +697,7 @@ interface Built {
 	base: number;
 	nodes: FrameNode[];
 	along: number[];
+	fine?: true;
 }
 
 /**
@@ -850,6 +860,8 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 	const scale = spreadAt(record.size.height, draw(Purpose.Height));
 	const axes: Built[] = [];
 	const patches: Mass[] = [];
+	/** The hanging axes whose rules state what hangs below their ends, by their index. */
+	const falls = new Map<number, { clears: number; least?: Curve; place: number }>();
 	/** The wood built so far, each run with its radius and its axis, for the axes that keep apart. */
 	const thick: WoodPoint[] = [];
 	const thin = new Map<number, WoodPoint[]>();
@@ -1456,6 +1468,9 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 			nodes,
 			along,
 		});
+		const clears = role === 'whip' ? (rule as FrameBranchRule).clears : undefined;
+		if (clears !== undefined && clears > 0)
+			falls.set(id, { clears: clears * scale, least: rule.least, place });
 		nodes.forEach((node, k) => {
 			const prior = k > 0 ? (nodes[k - 1] as FrameNode) : undefined;
 			addWood({
@@ -1610,6 +1625,126 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 		});
 	};
 
+	/**
+	 * Ends each hanging axis whose rule states what hangs below its end that far above the first
+	 * wood its course passes through, once every stated axis is built, so the wood built after it
+	 * counts too: the piece at its end then hangs on to that wood, and the axis never runs through
+	 * it. Near its seat it stands beside the wood it leaves, the wood that wood leaves and its
+	 * siblings; other hanging axes are never in its way. One left shorter than its least is not
+	 * grown, unless it carries axes of its own, and the axes and patches after it are numbered
+	 * again. The wood is then kept again as it now stands.
+	 */
+	const endFalls = (): void => {
+		if (falls.size === 0) return;
+		const dropped = new Set<number>();
+		for (const [id, fall] of falls) {
+			const axis = axes[id] as Built;
+			const parentAxis = axes[axis.parent] as Built;
+			const grand = parentAxis.parent;
+			const nearSeat = (other: number): boolean =>
+				other === id ||
+				other === axis.parent ||
+				other === grand ||
+				falls.has(other) ||
+				(axes[other] as Built).parent === axis.parent;
+			const pastSeat = (other: number): boolean =>
+				other === id || other === axis.parent || falls.has(other);
+			const seat = parentAxis.nodes[axis.parentNode] as FrameNode;
+			let prior: Vector3 = [seat.x, seat.y, seat.z];
+			let met = -1;
+			for (let k = 0; k < axis.nodes.length; k++) {
+				const node = axis.nodes[k] as FrameNode;
+				const at: Vector3 = [node.x, node.y, node.z];
+				const share = axis.along[k] as number;
+				if (gapAt(prior, at, node.radius, share < OUTER_FROM ? nearSeat : pastSeat, 0) < 0) {
+					met = k > 0 ? (axis.along[k - 1] as number) * axis.length : 0;
+					break;
+				}
+				prior = at;
+			}
+			if (met < 0) continue;
+			const kept = met - fall.clears;
+			const least = (fall.least === undefined ? 0.01 : curveAt(fall.least, fall.place)) * scale;
+			let last = -1;
+			for (let k = 0; k < axis.nodes.length; k++)
+				if ((axis.along[k] as number) * axis.length <= kept + 1e-9) last = k;
+			// An axis that carries axes of its own stays, at its least, so they keep their parent.
+			const carries = axes.some((other) => other.parent === id);
+			if ((kept < least - 1e-9 || last < 0) && !carries) {
+				dropped.add(id);
+				continue;
+			}
+			if (last < 0) last = 0;
+			const length = (axis.along[last] as number) * axis.length;
+			axis.nodes.length = last + 1;
+			axis.along.length = last + 1;
+			for (let k = 0; k <= last; k++)
+				axis.along[k] = (axis.along[k] as number) * (axis.length / length);
+			axis.length = length;
+			// A patch that clothes the axis holds the nodes it keeps.
+			for (const patch of patches) {
+				const clothes = patch.clothes;
+				if (patch.axis !== id || clothes === undefined) continue;
+				const low = [Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY];
+				const high = [Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY];
+				axis.nodes.forEach((node, k) => {
+					if ((axis.along[k] as number) < clothes - 1e-9 && k < axis.nodes.length - 1) return;
+					const point = [node.x, node.y, node.z];
+					for (let c = 0; c < 3; c++) {
+						low[c] = Math.min(low[c] as number, point[c] as number);
+						high[c] = Math.max(high[c] as number, point[c] as number);
+					}
+				});
+				const centre: Vector3 = [
+					((low[0] as number) + (high[0] as number)) / 2,
+					((low[1] as number) + (high[1] as number)) / 2,
+					((low[2] as number) + (high[2] as number)) / 2,
+				];
+				const mutable = patch as { centre: Vector3; depth: number; begins: number };
+				mutable.centre = centre;
+				mutable.depth = Math.min(
+					patch.depth,
+					Math.max(1e-6, (high[1] as number) - (low[1] as number)),
+				);
+				mutable.begins = Math.max(
+					0,
+					Math.sqrt(centre[0] * centre[0] + centre[2] * centre[2]) - patch.width / 2,
+				);
+			}
+		}
+		if (dropped.size > 0) {
+			const renumber = new Map<number, number>();
+			const kept = axes.filter((_, k) => !dropped.has(k));
+			axes.forEach((_, k) => {
+				if (!dropped.has(k)) renumber.set(k, renumber.size);
+			});
+			for (const axis of kept)
+				if (axis.parent >= 0) axis.parent = renumber.get(axis.parent) as number;
+			axes.length = 0;
+			axes.push(...kept);
+			const held = patches.filter((patch) => !dropped.has(patch.axis));
+			for (const patch of held)
+				(patch as { axis: number }).axis = renumber.get(patch.axis) as number;
+			patches.length = 0;
+			patches.push(...held);
+		}
+		thick.length = 0;
+		thin.clear();
+		axes.forEach((axis, id) => {
+			const parentAxis = axis.parent >= 0 ? axes[axis.parent] : undefined;
+			const seat = parentAxis?.nodes[axis.parentNode];
+			axis.nodes.forEach((node, k) => {
+				const prior = k > 0 ? (axis.nodes[k - 1] as FrameNode) : (seat ?? node);
+				addWood({
+					from: [prior.x, prior.y, prior.z],
+					at: [node.x, node.y, node.z],
+					radius: node.radius,
+					axis: id,
+				});
+			});
+		});
+	};
+
 	// The stems: the inner ones evenly round the base's middle and the outer ones evenly round them,
 	// each leaning away from the middle.
 	const stems = spec.stems;
@@ -1637,6 +1772,7 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 			scale,
 		);
 	}
+	endFalls();
 
 	/**
 	 * Clothes each patch that asks for fine wood, after every stated axis is built, so the stated
@@ -1678,15 +1814,15 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 				centre[1] = (over + under) / 2;
 			}
 			const flat = Math.sqrt(run[0] * run[0] + run[2] * run[2]);
+			// The patch covers the piece's footprint: the piece is the pitch wide and lies its reach
+			// out from the socket, so a piece longer than it is wide lies along a patch as long.
+			const width = Math.max(fill.pitch, fill.reach * flat);
 			return {
 				kind: 'spray',
 				axis,
 				centre,
-				begins: Math.max(
-					0,
-					Math.sqrt(centre[0] * centre[0] + centre[2] * centre[2]) - fill.pitch / 2,
-				),
-				width: fill.pitch,
+				begins: Math.max(0, Math.sqrt(centre[0] * centre[0] + centre[2] * centre[2]) - width / 2),
+				width,
 				depth,
 				along: flat > 0.2 ? [run[0] / flat, 0, run[2] / flat] : [1, 0, 0],
 			};
@@ -1910,6 +2046,7 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 				axes.push({
 					rule: 'twig',
 					role: 'branch',
+					fine: true,
 					order: (axes[parent] as Built).order + 1,
 					parent,
 					parentNode: node,
@@ -1990,6 +2127,7 @@ function writeAxes(plan: FramePlan, builder: SkeletonBuilder): Written[] {
 			kind: axis.role === 'stem' ? AXIS_STEM : AXIS_LIMB,
 			barkV: parent ? (parent.runs[axis.parentNode] as number) : 0,
 			barkU: radians(axis.azimuth),
+			...(axis.fine ? { fine: true } : {}),
 		});
 		const nodes: number[] = [];
 		const runs: number[] = [];
