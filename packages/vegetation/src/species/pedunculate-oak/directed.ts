@@ -517,6 +517,27 @@ const VARIANT_BYTES = { low: 11_860_000, medium: 12_010_000, high: 12_220_000, u
 const LEVEL_2_TRIANGLES = 44_600;
 
 /**
+ * The leaf's faces as the oak's own leaf pictures show them, leaf pixels' means in sRGB: the upper
+ * face on 12 57 / 96 / 23 and 24 45 / 66 / 23, mean 51 / 81 / 23; the lower face on 13 124 / 139 /
+ * 119 and 25 88 / 100 / 85, mean 106 / 120 / 102. The record's own faces read 58 / 83 / 38 and
+ * 133 / 148 / 127: the lower face paler than its pictures, and the upper bluer.
+ */
+const foliage =
+	record.foliage.kind === 'blade'
+		? {
+				...record.foliage,
+				leaf: {
+					...record.foliage.leaf,
+					optics: {
+						...record.foliage.leaf.optics,
+						reflectance: [0.0331, 0.0823, 0.0086] as const,
+						reflectanceBack: [0.1441, 0.1861, 0.1329] as const,
+					},
+				},
+			}
+		: record.foliage;
+
+/**
  * The pedunculate oak's record with the frame as its growth and the branch end of still 21 at each
  * socket. The shoot rows are the figures the scaffold build's oak states for the same branch ends;
  * a kit with no pieces draws them.
@@ -537,6 +558,7 @@ export const directed = {
 		turn: { roll: 90, tilt: 25, out: 30 },
 	}),
 	base,
+	foliage,
 	lod: {
 		...record.lod,
 		budget: {
