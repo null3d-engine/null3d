@@ -3,9 +3,11 @@
 // as a tree's shoot is, so its rows thin, bend in the wind and bake to cards as shoots do.
 //
 // The meshers that write a piece are the ones that write a merged plant's foliage. They give each
-// vertex the share of the way along its leaf and a wind record; a prototype's vertex holds its bend
-// weight, its flutter phase, its surface kind and its shade instead, and the metres along its leaf.
-// `pieceOf` makes that change, so no mesher is written twice.
+// vertex the share of the way along its part and its browning, which a piece keeps, and a wind
+// record, where a prototype's vertex holds its bend weight, its flutter phase, its surface kind and
+// its shade. `pieceTier` makes that change, so no mesher is written twice. A piece's surface kind
+// is its own (leaf/writer.ts), so the plant material reads its second coordinates as a share and
+// draws its browning, its collar and its sheath's colour as it does a merged plant's.
 //
 // A socket names its piece by its bud's vigor: each class of piece owns one even band of the range
 // from 0 to 1, in the order the grower lists its classes, and a socket's vigor is the middle of its
@@ -14,7 +16,7 @@ import type { PrototypeArrays } from '../asset';
 import { length3 } from '../core/math';
 import { DETAILS } from '../core/types';
 import type { UncardedPrototype } from './shoot';
-import { MeshWriter, SURFACE_LEAF } from './writer';
+import { MeshWriter, SURFACE_PIECE, SURFACE_PIECE_SHEATH, SURFACE_SHEATH } from './writer';
 
 /**
  * One class of piece: its name, how many prototypes of it the kit holds, and what writes one.
@@ -60,16 +62,15 @@ export function socketVigor(index: number, count: number): number {
 }
 
 /** A written mesh as a prototype's arrays. */
-function pieceTier(mesh: MeshWriter, length: number, phase: number): PrototypeArrays {
+function pieceTier(mesh: MeshWriter, phase: number): PrototypeArrays {
 	const count = mesh.vertices;
 	for (let i = 0; i < count; i++) {
-		// The meshers write the share along the leaf where a prototype holds its metres along it.
+		// A part bends by how far along it a vertex stands; a sheath column keeps its mark.
 		const along = Math.min(1, Math.max(0, mesh.uvs1[i * 2] as number));
-		mesh.uvs1[i * 2] = along * length;
-		mesh.uvs1[i * 2 + 1] = 0;
+		const sheath = (mesh.colors[i * 4 + 2] as number) === SURFACE_SHEATH;
 		mesh.colors[i * 4] = Math.round(255 * along);
 		mesh.colors[i * 4 + 1] = phase;
-		mesh.colors[i * 4 + 2] = SURFACE_LEAF;
+		mesh.colors[i * 4 + 2] = sheath ? SURFACE_PIECE_SHEATH : SURFACE_PIECE;
 		mesh.colors[i * 4 + 3] = 255;
 	}
 	return mesh.finishPrototype();
@@ -91,7 +92,7 @@ export function piecePrototypes(classes: readonly PieceClass[]): UncardedPrototy
 				const mesh = new MeshWriter();
 				piece.write(mesh, tier, variant);
 				// Each variant flutters on its own beat, so two blades side by side do not flap as one.
-				return pieceTier(mesh, piece.length, (out.length * 89) & 255);
+				return pieceTier(mesh, (out.length * 89) & 255);
 			}) as unknown as UncardedPrototype['tiers'];
 			const positions = (tiers[DETAILS.indexOf('high')] as PrototypeArrays).positions;
 			let radius = 0;

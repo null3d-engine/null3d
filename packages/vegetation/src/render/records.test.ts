@@ -8,6 +8,15 @@ import type { Species } from '../core/record';
 import { standInRecord } from '../core/stand-in';
 import { noTextureFiles, type TextureManifest } from '../core/textures';
 import type { Rgb } from '../core/types';
+import {
+	leafSurface,
+	SURFACE_BUD,
+	SURFACE_LEAF,
+	SURFACE_PIECE,
+	SURFACE_PIECE_SHEATH,
+	SURFACE_SHEATH,
+	SURFACE_STEM,
+} from '../leaf/writer';
 import { DEFAULT_WIND_SWAY, VARIANT_RECORDS, WIND_RECORD_FLOATS } from '../wind/records';
 import {
 	BARK_ZONE_TEXELS,
@@ -456,6 +465,30 @@ describe('the plant shader', () => {
 		};
 		for (const [name, value] of Object.entries(names))
 			expect([name, constant(name)]).toEqual([name, value]);
+	});
+
+	test('names the surface kinds that the mesh writers give a vertex', () => {
+		const kind = (name: string) => {
+			const match = new RegExp(`const ${name}: f32 = ([\\d.]+);`).exec(wgsl);
+			if (!match) throw new Error(`the plant shader declares no ${name}`);
+			return Number(match[1]);
+		};
+		const names: Record<string, number> = {
+			KIND_STEM: SURFACE_STEM,
+			KIND_BUD: SURFACE_BUD,
+			KIND_SHEATH: SURFACE_SHEATH,
+			KIND_PIECE: SURFACE_PIECE,
+			KIND_PIECE_SHEATH: SURFACE_PIECE_SHEATH,
+		};
+		for (const [name, value] of Object.entries(names))
+			expect([name, kind(name)]).toEqual([name, value]);
+		// The material draws every kind below half the stem's as a leaf, and the pieces' are two of
+		// them that it can tell from a leaf and from each other.
+		expect(SURFACE_LEAF).toBeLessThan(SURFACE_PIECE);
+		expect(SURFACE_PIECE).toBeLessThan(SURFACE_PIECE_SHEATH);
+		expect(SURFACE_PIECE_SHEATH).toBeLessThan(SURFACE_STEM / 2);
+		expect(leafSurface(SURFACE_LEAF) && leafSurface(SURFACE_PIECE)).toBe(true);
+		expect(leafSurface(SURFACE_PIECE_SHEATH) || leafSurface(SURFACE_STEM)).toBe(false);
 	});
 
 	test("reads a part's positions as fractions of the box, as the plant geometry gives them", () => {
