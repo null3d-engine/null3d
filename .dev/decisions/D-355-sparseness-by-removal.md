@@ -92,23 +92,34 @@ first carriers of the order and every axis from each of them to the root.
   carriers, 0.1 when not given. The count between is linear in the sparseness.
 - **The wood.** An axis stays whole or goes whole. Its nodes and radii are the grown plant's. The
   wood is meshed again from the axes that stay.
-- **Every level.** The card levels and the far bake read the same thinned plant. Some cards no
-  longer touch the level's wood or another card. A card level draws the branch under each of those,
-  as one straight run of three sides. So no level drops a card that the sparseness kept.
+- **Every level.** The card levels and the far bake read the same thinned plant. A card level
+  keeps every card its rule keeps, as grown and at every sparseness alike. Where a card touches
+  neither the level's wood nor a joined card, the level draws the branch under it, along the
+  branch's own path at the level's detail and joined to its parent. So no level drops a card that
+  the sparseness kept, and a sparser plant never draws more cards than a denser one. A rule that
+  dropped such cards as grown and kept them once thinned made a far oak fuller as it thinned: its
+  second card level drew 786 card triangles as grown and 2,838 with 4 of its 195 branch ends gone.
 - **No second growth.** A thread keeps the last eight plants as grown. A change of sparseness cuts
   the kept plant.
 - **Same choices.** A thinned plant records the index each axis, bud site and shoot row had as
   grown. The extras, the bark's peel, a column's ribs, the stem's flare and the wind phase key on
   those. So the fruit that stays hangs where the grown plant hung it.
 - **A plant of sockets.** A plant whose foliage stands at sockets, such as a tuft of pieces or a
-  directed frame, thins by whole sockets. A socket's rows all stand at its place, so each row
-  belongs to the socket at its node that stands nearest it. Each socket takes the earliest place
-  any of its rows takes in the walk's order, and its rows take that place. So a piece stays whole or
-  goes whole, and the sockets thin as evenly as the rows would. Wood that carries no kept socket
-  goes, unless it is a stem, a great limb or the wood to the plant's top. The thinned skeleton keeps
-  each kept socket's size, rank, mass and piece. The evenness is judged on sockets: a plant of
-  about fifty sockets, such as the sedge, has too few in an octant to judge, since one socket is a
-  sixth of it.
+  directed frame, thins by whole sockets and by whole branches first. A socket's rows all stand at
+  its place, so each row belongs to the socket at its node that stands nearest it; the sockets of
+  one shoot share a place and thin as one. Each branch that leaves a stem or a great limb is a unit,
+  and the sockets on a stem or limb itself are one more. The units take places by the reversed bits
+  of their place in the walk, so the kept units stand spread along every limb and round the plant.
+  A unit's sockets stand along it in the walk's order, those that leave one node by their bearing
+  round the plant, and take places by reversed bits too. A kept unit keeps at least half its
+  sockets; past that, whole units go, the last of the order first. So the sparsest plant is the
+  trunk, the great limbs and a few clothed branches. Each axis that carries foliage is cut back to
+  its last kept socket, or the last kept branch that leaves it, so nothing kept ends in bare wood;
+  wood that never carried foliage thins by its own spread as before. A socket whose place holds no
+  kept piece leaves the thinned skeleton, and each kept socket keeps its size, rank, mass and
+  piece. On the directed Scots pine at half sparseness, the sockets at the axes' tips keep 0.71 and
+  the sockets along the axes 0.46, where an order that kept each axis's tip first gave 0.92 and
+  0.34; at the sparsest it keeps 0.38 of its wood, where that order kept 0.50.
 
 Rejected:
 
@@ -125,6 +136,9 @@ Rejected:
   crown shape, but it is less even round the crown: the worst octant of the Scots pine stands 0.17
   from the plant's kept share, and of the sedge 0.15, where the walk's order holds every tree within
   0.031 and the test allows 0.12.
+- **The walk's order socket by socket** on a plant of sockets. It keeps each axis's tip first, so a
+  pine keeps its tips and strips its limbs, and at the sparsest nearly every branch still leads to a
+  kept socket, so half the wood stays.
 
 The floors that eight species named were shares of a regrown plant: limbs, leaf area and
 coarseness. Each of those species now names a share of its shoots. That share holds the leaf area
