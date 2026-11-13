@@ -28,6 +28,7 @@ import {
 } from '../packages/vegetation/src/core/registry.ts';
 import type { Season } from '../packages/vegetation/src/core/types.ts';
 import { buildKitNow, growPlantNow, loadPlantCode } from '../packages/vegetation/src/generate.ts';
+import { drawnAtOnce } from '../packages/vegetation/src/lod/drawn.ts';
 import { REPO_ROOT } from '../tests/lib/server.ts';
 import {
 	type Bounds,
@@ -242,6 +243,9 @@ if (folder) {
 	console.log('  no reference folder: name one with --refs to draw the match sheet');
 
 const { commit, dirty } = provenance();
+// The near form draws every shoot row at the kit's tier; one view draws at once only the rows inside
+// the switch distance, from the worst of the stated eyes.
+const drawn = drawnAtOnce(kit, asset);
 const summary = {
 	species,
 	form: form ?? null,
@@ -261,11 +265,14 @@ const summary = {
 	rows: asset.shoots.count,
 	triangles: asset.stats.triangles,
 	shootTriangles: asset.stats.shoots,
+	nearFormTriangles: asset.stats.triangles[0] + asset.stats.shoots,
+	drawnTriangles: drawn.triangles,
+	drawnEye: { place: drawn.eye, at: drawn.at.map((v) => Number(v.toFixed(2))) },
 	matchLevel,
 	match: figures,
 };
 writeFileSync(join(out, `${prefix}.json`), `${JSON.stringify(summary, null, '\t')}\n`);
 console.log(
-	`${species}${form ? ` (${form})` : ''} seed ${seed} variant ${variant} at ${commit.slice(0, 9)}${dirty ? ' with changes' : ''}: ${skeleton.nodeCount} nodes, ${axes.count} axes (${summary.axesByOrder.join(', ')} by order), ${skeleton.buds.count} bud sites, ${asset.shoots.count} shoot rows, ${top.toFixed(2)} m tall, kit and growth in ${Math.round(grown)} ms`,
+	`${species}${form ? ` (${form})` : ''} seed ${seed} variant ${variant} at ${commit.slice(0, 9)}${dirty ? ' with changes' : ''}: ${skeleton.nodeCount} nodes, ${axes.count} axes (${summary.axesByOrder.join(', ')} by order), ${skeleton.buds.count} bud sites, ${asset.shoots.count} shoot rows, ${top.toFixed(2)} m tall, kit and growth in ${Math.round(grown)} ms; ${summary.nearFormTriangles} triangles in the near form, ${drawn.triangles} drawn at once from the ${drawn.eye} eye`,
 );
 for (const file of files) console.log(`  ${file}`);

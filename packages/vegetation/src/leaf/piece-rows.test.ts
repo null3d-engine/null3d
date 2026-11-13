@@ -9,6 +9,7 @@ import { quatRotate, type Vector3 } from '../core/math';
 import { loadSpecies } from '../core/registry';
 import { DETAILS } from '../core/types';
 import { buildKitNow, growPlantNow, loadPlantCode } from '../generate';
+import { drawnAtOnce } from '../lod/drawn';
 import { carriesPieces, PROTOTYPES_MOST } from './piece-rows';
 
 const LONG = scaledBudget(120_000);
@@ -176,6 +177,17 @@ describe('the Scots pine, grown with its boughs at sockets', () => {
 		expect(asset.stats.shoots).toBe(rows);
 		// The boughs hold far more of the plant than its wood does.
 		expect(asset.stats.shoots).toBeGreaterThan(asset.stats.triangles[0]);
+	});
+
+	it('draws at once, from an eye inside its fullest pad, within its near budget', () => {
+		// The near form, every bough at the kit's tier, is more than one view draws: the engine
+		// switches each bough to its card past the switch distance. From the worst stated eye, inside
+		// the fullest foliage or standing under the crown, the count drawn at once stays within the
+		// record's own budget for the nearest level.
+		const drawn = drawnAtOnce(kit, asset);
+		expect(drawn.eye).toBe('foliage');
+		expect(drawn.triangles).toBeLessThanOrEqual(kit.record.lod.budget.lod0Triangles);
+		expect(drawn.triangles).toBeGreaterThanOrEqual(drawnAtOnce(kit, asset, false).triangles);
 	});
 
 	it('stands on a round foot 1.6 times as wide as the bole, with low roots and no buttress', () => {
