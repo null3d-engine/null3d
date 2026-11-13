@@ -214,8 +214,9 @@ export interface FramePatchRule {
 	/**
 	 * Sockets along the wood under the patch, beside the one at the wood's end: the share of the
 	 * plant's height from one to the next, and the degrees each stands out from the wood's line.
-	 * They run back from the end for half the patch's width, each turned on round the wood from the
-	 * last and none on the wood's underside. Left out, the patch has the one socket at the end.
+	 * They run back from the end for half the patch's width, or over the whole run a patch that
+	 * clothes its axis clothes, each turned on round the wood from the last and none on the wood's
+	 * underside. Left out, the patch has the one socket at the end.
 	 */
 	readonly sockets?: { readonly every: number; readonly angle: number };
 	/**
@@ -444,6 +445,11 @@ export interface FramePatch {
 	readonly along: Vector3;
 	/** The sockets along the wood under the patch: the metres between them and their angle. */
 	readonly sockets?: { readonly every: number; readonly angle: number };
+	/**
+	 * The share of its axis's length from which the patch clothes the axis itself, as a hanging
+	 * whip's does. Absent, the patch stands at the axis's end.
+	 */
+	readonly clothes?: number;
 }
 
 /** A patch while its plan is built, with the fine wood it asks for, in metres. */
@@ -1489,6 +1495,7 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 				...(patch.sockets
 					? { sockets: { every: patch.sockets.every * scale, angle: patch.sockets.angle } }
 					: {}),
+				...(patch.along === undefined ? {} : { clothes: patch.along }),
 				...(patch.fill
 					? { fill: { pitch: patch.fill.pitch * scale, reach: patch.fill.reach * scale } }
 					: {}),
@@ -2051,7 +2058,12 @@ export function frameSockets(plan: FramePlan): FrameSocket[] {
 		});
 		const rule = patch.sockets;
 		if (!rule || last < 1 || !(rule.every > 0)) return;
-		const back = Math.min(patch.width / 2, axis.length * SOCKETS_BACK);
+		// A patch that clothes its axis takes sockets over the whole run it clothes; any other, back
+		// from the axis's end for half its width.
+		const back =
+			patch.clothes === undefined
+				? Math.min(patch.width / 2, axis.length * SOCKETS_BACK)
+				: axis.length * (1 - patch.clothes);
 		let node = last - 1;
 		for (let k = 1; k * rule.every <= back; k++) {
 			const share = 1 - (k * rule.every) / axis.length;
