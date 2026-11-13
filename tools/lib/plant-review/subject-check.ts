@@ -217,6 +217,11 @@ export function lackReason(facts: unknown): string | undefined {
 	return subject?.lacks && subject.missing !== undefined ? subject.missing : undefined;
 }
 
+/** Whether a solved view's camera holds the whole plant in its frame, as the page posted it. */
+export function holdsWholePlant(facts: unknown): boolean {
+	return (facts as { subject?: { whole?: unknown } } | undefined)?.subject?.whole === true;
+}
+
 /** Whether a solved view's contract held on the camera that drew the picture. */
 export function contractHeld(facts: unknown): boolean {
 	return postedSubject(facts)?.contract?.present === true;

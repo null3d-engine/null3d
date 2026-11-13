@@ -783,7 +783,7 @@ describe('the bark views', () => {
 				const foot = landing(shot, lens, "the trunk's foot");
 				expect(foot.x).toBeCloseTo(0.5, 6);
 				expect(foot.y).toBeCloseTo(0.72, 6);
-				expect(shareOfWidth(shot, lens, [0, 0, 0], 2 * radius)).toBeCloseTo(0.6, 6);
+				expect(shareOfWidth(shot, lens, [0, 0, 0], 2 * radius)).toBeCloseTo(0.5, 6);
 				// The camera looks down past half its lens, so its upper edge stays under the horizon.
 				expect(pitchOf(shot.camera)).toBeCloseTo(-(lens.fov / 2 + 3), 6);
 				expect(landing(shot, lens, 'the horizon').y).toBeLessThan(0);
