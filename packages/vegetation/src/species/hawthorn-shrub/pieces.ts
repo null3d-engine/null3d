@@ -207,6 +207,7 @@ export const FRUIT_PIECES: readonly PieceRule[] = PIECES.map((rule) =>
 					oneMark(
 						{
 							kind: 'body',
+							round: true,
 							share: 0.7,
 							length: { mean: 0.009, spread: 0.001 },
 							width: 0.009,
