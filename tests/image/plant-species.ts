@@ -30,9 +30,13 @@ const PANELS_SECONDS = 120;
  * about the load the suite runs under. It is the second figure this species corrected after taking
  * it on the wrong load, the first being its young-bark color read against a picture that framed a
  * great limb rather than young wood.
+ *
+ * A tree fern's crown carries about two thousand pinnae, each a leaf of its own, and the software
+ * GPU drew three of the four panels within the shared limit and stopped before the last.
  */
 const PANELS_SECONDS_BY_SPECIES: Readonly<Record<string, number>> = {
 	'common-alder': 240,
+	'tree-fern': 180,
 	// The willow's four panels drew in 138 seconds on WebGL2 and 192 on compatibility mode and
 	// WebGPU, with the three tiers drawing together under a machine loaded to 47 at its peak, so
 	// this keeps the same quarter margin the alder's 240 does.

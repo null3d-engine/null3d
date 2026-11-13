@@ -4,11 +4,32 @@
 // no render at its angle matched, blocks a pass. Files that the folder's index marks superseded are
 // listed apart, as not in use.
 import type { StillResult, TurnResult, WindResult } from './compare.ts';
-import { fixed } from './compare.ts';
+import { EYE_VIEWS, fixed, measured } from './compare.ts';
 import type { ReferenceSet } from './references.ts';
 
-/** Whether a reference file was compared in full, in part, or not at all. */
-export type CoverageStatus = 'compared' | 'partial' | 'missing';
+/**
+ * What a run did with a reference file.
+ *
+ * - `compared`: a figure was read from its picture against it.
+ * - `drawn`: its picture was drawn and checked for its subject, and no figure was read, because the
+ *   standard states none for its view. The eye judges it, and it passes no row alone.
+ * - `unmeasured`: its picture was drawn and gave no figure where its view has one, or was not
+ *   checked for its subject. That is a fault of the tool.
+ * - `plant fault`: its picture was drawn and read, and the plant lacks or hides the subject its
+ *   photograph shows. The picture is judged, and its rows fail on it.
+ * - `partial`, `missing`: compared in part, or not at all.
+ * - `void`: its picture shows no subject, which compares nothing.
+ * - `not judged`: it shows a stand of plants that one plant cannot draw.
+ */
+export type CoverageStatus =
+	| 'compared'
+	| 'drawn'
+	| 'unmeasured'
+	| 'plant fault'
+	| 'partial'
+	| 'missing'
+	| 'void'
+	| 'not judged';
 
 /** One line of the coverage list. */
 export interface CoverageLine {
@@ -26,8 +47,13 @@ export interface Coverage {
 	readonly lines: readonly CoverageLine[];
 	readonly superseded: readonly { readonly file: string; readonly by: string }[];
 	readonly compared: number;
+	/** The files drawn and not measured, which the eye judges. */
+	readonly drawn: readonly string[];
 	readonly inUse: number;
-	/** True when every file in use was compared in full. */
+	/**
+	 * True when every file in use was compared in full, or was drawn for the eye where the standard
+	 * states no figure, or was read and failed the plant, or shows a stand that is not judged.
+	 */
 	readonly complete: boolean;
 }
 
@@ -50,6 +76,35 @@ function stillLine(file: string, kind: string, result: StillResult | undefined):
 			render: '-',
 			result: `the render failed: ${result.error}`,
 		};
+	// A photograph of a stand is drawn and set beside its reference, and is not judged: it holds
+	// no pass back, since no single plant could match it.
+	if (result.standing?.kind === 'stand')
+		return {
+			file,
+			kind,
+			status: 'not judged',
+			render: `${result.renderFile} (view ${result.view})`,
+			result: result.standing.reason,
+		};
+	// A picture whose plant lacks or hides the subject was read, and judged against the plant.
+	if (result.lacks !== undefined)
+		return {
+			file,
+			kind,
+			status: 'plant fault',
+			render: `${result.renderFile} (view ${result.view})`,
+			result: `the plant lacks or hides the subject: ${result.lacks}`,
+		};
+	// A picture whose subject is missing was drawn and compares nothing: the tool's camera, or the
+	// file's mapping to a view, is what needs mending before the file counts as compared.
+	if (result.void !== undefined)
+		return {
+			file,
+			kind,
+			status: 'void',
+			render: `${result.renderFile} (view ${result.view})`,
+			result: `void: ${result.void}`,
+		};
 	// A picture with no usable outline still has edges: its directions are the figure it gets.
 	const edges =
 		result.edgeDifference === null ? '' : `; edge directions ${fixed(result.edgeDifference, 3)}`;
@@ -59,13 +114,29 @@ function stillLine(file: string, kind: string, result: StillResult | undefined):
 			? `surface ΔE ${fixed(result.surfaceDeltaE, 1)}`
 			: result.foliageDeltaE !== null
 				? `leaf ΔE ${fixed(result.foliageDeltaE, 1)}; no outline${edges}`
-				: `by eye: no plain outline${edges}`;
+				: result.barkDeltaE !== null
+					? `bark ΔE ${fixed(result.barkDeltaE, 1)}; no outline${edges}`
+					: `by eye: no plain outline${edges}`;
+	// A picture that gave no figure is not compared. Where the standard states no figure for its
+	// view and a check confirmed its subject, it is drawn for the eye. Otherwise the tool failed
+	// to read a figure the view has, or cannot say what the picture shows.
+	const status: CoverageStatus = measured(result)
+		? 'compared'
+		: EYE_VIEWS.has(result.view) && result.subjectChecked
+			? 'drawn'
+			: 'unmeasured';
+	const fault =
+		status !== 'unmeasured'
+			? ''
+			: EYE_VIEWS.has(result.view)
+				? '; no check confirmed its subject'
+				: `; a ${result.view} view has a figure and the tool read none`;
 	return {
 		file,
 		kind,
-		status: 'compared',
+		status,
 		render: `${result.renderFile} (view ${result.view})`,
-		result: `${figures}${result.note ? `; ${result.note}` : ''}`,
+		result: `${figures}${fault}${result.note ? `; ${result.note}` : ''}`,
 	};
 }
 
@@ -146,7 +217,25 @@ export function coverageOf(
 		lines.push(unlisted ? { ...line, result: `${line.result}; ${unlisted}` } : line);
 	}
 	const compared = lines.filter((line) => line.status === 'compared').length;
-	return { lines, superseded, compared, inUse: lines.length, complete: compared === lines.length };
+	const drawn = lines.filter((line) => line.status === 'drawn').map((line) => line.file);
+	const waived = lines.filter(
+		(line) => line.status === 'not judged' || line.status === 'plant fault',
+	).length;
+	return {
+		lines,
+		superseded,
+		compared,
+		drawn,
+		inUse: lines.length,
+		complete: compared + drawn.length + waived === lines.length,
+	};
+}
+
+/** The count of the files drawn and not measured, as the summary words it; empty when none. */
+export function drawnText(coverage: Pick<Coverage, 'drawn'>): string {
+	return coverage.drawn.length === 0
+		? ''
+		: `, and ${coverage.drawn.length} more ${coverage.drawn.length === 1 ? 'was' : 'were'} drawn for the eye with no figure`;
 }
 
 /** The coverage list as Markdown. */
@@ -156,8 +245,8 @@ export function coverageMarkdown(species: string, slug: string, coverage: Covera
 		`# Coverage of ${species} against ${slug}`,
 		'',
 		coverage.complete
-			? `Every one of the ${coverage.inUse} reference files in use was compared with a render.`
-			: `${coverage.compared} of ${coverage.inUse} reference files in use were compared in full. The species cannot pass until the others are.`,
+			? `Every one of the ${coverage.inUse} reference files in use was compared with a render${drawnText(coverage)}.`
+			: `${coverage.compared} of ${coverage.inUse} reference files in use were compared in full${drawnText(coverage)}. The species cannot pass until the others are.`,
 		'',
 		'| Reference | Kind | Compared with | Result | Status |',
 		'| --- | --- | --- | --- | --- |',

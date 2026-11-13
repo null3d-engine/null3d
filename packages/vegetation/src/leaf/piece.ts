@@ -25,7 +25,15 @@ import {
 	type Vector3,
 } from '../core/math';
 import type { LeafShape, Phyllotaxis, Species } from '../core/record';
-import { type Curve, curveAt, type Detail, type Spread, spreadAt, spreadMean } from '../core/types';
+import {
+	type Curve,
+	curveAt,
+	type Detail,
+	type Spread,
+	spreadAt,
+	spreadMean,
+	type Vec3,
+} from '../core/types';
 import {
 	type AxisPoint,
 	addBudCluster,
@@ -47,16 +55,18 @@ import {
 /**
  * How each tier meshes a piece's wood and buds. A tree carries thousands of pieces, so a piece's
  * wood has the fewest sides a twig needs, three, widened to the round stem's mean width, with a ring
- * only where the stem bends: 8 degrees at the high tier and 15 at the medium. An axil's bud hides
- * under its leaf, so the medium tier draws none and the high tier only one long enough to show, as
- * the beech's long buds are. The tip clusters, which mark a species, are separate three-sided buds
- * at the high tier and one cone at the medium. Thorns are three-sided at both, and a fruiting body
- * is round at the high tier. The ultra tier keeps the crown's finest cut.
+ * only where the stem bends: 8 degrees at the high tier and 15 at the medium. Where a piece's leaves
+ * close round its stem, at every tier, no ring of the wood they hide shows, so its rings stand far
+ * apart. An axil's bud hides under its leaf, so the medium tier draws none and the high tier only
+ * one long enough to show, as the beech's long buds are. The tip clusters, which mark a species, are
+ * separate three-sided buds at the high tier and one cone at the medium. Thorns are three-sided at
+ * both, and a fruiting body is round at the high tier. The ultra tier keeps the crown's finest cut.
  */
 export const PIECE_CUTS: Readonly<Record<Detail, ShootCut>> = {
-	low: SHOOT_CUTS.low,
+	low: { ...SHOOT_CUTS.low, thinHidden: true },
 	medium: {
 		stemSides: 3,
+		thinHidden: true,
 		meanWidth: true,
 		ringTurn: 15,
 		cluster: { sides: 3, round: false },
@@ -65,6 +75,7 @@ export const PIECE_CUTS: Readonly<Record<Detail, ShootCut>> = {
 	},
 	high: {
 		stemSides: 3,
+		thinHidden: true,
 		meanWidth: true,
 		ringTurn: 8,
 		cluster: { sides: 3, round: false },
@@ -73,7 +84,7 @@ export const PIECE_CUTS: Readonly<Record<Detail, ShootCut>> = {
 		thorn: { sides: 3, round: false },
 		body: { sides: 4, round: true },
 	},
-	ultra: SHOOT_CUTS.ultra,
+	ultra: { ...SHOOT_CUTS.ultra, thinHidden: true },
 };
 
 /**
@@ -81,10 +92,16 @@ export const PIECE_CUTS: Readonly<Record<Detail, ShootCut>> = {
  * standing upright, with its plane level, or with its tip turned up. A hanging piece's ground side
  * is the way its line runs and an upright piece's is the way back along its line, so their stems
  * droop in the piece's own length; every other piece's ground side is opposite its sky side.
+ *
+ * @category api/vegetation
  */
 export type PieceAttitude = 'along' | 'plumb' | 'upright' | 'level' | 'up';
 
-/** The leaves along one stem of a piece. */
+/**
+ * The leaves along one stem of a piece.
+ *
+ * @category api/vegetation
+ */
 export interface PieceLeaves {
 	/** Metres between one node and the next. */
 	readonly gap: number;
@@ -145,14 +162,19 @@ export interface PieceLeaves {
 	readonly fan?: { readonly reach: number; readonly tilt: number; readonly cone?: number };
 }
 
-/** The side stems along one stem of a piece. */
+/**
+ * The side stems along one stem of a piece.
+ *
+ * @category api/vegetation
+ */
 export interface PieceSides {
 	/** The side stem's own rule. */
 	readonly stem: PieceStem;
 	/** Metres along the parent between one side stem, or one pair, and the next. */
 	readonly gap: number;
-	/** The shares of the parent's length between which side stems leave. */
+	/** The share of the parent's length below which no side stem leaves. */
 	readonly from?: number;
+	/** The share of the parent's length past which no side stem leaves. */
 	readonly to?: number;
 	/**
 	 * Where each side stem stands round its parent: `alternate` to one side and the other in turn, in
@@ -164,6 +186,11 @@ export interface PieceSides {
 	readonly angle: Spread;
 	/** A side stem's length over its rule's, by its place along the parent, foot to tip. */
 	readonly lengthAlong?: Curve;
+	/**
+	 * Degrees an `alternate` side stem stands out of its parent's plane: one pair toward the sky
+	 * side, the next pair away from it. It gives a flattened fan its measured depth.
+	 */
+	readonly out?: number;
 	/** Degrees added to every side stem's place round the parent; 180 starts on the other side. */
 	readonly turn?: number;
 	/**
@@ -173,7 +200,11 @@ export interface PieceSides {
 	readonly spread?: number;
 }
 
-/** One stem of a piece. */
+/**
+ * One stem of a piece.
+ *
+ * @category api/vegetation
+ */
 export interface PieceStem {
 	/** Metres from its foot to its tip. */
 	readonly length: Spread;
@@ -218,18 +249,23 @@ export interface PieceStem {
  * cone or a catkin, that hangs from it on a stalk. It is part of the piece's own mesh, so the piece
  * carries it wherever a socket holds it. Its length and width are the mark's real size in metres,
  * as the species' bud is; its gap and stalk are lengths of the rule.
+ *
+ * @category api/vegetation
  */
 export interface PieceMark {
+	/** A thorn that stands off the wood, or a body that hangs on a stalk. */
 	readonly kind: 'thorn' | 'body';
 	/** Metres along the stem between one place for a mark and the next. */
 	readonly gap: number;
-	/** The shares of the stem's length between which marks stand. */
+	/** The share of the stem's length where the marks begin. */
 	readonly from?: number;
+	/** The share of the stem's length where the marks end. */
 	readonly to?: number;
 	/** The share of those places that carry one. */
 	readonly share: number;
-	/** Its length, and its width across. */
+	/** Its length in metres. */
 	readonly length: Spread;
+	/** Its width across, in metres. */
 	readonly width: number;
 	/** Degrees a thorn stands from its stem. */
 	readonly angle?: number;
@@ -239,7 +275,11 @@ export interface PieceMark {
 	readonly count?: Spread;
 }
 
-/** One kind of piece of a species. */
+/**
+ * One kind of piece of a species.
+ *
+ * @category api/vegetation
+ */
 export interface PieceRule {
 	/** The piece's name, unique in its species. */
 	readonly name: string;
@@ -247,6 +287,16 @@ export interface PieceRule {
 	readonly attitude: PieceAttitude;
 	/** How many variants the kit holds, each with its own draws. */
 	readonly variants: number;
+	/**
+	 * The piece's flat plane, where it has one: the unit normal of that plane in the piece's rest
+	 * frame. A flattened fan names it, so its far form may be one card in that plane.
+	 */
+	readonly plane?: Vec3;
+	/**
+	 * The ground side in the piece's frame, where it is not its attitude's own: a piece that stands
+	 * upright on its socket names the way back along its line, so its side stems lift toward its tip.
+	 */
+	readonly ground?: Vec3;
 	/**
 	 * The piece's real size over the lengths its rule states. A rule's lengths are read from a
 	 * photograph whose caption gives the piece's length, and the leaf is the ruler: where the
@@ -335,6 +385,8 @@ export interface PiecePrototype
 	 */
 	readonly part: number;
 	readonly parts: number;
+	/** The unit normal of the piece's flat plane in its rest frame, where its rule names one. */
+	readonly plane?: Vec3;
 	/** Where the part may carry an extra, in the piece's rest frame, in rank order. */
 	readonly sites: readonly PieceSite[];
 }
@@ -449,14 +501,17 @@ export function planPiece(
 	if (!shoots)
 		throw new Error(`@null3d/vegetation: '${record.id}' has no shoots to build pieces of`);
 	const foliage = record.foliage;
-	if (foliage.kind !== 'blade')
-		throw new Error(`@null3d/vegetation: '${record.id}' has no blade leaf to build pieces of`);
+	if (foliage.kind !== 'blade' && foliage.kind !== 'fascicle' && foliage.kind !== 'needle')
+		throw new Error(
+			`@null3d/vegetation: '${record.id}' has '${foliage.kind}' foliage; a piece carries blades, needles or needle bundles`,
+		);
 	const salt = record.seedSalt;
 	const draw = (purpose: number, a = 0, b = 0) => unitAt(salt, PIECE_KEY + key, purpose, a, b);
 	const down: Readonly<Vector3> =
 		ground ??
+		rule.ground ??
 		(rule.attitude === 'plumb' ? [0, 1, 0] : rule.attitude === 'upright' ? [0, -1, 0] : [0, 0, -1]);
-	const leafSpread = foliage.leaf.length;
+	const leafSpread = foliage.kind === 'blade' ? foliage.leaf.length : foliage.needle.length;
 	const leafMean = spreadMean(leafSpread);
 	/** The piece's own line. */
 	const line: Readonly<Vector3> = [sin(radians(lean)), cos(radians(lean)), 0];
@@ -478,12 +533,14 @@ export function planPiece(
 			phyllotaxis,
 			leafAngle: own.angle,
 			leafAngleSpread: own.angleSpread ?? 0,
+			leafAzimuthSpread: 0,
 			needleAngle: undefined,
 			ranks: 0,
 			leafScale: own.scale ?? 1,
 			leafSpread,
 			leafMean,
-			leafLength: leafMean,
+			// Only a blade carries a bud in its axil.
+			leafLength: foliage.kind === 'blade' ? leafMean : 0,
 			leafMeshes,
 			budLength: shoots.bud.length,
 			budWidth: shoots.bud.width,
@@ -540,7 +597,8 @@ export function planPiece(
 		const direction = toward(
 			leaf.direction,
 			square(down, normal, leaf.direction),
-			foliage.leaf.petiole.droop,
+			// Only a blade hangs on a stalk; a needle keeps the line it leaves its twig on.
+			foliage.kind === 'blade' ? foliage.leaf.petiole.droop : 0,
 		);
 		const rotation = [0, 0, 0, 1];
 		quatFromFrame(direction, normal, rotation);
@@ -830,7 +888,12 @@ export function planPiece(
 					front * reach * (sides.spread ?? rule.depth ?? SIDE_SPREAD) + (sides.turn ?? 0);
 				const azimuths =
 					sides.arrangement === 'alternate'
-						? [90 + (n % 2) * 180 + wander]
+						? [
+								90 +
+									(n % 2) * 180 +
+									wander +
+									(sides.out ?? 0) * (n % 4 < 2 ? 1 : -1) * (n % 2 === 0 ? 1 : -1),
+							]
 						: sides.arrangement === 'paired'
 							? [90 + wander, 270 - wander]
 							: sides.arrangement === 'opposite'
@@ -989,7 +1052,9 @@ export function pieceSites(plan: ShootPlan): PieceSite[] {
 		});
 	}
 	const ranked = (sites: Omit<PieceSite, 'rank'>[]): PieceSite[] => {
-		const bits = Math.max(1, Math.ceil(Math.log2(Math.max(2, sites.length))));
+		// The bits that count the sites, found by doubling: a whole number, the same on every engine.
+		let bits = 1;
+		while (1 << bits < sites.length) bits++;
 		return sites
 			.map((site, index) => ({ site, order: reversed(index, bits) }))
 			.sort((a, b) => a.order - b.order)
@@ -1125,6 +1190,7 @@ export function piecePrototypes(
 					attitude: rule.attitude,
 					part,
 					parts: parts.length,
+					...(rule.plane ? { plane: rule.plane } : {}),
 					sites: pieceSites(plan),
 					...meshedPlan(plan, own, PIECE_CUTS),
 				});
