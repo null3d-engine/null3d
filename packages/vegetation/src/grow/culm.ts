@@ -17,7 +17,19 @@ import {
 	SkeletonBuilder,
 } from '../core/graph';
 import { unitAt } from '../core/hash';
-import { cos, normalize3, PI, pow, quatFromFrame, radians, sin, type Vector3 } from '../core/math';
+import {
+	asin,
+	atan2,
+	cos,
+	exp,
+	normalize3,
+	PI,
+	pow,
+	quatFromFrame,
+	radians,
+	sin,
+	type Vector3,
+} from '../core/math';
 import type { Culm, Species } from '../core/record';
 import { type Curve, curveAt, spreadAt } from '../core/types';
 import type { GrowInput } from '../stages';
@@ -121,7 +133,7 @@ function culmRadius(
 ): number {
 	const share = Math.min(1, Math.max(0, node / Math.max(1e-6, height)));
 	// The foot swells over the lowest eighth of the culm, as a new cane's base does against the soil.
-	const swell = 1 + 0.5 * Math.exp(-share * 8);
+	const swell = 1 + 0.5 * exp(-share * 8);
 	return base * swell * (1 - 0.58 * share) + (onNode ? ridge : 0);
 }
 
@@ -204,8 +216,8 @@ function growBranch(
 			i === nodes.length - 1
 				? directionOf(pointAt(builder, previousNode), at)
 				: directionOf(at, pointAt(builder, nextNode));
-		const azimuth = Math.atan2(along[2], along[0]);
-		const elevation = Math.asin(Math.min(1, Math.max(-1, along[1])));
+		const azimuth = atan2(along[2], along[0]);
+		const elevation = asin(Math.min(1, Math.max(-1, along[1])));
 		const vigor = Math.min(
 			1,
 			0.25 + 0.55 * heightShare + 0.2 * draw(input, Purpose.Buds, branchIndex, i, order),
@@ -307,7 +319,7 @@ export function growCulm(input: GrowInput): MacroSkeleton {
 					node,
 					at,
 					along: [0, 1, 0],
-					heading: Math.atan2(at[2], at[0]),
+					heading: atan2(at[2], at[0]),
 					elevation: PI / 2,
 					vigor: 0,
 					axis,
@@ -326,8 +338,7 @@ export function growCulm(input: GrowInput): MacroSkeleton {
 				curveAt(growth.branches.length, heightShare) *
 					(0.85 + 0.3 * draw(input, Purpose.Length, c, node)),
 			);
-			const heading0 =
-				Math.atan2(at[2], at[0]) + (draw(input, Purpose.Branch, c, s, 1) - 0.5) * 0.3;
+			const heading0 = atan2(at[2], at[0]) + (draw(input, Purpose.Branch, c, s, 1) - 0.5) * 0.3;
 			for (let k = 0; k < perNode; k++) {
 				// A dominant branch runs longer and a little thicker than the rest, as a bamboo's
 				// complement carries one branch that takes the node's lead.
