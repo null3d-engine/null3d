@@ -234,6 +234,8 @@ if (flag('turns'))
 				render,
 				aspect: box ? (box.right - box.left + 1) / (box.bottom - box.top + 1) : 0,
 				gap: render.measures.gapFraction,
+				// The share of the outline's own box that the piece covers.
+				cover: render.measures.solidity,
 			};
 		});
 		const { width, height } = face.view.plant;
@@ -263,8 +265,15 @@ if (flag('turns'))
 			[20, 20, 20],
 		);
 		turnStrips.push(strip);
+		console.log(
+			`  ${file} (still ${studio.still}): cover of its own box, face on ${drawn[0]?.cover.toFixed(3)} drawn against ${face.view.measures.solidity.toFixed(3)}, edge on ${drawn[2]?.cover.toFixed(3)} drawn against ${edge.view.measures.solidity.toFixed(3)}`,
+		);
 		depths[file] = {
 			still: studio.still,
+			cover: {
+				face: { drawing: drawn[0]?.cover, reference: face.view.measures.solidity },
+				edge: { drawing: drawn[2]?.cover, reference: edge.view.measures.solidity },
+			},
 			reference: {
 				face: face.aspect,
 				between: between.aspect,

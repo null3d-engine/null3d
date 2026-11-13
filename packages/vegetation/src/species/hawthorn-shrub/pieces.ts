@@ -122,7 +122,7 @@ export const PIECES: readonly PieceRule[] = [
 		attitude: 'along',
 		variants: 2,
 		// The turning video of the cut branch: edge on it is 0.22 as wide as face on.
-		depth: 20,
+		depth: 14,
 		stem: {
 			length: 0.155,
 			// Still 21: the stem is 0.03 of the branch's height thick at its cut (19 to 24 of 743 pixels).
