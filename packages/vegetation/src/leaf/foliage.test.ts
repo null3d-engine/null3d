@@ -50,24 +50,67 @@ describe('the needle', () => {
 });
 
 describe('the fascicle', () => {
-	it('bundles its needles round a sheath', () => {
-		const record: Species = {
-			...oakRecord(),
-			foliage: { kind: 'fascicle', needle: { ...NEEDLE, length: 0.06 }, sheath: 0.008, twist: 30 },
-			shoots: { ...oakRecord().shoots!, phyllotaxis: { kind: 'fascicle', needles: 3 } },
-		};
+	const record: Species = {
+		...oakRecord(),
+		foliage: { kind: 'fascicle', needle: { ...NEEDLE, length: 0.06 }, sheath: 0.008, twist: 30 },
+		shoots: { ...oakRecord().shoots!, phyllotaxis: { kind: 'fascicle', needles: 3 } },
+	};
+
+	it('bundles its round needles in a sheath at the finest tier', () => {
 		const one = needleMesh(
 			{ ...NEEDLE, length: 0.06, section: 'half-round' },
 			OAK_MANIFEST,
-			'high',
+			'ultra',
 		);
-		const bundle = fascicleMesh(record, OAK_MANIFEST, 'high');
+		const bundle = fascicleMesh(record, OAK_MANIFEST, 'ultra');
 		let stem = 0;
 		for (let i = 2; i < bundle.colors.length; i += 4) if (bundle.colors[i] === 85) stem++;
 		expect(stem).toBeGreaterThan(0);
 		expect(bundle.positions.length / 3 - stem).toBe((one.positions.length / 3) * 3);
 		// The needles part a little: their tips stand apart, near the bundle's height.
 		expect(top(bundle.positions)).toBeGreaterThan(0.059);
+	});
+
+	it('draws each needle as one flat blade of two triangles at every other tier', () => {
+		for (const detail of ['low', 'medium', 'high'] as const) {
+			const bundle = fascicleMesh(record, OAK_MANIFEST, detail);
+			expect(bundle.indices.length / 3).toBe(3 * 2);
+			expect(bundle.positions.length / 3).toBe(3 * 4);
+			// No sheath is drawn, and the blades reach the needle's length.
+			for (let i = 2; i < bundle.colors.length; i += 4) expect(bundle.colors[i]).not.toBe(85);
+			expect(top(bundle.positions)).toBeGreaterThan(0.059);
+		}
+	});
+
+	it('stands the two blades of a pair square to each other, so a brush covers from every side', () => {
+		const pair: Species = {
+			...record,
+			foliage: { kind: 'fascicle', needle: { ...NEEDLE, length: 0.06 }, sheath: 0.008, twist: 0 },
+			shoots: { ...oakRecord().shoots!, phyllotaxis: { kind: 'fascicle', needles: 2 } },
+		};
+		const bundle = fascicleMesh(pair, OAK_MANIFEST, 'high');
+		// Each blade's face normal, from its first three corners, laid level.
+		const normals = [0, 4].map((first) => {
+			const at = (k: number) =>
+				[0, 1, 2].map((c) => bundle.positions[(first + k) * 3 + c] as number);
+			const [a, b, d] = [at(0), at(1), at(3)];
+			const u = [0, 1, 2].map((c) => (b[c] as number) - (a[c] as number));
+			const v = [0, 1, 2].map((c) => (d[c] as number) - (a[c] as number));
+			const n = [
+				(u[1] as number) * (v[2] as number) - (u[2] as number) * (v[1] as number),
+				(u[2] as number) * (v[0] as number) - (u[0] as number) * (v[2] as number),
+				(u[0] as number) * (v[1] as number) - (u[1] as number) * (v[0] as number),
+			];
+			const length = Math.hypot(n[0] as number, n[1] as number, n[2] as number);
+			return n.map((c) => c / length);
+		});
+		const [first, second] = normals as [number[], number[]];
+		const dot =
+			(first[0] as number) * (second[0] as number) +
+			(first[1] as number) * (second[1] as number) +
+			(first[2] as number) * (second[2] as number);
+		// Square within the few degrees that the needles part from the bundle's line.
+		expect(Math.abs(dot)).toBeLessThan(0.1);
 	});
 });
 
