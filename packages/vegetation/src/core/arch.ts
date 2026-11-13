@@ -292,7 +292,7 @@ export interface ArchFit {
 }
 
 /** Steps a trial arch is summed over while the fit searches. */
-const FIT_STEPS = 48;
+const FIT_STEPS = 32;
 /** The logarithm of each step's middle share, so a trial's power costs one exponential a step. */
 const FIT_LOG = Float64Array.from({ length: FIT_STEPS }, (_, k) => log((k + 0.5) / FIT_STEPS));
 /** The largest power the fit tries. */
@@ -300,22 +300,42 @@ const FIT_MOST_POWER = 4;
 /** The lowest a fitted part's tip may point, in degrees above the horizontal: plumb down. */
 const FIT_TIP = -90;
 
+/** The least share of its length that a fitted part's turn takes. */
+const FIT_LEAST_TO = 0.3;
+
 /** A trial arch's own figures in metres, its length, and its distance from the measured ones. */
 const trial = { apex: 0, drop: 0, reach: 0, length: 0, miss: 0, distance: 0 };
 
 /**
- * Sums a trial arch that turns over its whole length and fills `trial`. A part whose length was
- * not measured takes the length that brings its figures nearest the measured ones.
+ * Sums a trial arch whose turn runs from its base to a share of its length, and fills `trial`. A
+ * part whose length was not measured takes the length that brings its figures nearest the measured
+ * ones.
  */
-function measure(figures: ArchFigures, leave: number, turn: number, power: number): void {
+function measure(
+	figures: ArchFigures,
+	leave: number,
+	turn: number,
+	power: number,
+	to: number,
+): void {
 	let x = 0;
 	let y = 0;
 	let top = 0;
 	const step = 1 / FIT_STEPS;
+	const end = log(to);
+	const hang = radians(leave - turn);
+	const hangX = cos(hang) * step;
+	const hangY = sin(hang) * step;
 	for (let k = 0; k < FIT_STEPS; k++) {
-		const angle = radians(leave - turn * exp(power * (FIT_LOG[k] as number)));
-		x += cos(angle) * step;
-		y += sin(angle) * step;
+		const behind = (FIT_LOG[k] as number) - end;
+		if (behind >= 0) {
+			x += hangX;
+			y += hangY;
+		} else {
+			const angle = radians(leave - turn * exp(power * behind));
+			x += cos(angle) * step;
+			y += sin(angle) * step;
+		}
 		if (y > top) top = y;
 	}
 	const { apex, drop, reach } = figures;
@@ -350,10 +370,11 @@ function measure(figures: ArchFigures, leave: number, turn: number, power: numbe
 
 /**
  * Finds the arch that stands nearest a part's measured figures. The arch turns toward the ground
- * over its whole length and its tip never points past plumb, so a fitted part hangs and does not
- * curl back. The search is a fixed grid and then a walk of halving steps, so the same figures
- * always give the same arch. Figures that leave more unknown than they measure are met by the
- * first arch the search reaches.
+ * from its base, more and more toward the end of its turn, and its tip never points past plumb: a
+ * part that has turned as far as it goes hangs straight from there, as a limp blade tip does. The
+ * search is a fixed grid and then a walk of halving steps, so the same figures always give the
+ * same arch. Figures that leave more unknown than they measure are met by the first arch the
+ * search reaches.
  *
  * @param figures The measured figures.
  * @returns The arch, and how far it misses the figures.
@@ -361,36 +382,36 @@ function measure(figures: ArchFigures, leave: number, turn: number, power: numbe
  */
 export function archFromFigures(figures: ArchFigures): ArchFit {
 	const freeLeave = figures.leave === undefined;
-	// The unknowns: the leaving angle, the share of the widest allowed turn, and the power.
-	const value: [number, number, number] = [figures.leave ?? 45, 0, 1];
-	const low: readonly [number, number, number] = [-30, 0, 1];
-	const high: readonly [number, number, number] = [90, 1, FIT_MOST_POWER];
-	const turnOf = (): number => (value[1] as number) * ((value[0] as number) - FIT_TIP);
+	// The unknowns: the leaving angle, the share of the widest allowed turn, the power, and the
+	// share of the length where the turn ends.
+	const value: [number, number, number, number] = [figures.leave ?? 45, 0, 1, 1];
+	const low: readonly number[] = [-30, 0, 1, FIT_LEAST_TO];
+	const high: readonly number[] = [90, 1, FIT_MOST_POWER, 1];
+	const sum = (): void =>
+		measure(figures, value[0], value[1] * (value[0] - FIT_TIP), value[2], value[3]);
 	let best = Number.POSITIVE_INFINITY;
-	const start: [number, number, number] = [value[0], 0, 1];
+	const start = [...value];
 	for (let l = freeLeave ? 0 : 4; l <= 4; l++)
-		for (let t = 0; t <= 8; t++)
-			for (let p = 0; p <= 3; p++) {
-				if (freeLeave) value[0] = 10 + 20 * l;
-				value[1] = t / 8;
-				value[2] = 1 + p;
-				measure(figures, value[0], turnOf(), value[2]);
-				if (trial.distance < best) {
-					best = trial.distance;
-					start[0] = value[0];
-					start[1] = value[1];
-					start[2] = value[2];
+		for (let t = 0; t <= 6; t++)
+			for (let p = 0; p <= 2; p++)
+				for (let e = 0; e <= 3; e++) {
+					if (freeLeave) value[0] = 10 + 20 * l;
+					value[1] = t / 6;
+					value[2] = 1 + 1.5 * p;
+					value[3] = 0.4 + 0.2 * e;
+					sum();
+					if (trial.distance < best) {
+						best = trial.distance;
+						for (let k = 0; k < 4; k++) start[k] = value[k] as number;
+					}
 				}
-			}
-	value[0] = start[0];
-	value[1] = start[1];
-	value[2] = start[2];
-	const step: [number, number, number] = [freeLeave ? 10 : 0, 0.0625, 0.5];
-	const finest: readonly [number, number, number] = [0.02, 0.0001, 0.001];
+	for (let k = 0; k < 4; k++) value[k] = start[k] as number;
+	const step = [freeLeave ? 10 : 0, 0.08, 0.5, 0.1];
+	const finest: readonly number[] = [0.05, 0.0005, 0.01, 0.002];
 	const first = freeLeave ? 0 : 1;
 	for (let round = 0; round < 400; round++) {
 		let moved = false;
-		for (let axis = first; axis < 3; axis++)
+		for (let axis = first; axis < 4; axis++)
 			for (let side = -1; side <= 1; side += 2) {
 				const kept = value[axis] as number;
 				const next = Math.min(
@@ -399,7 +420,7 @@ export function archFromFigures(figures: ArchFigures): ArchFit {
 				);
 				if (next === kept) continue;
 				value[axis] = next;
-				measure(figures, value[0], turnOf(), value[2]);
+				sum();
 				if (trial.distance < best) {
 					best = trial.distance;
 					moved = true;
@@ -407,15 +428,21 @@ export function archFromFigures(figures: ArchFigures): ArchFit {
 			}
 		if (moved) continue;
 		let fine = true;
-		for (let axis = first; axis < 3; axis++) {
+		for (let axis = first; axis < 4; axis++) {
 			step[axis] = (step[axis] as number) / 2;
 			if ((step[axis] as number) > (finest[axis] as number)) fine = false;
 		}
 		if (fine) break;
 	}
-	measure(figures, value[0], turnOf(), value[2]);
+	sum();
 	return {
-		arch: { length: trial.length, leave: value[0], turn: turnOf(), power: value[2] },
+		arch: {
+			length: trial.length,
+			leave: value[0],
+			turn: value[1] * (value[0] - FIT_TIP),
+			power: value[2],
+			to: value[3],
+		},
 		miss: trial.miss,
 	};
 }
