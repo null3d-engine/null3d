@@ -70,6 +70,11 @@ const STALK_POSES = 3;
  * with the measured poses alone a mound reads as that many separate shells.
  */
 const POSE_STEPS = 3;
+/**
+ * The shapes a blade strays from its age's, either side. Still 02's blades of one age come down at
+ * different distances and many end in the air, so a blade takes any shape up to a whole step away.
+ */
+const SHAPE_STRAY = 1;
 /** Radians a blade's heading strays from its rank. */
 const RANK_STRAY = 0.5;
 /** How far a rim shoot's blades turn from their rank toward the way out of the stool, as a share. */
@@ -90,6 +95,19 @@ const SPINDLE_RINGS: readonly number[] = [4, 5, 6, 8];
 const STALK_TAPER = 0.35;
 /** The share of a hanging spike's width that its thread takes. */
 const THREAD_WIDTH = 0.22;
+/**
+ * Still 02: a spike's thread runs 0.04 to 0.1 of the mound's height, so each takes from six tenths
+ * to one and four tenths of the record's mean; the spikes of a stem are of different lengths,
+ * three quarters to one and a quarter of the record's; and a thread leans up to 25 degrees to one
+ * side of the stem or the other, so the spikes hang in a loose bunch round it.
+ */
+const THREAD_LEAST = 0.6;
+const THREAD_RANGE = 0.8;
+const SPIKE_LEAST = 0.75;
+const SPIKE_RANGE = 0.5;
+const SPLAY = 25;
+/** The plastic number's fraction, a second step that spreads the spikes' lengths unlike the threads'. */
+const PLASTIC = 0.7548776662466927;
 /** A panicle branch's width, as a share of the stem's foot, and a spikelet's width over its length. */
 const BRANCH_WIDTH = 0.3;
 const SPIKELET_WIDTH = 0.42;
@@ -100,6 +118,8 @@ const WHORL_TAPER = 0.75;
  * strap turns about as tight as its own width allows where it meets the ground.
  */
 const LAND_RADIUS = 1.5;
+/** How far a landed blade lies along the soil past where it comes down, in blade widths. */
+const LAND_LIE = 1;
 /**
  * Still 07: the shoot bases at the stool's rim lean out about 15 degrees from plumb and stand about
  * six tenths as tall as the plumb ones at its middle.
@@ -292,7 +312,8 @@ function landing(
 	const radius = lift > 1e-6 ? ends / lift : aimed;
 	const turnLength = radius * radians(fall);
 	const shown = arch.length + turnLength;
-	const lie = (shown * blade.tipLength) / (1 - blade.tipLength);
+	// It comes to rest over a blade's width, so no point lies out past the skirt.
+	const lie = blade.width * LAND_LIE;
 	const { leave, ...first } = arch;
 	const chain: ArchChain = {
 		leave,
@@ -464,11 +485,14 @@ export function growTuft(input: GrowInput): MacroSkeleton {
 		const rankTurn = unit(2) * 2 * PI;
 		for (let k = 0; k < blades; k++) {
 			const draws = (m: number) => draw(input, Purpose.Blade, i, k, m);
-			// The blade's shape by its age, counted from the youngest, with a stray of half a shape.
+			// The blade's shape by its age, counted from the youngest, with a stray of up to a shape.
 			const age = 1 - (k + 0.5) / blades;
 			const pose = Math.min(
 				plan.blades.length - 1,
-				Math.max(0, Math.round(shapeAt(growth.poses, age) * POSE_STEPS + draws(2) - 0.5)),
+				Math.max(
+					0,
+					Math.round(shapeAt(growth.poses, age) * POSE_STEPS + (draws(2) * 2 - 1) * SHAPE_STRAY),
+				),
 			);
 			const shape = plan.blades[pose] as Pose;
 			const around = rankTurn + (2 * PI * (k % ranks)) / ranks + (draws(0) - 0.5) * RANK_STRAY;
@@ -828,9 +852,19 @@ function writeSpikes(
 			place.position[1] as number,
 			place.position[2] as number,
 		];
-		const thread = head.thread * mound * (1 + 0.25 * j);
-		const knot = [from[0] as number, (from[1] as number) - thread, from[2] as number];
-		const foot = [knot[0] as number, (knot[1] as number) - head.length * mound, knot[2] as number];
+		// A loose bunch: each spike on its own length of thread, of its own length, its thread
+		// leaning to one side of the stem or the other, so no two hang in one row.
+		const thread =
+			head.thread * mound * (THREAD_LEAST + THREAD_RANGE * (((j + 1) * GOLDEN_SHARE) % 1));
+		const length = head.length * mound * (SPIKE_LEAST + SPIKE_RANGE * (((j + 1) * PLASTIC) % 1));
+		const side = (j % 2 === 0 ? 1 : -1) * thread * sin(radians(SPLAY));
+		const knot = [0, 1, 2].map(
+			(k) =>
+				(from[k] as number) +
+				(place.binormal[k] as number) * side -
+				(k === 1 ? thread * cos(radians(SPLAY)) : 0),
+		);
+		const foot = [knot[0] as number, (knot[1] as number) - length, knot[2] as number];
 		writeRun(
 			mesh,
 			strip,
@@ -849,7 +883,7 @@ function writeSpikes(
 			strip,
 			straight(knot, foot),
 			0,
-			head.length * mound,
+			length,
 			tier === 0 ? 3 : 5,
 			sides,
 			(s) => body * Math.min(1, 0.35 + 6 * s) * (s > 0.85 ? (1 - s) / 0.15 + 0.2 : 1),
