@@ -210,6 +210,12 @@ export interface PlantReviewQuery {
 	readonly surface?: boolean;
 	/** Whether to draw the plant black on white with no light, for its exact outline. */
 	readonly matte?: boolean;
+	/**
+	 * Whether to draw each part of the plant in a flat colour of its own on white, with no light:
+	 * wood red with its radius in the blue channel, foliage green, extras green and blue. The parts
+	 * are cut and layered as the colour picture is, so the picture says which part covers each texel.
+	 */
+	readonly parts?: boolean;
 	/** Whether stages not built yet grow stand-ins; true for a species that is not registered. */
 	readonly placeholders?: boolean;
 	/** The row share of the horizon, which sets the camera's pitch with the field of view. */
@@ -415,6 +421,7 @@ const SWITCHES = [
 	'measure',
 	'scale',
 	'matte',
+	'parts',
 	'fruit',
 	'surface',
 	'lifted',
@@ -616,6 +623,7 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 		motion: params.get('motion') === '1',
 		young: params.get('young') === '1',
 		matte: params.get('matte') === '1',
+		parts: params.get('parts') === '1',
 		fruit: params.get('fruit') === '1',
 		surface: params.get('surface') === '1',
 	};

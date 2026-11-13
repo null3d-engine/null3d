@@ -103,6 +103,10 @@ const REFERENCE_LIGHT: [number, number] | null =
 		? [(QUERY.sunAzimuth * Math.PI) / 180, QUERY.sunRise]
 		: null;
 const MATTE = VIEW === 'silhouette' || QUERY.matte === true;
+/** Whether the page draws each part of the plant in a flat colour of its own. */
+const PARTS = QUERY.parts === true && !MATTE;
+/** Whether the page draws a picture for a reader and not for the eye: no light, on white. */
+const PLAIN = MATTE || PARTS;
 /**
  * The level forced at every distance: the query's, or the nearest for a view of the wood alone,
  * which judges the whole branching rather than what a level keeps at its distance. A view of the
@@ -675,21 +679,26 @@ function shaped(asset: PlantAsset, woodOnly: boolean): PlantAsset {
 	};
 }
 
-/** The materials of a matte: the plant black, with the card atlas's cut-outs kept. */
-function matteMaterials(ctx: SketchContext, kit: SpeciesKit): PlantMaterials {
-	const black = { color: '#000000', doubleSided: true } as const;
+/**
+ * The materials of a stand-in kit's matte: the plant black, with the card atlas's cut-outs kept.
+ * For a picture of the parts, the wood is red, the foliage green and the extras green and blue,
+ * as the plant shader draws them.
+ */
+function matteMaterials(ctx: SketchContext, kit: SpeciesKit, parts: boolean): PlantMaterials {
+	const flat = (color: string) => ({ color: parts ? color : '#000000', doubleSided: true });
+	const leaf = flat('#00ff00');
 	return {
-		wood: ctx.materials.unlit(black),
-		shoots: ctx.materials.unlit(black),
+		wood: ctx.materials.unlit(flat('#ff0000')),
+		shoots: ctx.materials.unlit(leaf),
 		cards: ctx.materials.unlit({
-			...black,
+			...leaf,
 			map: kit.textures.cardColor,
 			alphaMode: 'mask',
 			alphaCutoff: 0.5,
 		}),
-		foliage: ctx.materials.unlit(black),
-		foliageFar: ctx.materials.unlit(black),
-		extras: ctx.materials.unlit(black),
+		foliage: ctx.materials.unlit(leaf),
+		foliageFar: ctx.materials.unlit(leaf),
+		extras: ctx.materials.unlit(flat('#00ffff')),
 	};
 }
 
@@ -1659,9 +1668,9 @@ export default defineSketch(async (ctx) => {
 
 	// The background, the meadow and the light.
 	const colours = BACKGROUND_COLOURS[BACKGROUND];
-	scene.setBackground(MATTE ? '#ffffff' : (QUERY.sky ?? colours.sky));
+	scene.setBackground(PLAIN ? '#ffffff' : (QUERY.sky ?? colours.sky));
 	const groundColour = QUERY.ground ?? colours.ground;
-	if (groundColour && !MATTE && !SPEC.cutting && !QUERY.lifted) {
+	if (groundColour && !PLAIN && !SPEC.cutting && !QUERY.lifted) {
 		// The meadow is unlit and casts nothing back, so it shows its measured colour everywhere and a
 		// mask can tell it from the plant by colour alone.
 		scene.createMesh({
@@ -1670,7 +1679,7 @@ export default defineSketch(async (ctx) => {
 			rotation: FLAT,
 		});
 	}
-	if (MATTE && SPEC.whole && !SPEC.cutting && !QUERY.lifted) {
+	if (PLAIN && SPEC.whole && !SPEC.cutting && !QUERY.lifted) {
 		// A whole plant's matte stands on a white ground, so what grows below the ground, such as the
 		// buried part of a root flare, stays hidden as the meadow hides it in the picture.
 		scene.createMesh({
@@ -1679,7 +1688,7 @@ export default defineSketch(async (ctx) => {
 			rotation: FLAT,
 		});
 	}
-	if (VIEW === 'panels' && !MATTE) {
+	if (VIEW === 'panels' && !PLAIN) {
 		// The studio's grey behind the cluster cutting, facing its camera.
 		const half = turn0 / 2;
 		scene.createMesh({
@@ -1689,7 +1698,7 @@ export default defineSketch(async (ctx) => {
 			rotation: [0, Math.sin(half), 0, Math.cos(half)],
 		});
 	}
-	if (!MATTE) {
+	if (!PLAIN) {
 		const reach = Math.max(bounds.max[0] - bounds.min[0], bounds.max[2] - bounds.min[2]);
 		const shadow = { distance: Math.max(20, height * 2.5 + reach * 2), contactDistance: 0.4 };
 		const sunFrom = (azimuth: number, rise: number): V3 => {
@@ -1797,14 +1806,14 @@ export default defineSketch(async (ctx) => {
 	// distance fade stays off unless a still asks for one with `sway`: the fade is there to stand far
 	// cascades still, and a plant drawn alone has no cascade to spare.
 	const plantLook =
-		MATTE && kit.placeholders === true
-			? matteMaterials(ctx, kit)
+		PLAIN && kit.placeholders === true
+			? matteMaterials(ctx, kit, PARTS)
 			: plantMaterials(ctx, kit, {
 					...(wind && {
 						wind: wind.field,
 						...(QUERY.sway !== undefined && { swayDistance: QUERY.sway }),
 					}),
-					matte: MATTE,
+					matte: PARTS ? 'parts' : MATTE,
 				});
 	// A stand-in kit draws through the stand-in near pool. A real kit's one plant stands at a fixed
 	// place, so its placement composes its shoot rows once, with no pool.
@@ -1837,7 +1846,7 @@ export default defineSketch(async (ctx) => {
 					fov: FOV,
 					...((LOD === 0 || SPEC.cutting !== undefined) && { switchBias: -FORCED_NEAR_STOPS }),
 				},
-				castShadows: !MATTE,
+				castShadows: !PLAIN,
 			},
 		);
 	const drawn = shaped(main, WOOD_ONLY);
@@ -1964,8 +1973,8 @@ export default defineSketch(async (ctx) => {
 		standIn: !isSpeciesId(QUERY.species),
 		placeholders,
 		view: VIEW,
-		background: MATTE ? 'matte' : BACKGROUND,
-		sun: MATTE ? 'none' : SUN,
+		background: PLAIN ? 'matte' : BACKGROUND,
+		sun: PLAIN ? 'none' : SUN,
 		size: SIZE,
 		grid: [columns, rows],
 		plant: {
@@ -2017,7 +2026,7 @@ export default defineSketch(async (ctx) => {
 	page.post('plant-review', facts);
 
 	// A stand-in's matte materials take no wind.
-	const windMaterials = MATTE && kit.placeholders === true ? [] : Object.values(plantLook);
+	const windMaterials = PLAIN && kit.placeholders === true ? [] : Object.values(plantLook);
 	if (!wind && !near) return {};
 	return {
 		onUpdate() {

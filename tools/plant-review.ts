@@ -270,12 +270,8 @@ function stillShot(
 	// is a flat swatch rather than a picture of the plant, so it is not given one. A fruit view keeps
 	// its outline whether or not the photograph separates, because a part that hangs from nothing
 	// shows only as a piece, and a piece needs the matte.
-	// A view solved from the plant's subjects draws its matte whatever its photograph's background:
-	// its contract names parts of the picture that must show plant or open ground, and only the
-	// matte can say which they show.
 	const outline =
 		(slot.kind !== 'texture' && separable && slot.view !== 'silhouette') ||
-		SOLVED_VIEWS.has(query.view ?? slot.view) ||
 		slot.framed ||
 		slot.query?.fruit === true ||
 		CUTTING_VIEWS.includes(slot.view) ||
@@ -290,6 +286,11 @@ function stillShot(
 		matte && outline,
 		slot.file,
 		STILL_HOLD,
+		// A view solved from the plant's subjects draws its parts in flat colours too: its contract
+		// names areas of the picture that must show wood, foliage or open air, and that picture says
+		// which each texel shows. A matte cannot: close up it blends every level's soft coverage and
+		// reads fuller than the colour picture.
+		matte && SOLVED_VIEWS.has(query.view ?? slot.view),
 	);
 }
 
