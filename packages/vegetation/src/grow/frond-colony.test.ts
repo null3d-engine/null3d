@@ -34,7 +34,8 @@ function grow(season: Season = 'summer', variant = 0, seed = 11): MacroSkeleton 
 }
 
 const colony = brackenRecord.growth as FrondColony;
-const HEIGHT = spreadMean(brackenRecord.size.height);
+/** The height the colony grown here stands at: its record's for the seed and variant the tests grow. */
+const HEIGHT = targetHeight(brackenRecord, 11, 0);
 
 /** A skeleton's stalks, each as its nodes from the rhizome up. */
 function stalksOf(skeleton: MacroSkeleton): number[][][] {
@@ -127,7 +128,12 @@ describe("the frond colony's frame", () => {
 			const foot = stalks[k]?.[0] as number[];
 			for (let c = 0; c < 3; c++)
 				expect(summer.position[end * 3 + c]).toBeCloseTo(foot[c] as number, 6);
-			expect(foot[1]).toBeCloseTo(-colony.rhizome.depth, 6);
+			// Every foot lies at one depth: the record's, scaled as the colony is to its variant's
+			// height, which stands within a quarter of the record's mean.
+			const depth = -((stalksOf(summer)[0] as number[][])[0]?.[1] as number);
+			expect(foot[1]).toBeCloseTo(-depth, 6);
+			expect(depth / colony.rhizome.depth).toBeGreaterThan(0.75);
+			expect(depth / colony.rhizome.depth).toBeLessThan(1.3);
 		});
 	});
 

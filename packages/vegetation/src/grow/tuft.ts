@@ -47,7 +47,7 @@ import { MeshWriter } from '../leaf/writer';
 import type { CrownLight, GrowInput, MeshInput, MeshLevel } from '../stages';
 import { type AxisPath, axisPath, emptyFrame, frameAt } from '../wood/frames';
 import { axisBytes, leafStrip, stalkRange, wholePath, writeStem } from './ground';
-import { scaledSkeleton, targetHeight } from './height';
+import { scaledWithPieces, targetHeight } from './height';
 import type { Grower } from './models';
 import { addSockets, discPlaces, type Socket } from './sockets';
 
@@ -551,17 +551,7 @@ export function growTuft(input: GrowInput): MacroSkeleton {
 	// A tuft is its pieces, so each variant stands at the height its record asks for it with its
 	// pieces scaled with it, and the height calibration after the grower finds nothing to scale.
 	const factor = top > 0 ? targetHeight(input.record, input.seed, input.variant) / top : 1;
-	const scaled = scaledSkeleton(grown, factor);
-	const placed = scaled.buds.sockets;
-	return placed
-		? {
-				...scaled,
-				buds: {
-					...scaled.buds,
-					sockets: { ...placed, scale: placed.scale.map((value) => value * factor) },
-				},
-			}
-		: scaled;
+	return scaledWithPieces(grown, factor);
 }
 
 /**

@@ -64,6 +64,7 @@ import { MeshWriter } from '../leaf/writer';
 import type { GrowInput, MeshInput, MeshLevel } from '../stages';
 import { axisPath } from '../wood/frames';
 import { axisBytes, leafStrip, stalkRange, wholePath, writeStem } from './ground';
+import { scaledWithPieces, targetHeight } from './height';
 import type { Grower } from './models';
 import { discPlaces } from './sockets';
 
@@ -117,12 +118,22 @@ function colonyOf(record: Species): FrondColony {
 }
 
 /** One leaf the kit holds: its age, how far its droop is scaled, and whether it lies dead. */
+/**
+ * Degrees a grown leaf stands rolled about its rachis, one way or the other by kind. Still 12: the
+ * blade turns about its rachis so one side stands higher; still 01's leaves show their faces at
+ * three to five tenths of their width from a camera a little above them, where level blades would
+ * be edges.
+ */
+const GROWN_ROLL = 30;
+
 interface LeafKind {
 	readonly name: string;
 	readonly age: number;
 	/** The share of the record's droop the leaf takes; a lying leaf takes none. */
 	readonly droop: number;
 	readonly lying: boolean;
+	/** Degrees the leaf stands rolled about its rachis on its stalk; none for a leaf not yet open or lying. */
+	readonly roll: number;
 }
 
 /** A curve with every value multiplied by a factor. */
@@ -139,15 +150,16 @@ function scaled(curve: Curve, factor: number): Curve {
 function leafKinds(): LeafKind[] {
 	const kinds: LeafKind[] = [];
 	GROWN_DROOPS.forEach((droop, k) => {
-		kinds.push({ name: `leaf-grown-${k}`, age: MATURE_AGE, droop, lying: false });
+		const roll = GROWN_ROLL * (k % 2 === 0 ? 1 : -1);
+		kinds.push({ name: `leaf-grown-${k}`, age: MATURE_AGE, droop, lying: false, roll });
 	});
 	YOUNG_AGES.forEach((age, k) => {
-		kinds.push({ name: `leaf-young-${k}`, age, droop: 1, lying: false });
+		kinds.push({ name: `leaf-young-${k}`, age, droop: 1, lying: false, roll: 0 });
 	});
 	BROWN_AGES.forEach((age, k) => {
-		kinds.push({ name: `leaf-brown-${k}`, age, droop: 1, lying: false });
+		kinds.push({ name: `leaf-brown-${k}`, age, droop: 1, lying: false, roll: 0 });
 	});
-	kinds.push({ name: 'leaf-lying', age: 1, droop: 0, lying: true });
+	kinds.push({ name: 'leaf-lying', age: 1, droop: 0, lying: true, roll: 0 });
 	return kinds;
 }
 
@@ -390,7 +402,12 @@ export function growFrondColony(input: GrowInput): MacroSkeleton {
 		);
 		let aliveTop = 0;
 		for (let n = 0; n <= alive.segments; n++) aliveTop = Math.max(aliveTop, alive.up[n] as number);
-		const grownTop = aliveTop + sin(radians(tilt)) * (extents[1] as LeafExtent).rise * bladeLength;
+		// A grown leaf stands rolled about its rachis, so one side of its blade rises above it.
+		const grownLeaf = extents[1] as LeafExtent;
+		const grownTop =
+			aliveTop +
+			(sin(radians(tilt)) * grownLeaf.rise + sin(radians(GROWN_ROLL)) * grownLeaf.half) *
+				bladeLength;
 		stood = Math.max(stood, grownTop);
 		// A young frond stands at its share of that height: its straight stalk and the leaf it
 		// still holds upright together.
@@ -486,7 +503,9 @@ export function growFrondColony(input: GrowInput): MacroSkeleton {
 			y + up[1] * rise + lower[1] * out,
 			z + up[2] * rise + lower[2] * out,
 		];
-		top = Math.max(top, y + up[1] * rise, tip[1]);
+		// A rolled leaf's raised side stands above its rachis by its half-width.
+		const lift = Math.abs(sin(radians((kinds[kind] as LeafKind).roll))) * half;
+		top = Math.max(top, y + up[1] * rise + lift, tip[1] + lift);
 		// The blade spreads across its heading, about its rachis.
 		const across: Vector3 = normalize3([
 			up[1] * lower[2] - up[2] * lower[1],
@@ -503,7 +522,7 @@ export function growFrondColony(input: GrowInput): MacroSkeleton {
 	// highest leaf, and each leaf's reach from its stalk. Its height is the height its fronds
 	// stand at when grown, which a patch of croziers or of dead fronds on the ground keeps.
 	const drawn = Math.max(finished.height, top);
-	return {
+	const grown: MacroSkeleton = {
 		...finished,
 		height: stood,
 		bounds: {
@@ -511,6 +530,9 @@ export function growFrondColony(input: GrowInput): MacroSkeleton {
 			max: [high[0], drawn, high[1]],
 		},
 	};
+	// A colony is its fronds, so each variant stands at the height its record asks for it with its
+	// leaves scaled with it, and the height calibration after the grower finds nothing to scale.
+	return scaledWithPieces(grown, stood > 0 ? targetHeight(record, seed, variant) / stood : 1);
 }
 
 /**
@@ -543,6 +565,7 @@ export function frondPieces(record: Species, manifest: TextureManifest): readonl
 		return {
 			name: kind.name,
 			attitude: 'along',
+			...(kind.roll ? { roll: kind.roll } : {}),
 			length: longest,
 			leaves: 1,
 			parts: [
