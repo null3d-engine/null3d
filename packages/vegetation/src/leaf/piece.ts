@@ -114,6 +114,11 @@ export interface PieceStem {
 	readonly droopOver?: readonly [from: number, to: number];
 	/** Degrees it turns at each node, to one side and the other in turn. */
 	readonly zigzag?: number;
+	/**
+	 * Kinks along it: the metres between one and the next, and the degrees it turns at each, to one
+	 * side and the other in turn. An oak's twig runs straight between its kinks.
+	 */
+	readonly kink?: { readonly length: number; readonly angle: number };
 	/** Its leaves, where it carries any. */
 	readonly leaves?: PieceLeaves;
 	/** Its side stems, one rule for each kind. */
@@ -164,6 +169,7 @@ const Purpose = {
 	SideTurn: 0x44,
 	SideStart: 0x45,
 	Roll: 0x46,
+	Kink: 0x47,
 } as const;
 
 /**
@@ -308,6 +314,9 @@ export function planPiece(
 		let along = start.along;
 		let zig = 1;
 		let node = 0;
+		let kinks = 0;
+		// Leaves that stand closer than a third of a leaf's length crowd into a tuft at the stem's end.
+		const crowded = gap > 0 ? Math.min(1, Math.max(0, 1 - gap / (leafMean / 3))) : 0;
 		const azimuthStart = draw(Purpose.Start, axis) * 360;
 		// Each step's end with its frame, where a side stem may leave.
 		const frames: { at: Vector3; direction: Vector3; sky: Vector3; along: number }[] = [];
@@ -320,6 +329,25 @@ export function planPiece(
 			if (stem.droop && mid >= droopFrom * length && mid <= droopTo * length)
 				direction = toward(direction, down, (stem.droop * run) / droopSpan);
 			const atNode = gap > 0 && (k + 1) % perNode === 0;
+			const kink = stem.kink;
+			if (
+				kink &&
+				k > 0 &&
+				Math.floor(from / kink.length) > Math.floor((from - run) / kink.length)
+			) {
+				// A kink turns the stem in its own plane, and a little out of it, so no two lie alike.
+				const turned = kinks++;
+				direction = turn(
+					direction,
+					sky,
+					(turned % 2 === 0 ? 1 : -1) * kink.angle * (0.6 + 0.8 * draw(Purpose.Kink, axis, turned)),
+				);
+				direction = turn(
+					direction,
+					normalize3(cross3(direction, sky, [0, 0, 0])),
+					(draw(Purpose.Kink, axis, turned + 512) - 0.5) * kink.angle,
+				);
+			}
 			if (atNode && stem.zigzag) {
 				direction = turn(direction, sky, zig * stem.zigzag);
 				zig = -zig;
@@ -347,7 +375,7 @@ export function planPiece(
 					along,
 					share,
 					azimuthStart,
-					0,
+					crowded,
 				);
 				const own = stem.leaves;
 				if (own && (own.hang !== undefined || own.face))
@@ -539,7 +567,10 @@ export function layStudio(
 					piece: studio.piece,
 					pick: 0,
 					position: [0, 0, 0],
-					rotation: pieceTurn(attitudeOf(studio.piece), [1, 0, 0]),
+					// A hanging piece hangs with its hook to the picture's right; any other stands on
+					// its cut, its sky side toward the camera.
+					rotation:
+						attitudeOf(studio.piece) === 'plumb' ? pieceTurn('plumb', [1, 0, 0]) : [0, 0, 0, 1],
 				},
 			],
 		};

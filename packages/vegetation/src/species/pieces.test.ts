@@ -18,6 +18,7 @@ import {
 	planPiece,
 } from '../leaf/piece';
 import type { ShootPlan } from '../leaf/shoot';
+import { PIECES as OAK, STUDIO as OAK_STUDIO } from './pedunculate-oak/pieces';
 import { PIECES as BIRCH, STUDIO as BIRCH_STUDIO } from './silver-birch/pieces';
 import { PIECES as WILLOW, STUDIO as WILLOW_STUDIO } from './weeping-willow/pieces';
 
@@ -34,6 +35,7 @@ const SPECIES: readonly {
 }[] = [
 	{ id: 'silver-birch', pieces: BIRCH, studio: BIRCH_STUDIO },
 	{ id: 'weeping-willow', pieces: WILLOW, studio: WILLOW_STUDIO },
+	{ id: 'pedunculate-oak', pieces: OAK, studio: OAK_STUDIO },
 ];
 
 const distance = (a: readonly number[], b: readonly number[]): number =>
