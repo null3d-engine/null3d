@@ -61,6 +61,7 @@ export function kitPiece(piece: PiecePrototype, index: number): UncardedPrototyp
 			parts: piece.parts,
 			attitude: piece.attitude,
 			...(piece.plane ? { plane: piece.plane } : {}),
+			...(piece.lengthwise ? { lengthwise: true } : {}),
 		},
 	};
 }

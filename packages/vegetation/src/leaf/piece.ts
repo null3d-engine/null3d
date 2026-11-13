@@ -24,16 +24,7 @@ import {
 	type Vector3,
 } from '../core/math';
 import type { Phyllotaxis, Species } from '../core/record';
-import {
-	type Curve,
-	curveAt,
-	DETAILS,
-	type Detail,
-	type Spread,
-	spreadAt,
-	spreadMean,
-	type Vec3,
-} from '../core/types';
+import { type Curve, curveAt, type Spread, spreadAt, spreadMean, type Vec3 } from '../core/types';
 import {
 	type AxisPoint,
 	addBudCluster,
@@ -200,17 +191,17 @@ export interface PieceRule {
 	 */
 	readonly plane?: Vec3;
 	/**
+	 * Whether the piece's cards keep only the two planes that run along its line, its face and its
+	 * edge. A long narrow piece, such as a frond, seen end on piles all its leaves into one solid
+	 * patch, which the plane across its line would draw halfway along it. Absent, its cards keep all
+	 * three planes.
+	 */
+	readonly lengthwise?: boolean;
+	/**
 	 * The ground side in the piece's frame, where it is not its attitude's own: a piece that stands
 	 * upright on its socket names the way back along its line, so its side stems lift toward its tip.
 	 */
 	readonly ground?: Vec3;
-	/**
-	 * The finest leaf mesh the piece's leaves take: at a finer tier they take this tier's mesh. A
-	 * piece of hundreds of small leaves, such as a palm frond, takes the low tier's cut-out card, so
-	 * the frond keeps its count of leaflets inside the kit's bytes and the near level's triangles.
-	 * Absent, every tier takes its own leaf mesh.
-	 */
-	readonly leafDetail?: Detail;
 	/** Its main stem. */
 	readonly stem: PieceStem;
 }
@@ -231,6 +222,8 @@ export interface PiecePrototype
 	readonly parts: number;
 	/** The unit normal of the piece's flat plane in its rest frame, where its rule names one. */
 	readonly plane?: Vec3;
+	/** Whether its cards keep only the planes along its line, where its rule says so. */
+	readonly lengthwise?: boolean;
 }
 
 /** The golden angle in degrees. */
@@ -712,12 +705,9 @@ export function piecePrototypes(
 	leaves: readonly (readonly PrototypeArrays[])[],
 ): PiecePrototype[] {
 	const leafMeshes = Math.min(...leaves.map((tier) => tier.length));
+	const finest = leaves[leaves.length - 1] ?? [];
 	const out: PiecePrototype[] = [];
-	for (const [r, rule] of rules.entries()) {
-		// Each tier takes its own leaf mesh, or the rule's finest where the tier is finer.
-		const most = rule.leafDetail ? DETAILS.indexOf(rule.leafDetail) : leaves.length - 1;
-		const own = leaves.map((_, t) => leaves[Math.min(t, most)] ?? []);
-		const finest = own[own.length - 1] ?? [];
+	for (const [r, rule] of rules.entries())
 		for (let variant = 0; variant < Math.min(16, Math.max(1, rule.variants)); variant++) {
 			const parts = splitPlan(planPiece(record, rule, pieceKey(r, variant), leafMeshes), finest);
 			for (const [part, plan] of parts.entries())
@@ -728,10 +718,10 @@ export function piecePrototypes(
 					part,
 					parts: parts.length,
 					...(rule.plane ? { plane: rule.plane } : {}),
-					...meshedPlan(plan, own),
+					...(rule.lengthwise ? { lengthwise: true } : {}),
+					...meshedPlan(plan, leaves),
 				});
 		}
-	}
 	return out;
 }
 

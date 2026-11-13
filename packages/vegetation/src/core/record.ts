@@ -1955,6 +1955,14 @@ export interface LeafShape {
 	/** How the leaf looks under light. */
 	readonly optics: LeafOptics;
 	/**
+	 * Whether the leaf is a narrow leaflet, such as a palm's: a cut-out card at the low and medium
+	 * tiers, and the card folded at its midrib into two planes of four triangles at the high and ultra
+	 * tiers, in place of the cut meshes. A frond of hundreds of leaflets then fits a kit and a near
+	 * level, and each leaflet keeps its fold, so it shows one half from every side. Absent, the leaf
+	 * takes each tier's cut mesh.
+	 */
+	readonly narrow?: boolean;
+	/**
 	 * The spore cases a fern's leaf carries under its lobes: how many stand along the midrib, their
 	 * radius in metres, and the spot of the leaf texture they take their colour from, as u and v.
 	 * A leaf that names none carries none.

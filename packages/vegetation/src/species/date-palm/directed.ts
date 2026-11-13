@@ -2,12 +2,13 @@
 // spiral of 28 living fronds and a ring of 7 dead ones, each frond a piece at a socket of its own
 // (pieces.ts), with the date bunches at flower sites under the lowest fronds.
 //
-// Scale: the fact sheet gives a palm 15 to 25 m tall with fronds 4 to 6 m and a crown 6 to 10 m wide;
-// picture 01 gives fronds 0.40 of the height, a crown 0.71 and a trunk 0.064. At 15 m the frond is
-// 6.0 m (inside), the crown 10.65 m (the nearest the range allows: any greater height puts the frond
-// outside too) and the trunk 0.96 m, so the palm stands at the fact sheet's least height. Picture 01
-// is 1.4 times as tall as wide where the fact sheet says 2.5: a conflict in the reference, recorded
-// for the owner. Every other number is a share of that height read on the pictures named beside it.
+// Scale (owner ruling 8, and the lead's ruling on its precedence): the fact sheet gives a palm 15 to
+// 25 m tall, and picture 01 gives fronds 0.40 of the height, a crown 0.71 and a trunk 0.064. At 15 m,
+// the fact sheet's least, the frond is 6.0 m (inside its 4 to 6 m) and the trunk 0.96 m; no greater
+// height keeps the frond inside. Every other size is the pictures' proportion, even where it passes
+// the fact sheet: the crown is 10.65 m against 6 to 10, the leaflet 0.66 m against 20 to 40 cm, and
+// the palm 1.4 times as tall as wide against 2.5. Those are conflicts in the reference, recorded for
+// the owner.
 import type { Species } from '../../core/record';
 import { FROND, PIECES } from './pieces';
 import { record } from './record';
@@ -112,15 +113,15 @@ export const directed: Species = {
 		kind: 'blade',
 		leaf: {
 			...leaflet,
-			// The fact sheet: leaflets 20 to 40 cm long, stiff and V-folded; the longest stand at the
-			// frond's middle (pieces.ts). Picture 04 shows several whole fronds with their leaflets
-			// full from base to tip: 0.055 to 0.09 of the frond long (33 to 54 cm on this frond, the
-			// fact sheet's 40 cm inside both) and a tenth to a twelfth as wide as long, where the fact
-			// sheet says a fifteenth to a thirtieth. Several full leaves on a full-size picture rule
-			// the leaf's proportion, so the leaflet is a twelfth as wide as long: a conflict in the
-			// reference, recorded for the owner. Still 12: widest at 0.35 from the base, a long
-			// straight taper to a sharp point.
-			length: { mean: 0.4, spread: 0.03 },
+			// Picture 04, several whole fronds with their leaflets full from base to tip: the longest
+			// leaflets 0.10 to 0.12 of the frond (0.66 m on this one, past the fact sheet's 20 to
+			// 40 cm, recorded), and a tenth to a twelfth as wide as long (the fact sheet says a
+			// fifteenth to a thirtieth). Still 12: widest at 0.35 from the base, a long straight taper
+			// to a sharp point. The longest stand at the frond's middle (pieces.ts). A narrow leaflet
+			// is a card at the low and medium tiers and a card folded at its midrib at the high and
+			// ultra tiers: stills 09 and 12 and the fact sheet show the fold.
+			length: { mean: 0.66, spread: 0.05 },
+			narrow: true,
 			outline: {
 				width: [
 					[0, 0.012],
@@ -146,9 +147,9 @@ export const directed: Species = {
 			...record.lod.budget,
 			// The fronds are pieces in the kit, shared by every plant, where the grown palm drew them in
 			// each plant's own mesh. Measured at seed 11 over the three variants, kit and variants
-			// together: 1.85, 2.29, 2.76 and 3.29 MB at the low, medium, high and ultra tiers, against
-			// the grown palm's 9.45, 9.57, 9.72 and 9.99 MB. The kit's own: 0.79, 1.20, 1.66 and
-			// 2.18 MB; a plant's: at most 0.45 MB.
+			// together: 1.77, 2.14, 2.61 and 3.15 MB at the low, medium, high and ultra tiers, against
+			// the grown palm's 9.45, 9.57, 9.72 and 9.99 MB. The kit's own: 0.73, 1.06, 1.53 and
+			// 2.05 MB; a plant's: at most 0.44 MB.
 			kitBytes: { low: 2_500_000, medium: 2_500_000, high: 2_500_000, ultra: 2_500_000 },
 			variantBytes: { low: 600_000, medium: 600_000, high: 600_000, ultra: 600_000 },
 		},

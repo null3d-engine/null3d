@@ -114,6 +114,8 @@ export interface PrototypePiece {
 	readonly attitude: PieceAttitude;
 	/** The unit normal of the piece's flat plane in its rest frame, where it has one. */
 	readonly plane?: Vec3;
+	/** Whether its cards keep only the two planes that run along its line (`PieceRule.lengthwise`). */
+	readonly lengthwise?: boolean;
 }
 
 /**
@@ -122,7 +124,10 @@ export interface PrototypePiece {
  * @category api/vegetation
  */
 export interface CardCell {
-	/** The three planes: two vertical and crossed, one horizontal. */
+	/**
+	 * Its planes: two vertical and crossed, and one horizontal, which a lengthwise piece's card
+	 * leaves out.
+	 */
 	readonly planes: readonly {
 		/** The plane's centre in prototype space. */
 		readonly centre: Vec3;

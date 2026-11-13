@@ -72,9 +72,18 @@ function octahedral(x: number, y: number, z: number): [number, number] {
 	return [Math.round((u * 0.5 + 0.5) * 255), Math.round((v * 0.5 + 0.5) * 255)];
 }
 
-/** The three planes of a prototype: centre, right and up half-extents, normal. */
+/** The planes a prototype's card keeps: all three, or the two along the line of a lengthwise piece. */
+function planeCount(prototype: UncardedPrototype): number {
+	return prototype.piece?.lengthwise ? 2 : 3;
+}
+
+/**
+ * The planes of a prototype: centre, right and up half-extents, normal. The first two hold its line
+ * (+Y), its face and its edge; the third lies across its line.
+ */
 function planesOf(
 	mesh: PrototypeArrays,
+	count: number,
 ): { centre: number[]; right: number[]; up: number[]; normal: number[] }[] {
 	const lo = [Infinity, Infinity, Infinity];
 	const hi = [-Infinity, -Infinity, -Infinity];
@@ -92,7 +101,7 @@ function planesOf(
 		{ centre, right: [hx, 0, 0], up: [0, hy, 0], normal: [0, 0, 1] },
 		{ centre, right: [0, 0, -hz], up: [0, hy, 0], normal: [1, 0, 0] },
 		{ centre, right: [hx, 0, 0], up: [0, 0, -hz], normal: [0, 1, 0] },
-	];
+	].slice(0, count);
 }
 
 /** Where each prototype's three cells lie: full cells first, then half cells four to a full one. */
@@ -100,8 +109,10 @@ function layout(
 	prototypes: readonly UncardedPrototype[],
 	cell: number,
 ): { size: number; rects: [number, number, number, number][][] } {
-	const full = prototypes.filter((p) => p.leaves > 0).length * 3;
-	const halves = prototypes.filter((p) => p.leaves === 0).length * 3;
+	const planes = (bare: boolean) =>
+		prototypes.reduce((sum, p) => sum + ((p.leaves === 0) === bare ? planeCount(p) : 0), 0);
+	const full = planes(false);
+	const halves = planes(true);
 	const units = full + Math.ceil(halves / 4);
 	const across = Math.max(1, Math.ceil(Math.sqrt(units)));
 	let unit = 0;
@@ -110,7 +121,7 @@ function layout(
 	const place = (bare: boolean) =>
 		prototypes.forEach((prototype, p) => {
 			if ((prototype.leaves === 0) !== bare) return;
-			for (let k = 0; k < 3; k++) {
+			for (let k = 0; k < planeCount(prototype); k++) {
 				const x = (unit % across) * cell;
 				const y = Math.floor(unit / across) * cell;
 				if (!bare) {
@@ -244,7 +255,7 @@ export function bakeCards(
 	const palette = paletteOf(record, manifest);
 	const cells: CardCell[] = prototypes.map((prototype, p) => {
 		const mesh = prototype.tiers[BAKE_TIER] as PrototypeArrays;
-		const planes = planesOf(mesh);
+		const planes = planesOf(mesh, planeCount(prototype));
 		return {
 			planes: planes.map((plane, k) => {
 				const cell = rects[p]?.[k] as [number, number, number, number];
