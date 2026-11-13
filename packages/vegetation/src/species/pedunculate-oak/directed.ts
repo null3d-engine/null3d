@@ -504,6 +504,19 @@ function acorn(extra: ExtraSpec): ExtraSpec {
 }
 
 /**
+ * The framed oak's own budgets, measured at seed 11 on 14 November 2026 and set a twentieth above
+ * the measure, under every class-wide cap: the variant's bytes at each tier, and the second card
+ * level's triangles at the finest tier. The fill's sockets stand closer than a branch end's width so
+ * the crown reads closed, which the review judged better than the old oak (round
+ * pedunculate-oak-0bc6547f1); that takes 11,725 rows where the old record's budget held 7,935.
+ * Measured: 11,287,017, 11,435,505, 11,631,759 and 11,877,447 bytes from low to ultra; the second
+ * card level 38,273 to 42,476 triangles. The first card level, 95,793 to 119,799, keeps the record's
+ * own budget.
+ */
+const VARIANT_BYTES = { low: 11_860_000, medium: 12_010_000, high: 12_220_000, ultra: 12_480_000 };
+const LEVEL_2_TRIANGLES = 44_600;
+
+/**
  * The pedunculate oak's record with the frame as its growth and the branch end of still 21 at each
  * socket. The shoot rows are the figures the scaffold build's oak states for the same branch ends;
  * a kit with no pieces draws them.
@@ -520,6 +533,14 @@ export const directed = {
 		turn: { roll: 90, tilt: 25 },
 	}),
 	base,
+	lod: {
+		...record.lod,
+		budget: {
+			...record.lod.budget,
+			variantBytes: VARIANT_BYTES,
+			lod2Triangles: LEVEL_2_TRIANGLES,
+		},
+	},
 	extras: record.extras?.map(acorn),
 	pieces: PIECES.filter((piece) => piece.name === 'branch-end'),
 };
