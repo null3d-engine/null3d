@@ -1549,12 +1549,30 @@ export function followStem(
 	return foot > box.bottom ? { kind: 'stem', foot, runs: followed } : { kind: 'none' };
 }
 
+/** The share of the outline's height, from its lowest row up, whose runs place the stem's column. */
+const FOOT_AXIS_BAND = 0.15;
+
 /**
- * Follows a stem from the horizon down to its foot, in the mask. The ground's fitted colour cannot
- * tell a dark foot from dark ground, so an outline can end at the horizon while the stem runs on to
- * its root collar, and every figure that is a share of the plant's height then counts from the wrong
- * base. Where the outline's lowest row stands at the horizon, the widest run of that row is the stem,
- * and `followStem` follows it down.
+ * The stem's column: the middle value of the centres of each row's run nearest the outline's middle,
+ * over the outline's lowest rows. A row at the horizon blends the sky with the ground and can hold a
+ * speck wider than the stem, and a low bough can sweep out beside it, so no one row decides.
+ */
+function stemColumn(mask: Uint8Array, width: number, box: Box): number {
+	const runs = axisRuns(mask, width, box, (box.left + box.right) / 2);
+	const band = Math.max(2, Math.round((box.bottom - box.top + 1) * FOOT_AXIS_BAND));
+	const centres: number[] = [];
+	for (let y = box.bottom; y > Math.max(box.top - 1, box.bottom - band); y--)
+		if ((runs[y * 2] as number) >= 0)
+			centres.push(((runs[y * 2] as number) + (runs[y * 2 + 1] as number)) / 2);
+	centres.sort((a, b) => a - b);
+	return centres[centres.length >> 1] ?? (box.left + box.right) / 2;
+}
+
+/**
+ * Follows a stem from the outline's lowest row down to its foot, in the mask. The ground's fitted
+ * colour cannot tell a dark foot from dark ground, so an outline can end at the horizon, or in the
+ * ground below it, while the stem runs on to its root collar, and every figure that is a share of the
+ * plant's height then counts from the wrong base. `followStem` follows the stem down from its column.
  *
  * @returns The row where the outline ended before the stem was followed, or undefined where no
  *   stem was followed.
@@ -1567,28 +1585,25 @@ function followStemFoot(
 	horizon: number,
 ): number | undefined {
 	const box = boxOf(mask, width, height);
-	// An outline that already runs on below the horizon, or ends above it, has its own foot.
-	if (!box || Math.abs(box.bottom - horizon) > Math.max(2, Math.round(height * 0.01)))
-		return undefined;
-	let left = -1;
-	let right = -1;
-	for (let x = 0, start = -1; x <= width; x++) {
-		const on = x < width && mask[box.bottom * width + x] !== 0;
-		if (on && start < 0) start = x;
-		if (!on && start >= 0) {
-			if (x - start > right - left + 1 || left < 0) {
-				left = start;
-				right = x - 1;
-			}
-			start = -1;
-		}
-	}
-	const stem = followStem(lab, width, height, mask, box, (left + right) / 2);
+	// An outline that ends above the horizon stands on its own foot.
+	if (!box || box.bottom < horizon - Math.max(2, Math.round(height * 0.01))) return undefined;
+	// The stem is followed from its own lowest row, which a speck in the ground beside it can stand
+	// below; the followed rows then join the stem and are not a loose piece under the speck.
+	const column = stemColumn(mask, width, box);
+	const runs = axisRuns(mask, width, box, column);
+	const holds = (y: number): boolean =>
+		(runs[y * 2] as number) >= 0 &&
+		(runs[y * 2] as number) <= column + 1 &&
+		(runs[y * 2 + 1] as number) >= column - 1;
+	let last = box.bottom;
+	while (last > box.top && !holds(last)) last--;
+	const stemBox = { ...box, bottom: last };
+	const stem = followStem(lab, width, height, mask, stemBox, column);
 	if (stem.kind !== 'stem') return undefined;
 	stem.runs.forEach(([from, to], k) => {
-		mask.fill(1, (box.bottom + 1 + k) * width + from, (box.bottom + 1 + k) * width + to + 1);
+		mask.fill(1, (last + 1 + k) * width + from, (last + 1 + k) * width + to + 1);
 	});
-	return box.bottom;
+	return last;
 }
 
 /** How far above the horizon, as a share of the frame's height, a background band may lie. */
