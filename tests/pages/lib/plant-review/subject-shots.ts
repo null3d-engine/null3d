@@ -1590,6 +1590,24 @@ export function crownUndersideShot(
 	};
 }
 
+/** The share of the trunk's height under which a crown's base stands on a trunk the crown clothes. */
+const CLOTHED_BASE_SHARE = 0.5;
+
+/**
+ * Whether a view from inside the crown stands beside the trunk: a tree whose great limbs leave its
+ * trunk, or a trunk its crown clothes from low down, as a column's fine branches do. A plant with no
+ * trunk, or a trunk whose crown stands only at its top, as a palm's, keeps its stalks at the crown's
+ * own centre, and its inside photograph is of that bundle.
+ */
+export function insideBesideTrunk(subjects: PlantSubjects): boolean {
+	if (isAbsent(subjects.trunk)) return false;
+	if (!isAbsent(subjects.limbs) && subjects.limbs.length > 0) return true;
+	const axis = subjects.trunk.axis;
+	const ground = subjects.trunk.base[1];
+	const top = (axis[axis.length - 1] as AxisSample).at[1] - ground;
+	return !isAbsent(subjects.crownBase) && subjects.crownBase < CLOTHED_BASE_SHARE * top;
+}
+
 /** How a view from inside the crown frames the wood it looks along. */
 export interface InsideOptions {
 	readonly turn: number;
@@ -1619,9 +1637,9 @@ const INSIDE_MOST_TRUNK = 0.5;
  */
 export function insideShot(subjects: PlantSubjects, lens: Lens, options: InsideOptions): Solved {
 	if (isAbsent(subjects.trunk)) return subjects.trunk;
-	if (isAbsent(subjects.limbs)) return subjects.limbs;
 	const trunk = subjects.trunk;
-	const limbs = subjects.limbs;
+	// A trunk clothed in fine branches has no great limb to set the camera's turn by.
+	const limbs = isAbsent(subjects.limbs) ? [] : subjects.limbs;
 	const ground = trunk.base[1];
 	const pitch = (options.pitch ?? 40) * DEG;
 	const share = options.share ?? 0.28;

@@ -74,6 +74,7 @@ import {
 	crownOutsideShot,
 	crownUndersideShot,
 	forkShot,
+	insideBesideTrunk,
 	insideShot,
 	junctionShot,
 	limbShot,
@@ -1135,11 +1136,11 @@ export default defineSketch(async (ctx) => {
 				break;
 			}
 			case 'inside': {
-				// A plant with no trunk, or with no limb leaving one, keeps its stalks at the crown's own
-				// centre, so its inside photograph is of the stalk bundle: the camera stands just outside
-				// it at the crown's height and looks at the bundle. A tree is framed beside its trunk.
-				const { trunk: stemSubject, limbs: limbSubjects } = subjectsOf();
-				if (isAbsent(stemSubject) || isAbsent(limbSubjects) || limbSubjects.length === 0) {
+				// A plant with no trunk, or a trunk whose crown stands only at its top, keeps its stalks at
+				// the crown's own centre, so its inside photograph is of the stalk bundle: the camera stands
+				// just outside it at the crown's height and looks at the bundle. A tree, or a trunk its
+				// crown clothes from low down, is framed beside its trunk.
+				if (!insideBesideTrunk(subjectsOf())) {
 					const middle = Math.max(0.05, 0.45 * main.crown.top);
 					plainSubjects.set(view, {
 						kind: 'the stalk bundle at the crown',
