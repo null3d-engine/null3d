@@ -59,6 +59,7 @@ import {
 	type Vec3,
 } from './core/types';
 import { lightCrown } from './crown/visibility';
+import type { CuttingPart } from './cutting';
 import {
 	type CuttingOptions,
 	clusterRow,
@@ -89,8 +90,11 @@ import {
 	woodParts,
 } from './grow/sparse';
 import { extrasMesh } from './leaf/extras';
+import { writtenPieces } from './leaf/ground-piece';
 import { dressShoots, pruneLight } from './leaf/instancer';
 import { foliage, loadFoliage } from './leaf/kinds';
+import { type PiecePrototype, type PieceRule, piecePrototypes } from './leaf/piece';
+import { carriesPieces, kitPiece, PROTOTYPES_MOST, writesPieces } from './leaf/piece-rows';
 import { inLeaf } from './leaf/season';
 import { shootPrototypes } from './leaf/shoot';
 import {
@@ -155,9 +159,10 @@ export interface KitOptions {
 	/**
 	 * Build a cutting kit: the classes its cut pieces draw and no card levels or crown classes. A
 	 * cut piece is drawn only at the nearest level, so its kit never pays for the cards or for the
-	 * classes the crown alone uses.
+	 * classes the crown alone uses. The part names the piece the kit is built for, so a hint's own
+	 * shoot density applies to it; a bare `true` takes the species' own.
 	 */
-	readonly cutting?: boolean;
+	readonly cutting?: boolean | CuttingPart;
 }
 
 /**
@@ -223,12 +228,38 @@ function scaledCurve(curve: Curve, factor: number): Curve {
 }
 
 /**
+ * Builds a species' branch pieces on this thread, each variant at every detail tier, from the
+ * species' own leaf meshes. Call `loadPlantCode` first.
+ *
+ * @param source The species' record and texture manifest, such as its module.
+ * @param rules The species' piece rules.
+ * @param bare Whether the pieces carry no leaves, as a deciduous plant's do in winter: the wood and
+ * the bud at each stem's end.
+ * @returns The pieces, each rule's variants together, in the rules' order.
+ */
+export function buildPiecesNow(
+	source: KitSource,
+	rules: readonly PieceRule[],
+	bare = false,
+): PiecePrototype[] {
+	const builder = foliage(source.record.foliage.kind);
+	const manifest = source.textures.manifest;
+	return piecePrototypes(
+		source.record,
+		rules,
+		DETAILS.map((tier) => (bare ? [] : builder.leaves(source.record, manifest, tier))),
+	);
+}
+
+/**
  * The record a cutting kit grows by: the species' own, with the shoots a close piece carries over
  * the crown's. A piece is drawn at the nearest level alone, so its kit pays for no cards, and a
  * covering denser than the crown can afford costs the piece's own kit rather than the crown's.
  */
-function cuttingRecord(record: Species): Species {
-	const share = record.cuttings?.density;
+function cuttingRecord(record: Species, part?: CuttingPart): Species {
+	const hints = record.cuttings;
+	const hinted = part !== undefined && part !== 'leaf' ? hints?.[part]?.density : undefined;
+	const share = hinted ?? hints?.density;
 	const shoots = record.shoots;
 	if (share === undefined || !shoots) return record;
 	const factor = Math.min(8, Math.max(0.25, share));
@@ -325,10 +356,10 @@ export function kitKey(
 	record: Species,
 	manifest: TextureManifest,
 	detail: Detail,
-	cutting = false,
+	cutting: boolean | CuttingPart = false,
 ): string {
 	return hashText(
-		`${GENERATOR_VERSION}|${JSON.stringify(record)}|${JSON.stringify(manifest)}|${detail}${cutting ? ':cutting' : ''}`,
+		`${GENERATOR_VERSION}|${JSON.stringify(record)}|${JSON.stringify(manifest)}|${detail}${cutting ? `:cutting${typeof cutting === 'string' ? `:${cutting}` : ''}` : ''}`,
 	);
 }
 
@@ -375,8 +406,10 @@ export function buildKitNow(source: KitSource, options: KitOptions = {}): Specie
 	const manifest = source.textures.manifest;
 	const detail = options.detail ?? 'high';
 	const placeholders = options.placeholders ?? false;
-	const cutting = options.cutting === true;
-	const record = cutting ? cuttingRecord(base) : base;
+	const cutting = options.cutting ?? false;
+	const record = cutting
+		? cuttingRecord(base, typeof cutting === 'string' ? cutting : undefined)
+		: base;
 	const box = speciesBox(record);
 	const builder = foliage(record.foliage.kind);
 	const leavesByTier = DETAILS.map((tier) =>
@@ -392,12 +425,29 @@ export function buildKitNow(source: KitSource, options: KitOptions = {}): Specie
 		color: new Uint8Array(0),
 		surface: new Uint8Array(0),
 	};
-	if (record.shoots) {
-		const uncarded = stage(
-			placeholders,
-			() => shootPrototypes(record, manifest, leavesByTier, cutting),
-			() => placeholderPrototypes(record, leavesByTier),
-		);
+	// A species whose grower writes its own pieces builds them where a tree builds its shoots, in a
+	// cutting's kit too; a stand-in's holds none. A plant that carries branch pieces at its sockets
+	// keeps those in the kit, each part a prototype of its own; any other keeps its shoot prototypes.
+	const written =
+		writesPieces(record) && placeholders !== true
+			? grower(record.growth.model).pieces?.(record, manifest)
+			: undefined;
+	if (record.shoots || written) {
+		const pieces = !cutting && carriesPieces(record) ? record.pieces : undefined;
+		const uncarded = written
+			? writtenPieces(written).map(kitPiece)
+			: stage(
+					placeholders,
+					() =>
+						pieces
+							? piecePrototypes(record, pieces, leavesByTier).map(kitPiece)
+							: shootPrototypes(record, manifest, leavesByTier, cutting !== false),
+					() => placeholderPrototypes(record, leavesByTier),
+				);
+		if (uncarded.length > PROTOTYPES_MOST)
+			throw new Error(
+				`@null3d/vegetation: '${record.id}' builds ${uncarded.length} prototypes; a kit holds ${PROTOTYPES_MOST} at most`,
+			);
 		// A cutting kit holds no card levels: its pieces are drawn at the nearest level alone.
 		const baked = cutting
 			? { atlas: cards, cells: uncarded.map(() => ({ planes: [] })) }
@@ -469,21 +519,37 @@ function partOf(
  * always did.
  */
 function cuttingLeaves(record: Species, cutting: CuttingOptions | undefined): Species {
+	if (!cutting || record.shoots) return record;
 	const growth = record.growth;
-	if (!cutting || record.shoots || growth.model !== 'rosette') return record;
 	const leaves = record.cuttings?.leaves;
-	const hint = record.cuttings?.[cutting.part as 'branch' | 'subbranch'];
+	const hint = record.cuttings?.[cutting.part];
 	const scale = hint && 'order' in hint ? hint.scale : undefined;
-	const leaf = record.foliage.kind === 'thick' ? record.foliage.leaf : undefined;
 	let out = record;
+	// A crown-rosette's piece keeps the fronds it was cut from and takes leaflets of its own size:
+	// the pinna length curve is the share of the frond's length each leaflet stands, so the share is
+	// scaled and the places, and with them the count, are left as they stand.
+	if (scale !== undefined && growth.model === 'crown-rosette' && 'frond' in growth) {
+		const frond = growth.frond;
+		const pinnae = frond.pinnae;
+		if (pinnae !== undefined)
+			out = {
+				...record,
+				growth: {
+					...growth,
+					frond: { ...frond, pinnae: { ...pinnae, length: scaledCurve(pinnae.length, scale) } },
+				},
+			};
+	}
+	const leaf =
+		growth.model === 'rosette' && record.foliage.kind === 'thick' ? record.foliage.leaf : undefined;
 	if (scale !== undefined && leaf) {
 		const sized: Spread =
 			typeof leaf.length === 'number'
 				? leaf.length * scale
 				: { mean: leaf.length.mean * scale, spread: leaf.length.spread * scale };
-		out = { ...record, foliage: { kind: 'thick', leaf: { ...leaf, length: sized } } };
+		out = { ...out, foliage: { kind: 'thick', leaf: { ...leaf, length: sized } } };
 	}
-	if (leaves === undefined) return out;
+	if (leaves === undefined || growth.model !== 'rosette') return out;
 	return { ...out, growth: { ...growth, leaves } };
 }
 
@@ -676,6 +742,7 @@ function growFull(kit: SpeciesKitData, options: GrowOptions): GrownPlant {
 		// The coarseness dial changes how smoothly the wood is meshed, never what the plant grows.
 		skeleton: cutSkeleton(kit, calibrated, options.cutting),
 		coarseness,
+		cutting: options.cutting,
 		sections: options.sections,
 		cards: options.cards,
 		cardJoin: options.cardJoin,
@@ -686,7 +753,12 @@ function growFull(kit: SpeciesKitData, options: GrowOptions): GrownPlant {
 		record.lod.nearFoliage === 'instanced' && kit.prototypes.length > 0
 			? stage(
 					placeholders,
-					() => dressShoots(dressInput),
+					// A record with shoots dresses its buds, and a plant of pieces stands one at each
+					// socket.
+					() =>
+						record.shoots || carriesPieces(record)
+							? dressShoots(dressInput)
+							: { rows: emptyRows(), skeleton: dressInput.skeleton },
 					() => ({ rows: placeholderRows(dressInput), skeleton: dressInput.skeleton }),
 				)
 			: { rows: emptyRows(), skeleton: dressInput.skeleton };
@@ -860,6 +932,9 @@ function mergedTop(input: MeshInput, level: MeshLevel): number {
 /** Whether a cutting is cut from the grown skeleton rather than built from the kit alone. */
 function cutsSkeleton(kit: SpeciesKitData, cutting: CuttingOptions | undefined): boolean {
 	if (!cutting || cutting.part === 'leaf') return false;
+	// A plant of pieces at sockets has no shoot to stand alone: its cluster is a shoot of its frame
+	// with the pieces that stand on it.
+	if (!kit.record.shoots) return true;
 	return !cutsShoot(kit.record, cutting.part) || kit.prototypes.length === 0;
 }
 
@@ -1050,14 +1125,21 @@ function levelParts(mesh: MeshInput, level: MeshLevel): PlantPart[] {
 			() => placeholderFoliage(mesh, level),
 		);
 		parts.push(...partOf(kit, 'foliage', merged, TEXTURE_UV_STEPS));
-	} else if (level > 0) {
-		const cardLevel = level as 1 | 2;
-		const cards = stage(
-			placeholders,
-			() => cardMesh(mesh, cardLevel),
-			() => placeholderCardMesh(mesh, cardLevel),
-		);
-		parts.push(...partOf(kit, 'cards', cards, TEXTURE_UV_STEPS));
+	} else {
+		if (level > 0) {
+			const cardLevel = level as 1 | 2;
+			const cards = stage(
+				placeholders,
+				() => cardMesh(mesh, cardLevel),
+				() => placeholderCardMesh(mesh, cardLevel),
+			);
+			parts.push(...partOf(kit, 'cards', cards, TEXTURE_UV_STEPS));
+		}
+		// A plant whose pieces stand at sockets may draw a part of its own beside them, such as
+		// what lies in the soil under a stool.
+		const own =
+			!record.shoots && placeholders !== true ? grower(record.growth.model).foliage : undefined;
+		if (own) parts.push(...partOf(kit, 'foliage', own(mesh, level), TEXTURE_UV_STEPS));
 	}
 	const extras = stage(
 		placeholders,
