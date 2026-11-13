@@ -243,8 +243,9 @@ interface ArmPlan {
 /**
  * The arms' plans. The arms are dealt among the tiers in turn. Round the stem they stand at even
  * places through the full circle, so neighbours belong to different tiers and each tier's arms
- * balance each other. A variant the record stands in one plane has a tier's worth to one side and
- * the next to the other.
+ * balance each other. A variant the record stands in one plane is the photographed plant: it has a
+ * tier's worth to one side and the next to the other, and its arms take their tiers' mean figures,
+ * so each tier's pair balances across the plane as the photograph's does.
  */
 function armPlans(input: GrowInput, growth: Column, height: number): ArmPlan[] {
 	const arms = growth.arms;
@@ -264,21 +265,23 @@ function armPlans(input: GrowInput, growth: Column, height: number): ArmPlan[] {
 			: turn +
 				(2 * PI * k) / count +
 				(draw(input, Purpose.ArmAzimuth, k + 1) * 2 - 1) * HEADING_STRAY;
+		const figure = (purpose: number): number => (planar ? 0.5 : draw(input, purpose, k));
 		plans.push({
 			tier,
-			height: height * spreadAt(tier.at, draw(input, Purpose.ArmHeight, k)),
+			height: height * spreadAt(tier.at, figure(Purpose.ArmHeight)),
 			heading,
-			reach: spreadAt(tier.reach, draw(input, Purpose.ArmReach, k)),
-			top: height * spreadAt(tier.top, draw(input, Purpose.ArmTop, k)),
+			reach: spreadAt(tier.reach, figure(Purpose.ArmReach)),
+			top: height * spreadAt(tier.top, figure(Purpose.ArmTop)),
 		});
 	}
 	return plans;
 }
 
 /**
- * An arm's centre line from its first ring to the foot of its rounded tip: out at the record's
- * leaving angle, through one arc to plumb, then straight up. The arc takes the record's radius
- * where the arm's reach leaves room for it and is tighter where it does not.
+ * An arm's centre line from its first ring to the foot of its rounded tip: out at its leaving
+ * angle, through one arc of the record's radius to plumb, then straight up. An arm whose reach
+ * leaves no room to turn from the record's angle on that radius leaves rising instead, at the angle
+ * that turns it plumb on the radius within its reach, as a saguaro's arm climbs out of its joint.
  */
 function armArch(
 	growth: Column,
@@ -287,17 +290,11 @@ function armArch(
 	baseY: number,
 ): { readonly arch: Arch; readonly bendEnd: number; readonly domeHeight: number } {
 	const [radius, tipRadius] = plan.tier.radius;
-	const least = LEAST_ELBOW * 2 * radius;
-	let leave = radians(growth.arms.leave);
-	let across = 1 - sin(leave);
-	// An arm close beside the stem has no room to turn from the record's angle on an elbow of its
-	// own width, so it leaves rising, at the angle that turns it on that elbow within its reach.
-	if (room < least * across) {
-		leave = asin(Math.min(1, Math.max(-1, 1 - room / least)));
-		across = 1 - sin(leave);
-	}
-	const elbow = Math.max(least, Math.min(growth.arms.elbow * 2 * radius, room / across));
-	const run = Math.max(0, room - elbow * across) / cos(leave);
+	const elbow = Math.max(LEAST_ELBOW, growth.arms.elbow) * 2 * radius;
+	const level = radians(growth.arms.leave);
+	const fits = room >= elbow * (1 - sin(level));
+	const leave = fits ? level : asin(Math.min(1, Math.max(-1, 1 - room / elbow)));
+	const run = fits ? (room - elbow * (1 - sin(leave))) / cos(leave) : 0;
 	const bend = elbow * (PI / 2 - leave);
 	const domeHeight = growth.dome * tipRadius;
 	const rise = Math.max(
@@ -482,7 +479,8 @@ export function growColumn(input: GrowInput): MacroSkeleton {
 		ribs: ribPlan(growth, input.seed, salt, input.variant, stemAxis, false),
 	};
 	placeFlowerRing(builder, stem, frame);
-	// Arms leave the stem, each on an axis of its own from the node nearest its height.
+	// Arms leave the stem, each on an axis of its own that hangs from the node nearest its height
+	// and starts at the height itself, on the stem's line.
 	const up: Vector3 = [0, 1, 0];
 	for (const plan of armPlans(input, growth, height)) {
 		let fromNode = 0;
@@ -493,16 +491,21 @@ export function growColumn(input: GrowInput): MacroSkeleton {
 			)
 				fromNode = n;
 		const joint = trunk[fromNode] as Laid;
+		const base: Vector3 = [
+			(trunkDir[0] * plan.height) / trunkDir[1],
+			plan.height,
+			(trunkDir[2] * plan.height) / trunkDir[1],
+		];
 		const heading: Vector3 = [cos(plan.heading), 0, sin(plan.heading)];
 		const [radius, tipRadius] = plan.tier.radius;
 		// The arm's first ring stands clear of the stem's skin by most of its own radius, so the
 		// weld meets a ring that stands outside the parent.
-		const start = joint.radius + radius * ARM_START;
+		const start = radiusAt(plan.height) + radius * ARM_START;
 		const { arch, bendEnd, domeHeight } = armArch(
 			growth,
 			plan,
 			Math.max(0, plan.reach - start),
-			joint.at[1],
+			plan.height,
 		);
 		const path = archPath(arch, 0);
 		const armAxis = builder.addAxis({
@@ -539,9 +542,9 @@ export function growColumn(input: GrowInput): MacroSkeleton {
 				(path.up[segment] as number) +
 				t * ((path.up[segment + 1] as number) - (path.up[segment] as number));
 			const at: Vector3 = [
-				joint.at[0] + heading[0] * (start + out),
-				joint.at[1] + rise,
-				joint.at[2] + heading[2] * (start + out),
+				base[0] + heading[0] * (start + out),
+				base[1] + rise,
+				base[2] + heading[2] * (start + out),
 			];
 			const r = radiusOf(share * arch.length);
 			previous = builder.addNode({
@@ -557,7 +560,7 @@ export function growColumn(input: GrowInput): MacroSkeleton {
 		}
 		const shaftCount = arm.length;
 		layDome(builder, armAxis, arm, up, tipRadius, domeHeight);
-		const armPath = pathOf(arm, joint.at, trunkDir);
+		const armPath = pathOf(arm, base, trunkDir);
 		const run: Run = {
 			axis: armAxis,
 			points: arm,
