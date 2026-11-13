@@ -179,27 +179,30 @@ export const directed: Species = {
 	bark: {
 		...(record.bark as BarkSpec),
 		// Still 01 and the turning video: grey plates to 0.35 of the height, orange flakes above
-		// 0.40, and both between. Above the bole only the upper stem and the limbs are orange: still
-		// 01's limbs and still 08's fork. The fact sheet and still 09: the smaller wood is grey-brown,
-		// the branch and its side twigs alike, linear 0.21 to 0.24, 0.14 to 0.16 and 0.086 to 0.102.
-		// Wood thicker than 3.5 cm in radius takes the orange, and thinner wood the grey plates
-		// tinted to still 09's mean.
+		// 0.40, and both between. Above the bole only the upper stem and the great limbs are orange:
+		// the drawn orange stood 0.077 of the crown's box against still 02's 0.037. The fact sheet
+		// and still 09: the smaller wood is grey-brown, the branch and its side twigs alike, linear
+		// 0.21 to 0.24, 0.14 to 0.16 and 0.086 to 0.102. Wood thicker than 8 cm in radius takes
+		// the orange, and thinner wood the grey plates tinted to still 09's mean. Still 02's upper
+		// trunk, orange pixels alone: linear 0.515, 0.242 and 0.091 against the drawing's 0.530,
+		// 0.166 and 0.074, so the orange takes that tint.
 		zones: [
 			{ layer: 0, by: 'height', from: 0, to: 7.5, blend: 1 },
 			{
 				layer: 1,
 				by: 'radius',
-				from: 0.035,
+				from: 0.08,
 				to: 2,
-				blend: 0.015,
+				blend: 0.02,
+				tint: [0.97, 1.46, 1.23],
 				second: { from: 7.5, to: 30, blend: 1 },
 			},
 			{
 				layer: 0,
 				by: 'radius',
 				from: 0,
-				to: 0.035,
-				blend: 0.015,
+				to: 0.08,
+				blend: 0.02,
 				tint: [1.28, 1.13, 0.79],
 				second: { from: 7.5, to: 30, blend: 1 },
 			},
