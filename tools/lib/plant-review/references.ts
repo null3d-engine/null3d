@@ -118,6 +118,14 @@ const SKIN_CLOSE: SlotRule = {
 	note: 'a cactus skin close-up: judged on the waxy ribbed skin at close range',
 };
 
+/**
+ * Whether a picture's name is a cactus's skin close-up: its ribs, areoles or spines. A leaf's ribs
+ * and veins, such as a hosta's ribbed blade, are the leaf's own surface.
+ */
+function cactusSkin(name: string): boolean {
+	return /rib|areole|spine/.test(name) && !/leaf/.test(name);
+}
+
 /** A woodpecker's nest holes in an old cactus trunk: the same skin, framed wider. */
 const NEST_HOLES: SlotRule = {
 	view: 'bark-mid',
@@ -163,12 +171,9 @@ const SLOT_RULES: readonly { readonly test: (name: string) => boolean; readonly 
 			test: (n) => /spine-cluster|single-areole/.test(n),
 			slot: { view: 'leaf-upper', framed: false },
 		},
-		// Its ribs and areole rows are the skin's own close view: the species has no leaf or twig for
-		// the leaf and twig views to cut, and its body is one ribbed surface.
-		{ test: (n) => /rib|areoles/.test(n), slot: SKIN_CLOSE },
 		// A cactus's ribs, areoles and spine clusters are the skin's own close view: the species has no
 		// leaf or twig for the leaf and twig views to cut, and its body is one ribbed surface.
-		{ test: (n) => /rib|areole|spine/.test(n), slot: SKIN_CLOSE },
+		{ test: cactusSkin, slot: SKIN_CLOSE },
 		{ test: (n) => /\bnest|\bholes?\b/.test(n), slot: NEST_HOLES },
 		// A cactus's arms are its limbs: the whole arm, its underside and its elbow are limb views,
 		// and the crownless plant has no fork for the fork view to find.
@@ -514,7 +519,7 @@ function formOf(name: string, forms: readonly string[]): string | undefined {
 /** The texture rule of a texture source that its number does not name. */
 function textureRule(number: number, name: string): SlotRule {
 	// A cactus's texture sources hold its spine clusters, not leaves: its surface is the ribbed stem.
-	if (/rib|areole|spine/.test(name)) return SKIN_CLOSE;
+	if (cactusSkin(name)) return SKIN_CLOSE;
 	const known = TEXTURE_BY_NUMBER[number];
 	if (known) return known;
 	if (/leaf|needle|frond|blade/.test(name))
@@ -1369,6 +1374,12 @@ export function plantMask(image: Rgba, workWidth = WORK_WIDTH): PlantMask {
 			mask[at] = d > (below ? groundLimit : skyLimit) ? 1 : 0;
 		}
 	clearSideBands(mask, lab, width, height, horizon);
+	if (
+		background.ground &&
+		(plantGroundDistance(mask, lab, background.ground, horizon, height) ?? 0) >=
+			LIFTED_GROUND_DISTINCT
+	)
+		clearLiftedGround(mask, lab, width, height, horizon, background, skyLimit, groundLimit);
 	if (background.ground) keepHangingParts(mask, lab, width, height, horizon, background.ground);
 	else
 		keepHangingParts(
@@ -1390,21 +1401,9 @@ export function plantMask(image: Rgba, workWidth = WORK_WIDTH): PlantMask {
 		for (let at = 0; at < mask.length; at++) kept += mask[at] as number;
 		if (kept / (width * height) < MIN_FITTED_PLANT_SHARE) mask.fill(0);
 	}
-	let plantToGround: number | undefined;
-	if (background.ground) {
-		const groundAt = surfaceAt(background.ground, 0.5, (horizon / height + 1) / 2);
-		const channels: number[][] = [[], [], []];
-		for (let at = 0; at < width * height; at++)
-			if (mask[at])
-				for (let c = 0; c < 3; c++) (channels[c] as number[]).push(lab[at * 3 + c] as number);
-		if ((channels[0] as number[]).length > 0) {
-			const median = channels.map((values) => {
-				values.sort((a, b) => a - b);
-				return values[values.length >> 1] ?? 0;
-			});
-			plantToGround = Number(deltaE2000(median, groundAt).toFixed(2));
-		}
-	}
+	const plantToGround = background.ground
+		? plantGroundDistance(mask, lab, background.ground, horizon, height)
+		: undefined;
 	return {
 		width,
 		height,
@@ -1413,6 +1412,82 @@ export function plantMask(image: Rgba, workWidth = WORK_WIDTH): PlantMask {
 		...(plantToGround !== undefined ? { plantToGround } : {}),
 		...(footFollowedFrom !== undefined ? { footFollowedFrom } : {}),
 	};
+}
+
+/**
+ * The CIEDE2000 distance between the median colour of a mask's plant and the ground at the middle
+ * of the ground's band, or undefined where the mask holds no plant.
+ */
+function plantGroundDistance(
+	mask: Uint8Array,
+	lab: Float32Array,
+	ground: ColourSurface,
+	horizon: number,
+	height: number,
+): number | undefined {
+	const channels: number[][] = [[], [], []];
+	for (let at = 0; at < mask.length; at++)
+		if (mask[at])
+			for (let c = 0; c < 3; c++) (channels[c] as number[]).push(lab[at * 3 + c] as number);
+	if ((channels[0] as number[]).length === 0) return undefined;
+	const median = channels.map((values) => {
+		values.sort((a, b) => a - b);
+		return values[values.length >> 1] ?? 0;
+	});
+	return Number(deltaE2000(median, surfaceAt(ground, 0.5, (horizon / height + 1) / 2)).toFixed(2));
+}
+
+/**
+ * The least CIEDE2000 distance between a plant's colour and its ground's for the ground's lifted
+ * edge to be cleared: a plant that far from the ground's colour is not taken for it, where a bark
+ * of the litter's own colour would lose the sides of its flaring foot.
+ */
+const LIFTED_GROUND_DISTINCT = 20;
+
+/**
+ * How far above the horizon's row, as a share of the frame's height, a ground's own top edge may
+ * stand: a ploughed field's clods or a field's slope lift its edge a few rows above the one straight
+ * row the horizon is found at.
+ */
+const GROUND_LIFT = 0.03;
+
+/**
+ * Clears the ground's top edge where it stands above the horizon's row. Up each column from the
+ * horizon runs the edge: pixels that the ground's surface holds, that read as the ground in shade,
+ * such as the plant's own shadow along the edge, or that lie near a blend of the ground with the
+ * sky. The run is the ground's only where the sky stands on it within a few rows. A run that meets
+ * the plant, or climbs on past those rows, as a pale trunk or a skirt of dark leaves does, is the
+ * plant's own foot and stays.
+ */
+function clearLiftedGround(
+	mask: Uint8Array,
+	lab: Float32Array,
+	width: number,
+	height: number,
+	horizon: number,
+	background: Background,
+	skyLimit: number,
+	groundLimit: number,
+): void {
+	const ground = background.ground;
+	if (!ground) return;
+	const highest = Math.max(0, horizon - Math.max(1, Math.round(height * GROUND_LIFT)));
+	for (let x = 0; x < width; x++)
+		for (let y = horizon - 1; y >= highest; y--) {
+			const at = y * width + x;
+			const pixel = [lab[at * 3] as number, lab[at * 3 + 1] as number, lab[at * 3 + 2] as number];
+			const sky = surfaceAt(background.sky, x / width, y / height);
+			if (deltaE76(sky, pixel) <= skyLimit) {
+				for (let r = y + 1; r < horizon; r++) mask[r * width + x] = 0;
+				break;
+			}
+			const own = surfaceAt(ground, x / width, y / height);
+			const edge =
+				deltaE76(own, pixel) <= groundLimit ||
+				shadowLike(pixel, own) ||
+				distanceToSegment(pixel, sky, own) <= groundLimit;
+			if (!edge) break;
+		}
 }
 
 /** The least CIELAB lightness of a ground on which a foot can be told from it. */

@@ -69,12 +69,9 @@ export function sliceOf(all: readonly Walked[], index: number, count: number): r
 const NEAR_OVER: Readonly<Record<string, number>> = {
 	bamboo: 2_522_635,
 	'common-alder': 24_439_959,
-	'common-ash': 11_589_298,
 	'european-beech': 15_687_335,
 	'giant-sequoia': 53_398_951,
 	'hawthorn-shrub': 22_401_474,
-	'holm-oak': 3_264_901,
-	'italian-cypress': 105_831_631,
 	olive: 30_065_894,
 	'pedunculate-oak': 43_550_406,
 	'silver-birch': 81_019_038,
@@ -90,6 +87,19 @@ function growsWithinBudget(kit: SpeciesKitData): void {
 	expect(plantAssetDigest(growPlantNow(kit, options))).toBe(plantAssetDigest(asset));
 	const record = kit.record;
 	const budget = record.lod.budget;
+	// The plant's own figure counts its meshes and every piece placed at a socket at the kit's tier:
+	// each shoot row draws its prototype at the nearest level, and a card level draws its meshes.
+	const tier = DETAILS.indexOf(kit.detail);
+	let pieces = 0;
+	if (record.lod.nearFoliage === 'instanced')
+		for (let r = 0; r < asset.shoots.count; r++)
+			pieces +=
+				(kit.prototypes[asset.shoots.prototype[r] as number]?.tiers[tier]?.indices.length ?? 0) / 3;
+	expect(asset.stats.triangles).toEqual([
+		asset.levels[0].triangles + pieces,
+		asset.levels[1].triangles,
+		asset.levels[2].triangles,
+	]);
 	expect(kitBytesOf(kit)).toBeLessThanOrEqual(budget.kitBytes[kit.detail]);
 	expect(variantBytesOf(asset)).toBeLessThanOrEqual(budget.variantBytes[kit.detail]);
 	expect(asset.levels[1].triangles).toBeLessThanOrEqual(budget.lod1Triangles);

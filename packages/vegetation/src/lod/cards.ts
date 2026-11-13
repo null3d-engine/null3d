@@ -27,11 +27,16 @@ export const CARD_CORNERS = [
 /** The second coordinate that marks a card's stalk, in a place that the three card planes leave free. */
 const STALK_PLANE = 0.75;
 
-/** Metres from a card to a branch its level draws within which the card joins the plant. */
-const SEED_REACH = 2.5;
+/**
+ * Metres from a card's foot to a branch its level draws within which the card joins the plant, at
+ * the first card level and at the second. The first stands near the eye, where a gap of half a
+ * metre between a card and its wood shows, so a card joins only where its foot stands on drawn wood;
+ * at the second, past a hundred metres, a few metres span a few pixels.
+ */
+const SEED_REACH = [0.4, 2.5] as const;
 
-/** Metres between two cards within which their leaves meet, so one joins the other's clump. */
-const CARD_REACH = 2;
+/** Metres between two cards' feet within which one joins the other's clump, at each card level. */
+const CARD_REACH = [0.4, 2] as const;
 
 /** Texels of the card atlas with at least this coverage are the picture; the rest is clear. */
 const OPAQUE = 128;
@@ -237,9 +242,8 @@ function rowEdge(
 	const py = (rows.position[r * 3 + 1] as number) + shiftY;
 	const pz = (rows.position[r * 3 + 2] as number) + shiftZ;
 	let count = 0;
-	const cardPlanes = prototype.card.planes;
-	for (let k = 0; k < Math.min(planes, cardPlanes.length); k++) {
-		const plane = cardPlanes[k] as (typeof cardPlanes)[number];
+	for (const plane of prototype.card.planes) {
+		if (plane.role >= planes) continue;
 		const edge = picturedOf(kit, plane.front).edge;
 		const need = (count + edge.length / 2) * 3;
 		if (need > edgePoints.length) {
@@ -402,9 +406,8 @@ function surelyInside(
 	const pz = (rows.position[r * 3 + 2] as number) + shiftZ;
 	const tall = (hull.high - hull.low) * HULL_SLACK;
 	const span = Math.max(1e-9, hull.high - hull.low);
-	const cardPlanes = prototype.card.planes;
-	for (let k = 0; k < Math.min(planes, cardPlanes.length); k++) {
-		const plane = cardPlanes[k] as (typeof cardPlanes)[number];
+	for (const plane of prototype.card.planes) {
+		if (plane.role >= planes) continue;
 		turned(rows, r, plane.centre, scale, MIDDLE);
 		turned(rows, r, plane.right, scale, RIGHT);
 		turned(rows, r, plane.up, scale, UP);
@@ -648,23 +651,23 @@ export function cardRows(
 }
 
 /**
- * The area of the picture on a row's cards as a camera sees it: that of the plane that pictures
- * the most, since the crossed planes show one shoot from each side.
+ * The area of the picture on a row's cards as a camera sees it: that of the role whose planes
+ * picture the most, since the crossed planes show one shoot from each side. A piece cut along its
+ * line pictures it in several planes of each role, which together show the whole piece.
  */
 function rowCover(kit: SpeciesKitData, rows: ShootRows, r: number): number {
 	const prototype = kit.prototypes[rows.prototype[r] as number];
 	if (!prototype) return 0;
-	let most = 0;
-	for (const plane of prototype.card.planes) {
-		const area =
+	const byRole = [0, 0, 0];
+	for (const plane of prototype.card.planes)
+		byRole[plane.role] =
+			(byRole[plane.role] as number) +
 			4 *
-			length3(plane.right[0], plane.right[1], plane.right[2]) *
-			length3(plane.up[0], plane.up[1], plane.up[2]) *
-			picturedOf(kit, plane.front).share;
-		if (area > most) most = area;
-	}
+				length3(plane.right[0], plane.right[1], plane.right[2]) *
+				length3(plane.up[0], plane.up[1], plane.up[2]) *
+				picturedOf(kit, plane.front).share;
 	const scale = rows.scale[r] as number;
-	return most * scale * scale;
+	return Math.max(...byRole) * scale * scale;
 }
 
 /**
@@ -730,18 +733,20 @@ function keptRows(input: MeshInput, level: 1 | 2): number[] {
  * @param input The dressed variant.
  * @param kept The card rows a level keeps.
  * @param drawn Whether the level draws an axis.
+ * @param level The card level, which sets how near a card's foot must stand to join.
  * @returns One flag per row of the variant, 1 for a joined card.
  */
 function joinedCards(
 	input: MeshInput,
 	kept: readonly number[],
 	drawn: (axis: number) => boolean,
+	level: 1 | 2,
 ): Uint8Array {
 	const { skeleton, rows } = input;
 	const { position, axisOf, nodeCount } = skeleton;
 	const joined = new Uint8Array(rows.count);
 	const queue: number[] = [];
-	const seedReach = SEED_REACH * SEED_REACH;
+	const seedReach = (SEED_REACH[level - 1] as number) ** 2;
 	for (const r of kept) {
 		const x = rows.position[r * 3] as number;
 		const y = rows.position[r * 3 + 1] as number;
@@ -760,7 +765,7 @@ function joinedCards(
 			queue.push(r);
 		}
 	}
-	const cardReach = CARD_REACH * CARD_REACH;
+	const cardReach = (CARD_REACH[level - 1] as number) ** 2;
 	while (queue.length > 0) {
 		const r = queue.pop() as number;
 		const x = rows.position[r * 3] as number;
@@ -780,42 +785,136 @@ function joinedCards(
 	return joined;
 }
 
-/**
- * The branches some card rows stand on: for each row, the axis of its node, or of the nearest node
- * where the rows name none, and every axis above it.
- */
-function branchesUnder(input: MeshInput, cards: readonly number[]): Uint8Array {
+/** The axis a card row stands on: the axis of its node, or of the nearest node where the rows name none. */
+function rowAxis(input: MeshInput, r: number): number {
 	const { skeleton, rows } = input;
-	const { position, axisOf, nodeCount, axes } = skeleton;
-	const out = new Uint8Array(axes.count);
-	for (const r of cards) {
-		let axis = -1;
-		if (rows.node) axis = axisOf[rows.node[r] as number] as number;
-		else {
-			const x = rows.position[r * 3] as number;
-			const y = rows.position[r * 3 + 1] as number;
-			const z = rows.position[r * 3 + 2] as number;
-			let best = Number.POSITIVE_INFINITY;
-			for (let n = 0; n < nodeCount; n++) {
-				const dx = (position[n * 3] as number) - x;
-				const dy = (position[n * 3 + 1] as number) - y;
-				const dz = (position[n * 3 + 2] as number) - z;
-				const d = dx * dx + dy * dy + dz * dz;
-				if (d < best) {
-					best = d;
-					axis = axisOf[n] as number;
-				}
-			}
+	const { position, axisOf, nodeCount } = skeleton;
+	if (rows.node) return axisOf[rows.node[r] as number] as number;
+	const x = rows.position[r * 3] as number;
+	const y = rows.position[r * 3 + 1] as number;
+	const z = rows.position[r * 3 + 2] as number;
+	let best = Number.POSITIVE_INFINITY;
+	let axis = -1;
+	for (let n = 0; n < nodeCount; n++) {
+		const dx = (position[n * 3] as number) - x;
+		const dy = (position[n * 3 + 1] as number) - y;
+		const dz = (position[n * 3 + 2] as number) - z;
+		const d = dx * dx + dy * dy + dz * dz;
+		if (d < best) {
+			best = d;
+			axis = axisOf[n] as number;
 		}
-		for (let a = axis; a >= 0 && out[a] !== 1; a = axes.parent[a] as number) out[a] = 1;
+	}
+	return axis;
+}
+
+/** The branches some card rows stand on: for each row, the axis it stands on and every axis above it. */
+function branchesUnder(input: MeshInput, cards: readonly number[]): Uint8Array {
+	const { axes } = input.skeleton;
+	const out = new Uint8Array(axes.count);
+	for (const r of cards)
+		for (let a = rowAxis(input, r); a >= 0 && out[a] !== 1; a = axes.parent[a] as number)
+			out[a] = 1;
+	return out;
+}
+
+/**
+ * The branches a level draws under its free cards, shared between cards: the first free card in
+ * row order takes the branch it stands on and every branch under it down to the level's own wood,
+ * and every free card that then reaches that new wood, or a card joined to it, joins it and takes
+ * no branch of its own. So one branch holds the cards of its clump, and only a card that reaches
+ * none of them adds wood.
+ *
+ * @param input The dressed variant.
+ * @param kept The card rows the level keeps.
+ * @param joined One flag per row, 1 for a card joined to the level's own wood; the cards the new
+ *   branches join are marked in it too.
+ * @param keep The highest order the level draws as its own wood.
+ * @param level The card level, which sets the reaches.
+ * @returns One flag per axis, 1 for a branch drawn for the cards.
+ */
+function sharedSupports(
+	input: MeshInput,
+	kept: readonly number[],
+	joined: Uint8Array,
+	keep: number,
+	level: 1 | 2,
+): Uint8Array {
+	const { skeleton, rows } = input;
+	const { axes, position } = skeleton;
+	const out = new Uint8Array(axes.count);
+	const seedReach = (SEED_REACH[level - 1] as number) ** 2;
+	const cardReach = (CARD_REACH[level - 1] as number) ** 2;
+	const cell = Math.max(SEED_REACH[level - 1] as number, CARD_REACH[level - 1] as number);
+	// The free cards in cells of the larger reach, so each search reads the 27 cells about a point.
+	const cells = new Map<string, number[]>();
+	const cellOf = (x: number, y: number, z: number) =>
+		`${Math.floor(x / cell)},${Math.floor(y / cell)},${Math.floor(z / cell)}`;
+	const free = kept.filter((r) => joined[r] === 0);
+	for (const r of free) {
+		const key = cellOf(
+			rows.position[r * 3] as number,
+			rows.position[r * 3 + 1] as number,
+			rows.position[r * 3 + 2] as number,
+		);
+		const list = cells.get(key);
+		if (list) list.push(r);
+		else cells.set(key, [r]);
+	}
+	const queue: number[] = [];
+	// Every free card within a reach of a point joins, and waits to pass the join on.
+	const joinNear = (x: number, y: number, z: number, reach: number) => {
+		const ix = Math.floor(x / cell);
+		const iy = Math.floor(y / cell);
+		const iz = Math.floor(z / cell);
+		for (let dx = -1; dx <= 1; dx++)
+			for (let dy = -1; dy <= 1; dy++)
+				for (let dz = -1; dz <= 1; dz++)
+					for (const other of cells.get(`${ix + dx},${iy + dy},${iz + dz}`) ?? []) {
+						if (joined[other]) continue;
+						const ox = (rows.position[other * 3] as number) - x;
+						const oy = (rows.position[other * 3 + 1] as number) - y;
+						const oz = (rows.position[other * 3 + 2] as number) - z;
+						if (ox * ox + oy * oy + oz * oz > reach) continue;
+						joined[other] = 1;
+						queue.push(other);
+					}
+	};
+	for (const r of free) {
+		if (joined[r]) continue;
+		joined[r] = 1;
+		queue.push(r);
+		for (
+			let a = rowAxis(input, r);
+			a >= 0 && out[a] !== 1 && (axes.order[a] as number) > keep;
+			a = axes.parent[a] as number
+		) {
+			out[a] = 1;
+			for (let n = axes.first[a] as number; n <= (axes.last[a] as number); n++)
+				joinNear(
+					position[n * 3] as number,
+					position[n * 3 + 1] as number,
+					position[n * 3 + 2] as number,
+					seedReach,
+				);
+		}
+		while (queue.length > 0) {
+			const c = queue.pop() as number;
+			joinNear(
+				rows.position[c * 3] as number,
+				rows.position[c * 3 + 1] as number,
+				rows.position[c * 3 + 2] as number,
+				cardReach,
+			);
+		}
 	}
 	return out;
 }
 
 /**
  * The branches a level draws beside its own orders so its cards stay joined: with a `branch` join,
- * the branches under every card the level keeps; on a plant that sparseness took foliage from, the
- * branches under each card that reaches neither the level's wood nor a joined card.
+ * the branches under every card the level keeps; by default, the branches under the cards that
+ * reach neither the level's wood nor a joined card, each shared by every card it then reaches.
  *
  * @param input The dressed variant.
  * @param level The card level.
@@ -830,11 +929,8 @@ export function supportAxes(input: MeshInput, level: 1 | 2): Uint8Array | undefi
 	const kept = keptRows(input, level);
 	const keep = input.record.lod.woodOrders[level - 1] ?? 255;
 	const orders = input.skeleton.axes.order;
-	const joined = joinedCards(input, kept, (axis) => (orders[axis] as number) <= keep);
-	return branchesUnder(
-		input,
-		kept.filter((r) => joined[r] === 0),
-	);
+	const joined = joinedCards(input, kept, (axis) => (orders[axis] as number) <= keep, level);
+	return sharedSupports(input, kept, joined, keep, level);
 }
 
 /**
@@ -850,7 +946,7 @@ export function cardTwigs(input: MeshInput, level: 1 | 2): number[] {
 	const keep = input.record.lod.woodOrders[level - 1] ?? 255;
 	const orders = input.skeleton.axes.order;
 	const kept = keptRows(input, level);
-	const joined = joinedCards(input, kept, (axis) => (orders[axis] as number) <= keep);
+	const joined = joinedCards(input, kept, (axis) => (orders[axis] as number) <= keep, level);
 	return kept.filter((r) => joined[r] === 0);
 }
 
@@ -882,6 +978,7 @@ export function connectedCards(input: MeshInput, level: 1 | 2): Uint8Array {
 		input,
 		kept,
 		(axis) => (orders[axis] as number) <= keep || support?.[axis] === 1,
+		level,
 	);
 }
 
@@ -930,7 +1027,7 @@ export function cardMesh(input: MeshInput, level: 1 | 2): MeshArrays {
 		const px = rows.position[r * 3] as number;
 		const py = rows.position[r * 3 + 1] as number;
 		const pz = rows.position[r * 3 + 2] as number;
-		prototype.card.planes.forEach((plane, k) => {
+		prototype.card.planes.forEach((plane) => {
 			const n = normalize3([
 				plane.right[1] * plane.up[2] - plane.right[2] * plane.up[1],
 				plane.right[2] * plane.up[0] - plane.right[0] * plane.up[2],
@@ -950,7 +1047,7 @@ export function cardMesh(input: MeshInput, level: 1 | 2): MeshArrays {
 					[px + back[0] + world[0], py + back[1] + world[1], pz + back[2] + world[2]],
 					normal,
 					[(rx + ((sx + 1) / 2) * rw) / size, (ry + ((sy + 1) / 2) * rh) / size],
-					[(sy + 1) / 2, k / 2],
+					[plane.along[0] + ((sy + 1) / 2) * (plane.along[1] - plane.along[0]), plane.role / 2],
 					colour,
 				);
 			}
@@ -1073,6 +1170,11 @@ export interface CardCluster {
 	readonly anchor?: Vector3;
 	/** Whether a line joins it to its anchor: its cards touch neither the wood nor a joined card. */
 	readonly stalk: boolean;
+	/**
+	 * The card planes it draws: those of its prototype whose role is under the level's count, three
+	 * at most on a card that is not cut along its piece, two for each stretch of one that is.
+	 */
+	readonly faces?: number;
 }
 
 /**
@@ -1370,7 +1472,8 @@ export function cardClusters(
 		if (!prototype || !first) return Number.POSITIVE_INFINITY;
 		quatRotate(rows.rotation, r * 4, [first.centre[0], first.centre[1], first.centre[2]], lead);
 		let nearest = Number.POSITIVE_INFINITY;
-		for (const plane of prototype.card.planes.slice(0, planes)) {
+		for (const plane of prototype.card.planes) {
+			if (plane.role >= planes) continue;
 			quatRotate(rows.rotation, r * 4, [plane.centre[0], plane.centre[1], plane.centre[2]], edge);
 			quatRotate(rows.rotation, r * 4, [plane.right[0], plane.right[1], plane.right[2]], right);
 			quatRotate(rows.rotation, r * 4, [plane.up[0], plane.up[1], plane.up[2]], up);
@@ -1530,6 +1633,10 @@ export function cardClusters(
 	return made.map(({ joined, ...cluster }) => ({
 		...cluster,
 		stalk: !joined && cluster.anchor !== undefined,
+		faces:
+			kit.prototypes[rows.prototype[cluster.row] as number]?.card.planes.filter(
+				(plane) => plane.role < planes,
+			).length ?? 0,
 	}));
 }
 
@@ -1538,13 +1645,14 @@ export function cardClusters(
  * cluster that takes one.
  *
  * @param clusters The clusters.
- * @param planes The card planes each cluster draws, from 1 to 3.
+ * @param planes The card planes each cluster draws, from 1 to 3, where a cluster does not say.
  * @returns The count.
  * @category api/vegetation
  */
 export function clusterTriangles(clusters: readonly CardCluster[], planes: number): number {
 	let triangles = 0;
-	for (const cluster of clusters) triangles += 2 * planes + (cluster.stalk ? STALK_TRIANGLES : 0);
+	for (const cluster of clusters)
+		triangles += 2 * (cluster.faces ?? planes) + (cluster.stalk ? STALK_TRIANGLES : 0);
 	return triangles;
 }
 
@@ -1589,7 +1697,8 @@ export function clusterCardMesh(
 		local[1] = (lead?.centre[1] ?? 0) * scale;
 		local[2] = (lead?.centre[2] ?? 0) * scale;
 		quatRotate(rows.rotation, r * 4, local, first0);
-		prototype.card.planes.slice(0, planes).forEach((plane, k) => {
+		prototype.card.planes.forEach((plane) => {
+			if (plane.role >= planes) return;
 			const n = normalize3([
 				plane.right[1] * plane.up[2] - plane.right[2] * plane.up[1],
 				plane.right[2] * plane.up[0] - plane.right[0] * plane.up[2],
@@ -1613,7 +1722,7 @@ export function clusterCardMesh(
 					],
 					normal,
 					[(rx + ((sx + 1) / 2) * rw) / size, (ry + ((sy + 1) / 2) * rh) / size],
-					[(sy + 1) / 2, k / 2],
+					[plane.along[0] + ((sy + 1) / 2) * (plane.along[1] - plane.along[0]), plane.role / 2],
 					colour,
 				);
 			}

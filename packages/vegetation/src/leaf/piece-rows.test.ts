@@ -2,6 +2,7 @@
 // prototypes, built as the piece builder builds them, each socket carries every part of one variant
 // at one place with one turn, wind record and phase, and the same seed places the same rows.
 import { beforeAll, describe, expect, it } from 'bun:test';
+import { files as holmTextures } from '@null3d/vegetation-textures/holm-oak';
 import { files as oakTextures } from '@null3d/vegetation-textures/pedunculate-oak';
 import { files as willowTextures } from '@null3d/vegetation-textures/weeping-willow';
 import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
@@ -13,6 +14,7 @@ import { DETAILS } from '../core/types';
 import { buildKitNow, buildPiecesNow, growPlantNow, loadPlantCode } from '../generate';
 import { foliageBox } from '../lod/card-size.test-support';
 import { drawnAtOnce, TALLEST_VIEWS } from '../lod/drawn';
+import { directed as holmDirected } from '../species/holm-oak/directed';
 import { directed as oakDirected } from '../species/pedunculate-oak/directed';
 import { directed as willowDirected } from '../species/weeping-willow/directed';
 import { PIECES as WILLOW_PIECES } from '../species/weeping-willow/pieces';
@@ -45,13 +47,13 @@ const DRESSED: readonly Dressed[] = [
 	},
 	{
 		title: 'the holm oak, framed, with its branch ends at sockets',
-		module: () => loadSpecies('holm-oak'),
+		module: async () => ({ record: holmDirected, textures: holmTextures }),
 		piece: 'branch-end',
 		flat: false,
 	},
 	{
 		title: 'the weeping willow, framed, with its long strands at sockets',
-		module: () => loadSpecies('weeping-willow'),
+		module: async () => ({ record: willowDirected, textures: willowTextures }),
 		piece: 'strand-long',
 		flat: false,
 	},
@@ -231,8 +233,9 @@ describe("the Scots pine's boughs at sockets, by the pine's own figures", () => 
 			rows +=
 				(kit.prototypes[asset.shoots.prototype[r] as number]?.tiers[tier]?.indices.length ?? 0) / 3;
 		expect(asset.stats.shoots).toBe(rows);
+		expect(asset.stats.triangles[0]).toBe(asset.levels[0].triangles + rows);
 		// The boughs hold far more of the plant than its wood does.
-		expect(asset.stats.shoots).toBeGreaterThan(asset.stats.triangles[0]);
+		expect(asset.stats.shoots).toBeGreaterThan(asset.levels[0].triangles);
 	});
 
 	it('draws at once the most from an eye inside its fullest pad, within its budget at the reference lens', () => {
