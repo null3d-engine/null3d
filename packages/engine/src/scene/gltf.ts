@@ -540,12 +540,12 @@ export function fileLevelMeasure(
 	errors: readonly number[] | undefined,
 	coverage: readonly number[] | undefined,
 	j: number,
-): { error?: number; coverage?: number; fade?: boolean } {
+): { error?: number; coverage?: number; fade?: boolean; measured?: boolean } {
 	if (errors) {
 		const measured = coverage !== undefined;
 		return {
 			error: errors[j] as number,
-			...(measured ? { fade: false } : {}),
+			...(measured ? { fade: false, measured: true } : {}),
 		};
 	}
 	return { coverage: (coverage as readonly number[])[j] as number };
@@ -845,7 +845,7 @@ async function loadStages(
 				continue;
 			}
 			made.push(level);
-			levels[k]?.unshift({ mesh: level, error: drawn, fade: false });
+			levels[k]?.unshift({ mesh: level, error: drawn, fade: false, measured: true });
 			try {
 				mesh.setLevels(levels[k] ?? []);
 			} catch (error) {

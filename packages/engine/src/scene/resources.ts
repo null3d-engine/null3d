@@ -212,8 +212,9 @@ const LEVEL_FRAME_POLL_MS = 2;
  * A lower level of detail of a mesh: a simpler mesh that draws in the base mesh's place. Give its
  * `error`, the `distance` at which it switches in, or the screen `coverage` under which it draws.
  * A level with a measured error, which the asset tool writes, changes the picture by under a pixel
- * at its switch and switches at once. A level given by a distance, by a coverage or by a hand-set
- * error fades over a short band, so its switch does not pop.
+ * at a small threshold and switches at once. A governed threshold above about one and a half
+ * pixels makes that switch show, and such a level then fades too. A level given by a distance, by
+ * a coverage or by a hand-set error fades over a short band, so its switch does not pop.
  *
  * @category api/geometry
  */
@@ -244,11 +245,19 @@ export interface MeshLevel {
 	/**
 	 * True to hand over between two levels in a short band past each switch distance, where a
 	 * dither pattern shares the pixels between them, so a switch does not pop. False to switch at
-	 * once. The default is `fade` in the options. A level with a measured error changes the picture
-	 * by under a pixel at its switch, so its band only costs. The glTF reader switches a file's
-	 * measured error at once and fades an error that comes alone, which its author set by hand.
+	 * once. The default is `fade` in the options. A level with a measured error changes the
+	 * picture by under a pixel while the governed threshold stays small, so its band only costs
+	 * then; the engine fades such a level above about one and a half pixels. The glTF reader
+	 * switches a file's measured error at once and fades an error that comes alone, which its
+	 * author set by hand.
 	 */
 	fade?: boolean;
+	/**
+	 * @internal True for a level whose error the asset tool or the planner measured, rather than
+	 * one an author set by hand. Such a level switches at once at a small threshold, and the engine
+	 * fades it once the governed threshold makes its switch show.
+	 */
+	measured?: boolean;
 	/**
 	 * The material that the level's surface draws with, where it shades more cheaply than the base
 	 * mesh's. A level without one draws with the material of the level before it, and the base
@@ -267,7 +276,9 @@ export interface MeshLevelOptions {
 	/**
 	 * True to hand over between two levels in a short band past each switch distance, where a
 	 * dither pattern shares the pixels between them, so a switch does not pop. False to switch at
-	 * once. The default is true. A level's own `fade` overrides it.
+	 * once. The default is true. A level's own `fade` overrides it. A level with a measured error
+	 * fades too once the governed threshold rises above about one and a half pixels, where its
+	 * switch shows.
 	 */
 	fade?: boolean;
 	/**
@@ -789,7 +800,12 @@ export class MeshGeometry {
 			// level's mesh still arrives in its own frame.
 			if (made.length > 0) {
 				this.applyLevels(
-					made.map((mesh, j) => ({ mesh, error: errors[j] as number, fade: false })),
+					made.map((mesh, j) => ({
+						mesh,
+						error: errors[j] as number,
+						fade: false,
+						measured: true,
+					})),
 					{},
 					call,
 				);
@@ -1025,6 +1041,7 @@ export class MeshGeometry {
 		const radius = this.radius;
 		const defaultFade = options.fade ?? true;
 		let fades = 0;
+		let measured = 0;
 		let before = 0;
 		const values: number[] = [];
 		const switches: number[] = [];
@@ -1070,6 +1087,7 @@ export class MeshGeometry {
 			values.push(value);
 			switches.push(switchValue);
 			if (level.fade ?? defaultFade) fades |= 1 << (k + 1);
+			if (level.measured) measured |= 1 << (k + 1);
 		}
 		const count = levels.length;
 		const ids = levels.map((level) => level.mesh.id);
@@ -1093,7 +1111,13 @@ export class MeshGeometry {
 		this.core.f32(at + 4 * count, count).set(values);
 		this.core.u32(at + 8 * count, count).set(switches);
 		this.core.u32(at + 12 * count, count).set(materials);
-		this.core.check(this.core.glue.setMeshLevels(id, count, fades), call, 'a mesh', true);
+		// The low half of the word names the fading levels and the high half the measured ones.
+		this.core.check(
+			this.core.glue.setMeshLevels(id, count, (fades | (measured << 16)) >>> 0),
+			call,
+			'a mesh',
+			true,
+		);
 		this.lowerLevels = levels.map((level) => ({ ...level }));
 	}
 
