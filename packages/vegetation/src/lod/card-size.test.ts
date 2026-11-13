@@ -11,7 +11,7 @@ import { loadSpecies } from '../core/registry';
 import type { Detail } from '../core/types';
 import { buildKitNow, growPlantNow, loadPlantCode } from '../generate';
 import { foliageBox } from './card-size.test-support';
-import { outlineMatte, skyShare } from './outline.test-support';
+import { matteShare, outlineMatte, skyShare } from './outline.test-support';
 
 /** A species grows and its three levels are read texel by texel; a busy machine takes a while. */
 const LONG = scaledBudget(180_000);
@@ -45,14 +45,23 @@ const HABITS: readonly (readonly [habit: string, id: string, seeds: readonly num
 	['a frond colony', 'bracken', [11]],
 ];
 
-/** The species whose crowns are read for sky: broadleaves, a shrub, a conifer and a column. */
+/**
+ * The species whose crowns are read for sky: every species that draws shoot cards but the weeping
+ * willow, whose cards carry a strand a texel wide down each shoot and read far more closed than
+ * its leaves.
+ */
 const SKY_SPECIES = [
-	'pedunculate-oak',
-	'holm-oak',
-	'silver-birch',
-	'hawthorn-shrub',
+	'common-alder',
+	'common-ash',
+	'european-beech',
 	'giant-sequoia',
+	'hawthorn-shrub',
+	'holm-oak',
+	'olive',
+	'pedunculate-oak',
 	'saguaro',
+	'scots-pine',
+	'silver-birch',
 ] as const;
 
 /** A kit of a species at a tier. */
@@ -103,8 +112,8 @@ describe('a card level keeps the plant size', () => {
 		);
 
 	// The medium tier's leaves are meshes of their own outline, so the leaf form's matte is the
-	// leaves themselves and not a card's picture of them. These species' card levels draw every
-	// part of the leaf form but its finer wood, which their cards grow to make up.
+	// leaves themselves and not a card's picture of them. A card level draws less of the fine wood
+	// than the leaf form, and its cards grow inside the leaf form's hull to make that cover up.
 	for (const id of SKY_SPECIES)
 		it(
 			`keeps the sky inside the crown outline of the ${id} within the review band`,
@@ -112,9 +121,11 @@ describe('a card level keeps the plant size', () => {
 				const kit = await kitOf(id, 'medium');
 				const asset = growPlantNow(kit, { seed: 11, variant: 0, near: true });
 				const leaf = outlineMatte(kit, asset, 0, 192, 'leaves');
-				const own = skyShare(leaf, leaf);
+				// The crown is read from its base up: the nearest level alone draws the roots.
+				const from = matteShare(asset, Math.max(0, asset.skeleton.crownBase));
+				const own = skyShare(leaf, leaf, from);
 				for (const level of [1, 2] as const) {
-					const sky = skyShare(leaf, outlineMatte(kit, asset, level, 192));
+					const sky = skyShare(leaf, outlineMatte(kit, asset, level, 192), from);
 					const at = `${id} level ${level}: leaf form ${own.toFixed(4)}, level ${sky.toFixed(4)}`;
 					expect([at, sky - own <= SKY_MORE, own - sky <= SKY_LESS]).toEqual([at, true, true]);
 				}
