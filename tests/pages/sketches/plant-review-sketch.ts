@@ -1792,13 +1792,15 @@ export default defineSketch(async (ctx) => {
 	const colours = BACKGROUND_COLOURS[BACKGROUND];
 	scene.setBackground(PLAIN ? '#ffffff' : (QUERY.sky ?? colours.sky));
 	const groundColour = QUERY.ground ?? colours.ground;
-	if (groundColour && !PLAIN && !SPEC.cutting && !QUERY.lifted) {
+	if (groundColour && !PLAIN && (!SPEC.cutting || QUERY.meadow) && !QUERY.lifted) {
 		// The meadow is unlit and casts nothing back, so it shows its measured colour everywhere and a
-		// mask can tell it from the plant by colour alone.
+		// mask can tell it from the plant by colour alone. A cut piece stands on its background alone,
+		// unless its slot stands it in its field, where the meadow lies at the piece's own foot.
 		scene.createMesh({
 			mesh: geometry.plane({ width: 8000, height: 8000 }),
 			material: materials.unlit({ color: groundColour }),
 			rotation: FLAT,
+			...(SPEC.cutting && { position: [0, bounds.min[1] as number, 0] as V3 }),
 		});
 	}
 	if (PLAIN && SPEC.whole && !SPEC.cutting && !QUERY.lifted) {

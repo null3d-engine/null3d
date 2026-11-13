@@ -85,6 +85,7 @@ The command's status says whether the run did what it was asked. A run asked for
 | `pick`, `cut` | The cutting candidate and its length in metres. |
 | `cutFrom`, `cutSpan` | Metres along the axis where a spanned piece starts, and the metres it keeps, in place of the record's hint: a close still may show the frond's base or its middle, as its photograph does. |
 | `measure`, `scale`, `matte` | Post the measures; draw a 1 m bar; draw the plant black on white. |
+| `meadow` | Stand a cut piece on the meadow, laid at the piece's own foot, as a photograph of one frond standing alone in its field shows it; a cut piece otherwise stands on its background alone. |
 | `placeholders` | Grow stand-ins; on by default for an id that is not registered. |
 | `horizon`, `fill`, `targetY`, `targetX`, `top`, `eye` | A whole-plant framing in screen shares, which stands the camera on the ground as a reference's camera stood. |
 | `along`, `span` | How far along a limb a limb view looks, and the metres of bark a bark view frames. |
