@@ -152,11 +152,12 @@ fn bounds_of(
         OWN_BOUNDS + slot as u32
     } else if object_flags & flags::UNCULLED != 0 {
         UNCULLED_BOUNDS
-    } else if skinning.skins_in_vertex_shader(slot as u32) {
+    } else if skinning.skins_in_vertex_shader(slot as u32) && scene.level_biases()[slot] == 1.0 {
+        // The skinned objects of one mesh share a bucket, whose sphere holds every one of them. A
+        // bucket holds one bias, so a skinned object that sets its own bias draws from a bucket of
+        // its own, as any other object with a bias does.
         SHARED_SKIN_BOUNDS
     } else if object_flags & flags::CUSTOM_BOUNDS != 0 || scene.level_biases()[slot] != 1.0 {
-        // A bucket holds one threshold bias, so an object whose bias differs from the quality
-        // settings' draws from a bucket of its own.
         OWN_BOUNDS + slot as u32
     } else {
         MESH_BOUNDS
