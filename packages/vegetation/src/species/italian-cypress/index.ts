@@ -2,7 +2,7 @@
 // cypress names. The generated registry loads this entry as a chunk of its own.
 import { files } from '@null3d/vegetation-textures/italian-cypress';
 import type { SpeciesModule } from '../../core/record';
-import { record } from './record';
+import { directed } from './directed';
 
-/** The Italian cypress. */
-export const species: SpeciesModule = { record, textures: files };
+/** The Italian cypress, grown as a directed frame whose closed shell carries its fans at sockets. */
+export const species: SpeciesModule = { record: directed, textures: files };
