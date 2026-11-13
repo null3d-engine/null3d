@@ -555,7 +555,15 @@ interface PairMetrics {
 	readonly shapeIou: number | null;
 	readonly frameIou: number | null;
 	readonly profileError: number | null;
-	readonly gap: { readonly reference: number; readonly render: number } | null;
+	/**
+	 * The sky enclosed by each crown's outline, a texel counted as sky or plant on both sides. The
+	 * render's reading by its clear share is kept beside it, as the figure was read before.
+	 */
+	readonly gap: {
+		readonly reference: number;
+		readonly render: number;
+		readonly renderByCoverage?: number;
+	} | null;
 	readonly crownBoxGap: { readonly reference: number; readonly render: number } | null;
 	readonly frameGap: { readonly reference: number; readonly render: number } | null;
 	readonly foliageDeltaE: number | null;
@@ -586,7 +594,13 @@ function pairMetrics(reference: Side, render: Side): PairMetrics {
 				)
 			: null,
 		gap: both
-			? { reference: reference.measures.gapFraction, render: render.measures.gapFraction }
+			? {
+					reference: reference.measures.gapFraction,
+					render: render.measures.gapFraction,
+					...(render.measures.gapByCoverage !== null && {
+						renderByCoverage: render.measures.gapByCoverage,
+					}),
+				}
 			: null,
 		crownBoxGap: both
 			? { reference: reference.measures.crownBoxGap, render: render.measures.crownBoxGap }

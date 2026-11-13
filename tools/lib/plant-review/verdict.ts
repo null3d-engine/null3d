@@ -70,6 +70,15 @@ export interface VerdictRow {
 	readonly figures: readonly Figure[];
 	/** Why the row fails or is void; a reviewer may give one for a pass too. */
 	readonly reason?: string;
+	/**
+	 * What the row's figures say, for a row whose band the standard states: every figure in its
+	 * band, or some figure outside, with which. It proposes and does not judge: a plant can hold
+	 * every figure and still not look like its photograph, so only a reviewer passes a row.
+	 */
+	readonly proposed?: {
+		readonly figures: 'in band' | 'out of band';
+		readonly outside?: string;
+	};
 	/** The row's pictures that show no subject, each with its reason: they decide nothing. */
 	readonly voids?: readonly { readonly picture: string; readonly reason: string }[];
 	/**
@@ -269,16 +278,18 @@ function figuresOf(row: number, pair: StillResult, run: string): Figure[] {
 }
 
 /**
- * The rows the tool decides from figures alone, each with a band the standard states. Row 2 holds a
- * cut branch's four figures with their bands, and stays with the reviewer, who counts the limbs too.
+ * The rows whose figures all carry a band the standard states, so the tool can say whether they
+ * hold it. Row 2 holds a cut branch's four figures with their bands beside the limb count, which
+ * the reviewer makes.
  */
 const FIGURE_ROWS: ReadonlySet<number> = new Set([6, 8, 10]);
 
 /**
  * A run's verdict as the tool can write it. Every row gets its evidence pictures and its figures.
- * A row whose figures all carry a stated band is passed or failed on them. Row 12 fails where a
- * picture draws a piece that hangs free, since that fault needs no eye. A row whose pictures all
- * show no subject is void. Every other row is left unjudged for a reviewer.
+ * The tool passes no row: a row whose figures all carry a stated band gets a proposal, in band or
+ * out of band, and waits for a reviewer with every other row. Row 12 fails where a picture draws a
+ * piece that hangs free, since that fault needs no eye. A row whose pictures all show no subject
+ * is void.
  */
 export function toolVerdict(input: VerdictInput): Verdict {
 	const whole = (slot: Slot) => slot.view === 'whole' || slot.view === 'silhouette';
@@ -338,19 +349,23 @@ export function toolVerdict(input: VerdictInput): Verdict {
 		if (!FIGURE_ROWS.has(row) || figures.length === 0)
 			return { ...base, verdict: 'unjudged', judge: null };
 		const outside = figures.filter((figure) => inBand(figure) === false);
-		return outside.length === 0
-			? { ...base, verdict: 'pass', judge: 'tool' }
-			: {
-					...base,
-					verdict: 'fail',
-					judge: 'tool',
-					reason: outside
-						.map(
-							(figure) =>
-								`${figure.picture}: ${figure.name} ${figure.value} outside ${figure.band?.min ?? 'any'} to ${figure.band?.max ?? 'any'}`,
-						)
-						.join('; '),
-				};
+		return {
+			...base,
+			verdict: 'unjudged',
+			judge: null,
+			proposed:
+				outside.length === 0
+					? { figures: 'in band' }
+					: {
+							figures: 'out of band',
+							outside: outside
+								.map(
+									(figure) =>
+										`${figure.picture}: ${figure.name} ${figure.value} outside ${figure.band?.min ?? 'any'} to ${figure.band?.max ?? 'any'}`,
+								)
+								.join('; '),
+						},
+		};
 	});
 	return {
 		schema: VERDICT_SCHEMA,
@@ -405,8 +420,8 @@ export function mergeVerdict(existing: Verdict, fresh: Verdict): Verdict {
 /**
  * What is wrong with a verdict, one line each; none for a sound one. A verdict is unsound when a
  * row is missing or repeated, a judgement lacks its judge or its reason, a figure names another run
- * than the file's, a pass rests on nothing or on a figure outside its band, or a picture's path
- * leaves the run folder.
+ * than the file's, a pass is the tool's or rests on nothing, or a picture's path leaves the run
+ * folder.
  */
 export function verdictFaults(value: unknown): string[] {
 	const verdict = value as Partial<Verdict> | null;
@@ -464,14 +479,8 @@ export function verdictFaults(value: unknown): string[] {
 			if (evidence.length === 0) faults.push(`${at} passes on no picture`);
 			if (entry.voids && entry.voids.length >= evidence.length && evidence.length > 0)
 				faults.push(`${at} passes though every picture it names shows no subject`);
-			if (entry.judge === 'tool') {
-				if (figures.length === 0) faults.push(`${at} is passed by the tool on no figure`);
-				for (const figure of figures)
-					if (inBand(figure) !== true)
-						faults.push(
-							`${at} is passed by the tool though ${figure.name} of ${figure.picture} is ${figure.band ? 'outside its band' : 'without a band'}`,
-						);
-			}
+			if (entry.judge === 'tool')
+				faults.push(`${at} is passed by the tool: only a reviewer passes a row`);
 			// The eye may overrule a figure, and then the reviewer says so.
 			if (
 				entry.judge === 'reviewer' &&
