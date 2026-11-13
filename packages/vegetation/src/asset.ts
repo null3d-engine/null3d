@@ -141,6 +141,13 @@ export interface ShootRows {
 	 * previous bud or the parent node. Absent, a card draws no stalk.
 	 */
 	readonly back?: Float32Array;
+	/** The skeleton node each row stands on. Absent on rows that stand on no skeleton. */
+	readonly node?: Uint32Array;
+	/**
+	 * Each row's index in the plant as grown, on a plant that rows were removed from, so a choice
+	 * keyed on a row stays the same on the sparser plant. Absent on rows as grown.
+	 */
+	readonly id?: Uint32Array;
 }
 
 /**
@@ -371,6 +378,8 @@ function rowViews(rows: ShootRows): ArrayBufferView[] {
 		rows.sky,
 		rows.bent,
 		rows.order,
+		...(rows.node ? [rows.node] : []),
+		...(rows.id ? [rows.id] : []),
 	];
 }
 
