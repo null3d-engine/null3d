@@ -17,6 +17,8 @@ import {
 	edgeProfile,
 	emptySubject,
 	fittedMaskClause,
+	frameFiguresHold,
+	frameScale,
 	framingFault,
 	framingQuery,
 	hasSeparableOutline,
@@ -901,6 +903,16 @@ describe("a whole view's frame against its photograph's", () => {
 		// A sixth smaller both ways is inside the band, and so is the same plant higher in the frame.
 		expect(framingFault(photograph, framed(0.17, 0.32, 0.83, 0.9))).toBe(undefined);
 		expect(framingFault(photograph, framed(0.1, 0.05, 0.9, 0.75))).toBe(undefined);
+	});
+
+	test("reads the drawn plant's scale against the photograph's, and holds frame figures within a twentieth", () => {
+		expect(frameScale(photograph, framed(0.1, 0.2, 0.9, 0.9))).toBe(1);
+		// A plant that stands back to 0.91 of the photograph's height: the frame's figures go.
+		const smaller = frameScale(photograph, framed(0.14, 0.263, 0.86, 0.9));
+		expect(smaller).toBeCloseTo(0.91, 2);
+		expect(frameFiguresHold(smaller)).toBe(false);
+		expect(frameFiguresHold(frameScale(photograph, framed(0.1, 0.23, 0.9, 0.9)))).toBe(true);
+		expect(frameFiguresHold(null)).toBe(false);
 	});
 
 	test('fails a plant drawn at a third of the size, and says both sizes', () => {

@@ -92,11 +92,18 @@ import {
 import { extrasMesh } from './leaf/extras';
 import { writtenPieces } from './leaf/ground-piece';
 import { dressShoots, pruneLight } from './leaf/instancer';
-import { foliage, loadFoliage } from './leaf/kinds';
-import { type PiecePrototype, type PieceRule, piecePrototypes } from './leaf/piece';
+import { type FoliageBuilder, foliage, loadFoliage } from './leaf/kinds';
+import {
+	type PieceLeaf,
+	type PiecePrototype,
+	type PieceRule,
+	piecePrototypes,
+	pieceRecord,
+} from './leaf/piece';
 import { carriesPieces, kitPiece, PROTOTYPES_MOST, writesPieces } from './leaf/piece-rows';
 import { inLeaf } from './leaf/season';
 import { shootPrototypes } from './leaf/shoot';
+import { bakeWithBrushes } from './lod/brush-cards';
 import {
 	type BudgetInput,
 	type LevelBuild,
@@ -107,7 +114,6 @@ import {
 	referenceTriangles,
 	shootPartTriangles,
 } from './lod/budget';
-import { bakeCards } from './lod/card-bake';
 import { cardMesh } from './lod/cards';
 import { bakeFar } from './lod/impostor';
 import { levelStarts } from './lod/levels';
@@ -238,19 +244,52 @@ function scaledCurve(curve: Curve, factor: number): Curve {
  * @param rules The species' piece rules.
  * @param bare Whether the pieces carry no leaves, as a deciduous plant's do in winter: the wood and
  * the bud at each stem's end.
+ * @param leaf The leaf the species' pieces wear where it differs from the record's.
  * @returns The pieces, each rule's variants together, in the rules' order.
  */
 export function buildPiecesNow(
 	source: KitSource,
 	rules: readonly PieceRule[],
 	bare = false,
+	leaf?: PieceLeaf,
 ): PiecePrototype[] {
-	const builder = foliage(source.record.foliage.kind);
+	const record = pieceRecord(source.record, leaf);
+	const builder = foliage(record.foliage.kind);
 	const manifest = source.textures.manifest;
-	return piecePrototypes(
-		source.record,
-		rules,
-		DETAILS.map((tier) => (bare ? [] : builder.leaves(source.record, manifest, tier))),
+	const leavesOf = (from: Species) =>
+		bare ? DETAILS.map(() => []) : pieceLeaves(builder, from, manifest);
+	const leaves = leavesOf(record);
+	// A rule whose blades bend in their own plane takes leaves built with no bend at the stalk.
+	const straight =
+		record.foliage.kind === 'blade' && rules.some((rule) => rule.leafDroop === 'plane')
+			? leavesOf({
+					...record,
+					foliage: {
+						...record.foliage,
+						leaf: {
+							...record.foliage.leaf,
+							petiole: { ...record.foliage.leaf.petiole, droop: 0 },
+						},
+					},
+				})
+			: leaves;
+	return piecePrototypes(record, rules, leaves, straight);
+}
+
+/**
+ * A species' leaf meshes for its branch pieces at every tier, low first: its kind's piece cut where
+ * the kind cuts a piece's leaves apart from the crown's, since a tree carries thousands of pieces,
+ * and the crown's own leaves where it does not.
+ */
+function pieceLeaves(
+	builder: FoliageBuilder,
+	record: Species,
+	manifest: TextureManifest,
+): (readonly PrototypeArrays[])[] {
+	return DETAILS.map((tier) =>
+		builder.pieceLeaves
+			? builder.pieceLeaves(record, manifest, tier)
+			: builder.leaves(record, manifest, tier),
 	);
 }
 
@@ -440,7 +479,9 @@ export function buildKitNow(source: KitSource, options: KitOptions = {}): Specie
 					placeholders,
 					() =>
 						pieces
-							? piecePrototypes(record, pieces, leavesByTier).map(kitPiece)
+							? piecePrototypes(record, pieces, pieceLeaves(builder, record, manifest)).map(
+									kitPiece,
+								)
 							: shootPrototypes(record, manifest, leavesByTier, cutting !== false),
 					() => placeholderPrototypes(record, leavesByTier),
 				);
@@ -448,19 +489,24 @@ export function buildKitNow(source: KitSource, options: KitOptions = {}): Specie
 			throw new Error(
 				`@null3d/vegetation: '${record.id}' builds ${uncarded.length} prototypes; a kit holds ${PROTOTYPES_MOST} at most`,
 			);
-		// A cutting kit holds no card levels: its pieces are drawn at the nearest level alone.
+		// A cutting kit holds no card levels: its pieces are drawn at the nearest level alone. A piece
+		// that draws brush cards takes them in the bake, which pictures its leaves first.
 		const baked = cutting
-			? { atlas: cards, cells: uncarded.map(() => ({ planes: [] })) }
+			? {
+					atlas: cards,
+					cells: uncarded.map(() => ({ planes: [] })),
+					prototypes: uncarded.map(({ brushes: _brushes, ...prototype }) => prototype),
+				}
 			: stage(
 					placeholders,
-					() => bakeCards(record, manifest, detail, uncarded),
-					() => placeholderCardBake(record, uncarded),
+					() => bakeWithBrushes(record, manifest, detail, uncarded),
+					() => ({ ...placeholderCardBake(record, uncarded), prototypes: uncarded }),
 				);
 		// The kit keeps its own tier's meshes and the tiers below it, which the near band draws
 		// farther out; a page draws at one preset, so the tiers above it are left empty. The card
 		// bake, the lengths and the radii read the full build first.
 		const kept = DETAILS.indexOf(detail);
-		prototypes = uncarded.map((prototype, index) => {
+		prototypes = baked.prototypes.map((prototype, index) => {
 			const card = baked.cells[index];
 			if (!card) throw new Error(`the card bake gave no cells for prototype ${index}`);
 			const tiers = prototype.tiers.map((tier, t) =>
@@ -1052,6 +1098,7 @@ function growCutting(
 				NO_TRIANGLES,
 				NO_TRIANGLES,
 			],
+			shoots: shootTriangles(kit, rows),
 		},
 	};
 }
@@ -1237,6 +1284,19 @@ function referenceOf(kit: SpeciesKitData, input: BudgetInput): PartTriangles | u
 const now = () => (typeof performance === 'undefined' ? Date.now() : performance.now());
 
 /**
+ * The triangles a variant's shoot rows draw at the kit's detail: each row draws one prototype of
+ * the kit, which no level's own mesh holds.
+ */
+function shootTriangles(kit: SpeciesKitData, rows: PlantAsset['shoots']): number {
+	const tier = DETAILS.indexOf(kit.detail);
+	let triangles = 0;
+	for (let r = 0; r < rows.count; r++)
+		triangles +=
+			(kit.prototypes[rows.prototype[r] as number]?.tiers[tier]?.indices.length ?? 0) / 3;
+	return triangles;
+}
+
+/**
  * Grows one variant on this thread: its skeleton, its shoot rows, its crown light, its wind records
  * and its three levels. Call `loadPlantCode` first. The nearest level's wood is meshed only when
  * `near` is set; otherwise `growNearWoodNow` meshes it in the background.
@@ -1317,6 +1377,7 @@ export function growPlantNow(kit: SpeciesKitData, options: GrowOptions): PlantAs
 						clusters: [built[0].clusters, built[1].clusters, built[2].clusters] as const,
 					}
 				: {}),
+			shoots: record.lod.nearFoliage === 'instanced' ? shootTriangles(kit, mesh.rows) : 0,
 		},
 	};
 	return asset;
