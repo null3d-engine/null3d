@@ -26,7 +26,7 @@ import { speciesBox } from './core/box';
 import { formRecord } from './core/forms';
 import { type MacroSkeleton, SkeletonBuilder, skeletonCopy } from './core/graph';
 import { hashText } from './core/hash';
-import { quatRotate } from './core/math';
+import { quatRotate, type Vector3 } from './core/math';
 import { NotBuiltError } from './core/not-built';
 import {
 	emptyLevel,
@@ -242,6 +242,7 @@ function scaledCurve(curve: Curve, factor: number): Curve {
  * @param bare Whether the pieces carry no leaves, as a deciduous plant's do in winter: the wood and
  * the bud at each stem's end.
  * @param leaf The leaf the species' pieces wear where it differs from the record's.
+ * @param fall The way a hanging mark falls in each piece's frame, for a lone cut in a clamp.
  * @returns The pieces, each rule's variants together, in the rules' order.
  */
 export function buildPiecesNow(
@@ -249,6 +250,7 @@ export function buildPiecesNow(
 	rules: readonly PieceRule[],
 	bare = false,
 	leaf?: PieceLeaf,
+	fall?: Readonly<Vector3>,
 ): PiecePrototype[] {
 	const record = pieceRecord(source.record, leaf);
 	const builder = foliage(record.foliage.kind);
@@ -270,7 +272,7 @@ export function buildPiecesNow(
 					},
 				})
 			: leaves;
-	return piecePrototypes(record, rules, leaves, straight);
+	return piecePrototypes(record, rules, leaves, straight, fall);
 }
 
 /**

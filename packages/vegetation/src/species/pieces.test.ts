@@ -346,9 +346,6 @@ const OPEN_DEPTH: Readonly<Record<string, number>> = {
 	'olive 22': 0.367,
 	'european-beech 22': 0.216,
 	'common-ash 22': 0.244,
-	// Its cones hang to the twig's own ground side, behind it, where the photograph's hang below a
-	// twig that stands in a clamp.
-	'common-alder 22': 0.26,
 };
 const OPEN_GAP: Readonly<Record<string, number>> = {
 	// In the birch's and the willow's videos nearly every leaf shows its whole face in every frame,
@@ -360,7 +357,8 @@ const OPEN_GAP: Readonly<Record<string, number>> = {
 	'european-beech 22': 0.348,
 	'common-ash 21': 0.223,
 	'common-ash 22': 0.361,
-	'common-alder 22': 0.055,
+	// Read with its cones hanging along its line, as the clamp's gravity hangs them.
+	'common-alder 22': 0.045,
 	'holm-oak 21': 0.171,
 	'holm-oak 22': 0.325,
 	// Its arms and tufts stand in one plane.
@@ -381,7 +379,7 @@ function laidTriangles(
 	studio: PieceStudio,
 ): Laid[] {
 	const tier = DETAILS.indexOf('high');
-	const built = buildPiecesNow(module, pieces);
+	const built = buildPiecesNow(module, pieces, false, undefined, studio.fall);
 	const layout = layStudio(module.record, pieces, studio);
 	const out: Laid[] = [];
 	const add = (
