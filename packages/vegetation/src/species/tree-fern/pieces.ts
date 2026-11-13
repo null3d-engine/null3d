@@ -113,13 +113,22 @@ function rachis(droop: number, droopOver: readonly [number, number], near: boole
 	};
 }
 
-/** A living frond of one arch: pinnules near, one leaf a pinna far. */
+/**
+ * The roll of a living frond about its line. The turning video's first frame: a frond pointing
+ * across the view shows pinnae about 40 px above its rachis and 80 px below, against a face-on
+ * half-width of about 53 px, so its flat blade stands 60 to 90 degrees from level; the fronds hanging
+ * toward the lens still show half their faces, so the lower end.
+ */
+const ROLL = 60;
+
+/** A living frond of one arch: pinnules near, one leaf a pinna far, its blade rolled. */
 function frond(name: string, droop: number, droopOver: readonly [number, number]): PieceRule {
 	return {
 		name,
 		attitude: 'along',
 		variants: 1,
 		lengthwise: true,
+		roll: ROLL,
 		stem: rachis(droop, droopOver, true),
 		far: rachis(droop, droopOver, false),
 	};
