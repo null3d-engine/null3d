@@ -34,6 +34,7 @@ import {
 	anyPlantMask,
 	type Box,
 	boxOf,
+	halfDarkMask,
 	hangingParts,
 	matteMask,
 	matteOwnMask,
@@ -2223,7 +2224,12 @@ export function compareStills(
 		const drawnEarly = frame.query?.view ?? slot.view;
 		const piece = VIEW_SPECS[drawnEarly]?.cutting !== undefined;
 		const subject = piece ? subjectFile?.[slot.file]?.bottom : undefined;
-		const refPlant = plantMask(refImage);
+		// A silhouette is black on white in both pictures, so the photograph is read by the matte's
+		// own rule: a texel is plant where it is darker than half.
+		const refPlant =
+			slot.view === 'silhouette'
+				? halfDarkMask(plantMask(refImage), refImage)
+				: plantMask(refImage);
 		const refSide = side(slot.file, refImage, refPlant, false, habit, piece, subject);
 		const render = renderSideOf(runDir, frame, frame.file, false, habit, piece, subject);
 		// A whole view whose plant is cropped by the frame, or stands at another size than its
