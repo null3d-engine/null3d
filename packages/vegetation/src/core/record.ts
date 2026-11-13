@@ -1156,42 +1156,45 @@ export interface SheathColour {
 }
 
 /**
- * A tuft of shoots from one crown, each shoot a column of sheaths with blades in two or three ranks,
- * and flowering stems in season: grasses and sedges.
+ * A tuft of shoots on one stool, each shoot a column of sheaths with blades in two or three ranks,
+ * and flowering stems in season: grasses and sedges. The plant's height is its one scale: the leaf
+ * mound's height is a share of it, and every other length here is a share of the mound's height.
+ * The stool's sheath columns are the plant's frame; each blade and each flowering stem is a piece
+ * of the kit, placed whole at a socket.
  *
  * @category api/vegetation
  */
 export interface Tuft {
 	/** The model's name. */
 	readonly model: 'tuft';
-	/** Shoots (tillers) per tuft. */
+	/** The leaf mound's height as a share of the plant's height. */
+	readonly mound: number;
+	/** Shoots (tillers) on the stool. */
 	readonly shoots: Spread;
-	/** Radius of the crown the shoots rise from, in metres. */
-	readonly base: number;
-	/** Degrees a shoot leans out from vertical, by its distance from the centre (t = distance / base). */
-	readonly lean: Curve;
+	/** The stool's width at the soil, in mound heights. */
+	readonly stool: number;
+	/** A shoot's column of sheaths: its height and its width at the foot, in mound heights. */
+	readonly sheath: { readonly height: number; readonly width: number };
+	/**
+	 * The sheath column's colours, where the photographs show the plant's own sheaths rather than the
+	 * leaf's green: the stool draws its columns in them, from the foot up to the collar.
+	 */
+	readonly sheathColour?: SheathColour;
 	/** Blades per shoot. */
 	readonly blades: Spread;
 	/** Ranks the blades stand in round their shoot: 2 for grasses, 3 for sedges. */
 	readonly ranks: number;
-	/** Metres of sheath under each blade's collar. */
-	readonly sheath: Spread;
-	/** The sheath's radius in metres. */
-	readonly sheathRadius: number;
+	/** The poses a blade takes, the youngest first. Each is a piece of its own. */
+	readonly poses: readonly TuftPose[];
+	/** How far a blade's length strays either side of its pose's, as a share of it. */
+	readonly bladeSpread: number;
+	/** Flowering stems and the heads they carry. */
+	readonly stalks?: TuftStalks;
+	/** The least a thinned plant keeps: shoots, blades on each shoot, and flowering stems. */
+	readonly least: { readonly shoots: number; readonly blades: number; readonly stalks: number };
 	/**
-	 * The sheath column's colours, where the photographs show the plant's own sheaths rather than the
-	 * leaf's green: a merged ground plant draws its columns in them, from the foot up to the collar.
-	 */
-	readonly sheathColour?: SheathColour;
-	/** Degrees a blade leaves its shoot, by blade age (t = 0 the youngest, innermost, 1 the oldest). */
-	readonly spread: Curve;
-	/** Blade length over the foliage's blade length, by blade age. */
-	readonly size: Curve;
-	/** Flowering stems: how many, how tall, how they bow, and their heads. */
-	readonly heads?: TuftHeads;
-	/**
-	 * The crown's hold in the soil: a short rhizome and the roots that leave it, for a plant whose
-	 * photographs show them. Absent, the crown draws nothing under the shoots, as a tufted grass does.
+	 * The stool's hold in the soil: a short rhizome and the roots that leave it, in metres, for a
+	 * plant whose photographs show them. Absent, the stool draws nothing under the shoots.
 	 */
 	readonly soil?: TuftSoil;
 }
@@ -1218,69 +1221,104 @@ export interface TuftSoil {
 }
 
 /**
- * The flowering stems of a tuft and the heads they carry. Each head's flowers or spikes are the
- * record's extras on the stem's flower sites ('flower') and its tip ('stem-tip').
+ * One pose of a tuft's blade, as measured on a photograph, in mound heights.
  *
  * @category api/vegetation
  */
-export interface TuftHeads {
+export interface TuftPose {
+	/**
+	 * The share of a shoot's blades, by age, that the pose stands for. The pose itself is the blade
+	 * at the middle of that share; a blade between two poses' middles takes a shape between them.
+	 */
+	readonly share: number;
+	/** Degrees above the horizontal that the blade leaves its sheath at. Left out, the fit finds it. */
+	readonly leave?: number;
+	/** How far the blade's highest point stands above its collar. */
+	readonly apex: number;
+	/**
+	 * How far its tip ends below its highest point. A drop as great as the highest point brings the
+	 * blade down to the soil: it meets the soil where its point begins, and the point runs on.
+	 */
+	readonly drop: number;
+	/** How far out from its collar its tip ends. */
+	readonly reach: number;
+	/**
+	 * Degrees below the horizontal that the blade's tip points at, from 0 to 90, where the
+	 * photograph shows it. Left out, the fit finds it.
+	 */
+	readonly tip?: number;
+}
+
+/**
+ * The flowering stems of a tuft, in mound heights. A stem and its head are one piece of the kit.
+ *
+ * @category api/vegetation
+ */
+export interface TuftStalks {
 	/** Flowering stems per tuft. */
 	readonly count: Spread;
-	/** What the heads are: an open branched panicle (grasses) or spikes hanging on stalks (sedges). */
-	readonly kind: 'panicle' | 'spike';
-	/** Stem height in metres. */
-	readonly height: Spread;
-	/** The stem's radius at its base in metres. */
-	readonly radius: number;
-	/** Faces round the stem: 3 for a sedge's three-angled stem, more for a round culm. */
-	readonly sides: number;
-	/** Degrees the stem's top bows over from vertical. */
-	readonly bow: Spread;
-	/**
-	 * The share of its shoot's outward lean that a flowering stem takes, from 0 to 3: the stem
-	 * leaves the shoot's top along the shoot's own lean, so a tussock whose outer shoots lean away
-	 * spreads its flowering stems with them. 1.2 by default. A species whose photographs show the
-	 * stems rising upright from a leaning tussock names a smaller share.
-	 */
-	readonly leanShare?: number;
-	/**
-	 * The radius of a hanging spike's stalk, as a share of the stem's radius, from 0 to 1; absent,
-	 * 0.35. A stalk under a pixel wide drops from a silhouette's matte, so the spike then stands as
-	 * a piece apart from its stem.
-	 */
-	readonly stalkShare?: number;
 	/** The seasons the stems stand in. */
 	readonly seasons: readonly Season[];
-	/** A panicle: its length, whorls of branches, and flowers along each branch. */
-	readonly panicle?: {
-		/** Metres of the stem's top that the panicle takes. */
-		readonly length: Spread;
-		/** Whorls of branches up the panicle. */
-		readonly whorls: number;
-		/** Branches per whorl. */
-		readonly branches: Spread;
-		/** Degrees a branch leaves the stem, low whorls to high (t = 0 lowest, 1 highest). */
-		readonly angle: Curve;
-		/** Degrees a branch droops over its length. */
-		readonly droop: number;
-		/** Flowers (spikelets) per branch, on its outer part. */
-		readonly flowers: Spread;
-		/**
-		 * The share of the flowering stem's radius that a branch takes, from 0 to 1; absent, 0.18. A
-		 * branch thinner than a pixel drops from a silhouette's matte and splits the spray into
-		 * pieces, while a thicker one closes the gaps the see-through reads.
-		 */
-		readonly branchShare?: number;
-	};
-	/** Spikes hanging one below another from the stem's bowed top. */
-	readonly spikes?: {
-		/** Spikes per stem below the one at its tip. */
-		readonly count: Spread;
-		/** Metres between spikes along the stem. */
-		readonly spacing: Spread;
-		/** Metres of the stalk each spike hangs on. */
-		readonly stalk: Spread;
-	};
+	/** The height of a stem's highest point above the soil: the shortest stem's and the tallest's. */
+	readonly top: readonly [number, number];
+	/** Degrees a stem leans from plumb: at the stool's middle and at its rim. */
+	readonly lean: readonly [number, number];
+	/**
+	 * The stem's bow: the share of its length that runs straight before it, and the degrees it turns
+	 * over the rest, at the stool's middle and at its rim.
+	 */
+	readonly bow: { readonly from: number; readonly turn: readonly [number, number] };
+	/** The stem's width at its foot. */
+	readonly width: number;
+	/** Faces round the stem: 3 for a sedge's three-angled stem, more for a round culm. */
+	readonly sides: number;
+	/** What the stem carries. */
+	readonly head: TuftSpikes | TuftPanicle;
+}
+
+/**
+ * A sedge's head: spikes hanging plumb one below another along the stem's bow, and one at its tip.
+ *
+ * @category api/vegetation
+ */
+export interface TuftSpikes {
+	/** The kind of head. */
+	readonly kind: 'spike';
+	/** Hanging spikes on a stem. */
+	readonly count: number;
+	/** A spike's length, in mound heights. */
+	readonly length: number;
+	/** A spike's width, in mound heights. */
+	readonly width: number;
+	/** The length of the thread a spike hangs on. */
+	readonly thread: number;
+	/** The length of the spike that ends the stem, on the stem's own line. */
+	readonly tip: number;
+}
+
+/**
+ * A grass's head: an open pyramid of branches in whorls up the stem's top, each ending in a
+ * cluster of spikelets.
+ *
+ * @category api/vegetation
+ */
+export interface TuftPanicle {
+	/** The kind of head. */
+	readonly kind: 'panicle';
+	/** The head's length, in mound heights. */
+	readonly length: number;
+	/** The head's width at its lowest whorl, in mound heights. */
+	readonly width: number;
+	/** Whorls of branches up the head. */
+	readonly whorls: number;
+	/** Branches in a whorl. */
+	readonly branches: number;
+	/** Degrees a branch leaves the stem at. */
+	readonly angle: number;
+	/** Spikelets in a branch's cluster. */
+	readonly spikelets: number;
+	/** A spikelet's length, in mound heights. */
+	readonly spikelet: number;
 }
 
 /**
@@ -1325,11 +1363,14 @@ export interface Column {
 		readonly tiers: readonly ColumnArmTier[];
 		/**
 		 * How many of the species' variants, from the first, stand their arms in one upright plane, a
-		 * tier's worth to one side and the next to the other. The rest spread their arms evenly
-		 * through the full circle. A variant in one plane is not balanced round its column, so a
-		 * record that names any says in its comment which photograph shows it.
+		 * tier's worth to one side and the next to the other. The plane stands across the view from
+		 * +Z, so a whole picture taken from there shows every arm. The rest spread their arms
+		 * evenly through the full circle. A variant in one plane is not balanced round its column,
+		 * so a record that names any says in its comment which photograph shows it.
 		 */
 		readonly plane: number;
+		/** Ribs round an arm, which carries fewer than the column does. */
+		readonly ribs: Spread;
 		/** Degrees above the horizontal that an arm leaves the column at; a negative angle sags. */
 		readonly leave: number;
 		/**
@@ -2551,11 +2592,11 @@ export interface LodSpec {
 	 */
 	readonly cardGrow?: number;
 	/**
-	 * Texels a side of one cell of the card atlas, at each tier, where the species' leaves are
-	 * thinner than the default cell can hold: each entry is a power of two from 64 to 256, and 64
-	 * by default. A needle a millimetre and a half across is under one texel of a 64 cell, so its
-	 * card would draw only the bare twig; a cell of 128 holds it while the crown still reads green.
-	 * Each doubling costs four times the atlas memory.
+	 * Texels a side of one cell of the card atlas, at each tier, where the default cell does not
+	 * suit the species: each entry is a power of two from 32 to 256, and 64 by default. A needle a millimetre and a half across is under one texel
+	 * of a 64 cell, so its card would draw only the bare twig; a cell of 128 holds it while the
+	 * crown still reads green. A piece whose card first shows at two dozen pixels is held by a
+	 * cell of 32. Each doubling costs four times the atlas memory.
 	 */
 	readonly cardCell?: Readonly<Record<Detail, number>>;
 	/**

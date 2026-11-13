@@ -914,7 +914,7 @@ class Mesher {
 						this.record.seedSalt,
 						variant,
 						wood.axis,
-						path.radius[0] as number,
+						wood.stem < 0,
 					)
 				: undefined;
 		const section = ribs
