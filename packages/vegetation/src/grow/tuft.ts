@@ -551,6 +551,7 @@ function writeRun(
 	along: readonly [number, number],
 	closeTip: boolean,
 	angled = false,
+	sheath = false,
 ): void {
 	writeStem(mesh, {
 		path,
@@ -566,6 +567,7 @@ function writeRun(
 		along,
 		browning: 0,
 		closeTip,
+		sheath,
 	});
 }
 
@@ -816,6 +818,9 @@ export function tuftPieces(record: Species, manifest: TextureManifest): readonly
 				(s) => half * (1 - (1 - SHEATH_TAPER) * s),
 				[0, 1],
 				false,
+				false,
+				// The column takes the record's sheath colour where it gives one.
+				growth.sheathColour !== undefined,
 			);
 		},
 	});

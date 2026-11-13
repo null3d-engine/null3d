@@ -10,6 +10,7 @@ import type { Species, Tuft } from '../core/record';
 import { loadSpecies } from '../core/registry';
 import { DETAILS, spreadMean } from '../core/types';
 import { buildKitNow, growPlantNow, loadPlantCode } from '../generate';
+import { SURFACE_PIECE, SURFACE_PIECE_SHEATH } from '../leaf/writer';
 import { dequantisePosition } from '../lod/quantise';
 import { bodies, type TestMesh, toMesh } from './body.fixture';
 import { targetHeight } from './height';
@@ -173,6 +174,72 @@ for (const id of TUFTS) {
 			const mesh = stalk?.tiers[DETAILS.indexOf(kit.detail)];
 			if (!mesh) throw new Error(`${id} has no flowering stem`);
 			expect(bodies(mesh, 0)).toBeGreaterThan(1);
+		});
+
+		it("gives the material each piece's share along, and marks the sheath column for its colour", () => {
+			const tier = DETAILS.indexOf(kit.detail);
+			for (const prototype of kit.prototypes) {
+				const mesh = prototype.tiers[tier];
+				if (!mesh) throw new Error(`${prototype.class} has no tier`);
+				const sheath = prototype.class === 'piece-sheath' && growth.sheathColour !== undefined;
+				let least = 1;
+				let most = 0;
+				for (let i = 0; i < mesh.positions.length / 3; i++) {
+					// The surface kind: the sheath column's mark, or a piece's own surface.
+					expect(mesh.colors[i * 4 + 2]).toBe(sheath ? SURFACE_PIECE_SHEATH : SURFACE_PIECE);
+					// The second coordinates: the share along the part, then its browning.
+					const along = mesh.uvs1[i * 2] as number;
+					expect(along).toBeGreaterThanOrEqual(0);
+					expect(along).toBeLessThanOrEqual(1);
+					expect(mesh.uvs1[i * 2 + 1] as number).toBeGreaterThanOrEqual(0);
+					expect(mesh.uvs1[i * 2 + 1] as number).toBeLessThanOrEqual(1);
+					// The bend weight follows the share, so a part's foot holds and its end sways.
+					expect(Math.abs((mesh.colors[i * 4] as number) - 255 * along)).toBeLessThanOrEqual(0.51);
+					least = Math.min(least, along);
+					most = Math.max(most, along);
+				}
+				// A blade and a sheath column run their whole length, foot to end.
+				if (!prototype.class.startsWith('piece-stalk-')) {
+					expect(least).toBeLessThan(0.01);
+					expect(most).toBeGreaterThan(0.99);
+				}
+			}
+		});
+
+		it('draws the sheath column as the leaf where the record gives it no colour', () => {
+			const { sheathColour: _colour, ...plain } = growth;
+			const bare = buildKitNow(
+				{ ...module, record: { ...record, growth: plain } },
+				{ detail: 'high', placeholders: 'missing' },
+			);
+			const column = bare.prototypes.find((prototype) => prototype.class === 'piece-sheath');
+			const mesh = column?.tiers[DETAILS.indexOf('high')];
+			if (!mesh) throw new Error('no sheath column');
+			for (let i = 0; i < mesh.positions.length / 3; i++)
+				expect(mesh.colors[i * 4 + 2]).toBe(SURFACE_PIECE);
+		});
+
+		it("bakes the sheath column's card in the record's sheath colour", () => {
+			const colour = growth.sheathColour;
+			const column = kit.prototypes.find((prototype) => prototype.class === 'piece-sheath');
+			const face = column?.card.planes[0]?.front;
+			if (!colour || !face) throw new Error(`${id} has no coloured sheath column`);
+			// The card's texels that the column covers, as a mean of their stored colour.
+			const { size, color } = kit.cards;
+			const mean = [0, 0, 0];
+			let covered = 0;
+			for (let y = face[1]; y < face[1] + face[3]; y++)
+				for (let x = face[0]; x < face[0] + face[2]; x++) {
+					const at = (y * size + x) * 4;
+					if ((color[at + 3] as number) === 0) continue;
+					for (let k = 0; k < 3; k++) mean[k] = (mean[k] as number) + (color[at + k] as number);
+					covered++;
+				}
+			expect(covered).toBeGreaterThan(0);
+			// The stored colour is the record's, so its channels stand in the record's order: a
+			// brown sheath is redder than it is green, where the leaf is greener than it is red.
+			const order = (rgb: readonly number[]) => Math.sign((rgb[0] as number) - (rgb[1] as number));
+			expect(order(mean)).toBe(order(colour.foot));
 		});
 
 		it('holds a blade shape for every step between its measured poses, each in two twists', () => {

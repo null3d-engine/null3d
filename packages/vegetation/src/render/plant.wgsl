@@ -183,6 +183,11 @@ const KIND_STEM: f32 = 85.0;
 const KIND_BUD: f32 = 128.0;
 /// A merged ground plant's sheath column, marked in the colour's third byte.
 const KIND_SHEATH: f32 = 240.0;
+/// A placed piece's own surface, which draws as a leaf: its second coordinates hold the share along
+/// its part and its own browning, as a merged plant's foliage holds them.
+const KIND_PIECE: f32 = 16.0;
+/// A placed piece's sheath column, which draws in the record's sheath colour and does not flutter.
+const KIND_PIECE_SHEATH: f32 = 32.0;
 // Texels across the near table: two for each of its sixteen slots.
 const NEAR_TEXELS: f32 = 32.0;
 // A leaf's reflectance at normal incidence and at grazing, as the plant materials set them.
@@ -817,10 +822,12 @@ fn shoot_offset(input: VertexInput) -> vec3f {
     let bend = input.colors.r;
     local += local_wind * (bend * bend * length(input.position) * air.a * SHOOT_BEND);
     let kind = input.colors.b * 255.0;
-    if (kind < KIND_STEM * 0.5) {
+    if (kind < KIND_STEM * 0.5 && abs(kind - KIND_PIECE_SHEATH) >= 0.5) {
         let flutter = wind_record(own, 2);
         let leaf_length = max(header(HEADER_LOWER_REFLECTANCE).w, 0.01);
-        let along = clamp(input.uv1.x / leaf_length, 0.0, 1.0);
+        // A leaf holds its metres along, and a placed piece the share along its part.
+        let piece = abs(kind - KIND_PIECE) < 0.5;
+        let along = select(clamp(input.uv1.x / leaf_length, 0.0, 1.0), saturate(input.uv1.x), piece);
         let brisk = clamp(air.a / 10.0, 0.0, 1.5);
         let flap = sin(TURN * (frame.time * flutter.y + row.phase + input.colors.g));
         local += normalize(input.normal) * (flutter.x * brisk * flap * along / sqrt(squared));
@@ -1289,9 +1296,11 @@ fn surface(input: SurfaceInput) -> Surface {
                 base *= header(HEADER_YOUNG_TINT).rgb;
             }
             roughness = 0.8;
-        } else if (mode == MODE_FOLIAGE && abs(input.vertexColor.b * 255.0 - KIND_SHEATH) < 0.5) {
-            // A merged ground plant's sheath column draws in the record's sheath colour. Its kind
-            // marks the colour's third byte, since the asset clamps a negative coordinate to zero.
+        } else if ((mode == MODE_FOLIAGE && abs(input.vertexColor.b * 255.0 - KIND_SHEATH) < 0.5)
+            || (mode == MODE_SHOOTS && abs(input.vertexColor.b * 255.0 - KIND_PIECE_SHEATH) < 0.5)) {
+            // A ground plant's sheath column, a merged one or a placed piece's, draws in the
+            // record's sheath colour. Its kind marks the colour's third byte, since the asset
+            // clamps a negative coordinate to zero.
             // The leaf texture's stalk strip lies over it, divided by the face's mean, so the
             // sheath shows the blade's ribbing and the record's colour stays the material's own.
             // The column's second coordinates' x runs from its foot to its collar, so the record's
@@ -1309,8 +1318,10 @@ fn surface(input: SurfaceInput) -> Surface {
             let layer = select(1, 0, upper);
             let texel = textureSampleGrad(colour, colourSampler, uv, layer, gx, gy);
             let relief_texel = textureSampleGrad(relief, reliefSampler, uv, 0, gx, gy).rgb;
-            // A merged leaf browns on its own by its second coordinates' y, as a dying frond does.
-            let browning = select(0.0, input.uv1.y, mode == MODE_FOLIAGE);
+            // A merged leaf, or a placed piece, browns on its own by its second coordinates' y, as
+            // a dying frond does.
+            let piece = mode == MODE_SHOOTS && abs(input.vertexColor.b * 255.0 - KIND_PIECE) < 0.5;
+            let browning = select(0.0, input.uv1.y, mode == MODE_FOLIAGE || piece);
             let light = leaf_light(texel.rgb, upper, browning);
             base = light.base;
             share = light.share;
@@ -1330,8 +1341,10 @@ fn surface(input: SurfaceInput) -> Surface {
             through *= flatten;
             // A pale collar marks where the blade leaves its sheath, over the share the record
             // names at the blade's base.
+            // A shoot's leaf holds its metres along there, so the band is a merged leaf's or a
+            // placed piece's alone.
             let collar = header(HEADER_COLLAR);
-            if (collar.w > 0.0 && input.uv1.x < collar.w) {
+            if ((mode == MODE_FOLIAGE || piece) && collar.w > 0.0 && input.uv1.x < collar.w) {
                 base = mix(collar.rgb, base, smoothstep(collar.w * 0.6, collar.w, input.uv1.x));
             }
             sheen = select(header(HEADER_UPPER_REFLECTANCE).w, 0.0, upper);
