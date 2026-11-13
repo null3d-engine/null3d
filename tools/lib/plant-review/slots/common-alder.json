@@ -121,5 +121,10 @@
 		"thin": 0.015,
 		"span": 0.1,
 		"barkMask": true
+	},
+	"_pictures": {
+		"01-whole-distant.png": {
+			"outline": "the far river bank behind the tree joins its outline; picture 30 shows the same form on a clean ground"
+		}
 	}
 }

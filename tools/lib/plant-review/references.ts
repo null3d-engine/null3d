@@ -1466,6 +1466,12 @@ export function keepPlantParts(
 		mask[at] = keep[labels[at] as number] && labels[at] ? 1 : 0;
 }
 
+/**
+ * How a plant stands, where that changes how its outline is read: a mound of leaves from its foot,
+ * or a clump of several bare stems from one stool.
+ */
+export type PlantHabit = 'mound' | 'clump';
+
 /** The plant's outline from a matte: the plant drawn dark on white, as the silhouette view draws it. */
 export function matteMask(image: Rgba): PlantMask {
 	const work = image.width > WORK_WIDTH ? resizeToWidth(image, WORK_WIDTH) : image;
@@ -1628,6 +1634,24 @@ export function rowSpans(mask: Uint8Array, width: number, height: number): Int32
 	return spans;
 }
 
+/**
+ * Each row as one run as wide as the plant it holds, centred on the frame: the first and last
+ * columns of that run, or -1 for a row with no plant. A row of spread stems then reads as narrow as
+ * its stems together, and a row of foliage as wide as its foliage.
+ */
+export function filledSpans(mask: Uint8Array, width: number, height: number): Int32Array {
+	const spans = new Int32Array(height * 2).fill(-1);
+	for (let y = 0; y < height; y++) {
+		let filled = 0;
+		for (let x = 0; x < width; x++) filled += mask[y * width + x] ? 1 : 0;
+		if (filled === 0) continue;
+		const left = (width - filled) >> 1;
+		spans[y * 2] = left;
+		spans[y * 2 + 1] = left + filled - 1;
+	}
+	return spans;
+}
+
 /** The box round a mask's plant pixels, or null for an empty mask. */
 export function boxOf(mask: Uint8Array, width: number, height: number): Box | null {
 	let left = width;
@@ -1746,7 +1770,7 @@ export function crownStartRow(
 	spans: Int32Array,
 	box: Box,
 	central?: Int32Array,
-	moundForm = false,
+	habit?: PlantHabit,
 ): number {
 	const tall = box.bottom - box.top + 1;
 	const width = (y: number) => {
@@ -1829,7 +1853,7 @@ export function crownStartRow(
 	// that shows, the stem is the row's own central run: scan that, past the frame's bottom sliver
 	// and the foot's flare, for the first row above the stem that stands wider than the bole limit.
 	const stem =
-		central !== undefined && !moundForm && widest > 0 && trunk > widest * CORRUPT_TRUNK_SHARE
+		central !== undefined && habit !== 'mound' && widest > 0 && trunk > widest * CORRUPT_TRUNK_SHARE
 			? central
 			: undefined;
 	const boleLimit =
@@ -1914,7 +1938,7 @@ function meanColour(
 }
 
 /** Measures a plant from its outline in a picture. */
-export function measurePlant(image: Rgba, plant: PlantMask, moundForm = false): PlantMeasures {
+export function measurePlant(image: Rgba, plant: PlantMask, habit?: PlantHabit): PlantMeasures {
 	const { width, height, mask, coverage, background } = plant;
 	const work = image.width === width ? image : resizeToWidth(image, width);
 	const lab = labImage(work);
@@ -1952,7 +1976,13 @@ export function measurePlant(image: Rgba, plant: PlantMask, moundForm = false): 
 			light: null,
 		};
 	const spans = rowSpans(mask, width, height);
-	const start = crownStartRow(spans, box, centralRuns(mask, width, box), moundForm);
+	// A clump's stems spread from its stool, so a row through them spans wide while it holds little
+	// plant. Its crown starts where the rows fill with foliage, so each row counts by the plant it
+	// holds, not by the span between its outermost stems.
+	const start =
+		habit === 'clump'
+			? crownStartRow(filledSpans(mask, width, height), box)
+			: crownStartRow(spans, box, centralRuns(mask, width, box), habit);
 	const tall = box.bottom - box.top + 1;
 	// The crown's outline: in each crown row, everything between the row's outermost plant pixels.
 	let hull = 0;

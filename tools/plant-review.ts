@@ -59,6 +59,7 @@ import {
 	boxOf,
 	matteMask,
 	measurePlant,
+	type PlantHabit,
 	plantMask,
 	type ReferenceSet,
 	readReferenceSet,
@@ -77,6 +78,7 @@ import {
 	singleShot,
 	turnShots,
 } from './lib/plant-review/render.ts';
+import { reviewDataOfSpecies } from './lib/plant-review/review-data.ts';
 import { type SheathTarget, sheathTargetOf } from './lib/plant-review/sheath.ts';
 import {
 	mergeVerdict,
@@ -145,11 +147,18 @@ async function formsOf(species: string): Promise<readonly string[]> {
 	return Object.keys((await loadSpecies(species)).record.forms ?? {});
 }
 
-/** Whether a species grows as a mound of leaves from its foot, where the crown start stays at the foot. */
-async function moundFormOf(species: string): Promise<boolean> {
-	if (!isSpeciesId(species)) return false;
+/** The folder of the species' slot files, which hold each species' review data too. */
+const SLOTS = join(REPO_ROOT, 'tools/lib/plant-review/slots');
+
+/**
+ * How a species stands, where that changes how its outline is read: a mound of leaves from its
+ * foot, by its growth model, or what its review data names, such as a clump of bare stems.
+ */
+async function habitOf(species: string): Promise<PlantHabit | undefined> {
+	const named = reviewDataOfSpecies(SLOTS, species).habit;
+	if (named !== undefined || !isSpeciesId(species)) return named;
 	const model = (await loadSpecies(species)).record.growth.model;
-	return model === 'tuft' || model === 'rosette';
+	return model === 'tuft' || model === 'rosette' ? 'mound' : undefined;
 }
 
 /**
@@ -158,7 +167,7 @@ async function moundFormOf(species: string): Promise<boolean> {
  * read here.
  */
 function sheathTargetOfSpecies(species: string): SheathTarget | undefined {
-	const path = join(REPO_ROOT, 'tools/lib/plant-review/slots', `${species}.json`);
+	const path = join(SLOTS, `${species}.json`);
 	if (!existsSync(path)) return undefined;
 	return sheathTargetOf(JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>);
 }
@@ -181,7 +190,7 @@ function stillShot(
 	matte: boolean,
 	span?: number,
 	extra?: Readonly<Record<string, unknown>>,
-	moundForm = false,
+	habit?: PlantHabit,
 ): Shot {
 	const image = onColour(readImage(join(set.folder, slot.file)), [255, 255, 255]);
 	const aspect = image.width / image.height;
@@ -200,7 +209,7 @@ function stillShot(
 		skyMaskable(plant.background) ||
 		soilMaskable(plant.background, plant.height)
 	) {
-		const measures = measurePlant(image, plant, moundForm);
+		const measures = measurePlant(image, plant, habit);
 		// A plain background gives its own colour, which the render stands against. A silhouette
 		// draws black on white whatever its picture's colours and light, so it takes the framing alone.
 		if (slot.view !== 'silhouette') {
@@ -295,12 +304,12 @@ function videoQuery(
 	base: PlantReviewQuery,
 	view: PlantView,
 	background: PlantBackground,
-	moundForm = false,
+	habit?: PlantHabit,
 ): PlantReviewQuery {
 	const frames = sampleFrames(path, FRAMING_FRAMES);
 	const masks = frames.map((frame) => plantMask(frame));
 	const estimate = estimateFraming(
-		masks.map((mask, k) => measurePlant(frames[k] as Rgba, mask, moundForm)),
+		masks.map((mask, k) => measurePlant(frames[k] as Rgba, mask, habit)),
 		masks,
 	);
 	return { ...base, view, background, ...framingQuery(estimate) };
@@ -319,7 +328,7 @@ function turnVideoShots(
 	matte: boolean,
 	step?: number,
 	extra?: Readonly<Record<string, unknown>>,
-	moundForm = false,
+	habit?: PlantHabit,
 ): Shot[] {
 	const facts = probeVideo(video.path);
 	const frames = Math.max(1, Math.round(facts.duration * facts.fps));
@@ -328,8 +337,8 @@ function turnVideoShots(
 	const view: PlantView = TURN_VIEW[video.piece];
 	const query: PlantReviewQuery = withSlot(
 		video.piece === 'whole'
-			? { ...videoQuery(video.path, base, view, 'sky-meadow', moundForm), measure: true }
-			: videoQuery(video.path, base, view, 'studio-grey', moundForm),
+			? { ...videoQuery(video.path, base, view, 'sky-meadow', habit), measure: true }
+			: videoQuery(video.path, base, view, 'studio-grey', habit),
 		extra,
 	);
 	const group = `turn-${video.file.replace(/\.mp4$/, '')}`;
@@ -359,11 +368,11 @@ function windShots(
 	cellWidth: number | undefined,
 	fps: number,
 	extra?: Readonly<Record<string, unknown>>,
-	moundForm = false,
+	habit?: PlantHabit,
 ): Shot[] {
 	const facts = probeVideo(path);
 	const query: PlantReviewQuery = withSlot(
-		{ ...videoQuery(path, base, 'whole', 'sky-meadow', moundForm), wind: 1 },
+		{ ...videoQuery(path, base, 'whole', 'sky-meadow', habit), wind: 1 },
 		extra,
 	);
 	const count = Math.floor((facts.duration - 1e-6) * fps) + 1;
@@ -792,7 +801,7 @@ function compareRun(
 	manifest: Manifest,
 	set: ReferenceSet | undefined,
 	windFps: number,
-	moundForm: boolean,
+	habit: PlantHabit | undefined,
 	sheath: SheathTarget | undefined,
 ): boolean {
 	const byGroup = new Map<string, RunFrame[]>();
@@ -832,8 +841,9 @@ function compareRun(
 			set,
 			byGroup.get('stills') ?? [],
 			`${label}  STILLS AND TEXTURE SOURCES`,
-			moundForm,
+			habit,
 			sheath,
+			reviewDataOfSpecies(SLOTS, manifest.species).pictures,
 		);
 		for (const pair of result.pairs) stills.set(pair.file, pair);
 		metrics.stills = result;
@@ -895,7 +905,7 @@ function compareRun(
 			video,
 			frames,
 			`${label}  ${video.file.toUpperCase()}`,
-			moundForm,
+			habit,
 		);
 		turns.set(video.file, result);
 		summary.push(...turnSummary(result, limit));
@@ -1070,13 +1080,22 @@ function framingLines(pairs: readonly StillResult[]): string[] {
  * one, and no row passes or fails by it: the camera, or the file's mapping to a view, is at fault.
  */
 function voidLines(pairs: readonly StillResult[]): string[] {
-	return pairs.flatMap((pair) =>
-		pair.void === undefined
+	return pairs.flatMap((pair) => [
+		...(pair.void === undefined
 			? []
 			: [
 					`- ${pair.file}: void, ${pair.void}. No figure is read from it, and no row passes or fails by it.`,
-				],
-	);
+				]),
+		// A picture the species' review data sets aside, or whose outline it says cannot be read.
+		...(pair.standing === undefined
+			? []
+			: [
+					`- ${pair.file}: does not judge the primary plant (${pair.standing.kind}): ${pair.standing.reason}.`,
+				]),
+		...(pair.outlineVoid === undefined
+			? []
+			: [`- ${pair.file}: its outline figures are void: ${pair.outlineVoid}.`]),
+	]);
 }
 
 /**
@@ -1168,7 +1187,7 @@ async function main(): Promise<void> {
 			manifest,
 			set,
 			manifest.windFps ?? windFps,
-			await moundFormOf(manifest.species),
+			await habitOf(manifest.species),
 			sheathTargetOfSpecies(manifest.species),
 		);
 		console.log(readFileSync(join(dir, 'summary.md'), 'utf8'));
@@ -1200,7 +1219,7 @@ async function main(): Promise<void> {
 	const cell = flag('cell') ? Number(option('cell')) : undefined;
 	const step = flag('step') ? Number(option('step')) : undefined;
 	const wanted = parts();
-	const moundForm = await moundFormOf(species);
+	const habit = await habitOf(species);
 	const shots: Shot[] = [];
 	for (const view of viewList()) {
 		const [w, h] = VIEW_SPECS[view].size;
@@ -1233,7 +1252,7 @@ async function main(): Promise<void> {
 			: {};
 		if (wanted.has('stills'))
 			for (const slot of stillList(set.stills))
-				shots.push(stillShot(set, slot, base, matte, span, slotQueries[slot.file], moundForm));
+				shots.push(stillShot(set, slot, base, matte, span, slotQueries[slot.file], habit));
 		// The owner's two-dial sweep: a full round draws the whole view at the record's density and
 		// toward the sparse form, at the record's coarseness and a coarse one, so connectedness,
 		// height and the row's own density figure are read at every setting rather than only the
@@ -1263,12 +1282,12 @@ async function main(): Promise<void> {
 		if (wanted.has('turns'))
 			for (const video of set.turns)
 				shots.push(
-					...turnVideoShots(video, base, cell, matte, step, slotQueries[video.file], moundForm),
+					...turnVideoShots(video, base, cell, matte, step, slotQueries[video.file], habit),
 				);
 		if (wanted.has('wind'))
 			for (const path of set.winds) {
 				const file = path.split('/').pop() as string;
-				shots.push(...windShots(path, file, base, cell, windFps, slotQueries[file], moundForm));
+				shots.push(...windShots(path, file, base, cell, windFps, slotQueries[file], habit));
 			}
 	}
 	if (shots.length === 0)
@@ -1316,14 +1335,7 @@ async function main(): Promise<void> {
 	console.log(
 		`${frames.length - failed} of ${frames.length} frames drawn in ${manifest.seconds} s`,
 	);
-	const complete = compareRun(
-		dir,
-		manifest,
-		set,
-		windFps,
-		await moundFormOf(manifest.species),
-		sheath,
-	);
+	const complete = compareRun(dir, manifest, set, windFps, await habitOf(manifest.species), sheath);
 	console.log(readFileSync(join(dir, 'summary.md'), 'utf8'));
 	if (failed > 0 || !complete) process.exitCode = 1;
 }

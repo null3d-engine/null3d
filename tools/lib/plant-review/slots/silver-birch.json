@@ -110,5 +110,11 @@
 	},
 	"22-subbranch-studio.png": {
 		"turn": 45
+	},
+	"_pictures": {
+		"33-mature-dense-crown-whole.png": {
+			"standing": "second-form",
+			"reason": "the dense old tree is a second form of the species and does not judge the primary tree"
+		}
 	}
 }

@@ -24,6 +24,13 @@ vase, a spire or a set of separate pieces. Two pictures can hold the same colors
 of foliage and still be different trees. A pixel-difference figure or a color match is not this test
 and never substitutes for it.
 
+One plant of the set is the primary individual: the plant of the whole-plant turning video and of
+picture `01`. The species is built to be that plant. Every other whole view is matched on form and
+proportions, not outline for outline, because it may show another plant of the species. Where the
+turning video and a still disagree about the primary plant's shape, the turning video governs. The
+saguaro and the sedge are judged this way. The saguaro's arms spread round its trunk as its video
+shows. The flat arrangement of its picture `01` is a variant.
+
 Each species needs at least twenty reference pictures, most of them taken near the plant. They cover
 the whole habit at distance and in profile, the crown from outside and from underneath, the major
 limbs where they leave the trunk, how a limb forks and how it subdivides again, the fine twig
@@ -125,8 +132,12 @@ A species that fails a point fails the row that carries it.
 Row 11 is judged against a built neighbor, named in the verdict. A species with no built neighbor
 states that instead of passing.
 
-Row 6 is read from the sky gap: the share of the crown's own box that shows background, measured on
-both pictures at each whole view. A plant with no bare stem below its foliage, such as a sedge or a
+Row 6 is read from the sky gap: the share of background enclosed by the crown's own outline, on both
+pictures at each whole view. The verdict names this figure beside each value. The share of
+the crown's box that shows background is a different figure, and it does not judge this row. Some
+plants do not fill their box by shape: a spire, a cone, or any crown seen from below. Sky stands
+beside such a plant inside its box, so the box figure measures its taper. The Italian cypress read
+0.59 on that figure in its view from below, with no sky inside its column in any level view. A plant with no bare stem below its foliage, such as a sedge or a
 hosta, runs as wide at its foot as through its mound, so its crown's box is its whole box. A
 photograph whose lowest boughs sweep beside the stem can read as such a plant. Where the row's outer
 span hides the stem, the tool reads the stem's own central run and puts the crown's foot above it. The
@@ -191,6 +202,10 @@ The same species is drawn at eight equal angles, and two figures are measured at
 - **When the reference is less regular than the band, the reference sets the band.** A render more
   regular than its own reference is not a fault. The reviewer states the reference's spread beside the
   render's whenever it uses this.
+- **Crowns are built nearly round.** The narrow side of a crown's plan is at least 0.75 of its wide
+  side. A turning video can narrow more than that: the silver birch's reads 0.58 and the Scots
+  pine's 0.59. That narrowing is not copied, and a plant rounder than its turning video does not
+  fail this check.
 - **The foliage area is a note, not a pass mark.** It says how solid the crown reads from each side.
   It moves with the orientation of the cards rather than with the plant's balance, so an open crown's
   area swings widely while its outline does not.
@@ -285,6 +300,28 @@ own light they read 1.9, and the head's oak reads 2.2, so the light makes most o
   framed on the ring of flower sites at its stem's top, not on a single shoot tip and not on the
   plant's middle.
 
+## Pictures that do not judge the primary plant
+
+Some reference pictures are compared and shown, and still do not judge the plant. The species'
+review data names each one with its reason, in its slot file under `_pictures`. The tool keeps such
+a picture out of every row's evidence and figures, and the verdict lists it beside the row.
+
+- **A second form.** A picture of another form of the species judges that form, not the primary
+  plant. The silver birch's picture `33`, the dense old tree, is a second form.
+- **A limit of the reference.** A picture that shows the species badly is recorded as a limit until
+  it is remade. The common ash's picture `21`, a weak cut branch, is one.
+- **A stand.** One plant cannot draw a picture of many plants, or of a far larger plant than one
+  record grows. Such a picture is not judged until the review page plants a stand for it, with the
+  count and the spacing its slot states. The bracken's `03`, `04` and `06`, the bamboo's `03`, `05` and
+  `06`, and the meadow grass's `05` are stands. A stand picture does not hold back the coverage.
+- **An outline that joins its background.** The picture stays in the rows for its color and for the
+  eye, and its outline figures are void, with the reason. The common alder's picture `01` joins the
+  far river bank behind the tree; its picture `30` shows the same form on a clean ground.
+
+The hawthorn's default season is autumn with fruit, as its whole views show it. Summer leaf is a
+variant. Its thorn-tipped leafy leading shoots outside the mass pass the rule that no branch ends
+bare.
+
 ## What a reviewer must see for the picture-judged rows
 
 Seven rows are judged on a picture, not only on a band: 1 structure, 2 branch density, 3 branch
@@ -329,6 +366,12 @@ matte, it checks the picture too. A picture is void in three cases:
 - The plant has no subject for the view.
 - The subject is not in the frame.
 - The frame shows a wall of plant where the photograph has open ground.
+
+A whole view is void too when its plant is not drawn at its photograph's size. The plant's box must
+match the photograph's within a fifth, in height or in width. A render smaller in both, or larger in
+both, was framed from the wrong distance. Its figures would compare a small plant with a large one.
+The olive's whole views drew the plant at 0.34 of the frame's height against the photograph's 0.86,
+and every figure read from them was void.
 
 The tool reads no figure from a void picture and writes the reason beside it. A void picture is a
 fault to fix in the tool's camera or in the file's mapping to a view. It never passes a row and
@@ -452,6 +495,15 @@ than turning a fault of the measure into a pass or a fail.
   piece count survive such a move, and they are what to quote. The fix is tool work in that file,
   not species data. M3-V4 carries the debt, because the review rows are its evidence, while the code
   lives under `tools/`.
+
+## The crown start of a clump
+
+A clump is several bare stems from one stool, such as the holm oak. Its stems spread as they rise,
+so a row through them spans wide while it holds little plant. The outline rule takes that span for
+crown and starts the crown among the bare stems. A species' review data can name the habit `clump`.
+Each row then counts by the plant it holds, and the crown starts where the rows fill with foliage. The holm oak's picture `01` reads 0.253 of the height by the outline rule and 0.347 by the
+clump rule, against 0.34 to 0.42 by eye. Its pictures `02` and `18` read 0.289 and 0.228, where the
+hanging rim's foliage begins.
 
 ## The central-run crown start's reach
 
