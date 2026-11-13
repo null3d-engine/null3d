@@ -354,7 +354,6 @@ const OPEN_GAP: Readonly<Record<string, number>> = {
 	// which fixed leaves cannot; their stills judge them.
 	'silver-birch 21': 0.46,
 	'silver-birch 22': 0.466,
-	'weeping-willow 21': 0.278,
 	'weeping-willow 22': 0.388,
 	'european-beech 22': 0.348,
 	'common-ash 21': 0.223,

@@ -58,14 +58,14 @@ function whips(along: readonly [number, number], every: number, most: number): F
 		elbows: 3,
 		apart: 0.005,
 		// Stills 01, 09 and 18: side strands leave a whip along its whole run, and the curtain is
-		// nearly closed. A socket stands each 0.42 of a strand's length down the whip, so two or
-		// three strands hang side by side at every height of a fall.
+		// nearly closed. A socket stands each 0.48 of a strand's length down the whip, so two strands
+		// hang side by side at every height of a fall, and the leaf form keeps under its cap.
 		patch: {
 			kind: 'hang',
 			width: 0.07,
 			depth: 0.1,
 			along: 0,
-			sockets: { every: STRAND * 0.42, angle: 10 },
+			sockets: { every: STRAND * 0.48, angle: 10 },
 		},
 	};
 }

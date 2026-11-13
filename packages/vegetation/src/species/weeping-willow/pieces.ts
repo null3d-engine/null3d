@@ -37,15 +37,20 @@ const LEAF_SCALE = 0.74;
  * strand and its own midrib. A leaf leaves the strand at about 64 degrees and its stalk lets the
  * blade fall in that plane by the record's own 40 degrees, to 24 degrees off the strand.
  *
+ * A strand is built with the species' own leaf, which grows its lengths with it, so its leaves stand
+ * a step nearer on the rule than on the photograph: the drawn strand carries a leaf each 1.75
+ * centimetres, as still 21's does. Its cover then reads as the photographs' do: face on 0.385
+ * against still 21's 0.397, and the hanging shoot's enclosed sky 0.156 against still 19's 0.133.
+ *
  * @param length The strand's length in metres.
  * @param spread The half-width of an even spread on that length.
- * @param gap Metres between one leaf and the next.
+ * @param gap Metres between one leaf and the next, on the rule.
  * @param hook How the strand leaves its wood before it hangs.
  */
 function strand(
 	length: number,
 	spread: number,
-	gap = 0.0175,
+	gap = 0.0175 * LEAF_SCALE,
 	hook: PieceStem['hook'] = { angle: 70, length: 0.03 },
 ): PieceStem {
 	return {
