@@ -49,11 +49,48 @@ import {
 	type PlannedLeaf,
 	placeNodeLeaves,
 	plannedBrushes,
+	SHOOT_CUTS,
+	type ShootCut,
 	type ShootPlan,
 	square,
 	turn,
 	type UncardedPrototype,
 } from './shoot';
+
+/**
+ * How each tier meshes a piece's wood and buds. A tree carries thousands of pieces, so a piece's
+ * wood has the fewest sides a twig needs, three, widened to the round stem's mean width, with a ring
+ * only where the stem bends: 8 degrees at the high tier and 15 at the medium. Where a piece's leaves
+ * close round its stem, at every tier, no ring of the wood they hide shows, so its rings stand far
+ * apart. An axil's bud hides under its leaf, so the medium tier draws none and the high tier only
+ * one long enough to show, as the beech's long buds are. The tip clusters, which mark a species, are
+ * separate three-sided buds at the high tier and one cone at the medium. Thorns are three-sided at
+ * both, and a fruiting body is round at the high tier. The ultra tier keeps the crown's finest cut.
+ */
+export const PIECE_CUTS: Readonly<Record<Detail, ShootCut>> = {
+	low: { ...SHOOT_CUTS.low, thinHidden: true },
+	medium: {
+		stemSides: 3,
+		thinHidden: true,
+		meanWidth: true,
+		ringTurn: 15,
+		cluster: { sides: 3, round: false },
+		clusterCone: true,
+		thorn: { sides: 3, round: false },
+	},
+	high: {
+		stemSides: 3,
+		thinHidden: true,
+		meanWidth: true,
+		ringTurn: 8,
+		cluster: { sides: 3, round: false },
+		axil: { sides: 3, round: false },
+		axilLeast: 0.015,
+		thorn: { sides: 3, round: false },
+		body: { sides: 4, round: true },
+	},
+	ultra: { ...SHOOT_CUTS.ultra, thinHidden: true },
+};
 
 /**
  * How a piece is turned where a socket carries it: along the socket's own direction, hanging plumb,
@@ -803,6 +840,7 @@ export function planPiece(
 						width: mark.width,
 						along: frame.along,
 						cluster: false,
+						mark: 'thorn',
 					});
 					continue;
 				}
@@ -838,6 +876,7 @@ export function planPiece(
 						along: frame.along + stalk,
 						cluster: true,
 						stack: size,
+						mark: 'body',
 					});
 				}
 			}
@@ -1054,7 +1093,8 @@ export function splitPlan(
 	leaves: readonly PrototypeArrays[],
 	most = PART_VERTICES_MOST,
 ): ShootPlan[] {
-	const vertices = (part: ShootPlan): number => meshShoot(part, leaves, 'ultra').vertices;
+	const vertices = (part: ShootPlan): number =>
+		meshShoot(part, leaves, 'ultra', PIECE_CUTS.ultra).vertices;
 	if (vertices(plan) <= most) return [plan];
 	const near = (a: readonly number[], b: readonly number[]): number =>
 		length3(
@@ -1192,9 +1232,7 @@ export function piecePrototypes(
 					parts: parts.length,
 					...(rule.plane ? { plane: rule.plane } : {}),
 					sites: pieceSites(plan),
-					// A piece's leaves close round its stems where they stand densely, and no ring of
-					// the wood they hide shows.
-					...meshedPlan(plan, own, true),
+					...meshedPlan(plan, own, PIECE_CUTS),
 					...(brushes ? { brushes } : {}),
 				});
 			}
