@@ -366,7 +366,8 @@ export interface PieceRule {
  * fields over it. A species states one while its record's leaf also grows the crown it ships, which
  * keeps its own leaf until a plant built of pieces replaces it.
  */
-export interface PieceLeaf extends Partial<Pick<LeafShape, 'length' | 'breadth' | 'cardBands'>> {
+export interface PieceLeaf
+	extends Partial<Pick<LeafShape, 'length' | 'breadth' | 'cardBands' | 'cardStalkHighOnly'>> {
 	/** Metres of stalk from the stem to the blade's base. */
 	readonly stalk?: number;
 }
@@ -412,6 +413,9 @@ export function pieceRecord(record: Species, leaf: PieceLeaf | undefined): Speci
 				length: leaf.length ?? own.length,
 				...(leaf.breadth === undefined ? {} : { breadth: leaf.breadth }),
 				...(leaf.cardBands === undefined ? {} : { cardBands: leaf.cardBands }),
+				...(leaf.cardStalkHighOnly === undefined
+					? {}
+					: { cardStalkHighOnly: leaf.cardStalkHighOnly }),
 				petiole: { ...own.petiole, length: leaf.stalk ?? own.petiole.length },
 			},
 		},

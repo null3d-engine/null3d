@@ -24,7 +24,12 @@ import {
  * of their blade's length, with a median of 0.36: 1.25 centimetres on the record's 3.5 centimetre
  * blade.
  */
-export const PIECE_LEAF: PieceLeaf = { stalk: 0.0125 };
+export const PIECE_LEAF: PieceLeaf = {
+	stalk: 0.0125,
+	// Below the high tier a branch end is a few pixels across, where a stalk of a centimetre does not
+	// show; close up, at high, the stalk holds each leaf to its twig.
+	cardStalkHighOnly: true,
+};
 
 /**
  * The thorns along a stem. Stills 19, 21 and 22: one straight woody thorn at most nodes, one and a

@@ -328,7 +328,10 @@ export function bladeMesh(
 	}
 	// A card's texture draws the stalk it holds, so a card adds one, of one run, only where the stalk
 	// runs past it.
-	const stalkSides = tier.card && surface.extra <= 0 ? -1 : tier.stalkSides;
+	const stalkSides =
+		tier.card && (surface.extra <= 0 || (shape.cardStalkHighOnly === true && detail !== 'high'))
+			? -1
+			: tier.stalkSides;
 	if (stalkSides >= 0) addStalk(mesh, surface, shape, outline, stalkSides, tier.card ? 1 : 2);
 	addSori(mesh, surface, shape, outline, length);
 	return mesh.finishPrototype();
