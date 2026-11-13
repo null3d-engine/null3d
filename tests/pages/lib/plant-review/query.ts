@@ -145,6 +145,11 @@ export interface PlantReviewQuery {
 	 */
 	readonly footLost?: boolean;
 	/**
+	 * A limb view's subject as a great limb by its rank, the thickest first: the view frames that
+	 * limb across its run from the side, as a cactus's arm or a limb's elbow is photographed.
+	 */
+	readonly limbRank?: number;
+	/**
 	 * The radius of the ring a branch or sub-branch cutting's shoots stand on, as a share of the
 	 * piece's height, in place of the record hint's. A wide ring separates the shoots.
 	 */
@@ -411,6 +416,7 @@ const NUMBER_FIELDS = [
 	'lateralAngle',
 	'lateralScale',
 	'stemPick',
+	'limbRank',
 	'horizon',
 	'fill',
 	'targetY',
@@ -467,7 +473,7 @@ const SHARE_FIELDS = new Set([
 ]);
 
 /** The fields that are whole numbers of at least one. */
-const COUNT_FIELDS = new Set(['turns', 'columns']);
+const COUNT_FIELDS = new Set(['turns', 'columns', 'limbRank']);
 
 /** The switches, written as 1 when on. */
 const SWITCHES = [

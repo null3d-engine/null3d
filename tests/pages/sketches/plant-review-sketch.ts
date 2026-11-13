@@ -75,6 +75,7 @@ import {
 	forkShot,
 	insideShot,
 	junctionShot,
+	limbShot,
 	placedPieceShot,
 	type Solved,
 	underRimShot,
@@ -1330,6 +1331,25 @@ export default defineSketch(async (ctx) => {
 				break;
 			}
 			case 'limb': {
+				// A slot that names a great limb frames that limb across its run, from the side.
+				if (QUERY.limbRank !== undefined) {
+					const found = solvedAt(
+						view,
+						lens,
+						() =>
+							limbShot(subjectsOf(), lens, {
+								rank: QUERY.limbRank as number,
+								along: QUERY.along ?? 0.5,
+								span: QUERY.span ?? Math.max(0.5, height * 0.15),
+								elevation: e,
+								turn,
+							}),
+						0,
+						0.05,
+					);
+					if (found) return found;
+					break;
+				}
 				// A plant whose limbs leave one stem as a cluster, as a saguaro's arms do, is
 				// photographed as the stem's top with its limbs either side, or from between them,
 				// rather than as one limb's run. The query names that composition, and the camera
