@@ -130,6 +130,7 @@
 		"daylight": 2.3
 	},
 	"19-flowers-on-crown.png": {
+		"season": "blossom",
 		"sunAzimuth": -15,
 		"sunRise": 60,
 		"skyShare": 0.34,
