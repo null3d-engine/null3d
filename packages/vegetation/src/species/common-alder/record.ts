@@ -584,9 +584,6 @@ export const record: Species = {
 		// first switch coming nearer joins it to one. Rejected for still 17: it leaves that view's
 		// thirteen pieces unchanged, so they are not cards standing apart.
 		switchPixels: [160, 12, 160],
-		// The cards stand two fifths larger than the shoots they picture, so a gap between one shoot's
-		// leaves falls on a neighbour's leaves rather than on sky, and the crown's rim reads solid.
-		cardGrow: 1.7,
 		// Still 18: a card's twig is thinner than a pixel at a whole view, so its leaves would read as a
 		// piece in air. Each card draws its supporting twig as a line from the parent node, so the join
 		// shows. A wider least width draws the line as more specks, which count as more pieces.
@@ -615,9 +612,9 @@ export const record: Species = {
 	textures: 'own',
 	variants: 6,
 	seedSalt: 20261108,
-	// A first pass at the floors a phone's lighter form keeps, set from the species' form and to
-	// be measured on the phone set before they are trusted.
-	sparse: { limbs: 0.45, leaves: 0.5, coarseness: 0.55 },
+	// The sparsest form keeps this share of the crown's shoots, each whole: about the leaf area
+	// below which the crown stops reading as its species.
+	sparse: { foliage: 0.14 },
 	// The reference's own crown-box spread at the eight angles is wider than the broad dome's band,
 	// so the reference sets it.
 	roundBand,

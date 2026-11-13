@@ -40,13 +40,15 @@ import {
 	MASK_SUBJECT_FLOOR,
 	rubricBand,
 	SHEATH_VIEWS,
+	SOLVED_VIEWS,
 	type StillResult,
 	sweepMeasures,
 	type TurnResult,
 	viewSheets,
 	type WindResult,
+	WOOD_CLOSE_VIEWS,
 } from './lib/plant-review/compare.ts';
-import { coverageMarkdown, coverageOf } from './lib/plant-review/coverage.ts';
+import { coverageMarkdown, coverageOf, drawnText } from './lib/plant-review/coverage.ts';
 import {
 	deltaE2000,
 	onColour,
@@ -59,6 +61,7 @@ import {
 	boxOf,
 	matteMask,
 	measurePlant,
+	type PlantHabit,
 	plantMask,
 	type ReferenceSet,
 	readReferenceSet,
@@ -68,17 +71,26 @@ import {
 	subjectShares,
 	TURN_VIEW,
 	type TurnVideo,
+	WORK_WIDTH,
 	withSlot,
 } from './lib/plant-review/references.ts';
 import {
+	correctedScale,
 	drawShots,
 	type RunFrame,
 	type Shot,
 	singleShot,
 	turnShots,
 } from './lib/plant-review/render.ts';
+import { pictureRulings, reviewDataOfSpecies } from './lib/plant-review/review-data.ts';
 import { type SheathTarget, sheathTargetOf } from './lib/plant-review/sheath.ts';
 import { referenceFolder as storeFolder } from './lib/plant-review/store.ts';
+import {
+	mergeVerdict,
+	toolVerdict,
+	VERDICT_FILE,
+	type Verdict,
+} from './lib/plant-review/verdict.ts';
 
 /** Where runs go by default. */
 const RENDERS = join(REPO_ROOT, '.internal/coordination/tree-renders');
@@ -113,6 +125,8 @@ interface Manifest {
 	readonly seconds: number;
 	/** The species record's height band, so a sweep picture's height is read against it. */
 	readonly sizeBand?: { readonly mean: number; readonly spread: number };
+	/** Whether the run was asked for a part of the species' references, not for all of them. */
+	readonly part?: true;
 	readonly frames: readonly RunFrame[];
 }
 
@@ -136,11 +150,18 @@ async function formsOf(species: string): Promise<readonly string[]> {
 	return Object.keys((await loadSpecies(species)).record.forms ?? {});
 }
 
-/** Whether a species grows as a mound of leaves from its foot, where the crown start stays at the foot. */
-async function moundFormOf(species: string): Promise<boolean> {
-	if (!isSpeciesId(species)) return false;
+/** The folder of the species' slot files, which hold each species' review data too. */
+const SLOTS = join(REPO_ROOT, 'tools/lib/plant-review/slots');
+
+/**
+ * How a species stands, where that changes how its outline is read: a mound of leaves from its
+ * foot, by its growth model, or what its review data names, such as a clump of bare stems.
+ */
+async function habitOf(species: string): Promise<PlantHabit | undefined> {
+	const named = reviewDataOfSpecies(SLOTS, species).habit;
+	if (named !== undefined || !isSpeciesId(species)) return named;
 	const model = (await loadSpecies(species)).record.growth.model;
-	return model === 'tuft' || model === 'rosette';
+	return model === 'tuft' || model === 'rosette' ? 'mound' : undefined;
 }
 
 /**
@@ -149,7 +170,7 @@ async function moundFormOf(species: string): Promise<boolean> {
  * read here.
  */
 function sheathTargetOfSpecies(species: string): SheathTarget | undefined {
-	const path = join(REPO_ROOT, 'tools/lib/plant-review/slots', `${species}.json`);
+	const path = join(SLOTS, `${species}.json`);
 	if (!existsSync(path)) return undefined;
 	return sheathTargetOf(JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>);
 }
@@ -172,7 +193,7 @@ function stillShot(
 	matte: boolean,
 	span?: number,
 	extra?: Readonly<Record<string, unknown>>,
-	moundForm = false,
+	habit?: PlantHabit,
 ): Shot {
 	const image = onColour(readImage(join(set.folder, slot.file)), [255, 255, 255]);
 	const aspect = image.width / image.height;
@@ -186,12 +207,15 @@ function stillShot(
 		...slot.query,
 	};
 	const plant = plantMask(image);
-	if (
+	// A close view of the wood stands against leaves, woodland or the plant itself, so only a plain
+	// studio background separates its subject: a sky or a ground fitted to its border is not there,
+	// and its colours would paint the render's background with a leaf's green.
+	const separable =
 		plant.background.plain ||
-		skyMaskable(plant.background) ||
-		soilMaskable(plant.background, plant.height)
-	) {
-		const measures = measurePlant(image, plant, moundForm);
+		(!WOOD_CLOSE_VIEWS.has(slot.view) &&
+			(skyMaskable(plant.background) || soilMaskable(plant.background, plant.height)));
+	if (separable) {
+		const measures = measurePlant(image, plant, habit);
 		// A plain background gives its own colour, which the render stands against. A silhouette
 		// draws black on white whatever its picture's colours and light, so it takes the framing alone.
 		if (slot.view !== 'silhouette') {
@@ -246,11 +270,7 @@ function stillShot(
 	// its outline whether or not the photograph separates, because a part that hangs from nothing
 	// shows only as a piece, and a piece needs the matte.
 	const outline =
-		(slot.kind !== 'texture' &&
-			(plant.background.plain ||
-				skyMaskable(plant.background) ||
-				soilMaskable(plant.background, plant.height)) &&
-			slot.view !== 'silhouette') ||
+		(slot.kind !== 'texture' && separable && slot.view !== 'silhouette') ||
 		slot.framed ||
 		slot.query?.fruit === true ||
 		CUTTING_VIEWS.includes(slot.view) ||
@@ -265,6 +285,11 @@ function stillShot(
 		matte && outline,
 		slot.file,
 		STILL_HOLD,
+		// A view solved from the plant's subjects, or framing a placed piece, draws its parts in
+		// flat colours too: its contract names areas of the picture that must show wood, foliage or
+		// open air, and that picture says which each texel shows. A matte cannot: close up it
+		// blends every level's soft coverage and reads fuller than the colour picture.
+		matte && (SOLVED_VIEWS.has(query.view ?? slot.view) || query.piece !== undefined),
 	);
 }
 
@@ -286,12 +311,12 @@ function videoQuery(
 	base: PlantReviewQuery,
 	view: PlantView,
 	background: PlantBackground,
-	moundForm = false,
+	habit?: PlantHabit,
 ): PlantReviewQuery {
 	const frames = sampleFrames(path, FRAMING_FRAMES);
 	const masks = frames.map((frame) => plantMask(frame));
 	const estimate = estimateFraming(
-		masks.map((mask, k) => measurePlant(frames[k] as Rgba, mask, moundForm)),
+		masks.map((mask, k) => measurePlant(frames[k] as Rgba, mask, habit)),
 		masks,
 	);
 	return { ...base, view, background, ...framingQuery(estimate) };
@@ -310,7 +335,7 @@ function turnVideoShots(
 	matte: boolean,
 	step?: number,
 	extra?: Readonly<Record<string, unknown>>,
-	moundForm = false,
+	habit?: PlantHabit,
 ): Shot[] {
 	const facts = probeVideo(video.path);
 	const frames = Math.max(1, Math.round(facts.duration * facts.fps));
@@ -319,8 +344,8 @@ function turnVideoShots(
 	const view: PlantView = TURN_VIEW[video.piece];
 	const query: PlantReviewQuery = withSlot(
 		video.piece === 'whole'
-			? { ...videoQuery(video.path, base, view, 'sky-meadow', moundForm), measure: true }
-			: videoQuery(video.path, base, view, 'studio-grey', moundForm),
+			? { ...videoQuery(video.path, base, view, 'sky-meadow', habit), measure: true }
+			: videoQuery(video.path, base, view, 'studio-grey', habit),
 		extra,
 	);
 	const group = `turn-${video.file.replace(/\.mp4$/, '')}`;
@@ -350,11 +375,11 @@ function windShots(
 	cellWidth: number | undefined,
 	fps: number,
 	extra?: Readonly<Record<string, unknown>>,
-	moundForm = false,
+	habit?: PlantHabit,
 ): Shot[] {
 	const facts = probeVideo(path);
 	const query: PlantReviewQuery = withSlot(
-		{ ...videoQuery(path, base, 'whole', 'sky-meadow', moundForm), wind: 1 },
+		{ ...videoQuery(path, base, 'whole', 'sky-meadow', habit), wind: 1 },
 		extra,
 	);
 	const count = Math.floor((facts.duration - 1e-6) * fps) + 1;
@@ -373,9 +398,12 @@ function windShots(
 	});
 }
 
-/** The views a run draws alone, from `--views`. */
+/**
+ * The views a run draws alone, from `--views`. A run that draws every still also draws the wood
+ * alone, since the standard judges rows 1 to 3 on that picture and the verdict names it.
+ */
 function viewList(): PlantView[] {
-	if (!flag('views')) return [];
+	if (!flag('views')) return parts().has('stills') && !flag('stills') ? ['skeleton'] : [];
 	const text = option('views');
 	if (text === 'all') return [...PLANT_VIEWS];
 	const views = text.split(',') as PlantView[];
@@ -469,7 +497,12 @@ const WHOLE_SCALE_MIN = 0.4;
 
 /** How long a width correction waits for a draw slot before it keeps the framing's own stand. */
 const CORRECTION_WAIT_MS = 300_000;
-const WHOLE_SCALE_MAX = 2.5;
+/**
+ * The most a whole view's stand may be scaled back to clear a crop. A mask that reports the plant
+ * narrower than it draws asks for a stand beyond this, and the picture keeps the framing's own;
+ * the bound sits above the largest accepted correction a crop has needed here.
+ */
+const WHOLE_SCALE_MAX = 2.9;
 
 /**
  * A drawn frame's camera stand and the plant's width in metres, as the page posted them: the
@@ -544,6 +577,18 @@ function drawnShare(
 	};
 }
 
+/** A picture's width correction: the share it aims at, how its width is read, and its scale. */
+interface WidthFix {
+	readonly target: number;
+	readonly silhouette: boolean;
+	readonly scale: number;
+	/** A close view of the crown's outside, whose subject is its span. */
+	readonly close: boolean;
+	/** A whole view stood on its photograph's rows, which a redraw moves only out. */
+	readonly stood: boolean;
+	readonly fraction: number;
+}
+
 /**
  * Redraws a whole view whose drawn width is outside the band from its reference's, at a stand
  * corrected by the width the picture itself measured, and once more if the residual stays outside.
@@ -559,45 +604,65 @@ async function correctWidths(
 	const frameOf = (file: string): RunFrame | undefined =>
 		frames.find((frame) => frame.file === file);
 	const matteOf = (file: string): string | undefined => frameOf(file)?.matte;
-	const fixes = new Map<
-		string,
-		{ target: number; silhouette: boolean; scale: number; close: boolean }
-	>();
+	/**
+	 * The redraw a picture takes from the width its last drawing measured, or undefined where it
+	 * keeps that drawing: inside the band and uncropped, or a correction outside what its view takes.
+	 */
+	const redraw = (file: string, fix: WidthFix): WidthFix | undefined => {
+		const matte = matteOf(file);
+		const measured = drawnShare(
+			join(dir, file),
+			fix.silhouette,
+			matte ? join(dir, matte) : undefined,
+			frameOf(file),
+		);
+		if (measured === null) return undefined;
+		// A box that touches the frame's sides is a crop whatever its share reads, so it is redrawn
+		// even inside the band: a cropped frame cannot judge its subject.
+		const off = Math.abs(measured.share - fix.target) > WIDTH_BAND;
+		const cropped = measured.clipped && fix.target < 1;
+		if (!off && !cropped) return undefined;
+		const scale = correctedScale(measured.share, fix.target, fix.fraction);
+		if (fix.close) return scale > CLOSE_CROP_MAX ? undefined : { ...fix, scale };
+		if (scale < WHOLE_SCALE_MIN || scale > WHOLE_SCALE_MAX) {
+			console.warn(
+				`width: ${file} keeps its stand: the target needs a scale of ${scale.toFixed(3)}, outside ${WHOLE_SCALE_MIN} to ${WHOLE_SCALE_MAX}`,
+			);
+			return undefined;
+		}
+		// A whole view's stand already puts the plant's top and foot on its photograph's rows and
+		// moves only out for a redraw, so a plant drawn narrower than its photograph keeps its
+		// drawing: the width error is the plant's.
+		if (fix.stood && scale < 1) return undefined;
+		return { ...fix, scale };
+	};
+	const fixes = new Map<string, WidthFix>();
 	for (const shot of stills) {
 		const target = shot.query.widthShare;
 		if (target === undefined || target >= 1) continue;
 		const file = shot.cells[0]?.file;
 		if (!file) continue;
-		const matte = matteOf(file);
-		const measured = drawnShare(
-			join(dir, file),
-			shot.query.view === 'silhouette',
-			matte ? join(dir, matte) : undefined,
-			frameOf(file),
-		);
-		if (measured === null) continue;
-		// A box that touches the frame's sides is a crop whatever its share reads, so it is redrawn
-		// even inside the band: a cropped frame cannot judge its subject.
-		const off = Math.abs(measured.share - target) > WIDTH_BAND;
-		const cropped = measured.clipped && target < 1;
-		if (!off && !cropped) continue;
+		// Only a whole view's stand and a close view of the crown's outside take a redraw's scale;
+		// a cut piece is fitted to its own points, so a redraw would draw the same picture.
+		const stood = shot.query.view === 'whole' || shot.query.view === 'silhouette';
 		const close = shot.query.view === 'limb' && shot.query.surface === true;
-		const scale = measured.share / target;
-		if (close && scale > CLOSE_CROP_MAX) continue;
-		if (!close && (scale < WHOLE_SCALE_MIN || scale > WHOLE_SCALE_MAX)) {
-			console.warn(
-				`width: ${file} keeps its stand: the target needs a scale of ${scale.toFixed(3)}, outside ${WHOLE_SCALE_MIN} to ${WHOLE_SCALE_MAX}`,
-			);
-			continue;
-		}
-		fixes.set(file, {
+		if (!stood && !close) continue;
+		// A species whose crown's openness passes its band between the framing's stand and the full
+		// correction names the share of the correction it takes; every other picture takes it all.
+		const fix = redraw(file, {
 			target,
 			silhouette: shot.query.view === 'silhouette',
-			scale,
+			scale: 1,
 			close,
+			stood,
+			fraction: Math.min(1, Math.max(0, shot.query.widthFraction ?? 1)),
 		});
+		if (fix) fixes.set(file, fix);
 	}
 	for (let pass = 0; pass < 2 && fixes.size > 0; pass++) {
+		// A picture that takes a share of the correction keeps the stand that share gives: a second
+		// pass would chase the reference's own share and undo the share.
+		const fractioned = [...fixes.values()].some((fix) => fix.fraction < 1);
 		const redraws = stills
 			.filter((shot) => fixes.has(shot.cells[0]?.file ?? ''))
 			.map((shot) => {
@@ -627,33 +692,14 @@ async function correctWidths(
 			if (at >= 0) frames[at] = frame;
 			else frames.push(frame);
 		}
-		const next = new Map<
-			string,
-			{ target: number; silhouette: boolean; scale: number; close: boolean }
-		>();
+		const next = new Map<string, WidthFix>();
 		for (const [file, fix] of fixes) {
-			const matte = matteOf(file);
-			const measured = drawnShare(
-				join(dir, file),
-				fix.silhouette,
-				matte ? join(dir, matte) : undefined,
-				frameOf(file),
-			);
-			if (measured === null) continue;
-			const off = Math.abs(measured.share - fix.target) > WIDTH_BAND;
-			const cropped = measured.clipped && fix.target < 1;
-			const scale = fix.scale * (measured.share / fix.target);
-			if (fix.close && scale > CLOSE_CROP_MAX) continue;
-			if (!fix.close && (scale < WHOLE_SCALE_MIN || scale > WHOLE_SCALE_MAX)) {
-				console.warn(
-					`width: ${file} keeps its stand: the target needs a scale of ${scale.toFixed(3)}, outside ${WHOLE_SCALE_MIN} to ${WHOLE_SCALE_MAX}`,
-				);
-				continue;
-			}
-			if (off || cropped) next.set(file, { ...fix, scale });
+			const again = redraw(file, fix);
+			if (again) next.set(file, again);
 		}
 		fixes.clear();
 		for (const [file, fix] of next) fixes.set(file, fix);
+		if (fractioned) break;
 	}
 	return frames;
 }
@@ -782,7 +828,7 @@ function compareRun(
 	manifest: Manifest,
 	set: ReferenceSet | undefined,
 	windFps: number,
-	moundForm: boolean,
+	habit: PlantHabit | undefined,
 	sheath: SheathTarget | undefined,
 ): boolean {
 	const byGroup = new Map<string, RunFrame[]>();
@@ -822,8 +868,9 @@ function compareRun(
 			set,
 			byGroup.get('stills') ?? [],
 			`${label}  STILLS AND TEXTURE SOURCES`,
-			moundForm,
+			habit,
 			sheath,
+			reviewDataOfSpecies(SLOTS, manifest.species).pictures,
 		);
 		for (const pair of result.pairs) stills.set(pair.file, pair);
 		metrics.stills = result;
@@ -831,10 +878,10 @@ function compareRun(
 		summary.push(
 			'### Stills and texture sources',
 			'',
-			`- ${result.pairs.length} files beside a render of their view; ${masked.length} give an outline on a plain background in both pictures.`,
+			`- ${result.pairs.filter((pair) => !pair.error).length} of ${result.pairs.length} files drawn beside a render of their view; ${masked.length} give an outline on a plain background in both pictures.`,
 			...masked.map(
 				(pair) =>
-					`- ${pair.file}: shape IoU ${fixed(pair.shapeIou)}, width error ${fixed(pair.profileError, 3)}, gap ${fixed(pair.crownBoxGap?.reference)} against ${fixed(pair.crownBoxGap?.render)} in the crown box, enclosed ${fixed(pair.gap?.reference)} against ${fixed(pair.gap?.render)}, frame ${fixed(pair.frameGap?.reference)} against ${fixed(pair.frameGap?.render)}, leaf colour difference ${fixed(pair.foliageDeltaE, 1)}${barkClause(pair)}${pieceClause(pair)}${fittedMaskClause(pair)}.`,
+					`- ${pair.file}: shape IoU ${fixed(pair.shapeIou)}, width error ${fixed(pair.profileError, 3)}, sky gap enclosed by the crown's outline (row 6's figure): photograph ${fixed(pair.gap?.reference)}, drawing ${fixed(pair.gap?.render)}${pair.gap?.renderByCoverage === undefined ? '' : ` (${fixed(pair.gap.renderByCoverage)} by the drawing's clear share, the earlier reading)`}; sky share of the crown's box: photograph ${fixed(pair.crownBoxGap?.reference)}, drawing ${fixed(pair.crownBoxGap?.render)}; sky share of the whole frame: photograph ${fixed(pair.frameGap?.reference)}, drawing ${fixed(pair.frameGap?.render)}; foot row: photograph ${fixed(pair.footRow?.reference, 3)}, drawing ${fixed(pair.footRow?.render, 3)}; leaf colour difference ${fixed(pair.foliageDeltaE, 1)}${barkClause(pair)}${pieceClause(pair)}${fittedMaskClause(pair)}; drawn at the ${pair.level ?? 'level the page did not report'}.`,
 			),
 			...result.pairs.flatMap((pair) =>
 				pair.surfaceDeltaE !== null
@@ -864,6 +911,8 @@ function compareRun(
 			// where its parts run. It gets that figure instead of an outline it cannot trust.
 			...edgeLines(result.pairs),
 			...framingLines(result.pairs),
+			...areaLines(result.pairs),
+			...voidLines(result.pairs),
 			...pieceLines(result.pairs),
 			...connectivityLines(result.pairs),
 			...result.pairs.flatMap((pair) => (pair.note ? [`- ${pair.file}: ${pair.note}.`] : [])),
@@ -884,7 +933,7 @@ function compareRun(
 			video,
 			frames,
 			`${label}  ${video.file.toUpperCase()}`,
-			moundForm,
+			habit,
 		);
 		turns.set(video.file, result);
 		summary.push(...turnSummary(result, limit));
@@ -961,12 +1010,39 @@ function compareRun(
 	const floating = [...stills.values()].filter(
 		(pair) => (pair.connectivity?.floating.length ?? 0) > 0,
 	);
+	const voids = [...stills.values()].filter((pair) => pair.void !== undefined);
+	// The run's verdict: the tool's rows are written fresh, and a row a reviewer judged is kept.
+	const verdictPath = join(dir, VERDICT_FILE);
+	const fresh = toolVerdict({
+		species: manifest.species,
+		run: manifest.run,
+		commit: manifest.commit,
+		dirty: manifest.dirty,
+		seed: manifest.seed,
+		variant: manifest.variant,
+		preset: manifest.preset,
+		coverage,
+		slots: set.stills,
+		stills,
+		rulings: pictureRulings(reviewDataOfSpecies(SLOTS, manifest.species)),
+		...verdictViews(manifest, set, turns, limit),
+	});
+	const verdict = existsSync(verdictPath)
+		? mergeVerdict(JSON.parse(readFileSync(verdictPath, 'utf8')) as Verdict, fresh)
+		: fresh;
+	writeFileSync(verdictPath, `${JSON.stringify(verdict, null, '\t')}\n`);
 	summary.push(
 		'### Coverage',
 		'',
 		coverage.complete
-			? `- Every one of the ${coverage.inUse} reference files in use was compared. coverage.md lists each with its render.`
-			: `- ${coverage.compared} of ${coverage.inUse} reference files in use were compared in full, so the species cannot pass. coverage.md lists each file and what it lacks.`,
+			? `- Every one of the ${coverage.inUse} reference files in use was compared${drawnText(coverage)}. coverage.md lists each with its render.`
+			: `- ${coverage.compared} of ${coverage.inUse} reference files in use were compared in full${drawnText(coverage)}, so the species cannot pass. coverage.md lists each file and what it lacks.`,
+		...(voids.length > 0
+			? [
+					`- ${voids.length} picture${voids.length === 1 ? ' is' : 's are'} void, with no subject to compare: ${voids.map((pair) => pair.file).join(', ')}. A void picture is a fault of the tool's camera or of the file's view, and it neither passes nor fails a row.`,
+				]
+			: []),
+		`- ${VERDICT_FILE} holds this run's rows: ${verdict.rows.filter((row) => row.verdict === 'pass').length} pass, ${verdict.rows.filter((row) => row.verdict === 'fail').length} fail, ${verdict.rows.filter((row) => row.verdict === 'void').length} void and ${verdict.rows.filter((row) => row.verdict === 'unjudged').length} wait for a reviewer. \`bun run plants:ledger\` counts from it.`,
 		...(maskFailures.length > 0
 			? [
 					`- The mask check fails on ${maskFailures.length} turn${maskFailures.length === 1 ? '' : 's'}: ${maskFailures.map((turn) => turn.video).join(', ')}. A matte that the colour outline cannot follow is not a matte a row can be judged on.`,
@@ -987,6 +1063,7 @@ function compareRun(
 		'',
 		"- The reference outline comes from colour against a plain background. Below the horizon it keeps only the plant that hangs down from above and is not a darker copy of the meadow, so foliage that sweeps the ground can be lost and a trunk's foot can be cut short.",
 		"- The render outline comes from the run's matte where the run drew one, so it is exact.",
+		`- Both pictures are shrunk to ${WORK_WIDTH} px wide before any outline figure is read, so the two are read at one size. A photograph's sky gap read at its own size stands higher, by 0.02 to 0.10 on a silhouette; a figure quoted from another size is not this run's figure.`,
 		'- A turning video is taken to turn at a steady rate over its arc; the alignment cannot repair a video that speeds up or stops short.',
 		"- A turn's renders are drawn as sheets of cells at a still's size, with the sun's shadows; a release build of the page draws the cells without them.",
 		'',
@@ -995,12 +1072,52 @@ function compareRun(
 	writeFileSync(join(dir, 'coverage.json'), `${JSON.stringify(coverage, null, '\t')}\n`);
 	writeFileSync(join(dir, 'coverage.md'), coverageMarkdown(manifest.species, set.slug, coverage));
 	writeFileSync(join(dir, 'summary.md'), `${summary.join('\n')}\n`);
+	// A run asked for a part is sound when every reference it drew for was compared, or drawn for
+	// the eye: the species' completeness is the ledger's count, not this run's. A run of every
+	// reference is sound when it is complete and no check of it fails.
+	if (manifest.part) {
+		const asked = new Set(manifest.frames.flatMap((frame) => frame.reference ?? []));
+		return !coverage.lines.some(
+			(line) => asked.has(line.file) && (line.status === 'missing' || line.status === 'unmeasured'),
+		);
+	}
 	return (
 		coverage.complete &&
 		maskFailures.length === 0 &&
 		floating.length === 0 &&
 		sweepFloating.length === 0
 	);
+}
+
+/**
+ * What the verdict takes from a run beside its stills: the picture of the wood alone, where the
+ * run drew it, and the whole-plant turning video's spread over the standard's eight angles.
+ */
+function verdictViews(
+	manifest: Manifest,
+	set: ReferenceSet,
+	turns: ReadonlyMap<string, TurnResult>,
+	band: number,
+): Pick<Parameters<typeof toolVerdict>[0], 'skeleton' | 'turn'> {
+	const skeleton = manifest.frames.find(
+		(frame) => frame.group === 'views' && frame.query.view === 'skeleton' && !frame.error,
+	)?.file;
+	const video = set.turns.find((turn) => turn.piece === 'whole');
+	const result = video ? turns.get(video.file) : undefined;
+	return {
+		...(skeleton !== undefined && { skeleton }),
+		...(video &&
+			result &&
+			!result.error && {
+				turn: {
+					video: video.file,
+					reference: result.spread.reference,
+					render: result.spread.render,
+					band,
+					sheets: result.sheets,
+				},
+			}),
+	};
 }
 
 /** The edge-direction lines for the stills that give no outline, so a close-up still has a figure. */
@@ -1018,7 +1135,7 @@ function edgeLines(pairs: readonly StillResult[]): string[] {
 function framingLines(pairs: readonly StillResult[]): string[] {
 	return pairs.flatMap((pair) => {
 		const framing = pair.framing;
-		if (!framing) return [];
+		if (!framing || pair.void !== undefined) return [];
 		const { front, behind, fill } = framing;
 		const clutter =
 			front !== null && behind !== null && fill !== null
@@ -1027,6 +1144,48 @@ function framingLines(pairs: readonly StillResult[]): string[] {
 		const warning = framing.warning ? `, as ${framing.warning}` : '';
 		return [`- ${pair.file}: the camera framed ${framing.subject}${clutter}${warning}.`];
 	});
+}
+
+/**
+ * What each solved picture shows in the areas its view's contract names, read from its picture of
+ * the parts: figures for the eye beside the photograph, whose own shares are read by eye.
+ */
+function areaLines(pairs: readonly StillResult[]): string[] {
+	return pairs.flatMap((pair) =>
+		pair.areas && pair.areas.length > 0
+			? [
+					`- ${pair.file}: its areas, by the parts picture: ${pair.areas.map((area) => `${area.name} ${area.cover.toFixed(2)}`).join('; ')}.`,
+				]
+			: [],
+	);
+}
+
+/**
+ * The pictures that are void: each drew, and shows no subject to compare. No figure is read from
+ * one, and no row passes or fails by it: the camera, or the file's mapping to a view, is at fault.
+ */
+function voidLines(pairs: readonly StillResult[]): string[] {
+	return pairs.flatMap((pair) => [
+		...(pair.lacks === undefined
+			? []
+			: [
+					`- ${pair.file}: the plant lacks or hides the part its photograph shows: ${pair.lacks}. The rows this picture carries fail on it.`,
+				]),
+		...(pair.void === undefined
+			? []
+			: [
+					`- ${pair.file}: void, ${pair.void}. No figure is read from it, and no row passes or fails by it.`,
+				]),
+		// A picture the species' review data sets aside, or whose outline it says cannot be read.
+		...(pair.standing === undefined
+			? []
+			: [
+					`- ${pair.file}: does not judge the primary plant (${pair.standing.kind}): ${pair.standing.reason}.`,
+				]),
+		...(pair.outlineVoid === undefined
+			? []
+			: [`- ${pair.file}: its outline figures are void: ${pair.outlineVoid}.`]),
+	]);
 }
 
 /**
@@ -1118,11 +1277,45 @@ async function main(): Promise<void> {
 			manifest,
 			set,
 			manifest.windFps ?? windFps,
-			await moundFormOf(manifest.species),
+			await habitOf(manifest.species),
 			sheathTargetOfSpecies(manifest.species),
 		);
 		console.log(readFileSync(join(dir, 'summary.md'), 'utf8'));
 		if (!complete) process.exitCode = 1;
+		return;
+	}
+	if (flag('subjects')) {
+		const named = positional(0) ?? option('species');
+		if (!named) throw new Error('--subjects needs a species');
+		const where = referenceFolder(named);
+		if (!where) throw new Error(`--subjects found no reference folder for ${named}`);
+		const cutSet = readReferenceSet(where, await formsOf(named));
+		const subjects: Record<string, { readonly bottom: number }> = {};
+		for (const slot of cutSet.stills) {
+			if (VIEW_SPECS[slot.view].cutting === undefined) continue;
+			const image = onColour(readImage(join(cutSet.folder, slot.file)), [255, 255, 255]);
+			const plant = plantMask(image);
+			if (!plant.background.plain) {
+				console.log(`${slot.file}: the picture does not separate from its background`);
+				continue;
+			}
+			const measures = measurePlant(image, plant);
+			const box = measures.box;
+			if (!box) {
+				console.log(`${slot.file}: no box`);
+				continue;
+			}
+			const tall = box.bottom - box.top + 1;
+			const bottom = measures.crownBox.height / tall;
+			subjects[slot.file] = { bottom: Number(bottom.toFixed(4)) };
+			console.log(
+				`${slot.file}: plant ${box.right - box.left + 1}x${tall}, crown ${measures.crownBox.width}x${measures.crownBox.height}, subject bottom share ${bottom.toFixed(4)}`,
+			);
+		}
+		writeFileSync(
+			join('tools/lib/plant-review/slots', `${named}-subjects.json`),
+			`${JSON.stringify(subjects, null, '\t')}\n`,
+		);
 		return;
 	}
 	const species = positional(0) ?? option('species');
@@ -1150,7 +1343,7 @@ async function main(): Promise<void> {
 	const cell = flag('cell') ? Number(option('cell')) : undefined;
 	const step = flag('step') ? Number(option('step')) : undefined;
 	const wanted = parts();
-	const moundForm = await moundFormOf(species);
+	const habit = await habitOf(species);
 	const shots: Shot[] = [];
 	for (const view of viewList()) {
 		const [w, h] = VIEW_SPECS[view].size;
@@ -1183,7 +1376,7 @@ async function main(): Promise<void> {
 			: {};
 		if (wanted.has('stills'))
 			for (const slot of stillList(set.stills))
-				shots.push(stillShot(set, slot, base, matte, span, slotQueries[slot.file], moundForm));
+				shots.push(stillShot(set, slot, base, matte, span, slotQueries[slot.file], habit));
 		// The owner's two-dial sweep: a full round draws the whole view at the record's density and
 		// toward the sparse form, at the record's coarseness and a coarse one, so connectedness,
 		// height and the row's own density figure are read at every setting rather than only the
@@ -1213,12 +1406,12 @@ async function main(): Promise<void> {
 		if (wanted.has('turns'))
 			for (const video of set.turns)
 				shots.push(
-					...turnVideoShots(video, base, cell, matte, step, slotQueries[video.file], moundForm),
+					...turnVideoShots(video, base, cell, matte, step, slotQueries[video.file], habit),
 				);
 		if (wanted.has('wind'))
 			for (const path of set.winds) {
 				const file = path.split('/').pop() as string;
-				shots.push(...windShots(path, file, base, cell, windFps, slotQueries[file], moundForm));
+				shots.push(...windShots(path, file, base, cell, windFps, slotQueries[file], habit));
 			}
 	}
 	if (shots.length === 0)
@@ -1259,6 +1452,7 @@ async function main(): Promise<void> {
 		windFps,
 		started: new Date(started).toISOString(),
 		seconds: Number(((Date.now() - started) / 1000).toFixed(1)),
+		...((flag('only') || flag('stills') || flag('views')) && { part: true as const }),
 		frames,
 	};
 	writeFileSync(join(dir, 'manifest.json'), `${JSON.stringify(manifest, null, '\t')}\n`);
@@ -1266,14 +1460,7 @@ async function main(): Promise<void> {
 	console.log(
 		`${frames.length - failed} of ${frames.length} frames drawn in ${manifest.seconds} s`,
 	);
-	const complete = compareRun(
-		dir,
-		manifest,
-		set,
-		windFps,
-		await moundFormOf(manifest.species),
-		sheath,
-	);
+	const complete = compareRun(dir, manifest, set, windFps, await habitOf(manifest.species), sheath);
 	console.log(readFileSync(join(dir, 'summary.md'), 'utf8'));
 	if (failed > 0 || !complete) process.exitCode = 1;
 }

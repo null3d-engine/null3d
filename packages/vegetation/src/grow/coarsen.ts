@@ -15,8 +15,8 @@ import { type MacroSkeleton, NODE_STUB, SkeletonBuilder } from '../core/graph';
  * @param limit The thickest radius trimmed, in metres.
  * @param crownBase The height the trimmed skeleton's crown stands on, in metres.
  * @param full Whether every branch end is cut at its last shoot, whatever the wood's girth there.
- * @returns The trimmed skeleton and each axis's index in it, -1 for an axis that went; undefined
- *   when no wood goes.
+ * @returns The trimmed skeleton and each axis's and node's index in it, -1 for one that went;
+ *   undefined when no wood goes.
  */
 export function bareTrimmed(
 	skeleton: MacroSkeleton,
@@ -25,7 +25,7 @@ export function bareTrimmed(
 	limit: number,
 	crownBase: number,
 	full = false,
-): { skeleton: MacroSkeleton; axisOut: Int32Array } | undefined {
+): KeptSkeleton | undefined {
 	const { axisOf, radius, flags } = skeleton;
 	const table = skeleton.axes;
 	// The farthest node of each axis that a row stands on.
@@ -65,16 +65,32 @@ export function bareTrimmed(
 	return trimmed ? keptSkeleton(skeleton, keepTo, crownBase) : undefined;
 }
 
+/** A skeleton with some of its wood removed, and where each axis and node of the first went. */
+export interface KeptSkeleton {
+	/** The skeleton that stays. */
+	readonly skeleton: MacroSkeleton;
+	/** Each axis's index in it, -1 for an axis that went. */
+	readonly axisOut: Int32Array;
+	/** Each node's index in it, -1 for a node that went. */
+	readonly nodeOut: Int32Array;
+}
+
 /**
  * The skeleton with each axis kept from its base to a node, or not at all where that node is -1,
- * with the bud sites on the kept nodes, in the same order, standing on a crown base; and each
- * axis's index in it.
+ * with the bud sites on the kept nodes, in the same order and with their sockets, standing on a
+ * crown base. An axis is kept
+ * only where its parent keeps the node it leaves.
+ *
+ * @param skeleton The skeleton.
+ * @param keepTo The last node kept of each axis, or -1 for an axis that goes.
+ * @param crownBase The height the kept skeleton's crown stands on, in metres.
+ * @returns The kept skeleton, and each axis's and node's index in it.
  */
-function keptSkeleton(
+export function keptSkeleton(
 	skeleton: MacroSkeleton,
 	keepTo: Int32Array,
 	crownBase: number,
-): { skeleton: MacroSkeleton; axisOut: Int32Array } {
+): KeptSkeleton {
 	const { axes, buds } = skeleton;
 	const builder = new SkeletonBuilder();
 	const axisOut = new Int32Array(axes.count).fill(-1);
@@ -92,6 +108,9 @@ function keptSkeleton(
 			kind: axes.kind[a] as number,
 			barkV: axes.barkV[a] as number,
 			barkU: axes.barkU[a] as number,
+			cutFrom: axes.cutFrom[a] as number,
+			cutTo: axes.cutTo[a] as number,
+			grownBark: (axes.grownBark[a] as number) === 1,
 		});
 		for (let n = axes.first[a] as number; n <= end; n++) {
 			const p = skeleton.parent[n] as number;
@@ -122,7 +141,17 @@ function keptSkeleton(
 			light: buds.light[b] as number,
 			axis: axisOut[axis] as number,
 			woodRadius: buds.woodRadius[b] as number,
+			...(buds.sockets
+				? {
+						socket: {
+							scale: buds.sockets.scale[b] as number,
+							rank: buds.sockets.rank[b] as number,
+							lobe: buds.sockets.lobe[b] as number,
+							...(buds.sockets.piece ? { piece: buds.sockets.piece[b] as number } : {}),
+						},
+					}
+				: {}),
 		});
 	}
-	return { skeleton: builder.finish(crownBase), axisOut };
+	return { skeleton: builder.finish(crownBase), axisOut, nodeOut };
 }

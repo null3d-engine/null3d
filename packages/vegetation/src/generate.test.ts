@@ -6,7 +6,6 @@ import { describe, expect, it } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { scaledBudget } from '../../../tests/lib/run-budget.ts';
 import { type PlantAsset, plantAssetDigest } from './asset';
 import { hashBytes } from './core/hash';
 import { NotBuiltError } from './core/not-built';
@@ -19,13 +18,8 @@ import {
 	kitKey,
 	loadPlantCode,
 	variantKey,
-	withLeaves,
-	withLimbs,
 } from './generate';
 import type { PlantTaskInput } from './generate-task';
-
-/** The growth tests grow a real species, which a busy machine draws in tens of seconds. */
-const LONG = scaledBudget(180_000);
 
 const stub = standInSpecies('stub');
 
@@ -119,12 +113,12 @@ describe('the plant core with stand-ins', () => {
 
 	it('grows the same stand-ins as real stages land, so scenes that place them draw the same', () => {
 		const frozen = [
-			['stub', {}, 3667806437, '42622e3d4036c19e'],
+			['stub', {}, 3667806437, '6b3580f98a8ac9bd'],
 			[
 				'pedunculate-oak',
 				{ height: { mean: 20, spread: 3 }, aspect: 1.2 },
 				843710834,
-				'29724ef94d149086',
+				'0ab62314c7bf2788',
 			],
 		] as const;
 		for (const [id, options, kitHash, assetDigest] of frozen) {
@@ -197,86 +191,4 @@ self.onmessage = async (event) => {
 			rmSync(dir, { recursive: true, force: true });
 		}
 	});
-
-	it(
-		"sizes every species' leaves from one share, leaving the wood where the record grows it",
-		async () => {
-			const oak = (await import('./species/pedunculate-oak/index')).species;
-			await loadPlantCode(oak.record);
-			const grown = buildKitNow(oak, { placeholders: 'missing', detail: 'high' });
-			const shoots = oak.record.shoots as NonNullable<typeof oak.record.shoots>;
-			// The leaf area is the share, so a shoot's own scale moves by its square root.
-			const own = withLeaves(oak.record, 1);
-			expect(own).toBe(oak.record);
-			const smaller = withLeaves(oak.record, 0.64) as typeof oak.record;
-			const scaleOf = (record: typeof oak.record): number => {
-				const scale = record.shoots?.placement.scale ?? 1;
-				return typeof scale === 'number' ? scale : scale.mean;
-			};
-			expect(scaleOf(smaller)).toBeCloseTo(scaleOf(oak.record) * 0.8, 6);
-			// The wood does not move: the same growth, and a shoot count that keeps its own by
-			// taking back the room a smaller shoot frees along the axis.
-			expect(smaller.growth).toBe(oak.record.growth);
-			const perMetre = (curve: typeof shoots.placement.perMetre) =>
-				typeof curve === 'number' ? curve : (curve[0]?.[1] ?? 0);
-			expect(perMetre(smaller.shoots?.placement.perMetre ?? 0)).toBeCloseTo(
-				perMetre(shoots.placement.perMetre) * 0.8,
-				6,
-			);
-			expect(() => withLeaves(oak.record, 3)).toThrow();
-			expect(variantKey(grown, { seed: 11, variant: 0, leaves: 0.5 })).not.toBe(
-				variantKey(grown, { seed: 11, variant: 0 }),
-			);
-			expect(variantKey(grown, { seed: 11, variant: 0, leaves: 1 })).toBe(
-				variantKey(grown, { seed: 11, variant: 0 }),
-			);
-		},
-		LONG,
-	);
-
-	it(
-		'thins or fills the wood from one limb share, every species the same way',
-		async () => {
-			const oak = (await import('./species/pedunculate-oak/index')).species;
-			await loadPlantCode(oak.record);
-			const grown = buildKitNow(oak, { placeholders: 'missing', detail: 'high' });
-			const rows = (limbs?: number) =>
-				growPlantNow(grown, { seed: 11, variant: 0, near: true, limbs }).shoots.count;
-			// A share below one drops the shoots a crown's shaded wood carries; above it, keeps them.
-			expect(rows(0.5)).toBeLessThan(rows(1));
-			expect(rows(1.6)).toBeGreaterThan(rows(1));
-			// Absent or one grows the record's own crown, to the shoot.
-			expect(rows()).toBe(rows(1));
-			const shoots = oak.record.shoots as NonNullable<typeof oak.record.shoots>;
-			// The share moves the record's own sky prune, so a sparse crown keeps its lit rim.
-			const thinner = withLimbs(oak.record, 1.5) as typeof oak.record;
-			expect(thinner.shoots?.placement.skyPrune).toBeLessThan(shoots.placement.skyPrune ?? 0.5);
-			const sparse = withLimbs(oak.record, 0.5) as typeof oak.record;
-			// The growth's own count of limbs moves with the share, whatever model the record names.
-			if (oak.record.growth.model === 'self-organizing') {
-				const own = oak.record.growth.branching ?? 1;
-				expect(sparse.growth.model).toBe('self-organizing');
-				if (sparse.growth.model === 'self-organizing')
-					expect(sparse.growth.branching).toBeCloseTo(own * 0.5, 6);
-			}
-			if (shoots.placement.density !== undefined)
-				expect(sparse.shoots?.placement.density).toBeCloseTo(shoots.placement.density * 0.5, 6);
-			// The shoots along the finest axes thin too, which is the dial every growth model answers.
-			const perMetre = (curve: typeof shoots.placement.perMetre) =>
-				typeof curve === 'number' ? curve : (curve[0]?.[1] ?? 0);
-			expect(perMetre(sparse.shoots?.placement.perMetre ?? 0)).toBeCloseTo(
-				perMetre(shoots.placement.perMetre) * 0.5,
-				6,
-			);
-			expect(() => withLimbs(oak.record, 3)).toThrow();
-			// A different share is a different asset, so the cache never hands back the record's own.
-			expect(variantKey(grown, { seed: 11, variant: 0, limbs: 0.5 })).not.toBe(
-				variantKey(grown, { seed: 11, variant: 0 }),
-			);
-			expect(variantKey(grown, { seed: 11, variant: 0, limbs: 1 })).toBe(
-				variantKey(grown, { seed: 11, variant: 0 }),
-			);
-		},
-		LONG,
-	);
 });

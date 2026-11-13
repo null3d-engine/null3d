@@ -77,6 +77,13 @@ export interface CuttingOptions {
 	readonly length?: number;
 	/** The candidate to take, 0 for the best. */
 	readonly pick?: number;
+	/**
+	 * Metres along the axis where a spanned piece starts, in place of the record's hint: a close
+	 * view of one rachis may stand at the frond's base or at its middle, as its photograph shows.
+	 */
+	readonly from?: number;
+	/** Metres of the axis a spanned piece keeps, in place of the record's hint. */
+	readonly span?: number;
 	/** 'upright' stands the piece on its cut, as the studio stills do; 'as-grown' keeps its pose. */
 	readonly orient?: 'upright' | 'as-grown';
 	/** For 'leaf': the face toward +Z. */
@@ -207,9 +214,8 @@ const NEAR_STEPS = 2;
 /** Candidates whose length match falls in the same step of this many natural-log units rank as near. */
 const MATCH_STEP = 0.15;
 
-/** A branch or sub-branch hint that cuts from the grown plant, if the record gives one. */
+/** A cutting hint that cuts from the grown plant, if the record gives one. */
 function plantHint(record: Species, part: CuttingPart): CutFromPlant | undefined {
-	if (part !== 'branch' && part !== 'subbranch') return undefined;
 	const hint = record.cuttings?.[part];
 	return hint && 'order' in hint ? hint : undefined;
 }
@@ -231,7 +237,10 @@ function shootHint(record: Species, part: CuttingPart): ShootClass['name'] | und
  * @category api/vegetation
  */
 export function cutsShoot(record: Species, part: CuttingPart): boolean {
-	return part === 'cluster' || shootHint(record, part) !== undefined;
+	// A cluster that names a plant cut keeps a section of one long axis, as a fern's blade section
+	// does, rather than one shoot prototype from the kit.
+	const plantCluster = part === 'cluster' && plantHint(record, part) !== undefined;
+	return !plantCluster && (part === 'cluster' || shootHint(record, part) !== undefined);
 }
 
 /**
@@ -476,6 +485,68 @@ export interface CutBranch {
 }
 
 /**
+ * The arc length of one axis's polyline, from its first node to its last, so a piece cut from it
+ * knows the share of the original axis its own run covers.
+ */
+function axisLength(skeleton: MacroSkeleton, axis: number): number {
+	const first = skeleton.axes.first[axis] as number;
+	const last = skeleton.axes.last[axis] as number;
+	let total = 0;
+	for (let n = first + 1; n <= last; n++) {
+		const a = nodeAt(skeleton, n - 1);
+		const b = nodeAt(skeleton, n);
+		total += length3(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
+	}
+	return total;
+}
+
+/**
+ * Points along one axis's polyline between two distances from its first node, with the radius
+ * interpolated: a piece that keeps a span of a long axis is laid out at its own spacing rather than
+ * at its parent's node spacing, which may be coarser than the piece.
+ */
+function alongAxis(
+	skeleton: MacroSkeleton,
+	axis: number,
+	from: number,
+	to: number,
+	steps: number,
+): { at: Vector3; radius: number }[] {
+	const first = skeleton.axes.first[axis] as number;
+	const last = skeleton.axes.last[axis] as number;
+	const points: Vector3[] = [];
+	const radii: number[] = [];
+	for (let n = first; n <= last; n++) {
+		points.push(nodeAt(skeleton, n));
+		radii.push(skeleton.radius[n] as number);
+	}
+	// The arc at each node, so a target distance finds its node pair.
+	const arcs: number[] = [0];
+	for (let i = 1; i < points.length; i++) {
+		const a = points[i - 1] as Vector3;
+		const b = points[i] as Vector3;
+		arcs.push((arcs[i - 1] as number) + length3(b[0] - a[0], b[1] - a[1], b[2] - a[2]));
+	}
+	const total = arcs[arcs.length - 1] as number;
+	const out: { at: Vector3; radius: number }[] = [];
+	const count = Math.max(1, steps);
+	for (let k = 0; k <= count; k++) {
+		const s = Math.min(total, Math.max(0, from + ((to - from) * k) / count));
+		let i = 1;
+		while (i < arcs.length - 1 && (arcs[i] as number) < s) i++;
+		const a = points[i - 1] as Vector3;
+		const b = points[i] as Vector3;
+		const span = (arcs[i] as number) - (arcs[i - 1] as number);
+		const t = span > 1e-9 ? (s - (arcs[i - 1] as number)) / span : 0;
+		out.push({
+			at: [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t],
+			radius: (radii[i - 1] as number) + ((radii[i] as number) - (radii[i - 1] as number)) * t,
+		});
+	}
+	return out;
+}
+
+/**
  * Whether an axis hangs on wood the whole plant draws: a stem's axis or a frond colony's stipe at the
  * foot of its chain. A rosette's eye and a tuft's shoot hang on a crown that carries no wood, so a
  * piece cut from them is all foliage.
@@ -538,6 +609,11 @@ export function cutBranch(
 	const chosen = ranked[(cutting.pick ?? 0) % ranked.length] as Candidate;
 	const { axes, buds } = skeleton;
 	const root = chosen.axis;
+	// A piece that keeps a span of one long axis starts and ends there, as a palm's frond piece
+	// does: the cut face stands where the span begins.
+	const hint = plantHint(record, cutting.part);
+	const span = cutting.span ?? hint?.span;
+	const begin = cutting.from ?? hint?.from ?? 0;
 	const inside = new Uint8Array(axes.count);
 	const depth = depths(skeleton);
 	const order = Array.from({ length: axes.count }, (_, a) => a).sort(
@@ -547,28 +623,53 @@ export function cutBranch(
 		const parent = axes.parent[a] as number;
 		inside[a] = a === root || (parent >= 0 && inside[parent] === 1) ? 1 : 0;
 	}
-	const cut = junctionOf(skeleton, root);
-	// The turn that stands the piece upright: the cut-to-mean line onto +Y.
+	// The point the piece is cut at. A piece that keeps a span of one long axis starts partway along
+	// that axis, so its cut face stands there and is laid out at the piece's own spacing.
+	let cut = junctionOf(skeleton, root);
+	const spanned =
+		span === undefined
+			? undefined
+			: alongAxis(skeleton, root, begin, begin + span, Math.max(2, Math.ceil(span / 0.06)));
+	// The turn that stands the piece upright: the cut-to-mean line onto +Y, or the cut-to-tip line
+	// of a piece that keeps a span.
 	let q = [0, 0, 0, 1];
 	if (cutting.orient !== 'as-grown') {
 		const mean: Vector3 = [0, 0, 0];
 		let count = 0;
-		for (let a = 0; a < axes.count; a++) {
-			if (inside[a] !== 1) continue;
-			for (let n = axes.first[a] as number; n <= (axes.last[a] as number); n++) {
-				const p = nodeAt(skeleton, n);
-				mean[0] += p[0] - cut[0];
-				mean[1] += p[1] - cut[1];
-				mean[2] += p[2] - cut[2];
-				count++;
+		if (spanned) {
+			const start = spanned[0]?.at as Vector3;
+			const tip = spanned[spanned.length - 1]?.at as Vector3;
+			mean[0] = tip[0] - start[0];
+			mean[1] = tip[1] - start[1];
+			mean[2] = tip[2] - start[2];
+			count = 1;
+		} else {
+			for (let a = 0; a < axes.count; a++) {
+				if (inside[a] !== 1) continue;
+				for (let n = axes.first[a] as number; n <= (axes.last[a] as number); n++) {
+					const p = nodeAt(skeleton, n);
+					mean[0] += p[0] - cut[0];
+					mean[1] += p[1] - cut[1];
+					mean[2] += p[2] - cut[2];
+					count++;
+				}
 			}
 		}
 		q = uprightTurn([mean[0] / count, mean[1] / count, mean[2] / count]);
 	}
+	// A spaced piece's cut face is the span's exact start, which lies between the axis's nodes.
+	if (spanned) cut = spanned[0]?.at as Vector3;
 	const moved: Vector3 = [0, 0, 0];
 	const place = (p: Readonly<Vector3>): Vector3 =>
 		quatRotate(q, 0, [p[0] - cut[0], p[1] - cut[1], p[2] - cut[2]], moved);
 	const builder = new SkeletonBuilder();
+	// The share of its original axis the piece's root covers, so the foliage reads the record's
+	// curves where the piece stood rather than across the piece.
+	const run = axisLength(skeleton, root);
+	const spanOfRun = (metres: number): number =>
+		run > 1e-6 ? Math.max(0, Math.min(1, metres / run)) : 1;
+	const rootFrom = spanned ? spanOfRun(begin) : 0;
+	const rootTo = spanned ? spanOfRun(begin + (span as number)) : spanOfRun(length);
 	const axisMap = new Int32Array(axes.count).fill(-1);
 	const nodeMap = new Int32Array(skeleton.nodeCount).fill(-1);
 	let cutNode = -1;
@@ -589,11 +690,34 @@ export function cutBranch(
 			kind: isRoot && !onWood(skeleton, a) ? AXIS_ROOT : (axes.kind[a] as number),
 			barkV: axes.barkV[a] as number,
 			barkU: axes.barkU[a] as number,
+			cutFrom: isRoot ? rootFrom : (axes.cutFrom[a] as number),
+			cutTo: isRoot ? rootTo : (axes.cutTo[a] as number),
 		});
 		axisMap[a] = mapped;
+		if (isRoot && spanned) {
+			// The piece is a length of one axis: lay it out at its own spacing from the cut face.
+			let previous = -1;
+			spanned.forEach((sample, i) => {
+				const p = place(sample.at);
+				const node = builder.addNode({
+					x: p[0],
+					y: p[1],
+					z: p[2],
+					radius: sample.radius,
+					parent: previous,
+					axis: mapped,
+					light: 1,
+					age: 0,
+				});
+				if (i === 0) cutNode = node;
+				previous = node;
+			});
+			continue;
+		}
 		const first = axes.first[a] as number;
+		const last = axes.last[a] as number;
 		if (isRoot) {
-			// The cut face: a node at the junction, as thick as the piece's first node.
+			// The cut face: a node at the cut, as thick as the piece's first node.
 			cutNode = builder.addNode({
 				x: 0,
 				y: 0,
@@ -605,8 +729,9 @@ export function cutBranch(
 				age: skeleton.age[first] as number,
 			});
 		}
-		for (let n = first; n <= (axes.last[a] as number); n++) {
-			const p = place(nodeAt(skeleton, n));
+		for (let n = first; n <= last; n++) {
+			const here = nodeAt(skeleton, n);
+			const p = place(here);
 			const from = skeleton.parent[n] as number;
 			const parentOf = from >= 0 ? (nodeMap[from] as number) : -1;
 			nodeMap[n] = builder.addNode({
@@ -626,14 +751,26 @@ export function cutBranch(
 	for (let b = 0; b < buds.count; b++) {
 		const axis = buds.axis[b] as number;
 		if (inside[axis] !== 1) continue;
+		// A piece that starts partway along its axis keeps the axis's own buds, so a palm's frond
+		// piece still draws its leaflets: a bud whose node fell before the cut stands on the cut face.
+		const mappedNode =
+			(nodeMap[buds.node[b] as number] as number) >= 0
+				? (nodeMap[buds.node[b] as number] as number)
+				: axis === root
+					? cutNode
+					: -1;
+		if (mappedNode < 0) continue;
 		const p = place([
 			buds.position[b * 3] as number,
 			buds.position[b * 3 + 1] as number,
 			buds.position[b * 3 + 2] as number,
 		]);
 		quatMultiply(q, 0, buds.frame, b * 4, frame);
+		// A socket that names its piece keeps it, with its size and its rank: a ground form's pieces
+		// stand nowhere but at its sockets. A frame's cut draws its own shoots.
+		const sockets = buds.sockets?.piece ? buds.sockets : undefined;
 		builder.addBud({
-			node: nodeMap[buds.node[b] as number] as number,
+			node: mappedNode,
 			x: p[0],
 			y: p[1],
 			z: p[2],
@@ -643,6 +780,16 @@ export function cutBranch(
 			light: buds.light[b] as number,
 			axis: axisMap[axis] as number,
 			woodRadius: buds.woodRadius[b] as number,
+			...(sockets
+				? {
+						socket: {
+							scale: sockets.scale[b] as number,
+							rank: sockets.rank[b] as number,
+							lobe: sockets.lobe[b] as number,
+							piece: sockets.piece?.[b] as number,
+						},
+					}
+				: {}),
 		});
 	}
 	return {

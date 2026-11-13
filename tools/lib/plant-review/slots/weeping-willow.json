@@ -1,4 +1,9 @@
 {
+	"07-limb-leaving-trunk.png": {
+		"limbShare": 0.25,
+		"collarColumn": 0.45,
+		"limbLie": 45
+	},
 	"01-whole-distant.png": {
 		"sunAzimuth": 40,
 		"sunRise": 48,
@@ -21,8 +26,7 @@
 	},
 	"04-crown-outside.png": {
 		"skyShare": 0.5,
-		"daylight": 1.7,
-		"distance": 4
+		"daylight": 1.7
 	},
 	"05-crown-underneath.png": {
 		"skyShare": 0.68,

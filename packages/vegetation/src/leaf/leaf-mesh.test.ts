@@ -18,6 +18,7 @@ import {
 import { bladeMesh, builder, leafTriangles } from './leaf-mesh';
 import { OAK_MANIFEST, oakRecord } from './oak.test-support';
 import { parametricOutline, signedArea, textureOutline } from './outline';
+import { SURFACE_PETIOLE } from './writer';
 
 /** The oak leaf's coverage beside its manifest in the textures package. */
 const COVERAGE = new URL(
@@ -53,6 +54,19 @@ function overlap(detail: Detail): number {
 }
 
 describe('the blade leaf mesh', () => {
+	it('tags its petiole and carries the radius the draw widens from', () => {
+		const leaf = bladeMesh(FLAT, oak, 'high');
+		let stalks = 0;
+		for (let v = 0; v < leaf.colors.length / 4; v++) {
+			if ((leaf.colors[v * 4 + 2] as number) !== SURFACE_PETIOLE) continue;
+			stalks++;
+			// The wood's own units, so the shader widens a stalk thinner than the least drawn
+			// width exactly as it widens the wood and the shoot stems.
+			expect(leaf.uvs1[v * 2] as number).toBeCloseTo(0.0008 / 4, 6);
+		}
+		expect(stalks).toBeGreaterThan(0);
+	});
+
 	it('reads the oak outline counter-clockwise, in 24 to 64 points', () => {
 		expect(oak.points.length / 2).toBeGreaterThanOrEqual(24);
 		expect(oak.points.length / 2).toBeLessThanOrEqual(64);

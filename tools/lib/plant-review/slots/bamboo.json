@@ -1,0 +1,86 @@
+{
+	"01-whole-clump-distant.png": {
+		"skyShare": 0.6,
+		"daylight": 2.4
+	},
+	"02-whole-clump-profile.png": {
+		"skyShare": 0.6,
+		"daylight": 2.4
+	},
+	"03-whole-from-below.png": {
+		"stand": 6,
+		"lod": 0,
+		"skyShare": 0.6,
+		"daylight": 2.2
+	},
+	"04-clump-outside.png": {
+		"lod": 0,
+		"skyShare": 0.6,
+		"daylight": 1.8
+	},
+	"05-canopy-underside.png": {
+		"stand": 6,
+		"lod": 0,
+		"skyShare": 0.6,
+		"daylight": 2.2
+	},
+	"06-inside-thicket.png": {
+		"lod": 0,
+		"skyShare": 0.6,
+		"daylight": 1.8
+	},
+	"07-culm-base.png": {
+		"lod": 0,
+		"skyShare": 0.6,
+		"daylight": 1.8
+	},
+	"08-culm-branching.png": {
+		"lod": 0
+	},
+	"10-fine-branchlets.png": {
+		"lod": 0
+	},
+	"12-single-leaf-upper.png": {
+		"leaves": 1.15,
+		"roll": -45
+	},
+	"13-single-leaf-underside.png": {
+		"leaves": 1.15,
+		"roll": -45,
+		"daylight": 1.0,
+		"lamp": "#fff3d8"
+	},
+	"17-culm-taper.png": {
+		"lod": 0,
+		"skyShare": 0.3,
+		"daylight": 1.8
+	},
+	"24-leaf-texture-upper.png": {
+		"leaves": 1.15,
+		"roll": -45
+	},
+	"25-leaf-texture-underside.png": {
+		"leaves": 1.15,
+		"roll": -45
+	},
+	"bamboo-turntable.mp4": {
+		"skyShare": 0.6,
+		"daylight": 2.4
+	},
+	"bamboo-wind-motion.mp4": {
+		"skyShare": 0.6,
+		"daylight": 2.4
+	},
+	"09-secondary-branching.png": {},
+	"11-leaf-spray.png": {},
+	"21-branch-studio.png": {},
+	"22-subbranch-studio.png": {},
+	"23-leaf-cluster-studio.png": {},
+	"leaf-cluster-turntable.mp4": {
+		"view": "leaf-upper",
+		"background": "studio-grey",
+		"sunAzimuth": null,
+		"sunRise": null,
+		"pick": 1
+	}
+}
