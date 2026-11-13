@@ -2074,6 +2074,46 @@ export function siteShot(
 	};
 }
 
+/** The share of the frame's width that the section's outline takes, as a cut's photograph frames it. */
+const SECTION_FILL = 0.88;
+/** The stem's length below the cut that a section draws, as a share of its radius. */
+const SECTION_SLAB = 0.6;
+
+/**
+ * The view of the stem cut across at a height: the camera looks straight down the stem's line at
+ * the cut, and only a short slab of the stem below it is drawn, so the cut's outline, the ribs of a
+ * column, draws as a band of skin round the axis. No level draws a cut's filled face; the outline and
+ * the count of its ribs are what this picture can show.
+ */
+export function sectionShot(subjects: PlantSubjects, lens: Lens, height: number): Solved {
+	if (isAbsent(subjects.trunk)) return subjects.trunk;
+	const at = sampleAtHeight(subjects.trunk.axis, height);
+	if (!at) return lacking(`the stem does not reach ${height.toFixed(2)} m, where the cut stands`);
+	const axis = sampleAlong(subjects.trunk.axis, 0).direction;
+	const forward: V3 = [-axis[0], -axis[1], -axis[2]];
+	const tall = (2 * at.radius) / (SECTION_FILL * lens.aspect);
+	const camera = aim(at.at, 0.5, 0.5, forward, tall, lens);
+	const distance = tall / 2 / tanHalf(lens);
+	return {
+		kind: `the stem cut across at ${height.toFixed(2)} m, seen down its line`,
+		camera,
+		near: Math.max(0.01, distance - 0.01 * at.radius),
+		far: distance + SECTION_SLAB * at.radius,
+		points: [
+			{
+				name: 'the cut',
+				at: at.at,
+				within: [0.4, 0.4, 0.6, 0.6],
+				size: { metres: 2 * at.radius, of: 'width', min: 0.7, max: 0.95 },
+			},
+		],
+		regions: [
+			{ name: 'the ring of skin round the cut', box: [0.04, 0.4, 0.2, 0.6], of: 'wood', min: 0.05 },
+		],
+		facts: { height, radius: at.radius },
+	};
+}
+
 /** How a view of one great limb frames it. */
 export interface LimbOptions {
 	/** The limb by its rank among the great limbs, the thickest first: 1 for the thickest. */

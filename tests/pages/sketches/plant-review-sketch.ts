@@ -78,6 +78,7 @@ import {
 	limbShot,
 	placedPieceShot,
 	type Solved,
+	sectionShot,
 	siteShot,
 	underRimShot,
 } from '../lib/plant-review/subject-shots';
@@ -1205,6 +1206,17 @@ export default defineSketch(async (ctx) => {
 						}),
 					0,
 					0.05,
+				);
+				if (found) return found;
+				break;
+			}
+			case 'section': {
+				// The stem cut across at the slot's height, seen straight down its line.
+				const found = solvedAt(
+					view,
+					lens,
+					() => sectionShot(subjectsOf(), lens, QUERY.barkHeight ?? height * 0.4),
+					0,
 				);
 				if (found) return found;
 				break;
