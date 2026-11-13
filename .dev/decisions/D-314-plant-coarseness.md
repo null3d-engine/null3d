@@ -76,9 +76,10 @@ The options that this record rejects, at coarseness 1 on variant 0 or 1, at the 
 | Prune 40 %, deepest first, no thinning | 14,779,935 | 0.081 |
 
 The default gives the same bytes. The digests cover the oak's skeleton, shoot rows, crown light,
-wood at three levels and two card levels. They cover a stand-in's whole asset too. They are equal on
-the commit before these options and with them, with no coarseness or a coarseness of 0. A stand-in
-gives the same digest at coarseness 0.7 and 0.8, and with a triangle target.
+wind records, wood at three levels and two card levels. They cover a stand-in's whole asset too.
+They are equal on the commit before these options and with them, with no coarseness or a
+coarseness of 0. A stand-in gives the same digest at coarseness 0.7 and 0.8, and with a triangle
+target.
 
 How the data was produced: Bun 1.4.3 on the Mac, at a load average of 57 to 75. Other agents'
 builds ran beside each sweep. Each sweep ran in one process. Scripts called the stages in order,
