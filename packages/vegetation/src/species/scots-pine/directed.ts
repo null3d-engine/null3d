@@ -140,11 +140,12 @@ export const directed: Species = {
 			each: 'limb',
 			width: [0.23, 0.35],
 			depth: 0.38,
-			// A bough is 0.55 m long and 0.83 as wide, so boughs half a metre apart tile the
-			// outside of a pad.
+			// Still 20: on a pad's top the brushes stand shoulder to shoulder. A bough carries seven
+			// brushes, each 0.21 to 0.28 of its length across, so seven of them tile a square 0.36 m
+			// on a side.
 			// Stills 04 and 20: the brushes on a pad's top stand turned up and those at its rim
 			// reach out. The steepest that a bough leaves its twig is read by eye.
-			sockets: { piece: 'bough', pitch: 0.5, lift: 45 },
+			sockets: { piece: 'bough', pitch: 0.36, lift: 45 },
 		},
 	},
 	foliage: needles,

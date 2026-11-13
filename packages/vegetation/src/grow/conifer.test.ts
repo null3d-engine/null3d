@@ -558,15 +558,16 @@ describe("the pine's sockets", () => {
 						const nearest = Math.min(...own.map((socket) => apart(socket.at, place)));
 						expect(nearest).toBeLessThanOrEqual(reach + pitch);
 					}
-				// A pad wide enough to hold a dome of sockets is as deep for its width as the record
-				// says, within a tenth, measured over its boughs' reach.
-				if (patch.width < 8 * pitch) return;
+				// A pad four metres wide or more is as deep for its width as the record says, within
+				// a tenth, measured over the reach of the boughs on its twigs.
+				if (patch.width < 4) return;
 				/** A socket's height above the pad's floor under it. */
 				const above = (socket: (typeof own)[number]): number =>
 					socket.at[1] - floorAt(socket.at[0], socket.at[2]);
-				const top = Math.max(...own.map(above));
+				const domed = own.filter((socket) => socket.twig >= 0);
+				const top = Math.max(...domed.map(above));
 				const rim = Math.max(
-					...own.map((socket) =>
+					...domed.map((socket) =>
 						Math.hypot(socket.at[0] - patch.centre[0], socket.at[2] - patch.centre[2]),
 					),
 				);
@@ -574,11 +575,11 @@ describe("the pine's sockets", () => {
 				expect(Math.abs(built - growth.patch.depth)).toBeLessThanOrEqual(growth.patch.depth * 0.1);
 				// Its sockets stand through its depth: a fifth of them or more in each third.
 				const thirds = [0, 0, 0];
-				for (const socket of own)
+				for (const socket of domed)
 					(thirds[
 						Math.min(2, Math.max(0, Math.floor((above(socket) / (top + 1e-9)) * 3)))
 					] as number)++;
-				for (const third of thirds) expect(third).toBeGreaterThanOrEqual(own.length / 5);
+				for (const third of thirds) expect(third).toBeGreaterThanOrEqual(domed.length / 5);
 			});
 		}
 	});
@@ -588,7 +589,12 @@ describe("the pine's sockets", () => {
 		const sizes = plan.sockets.filter((socket) => socket.twig >= 0).map((socket) => socket.scale);
 		expect(Math.min(...sizes)).toBeLessThan(0.85);
 		expect(Math.max(...sizes)).toBeGreaterThan(1.15);
-		expect(new Set(sizes.map((size) => size.toFixed(3))).size).toBeGreaterThan(sizes.length / 4);
+		// Each fifth of the range of sizes holds a tenth of the boughs or more.
+		for (let fifth = 0; fifth < 5; fifth++) {
+			const from = 0.8 + fifth * 0.08;
+			const held = sizes.filter((size) => size >= from && size < from + 0.08).length;
+			expect(held).toBeGreaterThanOrEqual(sizes.length / 10);
+		}
 		const lifts = plan.sockets
 			.filter((socket) => socket.twig >= 0)
 			.map((socket) => (Math.asin(socket.heading[1]) * 180) / Math.PI);
