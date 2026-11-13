@@ -1049,9 +1049,10 @@ export interface Column {
 		readonly tiers: readonly ColumnArmTier[];
 		/**
 		 * How many of the species' variants, from the first, stand their arms in one upright plane, a
-		 * tier's worth to one side and the next to the other. The rest spread their arms evenly
-		 * through the full circle. A variant in one plane is not balanced round its column, so a
-		 * record that names any says in its comment which photograph shows it.
+		 * tier's worth to one side and the next to the other. The plane stands across the view from
+		 * +Z, so a whole picture taken from there shows every arm. The rest spread their arms
+		 * evenly through the full circle. A variant in one plane is not balanced round its column,
+		 * so a record that names any says in its comment which photograph shows it.
 		 */
 		readonly plane: number;
 		/** Degrees above the horizontal that an arm leaves the column at; a negative angle sags. */
