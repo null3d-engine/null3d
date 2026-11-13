@@ -535,9 +535,9 @@ export function buildKitNow(source: KitSource, options: KitOptions = {}): Specie
 		surface: new Uint8Array(0),
 	};
 	// A species whose skeleton carries sockets builds its classes of piece where a tree builds its
-	// shoots. A cutting's kit and a stand-in's hold none.
+	// shoots, in a cutting's kit too. A stand-in's holds none.
 	const pieces =
-		!record.shoots && !cutting && placeholders !== true
+		!record.shoots && placeholders !== true
 			? grower(record.growth.model).pieces?.(record, manifest)
 			: undefined;
 	if (record.shoots || pieces) {
@@ -839,6 +839,9 @@ function mergedTop(input: MeshInput, level: MeshLevel): number {
 /** Whether a cutting is cut from the grown skeleton rather than built from the kit alone. */
 function cutsSkeleton(kit: SpeciesKitData, cutting: CuttingOptions | undefined): boolean {
 	if (!cutting || cutting.part === 'leaf') return false;
+	// A plant of pieces at sockets has no shoot to stand alone: its cluster is a shoot of its frame
+	// with the pieces that stand on it.
+	if (!kit.record.shoots) return true;
 	return !cutsShoot(kit.record, cutting.part) || kit.prototypes.length === 0;
 }
 

@@ -908,11 +908,12 @@ export function meshTuft(input: MeshInput, level: MeshLevel): MeshArrays {
 		return sheathed ? { ...raw, phase: raw.phase >> 1 } : raw;
 	};
 	// The stool: a drum from under the soil to its surface, closed by a dome over the shoots' feet.
+	// A cut shoot has left its stool behind: its first axis starts at the cut, not under the soil.
 	const foot = axes.first[0] as number;
 	const under = -(skeleton.position[foot * 3 + 1] as number);
 	const rise = skeleton.position[(axes.last[0] as number) * 3 + 1] as number;
 	const wide = skeleton.radius[foot] as number;
-	if (rise > 0 && wide > 0)
+	if (under > 0 && rise > 0 && wide > 0)
 		writeStem(mesh, {
 			path: straight([0, -under, 0], [0, rise, 0]),
 			from: 0,

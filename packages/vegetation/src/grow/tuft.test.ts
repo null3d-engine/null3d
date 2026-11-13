@@ -348,6 +348,33 @@ for (const id of TUFTS) {
 			expect(low).toBeGreaterThanOrEqual(-(blade.tipLength * longest + blade.width) * scale);
 		});
 
+		it('cuts a shoot that keeps the pieces that stand on it, and leaves the stool behind', () => {
+			const cut = buildKitNow(module, { detail: 'high', placeholders: 'missing', cutting: true });
+			for (const part of ['branch', 'subbranch', 'cluster'] as const) {
+				const piece = growPlantNow(cut, { ...OPTIONS, cutting: { part } });
+				const kinds = new Map<string, number>();
+				const places = new Set<string>();
+				for (let r = 0; r < piece.shoots.count; r++) {
+					const kind = (cut.prototypes[piece.shoots.prototype[r] as number]?.class ?? '').replace(
+						/-\d+$/,
+						'',
+					);
+					kinds.set(kind, (kinds.get(kind) ?? 0) + 1);
+					places.add(
+						placeOf(piece, r)
+							.map((value) => value.toFixed(5))
+							.join(','),
+					);
+				}
+				// One shoot: its sheath column and its blades, all from the one foot.
+				expect([part, kinds.get('piece-sheath')]).toEqual([part, 1]);
+				expect(kinds.get('piece-blade') ?? 0).toBeGreaterThanOrEqual(growth.least.blades);
+				expect(places.size).toBe(1);
+				// The stool's mound stays with the plant.
+				expect(piece.levels[0].parts.map((drawn) => drawn.name)).not.toContain('foliage');
+			}
+		});
+
 		it('grows the same plant each time, and another for another variant', () => {
 			expect(plantAssetDigest(growPlantNow(kit, OPTIONS))).toBe(plantAssetDigest(asset));
 			expect(plantAssetDigest(growPlantNow(kit, { ...OPTIONS, variant: 1 }))).not.toBe(
