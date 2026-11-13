@@ -19,7 +19,7 @@ import { hashAt } from '../core/hash';
 import { cos, sin } from '../core/math';
 import type { TextureManifest } from '../core/textures';
 import { crownSkyAt } from '../crown/visibility';
-import { type MeshWriter, SURFACE_SHEATH } from '../leaf/writer';
+import { type MeshWriter, phaseByte, SURFACE_SHEATH } from '../leaf/writer';
 import type { CrownLight, MeshInput } from '../stages';
 import { VARIANT_RECORDS } from '../wind/records';
 import { type AxisPath, axisPath, emptyFrame, frameAt, type PathFrame } from '../wood/frames';
@@ -117,7 +117,7 @@ export interface AxisBytes {
 	readonly high: number;
 	/** The wind record's low byte. */
 	readonly low: number;
-	/** The flutter phase, 0 to 255. */
+	/** The flutter phase, 0 to 255, never a surface kind. */
 	readonly phase: number;
 }
 
@@ -133,7 +133,7 @@ export function axisBytes(input: MeshInput, axis: number): AxisBytes {
 	return {
 		high: (record >>> 8) & 255,
 		low: record & 255,
-		phase: hashAt(input.seed, axisKey(input.skeleton, axis), 7) & 255,
+		phase: phaseByte(hashAt(input.seed, axisKey(input.skeleton, axis), 7)),
 	};
 }
 
