@@ -49,12 +49,22 @@
 		"elevation": 0,
 		"view": "junction"
 	},
+	"06-inside-tuft.png": { "background": "studio-grey", "piece": "stalk", "edge": true },
+	"19-flower-spikes.png": {
+		"background": "studio-grey",
+		"piece": "stalk",
+		"edge": true,
+		"span": 0.35,
+		"along": 0.85
+	},
 	"20-hanging-spikes-habit.png": {
 		"eye": null,
 		"fill": null,
 		"targetY": null,
 		"top": null,
-		"view": "whole"
+		"view": "spike",
+		"piece": "blade",
+		"edge": true
 	},
 	"21-branch-studio.png": {
 		"background": "studio-grey",

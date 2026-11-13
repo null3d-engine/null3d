@@ -114,6 +114,8 @@ export interface PrototypePiece {
 	readonly attitude: PieceAttitude;
 	/** The unit normal of the piece's flat plane in its rest frame, where it has one. */
 	readonly plane?: Vec3;
+	/** Degrees it is turned about its own line at every socket (`PieceRule.roll`). */
+	readonly roll?: number;
 }
 
 /**
@@ -349,7 +351,11 @@ export interface PlantAsset {
 	 * still the plant's foliage, which the far bake reads. Absent, the rows draw at the kit's tier.
 	 */
 	readonly shootDetail?: Detail | 'none';
-	/** How long it took, its bytes, and each level's triangles. */
+	/**
+	 * How long it took, its bytes, each level's own triangles, and the triangles its shoot rows draw
+	 * at the kit's detail. A plant whose nearest foliage is drawn as rows holds that foliage in the
+	 * kit, so the nearest level's count leaves it out and the rows' count states it.
+	 */
 	readonly stats: {
 		readonly milliseconds: number;
 		readonly bytes: number;
@@ -370,6 +376,8 @@ export interface PlantAsset {
 		 * place of a card set for each shoot row. Absent without a maximum.
 		 */
 		readonly clusters?: readonly [ClusterCount, ClusterCount, ClusterCount];
+		/** The triangles its shoot rows draw at the kit's detail. */
+		readonly shoots: number;
 	};
 }
 

@@ -53,7 +53,44 @@ import { lathe, MeshWriter, SURFACE_BUD, SURFACE_STEM, type TubePoint, tube } fr
  *
  * @category api/vegetation
  */
-export type UncardedPrototype = Omit<ShootPrototype, 'card'>;
+export type UncardedPrototype = Omit<ShootPrototype, 'card'> & {
+	/**
+	 * The brush cards a piece draws below its finest tier, which the card bake pictures and then
+	 * lays over the tiers' dense runs of leaves. Absent on a prototype that draws its leaves whole.
+	 */
+	readonly brushes?: PrototypeBrushes;
+};
+
+/**
+ * One dense run of a piece's leaves that draws as a brush card: its picture by index, the run's
+ * start on its stem and its own frame (along the stem, toward the sky, and the side square to both),
+ * its length, and the bend weight and flutter phase its card takes.
+ */
+export interface BrushRun {
+	readonly picture: number;
+	readonly start: Vector3;
+	readonly along: Vector3;
+	readonly sky: Vector3;
+	readonly side: Vector3;
+	readonly length: number;
+	readonly bend: number;
+	readonly phase: number;
+}
+
+/**
+ * The leaves of one dense run in the run's own frame, which the card bake pictures: x along its
+ * side, y along its stem from the run's start, z toward its sky. Its length is the run's.
+ */
+export interface BrushPicture {
+	readonly mesh: PrototypeArrays;
+	readonly length: number;
+}
+
+/** A piece's brush runs and the pictures they draw from. */
+export interface PrototypeBrushes {
+	readonly runs: readonly BrushRun[];
+	readonly pictures: readonly BrushPicture[];
+}
 
 /** The golden angle in degrees. */
 const GOLDEN = 137.50776405;
@@ -93,30 +130,61 @@ const Purpose = {
 	LeafAzimuth: 14,
 } as const;
 
-/** Sides of stem tubes and buds by tier. */
-const STEM_SIDES: Readonly<Record<Detail, number>> = { low: 3, medium: 4, high: 5, ultra: 6 };
 /** A bud's mesh at a tier: faces around, and whether its profile is rounded or a plain cone. */
-interface BudShape {
+export interface BudShape {
 	readonly sides: number;
 	readonly round: boolean;
 }
+
+/** How a tier meshes a shoot's wood and buds. */
+export interface ShootCut {
+	/** Sides of the stem tubes. */
+	readonly stemSides: number;
+	/** Whether a tube keeps only the rings at each year's end. */
+	readonly yearRings?: boolean;
+	/** A tip cluster's buds; absent, the cluster draws none. */
+	readonly cluster?: BudShape;
+	/** Whether a tip cluster is drawn as one cone over its stack, in the cluster's shape. */
+	readonly clusterCone?: boolean;
+	/** An axil's bud; absent, the axils draw none. */
+	readonly axil?: BudShape;
+	/**
+	 * Metres below which an axil's bud is left out: a smaller one hides under its leaf and spans a
+	 * pixel or two at the distances the tier draws. Absent, every axil's bud is drawn.
+	 */
+	readonly axilLeast?: number;
+	/** A thorn's and a fruiting body's shapes; absent, a thorn takes the axil's and a body the cluster's. */
+	readonly thorn?: BudShape;
+	readonly body?: BudShape;
+	/** Whether a stem run that its leaves hide takes rings far apart, since no ring of it shows. */
+	readonly thinHidden?: boolean;
+	/**
+	 * Whether a tube of few sides stands wider than its stem's radius, so its outline is as wide as
+	 * the round stem's when averaged over a turn: a three-sided tube on the radius reads a sixth thin.
+	 */
+	readonly meanWidth?: boolean;
+	/**
+	 * Degrees a stem turns between two rings. Set, a ring stands only where the run from the last ring
+	 * meets the next run at that angle or more, so a straight run takes no rings between its ends.
+	 */
+	readonly ringTurn?: number;
+}
+
 /**
- * The buds of a tip cluster, which a close view reads, are rounder than those in the leaf axils.
- * The medium tier draws a whole cluster as one cone, and the low tier, whose shoots stand a few
- * pixels long, draws no buds.
+ * The crown's shoots at each tier. The buds of a tip cluster, which a close view reads, are rounder
+ * than those in the leaf axils. The medium tier draws a whole cluster as one cone, and the low tier,
+ * whose shoots stand a few pixels long, keeps one ring a year and draws no buds.
  */
-const CLUSTER_BUD: Readonly<Record<Detail, BudShape | undefined>> = {
-	low: undefined,
-	medium: { sides: 3, round: false },
-	high: { sides: 5, round: true },
-	ultra: { sides: 6, round: true },
-};
-/** An axil's bud hides under its leaf, so the low tier leaves it out. */
-const AXIL_BUD: Readonly<Record<Detail, BudShape | undefined>> = {
-	low: undefined,
-	medium: { sides: 3, round: false },
-	high: { sides: 4, round: false },
-	ultra: { sides: 5, round: true },
+export const SHOOT_CUTS: Readonly<Record<Detail, ShootCut>> = {
+	low: { stemSides: 3, yearRings: true },
+	medium: {
+		stemSides: 4,
+		cluster: { sides: 3, round: false },
+		clusterCone: true,
+		axil: { sides: 3, round: false },
+	},
+	high: { stemSides: 5, cluster: { sides: 5, round: true }, axil: { sides: 4, round: false } },
+	ultra: { stemSides: 6, cluster: { sides: 6, round: true }, axil: { sides: 5, round: true } },
 };
 /** The tier whose vertices cast the shoot's shade rays. */
 const SHADE_TIER = DETAILS.indexOf('medium');
@@ -174,6 +242,8 @@ export interface PlannedBud {
 	 * tip, along which the medium tier draws the whole cluster as one cone.
 	 */
 	readonly stack?: number;
+	/** The species' mark it draws, a thorn or a fruiting body, where it is one and not a bud. */
+	readonly mark?: 'thorn' | 'body';
 }
 
 /**
@@ -1082,9 +1152,181 @@ export function planShoot(
 	return { axes, leaves, buds, reach, span: Math.max(span, 1e-6) };
 }
 
+/** The longest run between two rings of a cut that names a turn, in metres. */
+const RING_RUN_MOST = 0.08;
+
+/** Whether the run from `from` to `at` meets the run from `at` to `to` at `degrees` or more. */
+function turnsPast(
+	from: Readonly<Vector3>,
+	at: Readonly<Vector3>,
+	to: Readonly<Vector3>,
+	degrees: number,
+): boolean {
+	const ax = at[0] - from[0];
+	const ay = at[1] - from[1];
+	const az = at[2] - from[2];
+	const bx = to[0] - at[0];
+	const by = to[1] - at[1];
+	const bz = to[2] - at[2];
+	const lengths = length3(ax, ay, az) * length3(bx, by, bz);
+	if (lengths <= 0) return false;
+	return (ax * bx + ay * by + az * bz) / lengths <= cos(radians(degrees));
+}
+
 /** The bend weight byte of a point along the shoot. */
 function bendByte(along: number, span: number): number {
 	return Math.min(255, Math.max(0, Math.round((along / span) * 255)));
+}
+
+/** Metres between the rings of a stem run that its leaves hide. */
+const HIDDEN_RING_GAP = 0.04;
+
+/**
+ * The runs of each axis that its leaves hide, as metres along the shoot from and to: where one leaf
+ * stands within two of the stem's radii of the next, the leaves close round the stem between them.
+ */
+function hiddenRuns(plan: ShootPlan): (readonly [number, number])[][] {
+	const alongs: number[][] = plan.axes.map(() => []);
+	for (const leaf of plan.leaves) alongs[leaf.axis]?.push(leaf.along);
+	return plan.axes.map((points, axis) => {
+		const runs: [number, number][] = [];
+		const leaves = (alongs[axis] as number[]).sort((a, b) => a - b);
+		let k = 0;
+		for (let i = 1; i < leaves.length; i++) {
+			const from = leaves[i - 1] as number;
+			const to = leaves[i] as number;
+			while (k < points.length - 1 && (points[k + 1] as AxisPoint).along <= from) k++;
+			if (to - from > 2 * ((points[k] as AxisPoint | undefined)?.radius ?? 0)) continue;
+			const last = runs[runs.length - 1];
+			if (last && last[1] >= from) last[1] = to;
+			else runs.push([from, to]);
+		}
+		return runs;
+	});
+}
+
+/** A plan's dense runs of leaves, each in its own frame, with the run's leaves by index into the plan. */
+export interface PlannedBrush extends Omit<BrushRun, 'picture'> {
+	/** The run's axis: 0 for the piece's own stem, and its side stems after it. */
+	readonly axis: number;
+	readonly leaves: readonly number[];
+}
+
+/**
+ * The dense runs of a plan's leaves, each with its frame. A run starts where its first leaf stands
+ * on its stem and ends at its last, runs along the straight way between them, and faces the mean
+ * sky of its leaves.
+ *
+ * @param plan The plan.
+ * @returns The runs, axis by axis.
+ */
+export function plannedBrushes(plan: ShootPlan): PlannedBrush[] {
+	const runs = hiddenRuns(plan);
+	const out: PlannedBrush[] = [];
+	plan.axes.forEach((points, axis) => {
+		/** The stem's point `along` metres from the attach point. */
+		const pointAt = (along: number): Vector3 => {
+			for (let k = 1; k < points.length; k++) {
+				const a = points[k - 1] as AxisPoint;
+				const b = points[k] as AxisPoint;
+				if (along > b.along && k < points.length - 1) continue;
+				const t = Math.max(0, Math.min(1, (along - a.along) / Math.max(1e-9, b.along - a.along)));
+				return [
+					a.at[0] + (b.at[0] - a.at[0]) * t,
+					a.at[1] + (b.at[1] - a.at[1]) * t,
+					a.at[2] + (b.at[2] - a.at[2]) * t,
+				];
+			}
+			const only = points[0] as AxisPoint;
+			return [only.at[0], only.at[1], only.at[2]];
+		};
+		for (const [from, to] of runs[axis] ?? []) {
+			const leaves: number[] = [];
+			plan.leaves.forEach((leaf, i) => {
+				if (leaf.axis === axis && leaf.along >= from - 1e-9 && leaf.along <= to + 1e-9)
+					leaves.push(i);
+			});
+			if (leaves.length === 0) continue;
+			const start = pointAt(from);
+			const end = pointAt(to);
+			const length = length3(end[0] - start[0], end[1] - start[1], end[2] - start[2]);
+			if (length < 1e-6) continue;
+			const along = normalize3([end[0] - start[0], end[1] - start[1], end[2] - start[2]]);
+			const mean: Vector3 = [0, 0, 0];
+			for (const i of leaves) {
+				const sky = (plan.leaves[i] as PlannedLeaf).sky;
+				mean[0] += sky[0];
+				mean[1] += sky[1];
+				mean[2] += sky[2];
+			}
+			const lean = mean[0] * along[0] + mean[1] * along[1] + mean[2] * along[2];
+			let sky: Vector3 = [
+				mean[0] - along[0] * lean,
+				mean[1] - along[1] * lean,
+				mean[2] - along[2] * lean,
+			];
+			if (length3(sky[0], sky[1], sky[2]) < 1e-6) {
+				const up: Vector3 = Math.abs(along[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
+				const tilt = up[0] * along[0] + up[1] * along[1] + up[2] * along[2];
+				sky = [up[0] - along[0] * tilt, up[1] - along[1] * tilt, up[2] - along[2] * tilt];
+			}
+			sky = normalize3(sky);
+			const middle = plan.leaves[leaves[leaves.length >> 1] as number] as PlannedLeaf;
+			out.push({
+				axis,
+				leaves,
+				start,
+				along,
+				sky,
+				side: cross3(along, sky, [0, 0, 0]),
+				length,
+				bend: bendByte((from + to) / 2, plan.span),
+				phase: middle.phase,
+			});
+		}
+	});
+	return out;
+}
+
+/**
+ * One run's leaves meshed at a tier and laid in the run's own frame, for the card bake to picture.
+ *
+ * @param plan The plan the run belongs to.
+ * @param brush The run.
+ * @param leafMeshes The leaf meshes at the tier.
+ * @param detail The tier.
+ * @returns The picture.
+ */
+export function brushPicture(
+	plan: ShootPlan,
+	brush: PlannedBrush,
+	leafMeshes: readonly PrototypeArrays[],
+	detail: Detail,
+): BrushPicture {
+	const leaves = brush.leaves.map((i) => plan.leaves[i] as PlannedLeaf);
+	const mesh = meshShoot(
+		{ ...plan, axes: [], buds: [], leaves },
+		leafMeshes,
+		detail,
+	).finishPrototype();
+	const positions = new Float32Array(mesh.positions.length);
+	const normals = new Float32Array(mesh.normals.length);
+	const { start, along, sky, side } = brush;
+	for (let i = 0; i < mesh.positions.length; i += 3) {
+		const x = (mesh.positions[i] as number) - start[0];
+		const y = (mesh.positions[i + 1] as number) - start[1];
+		const z = (mesh.positions[i + 2] as number) - start[2];
+		positions[i] = x * side[0] + y * side[1] + z * side[2];
+		positions[i + 1] = x * along[0] + y * along[1] + z * along[2];
+		positions[i + 2] = x * sky[0] + y * sky[1] + z * sky[2];
+		const nx = mesh.normals[i] as number;
+		const ny = mesh.normals[i + 1] as number;
+		const nz = mesh.normals[i + 2] as number;
+		normals[i] = nx * side[0] + ny * side[1] + nz * side[2];
+		normals[i + 1] = nx * along[0] + ny * along[1] + nz * along[2];
+		normals[i + 2] = nx * sky[0] + ny * sky[1] + nz * sky[2];
+	}
+	return { mesh: { ...mesh, positions, normals }, length: brush.length };
 }
 
 /**
@@ -1093,6 +1335,7 @@ function bendByte(along: number, span: number): number {
  * @param plan The plan.
  * @param leafMeshes The leaf meshes at this tier.
  * @param detail The tier.
+ * @param cut How the tier meshes the wood and buds; the crown's own cut by default.
  * @returns The mesh.
  * @category api/vegetation
  */
@@ -1100,11 +1343,22 @@ export function meshShoot(
 	plan: ShootPlan,
 	leafMeshes: readonly PrototypeArrays[],
 	detail: Detail,
+	cut: ShootCut = SHOOT_CUTS[detail],
 ): MeshWriter {
 	const mesh = new MeshWriter();
-	const sides = STEM_SIDES[detail];
-	for (const points of plan.axes) {
-		// Rings no closer than twice the stem's radius; the low tier keeps one ring at each year's end.
+	const sides = cut.stemSides;
+	// A regular polygon on a radius is, averaged over a turn, as wide as a circle that much smaller.
+	const widen = cut.meanWidth ? PI / (sides * sin(PI / sides)) : 1;
+	const hidden = cut.thinHidden ? hiddenRuns(plan) : undefined;
+	plan.axes.forEach((points, axis) => {
+		const runs = hidden?.[axis] ?? [];
+		/** Whether the stem between two places along the shoot lies inside one hidden run. */
+		const covered = (from: number, to: number): boolean =>
+			runs.some(([start, end]) => from >= start && to <= end);
+		// Rings no closer than twice the stem's radius, and far apart where leaves hide the stem. A cut
+		// of year rings keeps one at each year's end, and a cut that names a turn keeps one only where
+		// the stem bends that far from its last ring, or where the run from it grows long enough that
+		// wind would bend the stem between two rings.
 		const path: TubePoint[] = [];
 		for (let k = 0; k < points.length; k++) {
 			const point = points[k] as AxisPoint;
@@ -1112,9 +1366,18 @@ export function meshShoot(
 			const end = k === points.length - 1;
 			if (last && !end) {
 				const gap = point.along - last.along;
-				if (gap < point.radius * 2 || (detail === 'low' && !point.unitEnd)) continue;
+				const least = covered(last.along, point.along)
+					? Math.max(HIDDEN_RING_GAP, point.radius * 2)
+					: point.radius * 2;
+				if (gap < least || (cut.yearRings && !point.unitEnd)) continue;
+				if (
+					cut.ringTurn !== undefined &&
+					gap < RING_RUN_MOST &&
+					!turnsPast(last.at, point.at, (points[k + 1] as AxisPoint).at, cut.ringTurn)
+				)
+					continue;
 			}
-			path.push(point);
+			path.push(widen === 1 ? point : { ...point, radius: point.radius * widen });
 		}
 		mesh.mark();
 		tube(
@@ -1128,12 +1391,20 @@ export function meshShoot(
 			// the least drawn width, as it widens the wood.
 			(_ring, radius) => [Math.min(1, radius / WOOD_RADIUS_RANGE), 0],
 		);
-	}
+	});
 	for (const bud of plan.buds) {
-		const shape = (bud.cluster ? CLUSTER_BUD : AXIL_BUD)[detail];
+		const shape =
+			bud.mark === 'thorn'
+				? (cut.thorn ?? cut.axil)
+				: bud.mark === 'body'
+					? (cut.body ?? cut.cluster)
+					: bud.cluster
+						? cut.cluster
+						: cut.axil;
 		mesh.mark();
 		if (!shape) continue;
-		if (bud.cluster && detail === 'medium') {
+		if (!bud.cluster && !bud.mark && bud.length < (cut.axilLeast ?? 0)) continue;
+		if (bud.cluster && cut.clusterCone) {
 			// The whole cluster as one cone over its stack, drawn on its tip bud's part.
 			if (bud.stack === undefined) continue;
 			const foot = bud.stack - bud.length;
@@ -1211,13 +1482,17 @@ export function meshShoot(
  *
  * @param plan The plan.
  * @param leaves The species' leaf meshes at every tier, low first.
+ * @param cuts How each tier meshes the wood and buds; the crown's own cuts by default.
  * @returns The meshes and the measures.
  */
 export function meshedPlan(
 	plan: ShootPlan,
 	leaves: readonly (readonly PrototypeArrays[])[],
+	cuts: Readonly<Record<Detail, ShootCut>> = SHOOT_CUTS,
 ): Pick<UncardedPrototype, 'length' | 'radius' | 'leaves' | 'tiers'> {
-	const writers = DETAILS.map((detail, tier) => meshShoot(plan, leaves[tier] ?? [], detail));
+	const writers = DETAILS.map((detail, tier) =>
+		meshShoot(plan, leaves[tier] ?? [], detail, cuts[detail]),
+	);
 	shootOcclusion(writers, SHADE_TIER);
 	const tiers = writers.map((writer) =>
 		writer.finishPrototype(),
@@ -1240,12 +1515,16 @@ function prototypeOf(
 	shootClass: ShootClass,
 	cutting = false,
 ): UncardedPrototype {
+	// A class of cards draws its leaves alone, each as the low tier's cut-out card at every tier.
+	const cards = shootClass.cards === true;
+	const drawn = cards ? { ...plan, axes: [], buds: [] } : plan;
+	const meshes = cards ? leaves.map(() => leaves[0] ?? []) : leaves;
 	return {
 		index,
 		class: shootClass.name,
 		...(cutting ? { cutting: true as const } : {}),
 		vigor: shootClass.vigor,
-		...meshedPlan(plan, leaves),
+		...meshedPlan(drawn, meshes),
 	};
 }
 
