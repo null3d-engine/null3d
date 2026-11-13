@@ -122,12 +122,11 @@ export const directed: Species = {
 			each: 'limb',
 			width: [0.23, 0.35],
 			depth: 0.38,
-			// A bough is 0.55 m long and 0.83 as wide, and it stands on its socket tilted up, so
-			// boughs half a metre apart tile a pad. Still 09: a side twig leaves its branch at 40
-			// to 60 degrees.
-			// Stills 04 and 20: the brushes stand on twigs that rise from the limb, which gives a
-			// pad its depth. The rise is read by eye.
-			sockets: { piece: 'bough', pitch: 0.5, twig: 55, lift: 35 },
+			// A bough is 0.55 m long and 0.83 as wide, so boughs half a metre apart tile the
+			// outside of a pad.
+			// Stills 04 and 20: the brushes on a pad's top stand turned up and those at its rim
+			// reach out. The steepest that a bough leaves its twig is read by eye.
+			sockets: { piece: 'bough', pitch: 0.5, lift: 45 },
 		},
 	},
 	foliage: needles,
@@ -139,7 +138,7 @@ export const directed: Species = {
 		cardGrow: 1,
 		// The first card level keeps the twigs that reach the boughs, and the second the arms under
 		// each pad, so a far card still meets drawn wood.
-		woodOrders: [3, 2],
+		woodOrders: [4, 2],
 		budget: {
 			...record.lod.budget,
 			// The kit of three bough variants holds 13,073,360 bytes at the finest tier, where each

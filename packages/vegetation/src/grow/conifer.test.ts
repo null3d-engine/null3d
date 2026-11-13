@@ -6,6 +6,7 @@ import { speciesProblems } from '../core/check';
 import { AXIS_STEM, type MacroSkeleton } from '../core/graph';
 import { hashBytes } from '../core/hash';
 import type { Conifer } from '../core/record';
+import { spreadMean } from '../core/types';
 import { directed as sequoia } from '../species/giant-sequoia/directed';
 import { directed } from '../species/scots-pine/directed';
 import { growConifer, limbsPerLevel, planConifer, TURN_MOST } from './conifer';
@@ -308,25 +309,32 @@ describe("the giant sequoia's frame", () => {
 describe("the pine's sockets", () => {
 	const rule = growth.patch.sockets;
 	const pitch = rule?.pitch ?? 0;
+	/** The metres a bough reaches from its socket to the outside of its foliage. */
+	const bough = directed.pieces?.find((piece) => piece.name === rule?.piece);
+	const reach = (bough ? spreadMean(bough.stem.length) : 0) * 0.85;
+	const apart = (a: readonly number[], b: readonly number[]): number =>
+		Math.hypot(
+			(a[0] as number) - (b[0] as number),
+			(a[1] as number) - (b[1] as number),
+			(a[2] as number) - (b[2] as number),
+		);
 
-	it('fills every pad with ranked sockets, the ends of its limb and arms first', () => {
+	it('ranks every socket once across the plant, the ends of every limb and arm first', () => {
 		expect(rule).toBeDefined();
 		for (const seed of SEEDS) {
 			const plan = planConifer(input(seed));
-			plan.patches.forEach((_, patch) => {
-				const own = plan.sockets.filter((socket) => socket.patch === patch);
-				const limb = plan.limbs.find((candidate) => candidate.patch === plan.patches[patch]);
+			expect(plan.sockets.map((socket) => socket.rank).sort((a, b) => a - b)).toEqual(
+				plan.sockets.map((_, i) => i),
+			);
+			const ends = plan.limbs.reduce((sum, limb) => sum + 1 + limb.arms.length, 0);
+			for (const socket of plan.sockets) {
+				const limb = plan.limbs[socket.limb];
 				expect(limb).toBeDefined();
-				if (!limb) return;
-				// One socket on the limb's end and one on each arm's, then the twigs' sockets.
-				const ends = 1 + limb.arms.length;
-				expect(own.length).toBeGreaterThanOrEqual(ends);
-				// The ranks of a pad run from 0 with none repeated.
-				expect(own.map((socket) => socket.rank).sort((a, b) => a - b)).toEqual(
-					own.map((_, i) => i),
-				);
-				for (const socket of own) expect(socket.twig < 0).toBe(socket.rank < ends);
-			});
+				if (!limb) continue;
+				const wood = socket.arm < 0 ? limb.nodes : (limb.arms[socket.arm]?.nodes ?? []);
+				const onEnd = socket.twig < 0 && socket.node === wood.length - 1;
+				expect(onEnd).toBe(socket.rank < ends);
+			}
 		}
 	});
 
@@ -343,37 +351,108 @@ describe("the pine's sockets", () => {
 				for (let b = a + 1; b < own.length; b++) {
 					const second = own[b];
 					if (!second) continue;
-					const apart = Math.hypot(
-						first.at[0] - second.at[0],
-						first.at[1] - second.at[1],
-						first.at[2] - second.at[2],
-					);
-					expect(apart).toBeGreaterThanOrEqual(pitch * 0.7 - 1e-6);
+					expect(apart(first.at, second.at)).toBeGreaterThanOrEqual(pitch * 0.7 - 1e-6);
 				}
 			}
 		});
 	});
 
-	it('ends every twig in a socket, and thins any rank evenly over the pad', () => {
+	it('fills every pad as a dome: a bough within reach of every place on it, at every height', () => {
+		for (const seed of SEEDS) {
+			const plan = planConifer(input(seed));
+			plan.patches.forEach((patch, index) => {
+				const own = plan.sockets.filter((socket) => socket.patch === index);
+				const floor = patch.centre[1] - patch.depth / 2;
+				// No place on the pad's dome stands farther from a socket than a bough's reach and
+				// one pitch.
+				for (let turn = 0; turn < 24; turn++)
+					for (let band = 0; band < 8; band++) {
+						const t = (band + 0.5) / 8;
+						const ring = Math.sqrt(1 - t * t);
+						const angle = (turn / 24) * 2 * Math.PI;
+						const place = [
+							patch.centre[0] + (patch.width / 2) * ring * Math.cos(angle),
+							floor + patch.depth * t,
+							patch.centre[2] + (patch.width / 2) * ring * Math.sin(angle),
+						];
+						const nearest = Math.min(...own.map((socket) => apart(socket.at, place)));
+						expect(nearest).toBeLessThanOrEqual(reach + pitch);
+					}
+				// A pad wide enough to hold a dome of sockets is as deep for its width as the record
+				// says, within a tenth, measured over its boughs' reach.
+				if (patch.width < 8 * pitch) return;
+				const top = Math.max(...own.map((socket) => socket.at[1]));
+				const rim = Math.max(
+					...own.map((socket) =>
+						Math.hypot(socket.at[0] - patch.centre[0], socket.at[2] - patch.centre[2]),
+					),
+				);
+				const built = (top - floor + reach) / (2 * (rim + reach));
+				expect(Math.abs(built - growth.patch.depth)).toBeLessThanOrEqual(growth.patch.depth * 0.1);
+				// Its sockets stand through its depth: a fifth of them or more in each third.
+				const thirds = [0, 0, 0];
+				for (const socket of own)
+					(thirds[
+						Math.min(2, Math.floor(((socket.at[1] - floor) / (top - floor + 1e-9)) * 3))
+					] as number)++;
+				for (const third of thirds) expect(third).toBeGreaterThanOrEqual(own.length / 5);
+			});
+		}
+	});
+
+	it('gives its boughs many sizes and lifts, none below level and none past the lift', () => {
 		const plan = planConifer(input(11));
-		plan.twigs.forEach((twig, index) => {
-			const on = plan.sockets.filter((socket) => socket.twig === index);
-			expect(on.some((socket) => socket.node === twig.nodes.length - 1)).toBe(true);
-		});
-		// Half of a large pad's sockets, by rank, stand on both sides of its limb's line.
-		const largest = plan.patches.reduce((a, b) => (b.width > a.width ? b : a));
-		const index = plan.patches.indexOf(largest);
-		const own = plan.sockets.filter((socket) => socket.patch === index);
-		const kept = own.filter((socket) => socket.rank < own.length / 2);
-		const across: [number, number] = [-largest.along[2], largest.along[0]];
-		const sides = kept.map(
-			(socket) =>
-				(socket.at[0] - largest.centre[0]) * across[0] +
-				(socket.at[2] - largest.centre[2]) * across[1],
-		);
-		const left = sides.filter((side) => side < 0).length;
-		expect(left).toBeGreaterThan(kept.length * 0.25);
-		expect(left).toBeLessThan(kept.length * 0.75);
+		const sizes = plan.sockets.filter((socket) => socket.twig >= 0).map((socket) => socket.scale);
+		expect(Math.min(...sizes)).toBeLessThan(0.85);
+		expect(Math.max(...sizes)).toBeGreaterThan(1.15);
+		expect(new Set(sizes.map((size) => size.toFixed(3))).size).toBeGreaterThan(sizes.length / 4);
+		const lifts = plan.sockets
+			.filter((socket) => socket.twig >= 0)
+			.map((socket) => (Math.asin(socket.heading[1]) * 180) / Math.PI);
+		expect(Math.min(...lifts)).toBeGreaterThanOrEqual(-1e-6);
+		expect(Math.max(...lifts)).toBeLessThanOrEqual((rule?.lift ?? 0) + 1e-6);
+		expect(lifts.filter((lift) => lift < 15).length).toBeGreaterThan(lifts.length / 10);
+		expect(lifts.filter((lift) => lift > 30).length).toBeGreaterThan(lifts.length / 10);
+	});
+
+	it('ends every twig in a socket, a twig at most on a twig on the limb or an arm', () => {
+		for (const seed of SEEDS) {
+			const plan = planConifer(input(seed));
+			plan.twigs.forEach((twig, index) => {
+				const on = plan.sockets.filter((socket) => socket.twig === index);
+				expect(on.some((socket) => socket.node === twig.nodes.length - 1)).toBe(true);
+				expect(twig.twig).toBeLessThan(index);
+				if (twig.twig >= 0) expect(plan.twigs[twig.twig]?.twig).toBe(-1);
+			});
+		}
+	});
+
+	it('keeps a quarter and a tenth of the plant by rank as the same share of every pad, spread over it', () => {
+		for (const seed of SEEDS) {
+			const plan = planConifer(input(seed));
+			const all = plan.sockets.length;
+			const ends = plan.limbs.reduce((sum, limb) => sum + 1 + limb.arms.length, 0);
+			for (const share of [0.25, 0.1]) {
+				const cut = Math.round(share * all);
+				expect(cut).toBeGreaterThan(ends);
+				plan.patches.forEach((patch, index) => {
+					const own = plan.sockets.filter((socket) => socket.patch === index);
+					const kept = own.filter((socket) => socket.rank < cut);
+					const limb = plan.limbs[patch.limb];
+					if (!limb) return;
+					// Past its ends, each pad keeps the plant's own share of its sockets, to one socket.
+					const padEnds = 1 + limb.arms.length;
+					const fair = padEnds + ((cut - ends) / (all - ends)) * (own.length - padEnds);
+					expect(Math.abs(kept.length - fair)).toBeLessThanOrEqual(1);
+					// No socket of the pad stands farther from a kept one than the kept stand apart
+					// on an even grid: the pitch over the root of the share.
+					for (const socket of own) {
+						const nearest = Math.min(...kept.map((other) => apart(socket.at, other.at)));
+						expect(nearest).toBeLessThanOrEqual(pitch / Math.sqrt(share));
+					}
+				});
+			}
+		}
 	});
 
 	it('writes each socket as a bud site on its own wood', () => {
