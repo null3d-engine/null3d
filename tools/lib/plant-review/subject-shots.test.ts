@@ -1051,4 +1051,33 @@ describe("a view's areas against pictures that do not show its subject", () => {
 		// A ball of leaves and no wood anywhere.
 		expect(fails((x, y) => (ball(x, y, 0.2) ? LEAF : GROUND))).toBe(true);
 	});
+
+	test('frames the limb that carries the lobe low in the frame, where the photograph shows it', () => {
+		const lobes: Lobe[] = [{ centre: [5, 8, 0], radius: 2, limb: 1 }];
+		const shot = shotOf(
+			crownOutsideShot(tree({ lobes }), TALL, { turn: 90 * DEG, limbRow: 0.85, limbShare: 0.1 }),
+		);
+		const limb = landing(shot, TALL, 'the limb low in the frame');
+		expect(limb.x).toBeCloseTo(0.5, 6);
+		expect(limb.y).toBeCloseTo(0.85, 6);
+		expect(shot.kind).toContain('the limb that carries a foliage mass');
+		// The picture must hold that limb as wood of its own thickness, with leaves over it.
+		const names = (shot.regions ?? []).map((region) => region.name);
+		expect(names).toContain('the limb under the leaves');
+		expect(names).toContain('the leaves over the limb');
+		const fails = (paint: Parameters<typeof painted>[0]) =>
+			partsCheck(painted(paint), shot.regions ?? []).present === false;
+		const thick =
+			((shot.regions ?? []).find((r) => r.name === 'the limb under the leaves')?.thick ?? 0) / 0.75;
+		// Leaves over a limb of the right thickness that crosses low in the frame.
+		const right = (x: number, y: number) =>
+			y > 0.8 && y < 0.9 && x > 0.15 && x < 0.85
+				? woodOf(thick)
+				: y < 0.6 && x > 0.25 && x < 0.75
+					? LEAF
+					: GROUND;
+		expect(fails(right)).toBe(false);
+		// The same leaves with no limb under them.
+		expect(fails((x, y) => (y < 0.6 && x > 0.25 && x < 0.75 ? LEAF : GROUND))).toBe(true);
+	});
 });

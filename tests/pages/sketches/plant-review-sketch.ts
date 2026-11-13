@@ -1390,7 +1390,12 @@ export default defineSketch(async (ctx) => {
 					const found = solvedAt(
 						view,
 						lens,
-						() => crownOutsideShot(subjectsOf(), lens, { turn }),
+						() =>
+							crownOutsideShot(subjectsOf(), lens, {
+								turn,
+								...(QUERY.limbRow !== undefined && { limbRow: QUERY.limbRow }),
+								...(QUERY.limbShare !== undefined && { limbShare: QUERY.limbShare }),
+							}),
 						0,
 						0.02,
 					);
