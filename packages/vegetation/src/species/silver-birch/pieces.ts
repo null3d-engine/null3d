@@ -25,6 +25,8 @@ function strand(length: number, spread: number, hook: PieceStem['hook']): PieceS
 			angle: 55,
 			angleSpread: 15,
 			hang: 0.55,
+			// The sub-branch's turning video: edge on the twig is 0.27 as wide as face on.
+			flat: 0.7,
 			face: { turn: 0, spread: 30, inPlane: true },
 		},
 		sides: [
@@ -37,6 +39,8 @@ function strand(length: number, spread: number, hook: PieceStem['hook']): PieceS
 						angle: 55,
 						angleSpread: 15,
 						hang: 0.55,
+						// The sub-branch's turning video: edge on the twig is 0.27 as wide as face on.
+						flat: 0.7,
 						face: { turn: 0, spread: 30, inPlane: true },
 					},
 				},
@@ -92,6 +96,8 @@ export const STUDIO: readonly PieceStudio[] = [
 	{
 		still: 21,
 		piece: 'strand-arch',
+		// The cut branch's turning video: edge on it is 0.21 as wide as face on.
+		depth: 12,
 		stand: {
 			stem: {
 				length: 0.36,

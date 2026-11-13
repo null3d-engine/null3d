@@ -15,8 +15,10 @@ const LEAF_SCALE = 1.3;
  * one each 4.5 centimetres, held 50 to 70 degrees off the shoot, their faces open to the branch's sky
  * side. About forty leaves on the branch.
  */
-function leaves(from: number, scale = LEAF_SCALE): PieceLeaves {
-	return { gap: 0.045, from, angle: 60, angleSpread: 10, skyward: 0.9, scale };
+function leaves(from: number, scale = LEAF_SCALE, flat = 0.7): PieceLeaves {
+	// The sub-branch's turning video: edge on the twig is a fifth as wide as face on, so its leaves
+	// lean most of the way into its plane.
+	return { gap: 0.045, from, angle: 60, angleSpread: 10, skyward: 0.9, scale, flat };
 }
 
 /** A side shoot. Still 21: 15 to 25 centimetres long with four to six leaves. */
@@ -54,6 +56,8 @@ export const PIECES: readonly PieceRule[] = [
 		attitude: 'along',
 		variants: 2,
 		scale: 1 / LEAF_SCALE,
+		// The turning video of the cut branch: edge on it is 0.29 as wide as face on.
+		depth: 16,
 		stem: {
 			...arm(1),
 			radius: [0.006, 0.0012],
@@ -88,13 +92,13 @@ export const PIECES: readonly PieceRule[] = [
 		stem: {
 			length: { mean: 0.35, spread: 0.03 },
 			radius: [0.0025, 0.001],
-			leaves: leaves(0.2, 1),
+			leaves: leaves(0.2, 1, 0.85),
 			sides: [
 				{
 					stem: {
 						length: { mean: 0.2, spread: 0.02 },
 						radius: [0.002, 0.001],
-						leaves: leaves(0.15, 1),
+						leaves: leaves(0.15, 1, 0.85),
 					},
 					gap: 0.1,
 					from: 0.25,

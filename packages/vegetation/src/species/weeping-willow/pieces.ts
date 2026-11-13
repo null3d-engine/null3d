@@ -38,6 +38,8 @@ function strand(length: number, spread: number): PieceStem {
 			// Still 21 and its turning video: the curtain's blades show their faces to a camera that
 			// looks square at the branch.
 			face: { turn: 0, spread: 35, inPlane: true },
+			// The sub-branch's turning video: edge on it is 0.23 as wide as face on.
+			flat: 0.7,
 		},
 	};
 }
@@ -80,6 +82,8 @@ export const STUDIO: readonly PieceStudio[] = [
 	{
 		still: 21,
 		scale: 1 / LEAF_SCALE,
+		// The cut branch's turning video: edge on it is 0.37 as wide as face on.
+		depth: 24,
 		piece: 'strand',
 		stand: {
 			stem: {
