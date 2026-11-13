@@ -106,9 +106,9 @@ function frond(name: string, droop: number, droopOver: readonly [number, number]
 export const PIECES: readonly PieceRule[] = [
 	frond('frond-inner', 90, [0.2, 1]),
 	frond('frond-arched', 100, [0.15, 1]),
-	// Pictures 01, 16 and 20: a dead frond hangs plumb against the trunk, shrivelled, its pinnae
-	// folded down along the rachis so it is 0.18 as wide as long. It draws one leaf a pinna at every
-	// tier.
+	// Pictures 01, 16 and 20: a dead frond hangs steeply under the crown, shrivelled, its pinnae
+	// drooping toward the rachis so it is about 0.18 as wide as long. It draws one leaf a pinna at
+	// every tier.
 	{
 		name: 'frond-dead',
 		attitude: 'along',
@@ -117,7 +117,8 @@ export const PIECES: readonly PieceRule[] = [
 		browning: 1,
 		stem: {
 			...rachis(8, [0, 1]),
-			leaves: { ...PINNA_LEAVES, ranked: [20], angle: 25, angleSpread: 6 },
+			// Picture 20: a dead frond is about 0.18 as wide as long, its pinnae hanging 40 degrees out.
+			leaves: { ...PINNA_LEAVES, ranked: [20], angle: 40, angleSpread: 6 },
 		},
 	},
 ];

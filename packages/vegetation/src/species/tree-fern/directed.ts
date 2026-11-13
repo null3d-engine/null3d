@@ -62,18 +62,17 @@ export const directed: Species = {
 				{ share: 0.35, leave: 5, spread: 15, piece: 'frond-arched', length: 1 },
 			],
 		},
-		// Pictures 01, 16 and 20: 14 dead fronds (12 to 16) hang under the living crown, shrivelled to
-		// 0.25 of the height (0.42 of a living frond), their tips at 0.42 of the height; the turning
-		// video hangs the skirt to 0.45. Picture 01 at full size: the skirt flares as a bell about
-		// 0.36 of the height across round a trunk of 0.15, so the fronds hang 70 degrees below level
-		// rather than flat against the trunk.
+		// Pictures 01, 16 and 20: 14 to 16 dead fronds hang in a dense bell under the living crown, from
+		// 0.68 of the height down to 0.29 (picture 20, 175 of 450 px), so each is 0.39 of the height
+		// long, 0.65 of a living frond; the bell is 2.3 times the trunk wide, so the fronds hang 70
+		// degrees below level rather than flat against the trunk.
 		dead: {
-			count: { mean: 14, spread: 2 },
+			count: { mean: 16, spread: 2 },
 			hang: { mean: 70, spread: 4 },
 			from: 0.12,
 			to: 0.3,
 			piece: 'frond-dead',
-			length: 0.42,
+			length: 0.65,
 		},
 		// Pictures 05 and 06 and the turning video: 4 to 6 croziers at the centre, each a hairy stalk
 		// 0.12 of the height tall ending in a coil about 0.03 of the height across, leaning out by up
