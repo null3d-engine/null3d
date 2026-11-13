@@ -297,11 +297,16 @@ export interface PlantAsset {
 		readonly texels: number;
 		readonly from: number;
 	};
-	/** How long it took, its bytes, and each level's triangles. */
+	/**
+	 * How long it took, its bytes, each level's own triangles, and the triangles its shoot rows draw
+	 * at the kit's detail. A plant whose nearest foliage is drawn as rows holds that foliage in the
+	 * kit, so the nearest level's count leaves it out and the rows' count states it.
+	 */
 	readonly stats: {
 		readonly milliseconds: number;
 		readonly bytes: number;
 		readonly triangles: readonly [number, number, number];
+		readonly shoots: number;
 	};
 }
 

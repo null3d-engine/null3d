@@ -167,6 +167,17 @@ describe('the Scots pine, grown with its boughs at sockets', () => {
 		}
 	});
 
+	it("counts the triangles of its boughs beside its wood's", () => {
+		const tier = DETAILS.indexOf(kit.detail);
+		let rows = 0;
+		for (let r = 0; r < asset.shoots.count; r++)
+			rows +=
+				(kit.prototypes[asset.shoots.prototype[r] as number]?.tiers[tier]?.indices.length ?? 0) / 3;
+		expect(asset.stats.shoots).toBe(rows);
+		// The boughs hold far more of the plant than its wood does.
+		expect(asset.stats.shoots).toBeGreaterThan(asset.stats.triangles[0]);
+	});
+
 	it(
 		'places the same rows from the same seed',
 		() => {

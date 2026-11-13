@@ -249,6 +249,7 @@ const summary = {
 	buds: skeleton.buds.count,
 	rows: asset.shoots.count,
 	triangles: asset.stats.triangles,
+	shootTriangles: asset.stats.shoots,
 	match: figures,
 };
 writeFileSync(join(out, `${prefix}.json`), `${JSON.stringify(summary, null, '\t')}\n`);
