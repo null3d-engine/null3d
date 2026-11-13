@@ -19,11 +19,12 @@ import {
 	normalize3,
 	PI,
 	quatFromFrame,
+	quatRotate,
 	radians,
 	sin,
 	type Vector3,
 } from '../core/math';
-import type { Phyllotaxis, Species } from '../core/record';
+import type { LeafShape, Phyllotaxis, Species } from '../core/record';
 import { type Curve, curveAt, type Spread, spreadAt, spreadMean, type Vec3 } from '../core/types';
 import {
 	type AxisPoint,
@@ -267,6 +268,62 @@ export interface PieceRule {
 	 * a piece that is a third as deep as it is wide stands its side stems within about 20 degrees.
 	 */
 	readonly depth?: number;
+	/**
+	 * How the piece's blades bend at their stalks. Where absent a blade bends out of its own face,
+	 * as the species' leaf does. With `plane` the piece's leaves are built with no bend at the stalk,
+	 * and each blade turns about its own normal instead, toward the ground side, by the species' own
+	 * degrees and no farther than the ground side. A hanging blade then stays in the plane it lies in.
+	 */
+	readonly leafDroop?: 'plane';
+}
+
+/**
+ * The leaf a species' pieces wear where it differs from the record's: the record's blade with these
+ * fields over it. A species states one while its record's leaf also grows the crown it ships, which
+ * keeps its own leaf until a plant built of pieces replaces it.
+ */
+export interface PieceLeaf extends Partial<Pick<LeafShape, 'length' | 'breadth'>> {
+	/** Metres of stalk from the stem to the blade's base. */
+	readonly stalk?: number;
+}
+
+/**
+ * The record a species' pieces are built by: the species' own, its blade taking the pieces' leaf.
+ * The pieces' leaf meshes and their plans both read it, so a plan sizes its leaves by the meshes it
+ * places.
+ *
+ * @param record The species record.
+ * @param leaf The pieces' leaf, or nothing where the pieces wear the record's.
+ * @returns The record to build the pieces by.
+ */
+export function pieceRecord(record: Species, leaf: PieceLeaf | undefined): Species {
+	if (!leaf) return record;
+	const foliage = record.foliage;
+	if (foliage.kind !== 'blade')
+		throw new Error(
+			`@null3d/vegetation: '${record.id}' states a leaf for its pieces, and its foliage is '${foliage.kind}', not a blade`,
+		);
+	if (leaf.breadth !== undefined && !(leaf.breadth > 0 && leaf.breadth <= 2))
+		throw new Error(
+			`@null3d/vegetation: the pieces' leaf breadth of '${record.id}' is ${leaf.breadth}; it is a share of the outline's width, above 0 and at most 2`,
+		);
+	if (leaf.stalk !== undefined && !(leaf.stalk > 0))
+		throw new Error(
+			`@null3d/vegetation: the pieces' leaf stalk of '${record.id}' is ${leaf.stalk}; it is metres and must be above 0`,
+		);
+	const own = foliage.leaf;
+	return {
+		...record,
+		foliage: {
+			...foliage,
+			leaf: {
+				...own,
+				length: leaf.length ?? own.length,
+				...(leaf.breadth === undefined ? {} : { breadth: leaf.breadth }),
+				petiole: { ...own.petiole, length: leaf.stalk ?? own.petiole.length },
+			},
+		},
+	};
 }
 
 /** A piece's prototype: its meshes at every tier, with how a socket holds it. */
@@ -482,8 +539,32 @@ export function planPiece(
 	/** The way out of the piece's own plane: its flank for a hanging piece, else its sky side. */
 	const outOfPlane: Readonly<Vector3> = rule.attitude === 'plumb' ? [1, 0, 0] : [0, 0, 1];
 
-	/** A leaf laid into the piece's own plane, by a share. */
-	const flattened = (leaf: PlannedLeaf, share: number): PlannedLeaf => {
+	/** The way a leaf's upper face looks. */
+	const normalOf = (leaf: PlannedLeaf): Vector3 =>
+		quatRotate(leaf.rotation, 0, [0, 0, 1], [0, 0, 0]);
+
+	/**
+	 * A leaf turned at its stalk about its own normal, toward the ground side, by the species' stalk
+	 * droop and no farther than the ground side as it lies in the blade's plane.
+	 */
+	const drooped = (leaf: PlannedLeaf): PlannedLeaf => {
+		const normal = normalOf(leaf);
+		const direction = toward(
+			leaf.direction,
+			square(down, normal, leaf.direction),
+			// Only a blade hangs on a stalk; a needle keeps the line it leaves its twig on.
+			foliage.kind === 'blade' ? foliage.leaf.petiole.droop : 0,
+		);
+		const rotation = [0, 0, 0, 1];
+		quatFromFrame(direction, normal, rotation);
+		return { ...leaf, direction, rotation };
+	};
+
+	/**
+	 * A leaf laid into the piece's own plane, by a share. A blade whose rule names its face keeps
+	 * that face's roll and only its midrib is laid in.
+	 */
+	const flattened = (leaf: PlannedLeaf, share: number, keep = false): PlannedLeaf => {
 		const s = Math.min(1, Math.max(0, share));
 		const d = leaf.direction;
 		const out = d[0] * outOfPlane[0] + d[1] * outOfPlane[1] + d[2] * outOfPlane[2];
@@ -497,13 +578,15 @@ export function planPiece(
 			length3(laid[0], laid[1], laid[2]) < 1e-3
 				? square(leaf.stem, outOfPlane, [0, 1, 0])
 				: normalize3(laid);
-		const before = square(leaf.stem, direction, leaf.radial);
+		const before = square(keep ? normalOf(leaf) : leaf.stem, direction, leaf.radial);
 		const facing = square(outOfPlane, direction, before);
-		const face = normalize3([
-			before[0] * (1 - s) + facing[0] * s,
-			before[1] * (1 - s) + facing[1] * s,
-			before[2] * (1 - s) + facing[2] * s,
-		]);
+		const face = keep
+			? before
+			: normalize3([
+					before[0] * (1 - s) + facing[0] * s,
+					before[1] * (1 - s) + facing[1] * s,
+					before[2] * (1 - s) + facing[2] * s,
+				]);
 		const rotation = [0, 0, 0, 1];
 		quatFromFrame(direction, face, rotation);
 		return { ...leaf, direction, rotation };
@@ -662,7 +745,9 @@ export function planPiece(
 						leaves[i] = hung(leaves[i] as PlannedLeaf, own, axis, i);
 				if (own?.flat)
 					for (let i = first; i < leaves.length; i++)
-						leaves[i] = flattened(leaves[i] as PlannedLeaf, own.flat);
+						leaves[i] = flattened(leaves[i] as PlannedLeaf, own.flat, own.face !== undefined);
+				if (rule.leafDroop === 'plane')
+					for (let i = first; i < leaves.length; i++) leaves[i] = drooped(leaves[i] as PlannedLeaf);
 			}
 			if (atNode) node++;
 		}
@@ -824,6 +909,49 @@ export function planPiece(
 }
 
 /**
+ * A mark that stands at one place on a stem, between two shares of its length.
+ *
+ * @param mark The mark, without its spacing.
+ * @param length The stem's length in metres.
+ * @param from The share of the stem's length where the mark's stretch starts.
+ * @param to The share where it ends.
+ * @returns The mark, spaced so that one stands on that stretch.
+ */
+export function oneMark(
+	mark: Omit<PieceMark, 'gap' | 'from' | 'to'>,
+	length: Spread,
+	from: number,
+	to: number,
+): PieceMark {
+	return { ...mark, gap: 0.9 * (to - from) * spreadMean(length), from, to };
+}
+
+/**
+ * A rule with marks added to its stems: the same piece in fruit or in catkin.
+ *
+ * @param rule The piece's rule.
+ * @param marksOf The marks a stem gains, by its rule and its order, 0 for the piece's main stem;
+ * none where it returns nothing.
+ * @returns The rule, each stem with its own marks and the added ones.
+ */
+export function withMarks(
+	rule: PieceRule,
+	marksOf: (stem: PieceStem, order: number) => readonly PieceMark[] | undefined,
+): PieceRule {
+	const marked = (stem: PieceStem, order: number): PieceStem => {
+		const added = marksOf(stem, order) ?? [];
+		return {
+			...stem,
+			...(added.length > 0 ? { marks: [...(stem.marks ?? []), ...added] } : {}),
+			...(stem.sides
+				? { sides: stem.sides.map((side) => ({ ...side, stem: marked(side.stem, order + 1) })) }
+				: {}),
+		};
+	};
+	return { ...rule, stem: marked(rule.stem, 0) };
+}
+
+/**
  * The hash key of one variant of one of a species' pieces.
  *
  * @param rule The rule's index among the species' pieces.
@@ -877,7 +1005,9 @@ export function pieceSites(plan: ShootPlan): PieceSite[] {
 		});
 	}
 	const ranked = (sites: Omit<PieceSite, 'rank'>[]): PieceSite[] => {
-		const bits = Math.max(1, Math.ceil(Math.log2(Math.max(2, sites.length))));
+		// The bits that count the sites, found by doubling: a whole number, the same on every engine.
+		let bits = 1;
+		while (1 << bits < sites.length) bits++;
 		return sites
 			.map((site, index) => ({ site, order: reversed(index, bits) }))
 			.sort((a, b) => a.order - b.order)
@@ -987,6 +1117,8 @@ export function splitPlan(
  * @param record The species record.
  * @param rules The species' piece rules.
  * @param leaves The species' leaf meshes at every tier, low first.
+ * @param straight The same meshes built with no bend at the stalk, for the rules whose blades bend
+ * in their own plane; the species' own where absent.
  * @returns The prototypes, each rule's variants together and each variant's parts together, in the
  * rules' order.
  */
@@ -994,11 +1126,13 @@ export function piecePrototypes(
 	record: Species,
 	rules: readonly PieceRule[],
 	leaves: readonly (readonly PrototypeArrays[])[],
+	straight: readonly (readonly PrototypeArrays[])[] = leaves,
 ): PiecePrototype[] {
-	const leafMeshes = Math.min(...leaves.map((tier) => tier.length));
-	const finest = leaves[leaves.length - 1] ?? [];
 	const out: PiecePrototype[] = [];
-	for (const [r, rule] of rules.entries())
+	for (const [r, rule] of rules.entries()) {
+		const own = rule.leafDroop === 'plane' ? straight : leaves;
+		const leafMeshes = Math.min(...own.map((tier) => tier.length));
+		const finest = own[own.length - 1] ?? [];
 		for (let variant = 0; variant < Math.min(16, Math.max(1, rule.variants)); variant++) {
 			const parts = splitPlan(planPiece(record, rule, pieceKey(r, variant), leafMeshes), finest);
 			for (const [part, plan] of parts.entries())
@@ -1010,9 +1144,12 @@ export function piecePrototypes(
 					parts: parts.length,
 					...(rule.plane ? { plane: rule.plane } : {}),
 					sites: pieceSites(plan),
-					...meshedPlan(plan, leaves),
+					// A piece's leaves close round its stems where they stand densely, and no ring of
+					// the wood they hide shows.
+					...meshedPlan(plan, own, true),
 				});
 		}
+	}
 	return out;
 }
 
@@ -1023,8 +1160,11 @@ export function piecePrototypes(
 export interface PieceStudio {
 	/** The reference still's number. */
 	readonly still: number;
-	/** The piece drawn alone, or the piece at the tip of each stem of the stand. */
-	readonly piece: string;
+	/**
+	 * The piece drawn alone, or the piece at the tip of each stem of the stand. A stand with no
+	 * piece is drawn as its own wood, each stem ending in the species' buds.
+	 */
+	readonly piece?: string;
 	/** The cut's bare wood, standing upright from its foot, where the photograph shows it. */
 	readonly stand?: {
 		readonly stem: PieceStem;
@@ -1114,20 +1254,25 @@ export function layStudio(
 		if (!rule) throw new Error(`@null3d/vegetation: '${record.id}' has no piece named '${name}'`);
 		return rule.attitude;
 	};
-	if (!studio.stand)
+	const piece = studio.piece;
+	if (!studio.stand) {
+		if (piece === undefined)
+			throw new Error(
+				`@null3d/vegetation: the layout of still ${studio.still} of '${record.id}' names no piece and no stand`,
+			);
 		return {
 			placed: [
 				{
-					piece: studio.piece,
+					piece,
 					pick: 0,
 					position: [0, 0, 0],
 					// A hanging piece hangs with its hook to the picture's right; any other stands on
 					// its cut, its sky side toward the camera.
-					rotation:
-						attitudeOf(studio.piece) === 'plumb' ? pieceTurn('plumb', [1, 0, 0]) : [0, 0, 0, 1],
+					rotation: attitudeOf(piece) === 'plumb' ? pieceTurn('plumb', [1, 0, 0]) : [0, 0, 0, 1],
 				},
 			],
 		};
+	}
 	// The cut stands in its clamp: its line is up, and the ground is below it.
 	const stand = planPiece(
 		record,
@@ -1162,12 +1307,12 @@ export function layStudio(
 				b !== a && length3(foot[0] - tip.at[0], foot[1] - tip.at[1], foot[2] - tip.at[2]) < reach
 			);
 		});
-		if (!forks)
+		if (!forks && piece !== undefined)
 			placed.push({
-				piece: studio.piece,
+				piece,
 				pick: a,
 				position: [...tip.at],
-				rotation: pieceTurn(attitudeOf(studio.piece), heading),
+				rotation: pieceTurn(attitudeOf(piece), heading),
 			});
 		// A stand of one stem carries its side pieces on that stem; a forked stand on its arms.
 		if (!along || (a === 0 && stand.axes.length > 1)) continue;

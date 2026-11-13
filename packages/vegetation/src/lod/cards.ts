@@ -11,7 +11,7 @@
 // of the way up the card, for the shoot's bend, and the plane: 0 and 1 for the crossed vertical
 // planes, 2 for the horizontal one, over 2.
 import type { MeshArrays, ShootRows, SpeciesKitData } from '../asset';
-import { atan2, normalize3, quatRotate, type Vector3 } from '../core/math';
+import { atan2, length3, normalize3, quatRotate, type Vector3 } from '../core/math';
 import { MeshWriter } from '../leaf/writer';
 import type { MeshInput } from '../stages';
 import { VARIANT_RECORDS } from '../wind/records';
@@ -439,8 +439,8 @@ function rowCover(kit: SpeciesKitData, rows: ShootRows, r: number): number {
 	for (const plane of prototype.card.planes) {
 		const area =
 			4 *
-			Math.hypot(plane.right[0], plane.right[1], plane.right[2]) *
-			Math.hypot(plane.up[0], plane.up[1], plane.up[2]) *
+			length3(plane.right[0], plane.right[1], plane.right[2]) *
+			length3(plane.up[0], plane.up[1], plane.up[2]) *
 			picturedOf(kit, plane.front).share;
 		if (area > most) most = area;
 	}
@@ -465,7 +465,7 @@ function woodMakeUp(input: MeshInput, drawn: (axis: number) => boolean): number 
 		if (drawn(a)) continue;
 		for (let n = axes.first[a] as number; n < (axes.last[a] as number); n++)
 			wood +=
-				Math.hypot(
+				length3(
 					(position[n * 3 + 3] as number) - (position[n * 3] as number),
 					(position[n * 3 + 4] as number) - (position[n * 3 + 1] as number),
 					(position[n * 3 + 5] as number) - (position[n * 3 + 2] as number),

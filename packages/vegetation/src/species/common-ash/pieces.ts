@@ -5,7 +5,13 @@
 //
 // On still 21 a leaf is about 20 centimetres long against the record's 26, so a piece draws its
 // leaves at 0.8 of the record's until the record's own length moves.
-import type { PieceLeaves, PieceRule, PieceStudio } from '../../leaf/piece';
+import {
+	oneMark,
+	type PieceLeaves,
+	type PieceRule,
+	type PieceStudio,
+	withMarks,
+} from '../../leaf/piece';
 
 /** A piece's leaf over the record's: 20 centimetres measured on still 21, over 26. */
 const LEAF_SCALE = 0.8;
@@ -119,6 +125,33 @@ export const PIECES: readonly PieceRule[] = [
 		},
 	},
 ];
+
+/**
+ * The pieces in fruit. Still 19: dense hanging bunches of 30 to 60 flat keys, each 3.5 to 4
+ * centimetres long and a fifth as wide, a bunch 12 to 15 centimetres long, from a node behind the
+ * end leaves. A bunch is three rings of keys on stalks of three lengths.
+ */
+export const FRUIT_PIECES: readonly PieceRule[] = PIECES.map((rule) =>
+	withMarks(rule, (stem, order) =>
+		order === 0
+			? [0.03, 0.06, 0.09].map((stalk) =>
+					oneMark(
+						{
+							kind: 'body',
+							share: 1,
+							length: { mean: 0.037, spread: 0.004 },
+							width: 0.007,
+							stalk,
+							count: { mean: 14, spread: 3 },
+						},
+						stem.length,
+						0.75,
+						0.95,
+					),
+				)
+			: undefined,
+	),
+);
 
 /** The studio photographs of the ash's cut wood, each one piece standing on its cut. */
 export const STUDIO: readonly PieceStudio[] = [
