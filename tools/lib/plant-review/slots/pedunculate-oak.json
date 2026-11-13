@@ -22,7 +22,8 @@
 		"sunRise": 70,
 		"skyShare": 0.395,
 		"sky": "#d7e6f1",
-		"daylight": 1.739
+		"daylight": 1.739,
+		"forkRow": 0.64
 	},
 	"05-crown-underneath.png": {
 		"sunAzimuth": 45,

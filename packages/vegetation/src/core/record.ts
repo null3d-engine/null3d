@@ -739,6 +739,13 @@ export interface Framed {
 		 * socket holds shoot rows.
 		 */
 		readonly piece?: string;
+		/**
+		 * The most degrees each piece turns at its socket: its roll about its own line, from the
+		 * side toward the sky, and its tilt off the wood's line. Each is a share spread evenly over
+		 * the sockets in their order, so no two neighbours turn alike and the crown's leaf faces
+		 * every way. Absent, every piece's flat side faces the sky.
+		 */
+		readonly turn?: { readonly roll: number; readonly tilt: number };
 	};
 }
 
@@ -845,9 +852,24 @@ export interface Conifer {
 		readonly radius: number;
 		readonly leader?: number;
 	};
+	/**
+	 * A closed inner body inside the crown, in the shade of its foliage: one round body on the
+	 * trunk's line whose radius over the plant's height is given by height, from the lowest height
+	 * the curve names to the highest. A closed crown keeps it behind its pieces, so the gaps between
+	 * them show shade and never sky. Absent, the crown has none.
+	 */
+	readonly body?: { readonly radius: Curve };
 	/** The foliage patch at a limb's end, which the sockets of its foliage fill. */
 	readonly patch: {
-		/** A level plate on top of the limb's end, a dome round it, or a tile of a closed shell. */
+		/**
+		 * A level plate on top of the limb's end, a dome round it, or a tile of a closed shell. On a
+		 * shell the crown's reach by height is its outline, a closed surface round the trunk's line:
+		 * the sockets tile it in rows from its lowest named height to its top, each inside it by the
+		 * part of a piece that stands out from its socket, and each pulls its twig from the limb whose
+		 * end stands nearest. Each limb runs on until it stands a piece's length inside the outline,
+		 * and its patch is the part of the shell its sockets tile. A trunk that runs to the tip
+		 * carries no piece there: the shell's top rows close the top.
+		 */
 		readonly kind: 'pad' | 'dome' | 'shell';
 		/**
 		 * One patch a limb, which the limb's arms spread under, or one patch at the limb's end and one
@@ -871,13 +893,20 @@ export interface Conifer {
 		/**
 		 * The sockets that fill a patch: the piece each carries, by its name among the record's
 		 * pieces, the metres between one socket and the next over the patch's dome, and the most
-		 * degrees above level that a piece leaves its socket at, where the dome faces the sky.
-		 * Absent, a patch carries no socket.
+		 * degrees above level that a piece leaves its socket at, where the dome faces the sky. On a
+		 * shell the pitch is the metres between neighbours in a row, and each piece stands up the
+		 * shell, leaning out from it by the lift's degrees. Absent, a patch carries no socket.
 		 */
 		readonly sockets?: {
 			readonly piece: string;
 			readonly pitch: number;
 			readonly lift: number;
+			/**
+			 * On a shell, the metres between one row of sockets and the next, measured up the
+			 * outline. Each row turns on from the one below by half its pitch, as bricks lie. Absent,
+			 * the pitch.
+			 */
+			readonly rise?: number;
 		};
 	};
 }
@@ -2747,6 +2776,14 @@ export interface LodSpec {
 	 * cell of 32. Each doubling costs four times the atlas memory.
 	 */
 	readonly cardCell?: Readonly<Record<Detail, number>>;
+	/**
+	 * How a prototype many times longer than wide is cut along its line into cards of its own, where
+	 * the default does not suit the species: `most` stretches at most, from 1 to 8 and 4 by default,
+	 * and `cells`, whether each stretch's planes take a whole cell or a half one, `half` by default.
+	 * A half cell keeps the atlas near its uncut size and still gives a blade or a strand more texels
+	 * along its length; a wide frond whose leaflets need the texels across takes whole cells.
+	 */
+	readonly cardCuts?: { readonly most?: number; readonly cells?: 'full' | 'half' };
 	/**
 	 * The least width, in pixels, that a card's own stalk draws at any distance, from 0 to 8. A card
 	 * stands on its axis's twig, whose wood may be thinner than a pixel at a whole view, so the

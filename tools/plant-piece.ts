@@ -105,6 +105,11 @@ await loadPlantCode(module.record);
 const started = performance.now();
 const kit = buildKitNow(module, { detail: 'high', placeholders: 'missing' });
 const pieces = buildPiecesNow(module, PIECES, flag('bare'), layouts.PIECE_LEAF);
+/** The pieces a layout draws: built again where its photograph's gravity is not their ground side. */
+const piecesFor = (studio: PieceStudio) =>
+	studio.fall
+		? buildPiecesNow(module, PIECES, flag('bare'), layouts.PIECE_LEAF, studio.fall)
+		: pieces;
 const built = performance.now() - started;
 
 /** The four cut-branch figures of a picture in words, or why it gives none. */
@@ -140,7 +145,7 @@ for (const studio of STUDIO) {
 		console.log(`  ${file}: no outline separates from its background`);
 		continue;
 	}
-	const scene = studioScene(kit, pieces, layStudio(module.record, PIECES, studio));
+	const scene = studioScene(kit, piecesFor(studio), layStudio(module.record, PIECES, studio));
 	const render = studioView(scene, reference, studio.turn ?? 0);
 	const match = matchFigures(reference, render);
 	// The same layout with each piece drawn as its cards, which a whole view of a plant draws.
@@ -236,7 +241,7 @@ if (flag('turns'))
 		const face = views[wide] as (typeof views)[number];
 		const edge = views[narrow] as (typeof views)[number];
 		const between = views[Math.round((wide + narrow) / 2)] as (typeof views)[number];
-		const scene = studioScene(kit, pieces, layStudio(module.record, PIECES, studio));
+		const scene = studioScene(kit, piecesFor(studio), layStudio(module.record, PIECES, studio));
 		const drawn = [0, 45, 90].map((turn) => {
 			const render = studioView(scene, face.view, (studio.turn ?? 0) + turn);
 			const box = render.measures.box;

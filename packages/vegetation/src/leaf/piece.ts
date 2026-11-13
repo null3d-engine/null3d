@@ -369,6 +369,12 @@ export interface PieceRule {
 	 * the card atlas. The finest tier keeps every leaf. Absent, every tier draws its leaves.
 	 */
 	readonly brushCards?: boolean;
+	/**
+	 * The most metres between neighbouring leaves on a stem that one brush card pictures as a run.
+	 * Absent, two of the stem's radii, where needles close round their stem; a piece whose leaves
+	 * are sprays that overlap along their stem states the spacing they overlap at.
+	 */
+	readonly brushGap?: number;
 }
 
 /**
@@ -546,6 +552,8 @@ interface StemStart {
  * @param ground The ground side in the piece's frame, for a piece that stands another way than
  * its attitude holds it, as a cut branch in a clamp does.
  * @param lean Degrees the piece's line leans from +Y toward +X, for a cut that leans in its clamp.
+ * @param fall The way a hanging mark falls in the piece's frame, where a photograph's gravity is not
+ * the piece's own ground side; its ground side where absent.
  * @returns The plan.
  */
 export function planPiece(
@@ -555,14 +563,20 @@ export function planPiece(
 	leafMeshes: number,
 	ground?: Readonly<Vector3>,
 	lean = 0,
+	fall?: Readonly<Vector3>,
 ): ShootPlan {
 	const shoots = record.shoots;
 	if (!shoots)
 		throw new Error(`@null3d/vegetation: '${record.id}' has no shoots to build pieces of`);
 	const foliage = record.foliage;
-	if (foliage.kind !== 'blade' && foliage.kind !== 'fascicle' && foliage.kind !== 'needle')
+	if (
+		foliage.kind !== 'blade' &&
+		foliage.kind !== 'fascicle' &&
+		foliage.kind !== 'needle' &&
+		foliage.kind !== 'scale-spray'
+	)
 		throw new Error(
-			`@null3d/vegetation: '${record.id}' has '${foliage.kind}' foliage; a piece carries blades, needles or needle bundles`,
+			`@null3d/vegetation: '${record.id}' has '${foliage.kind}' foliage; a piece carries blades, needles, needle bundles or scale sprays`,
 		);
 	const salt = record.seedSalt;
 	const draw = (purpose: number, a = 0, b = 0) => unitAt(salt, PIECE_KEY + key, purpose, a, b);
@@ -570,7 +584,13 @@ export function planPiece(
 		ground ??
 		rule.ground ??
 		(rule.attitude === 'plumb' ? [0, 1, 0] : rule.attitude === 'upright' ? [0, -1, 0] : [0, 0, -1]);
-	const leafSpread = foliage.kind === 'blade' ? foliage.leaf.length : foliage.needle.length;
+	// A scale spray is built at its own size, so every spray of a piece draws at it.
+	const leafSpread =
+		foliage.kind === 'blade'
+			? foliage.leaf.length
+			: foliage.kind === 'scale-spray'
+				? 1
+				: foliage.needle.length;
 	const leafMean = spreadMean(leafSpread);
 	/** The piece's own line. */
 	const line: Readonly<Vector3> = [sin(radians(lean)), cos(radians(lean)), 0];
@@ -930,11 +950,12 @@ export function planPiece(
 				for (let c = 0; c < count; c++) {
 					// Each body hangs toward the ground side, a little out from the stem and apart
 					// from its neighbours.
-					const apart = turn(out, down, c * GOLDEN);
+					const below = fall ?? down;
+					const apart = turn(out, below, c * GOLDEN);
 					const way = normalize3([
-						down[0] + apart[0] * 0.4,
-						down[1] + apart[1] * 0.4,
-						down[2] + apart[2] * 0.4,
+						below[0] + apart[0] * 0.4,
+						below[1] + apart[1] * 0.4,
+						below[2] + apart[2] * 0.4,
 					]);
 					const end: Vector3 = [
 						frame.at[0] + way[0] * stalk,
@@ -1273,6 +1294,7 @@ function browned(mesh: PrototypeArrays, browning: number, leafLength: number): v
  * @param leaves The species' leaf meshes at every tier, low first.
  * @param straight The same meshes built with no bend at the stalk, for the rules whose blades bend
  * in their own plane; the species' own where absent.
+ * @param fall The way a hanging mark falls in each piece's frame, for a lone cut in a clamp.
  * @returns The prototypes, each rule's variants together and each variant's parts together, in the
  * rules' order.
  */
@@ -1281,6 +1303,7 @@ export function piecePrototypes(
 	rules: readonly PieceRule[],
 	leaves: readonly (readonly PrototypeArrays[])[],
 	straight: readonly (readonly PrototypeArrays[])[] = leaves,
+	fall?: Readonly<Vector3>,
 ): PiecePrototype[] {
 	const pictureTier = DETAILS.indexOf(BRUSH_PICTURE_TIER);
 	const foliage = record.foliage;
@@ -1299,10 +1322,9 @@ export function piecePrototypes(
 		// longest, and its side stems' longest. Every run draws from the one of its kind.
 		let pictures: BrushPicture[] | undefined;
 		for (let variant = 0; variant < Math.min(16, Math.max(1, rule.variants)); variant++) {
-			const key = pieceKey(r, variant);
-			const whole = planPiece(record, rule, key, leafMeshes);
+			const whole = planPiece(record, rule, pieceKey(r, variant), leafMeshes, undefined, 0, fall);
 			if (rule.brushCards && !pictures) {
-				const runs = plannedBrushes(whole);
+				const runs = plannedBrushes(whole, rule.brushGap);
 				const longest = (own: boolean) =>
 					runs
 						.filter((run) => (run.axis === 0) === own)
@@ -1320,10 +1342,12 @@ export function piecePrototypes(
 				const brushes =
 					drawn.length > 0
 						? {
-								runs: plannedBrushes(plan).map(({ axis, leaves: _leaves, ...run }) => ({
-									...run,
-									picture: Math.min(drawn.length - 1, axis === 0 ? 0 : 1),
-								})),
+								runs: plannedBrushes(plan, rule.brushGap).map(
+									({ axis, leaves: _leaves, ...run }) => ({
+										...run,
+										picture: Math.min(drawn.length - 1, axis === 0 ? 0 : 1),
+									}),
+								),
 								pictures: drawn,
 							}
 						: undefined;
@@ -1382,6 +1406,12 @@ export interface PieceStudio {
 	readonly scale?: number;
 	/** Degrees either side of the stand's plane its arms stand, as a piece rule's `depth` is. */
 	readonly depth?: number;
+	/**
+	 * The way the photograph's gravity pulls in a lone piece's own frame, where the cut stands in a
+	 * clamp and not as a socket holds it: its hanging marks fall that way. The piece's ground side
+	 * where absent.
+	 */
+	readonly fall?: Vec3;
 }
 
 /** One piece of a layout: which piece, and where it stands in the layout's space, +Y up. */

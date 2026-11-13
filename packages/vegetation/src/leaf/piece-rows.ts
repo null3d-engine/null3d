@@ -133,6 +133,10 @@ export function pieceRows(input: DressInput): Row[] {
 	const own = sockets.piece;
 	const byPlace = own ? [...byName.values()].map(offered) : [];
 	const heading: Vector3 = [0, 0, 0];
+	// A frame that states a turn for its pieces has turned each socket's frame by it, so a piece
+	// that lies along its socket takes the socket's own frame.
+	const growth = record.growth;
+	const turned = growth.model === 'frame' && growth.sockets.turn !== undefined;
 	for (let b = 0; b < buds.count; b++) {
 		if ((buds.kind[b] as number) === BUD_FLOWER) continue;
 		const choices = own && byPlace.length > 0 ? byPlace[own[b] as number] : variants;
@@ -159,14 +163,15 @@ export function pieceRows(input: DressInput): Row[] {
 						(position[parentNode * 3 + 2] as number) - at[2],
 					]
 				: [0, 0, 0];
-		const held = first.piece
-			? pieceTurn(first.piece.attitude, heading)
-			: [
-					buds.frame[b * 4] as number,
-					buds.frame[b * 4 + 1] as number,
-					buds.frame[b * 4 + 2] as number,
-					buds.frame[b * 4 + 3] as number,
-				];
+		const held =
+			first.piece && !(turned && first.piece.attitude === 'along')
+				? pieceTurn(first.piece.attitude, heading)
+				: [
+						buds.frame[b * 4] as number,
+						buds.frame[b * 4 + 1] as number,
+						buds.frame[b * 4 + 2] as number,
+						buds.frame[b * 4 + 3] as number,
+					];
 		// A piece whose rule states a roll turns about its own line, its +Y.
 		const roll = first.piece?.roll;
 		let rotation = held;

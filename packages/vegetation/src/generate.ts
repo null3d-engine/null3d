@@ -26,7 +26,7 @@ import { speciesBox } from './core/box';
 import { formRecord } from './core/forms';
 import { type MacroSkeleton, SkeletonBuilder, skeletonCopy } from './core/graph';
 import { hashText } from './core/hash';
-import { quatRotate } from './core/math';
+import { quatRotate, type Vector3 } from './core/math';
 import { NotBuiltError } from './core/not-built';
 import {
 	emptyLevel,
@@ -114,6 +114,7 @@ import {
 	referenceTriangles,
 	shootPartTriangles,
 } from './lod/budget';
+import { cardLevelMost } from './lod/card-bake';
 import { cardMesh } from './lod/cards';
 import { bakeFar } from './lod/impostor';
 import { levelStarts } from './lod/levels';
@@ -245,6 +246,7 @@ function scaledCurve(curve: Curve, factor: number): Curve {
  * @param bare Whether the pieces carry no leaves, as a deciduous plant's do in winter: the wood and
  * the bud at each stem's end.
  * @param leaf The leaf the species' pieces wear where it differs from the record's.
+ * @param fall The way a hanging mark falls in each piece's frame, for a lone cut in a clamp.
  * @returns The pieces, each rule's variants together, in the rules' order.
  */
 export function buildPiecesNow(
@@ -252,8 +254,9 @@ export function buildPiecesNow(
 	rules: readonly PieceRule[],
 	bare = false,
 	leaf?: PieceLeaf,
+	fall?: Readonly<Vector3>,
 ): PiecePrototype[] {
-	return piecesOf(pieceRecord(source.record, leaf), source.textures.manifest, rules, bare);
+	return piecesOf(pieceRecord(source.record, leaf), source.textures.manifest, rules, bare, fall);
 }
 
 /**
@@ -266,6 +269,7 @@ function piecesOf(
 	manifest: KitSource['textures']['manifest'],
 	rules: readonly PieceRule[],
 	bare: boolean,
+	fall?: Readonly<Vector3>,
 ): PiecePrototype[] {
 	const builder = foliage(record.foliage.kind);
 	const leavesOf = (from: Species) =>
@@ -285,7 +289,7 @@ function piecesOf(
 					},
 				})
 			: leaves;
-	return piecePrototypes(record, rules, leaves, straight);
+	return piecePrototypes(record, rules, leaves, straight, fall);
 }
 
 /**
@@ -531,7 +535,7 @@ export function buildKitNow(source: KitSource, options: KitOptions = {}): Specie
 	}
 	const header = stage(
 		placeholders,
-		() => speciesHeader(record, manifest, box),
+		() => speciesHeader(record, manifest, box, cardLevelMost(prototypes)),
 		() => placeholderHeader(record, box),
 	);
 	return {

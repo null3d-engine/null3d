@@ -40,6 +40,7 @@ import {
 	framingQuery,
 	MASK_GATE_PLAIN,
 	MASK_SUBJECT_FLOOR,
+	rowGap,
 	rubricBand,
 	SHEATH_VIEWS,
 	SOLVED_VIEWS,
@@ -631,13 +632,19 @@ async function correctWidths(
 			frameOf(file),
 		);
 		if (measured === null) return undefined;
+		const held = (frameOf(file)?.facts as { stand?: { held?: string } } | undefined)?.stand?.held;
+		const drawn = `width: ${file} draws ${measured.share.toFixed(3)} of the width${measured.clipped ? ', touching a side' : ''} against ${fix.target.toFixed(3)}, at a stand scale of ${fix.scale.toFixed(3)}${held ? ` held by ${held}` : ''}`;
 		// A box that touches the frame's sides is a crop whatever its share reads, so it is redrawn
 		// even inside the band: a cropped frame cannot judge its subject.
 		const off = Math.abs(measured.share - fix.target) > WIDTH_BAND;
 		const cropped = measured.clipped && fix.target < 1;
-		if (!off && !cropped) return undefined;
+		if (!off && !cropped) {
+			console.log(`${drawn}: inside the band`);
+			return undefined;
+		}
 		// The page applies a scale to the stand it solves, so a second pass builds on the first.
 		const scale = fix.scale * correctedScale(measured.share, fix.target, fix.fraction);
+		console.log(`${drawn}: the correction asks a scale of ${scale.toFixed(3)}`);
 		if (fix.close) return scale > CLOSE_CROP_MAX ? undefined : { ...fix, scale };
 		if (scale < WHOLE_SCALE_MIN || scale > WHOLE_SCALE_MAX) {
 			console.warn(
@@ -649,8 +656,10 @@ async function correctWidths(
 		// whose stand already held those rows, or the frame, keeps its drawing when it is drawn
 		// narrower than its photograph: the width error is the plant's. One that stood back for its
 		// width comes in.
-		const held = (frameOf(file)?.facts as { stand?: { held?: string } } | undefined)?.stand?.held;
-		if (fix.stood && scale < 1 && held !== 'width' && held !== 'scale') return undefined;
+		if (fix.stood && scale < 1 && held !== 'width' && held !== 'scale') {
+			console.log(`width: ${file} keeps its stand, which held its photograph's rows`);
+			return undefined;
+		}
 		return { ...fix, scale };
 	};
 	const fixes = new Map<string, WidthFix>();
@@ -898,7 +907,7 @@ function compareRun(
 			`- ${result.pairs.filter((pair) => !pair.error).length} of ${result.pairs.length} files drawn beside a render of their view; ${masked.length} give an outline on a plain background in both pictures.`,
 			...masked.map(
 				(pair) =>
-					`- ${pair.file}: shape IoU ${fixed(pair.shapeIou)}, width error ${fixed(pair.profileError, 3)}, sky gap enclosed by the crown's outline (row 6's figure): photograph ${fixed(pair.gap?.reference)}, drawing ${fixed(pair.gap?.render)}${pair.gap?.renderByCoverage === undefined ? '' : ` (${fixed(pair.gap.renderByCoverage)} by the drawing's clear share, the earlier reading)`}; sky share of the crown's box: photograph ${fixed(pair.crownBoxGap?.reference)}, drawing ${fixed(pair.crownBoxGap?.render)}; ${frameShareClause(pair)}; foot row: photograph ${fixed(pair.footRow?.reference, 3)}, drawing ${fixed(pair.footRow?.render, 3)}; leaf colour difference ${fixed(pair.foliageDeltaE, 1)}${barkClause(pair)}${pieceClause(pair)}${fittedMaskClause(pair)}; drawn at the ${pair.level ?? 'level the page did not report'}.`,
+					`- ${pair.file}: shape IoU ${fixed(pair.shapeIou)}, width error ${fixed(pair.profileError, 3)}, sky gap enclosed by the crown's outline (row 6's figure): photograph ${fixed(pair.gap?.reference)}, drawing ${fixed(pair.gap?.render)}${pair.gap?.renderByCoverage === undefined ? '' : ` (${fixed(pair.gap.renderByCoverage)} by the drawing's clear share, the earlier reading)`}${colourGapClause(pair)}; sky share of the crown's box: photograph ${fixed(pair.crownBoxGap?.reference)}, drawing ${fixed(pair.crownBoxGap?.render)}; ${frameShareClause(pair)}; foot row: photograph ${fixed(pair.footRow?.reference, 3)}, drawing ${fixed(pair.footRow?.render, 3)}; leaf colour difference ${fixed(pair.foliageDeltaE, 1)}${barkClause(pair)}${pieceClause(pair)}${fittedMaskClause(pair)}; drawn at the ${pair.level ?? 'level the page did not report'}.`,
 			),
 			...result.pairs.flatMap((pair) =>
 				pair.surfaceDeltaE !== null
@@ -1175,6 +1184,13 @@ function areaLines(pairs: readonly StillResult[]): string[] {
 				]
 			: [],
 	);
+}
+
+/** The drawing's gap read from its colour still, and whether row 6 reads it in place of the matte's. */
+function colourGapClause(pair: StillResult): string {
+	if (pair.gap?.renderByColour === undefined) return '';
+	const read = rowGap(pair.gap);
+	return `; by the colour still ${fixed(pair.gap.renderByColour)}${read.read === 'colour still' ? ", which row 6 reads: the matte's differs by more than 0.05" : ''}`;
 }
 
 /**
