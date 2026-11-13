@@ -37,7 +37,7 @@ import {
 import type { ExtraSpec } from '../core/record';
 import { spreadAt } from '../core/types';
 import { crownSkyAt } from '../crown/visibility';
-import { firstCardPixels, shootReach } from '../lod/levels';
+import { shootReach } from '../lod/levels';
 import type { MeshInput, MeshLevel } from '../stages';
 import { VARIANT_RECORDS } from '../wind/records';
 import { lathe, MeshWriter, SURFACE_STEM, sideAxes } from './writer';
@@ -379,10 +379,7 @@ function sizeOf(extra: ExtraSpec): number {
  */
 function pixelsAt(input: MeshInput, extra: ExtraSpec, level: 1 | 2): number | undefined {
 	if (!input.record.shoots || input.kit.prototypes.length === 0) return undefined;
-	const pixels =
-		level === 1
-			? firstCardPixels(input.record, input.kit.detail)
-			: input.record.lod.switchPixels[1];
+	const pixels = input.record.lod.switchPixels[level - 1] as number;
 	return (breadthOf(extra) / shootReach(input.kit)) * pixels;
 }
 

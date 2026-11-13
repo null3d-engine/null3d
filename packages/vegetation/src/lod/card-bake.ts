@@ -28,9 +28,10 @@ import { rasterise, rasterTarget } from './raster';
 
 /**
  * Texels a side of one card cell by tier. The first card level starts where its longest shoot spans
- * no more pixels than the cell gives it, so a card is never drawn larger than its own picture; a
- * finer cell lets cards start nearer, at four times the atlas memory. A prototype without leaves (a
- * bare winter twin) takes a cell of half the side: its card holds thin stems and buds.
+ * the record's first switch pixels, which on most species is more than a cell holds, so near its
+ * start a card is drawn larger than its picture; a finer cell costs four times the atlas memory. A
+ * prototype without leaves (a bare winter twin) takes a cell of half the side: its card holds thin
+ * stems and buds.
  *
  * @category api/vegetation
  */
@@ -45,19 +46,6 @@ export const CARD_CELL: Readonly<Record<Detail, number>> = {
 const BORDER = 2;
 /** How far a card plane reaches past the prototype's bounds. */
 const MARGIN = 1.04;
-
-/**
- * The texels a card's picture gives its shoot across the shoot's longest side at a tier: the cell
- * less its empty border, over the margin a card plane reaches past the shoot.
- *
- * @param record The species record.
- * @param detail The kit's tier.
- * @returns The texels.
- * @category api/vegetation
- */
-export function cardTexels(record: Species, detail: Detail): number {
-	return ((record.lod.cardCell?.[detail] ?? CARD_CELL[detail]) - 2 * BORDER) / MARGIN;
-}
 /** Texels a side of the outline mask that tests a leaf texel's coverage. */
 const MASK_SIZE = 512;
 /** The tier whose meshes the bake draws. */
