@@ -76,21 +76,24 @@ export function longestStraight(axis: FrameAxis): number {
 
 /**
  * The largest drop in radius between neighbouring nodes of an axis, as a share of the axis's
- * thickest radius. An axis that thins evenly over many nodes drops a small share at each.
+ * thickest radius. An axis that thins evenly over many nodes drops a small share at each. The drop
+ * just past a node where another axis leaves is the fork's own and is not counted.
  *
  * @param axis The axis.
+ * @param forks The axis's nodes where another axis leaves.
  * @returns The share, 0 for an axis of one radius.
  * @category api/vegetation
  */
-export function steepestStep(axis: FrameAxis): number {
+export function steepestStep(axis: FrameAxis, forks?: ReadonlySet<number>): number {
 	let thickest = 0;
 	for (const node of axis.nodes) thickest = Math.max(thickest, node.radius);
 	let most = 0;
 	for (let k = 1; k < axis.nodes.length; k++)
-		most = Math.max(
-			most,
-			Math.abs((axis.nodes[k - 1] as FrameNode).radius - (axis.nodes[k] as FrameNode).radius),
-		);
+		if (!forks?.has(k - 1))
+			most = Math.max(
+				most,
+				Math.abs((axis.nodes[k - 1] as FrameNode).radius - (axis.nodes[k] as FrameNode).radius),
+			);
 	return thickest > 0 ? most / thickest : 0;
 }
 

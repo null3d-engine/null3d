@@ -76,6 +76,8 @@ export const frame: FrameSpec = {
 				// 0.12 across sits round each branch's end, so the wood ends 0.06 short of the outline.
 				length: { outline: 0.87 },
 				vary: 0.06,
+				// Still 30: the highest branches are half a metre long at the least.
+				least: 0.025,
 				// Stills 07 and 17: 0.2 to 0.3 of the trunk at the join.
 				radius: 0.25,
 				taper: 0.2,

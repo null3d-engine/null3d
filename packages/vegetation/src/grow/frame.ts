@@ -52,6 +52,8 @@ const Purpose = {
 	Vary: 9,
 	Angle: 10,
 	Lean: 11,
+	Spot: 12,
+	Nod: 13,
 } as const;
 
 /**
@@ -130,10 +132,23 @@ interface FrameAxisRule {
 	readonly name: string;
 	/** The bends of its course, in order along it. */
 	readonly bends?: readonly FrameBend[];
-	/** Degrees each arch of the course turns sideways, to one side and the other in turn. */
+	/** Degrees the course turns at each elbow, to one side and the other in turn. */
 	readonly sway: number;
-	/** The arches the course is made of: the sway's turns. */
+	/** The elbows of the course. */
 	readonly elbows: number;
+	/**
+	 * How crooked the course is, from 0 to 0.9: the share of the stretch between two elbows that runs
+	 * straight. At 0 the course is an even wave that turns all the way along. Above 0 the elbows
+	 * stand at uneven steps, each a short rounded turn that also nods up or down, and an elbow
+	 * stands where a child axis leaves. Left out, 0.
+	 */
+	readonly crook?: number;
+	/**
+	 * The share of each child's cross-section that the axis loses where the child leaves, from 0 to
+	 * 1: at 1 the wood past a fork is as thick as the fork leaves it, and at 0 the axis thins
+	 * evenly whatever leaves it. A stem's width is stated, so it loses nothing. Left out, 0.
+	 */
+	readonly shed?: number;
 	/**
 	 * The share an axis's length may differ by, either way, and the shortest and the longest it may
 	 * run as shares of the height, by its place.
@@ -190,9 +205,10 @@ export interface FrameBranchRule extends FrameAxisRule {
 	readonly stagger?: number;
 	/**
 	 * How they stand round the parent: each turned on from the last by the golden angle, evenly round
-	 * it, in opposite pairs each crossed on the last, or to one side and the other in turn.
+	 * it, in opposite pairs each crossed on the last, to one side and the other in turn, or each at
+	 * its own stated degrees, which states every axis by itself.
 	 */
-	readonly around: 'spiral' | 'ring' | 'opposite' | 'sides';
+	readonly around: 'spiral' | 'ring' | 'opposite' | 'sides' | readonly number[];
 	/** Degrees round the parent where the first one stands. Left out, each parent draws its own. */
 	readonly first?: number;
 	/**
@@ -531,63 +547,105 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 			lift = clamp(lift, -90, 90);
 			lifts.push([Math.max(to, from + 1e-6), lift]);
 		}
-		// The sideways sway: the course leans to one side and the other in turn, once an elbow, and
-		// leaves in its own direction. The first lean is reached half an elbow along, so every
-		// stretch between two leans turns the whole way across, and the course ends half way to
-		// the lean that would follow, so its last stretch turns too.
+		// The elbows: at each the course's lean changes, to one side and the other in turn, over a
+		// short stretch, and it holds its lean between them. An even course spends the whole stretch
+		// between two elbows turning; a crooked one stands its elbows at uneven steps and nods at each.
 		const elbows = Math.max(1, Math.round(rule.elbows));
-		const sways: [number, number][] = [[0, 0]];
+		const crook = clamp(rule.crook ?? 0, 0, 0.9);
+		const half = ((1 - crook) * 0.5) / elbows;
+		const spots: number[] = [];
+		const leans: number[] = [];
+		const nods: number[] = [];
 		let side = draw(Purpose.SwaySide, id) < 0.5 ? 1 : -1;
-		let lean = 0;
-		for (let k = 0; k <= elbows; k++) {
-			const next = side * (rule.sway / 2) * (0.7 + 0.6 * draw(Purpose.Sway, id, k));
-			if (k < elbows) sways.push([(k + 0.5) / elbows, next]);
-			else sways.push([1, (lean + next) / 2]);
-			lean = next;
+		for (let k = 0; k < elbows; k++) {
+			spots.push((k + 0.5 + (draw(Purpose.Spot, id, k) * 2 - 1) * 0.45 * crook) / elbows);
+			leans.push(side * (rule.sway / 2) * (0.7 + (0.6 + 0.5 * crook) * draw(Purpose.Sway, id, k)));
+			nods.push(crook * (draw(Purpose.Nod, id, k) * 2 - 1) * (rule.sway / 2));
 			side = -side;
 		}
+		/** The lean and the nod at every share, from the elbows where they stand now. */
+		let sways: [number, number][] = [];
+		let dips: [number, number][] = [];
+		const elbowed = (): void => {
+			sways = [[0, 0]];
+			dips = [[0, 0]];
+			let lean = 0;
+			let nod = 0;
+			if (crook === 0) {
+				// An even wave reaches each lean at its elbow and ends half way to the lean that
+				// would follow, so every stretch of it turns, the first and the last too.
+				spots.forEach((spot, k) => {
+					sways.push([spot, leans[k] as number]);
+				});
+				const next = side * (rule.sway / 2) * (0.7 + 0.6 * draw(Purpose.Sway, id, elbows));
+				sways.push([1, ((leans[elbows - 1] as number) + next) / 2]);
+				return;
+			}
+			spots.forEach((spot, k) => {
+				const from = Math.max(spot - half, (sways[sways.length - 1] as [number, number])[0]);
+				const to = Math.min(1, Math.max(spot + half, from + 1e-6));
+				sways.push([from, lean], [to, leans[k] as number]);
+				dips.push([from, nod], [to, nods[k] as number]);
+				lean = leans[k] as number;
+				nod = nods[k] as number;
+			});
+		};
+		elbowed();
 		const across: Vector3 = [-sin(heading), 0, cos(heading)];
 		const tangent = (share: number): Vector3 => {
 			const base = direction(radians(curveAt(lifts, share)), heading);
 			const off = tan(radians(curveAt(sways, share)));
-			return unit(base[0] + across[0] * off, base[1], base[2] + across[2] * off);
+			const nod = tan(radians(curveAt(dips, share)));
+			// The nod turns the course in its own upright plane, square to its line.
+			const upX = across[1] * base[2] - across[2] * base[1];
+			const upY = across[2] * base[0] - across[0] * base[2];
+			const upZ = across[0] * base[1] - across[1] * base[0];
+			return unit(
+				base[0] + across[0] * off + upX * nod,
+				base[1] + upY * nod,
+				base[2] + across[2] * off + upZ * nod,
+			);
 		};
 
 		// The length: stated, or found so that the tip stands where the rule says.
 		const lengthRule = rule.length;
-		let length: number;
-		if ('share' in lengthRule) length = curveAt(lengthRule.share, place) * scale;
-		else if ('parent' in lengthRule) length = curveAt(lengthRule.parent, place) * parentLength;
-		else {
-			/** How far past its mark a trial length's tip stands; it rises with the length. */
-			const past = (trial: number): number => {
-				const tip = tipOf(start, tangent, trial);
-				if ('outline' in lengthRule) {
-					// The outline drawn in toward the crown's middle: its radius and its height above
-					// and below the widest row both take the share.
-					const share = Math.max(0.05, curveAt(lengthRule.outline, place));
-					const reach = Math.sqrt(tip[0] * tip[0] + tip[2] * tip[2]);
-					const at = middle + (tip[1] - middle) / share;
-					return reach - share * outlineRadius(spec, scale, at, atan2(tip[2], tip[0]));
+		let length = 0;
+		/** Finds the length from the course as it stands. */
+		const measure = (): void => {
+			if ('share' in lengthRule) length = curveAt(lengthRule.share, place) * scale;
+			else if ('parent' in lengthRule) length = curveAt(lengthRule.parent, place) * parentLength;
+			else {
+				/** How far past its mark a trial length's tip stands; it rises with the length. */
+				const past = (trial: number): number => {
+					const tip = tipOf(start, tangent, trial);
+					if ('outline' in lengthRule) {
+						// The outline drawn in toward the crown's middle: its radius and its height above
+						// and below the widest row both take the share.
+						const share = Math.max(0.05, curveAt(lengthRule.outline, place));
+						const reach = Math.sqrt(tip[0] * tip[0] + tip[2] * tip[2]);
+						const at = middle + (tip[1] - middle) / share;
+						return reach - share * outlineRadius(spec, scale, at, atan2(tip[2], tip[0]));
+					}
+					return tip[1] - curveAt(lengthRule.height, place) * scale;
+				};
+				let low = 0.01 * scale;
+				let high = 2 * scale;
+				// A hanging axis nears its mark from above, so its measure falls as it lengthens.
+				const falls = past(low) > 0 && 'height' in lengthRule;
+				for (let pass = 0; pass < LENGTH_PASSES; pass++) {
+					const trial = (low + high) / 2;
+					const over = falls ? -past(trial) : past(trial);
+					if (over < 0) low = trial;
+					else high = trial;
 				}
-				return tip[1] - curveAt(lengthRule.height, place) * scale;
-			};
-			let low = 0.01 * scale;
-			let high = 2 * scale;
-			// A hanging axis nears its mark from above, so its measure falls as it lengthens.
-			const falls = past(low) > 0 && 'height' in lengthRule;
-			for (let pass = 0; pass < LENGTH_PASSES; pass++) {
-				const middle = (low + high) / 2;
-				const over = falls ? -past(middle) : past(middle);
-				if (over < 0) low = middle;
-				else high = middle;
+				length = (low + high) / 2;
 			}
-			length = (low + high) / 2;
-		}
-		if (rule.vary) length *= 1 + (draw(Purpose.Vary, id) * 2 - 1) * rule.vary;
-		if (rule.most !== undefined) length = Math.min(length, curveAt(rule.most, place) * scale);
-		if (rule.least !== undefined) length = Math.max(length, curveAt(rule.least, place) * scale);
-		length = Math.max(length, 0.01 * scale);
+			if (rule.vary) length *= 1 + (draw(Purpose.Vary, id) * 2 - 1) * rule.vary;
+			if (rule.most !== undefined) length = Math.min(length, curveAt(rule.most, place) * scale);
+			if (rule.least !== undefined) length = Math.max(length, curveAt(rule.least, place) * scale);
+			length = Math.max(length, 0.01 * scale);
+		};
+		measure();
 
 		// Where each child leaves, as shares of this axis's length.
 		interface Seat {
@@ -628,6 +686,33 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 			}
 		});
 
+		// A crooked axis turns where a child leaves: the elbow nearest each seat moves onto it, where
+		// that keeps the elbows in order and clear of each other, and the length is found again.
+		if (crook > 0 && seats.length > 0) {
+			const taken = new Set<number>();
+			for (const seat of seats) {
+				if (seat.share < half || seat.share > 1 - half) continue;
+				let best = -1;
+				for (let k = 0; k < spots.length; k++)
+					if (
+						!taken.has(k) &&
+						(best < 0 ||
+							Math.abs((spots[k] as number) - seat.share) <
+								Math.abs((spots[best] as number) - seat.share))
+					)
+						best = k;
+				if (best < 0 || Math.abs((spots[best] as number) - seat.share) > 0.5 / elbows) continue;
+				const before = best > 0 ? (spots[best - 1] as number) : -1;
+				const after = best + 1 < spots.length ? (spots[best + 1] as number) : 2;
+				if (seat.share - before < 2 * half || after - seat.share < 2 * half) continue;
+				spots[best] = seat.share;
+				taken.add(best);
+			}
+			if (taken.size > 0) {
+				elbowed();
+				measure();
+			}
+		}
 		const stem = role === 'stem' ? (rule as FrameStemRule) : undefined;
 		// A stem is also cut where its width is stated, so its foot's flare keeps its shape.
 		const widths =
@@ -635,6 +720,21 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 				? stem.width.map((knot) => (knot[0] * scale) / length).filter((share) => share < 1)
 				: [];
 		const knots = [...lifts.map((knot) => knot[0]), ...sways.map((knot) => knot[0]), ...widths];
+		// What the axis keeps of its cross-section past each child, by the share where the child
+		// leaves.
+		const shed = stem ? 0 : clamp(rule.shed ?? 0, 0, 1);
+		const forks: [number, number][] = [];
+		if (shed > 0)
+			for (const seat of seats) {
+				const among = seat.count > 1 ? seat.index / (seat.count - 1) : 0;
+				const ratio = Math.min(BASE_MOST, curveAt(seat.rule.radius, among));
+				forks.push([seat.share, Math.sqrt(Math.max(0.05, 1 - shed * ratio * ratio))]);
+			}
+		const kept = (share: number): number => {
+			let keeps = 1;
+			for (const [at, keep] of forks) if (at < share - 1e-9) keeps *= keep;
+			return keeps;
+		};
 		const laid = lay(
 			start,
 			tangent,
@@ -648,7 +748,7 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 				RADIUS_LEAST,
 				stem
 					? (curveAt(stem.width, (share * length) / scale) * scale) / 2
-					: baseRadius * (1 - (1 - taper) * share),
+					: baseRadius * (1 - (1 - taper) * share) * kept(share),
 			);
 		const nodes: FrameNode[] = [];
 		const along: number[] = [];
@@ -745,7 +845,9 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 			const phase = phases.get(child) as number;
 			const jitter = (draw(Purpose.Jitter, id, c * 256 + seat.index) * 2 - 1) * (child.jitter ?? 0);
 			let round: number;
-			if (child.around === 'spiral') round = phase + seat.index * GOLDEN;
+			if (typeof child.around !== 'string')
+				round = child.around[seat.index % Math.max(1, child.around.length)] ?? 0;
+			else if (child.around === 'spiral') round = phase + seat.index * GOLDEN;
 			else if (child.around === 'ring') round = phase + (seat.index * 360) / seat.count;
 			else if (child.around === 'opposite')
 				round = phase + Math.floor(seat.index / 2) * 90 + (seat.index % 2) * 180;
