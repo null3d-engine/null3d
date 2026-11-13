@@ -91,6 +91,21 @@ export function normalize(a: readonly number[]): V3 {
 		: [0, 1, 0];
 }
 
+/** The point `metres` from `at` along a direction. */
+export function step(at: readonly number[], direction: readonly number[], metres: number): V3 {
+	return [
+		(at[0] as number) + (direction[0] as number) * metres,
+		(at[1] as number) + (direction[1] as number) * metres,
+		(at[2] as number) + (direction[2] as number) * metres,
+	];
+}
+
+/** A unit vector square to `v`, level where it can be: across a direction's run. */
+export function across(v: readonly number[]): V3 {
+	const level = cross([0, 1, 0], v);
+	return Math.hypot(...level) > 1e-3 ? normalize(level) : [1, 0, 0];
+}
+
 /** The chain of one axis: its parent node before its base (when it has one), then its own nodes. */
 export function chainOf(skeleton: MacroSkeleton, axis: number): number[] {
 	const { axes } = skeleton;

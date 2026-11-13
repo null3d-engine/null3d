@@ -7,9 +7,10 @@
 // picture is void, with the reason, and nothing is measured on it. The solves read only the
 // subjects interface, so they hold for any generator that fills it.
 
-import { cross, dot, facing, normalize, turnedAbout, type V3 } from './anatomy';
+import { across, cross, dot, facing, normalize, step, turnedAbout, type V3 } from './anatomy';
 import type { Lens } from './close';
 import { rowAngle } from './framing';
+import { lensAxes } from './sight';
 import {
 	type Absent,
 	type AxisSample,
@@ -115,8 +116,7 @@ function axesOf(
 	forward: V3,
 	roll = 0,
 ): { readonly forward: V3; readonly right: V3; readonly up: V3 } {
-	const right = normalize(cross(forward, Math.abs(forward[1]) > 0.999 ? [1, 0, 0] : [0, 1, 0]));
-	const up = cross(right, forward);
+	const { right, up } = lensAxes({ position: [0, 0, 0], target: forward });
 	return roll === 0
 		? { forward, right, up }
 		: { forward, right: turnedAbout(right, forward, roll), up: turnedAbout(up, forward, roll) };
@@ -183,12 +183,12 @@ function aim(
 ): Camera {
 	const { right, up } = axesOf(forward, roll);
 	const wide = tall * lens.aspect;
-	const across = (x - 0.5) * wide;
+	const aside = (x - 0.5) * wide;
 	const down = (y - 0.5) * tall;
 	const centre: V3 = [
-		point[0] - right[0] * across + up[0] * down,
-		point[1] - right[1] * across + up[1] * down,
-		point[2] - right[2] * across + up[2] * down,
+		point[0] - right[0] * aside + up[0] * down,
+		point[1] - right[1] * aside + up[1] * down,
+		point[2] - right[2] * aside + up[2] * down,
 	];
 	const distance = tall / 2 / tanHalf(lens);
 	return {
@@ -205,30 +205,15 @@ function aim(
 /** The roll about `forward` that turns the picture until `direction` points up the frame. */
 function rollUp(forward: V3, direction: V3): number {
 	const { right, up } = axesOf(forward);
-	const across = dot(direction, right);
+	const aside = dot(direction, right);
 	const along = dot(direction, up);
-	if (Math.hypot(across, along) < 0.2) return 0;
+	if (Math.hypot(aside, along) < 0.2) return 0;
 	const wanted = normalize([
-		right[0] * across + up[0] * along,
-		right[1] * across + up[1] * along,
-		right[2] * across + up[2] * along,
+		right[0] * aside + up[0] * along,
+		right[1] * aside + up[1] * along,
+		right[2] * aside + up[2] * along,
 	]);
 	return Math.atan2(dot(cross(up, wanted), forward), dot(up, wanted));
-}
-
-/** The point `metres` from `at` along a direction. */
-function step(at: V3, direction: V3, metres: number): V3 {
-	return [
-		at[0] + direction[0] * metres,
-		at[1] + direction[1] * metres,
-		at[2] + direction[2] * metres,
-	];
-}
-
-/** A unit vector square to `v` and level where it can be. */
-function levelAcross(v: V3): V3 {
-	const level = cross([0, 1, 0], v);
-	return Math.hypot(...level) > 1e-3 ? normalize(level) : [1, 0, 0];
 }
 
 /** The least distance between the segments `p1`–`q1` and `p2`–`q2`. */
@@ -1314,7 +1299,7 @@ export function insideShot(subjects: PlantSubjects, lens: Lens, options: InsideO
 		);
 	const distance = standOff(ahead, beside.radius + CLEARANCE);
 	// Beside the limb and below it, so the limb crosses the frame and the crown stands over it.
-	const side = levelAcross(beside.direction);
+	const side = across(beside.direction);
 	const off = normalize([side[0], -1, side[2]]);
 	return {
 		kind: 'a great limb from inside the crown',
@@ -1506,12 +1491,12 @@ export function barkLimbShot(
 	const solve = (limb: GreatLimb) => {
 		const at = sampleAlong(limb.axis, along);
 		const tall = frameOf(limb);
-		const across = levelAcross(at.direction);
+		const level = across(at.direction);
 		// The limb's outer side first: the trunk and the crown's middle stand behind the camera there.
-		const outer = dot(across, outwardOf(subjects.foot, at.at, 0)) >= 0 ? 1 : -1;
+		const outer = dot(level, outwardOf(subjects.foot, at.at, 0)) >= 0 ? 1 : -1;
 		let best: { camera: Camera; blocked: string | undefined } | undefined;
 		for (const sign of [outer, -outer]) {
-			const side: V3 = [across[0] * sign, across[1] * sign, across[2] * sign];
+			const side: V3 = [level[0] * sign, level[1] * sign, level[2] * sign];
 			const camera = aim(at.at, 0.5, 0.5, [-side[0], -side[1], -side[2]], tall, lens);
 			const blocked = blockedBy(subjects, camera.position, step(at.at, side, 1.5 * at.radius), {
 				limbs: [limb.id],
@@ -1594,7 +1579,7 @@ export function branchPieceShot(
 ): Solved {
 	if (!(piece.length > 0)) return absent('the branch piece has no length');
 	const fill = options.fill ?? 0.85;
-	const face = piece.face ?? levelAcross(piece.direction);
+	const face = piece.face ?? across(piece.direction);
 	const forward: V3 = [-face[0], -face[1], -face[2]];
 	const laid = options.laid === true;
 	const roll = rollUp(forward, piece.direction) + (laid ? -Math.PI / 2 : 0);
