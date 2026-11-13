@@ -2674,10 +2674,12 @@ export interface LodSpec {
 	 */
 	readonly cardCell?: Readonly<Record<Detail, number>>;
 	/**
-	 * How a prototype many times longer than wide is cut along its line into cards of its own, where
-	 * the default does not suit the species: `most` stretches at most, from 1 to 8 and 4 by default,
-	 * and `cells`, whether each stretch's planes take a whole cell or a half one, `half` by default.
-	 * A half cell keeps the atlas near its uncut size and still gives a blade or a strand more texels
+	 * Whether a prototype many times longer than wide is cut along its line into cards of its own:
+	 * `most` stretches at most, from 1 to 8, and 1 by default, which cuts nothing; and `cells`,
+	 * whether each stretch's planes take a whole cell or a half one, `half` by default. Each stretch
+	 * draws planes of its own, so a cut card costs more triangles at every card level and more atlas,
+	 * and a species asks for it only where its pictures read better and its caps hold the cost. A
+	 * half cell keeps the atlas near its uncut size and still gives a blade or a strand more texels
 	 * along its length; a wide frond whose leaflets need the texels across takes whole cells.
 	 */
 	readonly cardCuts?: { readonly most?: number; readonly cells?: 'full' | 'half' };
