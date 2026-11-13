@@ -221,6 +221,12 @@
 		"date": "2026-11-10",
 		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head in the one idle window, each drawing completed and compared before acceptance, and a CI drawing on a pull request replaces them"
 	},
+	"chromium-swiftshader/compat/plant-olive.png": {
+		"test": "plant-olive",
+		"tier": "compat",
+		"date": "2026-11-08",
+		"reason": "the olive's crown gathered more densely, so this Mac redrew the software set with CI=1"
+	},
 	"chromium-swiftshader/compat/plant-pedunculate-oak.png": {
 		"test": "plant-pedunculate-oak",
 		"tier": "compat",
@@ -574,6 +580,12 @@
 		"tier": "webgl2",
 		"date": "2026-11-10",
 		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head in the one idle window, each drawing completed and compared before acceptance, and a CI drawing on a pull request replaces them"
+	},
+	"chromium-swiftshader/webgl2/plant-olive.png": {
+		"test": "plant-olive",
+		"tier": "webgl2",
+		"date": "2026-11-08",
+		"reason": "the olive's crown gathered more densely, so this Mac redrew the software set with CI=1"
 	},
 	"chromium-swiftshader/webgl2/plant-pedunculate-oak.png": {
 		"test": "plant-pedunculate-oak",
@@ -958,6 +970,12 @@
 		"tier": "webgpu",
 		"date": "2026-11-10",
 		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head in the one idle window, each drawing completed and compared before acceptance, and a CI drawing on a pull request replaces them"
+	},
+	"chromium-swiftshader/webgpu/plant-olive.png": {
+		"test": "plant-olive",
+		"tier": "webgpu",
+		"date": "2026-11-08",
+		"reason": "the olive's crown gathered more densely, so this Mac redrew the software set with CI=1"
 	},
 	"chromium-swiftshader/webgpu/plant-pedunculate-oak.png": {
 		"test": "plant-pedunculate-oak",

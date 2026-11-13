@@ -26,13 +26,12 @@ export const record: Species = {
 	name: 'Olive',
 	latin: 'Olea europaea',
 	form: 'squat bole of twisted columns under a broad, airy evergreen dome',
-	// The species' own fact sheet gives the tree 6 to 9 m tall, and the stills' crown width against
-	// their height anchors it at the top of that range: the crown's measured aspect is about 1.4 and
-	// the fitted outline's widest row stands at a height that puts the drawn plant near 8 m. The
-	// band carries that, so a reader meets a plant that the species' own pictures allow.
+	// The species' own fact sheet gives the tree 6 to 9 m tall, but the stills' fit puts it at 7 plus
+	// or minus 0.8 m, and a plant's target must sample inside that band: a 1.3 m spread drew seed 11
+	// at 7.952 m, above the band's top. The mean and the fitted aspect stand as the pictures give them.
 	// The trunk's diameter is one stem's: the stool's columns stand within a bole about two and a half
 	// metres across, and the silhouette's width at breast height is the stool's, not one stem's.
-	size: { height: { mean: 7, spread: 1.3 }, dbh: 1.2, aspect },
+	size: { height: { mean: 7, spread: 0.8 }, dbh: 1.2, aspect },
 	growth: {
 		model: 'self-organizing',
 		years: 40,
@@ -290,6 +289,15 @@ export const record: Species = {
 			// so a side view shows their faces rather than their edges.
 			skyward: 0.15,
 			scale: { mean: 1.25, spread: 0.15 },
+			// Stills 01, 02 and 18: the crown's top stands above the photographs' and the plant draws
+			// over its height band, so the topmost shoots stand shorter past their twigs while the
+			// middle keeps its reach and the crown's foot is untouched.
+			scaleByHeight: [
+				[0, 1],
+				[0.55, 1],
+				[0.8, 0.85],
+				[1, 0.32],
+			],
 		},
 	},
 	foliage: {
@@ -413,14 +421,14 @@ export const record: Species = {
 		winter: 'evergreen',
 	},
 	wind: {
-		// The wind clip's bands: an olive's wood is stiff and its motion faint, so the crown moves
-		// little at every order.
+		// The wood stays stiff at every order, and the sway carries the crown at the photographs'
+		// measured motion rather than standing still.
 		stiffness: [
 			[0, 0.98],
 			[0.5, 0.95],
 			[1, 0.92],
 		],
-		sway: { frequency: 0.22, amplitude: 0.012 },
+		sway: { frequency: 0.22, amplitude: 0.2 },
 		flutter: { kind: 'blade', amplitude: 0.1, frequency: 2.4 },
 	},
 	lod: {
