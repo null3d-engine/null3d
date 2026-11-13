@@ -13,8 +13,9 @@ const LEAF_SCALE = 0.74;
 /**
  * One hanging strand of a stated length. Stills 19 and 21: a strand leaves the top or the outer side
  * of an arching twig and turns plumb within a few centimetres. Stills 10 and 28: the stem is about
- * two millimetres thick. Still 21: one leaf each 2 to 2.5 centimetres, alternate, to both sides and
- * round the strand, held 15 to 25 degrees off it with its tip down. Stills 10 and 23: the tip's
+ * two millimetres thick. Still 21: one leaf each two centimetres (14 pixels at 1.4 millimetres),
+ * alternate, to both sides of the strand, tip down. A leafy strand is 7 to 8 centimetres wide, which
+ * a leaf of 8.5 centimetres makes at 24 degrees off the strand. Stills 10 and 23: the tip's
  * leaves are young and small, and a slim bud lies in each axil.
  */
 function strand(length: number, spread: number): PieceStem {
@@ -24,19 +25,19 @@ function strand(length: number, spread: number): PieceStem {
 		hook: { angle: 100, length: 0.045 },
 		zigzag: 2,
 		leaves: {
-			gap: 0.022,
+			gap: 0.02,
 			from: 0.05 / length,
 			phyllotaxis: { kind: 'distichous', flatten: 0, turn: 35 },
-			angle: 20,
+			angle: 24,
 			angleSpread: 6,
 			scale: [
 				[0, LEAF_SCALE],
 				[0.88, LEAF_SCALE],
 				[1, LEAF_SCALE * 0.45],
 			],
-			// Stills 19 and 21: a blade hangs along its strand and faces away from it.
-			hang: 0.5,
-			face: { turn: 180, spread: 70 },
+			// Still 21 and its turning video: the curtain's blades show their faces to a camera that
+			// looks square at the branch.
+			face: { turn: 0, spread: 35, inPlane: true },
 		},
 	};
 }
