@@ -11,7 +11,9 @@
 // stage (core/placeholder.ts); with `placeholders: 'missing'` it grows a stand-in only for each stage
 // that is not built yet; without either, a stage that is not built yet throws.
 import type {
+	ClusterCount,
 	MeshArrays,
+	PartTriangles,
 	PlantAsset,
 	PlantPart,
 	PrototypeArrays,
@@ -84,12 +86,23 @@ import {
 	sparseKeep,
 	sparseOrder,
 	sparsePlant,
+	woodParts,
 } from './grow/sparse';
 import { extrasMesh } from './leaf/extras';
 import { dressShoots, pruneLight } from './leaf/instancer';
 import { foliage, loadFoliage } from './leaf/kinds';
 import { inLeaf } from './leaf/season';
 import { shootPrototypes } from './leaf/shoot';
+import {
+	type BudgetInput,
+	type LevelBuild,
+	levelBuild,
+	levelWithin,
+	NO_CLUSTERS,
+	NO_TRIANGLES,
+	referenceTriangles,
+	shootPartTriangles,
+} from './lod/budget';
 import { bakeCards } from './lod/card-bake';
 import { cardMesh } from './lod/cards';
 import { bakeFar } from './lod/impostor';
@@ -175,6 +188,16 @@ export interface GrowOptions extends CoarsenessOptions {
 	 * shoots and wood that every denser one holds. Stand-in species and cut pieces grow as they are.
 	 */
 	readonly sparse?: number;
+	/**
+	 * The most triangles one copy of the plant may draw at any of its levels, its shoot rows
+	 * counted in the nearest. Without it, each level draws what its best look needs: the wood at the
+	 * variant's tier, every shoot row at that tier, and the extras at their nearest form. With it,
+	 * the maximum is shared out across the trunk, the great limbs, the branches, the shoots and the
+	 * extras in proportion to what each holds at that best look, each part steps down to fit its
+	 * share, and no level draws more. It acts at any sparseness, on what the sparseness left. A
+	 * stand-in species and a cut piece grow as they are.
+	 */
+	readonly maxTriangles?: number;
 	/**
 	 * How far the wood's own sections are thinned, from 0 to 1: 0 is the level's own rings and
 	 * sides, and 1 the fewest that still draws a closed run, with square ends and no rounded joins.
@@ -311,7 +334,7 @@ export function kitKey(
 
 /**
  * The key of a grown variant: its kit's key, the seed, the variant, the season, the tier, the
- * cutting, the coarseness options and the sparseness.
+ * cutting, the coarseness options, the sparseness and the triangle maximum.
  *
  * @param kit The species' kit.
  * @param options The growth's options.
@@ -325,6 +348,8 @@ export function variantKey(kit: SpeciesKitData, options: GrowOptions): string {
 	// each is a different asset.
 	const level = sparseLevel(kit, options);
 	const sparse = level > 0 ? `:sparse=${level}` : '';
+	const most = maxOf(kit, options);
+	const max = most === undefined ? '' : `:max=${most}`;
 	const sections =
 		options.sections === undefined || options.sections === 0 ? '' : `:sections=${options.sections}`;
 	const cards = options.cards === undefined || options.cards === 1 ? '' : `:cards=${options.cards}`;
@@ -332,7 +357,7 @@ export function variantKey(kit: SpeciesKitData, options: GrowOptions): string {
 		options.cardJoin === undefined || options.cardJoin === 'remove'
 			? ''
 			: `:join=${options.cardJoin}`;
-	return `${kit.key}:${options.seed >>> 0}:${options.variant}:${season}:${options.detail ?? kit.detail}:${cutting}${coarsenessKey(kit, options)}${sparse}${sections}${cards}${join}`;
+	return `${kit.key}:${options.seed >>> 0}:${options.variant}:${season}:${options.detail ?? kit.detail}:${cutting}${coarsenessKey(kit, options)}${sparse}${max}${sections}${cards}${join}`;
 }
 
 /**
@@ -471,6 +496,22 @@ function checkGrowOptions(options: GrowOptions): void {
 		throw new Error(`cards is ${cards}; a share of the card rows lies from 0.05 to 1`);
 	if (sparse !== undefined && !(sparse >= 0 && sparse <= 1))
 		throw new Error(`sparse is ${sparse}; a sparseness lies from 0 to 1`);
+	const max = options.maxTriangles;
+	if (max !== undefined && !(Number.isFinite(max) && max > 0))
+		throw new Error(`maxTriangles is ${max}; a maximum is a positive number of triangles`);
+}
+
+/**
+ * The triangle maximum a growth takes: the one its options give, or none for a stand-in species and
+ * for a cut piece, which grow as they are.
+ *
+ * @param kit The species' kit.
+ * @param options The growth's options.
+ * @returns The maximum, or undefined for none.
+ */
+function maxOf(kit: SpeciesKitData, options: GrowOptions): number | undefined {
+	if (options.cutting || kit.placeholders === true) return undefined;
+	return options.maxTriangles;
 }
 
 /**
@@ -553,7 +594,7 @@ export function forgetGrownPlants(): void {
  */
 function grownPlant(kit: SpeciesKitData, options: GrowOptions): GrownPlant {
 	const stand = kit.placeholders === 'missing' ? ':missing' : kit.placeholders ? ':stand-ins' : '';
-	const key = `${variantKey(kit, { ...options, sparse: 0 })}${stand}`;
+	const key = `${variantKey(kit, { ...options, sparse: 0, maxTriangles: undefined })}${stand}`;
 	const kept = GROWN.get(key);
 	if (kept) {
 		GROWN.delete(key);
@@ -696,52 +737,107 @@ function rowsCopy(rows: ShootRows): ShootRows {
 	};
 }
 
+/** A dressed variant and what a level's parts and a triangle maximum read beside it. */
+interface Dressed {
+	/** The dressed variant the meshing stages read. */
+	readonly mesh: MeshInput;
+	/** What a level is built from: the variant, its wood's parts and the walk of its shoot rows. */
+	readonly budget: (wood: boolean) => BudgetInput;
+}
+
+/** The order a grown plant's foliage goes in, found once and kept beside the plant. */
+function orderOf(kit: SpeciesKitData, grown: GrownPlant): SparseOrder {
+	if (!grown.order) {
+		// The row that holds the drawn top stays, so every sparseness keeps the plant's height.
+		const top = topRow(kit, grown.rows, grown.input.record.lod.cardGrow ?? 1);
+		grown.order = sparseOrder(
+			grown.input.skeleton,
+			grown.rows,
+			kit.record.sparse?.limbs ?? GREAT_LIMB_SHARE,
+			top >= 0 ? [top] : [],
+		);
+	}
+	return grown.order;
+}
+
 /**
  * The dressed variant the meshing stages read: the plant as grown, or the same plant with the share
  * of its foliage that the sparseness asks for removed, and its crown lit as it then stands. Every
  * array is the growth's own, since the crown's light and the wind records write them in place and
  * a job worker moves them to the page.
  */
-function dress(kit: SpeciesKitData, options: GrowOptions): MeshInput {
+function dressed(kit: SpeciesKitData, options: GrowOptions): Dressed {
 	const grown = grownPlant(kit, options);
-	const { record } = grown.input;
 	const sparse = sparseLevel(kit, options);
 	// Rows that name no node stand on no skeleton, so no wood can follow them out.
-	const thins = sparse > 0 && (grown.rows.count === 0 || grown.rows.node !== undefined);
+	const thins = grown.rows.count === 0 || grown.rows.node !== undefined;
+	const full = { skeleton: grown.input.skeleton, rows: grown.rows };
 	let thinned: ReturnType<typeof sparsePlant>;
-	if (thins) {
-		if (!grown.order) {
-			// The row that holds the drawn top stays, so every sparseness keeps the plant's height.
-			const top = topRow(kit, grown.rows, record.lod.cardGrow ?? 1);
-			grown.order = sparseOrder(
-				grown.input.skeleton,
-				grown.rows,
-				kit.record.sparse?.limbs ?? GREAT_LIMB_SHARE,
-				top >= 0 ? [top] : [],
-			);
-		}
+	if (thins && sparse > 0) {
+		const order = orderOf(kit, grown);
 		const floor = kit.record.sparse?.foliage ?? FOLIAGE_FLOOR;
-		thinned = sparsePlant(
-			grown.input.skeleton,
-			grown.rows,
-			grown.order,
-			sparseKeep(grown.order, sparse, floor),
-		);
+		thinned = sparsePlant(full.skeleton, full.rows, order, sparseKeep(order, sparse, floor));
 	}
 	const input: DressInput = thinned
-		? {
-				...grown.input,
-				skeleton: thinned.skeleton,
-				grown: { skeleton: grown.input.skeleton, rows: grown.rows },
-			}
-		: { ...grown.input, skeleton: skeletonCopy(grown.input.skeleton) };
+		? { ...grown.input, skeleton: thinned.skeleton, grown: full }
+		: { ...grown.input, skeleton: skeletonCopy(full.skeleton) };
 	const rows = rowsCopy(thinned ? thinned.rows : grown.rows);
 	const crown = stage(
 		kit.placeholders,
 		() => lightCrown(input, rows),
 		() => placeholderCrown(input),
 	);
-	return { ...input, rows, crown, detail: grown.detail };
+	const mesh: MeshInput = { ...input, rows, crown, detail: grown.detail };
+	const limbs = kit.record.sparse?.limbs ?? GREAT_LIMB_SHARE;
+	/** What a level of a plant is built from, for the plant as dressed or with fewer carriers. */
+	const budgetOf = (of: MeshInput, wood: boolean): BudgetInput => {
+		const order = thins && kit.placeholders !== true ? orderOf(kit, grown) : undefined;
+		let walk: Uint32Array | undefined;
+		if (order?.byRows) {
+			// The rows this plant holds, in the order the walk of the grown plant meets them.
+			const held = new Int32Array(full.rows.count).fill(-1);
+			for (let r = 0; r < of.rows.count; r++) held[of.rows.id?.[r] ?? r] = r;
+			const kept: number[] = [];
+			for (const row of order.list) if ((held[row] as number) >= 0) kept.push(held[row] as number);
+			walk = Uint32Array.from(kept);
+		}
+		let carriers = 0;
+		if (order && !order.byRows) {
+			const origin = of.skeleton.axes.origin;
+			for (let a = 0; a < of.skeleton.axes.count; a++)
+				if ((order.place[origin?.[a] ?? a] as number) < order.carriers) carriers++;
+		}
+		return {
+			mesh: of,
+			parts: woodParts(of.skeleton, limbs),
+			wood,
+			...(walk ? { walk } : {}),
+			...(order && !order.byRows
+				? {
+						carriers,
+						thin: (keep: number) => {
+							const fewer = sparsePlant(full.skeleton, full.rows, order, keep, 1);
+							if (!fewer) return undefined;
+							// The wood that stays keeps the wind records the variant's table gives it.
+							const records = new Uint16Array(full.skeleton.axes.count);
+							const from = mesh.skeleton.axes;
+							for (let a = 0; a < from.count; a++)
+								records[from.origin?.[a] ?? a] = from.record[a] as number;
+							const axes = fewer.skeleton.axes;
+							const record = axes.record.map((_, a) => records[axes.origin?.[a] ?? a] as number);
+							const skeleton = { ...fewer.skeleton, axes: { ...axes, record } };
+							return budgetOf({ ...of, skeleton, grown: full }, wood);
+						},
+					}
+				: {}),
+		};
+	};
+	return { mesh, budget: (wood) => budgetOf(mesh, wood) };
+}
+
+/** The dressed variant alone, for the stages that read no more. */
+function dress(kit: SpeciesKitData, options: GrowOptions): MeshInput {
+	return dressed(kit, options).mesh;
 }
 
 /**
@@ -876,6 +972,11 @@ function growCutting(
 			milliseconds: now() - started,
 			bytes: wind.records.byteLength + near.bytes,
 			triangles: [near.triangles, 0, 0],
+			parts: [
+				countedParts(parts, shootPartTriangles({ kit }, rows, detail)),
+				NO_TRIANGLES,
+				NO_TRIANGLES,
+			],
 		},
 	};
 }
@@ -968,6 +1069,88 @@ function levelParts(mesh: MeshInput, level: MeshLevel): PlantPart[] {
 	return parts;
 }
 
+/** One level's quantised parts, each part's triangles, and what a maximum allowed each. */
+interface BuiltLevel {
+	readonly parts: PlantPart[];
+	readonly triangles: PartTriangles;
+	readonly allowed?: PartTriangles;
+	readonly shoots?: LevelBuild['shoots'];
+	readonly clusters: ClusterCount;
+}
+
+/** The parts' triangles of a level whose wood no mesher split: its wood counts as its trunk. */
+function countedParts(
+	parts: readonly PlantPart[],
+	shoots: readonly [leaves: number, twigs: number],
+): PartTriangles {
+	const of = (name: PlantPart['name']) => {
+		let triangles = 0;
+		for (const part of parts) if (part.name === name) triangles += part.arrays.indices.length / 3;
+		return triangles;
+	};
+	return {
+		...NO_TRIANGLES,
+		trunk: of('wood'),
+		twigs: shoots[1],
+		leaves: shoots[0] + of('cards') + of('foliage'),
+		extras: of('extras'),
+	};
+}
+
+/**
+ * The three levels of a variant: each as its best look draws it, or within the triangle maximum the
+ * growth names. A stand-in kit, and a species whose stage is not built yet, draw each level's
+ * stand-in stages and count their wood as one part.
+ */
+function builtLevels(
+	kit: SpeciesKitData,
+	plant: Dressed,
+	options: GrowOptions,
+): readonly [BuiltLevel, BuiltLevel, BuiltLevel] {
+	const { mesh } = plant;
+	const most = maxOf(kit, options);
+	const input = plant.budget(options.near === true);
+	const reference = most === undefined ? undefined : referenceOf(kit, input);
+	const level = (at: MeshLevel): BuiltLevel => {
+		const standIn = (): BuiltLevel => {
+			const parts = [...(at === 0 && options.near ? nearWood(mesh) : []), ...levelParts(mesh, at)];
+			const rows = at === 0 && mesh.record.lod.nearFoliage === 'instanced';
+			const shoots = rows ? shootPartTriangles(mesh, mesh.rows, mesh.detail) : ([0, 0] as const);
+			return { parts, triangles: countedParts(parts, shoots), clusters: NO_CLUSTERS };
+		};
+		const real = (): BuiltLevel => {
+			const build =
+				most === undefined || !reference
+					? levelBuild(input, at)
+					: levelWithin(input, at, most, reference);
+			return {
+				parts: [
+					...partOf(kit, 'wood', build.wood, WOOD_UV_STEPS),
+					...partOf(kit, 'foliage', build.foliage, TEXTURE_UV_STEPS),
+					...partOf(kit, 'cards', build.cards, TEXTURE_UV_STEPS),
+					// Fruit and cones are a few centimetres across, where the box's steps are near a millimetre.
+					...partOf(kit, 'extras', build.extras, TEXTURE_UV_STEPS, true),
+				],
+				triangles: build.triangles,
+				...(build.allowed ? { allowed: build.allowed } : {}),
+				...(build.shoots !== undefined ? { shoots: build.shoots } : {}),
+				clusters: build.clusters ?? NO_CLUSTERS,
+			};
+		};
+		return stage(kit.placeholders, real, standIn);
+	};
+	return [level(0), level(1), level(2)];
+}
+
+/** What each part holds at a plant's best look, or undefined where a stage of it is not built. */
+function referenceOf(kit: SpeciesKitData, input: BudgetInput): PartTriangles | undefined {
+	return stage(
+		kit.placeholders,
+		() => referenceTriangles(input),
+		() => undefined,
+	);
+}
+
 /** A clock for the stats, which no byte of the asset reads. */
 const now = () => (typeof performance === 'undefined' ? Date.now() : performance.now());
 
@@ -986,7 +1169,8 @@ export function growPlantNow(kit: SpeciesKitData, options: GrowOptions): PlantAs
 	if (options.cutting) return growCutting(kit, options, options.cutting);
 	const started = now();
 	const record = kit.record;
-	const mesh = dress(kit, options);
+	const plant = dressed(kit, options);
+	const mesh = plant.mesh;
 	const placeholders = kit.placeholders;
 	const wind = stage(
 		placeholders,
@@ -998,11 +1182,11 @@ export function growPlantNow(kit: SpeciesKitData, options: GrowOptions): PlantAs
 		() => levelStarts(mesh),
 		() => placeholderStarts(mesh),
 	);
-	const near = [...(options.near ? nearWood(mesh) : []), ...levelParts(mesh, 0)];
+	const built = builtLevels(kit, plant, options);
 	const levels = [
-		levelOf(0, near, 0),
-		levelOf(1, levelParts(mesh, 1), starts[0]),
-		levelOf(2, levelParts(mesh, 2), starts[1]),
+		levelOf(0, built[0].parts, 0),
+		levelOf(1, built[1].parts, starts[0]),
+		levelOf(2, built[2].parts, starts[1]),
 	] as const;
 	const { skeleton } = mesh;
 	const { min, max } = skeleton.bounds;
@@ -1018,6 +1202,8 @@ export function growPlantNow(kit: SpeciesKitData, options: GrowOptions): PlantAs
 	);
 	let bytes = wind.records.byteLength;
 	for (const level of levels) bytes += level.bytes;
+	const most = maxOf(kit, options);
+	const shoots = built[0].shoots;
 	const asset: PlantAsset = {
 		species: record.id,
 		recordHash: hashText(JSON.stringify(record)),
@@ -1036,10 +1222,19 @@ export function growPlantNow(kit: SpeciesKitData, options: GrowOptions): PlantAs
 			texels: record.lod.impostor.texels,
 			from: starts[2],
 		},
+		...(most !== undefined ? { maxTriangles: most } : {}),
+		...(shoots !== undefined && shoots !== mesh.detail ? { shootDetail: shoots } : {}),
 		stats: {
 			milliseconds: now() - started,
 			bytes,
 			triangles: [levels[0].triangles, levels[1].triangles, levels[2].triangles],
+			parts: [built[0].triangles, built[1].triangles, built[2].triangles],
+			...(built[0].allowed && built[1].allowed && built[2].allowed
+				? {
+						allowed: [built[0].allowed, built[1].allowed, built[2].allowed] as const,
+						clusters: [built[0].clusters, built[1].clusters, built[2].clusters] as const,
+					}
+				: {}),
 		},
 	};
 	return asset;
@@ -1058,7 +1253,13 @@ export function growPlantNow(kit: SpeciesKitData, options: GrowOptions): PlantAs
  */
 export function growNearWoodNow(kit: SpeciesKitData, options: GrowOptions): readonly PlantPart[] {
 	checkGrowOptions(options);
-	return nearWood(dress(kit, options));
+	const plant = dressed(kit, options);
+	const most = maxOf(kit, options);
+	if (most === undefined) return nearWood(plant.mesh);
+	// Under a maximum the nearest wood is the wood its level's shares leave it.
+	const input = plant.budget(true);
+	const level = levelWithin(input, 0, most, referenceTriangles(input));
+	return partOf(kit, 'wood', level.wood, WOOD_UV_STEPS);
 }
 
 /**

@@ -147,6 +147,24 @@ console.log(full.shoots.count, thin.shoots.count);
 
 A plant with no shoots, such as a hosta or a sedge, loses whole leaves in the same way. A stand-in species and a cut piece grow as they are at every sparseness. A change of sparseness alone does not grow the plant again while the thread that grew it still keeps it. `sparse` changes what the plant holds, and `coarseness` changes how finely that is drawn: neither moves the other.
 
+### A triangle maximum
+
+The `maxTriangles` option sets the most triangles that one copy of a plant may draw at any of its levels. The nearest level counts its shoots at the tier they draw at. Without the option, each level draws what its best look needs: the wood at the variant's tier, every shoot at that tier, and the extras at their nearest form.
+
+```ts
+const far = await growPlant(kit, { seed: 7, variant: 0, maxTriangles: 10_000 });
+console.log(far.stats.parts[0], far.stats.allowed?.[0], far.shootDetail);
+```
+
+- **Shares.** The maximum is shared out across the trunk, the great limbs, the branches, the shoots and the extras. Each part first takes a floor: the trunk and each great limb as one straight run, and one leaf card. The rest is shared in proportion to what each part holds at the plant's best look. What a part cannot use goes round the other parts, the trunk and the leaves first.
+- **Wood.** Each part of the wood steps down by itself: longer edges, then thinner sections, down to one straight run of three sides for each branch. Below that, only the thickest limbs and branches draw.
+- **Shoots.** The shoots draw at the kit's tier, then at each tier below it. Below the lowest tier, each shoot draws as its leaf cards, and `shootDetail` is `none`. Below that, each run of neighboring shoots draws as one larger card set. Every card set touches the drawn wood or another joined card set, or takes a thin stalk to the wood.
+- **Extras.** The extras draw on every site, then on a share of the sites, then in the coarser forms of the far levels, then not at all.
+- **Ground plants.** A plant whose leaves are one mesh, such as a hosta or a sedge, steps down its tiers, then draws the forms of its far levels. Below those it draws fewer leaves, taken out evenly.
+- **Never more.** No level draws more than the maximum. `stats.parts` gives each level's triangles part by part, and `stats.allowed` gives each part's allowance.
+
+The maximum acts at any sparseness, on what the sparseness left. A stand-in species and a cut piece grow as they are. The far cards are two triangles each whatever they show, so they show the plant at its best look. On a grown oak at the low tier, the nearest level holds 1,389,818 triangles. At a maximum of 10,000 it draws 9,931: 3,073 of wood and 6,858 of leaf cards.
+
 A page can also move the level switches of all its species at once. Give `switchBias` in the view that every `placePlants` call takes. It counts in stops: each switch distance is multiplied by two to the power of minus the bias. A bias of 1 switches every level at half its distance, and a bias of -1 at twice its distance. `switchScale(bias)` gives that factor.
 
 ### Other forms

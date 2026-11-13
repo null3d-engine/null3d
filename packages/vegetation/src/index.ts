@@ -23,8 +23,10 @@ export const NAMESPACE = declareAddonNamespace({
 
 export {
 	type CardCell,
+	type ClusterCount,
 	type MeshArrays,
 	type PartName,
+	type PartTriangles,
 	type PlantAsset,
 	type PlantLevel,
 	type PlantPart,
