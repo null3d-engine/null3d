@@ -136,23 +136,29 @@ export const directed: Species = {
 		// line at 0.95 to 1, and 0.27 and 0.17 at 0.90 to 0.95. One pad stands on top over the
 		// trunk's line, and the others stand lower round it.
 		top: { limbs: 4, leave: 45, end: 0, radius: 0.5, leader: 0.55 },
-		// Still 02, six pads: 0.23 to 0.35 of the height wide, and 0.38 as deep as wide.
+		// Still 02, six pads: 0.23 to 0.35 of the height wide.
 		// One pad a limb: the limb's arms spread under it.
 		// Stills 01 and 02 from the side: a pad clothes the outer part of its limb, which is bare for
 		// its inner 0.40 to 0.44 (02 on a grid, 01's two long limbs by eye). The pad lies along the
 		// outer two thirds of its limb's reach.
+		// Still 02's six pads read 0.29 to 0.53 as deep as wide from the side, median 0.38. The depth
+		// seen there takes in the fall of the pad's floor along its falling limb, so the dome itself
+		// is shallower: a dome 0.29 of its width deep reads 0.29 to 0.40 as deep as long from the
+		// side, median 0.34.
 		patch: {
 			kind: 'pad',
 			each: 'limb',
 			width: [0.23, 0.35],
 			along: 2 / 3,
-			depth: 0.38,
+			depth: 0.29,
 			// Still 20: on a pad's top the brushes stand shoulder to shoulder. A bough carries seven
 			// brushes, each 0.21 to 0.28 of its length across, so seven of them tile a square 0.36 m
-			// on a side.
+			// on a side. At that spacing over the whole dome the crown reads more closed than stills
+			// 01, 02 and 18 at the first card level; one bough to each 0.42 m square brings 01 and 18
+			// inside the review's band.
 			// Stills 04 and 20: the brushes on a pad's top stand turned up and those at its rim
 			// reach out. The steepest that a bough leaves its twig is read by eye.
-			sockets: { piece: 'bough', pitch: 0.36, lift: 45 },
+			sockets: { piece: 'bough', pitch: 0.42, lift: 45 },
 		},
 	},
 	foliage: needles,
