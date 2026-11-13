@@ -53,7 +53,44 @@ import { lathe, MeshWriter, SURFACE_BUD, SURFACE_STEM, type TubePoint, tube } fr
  *
  * @category api/vegetation
  */
-export type UncardedPrototype = Omit<ShootPrototype, 'card'>;
+export type UncardedPrototype = Omit<ShootPrototype, 'card'> & {
+	/**
+	 * The brush cards a piece draws below its finest tier, which the card bake pictures and then
+	 * lays over the tiers' dense runs of leaves. Absent on a prototype that draws its leaves whole.
+	 */
+	readonly brushes?: PrototypeBrushes;
+};
+
+/**
+ * One dense run of a piece's leaves that draws as a brush card: its picture by index, the run's
+ * start on its stem and its own frame (along the stem, toward the sky, and the side square to both),
+ * its length, and the bend weight and flutter phase its card takes.
+ */
+export interface BrushRun {
+	readonly picture: number;
+	readonly start: Vector3;
+	readonly along: Vector3;
+	readonly sky: Vector3;
+	readonly side: Vector3;
+	readonly length: number;
+	readonly bend: number;
+	readonly phase: number;
+}
+
+/**
+ * The leaves of one dense run in the run's own frame, which the card bake pictures: x along its
+ * side, y along its stem from the run's start, z toward its sky. Its length is the run's.
+ */
+export interface BrushPicture {
+	readonly mesh: PrototypeArrays;
+	readonly length: number;
+}
+
+/** A piece's brush runs and the pictures they draw from. */
+export interface PrototypeBrushes {
+	readonly runs: readonly BrushRun[];
+	readonly pictures: readonly BrushPicture[];
+}
 
 /** The golden angle in degrees. */
 const GOLDEN = 137.50776405;
@@ -1131,9 +1168,9 @@ function turnsPast(
 	const bx = to[0] - at[0];
 	const by = to[1] - at[1];
 	const bz = to[2] - at[2];
-	const lengths = Math.hypot(ax, ay, az) * Math.hypot(bx, by, bz);
+	const lengths = length3(ax, ay, az) * length3(bx, by, bz);
 	if (lengths <= 0) return false;
-	return (ax * bx + ay * by + az * bz) / lengths <= Math.cos((degrees * Math.PI) / 180);
+	return (ax * bx + ay * by + az * bz) / lengths <= cos(radians(degrees));
 }
 
 /** The bend weight byte of a point along the shoot. */
@@ -1168,6 +1205,130 @@ function hiddenRuns(plan: ShootPlan): (readonly [number, number])[][] {
 	});
 }
 
+/** A plan's dense runs of leaves, each in its own frame, with the run's leaves by index into the plan. */
+export interface PlannedBrush extends Omit<BrushRun, 'picture'> {
+	/** The run's axis: 0 for the piece's own stem, and its side stems after it. */
+	readonly axis: number;
+	readonly leaves: readonly number[];
+}
+
+/**
+ * The dense runs of a plan's leaves, each with its frame. A run starts where its first leaf stands
+ * on its stem and ends at its last, runs along the straight way between them, and faces the mean
+ * sky of its leaves.
+ *
+ * @param plan The plan.
+ * @returns The runs, axis by axis.
+ */
+export function plannedBrushes(plan: ShootPlan): PlannedBrush[] {
+	const runs = hiddenRuns(plan);
+	const out: PlannedBrush[] = [];
+	plan.axes.forEach((points, axis) => {
+		/** The stem's point `along` metres from the attach point. */
+		const pointAt = (along: number): Vector3 => {
+			for (let k = 1; k < points.length; k++) {
+				const a = points[k - 1] as AxisPoint;
+				const b = points[k] as AxisPoint;
+				if (along > b.along && k < points.length - 1) continue;
+				const t = Math.max(0, Math.min(1, (along - a.along) / Math.max(1e-9, b.along - a.along)));
+				return [
+					a.at[0] + (b.at[0] - a.at[0]) * t,
+					a.at[1] + (b.at[1] - a.at[1]) * t,
+					a.at[2] + (b.at[2] - a.at[2]) * t,
+				];
+			}
+			const only = points[0] as AxisPoint;
+			return [only.at[0], only.at[1], only.at[2]];
+		};
+		for (const [from, to] of runs[axis] ?? []) {
+			const leaves: number[] = [];
+			plan.leaves.forEach((leaf, i) => {
+				if (leaf.axis === axis && leaf.along >= from - 1e-9 && leaf.along <= to + 1e-9)
+					leaves.push(i);
+			});
+			if (leaves.length === 0) continue;
+			const start = pointAt(from);
+			const end = pointAt(to);
+			const length = length3(end[0] - start[0], end[1] - start[1], end[2] - start[2]);
+			if (length < 1e-6) continue;
+			const along = normalize3([end[0] - start[0], end[1] - start[1], end[2] - start[2]]);
+			const mean: Vector3 = [0, 0, 0];
+			for (const i of leaves) {
+				const sky = (plan.leaves[i] as PlannedLeaf).sky;
+				mean[0] += sky[0];
+				mean[1] += sky[1];
+				mean[2] += sky[2];
+			}
+			const lean = mean[0] * along[0] + mean[1] * along[1] + mean[2] * along[2];
+			let sky: Vector3 = [
+				mean[0] - along[0] * lean,
+				mean[1] - along[1] * lean,
+				mean[2] - along[2] * lean,
+			];
+			if (length3(sky[0], sky[1], sky[2]) < 1e-6) {
+				const up: Vector3 = Math.abs(along[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
+				const tilt = up[0] * along[0] + up[1] * along[1] + up[2] * along[2];
+				sky = [up[0] - along[0] * tilt, up[1] - along[1] * tilt, up[2] - along[2] * tilt];
+			}
+			sky = normalize3(sky);
+			const middle = plan.leaves[leaves[leaves.length >> 1] as number] as PlannedLeaf;
+			out.push({
+				axis,
+				leaves,
+				start,
+				along,
+				sky,
+				side: cross3(along, sky, [0, 0, 0]),
+				length,
+				bend: bendByte((from + to) / 2, plan.span),
+				phase: middle.phase,
+			});
+		}
+	});
+	return out;
+}
+
+/**
+ * One run's leaves meshed at a tier and laid in the run's own frame, for the card bake to picture.
+ *
+ * @param plan The plan the run belongs to.
+ * @param brush The run.
+ * @param leafMeshes The leaf meshes at the tier.
+ * @param detail The tier.
+ * @returns The picture.
+ */
+export function brushPicture(
+	plan: ShootPlan,
+	brush: PlannedBrush,
+	leafMeshes: readonly PrototypeArrays[],
+	detail: Detail,
+): BrushPicture {
+	const leaves = brush.leaves.map((i) => plan.leaves[i] as PlannedLeaf);
+	const mesh = meshShoot(
+		{ ...plan, axes: [], buds: [], leaves },
+		leafMeshes,
+		detail,
+	).finishPrototype();
+	const positions = new Float32Array(mesh.positions.length);
+	const normals = new Float32Array(mesh.normals.length);
+	const { start, along, sky, side } = brush;
+	for (let i = 0; i < mesh.positions.length; i += 3) {
+		const x = (mesh.positions[i] as number) - start[0];
+		const y = (mesh.positions[i + 1] as number) - start[1];
+		const z = (mesh.positions[i + 2] as number) - start[2];
+		positions[i] = x * side[0] + y * side[1] + z * side[2];
+		positions[i + 1] = x * along[0] + y * along[1] + z * along[2];
+		positions[i + 2] = x * sky[0] + y * sky[1] + z * sky[2];
+		const nx = mesh.normals[i] as number;
+		const ny = mesh.normals[i + 1] as number;
+		const nz = mesh.normals[i + 2] as number;
+		normals[i] = nx * side[0] + ny * side[1] + nz * side[2];
+		normals[i + 1] = nx * along[0] + ny * along[1] + nz * along[2];
+		normals[i + 2] = nx * sky[0] + ny * sky[1] + nz * sky[2];
+	}
+	return { mesh: { ...mesh, positions, normals }, length: brush.length };
+}
+
 /**
  * Meshes a prototype's plan at one tier, every vertex unoccluded.
  *
@@ -1187,7 +1348,7 @@ export function meshShoot(
 	const mesh = new MeshWriter();
 	const sides = cut.stemSides;
 	// A regular polygon on a radius is, averaged over a turn, as wide as a circle that much smaller.
-	const widen = cut.meanWidth ? Math.PI / (sides * Math.sin(Math.PI / sides)) : 1;
+	const widen = cut.meanWidth ? PI / (sides * sin(PI / sides)) : 1;
 	const hidden = cut.thinHidden ? hiddenRuns(plan) : undefined;
 	plan.axes.forEach((points, axis) => {
 		const runs = hidden?.[axis] ?? [];

@@ -140,6 +140,21 @@ export interface PlantReviewQuery {
 	/** Whether a placed piece's view looks along the piece's side, so an arching piece shows its arch. */
 	readonly edge?: boolean;
 	/**
+	 * Whether a whole view's photograph has lost the plant's foot below its horizon: the view then
+	 * stands the plant by its top row and its share of the width, with no foot row.
+	 */
+	readonly footLost?: boolean;
+	/**
+	 * A limb view's subject as a great limb by its rank, the thickest first: the view frames that
+	 * limb across its run from the side, as a cactus's arm or a limb's elbow is photographed.
+	 */
+	readonly limbRank?: number;
+	/**
+	 * The class of a site the plant marks on its surface that a close view frames, such as a
+	 * saguaro's `dormant` site, its nest hole, or an `areole`: the site that faces the camera best.
+	 */
+	readonly site?: string;
+	/**
 	 * The radius of the ring a branch or sub-branch cutting's shoots stand on, as a share of the
 	 * piece's height, in place of the record hint's. A wide ring separates the shoots.
 	 */
@@ -406,6 +421,7 @@ const NUMBER_FIELDS = [
 	'lateralAngle',
 	'lateralScale',
 	'stemPick',
+	'limbRank',
 	'horizon',
 	'fill',
 	'targetY',
@@ -462,7 +478,7 @@ const SHARE_FIELDS = new Set([
 ]);
 
 /** The fields that are whole numbers of at least one. */
-const COUNT_FIELDS = new Set(['turns', 'columns']);
+const COUNT_FIELDS = new Set(['turns', 'columns', 'limbRank']);
 
 /** The switches, written as 1 when on. */
 const SWITCHES = [
@@ -473,6 +489,7 @@ const SWITCHES = [
 	'fruit',
 	'surface',
 	'edge',
+	'footLost',
 	'lifted',
 	'barkMask',
 	'leafyBark',
@@ -493,6 +510,7 @@ export function plantReviewQuery(query: PlantReviewQuery): string {
 	if (query.form) params.set('form', query.form);
 	if (query.shoot) params.set('shoot', query.shoot);
 	if (query.piece) params.set('piece', query.piece);
+	if (query.site) params.set('site', query.site);
 	if (query.layout) params.set('layout', query.layout);
 	if (query.stem) params.set('stem', query.stem);
 	if (query.view) params.set('view', query.view);
@@ -552,6 +570,9 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 	const shoot = params.get('shoot');
 	if (shoot !== null && !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(shoot))
 		throw new Error(`shoot=${shoot} is not a class name: give a kebab-case word, such as twig.`);
+	const site = params.get('site');
+	if (site !== null && !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(site))
+		throw new Error(`site=${site} is not a class name: give a kebab-case word, such as areole.`);
 	const piece = params.get('piece');
 	if (piece !== null && !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(piece))
 		throw new Error(`piece=${piece} is not a class name: give a kebab-case word, such as bough.`);
@@ -672,6 +693,7 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 		...(form !== null && { form }),
 		...(shoot !== null && { shoot }),
 		...(piece !== null && { piece }),
+		...(site !== null && { site }),
 		...(stem !== null && { stem }),
 		...(layoutText !== null && { layout: layoutText as 'ring' | 'spray' | 'fan' }),
 		view,
@@ -703,5 +725,6 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 		fruit: params.get('fruit') === '1',
 		surface: params.get('surface') === '1',
 		edge: params.get('edge') === '1',
+		footLost: params.get('footLost') === '1',
 	};
 }

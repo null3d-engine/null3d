@@ -2,7 +2,7 @@
 // the review tool's, cleaned of the ground strip at the plant's foot as the fit tool cleans it, and
 // the crown's start and its two gap figures are the review's own. The stem, the radius profile, the
 // lumps and the holes are read from the same outline.
-import { deltaE76, labImage, labOf, type Rgba, resizeToWidth } from '../lib/plant-review/image.ts';
+import { deltaE76, labOf, type Rgba } from '../lib/plant-review/image.ts';
 import {
 	axisRuns,
 	type Box,
@@ -11,7 +11,7 @@ import {
 	surfaceAt,
 } from '../lib/plant-review/references.ts';
 import { frameOutline } from '../plant-fit/silhouettes.ts';
-import { endsAtHorizon, footInView, PLAIN_GROUND, wideFoot } from './foot.ts';
+import { footLost } from './foot.ts';
 import {
 	type ClearRow,
 	type Envelope,
@@ -26,11 +26,6 @@ import {
 	stemOf,
 } from './shape.ts';
 
-/**
- * The most of a plant's height that the ground below a wide foot at the horizon may hide before
- * the outline is refused.
- */
-const MASS_LOSS = 0.1;
 /** The share of the frame's height, each side of the horizon, whose rows blend sky and ground. */
 const HORIZON_BLEND = 0.006;
 
@@ -266,7 +261,7 @@ export function measureView(
 	if (outline.problem || !outline.box || outline.foot === null)
 		return { problem: outline.problem ?? 'no plant is found' };
 	const plant = outline.mask;
-	const { width, height, background } = plant;
+	const { width, height } = plant;
 	const horizon = outline.measures.horizon;
 	const horizonRow = horizon === null ? null : Math.floor(horizon * height);
 	// The review's outline follows a stem below the horizon to its foot, and says from which row.
@@ -274,22 +269,7 @@ export function measureView(
 	// has lost at most the ground below it. Where that ground is a thin band the loss is small and
 	// the outline stands, and where the ground under the foot is of another colour the foot stands
 	// in view on it; otherwise it is refused.
-	if (
-		horizonRow !== null &&
-		plant.footFollowedFrom === undefined &&
-		(background.ground?.noise ?? 0) >= PLAIN_GROUND &&
-		endsAtHorizon(outline.box, horizonRow, height) &&
-		wideFoot(plant.mask, width, outline.box, outline.foot) &&
-		(height - 1 - outline.box.bottom) / (outline.box.bottom - outline.box.top + 1) >= MASS_LOSS &&
-		!footInView(
-			labImage(image.width > width ? resizeToWidth(image, width) : image),
-			width,
-			height,
-			plant.mask,
-			outline.box,
-			outline.foot,
-		)
-	)
+	if (footLost(image, plant, outline.box, horizon, outline.foot))
 		return {
 			problem:
 				'the outline ends at the horizon on a mass too wide to be a stem, so the part of the plant that stands against the ground below is lost',
