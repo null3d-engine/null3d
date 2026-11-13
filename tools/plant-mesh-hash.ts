@@ -101,7 +101,10 @@ function meshHash(kit: SpeciesKitData, asset: PlantAsset): MeshHash {
 		skeleton.age,
 		skeleton.flags,
 		...Object.values(skeleton.axes),
-		...Object.values(skeleton.buds),
+		// A scaffold plant's bud sites carry a table of their sockets, whose arrays join the hash.
+		...Object.values(skeleton.buds).flatMap((value) =>
+			typeof value === 'object' && !ArrayBuffer.isView(value) ? Object.values(value) : [value],
+		),
 	])
 		eatField(hash, array);
 	const rows = asset.shoots;
