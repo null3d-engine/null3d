@@ -351,7 +351,7 @@ const OPEN_GAP: Readonly<Record<string, number>> = {
 	// In the birch's and the willow's videos nearly every leaf shows its whole face in every frame,
 	// which fixed leaves cannot; their stills judge them.
 	'silver-birch 21': 0.46,
-	'silver-birch 22': 0.362,
+	'silver-birch 22': 0.466,
 	'weeping-willow 21': 0.278,
 	'weeping-willow 22': 0.388,
 	'european-beech 22': 0.348,
