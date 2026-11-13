@@ -343,7 +343,7 @@ const FIGURE_ROUNDING = 0.0005;
  * band leaves the list.
  */
 const OPEN_DEPTH: Readonly<Record<string, number>> = {
-	'olive 22': 0.377,
+	'olive 22': 0.367,
 	'european-beech 22': 0.216,
 	'common-ash 22': 0.244,
 	// Its cones hang to the twig's own ground side, behind it, where the photograph's hang below a
@@ -357,7 +357,6 @@ const OPEN_GAP: Readonly<Record<string, number>> = {
 	'silver-birch 22': 0.362,
 	'weeping-willow 21': 0.278,
 	'weeping-willow 22': 0.388,
-	'olive 21': 0.426,
 	'european-beech 22': 0.348,
 	'common-ash 21': 0.223,
 	'common-ash 22': 0.361,
