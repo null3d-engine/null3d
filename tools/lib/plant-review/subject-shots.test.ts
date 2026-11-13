@@ -927,6 +927,16 @@ describe('the view of one branch piece', () => {
 		const { forward } = cameraAxes(shot.camera);
 		expect(forward[0]).toBeCloseTo(-1, 6);
 		expect(checkShot(shot, TALL).present).toBe(true);
+		// The slab is the stalk's own depth along the line of sight, so the plant beside it is cut.
+		const thin = shotOf(
+			placedPieceShot(
+				tree({ pieces: [{ ...stalk, length: 0.4, depth: { face: 0.12, side: 0.03 } }] }),
+				'stalk',
+				TALL,
+				{ edge: true },
+			),
+		);
+		expect((thin.far as number) - (thin.near as number)).toBeCloseTo(0.06, 6);
 		// Square to its face, the camera looks down onto the arch instead.
 		const faced = shotOf(placedPieceShot(tree({ pieces: [stalk] }), 'stalk', TALL));
 		expect(cameraAxes(faced.camera).forward[0]).toBeCloseTo(0, 6);

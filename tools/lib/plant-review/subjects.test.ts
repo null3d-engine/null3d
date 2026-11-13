@@ -364,6 +364,11 @@ describe('the placed pieces of a plant', () => {
 		expect(stalk.direction[1]).toBeCloseTo(0.6 / Math.hypot(0.6, 0.5), 6);
 		expect(stalk.direction[2]).toBeCloseTo(0.5 / Math.hypot(0.6, 0.5), 6);
 		expect(stalk.side?.[0]).toBeCloseTo(1, 6);
+		// How deep each piece stands off its own plane, face on and side on.
+		expect(outer.depth?.face).toBeCloseTo(0, 6);
+		expect(outer.depth?.side).toBeCloseTo(0.2, 6);
+		expect(stalk.depth?.face).toBeCloseTo(0.5, 6);
+		expect(stalk.depth?.side).toBeCloseTo(0, 6);
 	});
 
 	test('finds the pieces of a class by its name or its leading words', () => {

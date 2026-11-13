@@ -138,6 +138,11 @@ export interface BranchPiece {
 	readonly face?: V3;
 	/** The piece's own side, square to its face, along which an arching piece shows its arch. */
 	readonly side?: V3;
+	/**
+	 * Metres the piece stands off its own plane on either side: along its face, and along its side.
+	 * A view square to either sees the piece that deep.
+	 */
+	readonly depth?: { readonly face: number; readonly side: number };
 }
 
 /** A leaf's size. */
@@ -468,6 +473,9 @@ interface PieceRun {
 	readonly way: V3;
 	readonly length: number;
 	readonly spread: number;
+	/** How far its vertices stand off the socket along its own +Z and its own +X. */
+	readonly face: number;
+	readonly side: number;
 }
 
 /** The run of a piece whose parts are these prototypes' meshes, at scale 1. */
@@ -489,6 +497,8 @@ function runOf(meshes: readonly Float32Array[]): PieceRun {
 		}
 	const way = length > 0 ? normalize(far) : ([0, 1, 0] as V3);
 	let spread = 0;
+	let face = 0;
+	let side = 0;
 	for (const positions of meshes)
 		for (let i = 0; i + 2 < positions.length; i += 3) {
 			const x = positions[i] as number;
@@ -499,8 +509,10 @@ function runOf(meshes: readonly Float32Array[]): PieceRun {
 				spread,
 				Math.hypot(x - along * way[0], y - along * way[1], z - along * way[2]),
 			);
+			face = Math.max(face, Math.abs(z));
+			side = Math.max(side, Math.abs(x));
 		}
-	return { way, length, spread };
+	return { way, length, spread, face, side };
 }
 
 /**
@@ -565,6 +577,7 @@ export function piecesOfRows(
 				spread: run.spread * scale,
 				face: turnedBy(rows, r, 0, 0, 1),
 				side: turnedBy(rows, r, 1, 0, 0),
+				depth: { face: run.face * scale, side: run.side * scale },
 				out: Math.hypot(
 					socket[0] + direction[0] * length - foot[0],
 					socket[2] + direction[2] * length - foot[2],
