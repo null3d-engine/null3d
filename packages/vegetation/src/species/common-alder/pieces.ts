@@ -9,16 +9,50 @@ import type { PieceLeaves, PieceRule, PieceStem, PieceStudio } from '../../leaf/
 
 /** A piece's leaf over the record's: 9.5 centimetres measured on still 21, over 7. */
 const LEAF_SCALE = 1.3;
+/** The twig's height over the 0.4 metres its rule is written for: a blade is 0.148 of its height. */
+const TWIG_SCALE = 0.07 / 0.148 / 0.4;
 
 /**
  * The leaves along a shoot. Still 21: alternate, four to six on a side shoot of 15 to 25 centimetres,
  * one each 4.5 centimetres, held 50 to 70 degrees off the shoot, their faces open to the branch's sky
  * side. About forty leaves on the branch.
  */
-function leaves(from: number, scale = LEAF_SCALE, flat = 0.7): PieceLeaves {
-	// The sub-branch's turning video: edge on the twig is a fifth as wide as face on, so its leaves
-	// lean most of the way into its plane.
-	return { gap: 0.045, from, angle: 60, angleSpread: 10, skyward: 0.9, scale, flat };
+function leaves(from: number): PieceLeaves {
+	// The cut branch's turning video: edge on it is 0.29 as wide as face on, so its leaves lean most
+	// of the way into its plane.
+	return {
+		gap: 0.045,
+		from,
+		angle: 60,
+		angleSpread: 10,
+		skyward: 0.9,
+		scale: LEAF_SCALE,
+		flat: 0.7,
+	};
+}
+
+/**
+ * The leaves along a stem of the twig. Still 22 at full size and its turning video: alternate to
+ * the stem's two sides in the plane of the fork, one each 0.073 of the twig's height, held 60 to
+ * 75 degrees out on stalks. Face on each leaf stands alone and shows its whole face. Edge on the
+ * twig is a thin column: each blade leans and rolls 10 to 25 degrees.
+ *
+ * @param heading Degrees round the stem its first leaf stands: 0 to the right, 180 to the left.
+ * @param from The share of the stem's length below which no leaf stands.
+ * @param to The share above which none stands.
+ */
+function twigLeaves(heading: number, from: number, to: number): PieceLeaves {
+	return {
+		gap: 0.029,
+		from,
+		to,
+		phyllotaxis: { kind: 'distichous', flatten: 1 },
+		heading,
+		angle: 67,
+		angleSpread: 8,
+		scale: 1 / TWIG_SCALE,
+		face: { turn: 0, spread: 18, inPlane: true },
+	};
 }
 
 /** A side shoot. Still 21: 15 to 25 centimetres long with four to six leaves. */
@@ -102,29 +136,65 @@ export const PIECES: readonly PieceRule[] = [
 			],
 		},
 	},
-	// Still 22: a twig 35 centimetres long, forked once at a third of its length, with eleven leaves,
-	// each a fifth of the twig long: 7 centimetres, the record's own leaf.
+	// Still 22 at full size. The rule is written for a twig 0.4 metres tall; a blade is 0.134 to
+	// 0.162 of the twig's height, so the record's 7-centimetre leaf makes the twig 0.47 metres, and
+	// the rule's scale takes it there. A stem bare to 0.42 of the height, where it forks into two arms in one plane: the left 26
+	// degrees from the stem and 0.61 long, the right 35 degrees and 0.52 long. Three stalked buds end
+	// each arm. Ten round leaves, each alone and whole to the camera: one at the fork, six alternate
+	// on the left arm between 0.13 and 0.72 of its length, three on the right arm's upper third. Four
+	// cones hang on stalks from the middle of the right arm.
 	{
 		name: 'twig',
 		attitude: 'along',
 		variants: 2,
+		scale: TWIG_SCALE,
 		stem: {
-			length: { mean: 0.35, spread: 0.03 },
+			length: { mean: 0.168, spread: 0.01 },
 			// Still 22: the twig is 0.028 of its height thick (20 of 708 pixels).
-			radius: [0.005, 0.0015],
-			leaves: leaves(0.2, 1, 0.85),
+			radius: [0.0056, 0.0045],
+			bud: false,
+			// The one leaf at the fork, to the right.
+			leaves: { ...twigLeaves(0, 0.86, 1), gap: 0.03 },
 			sides: [
 				{
 					stem: {
-						length: { mean: 0.2, spread: 0.02 },
-						radius: [0.003, 0.0012],
-						leaves: leaves(0.15, 1, 0.85),
+						length: { mean: 0.244, spread: 0.012 },
+						radius: [0.0034, 0.0014],
+						leaves: twigLeaves(172, 0.1, 0.75),
 					},
-					gap: 0.1,
-					from: 0.25,
-					to: 0.45,
+					gap: 0.007,
+					from: 0.98,
+					to: 1.02,
 					arrangement: 'alternate',
-					angle: { mean: 40, spread: 4 },
+					turn: 180,
+					angle: { mean: 26, spread: 3 },
+				},
+				{
+					stem: {
+						length: { mean: 0.208, spread: 0.01 },
+						radius: [0.0034, 0.0014],
+						leaves: { ...twigLeaves(172, 0.6, 0.92), gap: 0.0231 },
+						// Still 22: four cones, each 0.07 of the height long and 0.65 as wide, on stalks
+						// of 0.06 to 0.1, from one place at 0.58 of the arm.
+						marks: [
+							{
+								kind: 'body',
+								gap: 0.033,
+								from: 0.5,
+								to: 0.66,
+								share: 1,
+								length: { mean: 0.026, spread: 0.003 },
+								width: 0.017,
+								stalk: 0.035,
+								count: { mean: 4, spread: 0.4 },
+							},
+						],
+					},
+					gap: 0.007,
+					from: 0.98,
+					to: 1.02,
+					arrangement: 'alternate',
+					angle: { mean: 35, spread: 3 },
 				},
 			],
 		},

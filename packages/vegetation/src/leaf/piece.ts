@@ -55,6 +55,8 @@ export interface PieceLeaves {
 	readonly gap: number;
 	/** The share of the stem's length below which no leaf stands. */
 	readonly from?: number;
+	/** The share of the stem's length above which no leaf stands; its tip where absent. */
+	readonly to?: number;
 	/** The leaf arrangement; the species' own where absent. */
 	readonly phyllotaxis?: Phyllotaxis;
 	/**
@@ -508,6 +510,7 @@ export function planPiece(
 		const steps = Math.max(1, Math.round(length / step));
 		const run = length / steps;
 		const leafFrom = (stem.leaves?.from ?? 0) * length;
+		const leafTo = (stem.leaves?.to ?? 1) * length;
 		const [droopFrom, droopTo] = stem.droopOver ?? [0, 1];
 		const droopSpan = Math.max(1e-6, (droopTo - droopFrom) * length);
 		const hook = stem.hook;
@@ -590,7 +593,7 @@ export function planPiece(
 			const radius = footRadius + (tipRadius - footRadius) * share;
 			points.push({ at: [...at], radius, along });
 			frames.push({ at: [...at], direction: [...direction], sky: [...sky], along });
-			if (atNode && leavesBy && from + run >= leafFrom - 1e-9) {
+			if (atNode && leavesBy && from + run >= leafFrom - 1e-9 && from + run <= leafTo + 1e-9) {
 				const first = leaves.length;
 				placeNodeLeaves(
 					leavesBy,
