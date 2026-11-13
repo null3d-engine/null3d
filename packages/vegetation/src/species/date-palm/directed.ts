@@ -147,9 +147,9 @@ export const directed: Species = {
 			...record.lod.budget,
 			// The fronds are pieces in the kit, shared by every plant, where the grown palm drew them in
 			// each plant's own mesh. Measured at seed 11 over the three variants, kit and variants
-			// together: 1.77, 2.14, 2.61 and 3.15 MB at the low, medium, high and ultra tiers, against
-			// the grown palm's 9.45, 9.57, 9.72 and 9.99 MB. The kit's own: 0.73, 1.06, 1.53 and
-			// 2.05 MB; a plant's: at most 0.44 MB.
+			// together: 1.77, 2.03, 2.38 and 2.76 MB at the low, medium, high and ultra tiers, against
+			// the grown palm's 9.45, 9.57, 9.72 and 9.99 MB. The kit's own: 0.73, 0.95, 1.29 and
+			// 1.66 MB; a plant's: at most 0.44 MB.
 			kitBytes: { low: 2_500_000, medium: 2_500_000, high: 2_500_000, ultra: 2_500_000 },
 			variantBytes: { low: 600_000, medium: 600_000, high: 600_000, ultra: 600_000 },
 		},
