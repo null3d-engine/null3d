@@ -141,6 +141,11 @@ export interface PieceRule {
 	readonly attitude: PieceAttitude;
 	/** How many variants the kit holds, each with its own draws. */
 	readonly variants: number;
+	/**
+	 * The ground side in the piece's frame, where it is not its attitude's own: a piece that stands
+	 * upright on its socket names the way back along its line, so its side stems lift toward its tip.
+	 */
+	readonly ground?: Readonly<Vector3>;
 	/** Its main stem. */
 	readonly stem: PieceStem;
 }
@@ -230,12 +235,15 @@ export function planPiece(
 	if (!shoots)
 		throw new Error(`@null3d/vegetation: '${record.id}' has no shoots to build pieces of`);
 	const foliage = record.foliage;
-	if (foliage.kind !== 'blade')
-		throw new Error(`@null3d/vegetation: '${record.id}' has no blade leaf to build pieces of`);
+	if (foliage.kind !== 'blade' && foliage.kind !== 'fascicle' && foliage.kind !== 'needle')
+		throw new Error(
+			`@null3d/vegetation: '${record.id}' has '${foliage.kind}' foliage; a piece carries blades, needles or needle bundles`,
+		);
 	const salt = record.seedSalt;
 	const draw = (purpose: number, a = 0, b = 0) => unitAt(salt, PIECE_KEY + key, purpose, a, b);
-	const down: Readonly<Vector3> = ground ?? (rule.attitude === 'plumb' ? [0, 1, 0] : [0, 0, -1]);
-	const leafSpread = foliage.leaf.length;
+	const down: Readonly<Vector3> =
+		ground ?? rule.ground ?? (rule.attitude === 'plumb' ? [0, 1, 0] : [0, 0, -1]);
+	const leafSpread = foliage.kind === 'blade' ? foliage.leaf.length : foliage.needle.length;
 	const leafMean = spreadMean(leafSpread);
 	const axes: AxisPoint[][] = [];
 	const leaves: PlannedLeaf[] = [];
@@ -260,7 +268,8 @@ export function planPiece(
 			leafScale: own.scale ?? 1,
 			leafSpread,
 			leafMean,
-			leafLength: leafMean,
+			// Only a blade carries a bud in its axil.
+			leafLength: foliage.kind === 'blade' ? leafMean : 0,
 			leafMeshes,
 			budLength: shoots.bud.length,
 			budWidth: shoots.bud.width,
