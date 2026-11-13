@@ -6,6 +6,15 @@ bipinnate fronds, with frond ages from crozier to brown. The frond-colony grower
 It lays a palm's stem and its spiral of fronds. The palm frond builder (`leaf/palm-frond.ts`) draws
 a pinnate frond as separate leaflets along its rachis. The tree fern draws on the same grower and
 builder, where the leaflet is the species' pinna, whose own picture carries its second division.
+A record's pinnae name which kind of leaflet the leaf picture holds (`leaflet`). The builder keeps a
+style for each kind, because one set of numbers cannot draw both. A `pinna` stands in pairs at its
+picture's own width, and its ribbon samples across the picture. A piece cut from the frond keeps
+the leaflets of the place it was cut from. A `blade` is the palm's narrow leaflet. It stands one
+to a place and is drawn wider than its picture where the frond stands far. Its colour comes from
+the picture's midrib. A short cut piece sets its leaflets at a close photograph's spacing. With
+each kind named, the date palm and the tree fern each draw the bytes that they drew on a builder
+of their own. A crown's dead fronds also name the share of a living frond's length that they keep
+(`dead.length`): the fern's hang at about seven tenths, the palm's at nearly all.
 Pending: fan and costapalmate fronds, tripinnate fronds and stem surfaces. Ruling 11 parks those with the palms and the tree fern.
 Task: none.
 
