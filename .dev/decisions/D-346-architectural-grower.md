@@ -112,3 +112,23 @@ its stand-in: its spots, sizes and count are set for the real plant, the owner j
 the page's reference is redrawn with attribution to the drawing that replaced it. That is a change
 taken on the owner's word, with a redrawn picture, and it is recorded here so the stand-in hold is
 not mistaken for the only way a page may answer a landing.
+
+## Addendum: a card level draws at the size of its leaf form
+
+A card level drew a larger plant than the leaves it pictures. The record's `cardGrow` field
+enlarged every card, by 4 on the weeping willow and 5.5 on the Scots pine. The second card level
+grew each card it kept by the square root of two on every species.
+
+The owner chose this fix over a redraw of the held island and Creek references. <!-- outside date -->
+A redraw would have kept the fault and moved twenty-four pictures twice.
+
+The rule: a card level draws each card at the size of its shoot. The second level keeps every
+second card and each row that sets the extent of the leaf form. Those rows are the highest, the
+ends across and in depth, and the farthest in each of sixteen sectors. A kept card grows to make
+up the cover its level does not draw, and only inside the hull of the leaf form. A card with no
+room where it stands draws back from the hull as it grows.
+
+The field is removed from the record type and from nine records. D-332's rejected value and
+D-335's measured one name a field that no later head holds. The change is
+`feat(vegetation)!: draw every card level at the size of the leaf form`, at `7ea34898a`. Its
+commit names the twenty-four pictures that move.
