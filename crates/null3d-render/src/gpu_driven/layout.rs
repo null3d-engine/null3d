@@ -592,6 +592,8 @@ pub(super) struct Layout {
     tables_generation: u64,
     treed_keys_hash: u64,
     tables_built: bool,
+    /// Counts the rebuilds that filled the cluster tables. A frame that sees it move uploads them.
+    tables_epoch: u64,
     /// Every cluster patch of those meshes, eight words each: its sphere and its record.
     pub(super) cluster_patches: Vec<[u32; 8]>,
     /// Every patch's indices, one patch after another.
@@ -826,6 +828,12 @@ impl Layout {
             fixed_slots,
             ..Self::default()
         }
+    }
+
+    /// The count of rebuilds that filled the cluster tables, so a frame that uploads them knows
+    /// when they changed. A rebuild that keeps the tables leaves it where it was.
+    pub(super) fn cluster_tables_epoch(&self) -> u64 {
+        self.tables_epoch
     }
 
     /// The buffers of the bucket table and the bucket records, which the culling passes bind.
@@ -1566,6 +1574,9 @@ impl Layout {
         self.bucket_levels.clear();
         self.draws.clear();
         self.skinned.clear();
+        if rebuild_tables {
+            self.tables_epoch = self.tables_epoch.wrapping_add(1);
+        }
         if shared_trees {
             self.clusters.clear();
             self.clusters
@@ -1590,6 +1601,9 @@ impl Layout {
         self.material_views = 0;
         self.pick_views = 0;
         let (mut copied, mut indexed) = (0, 0);
+        // The place of the next tree of a kept table: the keys visit the trees in the order that
+        // the build that filled the table named them.
+        let mut kept_tree = 0usize;
         // The buckets whose mesh draws pieces in their place, each with its mesh and whether its
         // pipeline drops back faces.
         let mut pieced_buckets: Vec<(u32, u32, bool)> = Vec::new();
@@ -1648,13 +1662,12 @@ impl Layout {
                     return Some(index as u32);
                 }
                 if !rebuild_tables {
-                    // The kept table puts this tree's patches where they were; find its record and
-                    // name this frame's copy and draw.
-                    let index = self
-                        .clusters
-                        .iter()
-                        .position(|record| record.mesh == mesh)?;
-                    let record = &mut self.clusters[index];
+                    // The kept table holds the trees in the key order that filled it, so this key
+                    // takes the next record and names this frame's copy and draw.
+                    let index = kept_tree;
+                    kept_tree += 1;
+                    let record = self.clusters.get_mut(index)?;
+                    debug_assert_eq!(record.mesh, mesh);
                     record.slot = slot_base;
                     record.first_draw = first_draw;
                     record.object = tree_object(&key).unwrap_or(NOT_DRAWN);
