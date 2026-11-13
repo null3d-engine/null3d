@@ -8,7 +8,7 @@
 // vertex's sky visibility darkens it, as the plant shader's ambient light does, so the crown's
 // inside reads darker from afar. The bake is arithmetic on the arrays, so every device gets the
 // same pixels.
-import { bakeImpostorAtlas, type ImpostorBakePart } from '@null3d/impostors/bake';
+import type { ImpostorBakePart } from '@null3d/impostors/bake';
 import type { PlantAsset, PlantPart, SpeciesKitData } from '../asset';
 import type { Rgb } from '../core/types';
 import type { FarBake } from '../stages';
@@ -24,6 +24,22 @@ export interface FarPlant {
 	readonly variant: number;
 	/** The baked atlases. */
 	readonly bake: FarBake;
+}
+
+/** The impostors add-on's CPU baker, which draws parts into the octahedral atlases. */
+type AtlasBaker = typeof import('@null3d/impostors/bake').bakeImpostorAtlas;
+
+/** The baker this thread has loaded. */
+let baker: AtlasBaker | undefined;
+
+/**
+ * Loads the far baker on this thread, once. It is a lazy chunk, as the growers are, so the plant
+ * core's other stages load on a thread that cannot read the impostors add-on.
+ *
+ * @category api/vegetation
+ */
+export async function loadFarBaker(): Promise<void> {
+	baker ??= (await import('@null3d/impostors/bake')).bakeImpostorAtlas;
 }
 
 /** The share of its colour that a vertex keeps where the crown hides all of its sky. */
@@ -159,6 +175,10 @@ function filtered(
  * @returns The atlases.
  */
 export function bakeFar(kit: SpeciesKitData, asset: PlantAsset): FarBake {
+	if (!baker)
+		throw new Error(
+			'@null3d/vegetation: the far baker is not loaded on this thread; await loadFarBaker() first',
+		);
 	const views = asset.impostor.views;
 	const texels = asset.impostor.texels;
 	const min = [Infinity, Infinity, Infinity];
@@ -228,7 +248,7 @@ export function bakeFar(kit: SpeciesKitData, asset: PlantAsset): FarBake {
 			depth: 1,
 		};
 	}
-	const bake = bakeImpostorAtlas({
+	const bake = baker({
 		atlas: { columns: views, rows: views },
 		texels: texels * SUPERSAMPLE,
 		parts,
