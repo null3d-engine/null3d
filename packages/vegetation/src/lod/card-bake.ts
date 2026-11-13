@@ -27,11 +27,11 @@ import type { CardAtlas } from '../stages';
 import { rasterise, rasterTarget } from './raster';
 
 /**
- * Texels a side of one card cell by tier. A card first shows where its shoot spans the record's
- * first switch pixels, a few tens of pixels, so 64 texels hold it on every tier, as the oak's review
- * against its references shows; a finer cell costs four times the atlas memory for no visible gain.
- * A prototype without leaves (a bare winter twin) takes a cell of half the side: its card holds
- * thin stems and buds.
+ * Texels a side of one card cell by tier. The first card level starts where its longest shoot spans
+ * the record's first switch pixels, which on most species is more than a cell holds, so near its
+ * start a card is drawn larger than its picture; a finer cell costs four times the atlas memory. A
+ * prototype without leaves (a bare winter twin) takes a cell of half the side: its card holds thin
+ * stems and buds.
  *
  * @category api/vegetation
  */
