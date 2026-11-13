@@ -2,8 +2,13 @@
 // below the horizon to its foot, and it cannot follow a tuft or a colony there: a mass that stands
 // against ground of nearly its own colour is lost below the horizon line. These helpers tell such
 // an outline, so its figures are refused and not read from half a plant.
-import { deltaE76 } from '../lib/plant-review/image.ts';
-import { axisRuns, type Box, FOOT_STEM_SHARE } from '../lib/plant-review/references.ts';
+import { deltaE76, labImage, type Rgba, resizeToWidth } from '../lib/plant-review/image.ts';
+import {
+	axisRuns,
+	type Box,
+	FOOT_STEM_SHARE,
+	type PlantMask,
+} from '../lib/plant-review/references.ts';
 
 /** The rows above the outline's end whose run is the foot's. */
 const FOOT_ROWS = 6;
@@ -17,6 +22,8 @@ export const PLAIN_GROUND = 3;
 const FOOT_IN_VIEW = 15;
 /** Rows either side of the horizon within which an outline's last row ends at it. */
 const AT_HORIZON = 0.015;
+/** The most of a plant's height that the ground below a wide foot at the horizon may hide before the outline is refused. */
+const MASS_LOSS = 0.1;
 
 /** Whether an outline's last row lies at the horizon rather than in the ground below it. */
 export function endsAtHorizon(box: Box, horizonRow: number, height: number): boolean {
@@ -82,4 +89,33 @@ export function footInView(
 	const foot = mean(rows(box.bottom - FOOT_ROWS + 1, box.bottom));
 	const under = mean(rows(box.bottom + 1, Math.min(height - 1, box.bottom + FOOT_ROWS)));
 	return foot !== null && under !== null && deltaE76(foot, under) >= FOOT_IN_VIEW;
+}
+
+/**
+ * Whether a whole plant's outline has lost its foot: it ends at the horizon on a mass too wide to be
+ * a stem, over a photographed ground and not a plain band, a real share of its height above the
+ * frame's foot, and the rows under it keep its own colour. The review's outline follows a stem below
+ * the horizon to its foot and says from which row; it cannot follow a mass.
+ *
+ * @param image The picture.
+ * @param plant Its plant mask, at the work size.
+ * @param box The outline's box in the mask.
+ * @param horizon The horizon as a share of the picture's height, or null where none is in view.
+ * @param axis The column of the plant's axis in the mask.
+ */
+export function footLost(
+	image: Rgba,
+	plant: PlantMask,
+	box: Box,
+	horizon: number | null,
+	axis: number,
+): boolean {
+	const { width, height, background } = plant;
+	if (horizon === null || plant.footFollowedFrom !== undefined) return false;
+	if ((background.ground?.noise ?? 0) < PLAIN_GROUND) return false;
+	if (!endsAtHorizon(box, Math.floor(horizon * height), height)) return false;
+	if (!wideFoot(plant.mask, width, box, axis)) return false;
+	if ((height - 1 - box.bottom) / (box.bottom - box.top + 1) < MASS_LOSS) return false;
+	const lab = labImage(image.width > width ? resizeToWidth(image, width) : image);
+	return !footInView(lab, width, height, plant.mask, box, axis);
 }
