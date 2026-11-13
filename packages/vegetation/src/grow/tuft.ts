@@ -5,7 +5,7 @@
 // whole at a socket on a shoot:
 //
 // - the shoot's own column of sheaths;
-// - a blade, in the poses the record measures: the youngest stand near plumb at the shoot's heart,
+// - a blade, in the poses the record measures and the shapes between them: the youngest stand near plumb at the shoot's heart,
 //   the oldest arch out and over to the ground. Blades leave their shoot in two ranks (grasses) or
 //   three (sedges);
 // - in the seasons the record names, a flowering stem with its head: a sedge's stem bows over and
@@ -804,6 +804,7 @@ export function tuftPieces(record: Species, manifest: TextureManifest): readonly
 		name: 'piece-sheath',
 		variants: 1,
 		length: plan.sheath,
+		leaves: 0,
 		write: (mesh, tier) => {
 			mesh.mark();
 			const half = plan.sheathWidth / 2;
@@ -828,9 +829,10 @@ export function tuftPieces(record: Species, manifest: TextureManifest): readonly
 		const path = pathOf(pose.arch);
 		classes.push({
 			name: `piece-blade-${k}`,
-			variants: 2,
+			variants: 1,
 			length: pose.arch.length,
-			write: (mesh, tier, variant) => {
+			leaves: 1,
+			write: (mesh, tier) => {
 				const detail = DETAILS[tier] as Detail;
 				writeBlade(
 					mesh,
@@ -839,8 +841,8 @@ export function tuftPieces(record: Species, manifest: TextureManifest): readonly
 						length: path.length,
 						width: blade.width,
 						blade,
-						// The two shapes of a pose twist opposite ways.
-						twist: blade.twist * (variant === 0 ? 1 : -1),
+						// Neighbouring shapes twist opposite ways.
+						twist: blade.twist * (k % 2 === 0 ? 1 : -1),
 						browning: 0,
 						dry: 0.5,
 					},
@@ -869,6 +871,7 @@ export function tuftPieces(record: Species, manifest: TextureManifest): readonly
 				name: `piece-stalk-${k}`,
 				variants: 1,
 				length: pose.arch.length,
+				leaves: 0,
 				write: (mesh, tier) => {
 					mesh.mark();
 					writeStalk(mesh, strip, path, pose.arch, tier, plan.stalkWidth, 1, stems.sides === 3);
