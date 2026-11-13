@@ -5,7 +5,10 @@
 // drawn by order, and each foliage patch as two rings of marks: its top and its underside.
 //
 //   bun --conditions=null3d-source tools/plant-frame-preview.ts <species> [--seed <n>]
-//     [--variant <n>] [--refs <folder>] [--out <dir>] [--name <prefix>]
+//     [--variant <n>] [--refs <folder>] [--out <dir>] [--name <prefix>] [--also <n,n>]
+//
+// The sheet shows the whole-plant stills numbered up to 18. `--also` names further whole-plant
+// stills by number, for a species whose primary plant stands in a later one.
 //
 // The reference folder is `<id>` under the corpus that NULL3D_PLANT_REFERENCES names, or the folder
 // `--refs` names. The sheet goes to `target/plant-preview/<species>/<prefix>-frame.png`, or into the
@@ -69,6 +72,12 @@ const variant = Number(option('variant', '0'));
 const out = resolve(option('out', join(REPO_ROOT, 'target/plant-preview', species)));
 const prefix = option('name', `${species}-s${seed}-v${variant}`);
 const folder = flag('refs') ? resolve(option('refs')) : join(REFERENCES, species);
+const also = new Set(
+	option('also', '')
+		.split(',')
+		.filter((word) => word !== '')
+		.map(Number),
+);
 
 const directedPath = join(REPO_ROOT, 'packages/vegetation/src/species', species, 'directed.ts');
 if (!existsSync(directedPath)) {
@@ -272,7 +281,8 @@ if (existsSync(folder)) {
 	const stills = readReferenceSet(folder).stills;
 	for (const still of stills) {
 		const whole = still.framed && (still.view === 'whole' || still.view === 'silhouette');
-		if (still.number > 18 || !(whole || still.view === 'below')) continue;
+		const shown = still.number <= 18 || also.has(still.number);
+		if (!shown || !(whole || still.view === 'below')) continue;
 		const image = readImage(join(folder, still.file));
 		const turn = still.turn ?? 0;
 		if (whole) {

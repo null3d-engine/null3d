@@ -24,7 +24,7 @@ const GOLDEN = 137.50776405;
 export const FRAME_TURN_MOST = 6;
 /** The longest piece of an axis as a share of its length, and its bounds in metres. */
 const STEP_SHARE = 1 / 12;
-const STEP_LEAST = 0.04;
+const STEP_LEAST = 0.02;
 const STEP_MOST = 0.45;
 /** Steps a trial course is summed over while its length is found, and the passes that find it. */
 const TRIAL_STEPS = 32;
@@ -494,15 +494,17 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 		}
 		// The sideways sway: the course leans to one side and the other in turn, once an elbow, and
 		// leaves in its own direction. The first lean is reached half an elbow along, so every
-		// stretch between two leans turns the whole way across.
+		// stretch between two leans turns the whole way across, and the course ends half way to
+		// the lean that would follow, so its last stretch turns too.
 		const elbows = Math.max(1, Math.round(rule.elbows));
 		const sways: [number, number][] = [[0, 0]];
 		let side = draw(Purpose.SwaySide, id) < 0.5 ? 1 : -1;
-		for (let k = 0; k < elbows; k++) {
-			sways.push([
-				(k + 0.5) / elbows,
-				side * (rule.sway / 2) * (0.7 + 0.6 * draw(Purpose.Sway, id, k)),
-			]);
+		let lean = 0;
+		for (let k = 0; k <= elbows; k++) {
+			const next = side * (rule.sway / 2) * (0.7 + 0.6 * draw(Purpose.Sway, id, k));
+			if (k < elbows) sways.push([(k + 0.5) / elbows, next]);
+			else sways.push([1, (lean + next) / 2]);
+			lean = next;
 			side = -side;
 		}
 		const across: Vector3 = [-sin(heading), 0, cos(heading)];
