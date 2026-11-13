@@ -268,7 +268,7 @@ const summary = {
 	rows: asset.shoots.count,
 	triangles: asset.stats.triangles,
 	shootTriangles: asset.stats.shoots,
-	nearFormTriangles: asset.stats.triangles[0] + asset.stats.shoots,
+	nearFormTriangles: asset.stats.triangles[0],
 	drawnTriangles: drawn.triangles,
 	drawnEye: { place: drawn.eye, at: drawn.at.map((v) => Number(v.toFixed(2))) },
 	drawnTallest: {
