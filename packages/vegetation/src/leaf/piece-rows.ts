@@ -20,7 +20,7 @@ import type { UncardedPrototype } from './shoot';
 export const PROTOTYPES_MOST = 255;
 
 /** The growth models that end their wood in sockets. */
-const DIRECTED: readonly GrowthModel[] = ['conifer'];
+const DIRECTED: readonly GrowthModel[] = ['conifer', 'frame'];
 /** The growth models whose growers write the pieces their sockets carry. */
 const WRITTEN: readonly GrowthModel[] = ['tuft'];
 
@@ -81,7 +81,9 @@ export function kitPiece(piece: PiecePrototype, index: number): UncardedPrototyp
 
 /** The piece that a record's sockets carry, by name, where its growth names one. */
 function socketPiece(record: Species): string | undefined {
-	return record.growth.model === 'conifer' ? record.growth.patch.sockets?.piece : undefined;
+	const growth = record.growth;
+	if (growth.model === 'conifer') return growth.patch.sockets?.piece;
+	return growth.model === 'frame' ? growth.sockets.piece : undefined;
 }
 
 /**
