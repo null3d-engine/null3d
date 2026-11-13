@@ -1131,25 +1131,35 @@ export interface FrondColony {
 	readonly model: 'frond-colony';
 	/** Fronds per colony. */
 	readonly fronds: Spread;
-	/** The buried rhizome: metres long, branches, and metres between fronds. */
-	readonly rhizome: {
-		readonly length: number;
-		readonly branches: Spread;
-		readonly spacing: Spread;
-		/**
-		 * Separate masses of fronds, where the photographs show ground between them: the number of
-		 * masses, the metres within which a mass's fronds scatter, and the metres from the colony's
-		 * middle to a mass's centre. Absent, the fronds stand evenly along the rhizome's lines and
-		 * their blades knit into one roof.
-		 */
-		readonly clump?: {
-			readonly count: number;
-			readonly radius: number;
-			readonly ring: number;
-		};
+	/**
+	 * The patch the fronds' feet stand in, spread evenly over an ellipse: its long and its short
+	 * width, as shares of the plant's height.
+	 */
+	readonly patch: { readonly long: number; readonly short: number };
+	/** The buried rhizome that joins the feet: metres under the soil, and its radius in metres. */
+	readonly rhizome: { readonly depth: number; readonly radius: number };
+	/**
+	 * A frond's size as a share of the tallest frond's: the range most fronds take, the range the
+	 * short fronds take, and the short fronds' share of the patch. The short fronds stand at the
+	 * patch's front edge, toward +Z.
+	 */
+	readonly heights: {
+		readonly tall: readonly [number, number];
+		readonly short: readonly [number, number];
+		readonly shortShare: number;
 	};
-	/** Stipe height and lean; the blade is held near horizontal on top. */
-	readonly stipe: { readonly length: Spread; readonly lean: Spread };
+	/**
+	 * The tallest frond's stalk, in metres; the degrees a stalk leans from plumb; and the radius
+	 * of the one curve in which its top turns over to hold the leaf, as a share of its length. A
+	 * frond's stalk is this length at the frond's own size.
+	 */
+	readonly stipe: { readonly length: Spread; readonly lean: Spread; readonly bend: number };
+	/**
+	 * Degrees above level that a stalk's end holds its leaf's midrib at, the least and the most.
+	 */
+	readonly tilt: readonly [number, number];
+	/** The fewest fronds a thinned patch keeps. */
+	readonly least: number;
 	/** One frond. */
 	readonly frond: FrondShape;
 	/** Young fronds still rolled. */
@@ -1795,6 +1805,12 @@ export interface ShootClass {
 	 * species': an old twig is thicker than this year's shoot, and a cutting of it shows that.
 	 */
 	readonly stem?: { readonly radius: readonly [base: number, tip: number] };
+	/**
+	 * Whether the shoot draws as its leaves alone, each a cut-out card of two triangles at every
+	 * tier, with no stem and no bud: a cactus's spine cluster, whose card carries its pad and spines
+	 * in its picture and stands in thousands on one plant.
+	 */
+	readonly cards?: boolean;
 	/**
 	 * How this class's leaves or buds stand along its shoots, where the species' arrangement does not
 	 * fit: a studio cutting's photograph shows leaves two-ranked along the twig, while the crown's
@@ -2746,6 +2762,12 @@ export interface CutFromPlant {
 	readonly order: number;
 	/** Metres of wood from the cut to the farthest tip. */
 	readonly length: number;
+	/**
+	 * How the piece's photograph stands it: `as-grown` keeps the turn it grew with, as a saguaro's
+	 * arm stands on its elbow with its upright part plumb. Where it names none, the piece stands as
+	 * the cutting asks, upright on the line from its cut.
+	 */
+	readonly stands?: 'as-grown';
 	/**
 	 * The shoots this piece places over the crown's own, from 0.25 to 8: a density of its own, where
 	 * the piece covers more or less than the species' `cuttings.density`, which applies where it

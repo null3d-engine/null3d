@@ -165,28 +165,47 @@ export const directed: Species = {
 	foliage: needles,
 	lod: {
 		...record.lod,
-		// The first card level keeps the twigs that reach the boughs, and the second the arms under
-		// each pad, so a far card still meets drawn wood.
-		woodOrders: [4, 2],
+		// Both card levels keep the bole and the limbs, the wood a viewer sees between the plates.
+		// The forks and twigs under a pad stand inside its boughs, which the cards picture, and each
+		// card still joins drawn wood through its pad's other cards.
+		woodOrders: [1, 1],
 		budget: {
 			...record.lod.budget,
 			// The kit of three bough variants holds 13,073,360 bytes at the finest tier, where each
 			// needle draws round; the tree model's cap there is 22,600,000.
 			kitBytes: { ...record.lod.budget.kitBytes, ultra: 13_200_000 },
-			// The default plant spends the triangles its best look needs. The first card level draws
-			// one card a bough and the twigs that carry them: 144,157 at seed 11 with pads as deep as
-			// still 02's thinnest. A shallower pad would fit 140,000 and fall below them.
-			lod1Triangles: 145_000,
 		},
 	},
 	bark: {
 		...(record.bark as BarkSpec),
 		// Still 01 and the turning video: grey plates to 0.35 of the height, orange flakes above
-		// 0.40, and both between.
+		// 0.40, and both between. Above the bole only the upper stem and the limbs are orange: still
+		// 01's limbs and still 08's fork. The fact sheet and still 09: the smaller wood is grey-brown,
+		// the branch and its side twigs alike, linear 0.21 to 0.24, 0.14 to 0.16 and 0.086 to 0.102.
+		// Wood thicker than 3.5 cm in radius takes the orange, and thinner wood the grey plates
+		// tinted to still 09's mean.
 		zones: [
 			{ layer: 0, by: 'height', from: 0, to: 7.5, blend: 1 },
-			{ layer: 1, by: 'height', from: 7.5, to: 24, blend: 1 },
+			{
+				layer: 1,
+				by: 'radius',
+				from: 0.035,
+				to: 2,
+				blend: 0.015,
+				second: { from: 7.5, to: 30, blend: 1 },
+			},
+			{
+				layer: 0,
+				by: 'radius',
+				from: 0,
+				to: 0.035,
+				blend: 0.015,
+				tint: [1.28, 1.13, 0.79],
+				second: { from: 7.5, to: 30, blend: 1 },
+			},
 		],
+		// The young bark of thin wood tinted to still 09's grey-brown.
+		youngTint: [0.53, 0.97, 1.53],
 	},
 	// Still 02: the foot is 1.6 times as wide at the ground as the bole is at a tenth of the
 	// height, and the widening fades within the lowest 0.03 of the height. Stills 14 and 17: the

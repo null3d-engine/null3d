@@ -92,7 +92,7 @@ import {
 import { extrasMesh } from './leaf/extras';
 import { writtenPieces } from './leaf/ground-piece';
 import { dressShoots, pruneLight } from './leaf/instancer';
-import { foliage, loadFoliage } from './leaf/kinds';
+import { type FoliageBuilder, foliage, loadFoliage } from './leaf/kinds';
 import {
 	type PieceLeaf,
 	type PiecePrototype,
@@ -103,6 +103,7 @@ import {
 import { carriesPieces, kitPiece, PROTOTYPES_MOST, writesPieces } from './leaf/piece-rows';
 import { inLeaf } from './leaf/season';
 import { shootPrototypes } from './leaf/shoot';
+import { bakeWithBrushes } from './lod/brush-cards';
 import {
 	type BudgetInput,
 	type LevelBuild,
@@ -113,7 +114,6 @@ import {
 	referenceTriangles,
 	shootPartTriangles,
 } from './lod/budget';
-import { bakeCards } from './lod/card-bake';
 import { cardMesh } from './lod/cards';
 import { bakeFar } from './lod/impostor';
 import { levelStarts } from './lod/levels';
@@ -254,7 +254,7 @@ export function buildPiecesNow(
 	const builder = foliage(record.foliage.kind);
 	const manifest = source.textures.manifest;
 	const leavesOf = (from: Species) =>
-		DETAILS.map((tier) => (bare ? [] : builder.leaves(from, manifest, tier)));
+		bare ? DETAILS.map(() => []) : pieceLeaves(builder, from, manifest);
 	const leaves = leavesOf(record);
 	// A rule whose blades bend in their own plane takes leaves built with no bend at the stalk.
 	const straight =
@@ -271,6 +271,23 @@ export function buildPiecesNow(
 				})
 			: leaves;
 	return piecePrototypes(record, rules, leaves, straight);
+}
+
+/**
+ * A species' leaf meshes for its branch pieces at every tier, low first: its kind's piece cut where
+ * the kind cuts a piece's leaves apart from the crown's, since a tree carries thousands of pieces,
+ * and the crown's own leaves where it does not.
+ */
+function pieceLeaves(
+	builder: FoliageBuilder,
+	record: Species,
+	manifest: TextureManifest,
+): (readonly PrototypeArrays[])[] {
+	return DETAILS.map((tier) =>
+		builder.pieceLeaves
+			? builder.pieceLeaves(record, manifest, tier)
+			: builder.leaves(record, manifest, tier),
+	);
 }
 
 /**
@@ -462,7 +479,9 @@ export function buildKitNow(source: KitSource, options: KitOptions = {}): Specie
 					placeholders,
 					() =>
 						pieces
-							? piecePrototypes(record, pieces, leavesByTier).map(kitPiece)
+							? piecePrototypes(record, pieces, pieceLeaves(builder, record, manifest)).map(
+									kitPiece,
+								)
 							: shootPrototypes(record, manifest, leavesByTier, cutting !== false),
 					() => placeholderPrototypes(record, leavesByTier),
 				);
@@ -470,19 +489,24 @@ export function buildKitNow(source: KitSource, options: KitOptions = {}): Specie
 			throw new Error(
 				`@null3d/vegetation: '${record.id}' builds ${uncarded.length} prototypes; a kit holds ${PROTOTYPES_MOST} at most`,
 			);
-		// A cutting kit holds no card levels: its pieces are drawn at the nearest level alone.
+		// A cutting kit holds no card levels: its pieces are drawn at the nearest level alone. A piece
+		// that draws brush cards takes them in the bake, which pictures its leaves first.
 		const baked = cutting
-			? { atlas: cards, cells: uncarded.map(() => ({ planes: [] })) }
+			? {
+					atlas: cards,
+					cells: uncarded.map(() => ({ planes: [] })),
+					prototypes: uncarded.map(({ brushes: _brushes, ...prototype }) => prototype),
+				}
 			: stage(
 					placeholders,
-					() => bakeCards(record, manifest, detail, uncarded),
-					() => placeholderCardBake(record, uncarded),
+					() => bakeWithBrushes(record, manifest, detail, uncarded),
+					() => ({ ...placeholderCardBake(record, uncarded), prototypes: uncarded }),
 				);
 		// The kit keeps its own tier's meshes and the tiers below it, which the near band draws
 		// farther out; a page draws at one preset, so the tiers above it are left empty. The card
 		// bake, the lengths and the radii read the full build first.
 		const kept = DETAILS.indexOf(detail);
-		prototypes = uncarded.map((prototype, index) => {
+		prototypes = baked.prototypes.map((prototype, index) => {
 			const card = baked.cells[index];
 			if (!card) throw new Error(`the card bake gave no cells for prototype ${index}`);
 			const tiers = prototype.tiers.map((tier, t) =>
