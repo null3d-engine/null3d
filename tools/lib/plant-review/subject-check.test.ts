@@ -1,7 +1,18 @@
 // The subject check on the tool's side: what a posted subject says, what a matte shows of a view's
 // regions, and when a picture is void.
 import { describe, expect, test } from 'bun:test';
-import { matteCheck, postedSubject, regionCover, voidReason } from './subject-check.ts';
+import {
+	matteCheck,
+	PART,
+	PART_RADIUS_SPAN,
+	partCover,
+	partsCheck,
+	partsOf,
+	postedSubject,
+	regionCover,
+	regionsRead,
+	voidReason,
+} from './subject-check.ts';
 
 /** A mask of a size with the plant drawn over a box of pixels. */
 function maskOf(
@@ -66,6 +77,85 @@ describe("a view's regions read on its matte", () => {
 		const read = matteCheck(air, 100, 100, regions);
 		expect(read.present).toBe(false);
 		expect(read.reason).toContain('the trunk beside the joint shows plant over 0.00');
+	});
+});
+
+/** The display value the plant shader's blue holds for a wood radius in metres. */
+function radiusByte(radius: number): number {
+	const code = Math.sqrt(radius / PART_RADIUS_SPAN);
+	const display = code <= 0.0031308 ? code * 12.92 : 1.055 * code ** (1 / 2.4) - 0.055;
+	return Math.round(display * 255);
+}
+
+/**
+ * A picture of the parts 100 by 80 on white: a limb 0.4 m in radius across the middle rows, a twig
+ * 0.02 m in radius down one column over it, and a spray of leaves over the limb's right end.
+ */
+function partsPicture(): { data: Uint8Array; width: number; height: number } {
+	const width = 100;
+	const height = 80;
+	const data = new Uint8Array(width * height * 4).fill(255);
+	const paint = (
+		[left, top, right, bottom]: readonly [number, number, number, number],
+		[r, g, b]: readonly [number, number, number],
+	) => {
+		for (let y = top; y < bottom; y++)
+			for (let x = left; x < right; x++) data.set([r, g, b, 255], (y * width + x) * 4);
+	};
+	paint([0, 30, 100, 50], [255, 0, radiusByte(0.4)]);
+	paint([20, 0, 24, 80], [255, 0, radiusByte(0.02)]);
+	paint([70, 20, 100, 60], [0, 255, 0]);
+	paint([0, 70, 5, 80], [0, 255, 255]);
+	return { data, width, height };
+}
+
+describe('a picture of the parts', () => {
+	const parts = partsOf(partsPicture());
+
+	test('reads each texel as ground, wood with its radius, foliage or an extra', () => {
+		const at = (x: number, y: number) => y * 100 + x;
+		expect(parts.kind[at(50, 5)]).toBe(PART.none);
+		expect(parts.kind[at(50, 40)]).toBe(PART.wood);
+		expect(parts.radius[at(50, 40)] as number).toBeCloseTo(0.4, 1);
+		expect(parts.kind[at(21, 5)]).toBe(PART.wood);
+		expect(parts.radius[at(21, 5)] as number).toBeLessThan(0.03);
+		expect(parts.kind[at(80, 40)]).toBe(PART.foliage);
+		expect(parts.kind[at(2, 75)]).toBe(PART.extras);
+	});
+
+	test('counts in a region only the parts the region names', () => {
+		const box = [0.4, 0.375, 0.6, 0.625] as const;
+		expect(partCover(parts, { name: 'any', box })).toBe(1);
+		expect(partCover(parts, { name: 'wood', box, of: 'wood' })).toBe(1);
+		expect(partCover(parts, { name: 'leaves', box, of: 'foliage' })).toBe(0);
+		// The twig lies over the limb between columns 20 and 24: thin wood does not count as the limb.
+		const across = [0.1, 0.375, 0.3, 0.625] as const;
+		expect(partCover(parts, { name: 'wood', box: across, of: 'wood' })).toBe(1);
+		expect(partCover(parts, { name: 'limb', box: across, of: 'wood', thick: 0.2 })).toBe(0.8);
+	});
+
+	test('sees leaves that lie over a subject whose points are all in the frame', () => {
+		const regions = [
+			{ name: "the limb's bark", box: [0.7, 0.4, 0.9, 0.6], min: 0.85, of: 'wood', thick: 0.2 },
+			{ name: 'the leaves over the limb', box: [0.6, 0.3, 1, 0.7], max: 0.25, of: 'foliage' },
+		] as const;
+		const read = partsCheck(parts, regions);
+		expect(read.present).toBe(false);
+		expect(read.reason).toBe(
+			"the limb's bark shows wood 0.20 m in radius or more over 0.00 of its part of the picture, under 0.85; the leaves over the limb shows leaves over 0.75 of its part of the picture, over 0.25",
+		);
+		const facts = {
+			subject: { kind: 'the bark on a great limb', contract: { present: true }, regions },
+		};
+		expect(voidReason(facts, undefined, parts)).toContain('the picture does not show the subject');
+		// A matte cannot tell the parts apart, so it reads no region of wood or of foliage.
+		const matte = { mask: new Uint8Array(100 * 80).fill(1), width: 100, height: 80 };
+		expect(voidReason(facts, matte)).toBe(undefined);
+		expect(matteCheck(matte.mask, 100, 80, regions).covers).toEqual([]);
+		// So a picture with such regions is checked only where the run drew its parts.
+		expect(regionsRead(facts, true, false)).toBe(false);
+		expect(regionsRead(facts, false, true)).toBe(true);
+		expect(regionsRead({ subject: { kind: 'the whole plant' } }, false, false)).toBe(true);
 	});
 });
 

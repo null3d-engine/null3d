@@ -66,13 +66,28 @@ export interface ContractPoint {
 	};
 }
 
-/** A part of the picture and the share of it the plant must cover, read from a matte. */
+/**
+ * A part of the picture and the share of it that the plant, or one kind of its parts, must cover.
+ * A region of the whole plant is read from a matte or from the picture of the parts. A region of
+ * wood or of foliage is read only from the picture of the parts.
+ */
 export interface ContractRegion {
 	readonly name: string;
 	readonly box: FrameBox;
 	readonly min?: number;
 	readonly max?: number;
+	/** The parts whose cover is counted; absent, every part of the plant. */
+	readonly of?: 'wood' | 'foliage';
+	/** For wood, the least radius in metres that counts, so a twig is not taken for a limb. */
+	readonly thick?: number;
 }
+
+/** The share of a subject's own radius below which wood across it is another, thinner part. */
+const SUBJECT_WOOD = 0.5;
+/** The most of a frame that wood may cover before it is a wall of bark across the picture. */
+const MOST_WOOD = 0.7;
+/** The most of a wood subject's part of the picture that leaves may lie over. */
+const MOST_LEAVES_OVER = 0.25;
 
 /** A solved shot: the camera, and the contract its picture must meet. */
 export interface SubjectShot {
@@ -524,12 +539,15 @@ export function belowShot(subjects: PlantSubjects, lens: Lens, options: BelowOpt
 					1,
 				],
 				min: 0.8,
+				of: 'wood',
 			},
+			// Above the fork stand the crown and the sky. A dense crown may fill it; wood may not.
+			{ name: 'the crown above the fork', box: [0, 0, 1, forkRow - 0.1], min: 0.05 },
 			{
-				name: 'the crown and the sky above the fork',
+				name: 'the wood above the fork',
 				box: [0, 0, 1, forkRow - 0.1],
-				min: 0.05,
-				max: 0.97,
+				max: MOST_WOOD,
+				of: 'wood',
 			},
 		],
 		facts: {
@@ -724,6 +742,8 @@ export function boleShot(subjects: PlantSubjects, lens: Lens, options: BoleOptio
 				name: 'the bole',
 				box: [middleAt.x - half, middleAt.y - 0.1, middleAt.x + half, middleAt.y + 0.1],
 				min: 0.7,
+				of: 'wood',
+				thick: SUBJECT_WOOD * middle.radius,
 			},
 		],
 		facts: {
@@ -876,6 +896,8 @@ export function junctionShot(
 	}
 	const { limb, tall, camera, crotch, forward } = chosen;
 	const rises = dot(limb.direction, axesOf(forward).up) >= 0;
+	const baseAt = step(limb.joint, limb.direction, limb.trunkRadius + limb.radius);
+	const base = project(camera, lens, baseAt);
 	return {
 		kind: 'a great limb leaving the trunk',
 		camera,
@@ -887,7 +909,7 @@ export function junctionShot(
 			},
 			{
 				name: "the limb's base",
-				at: step(limb.joint, limb.direction, limb.trunkRadius + limb.radius),
+				at: baseAt,
 				within: [0.3, 0.02, 1.1, 0.98],
 				size: { metres: 2 * limb.radius, of: 'height', min: 0.1, max: 0.7 },
 			},
@@ -903,6 +925,22 @@ export function junctionShot(
 				name: 'the trunk beside the joint',
 				box: [column - 0.17, 0.6, column - 0.02, 0.95],
 				min: 0.7,
+				of: 'wood',
+				thick: SUBJECT_WOOD * limb.trunkRadius,
+			},
+			// The limb itself where it leaves the trunk: thinner wood or leaves across it hide it.
+			{
+				name: 'the limb where it leaves the trunk',
+				box: [base.x - 0.05, base.y - 0.05, base.x + 0.05, base.y + 0.05],
+				min: 0.6,
+				of: 'wood',
+				thick: SUBJECT_WOOD * limb.radius,
+			},
+			{
+				name: 'the leaves over the join',
+				box: [column - 0.15, 0.3, Math.min(1, column + 0.3), 0.7],
+				max: MOST_LEAVES_OVER,
+				of: 'foliage',
 			},
 			{
 				name: 'the open ground beside the limb',
@@ -1047,7 +1085,13 @@ export function forkShot(subjects: PlantSubjects, lens: Lens, options: ForkOptio
 		],
 		apart: [{ a: 'one arm', b: 'the other arm', least: 0.12 }],
 		regions: [
-			{ name: 'the joint', box: [0.44, FORK_ROW - 0.06, 0.56, FORK_ROW + 0.06], min: 0.6 },
+			{
+				name: 'the joint',
+				box: [0.44, FORK_ROW - 0.06, 0.56, FORK_ROW + 0.06],
+				min: 0.6,
+				of: 'wood',
+				thick: SUBJECT_WOOD * fork.radius,
+			},
 			{ name: 'the plain ground round the fork', box: [0, 0, 1, 1], max: 0.75 },
 		],
 		facts: {
@@ -1152,7 +1196,7 @@ export function crownOutsideShot(
 			},
 		],
 		regions: [
-			{ name: 'the foliage mass', box: [0.3, 0.3, 0.7, 0.7], min: 0.25 },
+			{ name: 'the foliage mass', box: [0.3, 0.3, 0.7, 0.7], min: 0.25, of: 'foliage' },
 			{ name: 'the sky round the lobe', box: [0, 0, 1, 1], max: CROWN_MOST_COVER },
 		],
 		facts: {
@@ -1312,8 +1356,6 @@ const INSIDE_REACH = 0.5;
 const INSIDE_LIMB_STAND = 0.2;
 /** The most of the frame's width that the trunk beside the camera may take at its nearest. */
 const INSIDE_MOST_TRUNK = 0.5;
-/** The most of an inside view's frame that the plant may cover: the rest is the sky through it. */
-const INSIDE_MOST_COVER = 0.85;
 
 /**
  * The view from inside the crown, as picture 06 shows it: the camera stands beside the trunk a little
@@ -1440,8 +1482,9 @@ export function insideShot(subjects: PlantSubjects, lens: Lens, options: InsideO
 					: []),
 			],
 			regions: [
-				{ name: 'the trunk ahead', box: [0.45, 0.4, 0.55, 0.6], min: 0.5 },
-				{ name: 'the crown round the trunk', box: [0, 0, 1, 1], min: 0.1, max: INSIDE_MOST_COVER },
+				{ name: 'the trunk ahead', box: [0.45, 0.4, 0.55, 0.6], min: 0.5, of: 'wood' },
+				{ name: 'the crown round the trunk', box: [0, 0, 1, 1], min: 0.1 },
+				{ name: 'the wood across the picture', box: [0, 0, 1, 1], max: MOST_WOOD, of: 'wood' },
 			],
 			facts: {
 				wood: 'trunk',
@@ -1487,8 +1530,9 @@ export function insideShot(subjects: PlantSubjects, lens: Lens, options: InsideO
 			},
 		],
 		regions: [
-			{ name: 'the limb ahead', box: [0.45, 0.4, 0.55, 0.6], min: 0.5 },
-			{ name: 'the crown round the limb', box: [0, 0, 1, 1], min: 0.1, max: 0.92 },
+			{ name: 'the limb ahead', box: [0.45, 0.4, 0.55, 0.6], min: 0.5, of: 'wood' },
+			{ name: 'the crown round the limb', box: [0, 0, 1, 1], min: 0.1 },
+			{ name: 'the wood across the picture', box: [0, 0, 1, 1], max: MOST_WOOD, of: 'wood' },
 		],
 		facts: { wood: 'limb', limb: limb.id, stand: distance, pitch: pitch / DEG },
 	};
@@ -1557,7 +1601,13 @@ export function barkBaseShot(
 			},
 		],
 		regions: [
-			{ name: 'the trunk', box: [0.45, 0.3, 0.55, 0.75], min: 0.8 },
+			{
+				name: 'the trunk',
+				box: [0.45, 0.3, 0.55, 0.75],
+				min: 0.8,
+				of: 'wood',
+				thick: SUBJECT_WOOD * above.radius,
+			},
 			{ name: 'the ground and air beside the trunk', box: [0, 0.1, 0.1, 0.6], max: 0.7 },
 		],
 		facts: { radius, frame: tall, lookDown: lookDown / DEG },
@@ -1618,11 +1668,16 @@ export function barkMidShot(subjects: PlantSubjects, lens: Lens, options: BarkMi
 				name: 'the bark',
 				box: [0.5 - 0.4 * covered, 0.1, 0.5 + 0.4 * covered, 0.9],
 				min: 0.9,
+				of: 'wood',
+				thick: SUBJECT_WOOD * at.radius,
 			},
 		],
 		facts: { height, span: tall, radius: at.radius, barkShare: covered },
 	};
 }
+
+/** Limb radii in front of a limb's centre line from which a view of its bark draws the plant. */
+const BARK_LIMB_CLEAR = 1.5;
 
 /** How a view of the bark on a great limb frames it. */
 export interface BarkLimbOptions {
@@ -1685,9 +1740,17 @@ export function barkLimbShot(
 	}
 	const { limb, at, tall, camera } = chosen;
 	const reach = 0.35 * tall * lens.aspect;
+	const distance = Math.hypot(
+		camera.position[0] - at.at[0],
+		camera.position[1] - at.at[1],
+		camera.position[2] - at.at[2],
+	);
 	return {
 		kind: 'the bark on a great limb',
 		camera,
+		// The plant is drawn from just in front of the limb's bark, so a spray of leaves or a branch
+		// that hangs between the lens and the limb does not lie across the bark the picture is of.
+		near: Math.max(0.02, distance - BARK_LIMB_CLEAR * at.radius),
 		points: [
 			{
 				name: "the limb's bark",
@@ -1715,7 +1778,19 @@ export function barkLimbShot(
 			},
 		],
 		regions: [
-			{ name: "the limb's bark", box: [0.42, 0.42, 0.58, 0.58], min: 0.9 },
+			{
+				name: "the limb's bark",
+				box: [0.4, 0.4, 0.6, 0.6],
+				min: 0.85,
+				of: 'wood',
+				thick: SUBJECT_WOOD * at.radius,
+			},
+			{
+				name: 'the leaves over the limb',
+				box: [0.3, 0.3, 0.7, 0.7],
+				max: MOST_LEAVES_OVER,
+				of: 'foliage',
+			},
 			{ name: 'the ground beside the limb', box: [0, 0, 1, 1], max: 0.9 },
 		],
 		facts: {

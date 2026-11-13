@@ -55,7 +55,7 @@ import {
 import type { RunFrame } from './render.ts';
 import { type PictureNote, type Standing, standReason } from './review-data.ts';
 import type { SheathTarget } from './sheath.ts';
-import { contractHeld, lackReason, voidReason } from './subject-check.ts';
+import { contractHeld, lackReason, partsOf, regionsRead, voidReason } from './subject-check.ts';
 
 /** The bins of an edge-direction profile: twelve of fifteen degrees across half a turn. */
 const EDGE_BINS = 12;
@@ -1630,8 +1630,9 @@ export interface StillResult extends PairMetrics {
 	readonly lacks?: string;
 	/**
 	 * Whether a check confirmed that the picture shows its photograph's subject: a solved view
-	 * whose contract held, or a whole view that passed the framing check. A picture without one
-	 * may show another subject, so no row passes on such pictures alone.
+	 * whose contract held and whose regions were read from the picture, or a whole view that passed
+	 * the framing check. A picture without one may show another subject, so no row passes on such
+	 * pictures alone.
 	 */
 	readonly subjectChecked?: boolean;
 	/** A cut branch's four density figures on both pictures, where the run measured them. */
@@ -2047,7 +2048,11 @@ export function compareStills(
 			continue;
 		}
 		// A close picture whose subject is missing decides nothing, and no figure is read from it.
-		const voided = voidReason(frame.facts, own);
+		// The parts in flat colours, where the run drew them: the regions of a solved view's contract
+		// are read from that picture, which is cut and layered as the colour picture is.
+		const partsPicture =
+			frame.parts === undefined ? undefined : partsOf(readImage(join(runDir, frame.parts)));
+		const voided = voidReason(frame.facts, own, partsPicture);
 		if (voided !== undefined) {
 			unread({ void: voided }, ['VOID', 'SUBJECT MISSING']);
 			continue;
@@ -2247,7 +2252,10 @@ export function compareStills(
 			...(sheathFigure ? { sheath: sheathFigure } : {}),
 			...(framing ? { framing } : {}),
 			// A solved view whose contract held, or a whole view that passed the framing check.
-			subjectChecked: contractHeld(frame.facts) || framingChecked,
+			subjectChecked:
+				(contractHeld(frame.facts) &&
+					regionsRead(frame.facts, own !== undefined, partsPicture !== undefined)) ||
+				framingChecked,
 			...(pictureNote?.outline !== undefined ? { outlineVoid: pictureNote.outline } : {}),
 			...(pictureNote?.standing !== undefined && pictureNote.reason !== undefined
 				? { standing: { kind: pictureNote.standing, reason: pictureNote.reason } }
