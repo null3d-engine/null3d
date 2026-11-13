@@ -419,6 +419,22 @@ describe('the plant shader', () => {
 		return Number(match[1]);
 	};
 
+	test("draws a silhouette black at the colour picture's cut edge in both plant shaders", () => {
+		// The matte keeps each texel's own coverage, which on a coarse mip of fine leaflets is grey,
+		// a smear to the eye; a silhouette draws black with the colour picture's sharpened edge.
+		const viewFace = readFileSync(new URL('./plant-viewface.wgsl', import.meta.url), 'utf8');
+		for (const source of [wgsl, viewFace]) {
+			expect(source).toMatch(/let parts = material\.matte > 1\.5 && material\.matte < 2\.5;/);
+			expect(source).toMatch(/let silhouette = material\.matte > 2\.5;/);
+			expect(source).toMatch(/let matte = material\.matte > 0\.5 && material\.matte < 1\.5;/);
+			expect(source).toMatch(
+				/s\.baseColor = select\(base, vec3f\(0\.0\), matte \|\| parts \|\| silhouette\);/,
+			);
+			// Only the matte keeps the raw coverage: the alpha's choice names the matte alone.
+			expect(source).toMatch(/s\.alpha = select\([^;]*, matte\);/);
+		}
+	});
+
 	test("draws the review matte's soft coverage only where the colour picture draws", () => {
 		// A card drawn larger than its texels blurs: the colour picture cuts it at the cutoff into
 		// the fragments it shows, and a matte that kept every texel's soft coverage drew the blur as

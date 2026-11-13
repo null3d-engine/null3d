@@ -56,11 +56,14 @@ export interface PlantMaterialOptions {
 	readonly swayDistance?: number;
 	/**
 	 * Draw the plants black, keeping their outline, their leaves' cut-outs and their sway, as a
-	 * review's matte needs for an exact silhouette. `'parts'` draws each part in a flat color of
-	 * its own instead, cut and layered as the color picture is: wood red with its radius in the
-	 * blue channel, foliage green, extras green and blue.
+	 * review's matte needs for an exact silhouette: each texel carries its own partial coverage.
+	 * `'silhouette'` draws them black and cut at the leaf's edge, as the color picture cuts it, for
+	 * a silhouette to look at: a coarse texel that averages fine leaflets with their gaps draws
+	 * solid, not grey. `'parts'` draws each part in a flat color of its own instead, cut and
+	 * layered as the color picture is: wood red with its radius in the blue channel, foliage green,
+	 * extras green and blue.
 	 */
-	readonly matte?: boolean | 'parts';
+	readonly matte?: boolean | 'parts' | 'silhouette';
 }
 
 /** The roles, as the shader's mode uniform names them. */
@@ -134,6 +137,7 @@ export function plantMaterials(
 	const swayDistance = Math.max(0, options?.swayDistance ?? 0);
 	const parts = options?.matte === 'parts';
 	const matte = options?.matte === true;
+	const silhouette = options?.matte === 'silhouette';
 	const optics = foliageOptics(kit.record);
 	const share = optics ? transmissionShare(optics.reflectance, optics.transmittance) : 0;
 	const make = (
@@ -152,7 +156,7 @@ export function plantMaterials(
 			vertexColors: true,
 			roughness: 0.8,
 			metalness: 0,
-			specularIntensity: matte || parts ? 0 : LEAF_SPECULAR,
+			specularIntensity: matte || parts || silhouette ? 0 : LEAF_SPECULAR,
 			doubleSided: leafy,
 			// A matte carries each texel's own coverage, so it blends that coverage over the white
 			// ground. A cut at the leaf's cutoff would turn a partly covered texel whole or clear,
@@ -176,7 +180,7 @@ export function plantMaterials(
 				displacement: 0,
 				season: 0,
 				seasonKind: 0,
-				matte: parts ? 2 : matte ? 1 : 0,
+				matte: silhouette ? 3 : parts ? 2 : matte ? 1 : 0,
 			},
 		});
 		BOUND.set(material, {

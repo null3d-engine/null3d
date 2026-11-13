@@ -1419,9 +1419,12 @@ fn surface(input: SurfaceInput) -> Surface {
 
     // A matte keeps the outline, the cut-outs and the sway, and draws no light. A picture of the
     // parts does the same in each part's own flat colour, and keeps the colour picture's cut edge.
-    let parts = material.matte > 1.5;
-    let matte = material.matte > 0.5 && !parts;
-    s.baseColor = select(base, vec3f(0.0), matte || parts);
+    // A silhouette draws black with the colour picture's cut edge, for the eye: a coarse texel that
+    // averages fine leaflets with their gaps draws solid, where the matte's own coverage is grey.
+    let parts = material.matte > 1.5 && material.matte < 2.5;
+    let silhouette = material.matte > 2.5;
+    let matte = material.matte > 0.5 && material.matte < 1.5;
+    s.baseColor = select(base, vec3f(0.0), matte || parts || silhouette);
     if (parts) {
         s.emissive = part_colour(mode, input.uv1.x * WOOD_RADIUS_SPAN);
     }
@@ -1439,7 +1442,7 @@ fn surface(input: SurfaceInput) -> Surface {
     // does not show, such as a piece hanging in air.
     let drawn = sharpen(alpha, width);
     s.alpha = select(drawn, select(0.0, alpha, drawn > 0.0), matte);
-    s.diffuseTransmission = select(share, 0.0, matte || parts);
-    s.diffuseTransmissionColor = select(through, vec3f(0.0), matte || parts);
+    s.diffuseTransmission = select(share, 0.0, matte || parts || silhouette);
+    s.diffuseTransmissionColor = select(through, vec3f(0.0), matte || parts || silhouette);
     return s;
 }
