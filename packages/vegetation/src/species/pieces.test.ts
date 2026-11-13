@@ -292,15 +292,12 @@ const OPEN_DEPTH: Readonly<Record<string, string>> = {
 	'silver-birch 22':
 		'0.49 against 0.27: a blade bends at its stalk out of its own face, so a blade that faces the camera reaches toward it',
 	'weeping-willow 22': '0.46 against 0.23: the same bend at the stalk, 40 degrees in the record',
-	'hawthorn-shrub 22':
-		'0.61 against 0.39: as deep in metres as the video, but too narrow face on, its spurs short',
 };
 const OPEN_EDGE: Readonly<Record<string, string>> = {
 	'silver-birch 21':
 		'0.20 against 0.49: its strands hang in the planes of their arms, so edge on they stack into a line',
 	'weeping-willow 22': '0.14 against 0.47: three strands in one plane, edge on',
 	'hawthorn-shrub 21': '0.20 against 0.40: its arms and tufts stand in one plane',
-	'hawthorn-shrub 22': '0.16 against 0.30: the same, on a twig too narrow face on',
 };
 
 /** A laid cut's triangles: three corners each, with each corner's leaf texture place. */

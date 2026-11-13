@@ -109,13 +109,34 @@ function fork(stem: PieceStem, at: number, length: number, angle: number, left =
 	};
 }
 
-/** A shoot of the twig: zigzag, with a leaf each 0.13 of the twig's height from a third of its length. */
-function twigShoot(length: number): PieceStem {
+/**
+ * The leaves along a stem of the twig. Still 22 at full size and its turning video: alternate in
+ * two rows in the twig's own plane, 45 to 70 degrees from the stem, each whole to the camera. Edge
+ * on the twig is a thin column: each blade leans and rolls 15 to 25 degrees.
+ *
+ * @param gap Metres between one leaf and the next.
+ * @param from The share of the stem's length below which no leaf stands.
+ */
+function twigRows(gap: number, from: number): PieceLeaves {
+	return {
+		gap,
+		from,
+		phyllotaxis: { kind: 'distichous', flatten: 0.9 },
+		heading: 8,
+		angle: 58,
+		angleSpread: 10,
+		scale: TWIG_LEAF_SCALE,
+		face: { turn: 0, spread: 18, inPlane: true },
+	};
+}
+
+/** A shoot of the twig: zigzag, with a leaf each `gap` metres from a fifth of its length. */
+function twigShoot(length: number, gap: number): PieceStem {
 	return {
 		length: { mean: length, spread: length * 0.08 },
 		radius: [0.0022, 0.001],
 		zigzag: 18,
-		leaves: { ...rows(0.3), gap: 0.055, angle: 70, scale: TWIG_LEAF_SCALE },
+		leaves: twigRows(gap, 0.2),
 	};
 }
 
@@ -184,16 +205,21 @@ export const PIECES: readonly PieceRule[] = [
 		// The turning video of the sub-branch: edge on it is 0.29 as wide as face on.
 		depth: 16,
 		// Still 22 at full size, in shares of the twig's height: a zigzag stem with a shoot to the
-		// right at 0.4 (0.5 long, 50 degrees) and one to the left at 0.6 (0.28 long). Twelve oval
-		// leaves, each 0.17 of the height, one each 0.13 along a shoot, held 60 to 80 degrees out in
-		// the twig's plane. A long slim bud at each of the three ends.
+		// right at 0.4 (0.5 long, 50 degrees) and one to the left at 0.6 (0.28 long). Thirteen
+		// pointed oval leaves, a full one 0.18 to 0.21 of the height: six on the stem, four on the
+		// right shoot and three on the left. A long slim bud at each of the three ends.
 		stem: {
 			length: { mean: 0.38, spread: 0.02 },
 			// Still 22: the twig is 0.02 of its height thick at its cut.
 			radius: [0.0036, 0.0012],
 			zigzag: 18,
-			leaves: { ...rows(0.2), gap: 0.055, angle: 70, scale: TWIG_LEAF_SCALE },
-			sides: [fork(twigShoot(0.21), 0.44, 0.38, 50), fork(twigShoot(0.12), 0.66, 0.38, 50, true)],
+			leaves: twigRows(0.055, 0.15),
+			sides: [
+				// The stem leans away from this shoot where it leaves, so it stands 50 degrees from
+				// the twig's line.
+				fork(twigShoot(0.21, 0.047), 0.44, 0.38, 62),
+				fork(twigShoot(0.12, 0.04), 0.66, 0.38, 50, true),
+			],
 		},
 	},
 ];
