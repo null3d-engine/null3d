@@ -154,6 +154,8 @@ export const HEADER = {
 	scar: 69,
 	/** The scar's charred colour, then the share of it the hollow takes. */
 	scarColour: 70,
+	/** The coarsest mip level a card's sample reads, or 0 where it reads any. */
+	cardLevelMost: 71,
 } as const;
 
 /**
@@ -163,7 +165,7 @@ export const HEADER = {
 export const BARK_ZONE_TEXELS = 4;
 
 /** The header's texels that hold anything. */
-export const HEADER_TEXELS = HEADER.scarColour + 1;
+export const HEADER_TEXELS = HEADER.cardLevelMost + 1;
 
 /** An extra's roughness where its record names none. */
 export const EXTRA_ROUGHNESS = 0.6;
@@ -288,12 +290,15 @@ function zoneTexels(zone: BarkZone): readonly number[] {
  * @param record The species record.
  * @param manifest The texture manifest.
  * @param box The species box.
+ * @param cardLevelMost The coarsest mip level a card's sample reads, from the kit's cells; 0 reads
+ *   any.
  * @returns The header, `HEADER_ROWS` rows of `RECORDS_WIDTH` texels.
  */
 export function speciesHeader(
 	record: Species,
 	manifest: TextureManifest,
 	box: SpeciesBox,
+	cardLevelMost = 0,
 ): Float32Array {
 	const header = new Float32Array(HEADER_ROWS * RECORDS_WIDTH * 4);
 	const optics = foliageOptics(record);
@@ -423,6 +428,7 @@ export function speciesHeader(
 		scar ? [scar.from, scar.to, radians(scar.angle), radians(scar.width) * 0.5] : [0, 0, 0, 0],
 	);
 	texel(header, HEADER.scarColour, scar ? [...scar.colour, scar.shade ?? 0.9] : [0, 0, 0, 0]);
+	texel(header, HEADER.cardLevelMost, [cardLevelMost, 0, 0, 0]);
 	return header;
 }
 

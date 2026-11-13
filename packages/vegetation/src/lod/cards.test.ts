@@ -18,6 +18,7 @@ import {
 	bakeCell,
 	CARD_CUT_FALL_MOST,
 	CARD_CUT_LEAST,
+	cardLevelMost,
 	type Palette,
 	paletteOf,
 } from './card-bake';
@@ -467,6 +468,28 @@ function ribbon(path: readonly (readonly [number, number])[], width: number): Pr
 		indices: Uint16Array.from(indices),
 	};
 }
+
+describe('the coarsest mip level a card reads', () => {
+	// Cells of a whole and a half side, each drawn inside a border of two texels.
+	const cell = (side: number) =>
+		({
+			planes: [
+				{ front: [2, 2, side - 4, side - 4] },
+				{ front: [side + 2, 2, side / 2 - 4, side / 2 - 4] },
+			],
+		}) as unknown as SpeciesKitData['prototypes'][number]['card'];
+	it('is the deepest where the smallest leaf cell still holds four texels a side', () => {
+		expect(cardLevelMost([{ leaves: 4, card: cell(128) }])).toBe(4);
+		expect(cardLevelMost([{ leaves: 4, card: cell(64) }])).toBe(3);
+		expect(cardLevelMost([{ leaves: 4, card: cell(32) }])).toBe(2);
+	});
+	it('leaves out the cells of bare wood and of cuttings, and holds nothing without leaves', () => {
+		const leafy = { leaves: 4, card: cell(128) };
+		expect(cardLevelMost([leafy, { leaves: 0, card: cell(16) }])).toBe(4);
+		expect(cardLevelMost([leafy, { leaves: 4, cutting: true, card: cell(16) }])).toBe(4);
+		expect(cardLevelMost([{ leaves: 0, card: cell(64) }])).toBe(0);
+	});
+});
 
 describe('the card bake along a long piece', () => {
 	const record = oakRecord();
