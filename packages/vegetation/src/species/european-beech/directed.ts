@@ -34,10 +34,10 @@ function boughs(ends: readonly FrameBend[]): FrameBranchRule {
 		from: 'parent',
 		angleSpread: 6,
 		// Still 01: the tiers' ends are the outline's scallops.
-		length: { outline: 0.93 },
+		length: { outline: 0.95 },
 		vary: 0.05,
 		least: 0.08,
-		most: 0.42,
+		most: 0.48,
 		radius: 0.5,
 		taper: 0.3,
 		bends: [{ from: 0.1, to: 0.55, level: 2 }, ...ends],
@@ -152,8 +152,8 @@ export const frame: FrameSpec = {
 						from: 0.12,
 						to: 0.7,
 						level: [
-							[0, 3],
-							[0.34, 6],
+							[0, -4],
+							[0.34, 2],
 							[0.66, 22],
 							[1, 26],
 						],
@@ -162,7 +162,9 @@ export const frame: FrameSpec = {
 						from: 0.75,
 						to: 1,
 						by: [
-							[0, 20],
+							[0, 30],
+							[0.34, 24],
+							[0.66, 6],
 							[1, 4],
 						],
 					},
@@ -171,7 +173,7 @@ export const frame: FrameSpec = {
 				elbows: 5,
 				patch: tier(0.24),
 				// Still 01: the low boughs' ends hang to a skirt close to the grass.
-				children: [boughs([{ from: 0.55, to: 1, by: 30 }])],
+				children: [boughs([{ from: 0.5, to: 1, by: 48 }])],
 			},
 			{
 				name: 'upper',

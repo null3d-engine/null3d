@@ -475,9 +475,12 @@ interface Built {
  * @category api/vegetation
  */
 export function outlineRadius(spec: FrameSpec, scale: number, y: number, azimuth: number): number {
-	// Above the outline's last stated height there is no crown.
-	const last = typeof spec.outline === 'number' ? undefined : spec.outline[spec.outline.length - 1];
-	if (last && y / scale > last[0]) return 0;
+	// Above the outline's last stated height and below its first there is no crown.
+	if (typeof spec.outline !== 'number') {
+		const first = spec.outline[0];
+		const last = spec.outline[spec.outline.length - 1];
+		if ((last && y / scale > last[0]) || (first && y / scale < first[0])) return 0;
+	}
 	const wide = curveAt(spec.outline, y / scale) * scale;
 	const off = azimuth - radians(spec.plan.turn);
 	const narrow = clamp(spec.plan.narrow, 0.5, 1);

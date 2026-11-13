@@ -42,18 +42,18 @@ const branches: FrameBranchRule = {
 		{
 			name: 'spray',
 			role: 'branch',
-			count: 2,
+			count: 3,
 			along: [1, 1],
 			around: 'ring',
 			jitter: 30,
-			angle: 35,
+			angle: 38,
 			from: 'parent',
 			angleSpread: 8,
 			// A mass's sprays stand a little outside the wood's end.
-			length: { outline: 0.86 },
+			length: { outline: 0.9 },
 			vary: 0.08,
 			least: 0.06,
-			most: 0.26,
+			most: 0.32,
 			radius: 0.6,
 			taper: 0.3,
 			// Still 01: the sprays droop.

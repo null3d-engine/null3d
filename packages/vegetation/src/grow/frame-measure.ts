@@ -1,8 +1,15 @@
 // Measures of a directed frame, for its tests and its previews: how sharply its axes turn, how long
-// they run straight, how evenly they thin, how round the crown's plan is, how evenly a set of axes
-// stands round the plant, and whether every axis joins its parent and ends in foliage.
+// they run straight, how evenly they thin, how round the crown's plan is, how the crown fills the
+// outline its species states, how evenly a set of axes stands round the plant, and whether every
+// axis joins its parent and ends in foliage.
 import { acos, atan2, cos, PI, radians, sin } from '../core/math';
-import type { FrameAxis, FrameNode, FramePlan } from './frame';
+import {
+	type FrameAxis,
+	type FrameNode,
+	type FramePlan,
+	type FrameSpec,
+	outlineRadius,
+} from './frame';
 
 /** The degrees a run of an axis may stray from its first piece and still count as straight. */
 const STRAIGHT_WITHIN = 1;
@@ -272,4 +279,91 @@ export function bareEnds(plan: FramePlan): number[] {
 		if (!clothed) out.push(index);
 	});
 	return out;
+}
+
+/** One band of a crown seen from one side. */
+export interface CrownBand {
+	/** The band's middle height as a share of the plant's height. */
+	readonly height: number;
+	/** The foliage patches' reach to one side of the trunk's line in the band, in metres. */
+	readonly built: number;
+	/** The species' outline at the band's height toward that side, in metres. */
+	readonly stated: number;
+}
+
+/**
+ * A frame's crown seen from several sides, band by band: how far the foliage patches reach to each
+ * side of the trunk's line against the outline the species states. A view from one side reads two
+ * reaches, one to its left and one to its right.
+ *
+ * @param plan The frame.
+ * @param spec The species' frame, whose outline the reaches are held against.
+ * @param sides The directions round the plant that the reaches are read toward.
+ * @param bands The bands between the ground and the plant's stated height.
+ * @returns The bands of each direction, from the lowest.
+ * @category api/vegetation
+ */
+export function crownBands(plan: FramePlan, spec: FrameSpec, sides = 8, bands = 16): CrownBand[][] {
+	const out: CrownBand[][] = [];
+	for (let side = 0; side < sides; side++) {
+		const angle = (side * 2 * PI) / sides;
+		const c = cos(angle);
+		const s = sin(angle);
+		const row: CrownBand[] = [];
+		for (let band = 0; band < bands; band++) {
+			const low = (band / bands) * plan.scale;
+			const high = ((band + 1) / bands) * plan.scale;
+			let built = 0;
+			for (const patch of plan.patches) {
+				if (patch.centre[1] + patch.depth / 2 < low || patch.centre[1] - patch.depth / 2 > high)
+					continue;
+				built = Math.max(built, patch.centre[0] * c + patch.centre[2] * s + patch.width / 2);
+			}
+			row.push({
+				height: (band + 0.5) / bands,
+				built,
+				stated: outlineRadius(spec, plan.scale, (low + high) / 2, angle),
+			});
+		}
+		out.push(row);
+	}
+	return out;
+}
+
+/**
+ * How a frame's crown fills its stated outline: over the bands where the outline is at least half
+ * its widest, the built reach over the stated one, as the mean over every side and band, and the
+ * least and the most of the sides' own means.
+ *
+ * @param plan The frame.
+ * @param spec The species' frame.
+ * @returns The three shares.
+ * @category api/vegetation
+ */
+export function crownFill(
+	plan: FramePlan,
+	spec: FrameSpec,
+): { readonly mean: number; readonly least: number; readonly most: number } {
+	const rows = crownBands(plan, spec);
+	let widest = 0;
+	for (const row of rows) for (const band of row) widest = Math.max(widest, band.stated);
+	let all = 0;
+	let count = 0;
+	let least = Number.POSITIVE_INFINITY;
+	let most = 0;
+	for (const row of rows) {
+		let sum = 0;
+		let n = 0;
+		for (const band of row) {
+			if (band.stated < widest / 2) continue;
+			sum += band.built / band.stated;
+			n++;
+		}
+		if (n === 0) continue;
+		all += sum;
+		count += n;
+		least = Math.min(least, sum / n);
+		most = Math.max(most, sum / n);
+	}
+	return { mean: count > 0 ? all / count : 0, least: count > 0 ? least : 0, most };
 }

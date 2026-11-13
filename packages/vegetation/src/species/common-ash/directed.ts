@@ -22,21 +22,23 @@ const branches: FrameBranchRule = {
 	role: 'branch',
 	// Still 01: the low sweeping branches leave the limbs at 0.40 to 0.48 of the height, a fifth of
 	// the way along a limb.
-	count: { every: 0.07, least: 2, most: 6 },
+	count: { every: 0.07, least: 3, most: 6 },
 	along: [0.2, 0.88],
 	stagger: 0.2,
-	around: 'opposite',
-	jitter: 12,
+	// The first of a limb's branches leaves its ground side, which on a steep limb is level and
+	// outward, and the next two leave its flanks; the three stand so again up the limb.
+	around: [180, 80, 280],
+	jitter: 14,
 	angle: [
 		[0, 55],
 		[1, 42],
 	],
 	from: 'parent',
 	angleSpread: 6,
-	length: { outline: 0.88 },
+	length: { outline: 0.93 },
 	vary: 0.06,
 	least: 0.08,
-	most: 0.45,
+	most: 0.5,
 	radius: 0.45,
 	taper: 0.3,
 	bends: [
