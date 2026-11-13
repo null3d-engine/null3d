@@ -117,13 +117,12 @@ the file keeps them apart:
   the video is measured at its own angle, and each figure has its range round the plant.
 - **The secondary views** are the other whole views numbered up to `18`. They show other
   individuals of the same habit, and match the primary one in form and proportions only.
-- **The spread** lists each figure in the primary still, round the turn and in each secondary view,
-  with the largest distance of a secondary view from the primary still. It also says when the
-  primary still stands outside its own video's range, which means one of the two outlines is at
-  fault.
+- **The spread** lists each figure in the primary still, round the turn and in each secondary view.
+  It gives the largest distance of a secondary view from the primary still. It also says when the
+  primary still stands outside its own video's range. One of the two outlines is then at fault.
 - A picture that the species' slot file names as having no separable outline is not measured.
-- A frame whose plant stands more than 15 per cent taller or shorter than the turn's middle height
-  has lost its foot or its top, and is left out.
+- A frame can lose the plant's foot or its top. Its plant then stands more than 15 per cent taller
+  or shorter than the turn's middle height, and the frame is left out.
 - Whole views numbered above `18` show other forms, ages and seasons. They are listed apart and join
   no spread.
 
@@ -137,13 +136,13 @@ the file keeps them apart:
 | Lumps on the crown's edge | Rays from the crown's base find the edge. A notch is where the edge falls inside the crown's convex hull by 0.04 of the crown's size, the square root of the hull's area. The lumps are the stretches between notches | Only the lumps on the outline show. A lump in front of the crown or behind it is not counted |
 | Sky inside the crown | The review's enclosed gap and crown-box gap, the holes that plant closes on every side, and the gap in each cell of a three by three grid over the crown's box | Sky counts only where it matches the fitted sky's color |
 | Limbs at the first fork | Arcs at 1.5, 2 and 2.5 stem widths round the fork each cross the limbs. A count stands when no arc meets foliage and all three agree | Foliage covers the fork in most pictures, so the figure is usually null |
-| Cut-branch figures | The piece's pixels that are not leaf green are its wood. The wood is thinned to lines, and the lines give the tips, the wood for each tip, the tips for each area, the share of joints where four or more twigs leave one point, and the kinks for each length | Grey, blue or yellow foliage cannot be parted from the wood by color. Wood behind a leaf is not seen, and two twigs that cross read as one joint |
+| Cut-branch figures | The piece's pixels that are not leaf green are its wood. The wood is thinned to lines, and the lines give the tips, the wood for each tip, the tips for each area, the share of joints where four or more twigs leave one point, and the kinks for each length | Gray, blue or yellow foliage cannot be parted from the wood by color. Wood behind a leaf is not seen, and two twigs that cross read as one joint |
 
 Lengths are shares of the plant's height, and a piece's lengths are in piece lengths, the longer
 side of the piece's box. Every picture is measured at the review's work width.
 
 A figure that a picture cannot give is `null`. Its reason stands in the `missing` list beside it,
 and the file's `nulls` list repeats every reason with its path. The `stated` section holds what the
-species' `FACTS.md` states: the height, the spread, the crown and clear trunk shares, the leaf size,
-the leaf arrangement and the habit words. Those are stated, never measured, and a measured figure is
+species' `FACTS.md` states. That is the height, the spread, the crown and clear trunk shares, the
+leaf size, the leaf arrangement and the habit words. Those are stated, never measured, and a measured figure is
 never filled from them. Only breast height uses a stated figure, to place 1.3 m on the picture.
