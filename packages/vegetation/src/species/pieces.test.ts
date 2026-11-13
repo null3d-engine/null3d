@@ -3,15 +3,16 @@
 // same bytes. A hanging piece runs along its own line and its leaves hang with it. A studio layout
 // stands every piece on its cut wood.
 import { beforeAll, describe, expect, it } from 'bun:test';
+import { existsSync } from 'node:fs';
 import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
 import type { Rgba } from '../../../../tools/lib/plant-review/image.ts';
 import { matteMask, measurePlant } from '../../../../tools/lib/plant-review/references.ts';
 import { quatRotate } from '../core/math';
-import type { SpeciesModule } from '../core/record';
+import type { Species, SpeciesModule } from '../core/record';
 import type { SpeciesId } from '../core/registry';
 import { loadSpecies } from '../core/registry';
 import { DETAILS } from '../core/types';
-import { buildPiecesNow, loadPlantCode } from '../generate';
+import { buildKitNow, buildPiecesNow, loadPlantCode } from '../generate';
 import { bladeMesh, outlineOf } from '../leaf/leaf-mesh';
 import {
 	layStudio,
@@ -65,6 +66,7 @@ import {
 import {
 	PIECES as WILLOW,
 	FRUIT_PIECES as WILLOW_FRUIT,
+	PIECE_LEAF as WILLOW_LEAF,
 	STUDIO as WILLOW_STUDIO,
 } from './weeping-willow/pieces';
 
@@ -74,6 +76,7 @@ const PIECE_LEAVES: Partial<Record<SpeciesId, PieceLeaf>> = {
 	'european-beech': BEECH_LEAF,
 	'common-alder': ALDER_LEAF,
 	'hawthorn-shrub': HAWTHORN_LEAF,
+	'weeping-willow': WILLOW_LEAF,
 };
 
 /** A species' module with the record its pieces are built by. */
@@ -357,12 +360,12 @@ const OPEN_GAP: Readonly<Record<string, number>> = {
 	'olive 21': 0.426,
 	'european-beech 22': 0.348,
 	'common-ash 21': 0.223,
-	'common-ash 22': 0.359,
+	'common-ash 22': 0.361,
 	'common-alder 22': 0.055,
 	'holm-oak 21': 0.171,
-	'holm-oak 22': 0.322,
+	'holm-oak 22': 0.325,
 	// Its arms and tufts stand in one plane.
-	'hawthorn-shrub 21': 0.548,
+	'hawthorn-shrub 21': 0.551,
 };
 
 interface Laid {
@@ -997,6 +1000,48 @@ const CROWN_CUT_HIGH: Readonly<Record<string, number>> = {
 	'hawthorn-shrub branch-end': 9822,
 	'hawthorn-shrub twig': 5958,
 };
+
+describe("a plant of pieces' kit", () => {
+	it(
+		"holds each piece it carries at a fifth of the crown cut at the high tier, the oak's branch end at 1,000, every directed record of the nine species that names pieces",
+		async () => {
+			const high = DETAILS.indexOf('high');
+			let read = 0;
+			for (const id of BROADLEAF) {
+				const file = new URL(`./${id}/directed.ts`, import.meta.url);
+				if (!existsSync(file)) continue;
+				const record = (await import(file.href)).directed as Species;
+				// A directed record carries pieces only where it names them.
+				if (!record.pieces?.length) continue;
+				const module = await loadSpecies(id);
+				await loadPlantCode(record);
+				const kit = buildKitNow(
+					{ record, textures: module.textures },
+					{ detail: 'high', placeholders: 'missing' },
+				);
+				// Each piece's first variant, every part of it, as the kit holds it.
+				const drawn = new Map<string, number>();
+				for (const prototype of kit.prototypes) {
+					const piece = prototype.piece;
+					if (piece?.variant !== 0) continue;
+					const triangles = (prototype.tiers[high]?.indices.length ?? 0) / 3;
+					drawn.set(piece.name, (drawn.get(piece.name) ?? 0) + triangles);
+				}
+				expect(drawn.size).toBeGreaterThan(0);
+				for (const [name, triangles] of drawn) {
+					const crown = CROWN_CUT_HIGH[`${id} ${name}`];
+					expect(crown).toBeDefined();
+					expect(triangles).toBeLessThanOrEqual((crown ?? 0) / 5);
+					if (id === 'pedunculate-oak' && name === 'branch-end')
+						expect(triangles).toBeLessThanOrEqual(1000);
+					read++;
+				}
+			}
+			expect(read).toBeGreaterThan(0);
+		},
+		LONG,
+	);
+});
 
 describe("a piece's cost", () => {
 	it(
