@@ -1898,6 +1898,12 @@ export interface LeafShape {
 	readonly length: Spread;
 	/** The texture's measured contour, or a parametric outline where no texture leaf exists. */
 	readonly outline: 'texture' | ParametricOutline;
+	/**
+	 * The blade's width over its outline's, 1 where absent. Below 1 the mesh narrows across the
+	 * midrib and the texture narrows with it, for a species whose leaves are slimmer than its
+	 * texture leaf.
+	 */
+	readonly breadth?: number;
 	/** The leaf stalk. */
 	readonly petiole: {
 		/** Metres long. */

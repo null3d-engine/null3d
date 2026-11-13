@@ -1,7 +1,13 @@
 // The silver birch's pieces: the hanging strands its branches carry. Each value names the reference
 // picture it was measured on. The cut branch of still 21 is a metre tall, which makes its leaf blade
 // five centimetres, the record's own leaf.
-import type { PieceRule, PieceStem, PieceStudio } from '../../leaf/piece';
+import {
+	oneMark,
+	type PieceRule,
+	type PieceStem,
+	type PieceStudio,
+	withMarks,
+} from '../../leaf/piece';
 
 /**
  * One hanging strand of a stated length. Stills 09 and 19: a strand leaves the upper side or the
@@ -26,9 +32,11 @@ function strand(length: number, spread: number, hook: PieceStem['hook'], foot = 
 			angle: 55,
 			angleSpread: 15,
 			hang: 0.55,
-			// The sub-branch's turning video: edge on the twig is 0.27 as wide as face on.
-			flat: 0.7,
-			face: { turn: 0, spread: 30, inPlane: true },
+			// The sub-branch's turning video: edge on the twig is 0.27 as wide as face on, and about
+			// a third of its blades still show their faces: the midribs lie near the twig's plane and
+			// the blades are rolled through a wide range about them.
+			flat: 0.8,
+			face: { turn: 0, spread: 40, inPlane: true },
 		},
 		sides: [
 			{
@@ -40,9 +48,8 @@ function strand(length: number, spread: number, hook: PieceStem['hook'], foot = 
 						angle: 55,
 						angleSpread: 15,
 						hang: 0.55,
-						// The sub-branch's turning video: edge on the twig is 0.27 as wide as face on.
-						flat: 0.7,
-						face: { turn: 0, spread: 30, inPlane: true },
+						flat: 0.8,
+						face: { turn: 0, spread: 40, inPlane: true },
 					},
 				},
 				gap: 0.14,
@@ -62,29 +69,78 @@ const SIDE_HOOK = { angle: 105, length: 0.045 } as const;
 export const PIECES: readonly PieceRule[] = [
 	// Still 09: the strands along a side branch are five to seven and a half leaf lengths long,
 	// 25 to 38 centimetres.
-	{ name: 'strand-short', attitude: 'plumb', variants: 3, stem: strand(0.31, 0.07, SIDE_HOOK) },
+	{
+		name: 'strand-short',
+		attitude: 'plumb',
+		leafDroop: 'plane',
+		variants: 3,
+		stem: strand(0.31, 0.07, SIDE_HOOK),
+	},
 	// Still 21: the strands of a cut branch hang 30 to 72 centimetres.
-	{ name: 'strand', attitude: 'plumb', variants: 2, stem: strand(0.5, 0.1, SIDE_HOOK) },
+	{
+		name: 'strand',
+		attitude: 'plumb',
+		leafDroop: 'plane',
+		variants: 2,
+		stem: strand(0.5, 0.1, SIDE_HOOK),
+	},
 	// Still 19: a limb end's strands reach a metre.
-	{ name: 'strand-long', attitude: 'plumb', variants: 2, stem: strand(0.95, 0.08, SIDE_HOOK) },
-	// Still 22: a twig of 35 centimetres with twelve leaves. It rises for 20 centimetres from its
-	// branch, arches through about 150 degrees within 13 and ends pointing down.
+	{
+		name: 'strand-long',
+		attitude: 'plumb',
+		leafDroop: 'plane',
+		variants: 2,
+		stem: strand(0.95, 0.08, SIDE_HOOK),
+	},
+	// Still 22, read at full size: a leaf is 0.13 of the twig's height, so the record's leaf of five
+	// centimetres makes the twig 0.385 metres tall. It rises for 0.75 of that height, arches through
+	// about 150 degrees over 0.58 and ends pointing down: 0.56 metres of twig with fourteen to
+	// fifteen leaves.
 	{
 		name: 'strand-arch-short',
 		attitude: 'plumb',
+		leafDroop: 'plane',
 		variants: 2,
 		// Still 22: the twig is 0.016 of its height thick at its cut (11 to 13 of 712 pixels).
-		stem: strand(0.35, 0.04, { angle: 165, rise: 0.2, length: 0.13 }, 0.0019),
+		stem: strand(0.56, 0.04, { angle: 165, rise: 0.29, length: 0.22 }, 0.003),
 	},
 	// Still 21: the arms of a cut branch rise, arch over and hang 30 to 72 centimetres. A branch's own
 	// end is this piece.
 	{
 		name: 'strand-arch',
 		attitude: 'plumb',
+		leafDroop: 'plane',
 		variants: 3,
 		stem: strand(0.62, 0.2, { angle: 150, rise: 0.03, length: 0.12 }, 0.002),
 	},
 ];
+
+/**
+ * The pieces in catkin. Still 35: two to four slim catkins hang plumb from a twig's end, each four
+ * to five centimetres long, a leaf's length, and six to seven times as long as thick. About half
+ * of the strands carry them.
+ */
+export const FRUIT_PIECES: readonly PieceRule[] = PIECES.map((rule) =>
+	withMarks(rule, (stem, order) =>
+		order === 0
+			? [
+					oneMark(
+						{
+							kind: 'body',
+							share: 0.5,
+							length: { mean: 0.045, spread: 0.006 },
+							width: 0.007,
+							stalk: 0.005,
+							count: { mean: 2.5, spread: 1 },
+						},
+						stem.length,
+						0.9,
+						1,
+					),
+				]
+			: undefined,
+	),
+);
 
 /** The studio photographs of the birch's cut wood, each laid out from the pieces. */
 export const STUDIO: readonly PieceStudio[] = [
@@ -99,7 +155,7 @@ export const STUDIO: readonly PieceStudio[] = [
 		still: 21,
 		piece: 'strand-arch',
 		// The cut branch's turning video: edge on it is 0.21 as wide as face on.
-		depth: 12,
+		depth: 8,
 		stand: {
 			stem: {
 				length: 0.36,

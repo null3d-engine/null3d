@@ -5,7 +5,15 @@
 // The leaf is the ruler. On still 21 at full size a full leaf is 90 to 110 pixels of a branch 705
 // pixels tall, 0.14 of it, and the record's leaf is 12 centimetres, so the branch is 0.86 metres
 // tall. A piece's rule states its lengths as shares of the piece's height, and names that size.
-import type { PieceLeaves, PieceRule, PieceStem, PieceStudio } from '../../leaf/piece';
+import {
+	oneMark,
+	type PieceLeaves,
+	type PieceMark,
+	type PieceRule,
+	type PieceStem,
+	type PieceStudio,
+	withMarks,
+} from '../../leaf/piece';
 
 /** A leaf's length over the record's, with the branch's height as the unit: 0.14 over 0.12. */
 const LEAF_SCALE = 1.17;
@@ -162,8 +170,104 @@ export const PIECES: readonly PieceRule[] = [
 	},
 ];
 
+/**
+ * The pieces in acorn. Still 19: two or three acorns hang at the end of one thin stalk about one
+ * and a half times an acorn's length. An acorn is 1.6 times as long as wide; against the leaf's
+ * lobes it is 2.5 to 3 centimetres long. Under half of the leafy shoots carry a stalk.
+ */
+export const FRUIT_PIECES: readonly PieceRule[] = PIECES.map((rule) =>
+	withMarks(rule, (stem, order) =>
+		order > 0 && stem.leaves
+			? [
+					oneMark(
+						{
+							kind: 'body',
+							share: 0.4,
+							length: { mean: 0.028, spread: 0.003 },
+							width: 0.017,
+							stalk: 0.045,
+							count: { mean: 2.3, spread: 0.7 },
+						},
+						stem.length,
+						0.6,
+						0.95,
+					),
+				]
+			: undefined,
+	),
+);
+
 /** The studio photographs of the oak's cut wood, each one piece standing on its cut. */
 export const STUDIO: readonly PieceStudio[] = [
 	{ still: 21, piece: 'branch-end' },
 	{ still: 22, piece: 'twig' },
+];
+
+/**
+ * The side buds of a leafless twig. The winter oak's stills 21 and 22: one pointed bud stands at
+ * each node, half the length of a tip bud, 30 to 50 degrees from the twig.
+ */
+const SIDE_BUDS: PieceMark = {
+	kind: 'thorn',
+	gap: 0.03,
+	from: 0.15,
+	to: 0.9,
+	share: 0.8,
+	length: { mean: 0.0065, spread: 0.0015 },
+	width: 0.0045,
+	angle: 40,
+};
+
+/** A stout kinked shoot of a winter cutting, which ends in the species' bud cluster. */
+function winterShoot(length: number, foot: number): PieceStem {
+	return {
+		length: { mean: length, spread: 0 },
+		radius: [foot, 0.0032],
+		kink: { length: 0.04, angle: 12 },
+		marks: [SIDE_BUDS],
+	};
+}
+
+/**
+ * The winter oak's photographs, each drawn as its own wood at its own size. A tip bud is the ruler:
+ * the record's 1.2 centimetres. On still 22 a tip bud is 0.055 of the cutting's height, so the
+ * cutting is 0.22 metres tall; on still 21 it is 0.037, so that cutting is 0.32 metres. Both are
+ * the outer end of a twig, a third of the length of the pieces in leaf.
+ */
+export const BARE_STUDIO: readonly PieceStudio[] = [
+	// Still 21, in shares of its height: a kinked stem 0.035 thick at its cut, with a shoot to the
+	// right at 0.28 (0.42 long, 60 degrees), one to the left at 0.48 (0.33 long, 65 degrees) and one
+	// to the right at 0.52 (0.42 long, 45 degrees). Each of the four ends carries a cluster of four
+	// to six buds, 0.06 to 0.07 across.
+	{
+		still: 21,
+		stand: {
+			stem: {
+				...winterShoot(0.33, 0.0056),
+				sides: [
+					fork(winterShoot(0.135, 0.004), 0.28, 0.33, 60),
+					fork(winterShoot(0.105, 0.004), 0.48, 0.33, 65, true),
+					fork(winterShoot(0.135, 0.004), 0.54, 0.33, 45),
+				],
+			},
+		},
+	},
+	// Still 22, in shares of its height: a stout kinked stem 0.055 thick at its cut, with a shoot to
+	// the right at 0.22 (0.25 long, 55 degrees), one to the left at 0.45 (0.2 long, 60 degrees) and
+	// one to the right at 0.62 (0.24 long, 45 degrees). Each of the four ends carries three or four
+	// buds in view, a cluster 0.09 to 0.1 across.
+	{
+		still: 22,
+		stand: {
+			stem: {
+				...winterShoot(0.225, 0.006),
+				radius: [0.006, 0.0038],
+				sides: [
+					fork(winterShoot(0.055, 0.0045), 0.22, 0.225, 55),
+					fork(winterShoot(0.044, 0.0045), 0.45, 0.225, 60, true),
+					fork(winterShoot(0.053, 0.0045), 0.62, 0.225, 45),
+				],
+			},
+		},
+	},
 ];
