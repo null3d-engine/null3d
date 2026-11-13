@@ -92,7 +92,7 @@ import {
 	subjectsOfSkeleton,
 } from '../lib/plant-review/subjects';
 import { BACKGROUND_COLOURS, type PlantView, VIEW_SPECS } from '../lib/plant-review/views';
-import { liftedToGround, wholeStand } from '../lib/plant-review/whole-stand';
+import { groundCrossings, liftedToGround, wholeStand } from '../lib/plant-review/whole-stand';
 
 const QUERY = readPlantReviewQuery(new URL(import.meta.url).searchParams);
 const VIEW: PlantView = QUERY.view ?? 'whole';
@@ -841,7 +841,12 @@ export default defineSketch(async (ctx) => {
 		const parts = own.length > 0 ? own : (main.levels[0]?.parts ?? []);
 		const near = parts === main.levels[0]?.parts;
 		const lists = [
-			...parts.map((part) => partPositions(part, mainKit.box)),
+			// A surface that passes through the ground is drawn down to where it meets it, which can
+			// lie between its vertices, so those meetings count beside them.
+			...parts.flatMap((part) => {
+				const positions = partPositions(part, mainKit.box);
+				return [positions, groundCrossings(positions, part.arrays.indices, foot[1])];
+			}),
 			// A leaf that dips through the ground is drawn down to it, so its points count there.
 			...(near ? [liftedToGround(shootPositions(main, mainKit), foot[1])] : []),
 		].filter((list) => list.length > 0);
