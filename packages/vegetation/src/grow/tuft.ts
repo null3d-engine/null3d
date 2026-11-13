@@ -37,7 +37,7 @@ import {
 } from '../core/arch';
 import { AXIS_LIMB, AXIS_ROOT, type MacroSkeleton, SkeletonBuilder } from '../core/graph';
 import { unitAt } from '../core/hash';
-import { cos, PI, radians, sin, type Vector3 } from '../core/math';
+import { cos, PI, pow, radians, sin, type Vector3 } from '../core/math';
 import type { GrassBlade, Species, Tuft, TuftPanicle, TuftPose, TuftSpikes } from '../core/record';
 import type { TextureManifest } from '../core/textures';
 import { DETAILS, type Detail, spreadAt, spreadMean } from '../core/types';
@@ -679,7 +679,7 @@ function spindle(share: number): number {
 	if (share <= SPINDLE_WIDEST)
 		return SPINDLE_FOOT + (1 - SPINDLE_FOOT) * sin((PI / 2) * (share / SPINDLE_WIDEST));
 	const up = (share - SPINDLE_WIDEST) / (1 - SPINDLE_WIDEST);
-	return 1 - (1 - SPINDLE_TOP) * up ** 1.6;
+	return 1 - (1 - SPINDLE_TOP) * pow(up, 1.6);
 }
 
 /** A straight path between two points, for a stalk, a thread, a spike or a spikelet. */

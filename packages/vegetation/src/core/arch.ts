@@ -20,7 +20,7 @@
 // tip ends below that, and how far out the tip reaches. `archFromFigures` finds the turn that
 // stands nearest to them and says how far it misses.
 
-import { cos, exp, log, radians, sin } from './math';
+import { cos, exp, length3, log, radians, sin } from './math';
 
 /**
  * A bent part's centre line, in the vertical plane it grows in.
@@ -476,8 +476,8 @@ function turnAt3(path: ChainPath3, i: number): number {
 	const p = path.points;
 	const a = [0, 1, 2].map((k) => (p[i * 3 + k] as number) - (p[(i - 1) * 3 + k] as number));
 	const b = [0, 1, 2].map((k) => (p[(i + 1) * 3 + k] as number) - (p[i * 3 + k] as number));
-	const la = Math.hypot(a[0] as number, a[1] as number, a[2] as number);
-	const lb = Math.hypot(b[0] as number, b[1] as number, b[2] as number);
+	const la = length3(a[0] as number, a[1] as number, a[2] as number);
+	const lb = length3(b[0] as number, b[1] as number, b[2] as number);
 	if (la === 0 || lb === 0) return 1;
 	return (
 		((a[0] as number) * (b[0] as number) +
