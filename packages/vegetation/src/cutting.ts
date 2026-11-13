@@ -633,7 +633,8 @@ export function cutBranch(
 	// The turn that stands the piece upright: the cut-to-mean line onto +Y, or the cut-to-tip line
 	// of a piece that keeps a span.
 	let q = [0, 0, 0, 1];
-	if (cutting.orient !== 'as-grown') {
+	const stands = plantHint(record, cutting.part)?.stands ?? cutting.orient;
+	if (stands !== 'as-grown') {
 		const mean: Vector3 = [0, 0, 0];
 		let count = 0;
 		if (spanned) {

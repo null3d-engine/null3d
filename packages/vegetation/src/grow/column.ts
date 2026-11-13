@@ -68,8 +68,11 @@ const NEST_INSET = 0.012;
 const SITE_INSET = 0.008;
 /** The share of its own radius that an arm's first ring stands outside the stem's skin. */
 const ARM_START = 0.6;
-/** The tightest an elbow turns at its centre line, in arm radii: its inner side keeps some room. */
-const TIGHTEST_ELBOW = 1.15;
+/**
+ * The tightest an elbow turns at its centre line, in arm widths: a bend tighter than the arm's own
+ * width reads as a square corner.
+ */
+const LEAST_ELBOW = 1;
 /** How far through its bend an arm is stoutest, as a share of the bend. */
 const SWELL_AT = 0.4;
 /** The shortest upright part an arm keeps above its elbow, in metres. */
@@ -284,12 +287,16 @@ function armArch(
 	baseY: number,
 ): { readonly arch: Arch; readonly bendEnd: number; readonly domeHeight: number } {
 	const [radius, tipRadius] = plan.tier.radius;
-	const leave = radians(growth.arms.leave);
-	const across = 1 - sin(leave);
-	const elbow = Math.max(
-		TIGHTEST_ELBOW * radius,
-		Math.min(growth.arms.elbow * 2 * radius, room / across),
-	);
+	const least = LEAST_ELBOW * 2 * radius;
+	let leave = radians(growth.arms.leave);
+	let across = 1 - sin(leave);
+	// An arm close beside the stem has no room to turn from the record's angle on an elbow of its
+	// own width, so it leaves rising, at the angle that turns it on that elbow within its reach.
+	if (room < least * across) {
+		leave = Math.asin(Math.min(1, Math.max(-1, 1 - room / least)));
+		across = 1 - sin(leave);
+	}
+	const elbow = Math.max(least, Math.min(growth.arms.elbow * 2 * radius, room / across));
 	const run = Math.max(0, room - elbow * across) / cos(leave);
 	const bend = elbow * (PI / 2 - leave);
 	const domeHeight = growth.dome * tipRadius;
@@ -301,8 +308,8 @@ function armArch(
 	return {
 		arch: {
 			length,
-			leave: growth.arms.leave,
-			turn: growth.arms.leave - 90,
+			leave: (leave * 180) / PI,
+			turn: (leave * 180) / PI - 90,
 			from: run / length,
 			to: (run + bend) / length,
 		},
