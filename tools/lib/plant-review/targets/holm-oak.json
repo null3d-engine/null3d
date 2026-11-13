@@ -20,6 +20,12 @@
 				"figures": {
 					"heightToWidth": 0.7958,
 					"foot": {
+						"rows": {
+							"frame": 688,
+							"horizon": 568,
+							"outline": 608,
+							"foot": 608
+						},
 						"belowHorizon": 0.0822,
 						"followed": 0
 					},
@@ -115,6 +121,26 @@
 						"spread": 0.3457,
 						"frames": 193
 					},
+					"footBelowHorizon": {
+						"min": 0.0493,
+						"low": 0.0631,
+						"median": 0.0789,
+						"high": 0.0875,
+						"mean": 0.0766,
+						"max": 0.0997,
+						"spread": 0.6578,
+						"frames": 193
+					},
+					"footFollowed": {
+						"min": 0,
+						"low": 0,
+						"median": 0,
+						"high": 0,
+						"mean": 0,
+						"max": 0,
+						"spread": 0,
+						"frames": 193
+					},
 					"crownHeightToWidth": {
 						"min": 0.5904,
 						"low": 0.608,
@@ -147,35 +173,35 @@
 					},
 					"bareTrunk": {
 						"min": 0.0822,
-						"low": 0.0957,
-						"median": 0.118,
+						"low": 0.096,
+						"median": 0.1188,
 						"high": 0.1751,
-						"mean": 0.1344,
+						"mean": 0.1346,
 						"max": 0.443,
-						"spread": 2.684,
+						"spread": 2.6809,
 						"frames": 193
 					},
 					"trunkWidth": {
-						"min": 0.0302,
-						"low": 0.047,
-						"median": 0.0939,
-						"high": 0.1318,
-						"mean": 0.0938,
-						"max": 0.1533,
-						"spread": 1.3123,
+						"min": 0.0282,
+						"low": 0.046,
+						"median": 0.0917,
+						"high": 0.1288,
+						"mean": 0.0916,
+						"max": 0.1513,
+						"spread": 1.3438,
 						"frames": 193
 					},
 					"breastHeightWidth": null,
 					"flare": null,
 					"lean": {
 						"min": -33.62,
-						"low": -23.45,
-						"median": -0.9,
-						"high": 18.07,
-						"mean": -1.5435,
-						"max": 36.56,
-						"spread": 45.4681,
-						"frames": 40
+						"low": -20.84,
+						"median": -0.285,
+						"high": 15.11,
+						"mean": -1.6432,
+						"max": 21.43,
+						"spread": 33.501,
+						"frames": 34
 					},
 					"stems": {
 						"min": 1,
@@ -189,13 +215,13 @@
 					},
 					"limbs": {
 						"min": 3,
-						"low": 3,
-						"median": 7,
+						"low": 4,
+						"median": 5.5,
 						"high": 7,
-						"mean": 5.8667,
+						"mean": 5.5,
 						"max": 7,
-						"spread": 0.6818,
-						"frames": 15
+						"spread": 0.7273,
+						"frames": 12
 					},
 					"lobes": {
 						"min": 2,
@@ -350,6 +376,12 @@
 				"figures": {
 					"heightToWidth": 0.619,
 					"foot": {
+						"rows": {
+							"frame": 688,
+							"horizon": 626,
+							"outline": 631,
+							"foot": 631
+						},
 						"belowHorizon": 0.008,
 						"followed": 0
 					},
@@ -359,11 +391,11 @@
 						"width": 1.6021
 					},
 					"trunk": {
-						"bareShare": 0.061,
-						"width": 0.0477,
+						"bareShare": 0.0584,
+						"width": 0.0429,
 						"column": false,
 						"breastHeightWidth": null,
-						"flare": 4.444,
+						"flare": 4.846,
 						"lean": null,
 						"stems": 1
 					},
@@ -429,6 +461,12 @@
 				"figures": {
 					"heightToWidth": 0.743,
 					"foot": {
+						"rows": {
+							"frame": 688,
+							"horizon": 664,
+							"outline": 663,
+							"foot": 663
+						},
 						"belowHorizon": 0,
 						"followed": 0
 					},
@@ -439,10 +477,10 @@
 					},
 					"trunk": {
 						"bareShare": 0.0902,
-						"width": 0.0501,
+						"width": 0.0477,
 						"column": false,
 						"breastHeightWidth": null,
-						"flare": 3.05,
+						"flare": 3.129,
 						"lean": null,
 						"stems": 1
 					},
@@ -498,7 +536,7 @@
 					"missing": {
 						"trunk.breastHeightWidth": "breast height is not placed on this plant: source.breastHeight gives the reason",
 						"trunk.lean": "the bare stem above its flare is too short to fit a line through",
-						"limbs": "the counts at 1.5, 2, 2.5 stem widths from the fork disagree (5, 7, 8)"
+						"limbs": "the counts at 1.5, 2, 2.5 stem widths from the fork disagree (5, 6, 7)"
 					}
 				},
 				"missing": {}
@@ -584,16 +622,16 @@
 				"primaryOutsideTurn": false,
 				"turn": {
 					"min": 0.0822,
-					"low": 0.0957,
-					"median": 0.118,
+					"low": 0.096,
+					"median": 0.1188,
 					"high": 0.1751,
 					"max": 0.443
 				},
 				"secondary": {
-					"02-whole-clump-profile.png": 0.061,
+					"02-whole-clump-profile.png": 0.0584,
 					"18-silhouette.png": 0.0902
 				},
-				"largest": 0.499,
+				"largest": 0.52,
 				"outsideTurn": ["02-whole-clump-profile.png"]
 			},
 			{
@@ -601,17 +639,17 @@
 				"primary": 0.0921,
 				"primaryOutsideTurn": false,
 				"turn": {
-					"min": 0.0302,
-					"low": 0.047,
-					"median": 0.0939,
-					"high": 0.1318,
-					"max": 0.1533
+					"min": 0.0282,
+					"low": 0.046,
+					"median": 0.0917,
+					"high": 0.1288,
+					"max": 0.1513
 				},
 				"secondary": {
-					"02-whole-clump-profile.png": 0.0477,
-					"18-silhouette.png": 0.0501
+					"02-whole-clump-profile.png": 0.0429,
+					"18-silhouette.png": 0.0477
 				},
-				"largest": 0.482,
+				"largest": 0.534,
 				"outsideTurn": []
 			},
 			{
@@ -620,8 +658,8 @@
 				"primaryOutsideTurn": false,
 				"turn": null,
 				"secondary": {
-					"02-whole-clump-profile.png": 4.444,
-					"18-silhouette.png": 3.05
+					"02-whole-clump-profile.png": 4.846,
+					"18-silhouette.png": 3.129
 				},
 				"largest": null,
 				"outsideTurn": []
@@ -632,10 +670,10 @@
 				"primaryOutsideTurn": false,
 				"turn": {
 					"min": -33.62,
-					"low": -23.45,
-					"median": -0.9,
-					"high": 18.07,
-					"max": 36.56
+					"low": -20.84,
+					"median": -0.285,
+					"high": 15.11,
+					"max": 21.43
 				},
 				"secondary": {
 					"02-whole-clump-profile.png": null,
@@ -1069,7 +1107,7 @@
 		},
 		{
 			"path": "whole.secondary[18-silhouette.png].figures.limbs",
-			"reason": "the counts at 1.5, 2, 2.5 stem widths from the fork disagree (5, 7, 8)"
+			"reason": "the counts at 1.5, 2, 2.5 stem widths from the fork disagree (5, 6, 7)"
 		},
 		{
 			"path": "wood.views[03-whole-from-below.png].limbs",

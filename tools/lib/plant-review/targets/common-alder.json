@@ -18,29 +18,35 @@
 			"still": {
 				"file": "01-whole-distant.png",
 				"figures": {
-					"heightToWidth": 0.8874,
+					"heightToWidth": 1.0402,
 					"foot": {
-						"belowHorizon": 0.0785,
-						"followed": 0.0816
+						"rows": {
+							"frame": 688,
+							"horizon": 496,
+							"outline": 495,
+							"foot": 629
+						},
+						"belowHorizon": 0.2139,
+						"followed": 0.2165
 					},
 					"crown": {
 						"heightToWidth": 0.815,
-						"base": 0.0816,
-						"width": 1.1269
+						"base": 0.2165,
+						"width": 0.9613
 					},
 					"trunk": {
-						"bareShare": 0.148,
-						"width": 0.0483,
+						"bareShare": null,
+						"width": null,
 						"column": false,
 						"breastHeightWidth": null,
 						"flare": null,
-						"lean": -5.31,
+						"lean": null,
 						"stems": null
 					},
 					"limbs": null,
 					"envelope": {
-						"left": [0.0234, 0.3104, 0.4101, 0.5219, 0.5551, 0.5793, 0.4494, 0.4343, 0.4826, 0.4826, 0.4071, 0.2711, 0.256, 0.1745, 0.1715, 0.0627],
-						"right": [0.0189, 0.5174, 0.5174, 0.4177, 0.5446, 0.5446, 0.46, 0.5174, 0.5355, 0.4207, 0.3542, 0.3512, 0.3331, 0.182, 0.1186, 0.1125]
+						"left": [0.0638, 0.0277, 0.02, 0.2648, 0.3499, 0.4452, 0.4942, 0.4942, 0.3705, 0.4117, 0.4117, 0.3473, 0.2313, 0.2107, 0.1488, 0.0561],
+						"right": [0.0238, 0.0238, 0.0213, 0.4414, 0.4414, 0.413, 0.4646, 0.4594, 0.4336, 0.4568, 0.3589, 0.3022, 0.2867, 0.1553, 0.1501, 0.096]
 					},
 					"lobes": {
 						"count": 11,
@@ -87,10 +93,13 @@
 						"unevenness": 0.523
 					},
 					"missing": {
-						"trunk.flare": "the foot stands below the horizon for 9 per cent of the height, where the ground hides it",
-						"trunk.breastHeightWidth": "breast height is not placed on this plant: source.breastHeight gives the reason",
-						"trunk.stems": "too little bare stem shows below the foliage to tell the stems apart",
-						"limbs": "foliage covers the fork, so the limbs do not show apart"
+						"trunk.bareShare": "the stem below the crown stands under the horizon, where the ground hides it",
+						"trunk.width": "the stem below the crown stands under the horizon, where the ground hides it",
+						"trunk.breastHeightWidth": "the stem below the crown stands under the horizon, where the ground hides it",
+						"trunk.flare": "the stem below the crown stands under the horizon, where the ground hides it",
+						"trunk.lean": "the stem below the crown stands under the horizon, where the ground hides it",
+						"trunk.stems": "the stem below the crown stands under the horizon, where the ground hides it",
+						"limbs": "no stem shows below the crown, so no fork shows"
 					}
 				},
 				"missing": {}
@@ -110,6 +119,26 @@
 						"mean": 1.2452,
 						"max": 1.5281,
 						"spread": 0.3727,
+						"frames": 193
+					},
+					"footBelowHorizon": {
+						"min": 0.0682,
+						"low": 0.1,
+						"median": 0.1057,
+						"high": 0.1083,
+						"mean": 0.1035,
+						"max": 0.1089,
+						"spread": 0.3933,
+						"frames": 193
+					},
+					"footFollowed": {
+						"min": 0,
+						"low": 0,
+						"median": 0,
+						"high": 0,
+						"mean": 0,
+						"max": 0,
+						"spread": 0,
 						"frames": 193
 					},
 					"crownHeightToWidth": {
@@ -144,34 +173,34 @@
 					},
 					"bareTrunk": {
 						"min": 0.2414,
-						"low": 0.2564,
-						"median": 0.2894,
-						"high": 0.3095,
-						"mean": 0.2866,
+						"low": 0.2557,
+						"median": 0.2878,
+						"high": 0.3088,
+						"mean": 0.2851,
 						"max": 0.3219,
-						"spread": 0.2809,
+						"spread": 0.2823,
 						"frames": 193
 					},
 					"trunkWidth": {
-						"min": 0.0395,
-						"low": 0.0399,
-						"median": 0.0429,
-						"high": 0.0445,
-						"mean": 0.0424,
-						"max": 0.046,
-						"spread": 0.1531,
+						"min": 0.0377,
+						"low": 0.0384,
+						"median": 0.0394,
+						"high": 0.0401,
+						"mean": 0.0393,
+						"max": 0.0409,
+						"spread": 0.0814,
 						"frames": 193
 					},
 					"breastHeightWidth": null,
 					"flare": null,
 					"lean": {
 						"min": -2.88,
-						"low": -1.69,
-						"median": 0.42,
-						"high": 1.5,
-						"mean": 0.1034,
+						"low": -1.66,
+						"median": 0.43,
+						"high": 1.59,
+						"mean": 0.1231,
 						"max": 2.94,
-						"spread": 56.3038,
+						"spread": 47.2952,
 						"frames": 193
 					},
 					"stems": {
@@ -339,6 +368,12 @@
 				"figures": {
 					"heightToWidth": 1.6078,
 					"foot": {
+						"rows": {
+							"frame": 688,
+							"horizon": 661,
+							"outline": 666,
+							"foot": 668
+						},
 						"belowHorizon": 0.0098,
 						"followed": 0.0024
 					},
@@ -349,10 +384,10 @@
 					},
 					"trunk": {
 						"bareShare": 0.1902,
-						"width": 0.039,
+						"width": 0.0357,
 						"column": false,
 						"breastHeightWidth": null,
-						"flare": 1.063,
+						"flare": 1.196,
 						"lean": -0.5,
 						"stems": 1
 					},
@@ -417,6 +452,12 @@
 				"figures": {
 					"heightToWidth": 1.5367,
 					"foot": {
+						"rows": {
+							"frame": 688,
+							"horizon": 669,
+							"outline": 663,
+							"foot": 663
+						},
 						"belowHorizon": 0,
 						"followed": 0
 					},
@@ -426,11 +467,11 @@
 						"width": 0.6256
 					},
 					"trunk": {
-						"bareShare": 0.2286,
-						"width": 0.0352,
+						"bareShare": 0.2261,
+						"width": 0.0333,
 						"column": false,
 						"breastHeightWidth": null,
-						"flare": 1.214,
+						"flare": 1.399,
 						"lean": -0.19,
 						"stems": 1
 					},
@@ -497,6 +538,12 @@
 				"figures": {
 					"heightToWidth": 1.0741,
 					"foot": {
+						"rows": {
+							"frame": 688,
+							"horizon": 560,
+							"outline": 615,
+							"foot": 615
+						},
 						"belowHorizon": 0.0977,
 						"followed": 0
 					},
@@ -507,11 +554,11 @@
 					},
 					"trunk": {
 						"bareShare": 0.296,
-						"width": 0.0431,
+						"width": 0.0401,
 						"column": false,
 						"breastHeightWidth": null,
 						"flare": null,
-						"lean": 1.38,
+						"lean": 1.32,
 						"stems": 1
 					},
 					"limbs": null,
@@ -575,7 +622,7 @@
 		"spread": [
 			{
 				"figure": "heightToWidth",
-				"primary": 0.8874,
+				"primary": 1.0402,
 				"primaryOutsideTurn": true,
 				"turn": {
 					"min": 1.064,
@@ -588,7 +635,7 @@
 					"02-whole-profile.png": 1.6078,
 					"18-silhouette.png": 1.5367
 				},
-				"largest": 0.812,
+				"largest": 0.546,
 				"outsideTurn": ["02-whole-profile.png", "18-silhouette.png"]
 			},
 			{
@@ -611,8 +658,8 @@
 			},
 			{
 				"figure": "crownBase",
-				"primary": 0.0816,
-				"primaryOutsideTurn": true,
+				"primary": 0.2165,
+				"primaryOutsideTurn": false,
 				"turn": {
 					"min": 0.1988,
 					"low": 0.2229,
@@ -624,12 +671,12 @@
 					"02-whole-profile.png": 0.1024,
 					"18-silhouette.png": 0.1683
 				},
-				"largest": 1.063,
+				"largest": 0.527,
 				"outsideTurn": ["02-whole-profile.png", "18-silhouette.png"]
 			},
 			{
 				"figure": "crownWidth",
-				"primary": 1.1269,
+				"primary": 0.9613,
 				"primaryOutsideTurn": true,
 				"turn": {
 					"min": 0.6176,
@@ -642,43 +689,43 @@
 					"02-whole-profile.png": 0.5902,
 					"18-silhouette.png": 0.6256
 				},
-				"largest": 0.476,
+				"largest": 0.386,
 				"outsideTurn": ["02-whole-profile.png"]
 			},
 			{
 				"figure": "bareTrunk",
-				"primary": 0.148,
-				"primaryOutsideTurn": true,
+				"primary": null,
+				"primaryOutsideTurn": false,
 				"turn": {
 					"min": 0.2414,
-					"low": 0.2564,
-					"median": 0.2894,
-					"high": 0.3095,
+					"low": 0.2557,
+					"median": 0.2878,
+					"high": 0.3088,
 					"max": 0.3219
 				},
 				"secondary": {
 					"02-whole-profile.png": 0.1902,
-					"18-silhouette.png": 0.2286
+					"18-silhouette.png": 0.2261
 				},
-				"largest": 0.545,
+				"largest": null,
 				"outsideTurn": ["02-whole-profile.png", "18-silhouette.png"]
 			},
 			{
 				"figure": "trunkWidth",
-				"primary": 0.0483,
-				"primaryOutsideTurn": true,
+				"primary": null,
+				"primaryOutsideTurn": false,
 				"turn": {
-					"min": 0.0395,
-					"low": 0.0399,
-					"median": 0.0429,
-					"high": 0.0445,
-					"max": 0.046
+					"min": 0.0377,
+					"low": 0.0384,
+					"median": 0.0394,
+					"high": 0.0401,
+					"max": 0.0409
 				},
 				"secondary": {
-					"02-whole-profile.png": 0.039,
-					"18-silhouette.png": 0.0352
+					"02-whole-profile.png": 0.0357,
+					"18-silhouette.png": 0.0333
 				},
-				"largest": 0.271,
+				"largest": null,
 				"outsideTurn": ["02-whole-profile.png", "18-silhouette.png"]
 			},
 			{
@@ -687,28 +734,28 @@
 				"primaryOutsideTurn": false,
 				"turn": null,
 				"secondary": {
-					"02-whole-profile.png": 1.063,
-					"18-silhouette.png": 1.214
+					"02-whole-profile.png": 1.196,
+					"18-silhouette.png": 1.399
 				},
 				"largest": null,
 				"outsideTurn": []
 			},
 			{
 				"figure": "lean",
-				"primary": -5.31,
-				"primaryOutsideTurn": true,
+				"primary": null,
+				"primaryOutsideTurn": false,
 				"turn": {
 					"min": -2.88,
-					"low": -1.69,
-					"median": 0.42,
-					"high": 1.5,
+					"low": -1.66,
+					"median": 0.43,
+					"high": 1.59,
 					"max": 2.94
 				},
 				"secondary": {
 					"02-whole-profile.png": -0.5,
 					"18-silhouette.png": -0.19
 				},
-				"largest": 0.964,
+				"largest": null,
 				"outsideTurn": []
 			},
 			{
@@ -1191,20 +1238,32 @@
 			"reason": "the reference folder has no FACTS.md, so no stated height places breast height"
 		},
 		{
-			"path": "whole.primary.still.figures.trunk.flare",
-			"reason": "the foot stands below the horizon for 9 per cent of the height, where the ground hides it"
+			"path": "whole.primary.still.figures.trunk.bareShare",
+			"reason": "the stem below the crown stands under the horizon, where the ground hides it"
+		},
+		{
+			"path": "whole.primary.still.figures.trunk.width",
+			"reason": "the stem below the crown stands under the horizon, where the ground hides it"
 		},
 		{
 			"path": "whole.primary.still.figures.trunk.breastHeightWidth",
-			"reason": "breast height is not placed on this plant: source.breastHeight gives the reason"
+			"reason": "the stem below the crown stands under the horizon, where the ground hides it"
+		},
+		{
+			"path": "whole.primary.still.figures.trunk.flare",
+			"reason": "the stem below the crown stands under the horizon, where the ground hides it"
+		},
+		{
+			"path": "whole.primary.still.figures.trunk.lean",
+			"reason": "the stem below the crown stands under the horizon, where the ground hides it"
 		},
 		{
 			"path": "whole.primary.still.figures.trunk.stems",
-			"reason": "too little bare stem shows below the foliage to tell the stems apart"
+			"reason": "the stem below the crown stands under the horizon, where the ground hides it"
 		},
 		{
 			"path": "whole.primary.still.figures.limbs",
-			"reason": "foliage covers the fork, so the limbs do not show apart"
+			"reason": "no stem shows below the crown, so no fork shows"
 		},
 		{
 			"path": "whole.primary.turn.stats.breastHeightWidth",
