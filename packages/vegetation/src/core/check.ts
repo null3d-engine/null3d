@@ -1119,6 +1119,13 @@ export function speciesProblems(record: Species): string[] {
 					`lod.cardCell.${detail} is ${side}; a card cell is a power of two from 32 to 256 texels`,
 				);
 		}
+	for (const [k, share] of (lod.cardShare ?? []).entries())
+		if (!(share > 0 && share <= 1))
+			out.push(
+				`lod.cardShare[${k}] is ${share}; a level keeps a share of its cards above 0 and at most 1`,
+			);
+	if (lod.extrasFrom !== undefined && lod.extrasFrom !== 1 && lod.extrasFrom !== 2)
+		out.push(`lod.extrasFrom is ${lod.extrasFrom}; it names card level 1 or 2`);
 	const cuts = lod.cardCuts;
 	if (
 		cuts?.most !== undefined &&

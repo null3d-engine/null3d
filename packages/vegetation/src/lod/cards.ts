@@ -631,7 +631,9 @@ export function cardRows(
 	level: 1 | 2,
 ): Float32Array {
 	const { rows } = input;
-	const every = cardStep(level, input.cards ?? 1);
+	// The plant's own share of each level's cards, under the share its options keep.
+	const own = input.kit.record.lod.cardShare?.[level - 1] ?? 1;
+	const every = cardStep(level, (input.cards ?? 1) * own);
 	const grow = Math.sqrt(every);
 	const out = new Float32Array(rows.count);
 	const rim = every > 1 ? foliageHull(input).rim : undefined;

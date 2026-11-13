@@ -2683,6 +2683,21 @@ export interface LodSpec {
 	 */
 	readonly cardCuts?: { readonly most?: number; readonly cells?: 'full' | 'half' };
 	/**
+	 * The share of its own cards that each card level keeps, for the first and the second, each above
+	 * 0 and at most 1: a level keeps one of each so many of its cards in the space-filling order and
+	 * grows each kept card by the square root of that step, where the leaf form's hull has room, as
+	 * the second level keeps every second card of the first. A plant of many small pieces keeps its
+	 * cover with fewer, larger cards. Absent, every level keeps its own cards.
+	 */
+	readonly cardShare?: readonly [lod1: number, lod2: number];
+	/**
+	 * The first card level that draws no extras: 1 for both card levels, 2 for the second alone. A
+	 * cone or a fruit that the nearest level draws whole may still cost many triangles at a card
+	 * level where it spans a few pixels. Absent, a card level leaves out only the extras too small to
+	 * see at its distances.
+	 */
+	readonly extrasFrom?: 1 | 2;
+	/**
 	 * The least width, in pixels, that a card's own stalk draws at any distance, from 0 to 8. A card
 	 * stands on its axis's twig, whose wood may be thinner than a pixel at a whole view, so the
 	 * card's leaves read as a piece in air where the twig does not draw. At 1 or more the card
