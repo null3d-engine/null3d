@@ -4,7 +4,7 @@
 // trunk, one at the crown's edge, and, where asked, an eye inside the plant's fullest foliage,
 // where most rows stand within the switch distance at once.
 import type { PlantAsset, SpeciesKitData } from '../asset';
-import { radians, tan } from '../core/math';
+import { length3, radians, tan } from '../core/math';
 import { DETAILS, type Detail, spreadMax, type Vec3 } from '../core/types';
 import { REFERENCE_VIEW } from './levels';
 
@@ -85,7 +85,7 @@ export function drawnAtOnce(kit: SpeciesKitData, asset: PlantAsset, inside = tru
 		let triangles = asset.levels[0].triangles;
 		for (let r = 0; r < rows.count; r++) {
 			const distance =
-				Math.hypot(
+				length3(
 					(rows.position[r * 3] as number) - eye[0],
 					(rows.position[r * 3 + 1] as number) - eye[1],
 					(rows.position[r * 3 + 2] as number) - eye[2],
