@@ -488,6 +488,7 @@ describe('the plant shader', () => {
 			HEADER_CARD_COVERAGE: HEADER.cardCoverage,
 			HEADER_SCAR: HEADER.scar,
 			HEADER_SCAR_COLOUR: HEADER.scarColour,
+			HEADER_CARD_LEVEL_MOST: HEADER.cardLevelMost,
 			BARK_ZONE_TEXELS,
 			MAX_BARK_ZONES,
 			MAX_EXTRAS,

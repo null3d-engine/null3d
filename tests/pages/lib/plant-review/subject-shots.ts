@@ -9,6 +9,7 @@
 
 import { across, cross, dot, facing, normalize, step, turnedAbout, type V3 } from './anatomy';
 import type { Lens } from './close';
+import type { CutPlane } from './cut-face';
 import { rowAngle } from './framing';
 import { lensAxes } from './sight';
 import {
@@ -476,7 +477,12 @@ export function belowShot(subjects: PlantSubjects, lens: Lens, options: BelowOpt
 	const trunkShare = options.trunkShare ?? 0.42;
 	const ground = trunk.base[1];
 	const rise = top.at[1] - ground;
-	if (rise < LEAST_BOLE) return lowShot(subjects, lens, options.turn);
+	// A crown that reaches the ground leaves no bole to look up: a tall one is looked up along its
+	// face, a low one from a low eye inside its rim.
+	if (rise < LEAST_BOLE)
+		return subjects.height >= FACE_LEAST_HEIGHT
+			? faceShot(subjects, lens, options.turn)
+			: lowShot(subjects, lens, options.turn);
 	// The eye stays under the joints on the trunk's centre line, so it never stands among the limbs.
 	const eye = Math.max(LOWEST_EYE, Math.min(EYE, BELOW_EYE_SHARE * (ended.at[1] - ground)));
 	const radius = trunkRadius(trunk, ground + eye);
@@ -608,6 +614,41 @@ export function belowShot(subjects: PlantSubjects, lens: Lens, options: BelowOpt
 				warning: 'no stand round the trunk is clear of the limbs, so the camera keeps its turn',
 			}),
 		},
+	};
+}
+
+/** The row share on which a tall crown's top lands, seen up its face from its foot. */
+const FACE_TOP_ROW = 0.06;
+/** The least height in metres of a crown whose face a view up its side climbs; under it the low eye frames it whole. */
+const FACE_LEAST_HEIGHT = 3;
+
+/**
+ * The view up a crown's face from its foot, as a photograph of a column whose foliage reaches the
+ * ground looks up it: the camera stands at a person's eye just outside the crown's widest reach and
+ * looks steeply up, so the top lands near the frame's top edge and the face fills the frame below it,
+ * narrowing toward the top.
+ */
+export function faceShot(subjects: PlantSubjects, lens: Lens, turn: number): Solved {
+	const tall = subjects.height;
+	if (!(tall > 0)) return absent('the plant has no height to look up');
+	const foot = subjects.foot;
+	const distance = subjects.reach + CLEARANCE;
+	const eye = Math.min(EYE, tall / 2);
+	const top: V3 = [foot[0], foot[1] + tall, foot[2]];
+	const pitch = Math.min(
+		STEEPEST * DEG,
+		Math.atan2(tall - eye, distance) - rowAngle(FACE_TOP_ROW, lens.fov),
+	);
+	const out = facing(turn);
+	const position: V3 = [foot[0] + out[0] * distance, foot[1] + eye, foot[2] + out[2] * distance];
+	return {
+		kind: "the crown's face from its foot, looking up it",
+		camera: pitched(position, [-out[0], 0, -out[2]], pitch, Math.hypot(distance, tall - eye)),
+		points: [{ name: "the plant's top", at: top, within: [0.3, -0.02, 0.7, 0.2] }],
+		regions: [
+			{ name: "the crown's face over the lower frame", box: [0.25, 0.7, 0.75, 1], min: 0.5 },
+		],
+		facts: { eye, stand: distance, pitch: pitch / DEG },
 	};
 }
 
@@ -1549,6 +1590,24 @@ export function crownUndersideShot(
 	};
 }
 
+/** The share of the trunk's height under which a crown's base stands on a trunk the crown clothes. */
+const CLOTHED_BASE_SHARE = 0.5;
+
+/**
+ * Whether a view from inside the crown stands beside the trunk: a tree whose great limbs leave its
+ * trunk, or a trunk its crown clothes from low down, as a column's fine branches do. A plant with no
+ * trunk, or a trunk whose crown stands only at its top, as a palm's, keeps its stalks at the crown's
+ * own centre, and its inside photograph is of that bundle.
+ */
+export function insideBesideTrunk(subjects: PlantSubjects): boolean {
+	if (isAbsent(subjects.trunk)) return false;
+	if (!isAbsent(subjects.limbs) && subjects.limbs.length > 0) return true;
+	const axis = subjects.trunk.axis;
+	const ground = subjects.trunk.base[1];
+	const top = (axis[axis.length - 1] as AxisSample).at[1] - ground;
+	return !isAbsent(subjects.crownBase) && subjects.crownBase < CLOTHED_BASE_SHARE * top;
+}
+
 /** How a view from inside the crown frames the wood it looks along. */
 export interface InsideOptions {
 	readonly turn: number;
@@ -1578,9 +1637,9 @@ const INSIDE_MOST_TRUNK = 0.5;
  */
 export function insideShot(subjects: PlantSubjects, lens: Lens, options: InsideOptions): Solved {
 	if (isAbsent(subjects.trunk)) return subjects.trunk;
-	if (isAbsent(subjects.limbs)) return subjects.limbs;
 	const trunk = subjects.trunk;
-	const limbs = subjects.limbs;
+	// A trunk clothed in fine branches has no great limb to set the camera's turn by.
+	const limbs = isAbsent(subjects.limbs) ? [] : subjects.limbs;
 	const ground = trunk.base[1];
 	const pitch = (options.pitch ?? 40) * DEG;
 	const share = options.share ?? 0.28;
@@ -2071,6 +2130,68 @@ export function siteShot(
 			},
 		],
 		facts: { class: name, height: site.at[1], radius: site.radius, sites: sites.length },
+	};
+}
+
+/** The share of the frame's width that the section's outline takes, as a cut's photograph frames it. */
+const SECTION_FILL = 0.88;
+/** The stem's length below the cut that a section draws, as a share of its radius. */
+const SECTION_SLAB = 0.6;
+/**
+ * How far past its radius a stem's own skin reaches at a cut, as a share of the radius: a column's
+ * ribs stand proud of its mean radius by less than half of it. The frame shows little more.
+ */
+const SECTION_REACH = 1.5;
+
+/** Where a stem is cut across for its section: the cut's plane, and the stem's radius there. */
+export interface SectionCut extends CutPlane {
+	/** The stem's radius at the cut, in metres. */
+	readonly radius: number;
+}
+
+/**
+ * Where the stem is cut across at a height: a point on its line, the cut face's normal along the
+ * stem's line at its foot, and the reach of the stem's own skin there.
+ */
+export function sectionCut(subjects: PlantSubjects, height: number): Maybe<SectionCut> {
+	if (isAbsent(subjects.trunk)) return subjects.trunk;
+	const at = sampleAtHeight(subjects.trunk.axis, height);
+	if (!at) return lacking(`the stem does not reach ${height.toFixed(2)} m, where the cut stands`);
+	return {
+		at: at.at,
+		normal: sampleAlong(subjects.trunk.axis, 0).direction,
+		reach: SECTION_REACH * at.radius,
+		radius: at.radius,
+	};
+}
+
+/**
+ * The view of the stem cut across at a height: the camera looks straight down the stem's line at
+ * the cut, and only a short slab of the stem below it is drawn. The page lays the cut's face over
+ * the cut, so the outline, the ribs of a column, draws filled as the photograph's cut face does.
+ */
+export function sectionShot(subjects: PlantSubjects, lens: Lens, height: number): Solved {
+	const cut = sectionCut(subjects, height);
+	if (isAbsent(cut)) return cut;
+	const forward: V3 = [-cut.normal[0], -cut.normal[1], -cut.normal[2]];
+	const tall = (2 * cut.radius) / (SECTION_FILL * lens.aspect);
+	const camera = aim(cut.at, 0.5, 0.5, forward, tall, lens);
+	const distance = tall / 2 / tanHalf(lens);
+	return {
+		kind: `the stem cut across at ${height.toFixed(2)} m, seen down its line`,
+		camera,
+		near: Math.max(0.01, distance - 0.01 * cut.radius),
+		far: distance + SECTION_SLAB * cut.radius,
+		points: [
+			{
+				name: 'the cut',
+				at: cut.at,
+				within: [0.4, 0.4, 0.6, 0.6],
+				size: { metres: 2 * cut.radius, of: 'width', min: 0.7, max: 0.95 },
+			},
+		],
+		regions: [{ name: "the cut face's rim", box: [0.04, 0.4, 0.2, 0.6], of: 'wood', min: 0.05 }],
+		facts: { height, radius: cut.radius },
 	};
 }
 

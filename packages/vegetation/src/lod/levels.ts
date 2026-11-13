@@ -63,7 +63,8 @@ export function firstCardStart(
  * the record's first switch pixels, which on most species is more than a cell holds, so near its
  * start a card is drawn larger than its picture; a finer cell costs four times the atlas memory. A
  * prototype without leaves (a bare winter twin) takes a cell of half the side: its card holds thin
- * stems and buds.
+ * stems and buds. So does each stretch of a prototype cut along its line, unless its record's
+ * `lod.cardCuts` asks for whole cells.
  *
  * @category api/vegetation
  */

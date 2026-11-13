@@ -1,8 +1,10 @@
 {
 	"06-inside-column.png": {
-		"view": "inside",
-		"distance": 2,
-		"elevation": 30
+		"view": "inside"
+	},
+	"10-foliage-sprays.png": {
+		"view": "crown",
+		"distance": 0.45
 	},
 	"20-young-cypress.png": {
 		"view": "whole"

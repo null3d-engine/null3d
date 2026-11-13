@@ -10,6 +10,7 @@ import type { MacroSkeleton } from '../core/graph';
 import { hashBytes } from '../core/hash';
 import { quatRotate, type Vector3 } from '../core/math';
 import type { Species } from '../core/record';
+import { loadSpecies } from '../core/registry';
 import { curveAt, spreadMean } from '../core/types';
 import {
 	evenOutline,
@@ -216,15 +217,16 @@ const HELD: readonly Held[] = [
 		directed: commonAlderDirected,
 		heightMean: spreadMean(commonAlderDirected.size.height),
 		record: commonAlderRecord,
-		counts: { leader: 1, limb: 24, twig: [24, 168] },
+		counts: { leader: 1, limb: 24, side: [70, 105], twig: [3300, 4100] },
 		// Twenty-four limbs a golden angle apart leave no gap wider than two even shares and their
 		// jitter.
 		round: { rule: 'limb', gap: 46, lean: 0.25 },
-		base: { limb: 0.25, twig: 0.5 },
+		base: { limb: 0.25, side: 0.5 },
 		plumb: ['leader'],
 		through: 0,
 		crossings: [0, 8],
 		axesPerSocket: 1.0,
+		fine: ['twig'],
 		tall: [0.98, 1.02],
 	},
 	{
@@ -310,17 +312,25 @@ const HELD: readonly Held[] = [
 		directed: commonAshDirected,
 		heightMean: spreadMean(commonAshDirected.size.height),
 		record: commonAshRecord,
-		counts: { trunk: 1, limb: 4, top: 2, branch: [18, 36], twig: [36, 144] },
+		counts: {
+			trunk: 1,
+			limb: 4,
+			top: 2,
+			branch: [32, 42],
+			side: [150, 190],
+			spur: [28, 40],
+			twig: [2800, 3400],
+		},
 		// Two crossed pairs stand a quarter turn apart.
 		round: { rule: 'limb', gap: 110, lean: 0.2 },
-		base: { limb: 0.52, top: 0.62, branch: 0.45, twig: 0.5 },
+		base: { limb: 0.52, top: 0.62, branch: 0.45, side: 0.5, spur: 0.35 },
 		plumb: ['trunk'],
 		// The outline's top is blunt, so the bunches on the highest tips stand a little over it.
 		through: 0,
-		crossings: [2, 0],
-		axesPerSocket: 1.012,
+		crossings: [3, 3],
+		axesPerSocket: 1.0,
+		fine: ['twig'],
 		tall: [0.95, 1.05],
-		open: ['spread'],
 	},
 	{
 		id: 'olive',
@@ -352,7 +362,7 @@ const HELD: readonly Held[] = [
 			skirt: [12, 24],
 			bough: [45, 72],
 			branch: [90, 288],
-			twig: [6000, 9000],
+			twig: [9000, 14000],
 		},
 		// Six low limbs at their own stated directions: five a seventh of a turn apart and one gap of
 		// two, 103 degrees, where the rising limbs stand; each limb's end wanders with its elbows.
@@ -698,12 +708,14 @@ for (const held of HELD)
 					const piece = growth.model === 'frame' && growth.sockets.piece !== undefined;
 					expect(table.scale[b]).toBeCloseTo(piece ? 1 : plan.scale / held.heightMean, 5);
 					expect(skeleton.buds.position[b * 3 + 1]).toBeCloseTo(socket.at[1], 4);
+					// The bud runs along its socket's heading, or within the tilt the record states.
 					quatRotate(skeleton.buds.frame, b * 4, [0, 1, 0], along);
+					const tilt = growth.model === 'frame' ? (growth.sockets.turn?.tilt ?? 0) : 0;
 					expect(
 						along[0] * socket.heading[0] +
 							along[1] * socket.heading[1] +
 							along[2] * socket.heading[2],
-					).toBeGreaterThan(0.999);
+					).toBeGreaterThan(Math.min(0.999, Math.cos((tilt * Math.PI) / 180) - 1e-6));
 				});
 				// The first quarter of the ranks stands in every quarter round the trunk that any
 				// socket stands in, so a plant thinned to it keeps every side.
@@ -884,6 +896,24 @@ for (const held of HELD)
  * are the independent reviewer's, which a test of four sides by the farthest patch let pass. Each
  * is a set of patches placed against a plain dome's outline.
  */
+/**
+ * The species whose registered entry gives the frame record, so the review and the scenes draw the
+ * frame. A merge can take another line's entry, which gives the record the old grower grows, so
+ * this list changes in the same commit as an entry does.
+ */
+const REGISTERED_FRAMES = ['pedunculate-oak'] as const;
+
+describe('a species entry that gives its frame', () => {
+	for (const id of REGISTERED_FRAMES)
+		it(`registers the ${id} as its frame record`, async () => {
+			const held = HELD.find((candidate) => candidate.id === id);
+			expect(held).toBeDefined();
+			const module = await loadSpecies(id);
+			expect(module.record.growth.model).toBe('frame');
+			expect(module.record === held?.directed).toBe(true);
+		});
+});
+
 describe('the crown test, on crowns made by hand', () => {
 	const SCALE = 20;
 	const dome: FrameSpec = {
@@ -1237,10 +1267,38 @@ describe("the pedunculate oak's frame against its photographs", () => {
 		}
 	});
 
+	it('clothes the end of every twig when its piece reaches further than it is wide', () => {
+		// The common alder's branch end reaches 1.22 times its width; the oak's 1.09.
+		const reaching = (rule: FrameBranchRule): FrameBranchRule => ({
+			...rule,
+			...(rule.patch?.fill
+				? {
+						patch: {
+							...rule.patch,
+							fill: { pitch: rule.patch.fill.pitch, reach: rule.patch.fill.pitch * 1.22 },
+						},
+					}
+				: {}),
+			...(rule.children ? { children: rule.children.map(reaching) } : {}),
+		});
+		const long: FrameSpec = {
+			...oak.spec,
+			stems: {
+				...oak.spec.stems,
+				children: (oak.spec.stems.children ?? []).map(reaching),
+			},
+		};
+		for (const seed of SEEDS)
+			expect(
+				bareEnds(planFrame(long, { record: oak.record, seed, variant: 0, season: 'summer' })),
+			).toEqual([]);
+	});
+
 	it('fails the oak built with its clumps first on three of the four', () => {
 		expect(clumpsFirst.commit).toBe('5b5c56272');
-		// One patch in eight that a view shows near the trunk's line hangs under the boundary.
-		expect(underFork(clumps)).toBe(26);
+		// Eighteen patches that a view shows near the trunk's line hang under the boundary; those the
+		// trunk hides behind it in a view are not read there.
+		expect(underFork(clumps)).toBe(18);
 		expect(lumps(clumps)).toEqual([2, 1]);
 		expect(lumpsHold(clumps)).toBe(false);
 		const shares = thickness(clumps);

@@ -255,11 +255,17 @@ describe('the framing a close view reports', () => {
 describe("the plant's types the cameras read", () => {
 	test('come from the plant core as types alone, so no engine code loads with the cameras', () => {
 		const file = join(import.meta.dir, '../../../tests/pages/lib/plant-review/plant-types.ts');
-		const lines = readFileSync(file, 'utf8')
+		// Each statement, which the formatter may wrap over several lines, is a type export.
+		const statements = readFileSync(file, 'utf8')
 			.split('\n')
-			.filter((line) => line.trim() !== '' && !line.startsWith('//'));
-		expect(lines.length).toBeGreaterThan(0);
-		for (const line of lines) expect(line).toMatch(/^export type \{[^}]+\} from '[^']+';$/);
+			.filter((line) => !line.startsWith('//'))
+			.join('\n')
+			.split(';')
+			.map((statement) => statement.trim())
+			.filter((statement) => statement !== '');
+		expect(statements.length).toBeGreaterThan(0);
+		for (const statement of statements)
+			expect(statement).toMatch(/^export type \{[^}]+\} from '[^']+'$/);
 	});
 });
 

@@ -1,5 +1,6 @@
 // The card bake: each shoot prototype drawn orthographically onto three planes through the middle
-// of its bounds (two vertical and crossed, one horizontal), seen from the front and from behind,
+// of its bounds (two vertical and crossed, one horizontal), or a long piece onto a face and an edge
+// plane for each stretch of its line, seen from the front and from behind,
 // into a card atlas on the CPU. The front views fill layer 0 and the views from behind fill layer 1
 // at the same place, each drawn so that one point of a card samples one point of the shoot from
 // either side.
@@ -16,20 +17,22 @@
 // level, and one byte of the surface kind (a leaf adds 128) with the shade inside the shoot in its
 // low seven bits.
 // Colour then spreads into the empty texels of each cell, so the mip levels the GPU averages never
-// darken a card's edge. Then each texel the shoot covers half or more turns whole, and error
-// diffusion keeps each cell's cover through the texels under half, the parts thinner than a texel
-// among them, so the mip levels average to the shoot's own cover. Last, each cell
+// darken a card's edge. Then each texel that ends a thin run turns whole, with the cover that adds
+// taken from the run behind it, so a leaflet's tip keeps its reach; each texel the shoot covers half
+// or more turns whole, and error diffusion keeps each cell's cover through the texels under half,
+// the parts thinner than a texel among them, so the mip levels average to the shoot's own cover. Last, each cell
 // measures how fast the coverage it must reach to draw has to fall as the GPU's mip levels average
 // it, so a far card keeps the cover the near one draws.
 import type { CardCell, PrototypeArrays } from '../asset';
-import { length3, pow } from '../core/math';
+import { atan2, cos, length3, pow, sin } from '../core/math';
 import type { Species } from '../core/record';
 import { barkColourOf, type TextureManifest } from '../core/textures';
 import type { Rgb } from '../core/types';
 import { DETAILS, type Detail } from '../core/types';
 import { outlineMask, textureOutline } from '../leaf/outline';
 import type { UncardedPrototype } from '../leaf/shoot';
-import { leafSurface, SURFACE_EXTRA, SURFACE_PIECE_SHEATH } from '../leaf/writer';
+import { leafSurface, SURFACE_EXTRA, SURFACE_PIECE, SURFACE_PIECE_SHEATH } from '../leaf/writer';
+import { foliageOptics } from '../render/records';
 import type { CardAtlas } from '../stages';
 import { CARD_CELL } from './levels';
 import { rasterise, rasterTarget } from './raster';
@@ -65,10 +68,18 @@ function octahedral(x: number, y: number, z: number): [number, number] {
 	return [Math.round((u * 0.5 + 0.5) * 255), Math.round((v * 0.5 + 0.5) * 255)];
 }
 
-/** The three planes of a prototype: centre, right and up half-extents, normal. */
-function planesOf(
-	mesh: PrototypeArrays,
-): { centre: number[]; right: number[]; up: number[]; normal: number[] }[] {
+/** A card plane as the bake plans it: its frame, what it shows, and the triangles it pictures. */
+interface PlannedPlane extends CardPlane {
+	/** What the plane shows of its piece: 0 its face, 1 its edge, 2 across its line. */
+	readonly role: 0 | 1 | 2;
+	/** The share of the piece's line the plane spans, from its base. */
+	readonly along: readonly [number, number];
+	/** The triangles it pictures, three indices each; every triangle where absent. */
+	readonly triangles?: Uint32Array;
+}
+
+/** The three planes of a prototype through the middle of its bounds, each across the whole of it. */
+function planesOf(mesh: PrototypeArrays): PlannedPlane[] {
 	const lo = [Infinity, Infinity, Infinity];
 	const hi = [-Infinity, -Infinity, -Infinity];
 	for (let i = 0; i < mesh.positions.length; i += 3)
@@ -81,29 +92,406 @@ function planesOf(
 		Math.max(1e-4, (((hi[c] as number) - (lo[c] as number)) / 2) * MARGIN),
 	);
 	const [hx, hy, hz] = half as [number, number, number];
+	const whole = [0, 1] as const;
 	return [
-		{ centre, right: [hx, 0, 0], up: [0, hy, 0], normal: [0, 0, 1] },
-		{ centre, right: [0, 0, -hz], up: [0, hy, 0], normal: [1, 0, 0] },
-		{ centre, right: [hx, 0, 0], up: [0, 0, -hz], normal: [0, 1, 0] },
+		{ centre, right: [hx, 0, 0], up: [0, hy, 0], normal: [0, 0, 1], role: 0, along: whole },
+		{ centre, right: [0, 0, -hz], up: [0, hy, 0], normal: [1, 0, 0], role: 1, along: whole },
+		{ centre, right: [hx, 0, 0], up: [0, 0, -hz], normal: [0, 1, 0], role: 2, along: whole },
 	];
 }
 
-/** Where each prototype's three cells lie: full cells first, then half cells four to a full one. */
+/** Steps from a prototype's base to its tip that its line is traced in. */
+const LINE_STEPS = 12;
+/** Length over width from which a shoot's card is cut along its line. */
+const SHOOT_LONG = 4;
+/** Length over width from which a placed piece's card is cut along its line. */
+const PIECE_LONG = 1.5;
+/**
+ * Metres a prototype reaches from its attach point under which its card is never cut: its texels
+ * are already fine, and more cells would cost atlas memory for nothing seen.
+ */
+const CUT_LEAST = 0.25;
+/**
+ * The most cards along one prototype where its record names no other: one, so a card is cut along
+ * its piece only where the record asks. Each stretch draws planes of its own, so a cut card costs
+ * more triangles at every card level and more atlas cells.
+ */
+const CUTS_MOST = 1;
+
+/** A prototype's line: points from its base to its tip, and each triangle's place along it. */
+interface PieceLine {
+	readonly points: readonly (readonly [number, number, number])[];
+	/** Metres along the line from its base at each point. */
+	readonly lengths: readonly number[];
+	/** Each triangle's place along the line, in metres from the base. */
+	readonly placeOf: Float64Array;
+	/** The widest the prototype stands across its line at any step. */
+	readonly width: number;
+	/** The farthest a triangle's centre stands from the attach point. */
+	readonly reach: number;
+}
+
+/** a . b. */
+function dot(a: readonly number[], b: readonly number[]): number {
+	return (
+		(a[0] as number) * (b[0] as number) +
+		(a[1] as number) * (b[1] as number) +
+		(a[2] as number) * (b[2] as number)
+	);
+}
+
+/** a x b. */
+function cross(a: readonly number[], b: readonly number[]): [number, number, number] {
+	return [
+		(a[1] as number) * (b[2] as number) - (a[2] as number) * (b[1] as number),
+		(a[2] as number) * (b[0] as number) - (a[0] as number) * (b[2] as number),
+		(a[0] as number) * (b[1] as number) - (a[1] as number) * (b[0] as number),
+	];
+}
+
+/** A direction made unit length, or the fallback where it has none. */
+function unit(v: readonly number[], fallback: readonly number[]): [number, number, number] {
+	const l = length3(v[0] as number, v[1] as number, v[2] as number);
+	return l > 1e-9
+		? [(v[0] as number) / l, (v[1] as number) / l, (v[2] as number) / l]
+		: [fallback[0] as number, fallback[1] as number, fallback[2] as number];
+}
+
+/** A vertex's place. */
+function vertexAt(mesh: PrototypeArrays, v: number): [number, number, number] {
+	return [
+		mesh.positions[v * 3] as number,
+		mesh.positions[v * 3 + 1] as number,
+		mesh.positions[v * 3 + 2] as number,
+	];
+}
+
+/**
+ * The directions across a line in which a set of points spreads most and least: the principal axes
+ * of their spread in the plane square to the line.
+ */
+function crossAxes(
+	mesh: PrototypeArrays,
+	vertices: Iterable<number>,
+	line: readonly number[],
+): { wide: [number, number, number]; thin: [number, number, number] } {
+	const seed = Math.abs(line[1] as number) < 0.9 ? [0, 1, 0] : [1, 0, 0];
+	const e0 = unit(cross(line, seed), [1, 0, 0]);
+	const e1 = cross(line, e0);
+	let n = 0;
+	let s0 = 0;
+	let s1 = 0;
+	let s00 = 0;
+	let s01 = 0;
+	let s11 = 0;
+	for (const v of vertices) {
+		const p = vertexAt(mesh, v);
+		const a = dot(p, e0);
+		const b = dot(p, e1);
+		n++;
+		s0 += a;
+		s1 += b;
+		s00 += a * a;
+		s01 += a * b;
+		s11 += b * b;
+	}
+	if (n === 0) return { wide: e0, thin: unit(e1, [0, 0, 1]) };
+	const c00 = s00 / n - (s0 / n) * (s0 / n);
+	const c01 = s01 / n - (s0 / n) * (s1 / n);
+	const c11 = s11 / n - (s1 / n) * (s1 / n);
+	// The larger eigenvector of the 2 by 2 spread.
+	const angle = 0.5 * atan2(2 * c01, c00 - c11);
+	const ca = cos(angle);
+	const sa = sin(angle);
+	const wide = unit(
+		[0, 1, 2].map((c) => ca * (e0[c] as number) + sa * (e1[c] as number)),
+		e0,
+	);
+	return { wide, thin: unit(cross(line, wide), e1) };
+}
+
+/**
+ * A prototype's line, traced from base to tip: its triangles taken in steps along it, each step's
+ * mean place a point on the line, smoothed with its neighbours, from the attach point to the
+ * piece's own tip, so the last card reaches as far as the piece does. A placed piece's own surface holds
+ * its share along the part in its second coordinates, which follows a blade that arches over and
+ * droops; any other prototype is taken by distance from its attach point, which grows from base to
+ * tip along a strand, a frond or a twig.
+ */
+function pieceLine(mesh: PrototypeArrays): PieceLine {
+	const triangles = mesh.indices.length / 3;
+	let pieceVertices = 0;
+	for (let i = 2; i < mesh.colors.length; i += 4)
+		if ((mesh.colors[i] as number) === SURFACE_PIECE) pieceVertices++;
+	const bySurface = pieceVertices > 0 && pieceVertices === mesh.colors.length / 4;
+	const centres: [number, number, number][] = [];
+	const param = new Float64Array(triangles);
+	let reach = 1e-6;
+	let most = 1e-6;
+	for (let t = 0; t < triangles; t++) {
+		const c: [number, number, number] = [0, 0, 0];
+		let share = 0;
+		for (let k = 0; k < 3; k++) {
+			const v = mesh.indices[t * 3 + k] as number;
+			for (let a = 0; a < 3; a++)
+				c[a] = (c[a] as number) + (mesh.positions[v * 3 + a] as number) / 3;
+			share += (mesh.uvs1[v * 2] as number) / 3;
+		}
+		centres.push(c);
+		const distance = length3(c[0], c[1], c[2]);
+		reach = Math.max(reach, distance);
+		param[t] = bySurface ? share : distance;
+		most = Math.max(most, param[t] as number);
+	}
+	const stepOf = (value: number) =>
+		Math.min(LINE_STEPS - 1, Math.floor((value / most) * LINE_STEPS));
+	const sums = Array.from({ length: LINE_STEPS }, () => [0, 0, 0, 0]);
+	const members: number[][] = Array.from({ length: LINE_STEPS }, () => []);
+	for (let t = 0; t < triangles; t++) {
+		const step = stepOf(param[t] as number);
+		const sum = sums[step] as number[];
+		const c = centres[t] as [number, number, number];
+		for (let k = 0; k < 3; k++) sum[k] = (sum[k] as number) + (c[k] as number);
+		sum[3] = (sum[3] as number) + 1;
+		members[step]?.push(t);
+	}
+	const raw: [number, number, number][] = [[0, 0, 0]];
+	const stepPoint: number[] = new Array(LINE_STEPS).fill(-1);
+	sums.forEach((sum, step) => {
+		const n = sum[3] as number;
+		if (n === 0) return;
+		raw.push([(sum[0] as number) / n, (sum[1] as number) / n, (sum[2] as number) / n]);
+		stepPoint[step] = raw.length - 1;
+	});
+	// The tip: the vertex farthest along, by its share along the part or by its distance from the
+	// attach point.
+	let tip = -1;
+	let farthest = Number.NEGATIVE_INFINITY;
+	for (let v = 0; v < mesh.positions.length / 3; v++) {
+		const p = vertexAt(mesh, v);
+		const value = bySurface ? (mesh.uvs1[v * 2] as number) : length3(p[0], p[1], p[2]);
+		if (value > farthest) {
+			farthest = value;
+			tip = v;
+		}
+	}
+	if (tip >= 0) raw.push(vertexAt(mesh, tip));
+	// A step's mean leans toward whichever side its parts crowd, so the line is smoothed with its
+	// neighbours; its ends stay where they are.
+	const points = raw.map((point, i) => {
+		if (i === 0 || i === raw.length - 1) return point;
+		const a = raw[i - 1] as number[];
+		const b = raw[i + 1] as number[];
+		return [0, 1, 2].map(
+			(c) => ((a[c] as number) + 2 * (point[c] as number) + (b[c] as number)) / 4,
+		) as [number, number, number];
+	});
+	const lengths = [0];
+	for (let i = 1; i < points.length; i++) {
+		const a = points[i - 1] as number[];
+		const b = points[i] as number[];
+		lengths.push(
+			(lengths[i - 1] as number) +
+				length3(
+					(b[0] as number) - (a[0] as number),
+					(b[1] as number) - (a[1] as number),
+					(b[2] as number) - (a[2] as number),
+				),
+		);
+	}
+	// Each triangle's place: its step's place on the line, and how far past that step it lies.
+	const placeOf = new Float64Array(triangles);
+	let width = 0;
+	members.forEach((list, step) => {
+		const at = stepPoint[step] as number;
+		if (at < 0) return;
+		const before = points[at - 1] as number[];
+		const after = (points[at + 1] ?? points[at]) as number[];
+		const line = unit(
+			[0, 1, 2].map((c) => (after[c] as number) - (before[c] as number)),
+			[0, 1, 0],
+		);
+		const vertices = new Set<number>();
+		for (const t of list)
+			for (let k = 0; k < 3; k++) vertices.add(mesh.indices[t * 3 + k] as number);
+		const { wide } = crossAxes(mesh, vertices, line);
+		let lo = Infinity;
+		let hi = -Infinity;
+		for (const v of vertices) {
+			const d = dot(vertexAt(mesh, v), wide);
+			lo = Math.min(lo, d);
+			hi = Math.max(hi, d);
+		}
+		width = Math.max(width, hi - lo);
+		const point = points[at] as number[];
+		for (const t of list) {
+			const c = centres[t] as number[];
+			const past = dot(
+				[0, 1, 2].map((k) => (c[k] as number) - (point[k] as number)),
+				line,
+			);
+			placeOf[t] = Math.max(0, (lengths[at] as number) + past);
+		}
+	});
+	return { points, lengths, placeOf, width, reach };
+}
+
+/** The point on a line at a distance along it from its base. */
+function pointAlong(line: PieceLine, at: number): [number, number, number] {
+	const { points, lengths } = line;
+	for (let i = 1; i < points.length; i++)
+		if ((lengths[i] as number) >= at || i === points.length - 1) {
+			const a = points[i - 1] as readonly number[];
+			const b = points[i] as readonly number[];
+			const span = Math.max(1e-9, (lengths[i] as number) - (lengths[i - 1] as number));
+			const t = Math.min(1, Math.max(0, (at - (lengths[i - 1] as number)) / span));
+			return [0, 1, 2].map((c) => (a[c] as number) + ((b[c] as number) - (a[c] as number)) * t) as [
+				number,
+				number,
+				number,
+			];
+		}
+	return [...(points[0] ?? [0, 0, 0])] as [number, number, number];
+}
+
+/**
+ * The planes of a prototype's card. One many times longer than it is wide, or a placed piece half
+ * as long again as it is wide, is cut along its line into several cards, each with its own face and
+ * edge planes square to the stretch of line it holds and its own cells, so its texels run along the
+ * piece instead of across one square cell, and an arching blade or a hanging strand is pictured
+ * along its arch. Any other prototype keeps three planes through the middle of its bounds.
+ *
+ * @param prototype The prototype.
+ * @param mesh Its mesh at the bake's tier.
+ * @param most The most stretches it is cut into.
+ * @returns The planes, base first on a cut card.
+ */
+function cardPlanes(
+	prototype: UncardedPrototype,
+	mesh: PrototypeArrays,
+	most: number,
+): PlannedPlane[] {
+	const triangles = mesh.indices.length / 3;
+	// A prototype only a cutting draws is drawn at the nearest level alone, so its card stays whole.
+	if (triangles === 0 || prototype.cutting) return planesOf(mesh);
+	const line = pieceLine(mesh);
+	const length = line.lengths[line.lengths.length - 1] as number;
+	const width = Math.max(line.width, 1e-6);
+	const long = prototype.class === 'piece' ? PIECE_LONG : SHOOT_LONG;
+	if (line.reach < CUT_LEAST || length < long * width) return planesOf(mesh);
+	const cuts = Math.min(most, Math.max(2, Math.round(length / width)));
+	if (cuts < 2) return planesOf(mesh);
+	const step = length / cuts;
+	const groups: number[][] = Array.from({ length: cuts }, () => []);
+	for (let t = 0; t < triangles; t++)
+		groups[Math.min(cuts - 1, Math.floor((line.placeOf[t] as number) / step))]?.push(t);
+	const planes: PlannedPlane[] = [];
+	let lastWide: number[] | undefined;
+	groups.forEach((group, k) => {
+		if (group.length === 0) return;
+		const start = pointAlong(line, k * step);
+		const end = pointAlong(line, (k + 1) * step);
+		const along = unit(
+			[0, 1, 2].map((c) => (end[c] as number) - (start[c] as number)),
+			[0, 1, 0],
+		);
+		const vertices = new Set<number>();
+		for (const t of group)
+			for (let i = 0; i < 3; i++) vertices.add(mesh.indices[t * 3 + i] as number);
+		let { wide, thin } = crossAxes(mesh, vertices, along);
+		// Neighbouring cards keep one handedness, so the piece's face turns no way between them.
+		if (lastWide && dot(wide, lastWide) < 0) {
+			wide = [-wide[0], -wide[1], -wide[2]];
+			thin = [-thin[0], -thin[1], -thin[2]];
+		}
+		lastWide = wide;
+		const lo = [Infinity, Infinity, Infinity];
+		const hi = [-Infinity, -Infinity, -Infinity];
+		const axes = [wide, along, thin];
+		for (const v of vertices) {
+			const p = vertexAt(mesh, v);
+			axes.forEach((axis, a) => {
+				const d = dot(p, axis);
+				lo[a] = Math.min(lo[a] as number, d);
+				hi[a] = Math.max(hi[a] as number, d);
+			});
+		}
+		const mid = [0, 1, 2].map((a) => ((lo[a] as number) + (hi[a] as number)) / 2);
+		const half = [0, 1, 2].map((a) =>
+			Math.max(1e-4, (((hi[a] as number) - (lo[a] as number)) / 2) * MARGIN),
+		);
+		// Each plane stands in the middle of its stretch, but the last stretch's planes stand through
+		// the piece's tip along their normals, so a tip that turns away from its stretch's line, as a
+		// blade's tip lying along the ground does, is pictured where it lies.
+		const tip = k === groups.length - 1 ? end : undefined;
+		const placed = (w: number, t: number) =>
+			[0, 1, 2].map(
+				(c) =>
+					w * (wide[c] as number) +
+					(mid[1] as number) * (along[c] as number) +
+					t * (thin[c] as number),
+			);
+		const faceCentre = placed(mid[0] as number, tip ? dot(tip, thin) : (mid[2] as number));
+		const edgeCentre = placed(tip ? dot(tip, wide) : (mid[0] as number), mid[2] as number);
+		const indices = new Uint32Array(group.length * 3);
+		group.forEach((t, i) => {
+			for (let j = 0; j < 3; j++) indices[i * 3 + j] = mesh.indices[t * 3 + j] as number;
+		});
+		const span = [k / cuts, (k + 1) / cuts] as const;
+		const up = along.map((value) => value * (half[1] as number));
+		// The face: across the piece's width and along its line; the edge: across its depth.
+		const faceRight = wide.map((value) => value * (half[0] as number));
+		const edgeRight = thin.map((value) => -value * (half[2] as number));
+		planes.push(
+			{
+				centre: faceCentre,
+				right: faceRight,
+				up,
+				normal: unit(cross(faceRight, up), thin),
+				role: 0,
+				along: span,
+				triangles: indices,
+			},
+			{
+				centre: edgeCentre,
+				right: edgeRight,
+				up,
+				normal: unit(cross(edgeRight, up), wide),
+				role: 1,
+				along: span,
+				triangles: indices,
+			},
+		);
+	});
+	return planes;
+}
+
+/**
+ * Where each prototype's cells lie, one for each of its planes: full cells first, then half cells
+ * four to a full one for the prototypes that take them.
+ */
 function layout(
 	prototypes: readonly UncardedPrototype[],
+	counts: readonly number[],
+	halves: readonly boolean[],
 	cell: number,
 ): { size: number; rects: [number, number, number, number][][] } {
-	const full = prototypes.filter((p) => p.leaves > 0).length * 3;
-	const halves = prototypes.filter((p) => p.leaves === 0).length * 3;
-	const units = full + Math.ceil(halves / 4);
+	const planes = (bare: boolean) =>
+		prototypes.reduce(
+			(sum, _, k) => sum + ((halves[k] as boolean) === bare ? (counts[k] as number) : 0),
+			0,
+		);
+	const full = planes(false);
+	const halfPlanes = planes(true);
+	const units = full + Math.ceil(halfPlanes / 4);
 	const across = Math.max(1, Math.ceil(Math.sqrt(units)));
 	let unit = 0;
 	let quarter = 0;
 	const rects = prototypes.map(() => [] as [number, number, number, number][]);
 	const place = (bare: boolean) =>
-		prototypes.forEach((prototype, p) => {
-			if ((prototype.leaves === 0) !== bare) return;
-			for (let k = 0; k < 3; k++) {
+		prototypes.forEach((_, p) => {
+			if ((halves[p] as boolean) !== bare) return;
+			for (let k = 0; k < (counts[p] as number); k++) {
 				const x = (unit % across) * cell;
 				const y = Math.floor(unit / across) * cell;
 				if (!bare) {
@@ -139,6 +527,12 @@ export interface Palette {
 	readonly tip: number;
 	readonly mask: Uint8Array | undefined;
 	readonly extras: readonly Rgb[];
+	/**
+	 * How a fully browned piece's leaf colour turns on each face, where the record gives autumn
+	 * colours: the autumn reflectance over the face's own, as the plant material turns a placed
+	 * piece by its browning at the nearest level.
+	 */
+	readonly browned?: { readonly upper: Rgb; readonly lower: Rgb };
 }
 
 /**
@@ -188,6 +582,22 @@ export function paletteOf(record: Species, manifest: TextureManifest): Palette {
 	const extras = (record.extras ?? []).map((extra) => extra.colour);
 	const sheathColour = record.growth.model === 'tuft' ? record.growth.sheathColour : undefined;
 	const sheath = sheathColour ? { sheath: sheathColour.foot } : {};
+	const leafOptics = foliageOptics(record);
+	const autumn = record.seasons.autumn?.reflectance;
+	const turn = (face: Rgb, to: Rgb): Rgb => [
+		to[0] / Math.max(face[0], 1e-4),
+		to[1] / Math.max(face[1], 1e-4),
+		to[2] / Math.max(face[2], 1e-4),
+	];
+	const browning =
+		leafOptics && autumn
+			? {
+					browned: {
+						upper: turn(leafOptics.reflectance, autumn),
+						lower: turn(leafOptics.reflectanceBack, autumn),
+					},
+				}
+			: {};
 	if (leaf) {
 		const outline = textureOutline(leaf);
 		const mask = outlineMask(outline.points, MASK_SIZE);
@@ -207,6 +617,7 @@ export function paletteOf(record: Species, manifest: TextureManifest): Palette {
 			tip,
 			mask,
 			extras,
+			...browning,
 		};
 	}
 	return {
@@ -219,6 +630,7 @@ export function paletteOf(record: Species, manifest: TextureManifest): Palette {
 		tip: 1,
 		mask: undefined,
 		extras,
+		...browning,
 	};
 }
 
@@ -237,26 +649,42 @@ export function bakeCards(
 	detail: Detail,
 	prototypes: readonly UncardedPrototype[],
 ): { readonly atlas: CardAtlas; readonly cells: readonly CardCell[] } {
-	const { size, rects } = layout(prototypes, record.lod.cardCell?.[detail] ?? CARD_CELL[detail]);
+	const cuts = record.lod.cardCuts;
+	const planned = prototypes.map((prototype) =>
+		cardPlanes(prototype, prototype.tiers[BAKE_TIER] as PrototypeArrays, cuts?.most ?? CUTS_MOST),
+	);
+	// A prototype without leaves holds thin stems and buds, so its planes take half cells; so do a cut
+	// prototype's stretches, unless the record asks for whole ones.
+	const halves = prototypes.map(
+		(prototype, p) =>
+			prototype.leaves === 0 ||
+			((planned[p] as PlannedPlane[]).length !== 3 && cuts?.cells !== 'full'),
+	);
+	const { size, rects } = layout(
+		prototypes,
+		planned.map((planes) => planes.length),
+		halves,
+		record.lod.cardCell?.[detail] ?? CARD_CELL[detail],
+	);
 	const layerBytes = size * size * 4;
 	const color = new Uint8Array(layerBytes * 2);
 	const surface = new Uint8Array(layerBytes * 2);
 	const palette = paletteOf(record, manifest);
 	const cells: CardCell[] = prototypes.map((prototype, p) => {
 		const mesh = prototype.tiers[BAKE_TIER] as PrototypeArrays;
-		const planes = planesOf(mesh);
+		const planes = planned[p] as PlannedPlane[];
 		return {
 			planes: planes.map((plane, k) => {
 				const rect = inside(rects[p]?.[k] as [number, number, number, number]);
-				bakeCell(mesh, plane, rect, size, palette, color, surface);
+				bakeCell(mesh, plane, rect, size, palette, color, surface, plane.triangles);
 				return {
 					centre: plane.centre as unknown as CardCell['planes'][number]['centre'],
 					right: plane.right as unknown as CardCell['planes'][number]['right'],
 					up: plane.up as unknown as CardCell['planes'][number]['up'],
 					front: rect,
 					back: rect,
-					role: k as 0 | 1 | 2,
-					along: [0, 1] as const,
+					role: plane.role,
+					along: plane.along,
 				};
 			}),
 		};
@@ -285,6 +713,42 @@ const FALL_LEVELS = 5;
 const CUT_OFFSETS = 4;
 /** The lowest coverage a card's texel must reach at any mip level, so faint averages never draw. */
 export const CARD_CUT_LEAST = 0.08;
+
+/** Texels a side that a leaf cell keeps at the coarsest mip level a card reads. */
+const LEVEL_TEXELS = 4;
+
+/**
+ * The coarsest mip level a species' cards read: the deepest at which its smallest leaf cell, with
+ * its border, still holds four texels a side. Past it a cell's average takes in its empty border and the cells beside
+ * it, so a card seen at a slant, whose footprint runs long, would lose its cover. The plant shader
+ * holds each card's sample and cut there. Prototypes that hold no leaves, or that only a cutting
+ * draws, do not count; with no leaf cell at all it is 0, which holds nothing.
+ *
+ * @param prototypes The kit's prototypes with their cells.
+ * @returns The level.
+ */
+export function cardLevelMost(
+	prototypes: readonly {
+		readonly leaves: number;
+		readonly cutting?: boolean;
+		readonly card: CardCell;
+	}[],
+): number {
+	let side = Number.POSITIVE_INFINITY;
+	for (const prototype of prototypes) {
+		if (prototype.leaves === 0 || prototype.cutting) continue;
+		for (const plane of prototype.card.planes)
+			side = Math.min(
+				side,
+				(plane.front[2] as number) + 2 * BORDER,
+				(plane.front[3] as number) + 2 * BORDER,
+			);
+	}
+	if (!Number.isFinite(side)) return 0;
+	let level = 0;
+	while (side >> (level + 1) >= LEVEL_TEXELS) level++;
+	return level;
+}
 
 /** Falls a cell's search tries, evenly from none to `CARD_CUT_FALL_MOST`. */
 const FALL_STEPS = 60;
@@ -437,6 +901,8 @@ export interface CardPlane {
  * @param palette The species' colours, from `paletteOf`.
  * @param color The atlas's colour layers, which this writes.
  * @param surface The atlas's surface layers, which this writes.
+ * @param triangles The triangles the plane pictures, three indices each; every triangle of the mesh
+ * where absent.
  */
 export function bakeCell(
 	mesh: PrototypeArrays,
@@ -446,6 +912,7 @@ export function bakeCell(
 	palette: Palette,
 	color: Uint8Array,
 	surface: Uint8Array,
+	triangles: ArrayLike<number> = mesh.indices,
 ): void {
 	const drawn: [number, number, number, number] = [rect[0], rect[1], rect[2], rect[3]];
 	const left = Math.max(0, drawn[0] - BORDER);
@@ -457,11 +924,14 @@ export function bakeCell(
 		Math.min(size, drawn[1] + drawn[3] + BORDER) - bottom,
 	];
 	const cover = new Float32Array(drawn[2] * drawn[3]);
+	const centred = new Uint8Array(drawn[2] * drawn[3]);
 	for (let layer = 0; layer < 2; layer++) {
 		cover.fill(0);
-		drawPlane(mesh, plane, drawn, size, layer, palette, color, surface, cover);
+		centred.fill(0);
+		drawPlane(mesh, triangles, plane, drawn, size, layer, palette, color, surface, cover, centred);
 		spread(surface, color, size, layer, bordered, false);
 		spread(color, color, size, layer, bordered, true);
+		keepRunEnds(cover, centred, drawn[2], drawn[3]);
 		dither(color, cover, size, layer, drawn);
 		const fall = Math.round((cutFall(color, size, layer, drawn) / CARD_CUT_FALL_MOST) * 255);
 		for (let y = bordered[1]; y < bordered[1] + bordered[3]; y++)
@@ -479,6 +949,7 @@ export function bakeCell(
  */
 function drawPlane(
 	mesh: PrototypeArrays,
+	triangles: ArrayLike<number>,
 	plane: CardPlane,
 	rect: [number, number, number, number],
 	size: number,
@@ -487,6 +958,7 @@ function drawPlane(
 	color: Uint8Array,
 	surface: Uint8Array,
 	cover: Float32Array,
+	centred: Uint8Array,
 ): void {
 	const [rx, ry, rw, rh] = rect;
 	const w = rw * SAMPLES;
@@ -528,7 +1000,7 @@ function drawPlane(
 	const normalAt = new Float32Array(samples * 3);
 	const shadeAt = new Float32Array(samples);
 	const kindAt = new Int8Array(samples).fill(-1);
-	const indices = mesh.indices;
+	const indices = triangles;
 	let a = 0;
 	let b = 0;
 	let c = 0;
@@ -579,6 +1051,16 @@ function drawPlane(
 				] as number;
 			}
 			rgb = [mean[0] * gain, mean[1] * gain, mean[2] * gain];
+			// A placed piece browns by its own second coordinates' y, as the nearest level draws it.
+			if (palette.browned && kind === SURFACE_PIECE) {
+				const brown = Math.min(1, Math.max(0, lerp(mesh.uvs1, 2, 1)));
+				const turned = upper ? palette.browned.upper : palette.browned.lower;
+				rgb = [
+					rgb[0] * (1 + (turned[0] - 1) * brown),
+					rgb[1] * (1 + (turned[1] - 1) * brown),
+					rgb[2] * (1 + (turned[2] - 1) * brown),
+				];
+			}
 		} else if (kind === SURFACE_EXTRA) {
 			const index = Math.min(
 				palette.extras.length - 1,
@@ -615,6 +1097,7 @@ function drawPlane(
 		for (let x = 0; x < rw; x++) {
 			let covered = 0;
 			let leaves = 0;
+			let middle = 0;
 			sum.fill(0);
 			for (let sy = 0; sy < SAMPLES; sy++)
 				for (let sx = 0; sx < SAMPLES; sx++) {
@@ -622,6 +1105,7 @@ function drawPlane(
 					const kind = kindAt[at] as number;
 					if (kind < 0) continue;
 					covered++;
+					if (Math.abs(2 * sx + 1 - SAMPLES) <= 1 && Math.abs(2 * sy + 1 - SAMPLES) <= 1) middle++;
 					leaves += kind;
 					for (let k = 0; k < 3; k++) {
 						sum[k] = (sum[k] as number) + (rgbAt[at * 3 + k] as number);
@@ -651,7 +1135,98 @@ function drawPlane(
 			// The kind that covers most of the texel names it, a leaf on a tie.
 			surface[at + 3] = (2 * leaves >= covered ? 128 : 0) + Math.min(127, shade);
 			cover[y * rw + x] = covered / whole;
+			centred[y * rw + x] = middle > 0 ? 1 : 0;
 		}
+}
+
+/**
+ * The most cover, in whole texels, that a run's end holds in its three by three neighbourhood with
+ * itself: a thin run's end holds a texel or two, a broad part's edge three or more.
+ */
+const END_MOST = 2;
+
+/** How far to one side a run's end's neighbours' cover must lie, as the mean offset in texels. */
+const END_SIDE = 0.5;
+
+/** The most texels back along its run that a run's end takes its added cover from. */
+const END_REACH = 8;
+
+/**
+ * Makes whole each texel that ends a thin run of a cell's picture, such as a leaflet's tip or a
+ * needle's end, and takes the cover that adds from the run behind it, so the run's whole texels
+ * shift to reach its end and the cell keeps its cover. A texel ends a run where the run passes
+ * through its middle, it holds under half cover, little cover stands round it, and what does stands
+ * to one side. The added cover is taken from the run's thin texels, each time from the neighbour
+ * that holds most, back to a texel of half cover or a few texels along; a run that cannot pay for
+ * its end in full keeps its cover as it was.
+ *
+ * @param cover Each texel's cover in the cell, row by row, which this changes.
+ * @param centred Whether the part covers each texel's middle.
+ * @param w The cell's width in texels.
+ * @param h The cell's height in texels.
+ */
+function keepRunEnds(cover: Float32Array, centred: Uint8Array, w: number, h: number): void {
+	const ends: number[] = [];
+	for (let y = 0; y < h; y++)
+		for (let x = 0; x < w; x++) {
+			const own = cover[y * w + x] as number;
+			if (own <= 0 || own >= 0.5 || !centred[y * w + x]) continue;
+			let around = 0;
+			let ox = 0;
+			let oy = 0;
+			for (let dy = -1; dy <= 1; dy++)
+				for (let dx = -1; dx <= 1; dx++) {
+					if ((dx === 0 && dy === 0) || x + dx < 0 || y + dy < 0 || x + dx >= w || y + dy >= h)
+						continue;
+					const value = cover[(y + dy) * w + x + dx] as number;
+					around += value;
+					ox += dx * value;
+					oy += dy * value;
+				}
+			if (around <= 0 || own + around > END_MOST) continue;
+			if (length3(ox / around, oy / around, 0) >= END_SIDE) ends.push(y * w + x);
+		}
+	const taken = new Uint8Array(w * h);
+	const paid: number[] = [];
+	for (const end of ends) {
+		const own = cover[end] as number;
+		let owed = 1 - own;
+		paid.length = 0;
+		let at = end;
+		for (let step = 0; step < END_REACH && owed > 1e-6; step++) {
+			const x = at % w;
+			const y = (at - x) / w;
+			let next = -1;
+			let most = 0;
+			for (let dy = -1; dy <= 1; dy++)
+				for (let dx = -1; dx <= 1; dx++) {
+					if (x + dx < 0 || y + dy < 0 || x + dx >= w || y + dy >= h) continue;
+					const there = (y + dy) * w + x + dx;
+					const value = cover[there] as number;
+					if (taken[there] || value <= 0 || value >= 0.5 || value <= most) continue;
+					most = value;
+					next = there;
+				}
+			if (next < 0) break;
+			const share = Math.min(owed, most);
+			cover[next] = most - share;
+			owed -= share;
+			taken[next] = 1;
+			paid.push(next, share);
+			at = next;
+		}
+		// A run too short to pay for its end, such as a needle's second end, keeps its cover as it was.
+		if (owed > 1e-6) {
+			for (let k = 0; k < paid.length; k += 2) {
+				const texel = paid[k] as number;
+				cover[texel] = (cover[texel] as number) + (paid[k + 1] as number);
+				taken[texel] = 0;
+			}
+			continue;
+		}
+		cover[end] = 1;
+		taken[end] = 1;
+	}
 }
 
 /**
