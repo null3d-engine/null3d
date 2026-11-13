@@ -31,7 +31,7 @@ import { type AxisPath, axisPath, emptyFrame, frameAt, type PathFrame } from '..
 import type { FoliageBuilder } from './kinds';
 import { cutLeaf, type LeafCut } from './leaf-mesh';
 import { type LeafOutline, textureOutline } from './outline';
-import { MeshWriter, SURFACE_LEAF, tube } from './writer';
+import { MeshWriter, phaseByte, SURFACE_LEAF, tube } from './writer';
 
 /**
  * A frond's age in the two shares its shape reads.
@@ -681,7 +681,7 @@ export function frondFoliage(input: MeshInput, level: MeshLevel): MeshArrays {
 			cut,
 			{
 				colour(at, share) {
-					bytes[2] = (frond.phase + Math.round(share * 64)) & 255;
+					bytes[2] = phaseByte(frond.phase + Math.round(share * 64));
 					const sky = crownSkyAt(input.crown, at[0], at[1], at[2]);
 					bytes[3] = Math.round(255 * Math.max(0, Math.min(1, sky)));
 					return bytes;
