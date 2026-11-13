@@ -603,6 +603,39 @@ pedunculate oak's ([D-330](decisions/D-330-oak-crown-by-its-own-light.md)).
 Each floor value grows a different tree, so read all six variants after a floor change. Do not bring
 back the clump field for the specks: its holes fall at random through the wood.
 
+## Tune a scaffold crown
+
+A species that grows by the `scaffold` model has no prune line. Its foliage stands where its
+foliage masses put it, so the masses are what a tuning moves.
+
+`bun run plants:preview <species> --refs <folder>` draws the plant on the CPU in a few seconds. It
+draws the wood alone, the plant in leaf, and the plant's matte over each whole still at that
+still's framing. Look at its pictures after every change, before a review draws the plant. From
+the same camera, its matte reads the oak's sky gap about 0.01 more open than the review's matte.
+
+A whole view of a tree stands far past the distance where its shoots hand over to their cards. So
+the review's whole views judge the first card level, not the leaves. A card level drops a card
+that stands more than 2.5 m from the wood the level draws, unless a joined card stands within
+2 m. The record's `lod.woodOrders` must therefore keep the wood that carries the foliage. The
+scaffold grower gives the stem order 0, a great limb 1, a branch that carries a mass 2, and its
+twigs 3 and 4.
+
+The figures are the pedunculate oak's, over six variants.
+
+| Fault | Move first | What it does on the oak |
+| --- | --- | --- |
+| Crown too closed or too open | `growth.lobes.gap` | Each 0.01 opens the sky gap by 0.006 to 0.009 and shrinks every mass, so the outline overlap falls about 0.006 |
+| A hollow middle behind a full rim | `growth.lobes.inner` up | From 0 to 0.2, at one sky gap, the middle's sky falls from about 1.0 of the rim's to 0.85 |
+| Thin clumps at close range | `growth.sockets.spacing` down, then `growth.sockets.rows` up | From 2.0 to 1.5 closes the sky gap by 0.04, so `lobes.gap` rises to hold it |
+| Branch ends short of their foliage | `growth.sockets.lit` up | From 0.6 to 0.8 puts foliage round the branch's end and closes the sky gap by 0.05 |
+| Masses missing from a far level | `lod.woodOrders` | With `[2, 1]` the first card level dropped the masses on higher branches. `[3, 2]` keeps every card |
+| Foliage on the fork | `growth.lobes.floor` up | No mass stands near the stem in the crown's lower two fifths, whatever the floor |
+| Crown too flat or too tall for its still | `growth.lobes.floor` | From 0.175 to 0.15 takes the plant's width over height at turn 0 from 1.54 to 1.70 |
+
+The sky gap of one plant moves with where its masses fall against the view. Over eighteen oaks the
+gap spans 0.09 to 0.18 round a mean of 0.14. The three whole stills themselves span 0.09 to 0.15.
+Tune the mean of the variants into each still's band. Do not tune one variant into it.
+
 ## A shader's cell counts are computed, not written
 
 The plant shader draws a fruit's scales from its own coordinates. A cell count written as a literal

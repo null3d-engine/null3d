@@ -12,9 +12,9 @@ import {
 	SkeletonBuilder,
 } from '../core/graph';
 import { loadPlantCode } from '../generate';
-import { species } from '../species/pedunculate-oak';
 import { leadOnThickest } from './leaders';
 import { grower } from './models';
+import { species } from './oak-self-organizing.fixture';
 
 /** Degrees between two internodes that meet at a node: from `a` to `b`, then `b` to `c`. */
 function bend(p: Float32Array, a: number, b: number, c: number): number {

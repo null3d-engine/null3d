@@ -6,9 +6,9 @@ import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
 import { formRecord } from '../core/forms';
 import type { MacroSkeleton } from '../core/graph';
 import { loadPlantCode } from '../generate';
-import { species } from '../species/pedunculate-oak';
 import { leadOnThickest } from './leaders';
 import { grower } from './models';
+import { species } from './oak-self-organizing.fixture';
 
 /** The figures of one grown form, each a share of the plant's height unless it says otherwise. */
 interface FormFigures {

@@ -18,7 +18,6 @@ import {
 import { hashAt, hashBytes, unitAt } from '../core/hash';
 import type { Species } from '../core/record';
 import { curveAt, spreadAt } from '../core/types';
-import { species } from '../species/pedunculate-oak';
 import {
 	envelopeSilhouette,
 	envelopeVolume,
@@ -29,6 +28,7 @@ import {
 	skeletonSilhouette,
 } from './envelope';
 import { oakRecord } from './oak.fixture';
+import { species } from './oak-self-organizing.fixture';
 import { girthOf, growSelfOrganizing, shootReach } from './self-organizing';
 import { stemStarts } from './stems';
 

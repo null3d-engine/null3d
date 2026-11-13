@@ -154,9 +154,14 @@ describe('the stem base', () => {
 			const record = species.record;
 			await loadPlantCode(record);
 			for (let variant = 0; variant < 6; variant++) {
-				const led = leadOnThickest(
-					grower('self-organizing').grow({ record, seed: 11, variant, season: 'summer' }),
-				);
+				const grown = grower(record.growth.model).grow({
+					record,
+					seed: 11,
+					variant,
+					season: 'summer',
+				});
+				// A self-organizing plant's wood runs on into its larger limb, as the generator leads it.
+				const led = record.growth.model === 'self-organizing' ? leadOnThickest(grown) : grown;
 				const section = stemSection(record.base, 11, record.seedSalt, variant, 0);
 				const foot = {
 					x: 0,

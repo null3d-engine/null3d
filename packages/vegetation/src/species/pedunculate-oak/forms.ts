@@ -21,35 +21,26 @@ export const forms: Readonly<Record<string, SpeciesForm>> = {
 		// than the open oak, measured on the photo's outline as on the render's.
 		size: { height: { mean: 26, spread: 2 }, dbh: 1.57, aspect: 0.6 },
 		growth: {
-			// Stills 30 and 31: the woodland leader runs up through the crown on its own line, so it
-			// does not take the open oak's per-step turn limit; with the limit the stem top falls to
-			// 0.807 of the height, and without it the six variants read 0.854 to 0.979.
-			maxTurn: null,
-			// Still 30: the leader runs up through the crown to the top; it does not divide low.
-			divide: null,
-			// Still 30: one leader carries the crown to its top, its limbs leaving it at upward angles.
-			apical: {
-				control: [
-					[0, 0.72],
-					[1, 0.66],
-				],
-			},
-			// Still 30: the side branches spread wide from the leader and its limbs, so the crown is
-			// broad and open for its height rather than a narrow point.
-			buds: {
+			// Stills 30 and 31: shade has shed every limb below the crown, so the bole runs clean to
+			// under half the height, and the leader runs on up through the crown with limbs along it.
+			trunk: { fork: [0.46, 0.88] },
+			// Still 30: a small high crown of a few clumps round the leader, open to the sky between
+			// them, with nothing below its foot.
+			lobes: { count: { mean: 16, spread: 2 }, gap: 0.34, inner: 0.1, floor: 0.44 },
+			// Still 30: the limbs leave the leader at upward angles, the lowest widest, and rise at
+			// their ends.
+			limbs: {
+				count: { mean: 8, spread: 1 },
 				angle: [
-					[0.25, 58],
-					[1, 60],
+					[0, 62],
+					[1, 28],
 				],
-				// Still 30: no shoot's end bud dies by chance, so the limbs reach out to round the
-				// crown's top and the bole runs on up through it in every tree.
-				extinction: [0, 0.03],
+				end: [
+					[0, 8],
+					[1, 50],
+				],
 			},
-			// Stills 30 and 31: shade has shed every limb below the crown, about half the height; the
-			// crown's own lower limbs keep their leaves in still 30, so they shed only in deep shade.
-			shedding: { threshold: 0.06, cleanBole: 0.46 },
-			// Still 30: the bole runs on up through the crown as its leader, never outgrown by a limb.
-			pipe: { leader: 0.85 },
+			sockets: { spacing: 1.5 },
 		},
 		envelope: {
 			// Still 30's width profile: the crown from 0.44 of the height, widest near 0.6 at 0.6 of
@@ -63,9 +54,6 @@ export const forms: Readonly<Record<string, SpeciesForm>> = {
 				stills: [{ file: '30-woodland-form-whole.png', turn: 0 }],
 			},
 		},
-		// Still 30: the crown's lower limbs stay leafy into its shade, and the foliage fills the crown
-		// to the share of sky that the photograph shows through it; a tip in its deepest shade is bare.
-		shoots: { placement: { density: 0.8, shadePrune: 0.1, tipPrune: 0.05 } },
 		// Still 31: the shaded bole flares smoothly into the moss at its foot, with no buttress lobes or
 		// surface roots, so it runs up nearly parallel-sided from the ground.
 		base: { flare: { amount: 0.3, height: 0.5 }, buttress: null, roots: null },
@@ -77,59 +65,37 @@ export const forms: Readonly<Record<string, SpeciesForm>> = {
 		// Still 32: about four metres tall to its top leaves, the stem a sixtieth of the height across.
 		size: { height: { mean: 4.4, spread: 0.4 }, dbh: 0.06, aspect: 0.5 },
 		growth: {
-			// Stills 02, 18 and 32: a sapling's limbs are open enough that the clearance thins its
-			// stem and limbs, so the young form grows without it.
-			clearance: null,
-			// A sapling of about eleven seasons.
-			years: 11,
-			// Still 32: the limbs carry the shoots directly, with no orders between.
-			macroOrders: 2,
-			// Still 32: about ten limbs, evenly round the stem up its upper two thirds.
-			branching: 1.2,
-			// Still 32: the thin limbs run straight from the stem, at the angle they leave it, rather
-			// than turning up toward its line as an old tree's vigorous shoots do.
-			kinks: false,
-			forkRule: false,
-			// Still 32: short internodes on the thin wood, so the limbs read as twigs, not poles.
-			internode: { length: 0.15 },
-			// Still 32: one slim stem runs to the top; there are no great limbs yet.
-			divide: null,
-			// Still 32: the leader dominates its few side limbs and runs straight to the top, and the
-			// limbs fill out as the leader reaches the crown's top.
-			apical: {
-				control: [
-					[0, 0.75],
-					[0.5, 0.58],
-					[1, 0.45],
-				],
-				dominance: [1.8, 0.6, 0.98],
-				wander: 8,
+			// Still 32: one slim stem runs to the top, bare to under a third of the height, with about
+			// ten thin limbs round it up its upper two thirds.
+			trunk: { fork: [0.3, 0.94], wander: 3 },
+			// Still 32: a small tuft at each limb's end, each apart from the next with sky between.
+			lobes: {
+				count: { mean: 11, spread: 1 },
+				gap: 0.3,
+				inner: 0,
+				flatten: 0.8,
+				floor: 0.28,
 			},
-			// Still 32: the limbs leave the stem at about 60 degrees and the leader never dies back; the
-			// limbs themselves run out unbranched, each to its one rosette.
-			buds: {
+			// Still 32: the limbs leave the stem at about 60 degrees and run out nearly straight,
+			// turning a little upward.
+			limbs: {
+				count: { mean: 10, spread: 1 },
 				angle: [
-					[0, 60],
-					[1, 60],
+					[0, 62],
+					[1, 42],
 				],
-				extinction: [0, 0.03],
-				sideOrders: 1,
-			},
-			// Still 32: the thin limbs run out straight, turning a little upward, and hardly sag.
-			tropism: {
-				gravi: [
-					[0, 0.3],
-					[0.5, 0.04],
-					[1, 0.04],
+				end: [
+					[0, 12],
+					[1, 35],
 				],
+				wander: 0.02,
 			},
-			bending: { strength: 0.2 },
-			// Still 32: the slim stem tapers evenly to its top; no limb outgrows it.
-			pipe: { leader: 0.85 },
-			// Still 32: an open sapling, whose few leaves shade its lower limbs only a little.
-			light: { shadow: [5, 0.08, 2] },
-			// Still 32: the stem is bare to under a third of the height.
-			shedding: { cleanBole: 0.28 },
+			// Still 32: short internodes on the thin wood, so the limbs read as twigs, not poles.
+			branches: { step: 0.1, spacing: 0.2 },
+			// Still 32: each limb carries its shoots at its end, a few to a tuft.
+			sockets: { spacing: 0.4, inset: 0.15, rows: { mean: 2, spread: 0.5 }, fan: 35 },
+			// Still 32: the slim stem tapers evenly to its top, on twigs a few millimetres thick.
+			pipe: { exponent: 2.2, tipRadius: 0.004 },
 		},
 		envelope: {
 			// Still 32's width profile: the crown from 0.28 of the height, long low limbs near 0.4,
@@ -188,17 +154,8 @@ export const forms: Readonly<Record<string, SpeciesForm>> = {
 					droop: 5,
 				},
 			],
-			// Still 32: a small tuft at each limb's end, where the thin wood stands bare behind it, each
-			// tuft apart from the next with sky between.
-			placement: {
-				density: 1.2,
-				tipBias: 1,
-				// Still 32: the lower limbs keep their leaves in the open sapling's light.
-				shadePrune: 0.05,
-				// Still 32: only a tip in the sapling's deepest shade goes bare.
-				tipPrune: 0.025,
-				scale: { mean: 1.25, spread: 0.1 },
-			},
+			// Still 32: small shoots on thin wood.
+			placement: { scale: { mean: 1.25, spread: 0.1 } },
 		},
 		// Still 32: smooth young bark, with no moss or lichen yet.
 		bark: { moss: null, lichen: null },

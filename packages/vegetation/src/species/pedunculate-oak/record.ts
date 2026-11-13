@@ -40,77 +40,50 @@ export const record: Species = {
 	// flare, which these stills draw about 1.8 times the breast-height width a quarter metre up.
 	size: { height: { mean: 20, spread: 2 }, dbh: 2.9, aspect },
 	growth: {
-		model: 'self-organizing',
-		years: 36,
-		macroOrders: 4,
-		// Stills 01, 02 and 18 show sky under the crown down to the fork: the outline's lowest
-		// fitted row, the drooping limb ends at the rim, stays out of the room the crown fills.
-		floor: 0.175,
-		// Stills 06, 07 and 08: great limbs pass round one another rather than through. The clearance
-		// falls with each limb's order and applies only above a share of the trunk's girth, so the
-		// crown's fine wood keeps its own layout while its great limbs keep apart.
-		clearance: 0.3,
-		clearanceThickness: 0.35,
-		turning: 30,
-		internode: { length: 0.6, ageFactor: 0.99 },
+		model: 'scaffold',
 		stems: { count: 1, lean: { mean: 2, spread: 2 }, stool: 0, fused: 0 },
-		buds: {
+		// Stills 01, 02 and 17 and the winter oak's whole views: the lowest limbs leave the bole an
+		// eighth of the height up and the last of them a quarter up, where the bole ends. The bole
+		// runs straight from its flare to the fork.
+		trunk: { fork: [0.13, 0.24], wander: 2 },
+		// Stills 01, 02 and 18: the dome's outline is broken into rounded clumps four to six metres
+		// across with sky between them, about eleven round the outline of one view. Each clump is a
+		// little flatter than it is wide, and sky shows under the crown down to the fork.
+		lobes: {
+			count: { mean: 44, spread: 3 },
+			gap: 0.43,
+			inner: 0.2,
+			flatten: 0.7,
+			vary: 0.2,
+			floor: 0.15,
+		},
+		// The winter oak's stills 01 to 03: six or seven great limbs round the bole. The lowest run
+		// out almost level and dip at their ends; the highest rise steeply through the crown's middle.
+		limbs: {
+			count: { mean: 6, spread: 0.6 },
 			arrangement: { kind: 'spiral', divergence: 137.5 },
+			jitter: 10,
 			angle: [
-				[0.25, 50],
+				[0, 80],
+				[0.6, 55],
+				[1, 18],
+			],
+			end: [
+				[0, -12],
+				[0.5, 8],
 				[1, 55],
 			],
-			angleSpread: 8,
-			extinction: [0.02, 0.03],
+			wander: 0.03,
 		},
-		apical: {
-			control: [
-				[0, 0.55],
-				[1, 0.55],
-			],
-			dominance: [0.7, 0.6, 0.98],
-			wander: 16,
-		},
-		// Still 17: the bole runs straight from its flare to the fork, leaning no more than the
-		// stem's own lean (2 degrees, give or take 2).
-		divide: { at: 0.25, count: 5, angle: 64, lean: 35, plumb: 4 },
-		// Stills 01 and 02: the crown's top and rim carry its fullest shoots, not its weakest.
-		light: { apical: 1, lateral: 1, shadow: [5, 0.15, 2], cells: 96, surface: true },
-		tropism: {
-			photo: 0.04,
-			gravi: [
-				[0, 0.3],
-				[0.25, 0],
-				[0.5, 0],
-				[0.75, 0],
-				[1, 0.03],
-			],
-		},
-		// Stills 01, 02, 17 and 18 show sky under the crown's base: a shoot the righting carried below
-		// it stands in the crown's shade and dies back.
-		shedding: { threshold: 0.1, cleanBole: 0.2, stubs: 0, underCrown: 1 },
-		// Fewer subbranches and twigs, thinned most at the finest orders, so the crown keeps its
-		// masses with fewer drawn branches.
-		branchingByOrder: [
-			[0, 1],
-			[1, 0.6],
-		],
-		// The steps bend gently instead of kinking, and the branches leave their parents at separate
-		// points rather than as a crowd within one internode.
-		maxTurn: 8,
-		lateralSpacing: 0.6,
-		// The great limbs hold the azimuths their fork gave them, so the crown reads balanced from
-		// above while their branches take the light.
-		limbAzimuth: 0.5,
-		// The crown's sag was fitted with the wood weighed at a 3.5 m bole; the bend keeps weighing it
-		// so, whatever width the trunk is drawn at.
-		bending: { strength: 0.5, upturn: 0.2, girth: 3.5 },
-		forkRule: true,
-		kinks: true,
-		// Stills 02 and 18: the foliage meets the wood at every twig. A finer tip leaves leaf groups
-		// hanging off the crown as pieces of their own, since a twig under the far view's pixel draws
-		// nothing for them to stand on.
-		pipe: { exponent: 2.3, tipRadius: 0.012 },
+		// Stills 08 and 09: a branch leaves its parent at a wide angle, one at a time along it, and
+		// bends in gentle steps.
+		branches: { angle: 55, step: 0.4, turn: 22, spacing: 0.9, lift: 0.25 },
+		// Stills 04 and 21: a branch end is a spray about a metre and a half long, and the sprays
+		// stand a metre or so apart over a clump's lit side.
+		sockets: { spacing: 1.7, inset: 1.1, lit: 0.8, rows: { mean: 5, spread: 1 }, fan: 45 },
+		// Stills 02 and 18: the foliage meets the wood at every twig, and a great limb stands about
+		// two fifths of the bole across.
+		pipe: { exponent: 1.8, tipRadius: 0.018 },
 	},
 	envelope,
 	shoots: {
@@ -269,17 +242,8 @@ export const record: Species = {
 			// change of reach or part size. The low limbs now keep the foliage they carry below the
 			// bole's line, so the dial sits lower than it did when that foliage was missing.
 			density: 1,
-			// No shade line and no starved-tip line: the sky prune below takes the same wood, so one rule
-			// that can be read stands where three stood. A shade line is still there for a species that
-			// cannot prune by the sky its own leaves block.
+			// A socket holds its rows where its clump stands, so no shade or sky line thins them.
 			shadePrune: 0,
-			// Stills 01, 03 and 05: sky through the crown's middle and under it, where its own leaves
-			// leave a shoot under this share of the sky; the lit outer masses stay.
-			skyPrune: 0.43,
-			skyPruneLayer: 1,
-			// Stills 01 and 18: no bare twigs hang under the crown; a thin branch left with no shoot
-			// has died and goes.
-			bareTrim: 0.03,
 			// Stills 02 and 03: the shoots stand up off their wood, so the foliage rides on the limbs
 			// rather than hanging under them.
 			lift: 15,
@@ -450,7 +414,9 @@ export const record: Species = {
 		// The cards stand a quarter larger than the shoots they picture, so a gap between one
 		// shoot's leaves falls on a neighbour's leaves rather than on sky.
 		cardGrow: 1.25,
-		woodOrders: [2, 1],
+		// The first card level keeps the twigs that leave a clump's branch, so no branch ends short
+		// of its foliage at a whole view; the second keeps the branches that carry the clumps.
+		woodOrders: [3, 2],
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
