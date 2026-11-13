@@ -4,6 +4,9 @@
 import { DEV } from '../errors/checks';
 import { EngineError } from '../errors/engine-error';
 import {
+	LEVEL_SWITCH_COVERAGE,
+	LEVEL_SWITCH_DISTANCE,
+	LEVEL_SWITCH_ERROR,
 	LEVELS_MAX,
 	MAP_ROW_SLOT_ANISOTROPY,
 	MAP_ROW_SLOT_BUMP,
@@ -279,10 +282,6 @@ export interface MeshLevelOptions {
 const LEVEL_REFERENCE_HEIGHT = 1080;
 /** The field of view in degrees at which the engine compares a level's error and coverage. */
 const LEVEL_REFERENCE_FOV = 50;
-/** The level's switch measures, as the engine core names them: error, distance and coverage. */
-const LEVEL_SWITCH_ERROR = 0;
-const LEVEL_SWITCH_DISTANCE = 1;
-const LEVEL_SWITCH_COVERAGE = 2;
 /** The most lower levels a mesh takes: the core's levels, less the base mesh. */
 const MAX_LOWER_LEVELS = LEVELS_MAX - 1;
 
