@@ -14,7 +14,7 @@ import { record } from './record';
  * it: the spacing that keeps every branch end within the alder's near budget and closes the crown's
  * leaf form to stills 01, 02 and 18.
  */
-const ENDS = { pitch: 0.67 / 20, reach: 0.82 / 20 } as const;
+const ENDS = { pitch: 0.8 / 20, reach: 0.82 / 20 } as const;
 
 /** The common alder's frame. */
 export const frame: FrameSpec = {
@@ -43,8 +43,9 @@ export const frame: FrameSpec = {
 			[1, 0],
 		],
 		// Still 30 looks across the wide side. The turning video: a quarter turn on, the crown is
-		// about 0.65 as wide as tall against 0.85 at still 30's turn.
-		0.72,
+		// about 0.65 as wide as tall against 0.85 at still 30's turn; the plan's narrow way is held
+		// to at least three quarters of its wide way.
+		0.75,
 	),
 	stems: {
 		name: 'leader',
@@ -61,7 +62,7 @@ export const frame: FrameSpec = {
 			[1, 0.002],
 		],
 		// The leader's own tip carries a clump, whose fine wood and pieces make the tree's top.
-		length: { height: 0.955 },
+		length: { height: 0.93 },
 		// Stills 01 and 17: no lean and no bend.
 		sway: 0.6,
 		elbows: 4,
@@ -93,7 +94,13 @@ export const frame: FrameSpec = {
 				angleSpread: 4,
 				// Still 30: the longest branches reach 0.46 of the height from the leader, and a clump
 				// 0.12 across sits round each branch's end, so the wood ends 0.06 short of the outline.
-				length: { outline: 0.87 },
+				length: {
+					outline: [
+						[0, 0.93],
+						[0.5, 0.88],
+						[1, 0.85],
+					],
+				},
 				vary: 0.06,
 				// Still 30: the highest branches are half a metre long at the least.
 				least: 0.025,
@@ -116,7 +123,7 @@ export const frame: FrameSpec = {
 				sway: 10,
 				elbows: 5,
 				// Still 30: a clump is 0.10 to 0.15 of the height across.
-				patch: { kind: 'clump', width: 0.16, depth: 0.12, fill: ENDS },
+				patch: { kind: 'clump', width: 0.19, depth: 0.14, fill: ENDS },
 				children: [
 					{
 						name: 'side',
@@ -150,7 +157,7 @@ export const frame: FrameSpec = {
 						sway: 10,
 						elbows: 3,
 						// Still 30: the smaller clumps on a branch's side twigs.
-						patch: { kind: 'clump', width: 0.12, depth: 0.09, fill: ENDS },
+						patch: { kind: 'clump', width: 0.15, depth: 0.11, fill: ENDS },
 					},
 				],
 			},
