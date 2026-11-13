@@ -79,10 +79,14 @@ export const record: Species = {
 		},
 		// The least plant that still reads as the species: seven shoots of two blades and four stems.
 		least: { shoots: 7, blades: 2, stalks: 4 },
-		// Stills 14 and 21 show dense fine pale roots that leave the crown straight down and out,
-		// with no rhizome, and that hold a ball of soil about 0.11 m across and 0.1 m deep when the
-		// tuft is lifted. The tuft draws no roots: each costs about 630 bytes of the variant, and the
-		// thirty or so the pictures show would take the variant past its byte budget.
+		soil: {
+			// Still 14: dense fine pale roots leave the crown straight down and out, with no rhizome.
+			// Still 21: lifted, they hold a ball of soil about 0.11 m across and 0.1 m deep.
+			roots: { mean: 32, spread: 5 },
+			rootLength: { mean: 0.1, spread: 0.02 },
+			rootRadius: 0.002,
+			droop: { mean: 60, spread: 15 },
+		},
 	},
 	foliage: {
 		kind: 'grass-blade',
@@ -164,10 +168,13 @@ export const record: Species = {
 			kitBytes: { low: 821_000, medium: 1_031_000, high: 1_293_000, ultra: 1_626_000 },
 			// A plant is rows of the kit's pieces, so a variant's bytes are the same at every tier.
 			// Measured over the four variants at seed 11, in summer and in blossom: the largest reads
-			// 43,435 bytes; 20,756 triangles at the nearest level at the high tier and 29,284 at the
-			// ultra; and 586 and 300 at the two card levels. Each cap keeps about fifteen per cent
-			// above its read, and the nearest level's holds the ultra tier.
-			variantBytes: { low: 50_000, medium: 50_000, high: 50_000, ultra: 50_000 },
+			// 68,951 bytes, 19,468 of them the root ball of stills 14 and 21, and its cap keeps a
+			// twentieth above that read, as the lead ruled for the roots the pictures ask for. Drawn
+			// at once at the tallest view, the first variant reads 22,268 triangles at the high tier
+			// and 31,436 at the ultra; the two card levels read 658 and 354 at most. The other caps
+			// keep about fifteen per cent above their reads before the card bake's cut, and the
+			// nearest level's holds the ultra tier.
+			variantBytes: { low: 72_400, medium: 72_400, high: 72_400, ultra: 72_400 },
 			lod0Triangles: 33_700,
 			lod1Triangles: 680,
 			lod2Triangles: 350,
