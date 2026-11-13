@@ -4141,7 +4141,11 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 		name: 'plant-coverage',
 		page: 'tests/pages/plant-coverage.html',
 		size: [1280, 720],
-		timeoutSeconds: 180,
+		// Three crowns compile their materials before the first frame. A busy software runner drew
+		// its first frame at 64 seconds and its second at 159, and the page then gave no result inside
+		// its 180-second limit (run 43515868396). The limit stays under the page budget and above
+		// what the page has needed.
+		timeoutSeconds: 300,
 	},
 	...sparseFormTests(),
 ];
