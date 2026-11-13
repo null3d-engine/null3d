@@ -910,6 +910,7 @@ function compareRun(
 			// where its parts run. It gets that figure instead of an outline it cannot trust.
 			...edgeLines(result.pairs),
 			...framingLines(result.pairs),
+			...areaLines(result.pairs),
 			...voidLines(result.pairs),
 			...pieceLines(result.pairs),
 			...connectivityLines(result.pairs),
@@ -1145,6 +1146,20 @@ function framingLines(pairs: readonly StillResult[]): string[] {
 }
 
 /**
+ * What each solved picture shows in the areas its view's contract names, read from its picture of
+ * the parts: figures for the eye beside the photograph, whose own shares are read by eye.
+ */
+function areaLines(pairs: readonly StillResult[]): string[] {
+	return pairs.flatMap((pair) =>
+		pair.areas && pair.areas.length > 0
+			? [
+					`- ${pair.file}: its areas, by the parts picture: ${pair.areas.map((area) => `${area.name} ${area.cover.toFixed(2)}`).join('; ')}.`,
+				]
+			: [],
+	);
+}
+
+/**
  * The pictures that are void: each drew, and shows no subject to compare. No figure is read from
  * one, and no row passes or fails by it: the camera, or the file's mapping to a view, is at fault.
  */
@@ -1153,7 +1168,7 @@ function voidLines(pairs: readonly StillResult[]): string[] {
 		...(pair.lacks === undefined
 			? []
 			: [
-					`- ${pair.file}: the plant lacks the part its photograph shows: ${pair.lacks}. The rows this picture carries fail on it.`,
+					`- ${pair.file}: the plant lacks or hides the part its photograph shows: ${pair.lacks}. The rows this picture carries fail on it.`,
 				]),
 		...(pair.void === undefined
 			? []
