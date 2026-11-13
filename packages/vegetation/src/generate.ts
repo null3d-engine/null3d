@@ -492,7 +492,11 @@ export function buildKitNow(source: KitSource, options: KitOptions = {}): Specie
 		// A cutting kit holds no card levels: its pieces are drawn at the nearest level alone. A piece
 		// that draws brush cards takes them in the bake, which pictures its leaves first.
 		const baked = cutting
-			? { atlas: cards, cells: uncarded.map(() => ({ planes: [] })), prototypes: uncarded }
+			? {
+					atlas: cards,
+					cells: uncarded.map(() => ({ planes: [] })),
+					prototypes: uncarded.map(({ brushes: _brushes, ...prototype }) => prototype),
+				}
 			: stage(
 					placeholders,
 					() => bakeWithBrushes(record, manifest, detail, uncarded),
