@@ -216,7 +216,10 @@ export interface GrowOptions extends CoarsenessOptions {
 	 * A review redraw sets it to measure what the cards buy; a page rarely does.
 	 */
 	readonly cards?: number;
-	/** How a card joins the plant when its branch is not drawn: `remove`, `branch` or `twig`. */
+	/**
+	 * How a card joins the plant when its branch is not drawn: `remove`, `branch` or `twig`. Absent,
+	 * every card stays and the branch under each card that would hang free is drawn.
+	 */
 	readonly cardJoin?: 'remove' | 'branch' | 'twig';
 }
 
@@ -384,10 +387,7 @@ export function variantKey(kit: SpeciesKitData, options: GrowOptions): string {
 	const sections =
 		options.sections === undefined || options.sections === 0 ? '' : `:sections=${options.sections}`;
 	const cards = options.cards === undefined || options.cards === 1 ? '' : `:cards=${options.cards}`;
-	const join =
-		options.cardJoin === undefined || options.cardJoin === 'remove'
-			? ''
-			: `:join=${options.cardJoin}`;
+	const join = options.cardJoin === undefined ? '' : `:join=${options.cardJoin}`;
 	return `${kit.key}:${options.seed >>> 0}:${options.variant}:${season}:${options.detail ?? kit.detail}:${cutting}${coarsenessKey(kit, options)}${sparse}${max}${sections}${cards}${join}`;
 }
 

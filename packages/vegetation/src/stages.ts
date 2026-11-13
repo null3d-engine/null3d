@@ -70,8 +70,9 @@ export interface DressInput extends GrowInput {
 	readonly cards?: number;
 	/**
 	 * How a card joins the plant when its branch is not drawn at the level: `remove` drops the card,
-	 * `branch` draws the branch the card stands on, and `twig` keeps the card and draws it a twig to
-	 * the nearest drawn branch. `remove` by default.
+	 * `branch` draws the branch every card stands on, and `twig` keeps the card and draws it a twig
+	 * to the nearest drawn branch. Absent, the level keeps every card and draws the branch under each
+	 * card that reaches neither drawn wood nor a joined card.
 	 */
 	readonly cardJoin?: 'remove' | 'branch' | 'twig';
 	/**
