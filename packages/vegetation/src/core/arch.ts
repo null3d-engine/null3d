@@ -9,6 +9,10 @@
 // most two neighbouring segments may turn between them, and a path is never cut coarser than that,
 // so fewer triangles shorten a straight run and never put a corner in an arch.
 //
+// A part that turns one way and then the other, as a blade that arches over and then lies on the
+// soil, is a chain of arches laid end to end. Each link leaves in the direction the one before it
+// ends in, so the chain carries its own tangent, and the bound holds where two links meet as well.
+//
 // A part measured on a photograph is given by its figures instead: its highest point, how far its
 // tip ends below that, and how far out the tip reaches. `archFromFigures` finds the turn that
 // stands nearest to them and says how far it misses.
@@ -245,6 +249,134 @@ export function archPath(arch: Arch, level: 0 | 1 | 2, least = 1): ArchPath {
 		lay(arch, stretch, path);
 		if (tightest(path) >= bound || path.segments >= MOST_SEGMENTS) return path;
 		bends++;
+	}
+}
+
+/**
+ * One link of a chain of arches: an arch without its leaving angle, which it takes from the
+ * direction the link before it ends in.
+ *
+ * @category api/vegetation
+ */
+export type ArchLink = Omit<Arch, 'leave'>;
+
+/**
+ * A bent part made of arches laid end to end in one plane, each leaving in the direction the one
+ * before it ends in, so the part can turn one way and then the other with no corner where two
+ * meet: a blade that arches over and comes to rest on the soil, or a limb of elbows.
+ *
+ * @category api/vegetation
+ */
+export interface ArchChain {
+	/** Degrees above the horizontal that the first link leaves at. */
+	readonly leave: number;
+	/** The links, from the base. A link of no length is passed over. */
+	readonly links: readonly ArchLink[];
+}
+
+/**
+ * A chain's length: its links' lengths together.
+ *
+ * @param chain The chain.
+ * @returns Metres along its curve.
+ * @category api/vegetation
+ */
+export function chainLength(chain: ArchChain): number {
+	let sum = 0;
+	for (const link of chain.links) sum += Math.max(0, link.length);
+	return sum;
+}
+
+/**
+ * A chain's links as arches, each leaving at the angle the one before it ends at.
+ *
+ * @param chain The chain.
+ * @returns The arches, links of no length left out.
+ * @category api/vegetation
+ */
+export function chainArches(chain: ArchChain): Arch[] {
+	const arches: Arch[] = [];
+	let leave = chain.leave;
+	for (const link of chain.links) {
+		if (!(link.length > 0)) continue;
+		arches.push({ ...link, leave });
+		leave -= link.turn;
+	}
+	return arches;
+}
+
+/** The cosine of the turn between the segments either side of a path's point. */
+function turnAt(path: ArchPath, i: number): number {
+	const { out, up } = path;
+	const px = (out[i] as number) - (out[i - 1] as number);
+	const py = (up[i] as number) - (up[i - 1] as number);
+	const qx = (out[i + 1] as number) - (out[i] as number);
+	const qy = (up[i + 1] as number) - (up[i] as number);
+	const pl = Math.sqrt(px * px + py * py);
+	const ql = Math.sqrt(qx * qx + qy * qy);
+	return pl > 0 && ql > 0 ? (px * qx + py * qy) / (pl * ql) : 1;
+}
+
+/** The paths of a chain's links laid end to end as one path. */
+function joined(parts: readonly ArchPath[], arches: readonly Arch[], total: number): ArchPath {
+	let segments = 0;
+	for (const part of parts) segments += part.segments;
+	const path = room(segments);
+	let at = 0;
+	let x = 0;
+	let y = 0;
+	let before = 0;
+	path.elevation[0] = parts[0]?.elevation[0] as number;
+	parts.forEach((part, k) => {
+		const length = (arches[k] as Arch).length;
+		for (let i = 1; i <= part.segments; i++) {
+			path.out[at + i] = x + (part.out[i] as number);
+			path.up[at + i] = y + (part.up[i] as number);
+			path.elevation[at + i] = part.elevation[i] as number;
+			path.along[at + i] = (before + (part.along[i] as number) * length) / total;
+		}
+		at += part.segments;
+		x = path.out[at] as number;
+		y = path.up[at] as number;
+		before += length;
+	});
+	path.along[segments] = 1;
+	return path;
+}
+
+/**
+ * Cuts a chain into one path for a level of detail. Each link is cut as `archPath` cuts it, and
+ * where two links meet the turn between their neighbouring segments is held to the level's
+ * `MOST_TURN` as well: a join that turns more is cut finer on both sides until it does not.
+ * `least` is shared among the links by their lengths.
+ *
+ * @param chain The chain.
+ * @param level The level of detail, 0 the nearest.
+ * @param least The least segments to cut in all, for a part that needs more than its turns do.
+ * @returns The path, its shares along taken over the whole chain.
+ * @category api/vegetation
+ */
+export function chainPath(chain: ArchChain, level: 0 | 1 | 2, least = 1): ArchPath {
+	const arches = chainArches(chain);
+	const total = chainLength(chain);
+	if (arches.length === 0) throw new Error('@null3d/vegetation: a chain of arches has no length');
+	if (arches.length === 1) return archPath(arches[0] as Arch, level, least);
+	const bound = cos(radians(MOST_TURN[level])) - 1e-12;
+	const wanted = arches.map((arch) => Math.max(1, Math.floor((least * arch.length) / total)));
+	for (;;) {
+		const parts = arches.map((arch, k) => archPath(arch, level, wanted[k]));
+		const path = joined(parts, arches, total);
+		if (path.segments >= MOST_SEGMENTS) return path;
+		let over = false;
+		let at = 0;
+		for (let k = 0; k < parts.length - 1; k++) {
+			at += (parts[k] as ArchPath).segments;
+			if (turnAt(path, at) >= bound) continue;
+			wanted[k] = 2 * (parts[k] as ArchPath).segments;
+			wanted[k + 1] = 2 * (parts[k + 1] as ArchPath).segments;
+			over = true;
+		}
+		if (!over) return path;
 	}
 }
 
