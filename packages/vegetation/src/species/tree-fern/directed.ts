@@ -111,9 +111,24 @@ export const directed: Species = {
 		bud: { length: 0, width: 0, tipCluster: 0 },
 		placement: { perMetre: 0, shadePrune: 0, skyward: 0.5, scale: 1 },
 	},
-	// The leaf is one pinna (pieces.ts): drawn far as one card a pinna, and near as small folded
-	// cards, one a pinnule, on each pinna's midrib.
-	foliage: { kind: 'blade', leaf: { ...pinna, narrow: true } },
+	// The leaf is one pinna (pieces.ts), one lacy card a pinna at every tier.
+	foliage: {
+		kind: 'blade',
+		leaf: {
+			...pinna,
+			narrow: true,
+			// The faces as the plant's own pictures show them (green pixels' means, in sRGB): the upper
+			// face on 04 74 / 96 / 49, 08 80 / 100 / 55, 09 72 / 92 / 47, 11 91 / 111 / 44, 12 74 /
+			// 99 / 34, 21 85 / 104 / 63 and 22 81 / 98 / 65, mean 80 / 100 / 51; the lower face on 13
+			// 163 / 175 / 107, 25 140 / 150 / 90 and 05 133 / 150 / 93, mean 145 / 158 / 97. The
+			// texture's source, picture 24, is darker (56 / 71 / 30), and the lower face read yellow.
+			optics: {
+				...pinna.optics,
+				reflectance: [0.079, 0.127, 0.033],
+				reflectanceBack: [0.283, 0.341, 0.119],
+			},
+		},
+	},
 	base: {
 		// Picture 01: the foot widens to 0.175 of the height just above a low root mound 0.53 of the
 		// height wide at the ground and 0.08 tall, with concave sides (the turning video: 0.45 and
