@@ -31,6 +31,7 @@ import {
 	type LeafRule,
 	leafTurn,
 	meshedPlan,
+	meshShoot,
 	type PlannedBud,
 	type PlannedLeaf,
 	placeNodeLeaves,
@@ -42,9 +43,11 @@ import {
 
 /**
  * How a piece is turned where a socket carries it: along the socket's own direction, hanging plumb,
- * with its plane level, or with its tip turned up.
+ * standing upright, with its plane level, or with its tip turned up. A hanging piece's ground side
+ * is the way its line runs and an upright piece's is the way back along its line, so their stems
+ * droop in the piece's own length; every other piece's ground side is opposite its sky side.
  */
-export type PieceAttitude = 'along' | 'plumb' | 'level' | 'up';
+export type PieceAttitude = 'along' | 'plumb' | 'upright' | 'level' | 'up';
 
 /** The leaves along one stem of a piece. */
 export interface PieceLeaves {
@@ -100,6 +103,8 @@ export interface PieceSides {
 	readonly angle: Spread;
 	/** A side stem's length over its rule's, by its place along the parent, foot to tip. */
 	readonly lengthAlong?: Curve;
+	/** Degrees added to every side stem's place round the parent; 180 starts on the other side. */
+	readonly turn?: number;
 }
 
 /** One stem of a piece. */
@@ -157,6 +162,13 @@ export interface PiecePrototype
 	readonly piece: string;
 	readonly variant: number;
 	readonly attitude: PieceAttitude;
+	/**
+	 * Which part of its variant this is, and how many parts the variant has. A variant too large for
+	 * one prototype is split into parts. A socket carries every part of a variant at one place, with
+	 * one turn, one wind record and one phase, so the parts move as one body.
+	 */
+	readonly part: number;
+	readonly parts: number;
 }
 
 /** The golden angle in degrees. */
@@ -242,7 +254,9 @@ export function planPiece(
 	const salt = record.seedSalt;
 	const draw = (purpose: number, a = 0, b = 0) => unitAt(salt, PIECE_KEY + key, purpose, a, b);
 	const down: Readonly<Vector3> =
-		ground ?? rule.ground ?? (rule.attitude === 'plumb' ? [0, 1, 0] : [0, 0, -1]);
+		ground ??
+		rule.ground ??
+		(rule.attitude === 'plumb' ? [0, 1, 0] : rule.attitude === 'upright' ? [0, -1, 0] : [0, 0, -1]);
 	const leafSpread = foliage.kind === 'blade' ? foliage.leaf.length : foliage.needle.length;
 	const leafMean = spreadMean(leafSpread);
 	const axes: AxisPoint[][] = [];
@@ -440,7 +454,8 @@ export function planPiece(
 				const frame = frames[Math.min(steps - 1, Math.max(0, Math.round(place / run) - 1))];
 				if (!frame) continue;
 				const t = place / length;
-				const wander = (draw(Purpose.SideTurn, axis, s * 4096 + n) - 0.5) * SIDE_WANDER;
+				const wander =
+					(draw(Purpose.SideTurn, axis, s * 4096 + n) - 0.5) * SIDE_WANDER + (sides.turn ?? 0);
 				const azimuths =
 					sides.arrangement === 'alternate'
 						? [90 + (n % 2) * 180 + wander]
@@ -493,13 +508,109 @@ export function pieceKey(rule: number, variant: number): number {
 	return rule * 16 + variant;
 }
 
+/** The most vertices a part may hold at the finest tier, under the prototype's own limit. */
+export const PART_VERTICES_MOST = 60_000;
+
 /**
- * Builds a species' pieces, each variant at every detail tier, from its leaf meshes.
+ * Splits a plan into parts that each fit one prototype. The first part holds the main stem. A side
+ * stem of the main stem stays whole with everything that grows from it, and joins the current part
+ * while the part's mesh at the finest tier stays under the limit. Every part keeps the whole plan's
+ * span, so the parts bend as one body.
+ *
+ * @param plan The plan.
+ * @param leaves The leaf meshes at the finest tier.
+ * @param most The most vertices a part may hold at that tier.
+ * @returns The parts, the main stem's first; the plan itself where it fits one prototype.
+ */
+export function splitPlan(
+	plan: ShootPlan,
+	leaves: readonly PrototypeArrays[],
+	most = PART_VERTICES_MOST,
+): ShootPlan[] {
+	const vertices = (part: ShootPlan): number => meshShoot(part, leaves, 'ultra').vertices;
+	if (vertices(plan) <= most) return [plan];
+	const near = (a: readonly number[], b: readonly number[]): number =>
+		length3(
+			(a[0] as number) - (b[0] as number),
+			(a[1] as number) - (b[1] as number),
+			(a[2] as number) - (b[2] as number),
+		);
+	// Each stem's parent: the earliest stem that holds the point its foot stands on.
+	const parent = plan.axes.map((points, a) => {
+		const foot = (points[0] as AxisPoint).at;
+		for (let b = 0; b < a; b++)
+			if ((plan.axes[b] as readonly AxisPoint[]).some((point) => near(point.at, foot) < 1e-5))
+				return b;
+		return -1;
+	});
+	// The side stem of the main stem that each stem grows from, itself included; -1 for the main stem.
+	const limb = plan.axes.map((_, a) => {
+		let at = a;
+		while (at > 0 && (parent[at] as number) > 0) at = parent[at] as number;
+		return at === 0 ? -1 : at;
+	});
+	// Each bud's stem: the one that passes nearest to it.
+	const budStem = plan.buds.map((bud) => {
+		let best = 0;
+		let least = Infinity;
+		for (const [a, points] of plan.axes.entries())
+			for (const point of points) {
+				const d = near(point.at, bud.at);
+				if (d < least - 1e-9) {
+					least = d;
+					best = a;
+				}
+			}
+		return best;
+	});
+	const partOf = (stems: ReadonlySet<number>): ShootPlan => {
+		const index = new Map<number, number>();
+		const axes: (readonly AxisPoint[])[] = [];
+		for (const [a, points] of plan.axes.entries())
+			if (stems.has(a)) {
+				index.set(a, axes.length);
+				axes.push(points);
+			}
+		return {
+			axes,
+			leaves: plan.leaves
+				.filter((leaf) => stems.has(leaf.axis))
+				.map((leaf) => ({ ...leaf, axis: index.get(leaf.axis) as number })),
+			buds: plan.buds.filter((_, b) => stems.has(budStem[b] as number)),
+			reach: plan.reach,
+			span: plan.span,
+		};
+	};
+	const limbs = [...new Set(limb.filter((a) => a > 0))];
+	const parts: ShootPlan[] = [];
+	let current = new Set<number>([0]);
+	for (const root of limbs) {
+		const own = plan.axes.flatMap((_, a) => (limb[a] === root ? [a] : []));
+		const grown = new Set([...current, ...own]);
+		if (vertices(partOf(grown)) <= most) {
+			current = grown;
+			continue;
+		}
+		if (vertices(partOf(new Set(own))) > most)
+			throw new Error(
+				'@null3d/vegetation: one side stem of a piece passes the prototype vertex limit; give the piece fewer leaves on a side stem',
+			);
+		parts.push(partOf(current));
+		current = new Set(own);
+	}
+	parts.push(partOf(current));
+	return parts;
+}
+
+/**
+ * Builds a species' pieces, each variant at every detail tier, from its leaf meshes. A variant too
+ * large for one prototype comes as several parts.
  *
  * @param record The species record.
  * @param rules The species' piece rules.
  * @param leaves The species' leaf meshes at every tier, low first.
- * @returns The prototypes, each rule's variants together, in the rules' order.
+ * @returns The prototypes, each rule's variants together and each variant's parts together, in the
+ * rules' order.
  */
 export function piecePrototypes(
 	record: Species,
@@ -507,15 +618,21 @@ export function piecePrototypes(
 	leaves: readonly (readonly PrototypeArrays[])[],
 ): PiecePrototype[] {
 	const leafMeshes = Math.min(...leaves.map((tier) => tier.length));
+	const finest = leaves[leaves.length - 1] ?? [];
 	const out: PiecePrototype[] = [];
 	for (const [r, rule] of rules.entries())
-		for (let variant = 0; variant < Math.min(16, Math.max(1, rule.variants)); variant++)
-			out.push({
-				piece: rule.name,
-				variant,
-				attitude: rule.attitude,
-				...meshedPlan(planPiece(record, rule, pieceKey(r, variant), leafMeshes), leaves),
-			});
+		for (let variant = 0; variant < Math.min(16, Math.max(1, rule.variants)); variant++) {
+			const parts = splitPlan(planPiece(record, rule, pieceKey(r, variant), leafMeshes), finest);
+			for (const [part, plan] of parts.entries())
+				out.push({
+					piece: rule.name,
+					variant,
+					attitude: rule.attitude,
+					part,
+					parts: parts.length,
+					...meshedPlan(plan, leaves),
+				});
+		}
 	return out;
 }
 
@@ -587,6 +704,7 @@ export function pieceTurn(attitude: PieceAttitude, heading: Readonly<Vector3>): 
 	const out = [0, 0, 0, 1];
 	const flat = level(heading, [1, 0, 0]);
 	if (attitude === 'plumb') quatFromFrame([0, -1, 0], flat, out);
+	else if (attitude === 'upright') quatFromFrame(WORLD_UP, flat, out);
 	else if (attitude === 'level') quatFromFrame(flat, WORLD_UP, out);
 	else if (attitude === 'up')
 		quatFromFrame(toward(normalize3([...heading]), WORLD_UP, UP_LIFT), WORLD_UP, out);
