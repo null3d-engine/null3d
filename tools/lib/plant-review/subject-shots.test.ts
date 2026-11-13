@@ -17,6 +17,7 @@ import {
 	crownOutsideShot,
 	crownUndersideShot,
 	forkShot,
+	insideBesideTrunk,
 	insideShot,
 	junctionShot,
 	limbShot,
@@ -725,6 +726,29 @@ describe("the view of the crown's underside", () => {
 
 describe('the view from inside the crown', () => {
 	const lens = { fov: 75, aspect: 3 / 4 };
+
+	test('stands beside a trunk its crown clothes from low down, with no great limb', () => {
+		// A column whose fine branches are no great limbs, its crown from near the ground.
+		const column = tree({
+			height: 18,
+			reach: 1.5,
+			crownBase: 0.3,
+			trunk: trunkOf(17, 0.3),
+			limbs: absent('no limb takes a share of the trunk'),
+		});
+		expect(insideBesideTrunk(column)).toBe(true);
+		const shot = shotOf(insideShot(column, lens, { turn: 0 }));
+		expect(shot.facts.wood).toBe('trunk');
+		expect(Math.hypot(shot.camera.position[0], shot.camera.position[2])).toBeLessThan(1.5);
+	});
+
+	test("keeps a crown that stands only at its trunk's top to the stalk bundle", () => {
+		// A palm: its leaves leave the trunk's top, and no limb leaves the trunk below them.
+		const palm = tree({ height: 9, reach: 3, crownBase: 7.5, trunk: trunkOf(8, 0.25), limbs: [] });
+		expect(insideBesideTrunk(palm)).toBe(false);
+		expect(insideBesideTrunk(tree())).toBe(true);
+		expect(insideBesideTrunk(tree({ trunk: absent('no stem') }))).toBe(false);
+	});
 
 	test('stands beside the trunk above the crown base and looks up along it', () => {
 		const subjects = tree();
