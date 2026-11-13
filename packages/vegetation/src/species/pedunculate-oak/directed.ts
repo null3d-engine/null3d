@@ -52,42 +52,14 @@ const boughs: FrameBranchRule = {
 	patch: {
 		kind: 'clump',
 		width: [
-			[0, 0.2],
+			[0, 0.17],
 			[1, 0.12],
 		],
 		depth: [
-			[0, 0.14],
+			[0, 0.12],
 			[1, 0.085],
 		],
 	},
-	children: [
-		{
-			name: 'branch',
-			role: 'branch',
-			count: { every: 0.06, least: 2, most: 4 },
-			along: [0.35, 0.9],
-			stagger: 0.3,
-			around: 'sides',
-			jitter: 30,
-			angle: 52,
-			from: 'parent',
-			angleSpread: 8,
-			// A branch ends inside the crown's surface, and none is longer than a clump is wide.
-			length: { outline: 0.9 },
-			vary: 0.12,
-			least: 0.03,
-			most: [
-				[0, 0.2],
-				[1, 0.1],
-			],
-			radius: 0.55,
-			taper: 0.35,
-			sway: 34,
-			elbows: 5,
-			crook: 0.4,
-			patch: clump(0.13),
-		},
-	],
 };
 
 /** The pedunculate oak's frame. */
@@ -113,6 +85,28 @@ export const frame: FrameSpec = {
 	],
 	// The crown is built nearly round. Still 01 looks across the wide side.
 	plan: { narrow: 0.86, turn: 0 },
+	// The clumps are placed first: evenly over the crown's surface and over the same outline drawn
+	// in to two thirds, so sky is spread evenly through the crown. The real tree's rim is ten to
+	// twelve clumps in one view, which is a clump each 0.11 of the height round a crown 1.7 wide. A
+	// crooked branch is grown to each clump from the nearest limb, bough or earlier branch, the last
+	// order of wood, short and stiff.
+	masses: {
+		kind: 'clump',
+		spacing: 0.12,
+		layers: [0.91, 0.62],
+		width: [
+			[0.13, 0.17],
+			[0.7, 0.15],
+			[1, 0.11],
+		],
+		depth: [
+			[0.13, 0.12],
+			[0.7, 0.1],
+			[1, 0.08],
+		],
+		from: ['limb', 'bough'],
+		branch: { name: 'branch', leave: 55, reach: 0.24, radius: 0.5, taper: 0.35, wander: 0.02 },
+	},
 	stems: {
 		name: 'trunk',
 		count: 1,
@@ -219,7 +213,7 @@ export const frame: FrameSpec = {
 				sway: 28,
 				elbows: 9,
 				crook: 0.5,
-				patch: clump(0.2),
+				patch: clump(0.15),
 				children: [boughs],
 			},
 		],

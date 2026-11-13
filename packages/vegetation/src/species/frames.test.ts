@@ -126,6 +126,11 @@ function between(a: readonly number[], b: readonly number[]): number {
 /** The longest share of a limb or a branch that may hold one direction. */
 const STRAIGHT_MOST = 0.2;
 const STUB_DIAMETERS = 8;
+/**
+ * The longest share of a twig of the last order that may hold one direction. A twig is short and
+ * stiff, and where its curve turns from one side to the other it runs near straight for a while.
+ */
+const TWIG_STRAIGHT_MOST = 0.3;
 /** The most of its thickest radius an axis may drop between two nodes: a stem's foot, and the rest. */
 const STEP_STEM = 0.45;
 const STEP_MOST = 0.2;
@@ -146,6 +151,8 @@ interface Held {
 	readonly base: Readonly<Record<string, number>>;
 	/** The rules whose axes may run straight: a plumb stem, a hanging whip, a leading shoot. */
 	readonly plumb: readonly string[];
+	/** The rules whose axes are the last order of wood, grown to the foliage masses. */
+	readonly twigs?: readonly string[];
 	/** The plant's height over the record's, as the least and the most. */
 	readonly tall: readonly [number, number];
 	/**
@@ -286,16 +293,15 @@ const HELD: readonly Held[] = [
 		directed: pedunculateOakDirected,
 		heightMean: spreadMean(pedunculateOakDirected.size.height),
 		record: pedunculateOakRecord,
-		counts: { trunk: 1, limb: 7, bough: [35, 56], branch: [70, 224] },
+		counts: { trunk: 1, limb: 7, bough: [35, 56], branch: [300, 520] },
 		// Seven limbs at their own stated directions: six an eighth of a turn apart and one gap of two.
 		round: { rule: 'limb', gap: 112, lean: 0.25 },
-		// A limb's share runs from 0.42 at the lowest to 0.5 at the highest, so it is not held here.
-		base: { bough: 0.5, branch: 0.55 },
+		// A limb's share runs from 0.42 at the lowest to 0.5 at the highest, and a branch grown to a
+		// clump is as thick as its length allows, so neither is held here.
+		base: { bough: 0.5 },
 		plumb: ['trunk'],
+		twigs: ['branch'],
 		tall: [0.95, 1.04],
-		// The crown's foot stands at 0.13 of the height, inside the band from 0.125 to 0.1875, and
-		// only the low limbs' drooping ends reach it.
-		excused: { 2: "the crown's foot stands inside the band" },
 	},
 ];
 
@@ -403,7 +409,9 @@ for (const held of HELD)
 						axis.nodes.length >= 5 &&
 						axis.length >= STUB_DIAMETERS * 2 * axis.base
 					)
-						expect(longestStraight(axis)).toBeLessThanOrEqual(STRAIGHT_MOST);
+						expect(longestStraight(axis)).toBeLessThanOrEqual(
+							held.twigs?.includes(axis.rule) ? TWIG_STRAIGHT_MOST : STRAIGHT_MOST,
+						);
 				}
 		});
 
