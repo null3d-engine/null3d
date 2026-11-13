@@ -29,7 +29,7 @@ import {
 	sparsePlant,
 	structuralAxes,
 } from './grow/sparse';
-import { cardRows } from './lod/cards';
+import { cardRows, connectedCards } from './lod/cards';
 import { connectedBody } from './lod/connect';
 import type { MeshInput } from './stages';
 
@@ -179,6 +179,67 @@ function trianglesOf(asset: PlantAsset, level: 0 | 1 | 2, name: string): number 
 	for (const part of asset.levels[level].parts)
 		if (part.name === name) triangles += part.arrays.indices.length / 3;
 	return triangles;
+}
+
+/**
+ * The least share of a plant's shoot rows that its second card level draws a card for. The level
+ * keeps one row in two of the rows' space-filling order, and the rows of the leaf form's rim; a
+ * thinned plant's rows keep their places in the grown plant's order, so its share is near a half,
+ * not at least a half. The lowest measured on the sedge and the directed pine and oak, as grown, at
+ * half and at the sparsest, is 0.495, the pine at half.
+ */
+const SECOND_LEVEL_SHARE = 0.45;
+
+/**
+ * How far an octant's share of the second card level's cards may stand from the whole plant's. The
+ * level's step takes ranks, not places, so a small octant's share swings: the largest measured is
+ * 0.157, the directed pine's at the sparsest in an octant of 40 boughs. An octant the level strips
+ * stands about half a share off.
+ */
+const SECOND_LEVEL_SLACK = 0.2;
+
+/**
+ * Checks that each card level carries every socket's foliage, or its stated share. The first card
+ * level draws a card for every shoot row the plant holds, and the second for its stated share of the
+ * rows, spread round the crown: each octant about the foliage's middle draws its share within a band.
+ * Each level's card mesh holds the cards of those rows.
+ */
+function carriesEverySocket(kit: SpeciesKitData, plant: PlantAsset, at: string): void {
+	const rows = plant.shoots;
+	const input = meshInput(kit, plant);
+	const middle = [0, 0, 0];
+	for (let r = 0; r < rows.count; r++)
+		for (let k = 0; k < 3; k++)
+			middle[k] = (middle[k] as number) + (rows.position[r * 3 + k] as number) / rows.count;
+	for (const level of [1, 2] as const) {
+		const drawn = connectedCards(input, level);
+		const rowsIn = new Array<number>(8).fill(0);
+		const drawnIn = new Array<number>(8).fill(0);
+		let cards = 0;
+		let quads = 0;
+		for (let r = 0; r < rows.count; r++) {
+			let octant = 0;
+			for (let k = 0; k < 3; k++)
+				if ((rows.position[r * 3 + k] as number) > (middle[k] as number)) octant += 1 << k;
+			rowsIn[octant] = (rowsIn[octant] as number) + 1;
+			if (drawn[r] !== 1) continue;
+			cards++;
+			drawnIn[octant] = (drawnIn[octant] as number) + 1;
+			quads += kit.prototypes[rows.prototype[r] as number]?.card.planes.length ?? 0;
+		}
+		const share = cards / Math.max(1, rows.count);
+		if (level === 1) expect([at, level, cards]).toEqual([at, level, rows.count]);
+		else expect([at, level, share >= SECOND_LEVEL_SHARE]).toEqual([at, level, true]);
+		for (let octant = 0; octant < 8; octant++) {
+			const own = rowsIn[octant] as number;
+			if (own < OCTANT_LEAST) continue;
+			const off = Math.abs((drawnIn[octant] as number) / own - share);
+			const slack = level === 1 ? OCTANT_SLACK : SECOND_LEVEL_SLACK;
+			expect([at, level, octant, off <= slack]).toEqual([at, level, octant, true]);
+		}
+		// Two triangles a card plane; a stalk adds its own.
+		expect([at, level, trianglesOf(plant, level, 'cards') >= 2 * quads]).toEqual([at, level, true]);
+	}
 }
 
 /** The vertices of a level's parts of one name, each as one number of its three box steps. */
@@ -662,13 +723,15 @@ for (const [name, load] of SOCKET_PLANTS)
 						]).toEqual([at, a, true]);
 					}
 				}
-				// The levels as the engine grows them: a sparser plant's card levels never draw more cards,
-				// and every level stays within its cap.
+				// The levels as the engine grows them: each card level carries every socket's foliage or
+				// its stated share, a sparser plant's card levels never draw more cards, and every level
+				// stays within its cap.
 				const budget = kit.record.lod.budget;
 				let denser = full;
-				for (const sparse of [0.25, 0.5, 1]) {
-					const plant = growPlantNow(kit, { seed: 11, variant: 0, sparse });
+				for (const sparse of [0, 0.25, 0.5, 1]) {
+					const plant = sparse === 0 ? full : growPlantNow(kit, { seed: 11, variant: 0, sparse });
 					const at = `${name} sparse ${sparse}`;
+					carriesEverySocket(kit, plant, at);
 					for (const level of [1, 2] as const) {
 						expect([
 							at,
