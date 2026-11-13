@@ -7,6 +7,9 @@
 		"targetY": 0.45
 	},
 	"02-whole-plant-profile.png": {
+		"view": "cluster",
+		"piece": "leaf-grown",
+		"toward": true,
 		"background": "sky-meadow",
 		"skyShare": 0.357,
 		"daylight": 1.524,

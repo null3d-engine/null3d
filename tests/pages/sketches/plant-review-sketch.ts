@@ -439,7 +439,8 @@ function standView(
 ): View {
 	const middle = QUERY.targetY ?? 0.5;
 	const fill = QUERY.fill ?? 0.8;
-	const asked = QUERY.top !== undefined && QUERY.fill === undefined;
+	// A photograph whose foot is lost names its top row alone, whatever fill a slot gives the view.
+	const asked = QUERY.top !== undefined && (QUERY.footLost || QUERY.fill === undefined);
 	const corners = (): Float32Array => {
 		const out = new Float32Array(24);
 		for (let c = 0; c < 8; c++)
@@ -482,7 +483,11 @@ function standView(
 		held: stand.held,
 		points: points === undefined ? 0 : Math.floor(points.length / 3),
 	});
-	return { position: stand.position as V3, target: stand.target as V3, fov: FOV };
+	// The near plane stands closer than half the eye's height, so a camera near the ground still
+	// draws the ground in front of it down to the frame's lower edge.
+	const span = Math.hypot(...sub(stand.target as V3, stand.position as V3));
+	const near = Math.max(0.002, Math.min(0.5, span * 0.02, stand.height * 0.5));
+	return { position: stand.position as V3, target: stand.target as V3, fov: FOV, near };
 }
 
 /**
@@ -561,7 +566,7 @@ function hasWood(asset: PlantAsset): boolean {
 }
 
 /** The asset as a view draws it: the wood alone, or one level at every distance. */
-function shaped(asset: PlantAsset, woodOnly: boolean): PlantAsset {
+function shaped(asset: PlantAsset, woodOnly: boolean, lod = LOD): PlantAsset {
 	// A view of the wood alone has no wood to draw on a ground plant. Its crown, sheaths and blades
 	// are that plant's body, so the view keeps them rather than drawing an empty picture.
 	const bare = woodOnly && hasWood(asset);
@@ -574,7 +579,6 @@ function shaped(asset: PlantAsset, woodOnly: boolean): PlantAsset {
 		from,
 	});
 	const empty = { parts: [], triangles: 0, bytes: 0 };
-	const lod = LOD;
 	const rows =
 		bare || (lod !== undefined && lod !== 0) ? { ...asset.shoots, count: 0 } : asset.shoots;
 	if (lod === undefined || lod === 3)
@@ -998,6 +1002,7 @@ export default defineSketch(async (ctx) => {
 							laid: (QUERY.roll ?? 0) !== 0,
 							edge: QUERY.edge === true,
 							...(span !== undefined && { span, along: QUERY.along ?? 0.5 }),
+							...(QUERY.toward && { turn }),
 						}),
 					0,
 				);
@@ -1913,7 +1918,15 @@ export default defineSketch(async (ctx) => {
 						wind: wind.field,
 						...(QUERY.sway !== undefined && { swayDistance: QUERY.sway }),
 					}),
-					matte: PARTS ? 'parts' : MATTE,
+					// The silhouette still draws black at the colour picture's cut edge, for the eye; its
+					// measured matte, drawn with the matte query, keeps each texel's own coverage.
+					matte: PARTS
+						? 'parts'
+						: QUERY.matte
+							? true
+							: VIEW === 'silhouette'
+								? 'silhouette'
+								: false,
 				});
 	// A stand-in kit draws through the stand-in near pool. A real kit's one plant stands at a fixed
 	// place, so its placement composes its shoot rows once, with no pool.
@@ -1948,7 +1961,24 @@ export default defineSketch(async (ctx) => {
 				castShadows: !PLAIN && VIEW !== 'turntable',
 			},
 		);
-	const drawn = shaped(main, WOOD_ONLY);
+	// A matte or a picture of the parts draws the level alone that the colour picture draws from the
+	// first cell's camera. The colour picture leaves a level it does not draw out of its picture,
+	// and a matte that drew it too would read plant the picture does not show.
+	const plainLevel =
+		PLAIN && LOD === undefined && cells[0]
+			? drawnLevel(
+					mainKit,
+					main,
+					placedView,
+					Math.hypot(...sub(cells[0].view.position, [0, 0, 0])),
+					false,
+				).level
+			: undefined;
+	const drawn = shaped(
+		main,
+		WOOD_ONLY,
+		plainLevel !== undefined && plainLevel < 3 ? plainLevel : LOD,
+	);
 	const far = LOD === 3 && whole ? [await bakeFarPlant(kit, whole)] : undefined;
 	place(drawn, [0, 0, 0], mainKit, far);
 	if (VIEW === 'panels' && piece) place(shaped(piece, false), AWAY, pieceKit);
