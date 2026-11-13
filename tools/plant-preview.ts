@@ -28,7 +28,7 @@ import {
 } from '../packages/vegetation/src/core/registry.ts';
 import type { Season } from '../packages/vegetation/src/core/types.ts';
 import { buildKitNow, growPlantNow, loadPlantCode } from '../packages/vegetation/src/generate.ts';
-import { drawnAtOnce } from '../packages/vegetation/src/lod/drawn.ts';
+import { drawnAtOnce, drawnAtTallest } from '../packages/vegetation/src/lod/drawn.ts';
 import { REFERENCE_VIEW } from '../packages/vegetation/src/lod/levels.ts';
 import { REPO_ROOT } from '../tests/lib/server.ts';
 import {
@@ -245,8 +245,10 @@ if (folder) {
 
 const { commit, dirty } = provenance();
 // The near form draws every shoot row at the kit's tier; one view draws at once only the rows inside
-// the switch distance, from the worst of the stated eyes, here at the reference view.
+// the switch distance, from the worst of the stated eyes, at the reference view and at the tallest
+// views the presets give.
 const drawn = drawnAtOnce(kit, asset, REFERENCE_VIEW);
+const tallest = drawnAtTallest(kit, asset);
 const summary = {
 	species,
 	form: form ?? null,
@@ -269,11 +271,17 @@ const summary = {
 	nearFormTriangles: asset.stats.triangles[0] + asset.stats.shoots,
 	drawnTriangles: drawn.triangles,
 	drawnEye: { place: drawn.eye, at: drawn.at.map((v) => Number(v.toFixed(2))) },
+	drawnTallest: {
+		triangles: tallest.triangles,
+		view: tallest.view,
+		place: tallest.eye,
+		at: tallest.at.map((v) => Number(v.toFixed(2))),
+	},
 	matchLevel,
 	match: figures,
 };
 writeFileSync(join(out, `${prefix}.json`), `${JSON.stringify(summary, null, '\t')}\n`);
 console.log(
-	`${species}${form ? ` (${form})` : ''} seed ${seed} variant ${variant} at ${commit.slice(0, 9)}${dirty ? ' with changes' : ''}: ${skeleton.nodeCount} nodes, ${axes.count} axes (${summary.axesByOrder.join(', ')} by order), ${skeleton.buds.count} bud sites, ${asset.shoots.count} shoot rows, ${top.toFixed(2)} m tall, kit and growth in ${Math.round(grown)} ms; ${summary.nearFormTriangles} triangles in the near form, ${drawn.triangles} drawn at once from the ${drawn.eye} eye at the reference view`,
+	`${species}${form ? ` (${form})` : ''} seed ${seed} variant ${variant} at ${commit.slice(0, 9)}${dirty ? ' with changes' : ''}: ${skeleton.nodeCount} nodes, ${axes.count} axes (${summary.axesByOrder.join(', ')} by order), ${skeleton.buds.count} bud sites, ${asset.shoots.count} shoot rows, ${top.toFixed(2)} m tall, kit and growth in ${Math.round(grown)} ms; ${summary.nearFormTriangles} triangles in the near form, ${drawn.triangles} drawn at once from the ${drawn.eye} eye at the reference view, ${tallest.triangles} at ${tallest.view.height} px through a ${tallest.view.fov} degree lens`,
 );
 for (const file of files) console.log(`  ${file}`);
