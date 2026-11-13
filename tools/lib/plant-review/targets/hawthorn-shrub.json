@@ -20,6 +20,12 @@
 				"figures": {
 					"heightToWidth": 0.6237,
 					"foot": {
+						"rows": {
+							"frame": 688,
+							"horizon": 524,
+							"outline": 615,
+							"foot": 615
+						},
 						"belowHorizon": 0.1549,
 						"followed": 0
 					},
@@ -113,6 +119,26 @@
 						"mean": 0.6049,
 						"max": 0.7253,
 						"spread": 0.2984,
+						"frames": 193
+					},
+					"footBelowHorizon": {
+						"min": 0.0311,
+						"low": 0.0457,
+						"median": 0.0657,
+						"high": 0.1401,
+						"mean": 0.0773,
+						"max": 0.1823,
+						"spread": 1.9553,
+						"frames": 193
+					},
+					"footFollowed": {
+						"min": 0,
+						"low": 0,
+						"median": 0,
+						"high": 0,
+						"mean": 0,
+						"max": 0,
+						"spread": 0,
 						"frames": 193
 					},
 					"crownHeightToWidth": {
@@ -317,6 +343,12 @@
 				"figures": {
 					"heightToWidth": 0.5616,
 					"foot": {
+						"rows": {
+							"frame": 688,
+							"horizon": 472,
+							"outline": 535,
+							"foot": 535
+						},
 						"belowHorizon": 0.1223,
 						"followed": 0
 					},
@@ -400,6 +432,12 @@
 				"figures": {
 					"heightToWidth": 0.6226,
 					"foot": {
+						"rows": {
+							"frame": 688,
+							"horizon": 632,
+							"outline": 626,
+							"foot": 626
+						},
 						"belowHorizon": 0,
 						"followed": 0
 					},
@@ -410,10 +448,10 @@
 					},
 					"trunk": {
 						"bareShare": 0.0708,
-						"width": 0.0425,
+						"width": 0.042,
 						"column": false,
 						"breastHeightWidth": null,
-						"flare": 1,
+						"flare": 1.013,
 						"lean": -5.27,
 						"stems": null
 					},
@@ -568,7 +606,7 @@
 				"turn": null,
 				"secondary": {
 					"02-whole-shrub-profile.png": null,
-					"18-silhouette.png": 0.0425
+					"18-silhouette.png": 0.042
 				},
 				"largest": null,
 				"outsideTurn": []
@@ -580,7 +618,7 @@
 				"turn": null,
 				"secondary": {
 					"02-whole-shrub-profile.png": null,
-					"18-silhouette.png": 1
+					"18-silhouette.png": 1.013
 				},
 				"largest": null,
 				"outsideTurn": []
