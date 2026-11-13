@@ -21,7 +21,7 @@ import type {
 	ShootRows,
 	SpeciesKitData,
 } from './asset';
-import { type CoarsenessOptions, coarsenessFor, coarsenessKey } from './coarseness';
+import { type CoarsenessOptions, coarsenessFor, coarsenessKey, shootTriangles } from './coarseness';
 import { speciesBox } from './core/box';
 import { formRecord } from './core/forms';
 import { type MacroSkeleton, SkeletonBuilder, skeletonCopy } from './core/graph';
@@ -111,6 +111,7 @@ import {
 	levelWithin,
 	NO_CLUSTERS,
 	NO_TRIANGLES,
+	partTotal,
 	referenceTriangles,
 	shootPartTriangles,
 } from './lod/budget';
@@ -1084,6 +1085,7 @@ function growCutting(
 		skeleton = { ...skeleton, bounds, height: Math.max(skeleton.height, bounds.max[1]) };
 	}
 	const near = levelOf(0, parts, 0);
+	const counted = countedParts(parts, shootPartTriangles({ kit }, rows, detail));
 	const { min, max } = skeleton.bounds;
 	const base = Math.min(skeleton.crownBase, max[1]);
 	return {
@@ -1108,13 +1110,9 @@ function growCutting(
 		stats: {
 			milliseconds: now() - started,
 			bytes: wind.records.byteLength + near.bytes,
-			triangles: [near.triangles, 0, 0],
-			parts: [
-				countedParts(parts, shootPartTriangles({ kit }, rows, detail)),
-				NO_TRIANGLES,
-				NO_TRIANGLES,
-			],
-			shoots: shootTriangles(kit, rows),
+			triangles: [partTotal(counted), 0, 0],
+			parts: [counted, NO_TRIANGLES, NO_TRIANGLES],
+			shoots: shootTriangles(kit, rows, kit.detail),
 		},
 	};
 }
@@ -1300,19 +1298,6 @@ function referenceOf(kit: SpeciesKitData, input: BudgetInput): PartTriangles | u
 const now = () => (typeof performance === 'undefined' ? Date.now() : performance.now());
 
 /**
- * The triangles a variant's shoot rows draw at the kit's detail: each row draws one prototype of
- * the kit, which no level's own mesh holds.
- */
-function shootTriangles(kit: SpeciesKitData, rows: PlantAsset['shoots']): number {
-	const tier = DETAILS.indexOf(kit.detail);
-	let triangles = 0;
-	for (let r = 0; r < rows.count; r++)
-		triangles +=
-			(kit.prototypes[rows.prototype[r] as number]?.tiers[tier]?.indices.length ?? 0) / 3;
-	return triangles;
-}
-
-/**
  * Grows one variant on this thread: its skeleton, its shoot rows, its crown light, its wind records
  * and its three levels. Call `loadPlantCode` first. The nearest level's wood is meshed only when
  * `near` is set; otherwise `growNearWoodNow` meshes it in the background.
@@ -1385,7 +1370,11 @@ export function growPlantNow(kit: SpeciesKitData, options: GrowOptions): PlantAs
 		stats: {
 			milliseconds: now() - started,
 			bytes,
-			triangles: [levels[0].triangles, levels[1].triangles, levels[2].triangles],
+			triangles: [
+				partTotal(built[0].triangles),
+				partTotal(built[1].triangles),
+				partTotal(built[2].triangles),
+			],
 			parts: [built[0].triangles, built[1].triangles, built[2].triangles],
 			...(built[0].allowed && built[1].allowed && built[2].allowed
 				? {
@@ -1393,7 +1382,8 @@ export function growPlantNow(kit: SpeciesKitData, options: GrowOptions): PlantAs
 						clusters: [built[0].clusters, built[1].clusters, built[2].clusters] as const,
 					}
 				: {}),
-			shoots: record.lod.nearFoliage === 'instanced' ? shootTriangles(kit, mesh.rows) : 0,
+			shoots:
+				record.lod.nearFoliage === 'instanced' ? shootTriangles(kit, mesh.rows, kit.detail) : 0,
 		},
 	};
 	return asset;
