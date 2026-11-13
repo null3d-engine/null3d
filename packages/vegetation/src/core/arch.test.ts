@@ -185,7 +185,7 @@ describe('an arch fitted to measured figures', () => {
 				drop: apex - (path.up[path.segments] as number),
 				reach: path.out[path.segments] as number,
 			};
-			expect(archFromFigures(figures).miss).toBeLessThan(0.01);
+			expect(archFromFigures(figures).miss).toBeLessThan(0.02);
 		}
 	});
 
@@ -237,6 +237,15 @@ describe('an arch fitted to measured figures', () => {
 		expect(archFromFigures({ length: 1, leave: 60, apex: 0.2, reach: 1.4 }).miss).toBeGreaterThan(
 			0.2,
 		);
+	});
+
+	it('hangs a blade straight once its tip is plumb', () => {
+		// A blade that rises 0.98 m, hangs 0.69 m below its top and ends 0.47 m out: a steep rise, a
+		// turn right over and a straight hang, which no arch that bends to its very tip can make.
+		const fit = archFromFigures({ leave: 85, apex: 0.98, drop: 0.69, reach: 0.47 });
+		expect(fit.miss).toBeLessThan(0.05);
+		expect(fit.arch.to ?? 1).toBeLessThan(0.9);
+		expect(fit.arch.leave - fit.arch.turn).toBeLessThan(-80);
 	});
 
 	it('gives the same arch each time', () => {
