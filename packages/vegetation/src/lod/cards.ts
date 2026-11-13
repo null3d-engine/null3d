@@ -27,11 +27,16 @@ export const CARD_CORNERS = [
 /** The second coordinate that marks a card's stalk, in a place that the three card planes leave free. */
 const STALK_PLANE = 0.75;
 
-/** Metres from a card to a branch its level draws within which the card joins the plant. */
-const SEED_REACH = 2.5;
+/**
+ * Metres from a card's foot to a branch its level draws within which the card joins the plant, at
+ * the first card level and at the second. The first stands near the eye, where a gap of half a
+ * metre between a card and its wood shows, so a card joins only where its foot stands on drawn wood;
+ * at the second, past a hundred metres, a few metres span a few pixels.
+ */
+const SEED_REACH = [0.4, 2.5] as const;
 
-/** Metres between two cards within which their leaves meet, so one joins the other's clump. */
-const CARD_REACH = 2;
+/** Metres between two cards' feet within which one joins the other's clump, at each card level. */
+const CARD_REACH = [0.4, 2] as const;
 
 /** Texels of the card atlas with at least this coverage are the picture; the rest is clear. */
 const OPAQUE = 128;
@@ -728,18 +733,20 @@ function keptRows(input: MeshInput, level: 1 | 2): number[] {
  * @param input The dressed variant.
  * @param kept The card rows a level keeps.
  * @param drawn Whether the level draws an axis.
+ * @param level The card level, which sets how near a card's foot must stand to join.
  * @returns One flag per row of the variant, 1 for a joined card.
  */
 function joinedCards(
 	input: MeshInput,
 	kept: readonly number[],
 	drawn: (axis: number) => boolean,
+	level: 1 | 2,
 ): Uint8Array {
 	const { skeleton, rows } = input;
 	const { position, axisOf, nodeCount } = skeleton;
 	const joined = new Uint8Array(rows.count);
 	const queue: number[] = [];
-	const seedReach = SEED_REACH * SEED_REACH;
+	const seedReach = (SEED_REACH[level - 1] as number) ** 2;
 	for (const r of kept) {
 		const x = rows.position[r * 3] as number;
 		const y = rows.position[r * 3 + 1] as number;
@@ -758,7 +765,7 @@ function joinedCards(
 			queue.push(r);
 		}
 	}
-	const cardReach = CARD_REACH * CARD_REACH;
+	const cardReach = (CARD_REACH[level - 1] as number) ** 2;
 	while (queue.length > 0) {
 		const r = queue.pop() as number;
 		const x = rows.position[r * 3] as number;
@@ -828,7 +835,7 @@ export function supportAxes(input: MeshInput, level: 1 | 2): Uint8Array | undefi
 	const kept = keptRows(input, level);
 	const keep = input.record.lod.woodOrders[level - 1] ?? 255;
 	const orders = input.skeleton.axes.order;
-	const joined = joinedCards(input, kept, (axis) => (orders[axis] as number) <= keep);
+	const joined = joinedCards(input, kept, (axis) => (orders[axis] as number) <= keep, level);
 	return branchesUnder(
 		input,
 		kept.filter((r) => joined[r] === 0),
@@ -848,7 +855,7 @@ export function cardTwigs(input: MeshInput, level: 1 | 2): number[] {
 	const keep = input.record.lod.woodOrders[level - 1] ?? 255;
 	const orders = input.skeleton.axes.order;
 	const kept = keptRows(input, level);
-	const joined = joinedCards(input, kept, (axis) => (orders[axis] as number) <= keep);
+	const joined = joinedCards(input, kept, (axis) => (orders[axis] as number) <= keep, level);
 	return kept.filter((r) => joined[r] === 0);
 }
 
@@ -880,6 +887,7 @@ export function connectedCards(input: MeshInput, level: 1 | 2): Uint8Array {
 		input,
 		kept,
 		(axis) => (orders[axis] as number) <= keep || support?.[axis] === 1,
+		level,
 	);
 }
 

@@ -164,6 +164,31 @@ describe("the tool's verdict of a run", () => {
 		expect(verdictFaults(open)).toEqual([]);
 	});
 
+	test("reads the colour still's gap where it parts from the matte's by more than 0.05", () => {
+		const laced = toolVerdict(
+			input({
+				'01-whole-distant.png': {
+					gap: { reference: 0.29, render: 0.15, renderByColour: 0.56 },
+					masked: true,
+				},
+			}),
+		);
+		const figure = rowOf(laced, 6).figures.find((f) => f.picture === '01-whole-distant.png');
+		expect(figure?.value).toBe(0.56);
+		expect(figure?.name).toBe('sky gap enclosed by the crown outline, read on the colour still');
+		const near = toolVerdict(
+			input({
+				'01-whole-distant.png': {
+					gap: { reference: 0.29, render: 0.28, renderByColour: 0.31 },
+					masked: true,
+				},
+			}),
+		);
+		const kept = rowOf(near, 6).figures.find((f) => f.picture === '01-whole-distant.png');
+		expect(kept?.value).toBe(0.28);
+		expect(kept?.name).toBe('sky gap enclosed by the crown outline');
+	});
+
 	test('proposes the color rows in band at three steps or fewer, and out of band above', () => {
 		expect(rowOf(verdict, 10).proposed).toEqual({ figures: 'in band' });
 		expect(rowOf(verdict, 10).figures.length).toBe(2);
