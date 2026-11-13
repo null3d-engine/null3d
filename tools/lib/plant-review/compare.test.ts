@@ -9,16 +9,19 @@ import {
 import {
 	alignTurn,
 	anchorColumn,
+	blankFrame,
 	cameraWidthShare,
 	cropFault,
 	crownBoxSpread,
 	edgeDifference,
 	edgeProfile,
+	emptySubject,
 	fittedMaskClause,
 	framingFault,
 	framingQuery,
 	hasSeparableOutline,
 	iou,
+	levelName,
 	MASK_GATE_NATURAL,
 	MASK_GATE_PLAIN,
 	maskCheckOf,
@@ -32,6 +35,7 @@ import {
 	profileError,
 	rubricBand,
 	rubricFrames,
+	sameDrawing,
 	sheathDifference,
 	spread,
 } from './compare.ts';
@@ -907,5 +911,53 @@ describe("a whole view's frame against its photograph's", () => {
 		expect(cropFault(cropped, { ...clear, bottom: true, top: true })).toContain(
 			"frame's top edge,",
 		);
+	});
+});
+
+describe('a picture that answers nothing', () => {
+	test('is one whose subject takes none of the frame', () => {
+		const facts = (subject: number) => ({
+			subject: { kind: 'an arm seen from outside', clutter: { subject, front: 0, behind: 0 } },
+		});
+		expect(emptySubject(facts(0))).toBe(
+			'the subject, an arm seen from outside, takes 0.00 of the frame',
+		);
+		expect(emptySubject(facts(0.3))).toBe(undefined);
+		// A view that measured no share says nothing here.
+		expect(emptySubject({ subject: { kind: 'the whole plant' } })).toBe(undefined);
+	});
+
+	test('is one the page drew for another photograph that was asked for differently', () => {
+		const seen = new Map<string, { file: string; query: string }>();
+		const frame = (sunRise: number, sha256 = 'abc') =>
+			({ sha256, query: { view: 'leaf-upper', sunRise } }) as never;
+		expect(sameDrawing(seen, '11-leaf.png', frame(40))).toBe(undefined);
+		// The same picture for the same request is one drawing asked for twice.
+		expect(sameDrawing(seen, '11-leaf-copy.png', frame(40))).toBe(undefined);
+		expect(sameDrawing(seen, '12-leaf.png', frame(55))).toBe(
+			'the page drew the same picture as for 11-leaf.png, though the two were asked for differently',
+		);
+		expect(sameDrawing(seen, '13-leaf.png', frame(55, 'def'))).toBe(undefined);
+	});
+
+	test('is a whole view whose frame is all plant, or holds none', () => {
+		const frame = (covered: number) => ({
+			mask: new Uint8Array(100).fill(1, 0, covered),
+			width: 10,
+			height: 10,
+		});
+		expect(blankFrame(frame(100))).toBe(
+			'the plant covers 1.00 of the frame, so the frame holds no outline',
+		);
+		expect(blankFrame(frame(0))).toBe('the frame holds no plant');
+		expect(blankFrame(frame(40))).toBe(undefined);
+	});
+
+	test('names the level of detail its page posted', () => {
+		expect(levelName({ level: { name: 'first card level', forced: false } })).toBe(
+			'first card level',
+		);
+		expect(levelName({ level: { name: 'leaf form', forced: true } })).toBe('leaf form, forced');
+		expect(levelName({})).toBe(undefined);
 	});
 });

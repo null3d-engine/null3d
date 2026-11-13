@@ -13,6 +13,7 @@ import {
 	BUD_TERMINAL,
 	bakeFarPlant,
 	createNearPool,
+	drawnLevel,
 	type FarPlant,
 	growPlant,
 	isSpeciesId,
@@ -157,6 +158,8 @@ const FRUIT_TUBE = 0.6;
 const FRUIT_ELEVATION = -12;
 /** Stops of switch bias that carry a forced nearest level's shoots past every far plane. */
 const FORCED_NEAR_STOPS = 20;
+/** The levels of detail in words, by the number a query forces. */
+const LEVEL_WORDS = ['leaf form', 'first card level', 'second card level', 'far card'] as const;
 /** The most cells a sheet draws: the scene's views less the camera's own. */
 const MOST_CELLS = 31;
 
@@ -1401,10 +1404,13 @@ export default defineSketch(async (ctx) => {
 				// A bark zone of its own: the camera stands where that zone covers the wood, so the
 				// surface is the one the zone's texture source shows.
 				const zone = QUERY.barkZone === undefined ? undefined : record.bark?.zones[QUERY.barkZone];
+				// A height the slot names goes first: the photograph shows the surface of that height.
 				const zoneHeight =
-					zone?.by === 'height'
-						? Math.min(skeleton.height * 0.9, (zone.from + zone.to) / 2)
-						: undefined;
+					QUERY.barkHeight !== undefined
+						? Math.min(skeleton.height * 0.95, QUERY.barkHeight)
+						: zone?.by === 'height'
+							? Math.min(skeleton.height * 0.9, (zone.from + zone.to) / 2)
+							: undefined;
 				// The per-species picture keeps its bark panel at the fixed span its references draw.
 				if (VIEW !== 'panels' && !isAbsent(subjectsOf().trunk)) {
 					const found = solvedAt(
@@ -1821,6 +1827,15 @@ export default defineSketch(async (ctx) => {
 		placeholders === true && (LOD === undefined || LOD === 0)
 			? createNearPool(ctx, { placeholders: true })
 			: undefined;
+	// A forced nearest level draws its real shoots at every distance: the bias moves the shoots'
+	// switch past every camera's far plane. A cut piece takes the nearest level too: it has no card
+	// levels, so a sheet's smaller cells would switch its foliage to cards that hold nothing, and
+	// the piece would vanish.
+	const placedView = {
+		height: SIZE[1] / rows,
+		fov: FOV,
+		...((LOD === 0 || SPEC.cutting !== undefined) && { switchBias: -FORCED_NEAR_STOPS }),
+	};
 	const place = (asset: PlantAsset, at: V3, source: SpeciesKit, far?: readonly FarPlant[]) =>
 		placePlants(
 			ctx,
@@ -1837,15 +1852,7 @@ export default defineSketch(async (ctx) => {
 				materials: plantLook,
 				...(near && { near }),
 				...(far && { far }),
-				// A forced nearest level draws its real shoots at every distance: the bias moves the
-				// shoots' switch past every camera's far plane. A cut piece takes the nearest level
-				// too: it has no card levels, so a sheet's smaller cells would switch its foliage to
-				// cards that hold nothing, and the piece would vanish.
-				view: {
-					height: SIZE[1] / rows,
-					fov: FOV,
-					...((LOD === 0 || SPEC.cutting !== undefined) && { switchBias: -FORCED_NEAR_STOPS }),
-				},
+				view: placedView,
 				castShadows: !PLAIN,
 			},
 		);
@@ -1955,6 +1962,22 @@ export default defineSketch(async (ctx) => {
 			: { stemClass: stemName, stemRadius: stemClass?.stem?.radius ?? null };
 	// The shoot rows the piece actually draws, counted by class: a count on the drawn piece, not the
 	// slot's request.
+	// The level of detail each cell's picture draws, which every figure read from it must name.
+	// The distance is from the lens to the plant's foot, as the placement measures a copy.
+	const levelOf = (cell: Cell) => {
+		if (LOD !== undefined)
+			return { forced: true, level: LOD, name: LEVEL_WORDS[LOD] ?? 'far card' };
+		const at = cell.piece === 'away' ? AWAY : ([0, 0, 0] as const);
+		const distance = Math.hypot(...sub(cell.view.position, at));
+		const found = drawnLevel(mainKit, drawn, placedView, distance, far !== undefined);
+		return {
+			forced: false,
+			level: found.level,
+			name: found.name,
+			distance,
+			starts: found.starts,
+		};
+	};
 	const rowsByClass = piece
 		? (() => {
 				const counts: Record<string, number> = {};
@@ -2015,6 +2038,7 @@ export default defineSketch(async (ctx) => {
 				fov: cell.view.fov,
 				...(cell.view.roll && { roll: cell.view.roll / DEG }),
 			},
+			level: levelOf(cell),
 			...(QUERY.measure && {
 				measure: measurePlant(cell.piece === 'away' && piece ? piece : main, kit.box, cell.turn),
 			}),

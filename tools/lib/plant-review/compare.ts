@@ -1657,6 +1657,11 @@ export interface StillResult extends PairMetrics {
 	 */
 	readonly subjectChecked?: boolean;
 	/**
+	 * The level of detail the page drew the picture at, as it posted it: the leaf form, a card
+	 * level or the far card. A figure read from the picture holds for that level alone.
+	 */
+	readonly level?: string;
+	/**
 	 * A cut branch's four density figures on both pictures, where the run measured them. A side
 	 * is null where its picture gave no measure. `bare` says the piece carries no leaf: two of the
 	 * figures are sound on bare wood only.
@@ -1690,6 +1695,67 @@ export interface CutBranchFigures {
 	readonly fanShare: number | null;
 	/** Bends in the wood for each piece length of it. */
 	readonly kinks: number | null;
+}
+
+/** The least share of the frame a close view's subject takes to be in its picture at all. */
+const SUBJECT_LEAST_SHARE = 0.01;
+
+/**
+ * Why a close picture has no subject in it, where its page measured the subject's share of the
+ * frame and found none: a camera that stands in the plane of what it frames sees it edge on.
+ */
+export function emptySubject(facts: unknown): string | undefined {
+	const framing = closeFraming(facts);
+	return framing && framing.fill !== null && framing.fill < SUBJECT_LEAST_SHARE
+		? `the subject, ${framing.subject}, takes ${framing.fill.toFixed(2)} of the frame`
+		: undefined;
+}
+
+/**
+ * Why a picture answers no photograph of its own: the page drew the very picture it drew for an
+ * earlier reference, though the two were asked for differently. Each asked-for difference, such
+ * as a light or a height, then changed nothing, and one drawing must not count for two.
+ */
+export function sameDrawing(
+	seen: Map<string, { readonly file: string; readonly query: string }>,
+	file: string,
+	frame: RunFrame,
+): string | undefined {
+	if (frame.sha256 === undefined) return undefined;
+	const query = JSON.stringify(frame.query);
+	const first = seen.get(frame.sha256);
+	if (!first) {
+		seen.set(frame.sha256, { file, query });
+		return undefined;
+	}
+	return first.query === query
+		? undefined
+		: `the page drew the same picture as for ${first.file}, though the two were asked for differently`;
+}
+
+/** The share of a frame above which, or at none of which, the plant leaves no outline to read. */
+const BLANK_MOST = 0.98;
+
+/** Why a whole view's frame has no outline to read: the plant covers all of it, or none. */
+export function blankFrame(plant: {
+	readonly mask: Uint8Array;
+	readonly width: number;
+	readonly height: number;
+}): string | undefined {
+	let covered = 0;
+	for (let at = 0; at < plant.mask.length; at++) covered += plant.mask[at] ? 1 : 0;
+	const share = covered / Math.max(1, plant.mask.length);
+	if (share === 0) return 'the frame holds no plant';
+	return share > BLANK_MOST
+		? `the plant covers ${share.toFixed(2)} of the frame, so the frame holds no outline`
+		: undefined;
+}
+
+/** The level of detail a page posted for a cell, in words; undefined where it posted none. */
+export function levelName(cell: unknown): string | undefined {
+	const level = (cell as { level?: { name?: unknown; forced?: unknown } } | undefined)?.level;
+	if (!level || typeof level.name !== 'string') return undefined;
+	return level.forced === true ? `${level.name}, forced` : level.name;
 }
 
 /** How far a whole view's drawn plant may differ in size from its photograph's, as a share of it. */
@@ -1996,6 +2062,8 @@ export function compareStills(
 	);
 	const results: StillResult[] = [];
 	const rows: SheetRow[] = [];
+	// The first reference each drawn picture answered, by the picture's hash, with its query.
+	const drawnFor = new Map<string, { readonly file: string; readonly query: string }>();
 	for (const slot of set.stills) {
 		const refImage = referencePicture(join(set.folder, slot.file));
 		const frame = byReference.get(slot.file);
@@ -2082,7 +2150,10 @@ export function compareStills(
 		// are read from that picture, which is cut and layered as the colour picture is.
 		const partsPicture =
 			frame.parts === undefined ? undefined : partsOf(readImage(join(runDir, frame.parts)));
-		const voided = voidReason(frame.facts, own, partsPicture);
+		const voided =
+			voidReason(frame.facts, own, partsPicture) ??
+			emptySubject(frame.facts) ??
+			sameDrawing(drawnFor, slot.file, frame);
 		if (voided !== undefined) {
 			unread({ void: voided }, ['VOID', 'SUBJECT MISSING']);
 			continue;
@@ -2113,6 +2184,15 @@ export function compareStills(
 				'VOID',
 				'FRAMING DIFFERS',
 			]);
+			continue;
+		}
+		// A whole view whose frame is all plant or holds none has no outline to read.
+		const blank =
+			(slot.view === 'whole' || slot.view === 'silhouette') && frame.matte !== undefined
+				? blankFrame(render.plant)
+				: undefined;
+		if (blank !== undefined) {
+			unread({ void: blank }, ['VOID', 'NO OUTLINE']);
 			continue;
 		}
 		// A bark close view photographs the bark against bark, and a bark texture is a cut-out of
@@ -2289,6 +2369,7 @@ export function compareStills(
 			...(frame.query?.sparse !== undefined ? { sparse: frame.query.sparse } : {}),
 			...(sheathFigure ? { sheath: sheathFigure } : {}),
 			...(framing ? { framing } : {}),
+			...(levelName(frame.cell) !== undefined && { level: levelName(frame.cell) }),
 			// A solved view whose contract held, or a whole view that passed the framing check.
 			subjectChecked:
 				(contractHeld(frame.facts) &&

@@ -129,7 +129,7 @@ Give `triangles` in place of `coarseness` to set a target for one copy's nearest
 
 Options given to `prepareSpecies` apply to every variant that grows from its kit, and a variant's own options replace them. A coarseness of 0 grows the same bytes as no coarseness. Stand-ins grow the same at every coarseness. On a grown oak at the high tier, coarseness 1 cuts the nearest level's wood from 761,551 triangles to 576,720, while its 3,771 shoot rows and its cards stay as grown. To grow a sparser plant, use `sparse`.
 
-A page can also move the level switches of all its species at once. Give `switchBias` in the view that every `placePlants` call takes. It counts in stops: each switch distance is multiplied by two to the power of minus the bias. A bias of 1 switches every level at half its distance, and a bias of -1 at twice its distance. `switchScale(bias)` gives that factor.
+A page can also move the level switches of all its species at once. Give `switchBias` in the view that every `placePlants` call takes. It counts in stops: each switch distance is multiplied by two to the power of minus the bias. A bias of 1 switches every level at half its distance, and a bias of -1 at twice its distance. `switchScale(bias)` gives that factor. `drawnLevel(kit, asset, view, distance, far)` names the level a placed copy draws at a distance from the camera, with the distance each level starts at: the leaf form, the first or second card level, or the far card. A page that measures a picture uses it to say which level the picture shows.
 
 ### Other forms
 
