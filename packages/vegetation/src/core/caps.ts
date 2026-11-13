@@ -114,7 +114,12 @@ export const MODEL_CAPS: Readonly<Record<CapClass, ModelCaps>> = {
 	},
 	palm: {
 		kitBytes: { low: 4 * MB, medium: 4 * MB, high: 4 * MB, ultra: 4 * MB },
-		variantBytes: { low: 3 * MB, medium: 3 * MB, high: 3 * MB, ultra: 3 * MB },
+		// The date palm's crown at twenty-two fronds and a hundred and twenty leaflets a side
+		// measures 3.15 MB. A crown of thirty fronds and a hundred and seventy leaflets measures
+		// 5.29 MB and closes its whole-view sky gap only from 0.74 to 0.66, so the greater figure
+		// buys no crown the photographs show: the cap stays here and the palm states that openness
+		// as its limit. The nearest wood measures 0.65 MB and its triangles 89,000.
+		variantBytes: { low: 4.2 * MB, medium: 4.2 * MB, high: 4.2 * MB, ultra: 4.2 * MB },
 		lod0WoodBytes: { low: 2 * MB, medium: 2 * MB, high: 2 * MB, ultra: 2 * MB },
 		lod0Triangles: 600_000,
 		lod1Triangles: 80_000,
@@ -164,6 +169,8 @@ export const MODEL_CAPS: Readonly<Record<CapClass, ModelCaps>> = {
  */
 export const MODEL_CLASS: Readonly<Record<GrowthModel, CapClass>> = {
 	'self-organizing': 'tree',
+	scaffold: 'tree',
+	frame: 'tree',
 	architectural: 'tree',
 	conifer: 'tree',
 	'crown-rosette': 'palm',

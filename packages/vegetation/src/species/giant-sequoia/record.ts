@@ -29,7 +29,11 @@ export const record: Species = {
 	// The whole-tree stills stand the bole a fifth of the tree's height across at breast height
 	// (0.21 in 01, 0.19 in 18), where the buttressed taper still widens it. The pipe radius is the
 	// column's own width there, and the base taper adds the flare the photographs show.
-	size: { height: { mean: 58, spread: 4 }, dbh: 6.6, aspect },
+	//
+	// The height is the drawn plant's top, sampled from this band for the seed and variant; the
+	// grower scales the wood and the crown so the silhouette reaches it. Read the mean as the target,
+	// never as a fixed drawn height.
+	size: { height: { mean: 56.0, spread: 4 }, dbh: 6.6, aspect },
 	growth: {
 		model: 'architectural',
 		// Stills 01, 02 and 18: one straight spire from the buttressed foot to its rounded top, with
@@ -308,10 +312,10 @@ export const record: Species = {
 		// side, which the review turns to the camera for the picture.
 		scar: {
 			from: 0,
-			to: 4.2,
+			to: 8.5,
 			angle: 90,
-			width: 46,
-			depth: 0.8,
+			width: 72,
+			depth: 2.2,
 			colour: [0.012, 0.011, 0.009],
 			shade: 0.92,
 		},

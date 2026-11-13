@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { scaledBudget } from '../../../tests/lib/run-budget.ts';
 import { type PlantAsset, plantAssetDigest, type SpeciesKitData } from './asset';
-import { AXIS_CULM, AXIS_LIMB, AXIS_STEM, BUD_TERMINAL, SkeletonBuilder } from './core/graph';
+import { AXIS_LIMB, AXIS_STEM, BUD_TERMINAL, SkeletonBuilder } from './core/graph';
 import { quatRotate } from './core/math';
 import type { Species } from './core/record';
 import { standInSpecies } from './core/stand-in';
@@ -125,92 +125,6 @@ describe('cuttings', () => {
 		expect(cut.order).toBe(1);
 		expect(cut.axis).toBe(thick);
 		expect(cut.axis).not.toBe(thin);
-	});
-
-	/** A stem of twelve nodes, and a helper that hangs an axis on it with a bud and an optional child. */
-	function stemWithAxes() {
-		const builder = new SkeletonBuilder();
-		const stem = builder.addAxis({ parent: -1, parentNode: -1, order: 0, kind: AXIS_STEM });
-		let node = builder.addNode({ x: 0, y: 0, z: 0, radius: 0.4, parent: -1, axis: stem });
-		for (let i = 1; i <= 12; i++)
-			node = builder.addNode({ x: 0, y: i, z: 0, radius: 0.4, parent: node, axis: stem });
-		const growth = (at: number, radius: number, order: number, kind: number, child: boolean) => {
-			const axis = builder.addAxis({ parent: stem, parentNode: at, parentT: 0, order, kind });
-			let previous = builder.addNode({ x: radius, y: at, z: 0, radius, parent: at, axis });
-			const first = previous;
-			for (let i = 1; i <= 3; i++)
-				previous = builder.addNode({
-					x: radius + i * 0.3,
-					y: at,
-					z: 0,
-					radius: radius * (1 - i * 0.1),
-					parent: previous,
-					axis,
-				});
-			builder.addBud({
-				node: first,
-				x: radius,
-				y: at,
-				z: 0,
-				frame: [0, 0, 0, 1],
-				kind: BUD_TERMINAL,
-				vigor: 0.5,
-				light: 1,
-				axis,
-				woodRadius: radius,
-			});
-			if (child) {
-				const childAxis = builder.addAxis({
-					parent: axis,
-					parentNode: previous,
-					parentT: 0,
-					order: order + 1,
-					kind,
-				});
-				builder.addNode({
-					x: radius + 0.9,
-					y: at + 0.5,
-					z: 0,
-					radius: radius * 0.6,
-					parent: previous,
-					axis: childAxis,
-				});
-			}
-			return axis;
-		};
-		return { builder, growth };
-	}
-
-	it('takes a leafy shoot that divides before a thicker single axis near the asked length', () => {
-		const { builder, growth } = stemWithAxes();
-		const single = growth(4, 0.16, 1, AXIS_LIMB, false);
-		const shoot = growth(8, 0.04, 1, AXIS_LIMB, true);
-		const cut = cutBranch(
-			builder.finish(0),
-			{ ...stub.record, cuttings: undefined },
-			{
-				part: 'branch',
-			},
-		);
-		if (!cut) throw new Error('nothing was cut');
-		expect(cut.axis).toBe(shoot);
-		expect(cut.axis).not.toBe(single);
-	});
-
-	it('takes a leafy shoot before a flowering head near the asked length', () => {
-		const { builder, growth } = stemWithAxes();
-		const head = growth(8, 0.16, 2, AXIS_CULM, true);
-		const shoot = growth(4, 0.04, 1, AXIS_LIMB, true);
-		const cut = cutBranch(
-			builder.finish(0),
-			{ ...stub.record, cuttings: undefined },
-			{
-				part: 'branch',
-			},
-		);
-		if (!cut) throw new Error('nothing was cut');
-		expect(cut.axis).toBe(shoot);
-		expect(cut.axis).not.toBe(head);
 	});
 
 	it('cuts an axis that leaves at its parent node there, with every axis whose parents reach it', () => {
@@ -388,6 +302,54 @@ describe('cuttings', () => {
 		}
 		expect(cutsShoot(stub.record, 'branch')).toBe(false);
 		expect(cutsShoot(stub.record, 'leaf')).toBe(false);
+	});
+
+	it('cuts a cluster that names a plant cut from one long axis, not from the kit', async () => {
+		// A fern's leaf cluster is a section of a frond, which is a leaf axis of the grown plant.
+		// The cut must keep that axis rather than refuse it as a shoot-style cluster does.
+		const { species: fern } = await import('./species/tree-fern');
+		await loadPlantCode(fern.record);
+		const kit = buildKitNow(fern, { placeholders: 'missing', detail: 'low' });
+		const whole = growPlantNow(kit, { seed: 11, variant: 0, near: true });
+		const hint = fern.record.cuttings?.cluster;
+		if (!hint || !('order' in hint)) throw new Error('the fern names no plant cut for its cluster');
+		expect(cutsShoot(fern.record, 'cluster')).toBe(false);
+		const cut = cutBranch(whole.skeleton, fern.record, { part: 'cluster' });
+		if (!cut) throw new Error('the fern cluster cut found no axis');
+		expect(cut.order).toBe(hint.order);
+		// The piece is the span of one frond, not the whole plant.
+		expect(cut.skeleton.height).toBeLessThan(whole.skeleton.height * 0.5);
+		expect(cut.skeleton.height).toBeGreaterThan((hint.span ?? 0) * 0.5);
+	});
+
+	it("takes a plant cut's leaf scale from its record, and the crown's size when none is named", async () => {
+		const { species: fern } = await import('./species/tree-fern');
+		await loadPlantCode(fern.record);
+		const hint = fern.record.cuttings?.cluster;
+		if (!hint || !('order' in hint)) throw new Error('the fern names no plant cut for its cluster');
+		const kitOf = (scale?: number) =>
+			buildKitNow(
+				{
+					...fern,
+					record: {
+						...fern.record,
+						cuttings: {
+							...fern.record.cuttings,
+							cluster: scale === undefined ? hint : { ...hint, scale },
+						},
+					},
+				},
+				{ placeholders: 'missing', detail: 'low' },
+			);
+		const grow = { seed: 11, variant: 0, cutting: { part: 'cluster' } } as const;
+		const own = hint.scale ?? 1;
+		const plain = growPlantNow(kitOf(), grow);
+		const same = growPlantNow(kitOf(own), grow);
+		const smaller = growPlantNow(kitOf(own * 0.9), grow);
+		expect(plantAssetDigest(same)).toBe(plantAssetDigest(plain));
+		// The scale steers the leaflets' size alone: the cut's axes and nodes stay where they are.
+		expect(smaller.skeleton).toEqual(plain.skeleton);
+		expect(plantAssetDigest(smaller)).not.toBe(plantAssetDigest(plain));
 	});
 
 	it('stands a shoot cutting upright on its attach point, or as grown when asked', async () => {

@@ -7,7 +7,6 @@
 		"sunRise": 55,
 		"skyShare": 0.3,
 		"daylight": 2.3,
-		"composition": "arms",
 		"elevation": -10
 	},
 	"05-arm-underside.png": {
@@ -18,7 +17,6 @@
 		"sunRise": 50,
 		"skyShare": 0.3,
 		"daylight": 2.2,
-		"composition": "elbow",
 		"elevation": -55
 	},
 	"06-between-arms.png": {
@@ -29,14 +27,12 @@
 		"sunRise": 55,
 		"skyShare": 0.3,
 		"daylight": 2.3,
-		"composition": "arms",
 		"elevation": -14
 	},
 	"08-arm-elbow.png": {
 		"span": 2,
 		"thin": 0.22,
 		"along": 0.5,
-		"composition": "elbow",
 		"elevation": -14
 	},
 	"09-rib-pattern.png": {
@@ -96,8 +92,7 @@
 		"sunAzimuth": -24,
 		"sunRise": 56,
 		"skyShare": 0.32,
-		"daylight": 1.5,
-		"noOutline": true
+		"daylight": 1.5
 	},
 	"02-whole-profile.png": {
 		"sunAzimuth": -18,

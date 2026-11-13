@@ -55,7 +55,9 @@ struct Uniforms {
     season: f32,
     // The season the plant stands in: 0 summer, 1 autumn, 2 winter, 3 blossom.
     seasonKind: f32,
-    // 1 to draw the plant black, with its cut-outs and its sway, for an exact outline.
+    // 1 to draw the plant black, with its cut-outs and its sway, for an exact outline. 2 to draw
+    // each part in a flat colour of its own, cut and layered as the colour picture is, so a reader
+    // can tell which part of the plant covers each texel.
     matte: f32,
 }
 
@@ -905,6 +907,19 @@ fn coverage(input: SurfaceInput) -> f32 {
     return alpha;
 }
 
+/// The flat colour of a part in a picture of the parts. Wood is red, and its blue holds the
+/// square root of its radius as a share of the radius span, so a reader can tell a trunk from a
+/// twig. Shoot rows, cards and merged foliage are green. Extras are green and blue.
+fn part_colour(mode: i32, radius: f32) -> vec3f {
+    if (mode == MODE_WOOD) {
+        return vec3f(1.0, 0.0, sqrt(saturate(radius / WOOD_RADIUS_SPAN)));
+    }
+    if (mode == MODE_EXTRAS) {
+        return vec3f(0.0, 1.0, 1.0);
+    }
+    return vec3f(0.0, 1.0, 0.0);
+}
+
 fn surface(input: SurfaceInput) -> Surface {
     var s = defaultSurface(input);
     let mode = plant_mode();
@@ -1266,9 +1281,14 @@ fn surface(input: SurfaceInput) -> Surface {
     let grazing = 1.0 - saturate(dot(normal, input.viewDirection));
     base = min(base * (1.0 + sheen * grazing * grazing * grazing * grazing), vec3f(1.0));
 
-    // A matte keeps the outline, the cut-outs and the sway, and draws no light.
-    let matte = material.matte > 0.5;
-    s.baseColor = select(base, vec3f(0.0), matte);
+    // A matte keeps the outline, the cut-outs and the sway, and draws no light. A picture of the
+    // parts does the same in each part's own flat colour, and keeps the colour picture's cut edge.
+    let parts = material.matte > 1.5;
+    let matte = material.matte > 0.5 && !parts;
+    s.baseColor = select(base, vec3f(0.0), matte || parts);
+    if (parts) {
+        s.emissive = part_colour(mode, input.uv1.x * WOOD_RADIUS_SPAN);
+    }
     s.metalness = 0.0;
     s.roughness = widened;
     s.normal = normal;
@@ -1280,7 +1300,7 @@ fn surface(input: SurfaceInput) -> Surface {
     // the openness test keeps the sky it does not cover. A sharpened edge would do the first and lose
     // the second.
     s.alpha = select(sharpen(alpha, width), alpha, matte);
-    s.diffuseTransmission = select(share, 0.0, matte);
-    s.diffuseTransmissionColor = select(through, vec3f(0.0), matte);
+    s.diffuseTransmission = select(share, 0.0, matte || parts);
+    s.diffuseTransmissionColor = select(through, vec3f(0.0), matte || parts);
     return s;
 }
