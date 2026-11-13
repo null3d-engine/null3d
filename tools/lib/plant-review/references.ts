@@ -90,27 +90,11 @@ type SlotRule = Omit<Slot, 'file' | 'number' | 'name' | 'kind' | 'background'> &
 	readonly background?: PlantBackground;
 };
 
-/**
- * The stem radii from the stem's axis at which the photograph that looks up the whole height stands:
- * the distance at which a stem fills its share of the lower edge, at the photograph's pitch.
- */
-const STAND = 3.3;
+/** Looking up the trunk into the crown from beside it, the first fork a little above the frame's middle. */
+const FROM_BELOW: SlotRule = { view: 'below', framed: false };
 
-/** Looking up the whole height of the stem from its foot. */
-const FROM_BELOW: SlotRule = {
-	view: 'below',
-	elevation: 70,
-	query: { forkRow: 0.4, stand: STAND },
-	framed: false,
-};
-
-/** Looking up into the crown's underside from under it: the crown's box fills most of the frame, the trunk below. */
-const UNDERNEATH: SlotRule = {
-	view: 'crown-underside',
-	elevation: 60,
-	query: { aside: 40 },
-	framed: false,
-};
+/** Looking up into the crown's underside from under a great limb, back toward the trunk. */
+const UNDERNEATH: SlotRule = { view: 'crown-underside', framed: false };
 
 /**
  * Looking up a tall clean bole in leaf from a few steps back with a wide lens: the foot at the
@@ -207,14 +191,12 @@ const SLOT_RULES: readonly { readonly test: (name: string) => boolean; readonly 
 		},
 		{
 			// Looking up the whole height from the foot: the stem's first fork stands a little above the
-			// middle of the frame, with the first limbs running out from it, and the camera stands as
-			// far from the stem as the photograph's, measured in stem radii from its share of the frame.
+			// middle of the frame, with the first limbs running out from it.
 			test: (n) => n.includes('from-below'),
 			slot: FROM_BELOW,
 		},
 		{
-			// Looking up into the crown from beside the stem, which enters the frame from its lower left,
-			// from where the photograph that looks up the whole height stands.
+			// Looking up into the crown from under a great limb, the trunk low in the frame.
 			test: (n) => /(crown|canopy).*(underside|underneath)/.test(n),
 			slot: UNDERNEATH,
 		},
@@ -226,11 +208,10 @@ const SLOT_RULES: readonly { readonly test: (name: string) => boolean; readonly 
 		},
 		{ test: (n) => n.includes('inside'), slot: { view: 'inside', framed: false } },
 		{
-			// The crown's outer surface seen from outside it: a limb running low across the frame with
-			// its shoots rising against the sky, at the span a photograph of that surface covers, some
-			// thirty leaf lengths.
+			// The crown's outer surface seen from outside it: one foliage mass at the crown's edge
+			// against the sky.
 			test: (n) => /(crown|clump)-(outside|edge)/.test(n),
-			slot: { view: 'limb', query: { span: 2.8, thin: 0.06, surface: true }, framed: false },
+			slot: { view: 'limb', query: { surface: true }, framed: false },
 		},
 		{
 			test: (n) => n.includes('limb-leaving') || n.includes('culm-base'),

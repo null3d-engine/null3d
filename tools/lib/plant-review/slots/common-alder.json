@@ -55,8 +55,7 @@
 	},
 	"04-crown-outside.png": {
 		"skyShare": 0.65,
-		"daylight": 1.6,
-		"distance": 4
+		"daylight": 1.6
 	},
 	"05-crown-underside.png": {
 		"sunAzimuth": 30,

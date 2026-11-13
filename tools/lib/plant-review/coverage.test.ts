@@ -135,4 +135,37 @@ describe('the coverage list', () => {
 		expect(coverage.complete).toBe(false);
 		expect(coverageMarkdown('stub', 'oak', coverage)).toContain('cannot pass');
 	});
+
+	test('counts a void picture as drawn and not compared, with the reason beside it', () => {
+		const coverage = coverageOf(
+			set,
+			{
+				stills: new Map([
+					[
+						'01-whole-distant.png',
+						{
+							...still('01-whole-distant.png'),
+							masked: false,
+							void: 'the view has no subject: no limb divides into two arms of like size',
+						},
+					],
+					[
+						'26-bark-texture.png',
+						{ ...still('26-bark-texture.png'), kind: 'texture', masked: false, surfaceDeltaE: 4 },
+					],
+				]),
+				turns: new Map([['oak-turntable.mp4', turn(193)]]),
+				winds: new Map([['oak-wind-motion-b.mp4', wind(7.875, 0.125)]]),
+			},
+			0.125,
+		);
+		const line = coverage.lines.find((entry) => entry.file === '01-whole-distant.png');
+		expect(line?.status).toBe('void');
+		expect(line?.render).toBe('stills/01-whole-distant.png (view whole)');
+		expect(line?.result).toBe(
+			'void: the view has no subject: no limb divides into two arms of like size',
+		);
+		expect(coverage.compared).toBe(3);
+		expect(coverage.complete).toBe(false);
+	});
 });

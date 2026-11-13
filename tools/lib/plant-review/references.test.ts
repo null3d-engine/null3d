@@ -627,8 +627,6 @@ describe('the slots', () => {
 			forkRow: 0.4,
 			footRow: 0.5,
 			crownRow: 0.4,
-			aside: 10,
-			stand: 2,
 			leaves: 8,
 			sparse: 0.5,
 			sections: 0.5,
@@ -662,7 +660,6 @@ describe('the slots', () => {
 			readPlantReviewQuery(new URLSearchParams('species=stub&crownRow=0.4&footRow=0.5')),
 		).not.toThrow();
 		expect(read('leaves=0')).toThrow('above 0');
-		expect(read('stand=1')).toThrow('above 1');
 		// The daylight's strength is a multiple of the soft daylight: above none, and not past eight.
 		expect(read('daylight=2.5')().daylight).toBe(2.5);
 		expect(read('daylight=0')).toThrow('above 0');

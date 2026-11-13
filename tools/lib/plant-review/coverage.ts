@@ -7,8 +7,11 @@ import type { StillResult, TurnResult, WindResult } from './compare.ts';
 import { fixed } from './compare.ts';
 import type { ReferenceSet } from './references.ts';
 
-/** Whether a reference file was compared in full, in part, or not at all. */
-export type CoverageStatus = 'compared' | 'partial' | 'missing';
+/**
+ * Whether a reference file was compared in full, in part, or not at all, or was drawn as a picture
+ * that shows no subject, which compares nothing.
+ */
+export type CoverageStatus = 'compared' | 'partial' | 'missing' | 'void';
 
 /** One line of the coverage list. */
 export interface CoverageLine {
@@ -49,6 +52,16 @@ function stillLine(file: string, kind: string, result: StillResult | undefined):
 			status: 'missing',
 			render: '-',
 			result: `the render failed: ${result.error}`,
+		};
+	// A picture whose subject is missing was drawn and compares nothing: the tool's camera, or the
+	// file's mapping to a view, is what needs mending before the file counts as compared.
+	if (result.void !== undefined)
+		return {
+			file,
+			kind,
+			status: 'void',
+			render: `${result.renderFile} (view ${result.view})`,
+			result: `void: ${result.void}`,
 		};
 	// A picture with no usable outline still has edges: its directions are the figure it gets.
 	const edges =
