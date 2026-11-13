@@ -22,6 +22,7 @@ import {
 	type GreatLimb,
 	isAbsent,
 	type Lobe,
+	lacking,
 	sampleAlong,
 	sampleAtHeight,
 	subjectsOfSkeleton,
@@ -221,7 +222,7 @@ describe('the subjects of a plant with no trunk', () => {
 		});
 		run(b, blade, nodes[2] as number, [0.1, 0.1, 0], [0.1, 0.25, 0], 4, 0.004, 0.5);
 		const subjects = subjectsOfSkeleton(b.finish(0));
-		const why = absent('the plant has no stem that reaches a tenth of its height');
+		const why = lacking('the plant has no stem that reaches a tenth of its height');
 		expect(subjects.trunk).toEqual(why);
 		expect(subjects.limbs).toEqual(why);
 		expect(subjects.forks).toEqual(why);

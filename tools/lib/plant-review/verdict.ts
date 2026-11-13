@@ -7,7 +7,7 @@
 import type { StillResult } from './compare.ts';
 import type { Coverage } from './coverage.ts';
 import type { Slot } from './references.ts';
-import type { Standing } from './review-data.ts';
+import type { PictureRuling, Standing } from './review-data.ts';
 
 /** The name of the verdict file's format. */
 export const VERDICT_SCHEMA = 'null3d-plant-verdict/1';
@@ -56,6 +56,8 @@ export interface Figure {
 	readonly band: Band | null;
 	/** The run the figure was measured in. */
 	readonly run: string;
+	/** The level of detail the figure's picture was drawn at, where the page reported it. */
+	readonly level?: string;
 }
 
 /** Who passed a row, when, and the review file that holds the reading. */
@@ -152,9 +154,19 @@ export interface Verdict {
 		readonly complete: boolean;
 		readonly compared: number;
 		readonly inUse: number;
+		/**
+		 * The files drawn and not measured, because the standard states no figure for their view. The
+		 * eye judges them: each counts toward a complete run and passes no row alone.
+		 */
+		readonly drawn?: readonly string[];
 	};
 	/** The plant's balance through eight angles, from the whole-plant turning video. */
 	readonly balance: Balance;
+	/**
+	 * The pictures that a ruling takes out of their rows or of their outline figures, each with the
+	 * ruling it cites, whether or not this run drew them.
+	 */
+	readonly rulings?: readonly PictureRuling[];
 	readonly rows: readonly VerdictRow[];
 }
 
@@ -184,7 +196,7 @@ export const COLOUR_MOST = 3;
 /**
  * A cut branch's four density figures against its photograph's: the wood per tip and the tips per
  * area within a quarter of it, the share of fan joints at most a tenth above it, and the kinks at
- * least half of it.
+ * least half of it. The wood per tip and the kinks hold on bare wood only.
  */
 export const CUT_WITHIN = 0.25;
 export const CUT_FANS_ABOVE = 0.1;
@@ -206,10 +218,13 @@ export interface VerdictInput {
 	readonly seed: number;
 	readonly variant: number;
 	readonly preset: string;
-	readonly coverage: Pick<Coverage, 'complete' | 'compared' | 'inUse'>;
+	readonly coverage: Pick<Coverage, 'complete' | 'compared' | 'inUse'> &
+		Partial<Pick<Coverage, 'drawn'>>;
 	/** The set's stills and texture sources, and each one's comparison. */
 	readonly slots: readonly Slot[];
 	readonly stills: ReadonlyMap<string, StillResult>;
+	/** The species' pictures that a ruling takes out of their rows or of their outline figures. */
+	readonly rulings?: readonly PictureRuling[];
 	/** The run's picture of the wood alone, which rows 1 to 3 are judged on, where it drew one. */
 	readonly skeleton?: string;
 	/**
@@ -266,39 +281,44 @@ function rounded(value: number): number {
 
 /** The figures a picture gives a row, where the row has figures. */
 function figuresOf(row: number, pair: StillResult, run: string): Figure[] {
-	const base = { picture: pair.file, run };
+	const base = { picture: pair.file, run, ...(pair.level !== undefined && { level: pair.level }) };
 	switch (row) {
 		case 2: {
-			// A cut branch's density, where the run measured it on both pictures of the piece.
+			// A cut branch's density, where the run measured it on both pictures of the piece. A
+			// figure that either picture could not give is left out. The wood per tip and the kinks
+			// are read on bare wood only: on a piece in leaf, a leaf across a stem makes false tips
+			// and a straight twig passes the kinks, so neither is quoted there.
 			const cut = pair.cutBranch;
-			if (!cut) return [];
-			const near = (name: string, value: number, reference: number): Figure => ({
-				...base,
-				name,
-				value,
-				reference,
-				band: {
-					min: rounded(reference * (1 - CUT_WITHIN)),
-					max: rounded(reference * (1 + CUT_WITHIN)),
-				},
+			if (!cut?.reference || !cut.render) return [];
+			const { reference, render } = cut;
+			const both = (
+				name: keyof typeof reference,
+				band: (reference: number) => Band,
+				label: string,
+				bareOnly = false,
+			): Figure[] => {
+				const [value, against] = [render[name], reference[name]];
+				if (value === null || against === null || (bareOnly && !cut.bare)) return [];
+				return [{ ...base, name: label, value, reference: against, band: band(against) }];
+			};
+			const within = (against: number): Band => ({
+				min: rounded(against * (1 - CUT_WITHIN)),
+				max: rounded(against * (1 + CUT_WITHIN)),
 			});
 			return [
-				near('cut branch wood per tip', cut.render.woodPerTip, cut.reference.woodPerTip),
-				near('cut branch tips per area', cut.render.tipsPerArea, cut.reference.tipsPerArea),
-				{
-					...base,
-					name: 'cut branch share of fan joints',
-					value: cut.render.fanShare,
-					reference: cut.reference.fanShare,
-					band: { min: null, max: rounded(cut.reference.fanShare + CUT_FANS_ABOVE) },
-				},
-				{
-					...base,
-					name: 'cut branch kinks',
-					value: cut.render.kinks,
-					reference: cut.reference.kinks,
-					band: { min: rounded(cut.reference.kinks * CUT_KINKS_LEAST), max: null },
-				},
+				...both('woodPerTip', within, 'cut branch wood per tip', true),
+				...both('tipsPerArea', within, 'cut branch tips per area'),
+				...both(
+					'fanShare',
+					(against) => ({ min: null, max: rounded(against + CUT_FANS_ABOVE) }),
+					'cut branch share of fan joints',
+				),
+				...both(
+					'kinks',
+					(against) => ({ min: rounded(against * CUT_KINKS_LEAST), max: null }),
+					'cut branch kinks',
+					true,
+				),
 			];
 		}
 		case 4:
@@ -488,8 +508,11 @@ export function toolVerdict(input: VerdictInput): Verdict {
 			complete: input.coverage.complete,
 			compared: input.coverage.compared,
 			inUse: input.coverage.inUse,
+			...(input.coverage.drawn &&
+				input.coverage.drawn.length > 0 && { drawn: input.coverage.drawn }),
 		},
 		balance: toolBalance(input),
+		...(input.rulings && input.rulings.length > 0 && { rulings: input.rulings }),
 		rows,
 	};
 }

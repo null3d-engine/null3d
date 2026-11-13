@@ -18,17 +18,27 @@ import {
 import { departures, forks } from './close';
 import type { MacroSkeleton } from './plant-types';
 
-/** A subject the generator cannot name, with the reason. */
+/**
+ * A subject a view cannot have, with the reason. Either the plant has no such part, which is a
+ * fact about the plant, or the generator's data or the request cannot name one, which is not.
+ */
 export interface Absent {
 	readonly absent: string;
+	/** Whether the plant itself has no such part. */
+	readonly lacks?: true;
 }
 
 /** A subject, or why the generator cannot name it. */
 export type Maybe<T> = T | Absent;
 
-/** A subject marked absent for a reason. */
+/** A subject that the generator's data or the request cannot name, for a reason. */
 export function absent(why: string): Absent {
 	return { absent: why };
+}
+
+/** A part that the plant does not have, for a reason. */
+export function lacking(why: string): Absent {
+	return { absent: why, lacks: true };
 }
 
 /** Whether a subject is absent. */
@@ -351,7 +361,7 @@ export function subjectsOfSkeleton(
 	// A ground plant's crown axis looks like a stem at its base but reaches no height, where a tree
 	// that forks low still carries its stem a real share of the way up.
 	const hasTrunk = top >= Math.max(TRUNK_LEAST, TRUNK_HEIGHT_SHARE * skeleton.height);
-	const noTrunk = absent('the plant has no stem that reaches a tenth of its height');
+	const noTrunk = lacking('the plant has no stem that reaches a tenth of its height');
 
 	let trunk: Maybe<TrunkSubject> = noTrunk;
 	if (hasTrunk) {
@@ -362,7 +372,7 @@ export function subjectsOfSkeleton(
 			base: foot,
 			axis,
 			breast,
-			firstFork: forkAt ?? absent("no limb takes a fifth of the trunk's cross-section"),
+			firstFork: forkAt ?? lacking("no limb takes a fifth of the trunk's cross-section"),
 		};
 	}
 
@@ -396,7 +406,7 @@ export function subjectsOfSkeleton(
 
 	const lobes: Maybe<readonly Lobe[]> =
 		skeleton.buds.count === 0
-			? absent('the skeleton carries no bud sites, so it names no foliage mass')
+			? lacking('the plant carries no bud sites, so it has no foliage mass')
 			: hasTrunk
 				? lobesOf(skeleton, stem)
 				: noTrunk;
@@ -412,7 +422,7 @@ export function subjectsOfSkeleton(
 		limbs,
 		forks: divisions,
 		lobes,
-		twigTips: tips.length > 0 ? tips : absent('the skeleton carries no terminal bud'),
+		twigTips: tips.length > 0 ? tips : lacking('the plant carries no terminal bud'),
 		pieces: absent('the skeleton instances no branch piece: the cut views draw the review cutting'),
 		leaf:
 			options.leafLength === undefined

@@ -52,11 +52,18 @@
 	},
 	"04-crown-outside.png": {
 		"skyShare": 0.19,
-		"daylight": 2.761
+		"daylight": 2.761,
+		"limbRow": 0.85,
+		"limbShare": 0.1
 	},
 	"06-inside-crown.png": {
 		"skyShare": 0.395,
 		"daylight": 1.508
+	},
+	"07-limb-leaving-trunk.png": {
+		"limbShare": 0.5,
+		"collarColumn": 0.57,
+		"limbLie": 10
 	},
 	"17-trunk-taper.png": {
 		"skyShare": 0.702,

@@ -117,8 +117,6 @@ export interface PlantReviewQuery {
 	readonly pick?: number;
 	/** The cutting's length in metres. */
 	readonly cut?: number;
-	/** Metres above the ground where a mid-trunk bark view stands, where the species' trunk is tall. */
-	readonly barkHeight?: number;
 	/** Metres along the axis where a spanned piece starts, in place of the record's hint. */
 	readonly cutFrom?: number;
 	/** Metres of the axis a spanned piece keeps, in place of the record's hint. */
@@ -231,6 +229,12 @@ export interface PlantReviewQuery {
 	readonly surface?: boolean;
 	/** Whether to draw the plant black on white with no light, for its exact outline. */
 	readonly matte?: boolean;
+	/**
+	 * Whether to draw each part of the plant in a flat colour of its own on white, with no light:
+	 * wood red with its radius in the blue channel, foliage green, extras green and blue. The parts
+	 * are cut and layered as the colour picture is, so the picture says which part covers each texel.
+	 */
+	readonly parts?: boolean;
 	/** Whether stages not built yet grow stand-ins; true for a species that is not registered. */
 	readonly placeholders?: boolean;
 	/** The row share of the horizon, which sets the camera's pitch with the field of view. */
@@ -273,6 +277,12 @@ export interface PlantReviewQuery {
 	 */
 	readonly barkZone?: number;
 	/**
+	 * Metres above the ground at which a bark view of the trunk reads the surface, where the
+	 * photograph shows the surface of one height: a column's skin above its corky foot, or a hole
+	 * high in its trunk. It goes before the bark zone's own height.
+	 */
+	readonly barkHeight?: number;
+	/**
 	 * Metres that a close view covers: the bark or limb a bark or limb view frames, the sheath a
 	 * ground plant's sheath view frames, or the width a cut view shows across the frame, where the
 	 * reference is a picture of a part of the piece rather than the whole of it.
@@ -287,6 +297,24 @@ export interface PlantReviewQuery {
 	readonly subjectWidth?: number;
 	/** The subject box's share of the picture's height, with `subjectWidth`. */
 	readonly subjectHeight?: number;
+	/**
+	 * The share of the frame's height that a junction photograph's limb takes where it leaves the
+	 * trunk, read off the photograph. It sets the junction view's frame alone.
+	 */
+	readonly limbShare?: number;
+	/**
+	 * The row share on which a crown photograph's limb crosses the frame under its leaves. The
+	 * crown view then frames the limb that carries its foliage mass, low in the frame, and
+	 * `limbShare` is that limb's share of the frame's height.
+	 */
+	readonly limbRow?: number;
+	/** The column share on which a junction photograph's trunk meets its limb. */
+	readonly collarColumn?: number;
+	/**
+	 * The degrees a junction photograph's limb rises above level where it leaves the trunk: the
+	 * view frames the thick limb that lies nearest.
+	 */
+	readonly limbLie?: number;
 	/**
 	 * The row share on which a view up the stem puts the stem's first fork: the camera pitches up
 	 * until the fork lands there.
@@ -358,7 +386,6 @@ const NUMBER_FIELDS = [
 	'time',
 	'pick',
 	'cut',
-	'barkHeight',
 	'cutFrom',
 	'cutSpan',
 	'shoots',
@@ -382,9 +409,14 @@ const NUMBER_FIELDS = [
 	'along',
 	'thin',
 	'barkZone',
+	'barkHeight',
 	'span',
 	'subjectWidth',
 	'subjectHeight',
+	'limbShare',
+	'limbRow',
+	'collarColumn',
+	'limbLie',
 	'forkRow',
 	'footRow',
 	'crownRow',
@@ -429,6 +461,7 @@ const SWITCHES = [
 	'measure',
 	'scale',
 	'matte',
+	'parts',
 	'fruit',
 	'surface',
 	'lifted',
@@ -558,6 +591,10 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 		);
 	if (numbers.cutSpan !== undefined && numbers.cutSpan <= 0)
 		throw new Error(`cutSpan=${numbers.cutSpan} is a length of axis: give a number above 0.`);
+	if (numbers.barkHeight !== undefined && numbers.barkHeight < 0)
+		throw new Error(
+			`barkHeight=${numbers.barkHeight} is metres above the ground: give a number of 0 or more.`,
+		);
 	if (numbers.leaves !== undefined && numbers.leaves <= 0)
 		throw new Error(`leaves=${numbers.leaves} is a frame in leaf lengths: give a number above 0.`);
 	if (
@@ -570,6 +607,9 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 	for (const [name, value] of [
 		['subjectWidth', numbers.subjectWidth],
 		['subjectHeight', numbers.subjectHeight],
+		['limbShare', numbers.limbShare],
+		['limbRow', numbers.limbRow],
+		['collarColumn', numbers.collarColumn],
 	] as const)
 		if (value !== undefined && !(value > 0 && value <= 1))
 			throw new Error(
@@ -645,6 +685,7 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 		motion: params.get('motion') === '1',
 		young: params.get('young') === '1',
 		matte: params.get('matte') === '1',
+		parts: params.get('parts') === '1',
 		fruit: params.get('fruit') === '1',
 		surface: params.get('surface') === '1',
 	};
