@@ -28,6 +28,7 @@ import {
 import { enlarged, type PreviewCamera, restood, standingCamera } from './camera.ts';
 import {
 	canvas,
+	drawCardLevelWood,
 	drawCards,
 	drawLevelWood,
 	drawShoots,
@@ -153,13 +154,14 @@ export function renderView(
 	);
 	const draw = (camera: PreviewCamera) => {
 		const drawing = canvas(camera.width, camera.height);
-		// The level's own wood mesh where the asset holds it; else the skeleton's strokes.
-		if (!drawLevelWood(drawing, camera, kit, asset, level))
-			drawWood(drawing, camera, asset.skeleton, {
-				...(level > 0 ? { orders: kit.record.lod.woodOrders[level - 1] } : {}),
-			});
-		if (level === 0) drawShoots(drawing, camera, kit, asset.shoots);
-		else drawCards(drawing, camera, kit, asset, level);
+		if (level === 0) {
+			// The level's own wood mesh where the asset holds it; else the skeleton's strokes.
+			if (!drawLevelWood(drawing, camera, kit, asset, 0)) drawWood(drawing, camera, asset.skeleton);
+			drawShoots(drawing, camera, kit, asset.shoots);
+		} else {
+			drawCardLevelWood(drawing, camera, kit, asset, level);
+			drawCards(drawing, camera, kit, asset, level);
+		}
 		return drawing;
 	};
 	// The review stands its camera so the drawn plant takes the reference's share of the frame's

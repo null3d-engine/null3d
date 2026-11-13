@@ -2674,6 +2674,14 @@ export interface LodSpec {
 	 */
 	readonly cardCell?: Readonly<Record<Detail, number>>;
 	/**
+	 * How a prototype many times longer than wide is cut along its line into cards of its own, where
+	 * the default does not suit the species: `most` stretches at most, from 1 to 8 and 4 by default,
+	 * and `cells`, whether each stretch's planes take a whole cell or a half one, `half` by default.
+	 * A half cell keeps the atlas near its uncut size and still gives a blade or a strand more texels
+	 * along its length; a wide frond whose leaflets need the texels across takes whole cells.
+	 */
+	readonly cardCuts?: { readonly most?: number; readonly cells?: 'full' | 'half' };
+	/**
 	 * The least width, in pixels, that a card's own stalk draws at any distance, from 0 to 8. A card
 	 * stands on its axis's twig, whose wood may be thinner than a pixel at a whole view, so the
 	 * card's leaves read as a piece in air where the twig does not draw. At 1 or more the card
