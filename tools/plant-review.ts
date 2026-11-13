@@ -868,6 +868,7 @@ function compareRun(
 			// where its parts run. It gets that figure instead of an outline it cannot trust.
 			...edgeLines(result.pairs),
 			...framingLines(result.pairs),
+			...voidLines(result.pairs),
 			...pieceLines(result.pairs),
 			...connectivityLines(result.pairs),
 			...result.pairs.flatMap((pair) => (pair.note ? [`- ${pair.file}: ${pair.note}.`] : [])),
@@ -965,12 +966,18 @@ function compareRun(
 	const floating = [...stills.values()].filter(
 		(pair) => (pair.connectivity?.floating.length ?? 0) > 0,
 	);
+	const voids = [...stills.values()].filter((pair) => pair.void !== undefined);
 	summary.push(
 		'### Coverage',
 		'',
 		coverage.complete
 			? `- Every one of the ${coverage.inUse} reference files in use was compared. coverage.md lists each with its render.`
 			: `- ${coverage.compared} of ${coverage.inUse} reference files in use were compared in full, so the species cannot pass. coverage.md lists each file and what it lacks.`,
+		...(voids.length > 0
+			? [
+					`- ${voids.length} picture${voids.length === 1 ? ' is' : 's are'} void, with no subject to compare: ${voids.map((pair) => pair.file).join(', ')}. A void picture is a fault of the tool's camera or of the file's view, and it neither passes nor fails a row.`,
+				]
+			: []),
 		...(maskFailures.length > 0
 			? [
 					`- The mask check fails on ${maskFailures.length} turn${maskFailures.length === 1 ? '' : 's'}: ${maskFailures.map((turn) => turn.video).join(', ')}. A matte that the colour outline cannot follow is not a matte a row can be judged on.`,
@@ -1022,7 +1029,7 @@ function edgeLines(pairs: readonly StillResult[]): string[] {
 function framingLines(pairs: readonly StillResult[]): string[] {
 	return pairs.flatMap((pair) => {
 		const framing = pair.framing;
-		if (!framing) return [];
+		if (!framing || pair.void !== undefined) return [];
 		const { front, behind, fill } = framing;
 		const clutter =
 			front !== null && behind !== null && fill !== null
@@ -1031,6 +1038,20 @@ function framingLines(pairs: readonly StillResult[]): string[] {
 		const warning = framing.warning ? `, as ${framing.warning}` : '';
 		return [`- ${pair.file}: the camera framed ${framing.subject}${clutter}${warning}.`];
 	});
+}
+
+/**
+ * The pictures that are void: each drew, and shows no subject to compare. No figure is read from
+ * one, and no row passes or fails by it: the camera, or the file's mapping to a view, is at fault.
+ */
+function voidLines(pairs: readonly StillResult[]): string[] {
+	return pairs.flatMap((pair) =>
+		pair.void === undefined
+			? []
+			: [
+					`- ${pair.file}: void, ${pair.void}. No figure is read from it, and no row passes or fails by it.`,
+				],
+	);
 }
 
 /**

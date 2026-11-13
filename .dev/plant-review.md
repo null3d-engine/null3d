@@ -215,9 +215,14 @@ rules that set them.
   stands in for that measurement.
 - A picture whose upper half shows under 5 % sky and no clear shadows keeps the page's own light.
   Studio, copy-stand and silhouette pictures keep their own lights.
-- A view up the stem stands its camera at a person's eye height. A plant shorter than a person
-  stands under that height, so the camera drops to a third of the plant's height, and the crown
-  still stands above the lens. Without the drop the view looks over the whole plant at the sky.
+- A view up the stem stands its camera at a person's eye height, below the stem's first fork. Under
+  a lower fork, the camera drops to under half the bole's height. The lens then never stands among
+  the limbs. A plant with no trunk is seen from a low eye beside it, at 0.15 of its height. Its foot
+  stands on the frame's lower edge. Without the drop the view looks over the plant at the sky.
+- A close view is solved from its subject: the trunk, a limb's joint, a fork or a foliage mass. The
+  camera stands where that subject lands at the place and the size its photograph gives it. The
+  [review tool's guide](../tools/lib/plant-review/README.md#how-the-measures-work) gives each view's
+  contract.
 - The turning videos and the wind clip keep the light beside the camera, as the reference videos
   keep it. The oak's turntable holds its light about 9 degrees right of the camera and 41 degrees up
   in every frame. A sun fixed in the world would light half of each turn from behind.
@@ -315,6 +320,19 @@ standard picture map:
 whose crown box is void, a silhouette with no recorded angle, or a piece at the wrong subject is
 stated as a slot limit. It is not used to pass or fail the row. A row fails when a picture that can
 show the subject shows the fault.
+
+**A picture whose subject is missing is void, and the tool says so before any measure.** Each close
+view has a contract. It names the points of its subject, the place each must land in the frame, and
+the size each must take. The tool checks the contract on the camera that drew. Where the run drew a
+matte, it checks the picture too. A picture is void in three cases:
+
+- The plant has no subject for the view.
+- The subject is not in the frame.
+- The frame shows a wall of plant where the photograph has open ground.
+
+The tool reads no figure from a void picture and writes the reason beside it. A void picture is a
+fault to fix in the tool's camera or in the file's mapping to a view. It never passes a row and
+never fails one. A row whose pictures are all void is void, and a void row is not a pass.
 
 **A same-angle conflict is a reference conflict; a cross-angle comparison is not.** When two
 reference pictures disagree, read the turn each is drawn at. Compare only figures at the same turn,
@@ -552,7 +570,8 @@ limit is never a reason to stop work on the pictures it names.
    sentence, what a person would take the drawing for. Then walk row 12's checklist over the same
    picture. A figure does not answer this step and never stands in for it.
 4. **Judge** row by row, against the run's own figures and the reference pictures. Where a figure and
-   the eye disagree, the eye wins and the figure is explained.
+   the eye disagree, the eye wins and the figure is explained. Read the void pictures first: a row
+   that rests on one waits for the camera's fix and is not judged on it.
 5. **Write the verdict** to the species review file, with the pass list for the next round in priority
    order. Name every stray part, crossing and loose shape you saw, with the picture it appears in.
 6. **Hand back.** A species is done when every row passes, or when each limit it misses is stated with

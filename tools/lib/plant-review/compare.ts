@@ -53,6 +53,7 @@ import {
 } from './references.ts';
 import type { RunFrame } from './render.ts';
 import type { SheathTarget } from './sheath.ts';
+import { voidReason } from './subject-check.ts';
 
 /** The bins of an edge-direction profile: twelve of fifteen degrees across half a turn. */
 const EDGE_BINS = 12;
@@ -1548,6 +1549,12 @@ export interface StillResult extends PairMetrics {
 	 * render's foot and collar patches, each read against the record under the view's own light.
 	 */
 	readonly sheath?: SheathDifference;
+	/**
+	 * Why the picture is void: its view has no subject in the plant, or the picture does not show
+	 * it. A void picture carries no figure and decides no row. It is a fault of the tool's camera or
+	 * of the reference's mapping to a view, never a judgement of the plant.
+	 */
+	readonly void?: string;
 	readonly note?: string;
 	readonly error?: string;
 }
@@ -1838,6 +1845,37 @@ export function compareStills(
 			rows.push({ reference: refImage, lines: [...head, 'NO RENDER', error.slice(0, 18)] });
 			continue;
 		}
+		// The matte at the picture's own width, which the subject check and the connectivity gate read.
+		const own =
+			frame.matte === undefined ? undefined : matteOwnMask(readImage(join(runDir, frame.matte)));
+		// A close picture whose subject is missing decides nothing: it is laid on the sheet beside
+		// its reference and named void, and no figure is read from it.
+		const voided = voidReason(frame.facts, own);
+		if (voided !== undefined) {
+			const framing = closeFraming(frame.facts);
+			results.push({
+				...blankPair,
+				render: frame.file,
+				file: slot.file,
+				kind: slot.kind,
+				view: slot.view,
+				renderFile: frame.file,
+				masked: false,
+				surfaceDeltaE: null,
+				barkColour: null,
+				edgeDifference: null,
+				pieces: null,
+				connectivity: null,
+				void: voided,
+				...(framing ? { framing } : {}),
+			});
+			rows.push({
+				reference: refImage,
+				render: readImage(join(runDir, frame.file)),
+				lines: [...head, 'VOID', 'SUBJECT MISSING'],
+			});
+			continue;
+		}
 		const refPlant = plantMask(refImage);
 		const refSide = side(slot.file, refImage, refPlant, false, moundForm);
 		const render = renderSideOf(runDir, frame, frame.file, false, moundForm);
@@ -1913,13 +1951,7 @@ export function compareStills(
 		// The connectivity gate reads the matte at the picture's own width: a downscale to the work
 		// width can drop a hairline shoot the picture keeps and so invent a piece hanging free. The
 		// work-width read is kept beside it as a second figure.
-		const ownParts =
-			frame.matte === undefined
-				? null
-				: (() => {
-						const own = matteOwnMask(readImage(join(runDir, frame.matte)));
-						return piecePartsAtOwnWidth(own.mask, own.width, own.height);
-					})();
+		const ownParts = own ? piecePartsAtOwnWidth(own.mask, own.width, own.height) : null;
 		const pieces = parts
 			? {
 					reference:

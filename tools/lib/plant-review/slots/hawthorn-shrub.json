@@ -28,9 +28,6 @@
 	"04-crown-outside.png": {
 		"skyShare": 0.3,
 		"daylight": 2.6,
-		"distance": 4,
-		"thin": 0.018,
-		"span": 0.8,
 		"surface": true
 	},
 	"05-crown-underside.png": {

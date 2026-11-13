@@ -45,20 +45,13 @@ import {
 	type V3,
 } from '../lib/plant-review/anatomy';
 import {
-	barkLimbView,
-	belowView,
 	type ClosePlant,
 	type CloseView,
 	departures,
-	forkCandidates,
-	forkView,
-	insideView,
-	junctionView,
+	type Lens,
 	limbView,
 	spikeView,
 	strandsView,
-	surfaceView,
-	trunkView,
 	twigView,
 	walkedRound,
 } from '../lib/plant-review/close';
@@ -74,6 +67,22 @@ import {
 import { measurePlant, partPositions, shootPositions } from '../lib/plant-review/measure';
 import { readPlantReviewQuery } from '../lib/plant-review/query';
 import { sharedRecords } from '../lib/plant-review/sight';
+import {
+	barkBaseShot,
+	barkLimbShot,
+	barkMidShot,
+	belowShot,
+	boleShot,
+	checkShot,
+	crownOutsideShot,
+	crownUndersideShot,
+	forkShot,
+	insideShot,
+	junctionShot,
+	lowShot,
+	type Solved,
+} from '../lib/plant-review/subject-shots';
+import { isAbsent, type PlantSubjects, subjectsOfSkeleton } from '../lib/plant-review/subjects';
 import { BACKGROUND_COLOURS, type PlantView, VIEW_SPECS } from '../lib/plant-review/views';
 
 const QUERY = readPlantReviewQuery(new URL(import.meta.url).searchParams);
@@ -154,6 +163,8 @@ interface View {
 	readonly fov: number;
 	/** The near plane, when the view clears what stands close to the camera. */
 	readonly near?: number;
+	/** The far plane, when the view draws only what stands near its subject. */
+	readonly far?: number;
 	/** Radians the camera turns about its line of sight, the picture turning counterclockwise. */
 	readonly roll?: number;
 }
@@ -223,8 +234,18 @@ function rolledLook(position: V3, target: V3, roll: number): [number, number, nu
 /** A view with its camera moved to the query's distance from its target, when it names one. */
 function atDistance(view: View): View {
 	if (QUERY.distance === undefined) return view;
-	const along = normalize(sub(view.position, view.target));
-	return { ...view, position: add(view.target, scale(along, QUERY.distance)) };
+	const offset = sub(view.position, view.target);
+	const along = normalize(offset);
+	// A view that draws only a slab about its subject keeps the slab about the same place.
+	const moved = QUERY.distance - Math.hypot(...offset);
+	return {
+		...view,
+		position: add(view.target, scale(along, QUERY.distance)),
+		...(view.far !== undefined && {
+			near: Math.max(0.02, (view.near ?? 0) + moved),
+			far: view.far + moved,
+		}),
+	};
 }
 
 /** The box round a set of positions. */
@@ -885,7 +906,10 @@ export default defineSketch(async (ctx) => {
 	 * What a view that found no subject of its own drew instead, and why, so the figures of its
 	 * picture say which camera drew them.
 	 */
-	const plainSubjects = new Map<PlantView, { readonly kind: string; readonly warning: string }>();
+	const plainSubjects = new Map<
+		PlantView,
+		{ readonly kind: string; readonly warning?: string; readonly missing?: string }
+	>();
 	const closeAt = (
 		key: string,
 		find: () => CloseView | undefined,
@@ -903,6 +927,42 @@ export default defineSketch(async (ctx) => {
 			fov,
 			near,
 			...(walked.roll && { roll: walked.roll }),
+		};
+	};
+
+	/** The plant's subjects, which the solved close views frame, read from its skeleton once. */
+	let subjectsRead: PlantSubjects | undefined;
+	const subjectsOf = (): PlantSubjects => {
+		subjectsRead ??= subjectsOfSkeleton(skeleton, {
+			...(leafLength !== undefined && { leafLength }),
+		});
+		return subjectsRead;
+	};
+	/** Each solved view's shot, or why the plant gives none, with the lens it was solved for. */
+	const solvedViews = new Map<PlantView, { readonly shot: Solved; readonly lens: Lens }>();
+	/**
+	 * The camera of a view solved from its subject, found once and walked round its subject by the
+	 * further turns of a sheet; undefined where the plant gives the view no subject.
+	 */
+	const solvedAt = (
+		view: PlantView,
+		lens: Lens,
+		solve: () => Solved,
+		walked: number,
+		near?: number,
+	): View | undefined => {
+		if (!solvedViews.has(view)) solvedViews.set(view, { shot: solve(), lens });
+		const shot = (solvedViews.get(view) as { readonly shot: Solved }).shot;
+		if (isAbsent(shot)) return undefined;
+		const camera = walkedRound({ ...shot.camera, subject: {} }, walked);
+		const clip = shot.near ?? near;
+		return {
+			position: camera.position,
+			target: camera.target,
+			fov: lens.fov,
+			...(clip !== undefined && { near: clip }),
+			...(shot.far !== undefined && { far: shot.far }),
+			...(camera.roll && { roll: camera.roll }),
 		};
 	};
 
@@ -991,41 +1051,52 @@ export default defineSketch(async (ctx) => {
 				);
 			}
 			case 'below': {
-				const below = belowView(closePlant(false), turn, lens, {
-					elevation: e,
-					...(QUERY.forkRow !== undefined && { forkRow: QUERY.forkRow }),
-					...(QUERY.footRow !== undefined && { footRow: QUERY.footRow }),
-					...(QUERY.crownRow !== undefined && { crownRow: QUERY.crownRow }),
-					...(QUERY.aside !== undefined && { aside: QUERY.aside }),
-					...(QUERY.stand !== undefined && { stand: QUERY.stand }),
-				});
-				closeViews.set(view, below);
-				return { position: below.position, target: below.target, fov, near: 0.1 };
+				// The view up the trunk into the crown; or, where a slot names the rows of the foot and
+				// the crown's base, the bole between them from a few steps back.
+				const found = solvedAt(
+					view,
+					lens,
+					() =>
+						QUERY.footRow !== undefined && QUERY.crownRow !== undefined
+							? boleShot(subjectsOf(), lens, {
+									turn,
+									footRow: QUERY.footRow,
+									topRow: QUERY.crownRow,
+									toCrown: true,
+								})
+							: belowShot(subjectsOf(), lens, {
+									turn,
+									...(QUERY.forkRow !== undefined && { forkRow: QUERY.forkRow }),
+								}),
+					0,
+					0.1,
+				);
+				if (found) return found;
+				break;
 			}
 			case 'crown-underside': {
-				// The camera stands under the crown, the eye as far below its base as the underside
-				// photographs keep it, and looks up at the crown's top: the crown's box fills most of
-				// the frame, its leaves overhead and the trunk below.
-				const top = main.crown.top;
-				const base = main.crown.base;
-				const half = Math.max(0.3, (top - base) / 2);
-				const distance = QUERY.distance ?? Math.max(0.6, half / Math.tan((fov * 0.78 * DEG) / 2));
-				// A plant shorter than the eye stand has no room for a person's eye below its crown:
-				// the eye goes as low as the ground allows, under the crown rather than level with
-				// it, which is where its photograph was taken.
-				const eye = Math.max(0.05, base - 1.6);
-				return {
-					position: [foot[0] + out[0] * distance, eye, foot[2] + out[2] * distance],
-					target: [foot[0], top, foot[2]],
-					fov,
-					near: 0.1,
-				};
+				// From under a great limb, looking back up along it into the crown. A plant with no
+				// trunk has no limb to stand under, so it is seen from a low eye beside it, up through
+				// its leaves.
+				const found = solvedAt(
+					view,
+					lens,
+					() =>
+						isAbsent(subjectsOf().trunk)
+							? lowShot(subjectsOf(), lens, turn)
+							: crownUndersideShot(subjectsOf(), lens, { turn }),
+					0,
+					0.1,
+				);
+				if (found) return found;
+				break;
 			}
 			case 'inside': {
-				// A plant with no wood keeps its stalks at the crown's own centre, so its inside photograph
-				// is of the stalk bundle: the camera stands just outside it at the crown's height and
-				// looks at the bundle. A woody plant is framed beside its most level great limb.
-				if (!stemAt(skeleton, 1.3)) {
+				// A plant with no trunk, or with no limb leaving one, keeps its stalks at the crown's own
+				// centre, so its inside photograph is of the stalk bundle: the camera stands just outside
+				// it at the crown's height and looks at the bundle. A tree is framed beside its trunk.
+				const { trunk: stemSubject, limbs: limbSubjects } = subjectsOf();
+				if (isAbsent(stemSubject) || isAbsent(limbSubjects) || limbSubjects.length === 0) {
 					const middle = Math.max(0.05, 0.45 * main.crown.top);
 					plainSubjects.set(view, {
 						kind: 'the stalk bundle at the crown',
@@ -1039,40 +1110,34 @@ export default defineSketch(async (ctx) => {
 						fov,
 					);
 				}
-				// Beside the most level great limb, under it, looking up along it into the crown.
-				const found = closeAt(view, () => insideView(closePlant(false), lens), turn, fov, 0.05);
+				// Beside the trunk above the bole's top, looking up along it with the limbs round it.
+				const found = solvedAt(view, lens, () => insideShot(subjectsOf(), lens, { turn }), 0, 0.05);
 				if (found) return found;
-				if (limb < 0) break;
-				plainSubjects.set(view, {
-					kind: 'the largest limb, looking along it',
-					warning: 'no great limb crosses the frame clear from inside the crown',
-				});
-				const at = pointAlong(skeleton, limb, 0.4);
-				const side = normalize(cross(at.direction, [0, 1, 0]));
-				const position = add(at.at, scale(side, at.radius * 2 + 0.3));
-				const level = yaw(normalize([at.direction[0], 0, at.direction[2]]), turn);
-				const look = add(scale(level, Math.cos(e * DEG)), [0, Math.sin(e * DEG), 0]);
-				return { position, target: add(position, look), fov, near: 0.05 };
+				break;
 			}
 			case 'junction': {
-				// A great limb leaving the stem, seen side on from where no other limb hides it. The
-				// picture's own subject box, when the tool measured one, gives the frame its width and
-				// height shares; without it the view frames the limb's thickness alone.
+				// A great limb leaving the trunk, seen square to the join. The picture's own subject
+				// box, when the tool measured one, gives the frame its width and height shares.
 				const shares =
 					QUERY.subjectWidth !== undefined && QUERY.subjectHeight !== undefined
 						? { width: QUERY.subjectWidth, height: QUERY.subjectHeight }
 						: undefined;
-				const found = closeAt(
+				const found = solvedAt(
 					view,
-					() => junctionView(closePlant(WOOD_ONLY), lens, shares),
-					turn,
-					fov,
+					lens,
+					() => junctionShot(subjectsOf(), lens, { ...(shares && { shares }) }),
+					0,
 					0.05,
 				);
 				if (found) return found;
 				// A tuft whose crown axis leaves no main stem has no limb to stand at. Its picture is
 				// its crown's foot, where the sheaths that the row judges stand.
 				if (record.growth.model === 'tuft' && departures(skeleton).limbs.length === 0) {
+					solvedViews.delete(view);
+					plainSubjects.set(view, {
+						kind: "the crown's foot, where the sheaths stand",
+						warning: "a tuft has no limb, so the junction picture stands at its crown's foot",
+					});
 					const aim = Math.max(0.05, 0.06 * height);
 					return orbit(
 						[foot[0], aim, foot[2]],
@@ -1085,19 +1150,20 @@ export default defineSketch(async (ctx) => {
 				break;
 			}
 			case 'fork': {
-				// A limb dividing into two, seen square to its arms against the least of the crown.
-				const found = closeAt(
+				// A limb dividing into two, seen square to its arms, with only the wood near the joint
+				// drawn so the fork stands on a plain ground.
+				const found = solvedAt(
 					view,
-					() => forkView(closePlant(WOOD_ONLY), lens, QUERY.thin, QUERY.span),
-					turn,
-					fov,
+					lens,
+					() =>
+						forkShot(subjectsOf(), lens, {
+							...(QUERY.thin !== undefined && { radius: QUERY.thin }),
+							...(QUERY.span !== undefined && { span: QUERY.span }),
+						}),
+					0,
 					0.05,
 				);
 				if (found) return found;
-				const counts = forkCandidates(skeleton, QUERY.thin);
-				notes.push(
-					`the fork view found no division: ${counts.total} divisions, then ${counts.counts.join(', ')} through its wishes, ${counts.kept} kept near ${counts.sought.toFixed(3)} m`,
-				);
 				break;
 			}
 			case 'flowers': {
@@ -1254,9 +1320,20 @@ export default defineSketch(async (ctx) => {
 				break;
 			}
 			case 'limb': {
+				// The crown's outside: one foliage mass at its edge, seen from outside it and below.
+				if (QUERY.surface) {
+					const found = solvedAt(
+						view,
+						lens,
+						() => crownOutsideShot(subjectsOf(), lens, { turn }),
+						0,
+						0.02,
+					);
+					if (found) return scaledStand(found, QUERY.standScale);
+					break;
+				}
 				// One branch with its side branches seen across its run, from the side where the least of
-				// the plant stands in front of it; or, for the crown's outside, its lower rim seen from
-				// under it, looking up past its edge.
+				// the plant stands in front of it.
 				const framing = {
 					share: QUERY.along ?? 0.6,
 					thin: QUERY.thin ?? Math.max(0.005, height * 0.002),
@@ -1265,10 +1342,7 @@ export default defineSketch(async (ctx) => {
 				};
 				const found = closeAt(
 					view,
-					() =>
-						QUERY.surface
-							? surfaceView(closePlant(false), lens, framing)
-							: limbView(closePlant(false), lens, framing),
+					() => limbView(closePlant(false), lens, framing),
 					turn,
 					fov,
 					0.02,
@@ -1293,20 +1367,41 @@ export default defineSketch(async (ctx) => {
 				);
 			}
 			case 'bark-base': {
-				const r = stemAt(skeleton, 0.3)?.radius ?? 0.1;
-				// The foot and its flare, with the ground it stands on. The stand-off is measured from
-				// the buttressed surface, not the plain radius: on a thick bole the lobes reach nearly
-				// twice the radius, and a camera inside them draws a wall of bark.
-				return orbit([foot[0], 0.9, foot[2]], 1.5 + 3.5 * r, e, turn, fov);
+				// The trunk's foot and its flare, with the ground it stands on, at the trunk's own scale.
+				const found = solvedAt(
+					view,
+					lens,
+					() => barkBaseShot(subjectsOf(), lens, { turn, lookDown: e }),
+					0,
+				);
+				if (found) return found;
+				break;
 			}
 			case 'bark-mid': {
 				// A bark zone of its own: the camera stands where that zone covers the wood, so the
 				// surface is the one the zone's texture source shows.
 				const zone = QUERY.barkZone === undefined ? undefined : record.bark?.zones[QUERY.barkZone];
-				const y =
+				const zoneHeight =
 					zone?.by === 'height'
 						? Math.min(skeleton.height * 0.9, (zone.from + zone.to) / 2)
-						: Math.min(1.5, skeleton.height * 0.3);
+						: undefined;
+				// The per-species picture keeps its bark panel at the fixed span its references draw.
+				if (VIEW !== 'panels' && !isAbsent(subjectsOf().trunk)) {
+					const found = solvedAt(
+						view,
+						lens,
+						() =>
+							barkMidShot(subjectsOf(), lens, {
+								turn,
+								...(QUERY.span !== undefined && { span: QUERY.span }),
+								...(zoneHeight !== undefined && { height: zoneHeight }),
+							}),
+						0,
+					);
+					if (found) return found;
+					break;
+				}
+				const y = zoneHeight ?? Math.min(1.5, skeleton.height * 0.3);
 				// A plant with no single trunk, such as a tuft of culms, shows the thickest stem
 				// surface that crosses the height the picture frames.
 				const stem = stemAt(skeleton, y) ?? stemSurfaceAt(skeleton, y)?.at;
@@ -1319,19 +1414,19 @@ export default defineSketch(async (ctx) => {
 				// The bark on a great limb shown with the limb itself, when the view asks for its girth.
 				if (QUERY.girth !== undefined) {
 					const girth = QUERY.girth;
-					const share = QUERY.along ?? 0.3;
-					const found = closeAt(
+					const found = solvedAt(
 						view,
-						() => barkLimbView(closePlant(WOOD_ONLY), lens, girth, share),
-						turn,
-						fov,
+						lens,
+						() =>
+							barkLimbShot(subjectsOf(), lens, {
+								girth,
+								...(QUERY.along !== undefined && { along: QUERY.along }),
+							}),
+						0,
 						0.02,
 					);
 					if (found) return found;
-					plainSubjects.set(view, {
-						kind: 'a point along the largest limb',
-						warning: 'no great limb crosses the frame clear at the asked girth',
-					});
+					break;
 				}
 				if (limb < 0) break;
 				const share = QUERY.along ?? 0.2;
@@ -1362,13 +1457,13 @@ export default defineSketch(async (ctx) => {
 			}
 			case 'trunk': {
 				// The bole from its foot to where it first divides, seen from a person's eye height on
-				// the side where the fewest branches and leaves cross it near the asked turn; a sheet's
+				// the nearest side to the asked turn from which no great limb crosses it; a sheet's
 				// further turns walk round it from there.
-				const bole = closeAt(
+				const bole = solvedAt(
 					view,
-					() => trunkView(closePlant(WOOD_ONLY), lens, turn0),
+					lens,
+					() => boleShot(subjectsOf(), lens, { turn: turn0 }),
 					turn - turn0,
-					fov,
 					0.05,
 				);
 				if (bole) return bole;
@@ -1435,11 +1530,13 @@ export default defineSketch(async (ctx) => {
 			case 'panels':
 				break;
 		}
-		notes.push(`the plant has no part for the ${view} view, so it shows the whole plant`);
-		plainSubjects.set(view, {
-			kind: 'the whole plant',
-			warning: `the plant has no part for the ${view} view`,
-		});
+		// A view with no subject still draws, so its reference has a picture beside it, and says so:
+		// the tool reads no figure from a picture whose subject is missing.
+		const solved = solvedViews.get(view)?.shot;
+		const missing =
+			solved && isAbsent(solved) ? solved.absent : `the plant has no part for the ${view} view`;
+		notes.push(`${missing}, so the ${view} view shows the whole plant`);
+		plainSubjects.set(view, { kind: 'the whole plant', missing });
 		return fit(bounds, turn, e, aspect, fov);
 	};
 
@@ -1502,7 +1599,7 @@ export default defineSketch(async (ctx) => {
 		return scene.createPerspectiveCamera({
 			fov: cell.view.fov,
 			near: cell.view.near ?? Math.max(0.005, Math.min(0.5, span * 0.02)),
-			far: FAR,
+			far: cell.view.far ?? FAR,
 			position,
 			...(roll ? { rotation: rolledLook(position, target, roll) } : { target }),
 		});
@@ -1775,9 +1872,34 @@ export default defineSketch(async (ctx) => {
 		QUERY.distance === undefined
 			? undefined
 			: "the slot names a distance, which stands in for the view's own fitted stand";
-	const foundSubject = close
-		? { ...close.subject, ...(close.clutter && { clutter: close.clutter }) }
-		: plainSubjects.get(VIEW);
+	// A solved view posts its contract beside its subject: whether the subject's points land in the
+	// frame of the camera that drew, and the parts of the picture that must show plant or open
+	// ground. The camera is the one the cell drew with, so a slot's own distance is judged too.
+	const solved = solvedViews.get(VIEW);
+	const solvedSubject =
+		solved && !isAbsent(solved.shot) && first
+			? {
+					kind: solved.shot.kind,
+					...solved.shot.facts,
+					contract: checkShot(
+						{
+							...solved.shot,
+							camera: {
+								position: first.position,
+								target: first.target,
+								...(first.roll && { roll: first.roll }),
+							},
+						},
+						solved.lens,
+					),
+					regions: solved.shot.regions,
+				}
+			: undefined;
+	const foundSubject =
+		solvedSubject ??
+		(close
+			? { ...close.subject, ...(close.clutter && { clutter: close.clutter }) }
+			: plainSubjects.get(VIEW));
 	const prior = (foundSubject as { warning?: string } | undefined)?.warning;
 	const subject = foundSubject
 		? {

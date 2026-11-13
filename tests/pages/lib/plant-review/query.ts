@@ -263,7 +263,7 @@ export interface PlantReviewQuery {
 	readonly subjectHeight?: number;
 	/**
 	 * The row share on which a view up the stem puts the stem's first fork: the camera pitches up
-	 * until the fork lands there, no steeper than the view's elevation.
+	 * until the fork lands there.
 	 */
 	readonly forkRow?: number;
 	/**
@@ -272,10 +272,6 @@ export interface PlantReviewQuery {
 	 */
 	readonly footRow?: number;
 	readonly crownRow?: number;
-	/** Degrees a view up the stem turns its look to the right of the stem, so the stem enters low left. */
-	readonly aside?: number;
-	/** Stem radii from the stem's axis at which a view up the stem stands, in place of a step back. */
-	readonly stand?: number;
 	/**
 	 * Leaf lengths that a cut piece's frame height covers, in place of fitting the whole piece: the
 	 * scale its photograph shows it at. The piece then stands on its cut at the frame's lower edge.
@@ -363,8 +359,6 @@ const NUMBER_FIELDS = [
 	'forkRow',
 	'footRow',
 	'crownRow',
-	'aside',
-	'stand',
 	'leaves',
 	'leafLength',
 	'sparse',
@@ -540,10 +534,6 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 	if (numbers.leafLength !== undefined && numbers.leafLength <= 0)
 		throw new Error(
 			`leafLength=${numbers.leafLength} is a leaf's length in metres: give a number above 0.`,
-		);
-	if (numbers.stand !== undefined && numbers.stand <= 1)
-		throw new Error(
-			`stand=${numbers.stand} is in stem radii from its axis: give a number above 1.`,
 		);
 	for (const name of ['sky', 'ground', 'lamp'] as const) {
 		const text = params.get(name);
