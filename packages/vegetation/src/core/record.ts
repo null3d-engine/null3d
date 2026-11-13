@@ -1044,6 +1044,11 @@ export interface FrondRank {
 	readonly share: number;
 	/** Degrees above level that its fronds leave at; below 0 they leave downward. */
 	readonly leave: number;
+	/**
+	 * Degrees either side of that angle over which the rank's fronds leave, laid evenly through the
+	 * rank, so the ranks fill the crown between them. A few degrees of stray where absent.
+	 */
+	readonly spread?: number;
 	/** The piece its fronds are. */
 	readonly piece: string;
 	/** Its fronds' length as a share of the piece's own. */

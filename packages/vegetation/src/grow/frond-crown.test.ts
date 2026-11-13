@@ -22,6 +22,7 @@ import {
 	planPiece,
 } from '../leaf/piece';
 import { SURFACE_LEAF, SURFACE_PIECE, SURFACE_STEM } from '../leaf/writer';
+import { azimuthOf, drawnTop, elevationOf, largestGap } from './directed.test-support';
 import { radicalInverse } from './frond-crown';
 import { targetHeight } from './height';
 
@@ -50,17 +51,38 @@ beforeAll(async () => {
 
 const of = (id: string) => built.get(id) as Built;
 
-/** The sockets of a skeleton, by bud site, with the group each stands in. */
-function socketsOf(skeleton: MacroSkeleton): { bud: number; rank: number; group: number }[] {
+/**
+ * The sockets of a skeleton, by bud site, with the group each stands in: the rank of living fronds
+ * whose piece it carries and whose leaving angle stands nearest its own, or, for a dead frond, the
+ * group after the living ranks. A rank's spread is at most half the gap to its neighbours, so the
+ * nearest angle names its rank.
+ */
+function socketsOf(
+	skeleton: MacroSkeleton,
+	record: Species,
+): { bud: number; rank: number; group: number }[] {
+	const growth = record.growth as FrondCrown;
+	const names = (record.pieces ?? []).map((piece) => piece.name);
 	const { buds } = skeleton;
 	const out: { bud: number; rank: number; group: number }[] = [];
-	for (let b = 0; b < buds.count; b++)
-		if ((buds.kind[b] as number) !== BUD_FLOWER && buds.sockets)
-			out.push({
-				bud: b,
-				rank: buds.sockets.rank[b] as number,
-				group: buds.sockets.lobe[b] as number,
+	if (!buds.sockets) return out;
+	for (let b = 0; b < buds.count; b++) {
+		if ((buds.kind[b] as number) === BUD_FLOWER) continue;
+		const piece = names[buds.sockets.piece?.[b] ?? 0];
+		let group = growth.fronds.ranks.length;
+		if (piece !== growth.dead?.piece) {
+			const leave = elevationOf(skeleton, b);
+			let nearest = Number.POSITIVE_INFINITY;
+			growth.fronds.ranks.forEach((rank, r) => {
+				const off = Math.abs(rank.leave - leave);
+				if (rank.piece === piece && off < nearest) {
+					nearest = off;
+					group = r;
+				}
 			});
+		}
+		out.push({ bud: b, rank: buds.sockets.rank[b] as number, group });
+	}
 	return out;
 }
 
@@ -75,58 +97,6 @@ function flowersOf(skeleton: MacroSkeleton): number {
 	for (let b = 0; b < skeleton.buds.count; b++)
 		if ((skeleton.buds.kind[b] as number) === BUD_FLOWER) count++;
 	return count;
-}
-
-/** The azimuth of a bud site round the trunk's axis, in degrees. */
-function azimuthOf(skeleton: MacroSkeleton, bud: number): number {
-	const heading: Vector3 = [0, 0, 0];
-	quatRotate(skeleton.buds.frame, bud * 4, [0, 1, 0], heading);
-	return (Math.atan2(heading[2], heading[0]) * 180) / Math.PI;
-}
-
-/** The largest gap in degrees between neighbouring azimuths round a circle. */
-function largestGap(azimuths: readonly number[]): number {
-	const sorted = azimuths.map((a) => ((a % 360) + 360) % 360).sort((a, b) => a - b);
-	let gap = 0;
-	for (let i = 0; i < sorted.length; i++) {
-		const next = i + 1 < sorted.length ? (sorted[i + 1] as number) : (sorted[0] as number) + 360;
-		gap = Math.max(gap, next - (sorted[i] as number));
-	}
-	return gap;
-}
-
-/** The highest drawn point of a plant's near level: its wood and every row's prototype. */
-function drawnTop(kit: SpeciesKitData, asset: ReturnType<typeof growPlantNow>): number {
-	let top = asset.skeleton.height;
-	const rows = asset.shoots;
-	const local: Vector3 = [0, 0, 0];
-	const world: Vector3 = [0, 0, 0];
-	for (let r = 0; r < rows.count; r++) {
-		const mesh = kit.prototypes[rows.prototype[r] as number]?.tiers[DETAILS.indexOf('high')];
-		if (!mesh) continue;
-		const scale = rows.scale[r] as number;
-		for (let i = 0; i < mesh.positions.length; i += 3) {
-			local[0] = (mesh.positions[i] as number) * scale;
-			local[1] = (mesh.positions[i + 1] as number) * scale;
-			local[2] = (mesh.positions[i + 2] as number) * scale;
-			quatRotate(rows.rotation, r * 4, local, world);
-			top = Math.max(top, (rows.position[r * 3 + 1] as number) + world[1]);
-		}
-	}
-	return top;
-}
-
-/** The vertices of one surface kind in a prototype's mesh. */
-function verticesOf(mesh: PrototypeArrays, kind: number): Vector3[] {
-	const out: Vector3[] = [];
-	for (let i = 0; i < mesh.positions.length / 3; i++)
-		if ((mesh.colors[i * 4 + 2] as number) === kind)
-			out.push([
-				mesh.positions[i * 3] as number,
-				mesh.positions[i * 3 + 1] as number,
-				mesh.positions[i * 3 + 2] as number,
-			]);
-	return out;
 }
 
 /** The distance from a point to a triangle, in metres. */
@@ -214,10 +184,10 @@ describe('the frond-crown grower', () => {
 	for (const id of SPECIES) {
 		describe(id, () => {
 			it("lays the record's fronds, dead fronds and flower sites round one growing point", () => {
-				const { kit, growth } = of(id);
+				const { kit, growth, record } = of(id);
 				for (const variant of VARIANTS) {
 					const asset = growPlantNow(kit, { seed: 11, variant, near: true });
-					const sockets = socketsOf(asset.skeleton);
+					const sockets = socketsOf(asset.skeleton, record);
 					const ranks = growth.fronds.ranks.length;
 					const living = sockets.filter((s) => s.group < ranks).length;
 					const dead = sockets.filter((s) => s.group === ranks).length;
@@ -245,22 +215,40 @@ describe('the frond-crown grower', () => {
 			});
 
 			it('ranks every socket once across the plant, so the sparsest plant keeps every rank spread round the trunk', () => {
-				const { kit, growth } = of(id);
+				const { kit, growth, record } = of(id);
 				for (const variant of VARIANTS) {
 					const full = growPlantNow(kit, { seed: 11, variant, near: true });
-					const ranks = socketsOf(full.skeleton).map((s) => s.rank);
+					const ranks = socketsOf(full.skeleton, record).map((s) => s.rank);
 					expect([...ranks].sort((a, b) => a - b)).toEqual(ranks.map((_, i) => i));
 					const sparse = growPlantNow(kit, { seed: 11, variant, near: true, sparse: 1 });
-					const kept = socketsOf(sparse.skeleton);
+					const kept = socketsOf(sparse.skeleton, record);
 					for (let r = 0; r < growth.fronds.ranks.length; r++)
 						expect(kept.some((s) => s.group === r)).toBe(true);
 					const living = kept.filter((s) => s.group < growth.fronds.ranks.length);
-					expect(living.length).toBeLessThan(socketsOf(full.skeleton).length);
+					expect(living.length).toBeLessThan(socketsOf(full.skeleton, record).length);
 					// No half of the trunk's circle is left without a living frond.
 					expect(largestGap(living.map((s) => azimuthOf(sparse.skeleton, s.bud)))).toBeLessThan(
 						180,
 					);
 					if (growth.flowers) expect(flowersOf(sparse.skeleton)).toBeGreaterThan(0);
+				}
+			});
+
+			it("lays each rank's fronds over its stated spread", () => {
+				const { kit, growth, record } = of(id);
+				for (const variant of VARIANTS) {
+					const { skeleton } = growPlantNow(kit, { seed: 11, variant, near: true });
+					growth.fronds.ranks.forEach((rank, r) => {
+						if (rank.spread === undefined) return;
+						const leaves = socketsOf(skeleton, record)
+							.filter((s) => s.group === r)
+							.map((s) => elevationOf(skeleton, s.bud));
+						if (leaves.length < 3) return;
+						expect(Math.min(...leaves)).toBeGreaterThanOrEqual(rank.leave - rank.spread - 0.01);
+						expect(Math.max(...leaves)).toBeLessThanOrEqual(rank.leave + rank.spread + 0.01);
+						// An even spread covers more than half its width with three fronds or more.
+						expect(Math.max(...leaves) - Math.min(...leaves)).toBeGreaterThan(rank.spread);
+					});
 				}
 			});
 
