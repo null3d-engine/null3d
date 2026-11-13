@@ -54,6 +54,16 @@ const STRAIGHT_STEP = 3;
 /** Steps a trial course is summed over while its length is found, and the passes that find it. */
 const TRIAL_STEPS = 32;
 const LENGTH_PASSES = 22;
+/**
+ * How far a crooked axis may stray from its own line, sideways and up or down, as shares of its
+ * rule's sway: wide enough that its mean line wanders, and bounded so it keeps its course.
+ */
+const WANDER_SIDE = 0.8;
+const WANDER_NOD = 0.5;
+/** The rise of a unit direction above which a parent stands near plumb and has no ground side. */
+const PLUMB_NEAR = 0.9;
+/** The least radius a bend may have, in diameters of the wood where it bends. */
+const BEND_DIAMETERS = 3.4;
 /** The thinnest wood of a frame, in metres. */
 const RADIUS_LEAST = 0.0008;
 /** The most of its parent's radius an axis may take where it leaves. */
@@ -239,6 +249,13 @@ export interface FrameBranchRule extends FrameAxisRule {
 	 * negative figure lowers them toward its ground side.
 	 */
 	readonly lift?: number;
+	/**
+	 * Degrees of the parent's ground side that no axis leaves toward, when they stand round it on a
+	 * spiral or a ring: their places are drawn in round its sky side, so a level limb carries nothing
+	 * straight beneath it. A parent that stands near plumb has no ground side and is clothed all
+	 * round. Left out, 0.
+	 */
+	readonly clear?: number;
 	/** Degrees each may stand off its place round the parent. */
 	readonly jitter?: number;
 	/** Degrees each leaves at, by its place, measured from plumb or from the parent's own direction. */
@@ -365,6 +382,17 @@ function unit(x: number, y: number, z: number): Vector3 {
 /** The degrees between two unit directions. */
 function between(a: Readonly<Vector3>, b: Readonly<Vector3>): number {
 	return (acos(clamp(a[0] * b[0] + a[1] * b[1] + a[2] * b[2], -1, 1)) * 180) / PI;
+}
+
+/**
+ * Where a lean stands after a turn, held inside a bound either way: the turn goes the way it was
+ * drawn where that keeps the lean inside, the other way where only that does, and to the bound's
+ * farther edge where neither does.
+ */
+function strayed(lean: number, turn: number, bound: number): number {
+	if (Math.abs(lean + turn) <= bound) return lean + turn;
+	if (Math.abs(lean - turn) <= bound) return lean - turn;
+	return lean >= 0 ? -bound : bound;
 }
 
 /** A course cut into points. */
@@ -560,62 +588,113 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 		const heading = flat > 1e-6 ? atan2(leave[2], leave[0]) : draw(Purpose.Heading, id) * 2 * PI;
 		const lift0 = (asin(clamp(leave[1], -1, 1)) * 180) / PI;
 
-		// The course's lift at each share of its length, from the bends in order.
-		const lifts: [number, number][] = [[0, lift0]];
-		let lift = lift0;
-		for (const bend of rule.bends ?? []) {
-			const from = clamp(bend.from, 0, 1);
-			const to = clamp(bend.to, from, 1);
-			if (from > (lifts[lifts.length - 1] as [number, number])[0]) lifts.push([from, lift]);
-			lift =
-				bend.level !== undefined ? curveAt(bend.level, place) : lift - curveAt(bend.by ?? 0, place);
-			lift = clamp(lift, -90, 90);
-			lifts.push([Math.max(to, from + 1e-6), lift]);
-		}
-		// The elbows: at each the course's lean changes, to one side and the other in turn, over a
-		// short stretch, and it holds its lean between them. An even course spends the whole stretch
-		// between two elbows turning; a crooked one stands its elbows at uneven steps and nods at each.
+		// The wood's radius along the axis before any fork thins it, which bounds how tightly it may
+		// bend: no bend's radius is under a stated count of the wood's diameters there.
+		const thick = (share: number, over: number): number =>
+			'width' in rule
+				? (curveAt(rule.width, (share * over) / scale) * scale) / 2
+				: baseRadius * (1 - (1 - clamp(rule.taper, 0.02, 1)) * share);
+		/** The most degrees a stretch of an axis may turn at a share of an axis of a length. */
+		const turnMost = (share: number, stretch: number, over: number): number =>
+			((stretch * over) / (BEND_DIAMETERS * 2 * Math.max(RADIUS_LEAST, thick(share, over)))) *
+			(180 / PI);
+
+		// The elbows: at each the course's lean changes over a short stretch, and it holds its lean
+		// between them. An even course leans to one side and the other in turn and spends the whole
+		// stretch between two elbows turning. A crooked one stands its elbows at uneven steps; each
+		// turns by its own size toward its own side and nods up or down, so the axis's mean line
+		// wanders, and it turns back before it has strayed past the rule's sway.
 		const elbows = Math.max(1, Math.round(rule.elbows));
 		const crook = clamp(rule.crook ?? 0, 0, 0.9);
 		const half = ((1 - crook) * 0.5) / elbows;
 		const spots: number[] = [];
-		const leans: number[] = [];
-		const nods: number[] = [];
-		let side = draw(Purpose.SwaySide, id) < 0.5 ? 1 : -1;
-		for (let k = 0; k < elbows; k++) {
+		for (let k = 0; k < elbows; k++)
 			spots.push((k + 0.5 + (draw(Purpose.Spot, id, k) * 2 - 1) * 0.45 * crook) / elbows);
-			leans.push(side * (rule.sway / 2) * (0.7 + (0.6 + 0.5 * crook) * draw(Purpose.Sway, id, k)));
-			nods.push(crook * (draw(Purpose.Nod, id, k) * 2 - 1) * (rule.sway / 2));
-			side = -side;
-		}
-		/** The lean and the nod at every share, from the elbows where they stand now. */
+		const firstSide = draw(Purpose.SwaySide, id) < 0.5 ? 1 : -1;
+		/** How far each elbow's turn is eased, from 1 for none, so that no bend is too tight. */
+		const eases = new Array<number>(elbows + 1).fill(1);
+		/** The stretch of the axis each elbow turns over, as its first and last shares. */
+		let ramps: [number, number][] = [];
+		/** The lift, the lean and the nod at every share, shaped for an axis of a length. */
+		let lifts: [number, number][] = [];
 		let sways: [number, number][] = [];
 		let dips: [number, number][] = [];
-		const elbowed = (): void => {
+		const bent = (over: number): void => {
+			// The lift at each share, from the bends in order. A bend turns no more than its stretch
+			// of this wood may.
+			lifts = [[0, lift0]];
+			let lift = lift0;
+			for (const bend of rule.bends ?? []) {
+				const from = clamp(bend.from, 0, 1);
+				const to = clamp(bend.to, from, 1);
+				if (from > (lifts[lifts.length - 1] as [number, number])[0]) lifts.push([from, lift]);
+				const asked =
+					bend.level !== undefined
+						? curveAt(bend.level, place) - lift
+						: -curveAt(bend.by ?? 0, place);
+				const most = turnMost((from + to) / 2, to - from, over);
+				lift = clamp(lift + clamp(asked, -most, most), -90, 90);
+				lifts.push([Math.max(to, from + 1e-6), lift]);
+			}
 			sways = [[0, 0]];
 			dips = [[0, 0]];
-			let lean = 0;
-			let nod = 0;
+			ramps = [];
 			if (crook === 0) {
 				// An even wave reaches each lean at its elbow and ends half way to the lean that
 				// would follow, so every stretch of it turns, the first and the last too.
+				let side = firstSide;
+				const leans: number[] = [];
+				for (let k = 0; k <= elbows; k++) {
+					leans.push(
+						side * (rule.sway / 2) * (0.7 + 0.6 * draw(Purpose.Sway, id, k)) * (eases[k] as number),
+					);
+					side = -side;
+				}
+				// The whole wave is eased by one share where its tightest stretch would bend too far.
+				let ease = 1;
+				for (let k = 0; k < elbows; k++) {
+					const turn = Math.abs((leans[k] as number) - (k > 0 ? (leans[k - 1] as number) : 0));
+					const most = turnMost(spots[k] as number, 1 / elbows, over);
+					if (turn > most) ease = Math.min(ease, most / turn);
+				}
 				spots.forEach((spot, k) => {
-					sways.push([spot, leans[k] as number]);
+					ramps.push([k > 0 ? (spots[k - 1] as number) : 0, spot]);
+					sways.push([spot, (leans[k] as number) * ease]);
 				});
-				const next = side * (rule.sway / 2) * (0.7 + 0.6 * draw(Purpose.Sway, id, elbows));
-				sways.push([1, ((leans[elbows - 1] as number) + next) / 2]);
+				ramps.push([spots[elbows - 1] as number, 1]);
+				sways.push([1, (((leans[elbows - 1] as number) + (leans[elbows] as number)) / 2) * ease]);
 				return;
 			}
+			let lean = 0;
+			let nod = 0;
 			spots.forEach((spot, k) => {
-				const from = Math.max(spot - half, (sways[sways.length - 1] as [number, number])[0]);
-				const to = Math.min(1, Math.max(spot + half, from + 1e-6));
-				sways.push([from, lean], [to, leans[k] as number]);
-				dips.push([from, nod], [to, nods[k] as number]);
-				lean = leans[k] as number;
-				nod = nods[k] as number;
+				// The elbow's own turn: its size, and how much of it is sideways and how much a nod.
+				const size = rule.sway * (0.35 + 0.55 * draw(Purpose.Sway, id, k)) * (eases[k] as number);
+				const round = draw(Purpose.Nod, id, k) * 2 * PI;
+				// A sideways turn is never less than half the elbow's size, so no elbow is a straight.
+				const sideways = Math.max(size / 2, Math.abs(size * cos(round)));
+				const toward = draw(Purpose.SwaySide, id, k + 1) < 0.5 ? 1 : -1;
+				const turnSide = strayed(lean, sideways * toward, rule.sway * WANDER_SIDE) - lean;
+				const turnNod = strayed(nod, size * 0.6 * sin(round), rule.sway * WANDER_NOD) - nod;
+				// The elbow's room: half the way to the elbows either side of it, or to the axis's ends.
+				const before = k > 0 ? (spot - (spots[k - 1] as number)) / 2 : spot;
+				const after = k + 1 < spots.length ? ((spots[k + 1] as number) - spot) / 2 : 1 - spot;
+				const room = Math.max(1e-6, Math.min(before, after));
+				// Its stretch is as wide as this wood needs to turn that far, and where its room is
+				// less, it turns less.
+				const turn = Math.sqrt(turnSide * turnSide + turnNod * turnNod);
+				const needs = turn / Math.max(1e-9, turnMost(spot, 1, over)) / 2;
+				const wide = Math.min(room, Math.max(half, needs));
+				const ease = needs > wide ? wide / needs : 1;
+				const from = Math.max(spot - wide, (sways[sways.length - 1] as [number, number])[0]);
+				const to = Math.min(1, Math.max(spot + wide, from + 1e-6));
+				ramps.push([from, to]);
+				sways.push([from, lean], [to, lean + turnSide * ease]);
+				dips.push([from, nod], [to, nod + turnNod * ease]);
+				lean += turnSide * ease;
+				nod += turnNod * ease;
 			});
 		};
-		elbowed();
 		const across: Vector3 = [-sin(heading), 0, cos(heading)];
 		const tangent = (share: number): Vector3 => {
 			const base = direction(radians(curveAt(lifts, share)), heading);
@@ -631,10 +710,49 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 				base[2] + across[2] * off + upZ * nod,
 			);
 		};
+		/**
+		 * Shapes the course for an axis of a length. A bend and an elbow that fall together turn more
+		 * tightly than either alone, so the course is walked, and where its tightest turn is under the
+		 * least radius the leans and nods are eased until it is not.
+		 */
+		const shaped = (over: number): void => {
+			eases.fill(1);
+			bent(over);
+			for (let pass = 0; pass < 4; pass++) {
+				let tight = false;
+				let before = tangent(0);
+				for (let k = 1; k <= TRIAL_STEPS * 2; k++) {
+					const share = k / (TRIAL_STEPS * 2);
+					const here = tangent(share);
+					const turn = between(before, here);
+					before = here;
+					if (turn < 1e-6) continue;
+					const most = turnMost(share, 1 / (TRIAL_STEPS * 2), over);
+					if (turn <= most) continue;
+					// The elbow whose stretch holds this place turns less.
+					const middle = share - 0.5 / (TRIAL_STEPS * 2);
+					for (let e = 0; e < ramps.length; e++) {
+						const [from, to] = ramps[e] as [number, number];
+						if (middle < from || middle > to) continue;
+						eases[e] = Math.max(0.2, (eases[e] as number) * Math.max(0.5, most / turn));
+						tight = true;
+					}
+				}
+				if (!tight) break;
+				bent(over);
+			}
+		};
 
 		// The length: stated, or found so that the tip stands where the rule says.
 		const lengthRule = rule.length;
-		let length = 0;
+		// A first length to shape the bends for, before the course is measured.
+		let length =
+			'share' in lengthRule
+				? curveAt(lengthRule.share, place) * scale
+				: 'parent' in lengthRule
+					? curveAt(lengthRule.parent, place) * parentLength
+					: 0.3 * scale;
+		shaped(length);
 		/** Finds the length from the course as it stands. */
 		const measure = (): void => {
 			if ('share' in lengthRule) length = curveAt(lengthRule.share, place) * scale;
@@ -670,6 +788,11 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 			if (rule.least !== undefined) length = Math.max(length, curveAt(rule.least, place) * scale);
 			length = Math.max(length, 0.01 * scale);
 		};
+		// The bends are shaped for the length, and the length is found from the bends, twice over.
+		for (let pass = 0; pass < 2; pass++) {
+			measure();
+			shaped(length);
+		}
 		measure();
 
 		// Where each child leaves, as shares of this axis's length.
@@ -734,8 +857,9 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 				taken.add(best);
 			}
 			if (taken.size > 0) {
-				elbowed();
+				shaped(length);
 				measure();
+				shaped(length);
 			}
 		}
 		const stem = role === 'stem' ? (rule as FrameStemRule) : undefined;
@@ -879,6 +1003,16 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 			else
 				round =
 					(seat.index % 2 === 0 ? 1 : -1) * (sides.get(child) as number) * (90 - (child.lift ?? 0));
+			// Round a parent that leans, the places are drawn in away from its ground side.
+			if (
+				child.clear &&
+				child.from === 'parent' &&
+				(child.around === 'spiral' || child.around === 'ring') &&
+				Math.abs(t[1]) < PLUMB_NEAR
+			) {
+				const wrapped = ((((round + jitter) % 360) + 540) % 360) - 180;
+				round = wrapped * (1 - clamp(child.clear, 0, 300) / 360) - jitter;
+			}
 			round = radians(round + jitter);
 			const angle = radians(
 				curveAt(child.angle, childPlace) +

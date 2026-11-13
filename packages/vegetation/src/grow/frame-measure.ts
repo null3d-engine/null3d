@@ -83,25 +83,51 @@ export function longestStraight(axis: FrameAxis): number {
 
 /**
  * The largest drop in radius between neighbouring nodes of an axis, as a share of the axis's
- * thickest radius. An axis that thins evenly over many nodes drops a small share at each. The drop
- * just past a node where another axis leaves is the fork's own and is not counted.
+ * thickest radius. An axis that thins evenly over many nodes drops a small share at each. Just past
+ * a node where other axes leave, the axis may also drop by what those axes took of its
+ * cross-section, and only the drop beyond that is counted.
  *
  * @param axis The axis.
- * @param forks The axis's nodes where another axis leaves.
+ * @param forks For each of the axis's nodes where other axes leave, the share of its radius the
+ *   axis keeps past it when it gives up the whole of their cross-sections.
  * @returns The share, 0 for an axis of one radius.
  * @category api/vegetation
  */
-export function steepestStep(axis: FrameAxis, forks?: ReadonlySet<number>): number {
+export function steepestStep(axis: FrameAxis, forks?: ReadonlyMap<number, number>): number {
 	let thickest = 0;
 	for (const node of axis.nodes) thickest = Math.max(thickest, node.radius);
 	let most = 0;
-	for (let k = 1; k < axis.nodes.length; k++)
-		if (!forks?.has(k - 1))
-			most = Math.max(
-				most,
-				Math.abs((axis.nodes[k - 1] as FrameNode).radius - (axis.nodes[k] as FrameNode).radius),
-			);
+	for (let k = 1; k < axis.nodes.length; k++) {
+		const from = (axis.nodes[k - 1] as FrameNode).radius;
+		const drop = Math.abs(from - (axis.nodes[k] as FrameNode).radius);
+		const kept = forks?.get(k - 1);
+		most = Math.max(most, kept === undefined ? drop : Math.max(0, drop - from * (1 - kept)));
+	}
 	return thickest > 0 ? most / thickest : 0;
+}
+
+/**
+ * For each node of an axis where other axes leave, the share of its radius the axis keeps past it
+ * when it gives up the whole of their cross-sections: the root of one less the sum of the squares
+ * of their radii over its own.
+ *
+ * @param plan The frame.
+ * @param index The axis's index in the plan.
+ * @returns The kept share at each such node.
+ * @category api/vegetation
+ */
+export function forkShares(plan: FramePlan, index: number): Map<number, number> {
+	const axis = plan.axes[index] as FrameAxis;
+	const taken = new Map<number, number>();
+	for (const child of plan.axes) {
+		if (child.parent !== index) continue;
+		const at = (axis.nodes[child.parentNode] as FrameNode).radius;
+		const share = Math.min(0.95, child.base / Math.max(1e-9, at));
+		taken.set(child.parentNode, (taken.get(child.parentNode) ?? 0) + share * share);
+	}
+	const kept = new Map<number, number>();
+	for (const [node, squares] of taken) kept.set(node, Math.sqrt(Math.max(0.05, 1 - squares)));
+	return kept;
 }
 
 /**
