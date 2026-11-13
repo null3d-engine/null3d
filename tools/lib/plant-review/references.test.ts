@@ -13,6 +13,7 @@ import {
 	classifySlot,
 	classifyTurn,
 	crownStartRow,
+	filledSpans,
 	findHorizon,
 	greenLeaves,
 	hangingParts,
@@ -431,7 +432,7 @@ describe('a bole hidden by the boughs beside it', () => {
 		const measured = measurePlant(
 			blank(width, height, [255, 255, 255]),
 			plantOf(width, height, mask),
-			true,
+			'mound',
 		);
 		expect(measured.crownStart).toBeCloseTo((box.bottom - plain) / (box.bottom - box.top + 1), 3);
 	});
@@ -627,8 +628,6 @@ describe('the slots', () => {
 			forkRow: 0.4,
 			footRow: 0.5,
 			crownRow: 0.4,
-			aside: 10,
-			stand: 2,
 			leaves: 8,
 			sparse: 0.5,
 			sections: 0.5,
@@ -662,7 +661,6 @@ describe('the slots', () => {
 			readPlantReviewQuery(new URLSearchParams('species=stub&crownRow=0.4&footRow=0.5')),
 		).not.toThrow();
 		expect(read('leaves=0')).toThrow('above 0');
-		expect(read('stand=1')).toThrow('above 1');
 		// The daylight's strength is a multiple of the soft daylight: above none, and not past eight.
 		expect(read('daylight=2.5')().daylight).toBe(2.5);
 		expect(read('daylight=0')).toThrow('above 0');
@@ -1090,11 +1088,13 @@ describe('the coverage matte', () => {
 		const image = blank(width, height, [0, 0, 0]);
 		const binary = measurePlant(image, mattePlant(width, height, mask));
 		const fractional = measurePlant(image, mattePlant(width, height, mask, coverage));
-		// The hole is four texels of the crown's hundred; two are half covered, so the fractional
-		// gap gives back the half texel each of them leaves. The measure rounds the share to four
-		// places, which is where three per cent sits.
+		// The hole is four texels of the crown's hundred, and both pictures count four. Two are
+		// half covered, so the reading by clear share gives back the half texel each of them
+		// leaves. The measure rounds the share to four places, which is where three per cent sits.
 		expect(binary.gapFraction).toBeCloseTo(4 / 100, 4);
-		expect(fractional.gapFraction).toBeCloseTo(3 / 100, 4);
+		expect(fractional.gapFraction).toBeCloseTo(4 / 100, 4);
+		expect(fractional.gapByCoverage as number).toBeCloseTo(3 / 100, 4);
+		expect(binary.gapByCoverage).toBe(null);
 		// The crown's own box holds the same hole as the outline, so its gap agrees; the frame keeps
 		// the empty sky around the plant and reads far larger.
 		expect(binary.crownBoxGap).toBeCloseTo(4 / 100, 4);
@@ -1149,5 +1149,47 @@ describe('a fitted sky', () => {
 			soilMaskable({ horizon: 10, sky: surface(1, 20), ground: surface(1, 18), plain: false }, 640),
 		).toBe(false);
 		expect(soilMaskable({ horizon: null, sky: surface(1, 18), plain: false }, 640)).toBe(false);
+	});
+});
+
+describe('the crown start of a clump', () => {
+	/** A clump 100 rows tall: five thin stems that fan out from its foot, then a dense dome. */
+	const clump = (): { mask: Uint8Array; width: number; height: number } => {
+		const width = 200;
+		const height = 100;
+		const mask = new Uint8Array(width * height);
+		// The dome fills rows 0 to 59, and the stems spread over rows 60 to 99.
+		for (let y = 0; y < 60; y++) for (let x = 20; x < 180; x++) mask[y * width + x] = 1;
+		for (let y = 60; y < height; y++) {
+			const up = (height - 1 - y) / 40;
+			for (let stem = 0; stem < 5; stem++) {
+				const centre = Math.round(100 + (stem - 2) * 30 * up);
+				for (let x = centre - 1; x <= centre + 1; x++) mask[y * width + x] = 1;
+			}
+		}
+		return { mask, width, height };
+	};
+
+	test('is where the rows fill with foliage, not where the stems have spread', () => {
+		const { mask, width, height } = clump();
+		const box = boxOf(mask, width, height);
+		if (!box) throw new Error('the clump has no box');
+		// The stems' outer span passes the width test well below the dome, so the outline rule
+		// starts the crown among the bare stems.
+		const outline = crownStartRow(rowSpans(mask, width, height), box);
+		expect(outline).toBeGreaterThan(70);
+		// Each row counted by the plant it holds starts the crown at the dome's foot.
+		const filled = crownStartRow(filledSpans(mask, width, height), box);
+		expect(filled).toBeGreaterThanOrEqual(58);
+		expect(filled).toBeLessThanOrEqual(60);
+	});
+
+	test('counts each row by the plant it holds, as one run on the frame’s middle', () => {
+		const { mask, width, height } = clump();
+		const spans = filledSpans(mask, width, height);
+		// A stem row holds five stems of three columns; a dome row holds 160 columns.
+		expect((spans[80 * 2 + 1] as number) - (spans[80 * 2] as number) + 1).toBe(15);
+		expect((spans[30 * 2 + 1] as number) - (spans[30 * 2] as number) + 1).toBe(160);
+		expect(Array.from(filledSpans(new Uint8Array(8), 4, 2))).toEqual([-1, -1, -1, -1]);
 	});
 });

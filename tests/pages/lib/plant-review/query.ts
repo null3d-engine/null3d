@@ -210,6 +210,12 @@ export interface PlantReviewQuery {
 	readonly surface?: boolean;
 	/** Whether to draw the plant black on white with no light, for its exact outline. */
 	readonly matte?: boolean;
+	/**
+	 * Whether to draw each part of the plant in a flat colour of its own on white, with no light:
+	 * wood red with its radius in the blue channel, foliage green, extras green and blue. The parts
+	 * are cut and layered as the colour picture is, so the picture says which part covers each texel.
+	 */
+	readonly parts?: boolean;
 	/** Whether stages not built yet grow stand-ins; true for a species that is not registered. */
 	readonly placeholders?: boolean;
 	/** The row share of the horizon, which sets the camera's pitch with the field of view. */
@@ -262,8 +268,20 @@ export interface PlantReviewQuery {
 	/** The subject box's share of the picture's height, with `subjectWidth`. */
 	readonly subjectHeight?: number;
 	/**
+	 * The share of the frame's height that a junction photograph's limb takes where it leaves the
+	 * trunk, read off the photograph. It sets the junction view's frame alone.
+	 */
+	readonly limbShare?: number;
+	/** The column share on which a junction photograph's trunk meets its limb. */
+	readonly collarColumn?: number;
+	/**
+	 * The degrees a junction photograph's limb rises above level where it leaves the trunk: the
+	 * view frames the thick limb that lies nearest.
+	 */
+	readonly limbLie?: number;
+	/**
 	 * The row share on which a view up the stem puts the stem's first fork: the camera pitches up
-	 * until the fork lands there, no steeper than the view's elevation.
+	 * until the fork lands there.
 	 */
 	readonly forkRow?: number;
 	/**
@@ -272,10 +290,6 @@ export interface PlantReviewQuery {
 	 */
 	readonly footRow?: number;
 	readonly crownRow?: number;
-	/** Degrees a view up the stem turns its look to the right of the stem, so the stem enters low left. */
-	readonly aside?: number;
-	/** Stem radii from the stem's axis at which a view up the stem stands, in place of a step back. */
-	readonly stand?: number;
 	/**
 	 * Leaf lengths that a cut piece's frame height covers, in place of fitting the whole piece: the
 	 * scale its photograph shows it at. The piece then stands on its cut at the frame's lower edge.
@@ -360,11 +374,12 @@ const NUMBER_FIELDS = [
 	'span',
 	'subjectWidth',
 	'subjectHeight',
+	'limbShare',
+	'collarColumn',
+	'limbLie',
 	'forkRow',
 	'footRow',
 	'crownRow',
-	'aside',
-	'stand',
 	'leaves',
 	'leafLength',
 	'sparse',
@@ -406,6 +421,7 @@ const SWITCHES = [
 	'measure',
 	'scale',
 	'matte',
+	'parts',
 	'fruit',
 	'surface',
 	'lifted',
@@ -532,6 +548,8 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 	for (const [name, value] of [
 		['subjectWidth', numbers.subjectWidth],
 		['subjectHeight', numbers.subjectHeight],
+		['limbShare', numbers.limbShare],
+		['collarColumn', numbers.collarColumn],
 	] as const)
 		if (value !== undefined && !(value > 0 && value <= 1))
 			throw new Error(
@@ -540,10 +558,6 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 	if (numbers.leafLength !== undefined && numbers.leafLength <= 0)
 		throw new Error(
 			`leafLength=${numbers.leafLength} is a leaf's length in metres: give a number above 0.`,
-		);
-	if (numbers.stand !== undefined && numbers.stand <= 1)
-		throw new Error(
-			`stand=${numbers.stand} is in stem radii from its axis: give a number above 1.`,
 		);
 	for (const name of ['sky', 'ground', 'lamp'] as const) {
 		const text = params.get(name);
@@ -609,6 +623,7 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 		motion: params.get('motion') === '1',
 		young: params.get('young') === '1',
 		matte: params.get('matte') === '1',
+		parts: params.get('parts') === '1',
 		fruit: params.get('fruit') === '1',
 		surface: params.get('surface') === '1',
 	};
