@@ -1294,6 +1294,11 @@ export interface TuftSpikes {
 	readonly thread: number;
 	/** The length of the spike that ends the stem, on the stem's own line. */
 	readonly tip: number;
+	/**
+	 * Where the hanging spikes leave the bowed stem: the degrees above level that the stem points
+	 * where the highest leaves and where the lowest leaves, one below another between them.
+	 */
+	readonly hang: readonly [number, number];
 }
 
 /**

@@ -5,6 +5,7 @@
 // tall as its record asks and grows the same each time.
 import { describe, expect, it } from 'bun:test';
 import { type PlantAsset, plantAssetDigest, type SpeciesKitData } from '../asset';
+import { quatRotate } from '../core/math';
 import type { Species, Tuft } from '../core/record';
 import { loadSpecies } from '../core/registry';
 import { DETAILS, spreadMean } from '../core/types';
@@ -58,7 +59,30 @@ function staying(asset: PlantAsset): number[] {
 	return out;
 }
 
-/** The rows a sparseness setting keeps: the least plant's, and an even share of the rest. */
+/**
+ * The socket each row stands at: a socket carries every part of its piece as rows in turn, its
+ * first part first.
+ */
+function rowSockets(grown: Grown): number[] {
+	const out: number[] = [];
+	let socket = -1;
+	for (let r = 0; r < grown.asset.shoots.count; r++) {
+		const prototype = grown.kit.prototypes[grown.asset.shoots.prototype[r] as number];
+		if ((prototype?.piece?.part ?? 0) === 0) socket++;
+		out.push(socket);
+	}
+	return out;
+}
+
+/** The rows that stand at the first `sockets` sockets. */
+function rowsAt(grown: Grown, sockets: number): number[] {
+	const at = rowSockets(grown);
+	const out: number[] = [];
+	for (let r = 0; r < at.length; r++) if ((at[r] as number) < sockets) out.push(r);
+	return out;
+}
+
+/** The sockets a sparseness setting keeps: the least plant's, and an even share of the rest. */
 function keptAt(asset: PlantAsset, sparseness: number): number {
 	const stay = staying(asset);
 	const least = stay.filter((value) => value === 1).length;
@@ -72,6 +96,18 @@ const nameOf = (prototype: { readonly piece?: { readonly name: string } } | unde
 	prototype?.piece?.name ?? '';
 const classOf = (grown: Grown, row: number) =>
 	nameOf(grown.kit.prototypes[grown.asset.shoots.prototype[row] as number]);
+
+/** Several meshes as one. */
+function joined(meshes: readonly TestMesh[]): TestMesh {
+	const positions: number[] = [];
+	const indices: number[] = [];
+	for (const mesh of meshes) {
+		const base = positions.length / 3;
+		for (let i = 0; i < mesh.positions.length; i++) positions.push(mesh.positions[i] as number);
+		for (let i = 0; i < mesh.indices.length; i++) indices.push(base + (mesh.indices[i] as number));
+	}
+	return { positions, indices };
+}
 
 /** A level's own mesh, in metres. */
 function ownMesh(grown: Grown, level: 0 | 1 | 2): TestMesh {
@@ -155,17 +191,19 @@ for (const id of TUFTS) {
 				const built =
 					detail === kit.detail ? kit : buildKitNow(module, { detail, placeholders: 'missing' });
 				expect(built.prototypes.length).toBe(kit.prototypes.length);
+				// A piece's parts stand at one socket, so the piece is read whole: its parts together.
+				const pieces = new Map<string, TestMesh[]>();
 				for (const prototype of built.prototypes) {
 					const mesh = prototype.tiers[tier];
 					if (!mesh) throw new Error(`${nameOf(prototype)} has no ${detail} tier`);
 					expect(mesh.positions.length / 3).toBeGreaterThan(0);
 					expect(mesh.positions.length / 3).toBeLessThanOrEqual(VERTEX_CAP);
-					expect([nameOf(prototype), detail, bodies(mesh, join)]).toEqual([
-						nameOf(prototype),
-						detail,
-						1,
-					]);
-					expect(toMesh(mesh, [0, 0, 0])).toBeLessThanOrEqual(shootWidth / 2 + 1e-6);
+					pieces.set(nameOf(prototype), [...(pieces.get(nameOf(prototype)) ?? []), mesh]);
+				}
+				for (const [name, parts] of pieces) {
+					const whole = joined(parts);
+					expect([name, detail, bodies(whole, join)]).toEqual([name, detail, 1]);
+					expect(toMesh(whole, [0, 0, 0])).toBeLessThanOrEqual(shootWidth / 2 + 1e-6);
 				}
 			});
 		});
@@ -173,10 +211,14 @@ for (const id of TUFTS) {
 		it('reads a flowering stem as several parts when nothing may join them', () => {
 			// The reading of one body is of the drawn triangles: a stem, its threads and its spikes
 			// share no vertex, so with no joining distance they are apart.
-			const stalk = kit.prototypes.find((prototype) => nameOf(prototype).startsWith('stalk-'));
-			const mesh = stalk?.tiers[DETAILS.indexOf(kit.detail)];
-			if (!mesh) throw new Error(`${id} has no flowering stem`);
-			expect(bodies(mesh, 0)).toBeGreaterThan(1);
+			const name = nameOf(
+				kit.prototypes.find((prototype) => nameOf(prototype).startsWith('stalk-')),
+			);
+			const parts = kit.prototypes
+				.filter((prototype) => nameOf(prototype) === name)
+				.map((prototype) => prototype.tiers[DETAILS.indexOf(kit.detail)] as TestMesh);
+			if (parts.length === 0) throw new Error(`${id} has no flowering stem`);
+			expect(bodies(joined(parts), 0)).toBeGreaterThan(1);
 		});
 
 		it("gives the material each piece's share along, and marks the sheath column for its colour", () => {
@@ -196,8 +238,13 @@ for (const id of TUFTS) {
 					expect(along).toBeLessThanOrEqual(1);
 					expect(mesh.uvs1[i * 2 + 1] as number).toBeGreaterThanOrEqual(0);
 					expect(mesh.uvs1[i * 2 + 1] as number).toBeLessThanOrEqual(1);
-					// The bend weight follows the share, so a part's foot holds and its end sways.
-					expect(Math.abs((mesh.colors[i * 4] as number) - 255 * along)).toBeLessThanOrEqual(0.51);
+					// The bend weight follows the share, so a part's foot holds and its end sways; a
+					// blade that has come to rest holds still where it lies on the soil, within twice
+					// its width of the ground.
+					const bend = mesh.colors[i * 4] as number;
+					expect(bend).toBeLessThanOrEqual(255 * along + 0.51);
+					if ((mesh.positions[i * 3 + 1] as number) > 2 * blade.width * 1.25)
+						expect(Math.abs(bend - 255 * along)).toBeLessThanOrEqual(0.51);
 					least = Math.min(least, along);
 					most = Math.max(most, along);
 				}
@@ -266,12 +313,13 @@ for (const id of TUFTS) {
 
 		it('puts its sockets in the order the plant thins by, no piece before its shoot', () => {
 			const stay = staying(asset);
-			expect(stay.length).toBe(asset.shoots.count);
+			const at = rowSockets(grown);
+			expect(stay.length).toBe((at[at.length - 1] as number) + 1);
 			for (let r = 1; r < stay.length; r++)
 				expect(stay[r] as number).toBeLessThanOrEqual(stay[r - 1] as number);
-			// Row r stands at socket r, and the sockets stand in the order of their thinning rank.
+			// The rows stand socket by socket, and the sockets in the order of their thinning rank.
 			const sockets = asset.skeleton.buds.sockets;
-			for (let r = 0; r < asset.shoots.count; r++) expect(sockets?.rank[r]).toBe(r);
+			for (let b = 0; b < stay.length; b++) expect(sockets?.rank[b]).toBe(b);
 			const seen = new Set<string>();
 			for (let r = 0; r < asset.shoots.count; r++) {
 				const key = placeOf(asset, r).join(',');
@@ -282,13 +330,13 @@ for (const id of TUFTS) {
 
 		for (const sparseness of SPARSENESS)
 			it(`is one body at sparseness ${sparseness}: every kept piece on a kept shoot in the stool`, () => {
-				const kept = keptAt(asset, sparseness);
+				const kept = rowsAt(grown, keptAt(asset, sparseness));
 				const shoots = new Map<string, number[]>();
-				for (let r = 0; r < kept; r++)
+				for (const r of kept)
 					if (classOf(grown, r) === 'sheath')
 						shoots.set(placeOf(asset, r).join(','), placeOf(asset, r));
 				expect(shoots.size).toBeGreaterThan(0);
-				for (let r = 0; r < kept; r++) expect(shoots.has(placeOf(asset, r).join(','))).toBe(true);
+				for (const r of kept) expect(shoots.has(placeOf(asset, r).join(','))).toBe(true);
 				// The stool's mound is drawn at every level, and each kept shoot's foot stands in it:
 				// within one shoot's width of its surface.
 				for (const level of [0, 1, 2] as const) {
@@ -300,9 +348,12 @@ for (const id of TUFTS) {
 			});
 
 		it('keeps its least plant last, spread round the stool', () => {
-			const least = keptAt(asset, 1);
+			const least = rowsAt(grown, keptAt(asset, 1));
 			const counts = new Map<string, Map<string, number>>();
-			for (let r = 0; r < least; r++) {
+			for (const r of least) {
+				// A stem's head is a part of the stem's piece, not a piece of its own.
+				if ((grown.kit.prototypes[asset.shoots.prototype[r] as number]?.piece?.part ?? 0) > 0)
+					continue;
 				const key = placeOf(asset, r).join(',');
 				const kind = classOf(grown, r).replace(/-\d+$/, '');
 				const shoot = counts.get(key) ?? new Map<string, number>();
@@ -326,10 +377,10 @@ for (const id of TUFTS) {
 		});
 
 		it('keeps a shoot in every eighth of the stool at half sparseness', () => {
-			const kept = keptAt(asset, 0.5);
+			const kept = rowsAt(grown, keptAt(asset, 0.5));
 			const eighths = new Set<number>();
 			let shoots = 0;
-			for (let r = 0; r < kept; r++) {
+			for (const r of kept) {
 				if (classOf(grown, r) !== 'sheath') continue;
 				const [x, , z] = placeOf(asset, r) as [number, number, number];
 				eighths.add(Math.floor(((Math.atan2(z, x) + Math.PI) / (2 * Math.PI)) * 8) % 8);
@@ -338,16 +389,124 @@ for (const id of TUFTS) {
 			if (shoots >= 16) expect([...eighths].sort()).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
 		});
 
-		it("stands as tall as its record asks, with only its blades' points under the soil", () => {
+		it('stands as tall as its record asks, with nothing under the soil but a blade edge', () => {
 			const target = targetHeight(record, OPTIONS.seed, OPTIONS.variant);
 			const { low, top } = standing(grown);
 			expect(Math.abs(top - target) / target).toBeLessThan(0.03);
-			// A blade that comes down to the soil runs its point on into it, and no farther.
-			let longest = 0;
-			for (const prototype of kit.prototypes)
-				if (nameOf(prototype).startsWith('blade-')) longest = Math.max(longest, prototype.length);
-			// The blade's edges lie as much as its own width below its midline.
-			expect(low).toBeGreaterThanOrEqual(-(blade.tipLength * longest + blade.width) * scale);
+			// A blade that comes down to the soil turns and lies on it, so at most a twisted edge of
+			// it, half its width, dips under the ground as it lands.
+			expect(low).toBeGreaterThanOrEqual(-(blade.width / 2) * scale - 1e-6);
+		});
+
+		it('brings a blade that comes down to the soil to rest on it, still in the wind', () => {
+			const tier = DETAILS.indexOf(kit.detail);
+			const lands = growth.poses.some((pose) => pose.drop >= pose.apex);
+			let landing = 0;
+			for (const prototype of kit.prototypes) {
+				if (!nameOf(prototype).startsWith('blade-')) continue;
+				const mesh = prototype.tiers[tier];
+				if (!mesh) throw new Error(`${nameOf(prototype)} has no tier`);
+				// The blade's tip is its farthest point out along its heading.
+				let tip = 0;
+				for (let i = 0; i < mesh.positions.length; i += 3)
+					if ((mesh.positions[i + 2] as number) > (mesh.positions[tip + 2] as number)) tip = i;
+				if ((mesh.positions[tip + 1] as number) > blade.width) continue;
+				landing++;
+				// Its point lies on the soil: every vertex of it within half a blade's width of the
+				// ground. Its bend weight is at most three hundredths of a free tip's, and the wind
+				// bends a vertex by that weight squared, so the point holds still.
+				for (let i = 0; i < mesh.positions.length / 3; i++) {
+					if ((mesh.uvs1[i * 2] as number) < 1 - 0.9 * blade.tipLength) continue;
+					expect(Math.abs(mesh.positions[i * 3 + 1] as number)).toBeLessThanOrEqual(
+						blade.width / 2 + 1e-6,
+					);
+					expect(mesh.colors[i * 4] as number).toBeLessThanOrEqual(255 * 0.03);
+				}
+			}
+			expect(landing > 0).toBe(lands);
+		});
+
+		it('stands its shoot bases as pointed spindles, the rim ones leaning out and lower', () => {
+			const { buds } = asset.skeleton;
+			const sockets = buds.sockets;
+			if (!sockets?.piece) throw new Error(`${id}'s sockets name no pieces`);
+			const sheaths: { out: number; lean: number; outward: number; scale: number }[] = [];
+			let rim = 0;
+			const up = [0, 0, 0] as [number, number, number];
+			for (let b = 0; b < buds.count; b++) {
+				if (sockets.piece[b] !== 0) continue;
+				const x = buds.position[b * 3] as number;
+				const z = buds.position[b * 3 + 2] as number;
+				const out = Math.hypot(x, z);
+				rim = Math.max(rim, out);
+				quatRotate(buds.frame, b * 4, [0, 1, 0], up);
+				const level = Math.hypot(up[0], up[2]);
+				sheaths.push({
+					out,
+					lean: (Math.atan2(level, up[1]) * 180) / Math.PI,
+					outward: level > 1e-6 && out > 1e-6 ? (up[0] * x + up[2] * z) / (level * out) : 1,
+					scale: sockets.scale[b] as number,
+				});
+			}
+			const middle = sheaths.filter((sheath) => sheath.out < 0.3 * rim);
+			const outer = sheaths.filter((sheath) => sheath.out > 0.8 * rim);
+			const mean = (list: typeof sheaths, key: 'lean' | 'scale') =>
+				list.reduce((sum, sheath) => sum + sheath[key], 0) / list.length;
+			expect(middle.length).toBeGreaterThan(0);
+			expect(outer.length).toBeGreaterThan(0);
+			// Still 07: the middle stands plumb, the rim leans out by up to 15 degrees and stands
+			// about six tenths as tall.
+			expect(mean(middle, 'lean')).toBeLessThan(5);
+			expect(mean(outer, 'lean')).toBeGreaterThan(9);
+			for (const sheath of sheaths) expect(sheath.lean).toBeLessThanOrEqual(15 + 1e-3);
+			for (const sheath of outer) expect(sheath.outward).toBeGreaterThan(0.99);
+			expect(mean(outer, 'scale')).toBeLessThan(0.8 * mean(middle, 'scale'));
+			// The column closes to a point: its top is a fifth of its widest or less.
+			const column = kit.prototypes.find((prototype) => nameOf(prototype) === 'sheath');
+			const mesh = column?.tiers[DETAILS.indexOf(kit.detail)];
+			if (!mesh) throw new Error(`${id} has no sheath column`);
+			let topY = 0;
+			let widest = 0;
+			for (let i = 0; i < mesh.positions.length; i += 3) {
+				topY = Math.max(topY, mesh.positions[i + 1] as number);
+				widest = Math.max(
+					widest,
+					Math.hypot(mesh.positions[i] as number, mesh.positions[i + 2] as number),
+				);
+			}
+			for (let i = 0; i < mesh.positions.length; i += 3)
+				if ((mesh.positions[i + 1] as number) > 0.99 * topY)
+					expect(
+						Math.hypot(mesh.positions[i] as number, mesh.positions[i + 2] as number),
+					).toBeLessThanOrEqual(0.2 * widest);
+		});
+
+		it("draws a flowering stem's head as a part of its own, near the crest of its bow", () => {
+			if (!growth.stalks) return;
+			const tier = DETAILS.indexOf(kit.detail);
+			const names = new Set(
+				kit.prototypes
+					.map((prototype) => nameOf(prototype))
+					.filter((name) => name.startsWith('stalk-')),
+			);
+			expect(names.size).toBeGreaterThan(0);
+			const highest = (mesh: TestMesh) => {
+				let y = Number.NEGATIVE_INFINITY;
+				for (let i = 1; i < mesh.positions.length; i += 3)
+					y = Math.max(y, mesh.positions[i] as number);
+				return y;
+			};
+			for (const name of names) {
+				const parts = kit.prototypes.filter((prototype) => nameOf(prototype) === name);
+				expect(parts.map((prototype) => prototype.piece?.part)).toEqual([0, 1]);
+				const stem = highest(parts[0]?.tiers[tier] as TestMesh);
+				const head = highest(parts[1]?.tiers[tier] as TestMesh);
+				// The head stands at the stem's highest stretch: a sedge's spikes hang from it and never
+				// rise above it, a grass's panicle ends in a cluster that carries on past its tip.
+				if (growth.stalks.head.kind === 'spike') expect(head).toBeLessThanOrEqual(stem + 1e-6);
+				else expect(head).toBeLessThanOrEqual(1.05 * stem);
+				expect(head).toBeGreaterThan(0.9 * stem);
+			}
 		});
 
 		it('cuts a shoot that keeps the pieces that stand on it, and leaves the stool behind', () => {
@@ -410,5 +569,43 @@ describe('the meadow grass out of flower', () => {
 		for (let r = 0; r < grown.asset.shoots.count; r++) classes.add(classOf(grown, r));
 		expect([...classes].some((name) => name.startsWith('stalk-'))).toBe(false);
 		expect([...classes].some((name) => name.startsWith('blade-'))).toBe(true);
+	});
+});
+
+describe("the sedge's picked leaf", () => {
+	it('is the whole blade, pressed flat, closing to a fine point', async () => {
+		const module = await loadSpecies('sedge');
+		await loadPlantCode(module.record);
+		if (module.record.foliage.kind !== 'grass-blade') throw new Error('the sedge has no blade');
+		const blade = module.record.foliage.blade;
+		const kit = buildKitNow(module, { detail: 'high', placeholders: 'missing' });
+		const leaf = growPlantNow(kit, { ...OPTIONS, cutting: { part: 'leaf' } });
+		const positions: number[] = [];
+		const out: [number, number, number] = [0, 0, 0];
+		for (const part of leaf.levels[0].parts)
+			for (let i = 0; i < part.arrays.positions.length / 3; i++) {
+				dequantisePosition(part.arrays.positions, i, kit.box, out);
+				positions.push(out[0], out[1], out[2]);
+			}
+		let length = 0;
+		for (let i = 1; i < positions.length; i += 3) length = Math.max(length, positions[i] as number);
+		// Still 12 shows the upper part of a long leaf: the piece is the record's whole blade.
+		expect(Math.abs(length - spreadMean(blade.length)) / spreadMean(blade.length)).toBeLessThan(
+			0.02,
+		);
+		// One width from its tip it is about four tenths as wide as the blade, as still 12 reads.
+		const widthAt = (y: number) => {
+			let low = Number.POSITIVE_INFINITY;
+			let high = Number.NEGATIVE_INFINITY;
+			for (let i = 0; i < positions.length; i += 3)
+				if (Math.abs((positions[i + 1] as number) - y) < 0.004) {
+					low = Math.min(low, positions[i] as number);
+					high = Math.max(high, positions[i] as number);
+				}
+			return high - low;
+		};
+		const across = widthAt(length - blade.width) / blade.width;
+		expect(across).toBeGreaterThan(0.3);
+		expect(across).toBeLessThan(0.55);
 	});
 });

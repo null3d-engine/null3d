@@ -1,28 +1,40 @@
 // The tuft grower: grasses and sedges. The plant's frame is a stool: shoots (tillers) spread evenly
 // over a small disc at the soil, each a short plumb column of sheaths. The stool itself is a low
 // mound of old leaf bases that every shoot stands in, so the plant is one body however few shoots
-// it keeps. Nothing else of the frame stands above the ground. Every part a viewer sees is a piece of the kit, built once and placed
-// whole at a socket on a shoot:
+// it keeps. Nothing else of the frame stands above the ground. Every part a viewer sees is a piece
+// of the kit, built once and placed whole at a socket on a shoot:
 //
-// - the shoot's own column of sheaths;
-// - a blade, in the poses the record measures and the shapes between them: the youngest stand near plumb at the shoot's heart,
-//   the oldest arch out and over to the ground. Blades leave their shoot in two ranks (grasses) or
-//   three (sedges);
-// - in the seasons the record names, a flowering stem with its head: a sedge's stem bows over and
-//   hangs its spikes plumb one below another, a grass's stands nearly straight under an open
-//   pyramid of branches and spikelets.
+// - the shoot's own column of sheaths, a spindle that narrows to a point where its blades leave;
+//   the middle shoots' columns stand plumb and tallest, the rim's lean out and stand lower;
+// - a blade, in the poses the record measures and the shapes between them: the youngest stand near
+//   plumb at the shoot's heart, the oldest arch out and over to the ground, where they turn and lie
+//   on the soil. Blades leave their shoot in two ranks (grasses) or three (sedges);
+// - in the seasons the record names, a flowering stem, and its head as a piece of its own at the
+//   same socket: a sedge's stem bows over and hangs its spikes plumb one below another near the
+//   crest of its bow, a grass's stands nearly straight under an open pyramid of branches and
+//   spikelets.
 //
 // A piece is posed in its own space with +Y plumb, so a blade or a spike hangs under its own weight
 // wherever it stands; how far a stem leans is one of its poses. The record's lengths are shares of
-// the leaf mound's height, which is a share of the plant's height. Each bent part is one path of
-// the shared curve (core/arch.ts), fitted to the record's measured figures.
+// the leaf mound's height, which is a share of the plant's height. Each bent part is a path of the
+// shared curve (core/arch.ts), fitted to the record's measured figures: one arch, or for a blade
+// that comes to rest on the soil a chain of three, the arch to the soil, a turn back to level and
+// a run that lies on it.
 //
 // The sockets enter the skeleton in the order the plant thins by (grow/sockets.ts): shoots in an
 // order whose every leading run is spread evenly over the stool, a shoot's blades from its oldest,
-// and no piece before its shoot. The stool's mound draws as the plant's own mesh at every level,
+// no piece before its shoot, and a stem's head straight after its stem, so no head outlasts it. The stool's mound draws as the plant's own mesh at every level,
 // and what lies under the soil, a rhizome and roots, at the nearest.
 import type { MeshArrays } from '../asset';
-import { type Arch, archFromFigures, archPath } from '../core/arch';
+import {
+	type Arch,
+	type ArchChain,
+	archFromFigures,
+	archPath,
+	chainArches,
+	chainLength,
+	chainPath,
+} from '../core/arch';
 import { AXIS_LIMB, AXIS_ROOT, type MacroSkeleton, SkeletonBuilder } from '../core/graph';
 import { unitAt } from '../core/hash';
 import { cos, PI, radians, sin, type Vector3 } from '../core/math';
@@ -71,10 +83,9 @@ const TIER_LEVEL: readonly (0 | 1 | 2)[] = [2, 1, 0, 0];
 /** Faces round a flowering stem and round a spike or spikelet, by tier. */
 const STEM_SIDES: readonly number[] = [3, 3, 4, 5];
 const HEAD_SIDES: readonly number[] = [3, 3, 4, 5];
-/** Faces round a shoot's sheath column, by tier. */
+/** Faces round a shoot's sheath column and rings up it, by tier. */
 const SHEATH_SIDES: readonly number[] = [4, 5, 6, 8];
-/** The sheath column's width at its top, as a share of its width at the foot. */
-const SHEATH_TAPER = 0.7;
+const SPINDLE_RINGS: readonly number[] = [4, 5, 6, 8];
 /** A flowering stem's width under its head, as a share of its width at the foot. */
 const STALK_TAPER = 0.35;
 /** The share of a hanging spike's width that its thread takes. */
@@ -84,6 +95,24 @@ const BRANCH_WIDTH = 0.3;
 const SPIKELET_WIDTH = 0.42;
 /** How much shorter a panicle's top whorl's branches are than its lowest whorl's, as a share. */
 const WHORL_TAPER = 0.75;
+/**
+ * The radius a blade that comes down to the soil turns on as it comes to rest, in blade widths: a
+ * strap turns about as tight as its own width allows where it meets the ground.
+ */
+const LAND_RADIUS = 1.5;
+/**
+ * Still 07: the shoot bases at the stool's rim lean out about 15 degrees from plumb and stand about
+ * six tenths as tall as the plumb ones at its middle.
+ */
+const SHEATH_LEAN = 15;
+const SHEATH_RIM = 0.4;
+/**
+ * Still 07: a shoot base is a spindle, seven tenths of its widest at the soil, widest four tenths of
+ * the way up and closed to a point at its top, where the blades leave.
+ */
+const SPINDLE_FOOT = 0.7;
+const SPINDLE_WIDEST = 0.4;
+const SPINDLE_TOP = 0.15;
 
 /** A light that sees the whole sky, for a piece that is meshed before any crown stands round it. */
 const OPEN: CrownLight = { cells: [1, 1, 1], min: [0, 0, 0], cell: 1, sky: new Float32Array([1]) };
@@ -118,11 +147,20 @@ function angleBetween(from: number, to: number): number {
 
 /** One pose of a piece: its path at the largest size a socket asks for, and how high it stands. */
 interface Pose {
-	readonly arch: Arch;
+	readonly chain: ArchChain;
+	/** The path's length in metres. */
+	readonly length: number;
 	/** The highest point above the attach point, in metres. */
 	readonly top: number;
 	/** The farthest point out from the attach point along the heading, in metres. */
 	readonly out: number;
+	/**
+	 * Metres above the soil under which a blade that comes to rest lies on it: the radius it turns
+	 * on as it lands. None for a part that stays in the air.
+	 */
+	readonly lies?: number;
+	/** The shares along the path where it turns to the soil and where it lies on it. */
+	readonly landing?: readonly [number, number];
 }
 
 /** A tuft's sizes in metres and the poses of its pieces, from its record. */
@@ -146,9 +184,15 @@ const SHEATH_SPREAD = 0.15;
 /** The plans found, by the growth they were found from: a fit costs more than a plant's sockets. */
 const PLANS = new WeakMap<Tuft, Plan>();
 
-/** How high an arch stands above its base and how far out it reaches, in metres. */
-function extentOf(arch: Arch): { top: number; out: number } {
-	const path = archPath(arch, 0, 24);
+/** An arch as a chain of one link. */
+function single(arch: Arch): ArchChain {
+	const { leave, ...link } = arch;
+	return { leave, links: [link] };
+}
+
+/** How high a chain stands above its base and how far out it reaches, in metres. */
+function extentOf(chain: ArchChain): { top: number; out: number } {
+	const path = chainPath(chain, 0, 24);
 	let top = 0;
 	let out = 0;
 	for (let i = 0; i <= path.segments; i++) {
@@ -179,24 +223,18 @@ function planOf(record: Species): Plan {
 		const tip = stated(from.tip, to.tip);
 		const apex = between(from.apex, to.apex);
 		const drop = between(from.drop, to.drop);
-		const fit = archFromFigures({
+		const figures = {
 			...(leave !== undefined ? { leave } : {}),
 			...(tip !== undefined ? { tip } : {}),
 			apex: apex * mound,
 			drop: drop * mound,
 			reach: between(from.reach, to.reach) * mound,
-		});
-		// A blade that comes down to the soil is longer than its fall: it meets the soil at the
-		// width it has where its point begins, and the point runs on into the litter. The figures
-		// fit the blade as far as the soil, and the point carries on along its line.
-		const shown = drop >= apex ? 1 - blade.tipLength : 1;
-		const arch = {
-			...fit.arch,
-			length: (fit.arch.length / shown) * grown,
-			from: (fit.arch.from ?? 0) * shown,
-			to: (fit.arch.to ?? 1) * shown,
 		};
-		blades.push({ arch, ...extentOf(arch) });
+		const fit = archFromFigures(figures);
+		if (drop < apex) {
+			const chain = single({ ...fit.arch, length: fit.arch.length * grown });
+			blades.push({ chain, length: chainLength(chain), ...extentOf(chain) });
+		} else blades.push(landing(fit.arch, figures, blade, grown));
 	}
 	const stalks: Pose[] = [];
 	const stems = growth.stalks;
@@ -209,9 +247,9 @@ function planOf(record: Species): Plan {
 				from: stems.bow.from,
 			};
 			// The stem is as long as stands its highest point at the tallest stem's height.
-			const length = (stems.top[1] * mound) / extentOf({ ...shape, length: 1 }).top;
-			const arch = { ...shape, length };
-			stalks.push({ arch, ...extentOf(arch) });
+			const length = (stems.top[1] * mound) / extentOf(single({ ...shape, length: 1 })).top;
+			const chain = single({ ...shape, length });
+			stalks.push({ chain, length, ...extentOf(chain) });
 		}
 	const plan: Plan = {
 		mound,
@@ -223,6 +261,55 @@ function planOf(record: Species): Plan {
 	};
 	PLANS.set(growth, plan);
 	return plan;
+}
+
+/**
+ * A blade that comes down to the soil and comes to rest on it, as a chain of three arches: the arch
+ * the figures fit as far as a land radius above the soil, a turn on that radius back to level, and
+ * a run that lies on the soil. The blade meets the soil at the width it has where its point begins,
+ * so the run is as long as the point, and the point lies on the ground.
+ */
+function landing(
+	fitted: Arch,
+	figures: { readonly leave?: number; apex: number; drop: number; reach: number },
+	blade: GrassBlade,
+	grown: number,
+): Pose {
+	const fall = Math.max(0, Math.min(90, fitted.turn - fitted.leave));
+	const lift = 1 - cos(radians(fall));
+	const aimed = LAND_RADIUS * blade.width;
+	const arch = archFromFigures({
+		...(figures.leave !== undefined ? { leave: figures.leave } : {}),
+		tip: fall,
+		apex: figures.apex,
+		drop: Math.max(0, figures.drop - aimed * lift),
+		reach: Math.max(0, figures.reach - aimed * sin(radians(fall))),
+	}).arch;
+	// The fit meets its figures to within its miss, so the turn is sized from where the arch truly
+	// ends: it turns down from that height to the soil, and the run lies on the ground.
+	const path = archPath(arch, 0, 24);
+	const ends = Math.max(0, path.up[path.segments] as number);
+	const radius = lift > 1e-6 ? ends / lift : aimed;
+	const turnLength = radius * radians(fall);
+	const shown = arch.length + turnLength;
+	const lie = (shown * blade.tipLength) / (1 - blade.tipLength);
+	const { leave, ...first } = arch;
+	const chain: ArchChain = {
+		leave,
+		links: [
+			{ ...first, length: arch.length * grown },
+			{ length: turnLength * grown, turn: -fall },
+			{ length: lie * grown, turn: 0 },
+		],
+	};
+	const length = chainLength(chain);
+	return {
+		chain,
+		length,
+		...extentOf(chain),
+		lies: Math.max(radius, blade.width) * grown,
+		landing: [(arch.length * grown) / length, (shown * grown) / length],
+	};
 }
 
 /**
@@ -323,7 +410,11 @@ export function growTuft(input: GrowInput): MacroSkeleton {
 	places.forEach((place, i) => {
 		const unit = (k: number) => draw(input, Purpose.Shoot, i, k);
 		const shootKeep = keepOf(i, shoots, growth.least.shoots);
-		const column = growth.sheath.height * mound * (1 + SHEATH_SPREAD * (unit(0) * 2 - 1));
+		const column =
+			growth.sheath.height *
+			mound *
+			(1 + SHEATH_SPREAD * (unit(0) * 2 - 1)) *
+			(1 - SHEATH_RIM * place.out * place.out);
 		const axis = builder.addAxis({
 			parent: crown,
 			parentNode: crownTop,
@@ -340,11 +431,18 @@ export function growTuft(input: GrowInput): MacroSkeleton {
 			axis,
 			light: 1,
 		});
+		// A rim shoot's column leans out of the stool; the pieces that hang stand plumb.
+		const lean = radians(SHEATH_LEAN * place.out);
+		const tilt: Vector3 = [
+			cos(place.heading) * sin(lean),
+			cos(lean),
+			sin(place.heading) * sin(lean),
+		];
 		builder.addNode({
-			x: place.x,
-			y: column,
-			z: place.z,
-			radius: (plan.sheathWidth / 2) * SHEATH_TAPER,
+			x: place.x + tilt[0] * column,
+			y: tilt[1] * column,
+			z: place.z + tilt[2] * column,
+			radius: (plan.sheathWidth / 2) * SPINDLE_TOP,
 			parent: base,
 			axis,
 			light: 1,
@@ -354,13 +452,13 @@ export function growTuft(input: GrowInput): MacroSkeleton {
 			axis,
 			node: base,
 			at,
-			direction: level(place.heading),
+			direction: tilt,
 			piece: SHEATH_CLASS,
 			scale: column / plan.sheath,
 			keep: shootKeep,
 			group: i,
 		});
-		top = Math.max(top, column);
+		top = Math.max(top, tilt[1] * column);
 		// The blades, the oldest first: it stands lowest and outermost, and it is the last to go.
 		const blades = Math.max(1, Math.round(spreadAt(growth.blades, unit(1))));
 		const rankTurn = unit(2) * 2 * PI;
@@ -536,20 +634,28 @@ function rootPath(
 }
 
 /**
- * A piece's path from an arch, in the piece's own space: its attach point at the origin, +Y plumb
+ * A piece's path from a chain, in the piece's own space: its attach point at the origin, +Y plumb
  * and +Z the way it heads. The first frame's normal is the side that faces the sky once the path
  * has turned over.
  */
-function pathOf(arch: Arch): AxisPath {
-	const cut = archPath(arch, 0, 32);
+function pathOf(chain: ArchChain): AxisPath {
+	const cut = chainPath(chain, 0, 32);
 	const count = cut.segments + 1;
 	const points = new Float64Array(count * 3);
 	for (let i = 0; i < count; i++) {
 		points[i * 3 + 1] = cut.up[i] as number;
 		points[i * 3 + 2] = cut.out[i] as number;
 	}
-	const leave = radians(arch.leave);
+	const leave = radians(chain.leave);
 	return axisPath(points, new Float64Array(count), count, [0, cos(leave), -sin(leave)]);
+}
+
+/** A shoot base's width at a share of its height, as a share of its widest: a pointed spindle. */
+function spindle(share: number): number {
+	if (share <= SPINDLE_WIDEST)
+		return SPINDLE_FOOT + (1 - SPINDLE_FOOT) * sin((PI / 2) * (share / SPINDLE_WIDEST));
+	const up = (share - SPINDLE_WIDEST) / (1 - SPINDLE_WIDEST);
+	return 1 - (1 - SPINDLE_TOP) * up ** 1.6;
 }
 
 /** A straight path between two points, for a stalk, a thread, a spike or a spikelet. */
@@ -654,22 +760,19 @@ function writeStalk(
 	);
 }
 
-/** Writes a sedge's head: spikes hanging plumb on threads along the bow, and one ending the stem. */
-function writeSpikes(
+/** Writes the spike that ends a sedge's stem, carrying on along the stem's own line. */
+function writeEndSpike(
 	mesh: MeshWriter,
 	strip: Strip,
 	path: AxisPath,
-	arch: Arch,
 	head: TuftSpikes,
 	tier: number,
 	mound: number,
 ): void {
 	const sides = HEAD_SIDES[tier] as number;
 	const place = emptyFrame();
-	const bowAt = arch.from ?? 0;
 	const body = (head.width * mound) / 2;
 	const tipLength = head.tip * mound;
-	// The spike that ends the stem carries on along the stem's own line.
 	frameAt(path, path.length, place);
 	const end = [0, 1, 2].map(
 		(k) => (place.position[k] as number) + (place.tangent[k] as number) * tipLength,
@@ -686,8 +789,39 @@ function writeSpikes(
 		[1, 1],
 		true,
 	);
+}
+
+/**
+ * The share along a stem's bow where it points at an angle above level: the bow turns evenly, so
+ * the share follows the angle straight.
+ */
+function bowShareAt(arch: Arch, angle: number): number {
+	const bowAt = arch.from ?? 0;
+	if (arch.turn <= 0) return 1;
+	const turned = Math.min(1, Math.max(0, (arch.leave - angle) / arch.turn));
+	return bowAt + (1 - bowAt) * turned;
+}
+
+/**
+ * Writes a sedge's head: spikes hanging plumb on threads from the stem where its bow runs between
+ * the record's two angles, one below another near the bow's crest.
+ */
+function writeSpikes(
+	mesh: MeshWriter,
+	strip: Strip,
+	path: AxisPath,
+	arch: Arch,
+	head: TuftSpikes,
+	tier: number,
+	mound: number,
+): void {
+	const sides = HEAD_SIDES[tier] as number;
+	const place = emptyFrame();
+	const body = (head.width * mound) / 2;
+	const first = bowShareAt(arch, head.hang[0]);
+	const last = bowShareAt(arch, head.hang[1]);
 	for (let j = 0; j < head.count; j++) {
-		const share = bowAt + ((1 - bowAt) * (j + 1)) / (head.count + 1);
+		const share = first + ((last - first) * (j + 0.5)) / head.count;
 		frameAt(path, share * path.length, place);
 		const from = [
 			place.position[0] as number,
@@ -838,7 +972,8 @@ export function tuftPieces(record: Species, manifest: TextureManifest): readonly
 	const classes: WrittenPiece[] = [];
 	classes.push({
 		name: 'sheath',
-		attitude: 'upright',
+		// The column leans with its socket, out of the stool at the rim.
+		attitude: 'along',
 		length: plan.sheath,
 		leaves: 0,
 		parts: [
@@ -851,11 +986,11 @@ export function tuftPieces(record: Species, manifest: TextureManifest): readonly
 					straight([0, 0, 0], [0, plan.sheath, 0]),
 					0,
 					plan.sheath,
-					3,
+					SPINDLE_RINGS[tier] as number,
 					SHEATH_SIDES[tier] as number,
-					(s) => half * (1 - (1 - SHEATH_TAPER) * s),
+					(s) => half * spindle(s),
 					[0, 1],
-					false,
+					true,
 					false,
 					// The column takes the record's sheath colour where it gives one.
 					growth.sheathColour !== undefined,
@@ -864,12 +999,13 @@ export function tuftPieces(record: Species, manifest: TextureManifest): readonly
 		],
 	});
 	plan.blades.forEach((pose, k) => {
-		const path = pathOf(pose.arch);
+		const path = pathOf(pose.chain);
 		classes.push({
 			name: `blade-${k}`,
 			attitude: 'upright',
-			length: pose.arch.length,
+			length: pose.length,
 			leaves: 1,
+			...(pose.lies !== undefined ? { lies: pose.lies } : {}),
 			parts: [
 				(mesh, tier) => {
 					const detail = DETAILS[tier] as Detail;
@@ -884,13 +1020,14 @@ export function tuftPieces(record: Species, manifest: TextureManifest): readonly
 							twist: blade.twist * (k % 2 === 0 ? 1 : -1),
 							browning: 0,
 							dry: 0.5,
+							...(pose.landing ? { flat: pose.landing } : {}),
 						},
 						{
 							rows: BLADE_ROWS[detail],
 							across: BLADE_ACROSS[detail],
 							// The rows stand where the shared curve cuts the pose for this tier, so no row
 							// turns more than the curve's bound whatever the tier.
-							along: archPath(pose.arch, TIER_LEVEL[tier] as 0 | 1 | 2, BLADE_ROWS[detail]).along,
+							along: chainPath(pose.chain, TIER_LEVEL[tier] as 0 | 1 | 2, BLADE_ROWS[detail]).along,
 						},
 						texture,
 						NO_BYTES,
@@ -903,26 +1040,44 @@ export function tuftPieces(record: Species, manifest: TextureManifest): readonly
 		});
 	});
 	const stems = growth.stalks;
-	if (stems)
+	if (stems) {
+		const head = stems.head;
+		const stalkArch = (pose: Pose) => chainArches(pose.chain)[0] as Arch;
 		plan.stalks.forEach((pose, k) => {
-			const path = pathOf(pose.arch);
-			const head = stems.head;
+			const path = pathOf(pose.chain);
 			classes.push({
 				name: `stalk-${k}`,
 				attitude: 'upright',
-				length: pose.arch.length,
+				length: pose.length,
 				leaves: 0,
+				// The stem, and its head as a part of its own: the head's card frames the spikes at
+				// their own size, and the two stand at one socket, so a level keeps or drops them
+				// together.
 				parts: [
 					(mesh, tier) => {
 						mesh.mark();
-						writeStalk(mesh, strip, path, pose.arch, tier, plan.stalkWidth, 1, stems.sides === 3);
+						writeStalk(
+							mesh,
+							strip,
+							path,
+							stalkArch(pose),
+							tier,
+							plan.stalkWidth,
+							1,
+							stems.sides === 3,
+						);
+						if (head.kind === 'spike') writeEndSpike(mesh, strip, path, head, tier, plan.mound);
+					},
+					(mesh, tier) => {
+						mesh.mark();
 						if (head.kind === 'spike')
-							writeSpikes(mesh, strip, path, pose.arch, head, tier, plan.mound);
+							writeSpikes(mesh, strip, path, stalkArch(pose), head, tier, plan.mound);
 						else writePanicle(mesh, strip, path, head, tier, plan.mound, plan.stalkWidth);
 					},
 				],
 			});
 		});
+	}
 	return classes;
 }
 
