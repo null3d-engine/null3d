@@ -163,6 +163,9 @@ pub enum MeshError {
     NotTriangles,
     /// A page cannot hold one triangle of the mesh's format: the page limit is too small.
     PageTooSmall,
+    /// A page has no room for a level's indices. A page past its limit would refuse every frame,
+    /// so the level is refused instead and its caller gives the level a copy of its own.
+    PageFull,
     /// The mesh's morph targets make no morphed mesh.
     Morph(MorphError),
     /// The engine's memory could not grow by `bytes` for the mesh. The storage holds no part of it.
@@ -875,7 +878,11 @@ impl MeshStorage {
             Packing::Pages => part.first_vertex,
             Packing::SharedBuffers => 0,
         };
-        let page = &mut self.pages[part.page as usize];
+        let page_index = part.page as usize;
+        if !self.has_room(&self.pages[page_index], 0, 0, indices.len()) {
+            return Err(MeshError::PageFull);
+        }
+        let page = &mut self.pages[page_index];
         reserve(&mut page.indices, indices.len())?;
         let first_index = page.indices.len() as u32;
         page.indices
@@ -925,7 +932,11 @@ impl MeshStorage {
             Packing::Pages => part.first_vertex,
             Packing::SharedBuffers => 0,
         };
-        let page = &mut self.pages[part.page as usize];
+        let page_index = part.page as usize;
+        if !self.has_room(&self.pages[page_index], 0, 0, indices.len()) {
+            return Err(MeshError::PageFull);
+        }
+        let page = &mut self.pages[page_index];
         reserve(&mut page.indices, indices.len())?;
         let first_index = page.indices.len() as u32;
         page.indices
@@ -1084,6 +1095,18 @@ impl MeshStorage {
                     reserve(&mut apart, 3)?;
                     apart.extend_from_slice(triangle);
                 }
+            }
+        }
+        // A page that cannot hold its share of the level would refuse every frame, so the whole
+        // level is refused and the caller gives it a page of its own.
+        for (k, part) in parts.iter().enumerate() {
+            let list = &lists[k];
+            if list.is_empty() {
+                continue;
+            }
+            let placed = self.placed_indices(list.len());
+            if !self.has_room(&self.pages[part.page as usize], 0, 0, placed) {
+                return Err(MeshError::PageFull);
             }
         }
         // The vertices that the triangles apart name, each copied once, in the order they first
@@ -2786,6 +2809,31 @@ mod tests {
                 assert!(page.indices.iter().all(|&i| i < u16::MAX), "{packing:?}");
             }
         }
+    }
+
+    #[test]
+    fn a_level_past_its_pages_limit_is_refused() {
+        // Pages of 4 KiB hold 2,048 indices at two bytes each. A level of 3,000 indices needs
+        // 6,000 bytes, which would make every frame refuse the whole page.
+        let mut storage = MeshStorage::with_page_limit(Packing::SharedBuffers, 4096);
+        let base = storage.add(&grid(2, 2, 0)).unwrap();
+        let many = vec![0u32; 3_000];
+        assert_eq!(storage.add_level(base, &many), Err(MeshError::PageFull));
+        assert_eq!(
+            storage.add_split_level(base, &many, false),
+            Err(MeshError::PageFull)
+        );
+        assert_eq!(
+            storage.replace_indices(base, &many),
+            Err(MeshError::PageFull)
+        );
+        // Nothing changed: every page stays within its limit and the base keeps its triangles.
+        for page in storage.pages() {
+            let (vertex_bytes, index_bytes) = page.buffer_bytes();
+            assert!(vertex_bytes <= 4096 && index_bytes <= 4096);
+        }
+        let slot = *storage.mesh(base).unwrap();
+        assert_eq!(storage.parts(&slot, false)[0].index_count, 24);
     }
 
     #[test]
