@@ -896,7 +896,9 @@ export function pieceSites(plan: ShootPlan): PieceSite[] {
 		});
 	}
 	const ranked = (sites: Omit<PieceSite, 'rank'>[]): PieceSite[] => {
-		const bits = Math.max(1, Math.ceil(Math.log2(Math.max(2, sites.length))));
+		// The bits that count the sites, found by doubling: a whole number, the same on every engine.
+		let bits = 1;
+		while (1 << bits < sites.length) bits++;
 		return sites
 			.map((site, index) => ({ site, order: reversed(index, bits) }))
 			.sort((a, b) => a.order - b.order)
