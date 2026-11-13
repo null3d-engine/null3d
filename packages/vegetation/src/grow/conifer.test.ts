@@ -125,7 +125,29 @@ describe('the conifer limb schedule', () => {
 			expect(offLine(first.azimuth)).toBeLessThan(15);
 			expect(Math.cos(((first.azimuth - second.azimuth) * Math.PI) / 180)).toBeLessThan(-0.85);
 		}
-		expect(growth.limbs.plan.narrow).toBeGreaterThanOrEqual(0.75);
+	});
+
+	it('builds a crown whose narrow side is at least three quarters of its wide side', () => {
+		const turn = (growth.limbs.plan.turn * Math.PI) / 180;
+		for (const seed of SEEDS) {
+			const plan = planConifer(input(seed));
+			/** The crown's width along a level direction: the patches' farthest edges both ways. */
+			const widthAlong = (x: number, z: number): number => {
+				let low = 0;
+				let high = 0;
+				for (const { patch } of plan.limbs) {
+					const at = patch.centre[0] * x + patch.centre[2] * z;
+					low = Math.min(low, at - patch.width / 2);
+					high = Math.max(high, at + patch.width / 2);
+				}
+				return high - low;
+			};
+			const wide = widthAlong(Math.cos(turn), Math.sin(turn));
+			const narrow = widthAlong(-Math.sin(turn), Math.cos(turn));
+			expect(narrow / wide).toBeGreaterThanOrEqual(0.75);
+			// The grower solves the plan for the record's own share.
+			expect(Math.abs(narrow / wide - growth.limbs.plan.narrow)).toBeLessThan(0.04);
+		}
 	});
 });
 
