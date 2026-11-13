@@ -20,8 +20,8 @@ const ENDS = { pitch: 1.0 / 22, reach: 0.81 / 22 } as const;
  * show in one view, each a limb end's set of tips. Still 04: five or six tip bunches on one branch
  * end two metres across.
  */
-const bunch = (width: number) =>
-	({ kind: 'bunch', width, depth: width * 0.7, fill: ENDS }) as const;
+const bunch = (width: number, offset = 0) =>
+	({ kind: 'bunch', width, depth: width * 0.7, offset, fill: ENDS }) as const;
 
 /**
  * The branches of a limb and their twigs. Stills 07, 06 and 05: branches and twigs leave in opposite
@@ -73,7 +73,8 @@ const branches: FrameBranchRule = {
 	],
 	sway: 10,
 	elbows: 4,
-	patch: bunch(0.15),
+	// Stills 01 and 02: the leaves hang from a branch's outer run as well as standing at its tip.
+	patch: bunch(0.15, -0.3),
 	children: [
 		{
 			name: 'side',
@@ -238,8 +239,8 @@ export const frame: FrameSpec = {
 	},
 };
 
-/** The share of the sockets that bear a bunch of keys: the record's 0.06 times 1,399 over 3,606. */
-const KEYS_SHARE = 0.023;
+/** The share of the sockets that bear a bunch of keys: the record's 0.06 times 1,399 over 4,131. */
+const KEYS_SHARE = 0.0203;
 
 /**
  * The common ash's record with the frame as its growth and the branch end of still 21 at each
@@ -258,9 +259,9 @@ export const directed = {
 	pieces: PIECES.filter((piece) => piece.name === 'branch-end'),
 	// The record's keys hang from a share of the shoot tips, and the old grower's tree has 1,399 of
 	// them at seed 11, so the record means about 84 bunches. The frame carries a branch end at each
-	// of about 3,600 sockets, so the same share would hang two and a half times as many. Until a
+	// of about 4,100 sockets, so the same share would hang three times as many. Until a
 	// count of bunches from a picture exists, a socket bears keys at the share that keeps the
-	// record's own total. A bunch is about 2,430 triangles and 51 kilobytes at every tier.
+	// record's own total. A bunch is about 1,800 triangles and 41 kilobytes at every tier.
 	extras: record.extras?.map((extra) =>
 		extra.kind === 'fruit' && extra.at === 'shoot-tip' ? { ...extra, share: KEYS_SHARE } : extra,
 	),
