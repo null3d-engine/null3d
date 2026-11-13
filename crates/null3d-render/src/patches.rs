@@ -675,6 +675,8 @@ impl Walk<'_> {
 #[derive(Clone, Debug, Default)]
 pub struct PatchStorage {
     trees: Vec<Option<PatchTree>>,
+    /// Counts the changes to the trees, so a layout keeps its tables while the trees are the same.
+    generation: u64,
 }
 
 impl PatchStorage {
@@ -689,7 +691,15 @@ impl PatchStorage {
             }
             self.trees.resize(index + 1, None);
         }
-        self.trees[index] = tree;
+        if self.trees[index] != tree {
+            self.trees[index] = tree;
+            self.generation = self.generation.wrapping_add(1);
+        }
+    }
+
+    /// A count of the changes to the trees. It changes when a tree is set, taken away or grown.
+    pub fn generation(&self) -> u64 {
+        self.generation
     }
 
     /// The tree of mesh `mesh`, or `None` for a mesh without one.
@@ -710,7 +720,11 @@ impl PatchStorage {
     ) -> Option<Result<(), PatchError>> {
         let index = mesh.checked_sub(1)? as usize;
         let tree = self.trees.get_mut(index)?.as_mut()?;
-        Some(tree.append(bounds, records, indices, vertices))
+        let result = tree.append(bounds, records, indices, vertices);
+        if result.is_ok() {
+            self.generation = self.generation.wrapping_add(1);
+        }
+        Some(result)
     }
 
     /// True while some mesh has a tree.
