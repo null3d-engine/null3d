@@ -323,13 +323,6 @@ export interface PieceRule {
 	 */
 	readonly lengthwise?: boolean;
 	/**
-	 * The main stem that the low and medium tiers draw in place of `stem`: a coarser plan of the same
-	 * piece, such as a fern frond whose pinnae are one leaf each far off where its near tiers draw
-	 * each pinnule. It holds the same variant's draws and must split into as many parts. Absent,
-	 * every tier draws `stem`.
-	 */
-	readonly far?: PieceStem;
-	/**
 	 * Degrees the piece is turned about its own line at every socket, from its sky side up toward its
 	 * right. A living fern frond's flat blade stands rolled on the plant, so a frond seen from the
 	 * crown's side shows its face rather than its edge. Absent, 0.
@@ -1314,13 +1307,6 @@ export function piecePrototypes(
 					.map((run) => brushPicture(whole, run, own[pictureTier] ?? [], BRUSH_PICTURE_TIER));
 			}
 			const parts = splitPlan(whole, finest);
-			const far = rule.far
-				? splitPlan(planPiece(record, { ...rule, stem: rule.far }, key, leafMeshes), finest)
-				: undefined;
-			if (far && far.length !== parts.length)
-				throw new Error(
-					`@null3d/vegetation: the piece '${rule.name}' splits into ${parts.length} parts near and ${far.length} far; give its far stem the same parts`,
-				);
 			for (const [part, plan] of parts.entries()) {
 				const drawn = pictures ?? [];
 				const brushes =
@@ -1333,16 +1319,9 @@ export function piecePrototypes(
 								pictures: drawn,
 							}
 						: undefined;
-				const near = meshedPlan(plan, own, PIECE_CUTS);
-				// The low and medium tiers take the far plan's meshes, where the rule names one.
-				const farPlan = far?.[part];
-				const farTiers = farPlan ? meshedPlan(farPlan, own, PIECE_CUTS).tiers : undefined;
-				const tiers = farTiers
-					? (near.tiers.map((tier, t) =>
-							t <= DETAILS.indexOf('medium') ? farTiers[t] : tier,
-						) as unknown as typeof near.tiers)
-					: near.tiers;
-				if (rule.browning) for (const tier of tiers) browned(tier, rule.browning, leafLength);
+				const meshed = meshedPlan(plan, own, PIECE_CUTS);
+				if (rule.browning)
+					for (const tier of meshed.tiers) browned(tier, rule.browning, leafLength);
 				out.push({
 					piece: rule.name,
 					variant,
@@ -1353,8 +1332,7 @@ export function piecePrototypes(
 					...(rule.lengthwise ? { lengthwise: true } : {}),
 					...(rule.roll ? { roll: rule.roll } : {}),
 					sites: pieceSites(plan),
-					...near,
-					tiers,
+					...meshed,
 					...(brushes ? { brushes } : {}),
 				});
 			}
