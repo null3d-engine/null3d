@@ -27,6 +27,7 @@ import {
 	piecesOfClass,
 	sampleAlong,
 	sampleAtHeight,
+	sitesOfClass,
 	type TrunkSubject,
 } from './subjects';
 
@@ -2021,6 +2022,55 @@ export function barkLimbShot(
 				warning: `${chosen.blocked} stands between the camera and every great limb`,
 			}),
 		},
+	};
+}
+
+/** How a view of one marked site frames it. */
+export interface SiteOptions {
+	/** The metres the frame's width shows at the site. */
+	readonly span: number;
+	/** Whether the camera looks along the surface, so what stands out of the site shows in profile. */
+	readonly edge?: boolean;
+	/** Radians round the plant the camera prefers: the site that faces this way best is framed. */
+	readonly turn: number;
+}
+
+/**
+ * The view of one site of a class that the plant marks on its surface, such as a nest hole or an
+ * areole: the site that faces the camera's side best, in the frame's middle, the span wide. Face on,
+ * the camera looks into the site; with `edge` it looks along the surface beside it, so a cluster
+ * of spines stands in profile against the background.
+ */
+export function siteShot(
+	subjects: PlantSubjects,
+	name: string,
+	lens: Lens,
+	options: SiteOptions,
+): Solved {
+	const sites = sitesOfClass(subjects, name);
+	if (isAbsent(sites)) return sites;
+	const preferred = facing(options.turn);
+	let site = sites[0] as (typeof sites)[number];
+	for (const candidate of sites)
+		if (dot(candidate.normal, preferred) > dot(site.normal, preferred)) site = candidate;
+	const tangent = normalize(cross([0, 1, 0], site.normal));
+	const forward: V3 =
+		options.edge && Math.hypot(...tangent) > 0.5
+			? tangent
+			: [-site.normal[0], -site.normal[1], -site.normal[2]];
+	const tall = options.span / lens.aspect;
+	return {
+		kind: `one ${name} site, ${options.span} m of the surface round it${options.edge ? ', seen along the surface' : ''}`,
+		camera: aim(site.at, 0.5, 0.5, forward, tall, lens),
+		points: [{ name: `the ${name} site`, at: site.at, within: [0.4, 0.4, 0.6, 0.6] }],
+		regions: [
+			{
+				name: 'the surface round the site',
+				box: [0.35, 0.35, 0.65, 0.65],
+				min: options.edge ? 0.15 : 0.5,
+			},
+		],
+		facts: { class: name, height: site.at[1], radius: site.radius, sites: sites.length },
 	};
 }
 
