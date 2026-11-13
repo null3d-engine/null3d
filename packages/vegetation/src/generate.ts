@@ -80,6 +80,8 @@ import { grower, loadGrower } from './grow/models';
 import { extrasMesh } from './leaf/extras';
 import { dressShoots, pruneLight } from './leaf/instancer';
 import { foliage, loadFoliage } from './leaf/kinds';
+import { type PiecePrototype, type PieceRule, piecePrototypes } from './leaf/piece';
+import { carriesPieces, kitPiece, PROTOTYPES_MOST } from './leaf/piece-rows';
 import { inLeaf } from './leaf/season';
 import { shootPrototypes } from './leaf/shoot';
 import { bakeCards } from './lod/card-bake';
@@ -334,6 +336,16 @@ function thinnedGrowth(growth: Species['growth'], thin: number): Species['growth
 					between: growth.tiers.between * thin,
 				},
 			};
+		// A directed conifer states its limb count, so the share moves that count and the levels
+		// share out what is left.
+		case 'conifer':
+			return {
+				...growth,
+				limbs: {
+					...growth.limbs,
+					count: Math.max(growth.limbs.levels.length, Math.round(growth.limbs.count * thin)),
+				},
+			};
 		case 'crown-rosette':
 			return {
 				...growth,
@@ -363,6 +375,24 @@ function scaledCurve(curve: Curve, factor: number): Curve {
 	return typeof curve === 'number'
 		? curve * factor
 		: curve.map(([at, value]) => [at, value * factor] as [number, number]);
+}
+
+/**
+ * Builds a species' branch pieces on this thread, each variant at every detail tier, from the
+ * species' own leaf meshes. Call `loadPlantCode` first.
+ *
+ * @param source The species' record and texture manifest, such as its module.
+ * @param rules The species' piece rules.
+ * @returns The pieces, each rule's variants together, in the rules' order.
+ */
+export function buildPiecesNow(source: KitSource, rules: readonly PieceRule[]): PiecePrototype[] {
+	const builder = foliage(source.record.foliage.kind);
+	const manifest = source.textures.manifest;
+	return piecePrototypes(
+		source.record,
+		rules,
+		DETAILS.map((tier) => builder.leaves(source.record, manifest, tier)),
+	);
 }
 
 /**
@@ -539,11 +569,21 @@ export function buildKitNow(source: KitSource, options: KitOptions = {}): Specie
 		surface: new Uint8Array(0),
 	};
 	if (record.shoots) {
+		// A plant that carries pieces at its sockets keeps its pieces in the kit, each part a
+		// prototype of its own; any other keeps its shoot prototypes.
+		const pieces = !cutting && carriesPieces(record) ? record.pieces : undefined;
 		const uncarded = stage(
 			placeholders,
-			() => shootPrototypes(record, manifest, leavesByTier, cutting !== false),
+			() =>
+				pieces
+					? piecePrototypes(record, pieces, leavesByTier).map(kitPiece)
+					: shootPrototypes(record, manifest, leavesByTier, cutting !== false),
 			() => placeholderPrototypes(record, leavesByTier),
 		);
+		if (uncarded.length > PROTOTYPES_MOST)
+			throw new Error(
+				`@null3d/vegetation: '${record.id}' builds ${uncarded.length} prototypes; a kit holds ${PROTOTYPES_MOST} at most`,
+			);
 		// A cutting kit holds no card levels: its pieces are drawn at the nearest level alone.
 		const baked = cutting
 			? { atlas: cards, cells: uncarded.map(() => ({ planes: [] })) }

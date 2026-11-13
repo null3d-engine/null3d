@@ -17,6 +17,7 @@ import {
 const MODELS: readonly GrowthModel[] = [
 	'self-organizing',
 	'architectural',
+	'conifer',
 	'crown-rosette',
 	'culm',
 	'rosette',
@@ -612,6 +613,59 @@ function growthProblems(record: Species, out: string[]): void {
 		shareProblem(ribs.start, 'foliage.leaf.ribs.start', out);
 		if (ribs.depth < 0 || ribs.sweep <= 0)
 			out.push('foliage.leaf.ribs needs a depth from 0 and a sweep above 0');
+	}
+	if (growth.model === 'conifer') {
+		const { trunk, limbs, top, patch } = growth;
+		curveProblems(trunk.width, 'growth.trunk.width', out);
+		if (!(trunk.dividesAt > 0 && trunk.dividesAt <= 1))
+			out.push(
+				`growth.trunk.dividesAt is ${trunk.dividesAt}; it is a share of the height above 0, and 1 for a trunk that runs to the tip`,
+			);
+		if (limbs.levels.length === 0)
+			out.push('growth.limbs.levels is empty; give one level at least');
+		limbs.levels.forEach((level, i) => {
+			if (!(level > 0 && level <= trunk.dividesAt))
+				out.push(
+					`growth.limbs.levels[${i}] is ${level}; a level stands above the ground and no higher than growth.trunk.dividesAt (${trunk.dividesAt})`,
+				);
+			if (i > 0 && level <= (limbs.levels[i - 1] as number))
+				out.push(`growth.limbs.levels falls at entry ${i}; the levels rise`);
+		});
+		if (!Number.isInteger(limbs.count) || limbs.count < limbs.levels.length)
+			out.push(
+				`growth.limbs.count is ${limbs.count}; it is a whole number, one limb a level at least (${limbs.levels.length})`,
+			);
+		for (const name of ['leave', 'run', 'end', 'reach', 'reachShare'] as const)
+			curveProblems(limbs[name], `growth.limbs.${name}`, out);
+		shareProblem(limbs.stagger, 'growth.limbs.stagger', out);
+		shareProblem(limbs.riseOver, 'growth.limbs.riseOver', out);
+		shareProblem(limbs.endOver, 'growth.limbs.endOver', out);
+		shareProblem(limbs.taper, 'growth.limbs.taper', out);
+		if (!(limbs.plan.narrow >= 0.5 && limbs.plan.narrow <= 1))
+			out.push(
+				`growth.limbs.plan.narrow is ${limbs.plan.narrow}; the narrow side is from 0.5 to 1 of the wide side`,
+			);
+		if (!(limbs.radius[0] > 0 && limbs.radius[1] >= limbs.radius[0] && limbs.radius[1] <= 1))
+			out.push(
+				'growth.limbs.radius needs the shortest limb above 0, and the longest no thinner than it and no thicker than the trunk',
+			);
+		wholeProblem(limbs.arms.count, 'growth.limbs.arms.count', 0, 6, out);
+		if (!(limbs.arms.radius > 0 && limbs.arms.radius <= 1))
+			out.push(`growth.limbs.arms.radius is ${limbs.arms.radius}; it is above 0 and at most 1`);
+		if (!(limbs.collar.swell >= 1))
+			out.push(`growth.limbs.collar.swell is ${limbs.collar.swell}; it is 1 or more`);
+		if (top) {
+			wholeProblem(top.limbs, 'growth.top.limbs', 1, 8, out);
+			if (!(top.radius > 0 && top.radius <= 1))
+				out.push(`growth.top.radius is ${top.radius}; it is above 0 and at most 1`);
+			if (trunk.dividesAt >= 1)
+				out.push(
+					'growth.top is given but growth.trunk.dividesAt is 1; a trunk that runs to the tip has no top limbs',
+				);
+		}
+		if (!(patch.width[0] > 0 && patch.width[1] >= patch.width[0]))
+			out.push('growth.patch.width needs the shortest limb above 0 and the longest no smaller');
+		if (!(patch.depth > 0)) out.push(`growth.patch.depth is ${patch.depth}; it must be above 0`);
 	}
 	if (growth.model === 'architectural') {
 		if (growth.orders.length === 0)

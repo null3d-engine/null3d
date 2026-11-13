@@ -5,12 +5,13 @@
 
 import type { ShootPrototype } from '../asset';
 import type { EcoRule } from '../ecology/ecology';
+import type { PieceRule } from '../leaf/piece';
 import type { MacroSkeleton } from './graph';
 import type { SpeciesTextureFiles } from './textures';
 import type { Curve, Detail, Rgb, Season, Spread, Vec2, Vec3 } from './types';
 
 /**
- * One species: the folder of its own under `species/`, grown by one of the eight growth models.
+ * One species: the folder of its own under `species/`, grown by one of the growth models.
  *
  * @category api/vegetation
  */
@@ -36,6 +37,12 @@ export interface Species {
 	readonly growth: Growth;
 	/** The outline the plant fills. Required for 'self-organizing'; a cap for the other models. */
 	readonly envelope?: Envelope;
+	/**
+	 * The branch pieces that the plant's sockets carry, each a measured rule. A species that grows
+	 * by a directed model builds its kit from these, and its shoot classes then serve only as the
+	 * source of its twig, bud and leaf figures. Another model ignores them.
+	 */
+	readonly pieces?: readonly PieceRule[];
 	/** The shoot prototypes that carry the finest orders, buds and leaves. */
 	readonly shoots?: ShootSpec;
 	/** What the leaves are. */
@@ -190,13 +197,14 @@ export interface PlantSize {
 }
 
 /**
- * How the large structure of a plant grows: one of eight models, each with its own numbers.
+ * How the large structure of a plant grows: one model of several, each with its own numbers.
  *
  * @category api/vegetation
  */
 export type Growth =
 	| SelfOrganizing
 	| Architectural
+	| Conifer
 	| CrownRosette
 	| Culm
 	| Rosette
@@ -599,6 +607,133 @@ export interface ArchitecturalOrder {
 	readonly upturn: number;
 	/** Degrees it bends over its length. */
 	readonly curve: number;
+}
+
+/**
+ * A conifer built in a set order from measured figures: one plumb trunk of a stated width at each
+ * height, limbs at stated levels spread round it, each limb one smooth course through the direction
+ * it leaves in, the direction it runs in and the direction it ends in, and a foliage patch at each
+ * limb's end. The limb count is the record's own, so a check can hold it. Heights are shares of the
+ * plant's height, from 0 at the ground to 1 at its top.
+ *
+ * @category api/vegetation
+ */
+export interface Conifer {
+	/** The model's name. */
+	readonly model: 'conifer';
+	/** The trunk. */
+	readonly trunk: {
+		/** The trunk's width over the plant's height, by height. */
+		readonly width: Curve;
+		/**
+		 * The height where the trunk ends and the top limbs carry on from it. At 1 the trunk runs to
+		 * the plant's tip as one leader.
+		 */
+		readonly dividesAt: number;
+		/** Degrees the trunk strays from plumb, in slow curves. */
+		readonly wander: number;
+	};
+	/** The limbs that leave the trunk. */
+	readonly limbs: {
+		/** The heights of the limb levels, rising. */
+		readonly levels: readonly number[];
+		/** Limbs on the trunk, shared out over the levels as evenly as whole numbers allow. */
+		readonly count: number;
+		/** How far a limb may stand above or below its level, as a share of the plant's height. */
+		readonly stagger: number;
+		/** Degrees a limb's place round the trunk may stand off its level's even spacing. */
+		readonly jitter: number;
+		/** Degrees above level that a limb leaves the trunk at, by its height. Below 0 it leaves downward. */
+		readonly leave: Curve;
+		/** Degrees above level that a limb runs at through its middle, by its height. */
+		readonly run: Curve;
+		/** Degrees above level that a limb ends at, by its height. */
+		readonly end: Curve;
+		/**
+		 * The distance from the trunk over which a limb turns from the way it leaves to the way it
+		 * runs, as a share of the plant's height. A short limb takes at most half its length.
+		 */
+		readonly riseOver: number;
+		/** The share of a limb's length, at its outer end, over which it turns to the way it ends. */
+		readonly endOver: number;
+		/**
+		 * The crown's reach from the trunk's line on its wide side, over the plant's height, by
+		 * height: the far edge of the longest limb's foliage at that height.
+		 */
+		readonly reach: Curve;
+		/**
+		 * The share of that reach a limb takes, by its place among the plant's limbs from the shortest
+		 * (0) to the longest (1). The curve is the measured spread of limb lengths, so a crown keeps
+		 * its few long limbs and its many short ones.
+		 */
+		readonly reachShare: Curve;
+		/**
+		 * The crown's plan: the built crown's narrow side over its wide side, from 0.5 to 1, measured
+		 * over the foliage patches' far edges, and the degrees the wide side stands from +X. The
+		 * grower stretches each limb's reach by its direction until the built crown has this share.
+		 */
+		readonly plan: { readonly narrow: number; readonly turn: number };
+		/**
+		 * A limb's radius beside the trunk over the trunk's radius at that height, for the shortest
+		 * limb and for the longest.
+		 */
+		readonly radius: readonly [short: number, long: number];
+		/**
+		 * The swelling where a limb meets the trunk: how many times the limb's own radius it is
+		 * there, and the distance over which it fades, as a share of the plant's height.
+		 */
+		readonly collar: { readonly swell: number; readonly over: number };
+		/** A limb's radius where its foliage patch begins, over its radius past the collar. */
+		readonly taper: number;
+		/** The most degrees a limb's sideways sway turns it from its course, in slow bends. */
+		readonly wander: number;
+		/**
+		 * The arms a limb divides into under its foliage patch: how many, the degrees each leaves at
+		 * from the limb, to one side and the other in turn, and its radius over the limb's there.
+		 */
+		readonly arms: { readonly count: number; readonly angle: number; readonly radius: number };
+	};
+	/**
+	 * The limbs that carry on where the trunk divides, spread evenly round it: how many, the degrees
+	 * above level they leave and end at, and each one's radius over the trunk's where it divides.
+	 * The way each runs through its middle is solved so that its foliage patch's top stands at the
+	 * plant's height. Absent on a plant whose trunk runs to its tip.
+	 */
+	readonly top?: {
+		readonly limbs: number;
+		readonly leave: number;
+		readonly end: number;
+		readonly radius: number;
+	};
+	/** The foliage patch at a limb's end, which the sockets of its foliage fill. */
+	readonly patch: {
+		/** A level plate on top of the limb's end, a dome round it, or a tile of a closed shell. */
+		readonly kind: 'pad' | 'dome' | 'shell';
+		/**
+		 * One patch a limb, which the limb's arms spread under, or one patch at the limb's end and one
+		 * at each arm's end, each apart from the next.
+		 */
+		readonly each: 'limb' | 'end';
+		/**
+		 * The patch's width over the plant's height, for the shortest limb and for the longest. A
+		 * patch takes at most seven tenths of its limb's reach.
+		 */
+		readonly width: readonly [short: number, long: number];
+		/** The patch's depth over its width. */
+		readonly depth: number;
+		/**
+		 * The sockets that fill a patch: the piece each carries, by its name among the record's
+		 * pieces, the metres between one socket and the next, the degrees a side twig leaves at from
+		 * the wood under the patch, and the degrees it rises above level. Absent, a patch carries no
+		 * socket.
+		 */
+		readonly sockets?: {
+			readonly piece: string;
+			readonly pitch: number;
+			readonly twig: number;
+			readonly lift: number;
+		};
+	};
 }
 
 /**
