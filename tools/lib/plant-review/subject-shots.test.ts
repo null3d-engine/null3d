@@ -20,6 +20,7 @@ import {
 	insideShot,
 	junctionShot,
 	lowShot,
+	placedPieceShot,
 	project,
 	type Solved,
 	type SubjectShot,
@@ -858,6 +859,7 @@ function shareOfWidth(shot: SubjectShot, lens: typeof WIDE, at: V3, metres: numb
 
 describe('the view of one branch piece', () => {
 	const piece = {
+		class: 'bough',
 		socket: [2, 6, 1] as V3,
 		direction: normalize([1, -0.6, 0.2]),
 		length: 1.1,
@@ -887,6 +889,69 @@ describe('the view of one branch piece', () => {
 		const wide = shotOf(branchPieceShot({ ...piece, spread: 2 }, TALL));
 		expect(wide.facts.frame as number).toBeCloseTo(4 / (0.85 * TALL.aspect), 9);
 		expect(isAbsent(branchPieceShot({ ...piece, length: 0 }, TALL))).toBe(true);
+	});
+
+	test('frames the outermost placed piece of a class, and draws only the slab that holds it', () => {
+		const inner = { ...piece, socket: [0.5, 9, 0] as V3, direction: [0, 1, 0] as V3 };
+		const stalk = { ...piece, class: 'stalk-0', socket: [7, 0.2, 0] as V3 };
+		// Placed pieces come outermost first, so the view frames the first bough, not the inner one.
+		const plant = tree({ pieces: [stalk, piece, inner] });
+		const shot = shotOf(placedPieceShot(plant, 'bough', TALL));
+		expect(shot.facts.class).toBe('bough');
+		expect(shot.facts.socket).toEqual(piece.socket);
+		expect(checkShot(shot, TALL).present).toBe(true);
+		const middle: V3 = [
+			piece.socket[0] + (piece.direction[0] as number) * 0.55,
+			piece.socket[1] + (piece.direction[1] as number) * 0.55,
+			piece.socket[2] + (piece.direction[2] as number) * 0.55,
+		];
+		const depth = project(shot.camera, TALL, middle).depth;
+		expect(shot.near as number).toBeLessThan(depth);
+		expect(shot.far as number).toBeGreaterThan(depth);
+		expect((shot.far as number) - (shot.near as number)).toBeCloseTo(2 * piece.spread, 6);
+		// A class names its pieces by their leading words.
+		expect(shotOf(placedPieceShot(plant, 'stalk', TALL)).facts.class).toBe('stalk-0');
+	});
+
+	test("looks along an arching piece's side when asked, so its arch shows", () => {
+		const stalk = {
+			class: 'stalk-0',
+			socket: [0, 0.2, 0] as V3,
+			direction: normalize([0, 1, 1]),
+			length: 0.8,
+			spread: 0.15,
+			face: normalize([0, 1, -1]),
+			side: [1, 0, 0] as V3,
+		};
+		const shot = shotOf(placedPieceShot(tree({ pieces: [stalk] }), 'stalk', TALL, { edge: true }));
+		const { forward } = cameraAxes(shot.camera);
+		expect(forward[0]).toBeCloseTo(-1, 6);
+		expect(checkShot(shot, TALL).present).toBe(true);
+		// The slab is the stalk's own depth along the line of sight, so the plant beside it is cut.
+		const thin = shotOf(
+			placedPieceShot(
+				tree({ pieces: [{ ...stalk, length: 0.4, depth: { face: 0.12, side: 0.03 } }] }),
+				'stalk',
+				TALL,
+				{ edge: true },
+			),
+		);
+		expect((thin.far as number) - (thin.near as number)).toBeCloseTo(0.06, 6);
+		// Square to its face, the camera looks down onto the arch instead.
+		const faced = shotOf(placedPieceShot(tree({ pieces: [stalk] }), 'stalk', TALL));
+		expect(cameraAxes(faced.camera).forward[0]).toBeCloseTo(0, 6);
+	});
+
+	test('fails the plant that places pieces but none of the class its photograph shows', () => {
+		const plant = tree({ pieces: [piece] });
+		const missing = placedPieceShot(plant, 'cone', TALL);
+		expect(isAbsent(missing) && missing.lacks).toBe(true);
+		expect(isAbsent(missing) && missing.absent).toBe(
+			'the plant places no piece of the class cone; its pieces are bough',
+		);
+		// A plant that places no pieces at all is a fault of the view's mapping, not of the plant.
+		const none = placedPieceShot(tree({ pieces: absent('its rows are shoots') }), 'bough', TALL);
+		expect(isAbsent(none) && none.lacks).toBeFalsy();
 	});
 });
 

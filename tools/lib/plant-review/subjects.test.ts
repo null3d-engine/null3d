@@ -1,6 +1,7 @@
 // The subjects a macro skeleton gives the close cameras: what the adapter fills, and what it
 // reports as absent with its reason.
 import { describe, expect, test } from 'bun:test';
+import type { ShootPrototype, ShootRows } from '../../../packages/vegetation/src/asset.ts';
 import {
 	AXIS_LIMB,
 	AXIS_STEM,
@@ -23,6 +24,9 @@ import {
 	isAbsent,
 	type Lobe,
 	lacking,
+	type PlantSubjects,
+	piecesOfClass,
+	piecesOfRows,
 	sampleAlong,
 	sampleAtHeight,
 	subjectsOfSkeleton,
@@ -275,5 +279,113 @@ describe('a sample of an axis', () => {
 		expect(far.at).toEqual([3, 8, 0]);
 		expect(far.direction[0]).toBeCloseTo(0.6, 9);
 		expect(far.direction[1]).toBeCloseTo(0.8, 9);
+	});
+});
+
+/** A kit prototype whose mesh at every tier is the given vertices. */
+function prototype(
+	index: number,
+	kind: ShootPrototype['class'],
+	vertices: readonly number[],
+	piece?: string,
+): ShootPrototype {
+	const tier = { positions: new Float32Array(vertices) };
+	return {
+		index,
+		class: kind,
+		tiers: [tier, tier, tier, tier],
+		...(piece !== undefined && { piece: { name: piece, variant: 0, part: index, parts: 2 } }),
+	} as unknown as ShootPrototype;
+}
+
+/** A plant's rows: each a prototype, a place, a turn as a quaternion and a scale. */
+function rowsOf(
+	rows: readonly {
+		readonly prototype: number;
+		readonly at: readonly number[];
+		readonly turn: readonly number[];
+		readonly scale: number;
+	}[],
+): ShootRows {
+	return {
+		count: rows.length,
+		prototype: new Uint8Array(rows.map((row) => row.prototype)),
+		position: new Float32Array(rows.flatMap((row) => [...row.at])),
+		rotation: new Float32Array(rows.flatMap((row) => [...row.turn])),
+		scale: new Float32Array(rows.map((row) => row.scale)),
+	} as unknown as ShootRows;
+}
+
+describe('the placed pieces of a plant', () => {
+	// A bough of two parts, a tuft's flowering stalk that arches out along its +Z, and a shoot that
+	// is no piece.
+	const kit = {
+		detail: 'high' as const,
+		prototypes: [
+			prototype(0, 'piece', [0, 0, 0, 0, 0.5, 0, 0.1, 0.4, 0], 'bough'),
+			prototype(1, 'piece', [0, 0, 0, 0, 0.55, 0, -0.2, 0.3, 0], 'bough'),
+			prototype(2, 'piece-stalk-0', [0, 0, 0, 0, 0.5, 0.1, 0, 0.6, 0.5]),
+			prototype(3, 'twig' as ShootPrototype['class'], [0, 0, 0, 0, 0.3, 0]),
+		],
+	};
+	const level = [0, 0, 0, 1];
+	// A quarter turn about -Z: the piece's own +Y runs along +X.
+	const outward = [0, 0, -Math.SQRT1_2, Math.SQRT1_2];
+	const rows = rowsOf([
+		{ prototype: 0, at: [1, 10, 0], turn: level, scale: 2 },
+		{ prototype: 1, at: [1, 10, 0], turn: level, scale: 2 },
+		{ prototype: 3, at: [0, 6, 0], turn: level, scale: 1 },
+		{ prototype: 2, at: [0, 0.2, 0], turn: level, scale: 1 },
+		{ prototype: 0, at: [8, 9, 0], turn: outward, scale: 1 },
+		{ prototype: 1, at: [8, 9, 0], turn: outward, scale: 1 },
+	]);
+	const pieces = piecesOfRows(rows, kit, [0, 0, 0]);
+
+	test("reads one piece a socket, its parts together, the outermost first, by its grower's name", () => {
+		if (isAbsent(pieces)) throw new Error(pieces.absent);
+		expect(pieces.map((piece) => piece.class)).toEqual(['bough', 'bough', 'stalk-0']);
+		const [outer, inner, stalk] = pieces as readonly [
+			(typeof pieces)[0],
+			(typeof pieces)[0],
+			(typeof pieces)[0],
+		];
+		expect(outer.socket[0]).toBeCloseTo(8, 6);
+		expect(outer.direction[0]).toBeCloseTo(1, 6);
+		expect(outer.direction[1]).toBeCloseTo(0, 6);
+		expect(outer.face?.[2]).toBeCloseTo(1, 6);
+		expect(outer.side?.[1]).toBeCloseTo(-1, 6);
+		// The piece runs as far as its farthest part, and spreads as far as either part does.
+		expect(outer.length).toBeCloseTo(0.55, 6);
+		expect(outer.spread).toBeCloseTo(0.2, 6);
+		expect(inner.length).toBeCloseTo(1.1, 6);
+		expect(inner.spread).toBeCloseTo(0.4, 6);
+		// An arching piece runs to its tip, not along its own +Y.
+		expect(stalk.length).toBeCloseTo(Math.hypot(0.6, 0.5), 6);
+		expect(stalk.direction[1]).toBeCloseTo(0.6 / Math.hypot(0.6, 0.5), 6);
+		expect(stalk.direction[2]).toBeCloseTo(0.5 / Math.hypot(0.6, 0.5), 6);
+		expect(stalk.side?.[0]).toBeCloseTo(1, 6);
+		// How deep each piece stands off its own plane, face on and side on.
+		expect(outer.depth?.face).toBeCloseTo(0, 6);
+		expect(outer.depth?.side).toBeCloseTo(0.2, 6);
+		expect(stalk.depth?.face).toBeCloseTo(0.5, 6);
+		expect(stalk.depth?.side).toBeCloseTo(0, 6);
+	});
+
+	test('finds the pieces of a class by its name or its leading words', () => {
+		const subjects: PlantSubjects = { ...subjectsOfSkeleton(oak()), pieces };
+		const boughs = piecesOfClass(subjects, 'bough');
+		expect(isAbsent(boughs) ? 0 : boughs.length).toBe(2);
+		const stalks = piecesOfClass(subjects, 'stalk');
+		expect(isAbsent(stalks) ? '' : stalks[0]?.class).toBe('stalk-0');
+		expect(piecesOfClass(subjects, 'cone')).toEqual(
+			lacking('the plant places no piece of the class cone; its pieces are bough, stalk-0'),
+		);
+	});
+
+	test('reports a plant whose rows are shoots as placing no piece', () => {
+		const shoots = rowsOf([{ prototype: 3, at: [0, 6, 0], turn: level, scale: 1 }]);
+		expect(piecesOfRows(shoots, kit, [0, 0, 0])).toEqual(
+			absent('the plant places no branch piece at a socket: its rows are shoots'),
+		);
 	});
 });
