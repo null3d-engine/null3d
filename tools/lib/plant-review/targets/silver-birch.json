@@ -902,12 +902,13 @@
 					"foliageShare": null,
 					"woodShare": null,
 					"branch": null,
-					"droop": -88.2,
+					"droop": null,
 					"clipped": ["bottom"],
 					"missing": {
 						"foliageShare": "the leaves or flowers in the picture are not green, so colour cannot part them from the wood",
 						"woodShare": "the leaves or flowers in the picture are not green, so colour cannot part them from the wood",
-						"branch": "the leaves or flowers in the picture are not green, so colour cannot part them from the wood"
+						"branch": "the leaves or flowers in the picture are not green, so colour cannot part them from the wood",
+						"droop": "the subject rises from the frame's lower edge, as a standing plant or a stood cutting does, so its angle is not a branch's droop"
 					}
 				},
 				"missing": {}
@@ -1338,6 +1339,10 @@
 		{
 			"path": "pieces.stills[20-autumn-yellow.png].figures.branch",
 			"reason": "the leaves or flowers in the picture are not green, so colour cannot part them from the wood"
+		},
+		{
+			"path": "pieces.stills[20-autumn-yellow.png].figures.droop",
+			"reason": "the subject rises from the frame's lower edge, as a standing plant or a stood cutting does, so its angle is not a branch's droop"
 		},
 		{
 			"path": "pieces.stills[21-branch-studio.png].figures.droop",

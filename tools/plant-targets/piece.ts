@@ -145,6 +145,9 @@ export function measurePiece(
 			clipped.length === 0
 				? 'the piece touches no edge of the frame, so the end that joins the plant is not known'
 				: `the piece runs off ${clipped.length} edges of the frame, so the end that joins the plant is not known`;
+	else if (clipped[0] === 'bottom')
+		missing.droop =
+			"the subject rises from the frame's lower edge, as a standing plant or a stood cutting does, so its angle is not a branch's droop";
 	else {
 		// The long axis of the piece's pixels, pointed away from the edge it enters by.
 		const meanX = sumX / covered;
@@ -164,7 +167,7 @@ export function measurePiece(
 		let ax = Math.cos(turn);
 		let ay = Math.sin(turn);
 		const edge = clipped[0];
-		const away = edge === 'left' ? ax : edge === 'right' ? -ax : edge === 'top' ? ay : -ay;
+		const away = edge === 'left' ? ax : edge === 'right' ? -ax : ay;
 		if (away < 0) {
 			ax = -ax;
 			ay = -ay;

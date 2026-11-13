@@ -156,11 +156,12 @@ describe('a picture of a branch piece', () => {
 		expect(Math.abs((result.figures.droop as number) - 60)).toBeLessThan(2);
 		expect(result.figures.woodShare).toBe(1);
 		expect(result.figures.branch?.tips).toBe(1);
-		// A branch that rises from the bottom edge reads a negative droop.
+		// A subject that rises from the bottom edge may be a standing plant, so it has no droop.
 		const rising = measurePiece(picture([[120, 399, 120 + run, 99]], []), true);
 		if ('problem' in rising) throw new Error(rising.problem);
 		expect(rising.figures.clipped).toEqual(['bottom']);
-		expect(Math.abs((rising.figures.droop as number) + 60)).toBeLessThan(2);
+		expect(rising.figures.droop).toBeNull();
+		expect(rising.figures.missing.droop).toContain("rises from the frame's lower edge");
 	});
 
 	test('gives no wood figures where the foliage is not green', () => {
