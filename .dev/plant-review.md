@@ -67,6 +67,10 @@ its level must hold, with the blockiness that budget buys accepted at the distan
 coarse setting that thins the plant, or a density setting that changes how smooth it looks, has mixed
 the two dials and is wrong.
 
+Sparseness removes parts from one grown plant: a sparser plant is a subset of the denser one, with
+whole shoots and whole branches taken out evenly, and no leaf scaled
+([D-355](decisions/D-355-sparseness-by-removal.md)).
+
 Sparseness is where the connectedness rule shows first, because thinning is when parents are lost. A
 sparse picture that scatters leaf clumps through air is a failed picture even where its density figure
 sits inside its band.
@@ -413,10 +417,21 @@ The tool reads no figure from a void picture and writes the reason beside it. A 
 fault to fix in the tool's camera or in the file's mapping to a view. It never passes a row and
 never fails one. A row whose pictures are all void is void, and a void row is not a pass.
 
-**A part the plant lacks is a fail, not a void.** A void is for a camera or a framing failure on a
-plant that has the part. Where the species' reference shows a part and the grown plant has none,
-the plant is wrong: the tool fails the rows that the picture carries and names the missing part. A
-plant with no trunk fork under its crown fails the fork picture's rows. It does not void them.
+**A part the plant lacks or hides is a fail, not a void.** A void is for a camera or a framing
+failure on a plant that has the part. Where the species' reference shows a part and the grown plant
+has none, the plant is wrong: the tool fails the rows that the picture carries and names the missing
+part. A plant with no trunk fork under its crown fails the fork picture's rows. It does not void them.
+The same holds where the camera took its stand and holds the part's place, and the picture does not
+show the part there: leaves hang across the limb's bark, a hub of limbs stands in front of the join,
+or a crown shows no sky. The tool tells the two apart on the picture itself:
+
+- **Void**: the view cannot name its subject, the camera does not hold the subject's points, the
+  solve said that it could take no clear stand, or the frame crops the plant or holds none of it.
+- **Fail**: the solve held, and an area of the picture does not show what its contract names. The
+  tool writes the fail with each area's figure.
+
+An area can also be reported only. The share of wood above the fork in the view up the trunk is one:
+it is a figure for the eye beside the photograph, and rows 1 and 2 judge the form it measures.
 
 **A picture with no subject check passes no row alone.** A solved view is checked by its contract,
 and a whole view by the crop and size checks. A view with neither may show another subject than its

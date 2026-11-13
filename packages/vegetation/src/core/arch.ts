@@ -9,11 +9,18 @@
 // most two neighbouring segments may turn between them, and a path is never cut coarser than that,
 // so fewer triangles shorten a straight run and never put a corner in an arch.
 //
+// A part that turns one way and then the other, as a blade that arches over and then lies on the
+// soil, is a chain of arches laid end to end. Each link leaves in the direction the one before it
+// ends in, so the chain carries its own tangent, and the bound holds where two links meet as well.
+// A link may roll its plane about the curve's line, so a limb can elbow to the side as well as up
+// and down; such a chain is cut into a path in space. The bound holds angles, not how tight a bend
+// is: a part's least bend radius is stated beside it, to hold against the part's own thickness.
+//
 // A part measured on a photograph is given by its figures instead: its highest point, how far its
 // tip ends below that, and how far out the tip reaches. `archFromFigures` finds the turn that
 // stands nearest to them and says how far it misses.
 
-import { cos, exp, log, radians, sin } from './math';
+import { cos, exp, length3, log, radians, sin } from './math';
 
 /**
  * A bent part's centre line, in the vertical plane it grows in.
@@ -246,6 +253,309 @@ export function archPath(arch: Arch, level: 0 | 1 | 2, least = 1): ArchPath {
 		if (tightest(path) >= bound || path.segments >= MOST_SEGMENTS) return path;
 		bends++;
 	}
+}
+
+/**
+ * One link of a chain of arches: an arch without its leaving angle, which it takes from the
+ * direction the link before it ends in.
+ *
+ * @category api/vegetation
+ */
+export interface ArchLink extends Omit<Arch, 'leave'> {
+	/**
+	 * Degrees the plane the link turns in rolls about the curve's line from the plane the link
+	 * before it turned in, so a limb can elbow to the side as well as up and down. Left out, 0: a
+	 * chain whose links roll none lies in one upright plane. A rolled chain is cut by `chainPath3`.
+	 */
+	readonly roll?: number;
+}
+
+/**
+ * A bent part made of arches laid end to end in one plane, each leaving in the direction the one
+ * before it ends in, so the part can turn one way and then the other with no corner where two
+ * meet: a blade that arches over and comes to rest on the soil, or a limb of elbows.
+ *
+ * @category api/vegetation
+ */
+export interface ArchChain {
+	/** Degrees above the horizontal that the first link leaves at. */
+	readonly leave: number;
+	/** The links, from the base. A link of no length is passed over. */
+	readonly links: readonly ArchLink[];
+}
+
+/**
+ * A chain's length: its links' lengths together.
+ *
+ * @param chain The chain.
+ * @returns Metres along its curve.
+ * @category api/vegetation
+ */
+export function chainLength(chain: ArchChain): number {
+	let sum = 0;
+	for (const link of chain.links) sum += Math.max(0, link.length);
+	return sum;
+}
+
+/**
+ * A chain's links as arches, each leaving at the angle the one before it ends at.
+ *
+ * @param chain The chain.
+ * @returns The arches, links of no length left out.
+ * @category api/vegetation
+ */
+export function chainArches(chain: ArchChain): Arch[] {
+	const arches: Arch[] = [];
+	let leave = chain.leave;
+	for (const link of chain.links) {
+		if (!(link.length > 0)) continue;
+		arches.push({ ...link, leave });
+		leave -= link.turn;
+	}
+	return arches;
+}
+
+/** The cosine of the turn between the segments either side of a path's point. */
+function turnAt(path: ArchPath, i: number): number {
+	const { out, up } = path;
+	const px = (out[i] as number) - (out[i - 1] as number);
+	const py = (up[i] as number) - (up[i - 1] as number);
+	const qx = (out[i + 1] as number) - (out[i] as number);
+	const qy = (up[i + 1] as number) - (up[i] as number);
+	const pl = Math.sqrt(px * px + py * py);
+	const ql = Math.sqrt(qx * qx + qy * qy);
+	return pl > 0 && ql > 0 ? (px * qx + py * qy) / (pl * ql) : 1;
+}
+
+/** The paths of a chain's links laid end to end as one path. */
+function joined(parts: readonly ArchPath[], arches: readonly Arch[], total: number): ArchPath {
+	let segments = 0;
+	for (const part of parts) segments += part.segments;
+	const path = room(segments);
+	let at = 0;
+	let x = 0;
+	let y = 0;
+	let before = 0;
+	path.elevation[0] = parts[0]?.elevation[0] as number;
+	parts.forEach((part, k) => {
+		const length = (arches[k] as Arch).length;
+		for (let i = 1; i <= part.segments; i++) {
+			path.out[at + i] = x + (part.out[i] as number);
+			path.up[at + i] = y + (part.up[i] as number);
+			path.elevation[at + i] = part.elevation[i] as number;
+			path.along[at + i] = (before + (part.along[i] as number) * length) / total;
+		}
+		at += part.segments;
+		x = path.out[at] as number;
+		y = path.up[at] as number;
+		before += length;
+	});
+	path.along[segments] = 1;
+	return path;
+}
+
+/**
+ * The tightest radius an arch bends on, in metres: at the far end of its turn's stretch, where a
+ * gathered turn bends hardest. A bend is a corner to the eye when this is small against the part's
+ * own thickness, however finely the path is cut. Infinite for a straight part.
+ *
+ * @param arch The arch.
+ * @returns The least radius.
+ * @category api/vegetation
+ */
+export function archLeastRadius(arch: Arch): number {
+	const { from, to, power } = stretchOf(arch);
+	const turn = Math.abs(radians(arch.turn));
+	if (turn === 0) return Number.POSITIVE_INFINITY;
+	return (arch.length * (to - from)) / (power * turn);
+}
+
+/**
+ * The tightest radius any link of a chain bends on, in metres.
+ *
+ * @param chain The chain.
+ * @returns The least radius; infinite for a straight chain.
+ * @category api/vegetation
+ */
+export function chainLeastRadius(chain: ArchChain): number {
+	let least = Number.POSITIVE_INFINITY;
+	for (const arch of chainArches(chain)) least = Math.min(least, archLeastRadius(arch));
+	return least;
+}
+
+/**
+ * Cuts a chain's links for a level and lays them as one path, cutting both sides of a join finer
+ * until the turn between its neighbouring segments holds the level's bound.
+ */
+function cutChain<P extends { readonly segments: number }>(
+	arches: readonly Arch[],
+	total: number,
+	level: 0 | 1 | 2,
+	least: number,
+	lay: (parts: readonly ArchPath[]) => P,
+	turnAt: (path: P, i: number) => number,
+): P {
+	const bound = cos(radians(MOST_TURN[level])) - 1e-12;
+	const wanted = arches.map((arch) => Math.max(1, Math.floor((least * arch.length) / total)));
+	for (;;) {
+		const parts = arches.map((arch, k) => archPath(arch, level, wanted[k]));
+		const path = lay(parts);
+		if (path.segments >= MOST_SEGMENTS) return path;
+		let over = false;
+		let at = 0;
+		for (let k = 0; k < parts.length - 1; k++) {
+			at += (parts[k] as ArchPath).segments;
+			if (turnAt(path, at) >= bound) continue;
+			wanted[k] = 2 * (parts[k] as ArchPath).segments;
+			wanted[k + 1] = 2 * (parts[k + 1] as ArchPath).segments;
+			over = true;
+		}
+		if (!over) return path;
+	}
+}
+
+/**
+ * Cuts a chain into one path for a level of detail. Each link is cut as `archPath` cuts it, and
+ * where two links meet the turn between their neighbouring segments is held to the level's
+ * `MOST_TURN` as well: a join that turns more is cut finer on both sides until it does not.
+ * `least` is shared among the links by their lengths.
+ *
+ * @param chain The chain.
+ * @param level The level of detail, 0 the nearest.
+ * @param least The least segments to cut in all, for a part that needs more than its turns do.
+ * @returns The path, its shares along taken over the whole chain.
+ * @category api/vegetation
+ */
+export function chainPath(chain: ArchChain, level: 0 | 1 | 2, least = 1): ArchPath {
+	if (chain.links.some((link) => (link.roll ?? 0) !== 0))
+		throw new Error('@null3d/vegetation: a chain that rolls out of its plane is cut by chainPath3');
+	const arches = chainArches(chain);
+	const total = chainLength(chain);
+	if (arches.length === 0) throw new Error('@null3d/vegetation: a chain of arches has no length');
+	if (arches.length === 1) return archPath(arches[0] as Arch, level, least);
+	return cutChain(arches, total, level, least, (parts) => joined(parts, arches, total), turnAt);
+}
+
+/**
+ * A chain's path in space: the points from its base to its tip. +X is the way the chain first
+ * heads, level; +Y is up; +Z is to the side.
+ *
+ * @category api/vegetation
+ */
+export interface ChainPath3 {
+	/** Segments in the path; every array holds one more point, or three times one more, than this. */
+	readonly segments: number;
+	/** Each point's x, y and z in metres from the base, three numbers a point. */
+	readonly points: Float64Array;
+	/** The curve's own direction at each point, a unit vector, three numbers a point. */
+	readonly tangents: Float64Array;
+	/** The share of the length at each point, from 0 to 1. */
+	readonly along: Float64Array;
+}
+
+/** A unit vector's turn about a unit axis by an angle in radians (Rodrigues' formula). */
+function rolled(v: readonly number[], axis: readonly number[], angle: number): number[] {
+	const c = cos(angle);
+	const s = sin(angle);
+	const dot =
+		(v[0] as number) * (axis[0] as number) +
+		(v[1] as number) * (axis[1] as number) +
+		(v[2] as number) * (axis[2] as number);
+	const cross = [
+		(axis[1] as number) * (v[2] as number) - (axis[2] as number) * (v[1] as number),
+		(axis[2] as number) * (v[0] as number) - (axis[0] as number) * (v[2] as number),
+		(axis[0] as number) * (v[1] as number) - (axis[1] as number) * (v[0] as number),
+	];
+	return [0, 1, 2].map(
+		(k) => (v[k] as number) * c + (cross[k] as number) * s + (axis[k] as number) * dot * (1 - c),
+	);
+}
+
+/** The cosine of the turn between the segments either side of a point of a path in space. */
+function turnAt3(path: ChainPath3, i: number): number {
+	const p = path.points;
+	const a = [0, 1, 2].map((k) => (p[i * 3 + k] as number) - (p[(i - 1) * 3 + k] as number));
+	const b = [0, 1, 2].map((k) => (p[(i + 1) * 3 + k] as number) - (p[i * 3 + k] as number));
+	const la = length3(a[0] as number, a[1] as number, a[2] as number);
+	const lb = length3(b[0] as number, b[1] as number, b[2] as number);
+	if (la === 0 || lb === 0) return 1;
+	return (
+		((a[0] as number) * (b[0] as number) +
+			(a[1] as number) * (b[1] as number) +
+			(a[2] as number) * (b[2] as number)) /
+		(la * lb)
+	);
+}
+
+/**
+ * Cuts a chain whose links may roll out of one another's planes into one path in space, for a
+ * level of detail. Each link turns in its own plane, which holds the curve's line where the link
+ * begins, so the chain carries its tangent across every join in space as `chainPath` does in its
+ * plane, and the turn at a join holds the level's bound as a link's own turns do. A chain whose
+ * links roll none gives `chainPath`'s path in the upright plane through +X.
+ *
+ * @param chain The chain.
+ * @param level The level of detail, 0 the nearest.
+ * @param least The least segments to cut in all.
+ * @returns The path.
+ * @category api/vegetation
+ */
+export function chainPath3(chain: ArchChain, level: 0 | 1 | 2, least = 1): ChainPath3 {
+	const links = chain.links.filter((link) => link.length > 0);
+	if (links.length === 0) throw new Error('@null3d/vegetation: a chain of arches has no length');
+	const total = chainLength(chain);
+	// Each link is cut as an arch leaving along its own line, and laid into its own plane.
+	const arches: Arch[] = links.map((link) => ({ ...link, leave: 0 }));
+	const lay = (parts: readonly ArchPath[]): ChainPath3 => {
+		let segments = 0;
+		for (const part of parts) segments += part.segments;
+		const points = new Float64Array((segments + 1) * 3);
+		const tangents = new Float64Array((segments + 1) * 3);
+		const along = new Float64Array(segments + 1);
+		const leave = radians(chain.leave);
+		// The line the chain leaves along, and the way it turns toward, the ground in its plane.
+		let line = [cos(leave), sin(leave), 0];
+		let toward = [sin(leave), -cos(leave), 0];
+		let origin = [0, 0, 0];
+		let at = 0;
+		let before = 0;
+		tangents.set(line, 0);
+		parts.forEach((part, k) => {
+			const link = links[k] as ArchLink;
+			toward = rolled(toward, line, radians(link.roll ?? 0));
+			const up = toward.map((value) => -value);
+			for (let i = 1; i <= part.segments; i++) {
+				const e = part.elevation[i] as number;
+				for (let c = 0; c < 3; c++) {
+					points[(at + i) * 3 + c] =
+						(origin[c] as number) +
+						(part.out[i] as number) * (line[c] as number) +
+						(part.up[i] as number) * (up[c] as number);
+					tangents[(at + i) * 3 + c] = cos(e) * (line[c] as number) + sin(e) * (up[c] as number);
+				}
+				along[at + i] = (before + (part.along[i] as number) * link.length) / total;
+			}
+			const e = part.elevation[part.segments] as number;
+			const nextLine = [0, 1, 2].map(
+				(c) => cos(e) * (line[c] as number) + sin(e) * (up[c] as number),
+			);
+			const nextUp = [0, 1, 2].map(
+				(c) => -sin(e) * (line[c] as number) + cos(e) * (up[c] as number),
+			);
+			line = nextLine;
+			toward = nextUp.map((value) => -value);
+			at += part.segments;
+			origin = [
+				points[at * 3] as number,
+				points[at * 3 + 1] as number,
+				points[at * 3 + 2] as number,
+			];
+			before += link.length;
+		});
+		along[segments] = 1;
+		return { segments, points, tangents, along };
+	};
+	return cutChain(arches, total, level, least, lay, turnAt3);
 }
 
 /**

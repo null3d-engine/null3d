@@ -85,32 +85,30 @@ export interface Species {
 	/** Where the scatter places this species: its layer, spacing and tolerances. */
 	readonly ecology?: SpeciesEcology;
 	/**
-	 * The least of each grow share at which this species still reads as itself, for a sparse form:
-	 * a phone or a tablet may grow it lighter than a desktop, but not past these floors. A species
-	 * with no floors has no sparse form and grows the record's own at every device.
+	 * What the sparsest form of this species keeps: the least share of its foliage, and which limbs
+	 * count as great limbs and so stay whole. A species with no floors takes the add-on's own.
 	 */
 	readonly sparse?: SparseFloors;
 }
 
 /**
- * The floors of a species' sparse form: the least limb and leaf share it keeps, and the most
- * coarsening its wood and shoots take, before the plant stops reading as its species.
+ * The floors of a species' sparseness: what its sparsest form keeps, so the plant still reads as
+ * its species.
  *
  * @category api/vegetation
  */
 export interface SparseFloors {
-	/** The least limb share, from 0.05 to 1: how much of the record's wood the sparse form keeps. */
-	readonly limbs: number;
-	/** The least leaf-area share, from 0.05 to 1: how much of the record's leaf it keeps. */
-	readonly leaves: number;
-	/** The most coarsening, from 0 to 1: how far the sparse form smooths the wood's mesh. */
-	readonly coarseness: number;
 	/**
-	 * The most section sparsity, from 0 to 1: how far the sparse form may thin the wood's own
-	 * sections, from the level's rings and sides to a few flat-sided runs with square ends. Absent,
-	 * the sparse form keeps the sections its coarseness gives.
+	 * The share of the plant's foliage the sparsest form keeps, from 0 to 1: its shoots, or its
+	 * leaves where the plant carries no shoots. The shoots are kept whole, at the size they grew.
 	 */
-	readonly sections?: number;
+	readonly foliage: number;
+	/**
+	 * The least radius that makes a limb a great limb, as a share of the thickest limb that leaves
+	 * the same stem, above 0 and up to 1. A great limb stays whole at every sparseness. Half the
+	 * thickest limb's radius when not given.
+	 */
+	readonly limbs?: number;
 }
 
 /**
@@ -729,12 +727,17 @@ export interface Framed {
 	readonly model: 'frame';
 	/** The stems, the axes under them and the crown outline. */
 	readonly frame: FrameSpec;
-	/** What each socket holds, as the scaffold model states it. */
+	/** What each socket holds: shoot rows as the scaffold model states them, or one branch piece. */
 	readonly sockets: {
 		/** Shoot rows that one socket holds. */
 		readonly rows: Spread;
 		/** Degrees the rows of one socket fan from its line. */
 		readonly fan: number;
+		/**
+		 * The branch piece each socket carries, by its name among the record's pieces. Absent, a
+		 * socket holds shoot rows.
+		 */
+		readonly piece?: string;
 	};
 }
 
@@ -1128,25 +1131,35 @@ export interface FrondColony {
 	readonly model: 'frond-colony';
 	/** Fronds per colony. */
 	readonly fronds: Spread;
-	/** The buried rhizome: metres long, branches, and metres between fronds. */
-	readonly rhizome: {
-		readonly length: number;
-		readonly branches: Spread;
-		readonly spacing: Spread;
-		/**
-		 * Separate masses of fronds, where the photographs show ground between them: the number of
-		 * masses, the metres within which a mass's fronds scatter, and the metres from the colony's
-		 * middle to a mass's centre. Absent, the fronds stand evenly along the rhizome's lines and
-		 * their blades knit into one roof.
-		 */
-		readonly clump?: {
-			readonly count: number;
-			readonly radius: number;
-			readonly ring: number;
-		};
+	/**
+	 * The patch the fronds' feet stand in, spread evenly over an ellipse: its long and its short
+	 * width, as shares of the plant's height.
+	 */
+	readonly patch: { readonly long: number; readonly short: number };
+	/** The buried rhizome that joins the feet: metres under the soil, and its radius in metres. */
+	readonly rhizome: { readonly depth: number; readonly radius: number };
+	/**
+	 * A frond's size as a share of the tallest frond's: the range most fronds take, the range the
+	 * short fronds take, and the short fronds' share of the patch. The short fronds stand at the
+	 * patch's front edge, toward +Z.
+	 */
+	readonly heights: {
+		readonly tall: readonly [number, number];
+		readonly short: readonly [number, number];
+		readonly shortShare: number;
 	};
-	/** Stipe height and lean; the blade is held near horizontal on top. */
-	readonly stipe: { readonly length: Spread; readonly lean: Spread };
+	/**
+	 * The tallest frond's stalk, in metres; the degrees a stalk leans from plumb; and the radius
+	 * of the one curve in which its top turns over to hold the leaf, as a share of its length. A
+	 * frond's stalk is this length at the frond's own size.
+	 */
+	readonly stipe: { readonly length: Spread; readonly lean: Spread; readonly bend: number };
+	/**
+	 * Degrees above level that a stalk's end holds its leaf's midrib at, the least and the most.
+	 */
+	readonly tilt: readonly [number, number];
+	/** The fewest fronds a thinned patch keeps. */
+	readonly least: number;
 	/** One frond. */
 	readonly frond: FrondShape;
 	/** Young fronds still rolled. */
@@ -1307,6 +1320,11 @@ export interface TuftSpikes {
 	readonly thread: number;
 	/** The length of the spike that ends the stem, on the stem's own line. */
 	readonly tip: number;
+	/**
+	 * Where the hanging spikes leave the bowed stem: the degrees above level that the stem points
+	 * where the highest leaves and where the lowest leaves, one below another between them.
+	 */
+	readonly hang: readonly [number, number];
 }
 
 /**
@@ -1890,6 +1908,12 @@ export interface LeafShape {
 	readonly length: Spread;
 	/** The texture's measured contour, or a parametric outline where no texture leaf exists. */
 	readonly outline: 'texture' | ParametricOutline;
+	/**
+	 * The blade's width over its outline's, 1 where absent. Below 1 the mesh narrows across the
+	 * midrib and the texture narrows with it, for a species whose leaves are slimmer than its
+	 * texture leaf.
+	 */
+	readonly breadth?: number;
 	/** The leaf stalk. */
 	readonly petiole: {
 		/** Metres long. */
@@ -2598,13 +2622,6 @@ export interface LodSpec {
 	/** Macro orders that the first and second card levels keep as wood. */
 	readonly woodOrders: readonly [lod1: number, lod2: number];
 	/**
-	 * How much a shoot's card grows past the shoots it stands for, 1 by default. A card is a picture
-	 * of one shoot with transparent gaps between its leaves, and at a whole view neighbouring cards
-	 * do not meet, so the crown breaks into pieces. Growing them makes the gaps fall on a
-	 * neighbour's leaves instead of on sky.
-	 */
-	readonly cardGrow?: number;
-	/**
 	 * Texels a side of one cell of the card atlas, at each tier, where the default cell does not
 	 * suit the species: each entry is a power of two from 32 to 256, and 64 by default. A needle a millimetre and a half across is under one texel
 	 * of a 64 cell, so its card would draw only the bare twig; a cell of 128 holds it while the
@@ -2628,12 +2645,6 @@ export interface LodSpec {
 	 * wood it grows from. Absent, the line spans only the stretch behind the row, as it always has.
 	 */
 	readonly cardStalkToFoliage?: boolean;
-	/**
-	 * The width, in texels, of a card's guaranteed strand: the shoot's own axis drawn as one
-	 * connected line down the card, so a card whose leaves scatter into separate islands still joins
-	 * the shoot it pictures. 0 or absent, a card draws no strand.
-	 */
-	readonly cardStrand?: number;
 	/** The impostor's views across and texels per view. */
 	readonly impostor: { readonly views: number; readonly texels: number };
 	/** The level that casts shadows. */
@@ -2745,6 +2756,12 @@ export interface CutFromPlant {
 	readonly order: number;
 	/** Metres of wood from the cut to the farthest tip. */
 	readonly length: number;
+	/**
+	 * How the piece's photograph stands it: `as-grown` keeps the turn it grew with, as a saguaro's
+	 * arm stands on its elbow with its upright part plumb. Where it names none, the piece stands as
+	 * the cutting asks, upright on the line from its cut.
+	 */
+	readonly stands?: 'as-grown';
 	/**
 	 * The shoots this piece places over the crown's own, from 0.25 to 8: a density of its own, where
 	 * the piece covers more or less than the species' `cuttings.density`, which applies where it

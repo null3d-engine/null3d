@@ -16,9 +16,9 @@
 import type { InstanceBatch, Material, MeshGeometry, SketchContext, Texture } from '@null3d/engine';
 import type { ImpostorBatch } from '@null3d/impostors';
 import type { PlantAsset, PlantPart } from '../asset';
-import { DETAILS, type Season } from '../core/types';
-import { SHOOT_REACH, shootSwitchDistance, switchScale } from '../lod/drawn';
-import { REFERENCE_VIEW } from '../lod/levels';
+import { DETAILS, type Detail, type Season } from '../core/types';
+import { SHOOT_REACH, switchScale } from '../lod/drawn';
+import { firstCardStart, REFERENCE_VIEW } from '../lod/levels';
 import { EDGE_BAND, handOverToCards } from './hand-over';
 import {
 	type PlantMaterials,
@@ -51,6 +51,17 @@ function viewScale(view: PlaceOptions['view']): number {
 	const page = view.height / Math.tan((view.fov * Math.PI) / 360);
 	const reference = REFERENCE_VIEW.height / Math.tan((REFERENCE_VIEW.fov * Math.PI) / 360);
 	return page / reference;
+}
+
+/**
+ * Whether a variant draws its shoot rows near the camera. A triangle maximum may leave the rows to
+ * the nearest level's cards, and the variant then draws like one with no shoots.
+ *
+ * @param asset The grown variant.
+ * @returns Whether its rows draw.
+ */
+export function drawsShoots(asset: PlantAsset): boolean {
+	return asset.shoots.count > 0 && asset.shootDetail !== 'none';
 }
 
 /** The copies of one variant, by index into the copies. */
@@ -101,7 +112,7 @@ export function levelBands(
 	impostor: number,
 ): Band[] {
 	const starts = asset.levels.map((level, index) =>
-		index === 0 ? 0 : index === 1 && asset.shoots.count > 0 ? near : level.from * scale,
+		index === 0 ? 0 : index === 1 && drawsShoots(asset) ? near : level.from * scale,
 	);
 	return asset.levels.map((level, index) => {
 		let to = impostor;
@@ -155,7 +166,7 @@ export function drawnLevel(
 	const bias = switchScale(view.switchBias);
 	const scale = viewScale(view) * bias;
 	const impostor = far ? asset.impostor.from * scale : FAR;
-	const bands = levelBands(asset, shootSwitchDistance(kit, view) * bias, scale, impostor);
+	const bands = levelBands(asset, firstCardStart(kit, view) * bias, scale, impostor);
 	let level: 0 | 1 | 2 | 3 = 0;
 	bands.forEach((band, index) => {
 		if (band.parts.length > 0 && distance >= band.from) level = Math.min(index, 2) as 0 | 1 | 2;
@@ -191,7 +202,8 @@ export function placeStaticPlants(
 	// The page's switch bias moves every switch distance by one factor.
 	const bias = switchScale(options.view.switchBias);
 	const scale = viewScale(options.view) * bias;
-	const near = shootSwitchDistance(kit, options.view) * bias;
+	// The shoots hand over to the first card level by the rule that sets the asset's own start.
+	const near = firstCardStart(kit, options.view) * bias;
 	writePlantWind(kit, assets);
 	setPlacedUniforms([materials.cards], { nearDistance: near });
 	// The season the copies stand in, which a stem whose colour turns reads for its bark, and the
@@ -208,7 +220,6 @@ export function placeStaticPlants(
 	const cards: ImpostorBatch[] = [];
 	const meshes: MeshGeometry[] = [];
 	const widest = copies.scale.reduce((most, s) => Math.max(most, s), 0);
-	const bound = plantBoundingRadius(kit.box) * widest;
 	const castShadows = options.castShadows ?? true;
 	const slots = takeNearSlots(kit, copies);
 
@@ -216,6 +227,8 @@ export function placeStaticPlants(
 		const rows = copiesOf(copies, variant);
 		if (rows.length === 0) return;
 		const impostor = options.far ? asset.impostor.from * scale : FAR;
+		// Each variant's parts share one sphere of its own reach, so its levels switch together.
+		const bound = plantBoundingRadius(kit, asset) * widest;
 		const bands = levelBands(asset, near, scale, impostor);
 		const placed: InstanceBatch[] = [];
 		// The batches of the band that reaches the impostor's distance, with the distance they start at.
@@ -232,7 +245,7 @@ export function placeStaticPlants(
 				meshes.push(mesh);
 				// The first card level of a copy with real shoots draws from the copy out: its shader
 				// leaves the pixels inside the switch distance to the shoots.
-				const nearCards = part.name === 'cards' && band === bands[1] && asset.shoots.count > 0;
+				const nearCards = part.name === 'cards' && band === bands[1] && drawsShoots(asset);
 				const batch = ctx.scene.createInstances(mesh, rows.length, {
 					material,
 					castShadows,
@@ -341,7 +354,7 @@ function takeNearSlots(kit: SpeciesKit, copies: PlantCopies): Map<number, number
 }
 
 /**
- * The shoot rows of one variant's copies with slots: one batch per prototype at the kit's tier,
+ * The shoot rows of one variant's copies with slots: one batch per prototype at the rows' tier,
  * each row one shoot of one copy, placed in the world, drawing to the switch distance.
  */
 function shootBatches(
@@ -356,8 +369,9 @@ function shootBatches(
 ): InstanceBatch[] {
 	const shoots = asset.shoots;
 	const nearCopies = rows.filter((copy) => slots.has(copy));
-	if (shoots.count === 0 || nearCopies.length === 0) return [];
-	const tier = DETAILS.indexOf(kit.detail);
+	if (!drawsShoots(asset) || nearCopies.length === 0) return [];
+	// The kit's tier, or the tier below it that a triangle maximum gave the rows.
+	const tier = DETAILS.indexOf((asset.shootDetail as Detail | undefined) ?? kit.detail);
 	// Rows per prototype, so each batch is sized once.
 	const counts = new Array<number>(kit.prototypes.length).fill(0);
 	for (let r = 0; r < shoots.count; r++) {

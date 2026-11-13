@@ -89,7 +89,9 @@ if (isSpeciesId(id)) {
 
 `loadSpecies(id)` loads one species as a chunk of its own, so a page fetches only the species it places. Its textures load later, when the page prepares it. `checkSpecies(record)` names every problem with a record at once. `capsFor(record)` gives the limits that the record's budget must stay under. The limits depend on the growth model.
 
-The stages run in order. First, `prepareSpecies` builds the kit once for each species: its leaf meshes, shoot prototypes, card atlas and records. Each variant then grows its skeleton, shoot rows, crown light, wind records and three detail levels. Then `bakeFarPlant` bakes its far cards. The job workers run `growPlant` and `bakeFarPlant`, and the calling thread runs `growPlantNow` and `bakeFarNow`. Last, `placePlants` draws a species' copies with their levels and far cards. Without a near pool, it draws the first 16 copies of a species with real shoots near the camera. It composes them once at setup, which suits a hero tree or a small garden. Past the distance where a shoot spans the record's first switch pixels, each copy shows its shoot cards instead, pixel by pixel. A near pool from `createNearPool` will move the real shoots with the camera within the preset's limits.
+The stages run in order. First, `prepareSpecies` builds the kit once for each species: its leaf meshes, shoot prototypes, card atlas and records. Each variant then grows its skeleton, shoot rows, crown light, wind records and three detail levels. Then `bakeFarPlant` bakes its far cards. The job workers run `growPlant` and `bakeFarPlant`, and the calling thread runs `growPlantNow` and `bakeFarNow`. Last, `placePlants` draws a species' copies with their levels and far cards. Without a near pool, it draws the first 16 copies of a species with real shoots near the camera. It composes them once at setup, which suits a hero tree or a small garden. Past the distance where the longest shoot spans the record's first switch pixels, each copy shows its shoot cards instead, pixel by pixel. The asset's own first card level starts at the same distance. A copy's level is chosen by the distance to the nearest point of a sphere about its foot that holds all of its plant. So a camera inside or beside a crown draws the nearest level. A near pool from `createNearPool` will move the real shoots with the camera within the preset's limits.
+
+The three detail levels are one plant in size. The nearest level draws each shoot as its leaves. The first card level draws each shoot as its leaf cards, at the size of the shoot. The second card level keeps every second card, and each card at the rim of the plant. A card level draws less of the fine wood, so its cards grow to give the cover that the wood gave. A card grows only inside the outline of the leaves, and a card at the rim moves inward as it grows. So each card level stands as tall, as wide and as deep as the leaves that it pictures. A species record has no value that makes a card larger than its shoot.
 
 Every value that reaches geometry comes from an integer hash and the core's own trigonometry. So a variant has the same bytes in every browser. `plantAssetDigest(asset)` hashes those bytes to compare two growths.
 
@@ -127,7 +129,43 @@ console.log(crowd.coarseness, nearTriangles(kit, crowd));
 
 Give `triangles` in place of `coarseness` to set a target for one copy's nearest level: its wood, its shoots at the variant's tier and its extras. The variant grows at the coarseness that comes nearest, and the asset's `coarseness` says which one. The core finds it by counting the shoots and the wood at a few values of coarseness, before it builds any mesh. A target above the plant as grown gives the plant as grown, and a target below the coarsest wood mesh gives the coarsest. Give one of the two options, not both.
 
-Options given to `prepareSpecies` apply to every variant that grows from its kit, and a variant's own options replace them. A coarseness of 0 grows the same bytes as no coarseness. Stand-ins grow the same at every coarseness. On a grown oak at the high tier, coarseness 1 cuts the nearest level's wood from 761,551 triangles to 576,720, while its 3,771 shoot rows and its cards stay as grown. To grow a sparser plant, use `sparse`.
+Options given to `prepareSpecies` apply to every variant that grows from its kit, and a variant's own options replace them. A coarseness of 0 grows the same bytes as no coarseness. Stand-ins grow the same at every coarseness. On a grown oak at the high tier, coarseness 1 cuts the nearest level's wood from 761,551 triangles to 576,720, while its 3,771 shoot rows and its cards stay as grown.
+
+### Sparser plants
+
+The `sparse` option takes foliage out of a plant, and the branches that carried it. It runs from 0, the plant as grown, to 1, the sparsest. The default is 0, where the foliage is as dense as the species' reference shows.
+
+```ts
+const full = await growPlant(kit, { seed: 7, variant: 0 });
+const thin = await growPlant(kit, { seed: 7, variant: 0, sparse: 0.6 });
+console.log(full.shoots.count, thin.shoots.count);
+```
+
+- **The same plant.** The plant grows once, at its full density. A sparser plant is that plant with shoots and branches removed. Nothing moves, and no leaf is scaled. Every shoot and branch of a sparser plant is also in every denser one.
+- **One body.** A branch goes only when all its foliage has gone, so no branch ends bare and no piece hangs free. Each branch that stays keeps its whole length and its outermost shoot, so the crown keeps its outline and its height.
+- **Even.** Every limb, branch and twig keeps the plant's share of its own foliage. The crown thins evenly round the plant and through its height.
+- **The sparsest plant.** At 1, the plant keeps its trunk, its great limbs and the share of its foliage that its record's `sparse.foliage` names, 0.1 when the record names none. A great limb is a limb that leaves the trunk with at least half the radius of the thickest one, or the share that `sparse.limbs` names.
+- **Every level.** The card levels and the far cards draw the same sparse plant.
+
+A plant with no shoots, such as a hosta, loses whole leaves in the same way. A plant whose foliage stands at sockets, such as a sedge of pieces, loses whole sockets: each piece stays whole or goes whole, with the wood that carried it. A stand-in species and a cut piece grow as they are at every sparseness. A change of sparseness alone does not grow the plant again while the thread that grew it still keeps it. `sparse` changes what the plant holds, and `coarseness` changes how finely that is drawn: neither moves the other.
+
+### A triangle maximum
+
+The `maxTriangles` option sets the most triangles that one copy of a plant may draw at any of its levels. The nearest level counts its shoots at the tier they draw at. Without the option, each level draws what its best look needs: the wood at the variant's tier, every shoot at that tier, and the extras at their nearest form.
+
+```ts
+const far = await growPlant(kit, { seed: 7, variant: 0, maxTriangles: 10_000 });
+console.log(far.stats.parts[0], far.stats.allowed?.[0], far.shootDetail);
+```
+
+- **Shares.** The maximum is shared out across the trunk, the great limbs, the branches, the shoots and the extras. Each part first takes a floor: the trunk and each great limb as one straight run, and one leaf card. The rest is shared in proportion to what each part holds at the plant's best look. What a part cannot use goes round the other parts, the trunk and the leaves first.
+- **Wood.** Each part of the wood steps down by itself: longer edges, then thinner sections, down to one straight run of three sides for each branch. Below that, only the thickest limbs and branches draw.
+- **Shoots.** The shoots draw at the kit's tier, then at each tier below it. Below the lowest tier, each shoot draws as its leaf cards, and `shootDetail` is `none`. Below that, each run of neighboring shoots draws as one larger card set. Every card set touches the drawn wood or another joined card set, or takes a thin stalk to the wood.
+- **Extras.** The extras draw on every site, then on a share of the sites, then in the coarser forms of the far levels, then not at all.
+- **Ground plants.** A plant whose leaves are one mesh, such as a hosta or a sedge, steps down its tiers, then draws the forms of its far levels. Below those it draws fewer leaves, taken out evenly.
+- **Never more.** No level draws more than the maximum. `stats.parts` gives each level's triangles part by part, and `stats.allowed` gives each part's allowance.
+
+The maximum acts at any sparseness, on what the sparseness left. A stand-in species and a cut piece grow as they are. The far cards are two triangles each whatever they show, so they show the plant at its best look. On a grown oak at the low tier, the nearest level holds 1,389,818 triangles. At a maximum of 10,000 it draws 9,931: 3,073 of wood and 6,858 of leaf cards.
 
 A page can also move the level switches of all its species at once. Give `switchBias` in the view that every `placePlants` call takes. It counts in stops: each switch distance is multiplied by two to the power of minus the bias. A bias of 1 switches every level at half its distance, and a bias of -1 at twice its distance. `switchScale(bias)` gives that factor. `drawnLevel(kit, asset, view, distance, far)` names the level a placed copy draws at a distance from the camera, with the distance each level starts at: the leaf form, the first or second card level, or the far card. A page that measures a picture uses it to say which level the picture shows.
 

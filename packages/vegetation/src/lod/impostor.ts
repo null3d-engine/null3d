@@ -6,6 +6,7 @@
 import { bakeImpostorAtlas, type ImpostorBakePart } from '@null3d/impostors/bake';
 import type { PlantAsset, SpeciesKitData } from '../asset';
 import type { FarBake, MeshInput } from '../stages';
+import { meshWood } from '../wood/wood-mesh';
 import { cardMesh } from './cards';
 import { dequantisePosition } from './quantise';
 
@@ -20,6 +21,9 @@ export interface FarPlant {
 	/** The baked atlases. */
 	readonly bake: FarBake;
 }
+
+/** The mean bark colour a far card shows its wood in. */
+const BARK = [0.24, 0.2, 0.15] as const;
 
 /** The box a bake draws the plant in, and the extent of its drawn wood and cards. */
 function drawnBounds(positions: readonly Float32Array[]): {
@@ -95,8 +99,22 @@ export function bakeFar(kit: SpeciesKitData, asset: PlantAsset): FarBake {
 	const box = kit.box;
 	const out: [number, number, number] = [0, 0, 0];
 	const drawn: Float32Array[] = [cards.positions];
+	// A triangle maximum may have thinned the level's own wood. The far card is two triangles
+	// whatever it shows, so it shows the level's wood as its best look draws it.
+	if (asset.maxTriangles !== undefined) {
+		const wood = meshWood(input, 1);
+		const colours = new Float32Array(wood.positions.length);
+		for (let i = 0; i < colours.length; i += 3) colours.set(BARK, i);
+		parts.push({
+			positions: wood.positions,
+			normals: wood.normals,
+			indices: wood.indices,
+			colors: colours,
+		});
+		drawn.push(wood.positions);
+	}
 	for (const part of asset.levels[1].parts) {
-		if (part.name !== 'wood') continue;
+		if (part.name !== 'wood' || asset.maxTriangles !== undefined) continue;
 		const arrays = part.arrays;
 		const count = arrays.positions.length / 3;
 		const positions = new Float32Array(count * 3);
@@ -109,11 +127,7 @@ export function bakeFar(kit: SpeciesKitData, asset: PlantAsset): FarBake {
 		const normals = new Float32Array(count * 3);
 		for (let i = 0; i < count * 3; i++) normals[i] = (arrays.normals[i] as number) / 127;
 		const colours = new Float32Array(count * 3);
-		for (let i = 0; i < count; i++) {
-			colours[i * 3] = 0.24;
-			colours[i * 3 + 1] = 0.2;
-			colours[i * 3 + 2] = 0.15;
-		}
+		for (let i = 0; i < count; i++) colours.set(BARK, i * 3);
 		parts.push({ positions, normals, indices: arrays.indices, colors: colours });
 		drawn.push(positions);
 	}

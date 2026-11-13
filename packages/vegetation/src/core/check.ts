@@ -16,7 +16,7 @@ import {
 } from './types';
 
 /** The growth models whose skeletons carry sockets, so their rows need no shoots. */
-const SOCKET_MODELS: readonly GrowthModel[] = ['tuft'];
+const SOCKET_MODELS: readonly GrowthModel[] = ['tuft', 'frond-colony'];
 
 const MODELS: readonly GrowthModel[] = [
 	'self-organizing',
@@ -68,18 +68,13 @@ function spreadProblems(spread: Spread, path: string, positive: boolean, out: st
 		out.push(`${path} can draw ${mean - half}; it must stay above 0`);
 }
 
-/** A species' sparse floors' problems: each share from 0.05 to 1, and the coarsenings from 0 to 1. */
+/** A species' sparse floors' problems: the foliage share from 0 to 1, the limb share above 0 to 1. */
 function sparseProblems(record: Species, out: string[]): void {
 	const sparse = record.sparse;
 	if (!sparse) return;
-	for (const key of ['limbs', 'leaves'] as const) {
-		const value = sparse[key];
-		if (value < 0.05 || value > 1)
-			out.push(`sparse.${key} is ${value}; a sparse floor lies from 0.05 to 1`);
-	}
-	if (sparse.coarseness < 0 || sparse.coarseness > 1)
-		out.push(`sparse.coarseness is ${sparse.coarseness}; it lies from 0 to 1`);
-	shareProblem(sparse.sections, 'sparse.sections', out);
+	shareProblem(sparse.foliage, 'sparse.foliage', out);
+	if (sparse.limbs !== undefined && !(sparse.limbs > 0 && sparse.limbs <= 1))
+		out.push(`sparse.limbs is ${sparse.limbs}; a great limb's share lies above 0 and up to 1`);
 }
 
 /** A share's problems: it lies from 0 to 1. */
@@ -478,16 +473,31 @@ function growthProblems(record: Species, out: string[]): void {
 			out.push('growth.pipe needs an exponent and a tip radius above 0');
 	}
 	if (growth.model === 'frond-colony') {
-		const clump = growth.rhizome.clump;
-		if (clump !== undefined) {
-			wholeProblem(clump.count, 'growth.rhizome.clump.count', 1, 16, out);
-			if (!(clump.radius >= 0))
+		const { patch, rhizome, heights, tilt } = growth;
+		if (!(patch.long > 0 && patch.short > 0 && patch.short <= patch.long))
+			out.push(
+				`growth.patch is ${patch.long} by ${patch.short}; both are shares of the height above 0, the short no more than the long`,
+			);
+		if (!(rhizome.depth > 0 && rhizome.radius > 0))
+			out.push('growth.rhizome needs a depth and a radius in metres above 0');
+		for (const [name, range] of [
+			['tall', heights.tall],
+			['short', heights.short],
+		] as const)
+			if (!(range[0] > 0 && range[0] <= range[1] && range[1] <= 1))
 				out.push(
-					`growth.rhizome.clump.radius is ${clump.radius}; it is metres and is not negative`,
+					`growth.heights.${name} is ${range[0]} to ${range[1]}; it is shares of the tallest frond, above 0 to 1, least first`,
 				);
-			if (!(clump.ring >= 0))
-				out.push(`growth.rhizome.clump.ring is ${clump.ring}; it is metres and is not negative`);
-		}
+		shareProblem(heights.shortShare, 'growth.heights.shortShare', out);
+		if (!(tilt[0] >= -30 && tilt[0] <= tilt[1] && tilt[1] <= 80))
+			out.push(
+				`growth.tilt is ${tilt[0]} to ${tilt[1]}; it is degrees above level from -30 to 80, least first`,
+			);
+		wholeProblem(growth.least, 'growth.least', 1, 64, out);
+		if (!(growth.stipe.bend > 0 && growth.stipe.bend <= 1))
+			out.push(
+				`growth.stipe.bend is ${growth.stipe.bend}; it is a share of the stalk's length above 0 to 1`,
+			);
 	}
 	if (growth.model === 'rosette') {
 		if (record.foliage.kind !== 'thick') out.push("a rosette's foliage is 'thick'");
@@ -572,8 +582,14 @@ function growthProblems(record: Species, out: string[]): void {
 			const head = stalks.head;
 			if (!(head.length > 0 && head.width > 0))
 				out.push('growth.stalks.head needs a length and a width above 0');
-			if (head.kind === 'spike') wholeProblem(head.count, 'growth.stalks.head.count', 1, 8, out);
-			else {
+			if (head.kind === 'spike') {
+				wholeProblem(head.count, 'growth.stalks.head.count', 1, 8, out);
+				const [high, low] = head.hang;
+				if (!(high <= 90 && low >= -90 && high >= low))
+					out.push(
+						`growth.stalks.head.hang is ${head.hang}; the highest spike's angle comes first, both within 90 degrees of level`,
+					);
+			} else {
 				wholeProblem(head.whorls, 'growth.stalks.head.whorls', 1, 12, out);
 				wholeProblem(head.branches, 'growth.stalks.head.branches', 1, 8, out);
 				wholeProblem(head.spikelets, 'growth.stalks.head.spikelets', 1, 12, out);
@@ -637,6 +653,13 @@ function growthProblems(record: Species, out: string[]): void {
 			out.push(`growth.arms.swell is ${arms.swell}; it is a multiple of at least 1`);
 		if (!(growth.areoles > 0))
 			out.push(`growth.areoles is ${growth.areoles}; it is metres and must be above 0`);
+	}
+	if (record.foliage.kind === 'blade') {
+		const breadth = record.foliage.leaf.breadth;
+		if (breadth !== undefined && !(breadth > 0 && breadth <= 2))
+			out.push(
+				`foliage.leaf.breadth is ${breadth}; it is a share of the outline's width, above 0 and at most 2`,
+			);
 	}
 	if (record.foliage.kind === 'blade' && record.foliage.compound) {
 		const compound = record.foliage.compound;
@@ -1071,8 +1094,6 @@ export function speciesProblems(record: Species): string[] {
 		out.push('lod.woodOrders keeps more orders at the second card level than at the first');
 	if (lod.cardStalk !== undefined && !(lod.cardStalk >= 0 && lod.cardStalk <= 8))
 		out.push(`lod.cardStalk is ${lod.cardStalk}; it is pixels from 0 to 8`);
-	if (lod.cardStrand !== undefined && !(lod.cardStrand >= 0 && lod.cardStrand <= 4))
-		out.push(`lod.cardStrand is ${lod.cardStrand}; it is texels from 0 to 4`);
 	const cardCell = lod.cardCell;
 	if (cardCell)
 		for (const detail of ['low', 'medium', 'high', 'ultra'] as const) {

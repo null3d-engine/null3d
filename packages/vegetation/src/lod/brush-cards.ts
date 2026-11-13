@@ -5,6 +5,7 @@
 // it. Each tier then keeps its wood, stems and buds, and its leaves give way to the quads, laid
 // along each run's stem and stretched to its length. A prototype's own cells are baked from its
 // leaves, before the quads take their place, so its card at the far levels pictures the leaves.
+
 import type { CardCell, PrototypeArrays } from '../asset';
 import { length3 } from '../core/math';
 import type { Species } from '../core/record';
