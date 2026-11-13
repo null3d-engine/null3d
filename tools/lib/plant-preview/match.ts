@@ -25,7 +25,7 @@ import {
 	plantMask,
 	WORK_WIDTH,
 } from '../plant-review/references.ts';
-import { enlarged, type PreviewCamera, restood, standingCamera } from './camera.ts';
+import { atWidth, type PreviewCamera, restood, standingCamera } from './camera.ts';
 import {
 	canvas,
 	drawCardLevelWood,
@@ -36,6 +36,7 @@ import {
 	matte,
 	NATURAL,
 	painted,
+	STILL_WIDTH,
 } from './draw.ts';
 import { type GapSpread, gapSpread } from './spread.ts';
 
@@ -43,7 +44,7 @@ import { type GapSpread, gapSpread } from './spread.ts';
 export const WHOLE_FOV = 30;
 /** The camera's height in metres where a picture's plant stands on its horizon. */
 const LOW_EYE = 0.3;
-/** Canvas pixels drawn for each pixel of the matte, a side. */
+/** Canvas pixels a cut piece's preview draws for each pixel of its matte, a side. */
 export const SUPERSAMPLE = 3;
 /** How far the render's sky gap may stand above and below its reference's, by the review's row 6. */
 export const GAP_ABOVE = 0.05;
@@ -176,12 +177,16 @@ export function renderView(
 			if (Math.abs(share - widthShare) <= WIDTH_BAND) break;
 			camera = restood(camera, share / widthShare);
 		}
-	const drawing = draw(enlarged(camera, SUPERSAMPLE));
-	const picture = matte(drawing, SUPERSAMPLE);
+	// The last drawing stands at the review's still with one sample a pixel, as the engine draws
+	// it: an average of several samples a pixel closes the holes smaller than a pixel that the
+	// review's half-dark outline keeps open in an engine still. The review's measure shrinks it to
+	// its work width.
+	const drawing = draw(atWidth(camera, STILL_WIDTH));
+	const picture = resizeToWidth(matte(drawing, 1), width);
 	const plant = matteMask(picture);
 	const measures = measurePlant(picture, plant);
 	return {
-		colour: painted(drawing, SUPERSAMPLE, NATURAL),
+		colour: resizeToWidth(painted(drawing, 1, NATURAL), width),
 		matte: picture,
 		plant,
 		measures,
