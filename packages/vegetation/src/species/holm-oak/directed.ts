@@ -2,7 +2,7 @@
 // that spread like the ribs of a vase, each with one slow S-bend, each forking three times under one
 // shared dome. Each figure names the reference picture it was read on. Shares are of the plant's
 // height. Still 01 and the whole-plant turning video are the one plant the frame follows.
-import { type FrameBranchRule, type FrameSpec, framedRecord } from '../../grow/frame';
+import { evenOutline, type FrameBranchRule, type FrameSpec, framedRecord } from '../../grow/frame';
 import { record } from './record';
 
 /**
@@ -63,27 +63,29 @@ function fork(name: string, length: number, children: readonly FrameBranchRule[]
 /** The holm oak's frame. */
 export const frame: FrameSpec = {
 	// Still 01, the dome's half width in bands from the top down to its flat foot.
-	outline: [
-		[0.34, 0.45],
-		[0.354, 0.475],
-		[0.396, 0.56],
-		[0.438, 0.6],
-		[0.479, 0.62],
-		[0.521, 0.62],
-		[0.563, 0.61],
-		[0.604, 0.605],
-		[0.688, 0.595],
-		[0.729, 0.545],
-		[0.771, 0.505],
-		[0.813, 0.465],
-		[0.854, 0.445],
-		[0.896, 0.345],
-		[0.938, 0.275],
-		[0.979, 0.18],
-		[1, 0],
-	],
-	// The dome is built nearly round. Still 01 looks across the wide side.
-	plan: { narrow: 0.8, turn: 0 },
+	outline: evenOutline(
+		[
+			[0.34, 0.45],
+			[0.354, 0.475],
+			[0.396, 0.56],
+			[0.438, 0.6],
+			[0.479, 0.62],
+			[0.521, 0.62],
+			[0.563, 0.61],
+			[0.604, 0.605],
+			[0.688, 0.595],
+			[0.729, 0.545],
+			[0.771, 0.505],
+			[0.813, 0.465],
+			[0.854, 0.445],
+			[0.896, 0.345],
+			[0.938, 0.275],
+			[0.979, 0.18],
+			[1, 0],
+		],
+		// The dome is built nearly round. Still 01 looks across the wide side.
+		0.8,
+	),
 	stems: {
 		name: 'stem',
 		// Still 01: eight stems, two of them near the middle.

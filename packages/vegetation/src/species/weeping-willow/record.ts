@@ -22,9 +22,9 @@ const RANK: readonly (readonly [number, number])[] = [
 
 /** The weeping willow's record. */
 export const record: Species = {
-	// A first pass at the floors a phone's lighter form keeps, set from the species' form and to
-	// be measured on the phone set before they are trusted.
-	sparse: { limbs: 0.4, leaves: 0.5, coarseness: 0.55 },
+	// The sparsest form keeps this share of the crown's shoots, each whole: about the leaf area
+	// below which the crown stops reading as its species.
+	sparse: { foliage: 0.16 },
 	id: 'weeping-willow',
 	name: 'Weeping willow',
 	latin: 'Salix babylonica',
@@ -515,9 +515,6 @@ export const record: Species = {
 		// a shoot of this length spans half a column of pixels at the switch, and the nearer rows
 		// carry only the shoots a walk up to the curtain needs.
 		switchPixels: [500, 12, 160],
-		// The cards stand well past the shoots they picture, so a hanging shoot's card overlaps its
-		// neighbours and the far crown reads as one curtain rather than a fringe of specks.
-		cardGrow: 4,
 		// Stills 01 and 02: a card's twig is thinner than a pixel at a whole view, so each draws its
 		// supporting twig as a line and the join shows.
 		cardStalk: 4,

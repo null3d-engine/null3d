@@ -24,9 +24,9 @@ const ALTERNATE: readonly (readonly [number, number])[] = [
 
 /** The silver birch's record. */
 export const record: Species = {
-	// A first pass at the floors a phone's lighter form keeps, set from the species' form and to
-	// be measured on the phone set before they are trusted.
-	sparse: { limbs: 0.45, leaves: 0.55, coarseness: 0.5 },
+	// The sparsest form keeps this share of the crown's shoots, each whole: about the leaf area
+	// below which the crown stops reading as its species.
+	sparse: { foliage: 0.11 },
 	id: 'silver-birch',
 	name: 'Silver birch',
 	latin: 'Betula pendula',
@@ -444,12 +444,6 @@ export const record: Species = {
 	lod: {
 		nearFoliage: 'instanced',
 		switchPixels: [240, 12, 160],
-		// Stills 01, 02 and 18: 1.2 opens the three side views inside their own photographs under the
-		// three-tenths shading term. Measured at both bases, before and after the leaf back-face change,
-		// and the gaps read the same to four decimals either way, because a far view draws cards here
-		// rather than real shoots; a species whose far crown reads its shoot geometry moves with that
-		// change and this value would not carry over.
-		cardGrow: 1.2,
 		// Stills 01 and 19: a card's twig is thinner than a pixel at a whole view, so its leaves read
 		// as a piece in air; each card draws its twig as a line and the join shows.
 		cardStalk: 5,

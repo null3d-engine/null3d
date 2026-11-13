@@ -133,10 +133,6 @@ export const directed: Species = {
 	foliage: needles,
 	lod: {
 		...record.lod,
-		// A card pictures one whole bough, which already overlaps its neighbours on the pad, so it
-		// draws at the bough's own size. A card larger than its bough makes the far tree taller and
-		// wider than the near one.
-		cardGrow: 1,
 		// The first card level keeps the twigs that reach the boughs, and the second the arms under
 		// each pad, so a far card still meets drawn wood.
 		woodOrders: [3, 2],

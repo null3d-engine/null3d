@@ -279,9 +279,6 @@ export const record: Species = {
 	lod: {
 		nearFoliage: 'instanced',
 		switchPixels: [240, 12, 160],
-		// A card no wider than the shoot it stands for keeps the sky between the plume's sprays,
-		// as the turning reference shows.
-		cardGrow: 1.0,
 		// A card draws a short stalk so a leaf mass ties to its shoot, not floats free.
 		cardStalk: 2,
 		// The farthest card level keeps the culms alone: a branch a few centimetres thick is under a

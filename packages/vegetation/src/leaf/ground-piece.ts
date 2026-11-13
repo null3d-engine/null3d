@@ -103,6 +103,7 @@ export function writtenPieces(pieces: readonly WrittenPiece[]): PiecePrototype[]
 				radius,
 				leaves: piece.leaves,
 				tiers,
+				sites: [],
 			});
 		});
 	return out;
