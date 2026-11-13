@@ -379,13 +379,27 @@ export function buildPiecesNow(
 	rules: readonly PieceRule[],
 	bare = false,
 ): PiecePrototype[] {
-	const builder = foliage(source.record.foliage.kind);
+	const record = source.record;
+	const builder = foliage(record.foliage.kind);
 	const manifest = source.textures.manifest;
-	return piecePrototypes(
-		source.record,
-		rules,
-		DETAILS.map((tier) => (bare ? [] : builder.leaves(source.record, manifest, tier))),
-	);
+	const leavesOf = (from: Species) =>
+		DETAILS.map((tier) => (bare ? [] : builder.leaves(from, manifest, tier)));
+	const leaves = leavesOf(record);
+	// A rule whose blades bend in their own plane takes leaves built with no bend at the stalk.
+	const straight =
+		record.foliage.kind === 'blade' && rules.some((rule) => rule.leafDroop === 'plane')
+			? leavesOf({
+					...record,
+					foliage: {
+						...record.foliage,
+						leaf: {
+							...record.foliage.leaf,
+							petiole: { ...record.foliage.leaf.petiole, droop: 0 },
+						},
+					},
+				})
+			: leaves;
+	return piecePrototypes(record, rules, leaves, straight);
 }
 
 /**

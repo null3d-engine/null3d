@@ -19,6 +19,7 @@ import {
 	normalize3,
 	PI,
 	quatFromFrame,
+	quatRotate,
 	radians,
 	sin,
 	type Vector3,
@@ -228,6 +229,13 @@ export interface PieceRule {
 	 * a piece that is a third as deep as it is wide stands its side stems within about 20 degrees.
 	 */
 	readonly depth?: number;
+	/**
+	 * How the piece's blades bend at their stalks. Where absent a blade bends out of its own face,
+	 * as the species' leaf does. With `plane` the piece's leaves are built with no bend at the stalk,
+	 * and each blade turns about its own normal instead, toward the ground side, by the species' own
+	 * degrees and no farther than the ground side. A hanging blade then stays in the plane it lies in.
+	 */
+	readonly leafDroop?: 'plane';
 }
 
 /** A piece's prototype: its meshes at every tier, with how a socket holds it. */
@@ -436,8 +444,31 @@ export function planPiece(
 	/** The way out of the piece's own plane: its flank for a hanging piece, else its sky side. */
 	const outOfPlane: Readonly<Vector3> = rule.attitude === 'plumb' ? [1, 0, 0] : [0, 0, 1];
 
-	/** A leaf laid into the piece's own plane, by a share. */
-	const flattened = (leaf: PlannedLeaf, share: number): PlannedLeaf => {
+	/** The way a leaf's upper face looks. */
+	const normalOf = (leaf: PlannedLeaf): Vector3 =>
+		quatRotate(leaf.rotation, 0, [0, 0, 1], [0, 0, 0]);
+
+	/**
+	 * A leaf turned at its stalk about its own normal, toward the ground side, by the species' stalk
+	 * droop and no farther than the ground side as it lies in the blade's plane.
+	 */
+	const drooped = (leaf: PlannedLeaf): PlannedLeaf => {
+		const normal = normalOf(leaf);
+		const direction = toward(
+			leaf.direction,
+			square(down, normal, leaf.direction),
+			foliage.leaf.petiole.droop,
+		);
+		const rotation = [0, 0, 0, 1];
+		quatFromFrame(direction, normal, rotation);
+		return { ...leaf, direction, rotation };
+	};
+
+	/**
+	 * A leaf laid into the piece's own plane, by a share. A blade whose rule names its face keeps
+	 * that face's roll and only its midrib is laid in.
+	 */
+	const flattened = (leaf: PlannedLeaf, share: number, keep = false): PlannedLeaf => {
 		const s = Math.min(1, Math.max(0, share));
 		const d = leaf.direction;
 		const out = d[0] * outOfPlane[0] + d[1] * outOfPlane[1] + d[2] * outOfPlane[2];
@@ -451,13 +482,15 @@ export function planPiece(
 			length3(laid[0], laid[1], laid[2]) < 1e-3
 				? square(leaf.stem, outOfPlane, [0, 1, 0])
 				: normalize3(laid);
-		const before = square(leaf.stem, direction, leaf.radial);
+		const before = square(keep ? normalOf(leaf) : leaf.stem, direction, leaf.radial);
 		const facing = square(outOfPlane, direction, before);
-		const face = normalize3([
-			before[0] * (1 - s) + facing[0] * s,
-			before[1] * (1 - s) + facing[1] * s,
-			before[2] * (1 - s) + facing[2] * s,
-		]);
+		const face = keep
+			? before
+			: normalize3([
+					before[0] * (1 - s) + facing[0] * s,
+					before[1] * (1 - s) + facing[1] * s,
+					before[2] * (1 - s) + facing[2] * s,
+				]);
 		const rotation = [0, 0, 0, 1];
 		quatFromFrame(direction, face, rotation);
 		return { ...leaf, direction, rotation };
@@ -616,7 +649,9 @@ export function planPiece(
 						leaves[i] = hung(leaves[i] as PlannedLeaf, own, axis, i);
 				if (own?.flat)
 					for (let i = first; i < leaves.length; i++)
-						leaves[i] = flattened(leaves[i] as PlannedLeaf, own.flat);
+						leaves[i] = flattened(leaves[i] as PlannedLeaf, own.flat, own.face !== undefined);
+				if (rule.leafDroop === 'plane')
+					for (let i = first; i < leaves.length; i++) leaves[i] = drooped(leaves[i] as PlannedLeaf);
 			}
 			if (atNode) node++;
 		}
@@ -936,6 +971,8 @@ export function splitPlan(
  * @param record The species record.
  * @param rules The species' piece rules.
  * @param leaves The species' leaf meshes at every tier, low first.
+ * @param straight The same meshes built with no bend at the stalk, for the rules whose blades bend
+ * in their own plane; the species' own where absent.
  * @returns The prototypes, each rule's variants together and each variant's parts together, in the
  * rules' order.
  */
@@ -943,11 +980,13 @@ export function piecePrototypes(
 	record: Species,
 	rules: readonly PieceRule[],
 	leaves: readonly (readonly PrototypeArrays[])[],
+	straight: readonly (readonly PrototypeArrays[])[] = leaves,
 ): PiecePrototype[] {
-	const leafMeshes = Math.min(...leaves.map((tier) => tier.length));
-	const finest = leaves[leaves.length - 1] ?? [];
 	const out: PiecePrototype[] = [];
-	for (const [r, rule] of rules.entries())
+	for (const [r, rule] of rules.entries()) {
+		const own = rule.leafDroop === 'plane' ? straight : leaves;
+		const leafMeshes = Math.min(...own.map((tier) => tier.length));
+		const finest = own[own.length - 1] ?? [];
 		for (let variant = 0; variant < Math.min(16, Math.max(1, rule.variants)); variant++) {
 			const parts = splitPlan(planPiece(record, rule, pieceKey(r, variant), leafMeshes), finest);
 			for (const [part, plan] of parts.entries())
@@ -958,9 +997,10 @@ export function piecePrototypes(
 					part,
 					parts: parts.length,
 					sites: pieceSites(plan),
-					...meshedPlan(plan, leaves),
+					...meshedPlan(plan, own),
 				});
 		}
+	}
 	return out;
 }
 
