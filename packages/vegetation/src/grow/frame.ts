@@ -368,6 +368,13 @@ export interface FrameSide {
 	 * as shares of the height.
 	 */
 	readonly under: Curve;
+	/**
+	 * The direction round the plant, in degrees, that the view showing this side was taken from. A
+	 * place behind the trunk from there, inside the trunk's width, is hidden by the trunk in that
+	 * view, so this side's lower boundary does not bind it. Left out, the boundary binds every place
+	 * on the side.
+	 */
+	readonly seen?: number;
 }
 
 /**
@@ -766,7 +773,8 @@ export function outlineRadius(spec: FrameSpec, scale: number, y: number, azimuth
  * The height that no foliage may stand under at a place beside the plant, in metres. Each stated
  * side's lower boundary is read as the view across that side shows it, by the place's distance from
  * the trunk's line in that view, and the place answers to every side it stands on: the highest of
- * their boundaries there.
+ * their boundaries there. A side does not bind a place that its view sees only as the trunk, behind
+ * it and inside its width.
  *
  * @param spec The frame.
  * @param scale The plant's height in metres.
@@ -780,7 +788,16 @@ export function outlineUnder(spec: FrameSpec, scale: number, x: number, z: numbe
 	for (const side of spec.outline) {
 		const toward = radians(side.toward);
 		const reach = x * cos(toward) + z * sin(toward);
-		if (reach >= 0) highest = Math.max(highest, curveAt(side.under, reach / scale));
+		if (reach < 0) continue;
+		if (side.seen !== undefined) {
+			// The trunk's half width where the view shows its bole bare, which hides what stands
+			// behind it.
+			const bare = curveAt(side.under, 0);
+			const hidden = (curveAt(spec.stems.width, bare) * scale) / 2;
+			const from = radians(side.seen);
+			if (x * cos(from) + z * sin(from) < 0 && reach < hidden) continue;
+		}
+		highest = Math.max(highest, curveAt(side.under, reach / scale));
 	}
 	return highest * scale;
 }

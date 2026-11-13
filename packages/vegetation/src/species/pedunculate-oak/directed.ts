@@ -111,9 +111,10 @@ const boughs: FrameBranchRule = {
 };
 
 /**
- * The skirts of a low limb: short branches from its outer half that leave its sides lowered toward
- * the ground, each under a small clump. Stills 01, 02 and 18: the crown's underside hangs lower far
- * out than near the bole, in lobes of leaf under the low limbs' outer reach. A skirt's branch ends
+ * The skirts of a low limb: branches from its outer half that leave its sides lowered toward the
+ * ground and hang as far as a fifth of the height, each under a small clump. Stills 01, 02 and 18:
+ * the crown's underside hangs lower far out than near the bole, in lobes of leaf under the low
+ * limbs' outer reach, down to a tenth of the height at still 02. A skirt's branch ends
  * where the piece at its end meets the lower boundary, so its leaf hangs down to the boundary and
  * never under it.
  */
@@ -132,7 +133,7 @@ const skirts: FrameBranchRule = {
 	length: { outline: 0.95 },
 	vary: 0.1,
 	least: 0.03,
-	most: 0.1,
+	most: 0.2,
 	radius: 0.4,
 	taper: 0.35,
 	sway: 30,
@@ -221,10 +222,14 @@ const STILL_02_RIGHT: Reading = {
 	],
 };
 
-/** A side of the outline, from its reading on a still. */
-function side(toward: number, read: Reading): FrameSide {
+/**
+ * A side of the outline, from its reading on a still taken from a direction round the plant: still
+ * 01's camera stands toward 90 degrees and still 02's toward 0.
+ */
+function side(toward: number, seen: number, read: Reading): FrameSide {
 	return {
 		toward,
+		seen,
 		reach: [
 			read.foot,
 			...(read.hung ? [read.hung] : []),
@@ -243,10 +248,10 @@ export const frame: FrameSpec = {
 	// The outline, side by side, with no two sides averaged. Still 01 gives the two sides it looks
 	// across; still 02, a quarter turn on, gives the two it looks along.
 	outline: [
-		side(0, STILL_01_RIGHT),
-		side(90, STILL_02_LEFT),
-		side(180, STILL_01_LEFT),
-		side(270, STILL_02_RIGHT),
+		side(0, 90, STILL_01_RIGHT),
+		side(90, 0, STILL_02_LEFT),
+		side(180, 90, STILL_01_LEFT),
+		side(270, 0, STILL_02_RIGHT),
 	],
 	stems: {
 		name: 'trunk',
