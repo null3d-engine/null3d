@@ -112,14 +112,14 @@ Three changes take that work out of the frames:
 
 - The engine reads the mesh from the core one part a frame, from the frame after the one that first drew it. A part holds at most 65,535 vertices, so each read takes a few milliseconds.
 - A split mesh's level shares the base's vertices part by part (`createSplitLevel`): each triangle draws from a part that holds its three vertices, and only the triangles that cross a seam between parts copy their vertices. The million-triangle grid's finest level of 524,176 triangles then takes 14.3 ms on WebGPU and 15.1 ms on WebGL2, against 49.0 ms and 43.6 ms for a copy.
-- The levels arrive one a frame, coarsest first. Each frame's set holds the levels made so far, and the mesh draws its base nearer than the finest of them. Hold mode takes them at once, since its held frame waits for the plan.
+- The plan makes one level a frame, coarsest first. It gives the scene the whole set when the plan ends. The scene's draw tables then rebuild once, however many levels the plan made. Hold mode takes them all at once, since its held frame waits for the plan.
 
-| Grid, as built | The window of the frame that makes and draws the mesh: without levels, with them | Windows while the parts read and the plan runs | Windows while the levels arrive |
+| Grid, as built | The window of the frame that makes and draws the mesh: without levels, with them | Windows while the parts read and the plan runs | Windows while the plan makes the levels |
 | --- | --- | --- | --- |
 | 1,048,352 triangles, WebGPU | 72.7 ms, 82 ms | 16.7 ms | 16.7 ms |
 | 1,048,352 triangles, WebGL2 | 63.7 ms, 71.5 ms | 16.7 ms | 16.7 ms |
 
-No frame but the one that makes the mesh is late. Making a mesh of a million triangles in a frame costs about 60 ms on its own. The mesh's first draw adds only the start of the plan; between the two runs the window differs by 8 to 9 ms, within this machine's spread from run to run under its load. Each level's mesh took 3 to 15 ms of the sketch worker's time between frames, and the levels arrived over nine frames.
+No frame but the one that makes the mesh is late. Making a mesh of a million triangles in a frame costs about 60 ms on its own. The mesh's first draw adds only the start of the plan; between the two runs the window differs by 8 to 9 ms, within this machine's spread from run to run under its load. Each level's mesh took 3 to 15 ms of the sketch worker's time between frames, and the plan made its nine levels over nine frames.
 
 The Island showcase scene ran on the same page for 20 one-second windows, once as built and once with the automatic default turned off in a local build (the thresholds set past any mesh), on WebGPU and WebGL2. The 99th percentile of the frame interval, per window:
 
@@ -185,7 +185,7 @@ The run-time API:
 - `mesh.buildLevels(options?)` plans on the job workers and resolves with the levels. A call while a plan with the same options runs returns its promise.
 - `levels` in `geometry.fromArrays`'s arrays and every generator's options: left out, the default below; `false`, none; `true` or `{ cards }`, a plan when the mesh is made.
 - The engine reads the mesh back from the core one part a frame (`meshPlanningPart`), so every mesh plans from what it draws, and generators plan too. The levels are index lists over the mesh's own vertices (`createLevelMesh`). A split mesh's level shares the base's vertices part by part and copies only the vertices of the triangles that cross a seam (`createSplitLevel`). A level of cards copies its vertices and writes its grown positions (`createLevelCopy`).
-- The levels arrive one a frame, coarsest first, outside hold mode.
+- The plan makes one level a frame, coarsest first, and gives the scene the whole set once, outside hold mode.
 - Levels keep their measured errors and switch at once. An error of 0, where the simplifier found a step exact, takes a millionth of the mesh's size, and each error is at least 1.5 times the one before.
 - The cap is the core's: `LEVELS_MAX` from `null3d_render::levels::MAX_LEVELS`, less the base mesh, in both `setLevels` and the plan.
 
@@ -209,4 +209,4 @@ Guards:
 - The core gains `meshPlanningPart`, `createSplitLevel`, `createLevelCopy` and the `LEVELS_MAX` constant.
 - `docs/api/geometry.md` and `docs/concepts/lod.md` describe the planned levels; the skills and the three.js mapping name them. [D-91](D-91-level-planning.md) and [D-137](D-137-lod-groups.md) point here.
 - E1221 covers a mesh that cannot plan, and E1406 the planner's files.
-- A large mesh's levels arrive over as many frames as it has levels, after its parts have read over as many frames as it has parts.
+- A large mesh's levels are made over as many frames as it has levels, after its parts have read over as many frames as it has parts, and the scene takes the whole set once.
