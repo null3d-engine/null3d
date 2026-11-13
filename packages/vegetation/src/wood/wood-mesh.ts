@@ -12,6 +12,7 @@
 import type { MeshArrays } from '../asset';
 import {
 	AXIS_ARM,
+	AXIS_CULM,
 	AXIS_LIMB,
 	AXIS_RACHIS,
 	AXIS_STEM,
@@ -183,7 +184,9 @@ function woodAxes(input: MeshInput, keep: number, level: MeshLevel): WoodAxis[] 
 	// piece stands on its cut. Any other axis without a parent, such as a ground plant's crown,
 	// carries no wood.
 	const rooted = (a: number) =>
-		(axes.kind[a] as number) === AXIS_STEM || (axes.kind[a] as number) === AXIS_STIPE;
+		(axes.kind[a] as number) === AXIS_STEM ||
+		(axes.kind[a] as number) === AXIS_CULM ||
+		(axes.kind[a] as number) === AXIS_STIPE;
 	const piece = (a: number) =>
 		(axes.kind[a] as number) === AXIS_LIMB ||
 		(axes.kind[a] as number) === AXIS_RACHIS ||

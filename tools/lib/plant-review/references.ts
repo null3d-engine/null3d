@@ -204,6 +204,36 @@ const SLOT_RULES: readonly { readonly test: (name: string) => boolean; readonly 
 			test: (n) => /arm-tip/.test(n),
 			slot: { view: 'limb', query: { span: 0.35, thin: 0.24 }, framed: false },
 		},
+		// Bamboo's own close views: the reference set frames a culm's foot, a node, a sheath and a cut
+		// section where no tree view fits.
+		{
+			test: (n) => n.includes('culm-base'),
+			slot: { view: 'bark-base', framed: false },
+		},
+		{
+			test: (n) => n.includes('culm-node'),
+			slot: { view: 'bark-mid', query: { span: 0.22 }, framed: false },
+		},
+		{
+			// A sheath sits at a young culm's lower nodes, so the view frames the foot, not a limb.
+			test: (n) => n.includes('culm-sheath'),
+			slot: { view: 'bark-base', background: 'studio-grey', query: { span: 0.35 }, framed: false },
+		},
+		{
+			test: (n) => n.includes('cut-culm'),
+			slot: { view: 'bark-mid', query: { span: 0.2 }, framed: false },
+		},
+		{
+			// A wall of bare culms at eye height: the bole view looks up the nearest culm, the closest
+			// view the set has to that surface.
+			test: (n) => n.includes('clump-outside'),
+			slot: { view: 'trunk', framed: false },
+		},
+		{
+			// The spring spear is its own form of the plant, framed whole against the sky.
+			test: (n) => n.includes('new-shoot'),
+			slot: { view: 'whole', framed: true, background: 'sky-meadow' },
+		},
 		// A cut piece on a plain ground, framed as its photograph frames it: the photograph's piece
 		// sets the rows its top and its foot land on.
 		{ test: (n) => n.includes('subbranch-studio'), slot: { view: 'subbranch', framed: true } },

@@ -259,6 +259,8 @@ function shootClassProblems(
 		if (!(shoot.bend.angle >= 0 && shoot.bend.angle <= 60))
 			out.push(`${path}.bend.angle is ${shoot.bend.angle}; it is degrees from 0 to 60`);
 	}
+	if (shoot.leafAzimuthSpread !== undefined)
+		wholeProblem(shoot.leafAzimuthSpread, `${path}.leafAzimuthSpread`, 0, 90, out);
 	if (shoot.skyward !== undefined) shareProblem(shoot.skyward, `${path}.skyward`, out);
 	if (shoot.phyllotaxis?.kind === 'spiral')
 		wholeProblem(shoot.phyllotaxis.divergence, `${path}.phyllotaxis.divergence`, 0, 360, out);
@@ -485,6 +487,27 @@ function growthProblems(record: Species, out: string[]): void {
 			spreadProblems(growth.scapes.flowers, 'growth.scapes.flowers', true, out);
 			shareProblem(growth.scapes.raceme, 'growth.scapes.raceme', out);
 		}
+	}
+	if (growth.model === 'culm') {
+		spreadProblems(growth.culms, 'growth.culms', true, out);
+		if (!(growth.spacing > 0))
+			out.push(`growth.spacing is ${growth.spacing}; it is metres and must be above 0`);
+		spreadProblems(growth.height, 'growth.height', true, out);
+		spreadProblems(growth.diameter, 'growth.diameter', true, out);
+		curveProblems(growth.internode, 'growth.internode', out);
+		notNegative(growth.node.ridge, 'growth.node.ridge', out);
+		notNegative(growth.node.waxBand, 'growth.node.waxBand', out);
+		notNegative(growth.node.sheathScar, 'growth.node.sheathScar', out);
+		shareProblem(growth.branches.from, 'growth.branches.from', out);
+		spreadProblems(growth.branches.perNode, 'growth.branches.perNode', false, out);
+		curveProblems(growth.branches.length, 'growth.branches.length', out);
+		wholeProblem(growth.branches.angle, 'growth.branches.angle', 0, 90, out);
+		wholeProblem(growth.branches.orders, 'growth.branches.orders', 1, 3, out);
+		shareProblem(growth.sulcus, 'growth.sulcus', out);
+		shareProblem(growth.sheaths.upTo, 'growth.sheaths.upTo', out);
+		if (!(growth.sheaths.length >= 0))
+			out.push(`growth.sheaths.length is ${growth.sheaths.length}; a length is not negative`);
+		spreadProblems(growth.arch, 'growth.arch', false, out);
 	}
 	if (growth.model === 'tuft') {
 		if (record.foliage.kind !== 'grass-blade') out.push("a tuft's foliage is 'grass-blade'");

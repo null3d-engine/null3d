@@ -88,6 +88,7 @@ const Purpose = {
 	Spur: 11,
 	LeafAngle: 12,
 	Joint: 13,
+	LeafAzimuth: 14,
 } as const;
 
 /** Sides of stem tubes and buds by tier. */
@@ -799,6 +800,7 @@ export function planShoot(
 				: 1,
 		);
 		const spread = shootClass.leafAngleSpread ?? 0;
+		const azimuthSpread = shootClass.leafAzimuthSpread ?? 0;
 		const leafAngle =
 			needleAngle ??
 			curveAt(shootClass.leafAngle, t) +
@@ -811,6 +813,11 @@ export function planShoot(
 				let gap = toward - azimuth;
 				gap -= 2 * Math.PI * Math.round(gap / (2 * Math.PI));
 				azimuth += gap * ranks;
+			} else if (azimuthSpread > 0) {
+				// A two-ranked shoot's leaves turn a little out of its plane, so its fan keeps a width
+				// as the shoot turns edge-on.
+				const wobble = (draw(Purpose.LeafAzimuth, axis, node * 8 + k) * 2 - 1) * azimuthSpread;
+				azimuth += radians(wobble);
 			}
 			const radial = normalize3([
 				side[0] * cos(azimuth) + face[0] * sin(azimuth),
