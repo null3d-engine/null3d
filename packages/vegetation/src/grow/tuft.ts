@@ -1,84 +1,93 @@
-// The tuft grower: grasses and sedges. A crown under the soil carries shoots (tillers) spread over a
-// small disc, the outer ones leaning out; each shoot is a column of nested sheaths with blades
-// leaving it at rising collars, in two ranks (grasses) or three (sedges), the oldest lowest and
-// widest spread, the youngest innermost and upright. Each blade leaves its collar at its spread
-// angle and arches over toward the ground, more toward its tip. In the seasons the record's heads
-// name, flowering stems rise from some shoots and bow over at the top: a grass's carries an open
-// panicle, whorls of branches with spikelets on their outer parts; a sedge's hangs spikes on short
-// stalks one below another, with one more spike at its tip. The spikelets and spikes are the
-// record's extras on the flower sites and stem tips this grower places.
+// The tuft grower: grasses and sedges. The plant's frame is a stool: shoots (tillers) spread evenly
+// over a small disc at the soil, each a short plumb column of sheaths. The stool itself is a low
+// mound of old leaf bases that every shoot stands in, so the plant is one body however few shoots
+// it keeps. Nothing else of the frame stands above the ground. Every part a viewer sees is a piece of the kit, built once and placed
+// whole at a socket on a shoot:
 //
-// The plant draws as merged foliage (grow/ground.ts): blades, sheaths, stems and branches, each on
-// its own axis and wind record.
+// - the shoot's own column of sheaths;
+// - a blade, in the poses the record measures and the shapes between them: the youngest stand near plumb at the shoot's heart,
+//   the oldest arch out and over to the ground. Blades leave their shoot in two ranks (grasses) or
+//   three (sedges);
+// - in the seasons the record names, a flowering stem with its head: a sedge's stem bows over and
+//   hangs its spikes plumb one below another, a grass's stands nearly straight under an open
+//   pyramid of branches and spikelets.
+//
+// A piece is posed in its own space with +Y plumb, so a blade or a spike hangs under its own weight
+// wherever it stands; how far a stem leans is one of its poses. The record's lengths are shares of
+// the leaf mound's height, which is a share of the plant's height. Each bent part is one path of
+// the shared curve (core/arch.ts), fitted to the record's measured figures.
+//
+// The sockets enter the skeleton in the order the plant thins by (grow/sockets.ts): shoots in an
+// order whose every leading run is spread evenly over the stool, a shoot's blades from its oldest,
+// and no piece before its shoot. The stool's mound draws as the plant's own mesh at every level,
+// and what lies under the soil, a rhizome and roots, at the nearest.
 import type { MeshArrays } from '../asset';
-import {
-	AXIS_CULM,
-	AXIS_LIMB,
-	AXIS_ROOT,
-	BUD_FLOWER,
-	BUD_TERMINAL,
-	type MacroSkeleton,
-	SkeletonBuilder,
-} from '../core/graph';
+import { type Arch, archFromFigures, archPath } from '../core/arch';
+import { AXIS_LIMB, AXIS_ROOT, type MacroSkeleton, SkeletonBuilder } from '../core/graph';
 import { unitAt } from '../core/hash';
-import {
-	cos,
-	cross3,
-	normalize3,
-	PI,
-	pow,
-	quatFromFrame,
-	radians,
-	sin,
-	type Vector3,
-} from '../core/math';
-import type { GrassBlade, Species, Tuft } from '../core/record';
-import { curveAt, type Detail, spreadAt, spreadMean } from '../core/types';
-import {
-	BLADE_ACROSS,
-	BLADE_ROWS,
-	type BladeDetail,
-	bladeTexture,
-	writeBlade,
-} from '../leaf/grass-blade';
+import { cos, PI, radians, sin, type Vector3 } from '../core/math';
+import type { GrassBlade, Species, Tuft, TuftPanicle, TuftPose, TuftSpikes } from '../core/record';
+import type { TextureManifest } from '../core/textures';
+import { DETAILS, type Detail, spreadAt, spreadMean } from '../core/types';
+import { BLADE_ACROSS, BLADE_ROWS, bladeTexture, writeBlade } from '../leaf/grass-blade';
+import type { PieceClass } from '../leaf/ground-piece';
 import { MeshWriter } from '../leaf/writer';
-import type { GrowInput, MeshInput, MeshLevel } from '../stages';
-import {
-	AXIS_LEAF,
-	axisBytes,
-	axisKey,
-	leafStrip,
-	stalkRange,
-	terminalBuds,
-	wholePath,
-	writeStem,
-} from './ground';
+import type { CrownLight, GrowInput, MeshInput, MeshLevel } from '../stages';
+import { type AxisPath, axisPath, emptyFrame, frameAt } from '../wood/frames';
+import { axisBytes, leafStrip, stalkRange, wholePath, writeStem } from './ground';
 import type { Grower } from './models';
-
-/** The golden angle in radians, which spreads shoots over the crown's disc. */
-const GOLDEN = radians(137.50776405);
-/** Points along each blade's axis. */
-const BLADE_NODES = 8;
-/** Points along each flowering stem. */
-const STEM_NODES = 12;
-/** How far down a blade may arch, in degrees below the horizontal. */
-const LOWEST = 80;
-/** The lowest a blade's path runs above the ground, in metres. */
-const GROUND = 0.004;
+import { addSockets, discPlaces, type Socket } from './sockets';
 
 /** Purposes of the grower's hash keys, so no two draws share one. */
 const Purpose = {
 	Shoots: 1,
 	Shoot: 2,
-	Blades: 3,
 	Blade: 4,
-	Heads: 5,
-	Head: 6,
-	Branch: 7,
-	Spike: 8,
+	Stalks: 5,
+	Stalk: 6,
 	Rhizome: 9,
 	Root: 10,
 } as const;
+
+/** The poses a flowering stem takes, from the stool's middle to its rim. */
+const STALK_POSES = 3;
+/**
+ * The blade shapes the kit holds from one measured pose to the next, the next one counted. A blade
+ * ages through every shape between two measured poses, so the shapes between them are built too:
+ * with the measured poses alone a mound reads as that many separate shells.
+ */
+const POSE_STEPS = 3;
+/** Radians a blade's heading strays from its rank. */
+const RANK_STRAY = 0.5;
+/** How far a rim shoot's blades turn from their rank toward the way out of the stool, as a share. */
+const OUTWARD = 0.75;
+/** Radians a flowering stem's heading strays from the way out of the stool. */
+const STALK_STRAY = 0.5;
+/** The golden ratio's fraction, which spreads the stems' heights evenly between their ends. */
+const GOLDEN_SHARE = 0.6180339887498949;
+/** The level of detail of the shared curve that each mesh tier cuts its bends at, low tier first. */
+const TIER_LEVEL: readonly (0 | 1 | 2)[] = [2, 1, 0, 0];
+/** Faces round a flowering stem and round a spike or spikelet, by tier. */
+const STEM_SIDES: readonly number[] = [3, 3, 4, 5];
+const HEAD_SIDES: readonly number[] = [3, 3, 4, 5];
+/** Faces round a shoot's sheath column, by tier. */
+const SHEATH_SIDES: readonly number[] = [4, 5, 6, 8];
+/** The sheath column's width at its top, as a share of its width at the foot. */
+const SHEATH_TAPER = 0.7;
+/** A flowering stem's width under its head, as a share of its width at the foot. */
+const STALK_TAPER = 0.35;
+/** The share of a hanging spike's width that its thread takes. */
+const THREAD_WIDTH = 0.22;
+/** A panicle branch's width, as a share of the stem's foot, and a spikelet's width over its length. */
+const BRANCH_WIDTH = 0.3;
+const SPIKELET_WIDTH = 0.42;
+/** How much shorter a panicle's top whorl's branches are than its lowest whorl's, as a share. */
+const WHORL_TAPER = 0.75;
+
+/** A light that sees the whole sky, for a piece that is meshed before any crown stands round it. */
+const OPEN: CrownLight = { cells: [1, 1, 1], min: [0, 0, 0], cell: 1, sky: new Float32Array([1]) };
+/** The bytes of a piece's vertices before its row gives them a wind record. */
+const NO_BYTES = { high: 0, low: 0, phase: 0 } as const;
 
 /** A unit draw for one purpose of one variant. */
 function draw(input: GrowInput, purpose: number, a = 0, b = 0, c = 0): number {
@@ -98,501 +107,336 @@ function inPlane(heading: number, elevation: number): Vector3 {
 	return [cos(heading) * c, sin(elevation), sin(heading) * c];
 }
 
-/** The upper face of a direction in its vertical plane: square to it, toward the sky. */
-function faceOf(heading: number, elevation: number): Vector3 {
-	const s = sin(elevation);
-	return [-cos(heading) * s, cos(elevation), -sin(heading) * s];
+/** The signed angle from one heading to another, from -π to π. */
+function angleBetween(from: number, to: number): number {
+	let d = (to - from) % (2 * PI);
+	if (d > PI) d -= 2 * PI;
+	if (d < -PI) d += 2 * PI;
+	return d;
 }
 
-/** A frame quaternion from a direction and its upper face. */
-function frameOf(along: Readonly<Vector3>, face: Readonly<Vector3>): number[] {
-	const q = [0, 0, 0, 1];
-	quatFromFrame(along, face, q);
-	return q;
+/** One pose of a piece: its path at the largest size a socket asks for, and how high it stands. */
+interface Pose {
+	readonly arch: Arch;
+	/** The highest point above the attach point, in metres. */
+	readonly top: number;
+	/** The farthest point out from the attach point along the heading, in metres. */
+	readonly out: number;
 }
 
-/** Adds an axis with nodes along an arching curve and returns its index and node indices. */
-function arching(
-	builder: SkeletonBuilder,
-	parent: number,
-	parentNode: number,
-	order: number,
-	kind: number,
-	start: Readonly<Vector3>,
-	heading: number,
-	elevation: number,
-	bend: number,
-	length: number,
-	nodes: number,
-	radius: (share: number) => number,
-	power: number,
-): { axis: number; nodes: number[]; directions: Vector3[] } {
-	const axis = builder.addAxis({ parent, parentNode, parentT: 1, order, kind });
-	const out: number[] = [];
-	const directions: Vector3[] = [];
-	const p: Vector3 = [start[0], start[1], start[2]];
-	const step = length / (nodes - 1);
-	for (let i = 0; i < nodes; i++) {
-		const share = i / (nodes - 1);
-		const e = Math.max(radians(-LOWEST), elevation - bend * pow(share, power));
-		directions.push(inPlane(heading, e));
-		if (i > 0) {
-			const mid = Math.max(
-				radians(-LOWEST),
-				elevation - bend * pow((i - 0.5) / (nodes - 1), power),
-			);
-			const d = inPlane(heading, mid);
-			p[0] += d[0] * step;
-			p[1] = Math.max(GROUND, p[1] + d[1] * step);
-			p[2] += d[2] * step;
-		}
-		out.push(
-			builder.addNode({
-				x: p[0],
-				y: p[1],
-				z: p[2],
-				radius: radius(share),
-				parent: i === 0 ? parentNode : (out[i - 1] as number),
-				axis,
-				light: 1,
-			}),
-		);
+/** A tuft's sizes in metres and the poses of its pieces, from its record. */
+interface Plan {
+	/** The leaf mound's height. */
+	readonly mound: number;
+	/** The sheath column's height at its tallest, and its width at the foot. */
+	readonly sheath: number;
+	readonly sheathWidth: number;
+	/** The blade's poses, the youngest first. */
+	readonly blades: readonly Pose[];
+	/** The flowering stem's poses, from the stool's middle to its rim; none without stems. */
+	readonly stalks: readonly Pose[];
+	/** A flowering stem's width at its foot. */
+	readonly stalkWidth: number;
+}
+
+/** How much taller the tallest sheath column stands than the record's, as a share. */
+const SHEATH_SPREAD = 0.15;
+
+/** The plans found, by the growth they were found from: a fit costs more than a plant's sockets. */
+const PLANS = new WeakMap<Tuft, Plan>();
+
+/** How high an arch stands above its base and how far out it reaches, in metres. */
+function extentOf(arch: Arch): { top: number; out: number } {
+	const path = archPath(arch, 0, 24);
+	let top = 0;
+	let out = 0;
+	for (let i = 0; i <= path.segments; i++) {
+		top = Math.max(top, path.up[i] as number);
+		out = Math.max(out, path.out[i] as number);
 	}
-	return { axis, nodes: out, directions };
+	return { top, out };
 }
 
-/** A flowering stem's heads: a panicle's branches and spikelets, or a sedge's hanging spikes. */
-function growHeads(
-	input: GrowInput,
-	builder: SkeletonBuilder,
-	growth: Tuft,
-	stem: { axis: number; nodes: number[] },
-	height: number,
-	heading: number,
-	index: number,
-): void {
-	const heads = growth.heads;
-	if (!heads) return;
-	const position = (node: number): Vector3 => [
-		builder.position[node * 3] as number,
-		builder.position[node * 3 + 1] as number,
-		builder.position[node * 3 + 2] as number,
-	];
-	const tangentAt = (k: number): Vector3 => {
-		const a = position(stem.nodes[Math.max(0, k - 1)] as number);
-		const b = position(stem.nodes[Math.min(stem.nodes.length - 1, k + 1)] as number);
-		return normalize3([b[0] - a[0], b[1] - a[1], b[2] - a[2]]);
+/** A tuft's plan. */
+function planOf(record: Species): Plan {
+	const { growth, blade } = tuftOf(record);
+	const known = PLANS.get(growth);
+	if (known) return known;
+	const mound = growth.mound * spreadMean(record.size.height);
+	const grown = 1 + Math.max(0, growth.bladeSpread);
+	const keys = growth.poses;
+	const blades: Pose[] = [];
+	for (let i = 0; i <= (keys.length - 1) * POSE_STEPS; i++) {
+		const from = keys[Math.min(keys.length - 1, Math.floor(i / POSE_STEPS))] as TuftPose;
+		const to = keys[Math.min(keys.length - 1, Math.floor(i / POSE_STEPS) + 1)] as TuftPose;
+		const share = (i % POSE_STEPS) / POSE_STEPS;
+		const between = (a: number, b: number) => a + (b - a) * share;
+		// A figure that only one of the two measured poses states is left for the fit to find.
+		const stated = (a: number | undefined, b: number | undefined) =>
+			a !== undefined && b !== undefined ? between(a, b) : undefined;
+		const leave = stated(from.leave, to.leave);
+		const tip = stated(from.tip, to.tip);
+		const apex = between(from.apex, to.apex);
+		const drop = between(from.drop, to.drop);
+		const fit = archFromFigures({
+			...(leave !== undefined ? { leave } : {}),
+			...(tip !== undefined ? { tip } : {}),
+			apex: apex * mound,
+			drop: drop * mound,
+			reach: between(from.reach, to.reach) * mound,
+		});
+		// A blade that comes down to the soil is longer than its fall: it meets the soil at the
+		// width it has where its point begins, and the point runs on into the litter. The figures
+		// fit the blade as far as the soil, and the point carries on along its line.
+		const shown = drop >= apex ? 1 - blade.tipLength : 1;
+		const arch = {
+			...fit.arch,
+			length: (fit.arch.length / shown) * grown,
+			from: (fit.arch.from ?? 0) * shown,
+			to: (fit.arch.to ?? 1) * shown,
+		};
+		blades.push({ arch, ...extentOf(arch) });
+	}
+	const stalks: Pose[] = [];
+	const stems = growth.stalks;
+	if (stems)
+		for (let k = 0; k < STALK_POSES; k++) {
+			const share = (k + 0.5) / STALK_POSES;
+			const shape = {
+				leave: 90 - (stems.lean[0] + (stems.lean[1] - stems.lean[0]) * share),
+				turn: stems.bow.turn[0] + (stems.bow.turn[1] - stems.bow.turn[0]) * share,
+				from: stems.bow.from,
+			};
+			// The stem is as long as stands its highest point at the tallest stem's height.
+			const length = (stems.top[1] * mound) / extentOf({ ...shape, length: 1 }).top;
+			const arch = { ...shape, length };
+			stalks.push({ arch, ...extentOf(arch) });
+		}
+	const plan: Plan = {
+		mound,
+		sheath: growth.sheath.height * mound * (1 + SHEATH_SPREAD),
+		sheathWidth: growth.sheath.width * mound,
+		blades,
+		stalks,
+		stalkWidth: (stems?.width ?? 0) * mound,
 	};
-	const last = stem.nodes.length - 1;
-	const tip = stem.nodes[last] as number;
-	const tipAt = position(tip);
-	const tipTangent = tangentAt(last);
-	const flowerBud = (at: Readonly<Vector3>, node: number, axis: number, along: Readonly<Vector3>) =>
-		builder.addBud({
-			node,
-			x: at[0],
-			y: at[1],
-			z: at[2],
-			frame: frameOf(along, Math.abs(along[1]) > 0.95 ? [1, 0, 0] : [0, 1, 0]),
-			kind: BUD_FLOWER,
-			vigor: 0.5,
-			light: 1,
-			axis,
-			woodRadius: 0,
-		});
-	if (heads.kind === 'spike' && heads.spikes) {
-		// The spike at the tip carries on the stem's line.
-		builder.addBud({
-			node: tip,
-			x: tipAt[0],
-			y: tipAt[1],
-			z: tipAt[2],
-			frame: frameOf(tipTangent, Math.abs(tipTangent[1]) > 0.95 ? [1, 0, 0] : [0, 1, 0]),
-			kind: BUD_TERMINAL,
-			vigor: 0.5,
-			light: 1,
-			axis: stem.axis,
-			woodRadius: 0,
-		});
-		const spikes = Math.max(
-			1,
-			Math.round(spreadAt(heads.spikes.count, draw(input, Purpose.Spike, index))),
-		);
-		const nodeLength = height / last;
-		let arc = 0;
-		for (let j = 0; j < spikes; j++) {
-			arc += spreadAt(heads.spikes.spacing, draw(input, Purpose.Spike, index, j, 1));
-			const k = Math.max(1, last - Math.round(arc / nodeLength));
-			const node = stem.nodes[k] as number;
-			const from = position(node);
-			const t = tangentAt(k);
-			// The stalk leaves the stem's outer side, then hangs.
-			const side = heading + (draw(input, Purpose.Spike, index, j, 2) - 0.5) * 1.2;
-			const out = normalize3([cos(side) - t[0] * 0.3, 0.2, sin(side) - t[2] * 0.3]);
-			const length =
-				spreadAt(heads.spikes.stalk, draw(input, Purpose.Spike, index, j, 3)) * (1 + 0.15 * j);
-			const axis = builder.addAxis({
-				parent: stem.axis,
-				parentNode: node,
-				parentT: 1,
-				order: 3,
-				kind: AXIS_LIMB,
-			});
-			const radius =
-				heads.radius *
-				(heads.stalkShare ?? 0.35) *
-				(1 + 0.02 * draw(input, Purpose.Spike, index, j, 4));
-			const points: Vector3[] = [
-				from,
-				[
-					from[0] + out[0] * length * 0.35,
-					from[1] + out[1] * length * 0.35,
-					from[2] + out[2] * length * 0.35,
-				],
-				[
-					from[0] + out[0] * length * 0.55,
-					from[1] - length * 0.32,
-					from[2] + out[2] * length * 0.55,
-				],
-				[
-					from[0] + out[0] * length * 0.68,
-					from[1] - length * 0.62,
-					from[2] + out[2] * length * 0.68,
-				],
-			];
-			let previous = node;
-			let end = node;
-			points.forEach((point) => {
-				end = builder.addNode({
-					x: point[0],
-					y: point[1],
-					z: point[2],
-					// The stalk holds its width to the spike's foot: a taper there thins the join under
-					// the outline's half-cover cutoff, so the hanging spike draws as a piece of its own.
-					radius,
-					parent: previous,
-					axis,
-					light: 1,
-				});
-				previous = end;
-			});
-			const at = points[3] as Vector3;
-			// A hanging body follows its stalk's last reach, so a spike droops at the angle its
-			// stalk leaves the stem rather than standing dead vertical.
-			const along = normalize3([
-				at[0] - (points[2] as Vector3)[0],
-				at[1] - (points[2] as Vector3)[1],
-				at[2] - (points[2] as Vector3)[2],
-			]);
-			flowerBud(at, end, axis, along);
-		}
-		return;
-	}
-	const panicle = heads.panicle;
-	if (!panicle) return;
-	const length = Math.min(
-		height * 0.6,
-		spreadAt(panicle.length, draw(input, Purpose.Branch, index)),
-	);
-	const nodeLength = height / last;
-	const whorls = Math.max(1, panicle.whorls);
-	const twist = draw(input, Purpose.Branch, index, 0, 1) * 2 * PI;
-	for (let w = 0; w < whorls; w++) {
-		const share = whorls > 1 ? w / (whorls - 1) : 0;
-		// The lowest whorl at the panicle's foot, the highest just under its tip; branches shorten up it.
-		const arc = height - length * (1 - 0.9 * share);
-		const k = Math.max(1, Math.min(last - 1, Math.round(arc / nodeLength)));
-		const node = stem.nodes[k] as number;
-		const from = position(node);
-		const t = tangentAt(k);
-		const branches = Math.max(
-			1,
-			Math.round(spreadAt(panicle.branches, draw(input, Purpose.Branch, index, w, 2))),
-		);
-		const reach = length * (0.1 + 0.38 * (1 - share));
-		const angle = radians(curveAt(panicle.angle, share));
-		for (let b = 0; b < branches; b++) {
-			const around =
-				twist +
-				w * 2.4 +
-				(2 * PI * b) / branches +
-				(draw(input, Purpose.Branch, index, w * 16 + b, 3) - 0.5) * 0.6;
-			const [x, y] = sideOf(t);
-			const radial: Vector3 = [
-				x[0] * cos(around) + y[0] * sin(around),
-				x[1] * cos(around) + y[1] * sin(around),
-				x[2] * cos(around) + y[2] * sin(around),
-			];
-			const branchLength = reach * (0.75 + 0.5 * draw(input, Purpose.Branch, index, w * 16 + b, 4));
-			const axis = builder.addAxis({
-				parent: stem.axis,
-				parentNode: node,
-				parentT: 1,
-				order: 3,
-				kind: AXIS_LIMB,
-			});
-			const radius =
-				heads.radius *
-				(panicle.branchShare ?? 0.18) *
-				(1 + 0.02 * draw(input, Purpose.Branch, index, w * 16 + b, 5));
-			let previous = node;
-			const steps = 4;
-			let direction = normalize3([
-				t[0] * cos(angle) + radial[0] * sin(angle),
-				t[1] * cos(angle) + radial[1] * sin(angle),
-				t[2] * cos(angle) + radial[2] * sin(angle),
-			]);
-			const p: Vector3 = [from[0], from[1], from[2]];
-			const nodes: number[] = [];
-			const droop = radians(panicle.droop) / steps;
-			for (let i = 0; i <= steps; i++) {
-				if (i > 0) {
-					p[0] += direction[0] * (branchLength / steps);
-					p[1] += direction[1] * (branchLength / steps);
-					p[2] += direction[2] * (branchLength / steps);
-					direction = normalize3([direction[0], direction[1] - sin(droop), direction[2]]);
-				}
-				previous = builder.addNode({
-					x: p[0],
-					y: p[1],
-					z: p[2],
-					radius: radius * (1 - 0.5 * (i / steps)),
-					parent: previous,
-					axis,
-					light: 1,
-				});
-				nodes.push(previous);
-			}
-			// Spikelets on the branch's outer part, pointing on along it and a little out.
-			const flowers = Math.max(
-				1,
-				Math.round(spreadAt(panicle.flowers, draw(input, Purpose.Branch, index, w * 16 + b, 6))),
-			);
-			for (let f = 0; f < flowers; f++) {
-				const along = 0.45 + 0.55 * ((f + 0.5) / flowers);
-				const i = Math.min(steps - 1, Math.floor(along * steps));
-				const u = along * steps - i;
-				const a = nodes[i] as number;
-				const c = nodes[i + 1] as number;
-				const pa = position(a);
-				const pc = position(c);
-				const at: Vector3 = [
-					pa[0] + (pc[0] - pa[0]) * u,
-					pa[1] + (pc[1] - pa[1]) * u,
-					pa[2] + (pc[2] - pa[2]) * u,
-				];
-				const spin = draw(input, Purpose.Branch, index, w * 1024 + b * 64 + f, 7) * 2 * PI;
-				const [sx, sy] = sideOf(direction);
-				const lean = 0.45;
-				const flower = normalize3([
-					direction[0] + (sx[0] * cos(spin) + sy[0] * sin(spin)) * lean,
-					direction[1] + (sx[1] * cos(spin) + sy[1] * sin(spin)) * lean + 0.25,
-					direction[2] + (sx[2] * cos(spin) + sy[2] * sin(spin)) * lean,
-				]);
-				flowerBud(at, a, axis, flower);
-			}
-		}
-	}
-	// A few spikelets crown the stem's own tip.
-	for (let f = 0; f < 3; f++) {
-		const spin = (2 * PI * f) / 3 + twist;
-		const [sx, sy] = sideOf(tipTangent);
-		const flower = normalize3([
-			tipTangent[0] + (sx[0] * cos(spin) + sy[0] * sin(spin)) * 0.35,
-			tipTangent[1] + (sx[1] * cos(spin) + sy[1] * sin(spin)) * 0.35,
-			tipTangent[2] + (sx[2] * cos(spin) + sy[2] * sin(spin)) * 0.35,
-		]);
-		flowerBud(tipAt, tip, stem.axis, flower);
-	}
-}
-
-/** Two unit vectors square to a direction and each other. */
-function sideOf(direction: Readonly<Vector3>): [Vector3, Vector3] {
-	const hint: Vector3 = Math.abs(direction[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
-	const x = normalize3(cross3(hint, direction, [0, 0, 0]));
-	const y = cross3(direction, x, [0, 0, 0]);
-	return [x, y];
+	PLANS.set(growth, plan);
+	return plan;
 }
 
 /**
- * Grows a tuft: the crown, its shoots and their blades, and the flowering stems in season.
+ * Where a blade of an age stands among the measured poses: 0 at the first pose and one more at each
+ * next. A pose holds the middle of its share of a shoot's blades, and a blade between two middles
+ * stands between their poses.
+ */
+function shapeAt(poses: readonly TuftPose[], age: number): number {
+	let whole = 0;
+	for (const pose of poses) whole += pose.share;
+	let before = 0;
+	let last = 0;
+	for (let j = 0; j < poses.length; j++) {
+		const share = (poses[j] as TuftPose).share / whole;
+		const middle = before + share / 2;
+		if (age <= middle) return j === 0 ? 0 : j - 1 + (age - last) / (middle - last);
+		before += share;
+		last = middle;
+	}
+	return poses.length - 1;
+}
+
+/** The class of piece a shoot's sheath column is, a blade's pose is, and a stem's pose is. */
+const SHEATH_CLASS = 0;
+const bladeClass = (pose: number): number => 1 + pose;
+const stalkClass = (plan: Plan, pose: number): number => 1 + plan.blades.length + pose;
+const classCount = (plan: Plan): number => 1 + plan.blades.length + plan.stalks.length;
+
+/**
+ * How late a part goes when the plant is thinned, from 0 for a part of the least plant: the parts
+ * past the least count take even steps up to 1 in the order they are given.
+ */
+function keepOf(index: number, count: number, least: number): number {
+	return index < least ? 0 : (index - least + 1) / Math.max(1, count - least + 1);
+}
+
+/**
+ * Grows a tuft: the stool, its shoots, and a socket for each shoot's sheath column, each blade and
+ * each flowering stem in season.
  *
  * @param input The record, the seed, the variant and the season.
  * @returns The skeleton.
+ * @category api/vegetation
  */
 export function growTuft(input: GrowInput): MacroSkeleton {
 	const { growth, blade } = tuftOf(input.record);
+	const plan = planOf(input.record);
+	const { mound } = plan;
 	const builder = new SkeletonBuilder();
+	const stoolRadius = (growth.stool * mound) / 2;
 	const crown = builder.addAxis({ parent: -1, parentNode: -1, order: 0, kind: AXIS_ROOT });
-	builder.addNode({ x: 0, y: -0.03, z: 0, radius: growth.base, parent: -1, axis: crown, light: 1 });
+	builder.addNode({ x: 0, y: -0.03, z: 0, radius: stoolRadius, parent: -1, axis: crown, light: 1 });
 	const crownTop = builder.addNode({
 		x: 0,
 		y: 0,
 		z: 0,
-		radius: growth.base,
+		radius: stoolRadius,
 		parent: 0,
 		axis: crown,
 		light: 1,
 	});
-	growSoil(input, builder, crown, crownTop);
+	// The stool's mound closes over the shoots' feet, one shoot's width above the soil.
+	builder.addNode({
+		x: 0,
+		y: plan.sheathWidth,
+		z: 0,
+		radius: 0,
+		parent: crownTop,
+		axis: crown,
+		light: 1,
+	});
+	growSoil(input, builder, crown, crownTop, stoolRadius);
 	const shoots = Math.max(1, Math.round(spreadAt(growth.shoots, draw(input, Purpose.Shoots))));
-	const meanLength = spreadMean(blade.length);
-	const turn = draw(input, Purpose.Shoots, 1) * 2 * PI;
-	const tillers: { axis: number; top: number; heading: number; lean: number; at: Vector3 }[] = [];
-	for (let i = 0; i < shoots; i++) {
+	const places = discPlaces(shoots, stoolRadius, draw(input, Purpose.Shoots, 1) * 2 * PI);
+	const stems = growth.stalks;
+	const stalks =
+		stems?.seasons.includes(input.season) && plan.stalks.length > 0
+			? Math.min(
+					shoots,
+					Math.max(0, Math.round(spreadAt(stems.count, draw(input, Purpose.Stalks)))),
+				)
+			: 0;
+	const ranks = Math.max(1, growth.ranks);
+	const sockets: Socket[] = [];
+	const up: Vector3 = [0, 1, 0];
+	let top = 0;
+	// The box the placed pieces fill: each piece's own reach along its heading from its shoot.
+	const low: [number, number] = [-stoolRadius, -stoolRadius];
+	const high: [number, number] = [stoolRadius, stoolRadius];
+	const reaches = (at: Readonly<Vector3>, heading: number, out: number): void => {
+		const x = at[0] + cos(heading) * out;
+		const z = at[2] + sin(heading) * out;
+		low[0] = Math.min(low[0], x);
+		low[1] = Math.min(low[1], z);
+		high[0] = Math.max(high[0], x);
+		high[1] = Math.max(high[1], z);
+	};
+	places.forEach((place, i) => {
 		const unit = (k: number) => draw(input, Purpose.Shoot, i, k);
-		const distance = growth.base * Math.sqrt((i + 0.5) / shoots) * (0.85 + 0.3 * unit(0));
-		const heading = turn + i * GOLDEN + (unit(1) - 0.5) * 0.5;
-		const lean = radians(
-			curveAt(growth.lean, Math.min(1, distance / Math.max(1e-6, growth.base))) +
-				(unit(2) - 0.5) * 8,
-		);
-		const blades = Math.max(1, Math.round(spreadAt(growth.blades, unit(3))));
-		const sheath = spreadAt(growth.sheath, unit(4));
-		const column = sheath * (1 + 0.25 * (blades - 1));
-		const radius = growth.sheathRadius * (1 + 0.02 * unit(5));
-		const base: Vector3 = [cos(heading) * distance, -0.01, sin(heading) * distance];
-		const tiller = arching(
-			builder,
-			crown,
-			crownTop,
-			1,
-			AXIS_LIMB,
-			base,
-			heading,
-			PI / 2 - lean,
-			0,
-			column,
-			3,
-			(s) => radius * (1 - 0.25 * s),
-			1,
-		);
-		const top = tiller.nodes[2] as number;
-		tillers.push({ axis: tiller.axis, top, heading, lean, at: base });
-		const rankTurn = unit(6) * 2 * PI;
+		const shootKeep = keepOf(i, shoots, growth.least.shoots);
+		const column = growth.sheath.height * mound * (1 + SHEATH_SPREAD * (unit(0) * 2 - 1));
+		const axis = builder.addAxis({
+			parent: crown,
+			parentNode: crownTop,
+			parentT: 1,
+			order: 1,
+			kind: AXIS_LIMB,
+		});
+		const base = builder.addNode({
+			x: place.x,
+			y: 0,
+			z: place.z,
+			radius: plan.sheathWidth / 2,
+			parent: crownTop,
+			axis,
+			light: 1,
+		});
+		builder.addNode({
+			x: place.x,
+			y: column,
+			z: place.z,
+			radius: (plan.sheathWidth / 2) * SHEATH_TAPER,
+			parent: base,
+			axis,
+			light: 1,
+		});
+		const at: Vector3 = [place.x, 0, place.z];
+		sockets.push({
+			axis,
+			node: base,
+			at,
+			up,
+			heading: place.heading,
+			piece: SHEATH_CLASS,
+			length: column,
+			keep: shootKeep,
+		});
+		top = Math.max(top, column);
+		// The blades, the oldest first: it stands lowest and outermost, and it is the last to go.
+		const blades = Math.max(1, Math.round(spreadAt(growth.blades, unit(1))));
+		const rankTurn = unit(2) * 2 * PI;
 		for (let k = 0; k < blades; k++) {
-			const age = blades > 1 ? 1 - k / (blades - 1) : 0.5;
 			const draws = (m: number) => draw(input, Purpose.Blade, i, k, m);
-			const collar = column * (blades > 1 ? 0.45 + 0.55 * (k / (blades - 1)) : 1);
-			const rank = k % Math.max(1, growth.ranks);
-			const around =
-				rankTurn + (2 * PI * rank) / Math.max(1, growth.ranks) + (draws(0) - 0.5) * 0.5;
-			// A blade faces out from its tuft: its own heading leans toward the shoot's.
-			const headingOut = around + 0.55 * angleBetween(heading, around);
-			const spread = radians(curveAt(growth.spread, age) * (0.85 + 0.3 * draws(1)));
-			const length = spreadAt(blade.length, draws(2)) * curveAt(growth.size, age);
-			const arch = radians(
-				spreadAt(blade.arch, draws(3)) *
-					(0.6 + 0.8 * age) *
-					Math.sqrt(length / Math.max(1e-6, meanLength)),
+			// The blade's shape by its age, counted from the youngest, with a stray of half a shape.
+			const age = 1 - (k + 0.5) / blades;
+			const pose = Math.min(
+				plan.blades.length - 1,
+				Math.max(0, Math.round(shapeAt(growth.poses, age) * POSE_STEPS + draws(2) - 0.5)),
 			);
-			const shootDir = inPlane(heading, PI / 2 - lean);
-			const from: Vector3 = [
-				base[0] + shootDir[0] * collar,
-				base[1] + shootDir[1] * collar,
-				base[2] + shootDir[2] * collar,
-			];
-			const elevation = PI / 2 - Math.min(PI * 0.48, spread + lean * cos(headingOut - heading));
-			const halfWidth = 0.25 * blade.width * (1 + 0.02 * draws(4));
-			const leaf = arching(
-				builder,
-				tiller.axis,
-				top,
-				2,
-				AXIS_LEAF,
-				from,
-				headingOut,
-				elevation,
-				arch,
-				length,
-				BLADE_NODES,
-				(s) => halfWidth * (1 - 0.6 * s),
-				1.6,
-			);
-			const first = leaf.nodes[0] as number;
-			builder.addBud({
-				node: first,
-				x: from[0],
-				y: from[1],
-				z: from[2],
-				frame: frameOf(inPlane(headingOut, elevation), faceOf(headingOut, elevation)),
-				kind: BUD_TERMINAL,
-				vigor: age,
-				light: 1,
-				axis: leaf.axis,
-				woodRadius: 0,
-			});
-		}
-	}
-	const heads = growth.heads;
-	if (heads?.seasons.includes(input.season)) {
-		const count = Math.min(
-			tillers.length,
-			Math.max(0, Math.round(spreadAt(heads.count, draw(input, Purpose.Heads)))),
-		);
-		// Flowering stems rise from shoots spread over the crown, picked by a stride through them.
-		const stride = Math.max(1, Math.floor(tillers.length / Math.max(1, count)));
-		for (let h = 0; h < count; h++) {
-			const tiller =
-				tillers[(h * stride + Math.floor(draw(input, Purpose.Heads, 1) * stride)) % tillers.length];
-			if (!tiller) continue;
-			const unit = (k: number) => draw(input, Purpose.Head, h, k);
-			const height = spreadAt(heads.height, unit(0));
-			const heading = tiller.heading + (unit(1) - 0.5) * 0.6;
-			const leanShare = heads.leanShare ?? 1.2;
-			const lean = tiller.lean * leanShare + radians(3 + unit(2) * 12);
-			const bow = radians(spreadAt(heads.bow, unit(3)));
-			const at: Vector3 = [
-				builder.position[tiller.top * 3] as number,
-				builder.position[tiller.top * 3 + 1] as number,
-				builder.position[tiller.top * 3 + 2] as number,
-			];
-			const radius = heads.radius * (1 + 0.02 * unit(4));
-			const stem = arching(
-				builder,
-				tiller.axis,
-				tiller.top,
-				2,
-				AXIS_CULM,
+			const shape = plan.blades[pose] as Pose;
+			const around = rankTurn + (2 * PI * (k % ranks)) / ranks + (draws(0) - 0.5) * RANK_STRAY;
+			// A blade faces out of its tuft: at the rim its heading turns toward the way out.
+			const heading = around + OUTWARD * place.out * angleBetween(around, place.heading);
+			const size = (1 + growth.bladeSpread * (draws(1) * 2 - 1)) / (1 + growth.bladeSpread);
+			sockets.push({
+				axis,
+				node: base,
 				at,
+				up,
 				heading,
-				PI / 2 - lean,
-				bow,
-				height,
-				STEM_NODES,
-				(s) => radius * (1 - 0.45 * s),
-				3,
-			);
-			growHeads(input, builder, growth, stem, height, heading, h);
+				piece: bladeClass(pose),
+				length: shape.arch.length * size,
+				keep: Math.max(shootKeep, keepOf(k, blades, growth.least.blades)),
+			});
+			top = Math.max(top, shape.top * size);
+			reaches(at, heading, shape.out * size);
 		}
-	}
+		if (stems && i < stalks) {
+			const draws = (m: number) => draw(input, Purpose.Stalk, i, m);
+			const pose = Math.min(STALK_POSES - 1, Math.floor(place.out * STALK_POSES));
+			const shape = plan.stalks[pose] as Pose;
+			// The first stem is the tallest and the second the shortest, so a thinned plant keeps
+			// the spread of heights; the rest fall evenly between.
+			const share = i === 0 ? 1 : i === 1 ? 0 : (i * GOLDEN_SHARE) % 1;
+			const size = (stems.top[0] + (stems.top[1] - stems.top[0]) * share) / stems.top[1];
+			const heading = place.heading + (draws(0) - 0.5) * STALK_STRAY;
+			sockets.push({
+				axis,
+				node: base,
+				at,
+				up,
+				heading,
+				piece: stalkClass(plan, pose),
+				length: shape.arch.length * size,
+				keep: Math.max(shootKeep, keepOf(i, stalks, growth.least.stalks)),
+			});
+			top = Math.max(top, shape.top * size);
+			reaches(at, heading, shape.out * size);
+		}
+	});
+	addSockets(builder, sockets, classCount(plan));
 	const finished = builder.finish(0);
-	if (growth.soil === undefined) return finished;
-	// What grows below the soil does not extend the plant's box: the ground hides it, and every
-	// picture frames the plant above the ground. The crown's own nodes set the lowest point.
-	let lowest = finished.bounds.max[1] as number;
-	for (let n = finished.axes.first[0] as number; n <= (finished.axes.last[0] as number); n++)
-		lowest = Math.min(lowest, finished.position[n * 3 + 1] as number);
-	if ((finished.bounds.min[1] as number) >= lowest) return finished;
+	// The skeleton holds only the stool. The plant's top and its box are its pieces': the tallest
+	// piece, and each piece's reach from its shoot with half a blade's width beside it.
+	const beside = blade.width / 2;
 	return {
 		...finished,
+		height: top,
 		bounds: {
-			min: [finished.bounds.min[0], lowest, finished.bounds.min[2]],
-			max: finished.bounds.max,
+			min: [low[0] - beside, 0, low[1] - beside],
+			max: [high[0] + beside, top, high[1] + beside],
 		},
 	};
 }
 
 /**
- * The crown's hold in the soil: a rhizome along the ground and the roots that leave it and the
- * crown. A root runs below the soil, where the blades' own path never goes, so it takes its own
- * node run rather than the arching one.
+ * The stool's hold in the soil: a rhizome along the ground and the roots that leave it and the
+ * stool.
  */
 function growSoil(
 	input: GrowInput,
 	builder: SkeletonBuilder,
 	crown: number,
 	crownNode: number,
+	stoolRadius: number,
 ): void {
 	const { growth } = tuftOf(input.record);
 	const soil = growth.soil;
@@ -610,18 +454,17 @@ function growSoil(
 		let previous = -1;
 		for (let i = 0; i < nodes; i++) {
 			const share = i / (nodes - 1);
-			const reach = -half + 2 * half * share;
+			const out = -half + 2 * half * share;
 			const end = Math.abs(2 * share - 1);
-			const node = builder.addNode({
-				x: along[0] * reach,
+			previous = builder.addNode({
+				x: along[0] * out,
 				y: -radius * (0.4 + 0.35 * end),
-				z: along[1] * reach,
+				z: along[1] * out,
 				radius: radius * (0.55 + 0.45 * (1 - end)),
 				parent: previous < 0 ? -1 : previous,
 				axis,
 				light: 1,
 			});
-			previous = node;
 		}
 		host = axis;
 		hostNode = previous;
@@ -632,14 +475,14 @@ function growSoil(
 		const droop = radians(spreadAt(soil.droop, unit(1)));
 		const length = spreadAt(soil.rootLength, unit(2));
 		const start = host === crown ? -0.02 : -0.01;
-		const margin = host === crown ? growth.base : 0.01;
+		const margin = host === crown ? stoolRadius : 0.01;
 		const from: Vector3 = [cos(out) * margin * unit(3), start, sin(out) * margin * unit(3)];
 		rootPath(builder, host, hostNode, from, out, -droop, length, soil.rootRadius);
 	}
 }
 
 /**
- * Adds a root's axis: nodes running out from the crown and down below the soil, its radius closing
+ * Adds a root's axis: nodes running out from the stool and down below the soil, its radius closing
  * to a point at the end.
  */
 function rootPath(
@@ -677,88 +520,445 @@ function rootPath(
 	}
 }
 
-/** The signed angle from one heading to another, from -π to π. */
-function angleBetween(from: number, to: number): number {
-	let d = (from - to) % (2 * PI);
-	if (d > PI) d -= 2 * PI;
-	if (d < -PI) d += 2 * PI;
-	return d;
+/**
+ * A piece's path from an arch, in the piece's own space: its attach point at the origin, +Y plumb
+ * and +Z the way it heads. The first frame's normal is the side that faces the sky once the path
+ * has turned over.
+ */
+function pathOf(arch: Arch): AxisPath {
+	const cut = archPath(arch, 0, 32);
+	const count = cut.segments + 1;
+	const points = new Float64Array(count * 3);
+	for (let i = 0; i < count; i++) {
+		points[i * 3 + 1] = cut.up[i] as number;
+		points[i * 3 + 2] = cut.out[i] as number;
+	}
+	const leave = radians(arch.leave);
+	return axisPath(points, new Float64Array(count), count, [0, cos(leave), -sin(leave)]);
 }
 
-/** How finely each level draws: blade detail, stem faces, and whether the finest parts draw. */
-interface TuftLevel {
-	readonly blade: BladeDetail;
-	readonly stemSides: (sides: number) => number;
-	readonly fine: boolean;
-	readonly shortest: number;
+/** A straight path between two points, for a stalk, a thread, a spike or a spikelet. */
+function straight(from: ArrayLike<number>, to: ArrayLike<number>): AxisPath {
+	const points = new Float64Array(6);
+	for (let k = 0; k < 3; k++) {
+		points[k] = from[k] as number;
+		points[3 + k] = to[k] as number;
+	}
+	return axisPath(points, new Float64Array(2), 2, [1, 0, 0]);
 }
 
-function levelOf(detail: Detail, level: MeshLevel): TuftLevel {
-	if (level === 0)
-		return {
-			blade: { rows: BLADE_ROWS[detail], across: BLADE_ACROSS[detail] },
-			stemSides: (sides) =>
-				detail === 'low' ? 3 : sides <= 3 ? 3 : detail === 'medium' ? 4 : sides,
-			fine: true,
-			shortest: 0,
-		};
-	if (level === 1)
-		return { blade: { rows: 4, across: 1 }, stemSides: () => 3, fine: true, shortest: 0.25 };
-	return { blade: { rows: 2, across: 0 }, stemSides: () => 3, fine: false, shortest: 0.5 };
+/** A three-angled stem's section: rounded corners, flat faces. */
+function triangle(angle: number): number {
+	return 0.8 + 0.2 * cos(3 * angle);
+}
+
+/** What the stem writers share: the texture's stalk strip. */
+interface Strip {
+	readonly v: readonly [number, number];
+	readonly uHalf: number;
+}
+
+/** Writes a round or three-angled run along a path. */
+function writeRun(
+	mesh: MeshWriter,
+	strip: Strip,
+	path: AxisPath,
+	from: number,
+	to: number,
+	rings: number,
+	sides: number,
+	radius: (share: number) => number,
+	along: readonly [number, number],
+	closeTip: boolean,
+	angled = false,
+	sheath = false,
+): void {
+	writeStem(mesh, {
+		path,
+		from,
+		to,
+		rings: Math.max(2, rings),
+		radius,
+		section: { sides, ...(angled ? { shape: triangle } : {}) },
+		v: strip.v,
+		uHalf: strip.uHalf,
+		bytes: NO_BYTES,
+		crown: OPEN,
+		along,
+		browning: 0,
+		closeTip,
+		sheath,
+	});
+}
+
+/** Writes a flowering stem's own run: straight to its bow, then the bow's even arc. */
+function writeStalk(
+	mesh: MeshWriter,
+	strip: Strip,
+	path: AxisPath,
+	arch: Arch,
+	tier: number,
+	width: number,
+	until: number,
+	angled: boolean,
+): void {
+	const sides = STEM_SIDES[tier] as number;
+	const radius = (s: number) => (width / 2) * (1 - (1 - STALK_TAPER) * s);
+	const bowAt = (arch.from ?? 0) * path.length;
+	const end = until * path.length;
+	const share = (s: number) => s / path.length;
+	if (bowAt > 0)
+		writeRun(
+			mesh,
+			strip,
+			path,
+			0,
+			Math.min(bowAt, end),
+			2,
+			sides,
+			(s) => radius(share(Math.min(bowAt, end)) * s),
+			[0, share(Math.min(bowAt, end))],
+			false,
+			angled,
+		);
+	if (end <= bowAt) return;
+	// The bow turns evenly, so even rings turn evenly: as many as the shared curve asks.
+	const bends = archPath(arch, TIER_LEVEL[tier] as 0 | 1 | 2).segments;
+	writeRun(
+		mesh,
+		strip,
+		path,
+		bowAt,
+		end,
+		bends + 1,
+		sides,
+		(s) => radius(share(bowAt) + (share(end) - share(bowAt)) * s),
+		[share(bowAt), share(end)],
+		false,
+		angled,
+	);
+}
+
+/** Writes a sedge's head: spikes hanging plumb on threads along the bow, and one ending the stem. */
+function writeSpikes(
+	mesh: MeshWriter,
+	strip: Strip,
+	path: AxisPath,
+	arch: Arch,
+	head: TuftSpikes,
+	tier: number,
+	mound: number,
+): void {
+	const sides = HEAD_SIDES[tier] as number;
+	const place = emptyFrame();
+	const bowAt = arch.from ?? 0;
+	const body = (head.width * mound) / 2;
+	const tipLength = head.tip * mound;
+	// The spike that ends the stem carries on along the stem's own line.
+	frameAt(path, path.length, place);
+	const end = [0, 1, 2].map(
+		(k) => (place.position[k] as number) + (place.tangent[k] as number) * tipLength,
+	);
+	writeRun(
+		mesh,
+		strip,
+		straight(place.position, end),
+		0,
+		tipLength,
+		3,
+		sides,
+		(s) => body * (0.9 - 0.5 * s),
+		[1, 1],
+		true,
+	);
+	for (let j = 0; j < head.count; j++) {
+		const share = bowAt + ((1 - bowAt) * (j + 1)) / (head.count + 1);
+		frameAt(path, share * path.length, place);
+		const from = [
+			place.position[0] as number,
+			place.position[1] as number,
+			place.position[2] as number,
+		];
+		const thread = head.thread * mound * (1 + 0.25 * j);
+		const knot = [from[0] as number, (from[1] as number) - thread, from[2] as number];
+		const foot = [knot[0] as number, (knot[1] as number) - head.length * mound, knot[2] as number];
+		writeRun(
+			mesh,
+			strip,
+			straight(from, knot),
+			0,
+			thread,
+			2,
+			3,
+			() => body * THREAD_WIDTH,
+			[share, share],
+			false,
+		);
+		// The spike swells below its thread and closes at its foot.
+		writeRun(
+			mesh,
+			strip,
+			straight(knot, foot),
+			0,
+			head.length * mound,
+			tier === 0 ? 3 : 5,
+			sides,
+			(s) => body * Math.min(1, 0.35 + 6 * s) * (s > 0.85 ? (1 - s) / 0.15 + 0.2 : 1),
+			[share, share],
+			true,
+		);
+	}
+}
+
+/** Writes a grass's head: whorls of branches up the stem's top, each ending in a cluster of spikelets. */
+function writePanicle(
+	mesh: MeshWriter,
+	strip: Strip,
+	path: AxisPath,
+	head: TuftPanicle,
+	tier: number,
+	mound: number,
+	width: number,
+): void {
+	const sides = HEAD_SIDES[tier] as number;
+	const place = emptyFrame();
+	const length = head.length * mound;
+	const whorls = Math.max(1, Math.round(head.whorls));
+	const branches = Math.max(1, Math.round(head.branches));
+	const spikelet = head.spikelet * mound;
+	const angle = radians(head.angle);
+	const branchRadius = (width / 2) * BRANCH_WIDTH;
+	// A spikelet: a short body closed at both ends, lying along a direction from a point.
+	const spikeletAt = (from: readonly number[], dir: readonly number[], share: number): void => {
+		const to = [0, 1, 2].map((k) => (from[k] as number) + (dir[k] as number) * spikelet);
+		writeRun(
+			mesh,
+			strip,
+			straight(from, to),
+			0,
+			spikelet,
+			3,
+			sides,
+			(s) => spikelet * SPIKELET_WIDTH * (s < 0.5 ? 0.25 + 1.5 * s : 1) * 0.5,
+			[share, share],
+			true,
+		);
+	};
+	for (let w = 0; w < whorls; w++) {
+		const up = w / whorls;
+		const share = (path.length - length * (1 - up)) / path.length;
+		frameAt(path, share * path.length, place);
+		const from = [
+			place.position[0] as number,
+			place.position[1] as number,
+			place.position[2] as number,
+		];
+		const reach = ((head.width * mound) / 2 / sin(angle)) * (1 - WHORL_TAPER * up);
+		for (let b = 0; b < branches; b++) {
+			const turn = (2 * PI * b) / branches + w * 2.399963;
+			const dir = [0, 1, 2].map(
+				(k) =>
+					(place.tangent[k] as number) * cos(angle) +
+					((place.normal[k] as number) * cos(turn) + (place.binormal[k] as number) * sin(turn)) *
+						sin(angle),
+			);
+			const tip = [0, 1, 2].map((k) => (from[k] as number) + (dir[k] as number) * reach);
+			writeRun(
+				mesh,
+				strip,
+				straight(from, tip),
+				0,
+				reach,
+				2,
+				3,
+				() => branchRadius,
+				[share, share],
+				false,
+			);
+			// The cluster stands along the branch's outer half, each spikelet a little off its line.
+			const cluster = tier === 0 ? Math.min(2, head.spikelets) : head.spikelets;
+			for (let n = 0; n < cluster; n++) {
+				const along = 0.5 + (0.5 * (n + 0.5)) / cluster;
+				const at = [0, 1, 2].map((k) => (from[k] as number) + (dir[k] as number) * reach * along);
+				const side = n % 2 === 0 ? 0.35 : -0.35;
+				const off = [0, 1, 2].map(
+					(k) =>
+						(dir[k] as number) +
+						side * ((place.tangent[k] as number) - (dir[k] as number) * cos(angle)),
+				);
+				const l = Math.sqrt(off.reduce((sum, v) => sum + v * v, 0)) || 1;
+				spikeletAt(
+					at,
+					off.map((v) => v / l),
+					share,
+				);
+			}
+		}
+	}
+	// The stem's own tip carries a cluster.
+	frameAt(path, path.length, place);
+	spikeletAt(
+		[place.position[0] as number, place.position[1] as number, place.position[2] as number],
+		[place.tangent[0] as number, place.tangent[1] as number, place.tangent[2] as number],
+		1,
+	);
 }
 
 /**
- * Meshes a tuft's merged foliage at a level: every blade along its axis, the sheath columns, the
- * flowering stems, and a panicle's branches or a sedge's spike stalks.
+ * The classes of piece a tuft's sockets name: the shoot's sheath column, a blade in each of the
+ * record's poses, and a flowering stem with its head in each of its leans.
+ *
+ * @param record The species record.
+ * @param manifest The texture manifest.
+ * @returns The classes, in the order of their vigor bands.
+ * @category api/vegetation
+ */
+export function tuftPieces(record: Species, manifest: TextureManifest): readonly PieceClass[] {
+	const { growth, blade } = tuftOf(record);
+	const plan = planOf(record);
+	const texture = bladeTexture(manifest);
+	const leaf = leafStrip(manifest);
+	const strip: Strip = { v: stalkRange(leaf), uHalf: leaf.stalkHalf };
+	const classes: PieceClass[] = [];
+	classes.push({
+		name: 'piece-sheath',
+		variants: 1,
+		length: plan.sheath,
+		leaves: 0,
+		write: (mesh, tier) => {
+			mesh.mark();
+			const half = plan.sheathWidth / 2;
+			writeRun(
+				mesh,
+				strip,
+				straight([0, 0, 0], [0, plan.sheath, 0]),
+				0,
+				plan.sheath,
+				3,
+				SHEATH_SIDES[tier] as number,
+				(s) => half * (1 - (1 - SHEATH_TAPER) * s),
+				[0, 1],
+				false,
+				false,
+				// The column takes the record's sheath colour where it gives one.
+				growth.sheathColour !== undefined,
+			);
+		},
+	});
+	plan.blades.forEach((pose, k) => {
+		const path = pathOf(pose.arch);
+		classes.push({
+			name: `piece-blade-${k}`,
+			variants: 1,
+			length: pose.arch.length,
+			leaves: 1,
+			write: (mesh, tier) => {
+				const detail = DETAILS[tier] as Detail;
+				writeBlade(
+					mesh,
+					path,
+					{
+						length: path.length,
+						width: blade.width,
+						blade,
+						// Neighbouring shapes twist opposite ways.
+						twist: blade.twist * (k % 2 === 0 ? 1 : -1),
+						browning: 0,
+						dry: 0.5,
+					},
+					{
+						rows: BLADE_ROWS[detail],
+						across: BLADE_ACROSS[detail],
+						// The rows stand where the shared curve cuts the pose for this tier, so no row
+						// turns more than the curve's bound whatever the tier.
+						along: archPath(pose.arch, TIER_LEVEL[tier] as 0 | 1 | 2, BLADE_ROWS[detail]).along,
+					},
+					texture,
+					NO_BYTES,
+					undefined,
+					tier >= 2,
+				);
+				mesh.mark();
+			},
+		});
+	});
+	const stems = growth.stalks;
+	if (stems)
+		plan.stalks.forEach((pose, k) => {
+			const path = pathOf(pose.arch);
+			const head = stems.head;
+			classes.push({
+				name: `piece-stalk-${k}`,
+				variants: 1,
+				length: pose.arch.length,
+				leaves: 0,
+				write: (mesh, tier) => {
+					mesh.mark();
+					writeStalk(mesh, strip, path, pose.arch, tier, plan.stalkWidth, 1, stems.sides === 3);
+					if (head.kind === 'spike')
+						writeSpikes(mesh, strip, path, pose.arch, head, tier, plan.mound);
+					else writePanicle(mesh, strip, path, head, tier, plan.mound, plan.stalkWidth);
+				},
+			});
+		});
+	return classes;
+}
+
+/** Faces round the stool's mound and rings over its dome, by level. */
+const STOOL_SIDES: readonly number[] = [12, 8, 6];
+const STOOL_RINGS: readonly number[] = [4, 3, 2];
+
+/**
+ * Meshes what a tuft draws beside its pieces: the stool's mound at every level, and the rhizome and
+ * the roots at the nearest. They lie in the soil, so a farther view does not see them.
  *
  * @param input The dressed variant.
  * @param level The level.
- * @returns The foliage's mesh.
+ * @returns The mesh.
  */
 export function meshTuft(input: MeshInput, level: MeshLevel): MeshArrays {
-	const { blade, growth } = tuftOf(input.record);
-	// A species that gives its sheath columns a colour reserves a marked byte value for them, so
-	// every other foliage axis keeps its phase in the low seven bits. A species without the colour
-	// leaves every byte as it was.
-	const sheathed = growth.sheathColour !== undefined;
 	const { skeleton, crown, kit } = input;
+	const { growth } = tuftOf(input.record);
 	const axes = skeleton.axes;
-	const tiers = levelOf(input.detail, level);
-	const texture = bladeTexture(kit.manifest);
-	const strip = leafStrip(kit.manifest);
-	const stems = stalkRange(strip);
-	const buds = terminalBuds(skeleton);
-	const meanLength = spreadMean(blade.length);
-	// A ligule stands at the blade's collar only at the nearest and finest detail, where a close
-	// view can read it; the farther levels and the kit's pressed leaf draw none.
-	const ligule =
-		blade.ligule && (input.detail === 'high' || input.detail === 'ultra')
-			? { length: spreadMean(blade.ligule.length), width: blade.ligule.width }
-			: undefined;
-	const liguleShare = blade.ligule?.share ?? 1;
-	// The axes that carry a flower, whether a stem or a spike's stalk: they are kept at every tier,
-	// because the flower draws at its axis's own site and a stalk the tier drops leaves it hanging.
-	const flowering = new Set<number>();
-	for (let b = 0; b < skeleton.buds.count; b++)
-		if ((skeleton.buds.kind[b] as number) === BUD_FLOWER)
-			flowering.add(skeleton.buds.axis[b] as number);
+	const leaf = leafStrip(kit.manifest);
+	const stems = stalkRange(leaf);
 	const mesh = new MeshWriter();
-	const season = input.season;
-	const browning =
-		season === 'autumn'
-			? 0.2
-			: season === 'winter' && input.record.seasons.winter !== 'evergreen'
-				? 0.6
-				: 0;
-	for (let a = 0; a < axes.count; a++) {
-		const kind = axes.kind[a] as number;
-		const raw = axisBytes(input, a);
-		const bytes = sheathed ? { ...raw, phase: raw.phase >> 1 } : raw;
-		if (kind === AXIS_ROOT) {
-			// The crown's own axis holds the shoots and draws nothing itself; a rhizome and the
-			// roots lie along its soil and draw as tubes, the roots closing to a point. They stand
-			// only at the nearest level: a farther view sees them under the crown, not beside it.
-			if (a === 0 || level > 0) continue;
+	// A species that colours its sheaths marks them in the phase byte, so every other run keeps
+	// that byte's low bits alone.
+	const sheathed = growth.sheathColour !== undefined;
+	const bytesOf = (axis: number) => {
+		const raw = axisBytes(input, axis);
+		return sheathed ? { ...raw, phase: raw.phase >> 1 } : raw;
+	};
+	// The stool: a drum from under the soil to its surface, closed by a dome over the shoots' feet.
+	// A cut shoot has left its stool behind: its first axis starts at the cut, not under the soil.
+	const foot = axes.first[0] as number;
+	const under = -(skeleton.position[foot * 3 + 1] as number);
+	const rise = skeleton.position[(axes.last[0] as number) * 3 + 1] as number;
+	const wide = skeleton.radius[foot] as number;
+	if (under > 0 && rise > 0 && wide > 0)
+		writeStem(mesh, {
+			path: straight([0, -under, 0], [0, rise, 0]),
+			from: 0,
+			to: under + rise,
+			rings: 2 + (STOOL_RINGS[level] as number),
+			radius: (share) => {
+				const up = (share * (under + rise) - under) / rise;
+				return up <= 0 ? wide : wide * Math.sqrt(Math.max(0, 1 - up * up));
+			},
+			section: { sides: STOOL_SIDES[level] as number },
+			v: stems,
+			uHalf: leaf.stalkHalf,
+			bytes: bytesOf(0),
+			crown,
+			along: [0, 0],
+			browning: 1,
+			closeTip: true,
+			sheath: sheathed,
+		});
+	if (level === 0)
+		for (let a = 1; a < axes.count; a++) {
+			if ((axes.kind[a] as number) !== AXIS_ROOT) continue;
 			const path = wholePath(skeleton, a, [0, 1, 0]);
 			if (!path || path.length < 1e-4) continue;
 			const first = axes.first[a] as number;
@@ -771,115 +971,22 @@ export function meshTuft(input: MeshInput, level: MeshLevel): MeshArrays {
 				to: path.length,
 				rings: Math.max(2, last - first + 1),
 				radius: (share) => r0 + (r1 - r0) * share,
-				section: { sides: level === 0 ? 4 : 3 },
+				section: { sides: 4 },
 				v: stems,
-				uHalf: strip.stalkHalf,
-				bytes,
+				uHalf: leaf.stalkHalf,
+				bytes: bytesOf(a),
 				crown,
 				along: [0, 0.05],
 				browning: 0.3,
 				closeTip: true,
 			});
-			continue;
 		}
-		if (kind === AXIS_LEAF) {
-			const bud = buds[a] as number;
-			const face: [number, number, number] = [0, 1, 0];
-			if (bud >= 0) {
-				const q = skeleton.buds.frame.subarray(bud * 4, bud * 4 + 4);
-				const z = rotateZ(q);
-				face[0] = z[0];
-				face[1] = z[1];
-				face[2] = z[2];
-			}
-			const path = wholePath(skeleton, a, face);
-			if (!path || path.length < tiers.shortest * meanLength) continue;
-			const age = bud >= 0 ? (skeleton.buds.vigor[bud] as number) : 0.5;
-			const key = axisKey(skeleton, a);
-			const scale = Math.min(1.6, path.length / Math.max(1e-6, meanLength));
-			const rows = Math.max(2, Math.round(tiers.blade.rows * Math.min(2.5, Math.max(0.6, scale))));
-			writeBlade(
-				mesh,
-				path,
-				{
-					length: path.length,
-					width: blade.width * (0.7 + 0.3 * Math.min(1, scale)),
-					blade,
-					twist:
-						blade.twist *
-						(0.4 + 1.2 * unitAt(input.seed, key, 1)) *
-						(unitAt(input.seed, key, 2) < 0.5 ? -1 : 1),
-					browning,
-					dry: 0.35 + 0.65 * age * age,
-					...(ligule && unitAt(input.seed, key, 7) < liguleShare ? { ligule } : {}),
-				},
-				{ rows, across: tiers.blade.across },
-				texture,
-				bytes,
-				crown,
-				level === 0,
-			);
-			continue;
-		}
-		const fine = (axes.order[a] as number) >= 3;
-		const isStem = kind === AXIS_CULM;
-		if (fine && !tiers.fine && !flowering.has(a)) continue;
-		// A shoot's column of sheaths takes the record's colours, marked in its surface-kind byte.
-		const sheath = !isStem && !fine && growth.sheathColour !== undefined;
-		if (!isStem && !fine && level === 2) continue;
-		const path = wholePath(skeleton, a, [0, 1, 0]);
-		if (!path) continue;
-		const sides = isStem ? (growth.heads?.sides ?? 5) : fine ? 3 : 6;
-		// A flower stalk at the far tier is a single run of two rings: that tier's cap carries the
-		// stalks with their spikes, and the polygon dial draws them coarser there than near.
-		const rings = isStem ? (level === 0 ? 12 : 5) : level === 2 ? 2 : 4;
-		const first = axes.first[a] as number;
-		const last = axes.last[a] as number;
-		const r0 = skeleton.radius[first] as number;
-		const r1 = skeleton.radius[last] as number;
-		writeStem(mesh, {
-			path,
-			from: 0,
-			to: path.length,
-			rings: Math.max(2, Math.min(last - first + 1, rings)),
-			radius: (share) => r0 + (r1 - r0) * share,
-			section: {
-				sides: tiers.stemSides(sides),
-				...(isStem && sides === 3 ? { shape: triangle } : {}),
-			},
-			v: stems,
-			uHalf: strip.stalkHalf,
-			bytes,
-			crown,
-			// A sheath column's second coordinates run from its foot to its collar, so the record's
-			// two colours read the column's own height.
-			along: sheath || isStem ? [0, 1] : fine ? [0.85, 1] : [0, 0.05],
-			// Stalks brown as the season gives; a stalk under its leaves keeps a share of its green.
-			browning: isStem ? Math.max(browning, 0.15) : Math.max(browning, 0.3),
-			closeTip: isStem || fine,
-			// The shoot's sheath column is the one merged-foliage run a sheath colour draws.
-			sheath,
-		});
-	}
 	return mesh.finishMesh();
-}
-
-/** A three-angled stem's section: rounded corners, flat faces. */
-function triangle(angle: number): number {
-	return 0.8 + 0.2 * cos(3 * angle);
-}
-
-/** The +Z axis of a frame quaternion. */
-function rotateZ(q: ArrayLike<number>): [number, number, number] {
-	const x = q[0] as number;
-	const y = q[1] as number;
-	const z = q[2] as number;
-	const w = q[3] as number;
-	return [2 * (x * z + w * y), 2 * (y * z - w * x), 1 - 2 * (x * x + y * y)];
 }
 
 /** The tuft grower. */
 export const grower: Grower = {
 	grow: growTuft,
 	foliage: meshTuft,
+	pieces: tuftPieces,
 };
