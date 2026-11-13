@@ -184,6 +184,10 @@ export const directed: Species = {
 	},
 	bark: {
 		...(record.bark as BarkSpec),
+		// The twigs that carry the fans and the fans' own stems are young bark, which picture 04
+		// shows only as shade between the fans: tinted toward the column's dark interior, about
+		// half the young bark's own colour and greener, by eye.
+		youngTint: [0.4, 0.5, 0.35],
 		// The trunk's grey-brown strips, and the inner body in the foliage's shade. The body is the
 		// thickest wood at every height, so three bands of height, each a radius the body passes
 		// and the trunk never reaches there, give it its colour.

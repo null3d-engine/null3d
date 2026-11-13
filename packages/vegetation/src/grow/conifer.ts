@@ -101,6 +101,13 @@ const SHELL_LEAN_LEAST = 2;
 const SHELL_LEAN_MOST = 30;
 /** The passes that find how far a limb runs to stand inside a shell. */
 const SHELL_PASSES = 20;
+/**
+ * The least share of its own size that a shell piece shrinks to where the outline closes over it,
+ * the share it shrinks by at each step, and the most steps.
+ */
+const SHELL_SIZE_LEAST = 0.3;
+const SHELL_FIT_STEP = 0.85;
+const SHELL_FIT_PASSES = 12;
 /** The limb number under which a socket draws its piece, past every real limb's. */
 const PIECE_DRAW = 4095;
 /** The most degrees a piece's line swings from the way its patch faces, to one side or the other. */
@@ -530,8 +537,9 @@ interface ShellRule {
 	readonly rise: number;
 	/** Degrees a piece leans out from the outline. */
 	readonly lean: number;
-	/** Metres a socket stands inside the outline. */
+	/** Metres a socket stands inside the outline, and a piece's own length in metres. */
 	readonly inset: number;
+	readonly length: number;
 	/** Radians round the trunk where the lowest row's first socket stands. */
 	readonly turn: number;
 	/** A draw from 0 to 1 for a row and a place in it. */
@@ -542,7 +550,8 @@ interface ShellRule {
  * The sockets of a closed shell: rows a rise apart up the outline from its foot to its top, each
  * row as many sockets as its round holds at the pitch, each row turned on from the one below by
  * half its spacing, as bricks lie. Each socket stands its inset inside the outline, and its piece
- * stands up the outline there, leaning out from it, so its face looks out.
+ * stands up the outline there, leaning out from it, so its face looks out, and no longer than keeps
+ * its tip inside the outline.
  */
 function shellPlaces(rule: ShellRule): ShellPlace[] {
 	const { outline, lineAt, from, to, pitch, rise, lean, inset, draw } = rule;
@@ -593,10 +602,18 @@ function shellPlaces(rule: ShellRule): ShellPlace[] {
 			const slope = rising > 0 ? (above - below) / rising : 0;
 			const off = clamp((atan2(slope, 1) * 180) / PI + lean, -SHELL_LEAN_MOST, SHELL_LEAN_MOST);
 			const tilt = radians(Math.abs(off) < SHELL_LEAN_LEAST ? SHELL_LEAN_LEAST : off);
+			// A piece is no longer than keeps its tip inside the outline, so where the outline closes
+			// over the top its pieces shorten and the top stays round.
+			let scale = BOUGH_SIZE[0] + (BOUGH_SIZE[1] - BOUGH_SIZE[0]) * draw(row + rows, j);
+			for (let pass = 0; pass < SHELL_FIT_PASSES && scale > SHELL_SIZE_LEAST; pass++) {
+				const reach = rule.length * scale;
+				if (out + sin(tilt) * reach <= outline(y + cos(tilt) * reach, azimuth)) break;
+				scale = Math.max(SHELL_SIZE_LEAST, scale * SHELL_FIT_STEP);
+			}
 			places.push({
 				at: [lx + c * out, y, lz + n * out],
 				heading: [sin(tilt) * c, cos(tilt), sin(tilt) * n],
-				scale: BOUGH_SIZE[0] + (BOUGH_SIZE[1] - BOUGH_SIZE[0]) * draw(row + rows, j),
+				scale,
 				end: row === 0 || row === rows - 1,
 			});
 		}
@@ -2056,6 +2073,7 @@ export function planConifer(input: GrowInput): ConiferPlan {
 					rise: Math.max(0.05, rule.rise ?? rule.pitch),
 					lean: rule.lift,
 					inset: pieceLength * SHELL_FACE,
+					length: pieceLength,
 					turn: draw(Purpose.ShellTurn) * 2 * PI,
 					draw: (row, place) => draw(Purpose.ShellPlace, row, place),
 				})

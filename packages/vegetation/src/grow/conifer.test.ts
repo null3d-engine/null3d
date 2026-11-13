@@ -826,6 +826,27 @@ describe("the Italian cypress's closed shell", () => {
 		expect(skeleton.buds.sockets?.piece).toBeDefined();
 	});
 
+	it('keeps every fan inside the outline from its socket to its tip, shortening it where the top closes', () => {
+		for (const plan of plans) {
+			const H = heightOf(plan);
+			let shortened = 0;
+			for (const socket of plan.sockets) {
+				const reach = fanLength * socket.scale;
+				const tip = [0, 1, 2].map(
+					(k) => (socket.at[k] as number) + (socket.heading[k] as number) * reach,
+				);
+				const tipY = tip[1] as number;
+				const within = tipY <= crown * H && flat(tip) <= outline(plan, tipY) + 0.002 * H;
+				// The least a fan shrinks to is three tenths of its own size.
+				if (!within) expect(socket.scale).toBeCloseTo(0.3, 6);
+				if (socket.scale < 0.8) shortened++;
+			}
+			// The top rows shorten; the column below keeps its fans' sizes.
+			expect(shortened).toBeGreaterThan(0);
+			expect(shortened / plan.sockets.length).toBeLessThan(0.15);
+		}
+	});
+
 	it("carries no fan on the leader's tip, where the top rows close the column", () => {
 		for (const plan of plans) {
 			expect(plan.sockets.filter((socket) => socket.limb < 0)).toHaveLength(0);
