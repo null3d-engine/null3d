@@ -24,7 +24,9 @@ import {
 	atan2,
 	cos,
 	PI,
+	quatAxisAngle,
 	quatFromFrame,
+	quatMultiply,
 	radians,
 	sin,
 	tan,
@@ -61,27 +63,58 @@ const LENGTH_PASSES = 22;
 const UNDER_STEPS = 16;
 const UNDER_PASSES = 10;
 /**
+ * The passes in which a course cut short by the boundary is shaped again for its new length, and
+ * the share of the height its tip may stand past the cut before it is cut again.
+ */
+const SETTLE_PASSES = 4;
+const SETTLE_WITHIN = 0.0005;
+/**
  * How far a crooked axis may stray from its own line, sideways and up or down, as shares of its
  * rule's sway: wide enough that its mean line wanders, and bounded so it keeps its course.
  */
 const WANDER_SIDE = 0.8;
 const WANDER_NOD = 0.5;
 /**
- * Axes that keep apart: the share of an axis's length past which its wood is held clear of other
- * wood (nearer its base it stands beside the wood it leaves), how many times an axis may be shaped,
- * and the step between one shaping's hash keys and the next's.
+ * Axes that keep apart: the share of an axis's length over which it stands beside the wood it
+ * leaves, and is held clear only of other wood, how many times an axis may be shaped, and the step
+ * between one shaping's hash keys and the next's.
  */
 const OUTER_FROM = 0.2;
 const APART_TRIES = 8;
 /**
- * The wood built so far is kept so that the wood near a point is found without a read of all of
- * it: wood up to this radius, as a share of the height, stands in a grid of cells this wide, and
- * the few thicker points are read one by one.
+ * The wood built so far is kept so that the wood near a piece is found without a read of all of
+ * it: runs of wood up to this radius, as a share of the height, stand in a grid of cells this
+ * wide, and the few thicker runs are read one by one.
  */
 const WOOD_THIN = 0.01;
 const WOOD_CELL = 0.03;
 /** Half the cells a grid holds along one line, which no plant's wood reaches. */
 const WOOD_CELLS = 4096;
+/**
+ * Fine wood that fills a patch. A twig's piece runs this share of the pitch; a socket stands this
+ * share of the piece's length inside the patch's surface, since a piece lies out at an angle; a
+ * point of the surface is inside another patch under this share of that patch's own radius; a
+ * twig is this share of the wood it leaves at most, and this many times its own end's radius at
+ * most; it stands this share of the height clear of other wood; and the twigs grow for this many
+ * rounds at most.
+ */
+const FILL_STEP = 0.6;
+const FILL_INSET = 0.7;
+const FILL_INSIDE = 0.8;
+const FILL_SHARE = 0.7;
+const FILL_STOUT = 3;
+const FILL_CLEAR = 0.001;
+const FILL_ROUNDS = 16;
+/**
+ * The shells a patch's sockets stand on, from the outermost in: each one's size as a share of the
+ * outermost's, and the share of the outermost's spacing of points it keeps over its own surface, so
+ * the inner twigs carry fewer pieces the nearer the patch's middle they stand.
+ */
+const FILL_SHELLS: readonly (readonly [size: number, keep: number])[] = [
+	[1, 1],
+	[0.65, 0.85],
+	[0.35, 0.6],
+];
 const SHAPE_STEP = 16384;
 /** The rise of a unit direction above which a parent stands near plumb and has no ground side. */
 const PLUMB_NEAR = 0.9;
@@ -109,7 +142,15 @@ const Purpose = {
 	Lean: 11,
 	Spot: 12,
 	Nod: 13,
+	Fill: 14,
+	Turn: 15,
 } as const;
+/**
+ * The steps of the plastic number's sequence, which spreads pairs of shares evenly over a run of
+ * any length: a piece's roll takes the first and its tilt the second.
+ */
+const SPREAD_ROLL = 0.7548776662466927;
+const SPREAD_TILT = 0.5698402909980532;
 
 /**
  * What an axis of a frame is.
@@ -182,10 +223,20 @@ export interface FramePatchRule {
 	/**
 	 * Sockets along the wood under the patch, beside the one at the wood's end: the share of the
 	 * plant's height from one to the next, and the degrees each stands out from the wood's line.
-	 * They run back from the end for half the patch's width, each turned on round the wood from the
-	 * last and none on the wood's underside. Left out, the patch has the one socket at the end.
+	 * They run back from the end for half the patch's width, or over the whole run a patch that
+	 * clothes its axis clothes, each turned on round the wood from the last and none on the wood's
+	 * underside. Left out, the patch has the one socket at the end.
 	 */
 	readonly sockets?: { readonly every: number; readonly angle: number };
+	/**
+	 * Fine wood that clothes the patch: twigs grown from the wood under it toward points spread
+	 * over its surface, each twig ending in a socket. `pitch` is the share of the plant's height
+	 * from one such point to the next over the surface, which is the width of the piece a socket
+	 * carries, and `reach` is that piece's length, which the sockets stand inside the surface by.
+	 * A point is left out where the surface stands inside another patch or under the crown's lower
+	 * boundary. Left out, the patch has no wood of its own.
+	 */
+	readonly fill?: { readonly pitch: number; readonly reach: number };
 }
 
 /** What every axis rule states. */
@@ -326,6 +377,13 @@ export interface FrameSide {
 	 * as shares of the height.
 	 */
 	readonly under: Curve;
+	/**
+	 * The direction round the plant, in degrees, that the view showing this side was taken from. A
+	 * place behind the trunk from there, inside the trunk's width, is hidden by the trunk in that
+	 * view, so this side's lower boundary does not bind it. Left out, the boundary binds every place
+	 * on the side.
+	 */
+	readonly seen?: number;
 }
 
 /**
@@ -403,6 +461,16 @@ export interface FramePatch {
 	readonly along: Vector3;
 	/** The sockets along the wood under the patch: the metres between them and their angle. */
 	readonly sockets?: { readonly every: number; readonly angle: number };
+	/**
+	 * The share of its axis's length from which the patch clothes the axis itself, as a hanging
+	 * whip's does. Absent, the patch stands at the axis's end.
+	 */
+	readonly clothes?: number;
+}
+
+/** A patch while its plan is built, with the fine wood it asks for, in metres. */
+interface Mass extends FramePatch {
+	readonly fill?: { readonly pitch: number; readonly reach: number };
 }
 
 /**
@@ -538,6 +606,37 @@ function lay(
 	return { points, along, at };
 }
 
+/** The least distance between two straight runs, each from one point to another. */
+function runsApart(
+	a0: Readonly<Vector3>,
+	a1: Readonly<Vector3>,
+	b0: Readonly<Vector3>,
+	b1: Readonly<Vector3>,
+): number {
+	const ux = a1[0] - a0[0];
+	const uy = a1[1] - a0[1];
+	const uz = a1[2] - a0[2];
+	const vx = b1[0] - b0[0];
+	const vy = b1[1] - b0[1];
+	const vz = b1[2] - b0[2];
+	const wx = a0[0] - b0[0];
+	const wy = a0[1] - b0[1];
+	const wz = a0[2] - b0[2];
+	const a = ux * ux + uy * uy + uz * uz;
+	const b = ux * vx + uy * vy + uz * vz;
+	const c = vx * vx + vy * vy + vz * vz;
+	const d = ux * wx + uy * wy + uz * wz;
+	const e = vx * wx + vy * wy + vz * wz;
+	const square = a * c - b * b;
+	let s = square > 1e-12 ? clamp((b * e - c * d) / square, 0, 1) : 0;
+	const t = c > 1e-12 ? clamp((b * s + e) / c, 0, 1) : 0;
+	s = a > 1e-12 ? clamp((b * t - d) / a, 0, 1) : 0;
+	const x = wx + s * ux - t * vx;
+	const y = wy + s * uy - t * vy;
+	const z = wz + s * uz - t * vz;
+	return Math.sqrt(x * x + y * y + z * z);
+}
+
 /** Where a course of a stated length ends, summed in even steps. */
 function tipOf(
 	from: Readonly<Vector3>,
@@ -557,8 +656,19 @@ function tipOf(
 	return [x, y, z];
 }
 
-/** A point of the wood already built. */
+/** A twig's node while a patch is filled: where it stands and the node it grew from. */
+interface Sprout {
+	readonly at: Vector3;
+	readonly from: number;
+	/** The node of the patch's own axis it is, or -1 for a node of a twig. */
+	readonly seed: number;
+	/** Whether a socket stands at it. */
+	readonly socket: boolean;
+}
+
+/** A run of the wood already built: a straight piece from one of its points to the next. */
 interface WoodPoint {
+	readonly from: Vector3;
 	readonly at: Vector3;
 	readonly radius: number;
 	readonly axis: number;
@@ -672,7 +782,8 @@ export function outlineRadius(spec: FrameSpec, scale: number, y: number, azimuth
  * The height that no foliage may stand under at a place beside the plant, in metres. Each stated
  * side's lower boundary is read as the view across that side shows it, by the place's distance from
  * the trunk's line in that view, and the place answers to every side it stands on: the highest of
- * their boundaries there.
+ * their boundaries there. A side does not bind a place that its view sees only as the trunk, behind
+ * it and inside its width.
  *
  * @param spec The frame.
  * @param scale The plant's height in metres.
@@ -686,7 +797,16 @@ export function outlineUnder(spec: FrameSpec, scale: number, x: number, z: numbe
 	for (const side of spec.outline) {
 		const toward = radians(side.toward);
 		const reach = x * cos(toward) + z * sin(toward);
-		if (reach >= 0) highest = Math.max(highest, curveAt(side.under, reach / scale));
+		if (reach < 0) continue;
+		if (side.seen !== undefined) {
+			// The trunk's half width where the view shows its bole bare, which hides what stands
+			// behind it.
+			const bare = curveAt(side.under, 0);
+			const hidden = (curveAt(spec.stems.width, bare) * scale) / 2;
+			const from = radians(side.seen);
+			if (x * cos(from) + z * sin(from) < 0 && reach < hidden) continue;
+		}
+		highest = Math.max(highest, curveAt(side.under, reach / scale));
 	}
 	return highest * scale;
 }
@@ -729,23 +849,81 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 		unitAt(seed, salt, variant, purpose, a * 4096 + b);
 	const scale = spreadAt(record.size.height, draw(Purpose.Height));
 	const axes: Built[] = [];
-	const patches: FramePatch[] = [];
-	/** The wood built so far, each point with its radius and its axis, for the axes that keep apart. */
+	const patches: Mass[] = [];
+	/** The wood built so far, each run with its radius and its axis, for the axes that keep apart. */
 	const thick: WoodPoint[] = [];
 	const thin = new Map<number, WoodPoint[]>();
 	const cell = WOOD_CELL * scale;
 	const cellOf = (at: number): number => Math.floor(at / cell);
 	const cellKey = (i: number, j: number, k: number): number =>
 		((i + WOOD_CELLS) * 2 * WOOD_CELLS + j + WOOD_CELLS) * 2 * WOOD_CELLS + k + WOOD_CELLS;
-	const addWood = (point: WoodPoint): void => {
-		if (point.radius > WOOD_THIN * scale) {
-			thick.push(point);
+	/**
+	 * The least gap between a piece of wood of a radius, from one point to another, and the wood
+	 * built so far, apart from the axes asked to be left out: the distance between their straight
+	 * runs less both radii. Where no wood stands nearer than the gap asked for, the figure is only
+	 * known to be at least that gap.
+	 */
+	const gapAt = (
+		from: Readonly<Vector3>,
+		point: Readonly<Vector3>,
+		own: number,
+		skip: (axis: number) => boolean,
+		asked: number,
+	): number => {
+		let least = Number.POSITIVE_INFINITY;
+		const gap = (other: WoodPoint): void => {
+			if (skip(other.axis)) return;
+			least = Math.min(least, runsApart(from, point, other.from, other.at) - other.radius - own);
+		};
+		for (const other of thick) gap(other);
+		// Thin wood farther off than this stands clear by more than the gap asked for. A run is kept
+		// in every cell its box touches, so the cells round the piece's own box hold every run near it.
+		const near = asked + own + WOOD_THIN * scale;
+		for (
+			let i = cellOf(Math.min(from[0], point[0]) - near);
+			i <= cellOf(Math.max(from[0], point[0]) + near);
+			i++
+		)
+			for (
+				let j = cellOf(Math.min(from[1], point[1]) - near);
+				j <= cellOf(Math.max(from[1], point[1]) + near);
+				j++
+			)
+				for (
+					let c = cellOf(Math.min(from[2], point[2]) - near);
+					c <= cellOf(Math.max(from[2], point[2]) + near);
+					c++
+				) {
+					const held = thin.get(cellKey(i, j, c));
+					if (held) for (const other of held) gap(other);
+				}
+		return least;
+	};
+	const addWood = (run: WoodPoint): void => {
+		if (run.radius > WOOD_THIN * scale) {
+			thick.push(run);
 			return;
 		}
-		const key = cellKey(cellOf(point.at[0]), cellOf(point.at[1]), cellOf(point.at[2]));
-		const held = thin.get(key);
-		if (held) held.push(point);
-		else thin.set(key, [point]);
+		for (
+			let i = cellOf(Math.min(run.from[0], run.at[0]));
+			i <= cellOf(Math.max(run.from[0], run.at[0]));
+			i++
+		)
+			for (
+				let j = cellOf(Math.min(run.from[1], run.at[1]));
+				j <= cellOf(Math.max(run.from[1], run.at[1]));
+				j++
+			)
+				for (
+					let c = cellOf(Math.min(run.from[2], run.at[2]));
+					c <= cellOf(Math.max(run.from[2], run.at[2]));
+					c++
+				) {
+					const key = cellKey(i, j, c);
+					const held = thin.get(key);
+					if (held) held.push(run);
+					else thin.set(key, [run]);
+				}
 	};
 	// The height of the crown's widest row, in metres: the middle the outline is drawn in toward.
 	let middle = scale / 2;
@@ -792,6 +970,11 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 		 */
 		const drawn = (attempt: number) => {
 			const shape = id + attempt * SHAPE_STEP;
+			/** Whether the lower boundary cut the axis short, and shorter than its rule's least. */
+			let cut = false;
+			let stunted = false;
+			/** The length the course was last shaped for. */
+			let shapedFor = 0;
 			// The wood's radius along the axis before any fork thins it, which bounds how tightly it may
 			// bend: no bend's radius is under a stated count of the wood's diameters there.
 			const thick = (share: number, over: number): number =>
@@ -924,6 +1107,7 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 			 * least radius the leans and nods are eased until it is not.
 			 */
 			const shaped = (over: number): void => {
+				shapedFor = over;
 				eases.fill(1);
 				bent(over);
 				for (let pass = 0; pass < 4; pass++) {
@@ -963,16 +1147,32 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 			shaped(length);
 			/**
 			 * The length, up to a stated one, at which a course that runs down first takes its tip
-			 * under the crown's lower boundary, or deeper under it than where it left. A course that
-			 * does not run down keeps its length, since wood may run along the boundary.
+			 * under the crown's lower boundary, or deeper under it than where it left; for an axis
+			 * whose patch is clothed with pieces, where the piece at its end first would. A course
+			 * that does not run down keeps its length, since wood may run along the boundary.
 			 */
 			const aboveUnder = (most: number): number => {
 				// A tip stands a length along the course's mean heading, whatever the length.
 				const run = tipOf([0, 0, 0], tangent, 1);
 				if (run[1] >= 0) return most;
-				const under = (trial: number): number =>
-					outlineUnder(spec, scale, start[0] + run[0] * trial, start[2] + run[2] * trial) -
-					(start[1] + run[1] * trial);
+				// The piece at the end of a clothed axis lies out along the axis's last run, so the course
+				// ends where that piece's foot stands on the boundary, read under the piece's middle, or
+				// where the tip itself does, whichever comes first.
+				const fill = rule.patch?.fill;
+				const last = tangent(1);
+				const drop = clamp(-last[1], 0, 1);
+				const reach = (fill?.reach ?? 0) * scale;
+				const hang = fill ? drop * reach + (fill.pitch * scale * (1 - drop)) / 6 : 0;
+				const under = (trial: number): number => {
+					const x = start[0] + run[0] * trial;
+					const y = start[1] + run[1] * trial;
+					const z = start[2] + run[2] * trial;
+					return Math.max(
+						outlineUnder(spec, scale, x, z) - y,
+						outlineUnder(spec, scale, x + (last[0] * reach) / 2, z + (last[2] * reach) / 2) -
+							(y - hang),
+					);
+				};
 				const from = Math.max(0, under(0));
 				let clear = 0;
 				for (let k = 1; k <= UNDER_STEPS; k++) {
@@ -1025,7 +1225,12 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 				if (rule.vary) length *= 1 + (draw(Purpose.Vary, id) * 2 - 1) * rule.vary;
 				if (rule.most !== undefined) length = Math.min(length, curveAt(rule.most, place) * scale);
 				if (rule.least !== undefined) length = Math.max(length, curveAt(rule.least, place) * scale);
-				if ('outline' in lengthRule) length = aboveUnder(length);
+				if ('outline' in lengthRule) {
+					const kept = aboveUnder(length);
+					stunted = rule.least !== undefined && kept < curveAt(rule.least, place) * scale - 1e-9;
+					if (kept < length - 1e-9) cut = true;
+					length = kept;
+				}
 				length = Math.max(length, 0.01 * scale);
 			};
 			// The bends are shaped for the length, and the length is found from the bends, twice over.
@@ -1096,6 +1301,24 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 					shaped(length);
 				}
 			}
+			// The last shaping moves the tip, so a course that runs down is read against the lower
+			// boundary once more as it now stands. A course the boundary cuts is shaped again for its
+			// new length, so its bends are not drawn tighter than its wood allows, and read again,
+			// until its shape fits its length and its tip holds; past the last pass it is cut as it
+			// stands. A course the boundary never cuts keeps its shape.
+			if ('outline' in lengthRule)
+				for (let pass = 0; pass <= SETTLE_PASSES; pass++) {
+					const kept = Math.max(aboveUnder(length), 0.01 * scale);
+					const short = kept < length - SETTLE_WITHIN * scale;
+					if (short) {
+						length = kept;
+						cut = true;
+						if (rule.least !== undefined && kept < curveAt(rule.least, place) * scale - 1e-9)
+							stunted = true;
+					}
+					if (!cut || (!short && Math.abs(length - shapedFor) <= SETTLE_WITHIN * scale)) break;
+					if (pass < SETTLE_PASSES) shaped(length);
+				}
 			const stem = role === 'stem' ? (rule as FrameStemRule) : undefined;
 			// A stem is also cut where its width is stated, so its foot's flare keeps its shape.
 			const widths =
@@ -1125,40 +1348,51 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 				knots,
 				seats.map((seat) => seat.share),
 			);
-			return { laid, seats, length, tangent, stem, kept };
+			return { laid, seats, length, tangent, stem, kept, stunted };
 		};
 		let pick = drawn(0);
 		const apart = 'apart' in rule && rule.apart ? rule.apart * scale : 0;
 		/**
-		 * The least gap between the wood of an attempt's outer half and the wood of every axis built
-		 * before it, the axis it leaves apart: the distance between their lines less both radii. The
-		 * wood its parent grew from counts, so a branch does not end against its bough's own limb.
-		 * Where no wood stands nearer than the gap the rule asks for, the figure is only known to be
-		 * at least that gap.
+		 * The wood an axis stands beside where it leaves: its parent, the wood its parent leaves and
+		 * the axes that leave its parent too, which stand together with it at its base.
+		 */
+		const beside = new Set<number>([parent]);
+		const grand = axes[parent]?.parent ?? -1;
+		if (grand >= 0) beside.add(grand);
+		axes.forEach((other, k) => {
+			if (other.parent === parent) beside.add(k);
+		});
+		const skipBeside = (axis: number): boolean => beside.has(axis);
+		const skipParent = (axis: number): boolean => axis === parent;
+		const onlyParent = (axis: number): boolean => axis !== parent;
+		// Where it leaves, an axis stands inside its parent's thickness as far as both radii reach.
+		const seat = parent >= 0 ? (axes[parent] as Built).nodes[parentNode] : undefined;
+		const junction = (seat?.radius ?? 0) + baseRadius;
+		/**
+		 * The least gap between the wood of an attempt and the wood of every axis built before it:
+		 * the distance between their straight runs less both radii. Over its first stretch an axis
+		 * stands beside the wood it leaves, so there the wood beside it is left out. Past that
+		 * stretch the wood its parent grew from counts, so a branch does not end against its
+		 * bough's own limb; and once it has left its parent's thickness its parent counts too, which
+		 * it must not pass back through, though it may run as near it as it likes.
 		 */
 		const room = (attempt: typeof pick): number => {
 			let least = Number.POSITIVE_INFINITY;
 			const taper = clamp((rule as FrameBranchRule).taper, 0.02, 1);
 			attempt.laid.points.forEach((point, k) => {
 				const share = attempt.laid.along[k] as number;
-				if (share < OUTER_FROM) return;
-				const own = baseRadius * (1 - (1 - taper) * share);
-				const gap = (other: WoodPoint): void => {
-					if (other.axis === parent) return;
-					const dx = point[0] - other.at[0];
-					const dy = point[1] - other.at[1];
-					const dz = point[2] - other.at[2];
-					least = Math.min(least, Math.sqrt(dx * dx + dy * dy + dz * dz) - other.radius - own);
-				};
-				for (const other of thick) gap(other);
-				// Thin wood farther off than this stands clear by more than the gap asked for.
-				const near = apart + own + WOOD_THIN * scale;
-				for (let i = cellOf(point[0] - near); i <= cellOf(point[0] + near); i++)
-					for (let j = cellOf(point[1] - near); j <= cellOf(point[1] + near); j++)
-						for (let c = cellOf(point[2] - near); c <= cellOf(point[2] + near); c++) {
-							const held = thin.get(cellKey(i, j, c));
-							if (held) for (const other of held) gap(other);
-						}
+				const radius = baseRadius * (1 - (1 - taper) * share);
+				const prior = k > 0 ? (attempt.laid.points[k - 1] as Vector3) : start;
+				if (share < OUTER_FROM) {
+					least = Math.min(least, gapAt(prior, point, radius, skipBeside, apart));
+					return;
+				}
+				least = Math.min(least, gapAt(prior, point, radius, skipParent, apart));
+				const dx = point[0] - start[0];
+				const dy = point[1] - start[1];
+				const dz = point[2] - start[2];
+				if (dx * dx + dy * dy + dz * dz >= junction * junction)
+					least = Math.min(least, gapAt(prior, point, radius, onlyParent, 0) + apart);
 			});
 			return least;
 		};
@@ -1173,7 +1407,20 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 				}
 			}
 		}
-		const { laid, seats, length, tangent, stem, kept } = pick;
+		const { laid, seats, length, tangent, stem, kept, stunted } = pick;
+		// An axis that the lower boundary cuts shorter than its rule's least is not grown, nor the
+		// axes it would carry; and one that carries foliage and no other axis, and ends under the
+		// boundary, would hang its foliage under it, so it is not grown either.
+		const tip = laid.points[laid.points.length - 1];
+		if (
+			!stem &&
+			(stunted ||
+				(rule.patch &&
+					seats.length === 0 &&
+					tip &&
+					tip[1] < outlineUnder(spec, scale, tip[0], tip[2])))
+		)
+			return;
 		const taper = stem ? 1 : clamp((rule as FrameBranchRule).taper, 0.02, 1);
 		const radiusAt = (share: number): number =>
 			Math.max(
@@ -1209,8 +1456,15 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 			nodes,
 			along,
 		});
-		for (const node of nodes)
-			addWood({ at: [node.x, node.y, node.z], radius: node.radius, axis: id });
+		nodes.forEach((node, k) => {
+			const prior = k > 0 ? (nodes[k - 1] as FrameNode) : undefined;
+			addWood({
+				from: prior ? [prior.x, prior.y, prior.z] : [start[0], start[1], start[2]],
+				at: [node.x, node.y, node.z],
+				radius: node.radius,
+				axis: id,
+			});
+		});
 
 		const end = nodes[nodes.length - 1] as FrameNode;
 		const lastTangent = tangent(1);
@@ -1224,18 +1478,17 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 			let width = curveAt(patch.width, place) * scale;
 			let depth = curveAt(patch.depth, place) * scale;
 			let centre: Vector3;
-			if (patch.along === undefined)
-				// Foliage stands on the crown's lower boundary where its wood runs along it or ends at
-				// it, and never under it.
-				centre = [
-					end.x,
-					Math.max(
-						end.y + (patch.offset ?? 0) * depth,
-						outlineUnder(spec, scale, end.x, end.z) + depth / 2,
-					),
-					end.z,
-				];
-			else {
+			if (patch.along === undefined) {
+				centre = [end.x, end.y + (patch.offset ?? 0) * depth, end.z];
+				// A patch with no wood of its own is cut where it would hang under the crown's lower
+				// boundary: its top stays and its foot stands on the boundary.
+				const under = outlineUnder(spec, scale, end.x, end.z);
+				const over = centre[1] + depth / 2;
+				if (!patch.fill && centre[1] - depth / 2 < under && over > under) {
+					depth = over - under;
+					centre[1] = (over + under) / 2;
+				}
+			} else {
 				// The patch clothes the axis: it holds every node past the share where it begins.
 				const low = [Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY];
 				const high = [Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY];
@@ -1267,6 +1520,10 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 				along: level,
 				...(patch.sockets
 					? { sockets: { every: patch.sockets.every * scale, angle: patch.sockets.angle } }
+					: {}),
+				...(patch.along === undefined ? {} : { clothes: patch.along }),
+				...(patch.fill
+					? { fill: { pitch: patch.fill.pitch * scale, reach: patch.fill.reach * scale } }
 					: {}),
 			});
 		}
@@ -1381,10 +1638,324 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 		);
 	}
 
+	/**
+	 * Clothes each patch that asks for fine wood, after every stated axis is built, so the stated
+	 * wood stands as it did. Points are spread evenly over the patch's surface, and one is kept
+	 * where the surface is the crown's own: not inside another patch, and not under the lower
+	 * boundary. A socket stands a piece's reach inside each kept point, and more stand on smaller
+	 * shells deeper in, more thinly the deeper they are. Twigs then grow from the
+	 * wood under the patch toward the sockets by space colonisation: in each round every socket
+	 * not yet reached pulls the twig end nearest it, each pulled end grows one piece toward the
+	 * sockets that pull it, and a socket within one piece of an end is reached by a last piece. A
+	 * piece that would stand against other wood is not grown. Each socket takes the place of the
+	 * patch as a small patch of its own, the size of the piece it carries.
+	 *
+	 * @returns The plan's patches: those with no fine wood as they were, and the sockets' own.
+	 */
+	const fillMasses = (): FramePatch[] => {
+		const out: FramePatch[] = [];
+		const tip = RADIUS_LEAST * scale;
+		const clear = FILL_CLEAR * scale;
+		/** A socket's patch: the piece it carries, lying out along the wood's last run. */
+		const spray = (
+			axis: number,
+			at: Readonly<Vector3>,
+			run: Readonly<Vector3>,
+			fill: { readonly pitch: number; readonly reach: number },
+		): FramePatch => {
+			const rise = Math.abs(run[1]);
+			let depth = (fill.pitch / 3) * (1 - rise) + fill.reach * rise;
+			const centre: Vector3 = [
+				at[0] + (run[0] * fill.reach) / 2,
+				at[1] + (run[1] * fill.reach) / 2,
+				at[2] + (run[2] * fill.reach) / 2,
+			];
+			// A piece that would dip under the lower boundary is drawn in to it.
+			const under = outlineUnder(spec, scale, centre[0], centre[2]);
+			if (centre[1] - depth / 2 < under) {
+				const over = Math.max(centre[1] + depth / 2, under + tip);
+				depth = over - under;
+				centre[1] = (over + under) / 2;
+			}
+			const flat = Math.sqrt(run[0] * run[0] + run[2] * run[2]);
+			return {
+				kind: 'spray',
+				axis,
+				centre,
+				begins: Math.max(
+					0,
+					Math.sqrt(centre[0] * centre[0] + centre[2] * centre[2]) - fill.pitch / 2,
+				),
+				width: fill.pitch,
+				depth,
+				along: flat > 0.2 ? [run[0] / flat, 0, run[2] / flat] : [1, 0, 0],
+			};
+		};
+		patches.forEach((mass, index) => {
+			const fill = mass.fill;
+			if (!fill) {
+				out.push(mass);
+				return;
+			}
+			const main = axes[mass.axis] as Built;
+			const patchAxis = (axis: number): boolean => axis === mass.axis;
+			const a = mass.width / 2;
+			const b = mass.depth / 2;
+			const [cx, cy, cz] = mass.centre;
+			const step = fill.pitch * FILL_STEP;
+			const inset = fill.reach * FILL_INSET;
+			const innerA = Math.max(a - inset, a * 0.3);
+			const innerB = Math.max(b - inset, b * 0.3);
+			// The surface of the patch's rounded body, near enough, over one piece's footprint.
+			const count = Math.max(
+				1,
+				Math.round((4 * PI * (a * a + 2 * a * b)) / 3 / (fill.pitch * fill.pitch)),
+			);
+			const turn = draw(Purpose.Fill, mass.axis) * 2 * PI;
+			/** Whether a point stands inside another patch, which fills that place itself. */
+			const owned = (point: Readonly<Vector3>): boolean => {
+				for (let m = 0; m < patches.length; m++) {
+					if (m === index) continue;
+					const other = patches[m] as Mass;
+					const ox = (point[0] - other.centre[0]) / (other.width / 2);
+					const oy = (point[1] - other.centre[1]) / (other.depth / 2);
+					const oz = (point[2] - other.centre[2]) / (other.width / 2);
+					if (ox * ox + oy * oy + oz * oz < FILL_INSIDE * FILL_INSIDE) return true;
+				}
+				return false;
+			};
+			// The sockets stand on shells through the patch's depth: the outermost a piece's reach
+			// inside its surface, where a surface point the patch owns gives one, and each deeper shell
+			// smaller and more thinly set, so the patch is clothed through and not only at its rim.
+			const goals: Vector3[] = [];
+			FILL_SHELLS.forEach(([size, keep], shell) => {
+				const shellA = innerA * size;
+				const shellB = innerB * size;
+				const many = Math.round(count * size * size * keep);
+				for (let k = 0; k < many; k++) {
+					const y = 1 - (2 * (k + 0.5)) / many;
+					const ring = Math.sqrt(1 - y * y);
+					const angle = turn + shell * radians(GOLDEN / 3) + k * radians(GOLDEN);
+					const dx = ring * cos(angle);
+					const dz = ring * sin(angle);
+					const point: Vector3 = [cx + shellA * dx, cy + shellB * y, cz + shellA * dz];
+					// The outermost shell answers for the surface over it; a deeper one for its own place.
+					const outer: Vector3 = shell === 0 ? [cx + a * dx, cy + b * y, cz + a * dz] : point;
+					const low = Math.min(outer[1], point[1]) - fill.pitch / 6;
+					if (
+						low < outlineUnder(spec, scale, outer[0], outer[2]) ||
+						low < outlineUnder(spec, scale, point[0], point[2])
+					)
+						continue;
+					if (!owned(outer)) goals.push(point);
+				}
+			});
+
+			const tree: Sprout[] = [];
+			const last = main.nodes.length - 1;
+			// The thickest a twig of this patch can be, which each piece is held clear at.
+			let stout = tip;
+			main.nodes.forEach((node, k) => {
+				const nx = (node.x - cx) / a;
+				const ny = (node.y - cy) / b;
+				const nz = (node.z - cz) / a;
+				if (k !== last && nx * nx + ny * ny + nz * nz >= 1) return;
+				tree.push({ at: [node.x, node.y, node.z], from: -1, seed: k, socket: false });
+				stout = Math.max(stout, Math.min(node.radius * FILL_SHARE, tip * FILL_STOUT));
+			});
+			/**
+			 * Whether a piece grown from a node would pass through a piece of this patch's twigs
+			 * already grown, each read as a straight run. The pieces that meet at the node it grows
+			 * from stand beside it there and are left out.
+			 */
+			const crosses = (from: number, at: Readonly<Vector3>, radius: number): boolean => {
+				const start = (tree[from] as Sprout).at;
+				for (let k = 0; k < tree.length; k++) {
+					const sprout = tree[k] as Sprout;
+					if (sprout.from < 0 || sprout.from === from || k === from) continue;
+					const other = (tree[sprout.from] as Sprout).at;
+					if (runsApart(start, at, other, sprout.at) < radius + stout + clear) return true;
+				}
+				return false;
+			};
+			let open = goals;
+			for (let round = 0; round < FILL_ROUNDS && open.length > 0; round++) {
+				const pulls = new Map<number, Vector3>();
+				const still: Vector3[] = [];
+				const grown = tree.length;
+				for (const goal of open) {
+					let nearest = -1;
+					let least = Number.POSITIVE_INFINITY;
+					for (let k = 0; k < grown; k++) {
+						const sprout = tree[k] as Sprout;
+						if (sprout.socket) continue;
+						const dx = goal[0] - sprout.at[0];
+						const dy = goal[1] - sprout.at[1];
+						const dz = goal[2] - sprout.at[2];
+						const away = Math.sqrt(dx * dx + dy * dy + dz * dz);
+						if (away < least) {
+							least = away;
+							nearest = k;
+						}
+					}
+					if (nearest < 0) continue;
+					if (least <= step) {
+						const reached = (tree[nearest] as Sprout).at;
+						// A piece whose middle would stand under the lower boundary is dropped with its
+						// twig; one that only dips under it is drawn in to it.
+						const length = Math.max(1e-9, least);
+						const middle: Vector3 = [
+							goal[0] + ((goal[0] - reached[0]) / length) * (fill.reach / 2),
+							goal[1] + ((goal[1] - reached[1]) / length) * (fill.reach / 2),
+							goal[2] + ((goal[2] - reached[2]) / length) * (fill.reach / 2),
+						];
+						if (middle[1] < outlineUnder(spec, scale, middle[0], middle[2])) continue;
+						if (
+							gapAt(reached, goal, tip, patchAxis, clear) >= clear &&
+							!crosses(nearest, goal, tip)
+						)
+							tree.push({ at: goal, from: nearest, seed: -1, socket: true });
+						continue;
+					}
+					const from = (tree[nearest] as Sprout).at;
+					const pull = pulls.get(nearest) ?? [0, 0, 0];
+					pull[0] += (goal[0] - from[0]) / least;
+					pull[1] += (goal[1] - from[1]) / least;
+					pull[2] += (goal[2] - from[2]) / least;
+					pulls.set(nearest, pull);
+					still.push(goal);
+				}
+				let grew = false;
+				for (const [k, pull] of pulls) {
+					const size = Math.sqrt(pull[0] * pull[0] + pull[1] * pull[1] + pull[2] * pull[2]);
+					if (size < 1e-6) continue;
+					const from = (tree[k] as Sprout).at;
+					const at: Vector3 = [
+						from[0] + (pull[0] / size) * step,
+						from[1] + (pull[1] / size) * step,
+						from[2] + (pull[2] / size) * step,
+					];
+					if (gapAt(from, at, stout, patchAxis, clear) < clear || crosses(k, at, stout)) continue;
+					tree.push({ at, from: k, seed: -1, socket: false });
+					grew = true;
+				}
+				open = still;
+				if (!grew) break;
+			}
+
+			// The sockets each node feeds; a node that feeds none is no wood.
+			const feeds = tree.map((sprout): number => (sprout.socket ? 1 : 0));
+			for (let k = tree.length - 1; k >= 0; k--) {
+				const from = (tree[k] as Sprout).from;
+				if (from >= 0) feeds[from] = (feeds[from] as number) + (feeds[k] as number);
+			}
+			const kids: number[][] = tree.map(() => []);
+			tree.forEach((sprout, k) => {
+				if (sprout.from >= 0 && (feeds[k] as number) > 0) (kids[sprout.from] as number[]).push(k);
+			});
+			for (const list of kids)
+				list.sort((p, q) => (feeds[q] as number) - (feeds[p] as number) || p - q);
+
+			// The patch's own axis ends in a socket, as every twig does.
+			const end = main.nodes[last] as FrameNode;
+			const before = (main.nodes[last - 1] ?? axes[main.parent]?.nodes[main.parentNode]) as
+				| FrameNode
+				| undefined;
+			out.push(
+				spray(
+					mass.axis,
+					[end.x, end.y, end.z],
+					before ? unit(end.x - before.x, end.y - before.y, end.z - before.z) : [0, 1, 0],
+					fill,
+				),
+			);
+
+			// Each twig is a run of nodes that follows the heaviest way on; the others leave it.
+			const starts: { first: number; parent: number; node: number; from: FrameNode }[] = [];
+			tree.forEach((sprout, k) => {
+				if (sprout.seed < 0) return;
+				for (const kid of kids[k] as number[])
+					starts.push({
+						first: kid,
+						parent: mass.axis,
+						node: sprout.seed,
+						from: main.nodes[sprout.seed] as FrameNode,
+					});
+			});
+			for (let next = 0; next < starts.length; next++) {
+				const { first, parent, node, from } = starts[next] as (typeof starts)[number];
+				const id = axes.length;
+				const cap = Math.min(from.radius * FILL_SHARE, tip * FILL_STOUT);
+				const run: number[] = [first];
+				for (let at = first; (kids[at] as number[]).length > 0; ) {
+					at = (kids[at] as number[])[0] as number;
+					run.push(at);
+				}
+				const nodes: FrameNode[] = run.map((k) => {
+					const at = (tree[k] as Sprout).at;
+					const radius = Math.max(tip, Math.min(cap, tip * Math.sqrt(feeds[k] as number)));
+					return { x: at[0], y: at[1], z: at[2], radius };
+				});
+				const lengths: number[] = [];
+				let length = 0;
+				nodes.forEach((point, k) => {
+					const prior = k === 0 ? from : (nodes[k - 1] as FrameNode);
+					const dx = point.x - prior.x;
+					const dy = point.y - prior.y;
+					const dz = point.z - prior.z;
+					length += Math.sqrt(dx * dx + dy * dy + dz * dz);
+					lengths.push(length);
+				});
+				const head = nodes[0] as FrameNode;
+				axes.push({
+					rule: 'twig',
+					role: 'branch',
+					order: (axes[parent] as Built).order + 1,
+					parent,
+					parentNode: node,
+					index: next,
+					place: 0,
+					azimuth: (atan2(head.z - from.z, head.x - from.x) * 180) / PI,
+					length,
+					base: head.radius,
+					nodes,
+					along: lengths.map((at) => at / Math.max(1e-9, length)),
+				});
+				run.forEach((k, at) => {
+					const rest = (kids[k] as number[]).slice(1);
+					for (const kid of rest)
+						starts.push({ first: kid, parent: id, node: at, from: nodes[at] as FrameNode });
+				});
+				const socket = nodes[nodes.length - 1] as FrameNode;
+				const prior = (nodes[nodes.length - 2] ?? from) as FrameNode;
+				out.push(
+					spray(
+						id,
+						[socket.x, socket.y, socket.z],
+						unit(socket.x - prior.x, socket.y - prior.y, socket.z - prior.z),
+						fill,
+					),
+				);
+				nodes.forEach((point, k) => {
+					const prior = k > 0 ? (nodes[k - 1] as FrameNode) : from;
+					addWood({
+						from: [prior.x, prior.y, prior.z],
+						at: [point.x, point.y, point.z],
+						radius: point.radius,
+						axis: id,
+					});
+				});
+			}
+		});
+		return out;
+	};
+
+	const clothed = fillMasses();
+
 	let top = 0;
 	let crownBase = Number.POSITIVE_INFINITY;
 	for (const axis of axes) for (const node of axis.nodes) top = Math.max(top, node.y);
-	for (const patch of patches) {
+	for (const patch of clothed) {
 		top = Math.max(top, patch.centre[1] + patch.depth / 2);
 		crownBase = Math.min(crownBase, patch.centre[1] - patch.depth / 2);
 	}
@@ -1392,7 +1963,7 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 		height: top,
 		scale,
 		axes,
-		patches,
+		patches: clothed,
 		crownBase: Number.isFinite(crownBase) ? Math.max(0, crownBase) : top,
 	};
 }
@@ -1513,7 +2084,12 @@ export function frameSockets(plan: FramePlan): FrameSocket[] {
 		});
 		const rule = patch.sockets;
 		if (!rule || last < 1 || !(rule.every > 0)) return;
-		const back = Math.min(patch.width / 2, axis.length * SOCKETS_BACK);
+		// A patch that clothes its axis takes sockets over the whole run it clothes; any other, back
+		// from the axis's end for half its width.
+		const back =
+			patch.clothes === undefined
+				? Math.min(patch.width / 2, axis.length * SOCKETS_BACK)
+				: axis.length * (1 - patch.clothes);
 		let node = last - 1;
 		for (let k = 1; k * rule.every <= back; k++) {
 			const share = 1 - (k * rule.every) / axis.length;
@@ -1588,13 +2164,28 @@ export function growFrame(input: GrowInput): MacroSkeleton {
 			? plan.scale / Math.max(1e-6, spreadMean(input.record.size.height))
 			: 1;
 	const frame = new Float32Array(4);
-	for (const socket of frameSockets(plan)) {
+	const spin = new Float32Array(4);
+	// Each piece's roll and tilt are its socket's place in two evenly spread runs of shares, each
+	// started at the plant's own draw.
+	const turn = growth.sockets.turn;
+	const seed = input.seed >>> 0;
+	const salt = input.record.seedSalt >>> 0;
+	const rollFrom = unitAt(seed, salt, input.variant, Purpose.Turn, 0);
+	const tiltFrom = unitAt(seed, salt, input.variant, Purpose.Turn, 1);
+	frameSockets(plan).forEach((socket, k) => {
 		const wood = written[socket.axis] as Written;
 		quatFromFrame(
 			socket.heading,
 			Math.abs(socket.heading[1]) > 0.99 ? [1, 0, 0] : [0, 1, 0],
 			frame,
 		);
+		if (turn) {
+			const share = (from: number, step: number): number => ((from + k * step) % 1) * 2 - 1;
+			quatAxisAngle([0, 1, 0], radians(share(rollFrom, SPREAD_ROLL) * turn.roll), spin);
+			quatMultiply(frame, 0, spin, 0, frame);
+			quatAxisAngle([1, 0, 0], radians(share(tiltFrom, SPREAD_TILT) * turn.tilt), spin);
+			quatMultiply(frame, 0, spin, 0, frame);
+		}
 		builder.addBud({
 			node: wood.nodes[socket.node] as number,
 			x: socket.at[0],
@@ -1608,7 +2199,7 @@ export function growFrame(input: GrowInput): MacroSkeleton {
 			woodRadius: ((plan.axes[socket.axis] as FrameAxis).nodes[socket.node] as FrameNode).radius,
 			socket: { scale, rank: socket.rank, lobe: socket.patch },
 		});
-	}
+	});
 	return builder.finish(plan.crownBase);
 }
 

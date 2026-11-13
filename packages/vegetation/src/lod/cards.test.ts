@@ -3,16 +3,23 @@
 // card levels that place each row's planes and keep every second card in the thinned level.
 import { describe, expect, it } from 'bun:test';
 import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
-import type { SpeciesKitData } from '../asset';
-import { quatRotate, type Vector3 } from '../core/math';
+import type { PrototypeArrays, SpeciesKitData } from '../asset';
 import { placeholderSkeleton } from '../core/placeholder';
 import { standInSpecies } from '../core/stand-in';
 import { STAND_IN_BARK, type TextureManifest } from '../core/textures';
 import type { Rgb } from '../core/types';
 import { placeShoots } from '../leaf/instancer';
 import { OAK_MANIFEST, oakRecord, testKit } from '../leaf/oak.test-support';
+import { SURFACE_LEAF, SURFACE_STEM } from '../leaf/writer';
 import { record as oak } from '../species/pedunculate-oak/record';
-import { bakeCards, paletteOf } from './card-bake';
+import {
+	bakeCards,
+	bakeCell,
+	CARD_CUT_FALL_MOST,
+	CARD_CUT_LEAST,
+	type Palette,
+	paletteOf,
+} from './card-bake';
 import { cardKeep, cardMesh, cardRows, connectedCards, foliageHull } from './cards';
 
 /** sRGB byte to linear. */
@@ -151,7 +158,7 @@ describe('the card bake', () => {
 		}
 	});
 
-	it("bakes stems in the young bark's mean, else in a stand-in's own colour", () => {
+	it("bakes stems in the young bark's mean and tint, else in a stand-in's own colour", () => {
 		const tint = oak.bark?.zones[0]?.tint as readonly [number, number, number];
 		expect(tint).toBeDefined();
 		const young = { tile: [0.2, 0.2] as const, mean: [0.3, 0.25, 0.2] as const };
@@ -161,6 +168,12 @@ describe('the card bake', () => {
 			bark: { size: 1024, layers: [{ ...layer, height: { offset: 0, depth: 0 } }], young },
 		} as TextureManifest;
 		expect(paletteOf(oak, barked).stem).toEqual([0.3, 0.25, 0.2]);
+		// A record that tints its thin wood tints a card's twigs the same way.
+		const tinted = {
+			...oak,
+			bark: { ...(oak.bark as NonNullable<typeof oak.bark>), youngTint: [0.5, 1, 2] as const },
+		};
+		expect(paletteOf(tinted, barked).stem).toEqual([0.15, 0.25, 0.4]);
 		// A stand-in species measures no bark and gives its colour in its tint, which its far cards
 		// keep; with neither a measured bark nor a tint, the stand-in colour stands.
 		const bare = { ...OAK_MANIFEST, bark: undefined } as TextureManifest;
@@ -174,6 +187,201 @@ describe('the card bake', () => {
 			},
 		};
 		expect(paletteOf(plain, bare).stem).toEqual([...STAND_IN_BARK]);
+	});
+});
+
+/** Flat quads in the plane z = 0 facing +z, each `[x0, x1, y0, y1, kind]` in a unit square. */
+function quads(
+	list: readonly (readonly [number, number, number, number, number])[],
+): PrototypeArrays {
+	const positions: number[] = [];
+	const normals: number[] = [];
+	const uvs: number[] = [];
+	const colors: number[] = [];
+	const indices: number[] = [];
+	list.forEach(([x0, x1, y0, y1, kind], q) => {
+		for (const [x, y] of [
+			[x0, y0],
+			[x1, y0],
+			[x1, y1],
+			[x0, y1],
+		] as const) {
+			positions.push(x, y, 0);
+			normals.push(0, 0, 1);
+			uvs.push(x, y);
+			colors.push(0, 0, kind, 255);
+		}
+		indices.push(q * 4, q * 4 + 1, q * 4 + 2, q * 4, q * 4 + 2, q * 4 + 3);
+	});
+	return {
+		positions: Float32Array.from(positions),
+		normals: Float32Array.from(normals),
+		uvs: Float32Array.from(uvs),
+		uvs1: new Float32Array(uvs.length),
+		colors: Uint8Array.from(colors),
+		indices: Uint16Array.from(indices),
+	};
+}
+
+/** Leaves of one green and stems of one brown, with no texture outline. */
+const FLAT: Palette = {
+	upper: [0.1, 0.3, 0.05],
+	lower: [0.1, 0.3, 0.05],
+	stem: [0.3, 0.1, 0.05],
+	profile: undefined,
+	base: 0,
+	tip: 1,
+	mask: undefined,
+	extras: [],
+};
+
+/**
+ * A unit square's one face plane, baked into a cell of `cell` texels a side drawn in an atlas with a
+ * border of two texels round it.
+ */
+function bakeSquare(mesh: PrototypeArrays, cell = 8): { color: Uint8Array; surface: Uint8Array } {
+	const size = cell + 4;
+	const color = new Uint8Array(size * size * 8);
+	const surface = new Uint8Array(size * size * 8);
+	const plane = { centre: [0.5, 0.5, 0], right: [0.5, 0, 0], up: [0, 0.5, 0], normal: [0, 0, 1] };
+	bakeCell(mesh, plane, [2, 2, cell, cell], size, FLAT, color, surface);
+	return { color, surface };
+}
+
+/** The front layer's texel at (x, y) from the drawn area's corner of a cell `cell` texels a side. */
+const texelAt = (x: number, y: number, cell = 8) => ((y + 2) * (cell + 4) + x + 2) * 4;
+
+describe('a cell of the card bake', () => {
+	it('draws each texel whole or clear, and keeps the cover of parts thinner than a texel', () => {
+		// Ten needles a fifth of a texel wide, across the whole square.
+		const needles = quads(
+			Array.from({ length: 10 }, (_, k) => {
+				const x = (k + 0.37) / 10;
+				return [x, x + 0.025, 0, 1, SURFACE_LEAF] as const;
+			}),
+		);
+		const { color } = bakeSquare(needles);
+		let whole = 0;
+		for (let y = 0; y < 8; y++)
+			for (let x = 0; x < 8; x++) {
+				const alpha = color[texelAt(x, y) + 3] as number;
+				expect(alpha === 0 || alpha === 255).toBe(true);
+				if (alpha === 255) whole++;
+			}
+		// The needles cover a quarter of the square: 16 of its 64 texels, give or take the rounding
+		// that error diffusion carries off the cell's edge.
+		expect(Math.abs(whole - 16)).toBeLessThanOrEqual(2);
+	});
+
+	it('gives a texel the kind that covers most of it, in the mean colour of what covers it', () => {
+		// In the fifth column of texels, leaf covers three quarters and twig the last quarter.
+		const mesh = quads([
+			[0, 0.59375, 0, 1, SURFACE_LEAF],
+			[0.59375, 0.625, 0, 1, SURFACE_STEM],
+		]);
+		const { color, surface } = bakeSquare(mesh);
+		const at = texelAt(4, 3);
+		expect(surface[at + 3] as number).toBeGreaterThanOrEqual(128);
+		const green = 0.75 * 0.3 + 0.25 * 0.1;
+		expect(linear(color[at + 1] as number)).toBeCloseTo(green, 2);
+	});
+
+	it('keeps the share a cell draws at full size as the mip levels coarsen, dense or sparse', () => {
+		const CELL = 32;
+		const SIZE = CELL + 4;
+		/**
+		 * The share of a baked square's drawn area that draws at a mip level, read as the plant shader
+		 * reads it: the level's texels blended at points a texel of that level apart, from four
+		 * offsets a side, against a cut.
+		 */
+		const share = (color: Uint8Array, level: number, cut: number) => {
+			let side = SIZE;
+			let alpha = Float64Array.from(
+				{ length: SIZE * SIZE },
+				(_, i) => (color[i * 4 + 3] as number) / 255,
+			);
+			for (let l = 0; l < level; l++) {
+				const next = side >> 1;
+				const coarse = new Float64Array(next * next);
+				for (let y = 0; y < next; y++)
+					for (let x = 0; x < next; x++)
+						coarse[y * next + x] =
+							((alpha[y * 2 * side + x * 2] as number) +
+								(alpha[y * 2 * side + x * 2 + 1] as number) +
+								(alpha[(y * 2 + 1) * side + x * 2] as number) +
+								(alpha[(y * 2 + 1) * side + x * 2 + 1] as number)) /
+							4;
+				alpha = coarse;
+				side = next;
+			}
+			const step = 1 << level;
+			const at = (x: number, y: number) =>
+				alpha[
+					Math.min(side - 1, Math.max(0, y)) * side + Math.min(side - 1, Math.max(0, x))
+				] as number;
+			let drawn = 0;
+			let count = 0;
+			for (let oy = 0; oy < 4; oy++)
+				for (let ox = 0; ox < 4; ox++)
+					for (let ty = 2 + ((oy + 0.5) / 4) * step; ty < 2 + CELL; ty += step)
+						for (let tx = 2 + ((ox + 0.5) / 4) * step; tx < 2 + CELL; tx += step) {
+							const x = tx / step - 0.5;
+							const y = ty / step - 0.5;
+							const x0 = Math.floor(x);
+							const y0 = Math.floor(y);
+							const fx = x - x0;
+							const fy = y - y0;
+							const value =
+								(at(x0, y0) * (1 - fx) + at(x0 + 1, y0) * fx) * (1 - fy) +
+								(at(x0, y0 + 1) * (1 - fx) + at(x0 + 1, y0 + 1) * fx) * fy;
+							drawn += value >= cut ? 1 : 0;
+							count++;
+						}
+			return drawn / count;
+		};
+		const dense = quads([[0, 1, 0, 1, SURFACE_LEAF]]);
+		// Clumps of needles a third of a texel wide, as needles crowd round a twig: four clumps across,
+		// each four texels wide, in two bands, with as wide gaps between. A grey of evenly spread
+		// needles, the same at every point of a coarse level, could not be cut to any share but all
+		// or none; a real pad crowds as these do.
+		const sparse = quads(
+			[0.06, 0.31, 0.56, 0.81].flatMap((clump) =>
+				[0, 0.02, 0.04, 0.06, 0.08, 0.1].flatMap((offset) =>
+					[
+						[0.1, 0.4],
+						[0.6, 0.9],
+					].map(([from, to]) => {
+						const x = clump + offset;
+						return [x, x + 0.01, from as number, to as number, SURFACE_LEAF] as const;
+					}),
+				),
+			),
+		);
+		for (const mesh of [dense, sparse]) {
+			const { color, surface } = bakeSquare(mesh, CELL);
+			// The share full size draws: its whole texels.
+			let whole = 0;
+			for (let y = 0; y < CELL; y++)
+				for (let x = 0; x < CELL; x++)
+					whole += (color[texelAt(x, y, CELL) + 3] as number) === 255 ? 1 : 0;
+			const full = whole / (CELL * CELL);
+			const fall = ((surface[texelAt(5, 5, CELL) + 2] as number) / 255) * CARD_CUT_FALL_MOST;
+			// Where the cell spans several of a level's texels, it draws its full-size share.
+			let error = 0;
+			let before = 0;
+			for (const level of [1, 2, 3]) {
+				const drawn = share(color, level, Math.max(CARD_CUT_LEAST, 0.5 - fall * level));
+				if (level < 3) expect(Math.abs(drawn - full)).toBeLessThan(0.06);
+				error += Math.abs(drawn - full);
+				// The old cut: one half, the alpha raised five per cent a level.
+				before += Math.abs(share(color, level, 0.5 / (1 + 0.05 * level)) - full);
+			}
+			// Over the levels a whole view reads, it draws nearer the full-size share than the old cut;
+			// a level where the cell spans four texels reads nearly even, so no hard cut draws its share
+			// exactly there.
+			expect(error).toBeLessThanOrEqual(before + 1e-9);
+			if (mesh === sparse) expect(error).toBeLessThan(before * 0.75);
+		}
 	});
 });
 
