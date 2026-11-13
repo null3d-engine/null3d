@@ -16,6 +16,7 @@ import {
 import {
 	bareEnds,
 	baseShare,
+	crownFill,
 	endAzimuth,
 	imbalance,
 	longestStraight,
@@ -48,6 +49,13 @@ import { record as weepingWillowRecord } from './weeping-willow/record';
 const SEEDS = [11, 12, 13, 14] as const;
 /** The narrowest a crown's plan may be: its narrow side over its wide side, by the owner's ruling. */
 const PLAN_LEAST = 0.75;
+/**
+ * How far a built crown may stand off the outline its species states: the patches' reach over the
+ * outline's, as the mean over eight sides and the bands of the crown's wide part, and the least of
+ * any one side's own mean. These are a builder's working band, not the review standard's.
+ */
+const FILL_MEAN: readonly [number, number] = [0.75, 1.15];
+const FILL_SIDE = 0.5;
 /** The longest share of a limb or a branch that may hold one direction. */
 const STRAIGHT_MOST = 0.2;
 /** The most of its thickest radius an axis may drop between two nodes: a stem's foot, and the rest. */
@@ -76,20 +84,22 @@ const HELD: readonly Held[] = [
 		id: 'silver-birch',
 		spec: silverBirch,
 		record: silverBirchRecord,
-		counts: { leader: 1, limb: 12, top: 5, side: [24, 72] },
+		counts: { leader: 1, limb: 12, top: 5, side: [24, 72], fall: [12, 36] },
 		// Twelve limbs a golden angle apart leave no gap wider than two even shares and their jitter.
 		round: { rule: 'limb', gap: 80, lean: 0.25 },
-		base: { limb: 0.35, side: 0.45, top: 0.4 },
-		plumb: ['leader'],
+		base: { limb: 0.35, side: 0.45, top: 0.4, fall: 0.4 },
+		// A fall hangs by its own weight.
+		plumb: ['leader', 'fall'],
 		tall: [0.98, 1.02],
 	},
 	{
 		id: 'common-alder',
 		spec: commonAlder,
 		record: commonAlderRecord,
-		counts: { leader: 1, limb: 16, twig: [16, 80] },
-		// Sixteen limbs a golden angle apart leave no gap wider than two even shares and their jitter.
-		round: { rule: 'limb', gap: 62, lean: 0.25 },
+		counts: { leader: 1, limb: 24, twig: [24, 168] },
+		// Twenty-four limbs a golden angle apart leave no gap wider than two even shares and their
+		// jitter.
+		round: { rule: 'limb', gap: 46, lean: 0.25 },
 		base: { limb: 0.25, twig: 0.5 },
 		plumb: ['leader'],
 		tall: [0.98, 1.02],
@@ -148,7 +158,7 @@ const HELD: readonly Held[] = [
 		id: 'common-ash',
 		spec: commonAsh,
 		record: commonAshRecord,
-		counts: { trunk: 1, limb: 4, top: 2, branch: [12, 36], twig: [24, 144] },
+		counts: { trunk: 1, limb: 4, top: 2, branch: [18, 36], twig: [36, 144] },
 		// Two crossed pairs stand a quarter turn apart.
 		round: { rule: 'limb', gap: 110, lean: 0.2 },
 		base: { limb: 0.52, top: 0.62, branch: 0.45, twig: 0.5 },
@@ -160,7 +170,7 @@ const HELD: readonly Held[] = [
 		id: 'olive',
 		spec: olive,
 		record: oliveRecord,
-		counts: { trunk: 1, outer: 3, centre: 2, branch: 15, spray: 30 },
+		counts: { trunk: 1, outer: 3, centre: 2, branch: 15, spray: 45 },
 		// Three outer limbs stand a third of a turn apart.
 		round: { rule: 'outer', gap: 152, lean: 0.25 },
 		base: { outer: 0.34, centre: 0.55, branch: 0.6, spray: 0.6 },
@@ -222,6 +232,15 @@ for (const held of HELD)
 				expect(widestGap(round.map(endAzimuth))).toBeLessThanOrEqual(held.round.gap);
 				expect(imbalance(round)).toBeLessThanOrEqual(held.round.lean);
 				expect(planShape(plan).narrow).toBeGreaterThanOrEqual(PLAN_LEAST);
+			}
+		});
+
+		it('fills the crown outline it states, on every side', () => {
+			for (const seed of SEEDS) {
+				const fill = crownFill(planOf(held, seed), held.spec);
+				expect(fill.mean).toBeGreaterThanOrEqual(FILL_MEAN[0]);
+				expect(fill.mean).toBeLessThanOrEqual(FILL_MEAN[1]);
+				expect(fill.least).toBeGreaterThanOrEqual(FILL_SIDE);
 			}
 		});
 

@@ -55,19 +55,23 @@ export const frame: FrameSpec = {
 			{
 				name: 'limb',
 				role: 'limb',
-				// Still 30: 7 to 8 branches a side, leaving from 0.23 of the height to the tip at steps
-				// of about 0.045. The shares here are of the leader's own length.
-				count: 16,
+				// Still 30: 7 to 8 branches show on each side in outline, leaving from 0.23 of the height
+				// to the tip. A branch that points at the camera or away does not show in an outline,
+				// so the tree carries about half as many again as the 16 seen. The shares here are of
+				// the leader's own length.
+				count: 24,
 				along: [0.238, 0.975],
 				stagger: 0.25,
 				// Stills 07, 17 and 03: single, at clearly different heights, on every side.
 				around: 'spiral',
 				jitter: 8,
 				// Stills 30, 18 and 17: the lowest leave at 70 to 85 degrees from plumb, the middle at
-				// 60 to 70 and the upper at 40 to 55.
+				// 60 to 70 and the upper at 40 to 55. Still 30: the lowest two end a little below the
+				// height they leave at.
 				angle: [
-					[0, 78],
-					[0.5, 65],
+					[0, 88],
+					[0.2, 80],
+					[0.5, 68],
 					[1, 48],
 				],
 				from: 'plumb',
@@ -87,8 +91,8 @@ export const frame: FrameSpec = {
 						from: 0.65,
 						to: 1,
 						by: [
-							[0, -14],
-							[0.5, -6],
+							[0, -6],
+							[0.5, -4],
 							[1, 0],
 						],
 					},
@@ -104,8 +108,8 @@ export const frame: FrameSpec = {
 						role: 'branch',
 						// Stills 05 and 09: side branches leave alternately from the middle of a branch
 						// outward. A long low branch carries four or five and a top one a single one.
-						count: { every: 0.045, least: 1, most: 5 },
-						along: [0.45, 0.9],
+						count: { every: 0.035, least: 1, most: 7 },
+						along: [0.3, 0.92],
 						stagger: 0.2,
 						around: 'sides',
 						jitter: 12,

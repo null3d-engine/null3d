@@ -81,8 +81,8 @@ export const frame: FrameSpec = {
 						from: 0.6,
 						to: 1,
 						level: [
-							[0, -40],
-							[0.5, -8],
+							[0, -55],
+							[0.5, -15],
 							[1, 12],
 						],
 					},
@@ -104,6 +104,33 @@ export const frame: FrameSpec = {
 				},
 				children: [
 					{
+						name: 'fall',
+						role: 'whip',
+						// Stills 01 and 18: the outer part of a limb ends in hanging wood, a tenth of the
+						// height long and more under the lowest limbs, which carries the fringe down to a
+						// quarter of the height.
+						count: { every: 0.04, least: 1, most: 3 },
+						along: [0.72, 1],
+						around: 'spiral',
+						angle: 165,
+						from: 'plumb',
+						angleSpread: 6,
+						length: {
+							share: [
+								[0, 0.15],
+								[0.5, 0.08],
+								[1, 0.04],
+							],
+						},
+						vary: 0.15,
+						radius: 0.4,
+						taper: 0.3,
+						bends: [{ from: 0, to: 0.15, level: -90 }],
+						sway: 0,
+						elbows: 1,
+						patch: { kind: 'hang', width: 0.07, depth: 0.05, along: 0 },
+					},
+					{
 						name: 'side',
 						role: 'branch',
 						// Still 05: one limb with six side branches in view, alternate, on its outer two
@@ -124,8 +151,8 @@ export const frame: FrameSpec = {
 						// Still 05: the side branches shorten toward the limb's end.
 						length: {
 							parent: [
-								[0, 0.4],
-								[1, 0.2],
+								[0, 0.45],
+								[1, 0.32],
 							],
 						},
 						vary: 0.12,
