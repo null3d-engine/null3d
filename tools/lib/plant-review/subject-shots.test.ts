@@ -946,6 +946,16 @@ describe('the view of one branch piece', () => {
 		expect(cameraAxes(faced.camera).forward[0]).toBeCloseTo(0, 6);
 	});
 
+	test('frames the piece that heads toward the camera when asked, not the outermost', () => {
+		const outward = { ...piece, direction: normalize([1, 0.2, 0]) };
+		const toward = { ...piece, socket: [0, 6, 1] as V3, direction: normalize([0, 0.2, 1]) };
+		const plant = tree({ pieces: [outward, toward] });
+		// The camera at a turn of 0 stands on the +Z side: the second piece heads toward it.
+		const facingIt = shotOf(placedPieceShot(plant, 'bough', TALL, { turn: 0 }));
+		expect(facingIt.facts.socket).toEqual(toward.socket);
+		expect(shotOf(placedPieceShot(plant, 'bough', TALL)).facts.socket).toEqual(outward.socket);
+	});
+
 	test('frames a span of a placed piece round the share of its run asked', () => {
 		const head = shotOf(
 			placedPieceShot(tree({ pieces: [piece] }), 'bough', TALL, { span: 0.3, along: 0.85 }),
