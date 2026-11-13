@@ -179,7 +179,15 @@ export const sedgeRecord: Species = {
 			bow: { from: 0.7, turn: [100, 150] },
 			width: 0.025,
 			sides: 3,
-			head: { kind: 'spike', count: 3, length: 0.33, width: 0.028, thread: 0.07, tip: 0.13 },
+			head: {
+				kind: 'spike',
+				count: 3,
+				length: 0.33,
+				width: 0.028,
+				thread: 0.07,
+				tip: 0.13,
+				hang: [20, -40],
+			},
 		},
 		least: { shoots: 8, blades: 3, stalks: 5 },
 		soil: {
