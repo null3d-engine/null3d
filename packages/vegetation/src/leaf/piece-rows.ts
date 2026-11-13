@@ -68,6 +68,7 @@ export function kitPiece(piece: PiecePrototype, index: number): UncardedPrototyp
 		radius: piece.radius,
 		leaves: piece.leaves,
 		tiers: piece.tiers,
+		...(piece.brushes ? { brushes: piece.brushes } : {}),
 		piece: {
 			name: piece.piece,
 			variant: piece.variant,

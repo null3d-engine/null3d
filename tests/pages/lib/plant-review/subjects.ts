@@ -9,7 +9,12 @@ import type {
 	ShootRows,
 	SpeciesKitData,
 } from '../../../../packages/vegetation/src/asset';
-import { BUD_TERMINAL } from '../../../../packages/vegetation/src/core/graph';
+import {
+	BUD_AREOLE,
+	BUD_DORMANT,
+	BUD_FLOWER,
+	BUD_TERMINAL,
+} from '../../../../packages/vegetation/src/core/graph';
 import { DETAILS } from '../../../../packages/vegetation/src/core/types';
 import {
 	chainOf,
@@ -145,6 +150,21 @@ export interface BranchPiece {
 	readonly depth?: { readonly face: number; readonly side: number };
 }
 
+/**
+ * A site the plant marks on its surface, of a class named by the site's kind: a `flower`, an
+ * `areole`, or a `dormant` bud, which on a saguaro is a woodpecker's nest hole.
+ */
+export interface SiteSubject {
+	readonly class: string;
+	readonly at: V3;
+	/** The way the site faces out of the surface it stands in. */
+	readonly normal: V3;
+	/** The radius of the wood it stands on. */
+	readonly radius: number;
+	/** The axis it stands on. */
+	readonly axis: number;
+}
+
 /** A leaf's size. */
 export interface LeafSubject {
 	readonly length: number;
@@ -169,6 +189,8 @@ export interface PlantSubjects {
 	readonly lobes: Maybe<readonly Lobe[]>;
 	readonly twigTips: Maybe<readonly TwigTip[]>;
 	readonly pieces: Maybe<readonly BranchPiece[]>;
+	/** The sites marked on the plant's surface, the highest first. */
+	readonly sites: Maybe<readonly SiteSubject[]>;
 	readonly leaf: Maybe<LeafSubject>;
 }
 
@@ -325,6 +347,53 @@ function lobesOf(skeleton: MacroSkeleton, stem: number): Lobe[] {
 	return lobes;
 }
 
+/** The class of a site by its bud's kind, for the kinds that mark a surface. */
+const SITE_CLASSES: ReadonlyMap<number, string> = new Map([
+	[BUD_FLOWER, 'flower'],
+	[BUD_AREOLE, 'areole'],
+	[BUD_DORMANT, 'dormant'],
+]);
+
+/** The sites a skeleton marks on its surface: its flower, areole and dormant buds, the highest first. */
+function sitesOf(skeleton: MacroSkeleton): SiteSubject[] {
+	const { buds } = skeleton;
+	const sites: SiteSubject[] = [];
+	for (let b = 0; b < buds.count; b++) {
+		const name = SITE_CLASSES.get(buds.kind[b] as number);
+		if (name === undefined) continue;
+		const q = buds.frame.subarray(b * 4, b * 4 + 4);
+		const [x, y, z, w] = [q[0] as number, q[1] as number, q[2] as number, q[3] as number];
+		sites.push({
+			class: name,
+			at: [
+				buds.position[b * 3] as number,
+				buds.position[b * 3 + 1] as number,
+				buds.position[b * 3 + 2] as number,
+			],
+			// The frame's +Y, the way the site faces out of its surface.
+			normal: normalize([2 * (x * y - w * z), 1 - 2 * (x * x + z * z), 2 * (y * z + w * x)]),
+			radius: buds.woodRadius[b] as number,
+			axis: buds.axis[b] as number,
+		});
+	}
+	return sites.sort((a, b) => b.at[1] - a.at[1]);
+}
+
+/**
+ * The sites of one class, the highest first, or why there are none: the plant marks no site of
+ * that class where it marks others, or marks none at all.
+ *
+ * @param subjects The plant's subjects.
+ * @param name The class.
+ */
+export function sitesOfClass(subjects: PlantSubjects, name: string): Maybe<readonly SiteSubject[]> {
+	if (isAbsent(subjects.sites)) return subjects.sites;
+	const found = subjects.sites.filter((site) => site.class === name);
+	if (found.length > 0) return found;
+	const classes = [...new Set(subjects.sites.map((site) => site.class))].join(', ');
+	return lacking(`the plant marks no ${name} site; its sites are ${classes}`);
+}
+
 /** The twig tips of a skeleton: its terminal buds, the best lit and farthest out first. */
 function tipsOf(skeleton: MacroSkeleton, foot: V3, reach: number): TwigTip[] {
 	const { buds } = skeleton;
@@ -431,6 +500,7 @@ export function subjectsOfSkeleton(
 				: noTrunk;
 
 	const tips = tipsOf(skeleton, foot, reach);
+	const sites = sitesOf(skeleton);
 	return {
 		source: 'macro skeleton',
 		foot,
@@ -443,17 +513,12 @@ export function subjectsOfSkeleton(
 		lobes,
 		twigTips: tips.length > 0 ? tips : lacking('the plant carries no terminal bud'),
 		pieces: absent('the skeleton instances no branch piece: the cut views draw the review cutting'),
+		sites: sites.length > 0 ? sites : absent('the plant marks no flower, areole or dormant site'),
 		leaf:
 			options.leafLength === undefined
 				? absent("the species' foliage has no single leaf length")
 				: { length: options.leafLength },
 	};
-}
-
-/** A prototype's class as a placed piece: a branch piece's name, or a ground piece's class less its prefix. */
-function pieceClass(prototype: ShootPrototype): string | undefined {
-	if (prototype.piece) return prototype.piece.name;
-	return prototype.class.startsWith('piece-') ? prototype.class.slice('piece-'.length) : undefined;
 }
 
 /** A vector of a piece's own frame, turned as one of the plant's rows turns its prototype. */
@@ -556,7 +621,7 @@ export function piecesOfRows(
 		rows.position[a * 3 + 2] === rows.position[b * 3 + 2];
 	for (let r = 0; r < rows.count; ) {
 		const prototype = kit.prototypes[rows.prototype[r] as number];
-		const name = prototype ? pieceClass(prototype) : undefined;
+		const name = prototype?.piece?.name;
 		let end = r + 1;
 		while (end < rows.count && sameSocket(r, end)) end++;
 		if (name !== undefined) {

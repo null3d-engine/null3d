@@ -10,7 +10,10 @@
 	"13-single-leaflet-underside.png": {
 		"roll": -40.5
 	},
+	"09-frond-leaflet-rows.png": { "piece": "frond-arched", "along": 0.5 },
 	"22-subbranch-studio.png": {
+		"piece": "frond-straight",
+		"along": 0.5,
 		"span": 3.1,
 		"cut": 1.7,
 		"cutFrom": 1.5,
