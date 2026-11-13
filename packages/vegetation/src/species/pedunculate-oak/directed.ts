@@ -504,7 +504,7 @@ function acorn(extra: ExtraSpec): ExtraSpec {
 }
 
 /**
- * The framed oak's own budgets, measured at seed 11 on 14 November 2026 and set a twentieth above
+ * The framed oak's own budgets, measured at seed 11 and set a twentieth above
  * the measure, under every class-wide cap: the variant's bytes at each tier, and the second card
  * level's triangles at the finest tier. The fill's sockets stand closer than a branch end's width so
  * the crown reads closed, which the review judged better than the old oak (round
