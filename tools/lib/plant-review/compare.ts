@@ -636,11 +636,19 @@ interface PairMetrics {
 		readonly render: number;
 		readonly renderByCoverage?: number;
 		/**
-		 * The drawing's gap read from its colour still with the photograph's own mask, beside the
-		 * matte's: where the two part by more than the colour band, the matte has joined a lace of
-		 * flecks into cover that the eye reads as sky, and row 6 reads this one.
+		 * The drawing's gap read from its colour still by the photograph's own colour rule, against
+		 * the same kind of fitted sky. At a whole view this is the figure that compares like with
+		 * like: the photograph has no matte, and the engine's display-encoded matte counts a pixel as
+		 * plant only from about three quarters of cover.
 		 */
 		readonly renderByColour?: number;
+		/**
+		 * The rule both sides' gaps were read by, where they were read alike: `colour`, the
+		 * photograph's colour rule on the photograph and on the drawing's colour still; `half-dark`,
+		 * the half-dark rule on the photograph's silhouette and on the drawing's matte. Absent where
+		 * the drawing's matte stands against the photograph's colour mask, an instrument figure only.
+		 */
+		readonly rule?: 'colour' | 'half-dark';
 	} | null;
 	readonly crownBoxGap: { readonly reference: number; readonly render: number } | null;
 	readonly frameGap: { readonly reference: number; readonly render: number } | null;
@@ -665,21 +673,28 @@ interface PairMetrics {
 	readonly foliage: { readonly reference: string | null; readonly render: string | null };
 }
 
-/** How far the colour still's gap may part from the matte's before row 6 reads the colour one. */
-export const COLOUR_GAP_BAND = 0.05;
+/**
+ * The enclosed gap of a picture by the photograph's colour rule: its plant cut from its fitted
+ * background by colour distance, as a photograph of a whole plant is read. A drawing's colour still
+ * read this way compares like with like with its photograph.
+ */
+export function colourRuleGap(image: Rgba, habit?: PlantHabit): number {
+	return Number(measurePlant(image, plantMask(image), habit).gapFraction.toFixed(4));
+}
 
 /**
- * The drawing's enclosed gap that row 6 reads: the matte's, or the colour still's where the two part
- * by more than the colour band, since the review's eye reads the colour picture first.
+ * The drawing's enclosed gap that compares like with like with its photograph's, and the rule both
+ * were read by: the colour still's by the photograph's colour rule at a whole view, the matte's by
+ * the half-dark rule at a silhouette. Undefined where the two sides were read by different rules,
+ * which is an instrument figure and is not quoted.
  */
-export function rowGap(gap: NonNullable<PairMetrics['gap']>): {
-	readonly value: number;
-	readonly read: 'matte' | 'colour still';
-} {
-	return gap.renderByColour !== undefined &&
-		Math.abs(gap.renderByColour - gap.render) > COLOUR_GAP_BAND
-		? { value: gap.renderByColour, read: 'colour still' }
-		: { value: gap.render, read: 'matte' };
+export function rowGap(
+	gap: NonNullable<PairMetrics['gap']>,
+): { readonly value: number; readonly rule: 'colour' | 'half-dark' } | undefined {
+	if (gap.rule === 'colour' && gap.renderByColour !== undefined)
+		return { value: gap.renderByColour, rule: 'colour' };
+	if (gap.rule === 'half-dark') return { value: gap.render, rule: 'half-dark' };
+	return undefined;
 }
 
 /**
@@ -2435,16 +2450,25 @@ export function compareStills(
 			separable &&
 			(frame.matte !== undefined || (fittedKind !== null && render.measures.box !== undefined));
 		const paired = pairMetrics(masked ? refSide : { ...refSide, normal: undefined }, render);
-		// A whole view's gap read from the colour still too, by the photograph's own mask, where its
-		// row read the matte.
+		// A whole view's photograph has no matte: its plant is cut by colour from its fitted sky, so the
+		// drawing's colour still is read by the same rule. A silhouette is read by the half-dark rule
+		// on both sides.
 		const colourGap =
-			paired.gap && frame.matte !== undefined && (drawn === 'whole' || drawn === 'silhouette')
-				? Number(measurePlant(render.image, plantMask(render.image), habit).gapFraction.toFixed(4))
+			paired.gap && frame.matte !== undefined && drawn === 'whole'
+				? colourRuleGap(render.image, habit)
 				: undefined;
-		const pair =
-			paired.gap && colourGap !== undefined
-				? { ...paired, gap: { ...paired.gap, renderByColour: colourGap } }
-				: paired;
+		const rule: 'colour' | 'half-dark' | undefined =
+			drawn === 'silhouette' ? 'half-dark' : colourGap !== undefined ? 'colour' : undefined;
+		const pair = paired.gap
+			? {
+					...paired,
+					gap: {
+						...paired.gap,
+						...(colourGap !== undefined && { renderByColour: colourGap }),
+						...(rule && { rule }),
+					},
+				}
+			: paired;
 		const bark = slot.kind === 'texture' && !slot.view.startsWith('leaf');
 		// The shot carries the query the page was asked for, which is where a species' slot file
 		// reaches; the reference rule's own query is a different thing and is often empty.
