@@ -79,6 +79,10 @@ export const record: Species = {
 		},
 		// The least plant that still reads as the species: seven shoots of two blades and four stems.
 		least: { shoots: 7, blades: 2, stalks: 4 },
+		// Stills 14 and 21 show dense fine pale roots that leave the crown straight down and out,
+		// with no rhizome, and that hold a ball of soil about 0.11 m across and 0.1 m deep when the
+		// tuft is lifted. The tuft draws no roots: each costs about 630 bytes of the variant, and the
+		// thirty or so the pictures show would take the variant past its byte budget.
 	},
 	foliage: {
 		kind: 'grass-blade',
@@ -99,7 +103,10 @@ export const record: Species = {
 			tip: 'hooded',
 			tipLength: 0.04,
 			fold: 18,
-			twist: 30,
+			// Still 01: blades that arch out to either side show their faces along most of their
+			// length, where a blade held face up in the plane it arches in shows only its edge to a
+			// side view. Each turns a quarter turn from collar to tip.
+			twist: 90,
 			arch: { mean: 34, spread: 8 },
 			// Stills 02 and 06: the old outer blades carry dry brown tips.
 			dryTip: 0.03,
