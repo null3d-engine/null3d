@@ -1204,8 +1204,9 @@ const HIDDEN_RING_GAP = 0.04;
 /**
  * The runs of each axis that its leaves hide, as metres along the shoot from and to: where one leaf
  * stands within two of the stem's radii of the next, the leaves close round the stem between them.
+ * With a gap stated, the runs are where one leaf stands within that many metres of the next.
  */
-function hiddenRuns(plan: ShootPlan): (readonly [number, number])[][] {
+function hiddenRuns(plan: ShootPlan, gap?: number): (readonly [number, number])[][] {
 	const alongs: number[][] = plan.axes.map(() => []);
 	for (const leaf of plan.leaves) alongs[leaf.axis]?.push(leaf.along);
 	return plan.axes.map((points, axis) => {
@@ -1216,7 +1217,7 @@ function hiddenRuns(plan: ShootPlan): (readonly [number, number])[][] {
 			const from = leaves[i - 1] as number;
 			const to = leaves[i] as number;
 			while (k < points.length - 1 && (points[k + 1] as AxisPoint).along <= from) k++;
-			if (to - from > 2 * ((points[k] as AxisPoint | undefined)?.radius ?? 0)) continue;
+			if (to - from > (gap ?? 2 * ((points[k] as AxisPoint | undefined)?.radius ?? 0))) continue;
 			const last = runs[runs.length - 1];
 			if (last && last[1] >= from) last[1] = to;
 			else runs.push([from, to]);
@@ -1238,10 +1239,11 @@ export interface PlannedBrush extends Omit<BrushRun, 'picture'> {
  * sky of its leaves.
  *
  * @param plan The plan.
+ * @param gap The most metres between neighbouring leaves of a run; absent, two of the stem's radii.
  * @returns The runs, axis by axis.
  */
-export function plannedBrushes(plan: ShootPlan): PlannedBrush[] {
-	const runs = hiddenRuns(plan);
+export function plannedBrushes(plan: ShootPlan, gap?: number): PlannedBrush[] {
+	const runs = hiddenRuns(plan, gap);
 	const out: PlannedBrush[] = [];
 	plan.axes.forEach((points, axis) => {
 		/** The stem's point `along` metres from the attach point. */
