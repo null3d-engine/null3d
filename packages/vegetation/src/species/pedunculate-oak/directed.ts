@@ -530,7 +530,11 @@ export const directed = {
 		// flat side to the sky, a crown seen from the side shows most of its cards slanted or edge
 		// on, and the sky shows through. A real crown's rosettes face every way, so each piece rolls
 		// up to a quarter turn either way about its own line and tilts a little off the wood's.
-		turn: { roll: 90, tilt: 25 },
+		// Rolled round the sky, more than half the pieces showed their pale lower faces to a side view
+		// (the bake worker's count at `ac293bed1`). A crown's outer leaves turn their upper faces to
+		// the light, so each piece first tips down from straight out of its clump, its upper face
+		// leaning out and up; a steeper tip opens the crown.
+		turn: { roll: 90, tilt: 25, out: 30 },
 	}),
 	base,
 	lod: {
