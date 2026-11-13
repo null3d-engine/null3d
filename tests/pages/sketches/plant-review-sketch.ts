@@ -908,7 +908,12 @@ export default defineSketch(async (ctx) => {
 	 */
 	const plainSubjects = new Map<
 		PlantView,
-		{ readonly kind: string; readonly warning?: string; readonly missing?: string }
+		{
+			readonly kind: string;
+			readonly warning?: string;
+			readonly missing?: string;
+			readonly lacks?: true;
+		}
 	>();
 	const closeAt = (
 		key: string,
@@ -1125,7 +1130,13 @@ export default defineSketch(async (ctx) => {
 				const found = solvedAt(
 					view,
 					lens,
-					() => junctionShot(subjectsOf(), lens, { ...(shares && { shares }) }),
+					() =>
+						junctionShot(subjectsOf(), lens, {
+							...(shares && { shares }),
+							...(QUERY.limbShare !== undefined && { limbShare: QUERY.limbShare }),
+							...(QUERY.collarColumn !== undefined && { column: QUERY.collarColumn }),
+							...(QUERY.limbLie !== undefined && { lie: QUERY.limbLie }),
+						}),
 					0,
 					0.05,
 				);
@@ -1536,7 +1547,10 @@ export default defineSketch(async (ctx) => {
 		const missing =
 			solved && isAbsent(solved) ? solved.absent : `the plant has no part for the ${view} view`;
 		notes.push(`${missing}, so the ${view} view shows the whole plant`);
-		plainSubjects.set(view, { kind: 'the whole plant', missing });
+		// A plant of wood that has no such part is at fault. A ground plant draws no wood at all, so
+		// a wood view of it is a fault of the file's mapping to a view.
+		const lacks = solved !== undefined && isAbsent(solved) && solved.lacks && hasWood(main);
+		plainSubjects.set(view, { kind: 'the whole plant', missing, ...(lacks && { lacks: true }) });
 		return fit(bounds, turn, e, aspect, fov);
 	};
 
