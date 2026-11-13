@@ -11,6 +11,7 @@ import {
 	LATERAL_GAP_MOST,
 	SIDE_SHOOTS_MOST,
 	type Spread,
+	spreadMax,
 	spreadMean,
 } from './types';
 
@@ -80,51 +81,6 @@ function sparseProblems(record: Species, out: string[]): void {
 function shareProblem(value: number | undefined, path: string, out: string[]): void {
 	if (value === undefined) return;
 	if (value < 0 || value > 1) out.push(`${path} is ${value}; a share lies from 0 to 1`);
-}
-
-/** One share's problems, or each share's in a list of tiers. */
-function sharesProblem(value: number | readonly number[], path: string, out: string[]): void {
-	if (typeof value === 'number') {
-		shareProblem(value, path, out);
-		return;
-	}
-	if (value.length === 0) out.push(`${path} names no shares`);
-	for (let i = 0; i < value.length; i++)
-		shareProblem(value[i], i === 0 ? path : `${path}[${i}]`, out);
-}
-
-/** One spread's problems, or each spread's in a list of tiers. */
-function spreadsProblem(
-	value: Spread | readonly Spread[],
-	path: string,
-	positive: boolean,
-	out: string[],
-): void {
-	if (!Array.isArray(value)) {
-		spreadProblems(value as Spread, path, positive, out);
-		return;
-	}
-	if (value.length === 0) out.push(`${path} names no spreads`);
-	for (let i = 0; i < value.length; i++)
-		spreadProblems(value[i] as Spread, i === 0 ? path : `${path}[${i}]`, positive, out);
-}
-
-/** One length's problems, or each length's in a list of tiers: it is metres and above zero. */
-function lengthsProblem(value: number | readonly number[], path: string, out: string[]): void {
-	const lengths: readonly number[] = typeof value === 'number' ? [value] : value;
-	if (lengths.length === 0) out.push(`${path} names no lengths`);
-	for (let i = 0; i < lengths.length; i++) {
-		const length = lengths[i] as number;
-		if (!(length > 0))
-			out.push(
-				`${i === 0 ? path : `${path}[${i}]`} is ${length}; it is metres and must be above 0`,
-			);
-	}
-}
-
-/** The number of tiers a value names: one for a single value, else its length. */
-function tierCount(value: number | Spread | readonly unknown[]): number {
-	return Array.isArray(value) ? value.length : 1;
 }
 
 /** A whole number's problems: it is whole and within its range. */
@@ -570,22 +526,34 @@ function growthProblems(record: Species, out: string[]): void {
 		curveProblems(growth.radius, 'growth.radius', out);
 		spreadProblems(growth.ribs, 'growth.ribs', true, out);
 		wholeProblem(Math.round(spreadMean(growth.ribs)), 'growth.ribs', 3, 40, out);
-		if (!(growth.ribDepth >= 0))
-			out.push(`growth.ribDepth is ${growth.ribDepth}; a depth is not negative`);
-		spreadProblems(growth.arms.count, 'growth.arms.count', false, out);
-		wholeProblem(Math.round(spreadMean(growth.arms.count)), 'growth.arms.count', 0, 12, out);
-		sharesProblem(growth.arms.from, 'growth.arms.from', out);
-		lengthsProblem(growth.arms.elbow, 'growth.arms.elbow', out);
-		if (!(growth.arms.radius > 0))
-			out.push(`growth.arms.radius is ${growth.arms.radius}; it is metres and must be above 0`);
-		spreadsProblem(growth.arms.rise, 'growth.arms.rise', true, out);
-		const fromTiers = tierCount(growth.arms.from);
-		const elbowTiers = tierCount(growth.arms.elbow);
-		const riseTiers = tierCount(growth.arms.rise);
-		if (fromTiers !== elbowTiers || fromTiers !== riseTiers)
-			out.push(
-				`growth.arms.from, growth.arms.elbow and growth.arms.rise name ${fromTiers}, ${elbowTiers} and ${riseTiers} tiers; each tier needs one share, one elbow and one rise`,
-			);
+		shareProblem(growth.ribDepth, 'growth.ribDepth', out);
+		if (!(growth.dome >= 0))
+			out.push(`growth.dome is ${growth.dome}; a rounded end's height is not negative`);
+		const arms = growth.arms;
+		spreadProblems(arms.count, 'growth.arms.count', false, out);
+		wholeProblem(Math.round(spreadMean(arms.count)), 'growth.arms.count', 0, 12, out);
+		if (arms.tiers.length === 0) out.push('growth.arms.tiers names no tier');
+		arms.tiers.forEach((tier, i) => {
+			const path = `growth.arms.tiers[${i}]`;
+			spreadProblems(tier.at, `${path}.at`, true, out);
+			spreadProblems(tier.reach, `${path}.reach`, true, out);
+			spreadProblems(tier.top, `${path}.top`, true, out);
+			if (spreadMax(tier.at) > 1 || spreadMax(tier.top) > 1)
+				out.push(`${path} leaves or ends above the plant's top; its shares lie from 0 to 1`);
+			if (spreadMean(tier.top) <= spreadMean(tier.at))
+				out.push(`${path}.top is not above ${path}.at; an arm ends above where it leaves`);
+			if (!(tier.radius[0] > 0 && tier.radius[1] > 0))
+				out.push(`${path}.radius is ${tier.radius}; each radius is metres and above 0`);
+		});
+		wholeProblem(arms.plane, 'growth.arms.plane', 0, 8, out);
+		if (!(arms.leave > -90 && arms.leave < 90))
+			out.push(`growth.arms.leave is ${arms.leave}; it lies between -90 and 90 degrees`);
+		if (!(arms.elbow > 0))
+			out.push(`growth.arms.elbow is ${arms.elbow}; it is arm widths and must be above 0`);
+		if (!(arms.pinch > 0 && arms.pinch <= 1))
+			out.push(`growth.arms.pinch is ${arms.pinch}; it is a share above 0 and at most 1`);
+		if (!(arms.swell >= 1))
+			out.push(`growth.arms.swell is ${arms.swell}; it is a multiple of at least 1`);
 		if (!(growth.areoles > 0))
 			out.push(`growth.areoles is ${growth.areoles}; it is metres and must be above 0`);
 	}

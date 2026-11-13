@@ -1,7 +1,7 @@
 // The ribs of a column: the pleats of a cactus stem, as a cross-section the wood mesher draws and
 // the grower reads to set its areoles on the crests. The pipe radius is the crest, so every areole
-// stands on the surface its card grows from; each groove cuts inward by the record's depth, scaled
-// by how thick the wood is, so a thin arm keeps shallow pleats.
+// stands on the surface its card grows from; each groove cuts inward by the record's share of the
+// radius where it is, so a thin arm and a stout trunk carry pleats of the same proportion.
 import { unitAt } from '../core/hash';
 import { cos } from '../core/math';
 import type { Column } from '../core/record';
@@ -24,7 +24,7 @@ const FEWEST_RIBS = 12;
 export interface RibPlan {
 	/** Ribs around the axis. */
 	readonly count: number;
-	/** Metres of groove at the axis's base radius. */
+	/** How deep a groove cuts, as a share of the radius where it is. */
 	readonly depth: number;
 	/** Radians from the mesher's angle 0 to a crest. */
 	readonly phase: number;
@@ -67,14 +67,24 @@ export function ribPlan(
 }
 
 /**
+ * The angle round an axis where one of its rib crests stands, from the mesher's angle 0.
+ *
+ * @param plan The axis's ribs.
+ * @param crest The crest, from 0 to one less than the plan's count.
+ * @returns Radians.
+ */
+export function crestAngle(plan: RibPlan, crest: number): number {
+	return (2 * Math.PI * crest - plan.phase) / plan.count;
+}
+
+/**
  * The cross-section of a ribbed axis: the pipe radius at the crests, grooving inward between them.
  *
  * @param plan The axis's ribs.
- * @param baseRadius The axis's pipe radius at its base, which its groove depth was stated at.
  * @returns The section.
  */
-export function ribSection(plan: RibPlan, baseRadius: number): StemSection {
-	const share = plan.depth / Math.max(1e-3, baseRadius);
+export function ribSection(plan: RibPlan): StemSection {
+	const share = Math.min(1, Math.max(0, plan.depth));
 	return {
 		// Ribs run the whole axis, so the section never settles to the plain pipe.
 		reach: Number.POSITIVE_INFINITY,
