@@ -7,7 +7,7 @@ use common::{Rng, Workers, frusta, orthographic, perspective, random_spheres};
 use null3d_core::cells::CELL_SHIFT;
 use null3d_core::culling::{
     BY_ROW, BucketedCull, CULL_CHUNK, CullOutput, CullRun, CullSet, CullView, Frustum, NO_BUCKET,
-    ROW_CELLS, SetLayers, SetOrder, cull_into_buckets, cull_parallel, cull_spheres,
+    ROW_CELLS, RowRanges, SetLayers, SetOrder, cull_into_buckets, cull_parallel, cull_spheres,
     cull_spheres_in_cells, cull_spheres_reference,
 };
 use null3d_core::layers::{ALL_LAYERS, DEFAULT_LAYERS};
@@ -551,7 +551,28 @@ fn cull_levels_in_range(
     codes: bool,
     range: DrawRange,
 ) -> Vec<Vec<u32>> {
-    use null3d_core::culling::{LevelChoice, LevelRows, RowBiases, RowCells, RowRadii, RowRanges};
+    cull_levels_with_ranges(distances, by_row, band, codes, RowRanges::One(range))
+}
+
+/// The same, with each row's own range from `ranges`, two floats a row.
+fn cull_levels_by_row_ranges(
+    distances: &[f32],
+    ranges: &[f32],
+    band: f32,
+    codes: bool,
+) -> Vec<Vec<u32>> {
+    cull_levels_with_ranges(distances, false, band, codes, RowRanges::Rows(ranges))
+}
+
+/// Rows of one sphere each, as [`cull_levels`] makes them, in `ranges`.
+fn cull_levels_with_ranges(
+    distances: &[f32],
+    by_row: bool,
+    band: f32,
+    codes: bool,
+    ranges: RowRanges<'_>,
+) -> Vec<Vec<u32>> {
+    use null3d_core::culling::{LevelChoice, LevelRows, RowBiases, RowCells, RowRadii};
     use null3d_core::levels::{LevelLink, LevelRule, NO_LINK, Switch};
     let n = distances.len();
     let (xs, ys) = (vec![0.0; n], vec![0.0; n]);
@@ -585,7 +606,7 @@ fn cull_levels_in_range(
         cells: RowCells::One(0),
         radii: RowRadii::One(1.0),
         biases: RowBiases::One(1.0),
-        ranges: RowRanges::One(range),
+        ranges,
     };
     let levels = [0u32, 1, 2, 3, 4, 5];
     let choice = LevelChoice {
@@ -691,6 +712,20 @@ fn a_levels_debug_view_marks_a_source_that_its_draw_range_hides() {
     // Without the view's codes, the same range lists the row in no bucket at all.
     let hidden = cull_levels_in_range(&distances, true, 0.0, false, range);
     assert!(hidden.iter().all(Vec::is_empty));
+}
+
+#[test]
+fn each_row_draws_in_its_own_distance_range() {
+    // Two rows, one 3 m from the camera and one 30 m away. Each draws in the band that holds its
+    // distance: 0..10 m for the first and 20..40 m for the second.
+    let inside = cull_levels_by_row_ranges(&[3.0, 30.0], &[0.0, 10.0, 20.0, 40.0], 0.0, false);
+    assert_eq!(inside.iter().map(Vec::len).sum::<usize>(), 2);
+    // The same rows with the bands swapped lie outside both, so neither draws.
+    let outside = cull_levels_by_row_ranges(&[3.0, 30.0], &[20.0, 40.0, 0.0, 10.0], 0.0, false);
+    assert_eq!(outside.iter().map(Vec::len).sum::<usize>(), 0);
+    // A row whose pair the array does not hold draws at every distance.
+    let short = cull_levels_by_row_ranges(&[3.0, 30.0], &[20.0, 40.0], 0.0, false);
+    assert_eq!(short.iter().map(Vec::len).sum::<usize>(), 1);
 }
 
 #[test]
