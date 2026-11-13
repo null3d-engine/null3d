@@ -59,6 +59,7 @@ import {
 	twigView,
 	walkedRound,
 } from '../lib/plant-review/close';
+import { cutFace } from '../lib/plant-review/cut-face';
 import { type CutRows, cutCamera, leafFrame, spanDistance } from '../lib/plant-review/framing';
 import { measurePlant, partPositions, shootPositions } from '../lib/plant-review/measure';
 import { readPlantReviewQuery } from '../lib/plant-review/query';
@@ -78,6 +79,7 @@ import {
 	limbShot,
 	placedPieceShot,
 	type Solved,
+	sectionCut,
 	sectionShot,
 	siteShot,
 	underRimShot,
@@ -117,9 +119,10 @@ const PLAIN = MATTE || PARTS;
  * The level forced at every distance: the query's, or the nearest for a view of the wood alone,
  * which judges the whole branching rather than what a level keeps at its distance. A view of the
  * fruit takes the nearest too: a plant's cones, keys and flowers stand on the grown plant's extras,
- * and only the nearest level carries them, so a farther level frames leaves where the fruit is.
+ * and only the nearest level carries them, so a farther level frames leaves where the fruit is. A
+ * section takes the nearest too: its cut face is laid from the nearest level's wood.
  */
-const LOD = QUERY.lod ?? (WOOD_ONLY || QUERY.fruit ? 0 : undefined);
+const LOD = QUERY.lod ?? (WOOD_ONLY || QUERY.fruit || VIEW === 'section' ? 0 : undefined);
 const DEG = Math.PI / 180;
 /**
  * A colour scaled by another colour's channels, which is how a picture's own white balance tints a
@@ -768,6 +771,8 @@ export default defineSketch(async (ctx) => {
 	}
 	const foot: V3 = [stemFootPoint[0], Math.min(stemFootPoint[1], baseY), stemFootPoint[2]];
 	const height = Math.max(0.05, (bounds.max[1] as number) - foot[1]);
+	/** The height a section cuts the stem across at: the slot's, or two fifths of the plant's. */
+	const sectionHeight = QUERY.barkHeight ?? height * 0.4;
 
 	// The turns a sheet draws, each in a cell of its own.
 	const turns = VIEW === 'turntable' ? (QUERY.turns ?? 8) : (QUERY.turns ?? 1);
@@ -1212,12 +1217,7 @@ export default defineSketch(async (ctx) => {
 			}
 			case 'section': {
 				// The stem cut across at the slot's height, seen straight down its line.
-				const found = solvedAt(
-					view,
-					lens,
-					() => sectionShot(subjectsOf(), lens, QUERY.barkHeight ?? height * 0.4),
-					0,
-				);
+				const found = solvedAt(view, lens, () => sectionShot(subjectsOf(), lens, sectionHeight), 0);
 				if (found) return found;
 				break;
 			}
@@ -1976,6 +1976,27 @@ export default defineSketch(async (ctx) => {
 	// A matte or a picture of the parts draws the level alone that the colour picture draws from the
 	// first cell's camera. The colour picture leaves a level it does not draw out of its picture,
 	// and a matte that drew it too would read plant the picture does not show.
+	/**
+	 * A section's plant with the cut face laid over its nearest level's wood, where the stem is cut
+	 * across; any other view's plant as it is. The wood is a skin, so without the face the cut would
+	 * show an empty tube.
+	 */
+	const cutAcross = (asset: PlantAsset): PlantAsset => {
+		if (VIEW !== 'section') return asset;
+		const cut = sectionCut(subjectsOf(), sectionHeight);
+		if (isAbsent(cut)) return asset;
+		const nearest = asset.levels[0];
+		const faces = nearest.parts
+			.filter((part) => part.name === 'wood')
+			.map((part) => cutFace(part, mainKit.box, cut))
+			.filter((face): face is PlantPart => face !== undefined);
+		const level = {
+			...nearest,
+			parts: [...nearest.parts, ...faces],
+			triangles: faces.reduce((n, face) => n + face.arrays.indices.length / 3, nearest.triangles),
+		};
+		return { ...asset, levels: [level, asset.levels[1], asset.levels[2]] };
+	};
 	const plainLevel =
 		PLAIN && LOD === undefined && cells[0]
 			? drawnLevel(
@@ -1986,10 +2007,8 @@ export default defineSketch(async (ctx) => {
 					false,
 				).level
 			: undefined;
-	const drawn = shaped(
-		main,
-		WOOD_ONLY,
-		plainLevel !== undefined && plainLevel < 3 ? plainLevel : LOD,
+	const drawn = cutAcross(
+		shaped(main, WOOD_ONLY, plainLevel !== undefined && plainLevel < 3 ? plainLevel : LOD),
 	);
 	const far = LOD === 3 && whole ? [await bakeFarPlant(kit, whole)] : undefined;
 	place(drawn, [0, 0, 0], mainKit, far);
