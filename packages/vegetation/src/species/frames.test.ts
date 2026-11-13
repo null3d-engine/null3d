@@ -249,9 +249,11 @@ const HELD: readonly Held[] = [
 		round: { rule: 'stem', gap: 80, lean: 0.2 },
 		base: { arm: 0.65, fork: 0.65, branch: 0.65, side: 0.5 },
 		plumb: [],
-		through: 2,
+		// Raised from 2 with the crown drawn in a quarter turn on to its turning video's width: the
+		// same wood stands nearer together there.
+		through: 5,
 		// Every twig that clothes a clump is an axis that ends in a socket.
-		axesPerSocket: 1.079,
+		axesPerSocket: 1.09,
 		fine: ['twig'],
 		tall: [0.97, 1.06],
 	},
