@@ -10,9 +10,10 @@ import { record } from './record';
 /**
  * The fine wood that clothes a clump, each twig ending in a socket that carries the branch end of
  * still 21. A branch end is 0.82 m long and 0.6 m wide on a tree 20 m tall, so the sockets stand a
- * branch end's width apart over the clump's surface and a branch end's reach inside it.
+ * branch end's width apart over the clump's surface and a branch end's reach inside it, which closes
+ * the crown to stills 01 and 02.
  */
-const ENDS = { pitch: 0.67 / 20, reach: 0.82 / 20 } as const;
+const ENDS = { pitch: 0.6 / 20, reach: 0.82 / 20 } as const;
 
 /** The common alder's frame. */
 export const frame: FrameSpec = {
@@ -163,7 +164,16 @@ export const frame: FrameSpec = {
  */
 export const directed = {
 	...pieceRecord(
-		framedRecord(record, frame, { rows: { mean: 4, spread: 1 }, fan: 45, piece: 'branch-end' }),
+		framedRecord(record, frame, {
+			rows: { mean: 4, spread: 1 },
+			fan: 45,
+			piece: 'branch-end',
+			// With every branch end's flat side to the sky, a crown seen from the side shows most of
+			// its leaves slanted or edge on. Stills 07 and 17: the alder's leafy shoots face every way,
+			// so each piece rolls up to a quarter turn either way about its own line and tilts a
+			// little off the wood's.
+			turn: { roll: 90, tilt: 25 },
+		}),
 		PIECE_LEAF,
 	),
 	pieces: PIECES.filter((piece) => piece.name === 'branch-end'),
