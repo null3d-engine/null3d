@@ -1,8 +1,8 @@
 // Draws a species' branch pieces on the CPU beside the studio photographs of its cut wood, with no
 // browser and no GPU. Each photograph the species lays out is drawn from its pieces: the cut's bare
 // wood with a piece at each socket, or one piece alone. The sheet shows the photograph, the two
-// outlines laid over one another and the drawing, with the review tool's outline overlap and the
-// width over height of each.
+// outlines laid over one another, the drawing, and the same layout with each piece drawn as its
+// cards, with the review tool's outline overlap and the width over height of each.
 //
 //   bun run plants:piece <species> [--still <n,n>] [--refs <folder or slug>] [--out <dir>]
 //     [--name <prefix>]
@@ -31,9 +31,9 @@ import {
 } from '../packages/vegetation/src/leaf/piece.ts';
 import { REPO_ROOT } from '../tests/lib/server.ts';
 import { matchFigures, matchStrip, referenceView, stacked } from './lib/plant-preview/match.ts';
-import { studioScene, studioView } from './lib/plant-preview/piece.ts';
+import { pieceCards, studioScene, studioView } from './lib/plant-preview/piece.ts';
 import { flag, option, positionals } from './lib/plant-review/cli.ts';
-import { type Rgba, readImage } from './lib/plant-review/image.ts';
+import { blank, drawText, paste, type Rgba, readImage } from './lib/plant-review/image.ts';
 
 const REFERENCES =
 	process.env.NULL3D_PLANT_REFERENCES ??
@@ -101,18 +101,35 @@ for (const studio of STUDIO) {
 	const scene = studioScene(kit, pieces, layStudio(module.record, PIECES, studio));
 	const render = studioView(scene, reference, studio.turn ?? 0);
 	const match = matchFigures(reference, render);
+	// The same layout with each piece drawn as its cards, which a whole view of a plant draws.
+	const carded = studioView(scene, reference, studio.turn ?? 0, pieceCards(scene));
+	const cardMatch = matchFigures(reference, carded);
 	const title = `${file}: ${scene.pieces} x ${studio.piece}${studio.stand ? ' on its cut wood' : ' alone'}, ${scene.leaves} leaves, drawn ${render.wide.toFixed(2)} m wide and ${render.tall.toFixed(2)} m tall`;
-	strips.push(matchStrip(title, reference, render, match));
+	const strip = matchStrip(title, reference, render, match);
+	const wide = blank(strip.width + carded.colour.width + 8, strip.height, [255, 255, 255]);
+	paste(wide, strip, 0, 0);
+	paste(wide, carded.colour, strip.width + 8, 0);
+	if (cardMatch)
+		drawText(
+			wide,
+			`card form: sky gap ${cardMatch.gap.render.toFixed(4)} (leaf form ${match ? match.gap.render.toFixed(4) : '-'})  w/h ${cardMatch.plantAspect.render.toFixed(3)}  overlap ${cardMatch.shapeIou.toFixed(3)}`,
+			strip.width + 12,
+			carded.colour.height + 6,
+			2,
+			[20, 20, 20],
+		);
+	strips.push(wide);
 	figures[file] = {
 		pieces: scene.pieces,
 		leaves: scene.leaves,
 		wide: render.wide,
 		tall: render.tall,
 		match,
+		cards: cardMatch,
 	};
 	if (match)
 		console.log(
-			`  ${file}: ${scene.pieces} pieces, ${scene.leaves} leaves, outline overlap ${match.shapeIou} (as framed ${match.frameIou}), width over height ${match.plantAspect.render} against ${match.plantAspect.reference}, enclosed gap ${match.gap.render} against ${match.gap.reference}`,
+			`  ${file}: ${scene.pieces} pieces, ${scene.leaves} leaves, outline overlap ${match.shapeIou} (as framed ${match.frameIou}), width over height ${match.plantAspect.render} against ${match.plantAspect.reference}, enclosed gap ${match.gap.render} against ${match.gap.reference}${cardMatch ? `; as cards: gap ${cardMatch.gap.render}, width over height ${cardMatch.plantAspect.render}, overlap ${cardMatch.shapeIou}` : ''}`,
 		);
 }
 mkdirSync(out, { recursive: true });
@@ -133,6 +150,8 @@ writeFileSync(
 			pieces: pieces.map((piece) => ({
 				piece: piece.piece,
 				variant: piece.variant,
+				part: piece.part,
+				parts: piece.parts,
 				attitude: piece.attitude,
 				leaves: piece.leaves,
 				length: Number(piece.length.toFixed(3)),
