@@ -70,11 +70,12 @@ export const directed: Species = {
 				{ share: 0.08, leave: -30, spread: 15, piece: 'frond-straight', length: 1 },
 			],
 		},
-		// Picture 05 shows 5 to 6 dead fronds from one side; the turning video hangs them to 0.35 of
-		// the height. Picture 01: they hang 60 to 80 degrees below level within 0.45 of a frond of the
-		// trunk's axis, their bases in a ring under the living fronds.
+		// Picture 20: a dense curtain of about 15 dead fronds from one side, 2.9 times the trunk wide,
+		// so about 20 in all (16 to 24); the turning video hangs them to 0.35 of the height. Picture
+		// 01: they hang 60 to 80 degrees below level within 0.45 of a frond of the trunk's axis, their
+		// bases in a ring under the living fronds.
 		dead: {
-			count: { mean: 7, spread: 1 },
+			count: { mean: 20, spread: 4 },
 			hang: { mean: 70, spread: 10 },
 			from: 0.9,
 			to: 1.6,
