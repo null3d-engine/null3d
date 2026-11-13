@@ -964,6 +964,13 @@ export default defineSketch(async (ctx) => {
 		const placed = QUERY.piece !== undefined && SPEC.whole !== true;
 		switch (placed ? 'placed piece' : view) {
 			case 'placed piece': {
+				// A part of the piece is framed the span wide, or as many leaf lengths wide as the
+				// slot's cut pieces are, at the slot's share along it.
+				const span =
+					QUERY.span ??
+					(QUERY.leaves !== undefined && leafLength !== undefined
+						? QUERY.leaves * leafLength
+						: undefined);
 				const found = solvedAt(
 					view,
 					lens,
@@ -971,6 +978,7 @@ export default defineSketch(async (ctx) => {
 						placedPieceShot(subjectsOf(), QUERY.piece as string, lens, {
 							laid: (QUERY.roll ?? 0) !== 0,
 							edge: QUERY.edge === true,
+							...(span !== undefined && { span, along: QUERY.along ?? 0.5 }),
 						}),
 					0,
 				);
