@@ -367,3 +367,52 @@ export function crownFill(
 	}
 	return { mean: count > 0 ? all / count : 0, least: count > 0 ? least : 0, most };
 }
+
+/** A band of a crown, on one side, that stands off the stated outline by more than it may. */
+export interface CrownFault {
+	/** Degrees round the plant that the side faces. */
+	readonly side: number;
+	/** The band's number from the ground, and its middle height as a share of the plant's height. */
+	readonly band: number;
+	readonly height: number;
+	/** The built reach over the stated one in the band. */
+	readonly fill: number;
+}
+
+/**
+ * The bands of a frame's crown that do not hold the outline its species states. On each side, every
+ * band whose middle stands between the outline's foot and nine tenths of its top is read, and a
+ * band whose patches reach less than the least share of the outline there, or more than the most,
+ * is a fault. A mean over the bands passes a crown that is wide at one height only; this does not.
+ *
+ * @param plan The frame.
+ * @param spec The species' frame.
+ * @param sides The sides read, evenly round the plant.
+ * @param bands The bands between the ground and the plant's stated height.
+ * @param least The least share of the outline a band may fill.
+ * @param most The most.
+ * @returns The faults, side by side from the lowest band.
+ * @category api/vegetation
+ */
+export function crownFaults(
+	plan: FramePlan,
+	spec: FrameSpec,
+	sides = 4,
+	bands = 16,
+	least = 0.6,
+	most = 1.2,
+): CrownFault[] {
+	const out: CrownFault[] = [];
+	const foot = typeof spec.outline === 'number' ? 0 : (spec.outline[0]?.[0] ?? 0);
+	const top =
+		typeof spec.outline === 'number' ? 1 : (spec.outline[spec.outline.length - 1]?.[0] ?? 1);
+	crownBands(plan, spec, sides, bands).forEach((row, side) => {
+		row.forEach((band, k) => {
+			if (band.height < foot || band.height > 0.9 * top || band.stated <= 0) return;
+			const fill = band.built / band.stated;
+			if (fill < least || fill > most)
+				out.push({ side: (side * 360) / sides, band: k, height: band.height, fill });
+		});
+	});
+	return out;
+}
