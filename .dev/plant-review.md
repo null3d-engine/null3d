@@ -136,7 +136,13 @@ Row 6 is read from the sky gap: the share of background enclosed by the crown's 
 pictures at each whole view. The verdict names this figure beside each value. Both pictures are
 read one way: a texel is sky or plant. A render's matte also holds each texel's clear share, and a
 figure read by that share is about 0.015 more closed than the same outline read as a photograph's
-is. The summary prints that reading beside the figure, since earlier figures were read by it. The share of
+is. The summary prints that reading beside the figure, since earlier figures were read by it. Both
+pictures are also read at one size: each is shrunk to 640 pixels wide first. A photograph's figure
+moves with its size, since fine gaps close when a picture shrinks: read at its own 1,024 pixels, a
+silhouette's sky gap stands 0.02 to 0.10 higher, and a daylight whole view's up to 0.03 higher. The
+band is drawn round the figure at the work size, and a figure read at another size is not the
+row's figure. The summary also prints each plant's foot row, since a reference outline that loses
+its trunk's foot below the horizon reads the plant short and moves every share of its height. The share of
 the crown's box that shows background is a different figure, and it does not judge this row. Some
 plants do not fill their box by shape: a spire, a cone, or any crown seen from below. Sky stands
 beside such a plant inside its box, so the box figure measures its taper. The Italian cypress read
@@ -264,7 +270,10 @@ own light they read 1.9, and the head's oak reads 2.2, so the light makes most o
 - A cut branch's density is judged against a picture of the same piece at the same scale, by four
   figures. The wood per tip and the tips per area must fall within a quarter of the reference's. The
   share of fan joints, where four or more twigs leave one point, may stand at most a tenth above it.
-  The kinks must reach at least half of the reference's.
+  The kinks must reach at least half of the reference's. The wood per tip and the kinks are sound
+  on bare wood only: a winter piece, or a drawing's wood drawn alone against a hand count on the
+  photograph. On a piece in leaf, a leaf across a stem makes false tips and a straight twig passes
+  the kinks, so no verdict on a leafy piece quotes either.
 - The oak's winter branch is judged on the cut branch of the winter oak's own set. Still 20's outline
   is void. It shows a limb end about 35 cm across, and a limb that enters the frame's side reads as a
   horizon.
@@ -306,8 +315,11 @@ own light they read 1.9, and the head's oak reads 2.2, so the light makes most o
 ## Pictures that do not judge the primary plant
 
 Some reference pictures are compared and shown, and still do not judge the plant. The species'
-review data names each one with its reason, in its slot file under `_pictures`. The tool keeps such
-a picture out of every row's evidence and figures, and the verdict lists it beside the row.
+review data names each one with its reason, in its slot file under `_pictures`. Each entry cites
+the ruling that took the picture out: who ruled, and what. The tool refuses an entry with no
+ruling, so no picture leaves a row by the tool's own choice. The tool keeps such a picture out of
+every row's evidence and figures, the verdict lists it beside the row, and the count prints each
+one under its species with its ruling.
 
 - **A second form.** A picture of another form of the species judges that form, not the primary
   plant. The silver birch's picture `33`, the dense old tree, is a second form.
@@ -375,6 +387,22 @@ to an edge of the frame that the photograph's plant stands clear of, and names t
 saved runs the oak's profile ran off the right and lower edges, and the Scots pine's and the weeping
 willow's whole views ran off the lower edge.
 
+Three more pictures are void, each a fault of the camera or of the file's view and none a
+judgement of the plant:
+
+- A close view whose subject takes none of the frame. A camera that stands in the plane of an arm
+  or a fan sees it edge on, and the picture holds no subject.
+- A picture the page also drew for another photograph that was asked for differently. The light or
+  the height that one of them asked for then changed nothing, and one drawing does not count for
+  two.
+- A whole view whose frame the plant covers from edge to edge, or holds no plant at all. It has no
+  outline, so no overlap or gap is read from it.
+
+**A figure names the level it was drawn at.** A plant draws as its leaf form near the camera, then
+as two card levels, then as a far card. The page reports the level of each picture, the run's
+record keeps it, and the summary and the verdict print it beside each figure. A figure with no
+level named is a note, since the same view reads differently at another level.
+
 A whole view is void as well when its plant is not drawn at its photograph's size. The plant's box must
 match the photograph's within a fifth, in height or in width. A render smaller in both, or larger in
 both, was framed from the wrong distance. Its figures would compare a small plant with a large one.
@@ -394,6 +422,18 @@ plant with no trunk fork under its crown fails the fork picture's rows. It does 
 and a whole view by the crop and size checks. A view with neither may show another subject than its
 photograph. The verdict lists such pictures as not checked, and a row that rests only on them cannot
 pass.
+
+**A picture with no figure is drawn, not compared.** Some pictures have no figure to give: a limb's
+join against leaves has no outline and no band. The tool lists such a picture as drawn and not
+measured, and the eye judges it. Two limits hold:
+
+- The state applies only where this standard states no figure for the picture's view: the view up
+  the trunk, the crown's outside and underside, the inside of the crown, a limb's join, a fork and
+  the bole. Where a figure exists and the tool did not read it, that is a fault of the tool, and
+  the run is not complete.
+- Such a picture never carries a pass alone. Its row needs the named reviewer's reading in the
+  review file, as every pass does. The count prints how many such pictures a species has and names
+  them.
 
 **A same-angle conflict is a reference conflict; a cross-angle comparison is not.** When two
 reference pictures disagree, read the turn each is drawn at. Compare only figures at the same turn,

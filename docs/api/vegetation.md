@@ -110,7 +110,7 @@ To keep results across visits, give `prepareSpecies` a store of bytes as its `ca
 - **Edges cut solid.** A leaf's or card's coverage is sharpened to a one-pixel edge at the cutoff, so a blade draws whole to its cut edge.
 - **Bark relief follows the branch.** The bark's tangent frame comes from its own texture coordinates, so its ridges run along every limb, whichever way the limb points.
 - **Wind.** Give `options.wind` the wind add-on's field, and call `setWindLayer(materials, field)` in each frame. Every part sways, and leaves and cards flutter. `options.swayDistance` stops the sway past that distance, so far shadows stay cached.
-- **A matte.** `options.matte: true` draws the plant black, with its outline, its cut-outs and its sway, for an exact silhouette.
+- **A matte.** `options.matte: true` draws the plant black, with its outline, its cut-outs and its sway, for an exact silhouette. `options.matte: 'parts'` draws each part in a flat color of its own instead, cut and layered as the color picture is: wood red with its radius in the blue channel, foliage green, extras green and blue.
 
 `prepareSpecies` loads the textures of the preset's set, the half set on Low, the first time a page prepares the species. A page fetches no texture file of a species it does not prepare.
 
@@ -129,7 +129,7 @@ Give `triangles` in place of `coarseness` to set a target for one copy's nearest
 
 Options given to `prepareSpecies` apply to every variant that grows from its kit, and a variant's own options replace them. A coarseness of 0 grows the same bytes as no coarseness. Stand-ins grow the same at every coarseness. On a grown oak at the high tier, coarseness 1 cuts the nearest level's wood from 761,551 triangles to 576,720, while its 3,771 shoot rows and its cards stay as grown. To grow a sparser plant, use `sparse`.
 
-A page can also move the level switches of all its species at once. Give `switchBias` in the view that every `placePlants` call takes. It counts in stops: each switch distance is multiplied by two to the power of minus the bias. A bias of 1 switches every level at half its distance, and a bias of -1 at twice its distance. `switchScale(bias)` gives that factor.
+A page can also move the level switches of all its species at once. Give `switchBias` in the view that every `placePlants` call takes. It counts in stops: each switch distance is multiplied by two to the power of minus the bias. A bias of 1 switches every level at half its distance, and a bias of -1 at twice its distance. `switchScale(bias)` gives that factor. `drawnLevel(kit, asset, view, distance, far)` names the level a placed copy draws at a distance from the camera, with the distance each level starts at: the leaf form, the first or second card level, or the far card. A page that measures a picture uses it to say which level the picture shows.
 
 ### Other forms
 

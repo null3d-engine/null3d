@@ -56,7 +56,14 @@ import {
 import type { RunFrame } from './render.ts';
 import { type PictureNote, type Standing, standReason } from './review-data.ts';
 import type { SheathTarget } from './sheath.ts';
-import { contractHeld, lackReason, voidReason } from './subject-check.ts';
+import {
+	contractHeld,
+	holdsWholePlant,
+	lackReason,
+	partsOf,
+	regionsRead,
+	voidReason,
+} from './subject-check.ts';
 
 /** The bins of an edge-direction profile: twelve of fifteen degrees across half a turn. */
 const EDGE_BINS = 12;
@@ -85,6 +92,64 @@ const BARK_VIEWS: ReadonlySet<string> = new Set([
  * over a bark close-up stands well below this; the barks measured across the corpus stay above it.
  */
 const LEAF_GREEN = -5;
+
+/**
+ * The close views of the wood from among the plant's own parts: a limb's join, a fork, the trunk
+ * inside the crown and the bole. Their photographs stand against leaves, woodland or the plant
+ * itself, so a sky or a ground fitted to such a picture's border is not there to find. Only a
+ * plain studio background gives one of them an outline.
+ */
+export const WOOD_CLOSE_VIEWS: ReadonlySet<string> = new Set([
+	'junction',
+	'fork',
+	'inside',
+	'trunk',
+]);
+
+/**
+ * The views for which the standard states no figure: their rows are judged on them by eye. A picture
+ * of one of them that gives no figure is drawn and not measured, which is its proper state. A
+ * picture of any other view that gives no figure is a fault of the tool.
+ */
+export const EYE_VIEWS: ReadonlySet<string> = new Set([
+	'below',
+	'limb',
+	'crown-underside',
+	'inside',
+	'junction',
+	'fork',
+	'trunk',
+]);
+
+/**
+ * The views whose camera is solved from the plant's subjects, each with a contract. A picture of
+ * one draws its matte too, so the contract's regions are checked on what was drawn.
+ */
+export const SOLVED_VIEWS: ReadonlySet<string> = new Set([
+	...EYE_VIEWS,
+	'bark-base',
+	'bark-mid',
+	'bark-limb',
+]);
+
+/**
+ * Whether a comparison read any figure of its picture against its photograph: an outline, a
+ * surface or bark colour, or a leaf colour. The edge-direction share is not one: it is a note for
+ * the eye and no row's band.
+ */
+export function measured(pair: {
+	readonly masked: boolean;
+	readonly surfaceDeltaE: number | null;
+	readonly foliageDeltaE: number | null;
+	readonly barkDeltaE: number | null;
+}): boolean {
+	return (
+		pair.masked ||
+		pair.surfaceDeltaE !== null ||
+		pair.foliageDeltaE !== null ||
+		pair.barkDeltaE !== null
+	);
+}
 
 /**
  * Whether a picture separates a plant from a plain background, so its outline can be read. A bark
@@ -571,6 +636,11 @@ interface PairMetrics {
 	} | null;
 	readonly crownBoxGap: { readonly reference: number; readonly render: number } | null;
 	readonly frameGap: { readonly reference: number; readonly render: number } | null;
+	/**
+	 * The row share of each plant's foot, the lowest row of its outline. Every figure that is a
+	 * share of the plant's height counts from this row, so it stands beside them.
+	 */
+	readonly footRow?: { readonly reference: number; readonly render: number } | null;
 	readonly foliageDeltaE: number | null;
 	readonly barkDeltaE: number | null;
 	readonly crownBox: {
@@ -593,6 +663,15 @@ function pairMetrics(reference: Side, render: Side): PairMetrics {
 				? Number(iou(reference.normal, render.normal).toFixed(4))
 				: null,
 		frameIou: both ? Number(frameIou(reference.plant, render.plant).toFixed(4)) : null,
+		footRow:
+			reference.measures.box && render.measures.box
+				? {
+						reference: Number(
+							((reference.measures.box.bottom + 1) / reference.plant.height).toFixed(4),
+						),
+						render: Number(((render.measures.box.bottom + 1) / render.plant.height).toFixed(4)),
+					}
+				: null,
 		profileError: both
 			? Number(
 					profileError(reference.measures.widthProfile, render.measures.widthProfile).toFixed(4),
@@ -1605,14 +1684,25 @@ export interface StillResult extends PairMetrics {
 	readonly lacks?: string;
 	/**
 	 * Whether a check confirmed that the picture shows its photograph's subject: a solved view
-	 * whose contract held, or a whole view that passed the framing check. A picture without one
-	 * may show another subject, so no row passes on such pictures alone.
+	 * whose contract held and whose regions were read from the picture, or a whole view that passed
+	 * the framing check. A picture without one may show another subject, so no row passes on such
+	 * pictures alone.
 	 */
 	readonly subjectChecked?: boolean;
-	/** A cut branch's four density figures on both pictures, where the run measured them. */
+	/**
+	 * The level of detail the page drew the picture at, as it posted it: the leaf form, a card
+	 * level or the far card. A figure read from the picture holds for that level alone.
+	 */
+	readonly level?: string;
+	/**
+	 * A cut branch's four density figures on both pictures, where the run measured them. A side
+	 * is null where its picture gave no measure. `bare` says the piece carries no leaf: two of the
+	 * figures are sound on bare wood only.
+	 */
 	readonly cutBranch?: {
-		readonly reference: CutBranchFigures;
-		readonly render: CutBranchFigures;
+		readonly reference: CutBranchFigures | null;
+		readonly render: CutBranchFigures | null;
+		readonly bare?: boolean;
 	};
 	/**
 	 * Why the picture is void: its view has no subject in the plant, or the picture does not show
@@ -1624,16 +1714,81 @@ export interface StillResult extends PairMetrics {
 	readonly error?: string;
 }
 
-/** The four figures a cut branch's density is judged by, read on one picture of the piece. */
+/**
+ * The four figures a cut branch's density is judged by, read on one picture of the piece. Lengths
+ * are in piece lengths, so a photograph and a drawing of one piece compare whatever their scale. A
+ * figure is null where the picture cannot give it.
+ */
 export interface CutBranchFigures {
-	/** Metres of wood for each twig tip. */
-	readonly woodPerTip: number;
-	/** Twig tips for each square metre of the piece's outline. */
-	readonly tipsPerArea: number;
-	/** The share of joints where four or more twigs leave one point. */
-	readonly fanShare: number;
-	/** Bends in the wood for each metre of it. */
-	readonly kinks: number;
+	/** Piece lengths of wood for each twig tip. */
+	readonly woodPerTip: number | null;
+	/** Twig tips for each square piece length of the piece's outline. */
+	readonly tipsPerArea: number | null;
+	/** The share of joints where four or more twigs leave one point; null where the piece has no joint. */
+	readonly fanShare: number | null;
+	/** Bends in the wood for each piece length of it. */
+	readonly kinks: number | null;
+}
+
+/** The least share of the frame a close view's subject takes to be in its picture at all. */
+const SUBJECT_LEAST_SHARE = 0.01;
+
+/**
+ * Why a close picture has no subject in it, where its page measured the subject's share of the
+ * frame and found none: a camera that stands in the plane of what it frames sees it edge on.
+ */
+export function emptySubject(facts: unknown): string | undefined {
+	const framing = closeFraming(facts);
+	return framing && framing.fill !== null && framing.fill < SUBJECT_LEAST_SHARE
+		? `the subject, ${framing.subject}, takes ${framing.fill.toFixed(2)} of the frame`
+		: undefined;
+}
+
+/**
+ * Why a picture answers no photograph of its own: the page drew the very picture it drew for an
+ * earlier reference, though the two were asked for differently. Each asked-for difference, such
+ * as a light or a height, then changed nothing, and one drawing must not count for two.
+ */
+export function sameDrawing(
+	seen: Map<string, { readonly file: string; readonly query: string }>,
+	file: string,
+	frame: RunFrame,
+): string | undefined {
+	if (frame.sha256 === undefined) return undefined;
+	const query = JSON.stringify(frame.query);
+	const first = seen.get(frame.sha256);
+	if (!first) {
+		seen.set(frame.sha256, { file, query });
+		return undefined;
+	}
+	return first.query === query
+		? undefined
+		: `the page drew the same picture as for ${first.file}, though the two were asked for differently`;
+}
+
+/** The share of a frame above which, or at none of which, the plant leaves no outline to read. */
+const BLANK_MOST = 0.98;
+
+/** Why a whole view's frame has no outline to read: the plant covers all of it, or none. */
+export function blankFrame(plant: {
+	readonly mask: Uint8Array;
+	readonly width: number;
+	readonly height: number;
+}): string | undefined {
+	let covered = 0;
+	for (let at = 0; at < plant.mask.length; at++) covered += plant.mask[at] ? 1 : 0;
+	const share = covered / Math.max(1, plant.mask.length);
+	if (share === 0) return 'the frame holds no plant';
+	return share > BLANK_MOST
+		? `the plant covers ${share.toFixed(2)} of the frame, so the frame holds no outline`
+		: undefined;
+}
+
+/** The level of detail a page posted for a cell, in words; undefined where it posted none. */
+export function levelName(cell: unknown): string | undefined {
+	const level = (cell as { level?: { name?: unknown; forced?: unknown } } | undefined)?.level;
+	if (!level || typeof level.name !== 'string') return undefined;
+	return level.forced === true ? `${level.name}, forced` : level.name;
 }
 
 /** How far a whole view's drawn plant may differ in size from its photograph's, as a share of it. */
@@ -1955,6 +2110,8 @@ export function compareStills(
 	const subjectFile = subjectLoader(frames[0]?.query?.species);
 	const results: StillResult[] = [];
 	const rows: SheetRow[] = [];
+	// The first reference each drawn picture answered, by the picture's hash, with its query.
+	const drawnFor = new Map<string, { readonly file: string; readonly query: string }>();
 	for (const slot of set.stills) {
 		const refImage = referencePicture(join(set.folder, slot.file));
 		const frame = byReference.get(slot.file);
@@ -2037,7 +2194,14 @@ export function compareStills(
 			continue;
 		}
 		// A close picture whose subject is missing decides nothing, and no figure is read from it.
-		const voided = voidReason(frame.facts, own);
+		// The parts in flat colours, where the run drew them: the regions of a solved view's contract
+		// are read from that picture, which is cut and layered as the colour picture is.
+		const partsPicture =
+			frame.parts === undefined ? undefined : partsOf(readImage(join(runDir, frame.parts)));
+		const voided =
+			voidReason(frame.facts, own, partsPicture) ??
+			emptySubject(frame.facts) ??
+			sameDrawing(drawnFor, slot.file, frame);
 		if (voided !== undefined) {
 			unread({ void: voided }, ['VOID', 'SUBJECT MISSING']);
 			continue;
@@ -2074,6 +2238,15 @@ export function compareStills(
 			]);
 			continue;
 		}
+		// A whole view whose frame is all plant or holds none has no outline to read.
+		const blank =
+			(slot.view === 'whole' || slot.view === 'silhouette') && frame.matte !== undefined
+				? blankFrame(render.plant)
+				: undefined;
+		if (blank !== undefined) {
+			unread({ void: blank }, ['VOID', 'NO OUTLINE']);
+			continue;
+		}
 		// A bark close view photographs the bark against bark, and a bark texture is a cut-out of
 		// the material, so neither separates a plant from a background. Their rows read colour,
 		// never an outline: a mask fitted to a picture with no plain border invents one.
@@ -2081,22 +2254,33 @@ export function compareStills(
 		// such as a far scrub band the fitted sky and ground admit.
 		const drawn = frame.query?.view ?? slot.view;
 		// A reference whose outline joins its background, as the review data records, has none to read.
-		const noOutline = !hasSeparableOutline(
-			drawn,
-			slot.kind,
-			frame.query?.noOutline === true || pictureNote?.outline !== undefined,
-		);
-		const fittedKind = refPlant.background.plain
-			? null
-			: skyMaskable(refPlant.background)
-				? ('sky' as const)
-				: soilMaskable(refPlant.background, refPlant.height)
-					? ('ground' as const)
-					: null;
+		// A solved close view stands inside the plant, where the frame cuts it and a matte reads
+		// fuller than the picture. Its outline is not compared and its pieces are not counted, save
+		// where its camera holds the whole plant, as a low plant's does.
+		const closeInside = partsPicture !== undefined && !holdsWholePlant(frame.facts);
+		const noOutline =
+			closeInside ||
+			!hasSeparableOutline(
+				drawn,
+				slot.kind,
+				frame.query?.noOutline === true || pictureNote?.outline !== undefined,
+			);
+		// A close view of the wood takes no fitted sky or ground: its photograph has neither.
+		const fittedKind =
+			refPlant.background.plain || WOOD_CLOSE_VIEWS.has(drawn)
+				? null
+				: skyMaskable(refPlant.background)
+					? ('sky' as const)
+					: soilMaskable(refPlant.background, refPlant.height)
+						? ('ground' as const)
+						: null;
+		// An outline is compared only where the photograph separates its plant: on a plain
+		// background, or on a sky or a ground that the fit found.
+		const separable = refPlant.background.plain || fittedKind !== null;
 		const masked =
 			!noOutline &&
-			((fittedKind === null && frame.matte !== undefined) ||
-				(fittedKind !== null && (frame.matte !== undefined || render.measures.box !== undefined)));
+			separable &&
+			(frame.matte !== undefined || (fittedKind !== null && render.measures.box !== undefined));
 		const pair = pairMetrics(masked ? refSide : { ...refSide, normal: undefined }, render);
 		const bark = slot.kind === 'texture' && !slot.view.startsWith('leaf');
 		// The shot carries the query the page was asked for, which is where a species' slot file
@@ -2153,14 +2337,16 @@ export function compareStills(
 		// The connectivity gate reads the matte at the picture's own width: a downscale to the work
 		// width can drop a hairline shoot the picture keeps and so invent a piece hanging free. The
 		// work-width read is kept beside it as a second figure.
-		const ownParts = own ? piecePartsAtOwnWidth(own.mask, own.width, own.height) : null;
+		// A fork's picture draws only the wood near the joint's depth, so the cut leaves pieces that
+		// hang free in it by design, and the gate does not read it.
+		const ownParts =
+			own && drawn !== 'fork' && !closeInside
+				? piecePartsAtOwnWidth(own.mask, own.width, own.height)
+				: null;
 		const pieces = parts
 			? {
 					reference:
-						refSide.measures.box !== null &&
-						(refPlant.background.plain ||
-							skyMaskable(refPlant.background) ||
-							soilMaskable(refPlant.background, refPlant.height))
+						refSide.measures.box !== null && separable
 							? pieceCount(anyPlantMask(refPlant), refPlant.width, refPlant.height, PIECE_AREA)
 							: null,
 					render: parts.length,
@@ -2195,7 +2381,8 @@ export function compareStills(
 					foliageDeltaE: refPlant.background.plain ? pair.foliageDeltaE : null,
 				};
 		const framing = closeFraming(frame.facts);
-		const note = crownNote(refSide.measures, render.measures) ?? slot.note;
+		// The crown's box is read from an outline, so only a picture compared by outline has its note.
+		const note = (masked ? crownNote(refSide.measures, render.measures) : undefined) ?? slot.note;
 		results.push({
 			...shown,
 			file: slot.file,
@@ -2224,20 +2411,24 @@ export function compareStills(
 					}),
 			surfaceDeltaE,
 			barkColour,
-			// A masked close view reads its bark difference off the same patches, since the page's own
-			// figure averages a plant mask that on a thin stem is mostly the backdrop.
-			barkDeltaE:
-				barkMaskOn && barkColour
-					? Number(deltaE2000(barkColour.reference, barkColour.render).toFixed(2))
-					: shown.barkDeltaE,
+			// A bark close view reads its bark difference off the same patches: the page's own figure
+			// averages a plant mask, which a bark picture does not have and which on a thin stem is
+			// mostly the backdrop.
+			barkDeltaE: barkColour
+				? Number(deltaE2000(barkColour.reference, barkColour.render).toFixed(2))
+				: shown.barkDeltaE,
 			edgeDifference: edges,
 			pieces,
 			connectivity,
 			...(frame.query?.sparse !== undefined ? { sparse: frame.query.sparse } : {}),
 			...(sheathFigure ? { sheath: sheathFigure } : {}),
 			...(framing ? { framing } : {}),
+			...(levelName(frame.cell) !== undefined && { level: levelName(frame.cell) }),
 			// A solved view whose contract held, or a whole view that passed the framing check.
-			subjectChecked: contractHeld(frame.facts) || framingChecked,
+			subjectChecked:
+				(contractHeld(frame.facts) &&
+					regionsRead(frame.facts, own !== undefined, partsPicture !== undefined)) ||
+				framingChecked,
 			...(pictureNote?.outline !== undefined ? { outlineVoid: pictureNote.outline } : {}),
 			...(pictureNote?.standing !== undefined && pictureNote.reason !== undefined
 				? { standing: { kind: pictureNote.standing, reason: pictureNote.reason } }

@@ -29,7 +29,8 @@
 	"_pictures": {
 		"05-beneath-the-tuft.png": {
 			"standing": "stand",
-			"reason": "the photograph shows a far larger and finer tuft than one plant grows"
+			"reason": "the photograph shows a far larger and finer tuft than one plant grows",
+			"ruling": "the owner ruled that a stand picture is not judged until the review page plants a stand"
 		}
 	}
 }

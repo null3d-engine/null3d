@@ -35,6 +35,7 @@ import {
 	type PlantSubjects,
 	type TrunkSubject,
 } from '../../../tests/pages/lib/plant-review/subjects.ts';
+import { PART, type Parts, partsCheck } from './subject-check.ts';
 
 const DEG = Math.PI / 180;
 /** A landscape still's lens and a portrait still's. */
@@ -204,7 +205,7 @@ describe('the view up the trunk', () => {
 		expect(checkShot(shot, lens).present).toBe(true);
 	});
 
-	test('never looks up less than its least pitch, however thick the bole', () => {
+	test('never looks down at the ground, however thick the bole', () => {
 		const subjects = tree({
 			trunk: trunkOf(8, 1.2, 4),
 			crownBase: 4,
@@ -212,9 +213,13 @@ describe('the view up the trunk', () => {
 		});
 		const lens = { fov: 70, aspect: 4 / 3 };
 		const shot = shotOf(belowShot(subjects, lens, { turn: 0 }));
-		expect(pitchOf(shot.camera)).toBeCloseTo(25, 4);
+		// The frame's lower edge looks five degrees above level, so the pitch is half the lens more.
+		expect(pitchOf(shot.camera)).toBeCloseTo(40, 4);
 		expect(shot.facts.trunkShare as number).toBeGreaterThan(0.42);
 		expect(landing(shot, lens, 'the top of the bole').y).toBeCloseTo(0.42, 6);
+		// The horizon stands below the frame, so the picture holds no ground.
+		expect(landing(shot, lens, 'the horizon').y).toBeGreaterThan(1);
+		expect(checkShot(shot, lens).present).toBe(true);
 	});
 
 	test('keeps the fork on the middle column of a trunk that leans', () => {
@@ -429,7 +434,7 @@ describe('the view of a limb leaving the trunk', () => {
 		expect(shot.facts.frame as number).toBeLessThan(3);
 		expect(checkShot(shot, TALL).present).toBe(true);
 		// A thin limb on the same bole still shows the trunk's round: the frame is 0.9 of its diameter.
-		const thin = tree({ trunk, limbs: [limbOf(1, 5, [1, 0.3, 0], 0.05, 3, 0.9)] });
+		const thin = tree({ trunk, limbs: [limbOf(1, 5, [1, 0.3, 0], 0.15, 3, 0.9)] });
 		expect(shotOf(junctionShot(thin, TALL)).facts.frame as number).toBeCloseTo(0.9 * 1.8, 9);
 	});
 
@@ -476,6 +481,45 @@ describe('the view of a limb leaving the trunk', () => {
 		const steep = tree({ limbs: [limbOf(1, 5, [0.2, 1, 0], 0.3, 8, 0.4)] });
 		expect(junctionShot(steep, TALL)).toEqual({
 			absent: 'no great limb leaves the trunk at a wide angle',
+			lacks: true,
+		});
+	});
+
+	test("frames by the photograph's own reading: the limb's share, the collar's column", () => {
+		const shot = shotOf(junctionShot(tree(), TALL, { limbShare: 0.5, column: 0.57 }));
+		// The limb's 0.6 m takes half the frame's height, whatever the trunk's width needs.
+		expect(shot.facts.frame as number).toBeCloseTo(0.6 / 0.5, 9);
+		const collar = landing(shot, TALL, 'the collar, where the limb meets the trunk');
+		expect(collar.x).toBeCloseTo(0.57, 6);
+		expect(checkShot(shot, TALL).present).toBe(true);
+	});
+
+	test("takes the thick limb that lies nearest the photograph's limb", () => {
+		// A thick limb that rises steeply, a thick one near level, and a thin one that is level.
+		const limbs = [
+			limbOf(1, 5, [1, 0.8, 0], 0.3, 8, 0.4),
+			limbOf(2, 6, [-1, 0.1, 0.2], 0.24, 6, 0.4),
+			limbOf(3, 7, [0, 0, 1], 0.1, 5, 0.4),
+		];
+		// With no lie given, the limb that shows most thickness across the picture is taken.
+		expect(shotOf(junctionShot(tree({ limbs }), TALL)).facts.limb).toBe(2);
+		expect(shotOf(junctionShot(tree({ limbs }), TALL, { lie: 40 })).facts.limb).toBe(1);
+		// The level limb is too thin beside the others to be the photograph's limb.
+		const level = shotOf(junctionShot(tree({ limbs }), TALL, { lie: 0 }));
+		expect(level.facts.limb).toBe(2);
+		expect(level.facts.lie as number).toBeCloseTo(5.6, 1);
+	});
+
+	test('says the plant lacks the join where every wide limb is a small share of the trunk', () => {
+		const twigs = tree({ limbs: [limbOf(1, 5, [1, 0.3, 0], 0.04, 3, 0.4)] });
+		expect(junctionShot(twigs, TALL)).toEqual({
+			absent:
+				"no limb that leaves the trunk at a wide angle is 0.15 of the trunk's thickness there: the thickest is 0.10",
+			lacks: true,
+		});
+		// A limb named by a slot that the plant does not have is the slot's fault, not the plant's.
+		expect(junctionShot(twigs, TALL, { limb: 9 })).toEqual({
+			absent: 'the plant has no great limb 9',
 		});
 	});
 });
@@ -546,6 +590,14 @@ describe('the view of a fork', () => {
 		const uneven = [forkOf({ armRadii: [0.12, 0.02] })];
 		expect(forkShot(tree({ forks: uneven }), TALL)).toEqual({
 			absent: 'no limb divides into two arms of like size: 1 divisions, none even and open',
+			lacks: true,
+		});
+		// A twig's even fork is not the photograph's: the limb must be a share of the trunk.
+		const twig = [forkOf({ radius: 0.03, armRadii: [0.028, 0.025] })];
+		expect(forkShot(tree({ forks: twig }), TALL)).toEqual({
+			absent:
+				"no limb 0.15 of the trunk's thickness divides into two arms of like size: the thickest that does is 0.06 of it",
+			lacks: true,
 		});
 		expect(forkShot(tree({ forks: absent('a cut piece carries no skeleton') }), TALL)).toEqual({
 			absent: 'a cut piece carries no skeleton',
@@ -561,7 +613,7 @@ describe("the view of the crown's outside", () => {
 		{ centre: [1, 6, 1], radius: 0.2 },
 	];
 
-	test('frames one lobe at the rim from outside the crown and below it', () => {
+	test('frames one lobe at the rim against the sky, from under the crown', () => {
 		const subjects = tree({ lobes });
 		const shot = shotOf(crownOutsideShot(subjects, TALL, { turn: 90 * DEG }));
 		const lobe = landing(shot, TALL, 'the lobe');
@@ -569,13 +621,15 @@ describe("the view of the crown's outside", () => {
 		expect(lobe.y).toBeCloseTo(0.5, 6);
 		// The turn faces +X, so the lobe on that side is the subject.
 		expect(shot.facts.limb).toBe(1);
-		// The camera stands farther out than the lobe, lower than it, and looks up.
-		expect(shot.facts.outside as number).toBeGreaterThan(2);
+		// The camera stands nearer the trunk than the lobe, lower than it, and looks up and outward,
+		// so the sky stands behind the lobe and not the rest of the crown.
+		expect(shot.facts.inside as number).toBeGreaterThan(2);
+		expect(shot.camera.position[0]).toBeLessThan(5);
 		expect(shot.camera.position[1]).toBeLessThan(8);
-		expect(pitchOf(shot.camera)).toBeCloseTo(20, 4);
+		expect(pitchOf(shot.camera)).toBeCloseTo(50, 4);
 		// The lobe's width takes its share of the frame's shorter side.
 		const size = checkShot(shot, TALL).points[0]?.size as number;
-		expect(size).toBeCloseTo(0.7, 1);
+		expect(size).toBeCloseTo(0.6, 1);
 		expect(checkShot(shot, TALL).present).toBe(true);
 	});
 
@@ -722,16 +776,18 @@ describe('the view from inside the crown', () => {
 });
 
 describe('the bark views', () => {
-	test("the foot fills half the frame's width, whatever the trunk's thickness", () => {
+	test("the foot fills its share of the frame's width from above, whatever the trunk's thickness", () => {
 		for (const radius of [0.08, 0.5, 2.5]) {
 			const subjects = tree({ trunk: trunkOf(14, radius, 5) });
 			for (const lens of [WIDE, TALL]) {
 				const shot = shotOf(barkBaseShot(subjects, lens, { turn: 0 }));
 				const foot = landing(shot, lens, "the trunk's foot");
 				expect(foot.x).toBeCloseTo(0.5, 6);
-				expect(foot.y).toBeCloseTo(0.85, 6);
+				expect(foot.y).toBeCloseTo(0.72, 6);
 				expect(shareOfWidth(shot, lens, [0, 0, 0], 2 * radius)).toBeCloseTo(0.5, 6);
-				expect(pitchOf(shot.camera)).toBeCloseTo(-12, 6);
+				// The camera looks down past half its lens, so its upper edge stays under the horizon.
+				expect(pitchOf(shot.camera)).toBeCloseTo(-(lens.fov / 2 + 3), 6);
+				expect(landing(shot, lens, 'the horizon').y).toBeLessThan(0);
 				expect(checkShot(shot, lens).present).toBe(true);
 			}
 		}
@@ -885,5 +941,143 @@ describe('what stands on a sight line', () => {
 		expect(blockedBy(subjects, [4, 9, 3], [4, 3, -3], { trunk: true })).toBe('limb 1');
 		expect(blockedBy(subjects, [4, 9, 3], [4, 3, -3], { trunk: true, limbs: [1] })).toBe(undefined);
 		expect(blockedBy(subjects, [10, 1, 5], [10, 1, -5])).toBe(undefined);
+	});
+});
+
+/** A picture of the parts made by hand: what each texel shows, by its place as shares of the frame. */
+function painted(
+	paint: (x: number, y: number) => { kind: number; radius?: number },
+	size = 256,
+): Parts {
+	const kind = new Uint8Array(size * size);
+	const radius = new Float32Array(size * size);
+	for (let j = 0; j < size; j++)
+		for (let i = 0; i < size; i++) {
+			const texel = paint((i + 0.5) / size, (j + 0.5) / size);
+			kind[j * size + i] = texel.kind;
+			radius[j * size + i] = texel.radius ?? 0;
+		}
+	return { kind, radius, width: size, height: size };
+}
+
+const GROUND = { kind: PART.none };
+const LEAF = { kind: PART.foliage };
+const woodOf = (radius: number) => ({ kind: PART.wood, radius });
+
+// The independent reviewer made wrong pictures by hand and handed them to the check: each showed
+// another thing than the view's subject, and each passed. Every one must fail, and a picture of
+// the subject itself must pass.
+describe("a view's areas against pictures that do not show its subject", () => {
+	test('the bark on a limb: a trunk, a thin branch and a limb under leaves all fail', () => {
+		const shot = shotOf(barkLimbShot(tree(), TALL, { girth: 0.38, along: 0.3 }));
+		const limb = shot.facts.radius as number;
+		const fails = (paint: Parameters<typeof painted>[0]) =>
+			partsCheck(painted(paint), shot.regions ?? []).present === false;
+		const band = (y: number) => y > 0.3 && y < 0.7;
+		// The limb itself across the frame, with nothing over it.
+		expect(fails((_x, y) => (band(y) ? woodOf(limb) : GROUND))).toBe(false);
+		// The trunk's bark in place of the limb's.
+		expect(fails((x) => (x < 0.85 ? woodOf(0.5) : GROUND))).toBe(true);
+		// A branch half as thick as the limb.
+		expect(fails((_x, y) => (y > 0.375 && y < 0.625 ? woodOf(0.51 * limb) : GROUND))).toBe(true);
+		// The limb in the middle of the frame, with leaves over a quarter of it and all round it.
+		expect(
+			fails((x, y) => {
+				const core = x > 0.4 && x < 0.6 && y > 0.4 && y < 0.6;
+				const middle = x > 0.3 && x < 0.7 && y > 0.3 && y < 0.7;
+				if (core) return woodOf(limb);
+				if (middle) return x < 0.4 ? LEAF : woodOf(limb);
+				return y < 0.9 ? LEAF : GROUND;
+			}),
+		).toBe(true);
+	});
+
+	test("a limb's join: a wall of trunk, a trunk alone and a block that does not join it all fail", () => {
+		// A bole three times as thick as its limb, so the two are told apart by their radius.
+		const subjects = tree({
+			trunk: trunkOf(14, 0.9, 5),
+			limbs: [limbOf(1, 5, [1, 0.25, 0], 0.3, 8, 0.9)],
+		});
+		const shot = shotOf(junctionShot(subjects, TALL));
+		const regions = shot.regions ?? [];
+		const limb = shot.facts.radius as number;
+		const trunk = shot.facts.trunkRadius as number;
+		const fails = (paint: Parameters<typeof painted>[0]) =>
+			partsCheck(painted(paint), regions).present === false;
+		const at = (name: string) => {
+			const box = regions.find((region) => region.name === name)?.box as readonly number[];
+			return {
+				x: ((box[0] as number) + (box[2] as number)) / 2,
+				y: ((box[1] as number) + (box[3] as number)) / 2,
+				box,
+			};
+		};
+		const base = at('the limb where it leaves the trunk');
+		const collar = { x: 0.47, y: 0.5 };
+		// The limb's line from the collar through its base, and a band of wood along it.
+		const lineY = (x: number) =>
+			collar.y + ((base.y - collar.y) * (x - collar.x)) / (base.x - collar.x);
+		const joined = (x: number, y: number) =>
+			x < collar.x ? woodOf(trunk) : Math.abs(y - lineY(x)) < 0.14 ? woodOf(limb) : GROUND;
+		expect(fails(joined)).toBe(false);
+		// A wall of trunk bark with one corner open, and no limb.
+		expect(fails((x, y) => (x > 0.75 && y > 0.8 ? GROUND : woodOf(trunk)))).toBe(true);
+		// The trunk alone.
+		expect(fails((x) => (x < collar.x ? woodOf(trunk) : GROUND))).toBe(true);
+		// The trunk, and a block of limb wood that hangs where the limb's area is and meets nothing.
+		expect(
+			fails((x, y) => {
+				if (x < collar.x) return woodOf(trunk);
+				const [left, top, right, bottom] = base.box as readonly [number, number, number, number];
+				return x >= left && x <= right && y >= top && y <= bottom ? woodOf(limb) : GROUND;
+			}),
+		).toBe(true);
+	});
+
+	test("the crown's outside: a wall of leaves and a ball of leaves on no wood both fail", () => {
+		const lobes: Lobe[] = [{ centre: [5, 8, 0], radius: 2, limb: 1 }];
+		const shot = shotOf(crownOutsideShot(tree({ lobes }), TALL, { turn: 90 * DEG }));
+		const fails = (paint: Parameters<typeof painted>[0]) =>
+			partsCheck(painted(paint), shot.regions ?? []).present === false;
+		const ball = (x: number, y: number, r: number) => Math.hypot(x - 0.5, y - 0.5) < r;
+		// A mass of leaves in the open, on the branch that carries it.
+		expect(
+			fails((x, y) =>
+				ball(x, y, 0.3) ? LEAF : y > 0.8 && y < 0.83 && x > 0.1 && x < 0.9 ? woodOf(0.05) : GROUND,
+			),
+		).toBe(false);
+		// One flat wall of leaves under a strip of sky.
+		expect(fails((_x, y) => (y > 0.26 ? LEAF : GROUND))).toBe(true);
+		// A ball of leaves and no wood anywhere.
+		expect(fails((x, y) => (ball(x, y, 0.2) ? LEAF : GROUND))).toBe(true);
+	});
+
+	test('frames the limb that carries the lobe low in the frame, where the photograph shows it', () => {
+		const lobes: Lobe[] = [{ centre: [5, 8, 0], radius: 2, limb: 1 }];
+		const shot = shotOf(
+			crownOutsideShot(tree({ lobes }), TALL, { turn: 90 * DEG, limbRow: 0.85, limbShare: 0.1 }),
+		);
+		const limb = landing(shot, TALL, 'the limb low in the frame');
+		expect(limb.x).toBeCloseTo(0.5, 6);
+		expect(limb.y).toBeCloseTo(0.85, 6);
+		expect(shot.kind).toContain('the limb that carries a foliage mass');
+		// The picture must hold that limb as wood of its own thickness, with leaves over it.
+		const names = (shot.regions ?? []).map((region) => region.name);
+		expect(names).toContain('the limb under the leaves');
+		expect(names).toContain('the leaves over the limb');
+		const fails = (paint: Parameters<typeof painted>[0]) =>
+			partsCheck(painted(paint), shot.regions ?? []).present === false;
+		const thick =
+			((shot.regions ?? []).find((r) => r.name === 'the limb under the leaves')?.thick ?? 0) / 0.75;
+		// Leaves over a limb of the right thickness that crosses low in the frame.
+		const right = (x: number, y: number) =>
+			y > 0.8 && y < 0.9 && x > 0.15 && x < 0.85
+				? woodOf(thick)
+				: y < 0.6 && x > 0.25 && x < 0.75
+					? LEAF
+					: GROUND;
+		expect(fails(right)).toBe(false);
+		// The same leaves with no limb under them.
+		expect(fails((x, y) => (y < 0.6 && x > 0.25 && x < 0.75 ? LEAF : GROUND))).toBe(true);
 	});
 });
