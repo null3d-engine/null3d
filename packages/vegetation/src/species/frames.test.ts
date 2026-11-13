@@ -33,6 +33,7 @@ import {
 	steepestStep,
 	thickens,
 	widestGap,
+	woodThrough,
 } from '../grow/frame-measure';
 import { frame as commonAlder, directed as commonAlderDirected } from './common-alder/directed';
 import { record as commonAlderRecord } from './common-alder/record';
@@ -151,6 +152,12 @@ interface Held {
 	readonly base: Readonly<Record<string, number>>;
 	/** The rules whose axes may run straight: a plumb stem, a hanging whip, a leading shoot. */
 	readonly plumb: readonly string[];
+	/**
+	 * The pairs of axes whose wood passes through each other, summed over the seeds. The number may
+	 * only fall: the test fails when it rises, and fails when it falls until it is lowered here in
+	 * the same commit.
+	 */
+	readonly through: number;
 	/** The rules whose axes are the last order of wood, grown to the foliage masses. */
 	readonly twigs?: readonly string[];
 	/** The plant's height over the record's, as the least and the most. */
@@ -178,6 +185,7 @@ const HELD: readonly Held[] = [
 		base: { limb: 0.35, side: 0.45, top: 0.4, fall: 0.4 },
 		// A fall hangs by its own weight.
 		plumb: ['leader', 'fall'],
+		through: 0,
 		tall: [0.98, 1.02],
 		open: ['bands', 'spread'],
 	},
@@ -193,6 +201,7 @@ const HELD: readonly Held[] = [
 		round: { rule: 'limb', gap: 46, lean: 0.25 },
 		base: { limb: 0.25, twig: 0.5 },
 		plumb: ['leader'],
+		through: 0,
 		tall: [0.98, 1.02],
 		open: ['bands'],
 	},
@@ -209,6 +218,7 @@ const HELD: readonly Held[] = [
 		// A whip hangs by its own weight.
 		plumb: ['trunk', 'whip'],
 		// The heads' foliage stands above the highest wood.
+		through: 13,
 		tall: [0.93, 1.02],
 		open: ['bands', 'spread'],
 	},
@@ -224,6 +234,7 @@ const HELD: readonly Held[] = [
 		base: { arm: 0.65, fork: 0.65, twig: 0.65 },
 		plumb: [],
 		// The top masses' foliage stands above the highest twig.
+		through: 5,
 		tall: [0.97, 1.06],
 		open: ['bands'],
 	},
@@ -240,6 +251,7 @@ const HELD: readonly Held[] = [
 		// A leading shoot is straight: the owner's ruling passes it.
 		plumb: ['shoot'],
 		// The leading shoots' tips are the plant's top.
+		through: 3,
 		tall: [0.95, 1.08],
 		open: ['bands'],
 	},
@@ -255,6 +267,7 @@ const HELD: readonly Held[] = [
 		base: { low: 0.47, upper: 0.55, bough: 0.5, spray: 0.5 },
 		plumb: ['trunk'],
 		// The top tiers' foliage stands above the highest wood.
+		through: 3,
 		tall: [0.93, 1.02],
 		open: ['fill', 'bands'],
 	},
@@ -270,6 +283,7 @@ const HELD: readonly Held[] = [
 		base: { limb: 0.52, top: 0.62, branch: 0.45, twig: 0.5 },
 		plumb: ['trunk'],
 		// The outline's top is blunt, so the bunches on the highest tips stand a little over it.
+		through: 0,
 		tall: [0.95, 1.05],
 		open: ['bands', 'spread'],
 	},
@@ -284,6 +298,7 @@ const HELD: readonly Held[] = [
 		round: { rule: 'outer', gap: 140, lean: 0.3 },
 		base: { outer: 0.34, centre: 0.55, branch: 0.6, spray: 0.6 },
 		plumb: ['trunk'],
+		through: 5,
 		tall: [0.93, 1.05],
 		open: ['bands', 'spread'],
 	},
@@ -301,6 +316,7 @@ const HELD: readonly Held[] = [
 		base: { bough: 0.5 },
 		plumb: ['trunk'],
 		twigs: ['branch'],
+		through: 0,
 		tall: [0.95, 1.04],
 	},
 ];
@@ -585,6 +601,12 @@ for (const held of HELD)
 				expect(back).toBeLessThan(BACK_MOST * plan.scale);
 				expect(backward / Math.max(1, sides)).toBeLessThan(BACKWARD_JOINTS_MOST);
 			}
+		});
+
+		it('passes no wood through other wood, beyond the pairs it is known to', () => {
+			let pairs = 0;
+			for (const seed of SEEDS) pairs += woodThrough(planOf(held, seed)).length;
+			expect(pairs).toBe(held.through);
 		});
 
 		it('keeps its branch count to its sockets', () => {

@@ -47,6 +47,8 @@ const boughs: FrameBranchRule = {
 	sway: 30,
 	elbows: 7,
 	crook: 0.42,
+	// Still 05: a bough's outer half keeps clear of its neighbours'.
+	apart: 0.012,
 	// A bough's clump is smaller the nearer its limb's end it leaves, as the crown's rim and top
 	// are made of smaller clumps than its body.
 	patch: {
@@ -213,6 +215,8 @@ export const frame: FrameSpec = {
 				sway: 28,
 				elbows: 9,
 				crook: 0.5,
+				// Still 03, from below: the limbs spread to every side and none lies along another.
+				apart: 0.02,
 				patch: clump(0.15),
 				children: [boughs],
 			},
