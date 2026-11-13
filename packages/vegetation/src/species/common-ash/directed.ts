@@ -13,7 +13,7 @@ import { record } from './record';
  * still 21. A branch end is 0.81 m long and 0.7 m wide on a tree 22 m tall, so the sockets stand a
  * branch end's width apart over the bunch's surface and a branch end's reach inside it.
  */
-const ENDS = { pitch: 1.12 / 22, reach: 0.81 / 22 } as const;
+const ENDS = { pitch: 1.0 / 22, reach: 0.81 / 22 } as const;
 
 /**
  * A bunch of leaves at a shoot tip, which fine wood clothes. Still 01: nine or ten separate masses
