@@ -1029,6 +1029,9 @@ function writeExtra(
  * @returns The extras' mesh, or undefined.
  */
 export function extrasMesh(input: MeshInput, level: MeshLevel): MeshArrays | undefined {
+	// A record that names a card level from which its extras go draws none there or farther.
+	const from = input.record.lod.extrasFrom;
+	if (level > 0 && from !== undefined && level >= from) return undefined;
 	const extras = input.record.extras ?? [];
 	const mesh = new MeshWriter();
 	const salt = input.record.seedSalt;
