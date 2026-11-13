@@ -1,10 +1,10 @@
 // The card bake and the card levels: three cells a prototype in the atlas, a leaf colour whose mean
 // is the texture's mean, coverage and colour that keep through the mip levels the GPU averages, and
-// card levels that place each row's planes and keep every second card in the thinned level.
+// card levels that place each row's planes and keep every second card and the rim's in the thinned
+// level.
 import { describe, expect, it } from 'bun:test';
 import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
 import type { SpeciesKitData } from '../asset';
-import { quatRotate, type Vector3 } from '../core/math';
 import { placeholderSkeleton } from '../core/placeholder';
 import { standInSpecies } from '../core/stand-in';
 import { STAND_IN_BARK, type TextureManifest } from '../core/textures';
@@ -13,7 +13,7 @@ import { placeShoots } from '../leaf/instancer';
 import { OAK_MANIFEST, oakRecord, testKit } from '../leaf/oak.test-support';
 import { record as oak } from '../species/pedunculate-oak/record';
 import { bakeCards, paletteOf } from './card-bake';
-import { cardKeep, cardMesh } from './cards';
+import { cardKeep, cardMesh, cardRows, foliageHull } from './cards';
 
 /** sRGB byte to linear. */
 const linear = (byte: number) => {
@@ -246,7 +246,6 @@ describe('the card levels', () => {
 		expect(on.indices.length).toBe(off.indices.length);
 		let reached = 0;
 		let vertex = 0;
-		const turn: Vector3 = [0, 0, 0];
 		const near = (actual: readonly number[], expected: readonly number[]) => {
 			for (let c = 0; c < 3; c++) expect(actual[c] as number).toBeCloseTo(expected[c] as number, 5);
 		};
@@ -273,21 +272,18 @@ describe('the card levels', () => {
 			near(offFrom, [px, py, pz]);
 			near(offTo, [px + bx, py + by, pz + bz]);
 			// With it, the line still starts at the row's origin, so the card stays joined to the
-			// wood, and it ends at the centre of the foliage the card carries.
+			// wood, and it ends at the centre of the foliage the card carries: the middle of the
+			// card's first plane where the level draws it.
 			near(onFrom, [px, py, pz]);
 			const centre = prototype.card.planes[0]?.centre;
 			if (!centre) continue;
-			quatRotate(
-				rows.rotation,
-				r * 4,
-				[
-					centre[0] * (rows.scale[r] as number),
-					centre[1] * (rows.scale[r] as number),
-					centre[2] * (rows.scale[r] as number),
-				],
-				turn,
-			);
-			near(onTo, [px + turn[0], py + turn[1], pz + turn[2]]);
+			const first = at - planes * 4;
+			const middle = [0, 0, 0];
+			for (let corner = 0; corner < 4; corner++)
+				for (let c = 0; c < 3; c++)
+					middle[c] =
+						(middle[c] as number) + (on.positions[(first + corner) * 3 + c] as number) / 4;
+			near(onTo, middle);
 			if (
 				Math.hypot(centre[0], centre[1], centre[2]) * (rows.scale[r] as number) >
 				Math.hypot(bx, by, bz) + 1e-3
@@ -299,10 +295,22 @@ describe('the card levels', () => {
 		expect(reached).toBeGreaterThan(0);
 	});
 
-	it('keeps every second card in the thinned level, each grown by the square root of two', () => {
+	it('keeps every second card in the thinned level, and every row of the rim', () => {
 		const second = cardMesh(mesh, 2);
-		const kept = Array.from(rows.order).filter((order) => order % 2 === 0).length;
-		expect(second.indices.length / 3).toBe(kept * 6);
+		const keeps = cardRows(mesh, 2);
+		expect(second.indices.length / 3).toBe(keeps.filter((grow) => grow > 0).length * 6);
+		const rim = foliageHull(mesh).rim;
+		expect(rim.some((flag) => flag === 1)).toBe(true);
+		// Each step of two rows keeps its own row, or the row of the rim that stands in its place.
+		const stepHasRim = new Set<number>();
+		for (let r = 0; r < rows.count; r++)
+			if (rim[r] === 1) stepHasRim.add((rows.order[r] as number) >> 1);
+		for (let r = 0; r < rows.count; r++) {
+			const order = rows.order[r] as number;
+			const own = order % 2 === 0 && !stepHasRim.has(order >> 1);
+			expect([r, (keeps[r] as number) > 0]).toEqual([r, rim[r] === 1 || own]);
+			if ((keeps[r] as number) > 0) expect(keeps[r] as number).toBeCloseTo(Math.SQRT2, 6);
+		}
 		expect(cardKeep(4, 2)).toBeCloseTo(Math.SQRT2, 12);
 		expect(cardKeep(3, 2)).toBe(0);
 		expect(cardKeep(3, 1)).toBe(1);
