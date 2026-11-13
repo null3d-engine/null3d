@@ -3,6 +3,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
 	frameExtent,
+	liftedToGround,
 	type WholeFraming,
 	wholeStand,
 } from '../../../tests/pages/lib/plant-review/whole-stand.ts';
@@ -107,7 +108,7 @@ const FRAMINGS: readonly { readonly name: string; readonly framing: WholeFraming
 		},
 	},
 	{
-		name: 'a redraw that moves the camera in',
+		name: 'a redraw that asks to move the camera in',
 		framing: {
 			fov: 30,
 			aspect: 1.5,
@@ -146,6 +147,9 @@ describe('the stand of a whole view', () => {
 					expect(base).toBeLessThanOrEqual(0.995);
 					expect(left).toBeGreaterThanOrEqual(0.005);
 					expect(right).toBeLessThanOrEqual(0.995);
+					// A stand held back by the frame stands no farther back than holds the plant.
+					if (stand.held === 'frame')
+						expect(Math.min(top, 1 - base, left, 1 - right)).toBeLessThan(0.0125);
 					// The camera stands above the ground and looks at the plant.
 					expect(stand.position[1]).toBeGreaterThanOrEqual(0.1 - 1e-9);
 					expect(stand.distance).toBeGreaterThan(0);
@@ -171,16 +175,93 @@ describe('the stand of a whole view', () => {
 		expect(stand.extent.top).toBeGreaterThan(0.1744);
 	});
 
-	test("keeps the foot on its row through a redraw's scale", () => {
+	test("keeps a plant narrower than its photograph on its rows through a redraw's scale below one", () => {
 		const framing = FRAMINGS[0]?.framing as WholeFraming;
 		const tree = crown(6, 8, 4, 0.5);
 		const first = wholeStand(tree, [0, 0, 0], 0, framing, 12);
-		const nearer = wholeStand(tree, [0, 0, 0], 0, { ...framing, scale: 0.85 }, 12);
-		expect(nearer.distance).toBeLessThan(first.distance);
-		expect(nearer.extent.base).toBeCloseTo(0.8791, 2);
-		expect(nearer.extent.right - nearer.extent.left).toBeGreaterThan(
+		expect(first.held).toBe('rows');
+		for (const scale of [0.85, 0.59, 0.4]) {
+			const redrawn = wholeStand(tree, [0, 0, 0], 0, { ...framing, scale }, 12);
+			expect(redrawn.distance).toBeCloseTo(first.distance, 6);
+			expect(redrawn.extent.top).toBeCloseTo(0.1744, 2);
+			expect(redrawn.extent.base).toBeCloseTo(0.8791, 2);
+		}
+	});
+
+	test("moves the camera out for a redraw's scale above one, and keeps the foot on its row", () => {
+		const framing = FRAMINGS[0]?.framing as WholeFraming;
+		const tree = crown(6, 8, 4, 0.5);
+		const first = wholeStand(tree, [0, 0, 0], 0, framing, 12);
+		const farther = wholeStand(tree, [0, 0, 0], 0, { ...framing, scale: 1.3 }, 12);
+		expect(farther.distance).toBeGreaterThan(first.distance);
+		expect(farther.extent.base).toBeCloseTo(0.8791, 2);
+		expect(farther.extent.right - farther.extent.left).toBeLessThan(
 			first.extent.right - first.extent.left,
 		);
+	});
+
+	test('stands back from a crop only as far as holds every drawn point', () => {
+		// A broad crown on a long bole, as a pine's is, set so far to one side of the frame that its
+		// rows' stand runs it off the left edge.
+		const pine = crown(11, 10, 9, 0.7);
+		const framing: WholeFraming = {
+			fov: 30,
+			aspect: 768 / 516,
+			horizon: 0.8256,
+			top: 0.0163,
+			base: 0.8512,
+			targetX: 0.2,
+			widthShare: 0.8094,
+		};
+		for (const turn of [0, 1, 2.5, 4]) {
+			const stand = wholeStand(pine, [0, 0, 0], turn, framing, 19);
+			expect(stand.held).toBe('frame');
+			const { top, base, left, right } = stand.extent;
+			// One edge of the drawn plant sits on the frame's margin: the camera is no farther back.
+			const tightest = Math.min(top, 1 - base, left, 1 - right);
+			expect(tightest).toBeGreaterThanOrEqual(0.005);
+			expect(tightest).toBeLessThan(0.0125);
+			expect(base).toBeCloseTo(0.8512, 2);
+		}
+	});
+
+	test('holds a blade that dips through the ground in front of a low camera to where it meets the ground', () => {
+		// A tuft whose front blade runs toward the camera and dips under the ground near its tip.
+		const tuft = crown(0.5, 0.6, 0, 0.05);
+		const blade = new Float32Array([0, 0.3, 0.2, 0, 0.12, 0.8, 0, 0.02, 1.2, 0, -0.04, 1.35]);
+		const leaves = new Float32Array([...tuft, ...blade]);
+		const lifted = liftedToGround(leaves, 0);
+		expect(lifted[lifted.length - 2]).toBe(0);
+		expect(lifted[lifted.length - 5]).toBeCloseTo(0.02, 6);
+		expect(liftedToGround(tuft, -1)).toBe(tuft);
+		const framing: WholeFraming = {
+			fov: 38,
+			aspect: 768 / 516,
+			horizon: 0.9256,
+			top: 0.0465,
+			base: 0.9256,
+			targetX: 0.5117,
+			widthShare: 0.9297,
+		};
+		const stand = wholeStand(lifted, [0, 0, 0], 0, framing, 0.6);
+		const forward: [number, number, number] = [
+			stand.target[0] - stand.position[0],
+			stand.target[1] - stand.position[1],
+			stand.target[2] - stand.position[2],
+		];
+		const length = Math.hypot(...forward);
+		const where = frameExtent(
+			new Float32Array([0, 0, 1.35]),
+			stand.position,
+			forward.map((v) => v / length) as never,
+			38,
+			768 / 516,
+		);
+		// Where the blade meets the ground lands inside the frame.
+		expect(where.base).toBeLessThanOrEqual(0.995);
+		// Dropped, as the ground drops a root, it would stand outside the stand that left it out.
+		const dropped = wholeStand(leaves, [0, 0, 0], 0, framing, 0.6);
+		expect(stand.distance).toBeGreaterThan(dropped.distance);
 	});
 
 	test('leaves out what grows under the ground, which the ground hides', () => {

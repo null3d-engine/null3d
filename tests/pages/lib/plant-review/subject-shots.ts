@@ -24,6 +24,7 @@ import {
 	lacking,
 	type Maybe,
 	type PlantSubjects,
+	piecesOfClass,
 	sampleAlong,
 	sampleAtHeight,
 	type TrunkSubject,
@@ -82,6 +83,11 @@ export interface ContractRegion {
 	readonly thick?: number;
 	/** For wood, the greatest radius in metres that counts, so a trunk is not taken for a limb. */
 	readonly thickMost?: number;
+	/**
+	 * Whether the area is only reported: its cover is a figure for the eye beside the photograph,
+	 * and it neither voids the picture nor fails the plant.
+	 */
+	readonly report?: boolean;
 }
 
 /**
@@ -579,11 +585,13 @@ export function belowShot(subjects: PlantSubjects, lens: Lens, options: BelowOpt
 			},
 			// Above the fork stand the crown and the sky. A dense crown may fill it; wood may not.
 			{ name: 'the crown above the fork', box: [0, 0, 1, forkRow - 0.1], min: 0.05 },
+			// How much of that area is wood is a figure for the eye beside the photograph: a hub of
+			// limbs that fills it is the plant's form, which rows 1 and 2 judge.
 			{
 				name: 'the wood above the fork',
 				box: [0, 0, 1, forkRow - 0.1],
-				max: MOST_WOOD,
 				of: 'wood',
+				report: true,
 			},
 		],
 		facts: {
@@ -988,7 +996,9 @@ export function junctionShot(
 				box: [column - 0.17, 0.6, column - 0.02, 0.95],
 				min: 0.7,
 				of: 'wood',
-				thick: SUBJECT_WOOD * limb.trunkRadius,
+				// The trunk's bark and the limb's collar both stand here, and the collar is the
+				// limb's own wood: the area asks for wood no thinner than the limb.
+				thick: SUBJECT_WOOD * limb.radius,
 			},
 			// The limb itself where it leaves the trunk: thinner wood or leaves across it hide it.
 			{
@@ -2020,6 +2030,8 @@ export interface BranchPieceOptions {
 	readonly fill?: number;
 	/** Whether the piece lies across the frame, its cut at the left, in place of standing on its cut. */
 	readonly laid?: boolean;
+	/** Whether the camera looks along the piece's side, so an arching piece shows its arch, in place of its face. */
+	readonly edge?: boolean;
 }
 
 /**
@@ -2036,7 +2048,8 @@ export function branchPieceShot(
 	if (!(piece.length > 0)) return absent('the branch piece has no length');
 	const fill = options.fill ?? 0.85;
 	const face = piece.face ?? across(piece.direction);
-	const forward: V3 = [-face[0], -face[1], -face[2]];
+	const look = options.edge ? (piece.side ?? normalize(cross(piece.direction, face))) : face;
+	const forward: V3 = [-look[0], -look[1], -look[2]];
 	const laid = options.laid === true;
 	const roll = rollUp(forward, piece.direction) + (laid ? -Math.PI / 2 : 0);
 	const tall = laid
@@ -2067,6 +2080,41 @@ export function branchPieceShot(
 		],
 		regions: [{ name: 'the plain ground round the piece', box: [0, 0, 1, 1], min: 0.03, max: 0.8 }],
 		facts: { length: piece.length, spread: piece.spread, frame: tall, laid },
+	};
+}
+
+/**
+ * The view of one piece of a class as the plant places it, framed as a cut piece's photograph
+ * frames it: the outermost piece of the class, square to its face, with only the slab of the plant
+ * that holds the piece drawn, so the rest of the plant neither stands in front of it nor behind it.
+ */
+export function placedPieceShot(
+	subjects: PlantSubjects,
+	name: string,
+	lens: Lens,
+	options: BranchPieceOptions = {},
+): Solved {
+	const pieces = piecesOfClass(subjects, name);
+	if (isAbsent(pieces)) return pieces;
+	const piece = pieces[0] as BranchPiece;
+	const shot = branchPieceShot(piece, lens, options);
+	if (isAbsent(shot)) return shot;
+	const middle = step(piece.socket, piece.direction, piece.length / 2);
+	const distance = Math.hypot(
+		middle[0] - shot.camera.position[0],
+		middle[1] - shot.camera.position[1],
+		middle[2] - shot.camera.position[2],
+	);
+	// The slab is the piece's own depth along the line of sight, so what stands beside it in the
+	// plant is cut away; a piece that states no depth takes its spread.
+	const deep = piece.depth ? (options.edge ? piece.depth.side : piece.depth.face) : piece.spread;
+	const slab = Math.max(deep, 0.05 * piece.length);
+	return {
+		...shot,
+		kind: `one placed ${piece.class} from its socket to its tips`,
+		near: Math.max(0.02, distance - slab),
+		far: distance + slab,
+		facts: { ...shot.facts, class: piece.class, socket: piece.socket, of: pieces.length },
 	};
 }
 
