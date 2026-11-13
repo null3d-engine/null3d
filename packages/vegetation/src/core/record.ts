@@ -661,8 +661,9 @@ export interface Conifer {
 		 */
 		readonly reachShare: Curve;
 		/**
-		 * The crown's plan: its narrow side over its wide side, from 0.5 to 1, and the degrees the
-		 * wide side stands from +X.
+		 * The crown's plan: the built crown's narrow side over its wide side, from 0.5 to 1, measured
+		 * over the foliage patches' far edges, and the degrees the wide side stands from +X. The
+		 * grower stretches each limb's reach by its direction until the built crown has this share.
 		 */
 		readonly plan: { readonly narrow: number; readonly turn: number };
 		/**
