@@ -68,8 +68,8 @@ export interface PrototypeArrays {
 export interface ShootPrototype {
 	/** Its index in the kit. */
 	readonly index: number;
-	/** The shoot class it belongs to. */
-	readonly class: ShootClass['name'];
+	/** The shoot class it belongs to, or the name of its class of piece, which starts `piece-`. */
+	readonly class: ShootClass['name'] | `piece-${string}`;
 	/**
 	 * Set on a shoot that only a cutting draws. The crown never offers one, whatever vigor its buds
 	 * carry, so adding a cutting class leaves the crown's shoots as they were.

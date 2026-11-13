@@ -115,6 +115,15 @@ export const BUD_FLOWER = 4;
  * @category api/vegetation
  */
 export const BUD_AREOLE = 5;
+/**
+ * Bud kind: a socket, where one piece of the kit attaches whole. Its frame stands the piece, +Y the
+ * piece's own up and +Z the way it heads; its vigor names the piece's class; its wood radius holds
+ * the piece's length in metres. A skeleton's sockets stand in the order the plant thins by, the
+ * last to go first.
+ *
+ * @category api/vegetation
+ */
+export const BUD_SOCKET = 6;
 
 /**
  * One plant's grown structure: nodes joined into axes, and the bud sites shoots attach to. Plain
