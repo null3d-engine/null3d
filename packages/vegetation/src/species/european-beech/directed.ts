@@ -185,12 +185,13 @@ export const frame: FrameSpec = {
 				angle: 24,
 				from: 'plumb',
 				angleSpread: 5,
-				length: { outline: 0.72 },
+				// The upper limbs' ends are the crown's highest wood.
+				length: { outline: 0.95 },
 				vary: 0.05,
 				radius: 0.55,
 				taper: 0.25,
 				// Still 01: the upper limbs sweep up and outward in one slow curve.
-				bends: [{ from: 0.15, to: 0.9, level: 28 }],
+				bends: [{ from: 0.15, to: 0.9, level: 42 }],
 				sway: 12,
 				elbows: 5,
 				patch: tier(0.22),

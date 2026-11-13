@@ -24,7 +24,7 @@ const GOLDEN = 137.50776405;
 export const FRAME_TURN_MOST = 6;
 /** The longest piece of an axis as a share of its length, and its bounds in metres. */
 const STEP_SHARE = 1 / 12;
-const STEP_LEAST = 0.02;
+const STEP_LEAST = 0.012;
 const STEP_MOST = 0.45;
 /** The degrees under which a stretch counts as straight, and how much longer its pieces may be. */
 const STRAIGHT_TURN = 0.5;
@@ -93,7 +93,10 @@ export type FrameLength =
 	| { readonly share: Curve }
 	/** A share of its parent's length. */
 	| { readonly parent: Curve }
-	/** Its tip stands at this share of the crown outline's radius at the tip's own height. */
+	/**
+	 * Its tip stands on the crown outline drawn in to this share toward the crown's middle, which is
+	 * the trunk's line at the height of the outline's widest row.
+	 */
 	| { readonly outline: Curve }
 	/** Its tip stands at this share of the plant's height. */
 	| { readonly height: Curve };
@@ -485,6 +488,16 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 	const scale = spreadAt(record.size.height, draw(Purpose.Height));
 	const axes: Built[] = [];
 	const patches: FramePatch[] = [];
+	// The height of the crown's widest row, in metres: the middle the outline is drawn in toward.
+	let middle = scale / 2;
+	if (typeof spec.outline !== 'number') {
+		let widest = Number.NEGATIVE_INFINITY;
+		for (const [at, radius] of spec.outline)
+			if (radius > widest) {
+				widest = radius;
+				middle = at * scale;
+			}
+	}
 
 	/** Builds one axis and every axis under it. */
 	const build = (
@@ -550,12 +563,12 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 			const past = (trial: number): number => {
 				const tip = tipOf(start, tangent, trial);
 				if ('outline' in lengthRule) {
+					// The outline drawn in toward the crown's middle: its radius and its height above
+					// and below the widest row both take the share.
+					const share = Math.max(0.05, curveAt(lengthRule.outline, place));
 					const reach = Math.sqrt(tip[0] * tip[0] + tip[2] * tip[2]);
-					return (
-						reach -
-						curveAt(lengthRule.outline, place) *
-							outlineRadius(spec, scale, tip[1], atan2(tip[2], tip[0]))
-					);
+					const at = middle + (tip[1] - middle) / share;
+					return reach - share * outlineRadius(spec, scale, at, atan2(tip[2], tip[0]));
 				}
 				return tip[1] - curveAt(lengthRule.height, place) * scale;
 			};
