@@ -9,7 +9,7 @@ import { quatRotate, type Vector3 } from '../core/math';
 import { loadSpecies } from '../core/registry';
 import { DETAILS } from '../core/types';
 import { buildKitNow, growPlantNow, loadPlantCode } from '../generate';
-import { drawnAtOnce } from '../lod/drawn';
+import { drawnAtOnce, TALLEST_VIEWS } from '../lod/drawn';
 import { carriesPieces, PROTOTYPES_MOST } from './piece-rows';
 
 const LONG = scaledBudget(120_000);
@@ -179,16 +179,18 @@ describe('the Scots pine, grown with its boughs at sockets', () => {
 		expect(asset.stats.shoots).toBeGreaterThan(asset.stats.triangles[0]);
 	});
 
-	it('draws at once, from an eye inside its fullest pad, within its near budget at the tallest view', () => {
+	it('draws at once the most from an eye inside its fullest pad, within its budget at the reference lens', () => {
 		// The engine draws every bough whose bounds come within its switch distance at the kit's one
-		// tier, and the switch distance grows with the render height and narrows with the lens. The
-		// High preset draws at a device pixel ratio of at most 2 and a render scale of at most 1 (the
-		// engine's quality presets), so a window 1080 CSS pixels tall renders 2160 pixels tall. The
-		// lenses: the engine's reference view's 60 degrees, and the review's whole views' 30.
-		for (const fov of [60, 30]) {
-			const drawn = drawnAtOnce(kit, asset, { height: 1080 * 2, fov });
-			expect(drawn.triangles).toBeLessThanOrEqual(kit.record.lod.budget.lod0Triangles);
-		}
+		// tier. An eye inside a pad has the most boughs in reach, and at the tallest view the High
+		// preset gives, through the engine's reference lens, the pine's boughs stay within the
+		// record's budget for the nearest level. The species walk holds the narrower lens.
+		const [reference] = TALLEST_VIEWS;
+		expect(reference).toBeDefined();
+		if (!reference) return;
+		const drawn = drawnAtOnce(kit, asset, reference);
+		expect(drawn.eye).toBe('foliage');
+		expect(drawn.triangles).toBeGreaterThan(drawnAtOnce(kit, asset, reference, false).triangles);
+		expect(drawn.triangles).toBeLessThanOrEqual(kit.record.lod.budget.lod0Triangles);
 	});
 
 	it('stands on a round foot 1.6 times as wide as the bole, with low roots and no buttress', () => {

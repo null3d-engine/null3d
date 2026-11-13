@@ -155,3 +155,35 @@ export function drawnAtOnce(
 	}
 	return worst;
 }
+
+/**
+ * The tallest views the quality presets give a page: a window 1080 CSS pixels tall at the High
+ * preset's device pixel ratio of at most 2 and render scale of at most 1, so 2160 pixels, through
+ * the engine's reference lens of 60 degrees and the review's whole-view lens of 30.
+ */
+export const TALLEST_VIEWS: readonly PlantView[] = [
+	{ height: 2160, fov: 60 },
+	{ height: 2160, fov: 30 },
+];
+
+/**
+ * The triangles one copy draws at once at the worst of the tallest views, from the worst of the
+ * stated eyes.
+ *
+ * @param kit The species' kit.
+ * @param asset The grown variant, at a copy's scale of 1.
+ * @param inside Whether an eye inside the foliage counts too.
+ * @returns The worst count, its eye and its view.
+ */
+export function drawnAtTallest(
+	kit: SpeciesKitData,
+	asset: PlantAsset,
+	inside = true,
+): DrawnAtOnce & { readonly view: PlantView } {
+	let worst: (DrawnAtOnce & { view: PlantView }) | undefined;
+	for (const view of TALLEST_VIEWS) {
+		const drawn = drawnAtOnce(kit, asset, view, inside);
+		if (!worst || drawn.triangles > worst.triangles) worst = { ...drawn, view };
+	}
+	return worst as DrawnAtOnce & { view: PlantView };
+}
