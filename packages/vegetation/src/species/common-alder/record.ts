@@ -611,9 +611,9 @@ export const record: Species = {
 	textures: 'own',
 	variants: 6,
 	seedSalt: 20261108,
-	// A first pass at the floors a phone's lighter form keeps, set from the species' form and to
-	// be measured on the phone set before they are trusted.
-	sparse: { limbs: 0.45, leaves: 0.5, coarseness: 0.55 },
+	// The sparsest form keeps this share of the crown's shoots, each whole: about the leaf area
+	// below which the crown stops reading as its species.
+	sparse: { foliage: 0.14 },
 	// The reference's own crown-box spread at the eight angles is wider than the broad dome's band,
 	// so the reference sets it.
 	roundBand,

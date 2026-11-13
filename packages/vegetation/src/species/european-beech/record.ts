@@ -531,9 +531,9 @@ export const record: Species = {
 	textures: 'own',
 	variants: 6,
 	seedSalt: 2357111317,
-	// The owner's ruling, and the floors the measured runs used: the broadleaf keeps little wood and
-	// less leaf, and coarsens more than any other species, because its crown carries the most.
-	sparse: { limbs: 0.32, leaves: 0.38, coarseness: 0.65 },
+	// The sparsest form keeps this share of the crown's shoots, each whole: about the leaf area
+	// below which the crown stops reading as its species.
+	sparse: { foliage: 0.09 },
 	roundBand,
 	cuttings: {
 		// The wide prototype suits the branch's three sprays; the tall one suits the sub-branch.
