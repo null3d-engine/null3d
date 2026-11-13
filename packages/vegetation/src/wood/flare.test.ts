@@ -8,7 +8,7 @@ import type { BaseSpec } from '../core/record';
 import { loadPlantCode } from '../generate';
 import { leadOnThickest } from '../grow/leaders';
 import { grower } from '../grow/models';
-import { species } from '../species/pedunculate-oak';
+import { record as oldOak } from '../species/pedunculate-oak/record';
 import { type StemSection, type SurfaceRoot, stemSection, surfaceRoots } from './flare';
 
 const base: BaseSpec = {
@@ -149,9 +149,11 @@ describe('the stem base', () => {
 	});
 
 	it(
-		'draws the oak bole as stills 01, 02, 17 and 18 show it: an eighth of its height across, on a short concave foot',
+		"draws the old grower's oak bole as stills 01, 02, 17 and 18 show it: an eighth of its height across, on a short concave foot",
 		async () => {
-			const record = species.record;
+			// The old grower's record: the oak registered as a frame states its foot in its trunk's
+			// width, and its frame's tests hold that foot to still 01.
+			const record = oldOak;
 			await loadPlantCode(record);
 			for (let variant = 0; variant < 6; variant++) {
 				const led = leadOnThickest(
