@@ -261,19 +261,24 @@ interface Bounds {
 	readonly max: V3;
 }
 
-/** The bounds of an asset's parts at every level and of its skeleton. */
+/**
+ * The bounds of everything an asset draws, and of its skeleton: its parts at every level and its
+ * shoot rows. A plant of placed pieces holds most of its body in rows, so its meshes alone bound a
+ * small part of it.
+ */
 function boundsOf(asset: PlantAsset, kit: SpeciesKit): Bounds {
 	const min: V3 = [...asset.skeleton.bounds.min] as V3;
 	const max: V3 = [...asset.skeleton.bounds.max] as V3;
-	for (const level of asset.levels)
-		for (const part of level.parts) {
-			const p = partPositions(part, kit.box);
-			for (let i = 0; i < p.length; i++) {
-				const k = i % 3;
-				min[k] = Math.min(min[k] as number, p[i] as number);
-				max[k] = Math.max(max[k] as number, p[i] as number);
-			}
+	const widen = (p: Float32Array) => {
+		for (let i = 0; i < p.length; i++) {
+			const k = i % 3;
+			min[k] = Math.min(min[k] as number, p[i] as number);
+			max[k] = Math.max(max[k] as number, p[i] as number);
 		}
+	};
+	for (const level of asset.levels)
+		for (const part of level.parts) widen(partPositions(part, kit.box));
+	widen(shootPositions(asset, kit));
 	refuseEmptyBox(min, max);
 	return { min, max };
 }
@@ -891,19 +896,58 @@ export default defineSketch(async (ctx) => {
 		}
 		return out;
 	})();
-	/** The drawn plant's own points, which a framed view holds between its asked rows. */
-	const plantPoints = ((): Float32Array | undefined => {
-		const parts = main.levels[0]?.parts ?? [];
-		if (parts.length === 0) return undefined;
-		const lists = parts.map((part) => partPositions(part, kit.box));
-		const out = new Float32Array(lists.reduce((n, list) => n + list.length, 0));
-		let at = 0;
-		for (const list of lists) {
-			out.set(list, at);
-			at += list.length;
+	/**
+	 * The points the plant draws at a level, which a framed view holds between its asked rows: the
+	 * nearest level's parts with the shoot rows, or a card level's own parts, whose cards reach
+	 * past the leaves they stand for. A level with no parts takes the nearest level's points.
+	 */
+	const levelPoints = new Map<number, Float32Array | undefined>();
+	const pointsAt = (level: number): Float32Array | undefined => {
+		if (levelPoints.has(level)) return levelPoints.get(level);
+		const own = main.levels[Math.min(level, 2)]?.parts ?? [];
+		const parts = own.length > 0 ? own : (main.levels[0]?.parts ?? []);
+		const near = parts === main.levels[0]?.parts;
+		const lists = [
+			...parts.map((part) => partPositions(part, mainKit.box)),
+			...(near ? [shootPositions(main, mainKit)] : []),
+		].filter((list) => list.length > 0);
+		let out: Float32Array | undefined;
+		if (lists.length > 0) {
+			out = new Float32Array(lists.reduce((n, list) => n + list.length, 0));
+			let at = 0;
+			for (const list of lists) {
+				out.set(list, at);
+				at += list.length;
+			}
 		}
+		levelPoints.set(level, out);
 		return out;
-	})();
+	};
+	/** The view's render height and lens as the placement takes them, which set the levels' switches. */
+	const placedView = {
+		height: SIZE[1] / rows,
+		fov: FOV,
+		...((LOD === 0 || SPEC.cutting !== undefined) && { switchBias: -FORCED_NEAR_STOPS }),
+	};
+	/**
+	 * A framed whole view of the plant as the level it draws at: the stand is found on the nearest
+	 * level's points, the level that stand draws is read, and the stand is found again on that
+	 * level's points, so the frame holds what is drawn and not the leaves a card level replaces.
+	 */
+	const framedStand = (turn: number, aspect: number): View => {
+		const stand = (level: number) => standView(height, bounds, pointsAt(level), foot, turn, aspect);
+		let level = LOD ?? 0;
+		let view = stand(level);
+		if (LOD !== undefined) return view;
+		for (let pass = 0; pass < 2; pass++) {
+			const distance = Math.hypot(...sub(view.position, [0, 0, 0]));
+			const drawnAt = drawnLevel(mainKit, main, placedView, distance, false).level;
+			if (drawnAt === level) break;
+			level = drawnAt;
+			view = stand(level);
+		}
+		return view;
+	};
 	/** What the close views read of the plant: its wood alone for a view that draws the wood alone. */
 	const closePlant = (woodOnly: boolean): ClosePlant => ({
 		skeleton,
@@ -1000,9 +1044,7 @@ export default defineSketch(async (ctx) => {
 				const reach = QUERY.lifted
 					? { min: [bounds.min[0], baseY, bounds.min[2]] as V3, max: bounds.max }
 					: bounds;
-				const view = FRAMED
-					? standView(height, bounds, plantPoints, foot, turn, aspect)
-					: fit(reach, turn, e, aspect, fov);
+				const view = FRAMED ? framedStand(turn, aspect) : fit(reach, turn, e, aspect, fov);
 				// A whole view may be stood at a named distance, as a far level is judged at its switch.
 				return atDistance(scaledStand(view, QUERY.standScale));
 			}
@@ -1827,15 +1869,10 @@ export default defineSketch(async (ctx) => {
 		placeholders === true && (LOD === undefined || LOD === 0)
 			? createNearPool(ctx, { placeholders: true })
 			: undefined;
-	// A forced nearest level draws its real shoots at every distance: the bias moves the shoots'
-	// switch past every camera's far plane. A cut piece takes the nearest level too: it has no card
-	// levels, so a sheet's smaller cells would switch its foliage to cards that hold nothing, and
-	// the piece would vanish.
-	const placedView = {
-		height: SIZE[1] / rows,
-		fov: FOV,
-		...((LOD === 0 || SPEC.cutting !== undefined) && { switchBias: -FORCED_NEAR_STOPS }),
-	};
+	// A forced nearest level draws its real shoots at every distance: the placement view's bias
+	// moves the shoots' switch past every camera's far plane. A cut piece takes the nearest level
+	// too: it has no card levels, so a sheet's smaller cells would switch its foliage to cards that
+	// hold nothing, and the piece would vanish.
 	const place = (asset: PlantAsset, at: V3, source: SpeciesKit, far?: readonly FarPlant[]) =>
 		placePlants(
 			ctx,
