@@ -9,7 +9,7 @@ import type { Conifer } from '../core/record';
 import { spreadMean } from '../core/types';
 import { directed as sequoia } from '../species/giant-sequoia/directed';
 import { directed } from '../species/scots-pine/directed';
-import { growConifer, limbsPerLevel, planConifer, TURN_MOST } from './conifer';
+import { type ConiferPatch, growConifer, limbsPerLevel, planConifer, TURN_MOST } from './conifer';
 
 const SEEDS = [11, 12, 13, 14] as const;
 const growth = directed.growth as Conifer;
@@ -54,6 +54,29 @@ function sharpestTurn(skeleton: MacroSkeleton): number {
 		most = Math.max(most, (Math.acos(Math.min(1, Math.max(-1, dot / (la * lb)))) * 180) / Math.PI);
 	}
 	return most;
+}
+
+/** A level place's metres from a patch's middle along its limb and across it. */
+function laid(patch: ConiferPatch, x: number, z: number): [along: number, across: number] {
+	const dx = x - patch.centre[0];
+	const dz = z - patch.centre[2];
+	return [dx * patch.along[0] + dz * patch.along[2], dz * patch.along[0] - dx * patch.along[2]];
+}
+
+/** How far out in its patch's plan a level place stands: 1 on the rim, below 1 inside it. */
+function inPlan(patch: ConiferPatch, x: number, z: number): number {
+	const [u, v] = laid(patch, x, z);
+	return Math.hypot(u / (patch.length / 2), v / (patch.width / 2));
+}
+
+/** The level place on a patch's plan at a share of the way out from its middle and a turn from its limb's way. */
+function planAt(patch: ConiferPatch, out: number, turn: number): [x: number, z: number] {
+	const u = (patch.length / 2) * out * Math.cos(turn);
+	const v = (patch.width / 2) * out * Math.sin(turn);
+	return [
+		patch.centre[0] + patch.along[0] * u - patch.along[2] * v,
+		patch.centre[2] + patch.along[2] * u + patch.along[0] * v,
+	];
 }
 
 describe('the conifer limb schedule', () => {
@@ -203,14 +226,14 @@ describe('the conifer frame as a skeleton', () => {
 		for (const seed of SEEDS) {
 			const plan = planConifer(input(seed));
 			for (const limb of plan.limbs) {
-				const { centre, width } = limb.patch;
+				const { width } = limb.patch;
 				const ends = [limb.nodes, ...limb.arms.map((arm) => arm.nodes)].map(
 					(nodes) => nodes[nodes.length - 1],
 				);
 				for (const end of ends) {
 					expect(end).toBeDefined();
 					if (!end) continue;
-					expect(Math.hypot(end.x - centre[0], end.z - centre[2])).toBeLessThanOrEqual(width / 2);
+					expect(inPlan(limb.patch, end.x, end.z)).toBeLessThanOrEqual(1 + 1e-6);
 				}
 				// An arm reaches out under its pad: its end stands a fifth of the pad's width from its foot.
 				for (const arm of limb.arms) {
@@ -481,6 +504,44 @@ describe("the pine's frame against its photographs", () => {
 			}
 		}
 	});
+
+	it('lays each pad along the outer two thirds of its limb and leaves the inner third bare', () => {
+		const pitch = growth.patch.sockets?.pitch ?? 0;
+		for (const seed of SEEDS) {
+			const plan = planConifer(input(seed));
+			plan.patches.forEach((patch, index) => {
+				const limb = plan.limbs[patch.limb];
+				if (!limb || limb.top) return;
+				const from = plan.trunk[limb.trunkNode];
+				expect(from).toBeDefined();
+				if (!from) return;
+				// The pad runs from a third of the limb's reach to its far edge, and is no wider
+				// than it is long.
+				expect(patch.begins / limb.reach).toBeCloseTo(1 / 3, 6);
+				expect(patch.length / limb.reach).toBeCloseTo(2 / 3, 6);
+				expect(patch.width).toBeLessThanOrEqual(patch.length + 1e-9);
+				// Its boughs stand between those two places, and reach both of them.
+				const out = plan.sockets
+					.filter((socket) => socket.patch === index)
+					.map((socket) => Math.hypot(socket.at[0] - from.x, socket.at[2] - from.z));
+				expect(Math.min(...out)).toBeGreaterThan(patch.begins);
+				expect(Math.min(...out)).toBeLessThanOrEqual(patch.begins + reach + pitch);
+				expect(Math.max(...out)).toBeLessThanOrEqual(limb.reach);
+				expect(Math.max(...out)).toBeGreaterThanOrEqual(limb.reach - reach - pitch);
+			});
+		}
+	});
+
+	it('starts its foliage where picture 01 and the turning video start the crown', () => {
+		// Picture 01 with its foot followed below the horizon: the crown starts at 0.465 of the
+		// height. The turning video's bare bole is 0.45 to 0.53 of the height, median 0.466.
+		for (const seed of SEEDS) {
+			const plan = planConifer(input(seed));
+			const lowest = Math.min(...plan.sockets.map((socket) => socket.at[1])) / plan.height;
+			expect(Math.abs(lowest - 0.465)).toBeLessThanOrEqual(0.02);
+			expect(Math.abs(plan.crownBase / plan.height - 0.465)).toBeLessThanOrEqual(0.02);
+		}
+	});
 });
 
 describe("the pine's sockets", () => {
@@ -522,9 +583,7 @@ describe("the pine's sockets", () => {
 			for (let a = 0; a < own.length; a++) {
 				const first = own[a];
 				if (!first) continue;
-				expect(
-					Math.hypot(first.at[0] - patch.centre[0], first.at[2] - patch.centre[2]),
-				).toBeLessThanOrEqual(patch.width / 2 + 1e-6);
+				expect(inPlan(patch, first.at[0], first.at[2])).toBeLessThanOrEqual(1 + 1e-6);
 				for (let b = a + 1; b < own.length; b++) {
 					const second = own[b];
 					if (!second) continue;
@@ -541,25 +600,19 @@ describe("the pine's sockets", () => {
 				const own = plan.sockets.filter((socket) => socket.patch === index);
 				/** The height of the pad's floor at a place: it falls with the limb. */
 				const floorAt = (x: number, z: number): number =>
-					patch.centre[1] -
-					patch.depth / 2 +
-					patch.slope *
-						((x - patch.centre[0]) * patch.along[0] + (z - patch.centre[2]) * patch.along[2]);
+					patch.centre[1] - patch.depth / 2 + patch.slope * laid(patch, x, z)[0];
 				// No place on the pad's dome stands farther from a socket than a bough's reach and
 				// one pitch.
 				for (let turn = 0; turn < 24; turn++)
 					for (let band = 0; band < 8; band++) {
 						const t = (band + 0.5) / 8;
-						const ring = Math.sqrt(1 - t * t);
-						const angle = (turn / 24) * 2 * Math.PI;
-						const x = patch.centre[0] + (patch.width / 2) * ring * Math.cos(angle);
-						const z = patch.centre[2] + (patch.width / 2) * ring * Math.sin(angle);
+						const [x, z] = planAt(patch, Math.sqrt(1 - t * t), (turn / 24) * 2 * Math.PI);
 						const place = [x, floorAt(x, z) + patch.depth * t, z];
 						const nearest = Math.min(...own.map((socket) => apart(socket.at, place)));
 						expect(nearest).toBeLessThanOrEqual(reach + pitch);
 					}
-				// A pad four metres wide or more is as deep for its width as the record says, within
-				// a tenth, measured over the reach of the boughs on its twigs.
+				// A pad four metres wide or more is as deep for its width across its limb as the
+				// record says, within a tenth, measured over the reach of the boughs on its twigs.
 				if (patch.width < 4) return;
 				/** A socket's height above the pad's floor under it. */
 				const above = (socket: (typeof own)[number]): number =>
@@ -567,9 +620,7 @@ describe("the pine's sockets", () => {
 				const domed = own.filter((socket) => socket.twig >= 0);
 				const top = Math.max(...domed.map(above));
 				const rim = Math.max(
-					...domed.map((socket) =>
-						Math.hypot(socket.at[0] - patch.centre[0], socket.at[2] - patch.centre[2]),
-					),
+					...domed.map((socket) => Math.abs(laid(patch, socket.at[0], socket.at[2])[1])),
 				);
 				const built = (top + reach) / (2 * (rim + reach));
 				expect(Math.abs(built - growth.patch.depth)).toBeLessThanOrEqual(growth.patch.depth * 0.1);

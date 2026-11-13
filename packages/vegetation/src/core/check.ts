@@ -643,6 +643,12 @@ function growthProblems(record: Species, out: string[]): void {
 		if (!(patch.width[0] > 0 && patch.width[1] >= patch.width[0]))
 			out.push('growth.patch.width needs the shortest limb above 0 and the longest no smaller');
 		if (!(patch.depth > 0)) out.push(`growth.patch.depth is ${patch.depth}; it must be above 0`);
+		if (patch.along !== undefined) {
+			if (!(patch.along > 0 && patch.along <= 1))
+				out.push(`growth.patch.along is ${patch.along}; it is above 0 and at most 1`);
+			if (patch.each !== 'limb')
+				out.push("growth.patch.along is given but growth.patch.each is not 'limb'");
+		}
 	}
 	if (growth.model === 'architectural') {
 		if (growth.orders.length === 0)

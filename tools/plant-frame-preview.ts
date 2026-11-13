@@ -100,7 +100,10 @@ const BY_ORDER: Paint = {
 	mark: [40, 150, 70],
 };
 
-/** The marks of every patch: a ring round its top and a ring round its underside. */
+/**
+ * The marks of every patch: a ring round its top and a ring round its underside, each as long as
+ * the patch along its limb and as wide across it.
+ */
 function patchMarks(plan: ConiferPlan): Float32Array {
 	const marks = new Float32Array(plan.patches.length * RING * 2 * 3);
 	let at = 0;
@@ -108,9 +111,11 @@ function patchMarks(plan: ConiferPlan): Float32Array {
 		for (const lift of [0.5, -0.5])
 			for (let k = 0; k < RING; k++) {
 				const angle = (k / RING) * 2 * Math.PI;
-				marks[at++] = patch.centre[0] + (Math.cos(angle) * patch.width) / 2;
+				const u = (Math.cos(angle) * patch.length) / 2;
+				const v = (Math.sin(angle) * patch.width) / 2;
+				marks[at++] = patch.centre[0] + patch.along[0] * u - patch.along[2] * v;
 				marks[at++] = patch.centre[1] + lift * patch.depth;
-				marks[at++] = patch.centre[2] + (Math.sin(angle) * patch.width) / 2;
+				marks[at++] = patch.centre[2] + patch.along[2] * u + patch.along[0] * v;
 			}
 	return marks;
 }
@@ -251,6 +256,7 @@ const figures = {
 		place: Number(limb.place.toFixed(3)),
 		reach: Number((limb.reach / H).toFixed(4)),
 		leaves: Number(((plan.trunk[limb.trunkNode]?.y ?? 0) / H).toFixed(4)),
+		patchLength: Number((limb.patch.length / H).toFixed(4)),
 		patchWidth: Number((limb.patch.width / H).toFixed(4)),
 		patchDepth: Number((limb.patch.depth / H).toFixed(4)),
 	})),
