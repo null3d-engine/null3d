@@ -401,15 +401,21 @@ function scaledCurve(curve: Curve, factor: number): Curve {
  *
  * @param source The species' record and texture manifest, such as its module.
  * @param rules The species' piece rules.
+ * @param bare Whether the pieces carry no leaves, as a deciduous plant's do in winter: the wood and
+ * the bud at each stem's end.
  * @returns The pieces, each rule's variants together, in the rules' order.
  */
-export function buildPiecesNow(source: KitSource, rules: readonly PieceRule[]): PiecePrototype[] {
+export function buildPiecesNow(
+	source: KitSource,
+	rules: readonly PieceRule[],
+	bare = false,
+): PiecePrototype[] {
 	const builder = foliage(source.record.foliage.kind);
 	const manifest = source.textures.manifest;
 	return piecePrototypes(
 		source.record,
 		rules,
-		DETAILS.map((tier) => builder.leaves(source.record, manifest, tier)),
+		DETAILS.map((tier) => (bare ? [] : builder.leaves(source.record, manifest, tier))),
 	);
 }
 
