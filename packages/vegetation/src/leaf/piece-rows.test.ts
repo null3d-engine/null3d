@@ -106,6 +106,12 @@ const DRESSED: readonly Dressed[] = [
 		piece: 'branch-end',
 		flat: false,
 	},
+	{
+		title: 'the holm oak, framed, with its branch ends at sockets',
+		module: () => loadSpecies('holm-oak'),
+		piece: 'branch-end',
+		flat: false,
+	},
 ];
 
 for (const dressed of DRESSED)
