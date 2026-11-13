@@ -7,12 +7,21 @@
 // is 7, so a piece draws its leaves at 1.3 of that until the record's own length moves.
 import {
 	oneMark,
+	type PieceLeaf,
 	type PieceLeaves,
 	type PieceRule,
 	type PieceStem,
 	type PieceStudio,
 	withMarks,
 } from '../../leaf/piece';
+
+/**
+ * The leaf the pieces wear: the record's, on the stalk the twig's photograph shows. The record's
+ * leaf grows the crown the species ships, so it keeps its own stalk until a plant built of pieces
+ * replaces that crown. Ten leaves read at full size on still 22 stand on stalks 0.15 to 0.31 of their
+ * blade's length, with a median of 0.21: 1.5 centimetres on the record's 7 centimetre blade.
+ */
+export const PIECE_LEAF: PieceLeaf = { stalk: 0.015 };
 
 /** A piece's leaf over the record's: 9.5 centimetres measured on still 21, over 7. */
 const LEAF_SCALE = 1.3;

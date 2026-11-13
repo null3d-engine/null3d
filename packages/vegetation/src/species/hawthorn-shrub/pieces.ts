@@ -8,6 +8,7 @@
 // them a hawthorn's own sizes. The piece keeps the leaf's true size and the photograph's proportions.
 import {
 	oneMark,
+	type PieceLeaf,
 	type PieceLeaves,
 	type PieceMark,
 	type PieceRule,
@@ -15,6 +16,15 @@ import {
 	type PieceStudio,
 	withMarks,
 } from '../../leaf/piece';
+
+/**
+ * The leaf the pieces wear: the record's, on the stalk the twig's photograph shows. The record's
+ * leaf grows the crown the species ships, so it keeps its own stalk until a plant built of pieces
+ * replaces that crown. Eight full leaves read at full size on still 22 stand on stalks 0.28 to 0.47
+ * of their blade's length, with a median of 0.36: 1.25 centimetres on the record's 3.5 centimetre
+ * blade.
+ */
+export const PIECE_LEAF: PieceLeaf = { stalk: 0.0125 };
 
 /**
  * The thorns along a stem. Stills 19, 21 and 22: one straight woody thorn at most nodes, one and a

@@ -107,6 +107,27 @@ describe('the blade leaf mesh', () => {
 		expect(Math.abs(top - expected)).toBeLessThan(0.0015);
 	});
 
+	it('narrows across its midrib by its breadth, keeping its length and its texture places', () => {
+		const whole = bladeMesh({ ...FLAT, petiole: { ...FLAT.petiole, radius: 0 } }, oak, 'high');
+		const slim = bladeMesh(
+			{ ...FLAT, breadth: 0.6, petiole: { ...FLAT.petiole, radius: 0 } },
+			oak,
+			'high',
+		);
+		expect(slim.positions.length).toBe(whole.positions.length);
+		expect([...slim.uvs]).toEqual([...whole.uvs]);
+		for (let i = 0; i < whole.positions.length / 3; i++) {
+			expect(slim.positions[i * 3] as number).toBeCloseTo(
+				0.6 * (whole.positions[i * 3] as number),
+				6,
+			);
+			expect(slim.positions[i * 3 + 1] as number).toBeCloseTo(
+				whole.positions[i * 3 + 1] as number,
+				6,
+			);
+		}
+	});
+
 	it('folds its halves into a V and curls its tip down', () => {
 		const leaf = bladeMesh({ ...FLAT, fold: 20, curl: 40 }, oak, 'high');
 		let left = 0;

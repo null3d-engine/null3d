@@ -15,7 +15,8 @@
 // one's width over height and the depth over width of both.
 //
 // A species' pieces and layouts are `PIECES` and `STUDIO` in its `pieces.ts`; with `--bare` its
-// `BARE_STUDIO` is drawn in place of `STUDIO`, where the file has one. Its reference folder
+// `BARE_STUDIO` is drawn in place of `STUDIO`, where the file has one, and its pieces wear its
+// `PIECE_LEAF` where it states one. Its reference folder
 // is `<id>` under the corpus that NULL3D_PLANT_REFERENCES names, or the repository's
 // `.internal/coordination/tree-corpus/generated`; `--refs` names another. The pictures go to
 // `target/plant-piece/<species>/`, or the folder `--out` names, as `<prefix>-pieces.png`, with every
@@ -34,6 +35,7 @@ import {
 import { buildKitNow, buildPiecesNow, loadPlantCode } from '../packages/vegetation/src/generate.ts';
 import {
 	layStudio,
+	type PieceLeaf,
 	type PieceRule,
 	type PieceStudio,
 } from '../packages/vegetation/src/leaf/piece.ts';
@@ -92,6 +94,7 @@ const layouts = (await import(source)) as {
 	STUDIO: readonly PieceStudio[];
 	BARE_STUDIO?: readonly PieceStudio[];
 	FRUIT_PIECES?: readonly PieceRule[];
+	PIECE_LEAF?: PieceLeaf;
 };
 // A species in fruit or in catkin takes its fruiting rules, where it states them.
 const PIECES = flag('fruit') && layouts.FRUIT_PIECES ? layouts.FRUIT_PIECES : layouts.PIECES;
@@ -101,7 +104,7 @@ const module = await loadSpecies(species);
 await loadPlantCode(module.record);
 const started = performance.now();
 const kit = buildKitNow(module, { detail: 'high', placeholders: 'missing' });
-const pieces = buildPiecesNow(module, PIECES, flag('bare'));
+const pieces = buildPiecesNow(module, PIECES, flag('bare'), layouts.PIECE_LEAF);
 const built = performance.now() - started;
 
 /** The four cut-branch figures of a picture in words, or why it gives none. */

@@ -79,7 +79,13 @@ import { grower, loadGrower } from './grow/models';
 import { extrasMesh } from './leaf/extras';
 import { dressShoots, pruneLight } from './leaf/instancer';
 import { foliage, loadFoliage } from './leaf/kinds';
-import { type PiecePrototype, type PieceRule, piecePrototypes } from './leaf/piece';
+import {
+	type PieceLeaf,
+	type PiecePrototype,
+	type PieceRule,
+	piecePrototypes,
+	pieceRecord,
+} from './leaf/piece';
 import { inLeaf } from './leaf/season';
 import { shootPrototypes } from './leaf/shoot';
 import { bakeCards } from './lod/card-bake';
@@ -372,14 +378,16 @@ function scaledCurve(curve: Curve, factor: number): Curve {
  * @param rules The species' piece rules.
  * @param bare Whether the pieces carry no leaves, as a deciduous plant's do in winter: the wood and
  * the bud at each stem's end.
+ * @param leaf The leaf the species' pieces wear where it differs from the record's.
  * @returns The pieces, each rule's variants together, in the rules' order.
  */
 export function buildPiecesNow(
 	source: KitSource,
 	rules: readonly PieceRule[],
 	bare = false,
+	leaf?: PieceLeaf,
 ): PiecePrototype[] {
-	const record = source.record;
+	const record = pieceRecord(source.record, leaf);
 	const builder = foliage(record.foliage.kind);
 	const manifest = source.textures.manifest;
 	const leavesOf = (from: Species) =>
