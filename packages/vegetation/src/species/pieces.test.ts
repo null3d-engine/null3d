@@ -299,8 +299,6 @@ const OPEN_EDGE: Readonly<Record<string, string>> = {
 	'silver-birch 21':
 		'0.20 against 0.49: its strands hang in the planes of their arms, so edge on they stack into a line',
 	'weeping-willow 22': '0.14 against 0.47: three strands in one plane, edge on',
-	'common-ash 21':
-		'0.38 against 0.27: more leaves than the photograph, which the owner ruled a limit of the reference',
 	'hawthorn-shrub 21': '0.20 against 0.40: its arms and tufts stand in one plane',
 	'hawthorn-shrub 22': '0.16 against 0.30: the same, on a twig too narrow face on',
 };
@@ -585,6 +583,40 @@ describe("a piece's wood", () => {
 					expect(points[0]?.radius ?? 0).toBeGreaterThanOrEqual(
 						points[points.length - 1]?.radius ?? 0,
 					);
+			}
+		}
+	});
+});
+
+describe("the ash's branch end, as still 21 and its turning video count it", () => {
+	it('carries six leaves: one pair under the bud at each of its three ends, in its own plane', async () => {
+		const module = await loadSpecies('common-ash');
+		await loadPlantCode(module.record);
+		const rule = ASH[0] as PieceRule;
+		for (let variant = 0; variant < rule.variants; variant++) {
+			const plan = planPiece(module.record, rule, pieceKey(0, variant), 4);
+			// The stem and one opposite pair of side shoots.
+			expect(plan.axes.length).toBe(3);
+			expect(plan.leaves.length).toBe(6);
+			for (const points of plan.axes) {
+				const tip = points[points.length - 1]?.at ?? [0, 0, 0];
+				const reach = (rule.scale ?? 1) * 0.04;
+				const pair = plan.leaves.filter((leaf) => distance(leaf.at, tip) < reach);
+				expect(pair.length).toBe(2);
+				// The two leaves of a pair stand at least 40 degrees apart.
+				const [one, other] = pair.map((leaf) => leaf.direction);
+				expect(
+					(one?.[0] ?? 0) * (other?.[0] ?? 0) +
+						(one?.[1] ?? 0) * (other?.[1] ?? 0) +
+						(one?.[2] ?? 0) * (other?.[2] ?? 0),
+				).toBeLessThan(0.766);
+			}
+			for (const leaf of plan.leaves) {
+				// A midrib stands within 15 degrees of the plane, and a blade shows the sky side at
+				// least three quarters of its face.
+				expect(Math.abs(leaf.direction[2] as number)).toBeLessThan(0.259);
+				const face = quatRotate(leaf.rotation, 0, [0, 0, 1], [0, 0, 0]);
+				expect(face[2]).toBeGreaterThan(0.75);
 			}
 		}
 	});
