@@ -37,7 +37,8 @@ function hold(box: Box, x: number, y: number, z: number): void {
 
 /**
  * The box of one level's foliage: its shoot rows' own meshes at the nearest level of a plant with
- * rows, its foliage mesh on a merged plant, and the pictured part of its cards at a card level.
+ * rows, every foliage mesh the level draws, such as a tuft's stool beside its blades or a merged
+ * plant's leaves, and the pictured part of its cards at a card level.
  *
  * @param kit The species' kit.
  * @param asset The grown variant.
@@ -69,7 +70,6 @@ export function foliageBox(kit: SpeciesKitData, asset: PlantAsset, level: 0 | 1 
 				);
 			}
 		}
-		return box;
 	}
 	const atlas = kit.cards.size;
 	const alpha = kit.cards.color;
