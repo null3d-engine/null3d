@@ -727,12 +727,17 @@ export interface Framed {
 	readonly model: 'frame';
 	/** The stems, the axes under them and the crown outline. */
 	readonly frame: FrameSpec;
-	/** What each socket holds, as the scaffold model states it. */
+	/** What each socket holds: shoot rows as the scaffold model states them, or one branch piece. */
 	readonly sockets: {
 		/** Shoot rows that one socket holds. */
 		readonly rows: Spread;
 		/** Degrees the rows of one socket fan from its line. */
 		readonly fan: number;
+		/**
+		 * The branch piece each socket carries, by its name among the record's pieces. Absent, a
+		 * socket holds shoot rows.
+		 */
+		readonly piece?: string;
 	};
 }
 
