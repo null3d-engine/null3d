@@ -2,6 +2,8 @@
 // regions, and when a picture is void.
 import { describe, expect, test } from 'bun:test';
 import {
+	areaCovers,
+	lackReason,
 	matteCheck,
 	PART,
 	PART_RADIUS_SPAN,
@@ -11,6 +13,7 @@ import {
 	postedSubject,
 	regionCover,
 	regionsRead,
+	subjectFault,
 	voidReason,
 } from './subject-check.ts';
 
@@ -147,7 +150,13 @@ describe('a picture of the parts', () => {
 		const facts = {
 			subject: { kind: 'the bark on a great limb', contract: { present: true }, regions },
 		};
-		expect(voidReason(facts, undefined, parts)).toContain('the picture does not show the subject');
+		// The camera holds the limb's place, so leaves across the bark are the plant's fault.
+		expect(lackReason(facts, undefined, parts)).toContain('the picture does not show it');
+		expect(voidReason(facts, undefined, parts)).toBe(undefined);
+		expect(areaCovers(facts, parts).map((area) => area.name)).toEqual([
+			"the limb's bark",
+			'the leaves over the limb',
+		]);
 		// A matte cannot tell the parts apart, so it reads no region of wood or of foliage.
 		const matte = { mask: new Uint8Array(100 * 80).fill(1), width: 100, height: 80 };
 		expect(voidReason(facts, matte)).toBe(undefined);
@@ -192,11 +201,38 @@ describe('a void picture', () => {
 			},
 		};
 		const wall = { mask: maskOf(40, 40, [[0, 0, 40, 40]]), width: 40, height: 40 };
-		expect(voidReason(facts, wall)).toContain('the picture does not show the subject');
+		// The solve said it could take no clear stand, so the wall is the camera's.
+		const warned = { subject: { ...facts.subject, warning: 'limb 4 stands before every joint' } };
+		expect(voidReason(warned, wall)).toContain('the camera took no clear stand');
+		expect(lackReason(warned, wall)).toBe(undefined);
 		// The same contract with the ground open, and with no matte to read, is not void.
 		const open = { mask: maskOf(40, 40, [[0, 0, 18, 40]]), width: 40, height: 40 };
-		expect(voidReason(facts, open)).toBe(undefined);
-		expect(voidReason(facts)).toBe(undefined);
+		expect(voidReason(warned, open)).toBe(undefined);
+		expect(voidReason(warned)).toBe(undefined);
+	});
+
+	test("is not a picture whose camera held its subject's place: that one fails the plant", () => {
+		const regions = [{ name: 'the open ground beside the limb', box: [0.75, 0.8, 1, 1], max: 0.6 }];
+		const held = { subject: { ...junction, contract: { present: true }, regions } };
+		const wall = { mask: maskOf(40, 40, [[0, 0, 40, 40]]), width: 40, height: 40 };
+		expect(subjectFault(held, wall)).toEqual({
+			kind: 'plant',
+			reason:
+				"the camera holds the subject's place and the picture does not show it: the open ground beside the limb shows plant over 1.00 of its part of the picture, over 0.6",
+		});
+		expect(voidReason(held, wall)).toBe(undefined);
+		// A plant with no such part at all fails the same way, on the page's own word.
+		const none = { subject: { kind: 'the whole plant', missing: 'no limb divides', lacks: true } };
+		expect(subjectFault(none)).toEqual({ kind: 'plant', reason: 'no limb divides' });
+		// An area that is only reported gives its figure and judges nothing.
+		const reported = {
+			subject: {
+				...junction,
+				contract: { present: true },
+				regions: [{ ...regions[0], report: true }],
+			},
+		};
+		expect(subjectFault(reported, wall)).toBe(undefined);
 	});
 
 	test('is never a picture whose page posted no subject, such as a whole view', () => {

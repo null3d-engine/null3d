@@ -77,7 +77,8 @@ export interface KeptSkeleton {
 
 /**
  * The skeleton with each axis kept from its base to a node, or not at all where that node is -1,
- * with the bud sites on the kept nodes, in the same order, standing on a crown base. An axis is kept
+ * with the bud sites on the kept nodes, in the same order and with their sockets, standing on a
+ * crown base. An axis is kept
  * only where its parent keeps the node it leaves.
  *
  * @param skeleton The skeleton.
@@ -140,6 +141,16 @@ export function keptSkeleton(
 			light: buds.light[b] as number,
 			axis: axisOut[axis] as number,
 			woodRadius: buds.woodRadius[b] as number,
+			...(buds.sockets
+				? {
+						socket: {
+							scale: buds.sockets.scale[b] as number,
+							rank: buds.sockets.rank[b] as number,
+							lobe: buds.sockets.lobe[b] as number,
+							...(buds.sockets.piece ? { piece: buds.sockets.piece[b] as number } : {}),
+						},
+					}
+				: {}),
 		});
 	}
 	return { skeleton: builder.finish(crownBase), axisOut, nodeOut };

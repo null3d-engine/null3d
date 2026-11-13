@@ -146,11 +146,12 @@ export const record: Species = {
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
-			// The kit holds eleven pieces and their card atlas of twenty-four cells of 32 texels. It
-			// reads 531,408, 710,460, 934,072 and 1,215,156 bytes at the four tiers; the three
-			// flowering stems with their panicles are most of what the tiers add. Each cap keeps
-			// about fifteen per cent above its read.
-			kitBytes: { low: 612_000, medium: 818_000, high: 1_075_000, ultra: 1_398_000 },
+			// The kit holds fourteen prototypes, the sheath column, seven blade shapes and three
+			// flowering stems each with its panicle as a part of its own, and their card atlas of
+			// 32-texel cells. It reads 713,148, 896,436, 1,124,308 and 1,413,280 bytes at the four
+			// tiers; the three flowering stems with their panicles are most of what the tiers add.
+			// Each cap keeps about fifteen per cent above its read.
+			kitBytes: { low: 821_000, medium: 1_031_000, high: 1_293_000, ultra: 1_626_000 },
 			// A plant is rows of the kit's pieces, so a variant's bytes are the same at every tier.
 			// Measured over the four variants at seed 11, in summer and in blossom: the largest reads
 			// 43,435 bytes; 20,756 triangles at the nearest level at the high tier and 29,284 at the

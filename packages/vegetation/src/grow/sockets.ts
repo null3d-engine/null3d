@@ -3,19 +3,21 @@
 // the feet of a colony spread over a patch. Each point carries pieces of the kit, a blade, a leaf
 // on its stalk, a frond or a flowering stem, each placed whole at a socket.
 //
-// A socket is a bud site of the socket kind. Its frame stands the piece: +Y the piece's own up and
-// +Z the way it heads. Its vigor names the piece's class (leaf/piece.ts) and its wood radius holds
-// the piece's length in metres, which sets the row's scale.
+// A socket is a bud site with the socket record every plant of pieces uses (core/graph.ts): the
+// piece's size against its own, its rank in the order the plant thins by, the foliage mass it
+// belongs to, and here the piece it carries, since one stool carries pieces of several kinds. Its
+// frame's +Y is the way the socket points, which the piece's attitude turns it by
+// (leaf/piece.ts): a piece that stands upright heads the level way +Y points, one turned along
+// the socket follows it.
 //
 // Every socket has a place in the order the plant thins by: its `keep`, from 0 for the pieces that
 // go last to 1 for those that go first. A piece on a shoot never outlasts the shoot, so its keep
-// is never below its shoot's. The sockets enter the skeleton sorted by keep, so a socket's rank is
-// its place among the skeleton's sockets, and the first sockets of any count are a plant that is
-// spread evenly and holds together. A socket's light holds how long it stays, 1 less its keep, as a
-// shoot's bud holds the light it is pruned by: the sockets of the least plant are the brightest.
-import { BUD_SOCKET, type SkeletonBuilder } from '../core/graph';
+// is never below its shoot's. The sockets enter the skeleton sorted by keep, and a socket's rank is
+// its place among them, so the first sockets of any count are a plant that is spread evenly and
+// holds together. A socket's light holds how long it stays, 1 less its keep, as a shoot's bud
+// holds the light it is pruned by: the sockets of the least plant are the brightest.
+import { BUD_TERMINAL, type SkeletonBuilder } from '../core/graph';
 import { cos, PI, quatFromFrame, sin, type Vector3 } from '../core/math';
-import { socketVigor } from '../leaf/ground-piece';
 
 /**
  * The plastic number's two steps: the low-discrepancy sequence of points in a square whose every
@@ -74,16 +76,19 @@ export interface Socket {
 	readonly node: number;
 	/** The attach point, in plant space. */
 	readonly at: Readonly<Vector3>;
-	/** The piece's own up, a unit vector: plumb for a piece that hangs under its own weight. */
-	readonly up: Readonly<Vector3>;
-	/** The way the piece heads, in radians about the plumb line; +X is 0. */
-	readonly heading: number;
-	/** The piece's class, as its place in the grower's list of classes. */
+	/**
+	 * The way the socket points, a unit vector: the level way an upright piece heads, or the line of
+	 * a piece turned along it.
+	 */
+	readonly direction: Readonly<Vector3>;
+	/** The piece's place in the grower's list of pieces. */
 	readonly piece: number;
-	/** The piece's length in metres. */
-	readonly length: number;
+	/** The piece's size against its own, 1 for the piece as the kit holds it. */
+	readonly scale: number;
 	/** Its place in the order the plant thins by, from 0 for the last to go to 1 for the first. */
 	readonly keep: number;
+	/** The shoot or foot it stands on: the foliage mass it belongs to. */
+	readonly group: number;
 }
 
 /**
@@ -92,31 +97,29 @@ export interface Socket {
  *
  * @param builder The skeleton under construction.
  * @param sockets The sockets.
- * @param classes The classes of piece in the grower's list.
  * @category api/vegetation
  */
-export function addSockets(
-	builder: SkeletonBuilder,
-	sockets: readonly Socket[],
-	classes: number,
-): void {
+export function addSockets(builder: SkeletonBuilder, sockets: readonly Socket[]): void {
 	const order = sockets.map((_, i) => i);
 	order.sort((a, b) => (sockets[a] as Socket).keep - (sockets[b] as Socket).keep || a - b);
 	const frame = new Float32Array(4);
-	for (const i of order) {
+	const up: Vector3 = [0, 1, 0];
+	const ahead: Vector3 = [1, 0, 0];
+	order.forEach((i, rank) => {
 		const socket = sockets[i] as Socket;
-		quatFromFrame(socket.up, [cos(socket.heading), 0, sin(socket.heading)], frame);
+		quatFromFrame(socket.direction, Math.abs(socket.direction[1]) > 0.99 ? ahead : up, frame);
 		builder.addBud({
 			node: socket.node,
 			x: socket.at[0],
 			y: socket.at[1],
 			z: socket.at[2],
 			frame,
-			kind: BUD_SOCKET,
-			vigor: socketVigor(socket.piece, classes),
+			kind: BUD_TERMINAL,
+			vigor: 1,
 			light: 1 - socket.keep,
 			axis: socket.axis,
-			woodRadius: socket.length,
+			woodRadius: 0,
+			socket: { scale: socket.scale, rank, lobe: socket.group, piece: socket.piece },
 		});
-	}
+	});
 }

@@ -82,11 +82,6 @@ const TAN_HALF = Math.tan((FOV * Math.PI) / 360);
 const VIEW_SCALE =
 	FRAME.height / TAN_HALF / (ASSET_VIEW.height / Math.tan((ASSET_VIEW.fov * Math.PI) / 360));
 
-/** The largest value a spread takes. */
-function spreadMax(spread: number | { readonly mean: number; readonly spread: number }): number {
-	return typeof spread === 'number' ? spread : spread.mean + spread.spread;
-}
-
 /** What the coverage row needs after setup: the camera and each crown's box. */
 export interface CoverageRow {
 	readonly camera: Camera;
@@ -127,13 +122,9 @@ export async function addCoverageRow(
 	if (options.cardCutoff !== undefined) materials.cards.set({ alphaCutoff: options.cardCutoff });
 
 	const crown = asset.crown;
-	// The distance at which the longest shoot covers the record's first switch pixels, which is
-	// where the nearest level hands over to the first card level.
-	const scale = kit.record.shoots ? spreadMax(kit.record.shoots.placement.scale) : 1;
-	let longest = 0;
-	for (const prototype of kit.prototypes) longest = Math.max(longest, prototype.length);
-	const switchPixels = kit.record.lod.switchPixels;
-	const nearSplit = (longest * scale * FRAME.height) / (2 * TAN_HALF * switchPixels[0]);
+	// Where the nearest level hands over to the first card level: the asset's own start, which the
+	// page's shoots hand over at too, measured at the asset's reference view.
+	const nearSplit = asset.levels[1].from * VIEW_SCALE;
 	// The second card level's own start, measured at the asset's reference view.
 	const secondStart = asset.levels[2].from * VIEW_SCALE;
 	// Two distances in the first band and one in the second, away from the hand-over edges: the first

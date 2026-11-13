@@ -4,7 +4,13 @@
 // a subject reports it as absent with its reason, and a camera that needs it then draws no picture
 // to judge. The adapter at the foot fills the interface from a macro skeleton.
 
+import type {
+	ShootPrototype,
+	ShootRows,
+	SpeciesKitData,
+} from '../../../../packages/vegetation/src/asset';
 import { BUD_TERMINAL } from '../../../../packages/vegetation/src/core/graph';
+import { DETAILS } from '../../../../packages/vegetation/src/core/types';
 import {
 	chainOf,
 	dot,
@@ -12,6 +18,7 @@ import {
 	mainStem,
 	nodeAt,
 	normalize,
+	placeOnRow,
 	stemFoot,
 	type V3,
 } from './anatomy';
@@ -114,6 +121,11 @@ export interface TwigTip {
 
 /** One branch piece as the plant carries it: a branch end with its twigs and leaves at a socket. */
 export interface BranchPiece {
+	/**
+	 * The piece's class, the name its grower gives it: a pine's `bough`, or a tuft's `stalk-0`, its
+	 * first flowering stalk.
+	 */
+	readonly class: string;
 	/** The socket: the piece's cut end. */
 	readonly socket: V3;
 	/** The direction the piece runs from its socket. */
@@ -124,6 +136,13 @@ export interface BranchPiece {
 	readonly spread: number;
 	/** The side of the piece its leaves face, where it has one. */
 	readonly face?: V3;
+	/** The piece's own side, square to its face, along which an arching piece shows its arch. */
+	readonly side?: V3;
+	/**
+	 * Metres the piece stands off its own plane on either side: along its face, and along its side.
+	 * A view square to either sees the piece that deep.
+	 */
+	readonly depth?: { readonly face: number; readonly side: number };
 }
 
 /** A leaf's size. */
@@ -429,6 +448,169 @@ export function subjectsOfSkeleton(
 				? absent("the species' foliage has no single leaf length")
 				: { length: options.leafLength },
 	};
+}
+
+/** A prototype's class as a placed piece: a branch piece's name, or a ground piece's class less its prefix. */
+function pieceClass(prototype: ShootPrototype): string | undefined {
+	if (prototype.piece) return prototype.piece.name;
+	return prototype.class.startsWith('piece-') ? prototype.class.slice('piece-'.length) : undefined;
+}
+
+/** A vector of a piece's own frame, turned as one of the plant's rows turns its prototype. */
+function turnedBy(rows: ShootRows, r: number, x: number, y: number, z: number): V3 {
+	const out: [number, number, number] = [0, 0, 0];
+	placeOnRow(rows, r, x, y, z, out, 0);
+	const s = rows.scale[r] as number;
+	return normalize([
+		(out[0] - (rows.position[r * 3] as number)) / s,
+		(out[1] - (rows.position[r * 3 + 1] as number)) / s,
+		(out[2] - (rows.position[r * 3 + 2] as number)) / s,
+	]);
+}
+
+/** A piece's run in its own frame: the way to its farthest vertex, how far, and its spread off that line. */
+interface PieceRun {
+	readonly way: V3;
+	readonly length: number;
+	readonly spread: number;
+	/** How far its vertices stand off the socket along its own +Z and its own +X. */
+	readonly face: number;
+	readonly side: number;
+}
+
+/** The run of a piece whose parts are these prototypes' meshes, at scale 1. */
+function runOf(meshes: readonly Float32Array[]): PieceRun {
+	let far: V3 = [0, 1, 0];
+	let length = 0;
+	for (const positions of meshes)
+		for (let i = 0; i + 2 < positions.length; i += 3) {
+			const v: V3 = [
+				positions[i] as number,
+				positions[i + 1] as number,
+				positions[i + 2] as number,
+			];
+			const d = Math.hypot(v[0], v[1], v[2]);
+			if (d > length) {
+				length = d;
+				far = v;
+			}
+		}
+	const way = length > 0 ? normalize(far) : ([0, 1, 0] as V3);
+	let spread = 0;
+	let face = 0;
+	let side = 0;
+	for (const positions of meshes)
+		for (let i = 0; i + 2 < positions.length; i += 3) {
+			const x = positions[i] as number;
+			const y = positions[i + 1] as number;
+			const z = positions[i + 2] as number;
+			const along = x * way[0] + y * way[1] + z * way[2];
+			spread = Math.max(
+				spread,
+				Math.hypot(x - along * way[0], y - along * way[1], z - along * way[2]),
+			);
+			face = Math.max(face, Math.abs(z));
+			side = Math.max(side, Math.abs(x));
+		}
+	return { way, length, spread, face, side };
+}
+
+/**
+ * The branch pieces a plant places at its sockets, read from its rows. A piece's parts stand as
+ * rows one after another at one place, with one turn and one scale. The piece runs from its socket
+ * toward its farthest vertex, so an arching piece runs to its tip, spreads as far as its vertices
+ * stand off that line, faces its +Z, the sky side of a branch piece, and has its +X for its side.
+ * The pieces come outermost first, so a view of one frames a piece at the plant's rim.
+ *
+ * @param rows The plant's rows.
+ * @param kit The kit the rows draw, for its prototypes and the tier its rows draw at.
+ * @param foot Where the plant stands.
+ * @returns The pieces, or why the plant has none: its rows are shoots.
+ */
+export function piecesOfRows(
+	rows: ShootRows,
+	kit: Pick<SpeciesKitData, 'detail' | 'prototypes'>,
+	foot: V3,
+): Maybe<readonly BranchPiece[]> {
+	const tier = DETAILS.indexOf(kit.detail);
+	// Each set of parts' run at scale 1, found once: the sockets of one variant share it.
+	const runs = new Map<string, PieceRun>();
+	const runAt = (first: number, end: number): PieceRun => {
+		const parts: number[] = [];
+		for (let part = first; part < end; part++) parts.push(rows.prototype[part] as number);
+		const key = parts.join(',');
+		let run = runs.get(key);
+		if (!run) {
+			run = runOf(
+				parts.map((index) => kit.prototypes[index]?.tiers[tier]?.positions ?? new Float32Array(0)),
+			);
+			runs.set(key, run);
+		}
+		return run;
+	};
+	const pieces: (BranchPiece & { readonly out: number })[] = [];
+	const sameSocket = (a: number, b: number) =>
+		rows.scale[a] === rows.scale[b] &&
+		rows.position[a * 3] === rows.position[b * 3] &&
+		rows.position[a * 3 + 1] === rows.position[b * 3 + 1] &&
+		rows.position[a * 3 + 2] === rows.position[b * 3 + 2];
+	for (let r = 0; r < rows.count; ) {
+		const prototype = kit.prototypes[rows.prototype[r] as number];
+		const name = prototype ? pieceClass(prototype) : undefined;
+		let end = r + 1;
+		while (end < rows.count && sameSocket(r, end)) end++;
+		if (name !== undefined) {
+			const scale = rows.scale[r] as number;
+			const run = runAt(r, end);
+			const length = run.length * scale;
+			const socket: V3 = [
+				rows.position[r * 3] as number,
+				rows.position[r * 3 + 1] as number,
+				rows.position[r * 3 + 2] as number,
+			];
+			const direction = turnedBy(rows, r, run.way[0], run.way[1], run.way[2]);
+			pieces.push({
+				class: name,
+				socket,
+				direction,
+				length,
+				spread: run.spread * scale,
+				face: turnedBy(rows, r, 0, 0, 1),
+				side: turnedBy(rows, r, 1, 0, 0),
+				depth: { face: run.face * scale, side: run.side * scale },
+				out: Math.hypot(
+					socket[0] + direction[0] * length - foot[0],
+					socket[2] + direction[2] * length - foot[2],
+				),
+			});
+		}
+		r = end;
+	}
+	if (pieces.length === 0)
+		return absent('the plant places no branch piece at a socket: its rows are shoots');
+	pieces.sort((a, b) => b.out - a.out);
+	return pieces.map(({ out: _out, ...piece }) => piece);
+}
+
+/**
+ * The placed pieces of one class, outermost first. A class names a piece by its grower's name, or
+ * by its leading words, so `stalk` names every flowering stalk a tuft places.
+ *
+ * @param subjects The plant's subjects.
+ * @param name The class.
+ * @returns The pieces, or that the plant lacks the class: it places pieces, and none of this one.
+ */
+export function piecesOfClass(
+	subjects: PlantSubjects,
+	name: string,
+): Maybe<readonly BranchPiece[]> {
+	if (isAbsent(subjects.pieces)) return subjects.pieces;
+	const found = subjects.pieces.filter(
+		(piece) => piece.class === name || piece.class.startsWith(`${name}-`),
+	);
+	if (found.length > 0) return found;
+	const classes = [...new Set(subjects.pieces.map((piece) => piece.class))].join(', ');
+	return lacking(`the plant places no piece of the class ${name}; its pieces are ${classes}`);
 }
 
 /** The degrees between a limb's line and the trunk's where the limb leaves. */

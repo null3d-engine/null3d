@@ -90,9 +90,9 @@ import {
 	woodParts,
 } from './grow/sparse';
 import { extrasMesh } from './leaf/extras';
-import { groundPiecePrototypes } from './leaf/ground-piece';
+import { writtenPieces } from './leaf/ground-piece';
 import { dressShoots, pruneLight } from './leaf/instancer';
-import { foliage, loadFoliage } from './leaf/kinds';
+import { type FoliageBuilder, foliage, loadFoliage } from './leaf/kinds';
 import {
 	type PieceLeaf,
 	type PiecePrototype,
@@ -100,10 +100,9 @@ import {
 	piecePrototypes,
 	pieceRecord,
 } from './leaf/piece';
-import { carriesPieces, kitPiece, PROTOTYPES_MOST } from './leaf/piece-rows';
+import { carriesPieces, kitPiece, PROTOTYPES_MOST, writesPieces } from './leaf/piece-rows';
 import { inLeaf } from './leaf/season';
 import { shootPrototypes } from './leaf/shoot';
-import { socketRows } from './leaf/socket-rows';
 import {
 	type BudgetInput,
 	type LevelBuild,
@@ -266,15 +265,8 @@ function piecesOf(
 	bare: boolean,
 ): PiecePrototype[] {
 	const builder = foliage(record.foliage.kind);
-	// A piece wears its kind's piece leaves where the kind cuts them apart from the crown's.
 	const leavesOf = (from: Species) =>
-		DETAILS.map((tier) =>
-			bare
-				? []
-				: builder.pieceLeaves
-					? builder.pieceLeaves(from, manifest, tier)
-					: builder.leaves(from, manifest, tier),
-		);
+		bare ? DETAILS.map(() => []) : pieceLeaves(builder, from, manifest);
 	const leaves = leavesOf(record);
 	// A rule whose blades bend in their own plane takes leaves built with no bend at the stalk.
 	const straight =
@@ -291,6 +283,23 @@ function piecesOf(
 				})
 			: leaves;
 	return piecePrototypes(record, rules, leaves, straight);
+}
+
+/**
+ * A species' leaf meshes for its branch pieces at every tier, low first: its kind's piece cut where
+ * the kind cuts a piece's leaves apart from the crown's, since a tree carries thousands of pieces,
+ * and the crown's own leaves where it does not.
+ */
+function pieceLeaves(
+	builder: FoliageBuilder,
+	record: Species,
+	manifest: TextureManifest,
+): (readonly PrototypeArrays[])[] {
+	return DETAILS.map((tier) =>
+		builder.pieceLeaves
+			? builder.pieceLeaves(record, manifest, tier)
+			: builder.leaves(record, manifest, tier),
+	);
 }
 
 /**
@@ -472,13 +481,13 @@ export function buildKitNow(source: KitSource, options: KitOptions = {}): Specie
 	// keeps those in the kit, each part a prototype of its own, built as the piece builder builds
 	// them; any other keeps its shoot prototypes.
 	const written =
-		!record.shoots && placeholders !== true
+		writesPieces(record) && placeholders !== true
 			? grower(record.growth.model).pieces?.(record, manifest)
 			: undefined;
 	if (record.shoots || written) {
 		const pieces = !cutting && carriesPieces(record) ? record.pieces : undefined;
 		const uncarded = written
-			? groundPiecePrototypes(written)
+			? writtenPieces(written).map(kitPiece)
 			: stage(
 					placeholders,
 					() =>
@@ -796,11 +805,12 @@ function growFull(kit: SpeciesKitData, options: GrowOptions): GrownPlant {
 		record.lod.nearFoliage === 'instanced' && kit.prototypes.length > 0
 			? stage(
 					placeholders,
-					// A record with shoots dresses its buds; one without stands a piece at each socket.
+					// A record with shoots dresses its buds, and a plant of pieces stands one at each
+					// socket.
 					() =>
-						record.shoots
+						record.shoots || carriesPieces(record)
 							? dressShoots(dressInput)
-							: { rows: socketRows(dressInput), skeleton: dressInput.skeleton },
+							: { rows: emptyRows(), skeleton: dressInput.skeleton },
 					() => ({ rows: placeholderRows(dressInput), skeleton: dressInput.skeleton }),
 				)
 			: { rows: emptyRows(), skeleton: dressInput.skeleton };
@@ -1094,6 +1104,7 @@ function growCutting(
 				NO_TRIANGLES,
 				NO_TRIANGLES,
 			],
+			shoots: shootTriangles(kit, rows),
 		},
 	};
 }
@@ -1279,6 +1290,19 @@ function referenceOf(kit: SpeciesKitData, input: BudgetInput): PartTriangles | u
 const now = () => (typeof performance === 'undefined' ? Date.now() : performance.now());
 
 /**
+ * The triangles a variant's shoot rows draw at the kit's detail: each row draws one prototype of
+ * the kit, which no level's own mesh holds.
+ */
+function shootTriangles(kit: SpeciesKitData, rows: PlantAsset['shoots']): number {
+	const tier = DETAILS.indexOf(kit.detail);
+	let triangles = 0;
+	for (let r = 0; r < rows.count; r++)
+		triangles +=
+			(kit.prototypes[rows.prototype[r] as number]?.tiers[tier]?.indices.length ?? 0) / 3;
+	return triangles;
+}
+
+/**
  * Grows one variant on this thread: its skeleton, its shoot rows, its crown light, its wind records
  * and its three levels. Call `loadPlantCode` first. The nearest level's wood is meshed only when
  * `near` is set; otherwise `growNearWoodNow` meshes it in the background.
@@ -1359,6 +1383,7 @@ export function growPlantNow(kit: SpeciesKitData, options: GrowOptions): PlantAs
 						clusters: [built[0].clusters, built[1].clusters, built[2].clusters] as const,
 					}
 				: {}),
+			shoots: record.lod.nearFoliage === 'instanced' ? shootTriangles(kit, mesh.rows) : 0,
 		},
 	};
 	return asset;

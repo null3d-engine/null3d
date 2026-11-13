@@ -119,6 +119,8 @@ export interface ShootCut {
 	/** A thorn's and a fruiting body's shapes; absent, a thorn takes the axil's and a body the cluster's. */
 	readonly thorn?: BudShape;
 	readonly body?: BudShape;
+	/** Whether a stem run that its leaves hide takes rings far apart, since no ring of it shows. */
+	readonly thinHidden?: boolean;
 	/**
 	 * Whether a tube of few sides stands wider than its stem's radius, so its outline is as wide as
 	 * the round stem's when averaged over a turn: a three-sided tube on the radius reads a sixth thin.
@@ -1139,6 +1141,33 @@ function bendByte(along: number, span: number): number {
 	return Math.min(255, Math.max(0, Math.round((along / span) * 255)));
 }
 
+/** Metres between the rings of a stem run that its leaves hide. */
+const HIDDEN_RING_GAP = 0.04;
+
+/**
+ * The runs of each axis that its leaves hide, as metres along the shoot from and to: where one leaf
+ * stands within two of the stem's radii of the next, the leaves close round the stem between them.
+ */
+function hiddenRuns(plan: ShootPlan): (readonly [number, number])[][] {
+	const alongs: number[][] = plan.axes.map(() => []);
+	for (const leaf of plan.leaves) alongs[leaf.axis]?.push(leaf.along);
+	return plan.axes.map((points, axis) => {
+		const runs: [number, number][] = [];
+		const leaves = (alongs[axis] as number[]).sort((a, b) => a - b);
+		let k = 0;
+		for (let i = 1; i < leaves.length; i++) {
+			const from = leaves[i - 1] as number;
+			const to = leaves[i] as number;
+			while (k < points.length - 1 && (points[k + 1] as AxisPoint).along <= from) k++;
+			if (to - from > 2 * ((points[k] as AxisPoint | undefined)?.radius ?? 0)) continue;
+			const last = runs[runs.length - 1];
+			if (last && last[1] >= from) last[1] = to;
+			else runs.push([from, to]);
+		}
+		return runs;
+	});
+}
+
 /**
  * Meshes a prototype's plan at one tier, every vertex unoccluded.
  *
@@ -1159,10 +1188,16 @@ export function meshShoot(
 	const sides = cut.stemSides;
 	// A regular polygon on a radius is, averaged over a turn, as wide as a circle that much smaller.
 	const widen = cut.meanWidth ? Math.PI / (sides * Math.sin(Math.PI / sides)) : 1;
-	for (const points of plan.axes) {
-		// Rings no closer than twice the stem's radius; a cut of year rings keeps one at each year's end,
-		// and a cut that names a turn keeps one only where the stem bends that far from its last ring, or
-		// where the run from it grows long enough that wind would bend the stem between two rings.
+	const hidden = cut.thinHidden ? hiddenRuns(plan) : undefined;
+	plan.axes.forEach((points, axis) => {
+		const runs = hidden?.[axis] ?? [];
+		/** Whether the stem between two places along the shoot lies inside one hidden run. */
+		const covered = (from: number, to: number): boolean =>
+			runs.some(([start, end]) => from >= start && to <= end);
+		// Rings no closer than twice the stem's radius, and far apart where leaves hide the stem. A cut
+		// of year rings keeps one at each year's end, and a cut that names a turn keeps one only where
+		// the stem bends that far from its last ring, or where the run from it grows long enough that
+		// wind would bend the stem between two rings.
 		const path: TubePoint[] = [];
 		for (let k = 0; k < points.length; k++) {
 			const point = points[k] as AxisPoint;
@@ -1170,7 +1205,10 @@ export function meshShoot(
 			const end = k === points.length - 1;
 			if (last && !end) {
 				const gap = point.along - last.along;
-				if (gap < point.radius * 2 || (cut.yearRings && !point.unitEnd)) continue;
+				const least = covered(last.along, point.along)
+					? Math.max(HIDDEN_RING_GAP, point.radius * 2)
+					: point.radius * 2;
+				if (gap < least || (cut.yearRings && !point.unitEnd)) continue;
 				if (
 					cut.ringTurn !== undefined &&
 					gap < RING_RUN_MOST &&
@@ -1192,7 +1230,7 @@ export function meshShoot(
 			// the least drawn width, as it widens the wood.
 			(_ring, radius) => [Math.min(1, radius / WOOD_RADIUS_RANGE), 0],
 		);
-	}
+	});
 	for (const bud of plan.buds) {
 		const shape =
 			bud.mark === 'thorn'
