@@ -6,6 +6,9 @@
 // and from the description of the real tree in the first review of its frame, which read stills 01,
 // 02, 03, 04, 18 and 20, the whole-tree turning video and the winter oak. Shares are of the tree's
 // height.
+
+import type { ExtraSpec } from '../../core/record';
+import type { Vec2 } from '../../core/types';
 import {
 	type FrameBranchRule,
 	type FrameSide,
@@ -17,10 +20,11 @@ import { record } from './record';
 
 /**
  * The fine wood that clothes a clump, each twig ending in a socket that carries the branch end of
- * still 21. A branch end is 0.86 m long and 0.79 m wide on a tree 20 m tall, so the sockets stand
- * a branch end's width apart over the clump's surface and a branch end's reach inside it.
+ * still 21. A branch end is 0.86 m long and 0.79 m wide on a tree 20 m tall. The sockets stand a
+ * branch end's reach inside the clump's surface and closer together than its width, so neighbouring
+ * branch ends overlap as a real crown's do and the clump reads closed at the first card level.
  */
-const ENDS = { pitch: 0.79 / 20, reach: 0.86 / 20 } as const;
+const ENDS = { pitch: (0.79 * 0.82) / 20, reach: 0.86 / 20 } as const;
 
 /** A rounded clump of foliage. The real tree's rim is ten to twelve clumps with sky bays between. */
 const clump = (width: number) =>
@@ -258,9 +262,10 @@ export const frame: FrameSpec = {
 		count: 1,
 		// Still 01, read row by row from the trunk's line: the bole is narrowest, 0.155 of the height
 		// across, a tenth of the way up, and its foot flares on a rounded curve to 0.168 at 0.075 of the
-		// height, 0.194 at 0.054, 0.213 at 0.043 and 0.23 at 0.032, where the grass hides it. Over the
-		// fork zone the bole gives its wood to the low limbs, and above them it runs on, a third as
-		// thick as at its foot, to where it divides.
+		// height, 0.194 at 0.054, 0.213 at 0.043 and 0.23 at 0.032, where the grass hides it. It holds
+		// its width up through the fork zone, where its limbs' collars widen it, so it stands as a post
+		// to the fork and not as a bottle's neck. Above the low limbs, which take its wood, it runs on
+		// a third as thick as at its foot to where it divides.
 		width: [
 			[0, 0.262],
 			[0.012, 0.25],
@@ -269,9 +274,9 @@ export const frame: FrameSpec = {
 			[0.043, 0.212],
 			[0.054, 0.194],
 			[0.075, 0.168],
-			[0.1, 0.156],
-			[0.15, 0.155],
-			[0.25, 0.12],
+			[0.1, 0.157],
+			[0.24, 0.152],
+			[0.294, 0.0984],
 			[0.35, 0.071],
 		],
 		// The real tree: the low limbs leave over a zone between 0.15 and 0.25 of the height. Stills 01
@@ -331,14 +336,14 @@ export const frame: FrameSpec = {
 				// over the camera 43, and the two steeper limbs 48 and 41. The limb away from the camera
 				// does not show and takes the figure of the one toward it. The real tree: the thickest
 				// limb leaves at half the bole's width. Each share here gives its limb that thickness
-				// beside the left limb's, on a bole that thins over the zone the limbs leave in.
+				// beside the left limb's, on a bole that holds its width over the zone the limbs leave in.
 				radius: [
-					[0, 0.268],
-					[0.2, 0.274],
-					[0.4, 0.321],
-					[0.6, 0.421],
-					[0.8, 0.5],
-					[1, 0.302],
+					[0, 0.254],
+					[0.2, 0.2526],
+					[0.4, 0.2877],
+					[0.6, 0.3663],
+					[0.8, 0.4221],
+					[1, 0.247],
 				],
 				taper: 0.3,
 				shed: 0.7,
@@ -466,6 +471,52 @@ const base = {
 } as const;
 
 /**
+ * The share of the sockets that bear a bunch of acorns: the record's 0.0475 of the old grower's
+ * 3,774 shoot tips at seed 11 over the frame's 7,932 sockets, so the tree hangs the bunches the
+ * record means.
+ */
+const ACORN_SHARE = 0.0226;
+
+/**
+ * The framed oak's acorn: the record's own cup and nut drawn in fewer segments. At the nearest
+ * level's farthest an acorn is about five pixels long, and the cup's rim, the nut's swell and its
+ * point are what read, so ten points of the record's profile keep them, on twelve faces with four
+ * rows of scales.
+ */
+function acorn(extra: ExtraSpec): ExtraSpec {
+	if (extra.kind !== 'fruit' || extra.at !== 'shoot-tip' || !('lathe' in extra.shape)) return extra;
+	const shape = extra.shape;
+	const keep = [0, 2, 4, 5, 6, 8, 10, 12, 14, 16];
+	return {
+		...extra,
+		share: ACORN_SHARE,
+		shape: {
+			...shape,
+			lathe: keep.flatMap((k): Vec2[] => {
+				const point = shape.lathe[k];
+				return point ? [point] : [];
+			}),
+			sides: 12,
+			scales: 4,
+			stalkSides: 4,
+		},
+	};
+}
+
+/**
+ * The framed oak's own budgets, measured at seed 11 on 14 November 2026 and set a twentieth above
+ * the measure, under every class-wide cap: the variant's bytes at each tier, and the second card
+ * level's triangles at the finest tier. The fill's sockets stand closer than a branch end's width so
+ * the crown reads closed, which the review judged better than the old oak (round
+ * pedunculate-oak-0bc6547f1); that takes 11,725 rows where the old record's budget held 7,935.
+ * Measured: 11,287,017, 11,435,505, 11,631,759 and 11,877,447 bytes from low to ultra; the second
+ * card level 38,273 to 42,476 triangles. The first card level, 95,793 to 119,799, keeps the record's
+ * own budget.
+ */
+const VARIANT_BYTES = { low: 11_860_000, medium: 12_010_000, high: 12_220_000, ultra: 12_480_000 };
+const LEVEL_2_TRIANGLES = 44_600;
+
+/**
  * The pedunculate oak's record with the frame as its growth and the branch end of still 21 at each
  * socket. The shoot rows are the figures the scaffold build's oak states for the same branch ends;
  * a kit with no pieces draws them.
@@ -482,5 +533,14 @@ export const directed = {
 		turn: { roll: 90, tilt: 25 },
 	}),
 	base,
+	lod: {
+		...record.lod,
+		budget: {
+			...record.lod.budget,
+			variantBytes: VARIANT_BYTES,
+			lod2Triangles: LEVEL_2_TRIANGLES,
+		},
+	},
+	extras: record.extras?.map(acorn),
 	pieces: PIECES.filter((piece) => piece.name === 'branch-end'),
 };

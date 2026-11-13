@@ -132,8 +132,10 @@ export const PIECES: readonly PieceRule[] = [
 		attitude: 'along',
 		variants: 2,
 		scale: 1 / LEAF_SCALE,
-		// The turning video of the cut branch: edge on it is 0.33 as wide as face on.
-		depth: 24,
+		// The turning video of the cut branch: edge on it is 0.33 as wide as face on. The side stems
+		// stand as deep as the cut's own side view allows: any deeper, the sky between them edge on
+		// stands outside the standard's band.
+		depth: 26,
 		stem: {
 			length: { mean: 0.84, spread: 0.03 },
 			radius: [0.0115, 0.005],
