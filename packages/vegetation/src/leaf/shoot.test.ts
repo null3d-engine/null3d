@@ -22,6 +22,7 @@ import { dressShoots, placeShoots, prototypesFor, pruneLight } from './instancer
 import { builder } from './leaf-mesh';
 import { OAK_MANIFEST, OAK_SHOOTS, oakRecord, testKit } from './oak.test-support';
 import { type PlannedLeaf, planShoot, type ShootPlan, shootPrototypes } from './shoot';
+import { SURFACE_LEAF, SURFACE_STEM } from './writer';
 
 /** A record whose shoots stand straight, with one arrangement of leaves. */
 function straight(phyllotaxis: Phyllotaxis): Species {
@@ -509,6 +510,28 @@ describe('the shoot prototypes', () => {
 		}
 		expect(lowest).toBeLessThan(160);
 		expect(highest).toBeGreaterThan(220);
+	});
+
+	it('writes a stem vertex its radius, so the draw keeps a least width', () => {
+		const high = prototypes[0]?.tiers[2];
+		if (!high) throw new Error('no prototype');
+		let stems = 0;
+		let leaves = 0;
+		for (let v = 0; v < high.colors.length / 4; v++) {
+			const kind = high.colors[v * 4 + 2] as number;
+			const second = high.uvs1[v * 2] as number;
+			if (kind === SURFACE_STEM) {
+				stems++;
+				// The wood's own units: the shader widens a stem thinner than the least drawn
+				// width from this figure.
+				expect(second).toBeGreaterThan(0);
+				expect(second).toBeLessThanOrEqual(1);
+			} else if (kind === SURFACE_LEAF) {
+				leaves++;
+			}
+		}
+		expect(stems).toBeGreaterThan(0);
+		expect(leaves).toBeGreaterThan(0);
 	});
 });
 

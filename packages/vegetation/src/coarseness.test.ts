@@ -301,13 +301,14 @@ describe('the section sparsity', () => {
 	});
 
 	it('draws the far level of the oak as one segment an axis, in a few triangles', () => {
-		// The far level keeps three axes at most, each one segment of three sides, with no joins,
-		// tips or roots, so its whole wood is a handful of triangles.
+		// The far level keeps a few axes, each one segment of three sides, with no joins, tips or
+		// roots: two triangles a side, so six an axis, and its whole wood is a handful of triangles.
 		const full = wood(0, 2).triangles;
 		const fewest = wood(1, 2).triangles;
 		expect(fewest).toBeLessThan(full / 4);
 		expect(fewest).toBeGreaterThan(0);
-		expect(fewest).toBeLessThanOrEqual(30);
+		expect(fewest % 6).toBe(0);
+		expect(fewest).toBeLessThanOrEqual(48);
 	});
 
 	it('holds its quick count of the nearest level within ten per cent at half the sections', () => {

@@ -2,18 +2,24 @@
 // top. Each value names the reference picture it was measured on; stills of the bare winter oak are
 // named as such.
 //
-// The cut branch of still 21 is a metre tall, and a leaf tuft on it is 0.22 of that across, which
-// makes a leaf 10 to 11 centimetres. The record's leaf is 12, so a piece draws its leaves at 0.9 of
-// that until the record's own length moves.
+// The leaf is the ruler. On still 21 at full size a full leaf is 90 to 110 pixels of a branch 705
+// pixels tall, 0.14 of it, and the record's leaf is 12 centimetres, so the branch is 0.86 metres
+// tall. A piece's rule states its lengths as shares of the piece's height, and names that size.
 import type { PieceLeaves, PieceRule, PieceStem, PieceStudio } from '../../leaf/piece';
 
-/** A piece's leaf over the record's: 10.8 centimetres measured on still 21, over 12. */
-const LEAF_SCALE = 0.9;
+/** A leaf's length over the record's, with the branch's height as the unit: 0.14 over 0.12. */
+const LEAF_SCALE = 1.17;
+/**
+ * The same for still 22's twig: at full size a leaf is 110 to 140 pixels of a twig 720 pixels tall,
+ * 0.18 of it, so the twig is 0.67 metres tall.
+ */
+const TWIG_LEAF_SCALE = 1.5;
 
 /**
- * The tuft at a shoot's end. Stills 09, 10 and 21: six to ten leaves crowd in a shoot's last five
- * centimetres. Stills 21 and 22: they lie as one flat rosette that faces out of the branch's plane,
- * fanned all round the shoot's tip, so a tuft is two leaf lengths across.
+ * The rosette at a shoot's end. Still 21 at full size: eight to ten separate leaves crowd in a
+ * shoot's last few centimetres and radiate all round its tip, with sky between them, so a rosette
+ * is two leaf lengths across, a third of the branch. Its turning video: the rosettes have depth,
+ * and the branch is a third as deep as it is wide.
  */
 function tuft(length: number, leaves: number, scale = LEAF_SCALE): PieceLeaves {
 	const run = 0.05;
@@ -21,95 +27,136 @@ function tuft(length: number, leaves: number, scale = LEAF_SCALE): PieceLeaves {
 		gap: run / leaves,
 		from: 1 - run / length,
 		angle: 60,
+		// The outer, older leaves are the full ones; the inner are young and down to 0.6 of them.
 		scale: [
 			[1 - run / length, scale],
-			[1, scale * 0.85],
+			[1, scale * 0.6],
 		],
-		fan: { reach: 150, tilt: 18 },
+		fan: { reach: 165, tilt: 20, cone: 20 },
 	};
 }
 
 /**
- * A side shoot. Still 21 and the winter oak's 21: it is bare but for its end, turns 15 to 40 degrees
- * once or twice along its length, and may carry one short shoot of its own.
+ * A side shoot. Still 21 and the winter oak's 21: it is bare but for its end, bends at each node,
+ * and a long one carries a short shoot of its own.
  */
-function sideShoot(length: number, spread: number): PieceStem {
+function sideShoot(length: number, forks = false): PieceStem {
 	return {
-		length: { mean: length, spread },
-		radius: [0.004, 0.002],
-		kink: { length: 0.13, angle: 16 },
+		length: { mean: length, spread: length * 0.08 },
+		radius: [0.006, 0.004],
+		kink: { length: 0.07, angle: 20 },
 		leaves: tuft(length, 9),
-		sides: [
-			{
-				stem: { length: 0.08, radius: [0.0025, 0.0018], leaves: tuft(0.08, 6) },
-				gap: 0.25,
-				from: 0.3,
-				to: 0.8,
-				arrangement: 'spiral',
-				angle: { mean: 55, spread: 8 },
-			},
-		],
+		sides: forks
+			? [
+					{
+						stem: {
+							length: 0.09,
+							radius: [0.004, 0.003],
+							kink: { length: 0.05, angle: 16 },
+							leaves: tuft(0.09, 6),
+						},
+						gap: 0.3,
+						from: 0.45,
+						to: 0.85,
+						arrangement: 'alternate',
+						angle: { mean: 55, spread: 8 },
+					},
+				]
+			: [],
 	};
 }
 
+/** The leaves along the outer part of a twig's shoot, from a share of its length. */
+function twigLeaves(from: number): PieceLeaves {
+	return {
+		gap: 0.035,
+		from,
+		angle: 62,
+		angleSpread: 10,
+		scale: [
+			[from, TWIG_LEAF_SCALE],
+			[1, TWIG_LEAF_SCALE * 0.75],
+		],
+		// The sub-branch's turning video: edge on the twig is 0.37 as wide as face on, so its
+		// leaves lean most of the way into its plane.
+		flat: 0.8,
+	};
+}
+
+/** A shoot of the twig: it bends at each node and is leafy over its outer half. */
+function twigShoot(length: number): PieceStem {
+	return {
+		length: { mean: length, spread: length * 0.06 },
+		radius: [0.008, 0.005],
+		kink: { length: 0.08, angle: 16 },
+		leaves: twigLeaves(0.5),
+	};
+}
+
+/** One shoot that leaves a stem of `length` at a share of it, to the right or the left. */
+function fork(stem: PieceStem, at: number, length: number, angle: number, left = false) {
+	return {
+		stem,
+		gap: 0.04 * length,
+		from: at - 0.04,
+		to: at,
+		arrangement: 'alternate' as const,
+		angle: { mean: angle, spread: 5 },
+		turn: left ? 180 : 0,
+	};
+}
+
+// The wood. Still 21: the stem is 0.023 of the branch's height thick at its cut (17 of 733 pixels),
+// and holds that to a quarter of the height. The winter oak's 21: 0.034, stouter, with twig ends
+// about 0.011 thick, and a bend at every node, each rounded over a few centimetres. Still 22: the
+// twig's stem is 0.032 of its height thick.
 /** The pedunculate oak's pieces. */
 export const PIECES: readonly PieceRule[] = [
-	// Still 21: a branch end a metre long, 1.2 centimetres thick at its cut. Five side shoots leave
-	// one at a time, one each 10 to 12 centimetres from 0.2 of its length, at 50 to 70 degrees. They
-	// are 15 to 42 centimetres long, the longest at the middle. The stem ends in a tuft of its own.
+	// Still 21 at full size, in shares of the branch's height: a stem bare to 0.25, where a short
+	// shoot leaves to the left (0.2 long, near level) and a long one to the right (0.55 long, at 45
+	// degrees). A short shoot at 0.45 carries the rosette at the branch's middle, and a shoot of 0.33
+	// leaves to the left at 0.5. The stem ends at 0.84 in a rosette of its own. Five rosettes.
 	{
 		name: 'branch-end',
 		attitude: 'along',
 		variants: 2,
+		scale: 1 / LEAF_SCALE,
+		// The turning video of the cut branch: edge on it is 0.33 as wide as face on.
+		depth: 24,
 		stem: {
-			length: { mean: 1, spread: 0.06 },
-			radius: [0.006, 0.0025],
-			kink: { length: 0.115, angle: 9 },
-			leaves: tuft(1, 9),
+			length: { mean: 0.84, spread: 0.03 },
+			radius: [0.0115, 0.005],
+			kink: { length: 0.08, angle: 14 },
+			leaves: tuft(0.84, 9),
 			sides: [
-				{
-					stem: sideShoot(0.4, 0.06),
-					gap: 0.115,
-					from: 0.13,
-					to: 0.75,
-					// Still 21 and the winter oak's 21: the side shoots stand left and right in turn, in
-					// one plane, which the photographs show face on.
-					arrangement: 'alternate',
-					angle: { mean: 63, spread: 7 },
-					lengthAlong: [
-						[0, 0.8],
-						[0.4, 1.1],
-						[1, 0.6],
-					],
-				},
+				fork(sideShoot(0.2), 0.3, 0.84, 85, true),
+				fork(sideShoot(0.55, true), 0.3, 0.84, 45),
+				fork(sideShoot(0.1), 0.54, 0.84, 60),
+				fork(sideShoot(0.33), 0.6, 0.84, 65, true),
 			],
 		},
 	},
-	// Still 22 and the winter oak's 22: a twig 35 centimetres long with three side shoots 10 to 14
-	// centimetres long at 50 to 60 degrees, and a tuft of five to seven leaves at each end. At that
-	// length its leaves are about 7.5 centimetres, 0.62 of the record's.
+	// Still 22 at full size, in shares of the twig's height: a knobbly stem 0.032 thick that bends
+	// at each node. Three shoots: to the right at 0.2 (0.28 long, 40 degrees), to the left at 0.33
+	// (0.42 long, 50 degrees) and to the right at 0.5 (0.38 long, 45 degrees). Each shoot and the
+	// stem carry five to seven separate leaves along their outer half, held 50 to 70 degrees out,
+	// and end in a cluster of buds.
 	{
 		name: 'twig',
 		attitude: 'along',
 		variants: 2,
+		scale: 1 / TWIG_LEAF_SCALE,
+		// The turning video of the sub-branch: edge on it is 0.37 as wide as face on.
+		depth: 26,
 		stem: {
-			length: { mean: 0.35, spread: 0.03 },
-			radius: [0.004, 0.002],
-			kink: { length: 0.09, angle: 12 },
-			leaves: tuft(0.35, 6, 0.62),
+			length: { mean: 0.93, spread: 0.03 },
+			radius: [0.016, 0.006],
+			kink: { length: 0.1, angle: 18 },
+			leaves: twigLeaves(0.78),
 			sides: [
-				{
-					stem: {
-						length: { mean: 0.12, spread: 0.02 },
-						radius: [0.0025, 0.0018],
-						leaves: tuft(0.12, 6, 0.62),
-					},
-					gap: 0.09,
-					from: 0.18,
-					to: 0.95,
-					arrangement: 'alternate',
-					angle: { mean: 55, spread: 6 },
-				},
+				fork(twigShoot(0.28), 0.22, 0.93, 40),
+				fork(twigShoot(0.42), 0.36, 0.93, 50, true),
+				fork(twigShoot(0.38), 0.54, 0.93, 45),
 			],
 		},
 	},

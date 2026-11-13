@@ -290,7 +290,7 @@ async function coniferFrame(directed: Species): Promise<Drawn> {
 	return {
 		height: H,
 		skeleton,
-		patches: plan.limbs.map((limb) => limb.patch),
+		patches: plan.patches,
 		eyeRadius: plan.trunk.find((node) => node.y >= BELOW.eye)?.radius ?? 0.5,
 		figures: {
 			height: Number(H.toFixed(3)),
