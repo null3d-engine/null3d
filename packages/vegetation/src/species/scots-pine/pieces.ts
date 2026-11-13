@@ -6,16 +6,20 @@ import type { PieceRule, PieceStem, PieceStudio } from '../../leaf/piece';
 
 /**
  * The forked shoot's needle pairs: the metres between one node and the next, and the pairs at a
- * node. Still 22: a brush shows 12 to 14 needles on a side, 20 to 25 pairs on 8 cm of shoot.
+ * node. Still 22: a brush shows 12 to 14 needles on a side, 20 to 25 pairs on 8 cm of shoot, as its
+ * own photograph counts them.
  */
 const FORK_PAIRS = [0.0036, 1] as const;
 /**
- * The bough's needle pairs. Stills 21 and 22 show different shoots, and still 21's needles cannot be
- * counted. With the needle at its own size, the cover of two of its brushes was read with one mask
- * at one size on the photograph and on the drawing: a pair each 0.8 to 1.8 mm of shoot brackets the
- * photograph's cover. Two pairs at a node, the nodes 2.4 mm apart, is a pair each 1.2 mm.
+ * The bough's needle pairs, one at a node on the species' own spiral, so a brush is round and its
+ * needles hide its stem. Stills 21 and 22 show different shoots, and still 21's needles cannot be
+ * counted. With the needle at its own size, the cover of two brushes was read with one mask at one
+ * size on the photograph and on the drawing. One brush reads as a pair each 2.4 to 3.6 mm of shoot
+ * and the other as closer than 2 mm, so the range is about 1.2 to 2.7 mm. Still 22's count of 20
+ * to 25 pairs on 8 cm is of the one face its camera sees, which is a pair each 1.6 to 2 mm round
+ * the whole shoot. The bough takes 2 mm.
  */
-const BOUGH_PAIRS = [0.0024, 2] as const;
+const BOUGH_PAIRS = [0.002, 1] as const;
 
 /**
  * The needle pairs of a shoot's leafy end, from the angle the needles stand at where the brush
@@ -87,7 +91,8 @@ export const PIECES: readonly PieceRule[] = [
 					stem: {
 						// The longest side branch is 0.51 of the bough's length.
 						length: { mean: 0.28, spread: 0.015 },
-						radius: [0.0055, 0.003],
+						// Still 21: a side branch is 6 to 8 mm across at its foot (8 to 10 pixels).
+						radius: [0.0035, 0.002],
 						// A side branch leaves at 40 to 68 degrees and stands 20 to 30 degrees from
 						// the bough's line at its tip. It runs straight over its bare part and turns
 						// up inside its brush (by eye on still 21).
