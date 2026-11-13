@@ -10,7 +10,8 @@ import { STAND_IN_BARK, type TextureManifest } from '../core/textures';
 import type { Rgb } from '../core/types';
 import { placeShoots } from '../leaf/instancer';
 import { OAK_MANIFEST, oakRecord, testKit } from '../leaf/oak.test-support';
-import { SURFACE_LEAF, SURFACE_STEM } from '../leaf/writer';
+import type { UncardedPrototype } from '../leaf/shoot';
+import { SURFACE_LEAF, SURFACE_PIECE, SURFACE_STEM } from '../leaf/writer';
 import { record as oak } from '../species/pedunculate-oak/record';
 import {
 	bakeCards,
@@ -382,6 +383,168 @@ describe('a cell of the card bake', () => {
 			expect(error).toBeLessThanOrEqual(before + 1e-9);
 			if (mesh === sparse) expect(error).toBeLessThan(before * 0.75);
 		}
+	});
+});
+
+/** A prototype of one mesh at every tier. */
+function prototypeOf(mesh: PrototypeArrays, kind: UncardedPrototype['class'], leaves: number) {
+	let reach = 0;
+	for (let i = 0; i < mesh.positions.length; i += 3)
+		reach = Math.max(
+			reach,
+			Math.hypot(
+				mesh.positions[i] as number,
+				mesh.positions[i + 1] as number,
+				mesh.positions[i + 2] as number,
+			),
+		);
+	return {
+		index: 0,
+		class: kind,
+		vigor: [0, 1] as const,
+		length: reach,
+		radius: reach,
+		leaves,
+		tiers: [mesh, mesh, mesh, mesh] as const,
+	} as unknown as UncardedPrototype;
+}
+
+/**
+ * A ribbon of placed-piece surface along a path from the origin, `width` across in x, each vertex's
+ * second coordinates holding its share along the ribbon, as a placed piece's surface does.
+ */
+function ribbon(path: readonly (readonly [number, number])[], width: number): PrototypeArrays {
+	const positions: number[] = [];
+	const normals: number[] = [];
+	const uvs: number[] = [];
+	const uvs1: number[] = [];
+	const colors: number[] = [];
+	const indices: number[] = [];
+	path.forEach(([y, z], k) => {
+		const share = k / (path.length - 1);
+		for (const x of [-width / 2, width / 2]) {
+			positions.push(x, y, z);
+			normals.push(0, 0, 1);
+			uvs.push(x / width + 0.5, share);
+			uvs1.push(share, 0);
+			colors.push(0, 0, SURFACE_PIECE, 255);
+		}
+		if (k > 0) {
+			const a = (k - 1) * 2;
+			indices.push(a, a + 1, a + 3, a, a + 3, a + 2);
+		}
+	});
+	return {
+		positions: Float32Array.from(positions),
+		normals: Float32Array.from(normals),
+		uvs: Float32Array.from(uvs),
+		uvs1: Float32Array.from(uvs1),
+		colors: Uint8Array.from(colors),
+		indices: Uint16Array.from(indices),
+	};
+}
+
+describe('the card bake along a long piece', () => {
+	const record = oakRecord();
+	const planesOf = (prototype: UncardedPrototype) =>
+		(bakeCards(record, OAK_MANIFEST, 'high', [prototype]).cells[0] as { planes: CardPlanes })
+			.planes;
+	type CardPlanes = SpeciesKitData['prototypes'][number]['card']['planes'];
+
+	it('cuts a piece many times longer than wide into cards along it, each in cells of its own', () => {
+		// A strip 1.2 m long and 6 cm wide, straight up its line.
+		const strip = prototypeOf(
+			ribbon(
+				Array.from({ length: 25 }, (_, k) => [(k / 24) * 1.2, 0] as const),
+				0.06,
+			),
+			'piece',
+			1,
+		);
+		const planes = planesOf(strip);
+		expect(planes.length).toBeGreaterThanOrEqual(4);
+		expect(planes.length % 2).toBe(0);
+		const taken = new Set<string>();
+		let along = 0;
+		for (const [k, plane] of planes.entries()) {
+			expect(plane.role).toBe(k % 2 === 0 ? 0 : 1);
+			taken.add(plane.front.join(','));
+			if (k % 2 === 0) {
+				expect(plane.along[0]).toBeCloseTo(along, 6);
+				along = plane.along[1];
+			}
+		}
+		expect(along).toBeCloseTo(1, 6);
+		expect(taken.size).toBe(planes.length);
+		// Texels a metre along the strip: an uncut card holds its whole length in one cell.
+		const face = planes[0] as CardPlanes[number];
+		const perMetre = face.front[3] / (2 * Math.hypot(...(face.up as [number, number, number])));
+		const uncut = face.front[3] / 1.25;
+		expect(perMetre).toBeGreaterThan((planes.length / 2) * uncut * 0.8);
+	});
+
+	it('keeps three planes on a card about as long as it is wide', () => {
+		const square = prototypeOf(quads([[0, 0.5, 0, 0.5, SURFACE_LEAF]]), 'piece', 1);
+		const planes = planesOf(square);
+		expect(planes.map((plane) => plane.role)).toEqual([0, 1, 2]);
+		for (const plane of planes) expect([...plane.along]).toEqual([0, 1]);
+	});
+
+	it('keeps a shoot under four times longer than wide whole, where a piece would be cut', () => {
+		const path = Array.from({ length: 13 }, (_, k) => [(k / 12) * 0.6, 0] as const);
+		expect(planesOf(prototypeOf(ribbon(path, 0.2), 'piece', 1)).length).toBeGreaterThan(3);
+		expect(planesOf(prototypeOf(ribbon(path, 0.2), 'short', 1)).length).toBe(3);
+	});
+
+	it('follows a blade that arches over: its cards turn along the arch', () => {
+		// A quarter circle of 0.6 m from straight up to level.
+		const arch = Array.from({ length: 33 }, (_, k) => {
+			const angle = (k / 32) * (Math.PI / 2);
+			return [0.6 * Math.sin(angle), 0.6 * (1 - Math.cos(angle))] as const;
+		});
+		const planes = planesOf(prototypeOf(ribbon(arch, 0.04), 'piece', 1));
+		const up = (plane: CardPlanes[number]) => {
+			const [x, y, z] = plane.up as [number, number, number];
+			const l = Math.hypot(x, y, z);
+			return [x / l, y / l, z / l];
+		};
+		const first = up(planes[0] as CardPlanes[number]);
+		const last = up(planes[planes.length - 1] as CardPlanes[number]);
+		expect(Math.abs(first[1] as number)).toBeGreaterThan(0.8);
+		expect(Math.abs(last[2] as number)).toBeGreaterThan(0.8);
+	});
+
+	it('pictures a blade that arches over and lies along the ground out to its tip', () => {
+		// An arch 0.5 m high that comes down 0.7 m out, then a last stretch along the ground.
+		const arch = [
+			...Array.from({ length: 25 }, (_, k) => {
+				const angle = (k / 24) * Math.PI;
+				return [0.5 * Math.sin(angle), 0.35 * (1 - Math.cos(angle))] as const;
+			}),
+			...Array.from({ length: 4 }, (_, k) => [0.005, 0.7 + ((k + 1) / 4) * 0.15] as const),
+		];
+		const blade = prototypeOf(ribbon(arch, 0.05), 'piece', 1);
+		const { atlas, cells } = bakeCards(record, OAK_MANIFEST, 'high', [blade]);
+		const planes = (cells[0] as { planes: CardPlanes }).planes;
+		expect(planes.length).toBeGreaterThan(3);
+		// How far out the cards' picture reaches: the corners of every texel of half cover or more.
+		let reach = Number.NEGATIVE_INFINITY;
+		for (const plane of planes) {
+			const [x0, y0, w, h] = plane.front;
+			for (let j = 0; j < h; j++)
+				for (let i = 0; i < w; i++) {
+					if ((atlas.color[((y0 + j) * atlas.size + x0 + i) * 4 + 3] as number) < 128) continue;
+					for (const a of [(i / w) * 2 - 1, ((i + 1) / w) * 2 - 1])
+						for (const b of [(j / h) * 2 - 1, ((j + 1) / h) * 2 - 1])
+							reach = Math.max(
+								reach,
+								(plane.centre[2] as number) +
+									a * (plane.right[2] as number) +
+									b * (plane.up[2] as number),
+							);
+				}
+		}
+		expect(reach).toBeGreaterThan(0.85 - 0.02);
 	});
 });
 
