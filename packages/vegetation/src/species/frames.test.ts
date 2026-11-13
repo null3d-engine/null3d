@@ -14,6 +14,7 @@ import { curveAt, spreadMean } from '../core/types';
 import {
 	evenOutline,
 	FRAME_TURN_MOST,
+	type FrameBranchRule,
 	type FrameNode,
 	type FramePatch,
 	type FramePlan,
@@ -997,11 +998,13 @@ describe("the pedunculate oak's frame against its photographs", () => {
 	const LANDMARK_REACH = 0.89;
 	const REACH_WITHIN = 0.05;
 	/**
-	 * Stills 01 and 03: where the trunk ends it divides into at least this many rising limbs, and
-	 * no limb that leaves it is thicker than this share of the trunk where it leaves, so none runs
-	 * on as a stem.
+	 * Stills 01 and 03: where the trunk ends it divides into at least this many rising limbs, which
+	 * share it about evenly, the thickest at most this many times the thinnest; and no limb that
+	 * leaves the trunk is thicker than this share of it where it leaves. A leader 0.64 of the bole
+	 * with thinner limbs beside it fails, as does a bole that runs on as one stem.
 	 */
 	const DIVIDES_INTO = 3;
+	const DIVIDES_EVEN = 1.25;
 	const LIMB_MOST = 0.65;
 	/**
 	 * Still 01's bole, read row by row from its foot row (587 of 688, the measuring worker's), where
@@ -1129,20 +1132,51 @@ describe("the pedunculate oak's frame against its photographs", () => {
 		}
 	});
 
+	/** Whether a frame's bole divides into rising limbs that share it, with no limb run on as a stem. */
+	const divides = (plan: FramePlan): boolean => {
+		const trunk = plan.axes[0] as FramePlan['axes'][number];
+		const end = trunk.nodes.length - 1;
+		const limbs = plan.axes.filter((axis) => axis.parent === 0);
+		const division = limbs.filter((limb) => limb.parentNode === end).map((limb) => limb.base);
+		return (
+			division.length >= DIVIDES_INTO &&
+			Math.max(...division) / Math.min(...division) <= DIVIDES_EVEN &&
+			limbs.every(
+				(limb) => limb.base / (trunk.nodes[limb.parentNode] as FrameNode).radius <= LIMB_MOST,
+			)
+		);
+	};
+
 	it('divides its bole into rising limbs, and runs no limb on as a stem', () => {
-		for (const seed of SEEDS) {
-			const plan = planOf(oak, seed);
-			const trunk = plan.axes[0] as FramePlan['axes'][number];
-			const end = trunk.nodes.length - 1;
-			const limbs = plan.axes.filter((axis) => axis.parent === 0);
-			expect(limbs.filter((limb) => limb.parentNode === end).length).toBeGreaterThanOrEqual(
-				DIVIDES_INTO,
-			);
-			for (const limb of limbs)
-				expect(limb.base / (trunk.nodes[limb.parentNode] as FrameNode).radius).toBeLessThanOrEqual(
-					LIMB_MOST,
-				);
-		}
+		for (const seed of SEEDS) expect(divides(planOf(oak, seed))).toBe(true);
+	});
+
+	it('fails the oak whose bole runs on as a leader 0.64 of its thickness', () => {
+		// The rising limb near the trunk's line at 0.64 of the bole where it leaves, running to the
+		// top, with the two others half as thick.
+		const [low, rising] = oak.spec.stems.children as [FrameBranchRule, FrameBranchRule];
+		const leader: FrameSpec = {
+			...oak.spec,
+			stems: {
+				...oak.spec.stems,
+				children: [
+					low,
+					{
+						...rising,
+						radius: [
+							[0, 0.64],
+							[0.5, 0.32],
+							[1, 0.32],
+						],
+						length: { outline: 0.93 },
+					},
+				],
+			},
+		};
+		for (const seed of SEEDS)
+			expect(
+				divides(planFrame(leader, { record: oak.record, seed, variant: 0, season: 'summer' })),
+			).toBe(false);
 	});
 
 	it("stands on still 01's rounded foot, with no fins", () => {
