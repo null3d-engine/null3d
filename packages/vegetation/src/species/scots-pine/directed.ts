@@ -135,7 +135,7 @@ export const directed: Species = {
 		// Still 01, the outline's two sides by height: 0.09 and 0.11 of the height from the trunk's
 		// line at 0.95 to 1, and 0.27 and 0.17 at 0.90 to 0.95. One pad stands on top over the
 		// trunk's line, and the others stand lower round it.
-		top: { limbs: 4, leave: 45, end: 0, radius: 0.5, leader: 0.55 },
+		top: { limbs: 4, leave: 45, end: 0, radius: 0.5, leader: 0.38 },
 		// Still 02, six pads: 0.23 to 0.35 of the height wide.
 		// One pad a limb: the limb's arms spread under it.
 		// Stills 01 and 02 from the side: a pad clothes the outer part of its limb, which is bare for
