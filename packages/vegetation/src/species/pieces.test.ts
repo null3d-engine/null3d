@@ -178,3 +178,22 @@ for (const { id, pieces, studio } of SPECIES)
 			}
 		});
 	});
+
+describe('a flat rosette', () => {
+	it(
+		"lays the oak's tuft leaves in the plane that faces the sky side, spread to both sides",
+		async () => {
+			const module = await loadSpecies('pedunculate-oak');
+			await loadPlantCode(module.record);
+			const rule = OAK[0] as PieceRule;
+			const plan = planPiece(module.record, rule, pieceKey(0, 0), 4);
+			expect(plan.leaves.length).toBeGreaterThan(40);
+			for (const leaf of plan.leaves) expect(Math.abs(leaf.direction[2])).toBeLessThan(1e-6);
+			// The main stem's own tuft fans to both sides of the stem's line.
+			const own = plan.leaves.filter((leaf) => leaf.axis === 0);
+			expect(own.some((leaf) => leaf.direction[0] > 0.5)).toBe(true);
+			expect(own.some((leaf) => leaf.direction[0] < -0.5)).toBe(true);
+		},
+		LONG,
+	);
+});
