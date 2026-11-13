@@ -173,10 +173,11 @@ export const record: Species = {
 			// 140,151 bytes with the root ball of stills 14 and 21 and the forty-eight shoots still
 			// 01's cover asks for, and the two card levels 1,624 and 822 triangles. Those three caps
 			// keep a twentieth above their reads, as the lead ruled. Drawn at once at the tallest
-			// view, the first variant reads 30,268 triangles at the high tier, under the nearest
-			// level's cap, and 49,148 at the ultra, over it.
+			// view, the first variant reads 30,268 triangles at the high tier and 49,148 at the ultra,
+			// and the nearest level's cap keeps a twentieth above the ultra's read, so it holds at
+			// every tier.
 			variantBytes: { low: 147_200, medium: 147_200, high: 147_200, ultra: 147_200 },
-			lod0Triangles: 33_700,
+			lod0Triangles: 51_610,
 			lod1Triangles: 1_706,
 			lod2Triangles: 864,
 			downloadBytes: 350_000,
