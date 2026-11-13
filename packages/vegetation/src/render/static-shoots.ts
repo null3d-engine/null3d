@@ -16,7 +16,8 @@
 import type { InstanceBatch, Material, MeshGeometry, SketchContext, Texture } from '@null3d/engine';
 import type { ImpostorBatch } from '@null3d/impostors';
 import type { PlantAsset, PlantPart } from '../asset';
-import { DETAILS, type Season, spreadMax } from '../core/types';
+import { DETAILS, type Season } from '../core/types';
+import { SHOOT_REACH, shootSwitchDistance, switchScale } from '../lod/drawn';
 import { REFERENCE_VIEW } from '../lod/levels';
 import { EDGE_BAND, handOverToCards } from './hand-over';
 import {
@@ -26,7 +27,7 @@ import {
 	prototypeGeometry,
 	setPlacedUniforms,
 } from './material';
-import { type PlacedPlants, type PlaceOptions, type PlantCopies, switchScale } from './place';
+import type { PlacedPlants, PlaceOptions, PlantCopies } from './place';
 import { toHalf, writeShootRow } from './records';
 import { farCards } from './stand-in';
 import { NEAR_SLOT_TEXELS, NEAR_SLOTS, type SpeciesKit, writePlantWind } from './textures';
@@ -39,9 +40,6 @@ const SEASON_KIND: Readonly<Record<Season, number>> = {
 	blossom: 3,
 };
 
-/** How far past the switch distance a shoot row draws, and how far inside it a card gives way. */
-const SHOOT_REACH = 1.04;
-
 /** The far edge of a band with no end, in metres. */
 const FAR = 1e9;
 
@@ -53,23 +51,6 @@ function viewScale(view: PlaceOptions['view']): number {
 	const page = view.height / Math.tan((view.fov * Math.PI) / 360);
 	const reference = REFERENCE_VIEW.height / Math.tan((REFERENCE_VIEW.fov * Math.PI) / 360);
 	return page / reference;
-}
-
-/**
- * The distance at which a copy hands its shoots to its first card level: where the species'
- * longest shoot, at its largest scale, covers the record's first switch pixels at the page's view.
- *
- * @param kit The species' kit.
- * @param view The page's render height and vertical field of view.
- * @returns Metres, at a copy's scale of 1.
- */
-export function shootSwitchDistance(kit: SpeciesKit, view: PlaceOptions['view']): number {
-	let longest = 0;
-	for (const prototype of kit.prototypes) longest = Math.max(longest, prototype.length);
-	const scale = kit.record.shoots ? spreadMax(kit.record.shoots.placement.scale) : 1;
-	longest *= scale;
-	const pixels = kit.record.lod.switchPixels[0];
-	return (longest * view.height) / (2 * Math.tan((view.fov * Math.PI) / 360) * pixels);
 }
 
 /** The copies of one variant, by index into the copies. */

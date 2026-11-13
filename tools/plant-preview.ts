@@ -29,6 +29,7 @@ import {
 import type { Season } from '../packages/vegetation/src/core/types.ts';
 import { buildKitNow, growPlantNow, loadPlantCode } from '../packages/vegetation/src/generate.ts';
 import { drawnAtOnce } from '../packages/vegetation/src/lod/drawn.ts';
+import { REFERENCE_VIEW } from '../packages/vegetation/src/lod/levels.ts';
 import { REPO_ROOT } from '../tests/lib/server.ts';
 import {
 	type Bounds,
@@ -244,8 +245,8 @@ if (folder) {
 
 const { commit, dirty } = provenance();
 // The near form draws every shoot row at the kit's tier; one view draws at once only the rows inside
-// the switch distance, from the worst of the stated eyes.
-const drawn = drawnAtOnce(kit, asset);
+// the switch distance, from the worst of the stated eyes, here at the reference view.
+const drawn = drawnAtOnce(kit, asset, REFERENCE_VIEW);
 const summary = {
 	species,
 	form: form ?? null,
@@ -273,6 +274,6 @@ const summary = {
 };
 writeFileSync(join(out, `${prefix}.json`), `${JSON.stringify(summary, null, '\t')}\n`);
 console.log(
-	`${species}${form ? ` (${form})` : ''} seed ${seed} variant ${variant} at ${commit.slice(0, 9)}${dirty ? ' with changes' : ''}: ${skeleton.nodeCount} nodes, ${axes.count} axes (${summary.axesByOrder.join(', ')} by order), ${skeleton.buds.count} bud sites, ${asset.shoots.count} shoot rows, ${top.toFixed(2)} m tall, kit and growth in ${Math.round(grown)} ms; ${summary.nearFormTriangles} triangles in the near form, ${drawn.triangles} drawn at once from the ${drawn.eye} eye`,
+	`${species}${form ? ` (${form})` : ''} seed ${seed} variant ${variant} at ${commit.slice(0, 9)}${dirty ? ' with changes' : ''}: ${skeleton.nodeCount} nodes, ${axes.count} axes (${summary.axesByOrder.join(', ')} by order), ${skeleton.buds.count} bud sites, ${asset.shoots.count} shoot rows, ${top.toFixed(2)} m tall, kit and growth in ${Math.round(grown)} ms; ${summary.nearFormTriangles} triangles in the near form, ${drawn.triangles} drawn at once from the ${drawn.eye} eye at the reference view`,
 );
 for (const file of files) console.log(`  ${file}`);

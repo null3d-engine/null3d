@@ -179,15 +179,16 @@ describe('the Scots pine, grown with its boughs at sockets', () => {
 		expect(asset.stats.shoots).toBeGreaterThan(asset.stats.triangles[0]);
 	});
 
-	it('draws at once, from an eye inside its fullest pad, within its near budget', () => {
-		// The near form, every bough at the kit's tier, is more than one view draws: the engine
-		// switches each bough to its card past the switch distance. From the worst stated eye, inside
-		// the fullest foliage or standing under the crown, the count drawn at once stays within the
-		// record's own budget for the nearest level.
-		const drawn = drawnAtOnce(kit, asset);
-		expect(drawn.eye).toBe('foliage');
-		expect(drawn.triangles).toBeLessThanOrEqual(kit.record.lod.budget.lod0Triangles);
-		expect(drawn.triangles).toBeGreaterThanOrEqual(drawnAtOnce(kit, asset, false).triangles);
+	it('draws at once, from an eye inside its fullest pad, within its near budget at the tallest view', () => {
+		// The engine draws every bough whose bounds come within its switch distance at the kit's one
+		// tier, and the switch distance grows with the render height and narrows with the lens. The
+		// High preset draws at a device pixel ratio of at most 2 and a render scale of at most 1 (the
+		// engine's quality presets), so a window 1080 CSS pixels tall renders 2160 pixels tall. The
+		// lenses: the engine's reference view's 60 degrees, and the review's whole views' 30.
+		for (const fov of [60, 30]) {
+			const drawn = drawnAtOnce(kit, asset, { height: 1080 * 2, fov });
+			expect(drawn.triangles).toBeLessThanOrEqual(kit.record.lod.budget.lod0Triangles);
+		}
 	});
 
 	it('stands on a round foot 1.6 times as wide as the bole, with low roots and no buttress', () => {
