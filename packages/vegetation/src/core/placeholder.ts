@@ -427,7 +427,15 @@ export function placeholderCardBake(
 							surface[at + 2] = 255;
 							surface[at + 3] = 128;
 						}
-				return { centre, right, up, front: rect, back: rect };
+				return {
+					centre,
+					right,
+					up,
+					front: rect,
+					back: rect,
+					role: k as 0 | 1 | 2,
+					along: [0, 1] as const,
+				};
 			}),
 		};
 	});

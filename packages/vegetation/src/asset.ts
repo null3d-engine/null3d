@@ -136,6 +136,13 @@ export interface CardCell {
 		readonly front: readonly [x: number, y: number, w: number, h: number];
 		/** Atlas rectangle of the back face, in texels. */
 		readonly back: readonly [x: number, y: number, w: number, h: number];
+		/**
+		 * What the plane shows of its prototype: 0 its face, 1 its edge, 2 across its line. A level
+		 * that draws fewer planes keeps those of the lower roles.
+		 */
+		readonly role: 0 | 1 | 2;
+		/** The share of the prototype's line the plane spans, from its base: 0 to 1 on an uncut card. */
+		readonly along: readonly [from: number, to: number];
 	}[];
 }
 
