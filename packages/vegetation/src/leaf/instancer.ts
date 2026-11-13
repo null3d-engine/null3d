@@ -151,6 +151,11 @@ export interface Row {
 	axis: number;
 	/** From the row's place back to the far end of the stretch it serves. */
 	back: Vector3;
+	/**
+	 * The socket the row stands at, for a part of a piece: every part of one socket takes one
+	 * place in the space-filling order, so a card level keeps or drops the piece whole.
+	 */
+	socket?: number;
 }
 
 /** A variant's shoot rows and the skeleton they stand on, its bare wood trimmed where the record asks. */
@@ -854,6 +859,31 @@ function spaceRanks(rows: readonly Row[], bounds: DressInput['skeleton']['bounds
 	return keys.map((_, r) => r).sort((a, b) => (keys[a] as number) - (keys[b] as number) || a - b);
 }
 
+/**
+ * Each row's place in the space-filling order: its rank, or for the parts of a piece the rank of
+ * their socket among the sockets, so the parts of one socket share one place.
+ */
+function rowOrder(rows: readonly Row[], bounds: DressInput['skeleton']['bounds']): Uint32Array {
+	const order = new Uint32Array(rows.length);
+	const ranked = spaceRanks(rows, bounds);
+	let place = 0;
+	const placed = new Map<number, number>();
+	for (const r of ranked) {
+		const socket = (rows[r] as Row).socket;
+		if (socket === undefined) {
+			order[r] = place++;
+			continue;
+		}
+		let at = placed.get(socket);
+		if (at === undefined) {
+			at = place++;
+			placed.set(socket, at);
+		}
+		order[r] = at;
+	}
+	return order;
+}
+
 /** The rows as the table's typed arrays, with their space-filling order. */
 function packRows(rows: readonly Row[], bounds: DressInput['skeleton']['bounds']): ShootRows {
 	const count = rows.length;
@@ -879,9 +909,6 @@ function packRows(rows: readonly Row[], bounds: DressInput['skeleton']['bounds']
 		out.phase[r] = row.phase;
 		out.back.set(row.back, r * 3);
 	});
-	const ranked = spaceRanks(rows, bounds);
-	ranked.forEach((row, rank) => {
-		out.order[row] = rank;
-	});
+	out.order.set(rowOrder(rows, bounds));
 	return out;
 }

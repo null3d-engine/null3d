@@ -5,7 +5,6 @@
 // tall as its record asks and grows the same each time.
 import { describe, expect, it } from 'bun:test';
 import { type PlantAsset, plantAssetDigest, type SpeciesKitData } from '../asset';
-import { BUD_SOCKET } from '../core/graph';
 import type { Species, Tuft } from '../core/record';
 import { loadSpecies } from '../core/registry';
 import { DETAILS, spreadMean } from '../core/types';
@@ -55,8 +54,7 @@ async function grow(id: TuftSpecies, options: { season?: Species['seasons']['def
 function staying(asset: PlantAsset): number[] {
 	const { buds } = asset.skeleton;
 	const out: number[] = [];
-	for (let b = 0; b < buds.count; b++)
-		if ((buds.kind[b] as number) === BUD_SOCKET) out.push(buds.light[b] as number);
+	for (let b = 0; b < buds.count; b++) if (buds.sockets) out.push(buds.light[b] as number);
 	return out;
 }
 
@@ -69,8 +67,11 @@ function keptAt(asset: PlantAsset, sparseness: number): number {
 
 const placeOf = (asset: PlantAsset, row: number) =>
 	[0, 1, 2].map((k) => asset.shoots.position[row * 3 + k] as number);
+/** A prototype's piece name, or nothing for a prototype that is no piece's part. */
+const nameOf = (prototype: { readonly piece?: { readonly name: string } } | undefined) =>
+	prototype?.piece?.name ?? '';
 const classOf = (grown: Grown, row: number) =>
-	grown.kit.prototypes[grown.asset.shoots.prototype[row] as number]?.class ?? '';
+	nameOf(grown.kit.prototypes[grown.asset.shoots.prototype[row] as number]);
 
 /** A level's own mesh, in metres. */
 function ownMesh(grown: Grown, level: 0 | 1 | 2): TestMesh {
@@ -156,11 +157,11 @@ for (const id of TUFTS) {
 				expect(built.prototypes.length).toBe(kit.prototypes.length);
 				for (const prototype of built.prototypes) {
 					const mesh = prototype.tiers[tier];
-					if (!mesh) throw new Error(`${prototype.class} has no ${detail} tier`);
+					if (!mesh) throw new Error(`${nameOf(prototype)} has no ${detail} tier`);
 					expect(mesh.positions.length / 3).toBeGreaterThan(0);
 					expect(mesh.positions.length / 3).toBeLessThanOrEqual(VERTEX_CAP);
-					expect([prototype.class, detail, bodies(mesh, join)]).toEqual([
-						prototype.class,
+					expect([nameOf(prototype), detail, bodies(mesh, join)]).toEqual([
+						nameOf(prototype),
 						detail,
 						1,
 					]);
@@ -172,7 +173,7 @@ for (const id of TUFTS) {
 		it('reads a flowering stem as several parts when nothing may join them', () => {
 			// The reading of one body is of the drawn triangles: a stem, its threads and its spikes
 			// share no vertex, so with no joining distance they are apart.
-			const stalk = kit.prototypes.find((prototype) => prototype.class.startsWith('piece-stalk-'));
+			const stalk = kit.prototypes.find((prototype) => nameOf(prototype).startsWith('stalk-'));
 			const mesh = stalk?.tiers[DETAILS.indexOf(kit.detail)];
 			if (!mesh) throw new Error(`${id} has no flowering stem`);
 			expect(bodies(mesh, 0)).toBeGreaterThan(1);
@@ -182,8 +183,8 @@ for (const id of TUFTS) {
 			const tier = DETAILS.indexOf(kit.detail);
 			for (const prototype of kit.prototypes) {
 				const mesh = prototype.tiers[tier];
-				if (!mesh) throw new Error(`${prototype.class} has no tier`);
-				const sheath = prototype.class === 'piece-sheath' && growth.sheathColour !== undefined;
+				if (!mesh) throw new Error(`${nameOf(prototype)} has no tier`);
+				const sheath = nameOf(prototype) === 'sheath' && growth.sheathColour !== undefined;
 				let least = 1;
 				let most = 0;
 				for (let i = 0; i < mesh.positions.length / 3; i++) {
@@ -201,7 +202,7 @@ for (const id of TUFTS) {
 					most = Math.max(most, along);
 				}
 				// A blade and a sheath column run their whole length, foot to end.
-				if (!prototype.class.startsWith('piece-stalk-')) {
+				if (!nameOf(prototype).startsWith('stalk-')) {
 					expect(least).toBeLessThan(0.01);
 					expect(most).toBeGreaterThan(0.99);
 				}
@@ -214,7 +215,7 @@ for (const id of TUFTS) {
 				{ ...module, record: { ...record, growth: plain } },
 				{ detail: 'high', placeholders: 'missing' },
 			);
-			const column = bare.prototypes.find((prototype) => prototype.class === 'piece-sheath');
+			const column = bare.prototypes.find((prototype) => nameOf(prototype) === 'sheath');
 			const mesh = column?.tiers[DETAILS.indexOf('high')];
 			if (!mesh) throw new Error('no sheath column');
 			for (let i = 0; i < mesh.positions.length / 3; i++)
@@ -223,7 +224,7 @@ for (const id of TUFTS) {
 
 		it("bakes the sheath column's card in the record's sheath colour", () => {
 			const colour = growth.sheathColour;
-			const column = kit.prototypes.find((prototype) => prototype.class === 'piece-sheath');
+			const column = kit.prototypes.find((prototype) => nameOf(prototype) === 'sheath');
 			const face = column?.card.planes[0]?.front;
 			if (!colour || !face) throw new Error(`${id} has no coloured sheath column`);
 			// The card's texels that the column covers, as a mean of their stored colour.
@@ -245,10 +246,8 @@ for (const id of TUFTS) {
 		});
 
 		it('holds a blade shape for every step between its measured poses', () => {
-			const blades = kit.prototypes.filter((prototype) =>
-				prototype.class.startsWith('piece-blade-'),
-			);
-			const shapes = new Set(blades.map((prototype) => prototype.class));
+			const blades = kit.prototypes.filter((prototype) => nameOf(prototype).startsWith('blade-'));
+			const shapes = new Set(blades.map((prototype) => nameOf(prototype)));
 			expect(shapes.size).toBeGreaterThan(growth.poses.length);
 			expect((shapes.size - 1) % (growth.poses.length - 1)).toBe(0);
 			expect(blades.length).toBe(shapes.size);
@@ -270,11 +269,13 @@ for (const id of TUFTS) {
 			expect(stay.length).toBe(asset.shoots.count);
 			for (let r = 1; r < stay.length; r++)
 				expect(stay[r] as number).toBeLessThanOrEqual(stay[r - 1] as number);
-			for (let r = 0; r < asset.shoots.count; r++) expect(asset.shoots.order[r]).toBe(r);
+			// Row r stands at socket r, and the sockets stand in the order of their thinning rank.
+			const sockets = asset.skeleton.buds.sockets;
+			for (let r = 0; r < asset.shoots.count; r++) expect(sockets?.rank[r]).toBe(r);
 			const seen = new Set<string>();
 			for (let r = 0; r < asset.shoots.count; r++) {
 				const key = placeOf(asset, r).join(',');
-				if (classOf(grown, r) === 'piece-sheath') seen.add(key);
+				if (classOf(grown, r) === 'sheath') seen.add(key);
 				else expect(seen.has(key)).toBe(true);
 			}
 		});
@@ -284,7 +285,7 @@ for (const id of TUFTS) {
 				const kept = keptAt(asset, sparseness);
 				const shoots = new Map<string, number[]>();
 				for (let r = 0; r < kept; r++)
-					if (classOf(grown, r) === 'piece-sheath')
+					if (classOf(grown, r) === 'sheath')
 						shoots.set(placeOf(asset, r).join(','), placeOf(asset, r));
 				expect(shoots.size).toBeGreaterThan(0);
 				for (let r = 0; r < kept; r++) expect(shoots.has(placeOf(asset, r).join(','))).toBe(true);
@@ -313,9 +314,9 @@ for (const id of TUFTS) {
 			let stalks = 0;
 			const quarters = new Set<number>();
 			for (const [key, shoot] of counts) {
-				expect(shoot.get('piece-sheath')).toBe(1);
-				expect(shoot.get('piece-blade')).toBe(growth.least.blades);
-				stalks += shoot.get('piece-stalk') ?? 0;
+				expect(shoot.get('sheath')).toBe(1);
+				expect(shoot.get('blade')).toBe(growth.least.blades);
+				stalks += shoot.get('stalk') ?? 0;
 				const [x, , z] = key.split(',').map(Number) as [number, number, number];
 				quarters.add((x >= 0 ? 1 : 0) + (z >= 0 ? 2 : 0));
 			}
@@ -329,7 +330,7 @@ for (const id of TUFTS) {
 			const eighths = new Set<number>();
 			let shoots = 0;
 			for (let r = 0; r < kept; r++) {
-				if (classOf(grown, r) !== 'piece-sheath') continue;
+				if (classOf(grown, r) !== 'sheath') continue;
 				const [x, , z] = placeOf(asset, r) as [number, number, number];
 				eighths.add(Math.floor(((Math.atan2(z, x) + Math.PI) / (2 * Math.PI)) * 8) % 8);
 				shoots++;
@@ -344,8 +345,7 @@ for (const id of TUFTS) {
 			// A blade that comes down to the soil runs its point on into it, and no farther.
 			let longest = 0;
 			for (const prototype of kit.prototypes)
-				if (prototype.class.startsWith('piece-blade-'))
-					longest = Math.max(longest, prototype.length);
+				if (nameOf(prototype).startsWith('blade-')) longest = Math.max(longest, prototype.length);
 			// The blade's edges lie as much as its own width below its midline.
 			expect(low).toBeGreaterThanOrEqual(-(blade.tipLength * longest + blade.width) * scale);
 		});
@@ -357,7 +357,7 @@ for (const id of TUFTS) {
 				const kinds = new Map<string, number>();
 				const places = new Set<string>();
 				for (let r = 0; r < piece.shoots.count; r++) {
-					const kind = (cut.prototypes[piece.shoots.prototype[r] as number]?.class ?? '').replace(
+					const kind = nameOf(cut.prototypes[piece.shoots.prototype[r] as number]).replace(
 						/-\d+$/,
 						'',
 					);
@@ -369,8 +369,8 @@ for (const id of TUFTS) {
 					);
 				}
 				// One shoot: its sheath column and its blades, all from the one foot.
-				expect([part, kinds.get('piece-sheath')]).toEqual([part, 1]);
-				expect(kinds.get('piece-blade') ?? 0).toBeGreaterThanOrEqual(growth.least.blades);
+				expect([part, kinds.get('sheath')]).toEqual([part, 1]);
+				expect(kinds.get('blade') ?? 0).toBeGreaterThanOrEqual(growth.least.blades);
 				expect(places.size).toBe(1);
 				// The stool's mound stays with the plant.
 				expect(piece.levels[0].parts.map((drawn) => drawn.name)).not.toContain('foliage');
@@ -408,7 +408,7 @@ describe('the meadow grass out of flower', () => {
 		const grown = await grow('meadow-grass', { season: 'winter' });
 		const classes = new Set<string>();
 		for (let r = 0; r < grown.asset.shoots.count; r++) classes.add(classOf(grown, r));
-		expect([...classes].some((name) => name.startsWith('piece-stalk-'))).toBe(false);
-		expect([...classes].some((name) => name.startsWith('piece-blade-'))).toBe(true);
+		expect([...classes].some((name) => name.startsWith('stalk-'))).toBe(false);
+		expect([...classes].some((name) => name.startsWith('blade-'))).toBe(true);
 	});
 });

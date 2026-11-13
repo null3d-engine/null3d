@@ -78,14 +78,13 @@ import {
 import { leadOnThickest } from './grow/leaders';
 import { grower, loadGrower } from './grow/models';
 import { extrasMesh } from './leaf/extras';
-import { groundPiecePrototypes } from './leaf/ground-piece';
+import { writtenPieces } from './leaf/ground-piece';
 import { dressShoots, pruneLight } from './leaf/instancer';
 import { foliage, loadFoliage } from './leaf/kinds';
 import { type PiecePrototype, type PieceRule, piecePrototypes } from './leaf/piece';
-import { carriesPieces, kitPiece, PROTOTYPES_MOST } from './leaf/piece-rows';
+import { carriesPieces, kitPiece, PROTOTYPES_MOST, writesPieces } from './leaf/piece-rows';
 import { inLeaf } from './leaf/season';
 import { shootPrototypes } from './leaf/shoot';
-import { socketRows } from './leaf/socket-rows';
 import { bakeCards } from './lod/card-bake';
 import { cardMesh } from './lod/cards';
 import { bakeFar } from './lod/impostor';
@@ -590,13 +589,13 @@ export function buildKitNow(source: KitSource, options: KitOptions = {}): Specie
 	// cutting's kit too; a stand-in's holds none. A plant that carries branch pieces at its sockets
 	// keeps those in the kit, each part a prototype of its own; any other keeps its shoot prototypes.
 	const written =
-		!record.shoots && placeholders !== true
+		writesPieces(record) && placeholders !== true
 			? grower(record.growth.model).pieces?.(record, manifest)
 			: undefined;
 	if (record.shoots || written) {
 		const pieces = !cutting && carriesPieces(record) ? record.pieces : undefined;
 		const uncarded = written
-			? groundPiecePrototypes(written)
+			? writtenPieces(written).map(kitPiece)
 			: stage(
 					placeholders,
 					() =>
@@ -854,11 +853,12 @@ function dress(kit: SpeciesKitData, options: GrowOptions): MeshInput {
 		record.lod.nearFoliage === 'instanced' && kit.prototypes.length > 0
 			? stage(
 					placeholders,
-					// A record with shoots dresses its buds; one without stands a piece at each socket.
+					// A record with shoots dresses its buds, and a plant of pieces stands one at each
+					// socket.
 					() =>
-						record.shoots
+						record.shoots || carriesPieces(record)
 							? dressShoots(dressInput)
-							: { rows: socketRows(dressInput), skeleton: dressInput.skeleton },
+							: { rows: emptyRows(), skeleton: dressInput.skeleton },
 					() => ({ rows: placeholderRows(dressInput), skeleton: dressInput.skeleton }),
 				)
 			: { rows: emptyRows(), skeleton: dressInput.skeleton };
