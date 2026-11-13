@@ -75,10 +75,16 @@ import {
 	forkShot,
 	insideShot,
 	junctionShot,
+	placedPieceShot,
 	type Solved,
 	underRimShot,
 } from '../lib/plant-review/subject-shots';
-import { isAbsent, type PlantSubjects, subjectsOfSkeleton } from '../lib/plant-review/subjects';
+import {
+	isAbsent,
+	type PlantSubjects,
+	piecesOfRows,
+	subjectsOfSkeleton,
+} from '../lib/plant-review/subjects';
 import { BACKGROUND_COLOURS, type PlantView, VIEW_SPECS } from '../lib/plant-review/views';
 import { wholeStand } from '../lib/plant-review/whole-stand';
 
@@ -687,7 +693,9 @@ export default defineSketch(async (ctx) => {
 		...(QUERY.cardJoin !== undefined && { cardJoin: QUERY.cardJoin }),
 	};
 	const turn0 = (QUERY.turn ?? 0) * DEG;
-	const cuttingPart = VIEW === 'panels' ? 'cluster' : SPEC.cutting;
+	// A view that names a class of piece frames that piece on the grown plant, so it cuts none.
+	const cuttingPart =
+		VIEW === 'panels' ? 'cluster' : QUERY.piece === undefined ? SPEC.cutting : undefined;
 	const cutting = cuttingPart && {
 		part: cuttingPart,
 		...(QUERY.cut !== undefined && { length: QUERY.cut }),
@@ -713,7 +721,7 @@ export default defineSketch(async (ctx) => {
 		...(QUERY.age !== undefined && { age: QUERY.age }),
 		...(QUERY.young !== undefined && { young: QUERY.young }),
 	};
-	const needsWhole = !SPEC.cutting;
+	const needsWhole = !cuttingPart;
 	// A piece whose record hint names one of the species' cutting classes grows from a kit of its
 	// own, which holds that class and no cards: the piece is only ever drawn at the nearest level.
 	const cutHint = cutting ? record.cuttings?.[cutting.part] : undefined;
@@ -837,7 +845,7 @@ export default defineSketch(async (ctx) => {
 	const placedView = {
 		height: SIZE[1] / rows,
 		fov: FOV,
-		...((LOD === 0 || SPEC.cutting !== undefined) && { switchBias: -FORCED_NEAR_STOPS }),
+		...((LOD === 0 || cuttingPart !== undefined) && { switchBias: -FORCED_NEAR_STOPS }),
 	};
 	/**
 	 * A framed whole view of the plant as the level it draws at: the stand is found on the nearest
@@ -901,12 +909,16 @@ export default defineSketch(async (ctx) => {
 		};
 	};
 
-	/** The plant's subjects, which the solved close views frame, read from its skeleton once. */
+	/**
+	 * The plant's subjects, which the solved close views frame, read once: from its skeleton, and
+	 * its placed pieces from its rows.
+	 */
 	let subjectsRead: PlantSubjects | undefined;
 	const subjectsOf = (): PlantSubjects => {
-		subjectsRead ??= subjectsOfSkeleton(skeleton, {
-			...(leafLength !== undefined && { leafLength }),
-		});
+		subjectsRead ??= {
+			...subjectsOfSkeleton(skeleton, { ...(leafLength !== undefined && { leafLength }) }),
+			pieces: piecesOfRows(main.shoots, mainKit, foot),
+		};
 		return subjectsRead;
 	};
 	/** Each solved view's shot, or why the plant gives none, with the lens it was solved for. */
@@ -944,7 +956,22 @@ export default defineSketch(async (ctx) => {
 		const fov = QUERY.fov ?? spec.fov;
 		const out = facing(turn);
 		const lens = { fov, aspect };
-		switch (view) {
+		// A close view that names a class of piece frames the outermost placed piece of that class.
+		const placed = QUERY.piece !== undefined && SPEC.whole !== true;
+		switch (placed ? 'placed piece' : view) {
+			case 'placed piece': {
+				const found = solvedAt(
+					view,
+					lens,
+					() =>
+						placedPieceShot(subjectsOf(), QUERY.piece as string, lens, {
+							laid: (QUERY.roll ?? 0) !== 0,
+						}),
+					0,
+				);
+				if (found) return found;
+				break;
+			}
 			case 'turntable':
 			case 'whole':
 			case 'skeleton':
@@ -1576,7 +1603,11 @@ export default defineSketch(async (ctx) => {
 		notes.push(`${missing}, so the ${view} view shows the whole plant`);
 		// A plant of wood that has no such part is at fault. A ground plant draws no wood at all, so
 		// a wood view of it is a fault of the file's mapping to a view.
-		const lacks = solved !== undefined && isAbsent(solved) && solved.lacks && hasWood(main);
+		const lacks =
+			solved !== undefined &&
+			isAbsent(solved) &&
+			solved.lacks &&
+			(QUERY.piece !== undefined || hasWood(main));
 		plainSubjects.set(view, { kind: 'the whole plant', missing, ...(lacks && { lacks: true }) });
 		return fit(bounds, turn, e, aspect, fov);
 	};

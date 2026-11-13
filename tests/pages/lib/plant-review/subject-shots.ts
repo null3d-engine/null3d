@@ -24,6 +24,7 @@ import {
 	lacking,
 	type Maybe,
 	type PlantSubjects,
+	piecesOfClass,
 	sampleAlong,
 	sampleAtHeight,
 	type TrunkSubject,
@@ -2076,6 +2077,39 @@ export function branchPieceShot(
 		],
 		regions: [{ name: 'the plain ground round the piece', box: [0, 0, 1, 1], min: 0.03, max: 0.8 }],
 		facts: { length: piece.length, spread: piece.spread, frame: tall, laid },
+	};
+}
+
+/**
+ * The view of one piece of a class as the plant places it, framed as a cut piece's photograph
+ * frames it: the outermost piece of the class, square to its face, with only the slab of the plant
+ * that holds the piece drawn, so the rest of the plant neither stands in front of it nor behind it.
+ */
+export function placedPieceShot(
+	subjects: PlantSubjects,
+	name: string,
+	lens: Lens,
+	options: BranchPieceOptions = {},
+): Solved {
+	const pieces = piecesOfClass(subjects, name);
+	if (isAbsent(pieces)) return pieces;
+	const piece = pieces[0] as BranchPiece;
+	const shot = branchPieceShot(piece, lens, options);
+	if (isAbsent(shot)) return shot;
+	const middle = step(piece.socket, piece.direction, piece.length / 2);
+	const distance = Math.hypot(
+		middle[0] - shot.camera.position[0],
+		middle[1] - shot.camera.position[1],
+		middle[2] - shot.camera.position[2],
+	);
+	// The piece's own depth is at most its spread, as it faces the camera.
+	const slab = Math.max(piece.spread, 0.1 * piece.length);
+	return {
+		...shot,
+		kind: `one placed ${piece.class} from its socket to its tips`,
+		near: Math.max(0.02, distance - slab),
+		far: distance + slab,
+		facts: { ...shot.facts, class: piece.class, socket: piece.socket, of: pieces.length },
 	};
 }
 

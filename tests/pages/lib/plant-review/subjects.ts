@@ -4,7 +4,13 @@
 // a subject reports it as absent with its reason, and a camera that needs it then draws no picture
 // to judge. The adapter at the foot fills the interface from a macro skeleton.
 
+import type {
+	ShootPrototype,
+	ShootRows,
+	SpeciesKitData,
+} from '../../../../packages/vegetation/src/asset';
 import { BUD_TERMINAL } from '../../../../packages/vegetation/src/core/graph';
+import { DETAILS } from '../../../../packages/vegetation/src/core/types';
 import {
 	chainOf,
 	dot,
@@ -12,6 +18,7 @@ import {
 	mainStem,
 	nodeAt,
 	normalize,
+	placeOnRow,
 	stemFoot,
 	type V3,
 } from './anatomy';
@@ -114,6 +121,11 @@ export interface TwigTip {
 
 /** One branch piece as the plant carries it: a branch end with its twigs and leaves at a socket. */
 export interface BranchPiece {
+	/**
+	 * The piece's class, the name its grower gives it: a pine's `bough`, or a tuft's `stalk-0`, its
+	 * first flowering stalk.
+	 */
+	readonly class: string;
 	/** The socket: the piece's cut end. */
 	readonly socket: V3;
 	/** The direction the piece runs from its socket. */
@@ -429,6 +441,130 @@ export function subjectsOfSkeleton(
 				? absent("the species' foliage has no single leaf length")
 				: { length: options.leafLength },
 	};
+}
+
+/** A prototype's class as a placed piece: a branch piece's name, or a ground piece's class less its prefix. */
+function pieceClass(prototype: ShootPrototype): string | undefined {
+	if (prototype.piece) return prototype.piece.name;
+	return prototype.class.startsWith('piece-') ? prototype.class.slice('piece-'.length) : undefined;
+}
+
+/** A vector of a piece's own frame, turned as one of the plant's rows turns its prototype. */
+function turnedBy(rows: ShootRows, r: number, x: number, y: number, z: number): V3 {
+	const out: [number, number, number] = [0, 0, 0];
+	placeOnRow(rows, r, x, y, z, out, 0);
+	const s = rows.scale[r] as number;
+	return normalize([
+		(out[0] - (rows.position[r * 3] as number)) / s,
+		(out[1] - (rows.position[r * 3 + 1] as number)) / s,
+		(out[2] - (rows.position[r * 3 + 2] as number)) / s,
+	]);
+}
+
+/**
+ * The branch pieces a plant places at its sockets, read from its rows. A piece's parts stand as
+ * rows one after another at one place, with one turn and one scale. The piece runs from its socket
+ * along its own +Y as far as its farthest vertex, spreads as far as its vertices stand off that
+ * line, and faces its +Z, the sky side of a branch piece and the upper face of a ground piece. The
+ * pieces come outermost first, so a view of one frames a piece at the plant's rim.
+ *
+ * @param rows The plant's rows.
+ * @param kit The kit the rows draw, for its prototypes and the tier its rows draw at.
+ * @param foot Where the plant stands.
+ * @returns The pieces, or why the plant has none: its rows are shoots.
+ */
+export function piecesOfRows(
+	rows: ShootRows,
+	kit: Pick<SpeciesKitData, 'detail' | 'prototypes'>,
+	foot: V3,
+): Maybe<readonly BranchPiece[]> {
+	const tier = DETAILS.indexOf(kit.detail);
+	// Each prototype's reach and spread at scale 1, found once.
+	const sizes = new Map<number, { readonly length: number; readonly spread: number }>();
+	const sizeOf = (index: number) => {
+		let size = sizes.get(index);
+		if (!size) {
+			const positions = kit.prototypes[index]?.tiers[tier]?.positions ?? new Float32Array(0);
+			let length = 0;
+			let spread = 0;
+			for (let i = 0; i + 2 < positions.length; i += 3) {
+				const x = positions[i] as number;
+				const y = positions[i + 1] as number;
+				const z = positions[i + 2] as number;
+				length = Math.max(length, Math.hypot(x, y, z));
+				spread = Math.max(spread, Math.hypot(x, z));
+			}
+			size = { length, spread };
+			sizes.set(index, size);
+		}
+		return size;
+	};
+	const pieces: (BranchPiece & { readonly out: number })[] = [];
+	const sameSocket = (a: number, b: number) =>
+		rows.scale[a] === rows.scale[b] &&
+		rows.position[a * 3] === rows.position[b * 3] &&
+		rows.position[a * 3 + 1] === rows.position[b * 3 + 1] &&
+		rows.position[a * 3 + 2] === rows.position[b * 3 + 2];
+	for (let r = 0; r < rows.count; ) {
+		const prototype = kit.prototypes[rows.prototype[r] as number];
+		const name = prototype ? pieceClass(prototype) : undefined;
+		let end = r + 1;
+		while (end < rows.count && sameSocket(r, end)) end++;
+		if (name !== undefined) {
+			const scale = rows.scale[r] as number;
+			let length = 0;
+			let spread = 0;
+			for (let part = r; part < end; part++) {
+				const size = sizeOf(rows.prototype[part] as number);
+				length = Math.max(length, size.length * scale);
+				spread = Math.max(spread, size.spread * scale);
+			}
+			const socket: V3 = [
+				rows.position[r * 3] as number,
+				rows.position[r * 3 + 1] as number,
+				rows.position[r * 3 + 2] as number,
+			];
+			const direction = turnedBy(rows, r, 0, 1, 0);
+			pieces.push({
+				class: name,
+				socket,
+				direction,
+				length,
+				spread,
+				face: turnedBy(rows, r, 0, 0, 1),
+				out: Math.hypot(
+					socket[0] + direction[0] * length - foot[0],
+					socket[2] + direction[2] * length - foot[2],
+				),
+			});
+		}
+		r = end;
+	}
+	if (pieces.length === 0)
+		return absent('the plant places no branch piece at a socket: its rows are shoots');
+	pieces.sort((a, b) => b.out - a.out);
+	return pieces.map(({ out: _out, ...piece }) => piece);
+}
+
+/**
+ * The placed pieces of one class, outermost first. A class names a piece by its grower's name, or
+ * by its leading words, so `stalk` names every flowering stalk a tuft places.
+ *
+ * @param subjects The plant's subjects.
+ * @param name The class.
+ * @returns The pieces, or that the plant lacks the class: it places pieces, and none of this one.
+ */
+export function piecesOfClass(
+	subjects: PlantSubjects,
+	name: string,
+): Maybe<readonly BranchPiece[]> {
+	if (isAbsent(subjects.pieces)) return subjects.pieces;
+	const found = subjects.pieces.filter(
+		(piece) => piece.class === name || piece.class.startsWith(`${name}-`),
+	);
+	if (found.length > 0) return found;
+	const classes = [...new Set(subjects.pieces.map((piece) => piece.class))].join(', ');
+	return lacking(`the plant places no piece of the class ${name}; its pieces are ${classes}`);
 }
 
 /** The degrees between a limb's line and the trunk's where the limb leaves. */
