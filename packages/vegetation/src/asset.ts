@@ -11,6 +11,7 @@ import type { ShootClass, Species } from './core/record';
 import type { TextureManifest } from './core/textures';
 import type { Detail, Season, Vec3 } from './core/types';
 import type { CuttingOptions } from './cutting';
+import type { PieceAttitude } from './leaf/piece';
 
 /**
  * One mesh before quantisation, in floats: what the meshers and the leaf builders write.
@@ -68,8 +69,11 @@ export interface PrototypeArrays {
 export interface ShootPrototype {
 	/** Its index in the kit. */
 	readonly index: number;
-	/** The shoot class it belongs to. */
-	readonly class: ShootClass['name'];
+	/**
+	 * The shoot class it belongs to, `piece` for a part of a branch piece, or the name of a ground
+	 * form's class of piece, which starts `piece-`.
+	 */
+	readonly class: ShootClass['name'] | 'piece' | `piece-${string}`;
 	/**
 	 * Set on a shoot that only a cutting draws. The crown never offers one, whatever vigor its buds
 	 * carry, so adding a cutting class leaves the crown's shoots as they were.
@@ -87,6 +91,32 @@ export interface ShootPrototype {
 	readonly tiers: readonly [PrototypeArrays, PrototypeArrays, PrototypeArrays, PrototypeArrays];
 	/** Its six cells in the card atlas: three planes, two faces each. */
 	readonly card: CardCell;
+	/**
+	 * The branch piece this prototype is one part of, in a kit whose plant carries pieces at its
+	 * sockets. Absent on a shoot prototype.
+	 */
+	readonly piece?: PrototypePiece;
+}
+
+/**
+ * What a kit keeps of a branch piece on each of its prototypes: the piece's name and variant, which
+ * part of the variant the prototype is, how a socket holds the piece, and its flat plane.
+ *
+ * @category api/vegetation
+ */
+export interface PrototypePiece {
+	/** The piece's name, unique in its species. */
+	readonly name: string;
+	/** Which of the piece's variants this is. */
+	readonly variant: number;
+	/** Which part of the variant this is. */
+	readonly part: number;
+	/** How many parts the variant has. */
+	readonly parts: number;
+	/** How a socket turns the piece. */
+	readonly attitude: PieceAttitude;
+	/** The unit normal of the piece's flat plane in its rest frame, where it has one. */
+	readonly plane?: Vec3;
 }
 
 /**
@@ -141,6 +171,13 @@ export interface ShootRows {
 	 * previous bud or the parent node. Absent, a card draws no stalk.
 	 */
 	readonly back?: Float32Array;
+	/** The skeleton node each row stands on. Absent on rows that stand on no skeleton. */
+	readonly node?: Uint32Array;
+	/**
+	 * Each row's index in the plant as grown, on a plant that rows were removed from, so a choice
+	 * keyed on a row stays the same on the sparser plant. Absent on rows as grown.
+	 */
+	readonly id?: Uint32Array;
 }
 
 /**
@@ -226,6 +263,40 @@ export interface WindTable {
 }
 
 /**
+ * The triangles of each part of a plant at one level.
+ *
+ * @category api/vegetation
+ */
+export interface PartTriangles {
+	/** The trunk: every axis with no parent, with its roots. */
+	readonly trunk: number;
+	/** The great limbs. */
+	readonly limbs: number;
+	/** Every other axis of the skeleton. */
+	readonly branches: number;
+	/** The twig wood inside the shoot rows: their stems and buds. */
+	readonly twigs: number;
+	/** The leaves: the shoot rows' leaves, the leaf cards, or a merged plant's foliage mesh. */
+	readonly leaves: number;
+	/** The extras: cones, fruit, flowers, catkins, thorns and spines. */
+	readonly extras: number;
+}
+
+/**
+ * The card clusters of one level under a triangle maximum, and how they join the plant.
+ *
+ * @category api/vegetation
+ */
+export interface ClusterCount {
+	/** The clusters the level draws; none where it draws shoot rows or the level's own cards. */
+	readonly clusters: number;
+	/** The clusters joined by a stalk: their cards touch neither the drawn wood nor a joined card. */
+	readonly stalks: number;
+	/** The clusters with no drawn wood to hang on, where the maximum leaves the level no wood. */
+	readonly free: number;
+}
+
+/**
  * One grown variant of a species, with its levels, its shoot rows and its wind records.
  *
  * @category api/vegetation
@@ -270,11 +341,38 @@ export interface PlantAsset {
 		readonly texels: number;
 		readonly from: number;
 	};
+	/**
+	 * The most triangles each of its levels may draw, where its growth named a maximum. The nearest
+	 * level counts its shoot rows at the tier they draw at.
+	 */
+	readonly maxTriangles?: number;
+	/**
+	 * How its shoot rows draw near the camera, where a triangle maximum moved them: at a tier below
+	 * the kit's, or `none` where the nearest level draws leaf cards in their place. The rows are
+	 * still the plant's foliage, which the far bake reads. Absent, the rows draw at the kit's tier.
+	 */
+	readonly shootDetail?: Detail | 'none';
 	/** How long it took, its bytes, and each level's triangles. */
 	readonly stats: {
 		readonly milliseconds: number;
 		readonly bytes: number;
 		readonly triangles: readonly [number, number, number];
+		/**
+		 * Each level's triangles part by part. The nearest level counts its shoot rows at the tier
+		 * they draw at, as leaves and as twig wood, and its wood once that is meshed: none on a variant
+		 * grown without `near`. A stand-in's wood counts as its trunk.
+		 */
+		readonly parts: readonly [PartTriangles, PartTriangles, PartTriangles];
+		/**
+		 * Each part's allowance at each level under a triangle maximum: its share of the maximum, and
+		 * what was handed on to it from the parts that used less. Absent without a maximum.
+		 */
+		readonly allowed?: readonly [PartTriangles, PartTriangles, PartTriangles];
+		/**
+		 * The card clusters each level draws under a triangle maximum, where it draws clusters in
+		 * place of a card set for each shoot row. Absent without a maximum.
+		 */
+		readonly clusters?: readonly [ClusterCount, ClusterCount, ClusterCount];
 	};
 }
 
@@ -371,6 +469,8 @@ function rowViews(rows: ShootRows): ArrayBufferView[] {
 		rows.sky,
 		rows.bent,
 		rows.order,
+		...(rows.node ? [rows.node] : []),
+		...(rows.id ? [rows.id] : []),
 	];
 }
 

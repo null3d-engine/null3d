@@ -13,7 +13,7 @@
 // many leaves the plant grows.
 import type { ShootPrototype, ShootRows } from '../asset';
 import type { MacroSkeleton } from '../core/graph';
-import { BUD_AREOLE, BUD_DORMANT, BUD_TERMINAL } from '../core/graph';
+import { BUD_AREOLE, BUD_DORMANT, BUD_FLOWER, BUD_TERMINAL } from '../core/graph';
 import { hashAt, unitAt } from '../core/hash';
 import {
 	cos,
@@ -34,6 +34,7 @@ import { rowCentre } from '../crown/density';
 import { crownSkyAt, lightCrown } from '../crown/visibility';
 import { bareTrimmed } from '../grow/coarsen';
 import type { CrownLight, DressInput } from '../stages';
+import { carriesPieces, pieceRows } from './piece-rows';
 import { inLeaf } from './season';
 
 /** Sky visibility and bent normal of a row before the crown's light gives it its own. */
@@ -138,7 +139,7 @@ function tropismTurn(record: Species): number {
 }
 
 /** A row under construction. */
-interface Row {
+export interface Row {
 	prototype: number;
 	position: Vector3;
 	rotation: number[];
@@ -363,10 +364,11 @@ export function dressShoots(input: DressInput): DressedShoots {
 				: input.skeleton;
 		return { rows: finishedRows(rows, skeleton), skeleton };
 	}
-	const { skeleton, axisOut } = trimmed;
+	const { skeleton, axisOut, nodeOut } = trimmed;
 	for (const row of rows) {
 		const axis = axisOut[row.axis] as number;
 		row.axis = axis;
+		row.node = nodeOut[row.node] as number;
 		row.record = skeleton.axes.record[axis] as number;
 	}
 	return { rows: finishedRows(rows, skeleton), skeleton };
@@ -450,6 +452,8 @@ function skyPruned(input: DressInput, rows: Row[], line: number): Row[] {
  */
 function placedRows(input: DressInput, bySky = true): Row[] {
 	const { record, seed, variant, skeleton, kit } = input;
+	// A plant that carries pieces at sockets stands its foliage where its grower put the sockets.
+	if (carriesPieces(record)) return pieceRows(input);
 	const shoots = record.shoots;
 	const rows: Row[] = [];
 	if (!shoots || kit.prototypes.length === 0) return rows;
@@ -530,8 +534,9 @@ function placedRows(input: DressInput, bySky = true): Row[] {
 		const axis = buds.axis[b] as number;
 		const kind = buds.kind[b] as number;
 		// A dormant bud carries nothing, and it is no anchor for the stretch the next shoot's count
-		// shares: a culm's sheath buds must not stretch its tip's shoot down the bare culm.
-		if (kind === BUD_DORMANT) continue;
+		// shares: a culm's sheath buds must not stretch its tip's shoot down the bare culm. A flower
+		// site carries its flower, which is an extra, and no shoot.
+		if (kind === BUD_DORMANT || kind === BUD_FLOWER) continue;
 		const at: Vector3 = [
 			buds.position[b * 3] as number,
 			buds.position[b * 3 + 1] as number,
@@ -865,6 +870,7 @@ function packRows(rows: readonly Row[], bounds: DressInput['skeleton']['bounds']
 		bent: new Uint8Array(count).fill(BENT_UP),
 		order: new Uint32Array(count),
 		back: new Float32Array(count * 3),
+		node: new Uint32Array(count),
 	};
 	rows.forEach((row, r) => {
 		out.prototype[r] = row.prototype;
@@ -874,6 +880,7 @@ function packRows(rows: readonly Row[], bounds: DressInput['skeleton']['bounds']
 		out.record[r] = row.record;
 		out.phase[r] = row.phase;
 		out.back.set(row.back, r * 3);
+		out.node[r] = row.node;
 	});
 	const ranked = spaceRanks(rows, bounds);
 	ranked.forEach((row, rank) => {

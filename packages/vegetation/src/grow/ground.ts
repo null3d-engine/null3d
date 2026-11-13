@@ -19,20 +19,13 @@ import { hashAt } from '../core/hash';
 import { cos, sin } from '../core/math';
 import type { TextureManifest } from '../core/textures';
 import { crownSkyAt } from '../crown/visibility';
-import type { MeshWriter } from '../leaf/writer';
+import { type MeshWriter, SURFACE_SHEATH } from '../leaf/writer';
 import type { CrownLight, MeshInput } from '../stages';
 import { VARIANT_RECORDS } from '../wind/records';
 import { type AxisPath, axisPath, emptyFrame, frameAt, type PathFrame } from '../wood/frames';
 
 /** The axis kind of a leaf or blade: a lamina on its own stalk or sheath. */
 export const AXIS_LEAF = AXIS_RACHIS;
-
-/**
- * The flutter byte of a tuft's basal sheath column, which marks it for the plant material: the
- * column draws in the record's sheath colour under the leaf texture's ribbing, not the leaf's green.
- * The shader's `KIND_SHEATH` names the same value. Every other foliage axis keeps its phase byte.
- */
-export const SHEATH_KIND = 240;
 
 /** The bits of a 32-bit float, for keys that a cut keeps. */
 const FLOAT = new Float32Array(1);
@@ -306,7 +299,7 @@ export function writeStem(mesh: MeshWriter, run: StemRun): void {
 	const colour = [
 		run.bytes.high,
 		run.bytes.low,
-		run.sheath === true ? SHEATH_KIND : run.bytes.phase,
+		run.sheath === true ? SURFACE_SHEATH : run.bytes.phase,
 		0,
 	];
 	const p = [0, 0, 0];

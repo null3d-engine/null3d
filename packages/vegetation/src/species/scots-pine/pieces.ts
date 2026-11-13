@@ -5,10 +5,21 @@
 import type { PieceRule, PieceStem, PieceStudio } from '../../leaf/piece';
 
 /**
- * The metres between one needle pair and the next along a shoot. Still 22: a brush shows 12 to 14
- * needles on a side, 20 to 25 pairs on 8 cm of shoot.
+ * The forked shoot's needle pairs: the metres between one node and the next, and the pairs at a
+ * node. Still 22: a brush shows 12 to 14 needles on a side, 20 to 25 pairs on 8 cm of shoot, as its
+ * own photograph counts them.
  */
-const PAIR_GAP = 0.0036;
+const FORK_PAIRS = [0.0036, 1] as const;
+/**
+ * The bough's needle pairs, one at a node on the species' own spiral, so a brush is round and its
+ * needles hide its stem. Stills 21 and 22 show different shoots, and still 21's needles cannot be
+ * counted. With the needle at its own size, the cover of two brushes was read with one mask at one
+ * size on the photograph and on the drawing. One brush reads as a pair each 2.4 to 3.6 mm of shoot
+ * and the other as closer than 2 mm, so the range is about 1.2 to 2.7 mm. Still 22's count of 20
+ * to 25 pairs on 8 cm is of the one face its camera sees, which is a pair each 1.6 to 2 mm round
+ * the whole shoot. The bough takes 2 mm.
+ */
+const BOUGH_PAIRS = [0.002, 1] as const;
 
 /**
  * The needle pairs of a shoot's leafy end, from the angle the needles stand at where the brush
@@ -18,9 +29,16 @@ const PAIR_GAP = 0.0036;
  * @param low Degrees a needle stands from the shoot where the brush begins.
  * @param tip Degrees a needle stands from the shoot at its tip.
  */
-function brush(from: number, low: number, tip: number): NonNullable<PieceStem['leaves']> {
+function brush(
+	from: number,
+	low: number,
+	tip: number,
+	[gap, pairs]: readonly [number, number],
+): NonNullable<PieceStem['leaves']> {
 	return {
-		gap: PAIR_GAP,
+		gap,
+		// One pair at a node follows the species' own spiral; more stand in a ring at the node.
+		...(pairs > 1 ? { phyllotaxis: { kind: 'whorled', count: pairs } as const } : {}),
 		from,
 		angle: [
 			[from, low],
@@ -41,6 +59,13 @@ const BOUGH_BRUSH = [75, 40] as const;
  */
 const FORK_BRUSH = [55, 32] as const;
 
+/**
+ * Degrees the bough's side branches stand out of its plane, one pair toward the sky side and the
+ * next away. The turning video: the bough's narrowest view is 0.43 as wide as its widest. The drawn
+ * bough reads 0.38 at 12 degrees and 0.48 at 20.
+ */
+const OUT = 16;
+
 /** The Scots pine's pieces. */
 export const PIECES: readonly PieceRule[] = [
 	{
@@ -51,12 +76,14 @@ export const PIECES: readonly PieceRule[] = [
 		attitude: 'up',
 		variants: 3,
 		ground: [0, -1, 0],
+		// The fan lies in the plane of the bough's line and its sides.
+		plane: [0, 0, 1],
 		stem: {
 			length: { mean: 0.55, spread: 0.03 },
 			// 0.040 of the length across at the cut and 0.017 in the upper part.
 			radius: [0.011, 0.0047],
 			// The leader's own brush stands above the last side branch, which leaves at 0.75.
-			leaves: brush(0.78, ...BOUGH_BRUSH),
+			leaves: brush(0.78, ...BOUGH_BRUSH, BOUGH_PAIRS),
 			// The buds and the cones are extras with sockets of their own, so a tip ends in needles.
 			bud: false,
 			sides: [
@@ -64,14 +91,15 @@ export const PIECES: readonly PieceRule[] = [
 					stem: {
 						// The longest side branch is 0.51 of the bough's length.
 						length: { mean: 0.28, spread: 0.015 },
-						radius: [0.0055, 0.003],
+						// Still 21: a side branch is 6 to 8 mm across at its foot (8 to 10 pixels).
+						radius: [0.0035, 0.002],
 						// A side branch leaves at 40 to 68 degrees and stands 20 to 30 degrees from
 						// the bough's line at its tip. It runs straight over its bare part and turns
 						// up inside its brush (by eye on still 21).
 						droop: -30,
 						droopOver: [0.55, 1],
 						// The inner 0.25 to 0.30 of a side branch is bare.
-						leaves: brush(0.28, ...BOUGH_BRUSH),
+						leaves: brush(0.28, ...BOUGH_BRUSH, BOUGH_PAIRS),
 						bud: false,
 					},
 					// Six side branches, one at a node, at 0.16, 0.27, 0.37, 0.51, 0.59 and 0.75 of
@@ -80,6 +108,7 @@ export const PIECES: readonly PieceRule[] = [
 					from: 0.11,
 					to: 0.8,
 					arrangement: 'alternate',
+					out: OUT,
 					angle: { mean: 57, spread: 11 },
 					// Their lengths, by where each leaves: 0.51, 0.45, 0.34, 0.20, 0.43 and 0.21 of
 					// the bough's length.
@@ -107,7 +136,7 @@ export const PIECES: readonly PieceRule[] = [
 			length: { mean: 0.21, spread: 0.015 },
 			// 0.05 of the length across at the cut.
 			radius: [0.0052, 0.003],
-			leaves: brush(0.56, ...FORK_BRUSH),
+			leaves: brush(0.56, ...FORK_BRUSH, FORK_PAIRS),
 			bud: false,
 			sides: [
 				{
@@ -115,7 +144,7 @@ export const PIECES: readonly PieceRule[] = [
 						length: { mean: 0.105, spread: 0.01 },
 						radius: [0.004, 0.0028],
 						droop: -10,
-						leaves: brush(0.35, ...FORK_BRUSH),
+						leaves: brush(0.35, ...FORK_BRUSH, FORK_PAIRS),
 						bud: false,
 					},
 					gap: 0.0294,

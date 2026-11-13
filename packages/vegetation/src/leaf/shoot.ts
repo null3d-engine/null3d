@@ -43,6 +43,7 @@ import {
 	spreadAt,
 	spreadMean,
 } from '../core/types';
+import { WOOD_RADIUS_RANGE } from '../wood/wood-mesh';
 import { shootOcclusion } from './occlusion';
 import { hasBareTwins } from './season';
 import { lathe, MeshWriter, SURFACE_BUD, SURFACE_STEM, type TubePoint, tube } from './writer';
@@ -89,6 +90,7 @@ const Purpose = {
 	Spur: 11,
 	LeafAngle: 12,
 	Joint: 13,
+	LeafAzimuth: 14,
 } as const;
 
 /** Sides of stem tubes and buds by tier. */
@@ -563,6 +565,8 @@ export interface LeafRule {
 	/** Degrees a leaf stands from its stem, base to tip, and the half-width of its spread. */
 	readonly leafAngle: Curve;
 	readonly leafAngleSpread: number;
+	/** Degrees each leaf's azimuth varies from the arrangement's own, 0 for none. */
+	readonly leafAzimuthSpread: number;
 	/** The angle a needle stands at, which replaces the leaf angle. */
 	readonly needleAngle: number | undefined;
 	/** The share by which needles turn toward the shoot's two sides. */
@@ -639,6 +643,12 @@ export function placeNodeLeaves(
 			let gap = toward - azimuth;
 			gap -= 2 * Math.PI * Math.round(gap / (2 * Math.PI));
 			azimuth += gap * ranks;
+		} else if (rule.leafAzimuthSpread > 0) {
+			// A two-ranked shoot's leaves turn a little out of its plane, so its fan keeps a width
+			// as the shoot turns edge-on.
+			const wobble =
+				(draw(Purpose.LeafAzimuth, axis, node * 8 + k) * 2 - 1) * rule.leafAzimuthSpread;
+			azimuth += radians(wobble);
 		}
 		const radial = normalize3([
 			side[0] * cos(azimuth) + face[0] * sin(azimuth),
@@ -1005,6 +1015,7 @@ export function planShoot(
 		phyllotaxis,
 		leafAngle: shootClass.leafAngle,
 		leafAngleSpread: shootClass.leafAngleSpread ?? 0,
+		leafAzimuthSpread: shootClass.leafAzimuthSpread ?? 0,
 		needleAngle,
 		ranks,
 		leafScale: shootClass.leafScale,
@@ -1106,12 +1117,17 @@ export function meshShoot(
 			path.push(point);
 		}
 		mesh.mark();
-		tube(mesh, path, sides, (ring) => [
-			bendByte((path[ring] as TubePoint).along, plan.span),
-			0,
-			SURFACE_STEM,
-			255,
-		]);
+		tube(
+			mesh,
+			path,
+			sides,
+			(ring) => [bendByte((path[ring] as TubePoint).along, plan.span), 0, SURFACE_STEM, 255],
+			false,
+			undefined,
+			// The stem's radius in the wood's own units, so the shader can widen a stem thinner than
+			// the least drawn width, as it widens the wood.
+			(_ring, radius) => [Math.min(1, radius / WOOD_RADIUS_RANGE), 0],
+		);
 	}
 	for (const bud of plan.buds) {
 		const shape = (bud.cluster ? CLUSTER_BUD : AXIL_BUD)[detail];

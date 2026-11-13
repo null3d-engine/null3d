@@ -9,14 +9,19 @@ import {
 import {
 	alignTurn,
 	anchorColumn,
+	blankFrame,
 	cameraWidthShare,
+	cropFault,
 	crownBoxSpread,
 	edgeDifference,
 	edgeProfile,
+	emptySubject,
 	fittedMaskClause,
+	framingFault,
 	framingQuery,
 	hasSeparableOutline,
 	iou,
+	levelName,
 	MASK_GATE_NATURAL,
 	MASK_GATE_PLAIN,
 	maskCheckOf,
@@ -30,6 +35,7 @@ import {
 	profileError,
 	rubricBand,
 	rubricFrames,
+	sameDrawing,
 	sheathDifference,
 	spread,
 } from './compare.ts';
@@ -349,6 +355,19 @@ describe("the page's stand camera", () => {
 		expect(camera.height).toBeGreaterThan(0);
 		expect(projectRow(camera, 1.52, fov)).toBeCloseTo(0.193, 3);
 		expect(projectRow(camera, 0, fov)).toBeCloseTo(0.8814, 3);
+	});
+
+	test("solves a hand-high plant's base row rather than standing back to eye height", () => {
+		const fov = 38;
+		const camera = standCamera(
+			{ fov, aspect: 1.5, horizon: 0.62, top: 0.5, base: 0.914, targetX: 0.5 },
+			0.56,
+		);
+		// The camera clears the ground by the floor and the foot lands on the row the framing asks
+		// for, so the plant does not run off the frame's foot.
+		expect(camera.height).toBeGreaterThan(0);
+		expect(camera.warning).toBeUndefined();
+		expect(projectRow(camera, 0, fov)).toBeCloseTo(0.914, 5);
 	});
 
 	test('says what it gave up when the base would put the camera under the ground', () => {
@@ -858,5 +877,100 @@ describe('the mask check gate', () => {
 		expect(plainTurnOf('sky-meadow')).toBe(false);
 		// The page's default background is the natural one.
 		expect(plainTurnOf(undefined)).toBe(false);
+	});
+});
+
+describe("a whole view's frame against its photograph's", () => {
+	/** A plant's box in a frame 640 by 480, from shares of the frame. */
+	const framed = (left: number, top: number, right: number, bottom: number) => ({
+		box: {
+			left: Math.round(left * 640),
+			top: Math.round(top * 480),
+			right: Math.round(right * 640) - 1,
+			bottom: Math.round(bottom * 480) - 1,
+		},
+		width: 640,
+		height: 480,
+	});
+	const photograph = framed(0.1, 0.2, 0.9, 0.9);
+
+	test('holds when the plant stands at the same size, whatever its own shape and place', () => {
+		expect(framingFault(photograph, framed(0.1, 0.2, 0.9, 0.9))).toBe(undefined);
+		// A plant a third narrower at the photograph's height is the plant's shape, not the frame's.
+		expect(framingFault(photograph, framed(0.25, 0.2, 0.75, 0.9))).toBe(undefined);
+		// A sixth smaller both ways is inside the band, and so is the same plant higher in the frame.
+		expect(framingFault(photograph, framed(0.17, 0.32, 0.83, 0.9))).toBe(undefined);
+		expect(framingFault(photograph, framed(0.1, 0.05, 0.9, 0.75))).toBe(undefined);
+	});
+
+	test('fails a plant drawn at a third of the size, and says both sizes', () => {
+		expect(framingFault(photograph, framed(0.37, 0.67, 0.63, 0.9))).toBe(
+			"the render's plant takes 0.23 of the frame's height and 0.26 of its width, against the photograph's 0.70 and 0.80, so it is drawn too small",
+		);
+		expect(framingFault(framed(0.3, 0.5, 0.7, 0.9), framed(0.05, 0.1, 0.95, 0.9))).toContain(
+			'so it is drawn too large',
+		);
+	});
+
+	test('fails a plant the frame crops where the photograph holds it whole', () => {
+		const clear = { left: false, top: false, right: false, bottom: false };
+		expect(cropFault(clear, clear)).toBe(undefined);
+		expect(cropFault(clear, { ...clear, bottom: true, right: true })).toBe(
+			"the render's plant runs off the frame's right and bottom edges, where the photograph holds it whole",
+		);
+		// A photograph that crops its own plant allows the same crop, and no other.
+		const cropped = { ...clear, bottom: true };
+		expect(cropFault(cropped, cropped)).toBe(undefined);
+		expect(cropFault(cropped, { ...clear, bottom: true, top: true })).toContain(
+			"frame's top edge,",
+		);
+	});
+});
+
+describe('a picture that answers nothing', () => {
+	test('is one whose subject takes none of the frame', () => {
+		const facts = (subject: number) => ({
+			subject: { kind: 'an arm seen from outside', clutter: { subject, front: 0, behind: 0 } },
+		});
+		expect(emptySubject(facts(0))).toBe(
+			'the subject, an arm seen from outside, takes 0.00 of the frame',
+		);
+		expect(emptySubject(facts(0.3))).toBe(undefined);
+		// A view that measured no share says nothing here.
+		expect(emptySubject({ subject: { kind: 'the whole plant' } })).toBe(undefined);
+	});
+
+	test('is one the page drew for another photograph that was asked for differently', () => {
+		const seen = new Map<string, { file: string; query: string }>();
+		const frame = (sunRise: number, sha256 = 'abc') =>
+			({ sha256, query: { view: 'leaf-upper', sunRise } }) as never;
+		expect(sameDrawing(seen, '11-leaf.png', frame(40))).toBe(undefined);
+		// The same picture for the same request is one drawing asked for twice.
+		expect(sameDrawing(seen, '11-leaf-copy.png', frame(40))).toBe(undefined);
+		expect(sameDrawing(seen, '12-leaf.png', frame(55))).toBe(
+			'the page drew the same picture as for 11-leaf.png, though the two were asked for differently',
+		);
+		expect(sameDrawing(seen, '13-leaf.png', frame(55, 'def'))).toBe(undefined);
+	});
+
+	test('is a whole view whose frame is all plant, or holds none', () => {
+		const frame = (covered: number) => ({
+			mask: new Uint8Array(100).fill(1, 0, covered),
+			width: 10,
+			height: 10,
+		});
+		expect(blankFrame(frame(100))).toBe(
+			'the plant covers 1.00 of the frame, so the frame holds no outline',
+		);
+		expect(blankFrame(frame(0))).toBe('the frame holds no plant');
+		expect(blankFrame(frame(40))).toBe(undefined);
+	});
+
+	test('names the level of detail its page posted', () => {
+		expect(levelName({ level: { name: 'first card level', forced: false } })).toBe(
+			'first card level',
+		);
+		expect(levelName({ level: { name: 'leaf form', forced: true } })).toBe('leaf form, forced');
+		expect(levelName({})).toBe(undefined);
 	});
 });
