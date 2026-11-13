@@ -1,11 +1,14 @@
 // Measures of a directed frame, for its tests and its previews: how sharply its axes turn, how long
 // they run straight, how evenly they thin, how round the crown's plan is, how the crown fills the
-// outline its species states, how evenly a set of axes stands round the plant, and whether every
-// axis joins its parent and ends in foliage.
-import { acos, atan2, cos, PI, radians, sin } from '../core/math';
+// outline its species states band by band, what foliage stands under the outline's lower boundary,
+// how many lumps the crown's rim has, how evenly a set of axes stands round the plant, and whether
+// every axis joins its parent and ends in foliage.
+import { acos, asin, atan2, cos, PI, radians, sin } from '../core/math';
+import { curveAt } from '../core/types';
 import {
 	type FrameAxis,
 	type FrameNode,
+	type FramePatch,
 	type FramePlan,
 	type FrameSpec,
 	outlineRadius,
@@ -308,6 +311,20 @@ export function bareEnds(plan: FramePlan): number[] {
 	return out;
 }
 
+/**
+ * How far a patch reaches toward a direction inside a band of heights, in metres, or 0 where it
+ * stands outside the band. A patch is a rounded body: it is as wide in a band as an ellipse of its
+ * width and depth is at the band's nearest height.
+ */
+function reachIn(patch: FramePatch, low: number, high: number, c: number, s: number): number {
+	const off = Math.max(0, low - patch.centre[1], patch.centre[1] - high);
+	const share = off / Math.max(1e-9, patch.depth / 2);
+	if (share >= 1) return 0;
+	return (
+		patch.centre[0] * c + patch.centre[2] * s + (patch.width / 2) * Math.sqrt(1 - share * share)
+	);
+}
+
 /** One band of a crown seen from one side. */
 export interface CrownBand {
 	/** The band's middle height as a share of the plant's height. */
@@ -341,18 +358,7 @@ export function crownBands(plan: FramePlan, spec: FrameSpec, sides = 8, bands = 
 			const low = (band / bands) * plan.scale;
 			const high = ((band + 1) / bands) * plan.scale;
 			let built = 0;
-			for (const patch of plan.patches) {
-				// A patch is as wide in a band as its rounded body is at the band's nearest height.
-				const off = Math.max(0, low - patch.centre[1], patch.centre[1] - high);
-				const share = off / Math.max(1e-9, patch.depth / 2);
-				if (share >= 1) continue;
-				built = Math.max(
-					built,
-					patch.centre[0] * c +
-						patch.centre[2] * s +
-						(patch.width / 2) * Math.sqrt(1 - share * share),
-				);
-			}
+			for (const patch of plan.patches) built = Math.max(built, reachIn(patch, low, high, c, s));
 			row.push({
 				height: (band + 0.5) / bands,
 				built,
@@ -402,51 +408,347 @@ export function crownFill(
 	return { mean: count > 0 ? all / count : 0, least: count > 0 ? least : 0, most };
 }
 
-/** A band of a crown, on one side, that stands off the stated outline by more than it may. */
+/** A band of a crown, on one side, that does not hold the outline its species states. */
 export interface CrownFault {
 	/** Degrees round the plant that the side faces. */
 	readonly side: number;
 	/** The band's number from the ground, and its middle height as a share of the plant's height. */
 	readonly band: number;
 	readonly height: number;
-	/** The built reach over the stated one in the band. */
+	/**
+	 * What is wrong: the patches' reach is under or over the outline's, the patches leave too much
+	 * of the band's height empty, or they cover too little of the side's arc.
+	 */
+	readonly kind: 'reach' | 'height' | 'arc';
+	/** The figure that fails: the reach over the stated one, or the share covered. */
 	readonly fill: number;
 }
 
+/** The bounds a crown's bands are held to. */
+export interface CrownBounds {
+	/** The sides read, evenly round the plant, and the bands from the ground to the stated height. */
+	readonly sides: number;
+	readonly bands: number;
+	/** The least and the most of the stated outline that a band's patches may reach. */
+	readonly least: number;
+	readonly most: number;
+	/** The least share of a band's height, and of a side's arc, that its patches must cover. */
+	readonly tall: number;
+	readonly arc: number;
+}
+
 /**
- * The bands of a frame's crown that do not hold the outline its species states. On each side, every
- * band whose middle stands between the outline's foot and nine tenths of its top is read, and a
- * band whose patches reach less than the least share of the outline there, or more than the most,
- * is a fault. A mean over the bands passes a crown that is wide at one height only; this does not.
+ * The bounds a frame's test holds a crown to.
  *
- * @param plan The frame.
+ * @category api/vegetation
+ */
+export const CROWN_BOUNDS: CrownBounds = {
+	sides: 8,
+	bands: 16,
+	least: 0.6,
+	most: 1.2,
+	tall: 0.7,
+	arc: 0.5,
+};
+
+/** The foliage of a plant: its patches, at the plant's height. A frame is one; so is a made crown. */
+export type Crown = Pick<FramePlan, 'scale' | 'patches'>;
+
+/**
+ * The bands of a crown that do not hold the outline its species states. Each side is a sector
+ * round the plant, and only the patches that stand in the sector count for it, so a patch to one
+ * side cannot fill in a side that is missing. Every band from the outline's foot to its top is
+ * read. A band on a side is a fault when the patches' reach there is under the least share of the
+ * outline or over the most; when the patches leave more of the band's height empty than they may,
+ * as flat discs with sky between them do; or when they cover less of the sector's arc than they
+ * must, as a few small patches on the outline do.
+ *
+ * @param crown The frame, or any set of patches at a stated height.
  * @param spec The species' frame.
- * @param sides The sides read, evenly round the plant.
- * @param bands The bands between the ground and the plant's stated height.
- * @param least The least share of the outline a band may fill.
- * @param most The most.
+ * @param bounds The bounds; the test's own where left out.
  * @returns The faults, side by side from the lowest band.
  * @category api/vegetation
  */
 export function crownFaults(
-	plan: FramePlan,
+	crown: Crown,
 	spec: FrameSpec,
-	sides = 4,
-	bands = 16,
-	least = 0.6,
-	most = 1.2,
+	bounds: CrownBounds = CROWN_BOUNDS,
 ): CrownFault[] {
 	const out: CrownFault[] = [];
 	const { foot, top } = outlineSpan(spec);
-	crownBands(plan, spec, sides, bands).forEach((row, side) => {
-		row.forEach((band, k) => {
-			if (band.height < foot || band.height > 0.9 * top || band.stated <= 0) return;
-			const fill = band.built / band.stated;
-			if (fill < least || fill > most)
-				out.push({ side: (side * 360) / sides, band: k, height: band.height, fill });
-		});
-	});
+	const sector = PI / bounds.sides;
+	// A reach this far under or over its bound is inside the measure's own grain.
+	const grain = 0.01 * crown.scale;
+	for (let side = 0; side < bounds.sides; side++) {
+		const angle = (side * 2 * PI) / bounds.sides;
+		const c = cos(angle);
+		const s = sin(angle);
+		// The patches that stand in the side's sector, each with the arc it covers there.
+		const own: { patch: FramePatch; from: number; to: number }[] = [];
+		for (const patch of crown.patches) {
+			const away = Math.sqrt(patch.centre[0] * patch.centre[0] + patch.centre[2] * patch.centre[2]);
+			// A patch over the trunk's line stands in every sector, across all of it.
+			if (away <= patch.width / 2) {
+				own.push({ patch, from: -sector, to: sector });
+				continue;
+			}
+			let off = atan2(patch.centre[2], patch.centre[0]) - angle;
+			off = ((((off + PI) % (2 * PI)) + 2 * PI) % (2 * PI)) - PI;
+			const half = asin(Math.min(1, patch.width / 2 / away));
+			if (off + half < -sector || off - half > sector) continue;
+			own.push({ patch, from: Math.max(-sector, off - half), to: Math.min(sector, off + half) });
+		}
+		for (let band = 0; band < bounds.bands; band++) {
+			const height = (band + 0.5) / bounds.bands;
+			if (height < foot || height > top) continue;
+			const low = (band / bounds.bands) * crown.scale;
+			const high = ((band + 1) / bounds.bands) * crown.scale;
+			const stated = outlineRadius(spec, crown.scale, (low + high) / 2, angle);
+			if (stated <= 0) continue;
+			let built = 0;
+			const tall: [number, number][] = [];
+			const round: [number, number][] = [];
+			for (const { patch, from, to } of own) {
+				const under = patch.centre[1] - patch.depth / 2;
+				const over = patch.centre[1] + patch.depth / 2;
+				if (over <= low || under >= high) continue;
+				built = Math.max(built, reachIn(patch, low, high, c, s));
+				tall.push([Math.max(low, under), Math.min(high, over)]);
+				round.push([from, to]);
+			}
+			const fault = (kind: CrownFault['kind'], fill: number): void => {
+				out.push({ side: (side * 360) / bounds.sides, band, height, kind, fill });
+			};
+			if (built < bounds.least * stated - grain || built > bounds.most * stated + grain)
+				fault('reach', built / stated);
+			const filled = covered(tall) / (high - low);
+			if (filled < bounds.tall) fault('height', filled);
+			const swept = covered(round) / (2 * sector);
+			if (swept < bounds.arc) fault('arc', swept);
+		}
+	}
 	return out;
+}
+
+/** The length of a line that a set of stretches covers, each given by its two ends. */
+function covered(stretches: [number, number][]): number {
+	stretches.sort((a, b) => a[0] - b[0]);
+	let total = 0;
+	let end = Number.NEGATIVE_INFINITY;
+	for (const [from, to] of stretches) {
+		if (to <= end) continue;
+		total += to - Math.max(from, end);
+		end = to;
+	}
+	return total;
+}
+
+/** A foliage patch that a view shows under the crown's lower boundary. */
+export interface UnderFault {
+	/** Degrees round the plant that the side faces whose boundary the patch stands under. */
+	readonly side: number;
+	readonly patch: FramePatch;
+	/** The patch's distance from the trunk's line in the view, as a share of the plant's height. */
+	readonly reach: number;
+	/** How far its foot stands under the boundary, as a share of the plant's height. */
+	readonly by: number;
+}
+
+/**
+ * The foliage patches of a crown that stand under the lower boundary its species states. Each
+ * stated side is read as the view that looks across it shows it: a patch stands as far from the
+ * trunk's line as its centre does along the side's direction, whatever its depth in the view, and
+ * it is under the boundary when its rounded body's foot is lower than the boundary there. So a
+ * patch that hangs in front of the bole is read against the boundary at the bole.
+ *
+ * @param crown The frame, or any set of patches at a stated height.
+ * @param spec The species' frame.
+ * @param within The distance from the trunk's line, as a share of the plant's height, that the
+ * patches read stand inside.
+ * @param slack The depth under the boundary that is not counted, as a share of the height.
+ * @returns How many patches were read over all the sides, and those under a side's boundary.
+ * @category api/vegetation
+ */
+export function underBoundary(
+	crown: Crown,
+	spec: FrameSpec,
+	within = Number.POSITIVE_INFINITY,
+	slack = 0,
+): { readonly read: number; readonly under: UnderFault[] } {
+	let read = 0;
+	const under: UnderFault[] = [];
+	for (const side of spec.outline) {
+		const toward = radians(side.toward);
+		const c = cos(toward);
+		const s = sin(toward);
+		for (const patch of crown.patches) {
+			const reach = (patch.centre[0] * c + patch.centre[2] * s) / crown.scale;
+			if (reach < 0 || reach > within) continue;
+			read++;
+			const by = curveAt(side.under, reach) - (patch.centre[1] - patch.depth / 2) / crown.scale;
+			if (by > slack) under.push({ side: side.toward, patch, reach, by });
+		}
+	}
+	return { read, under };
+}
+
+/** The rays a crown's rim is read along, over the half turn above its base. */
+const RIM_RAYS = 361;
+/** The rays to each side that a ray takes its farthest reach from, so a thin gap is no notch. */
+const RIM_WINDOW = 3;
+
+/**
+ * The lumps of a crown's rim in a view from one side, read as the species' reference figures read
+ * a photograph's. Rays leave the trunk's line at the crown's base over the half turn above it, and
+ * each takes the farthest foliage it meets. A notch is a place where that edge falls inside the
+ * edge's convex hull by a set share of the crown's size, the square root of the hull's area, and
+ * stands that far above the saddles that join it to deeper notches. A lump is the edge between two
+ * notches, so a convex crown is one lump however wide it is.
+ *
+ * @param crown The frame, or any set of patches at a stated height.
+ * @param turn The degrees round the plant the view looks from: 0 looks along -Z with +X to its
+ * right.
+ * @param base The height of the crown's base, as a share of the plant's height.
+ * @param least The least depth of a notch, as a share of the crown's size.
+ * @returns The lumps' count and each notch's depth, deepest first.
+ * @category api/vegetation
+ */
+export function rimLumps(
+	crown: Crown,
+	turn: number,
+	base: number,
+	least = 0.04,
+): { readonly count: number; readonly notches: number[] } {
+	const facing = radians(turn);
+	const rightX = cos(facing);
+	const rightZ = -sin(facing);
+	const floor = base * crown.scale;
+	// Each patch as the view shows it: an ellipse of its width and depth about its centre.
+	const seen = crown.patches.map((patch) => ({
+		x: patch.centre[0] * rightX + patch.centre[2] * rightZ,
+		y: patch.centre[1] - floor,
+		a: Math.max(1e-6, patch.width / 2),
+		b: Math.max(1e-6, patch.depth / 2),
+	}));
+	const reach = new Float64Array(RIM_RAYS);
+	const angleOf = (ray: number): number => (PI * ray) / (RIM_RAYS - 1);
+	for (let ray = 0; ray < RIM_RAYS; ray++) {
+		const c = cos(angleOf(ray));
+		const s = sin(angleOf(ray));
+		let far = 0;
+		for (const { x, y, a, b } of seen) {
+			// Where the ray leaves the ellipse: the greater root of the ray's run through it.
+			const p = (c * c) / (a * a) + (s * s) / (b * b);
+			const q = (c * x) / (a * a) + (s * y) / (b * b);
+			const r = (x * x) / (a * a) + (y * y) / (b * b) - 1;
+			const inside = q * q - p * r;
+			if (inside < 0) continue;
+			far = Math.max(far, (q + Math.sqrt(inside)) / p);
+		}
+		reach[ray] = far;
+	}
+	const edge: [number, number][] = [];
+	for (let ray = 0; ray < RIM_RAYS; ray++) {
+		let most = 0;
+		for (let k = Math.max(0, ray - RIM_WINDOW); k <= Math.min(RIM_RAYS - 1, ray + RIM_WINDOW); k++)
+			most = Math.max(most, reach[k] as number);
+		edge.push([most * cos(angleOf(ray)), most * sin(angleOf(ray))]);
+	}
+	const hull = convexHull([[0, 0], ...edge]);
+	let twice = 0;
+	hull.forEach((p, h) => {
+		const q = hull[(h + 1) % hull.length] as [number, number];
+		twice += p[0] * q[1] - q[0] * p[1];
+	});
+	const size = Math.sqrt(Math.abs(twice) / 2);
+	if (!(size > 0) || hull.length < 3) return { count: 1, notches: [] };
+	// A point's depth is its distance to the nearest side of the hull, over the crown's size.
+	const depth = edge.map(([px, py]) => {
+		let nearest = Number.POSITIVE_INFINITY;
+		hull.forEach((p, h) => {
+			const q = hull[(h + 1) % hull.length] as [number, number];
+			const ex = q[0] - p[0];
+			const ey = q[1] - p[1];
+			const along = Math.max(
+				0,
+				Math.min(1, ((px - p[0]) * ex + (py - p[1]) * ey) / (ex * ex + ey * ey || 1)),
+			);
+			const dx = px - p[0] - along * ex;
+			const dy = py - p[1] - along * ey;
+			nearest = Math.min(nearest, Math.sqrt(dx * dx + dy * dy));
+		});
+		return nearest / size;
+	});
+	const notches = peaks(depth, least)
+		.map((at) => depth[at] as number)
+		.sort((a, b) => b - a);
+	return { count: notches.length + 1, notches };
+}
+
+/** The convex hull of a set of points, in order round it. */
+function convexHull(points: readonly [number, number][]): [number, number][] {
+	const sorted = [...points].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+	const cross = (o: [number, number], a: [number, number], b: [number, number]): number =>
+		(a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+	const half = (list: [number, number][]): [number, number][] => {
+		const out: [number, number][] = [];
+		for (const p of list) {
+			while (
+				out.length >= 2 &&
+				cross(
+					out[out.length - 2] as [number, number],
+					out[out.length - 1] as [number, number],
+					p,
+				) <= 0
+			)
+				out.pop();
+			out.push(p);
+		}
+		out.pop();
+		return out;
+	};
+	return [...half(sorted), ...half([...sorted].reverse())];
+}
+
+/**
+ * The peaks of a profile that stand at least a stated height above the saddle that joins each to a
+ * higher peak, or above the profile's ends where it is the highest. A level stretch is one peak.
+ */
+function peaks(profile: readonly number[], least: number): number[] {
+	const found: number[] = [];
+	const n = profile.length;
+	for (let i = 0; i < n; i++) {
+		const d = profile[i] as number;
+		if (d < least) continue;
+		if (i > 0 && (profile[i - 1] as number) >= d) continue;
+		let end = i;
+		while (end + 1 < n && profile[end + 1] === d) end++;
+		if (end + 1 < n && (profile[end + 1] as number) > d) continue;
+		let leftLow = d;
+		let leftHigher = false;
+		for (let k = i - 1; k >= 0; k--) {
+			const v = profile[k] as number;
+			if (v > d) {
+				leftHigher = true;
+				break;
+			}
+			leftLow = Math.min(leftLow, v);
+		}
+		let rightLow = d;
+		let rightHigher = false;
+		for (let k = end + 1; k < n; k++) {
+			const v = profile[k] as number;
+			if (v >= d) {
+				rightHigher = true;
+				break;
+			}
+			rightLow = Math.min(rightLow, v);
+		}
+		if (!leftHigher) leftLow = Math.min(leftLow, 0);
+		if (!rightHigher) rightLow = Math.min(rightLow, 0);
+		if (d - Math.max(leftLow, rightLow) >= least) found.push((i + end) >> 1);
+	}
+	return found;
 }
 
 /**
