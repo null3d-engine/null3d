@@ -1,4 +1,9 @@
 {
+	"07-limb-leaving-trunk.png": {
+		"limbShare": 0.33,
+		"collarColumn": 0.5,
+		"limbLie": 45
+	},
 	"14-bark-base.png": {
 		"barkMask": true
 	},

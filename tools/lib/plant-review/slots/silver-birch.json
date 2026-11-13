@@ -1,4 +1,9 @@
 {
+	"07-limb-leaving-trunk.png": {
+		"limbShare": 0.12,
+		"collarColumn": 0.3,
+		"limbLie": 45
+	},
 	"01-whole-distant.png": {
 		"daylight": 2.95,
 		"skyShare": 0.65
