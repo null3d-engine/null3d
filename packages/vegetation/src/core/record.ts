@@ -85,32 +85,30 @@ export interface Species {
 	/** Where the scatter places this species: its layer, spacing and tolerances. */
 	readonly ecology?: SpeciesEcology;
 	/**
-	 * The least of each grow share at which this species still reads as itself, for a sparse form:
-	 * a phone or a tablet may grow it lighter than a desktop, but not past these floors. A species
-	 * with no floors has no sparse form and grows the record's own at every device.
+	 * What the sparsest form of this species keeps: the least share of its foliage, and which limbs
+	 * count as great limbs and so stay whole. A species with no floors takes the add-on's own.
 	 */
 	readonly sparse?: SparseFloors;
 }
 
 /**
- * The floors of a species' sparse form: the least limb and leaf share it keeps, and the most
- * coarsening its wood and shoots take, before the plant stops reading as its species.
+ * The floors of a species' sparseness: what its sparsest form keeps, so the plant still reads as
+ * its species.
  *
  * @category api/vegetation
  */
 export interface SparseFloors {
-	/** The least limb share, from 0.05 to 1: how much of the record's wood the sparse form keeps. */
-	readonly limbs: number;
-	/** The least leaf-area share, from 0.05 to 1: how much of the record's leaf it keeps. */
-	readonly leaves: number;
-	/** The most coarsening, from 0 to 1: how far the sparse form smooths the wood's mesh. */
-	readonly coarseness: number;
 	/**
-	 * The most section sparsity, from 0 to 1: how far the sparse form may thin the wood's own
-	 * sections, from the level's rings and sides to a few flat-sided runs with square ends. Absent,
-	 * the sparse form keeps the sections its coarseness gives.
+	 * The share of the plant's foliage the sparsest form keeps, from 0 to 1: its shoots, or its
+	 * leaves where the plant carries no shoots. The shoots are kept whole, at the size they grew.
 	 */
-	readonly sections?: number;
+	readonly foliage: number;
+	/**
+	 * The least radius that makes a limb a great limb, as a share of the thickest limb that leaves
+	 * the same stem, above 0 and up to 1. A great limb stays whole at every sparseness. Half the
+	 * thickest limb's radius when not given.
+	 */
+	readonly limbs?: number;
 }
 
 /**
@@ -2589,13 +2587,6 @@ export interface LodSpec {
 	readonly switchPixels: readonly [lod1: number, lod2: number, lod3: number];
 	/** Macro orders that the first and second card levels keep as wood. */
 	readonly woodOrders: readonly [lod1: number, lod2: number];
-	/**
-	 * How much a shoot's card grows past the shoots it stands for, 1 by default. A card is a picture
-	 * of one shoot with transparent gaps between its leaves, and at a whole view neighbouring cards
-	 * do not meet, so the crown breaks into pieces. Growing them makes the gaps fall on a
-	 * neighbour's leaves instead of on sky.
-	 */
-	readonly cardGrow?: number;
 	/**
 	 * Texels a side of one cell of the card atlas, at each tier, where the default cell does not
 	 * suit the species: each entry is a power of two from 32 to 256, and 64 by default. A needle a millimetre and a half across is under one texel

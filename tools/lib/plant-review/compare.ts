@@ -91,7 +91,7 @@ const BARK_VIEWS: ReadonlySet<string> = new Set([
  * The green of a leaf in CIELAB a*, below which a patch pixel is foliage rather than bark. Foliage
  * over a bark close-up stands well below this; the barks measured across the corpus stay above it.
  */
-const LEAF_GREEN = -5;
+export const LEAF_GREEN = -5;
 
 /**
  * The close views of the wood from among the plant's own parts: a limb's join, a fork, the trunk

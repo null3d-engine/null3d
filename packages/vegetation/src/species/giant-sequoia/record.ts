@@ -379,9 +379,6 @@ export const record: Species = {
 		// few tens of pixels, so the real shoots draw from twenty pixels up and the cards serve the
 		// whole views alone.
 		switchPixels: [20, 12, 160],
-		// One card stands for a whole clump of its neighbours' shoots, so a crown of scale ropes
-		// closes into the reference's separate masses rather than a scatter of specks.
-		cardGrow: 14,
 		// A shoot's own twig is under a pixel at a whole view, so each card draws a short stalk
 		// down to the wood it grows from and joins the clump to its branch.
 		cardStalk: 3,

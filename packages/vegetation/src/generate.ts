@@ -11,7 +11,9 @@
 // stage (core/placeholder.ts); with `placeholders: 'missing'` it grows a stand-in only for each stage
 // that is not built yet; without either, a stage that is not built yet throws.
 import type {
+	ClusterCount,
 	MeshArrays,
+	PartTriangles,
 	PlantAsset,
 	PlantPart,
 	PrototypeArrays,
@@ -22,7 +24,7 @@ import type {
 import { type CoarsenessOptions, coarsenessFor, coarsenessKey } from './coarseness';
 import { speciesBox } from './core/box';
 import { formRecord } from './core/forms';
-import { type MacroSkeleton, SkeletonBuilder } from './core/graph';
+import { type MacroSkeleton, SkeletonBuilder, skeletonCopy } from './core/graph';
 import { hashText } from './core/hash';
 import { quatRotate } from './core/math';
 import { NotBuiltError } from './core/not-built';
@@ -74,9 +76,19 @@ import {
 	scaledRows,
 	scaledSkeleton,
 	targetHeight,
+	topRow,
 } from './grow/height';
 import { leadOnThickest } from './grow/leaders';
 import { grower, loadGrower } from './grow/models';
+import {
+	FOLIAGE_FLOOR,
+	GREAT_LIMB_SHARE,
+	type SparseOrder,
+	sparseKeep,
+	sparseOrder,
+	sparsePlant,
+	woodParts,
+} from './grow/sparse';
 import { extrasMesh } from './leaf/extras';
 import { writtenPieces } from './leaf/ground-piece';
 import { dressShoots, pruneLight } from './leaf/instancer';
@@ -85,6 +97,16 @@ import { type PiecePrototype, type PieceRule, piecePrototypes } from './leaf/pie
 import { carriesPieces, kitPiece, PROTOTYPES_MOST, writesPieces } from './leaf/piece-rows';
 import { inLeaf } from './leaf/season';
 import { shootPrototypes } from './leaf/shoot';
+import {
+	type BudgetInput,
+	type LevelBuild,
+	levelBuild,
+	levelWithin,
+	NO_CLUSTERS,
+	NO_TRIANGLES,
+	referenceTriangles,
+	shootPartTriangles,
+} from './lod/budget';
 import { bakeCards } from './lod/card-bake';
 import { cardMesh } from './lod/cards';
 import { bakeFar } from './lod/impostor';
@@ -163,32 +185,29 @@ export interface GrowOptions extends CoarsenessOptions {
 	/** Grow or cut one piece for close review instead of the whole plant. */
 	readonly cutting?: CuttingOptions;
 	/**
-	 * The leaf area on the wood against the record's own, from 0.4 to 2: 1 grows the record's
-	 * leaves, a share below 1 draws smaller leaves on the same twigs, above 1 larger ones. Every
-	 * species answers it the same way, since every record places its shoots at a scale its leaves
-	 * follow.
-	 */
-	readonly leaves?: number;
-	/**
-	 * The wood itself against the record's own, from 0.4 to 2: 1 grows the record's crown, below 1
-	 * keeps fewer shoots along the wood, fewer of its finest twigs and a sparser division of its
-	 * branches, and above 1 keeps the shoots the record's own density drops. Every growth model
-	 * answers its own count of limbs, so one option sets the wood of any species.
-	 */
-	readonly limbs?: number;
-	/**
-	 * How far toward its sparse form the plant grows, from 0 to 1: 0 is the record's own, and 1 the
-	 * sparsest the species allows, with the record's `sparse` floors holding the limbs, the leaves
-	 * and the coarseness at what still reads as its species. A record with no floors grows its own
-	 * form whatever the level asks. A page sets it by the device class, so a phone or a tablet
-	 * grows the light form and a desktop the full one.
+	 * How much of its foliage, and of the branches that carried it, the plant gives up, from 0 to 1:
+	 * 0 is the plant as grown, at its full density, and 1 is the sparsest, the trunk and the great
+	 * limbs with the share of the foliage the record's `sparse.foliage` floor names. The plant grows
+	 * once, and a sparser plant is the same plant with shoots and branches removed: nothing moves,
+	 * no leaf is scaled, every piece stays joined to the root, and each sparser plant holds only
+	 * shoots and wood that every denser one holds. Stand-in species and cut pieces grow as they are.
 	 */
 	readonly sparse?: number;
 	/**
+	 * The most triangles one copy of the plant may draw at any of its levels, its shoot rows
+	 * counted in the nearest. Without it, each level draws what its best look needs: the wood at the
+	 * variant's tier, every shoot row at that tier, and the extras at their nearest form. With it,
+	 * the maximum is shared out across the trunk, the great limbs, the branches, the shoots and the
+	 * extras in proportion to what each holds at that best look, each part steps down to fit its
+	 * share, and no level draws more. It acts at any sparseness, on what the sparseness left. A
+	 * stand-in species and a cut piece grow as they are.
+	 */
+	readonly maxTriangles?: number;
+	/**
 	 * How far the wood's own sections are thinned, from 0 to 1: 0 is the level's own rings and
 	 * sides, and 1 the fewest that still draws a closed run, with square ends and no rounded joins.
-	 * A page rarely sets it; a sparse level raises it to the species' floor, if the record names
-	 * one. Every growth model answers it the same way, since one wood mesher builds them all.
+	 * A page rarely sets it. Every growth model answers it the same way, since one wood mesher
+	 * builds them all.
 	 */
 	readonly sections?: number;
 	/**
@@ -199,192 +218,6 @@ export interface GrowOptions extends CoarsenessOptions {
 	readonly cards?: number;
 	/** How a card joins the plant when its branch is not drawn: `remove`, `branch` or `twig`. */
 	readonly cardJoin?: 'remove' | 'branch' | 'twig';
-}
-
-/** The least and the most share of leaves or limbs a growth may ask for. */
-export const LEAVES_LEAST = 0.4;
-export const LEAVES_MOST = 2;
-export const LIMBS_LEAST = 0.4;
-export const LIMBS_MOST = 2;
-/**
- * The least share a sparse form may reach, below the shares a page passes on its own.
- *
- * @category api/vegetation
- */
-export const SPARSE_LEAST = 0.05;
-
-/**
- * The coarseness every species reaches at the full sparse level, whatever its record asks for. The
- * coarseness decides how finely each limb is meshed, so it moves the triangle count down without
- * changing what the plant grows: the twigs, the shoot rows and the leaves stay.
- *
- * @category api/vegetation
- */
-export const SPARSE_COARSENESS = 0.85;
-
-/**
- * The record a plant grows by when its leaf area is set against the record's own. A shoot carries
- * its leaves at its own scale, so the share is taken on the leaf's area and the scale moves by its
- * square root, and the wood the leaves stand on does not move at all. Every species moves the same
- * way, so one option sets the leaves of any of them.
- *
- * @param record The species record.
- * @param leaves The leaf-area share, 1 for the record's own; undefined or 1 leaves the record alone.
- * @returns The record to grow by.
- * @category api/vegetation
- */
-export function withLeaves(
-	record: Species,
-	leaves: number | undefined,
-	least: number = LEAVES_LEAST,
-): Species {
-	if (leaves === undefined || leaves === 1) return record;
-	checkShare('leaves', leaves, least, LEAVES_MOST);
-	const shoots = record.shoots;
-	if (!shoots) return record;
-	const grow = Math.sqrt(leaves);
-	const scale = shoots.placement.scale;
-	const scaled: Spread =
-		typeof scale === 'number'
-			? scale * grow
-			: { mean: scale.mean * grow, spread: scale.spread * grow };
-	const placement = shoots.placement;
-	const density = placement.density;
-	// A smaller shoot fits more often along the wood, so the shoot count would rise as the leaves
-	// shrink. The count moves with the scale the other way, so it is taken back out and the plant
-	// keeps the same wood, the same number of shoots and leaves of a new size.
-	return {
-		...record,
-		shoots: {
-			...shoots,
-			placement: {
-				...placement,
-				scale: scaled,
-				perMetre: scaledCurve(placement.perMetre, grow),
-				...(density !== undefined ? { density: density * grow } : {}),
-			},
-		},
-	};
-}
-
-/**
- * The record a plant grows by when its wood is set against the record's own. Each growth model
- * keeps its own count of limbs, and the share moves that count: the branches a self-organizing
- * plant puts out, the finest order of an architectural plant, a rosette's fronds or a tuft's
- * tillers, a culm's culms or a column's arms. A record that carries shoots also thins the shoots
- * along its finest axes, and keeps its lit rim by raising the shade line it prunes under.
- *
- * @param record The species record.
- * @param limbs The limb share, 1 for the record's own; undefined or 1 leaves the record alone.
- * @returns The record to grow by.
- * @category api/vegetation
- */
-export function withLimbs(
-	record: Species,
-	limbs: number | undefined,
-	least: number = LIMBS_LEAST,
-): Species {
-	if (limbs === undefined || limbs === 1) return record;
-	checkShare('limbs', limbs, least, LIMBS_MOST);
-	const thin = Math.min(1, limbs);
-	// A scaffold plant's sockets are its shoots' places, so a share above the record's own adds
-	// sockets as a share below it takes them away. Every other model keeps the shoots its own
-	// shade line drops, below.
-	const growth = thinnedGrowth(record.growth, record.growth.model === 'scaffold' ? limbs : thin);
-	const shoots = record.shoots;
-	if (!shoots) return { ...record, growth };
-	const placement = shoots.placement;
-	const own = placement.skyPrune;
-	// A share above the record's own keeps the shoots its shade line drops; below it the shoots
-	// along the finest axes thin, and the line rises so the crown keeps its lit rim.
-	const line = own === undefined ? undefined : Math.min(0.95, Math.max(0, own / limbs));
-	const density = placement.density;
-	return {
-		...record,
-		growth,
-		shoots: {
-			...shoots,
-			placement: {
-				...placement,
-				...(line !== undefined ? { skyPrune: line } : {}),
-				perMetre: thin < 1 ? scaledCurve(placement.perMetre, thin) : placement.perMetre,
-				...(density !== undefined ? { density: density * thin } : {}),
-			},
-		},
-	};
-}
-
-/** The share's range, or an error that says what it may be. */
-function checkShare(name: string, share: number, least: number, most: number): void {
-	if (share >= least && share <= most) return;
-	throw new Error(
-		`@null3d/vegetation: ${name} ${share} is outside ${least} to ${most}; 1 grows the record's own.`,
-	);
-}
-
-/**
- * A growth spec with a share of its model's own limbs removed: the wood a sparse plant keeps. A
- * scaffold plant takes a share above one too.
- */
-function thinnedGrowth(growth: Species['growth'], thin: number): Species['growth'] {
-	switch (growth.model) {
-		// The branching multiplier is 1 where a record does not give one, so a share moves it
-		// whatever the record says: this is the dial that decides how many limbs a crown puts out.
-		case 'self-organizing':
-			return { ...growth, branching: (growth.branching ?? 1) * thin };
-		// A frame stated as axis rules keeps every axis; its sockets carry their rank for thinning.
-		case 'frame':
-			return growth;
-		// A scaffold plant's branches end at its sockets, so the share moves the sockets on each
-		// foliage mass: fewer sockets are fewer branches, and the masses keep the crown's outline.
-		case 'scaffold':
-			return {
-				...growth,
-				sockets: { ...growth.sockets, spacing: growth.sockets.spacing / Math.sqrt(thin) },
-			};
-		// A conifer's limbs are its boughs, so the share moves the boughs at the leader and leaves
-		// the orders below them their own division.
-		case 'architectural':
-			return {
-				...growth,
-				tiers: {
-					...growth.tiers,
-					perWhorl: scaledSpread(growth.tiers.perWhorl, thin),
-					between: growth.tiers.between * thin,
-				},
-			};
-		// A directed conifer states its limb count, so the share moves that count and the levels
-		// share out what is left.
-		case 'conifer':
-			return {
-				...growth,
-				limbs: {
-					...growth.limbs,
-					count: Math.max(growth.limbs.levels.length, Math.round(growth.limbs.count * thin)),
-				},
-			};
-		case 'crown-rosette':
-			return {
-				...growth,
-				crown: { ...growth.crown, fronds: scaledSpread(growth.crown.fronds, thin) },
-			};
-		case 'culm':
-			return { ...growth, culms: scaledSpread(growth.culms, thin) };
-		case 'rosette':
-			return { ...growth, shoots: scaledSpread(growth.shoots, thin) };
-		case 'frond-colony':
-			return { ...growth, fronds: scaledSpread(growth.fronds, thin) };
-		case 'tuft':
-			return { ...growth, shoots: scaledSpread(growth.shoots, thin) };
-		case 'column':
-			return { ...growth, arms: { ...growth.arms, count: scaledSpread(growth.arms.count, thin) } };
-	}
-}
-
-/** A count's spread with its mean scaled, never below one whole limb. */
-function scaledSpread(spread: Spread, factor: number): Spread {
-	if (typeof spread === 'number') return Math.max(1, spread * factor);
-	return { mean: Math.max(1, spread.mean * factor), spread: spread.spread * factor };
 }
 
 /** A curve with every value multiplied by a factor. */
@@ -400,15 +233,21 @@ function scaledCurve(curve: Curve, factor: number): Curve {
  *
  * @param source The species' record and texture manifest, such as its module.
  * @param rules The species' piece rules.
+ * @param bare Whether the pieces carry no leaves, as a deciduous plant's do in winter: the wood and
+ * the bud at each stem's end.
  * @returns The pieces, each rule's variants together, in the rules' order.
  */
-export function buildPiecesNow(source: KitSource, rules: readonly PieceRule[]): PiecePrototype[] {
+export function buildPiecesNow(
+	source: KitSource,
+	rules: readonly PieceRule[],
+	bare = false,
+): PiecePrototype[] {
 	const builder = foliage(source.record.foliage.kind);
 	const manifest = source.textures.manifest;
 	return piecePrototypes(
 		source.record,
 		rules,
-		DETAILS.map((tier) => builder.leaves(source.record, manifest, tier)),
+		DETAILS.map((tier) => (bare ? [] : builder.leaves(source.record, manifest, tier))),
 	);
 }
 
@@ -526,7 +365,7 @@ export function kitKey(
 
 /**
  * The key of a grown variant: its kit's key, the seed, the variant, the season, the tier, the
- * cutting and the coarseness options.
+ * cutting, the coarseness options, the sparseness and the triangle maximum.
  *
  * @param kit The species' kit.
  * @param options The growth's options.
@@ -536,11 +375,12 @@ export function kitKey(
 export function variantKey(kit: SpeciesKitData, options: GrowOptions): string {
 	const season = options.season ?? kit.record.seasons.default;
 	const cutting = options.cutting ? JSON.stringify(options.cutting) : '';
-	// A share of leaves or limbs grows a different plant, so it keys a different asset. Section
-	// sparsity meshes the same plant coarser, which is a different asset too.
-	const leaves =
-		options.leaves === undefined || options.leaves === 1 ? '' : `:leaves=${options.leaves}`;
-	const limbs = options.limbs === undefined || options.limbs === 1 ? '' : `:limbs=${options.limbs}`;
+	// A sparser plant holds less of the plant, and section sparsity meshes the same plant coarser:
+	// each is a different asset.
+	const level = sparseLevel(kit, options);
+	const sparse = level > 0 ? `:sparse=${level}` : '';
+	const most = maxOf(kit, options);
+	const max = most === undefined ? '' : `:max=${most}`;
 	const sections =
 		options.sections === undefined || options.sections === 0 ? '' : `:sections=${options.sections}`;
 	const cards = options.cards === undefined || options.cards === 1 ? '' : `:cards=${options.cards}`;
@@ -548,7 +388,7 @@ export function variantKey(kit: SpeciesKitData, options: GrowOptions): string {
 		options.cardJoin === undefined || options.cardJoin === 'remove'
 			? ''
 			: `:join=${options.cardJoin}`;
-	return `${kit.key}:${options.seed >>> 0}:${options.variant}:${season}:${options.detail ?? kit.detail}:${cutting}${coarsenessKey(kit, options)}${leaves}${limbs}${sections}${cards}${join}`;
+	return `${kit.key}:${options.seed >>> 0}:${options.variant}:${season}:${options.detail ?? kit.detail}:${cutting}${coarsenessKey(kit, options)}${sparse}${max}${sections}${cards}${join}`;
 }
 
 /**
@@ -713,39 +553,44 @@ function cuttingLeaves(record: Species, cutting: CuttingOptions | undefined): Sp
 	return { ...out, growth: { ...growth, leaves } };
 }
 
+/** Checks a growth's shares, with an error that says what each may be. */
+function checkGrowOptions(options: GrowOptions): void {
+	const { sections, cards, sparse } = options;
+	if (sections !== undefined && !(sections >= 0 && sections <= 1))
+		throw new Error(`sections is ${sections}; a section sparsity lies from 0 to 1`);
+	if (cards !== undefined && !(cards >= 0.05 && cards <= 1))
+		throw new Error(`cards is ${cards}; a share of the card rows lies from 0.05 to 1`);
+	if (sparse !== undefined && !(sparse >= 0 && sparse <= 1))
+		throw new Error(`sparse is ${sparse}; a sparseness lies from 0 to 1`);
+	const max = options.maxTriangles;
+	if (max !== undefined && !(Number.isFinite(max) && max > 0))
+		throw new Error(`maxTriangles is ${max}; a maximum is a positive number of triangles`);
+}
+
 /**
- * The grow options a sparse level asks for: the leaves, limbs, coarseness and section sparsity
- * moved toward the record's floors by the level, from 0, the record's own form, to 1, the sparsest
- * the species allows. A record with no floors, or a level of 0, leaves the options as they stand.
- * The level is kept in the options so the shares it sets are taken at the sparse bound rather than
- * a page's own.
+ * The triangle maximum a growth takes: the one its options give, or none for a stand-in species and
+ * for a cut piece, which grow as they are.
  *
- * @param record The species record.
- * @param options The options as the page gave them.
- * @returns The options to grow by.
- * @category api/vegetation
+ * @param kit The species' kit.
+ * @param options The growth's options.
+ * @returns The maximum, or undefined for none.
  */
-export function withSparse<T extends GrowOptions>(record: Species, options: T): GrowOptions {
-	if (options.sections !== undefined && !(options.sections >= 0 && options.sections <= 1))
-		throw new Error(`sections is ${options.sections}; a section sparsity lies from 0 to 1`);
-	if (options.cards !== undefined && !(options.cards >= 0.05 && options.cards <= 1))
-		throw new Error(`cards is ${options.cards}; a share of the card rows lies from 0.05 to 1`);
-	const floors = record.sparse;
-	const asked = options.sparse;
-	if (!floors || asked === undefined || asked <= 0) return options;
-	if (asked > 1) throw new Error(`sparse is ${asked}; a sparse level lies from 0 to 1`);
-	const level = asked;
-	const at = (least: number) => Math.max(least, 1 - level * (1 - least));
-	return {
-		...options,
-		leaves: at(floors.leaves),
-		limbs: at(floors.limbs),
-		coarseness: Math.max(
-			options.coarseness ?? 0,
-			level * Math.max(floors.coarseness, SPARSE_COARSENESS),
-		),
-		sections: Math.max(options.sections ?? 0, level * (floors.sections ?? 0)),
-	};
+function maxOf(kit: SpeciesKitData, options: GrowOptions): number | undefined {
+	if (options.cutting || kit.placeholders === true) return undefined;
+	return options.maxTriangles;
+}
+
+/**
+ * The sparseness a growth takes: the one its options give, or none for a stand-in species and for a
+ * cut piece, which grow as they are.
+ *
+ * @param kit The species' kit.
+ * @param options The growth's options.
+ * @returns The sparseness, from 0 to 1.
+ */
+function sparseLevel(kit: SpeciesKitData, options: GrowOptions): number {
+	if (options.cutting || kit.placeholders === true) return 0;
+	return Math.min(1, Math.max(0, options.sparse ?? 0));
 }
 
 /**
@@ -757,9 +602,9 @@ export function withSparse<T extends GrowOptions>(record: Species, options: T): 
 export type DeviceClass = 'phone' | 'tablet' | 'desktop';
 
 /**
- * The sparse level a device class asks for: a phone or a tablet grows the light form of a species
- * that records floors, and a desktop grows the record's own at every preset. A page reads its class
- * from the engine's chooser and passes this level beside the record.
+ * The sparseness a device class asks for: a phone or a tablet grows the sparsest form of each
+ * species, and a desktop grows the plant as grown at every preset. A page reads its class from the
+ * engine's chooser and passes this level beside the record.
  *
  * @param kind The device class the engine chose.
  * @returns The level for `GrowOptions.sparse`.
@@ -769,14 +614,69 @@ export function sparseForDevice(kind: DeviceClass): number {
 	return kind === 'desktop' ? 0 : 1;
 }
 
-/** The grown skeleton and its dressing: the stages before the meshes. */
-function dress(kit: SpeciesKitData, options: GrowOptions): MeshInput {
-	// A sparse form's shares may sit below what a page may ask for on its own.
-	const least = options.sparse !== undefined ? SPARSE_LEAST : LEAVES_LEAST;
-	const record = cuttingLeaves(
-		withLimbs(withLeaves(kit.record, options.leaves, least), options.limbs, least),
-		options.cutting,
-	);
+/**
+ * A plant as grown, at its full density: what every sparseness of one variant is cut from. Its
+ * arrays are never written after it is made, so each growth that reads it takes copies.
+ */
+interface GrownPlant {
+	/** What the dressing stages read: the record at the plant's own scale, the kit and the skeleton as grown. */
+	readonly input: DressInput;
+	/** The shoot rows as grown, before the crown lights them, each naming its axis as its record. */
+	readonly rows: ShootRows;
+	/** The mesh tier. */
+	readonly detail: Detail;
+	/** The order its foliage goes in as it thins, found when a sparseness first asks for it. */
+	order?: SparseOrder;
+}
+
+/** The plants as grown that this thread keeps, by key, the one read last at the end. */
+const GROWN = new Map<string, GrownPlant>();
+
+/** The most plants as grown that a thread keeps: a page changes the sparseness of a few at a time. */
+const GROWN_KEPT = 8;
+
+/** The plants this thread has grown from a seed. */
+let grownFromSeed = 0;
+
+/**
+ * How many plants this thread has grown from a seed. A change of sparseness cuts the plant that is
+ * kept as grown and so leaves the count where it was, while the thread still keeps that plant.
+ *
+ * @returns The count.
+ */
+export function plantsGrown(): number {
+	return grownFromSeed;
+}
+
+/** Forgets every plant this thread keeps as grown, so the next growth starts from its seed. */
+export function forgetGrownPlants(): void {
+	GROWN.clear();
+}
+
+/**
+ * The plant as grown for a kit and a growth's options: kept from the growth before, or grown now.
+ * Its key holds everything that moves the grown plant and leaves out the sparseness, which only
+ * cuts it.
+ */
+function grownPlant(kit: SpeciesKitData, options: GrowOptions): GrownPlant {
+	const stand = kit.placeholders === 'missing' ? ':missing' : kit.placeholders ? ':stand-ins' : '';
+	const key = `${variantKey(kit, { ...options, sparse: 0, maxTriangles: undefined })}${stand}`;
+	const kept = GROWN.get(key);
+	if (kept) {
+		GROWN.delete(key);
+		GROWN.set(key, kept);
+		return kept;
+	}
+	const grown = growFull(kit, options);
+	GROWN.set(key, grown);
+	if (GROWN.size > GROWN_KEPT) GROWN.delete(GROWN.keys().next().value as string);
+	return grown;
+}
+
+/** Grows a plant from its seed at its full density: the skeleton, its height and its shoot rows. */
+function growFull(kit: SpeciesKitData, options: GrowOptions): GrownPlant {
+	grownFromSeed++;
+	const record = cuttingLeaves(kit.record, options.cutting);
 	const placeholders = kit.placeholders;
 	const growInput: GrowInput = {
 		record,
@@ -880,7 +780,7 @@ function dress(kit: SpeciesKitData, options: GrowOptions): MeshInput {
 					1,
 				)
 			: rows.count > 0
-				? Math.max(skeleton.height, cardTop(kit, rows, record.lod.cardGrow ?? 1))
+				? Math.max(skeleton.height, cardTop(kit, rows))
 				: 0;
 		if (top > 0 && Math.abs(top - target) / target > HEIGHT_RESIDUAL) {
 			const corrective = target / top;
@@ -888,13 +788,128 @@ function dress(kit: SpeciesKitData, options: GrowOptions): MeshInput {
 			rows = scaledRows(rows, corrective);
 		}
 	}
-	const input: DressInput = { ...dressInput, skeleton };
+	return { input: { ...dressInput, skeleton }, rows, detail };
+}
+
+/** A copy of shoot rows, which a growth may light and renumber without touching the rows it read. */
+function rowsCopy(rows: ShootRows): ShootRows {
+	return {
+		...rows,
+		prototype: rows.prototype.slice(),
+		position: rows.position.slice(),
+		rotation: rows.rotation.slice(),
+		scale: rows.scale.slice(),
+		record: rows.record.slice(),
+		phase: rows.phase.slice(),
+		sky: rows.sky.slice(),
+		bent: rows.bent.slice(),
+		order: rows.order.slice(),
+		...(rows.back ? { back: rows.back.slice() } : {}),
+		...(rows.node ? { node: rows.node.slice() } : {}),
+	};
+}
+
+/** A dressed variant and what a level's parts and a triangle maximum read beside it. */
+interface Dressed {
+	/** The dressed variant the meshing stages read. */
+	readonly mesh: MeshInput;
+	/** What a level is built from: the variant, its wood's parts and the walk of its shoot rows. */
+	readonly budget: (wood: boolean) => BudgetInput;
+}
+
+/** The order a grown plant's foliage goes in, found once and kept beside the plant. */
+function orderOf(kit: SpeciesKitData, grown: GrownPlant): SparseOrder {
+	if (!grown.order) {
+		// The row that holds the drawn top stays, so every sparseness keeps the plant's height.
+		const top = topRow(kit, grown.rows);
+		grown.order = sparseOrder(
+			grown.input.skeleton,
+			grown.rows,
+			kit.record.sparse?.limbs ?? GREAT_LIMB_SHARE,
+			top >= 0 ? [top] : [],
+		);
+	}
+	return grown.order;
+}
+
+/**
+ * The dressed variant the meshing stages read: the plant as grown, or the same plant with the share
+ * of its foliage that the sparseness asks for removed, and its crown lit as it then stands. Every
+ * array is the growth's own, since the crown's light and the wind records write them in place and
+ * a job worker moves them to the page.
+ */
+function dressed(kit: SpeciesKitData, options: GrowOptions): Dressed {
+	const grown = grownPlant(kit, options);
+	const sparse = sparseLevel(kit, options);
+	// Rows that name no node stand on no skeleton, so no wood can follow them out.
+	const thins = grown.rows.count === 0 || grown.rows.node !== undefined;
+	const full = { skeleton: grown.input.skeleton, rows: grown.rows };
+	let thinned: ReturnType<typeof sparsePlant>;
+	if (thins && sparse > 0) {
+		const order = orderOf(kit, grown);
+		const floor = kit.record.sparse?.foliage ?? FOLIAGE_FLOOR;
+		thinned = sparsePlant(full.skeleton, full.rows, order, sparseKeep(order, sparse, floor));
+	}
+	const input: DressInput = thinned
+		? { ...grown.input, skeleton: thinned.skeleton, grown: full }
+		: { ...grown.input, skeleton: skeletonCopy(full.skeleton) };
+	const rows = rowsCopy(thinned ? thinned.rows : grown.rows);
 	const crown = stage(
-		placeholders,
+		kit.placeholders,
 		() => lightCrown(input, rows),
 		() => placeholderCrown(input),
 	);
-	return { ...input, rows, crown, detail };
+	const mesh: MeshInput = { ...input, rows, crown, detail: grown.detail };
+	const limbs = kit.record.sparse?.limbs ?? GREAT_LIMB_SHARE;
+	/** What a level of a plant is built from, for the plant as dressed or with fewer carriers. */
+	const budgetOf = (of: MeshInput, wood: boolean): BudgetInput => {
+		const order = thins && kit.placeholders !== true ? orderOf(kit, grown) : undefined;
+		let walk: Uint32Array | undefined;
+		if (order?.byRows) {
+			// The rows this plant holds, in the order the walk of the grown plant meets them.
+			const held = new Int32Array(full.rows.count).fill(-1);
+			for (let r = 0; r < of.rows.count; r++) held[of.rows.id?.[r] ?? r] = r;
+			const kept: number[] = [];
+			for (const row of order.list) if ((held[row] as number) >= 0) kept.push(held[row] as number);
+			walk = Uint32Array.from(kept);
+		}
+		let carriers = 0;
+		if (order && !order.byRows) {
+			const origin = of.skeleton.axes.origin;
+			for (let a = 0; a < of.skeleton.axes.count; a++)
+				if ((order.place[origin?.[a] ?? a] as number) < order.carriers) carriers++;
+		}
+		return {
+			mesh: of,
+			parts: woodParts(of.skeleton, limbs),
+			wood,
+			...(walk ? { walk } : {}),
+			...(order && !order.byRows
+				? {
+						carriers,
+						thin: (keep: number) => {
+							const fewer = sparsePlant(full.skeleton, full.rows, order, keep, 1);
+							if (!fewer) return undefined;
+							// The wood that stays keeps the wind records the variant's table gives it.
+							const records = new Uint16Array(full.skeleton.axes.count);
+							const from = mesh.skeleton.axes;
+							for (let a = 0; a < from.count; a++)
+								records[from.origin?.[a] ?? a] = from.record[a] as number;
+							const axes = fewer.skeleton.axes;
+							const record = axes.record.map((_, a) => records[axes.origin?.[a] ?? a] as number);
+							const skeleton = { ...fewer.skeleton, axes: { ...axes, record } };
+							return budgetOf({ ...of, skeleton, grown: full }, wood);
+						},
+					}
+				: {}),
+		};
+	};
+	return { mesh, budget: (wood) => budgetOf(mesh, wood) };
+}
+
+/** The dressed variant alone, for the stages that read no more. */
+function dress(kit: SpeciesKitData, options: GrowOptions): MeshInput {
+	return dressed(kit, options).mesh;
 }
 
 /**
@@ -1032,6 +1047,11 @@ function growCutting(
 			milliseconds: now() - started,
 			bytes: wind.records.byteLength + near.bytes,
 			triangles: [near.triangles, 0, 0],
+			parts: [
+				countedParts(parts, shootPartTriangles({ kit }, rows, detail)),
+				NO_TRIANGLES,
+				NO_TRIANGLES,
+			],
 		},
 	};
 }
@@ -1131,6 +1151,88 @@ function levelParts(mesh: MeshInput, level: MeshLevel): PlantPart[] {
 	return parts;
 }
 
+/** One level's quantised parts, each part's triangles, and what a maximum allowed each. */
+interface BuiltLevel {
+	readonly parts: PlantPart[];
+	readonly triangles: PartTriangles;
+	readonly allowed?: PartTriangles;
+	readonly shoots?: LevelBuild['shoots'];
+	readonly clusters: ClusterCount;
+}
+
+/** The parts' triangles of a level whose wood no mesher split: its wood counts as its trunk. */
+function countedParts(
+	parts: readonly PlantPart[],
+	shoots: readonly [leaves: number, twigs: number],
+): PartTriangles {
+	const of = (name: PlantPart['name']) => {
+		let triangles = 0;
+		for (const part of parts) if (part.name === name) triangles += part.arrays.indices.length / 3;
+		return triangles;
+	};
+	return {
+		...NO_TRIANGLES,
+		trunk: of('wood'),
+		twigs: shoots[1],
+		leaves: shoots[0] + of('cards') + of('foliage'),
+		extras: of('extras'),
+	};
+}
+
+/**
+ * The three levels of a variant: each as its best look draws it, or within the triangle maximum the
+ * growth names. A stand-in kit, and a species whose stage is not built yet, draw each level's
+ * stand-in stages and count their wood as one part.
+ */
+function builtLevels(
+	kit: SpeciesKitData,
+	plant: Dressed,
+	options: GrowOptions,
+): readonly [BuiltLevel, BuiltLevel, BuiltLevel] {
+	const { mesh } = plant;
+	const most = maxOf(kit, options);
+	const input = plant.budget(options.near === true);
+	const reference = most === undefined ? undefined : referenceOf(kit, input);
+	const level = (at: MeshLevel): BuiltLevel => {
+		const standIn = (): BuiltLevel => {
+			const parts = [...(at === 0 && options.near ? nearWood(mesh) : []), ...levelParts(mesh, at)];
+			const rows = at === 0 && mesh.record.lod.nearFoliage === 'instanced';
+			const shoots = rows ? shootPartTriangles(mesh, mesh.rows, mesh.detail) : ([0, 0] as const);
+			return { parts, triangles: countedParts(parts, shoots), clusters: NO_CLUSTERS };
+		};
+		const real = (): BuiltLevel => {
+			const build =
+				most === undefined || !reference
+					? levelBuild(input, at)
+					: levelWithin(input, at, most, reference);
+			return {
+				parts: [
+					...partOf(kit, 'wood', build.wood, WOOD_UV_STEPS),
+					...partOf(kit, 'foliage', build.foliage, TEXTURE_UV_STEPS),
+					...partOf(kit, 'cards', build.cards, TEXTURE_UV_STEPS),
+					// Fruit and cones are a few centimetres across, where the box's steps are near a millimetre.
+					...partOf(kit, 'extras', build.extras, TEXTURE_UV_STEPS, true),
+				],
+				triangles: build.triangles,
+				...(build.allowed ? { allowed: build.allowed } : {}),
+				...(build.shoots !== undefined ? { shoots: build.shoots } : {}),
+				clusters: build.clusters ?? NO_CLUSTERS,
+			};
+		};
+		return stage(kit.placeholders, real, standIn);
+	};
+	return [level(0), level(1), level(2)];
+}
+
+/** What each part holds at a plant's best look, or undefined where a stage of it is not built. */
+function referenceOf(kit: SpeciesKitData, input: BudgetInput): PartTriangles | undefined {
+	return stage(
+		kit.placeholders,
+		() => referenceTriangles(input),
+		() => undefined,
+	);
+}
+
 /** A clock for the stats, which no byte of the asset reads. */
 const now = () => (typeof performance === 'undefined' ? Date.now() : performance.now());
 
@@ -1145,11 +1247,12 @@ const now = () => (typeof performance === 'undefined' ? Date.now() : performance
  * @category api/vegetation
  */
 export function growPlantNow(kit: SpeciesKitData, options: GrowOptions): PlantAsset {
-	options = withSparse(kit.record, options);
+	checkGrowOptions(options);
 	if (options.cutting) return growCutting(kit, options, options.cutting);
 	const started = now();
 	const record = kit.record;
-	const mesh = dress(kit, options);
+	const plant = dressed(kit, options);
+	const mesh = plant.mesh;
 	const placeholders = kit.placeholders;
 	const wind = stage(
 		placeholders,
@@ -1161,11 +1264,11 @@ export function growPlantNow(kit: SpeciesKitData, options: GrowOptions): PlantAs
 		() => levelStarts(mesh),
 		() => placeholderStarts(mesh),
 	);
-	const near = [...(options.near ? nearWood(mesh) : []), ...levelParts(mesh, 0)];
+	const built = builtLevels(kit, plant, options);
 	const levels = [
-		levelOf(0, near, 0),
-		levelOf(1, levelParts(mesh, 1), starts[0]),
-		levelOf(2, levelParts(mesh, 2), starts[1]),
+		levelOf(0, built[0].parts, 0),
+		levelOf(1, built[1].parts, starts[0]),
+		levelOf(2, built[2].parts, starts[1]),
 	] as const;
 	const { skeleton } = mesh;
 	const { min, max } = skeleton.bounds;
@@ -1181,6 +1284,8 @@ export function growPlantNow(kit: SpeciesKitData, options: GrowOptions): PlantAs
 	);
 	let bytes = wind.records.byteLength;
 	for (const level of levels) bytes += level.bytes;
+	const most = maxOf(kit, options);
+	const shoots = built[0].shoots;
 	const asset: PlantAsset = {
 		species: record.id,
 		recordHash: hashText(JSON.stringify(record)),
@@ -1199,10 +1304,19 @@ export function growPlantNow(kit: SpeciesKitData, options: GrowOptions): PlantAs
 			texels: record.lod.impostor.texels,
 			from: starts[2],
 		},
+		...(most !== undefined ? { maxTriangles: most } : {}),
+		...(shoots !== undefined && shoots !== mesh.detail ? { shootDetail: shoots } : {}),
 		stats: {
 			milliseconds: now() - started,
 			bytes,
 			triangles: [levels[0].triangles, levels[1].triangles, levels[2].triangles],
+			parts: [built[0].triangles, built[1].triangles, built[2].triangles],
+			...(built[0].allowed && built[1].allowed && built[2].allowed
+				? {
+						allowed: [built[0].allowed, built[1].allowed, built[2].allowed] as const,
+						clusters: [built[0].clusters, built[1].clusters, built[2].clusters] as const,
+					}
+				: {}),
 		},
 	};
 	return asset;
@@ -1220,7 +1334,14 @@ export function growPlantNow(kit: SpeciesKitData, options: GrowOptions): PlantAs
  * @category api/vegetation
  */
 export function growNearWoodNow(kit: SpeciesKitData, options: GrowOptions): readonly PlantPart[] {
-	return nearWood(dress(kit, withSparse(kit.record, options)));
+	checkGrowOptions(options);
+	const plant = dressed(kit, options);
+	const most = maxOf(kit, options);
+	if (most === undefined) return nearWood(plant.mesh);
+	// Under a maximum the nearest wood is the wood its level's shares leave it.
+	const input = plant.budget(true);
+	const level = levelWithin(input, 0, most, referenceTriangles(input));
+	return partOf(kit, 'wood', level.wood, WOOD_UV_STEPS);
 }
 
 /**

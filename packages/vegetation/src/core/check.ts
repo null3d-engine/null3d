@@ -68,18 +68,13 @@ function spreadProblems(spread: Spread, path: string, positive: boolean, out: st
 		out.push(`${path} can draw ${mean - half}; it must stay above 0`);
 }
 
-/** A species' sparse floors' problems: each share from 0.05 to 1, and the coarsenings from 0 to 1. */
+/** A species' sparse floors' problems: the foliage share from 0 to 1, the limb share above 0 to 1. */
 function sparseProblems(record: Species, out: string[]): void {
 	const sparse = record.sparse;
 	if (!sparse) return;
-	for (const key of ['limbs', 'leaves'] as const) {
-		const value = sparse[key];
-		if (value < 0.05 || value > 1)
-			out.push(`sparse.${key} is ${value}; a sparse floor lies from 0.05 to 1`);
-	}
-	if (sparse.coarseness < 0 || sparse.coarseness > 1)
-		out.push(`sparse.coarseness is ${sparse.coarseness}; it lies from 0 to 1`);
-	shareProblem(sparse.sections, 'sparse.sections', out);
+	shareProblem(sparse.foliage, 'sparse.foliage', out);
+	if (sparse.limbs !== undefined && !(sparse.limbs > 0 && sparse.limbs <= 1))
+		out.push(`sparse.limbs is ${sparse.limbs}; a great limb's share lies above 0 and up to 1`);
 }
 
 /** A share's problems: it lies from 0 to 1. */
@@ -673,7 +668,18 @@ function growthProblems(record: Species, out: string[]): void {
 		spreadProblems(growth.sockets.rows, 'growth.sockets.rows', true, out);
 		if (!(growth.sockets.fan >= 0 && growth.sockets.fan <= 120))
 			out.push(`growth.sockets.fan is ${growth.sockets.fan}; it is degrees from 0 to 120`);
-		curveProblems(growth.frame.outline, 'growth.frame.outline', out);
+		const sides = growth.frame.outline;
+		if (sides.length < 2)
+			out.push(`growth.frame.outline has ${sides.length} sides; an outline states two or more`);
+		sides.forEach((side, k) => {
+			const path = `growth.frame.outline[${k}]`;
+			if (!(side.toward >= 0 && side.toward < 360))
+				out.push(`${path}.toward is ${side.toward}; it is degrees from 0 to under 360`);
+			if (k > 0 && side.toward <= (sides[k - 1]?.toward ?? 0))
+				out.push(`${path}.toward is ${side.toward}; the sides run in their order round the plant`);
+			curveProblems(side.reach, `${path}.reach`, out);
+			curveProblems(side.under, `${path}.under`, out);
+		});
 		if (!(growth.frame.stems.count >= 1))
 			out.push(
 				`growth.frame.stems.count is ${growth.frame.stems.count}; a plant has one stem or more`,

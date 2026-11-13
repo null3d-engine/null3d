@@ -241,7 +241,6 @@ export const record: Species = {
 		nearFoliage: 'instanced',
 		switchPixels: [240, 12, 160],
 		woodOrders: [1, 1],
-		cardGrow: 1,
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
