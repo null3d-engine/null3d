@@ -8,7 +8,7 @@
 // every nth species rather than a run of them, so the species that take longest land in different
 // slices rather than in one.
 import { describe, expect, it } from 'bun:test';
-import type { SpeciesKitData } from '../../packages/vegetation/src/asset';
+import type { PlantAsset, SpeciesKitData } from '../../packages/vegetation/src/asset';
 import { plantAssetDigest } from '../../packages/vegetation/src/asset';
 import {
 	capsFor,
@@ -23,6 +23,7 @@ import { standInSpecies } from '../../packages/vegetation/src/core/stand-in';
 import { DETAILS } from '../../packages/vegetation/src/core/types';
 import { buildKitNow, growPlantNow, loadPlantCode } from '../../packages/vegetation/src/generate';
 import { kitBuffers } from '../../packages/vegetation/src/generate-task';
+import { SURFACE_SHEATH } from '../../packages/vegetation/src/leaf/writer';
 import { drawnAtTallest } from '../../packages/vegetation/src/lod/drawn';
 import { scaledBudget } from './run-budget.ts';
 
@@ -78,6 +79,18 @@ const NEAR_OVER: Readonly<Record<string, number>> = {
 	'weeping-willow': 12_556_895,
 };
 
+/** The vertices of a variant's nearest merged foliage that carry the sheath column's mark. */
+function sheathMarked(asset: PlantAsset): number {
+	let marked = 0;
+	for (const part of asset.levels[0].parts) {
+		if (part.name !== 'foliage') continue;
+		const colours = part.arrays.colors as ArrayLike<number> | undefined;
+		if (!colours) continue;
+		for (let i = 2; i < colours.length; i += 4) if (colours[i] === SURFACE_SHEATH) marked++;
+	}
+	return marked;
+}
+
 /**
  * Grows a kit's first variant twice and checks that both give the same bytes, and that the kit, the
  * variant, its near band and its card levels in every season stay within the record's own budget.
@@ -87,6 +100,12 @@ function growsWithinBudget(kit: SpeciesKitData): void {
 	const asset = growPlantNow(kit, options);
 	expect(plantAssetDigest(growPlantNow(kit, options))).toBe(plantAssetDigest(asset));
 	const record = kit.record;
+	// Merged foliage keeps each run's flutter phase in the byte that marks a sheath column, so a
+	// species without sheath columns draws no vertex with that mark: a leaf so marked draws in the
+	// record's sheath colour, black where the record names none.
+	const growth = record.growth;
+	if (!(growth.model === 'tuft' && growth.sheathColour !== undefined))
+		expect(sheathMarked(asset)).toBe(0);
 	const budget = record.lod.budget;
 	// The plant's own figure counts its meshes and every piece placed at a socket at the kit's tier:
 	// each shoot row draws its prototype at the nearest level, and a card level draws its meshes.
@@ -209,7 +228,7 @@ export function walkSpecies(walked: Walked): void {
 		);
 
 		it(
-			'grows the same bytes twice, and stays within its own budget',
+			'grows the same bytes twice, stays within its own budget and marks no leaf a sheath',
 			() => {
 				const kit = buildKitNow(module, { placeholders: walked.placeholders });
 				growsWithinBudget(kit);
