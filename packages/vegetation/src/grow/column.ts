@@ -2,7 +2,7 @@
 // ends in a rounded top. A few arms leave its side, each on one path: out from a pinched joint,
 // through one smooth elbow, then up beside the stem to a rounded tip below the stem's own. The arms
 // are dealt among the record's tiers and stand round the stem through the full circle, or in one
-// upright plane where the record asks for it.
+// upright plane in the variants the record names.
 //
 // Every rib crest carries a line of areoles: one bud site each, which the species' single shoot
 // class draws as a spine-cluster card. The ribs are the section the wood mesher draws. The sites
@@ -240,7 +240,8 @@ interface ArmPlan {
 /**
  * The arms' plans. The arms are dealt among the tiers in turn. Round the stem they stand at even
  * places through the full circle, so neighbours belong to different tiers and each tier's arms
- * balance each other; in one plane a tier's worth stands to one side, the next to the other.
+ * balance each other. A variant the record stands in one plane has a tier's worth to one side and
+ * the next to the other.
  */
 function armPlans(input: GrowInput, growth: Column, height: number): ArmPlan[] {
 	const arms = growth.arms;
@@ -248,15 +249,15 @@ function armPlans(input: GrowInput, growth: Column, height: number): ArmPlan[] {
 	const count = Math.max(0, Math.round(spreadAt(arms.count, draw(input, Purpose.Arms))));
 	if (tiers.length === 0) return [];
 	const turn = draw(input, Purpose.ArmAzimuth) * 2 * PI;
+	const planar = input.variant < arms.plane;
 	const plans: ArmPlan[] = [];
 	for (let k = 0; k < count; k++) {
 		const tier = tiers[k % tiers.length] as ColumnArmTier;
-		const heading =
-			arms.spread === 'plane'
-				? turn + PI * (Math.floor(k / tiers.length) % 2)
-				: turn +
-					(2 * PI * k) / count +
-					(draw(input, Purpose.ArmAzimuth, k + 1) * 2 - 1) * HEADING_STRAY;
+		const heading = planar
+			? turn + PI * (Math.floor(k / tiers.length) % 2)
+			: turn +
+				(2 * PI * k) / count +
+				(draw(input, Purpose.ArmAzimuth, k + 1) * 2 - 1) * HEADING_STRAY;
 		plans.push({
 			tier,
 			height: height * spreadAt(tier.at, draw(input, Purpose.ArmHeight, k)),

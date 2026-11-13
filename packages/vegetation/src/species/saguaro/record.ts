@@ -49,8 +49,10 @@ export const record: Species = {
 		// between them. Its underside sags a little below its joint (stills 01 and 05), so it
 		// leaves a few degrees below level, and its elbow turns on a radius of one and a half arm
 		// widths at the centre line (stills 01, 08 and 21) where its reach leaves room.
-		// The arms stand round the stem through the full circle. Still 01's four arms stand in one
-		// plane, which is the form named `flat`.
+		// The turning video and still 01 show the primary plant's four arms in one upright plane: the
+		// arms close up edge on twice in the turn. That plant is the first variant, and it is the
+		// species' named exception to the rule that a plant is balanced round its stem. The other
+		// variants spread their arms round the stem.
 		arms: {
 			count: { mean: 4, spread: 1 },
 			tiers: [
@@ -67,6 +69,7 @@ export const record: Species = {
 					radius: [0.282, 0.222],
 				},
 			],
+			plane: 1,
 			leave: -5,
 			elbow: 1.5,
 			pinch: 0.75,
@@ -266,13 +269,6 @@ export const record: Species = {
 	variants: 6,
 	seedSalt: 1916846534,
 	roundBand,
-	forms: {
-		// Still 01: every arm in one upright plane, a lower and an upper arm to each side.
-		flat: {
-			form: 'ribbed column with its arms in one plane',
-			growth: { arms: { spread: 'plane' } },
-		},
-	},
 	cuttings: {
 		// Still 21: the whole arm, from the pinched junction through its run and elbow to upright.
 		branch: { order: 1, length: 4.8 },

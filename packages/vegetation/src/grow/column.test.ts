@@ -11,15 +11,11 @@ import type { Column } from '../core/record';
 import { loadSpecies } from '../core/registry';
 import { buildKitNow, growPlantNow, loadPlantCode } from '../generate';
 
-/** The saguaro's kit in a form, with its grown variants. */
-async function saguaro(form?: string) {
+/** The saguaro's kit, with its grown variants. */
+async function saguaro() {
 	const module = await loadSpecies('saguaro');
 	await loadPlantCode(module.record);
-	const kit = buildKitNow(module, {
-		placeholders: 'missing',
-		detail: 'high',
-		...(form ? { form } : {}),
-	});
+	const kit = buildKitNow(module, { placeholders: 'missing', detail: 'high' });
 	const grow = (variant: number) => growPlantNow(kit, { seed: 11, variant, near: true });
 	return { kit, grow, growth: kit.record.growth as Column };
 }
@@ -146,7 +142,7 @@ describe('the saguaro frame', () => {
 		}
 	});
 
-	it('spreads the arms round the stem, and stands them in one plane in the flat form', async () => {
+	it('stands the first variant in one plane and spreads the others round the stem', async () => {
 		const headingsOf = (skeleton: MacroSkeleton): number[] =>
 			armsOf(skeleton).map((arm) => {
 				const first = skeleton.axes.first[arm] as number;
@@ -157,9 +153,15 @@ describe('the saguaro frame', () => {
 					(skeleton.position[first * 3] as number) - (skeleton.position[joint * 3] as number),
 				);
 			});
-		const round = await saguaro();
-		for (let variant = 0; variant < 6; variant++) {
-			const headings = headingsOf(round.grow(variant).skeleton).sort((a, b) => a - b);
+		const { grow, growth } = await saguaro();
+		expect(growth.arms.plane).toBe(1);
+		const primary = headingsOf(grow(0).skeleton);
+		for (const heading of primary)
+			expect(Math.abs(Math.sin(heading - (primary[0] as number)))).toBeLessThan(1e-6);
+		// The plane holds arms to both sides.
+		expect(primary.some((heading) => Math.cos(heading - (primary[0] as number)) < 0)).toBe(true);
+		for (let variant = 1; variant < 6; variant++) {
+			const headings = headingsOf(grow(variant).skeleton).sort((a, b) => a - b);
 			const even = (2 * Math.PI) / headings.length;
 			headings.forEach((heading, k) => {
 				const next = headings[(k + 1) % headings.length] as number;
@@ -167,14 +169,6 @@ describe('the saguaro frame', () => {
 				// No gap between neighbours is wider than an even share and the two arms' own stray.
 				expect(gap).toBeLessThanOrEqual(even + 0.4 + 1e-6);
 			});
-		}
-		const flat = await saguaro('flat');
-		for (let variant = 0; variant < 6; variant++) {
-			const headings = headingsOf(flat.grow(variant).skeleton);
-			for (const heading of headings) {
-				const off = Math.abs(Math.sin(heading - (headings[0] as number)));
-				expect(off).toBeLessThan(1e-6);
-			}
 		}
 	});
 
