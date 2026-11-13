@@ -40,6 +40,7 @@ import {
 	framingQuery,
 	MASK_GATE_PLAIN,
 	MASK_SUBJECT_FLOOR,
+	rowGap,
 	rubricBand,
 	SHEATH_VIEWS,
 	SOLVED_VIEWS,
@@ -898,7 +899,7 @@ function compareRun(
 			`- ${result.pairs.filter((pair) => !pair.error).length} of ${result.pairs.length} files drawn beside a render of their view; ${masked.length} give an outline on a plain background in both pictures.`,
 			...masked.map(
 				(pair) =>
-					`- ${pair.file}: shape IoU ${fixed(pair.shapeIou)}, width error ${fixed(pair.profileError, 3)}, sky gap enclosed by the crown's outline (row 6's figure): photograph ${fixed(pair.gap?.reference)}, drawing ${fixed(pair.gap?.render)}${pair.gap?.renderByCoverage === undefined ? '' : ` (${fixed(pair.gap.renderByCoverage)} by the drawing's clear share, the earlier reading)`}; sky share of the crown's box: photograph ${fixed(pair.crownBoxGap?.reference)}, drawing ${fixed(pair.crownBoxGap?.render)}; ${frameShareClause(pair)}; foot row: photograph ${fixed(pair.footRow?.reference, 3)}, drawing ${fixed(pair.footRow?.render, 3)}; leaf colour difference ${fixed(pair.foliageDeltaE, 1)}${barkClause(pair)}${pieceClause(pair)}${fittedMaskClause(pair)}; drawn at the ${pair.level ?? 'level the page did not report'}.`,
+					`- ${pair.file}: shape IoU ${fixed(pair.shapeIou)}, width error ${fixed(pair.profileError, 3)}, sky gap enclosed by the crown's outline (row 6's figure): photograph ${fixed(pair.gap?.reference)}, drawing ${fixed(pair.gap?.render)}${pair.gap?.renderByCoverage === undefined ? '' : ` (${fixed(pair.gap.renderByCoverage)} by the drawing's clear share, the earlier reading)`}${colourGapClause(pair)}; sky share of the crown's box: photograph ${fixed(pair.crownBoxGap?.reference)}, drawing ${fixed(pair.crownBoxGap?.render)}; ${frameShareClause(pair)}; foot row: photograph ${fixed(pair.footRow?.reference, 3)}, drawing ${fixed(pair.footRow?.render, 3)}; leaf colour difference ${fixed(pair.foliageDeltaE, 1)}${barkClause(pair)}${pieceClause(pair)}${fittedMaskClause(pair)}; drawn at the ${pair.level ?? 'level the page did not report'}.`,
 			),
 			...result.pairs.flatMap((pair) =>
 				pair.surfaceDeltaE !== null
@@ -1175,6 +1176,13 @@ function areaLines(pairs: readonly StillResult[]): string[] {
 				]
 			: [],
 	);
+}
+
+/** The drawing's gap read from its colour still, and whether row 6 reads it in place of the matte's. */
+function colourGapClause(pair: StillResult): string {
+	if (pair.gap?.renderByColour === undefined) return '';
+	const read = rowGap(pair.gap);
+	return `; by the colour still ${fixed(pair.gap.renderByColour)}${read.read === 'colour still' ? ", which row 6 reads: the matte's differs by more than 0.05" : ''}`;
 }
 
 /**
