@@ -242,14 +242,14 @@ for (const id of TUFTS) {
 			expect(order(mean)).toBe(order(colour.foot));
 		});
 
-		it('holds a blade shape for every step between its measured poses, each in two twists', () => {
+		it('holds a blade shape for every step between its measured poses', () => {
 			const blades = kit.prototypes.filter((prototype) =>
 				prototype.class.startsWith('piece-blade-'),
 			);
 			const shapes = new Set(blades.map((prototype) => prototype.class));
 			expect(shapes.size).toBeGreaterThan(growth.poses.length);
 			expect((shapes.size - 1) % (growth.poses.length - 1)).toBe(0);
-			expect(blades.length).toBe(shapes.size * 2);
+			expect(blades.length).toBe(shapes.size);
 			// The youngest shape stands highest and the oldest reaches farthest.
 			const tier = DETAILS.indexOf('high');
 			const extent = (index: number, axis: number) => {

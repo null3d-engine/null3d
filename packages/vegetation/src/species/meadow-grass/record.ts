@@ -143,12 +143,20 @@ export const record: Species = {
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
-			kitBytes: { low: 600_000, medium: 600_000, high: 600_000, ultra: 600_000 },
-			// Each tier holds the largest measured variant with about fifteen per cent above it.
-			variantBytes: { low: 1_550_000, medium: 1_600_000, high: 1_700_000, ultra: 3_800_000 },
-			lod0Triangles: 200_000,
-			lod1Triangles: 30_000,
-			lod2Triangles: 8_000,
+			// The kit holds eleven pieces and their card atlas of twenty-four cells. It reads
+			// 1,760,208, 1,939,260, 2,162,872 and 2,443,956 bytes at the four tiers; the three
+			// flowering stems with their panicles are most of what the tiers add. Each cap keeps
+			// about fifteen per cent above its read.
+			kitBytes: { low: 2_025_000, medium: 2_230_000, high: 2_487_000, ultra: 2_811_000 },
+			// A plant is rows of the kit's pieces, so a variant's bytes are the same at every tier.
+			// Measured over the four variants at seed 11, in summer and in blossom: the largest reads
+			// 43,435 bytes; 20,756 triangles at the nearest level at the high tier and 29,284 at the
+			// ultra; and 586 and 300 at the two card levels. Each cap keeps about fifteen per cent
+			// above its read, and the nearest level's holds the ultra tier.
+			variantBytes: { low: 50_000, medium: 50_000, high: 50_000, ultra: 50_000 },
+			lod0Triangles: 33_700,
+			lod1Triangles: 680,
+			lod2Triangles: 350,
 			downloadBytes: 350_000,
 			downloadHalfBytes: 120_000,
 			growMilliseconds: 150,

@@ -31,6 +31,11 @@ export interface PieceClass {
 	/** The piece's length in metres at scale 1, from its attach point to its tip along its curve. */
 	readonly length: number;
 	/**
+	 * Leaves the piece holds, which the crown's light counts: none for a piece of stems alone, whose
+	 * card takes a cell of half the side as a bare twig's does.
+	 */
+	readonly leaves: number;
+	/**
 	 * Writes one prototype of the class at a detail tier into a mesh, as the merged foliage meshers
 	 * write: its attach point at the origin, +Y the way it leaves, +Z its upper face.
 	 */
@@ -107,7 +112,7 @@ export function piecePrototypes(classes: readonly PieceClass[]): UncardedPrototy
 				vigor: pieceBand(k, classes.length),
 				length: piece.length,
 				radius,
-				leaves: 1,
+				leaves: piece.leaves,
 				tiers,
 			});
 		}
