@@ -137,6 +137,8 @@ export interface PlantReviewQuery {
 	 * face, with only the slab of the plant that holds it drawn.
 	 */
 	readonly piece?: string;
+	/** Whether a placed piece's view looks along the piece's side, so an arching piece shows its arch. */
+	readonly edge?: boolean;
 	/**
 	 * The radius of the ring a branch or sub-branch cutting's shoots stand on, as a share of the
 	 * piece's height, in place of the record hint's. A wide ring separates the shoots.
@@ -470,6 +472,7 @@ const SWITCHES = [
 	'parts',
 	'fruit',
 	'surface',
+	'edge',
 	'lifted',
 	'barkMask',
 	'leafyBark',
@@ -699,5 +702,6 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 		parts: params.get('parts') === '1',
 		fruit: params.get('fruit') === '1',
 		surface: params.get('surface') === '1',
+		edge: params.get('edge') === '1',
 	};
 }

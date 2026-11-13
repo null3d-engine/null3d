@@ -136,6 +136,8 @@ export interface BranchPiece {
 	readonly spread: number;
 	/** The side of the piece its leaves face, where it has one. */
 	readonly face?: V3;
+	/** The piece's own side, square to its face, along which an arching piece shows its arch. */
+	readonly side?: V3;
 }
 
 /** A leaf's size. */
@@ -461,12 +463,52 @@ function turnedBy(rows: ShootRows, r: number, x: number, y: number, z: number): 
 	]);
 }
 
+/** A piece's run in its own frame: the way to its farthest vertex, how far, and its spread off that line. */
+interface PieceRun {
+	readonly way: V3;
+	readonly length: number;
+	readonly spread: number;
+}
+
+/** The run of a piece whose parts are these prototypes' meshes, at scale 1. */
+function runOf(meshes: readonly Float32Array[]): PieceRun {
+	let far: V3 = [0, 1, 0];
+	let length = 0;
+	for (const positions of meshes)
+		for (let i = 0; i + 2 < positions.length; i += 3) {
+			const v: V3 = [
+				positions[i] as number,
+				positions[i + 1] as number,
+				positions[i + 2] as number,
+			];
+			const d = Math.hypot(v[0], v[1], v[2]);
+			if (d > length) {
+				length = d;
+				far = v;
+			}
+		}
+	const way = length > 0 ? normalize(far) : ([0, 1, 0] as V3);
+	let spread = 0;
+	for (const positions of meshes)
+		for (let i = 0; i + 2 < positions.length; i += 3) {
+			const x = positions[i] as number;
+			const y = positions[i + 1] as number;
+			const z = positions[i + 2] as number;
+			const along = x * way[0] + y * way[1] + z * way[2];
+			spread = Math.max(
+				spread,
+				Math.hypot(x - along * way[0], y - along * way[1], z - along * way[2]),
+			);
+		}
+	return { way, length, spread };
+}
+
 /**
  * The branch pieces a plant places at its sockets, read from its rows. A piece's parts stand as
  * rows one after another at one place, with one turn and one scale. The piece runs from its socket
- * along its own +Y as far as its farthest vertex, spreads as far as its vertices stand off that
- * line, and faces its +Z, the sky side of a branch piece and the upper face of a ground piece. The
- * pieces come outermost first, so a view of one frames a piece at the plant's rim.
+ * toward its farthest vertex, so an arching piece runs to its tip, spreads as far as its vertices
+ * stand off that line, faces its +Z, the sky side of a branch piece, and has its +X for its side.
+ * The pieces come outermost first, so a view of one frames a piece at the plant's rim.
  *
  * @param rows The plant's rows.
  * @param kit The kit the rows draw, for its prototypes and the tier its rows draw at.
@@ -479,25 +521,20 @@ export function piecesOfRows(
 	foot: V3,
 ): Maybe<readonly BranchPiece[]> {
 	const tier = DETAILS.indexOf(kit.detail);
-	// Each prototype's reach and spread at scale 1, found once.
-	const sizes = new Map<number, { readonly length: number; readonly spread: number }>();
-	const sizeOf = (index: number) => {
-		let size = sizes.get(index);
-		if (!size) {
-			const positions = kit.prototypes[index]?.tiers[tier]?.positions ?? new Float32Array(0);
-			let length = 0;
-			let spread = 0;
-			for (let i = 0; i + 2 < positions.length; i += 3) {
-				const x = positions[i] as number;
-				const y = positions[i + 1] as number;
-				const z = positions[i + 2] as number;
-				length = Math.max(length, Math.hypot(x, y, z));
-				spread = Math.max(spread, Math.hypot(x, z));
-			}
-			size = { length, spread };
-			sizes.set(index, size);
+	// Each set of parts' run at scale 1, found once: the sockets of one variant share it.
+	const runs = new Map<string, PieceRun>();
+	const runAt = (first: number, end: number): PieceRun => {
+		const parts: number[] = [];
+		for (let part = first; part < end; part++) parts.push(rows.prototype[part] as number);
+		const key = parts.join(',');
+		let run = runs.get(key);
+		if (!run) {
+			run = runOf(
+				parts.map((index) => kit.prototypes[index]?.tiers[tier]?.positions ?? new Float32Array(0)),
+			);
+			runs.set(key, run);
 		}
-		return size;
+		return run;
 	};
 	const pieces: (BranchPiece & { readonly out: number })[] = [];
 	const sameSocket = (a: number, b: number) =>
@@ -512,26 +549,22 @@ export function piecesOfRows(
 		while (end < rows.count && sameSocket(r, end)) end++;
 		if (name !== undefined) {
 			const scale = rows.scale[r] as number;
-			let length = 0;
-			let spread = 0;
-			for (let part = r; part < end; part++) {
-				const size = sizeOf(rows.prototype[part] as number);
-				length = Math.max(length, size.length * scale);
-				spread = Math.max(spread, size.spread * scale);
-			}
+			const run = runAt(r, end);
+			const length = run.length * scale;
 			const socket: V3 = [
 				rows.position[r * 3] as number,
 				rows.position[r * 3 + 1] as number,
 				rows.position[r * 3 + 2] as number,
 			];
-			const direction = turnedBy(rows, r, 0, 1, 0);
+			const direction = turnedBy(rows, r, run.way[0], run.way[1], run.way[2]);
 			pieces.push({
 				class: name,
 				socket,
 				direction,
 				length,
-				spread,
+				spread: run.spread * scale,
 				face: turnedBy(rows, r, 0, 0, 1),
+				side: turnedBy(rows, r, 1, 0, 0),
 				out: Math.hypot(
 					socket[0] + direction[0] * length - foot[0],
 					socket[2] + direction[2] * length - foot[2],

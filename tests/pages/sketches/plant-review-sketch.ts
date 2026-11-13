@@ -966,6 +966,7 @@ export default defineSketch(async (ctx) => {
 					() =>
 						placedPieceShot(subjectsOf(), QUERY.piece as string, lens, {
 							laid: (QUERY.roll ?? 0) !== 0,
+							edge: QUERY.edge === true,
 						}),
 					0,
 				);
