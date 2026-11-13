@@ -42,6 +42,30 @@ function armsOf(skeleton: MacroSkeleton): number[] {
 	return arms;
 }
 
+/**
+ * The tightest radius a run of points turns on: the least circle through any three neighbours,
+ * where they do not stand in a line.
+ */
+function leastBend(points: readonly number[][]): number {
+	let least = Number.POSITIVE_INFINITY;
+	for (let i = 1; i + 1 < points.length; i++) {
+		const [p, q, r] = [points[i - 1], points[i], points[i + 1]] as [number[], number[], number[]];
+		const pq = Math.hypot(...[0, 1, 2].map((k) => (q[k] as number) - (p[k] as number)));
+		const qr = Math.hypot(...[0, 1, 2].map((k) => (r[k] as number) - (q[k] as number)));
+		const rp = Math.hypot(...[0, 1, 2].map((k) => (p[k] as number) - (r[k] as number)));
+		const u = [0, 1, 2].map((k) => (q[k] as number) - (p[k] as number));
+		const v = [0, 1, 2].map((k) => (r[k] as number) - (p[k] as number));
+		const cross = Math.hypot(
+			(u[1] as number) * (v[2] as number) - (u[2] as number) * (v[1] as number),
+			(u[2] as number) * (v[0] as number) - (u[0] as number) * (v[2] as number),
+			(u[0] as number) * (v[1] as number) - (u[1] as number) * (v[0] as number),
+		);
+		if (cross < 1e-9) continue;
+		least = Math.min(least, (pq * qr * rp) / (2 * cross));
+	}
+	return least;
+}
+
 /** Degrees between each pair of neighbouring segments of a run of points. */
 function turns(points: readonly number[][]): number[] {
 	const found: number[] = [];
@@ -335,53 +359,49 @@ describe('the saguaro frame', () => {
 		expect(cork.some((zone) => zoneHolds(zone, whole.radius[0] as number, 0.5))).toBe(true);
 	});
 
-	it("keeps the primary plant's lower elbows inside still 01's outline", async () => {
+	it("climbs each of the primary plant's arms out of its joint on the record's elbow", async () => {
 		const { grow, growth } = await saguaro();
 		const { skeleton } = grow(0);
-		// Still 01 read from its true foot: how far the lower arms' outer edge stands from the stem's
-		// axis at three heights through their elbows, as shares of the plant's height.
-		const photograph: readonly [at: number, out: number][] = [
-			[0.44, 0.113],
-			[0.48, 0.151],
-			[0.52, 0.165],
-		];
-		const lower = armsOf(skeleton).filter((_, k) => k % growth.arms.tiers.length === 0);
-		expect(lower.length).toBe(2);
-		for (const arm of lower) {
-			// The arm's centre line, node by node from the stem's, as circles of its girth in the
-			// plane its arms stand in.
-			const nodes = [skeleton.axes.parentNode[arm] as number];
-			for (
-				let n = skeleton.axes.first[arm] as number;
-				n <= (skeleton.axes.last[arm] as number);
-				n++
-			)
-				nodes.push(n);
-			for (const [at, out] of photograph) {
-				const y = at * skeleton.height;
-				// The stem's axis at this height: it leans a little.
-				const stem = nodesOf(skeleton, 0);
-				const above = stem.findIndex((point) => (point[1] as number) >= y);
-				const [low, high] = [stem[above - 1], stem[above]] as [number[], number[]];
-				const share = (y - (low[1] as number)) / ((high[1] as number) - (low[1] as number));
-				const axis = (low[0] as number) + share * ((high[0] as number) - (low[0] as number));
-				let edge = 0;
-				for (let i = 0; i + 1 < nodes.length; i++)
-					for (let s = 0; s <= 16; s++) {
-						const t = s / 16;
-						const [p, q] = [nodes[i] as number, nodes[i + 1] as number];
-						const lerp = (k: number) =>
-							(skeleton.position[p * 3 + k] as number) * (1 - t) +
-							(skeleton.position[q * 3 + k] as number) * t;
-						const r = (skeleton.radius[p] as number) * (1 - t) + (skeleton.radius[q] as number) * t;
-						const d = y - lerp(1);
-						if (Math.abs(d) < r)
-							edge = Math.max(edge, Math.abs(lerp(0) - axis) + Math.sqrt(r * r - d * d));
-					}
-				// No wider than the photograph's edge, give or take two of its rows.
-				expect([arm, at, edge / skeleton.height <= out + 0.002]).toEqual([arm, at, true]);
-			}
-		}
+		const stem = nodesOf(skeleton, 0);
+		// The stem's axis at a height, between the stem's nodes: it leans a little.
+		const axisAt = (y: number): number[] => {
+			const above = stem.findIndex((point) => (point[1] as number) >= y);
+			const [low, high] = [stem[above - 1], stem[above]] as [number[], number[]];
+			const t = (y - (low[1] as number)) / ((high[1] as number) - (low[1] as number));
+			return [0, 1, 2].map(
+				(k) => (low[k] as number) + t * ((high[k] as number) - (low[k] as number)),
+			);
+		};
+		armsOf(skeleton).forEach((arm, k) => {
+			const tier = growth.arms.tiers[k % growth.arms.tiers.length];
+			if (!tier) throw new Error('the record names no tier');
+			const points = nodesOf(skeleton, arm);
+			const [first, second, last] = [points[0], points[1], points[points.length - 1]] as [
+				number[],
+				number[],
+				number[],
+			];
+			// No arm of the photographed plant has room to turn from the record's angle, so each
+			// leaves rising.
+			const rise = (second[1] as number) - (first[1] as number);
+			const out = Math.hypot(
+				(second[0] as number) - (first[0] as number),
+				(second[2] as number) - (first[2] as number),
+			);
+			expect((Math.atan2(rise, out) * 180) / Math.PI).toBeGreaterThan(
+				Math.max(0, growth.arms.leave),
+			);
+			// Its upright part stands at its tier's mean reach from the stem's axis at its joint.
+			const joint = axisAt(first[1] as number);
+			const reach = Math.hypot(
+				(last[0] as number) - (joint[0] as number),
+				(last[2] as number) - (joint[2] as number),
+			);
+			expect(Math.abs(reach - (tier.reach as { mean: number }).mean)).toBeLessThan(0.01);
+			// Its bend turns on the record's elbow, in widths of the arm above its bend.
+			const width = 2 * tier.radius[0];
+			expect(leastBend(points)).toBeGreaterThanOrEqual(0.95 * growth.arms.elbow * width);
+		});
 	});
 
 	it("turns every arm's elbow on a radius of at least the arm's own width", async () => {
@@ -399,27 +419,7 @@ describe('the saguaro frame', () => {
 					radii.push(skeleton.radius[n] as number);
 				radii.sort((x, y) => x - y);
 				const width = 2 * (radii[radii.length >> 1] as number);
-				let least = Number.POSITIVE_INFINITY;
-				for (let i = 1; i + 1 < points.length; i++) {
-					const [p, q, r] = [points[i - 1], points[i], points[i + 1]] as [
-						number[],
-						number[],
-						number[],
-					];
-					const pq = Math.hypot(...[0, 1, 2].map((k) => (q[k] as number) - (p[k] as number)));
-					const qr = Math.hypot(...[0, 1, 2].map((k) => (r[k] as number) - (q[k] as number)));
-					const rp = Math.hypot(...[0, 1, 2].map((k) => (p[k] as number) - (r[k] as number)));
-					const u = [0, 1, 2].map((k) => (q[k] as number) - (p[k] as number));
-					const v = [0, 1, 2].map((k) => (r[k] as number) - (p[k] as number));
-					const cross = Math.hypot(
-						(u[1] as number) * (v[2] as number) - (u[2] as number) * (v[1] as number),
-						(u[2] as number) * (v[0] as number) - (u[0] as number) * (v[2] as number),
-						(u[0] as number) * (v[1] as number) - (u[1] as number) * (v[0] as number),
-					);
-					if (cross < 1e-9) continue;
-					least = Math.min(least, (pq * qr * rp) / (2 * cross));
-				}
-				expect([variant, arm, least >= 0.95 * width]).toEqual([variant, arm, true]);
+				expect([variant, arm, leastBend(points) >= 0.95 * width]).toEqual([variant, arm, true]);
 			}
 		}
 	});
