@@ -1917,7 +1917,15 @@ export default defineSketch(async (ctx) => {
 						wind: wind.field,
 						...(QUERY.sway !== undefined && { swayDistance: QUERY.sway }),
 					}),
-					matte: PARTS ? 'parts' : MATTE,
+					// The silhouette still draws black at the colour picture's cut edge, for the eye; its
+					// measured matte, drawn with the matte query, keeps each texel's own coverage.
+					matte: PARTS
+						? 'parts'
+						: QUERY.matte
+							? true
+							: VIEW === 'silhouette'
+								? 'silhouette'
+								: false,
 				});
 	// A stand-in kit draws through the stand-in near pool. A real kit's one plant stands at a fixed
 	// place, so its placement composes its shoot rows once, with no pool.
