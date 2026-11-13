@@ -244,7 +244,7 @@ const HELD: readonly Held[] = [
 		through: 13,
 		crossings: [30, 4],
 		// Every whip and branch carries strands along it, so an axis carries several sockets.
-		axesPerSocket: 0.197,
+		axesPerSocket: 0.177,
 		tall: [0.93, 1.02],
 	},
 	{
