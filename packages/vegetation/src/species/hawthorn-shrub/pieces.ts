@@ -1,12 +1,19 @@
 // The hawthorn's pieces: the zigzag branch end with leaf tufts on short spurs its sockets carry, and
-// the twig at its top. Each value names the reference picture it was measured on. Thorns, haws and
-// flowers are not part of a piece yet.
+// the twig at its top, with a straight thorn at most nodes. Each value names the reference picture
+// it was measured on. Haws and flowers are not part of a piece yet.
 //
 // Still 21 is stated as a metre tall, but read at full size its leaves are a tenth of its height
 // and its longest thorn another tenth. With the record's leaf of 3.5 centimetres the pictured branch
 // is 36 centimetres tall, its longest thorn 3.6 centimetres and its cut 1.3 centimetres thick, all of
 // them a hawthorn's own sizes. The piece keeps the leaf's true size and the photograph's proportions.
-import type { PieceLeaves, PieceRule, PieceSides, PieceStem, PieceStudio } from '../../leaf/piece';
+import type {
+	PieceLeaves,
+	PieceMark,
+	PieceRule,
+	PieceSides,
+	PieceStem,
+	PieceStudio,
+} from '../../leaf/piece';
 
 /**
  * The spurs along a stem. Stills 21 and 22: alternate, one each 6 to 8 centimetres on a branch and
@@ -25,6 +32,23 @@ function spurs(gap: number, from: number): PieceSides {
 		to: 0.98,
 		arrangement: 'alternate',
 		angle: { mean: 60, spread: 12 },
+	};
+}
+
+/**
+ * The thorns along a stem. Stills 19, 21 and 22: one straight woody thorn at most nodes, one and a
+ * half to four centimetres long, standing 70 to 90 degrees from the stem.
+ */
+function thorns(gap: number, share: number): PieceMark {
+	return {
+		kind: 'thorn',
+		gap,
+		from: 0.1,
+		to: 0.95,
+		share,
+		length: { mean: 0.022, spread: 0.012 },
+		width: 0.003,
+		angle: 80,
 	};
 }
 
@@ -55,6 +79,7 @@ function arm(length: number): PieceStem {
 		radius: [0.004, 0.0015],
 		kink: { length: 0.045, angle: 16 },
 		leaves: tuft(length, 4),
+		marks: [thorns(0.054, 0.75)],
 		sides: [
 			{
 				stem: {
@@ -103,6 +128,9 @@ export const PIECES: readonly PieceRule[] = [
 			// Still 21: the stem is 0.03 of the branch's height thick at its cut (19 to 24 of 743 pixels).
 			radius: [0.0055, 0.004],
 			bud: false,
+			// Still 21: the longest thorns stand on the stem, one below the fork a tenth of the
+			// branch's height long.
+			marks: [{ ...thorns(0.045, 1), length: { mean: 0.028, spread: 0.008 }, from: 0.3 }],
 			sides: [
 				fork(arm(0.205), 1, 0.155, 37, true),
 				fork(arm(0.225), 0.97, 0.155, 33),
@@ -123,6 +151,7 @@ export const PIECES: readonly PieceRule[] = [
 			// Still 22: the twig is 0.025 of its height thick (16 to 20 of 725 pixels).
 			radius: [0.004, 0.0015],
 			kink: { length: 0.04, angle: 14 },
+			marks: [thorns(0.045, 0.7)],
 			leaves: { gap: 0.004, from: 0.93, angle: 55, angleSpread: 12 },
 			sides: [spurs(0.05, 0.2)],
 		},

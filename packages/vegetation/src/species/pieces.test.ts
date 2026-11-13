@@ -383,6 +383,64 @@ describe("a piece's wood", () => {
 	});
 });
 
+describe("a species' marks", () => {
+	it(
+		"stands a straight thorn of one to four centimetres at most nodes of the hawthorn's branch",
+		async () => {
+			const module = await loadSpecies('hawthorn-shrub');
+			await loadPlantCode(module.record);
+			const rule = HAWTHORN[0] as PieceRule;
+			const plan = planPiece(module.record, rule, pieceKey(0, 0), 4);
+			// A thorn is longer than any bud of the species, and it is not a tip's bud.
+			const thorns = plan.buds.filter((bud) => !bud.cluster && bud.length >= 0.01);
+			expect(thorns.length).toBeGreaterThanOrEqual(8);
+			for (const thorn of thorns) {
+				expect(thorn.length).toBeLessThanOrEqual(0.04);
+				// It stands on a point of a stem.
+				expect(plan.axes.flat().some((point) => distance(point.at, thorn.at) < SAME)).toBe(true);
+			}
+			// The leafless mesh holds more with the thorns than without them.
+			const bare = (rules: readonly PieceRule[]): number =>
+				(buildPiecesNow(module, rules, true)[0]?.tiers[DETAILS.indexOf('high')]?.positions.length ??
+					0) / 3;
+			expect(bare([rule])).toBeGreaterThan(bare([{ ...rule, stem: stripped(rule.stem) }]));
+		},
+		LONG,
+	);
+
+	it("hangs the alder's cones and the olive's fruit on stalks from their own wood", async () => {
+		for (const [id, rules] of [
+			['common-alder', ALDER],
+			['olive', OLIVE],
+		] as const) {
+			const module = await loadSpecies(id);
+			await loadPlantCode(module.record);
+			const plan = planPiece(module.record, rules[0] as PieceRule, pieceKey(0, 0), 4);
+			const bodies = plan.buds.filter((bud) => bud.cluster && bud.stack === bud.length);
+			expect(bodies.length).toBeGreaterThanOrEqual(4);
+			// Each body hangs at the end of a stalk, and every stalk's foot stands on a stem.
+			for (const body of bodies)
+				expect(
+					plan.axes.some(
+						(points) => distance(points[points.length - 1]?.at ?? [0, 0, 0], body.at) < SAME,
+					),
+				).toBe(true);
+			expect(loose(plan)).toEqual([]);
+		}
+	});
+});
+
+/** A stem's rule with no marks on it or on any of its side stems. */
+function stripped(stem: PieceRule['stem']): PieceRule['stem'] {
+	const { marks: _marks, ...rest } = stem;
+	return {
+		...rest,
+		...(stem.sides
+			? { sides: stem.sides.map((side) => ({ ...side, stem: stripped(side.stem) })) }
+			: {}),
+	};
+}
+
 describe('a piece through the card bake', () => {
 	it(
 		"gives the oak's branch end three planes whose front cell holds its leaf tufts",
