@@ -635,6 +635,12 @@ interface PairMetrics {
 		readonly reference: number;
 		readonly render: number;
 		readonly renderByCoverage?: number;
+		/**
+		 * The drawing's gap read from its colour still with the photograph's own mask, beside the
+		 * matte's: where the two part by more than the colour band, the matte has joined a lace of
+		 * flecks into cover that the eye reads as sky, and row 6 reads this one.
+		 */
+		readonly renderByColour?: number;
 	} | null;
 	readonly crownBoxGap: { readonly reference: number; readonly render: number } | null;
 	readonly frameGap: { readonly reference: number; readonly render: number } | null;
@@ -657,6 +663,23 @@ interface PairMetrics {
 		readonly render: { readonly width: number; readonly height: number };
 	} | null;
 	readonly foliage: { readonly reference: string | null; readonly render: string | null };
+}
+
+/** How far the colour still's gap may part from the matte's before row 6 reads the colour one. */
+export const COLOUR_GAP_BAND = 0.05;
+
+/**
+ * The drawing's enclosed gap that row 6 reads: the matte's, or the colour still's where the two part
+ * by more than the colour band, since the review's eye reads the colour picture first.
+ */
+export function rowGap(gap: NonNullable<PairMetrics['gap']>): {
+	readonly value: number;
+	readonly read: 'matte' | 'colour still';
+} {
+	return gap.renderByColour !== undefined &&
+		Math.abs(gap.renderByColour - gap.render) > COLOUR_GAP_BAND
+		? { value: gap.renderByColour, read: 'colour still' }
+		: { value: gap.render, read: 'matte' };
 }
 
 /**
@@ -2342,7 +2365,17 @@ export function compareStills(
 			!noOutline &&
 			separable &&
 			(frame.matte !== undefined || (fittedKind !== null && render.measures.box !== undefined));
-		const pair = pairMetrics(masked ? refSide : { ...refSide, normal: undefined }, render);
+		const paired = pairMetrics(masked ? refSide : { ...refSide, normal: undefined }, render);
+		// A whole view's gap read from the colour still too, by the photograph's own mask, where its
+		// row read the matte.
+		const colourGap =
+			paired.gap && frame.matte !== undefined && (drawn === 'whole' || drawn === 'silhouette')
+				? Number(measurePlant(render.image, plantMask(render.image), habit).gapFraction.toFixed(4))
+				: undefined;
+		const pair =
+			paired.gap && colourGap !== undefined
+				? { ...paired, gap: { ...paired.gap, renderByColour: colourGap } }
+				: paired;
 		const bark = slot.kind === 'texture' && !slot.view.startsWith('leaf');
 		// The shot carries the query the page was asked for, which is where a species' slot file
 		// reaches; the reference rule's own query is a different thing and is often empty.
