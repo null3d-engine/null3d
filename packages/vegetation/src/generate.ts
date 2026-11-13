@@ -77,9 +77,9 @@ import {
 import { leadOnThickest } from './grow/leaders';
 import { grower, loadGrower } from './grow/models';
 import { extrasMesh } from './leaf/extras';
+import { groundPiecePrototypes } from './leaf/ground-piece';
 import { dressShoots, pruneLight } from './leaf/instancer';
 import { foliage, loadFoliage } from './leaf/kinds';
-import { piecePrototypes } from './leaf/piece';
 import { inLeaf } from './leaf/season';
 import { shootPrototypes } from './leaf/shoot';
 import { socketRows } from './leaf/socket-rows';
@@ -542,7 +542,7 @@ export function buildKitNow(source: KitSource, options: KitOptions = {}): Specie
 			: undefined;
 	if (record.shoots || pieces) {
 		const uncarded = pieces
-			? piecePrototypes(pieces)
+			? groundPiecePrototypes(pieces)
 			: stage(
 					placeholders,
 					() => shootPrototypes(record, manifest, leavesByTier, cutting),

@@ -7,7 +7,7 @@ import type { MeshArrays } from '../asset';
 import type { MacroSkeleton } from '../core/graph';
 import type { GrowthModel, Species } from '../core/record';
 import type { TextureManifest } from '../core/textures';
-import type { PieceClass } from '../leaf/piece';
+import type { PieceClass } from '../leaf/ground-piece';
 import type { GrowInput, MeshInput, MeshLevel } from '../stages';
 
 /**

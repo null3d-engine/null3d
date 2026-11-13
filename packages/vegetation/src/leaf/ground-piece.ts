@@ -89,7 +89,7 @@ function pieceTier(mesh: MeshWriter, phase: number): PrototypeArrays {
  * @returns The prototypes, without their cards.
  * @category api/vegetation
  */
-export function piecePrototypes(classes: readonly PieceClass[]): UncardedPrototype[] {
+export function groundPiecePrototypes(classes: readonly PieceClass[]): UncardedPrototype[] {
 	const out: UncardedPrototype[] = [];
 	classes.forEach((piece, k) => {
 		for (let variant = 0; variant < piece.variants; variant++) {

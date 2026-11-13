@@ -15,7 +15,7 @@
 // shoot's bud holds the light it is pruned by: the sockets of the least plant are the brightest.
 import { BUD_SOCKET, type SkeletonBuilder } from '../core/graph';
 import { cos, PI, quatFromFrame, sin, type Vector3 } from '../core/math';
-import { socketVigor } from '../leaf/piece';
+import { socketVigor } from '../leaf/ground-piece';
 
 /**
  * The plastic number's two steps: the low-discrepancy sequence of points in a square whose every
