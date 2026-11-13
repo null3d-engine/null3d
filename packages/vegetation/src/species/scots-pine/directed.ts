@@ -23,7 +23,9 @@ const needles: Species['foliage'] =
 /** The Scots pine's record with the directed frame in place of the grown one. */
 export const directed: Species = {
 	...own,
-	pieces: PIECES,
+	// The tree's sockets carry the bough alone, so its kit holds no other piece. The forked shoot is
+	// the close photograph's subject and is drawn from the piece rules.
+	pieces: PIECES.filter((piece) => piece.name === 'bough'),
 	// Still 01: the bole is 0.076 of the height across at breast height.
 	size: { ...record.size, dbh: 1.5 },
 	growth: {
@@ -129,6 +131,15 @@ export const directed: Species = {
 		},
 	},
 	foliage: needles,
+	lod: {
+		...record.lod,
+		budget: {
+			...record.lod.budget,
+			// The kit of three bough variants holds 13,073,360 bytes at the finest tier, where each
+			// needle draws round; the tree model's cap there is 22,600,000.
+			kitBytes: { ...record.lod.budget.kitBytes, ultra: 13_200_000 },
+		},
+	},
 	bark: {
 		...(record.bark as BarkSpec),
 		// Still 01 and the turning video: grey plates to 0.35 of the height, orange flakes above
