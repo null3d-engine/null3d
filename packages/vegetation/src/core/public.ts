@@ -84,6 +84,7 @@ export type {
 	RadialEnvelope,
 	RecordChanges,
 	Rosette,
+	Scaffold,
 	ScaleSpray,
 	ScarSpec,
 	Sdf,

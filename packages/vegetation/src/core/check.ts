@@ -17,6 +17,8 @@ import {
 
 const MODELS: readonly GrowthModel[] = [
 	'self-organizing',
+	'scaffold',
+	'frame',
 	'architectural',
 	'conifer',
 	'crown-rosette',
@@ -419,6 +421,59 @@ function growthProblems(record: Species, out: string[]): void {
 				`growth.pipe.leader is ${leader}; a stem keeps a share of its girth from 0.5 to 1 from node to node`,
 			);
 	}
+	if (growth.model === 'scaffold') {
+		if (!record.envelope) out.push('a scaffold species needs an envelope');
+		spreadProblems(growth.stems.count, 'growth.stems.count', true, out);
+		const [from, to] = growth.trunk.fork;
+		if (!(from > 0 && from <= to && to < 1))
+			out.push(
+				`growth.trunk.fork is ${from} to ${to}; give two shares of the height above 0 and below 1, lowest first`,
+			);
+		if (!(growth.trunk.wander >= 0 && growth.trunk.wander <= 30))
+			out.push(`growth.trunk.wander is ${growth.trunk.wander}; it is degrees from 0 to 30`);
+		spreadProblems(growth.lobes.count, 'growth.lobes.count', true, out);
+		if (!(growth.lobes.gap >= 0 && growth.lobes.gap <= 0.8))
+			out.push(`growth.lobes.gap is ${growth.lobes.gap}; it is a share from 0 to 0.8`);
+		if (!(growth.lobes.inner >= 0 && growth.lobes.inner <= 0.5))
+			out.push(`growth.lobes.inner is ${growth.lobes.inner}; it is a share from 0 to 0.5`);
+		if (!(growth.lobes.flatten > 0))
+			out.push(`growth.lobes.flatten is ${growth.lobes.flatten}; it must be above 0`);
+		if (!(growth.lobes.vary >= 0 && growth.lobes.vary <= 0.5))
+			out.push(`growth.lobes.vary is ${growth.lobes.vary}; it is a share from 0 to 0.5`);
+		if (!(growth.lobes.floor >= 0 && growth.lobes.floor <= 0.9))
+			out.push(
+				`growth.lobes.floor is ${growth.lobes.floor}; it is a share of the height from 0 to 0.9`,
+			);
+		spreadProblems(growth.limbs.count, 'growth.limbs.count', true, out);
+		notNegative(growth.limbs.jitter, 'growth.limbs.jitter', out);
+		curveProblems(growth.limbs.angle, 'growth.limbs.angle', out);
+		curveProblems(growth.limbs.end, 'growth.limbs.end', out);
+		if (!(growth.limbs.wander >= 0 && growth.limbs.wander <= 0.2))
+			out.push(
+				`growth.limbs.wander is ${growth.limbs.wander}; it is a share of a limb's length from 0 to 0.2`,
+			);
+		if (!(growth.branches.angle >= 5 && growth.branches.angle <= 90))
+			out.push(`growth.branches.angle is ${growth.branches.angle}; it is degrees from 5 to 90`);
+		if (!(growth.branches.step > 0))
+			out.push(`growth.branches.step is ${growth.branches.step}; it is metres and must be above 0`);
+		if (!(growth.branches.turn >= 2 && growth.branches.turn <= 90))
+			out.push(`growth.branches.turn is ${growth.branches.turn}; it is degrees from 2 to 90`);
+		notNegative(growth.branches.spacing, 'growth.branches.spacing', out);
+		if (!(growth.branches.lift >= -1 && growth.branches.lift <= 1))
+			out.push(`growth.branches.lift is ${growth.branches.lift}; it lies from -1 to 1`);
+		if (!(growth.sockets.spacing > 0))
+			out.push(
+				`growth.sockets.spacing is ${growth.sockets.spacing}; it is metres and must be above 0`,
+			);
+		notNegative(growth.sockets.inset, 'growth.sockets.inset', out);
+		if (!(growth.sockets.lit >= 0.2 && growth.sockets.lit <= 1))
+			out.push(`growth.sockets.lit is ${growth.sockets.lit}; it is a share from 0.2 to 1`);
+		spreadProblems(growth.sockets.rows, 'growth.sockets.rows', true, out);
+		if (!(growth.sockets.fan >= 0 && growth.sockets.fan <= 120))
+			out.push(`growth.sockets.fan is ${growth.sockets.fan}; it is degrees from 0 to 120`);
+		if (growth.pipe.exponent <= 0 || growth.pipe.tipRadius <= 0)
+			out.push('growth.pipe needs an exponent and a tip radius above 0');
+	}
 	if (growth.model === 'frond-colony') {
 		const clump = growth.rhizome.clump;
 		if (clump !== undefined) {
@@ -581,6 +636,16 @@ function growthProblems(record: Species, out: string[]): void {
 		shareProblem(ribs.start, 'foliage.leaf.ribs.start', out);
 		if (ribs.depth < 0 || ribs.sweep <= 0)
 			out.push('foliage.leaf.ribs needs a depth from 0 and a sweep above 0');
+	}
+	if (growth.model === 'frame') {
+		spreadProblems(growth.sockets.rows, 'growth.sockets.rows', true, out);
+		if (!(growth.sockets.fan >= 0 && growth.sockets.fan <= 120))
+			out.push(`growth.sockets.fan is ${growth.sockets.fan}; it is degrees from 0 to 120`);
+		curveProblems(growth.frame.outline, 'growth.frame.outline', out);
+		if (!(growth.frame.stems.count >= 1))
+			out.push(
+				`growth.frame.stems.count is ${growth.frame.stems.count}; a plant has one stem or more`,
+			);
 	}
 	if (growth.model === 'conifer') {
 		const { trunk, limbs, top, patch } = growth;

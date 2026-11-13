@@ -248,10 +248,21 @@ self.onmessage = async (event) => {
 			// Absent or one grows the record's own crown, to the shoot.
 			expect(rows()).toBe(rows(1));
 			const shoots = oak.record.shoots as NonNullable<typeof oak.record.shoots>;
-			// The share moves the record's own sky prune, so a sparse crown keeps its lit rim.
+			// The share moves a record's own sky prune, so a sparse crown keeps its lit rim.
 			const thinner = withLimbs(oak.record, 1.5) as typeof oak.record;
-			expect(thinner.shoots?.placement.skyPrune).toBeLessThan(shoots.placement.skyPrune ?? 0.5);
+			if (shoots.placement.skyPrune !== undefined)
+				expect(thinner.shoots?.placement.skyPrune).toBeLessThan(shoots.placement.skyPrune);
 			const sparse = withLimbs(oak.record, 0.5) as typeof oak.record;
+			// A scaffold plant's limbs end at its sockets, so the share moves the sockets on each
+			// foliage mass: their spacing grows as the share's square root falls.
+			if (oak.record.growth.model === 'scaffold') {
+				const own = oak.record.growth.sockets.spacing;
+				expect(sparse.growth.model).toBe('scaffold');
+				if (sparse.growth.model === 'scaffold')
+					expect(sparse.growth.sockets.spacing).toBeCloseTo(own / Math.sqrt(0.5), 6);
+				if (thinner.growth.model === 'scaffold')
+					expect(thinner.growth.sockets.spacing).toBeCloseTo(own / Math.sqrt(1.5), 6);
+			}
 			// The growth's own count of limbs moves with the share, whatever model the record names.
 			if (oak.record.growth.model === 'self-organizing') {
 				const own = oak.record.growth.branching ?? 1;
