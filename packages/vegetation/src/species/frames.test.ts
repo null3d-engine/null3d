@@ -295,16 +295,24 @@ const HELD: readonly Held[] = [
 		directed: commonAshDirected,
 		heightMean: spreadMean(commonAshDirected.size.height),
 		record: commonAshRecord,
-		counts: { trunk: 1, limb: 4, top: 2, branch: [18, 36], twig: [36, 144] },
+		counts: {
+			trunk: 1,
+			limb: 4,
+			top: 2,
+			branch: [18, 36],
+			side: [90, 140],
+			spur: [16, 26],
+			twig: [2800, 3900],
+		},
 		// Two crossed pairs stand a quarter turn apart.
 		round: { rule: 'limb', gap: 110, lean: 0.2 },
-		base: { limb: 0.52, top: 0.62, branch: 0.45, twig: 0.5 },
+		base: { limb: 0.52, top: 0.62, branch: 0.45, side: 0.5, spur: 0.35 },
 		plumb: ['trunk'],
 		// The outline's top is blunt, so the bunches on the highest tips stand a little over it.
 		through: 0,
-		axesPerSocket: 1.012,
+		axesPerSocket: 1.0,
+		fine: ['twig'],
 		tall: [0.95, 1.05],
-		open: ['spread'],
 	},
 	{
 		id: 'olive',

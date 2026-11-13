@@ -5,13 +5,23 @@
 // height, measured from the true foot. Still 01 and the whole-tree turning video are the one tree
 // the frame follows.
 import { evenOutline, type FrameBranchRule, type FrameSpec, framedRecord } from '../../grow/frame';
+import { PIECES } from './pieces';
 import { record } from './record';
 
 /**
- * A bunch of leaves at a shoot tip. Still 01: nine or ten separate masses show in one view, each a
- * limb end's set of tips. Still 04: five or six tip bunches on one branch end two metres across.
+ * The fine wood that clothes a bunch, each twig ending in a socket that carries the branch end of
+ * still 21. A branch end is 0.81 m long and 0.7 m wide on a tree 22 m tall, so the sockets stand a
+ * branch end's width apart over the bunch's surface and a branch end's reach inside it.
  */
-const bunch = (width: number) => ({ kind: 'bunch', width, depth: width * 0.7 }) as const;
+const ENDS = { pitch: 0.8 / 22, reach: 0.81 / 22 } as const;
+
+/**
+ * A bunch of leaves at a shoot tip, which fine wood clothes. Still 01: nine or ten separate masses
+ * show in one view, each a limb end's set of tips. Still 04: five or six tip bunches on one branch
+ * end two metres across.
+ */
+const bunch = (width: number) =>
+	({ kind: 'bunch', width, depth: width * 0.7, fill: ENDS }) as const;
 
 /**
  * The branches of a limb and their twigs. Stills 07, 06 and 05: branches and twigs leave in opposite
@@ -24,7 +34,7 @@ const branches: FrameBranchRule = {
 	// Still 01: the low sweeping branches leave the limbs at 0.40 to 0.48 of the height, a fifth of
 	// the way along a limb.
 	count: { every: 0.07, least: 3, most: 6 },
-	along: [0.2, 0.88],
+	along: [0.12, 0.88],
 	stagger: 0.2,
 	// The first of a limb's branches leaves its ground side, which on a steep limb is level and
 	// outward, and the next two leave its flanks; the three stand so again up the limb.
@@ -36,25 +46,38 @@ const branches: FrameBranchRule = {
 	],
 	from: 'parent',
 	angleSpread: 6,
-	length: { outline: 0.93 },
+	length: {
+		outline: [
+			[0, 1],
+			[1, 0.86],
+		],
+	},
 	vary: 0.06,
 	least: 0.08,
 	most: 0.5,
 	radius: 0.45,
 	taper: 0.3,
 	bends: [
-		{ from: 0.1, to: 0.6, level: 2 },
+		{
+			from: 0.1,
+			to: 0.6,
+			level: [
+				[0, -14],
+				[0.4, 0],
+				[1, 4],
+			],
+		},
 		{ from: 0.72, to: 1, by: -35 },
 	],
 	sway: 10,
 	elbows: 4,
-	patch: bunch(0.14),
+	patch: bunch(0.15),
 	children: [
 		{
-			name: 'twig',
+			name: 'side',
 			role: 'branch',
-			count: { every: 0.07, least: 2, most: 4 },
-			along: [0.45, 0.88],
+			count: { every: 0.045, least: 2, most: 6 },
+			along: [0.15, 0.92],
 			stagger: 0.2,
 			around: 'opposite',
 			jitter: 12,
@@ -76,9 +99,35 @@ const branches: FrameBranchRule = {
 			bends: [{ from: 0.5, to: 1, by: -30 }],
 			sway: 10,
 			elbows: 3,
-			patch: bunch(0.1),
+			patch: bunch(0.11),
 		},
 	],
+};
+
+/**
+ * The short leafy shoots along a limb's upper run, each with its own bunch. Stills 02 and 03: the
+ * middle of the crown is full of fine shoots, so it reads closer than the rim; from below, the
+ * upper limbs are clothed along their length.
+ */
+const spurs: FrameBranchRule = {
+	name: 'spur',
+	role: 'branch',
+	count: { every: 0.06, least: 2, most: 6 },
+	along: [0.4, 0.92],
+	stagger: 0.25,
+	around: 'spiral',
+	jitter: 20,
+	angle: 50,
+	from: 'parent',
+	angleSpread: 8,
+	length: { share: 0.06 },
+	vary: 0.2,
+	radius: 0.35,
+	taper: 0.35,
+	bends: [{ from: 0.3, to: 1, by: -24 }],
+	sway: 14,
+	elbows: 3,
+	patch: bunch(0.1),
 };
 
 /** The common ash's frame. */
@@ -156,8 +205,8 @@ export const frame: FrameSpec = {
 				bends: [{ from: 0.7, to: 1, by: -8 }],
 				sway: 9,
 				elbows: 5,
-				patch: bunch(0.14),
-				children: [branches],
+				patch: bunch(0.15),
+				children: [branches, spurs],
 			},
 			{
 				name: 'top',
@@ -170,7 +219,7 @@ export const frame: FrameSpec = {
 				angle: 20,
 				from: 'plumb',
 				angleSpread: 4,
-				length: { outline: 0.8 },
+				length: { outline: 0.74 },
 				vary: 0.05,
 				radius: 0.62,
 				taper: 0.25,
@@ -178,15 +227,17 @@ export const frame: FrameSpec = {
 				sway: 9,
 				elbows: 4,
 				patch: bunch(0.14),
-				children: [branches],
+				children: [branches, spurs],
 			},
 		],
 	},
 };
 
 /**
- * The common ash's record with the frame as its growth. A socket holds four shoot rows that fan 45
- * degrees from its line. These two are working figures, not measured ones: they stand until the
- * species' branch pieces are placed at its sockets, which then state what a socket holds.
+ * The common ash's record with the frame as its growth and the branch end of still 21 at each
+ * socket. The shoot rows are working figures, not measured ones: a kit with no pieces draws them.
  */
-export const directed = framedRecord(record, frame, { rows: { mean: 4, spread: 1 }, fan: 45 });
+export const directed = {
+	...framedRecord(record, frame, { rows: { mean: 4, spread: 1 }, fan: 45, piece: 'branch-end' }),
+	pieces: PIECES.filter((piece) => piece.name === 'branch-end'),
+};
