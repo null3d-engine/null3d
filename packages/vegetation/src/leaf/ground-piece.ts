@@ -30,6 +30,8 @@ export interface WrittenPiece {
 	readonly name: string;
 	/** How a socket turns it. */
 	readonly attitude: PieceAttitude;
+	/** Degrees it is turned about its own line at every socket. Absent, 0. */
+	readonly roll?: number;
 	/** The piece's length in metres at scale 1, from its attach point to its tip along its curve. */
 	readonly length: number;
 	/**
@@ -97,6 +99,7 @@ export function writtenPieces(pieces: readonly WrittenPiece[]): PiecePrototype[]
 				piece: piece.name,
 				variant: 0,
 				attitude: piece.attitude,
+				...(piece.roll ? { roll: piece.roll } : {}),
 				part,
 				parts: piece.parts.length,
 				length: piece.length,
