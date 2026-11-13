@@ -47,8 +47,10 @@ const HABITS: readonly (readonly [habit: string, id: string, seeds: readonly num
 
 /**
  * The species whose crowns are read for sky: every species that draws shoot cards but the weeping
- * willow, whose cards carry a strand a texel wide down each shoot and read far more closed than
- * its leaves.
+ * willow. Each of a card's three crossed planes pictures the whole shoot, so a sparse shoot seen
+ * from between two planes shows more cover than its leaves, up to half as much again on the
+ * willow's long open shoots. Its card levels read about 0.07 more closed than its leaf form, below
+ * the band, and the fault is the card design's, not the bake's.
  */
 const SKY_SPECIES = [
 	'common-alder',
