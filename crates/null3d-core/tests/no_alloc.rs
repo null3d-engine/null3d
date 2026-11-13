@@ -797,3 +797,41 @@ fn drawing_blockers_and_testing_spheres_allocates_nothing() {
     assert_eq!(CountingAllocator::disarm(), 0);
     assert!(hidden > 0, "the blockers hid nothing");
 }
+
+#[test]
+fn picking_levels_in_a_row_range_allocates_nothing() {
+    use null3d_core::culling::RowRanges;
+    use null3d_core::levels::{LevelLink, LevelRule, NO_LINK, Switch};
+    let _only = CountingAllocator::exclusive();
+    CountingAllocator::track_this_thread();
+    // One mesh of two lower levels, drawn in a range that starts at 5 m.
+    let links = [
+        LevelLink {
+            value: 0.0,
+            switch: Switch::Error,
+            next: 1,
+            fade: NO_LINK,
+        },
+        LevelLink {
+            value: 0.01,
+            switch: Switch::Error,
+            next: 2,
+            fade: NO_LINK,
+        },
+        LevelLink {
+            value: 0.05,
+            switch: Switch::Distance,
+            next: NO_LINK,
+            fade: NO_LINK,
+        },
+        LevelLink::NONE,
+    ];
+    let rows = RowRanges::Rows(&[5.0, 400.0, 0.0, 80.0]);
+    let rule = LevelRule::new(1080.0, 1.732, false, 1.0, 0.08);
+    let distance = rule.distances([0.0, 0.0, -20.0], 1.0);
+    CountingAllocator::arm();
+    for k in 0..10_000 {
+        let _ = rule.pick(&links, 0, 1.0, 1.0, distance, 1.0, rows.range(k & 1));
+    }
+    assert_eq!(CountingAllocator::disarm(), 0);
+}
