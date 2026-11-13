@@ -1,14 +1,17 @@
 // The conifer grower: the limb schedule gives the record's counts, each level's limbs stand spread
 // round the trunk, every axis bends within its bound and joins the wood it leaves, and one seed
-// grows one plant.
+// grows one plant. A closed shell's sockets tile its outline and its inner body stands behind them.
 import { describe, expect, it } from 'bun:test';
 import { VARIANTS_BY_PRESET } from '../core/caps';
 import { speciesProblems } from '../core/check';
 import { AXIS_STEM, type MacroSkeleton } from '../core/graph';
 import { hashBytes } from '../core/hash';
 import type { Conifer } from '../core/record';
-import { spreadMean } from '../core/types';
+import { curveAt, spreadMean } from '../core/types';
+import { buildKitNow, growPlantNow, loadPlantCode } from '../generate';
 import { directed as sequoia } from '../species/giant-sequoia/directed';
+import { species as cypressModule } from '../species/italian-cypress';
+import { directed as cypress } from '../species/italian-cypress/directed';
 import { directed } from '../species/scots-pine/directed';
 import { type ConiferPatch, growConifer, limbsPerLevel, planConifer, TURN_MOST } from './conifer';
 
@@ -729,4 +732,164 @@ describe("the pine's sockets", () => {
 			expect(buds.sockets?.lobe[b]).toBe((plan.sockets[b] as (typeof plan.sockets)[number]).patch);
 		}
 	});
+});
+
+describe("the Italian cypress's closed shell", () => {
+	const shell = cypress.growth as Conifer;
+	const rule = shell.patch.sockets;
+	const pitch = rule?.pitch ?? 0;
+	const fan = cypress.pieces?.find((piece) => piece.name === rule?.piece);
+	const fanLength = fan ? spreadMean(fan.stem.length) : 0;
+	const [foot, crown] = [
+		(shell.limbs.reach as readonly (readonly [number, number])[])[0]?.[0] ?? 0,
+		(shell.limbs.reach as readonly (readonly [number, number])[]).at(-1)?.[0] ?? 1,
+	];
+	const plans = SEEDS.map((seed) =>
+		planConifer({ record: cypress, seed, variant: 0, season: 'summer' }),
+	);
+	/** The plant's drawn height: the leader's tip patch stands half its depth over the trunk's end. */
+	const heightOf = (plan: (typeof plans)[number]): number =>
+		(plan.trunk.at(-1)?.y ?? 0) / (1 - (shell.patch.width[1] * shell.patch.depth) / 2);
+	/** The outline's metres from the trunk's line on its wide side at a height. */
+	const outline = (plan: (typeof plans)[number], y: number): number =>
+		curveAt(shell.limbs.reach, y / heightOf(plan)) * heightOf(plan);
+	const flat = (at: readonly number[]): number => Math.hypot(at[0] as number, at[2] as number);
+
+	it('passes the record check and stands every socket just inside the outline, from its foot to its top', () => {
+		expect(speciesProblems(cypress)).toEqual([]);
+		for (const plan of plans) {
+			const H = heightOf(plan);
+			for (const socket of plan.sockets) {
+				if (socket.limb < 0) continue;
+				const y = socket.at[1];
+				expect(y).toBeGreaterThanOrEqual(foot * H - 1e-6);
+				expect(y).toBeLessThanOrEqual(crown * H + 1e-6);
+				// Within the outline, and no deeper than a fifth of a fan inside its narrow side.
+				const r = flat(socket.at);
+				expect(r).toBeLessThanOrEqual(outline(plan, y) + 0.002 * H);
+				expect(r).toBeGreaterThanOrEqual(
+					Math.min(
+						shell.limbs.plan.narrow * outline(plan, y) - 0.2 * fanLength,
+						0.3 * outline(plan, y),
+					) -
+						0.002 * H,
+				);
+			}
+		}
+	});
+
+	it('leaves no gap round the column wider than two pitches, at every height', () => {
+		for (const plan of plans) {
+			const H = heightOf(plan);
+			for (let band = 0.02; band < 0.9; band += 0.05) {
+				const turns = plan.sockets
+					.filter((s) => s.at[1] >= band * H && s.at[1] < (band + 0.05) * H)
+					.map((s) => Math.atan2(s.at[2], s.at[0]))
+					.sort((a, b) => a - b);
+				expect(turns.length).toBeGreaterThan(3);
+				let widest = 2 * Math.PI - ((turns.at(-1) as number) - (turns[0] as number));
+				for (let k = 1; k < turns.length; k++)
+					widest = Math.max(widest, (turns[k] as number) - (turns[k - 1] as number));
+				const radius = outline(plan, (band + 0.025) * H);
+				expect(widest * radius).toBeLessThanOrEqual(2 * pitch);
+			}
+		}
+	});
+
+	it('stands every fan up the shell, leaning out where the column does not narrow, never plumb', () => {
+		for (const plan of plans) {
+			const H = heightOf(plan);
+			for (const socket of plan.sockets) {
+				if (socket.limb < 0) continue;
+				const [hx, hy, hz] = socket.heading;
+				// The tucked foot leans its fans out the most: its outline widens by 0.7 of its rise.
+				expect(hy).toBeGreaterThan(Math.cos((50 * Math.PI) / 180));
+				expect(Math.hypot(hx, hz)).toBeGreaterThan(Math.sin((1.9 * Math.PI) / 180));
+				if (socket.at[1] < 0.75 * H)
+					expect(hx * socket.at[0] + hz * socket.at[2]).toBeGreaterThan(0);
+			}
+		}
+	});
+
+	it('feeds every fan from a bough that rises to end inside the outline, each bough a share of them', () => {
+		for (const plan of plans) {
+			const fed = new Array<number>(plan.limbs.length).fill(0);
+			for (const socket of plan.sockets) if (socket.limb >= 0) (fed[socket.limb] as number)++;
+			expect(Math.min(...fed)).toBeGreaterThan(0);
+			// The busiest bough feeds a few times the median's share.
+			const sorted = [...fed].sort((a, b) => a - b);
+			expect(Math.max(...fed)).toBeLessThanOrEqual(5 * (sorted[sorted.length >> 1] as number));
+			for (const limb of plan.limbs) {
+				const end = limb.nodes.at(-1) as (typeof limb.nodes)[number];
+				const seat = plan.trunk[limb.trunkNode] as (typeof plan.trunk)[number];
+				expect(end.y).toBeGreaterThan(seat.y);
+				expect(flat([end.x, end.y, end.z])).toBeLessThan(outline(plan, end.y));
+			}
+		}
+	});
+
+	it("stands its inner body on the trunk's line at its share of the outline, as wood joined to nothing", () => {
+		const body = shell.body?.radius as readonly (readonly [number, number])[];
+		const share = (body[1]?.[1] ?? 0) / (curveAt(shell.limbs.reach, body[1]?.[0] ?? 0) || 1);
+		for (const [seed, plan] of plans.entries()) {
+			const H = heightOf(plan);
+			expect(plan.body.length).toBeGreaterThan(2);
+			expect((plan.body[0]?.y ?? 0) / H).toBeCloseTo(body[0]?.[0] ?? 0, 4);
+			expect((plan.body.at(-1)?.y ?? 0) / H).toBeCloseTo(body.at(-1)?.[0] ?? 0, 4);
+			for (const node of plan.body)
+				expect(node.radius).toBeCloseTo(share * outline(plan, node.y), 3);
+			const skeleton = growConifer({
+				record: cypress,
+				seed: SEEDS[seed] as number,
+				variant: 0,
+				season: 'summer',
+			});
+			const loose = [];
+			for (let a = 0; a < skeleton.axes.count; a++)
+				if (
+					(skeleton.axes.parent[a] as number) < 0 &&
+					(skeleton.axes.kind[a] as number) !== AXIS_STEM
+				)
+					loose.push(a);
+			expect(loose).toHaveLength(1);
+			const axis = loose[0] as number;
+			expect(skeleton.axes.order[axis]).toBe(1);
+			expect((skeleton.axes.last[axis] as number) - (skeleton.axes.first[axis] as number) + 1).toBe(
+				plan.body.length,
+			);
+		}
+	});
+
+	it('draws its inner body all round the trunk in the wood of the near form and of both card levels', async () => {
+		await loadPlantCode(cypressModule.record);
+		const kit = buildKitNow(cypressModule, { detail: 'high', placeholders: 'missing' });
+		const asset = growPlantNow(kit, { seed: 11, variant: 0, season: 'summer', near: true });
+		const plan = planConifer({
+			record: cypressModule.record,
+			seed: 11,
+			variant: 0,
+			season: 'summer',
+		});
+		// The grown plant is scaled so its drawn top stands at the record's height.
+		const scale = asset.skeleton.height / plan.height;
+		const middle = plan.body[plan.body.length >> 1] as (typeof plan.body)[number];
+		const { min, max } = kit.box;
+		for (const level of [0, 1, 2] as const) {
+			const wood = asset.levels[level].parts.find((part) => part.name === 'wood');
+			expect(wood).toBeDefined();
+			if (!wood) continue;
+			const raw = wood.arrays.positions;
+			const sectors = new Set<number>();
+			for (let v = 0; v < raw.length / 3; v++) {
+				const x = min[0] + (raw[v * 3] as number) * ((max[0] - min[0]) / 65535);
+				const y = min[1] + (raw[v * 3 + 1] as number) * ((max[1] - min[1]) / 65535);
+				const z = min[2] + (raw[v * 3 + 2] as number) * ((max[2] - min[2]) / 65535);
+				if (Math.abs(y - middle.y * scale) > 0.5) continue;
+				if (Math.abs(Math.hypot(x, z) - middle.radius * scale) > 0.1 * middle.radius * scale)
+					continue;
+				sectors.add(Math.floor(((((Math.atan2(z, x) / (2 * Math.PI)) % 1) + 1) % 1) * 16));
+			}
+			expect(sectors.size).toBe(16);
+		}
+	}, 120_000);
 });

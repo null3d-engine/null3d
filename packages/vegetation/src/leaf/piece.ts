@@ -343,6 +343,12 @@ export interface PieceRule {
 	 * the card atlas. The finest tier keeps every leaf. Absent, every tier draws its leaves.
 	 */
 	readonly brushCards?: boolean;
+	/**
+	 * The most metres between neighbouring leaves on a stem that one brush card pictures as a run.
+	 * Absent, two of the stem's radii, where needles close round their stem; a piece whose leaves
+	 * are sprays that overlap along their stem states the spacing they overlap at.
+	 */
+	readonly brushGap?: number;
 }
 
 /**
@@ -526,9 +532,14 @@ export function planPiece(
 	if (!shoots)
 		throw new Error(`@null3d/vegetation: '${record.id}' has no shoots to build pieces of`);
 	const foliage = record.foliage;
-	if (foliage.kind !== 'blade' && foliage.kind !== 'fascicle' && foliage.kind !== 'needle')
+	if (
+		foliage.kind !== 'blade' &&
+		foliage.kind !== 'fascicle' &&
+		foliage.kind !== 'needle' &&
+		foliage.kind !== 'scale-spray'
+	)
 		throw new Error(
-			`@null3d/vegetation: '${record.id}' has '${foliage.kind}' foliage; a piece carries blades, needles or needle bundles`,
+			`@null3d/vegetation: '${record.id}' has '${foliage.kind}' foliage; a piece carries blades, needles, needle bundles or scale sprays`,
 		);
 	const salt = record.seedSalt;
 	const draw = (purpose: number, a = 0, b = 0) => unitAt(salt, PIECE_KEY + key, purpose, a, b);
@@ -536,7 +547,13 @@ export function planPiece(
 		ground ??
 		rule.ground ??
 		(rule.attitude === 'plumb' ? [0, 1, 0] : rule.attitude === 'upright' ? [0, -1, 0] : [0, 0, -1]);
-	const leafSpread = foliage.kind === 'blade' ? foliage.leaf.length : foliage.needle.length;
+	// A scale spray is built at its own size, so every spray of a piece draws at it.
+	const leafSpread =
+		foliage.kind === 'blade'
+			? foliage.leaf.length
+			: foliage.kind === 'scale-spray'
+				? 1
+				: foliage.needle.length;
 	const leafMean = spreadMean(leafSpread);
 	/** The piece's own line. */
 	const line: Readonly<Vector3> = [sin(radians(lean)), cos(radians(lean)), 0];
@@ -1213,7 +1230,7 @@ export function piecePrototypes(
 		for (let variant = 0; variant < Math.min(16, Math.max(1, rule.variants)); variant++) {
 			const whole = planPiece(record, rule, pieceKey(r, variant), leafMeshes);
 			if (rule.brushCards && !pictures) {
-				const runs = plannedBrushes(whole);
+				const runs = plannedBrushes(whole, rule.brushGap);
 				const longest = (own: boolean) =>
 					runs
 						.filter((run) => (run.axis === 0) === own)
@@ -1231,10 +1248,12 @@ export function piecePrototypes(
 				const brushes =
 					drawn.length > 0
 						? {
-								runs: plannedBrushes(plan).map(({ axis, leaves: _leaves, ...run }) => ({
-									...run,
-									picture: Math.min(drawn.length - 1, axis === 0 ? 0 : 1),
-								})),
+								runs: plannedBrushes(plan, rule.brushGap).map(
+									({ axis, leaves: _leaves, ...run }) => ({
+										...run,
+										picture: Math.min(drawn.length - 1, axis === 0 ? 0 : 1),
+									}),
+								),
 								pictures: drawn,
 							}
 						: undefined;
