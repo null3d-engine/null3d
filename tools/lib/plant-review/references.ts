@@ -1257,8 +1257,8 @@ const FOOT_SHARE = 0.03;
  * pixels. The picture is first shrunk to the work width. Returns a mask with no plant when the
  * border is neither plain nor a sky the surface fit models (see `skyMaskable`).
  */
-export function plantMask(image: Rgba): PlantMask {
-	const work = image.width > WORK_WIDTH ? resizeToWidth(image, WORK_WIDTH) : image;
+export function plantMask(image: Rgba, workWidth = WORK_WIDTH): PlantMask {
+	const work = image.width > workWidth ? resizeToWidth(image, workWidth) : image;
 	const { width, height } = work;
 	const lab = labImage(work);
 	const background = backgroundOf(lab, width, height);
@@ -1307,6 +1307,12 @@ export function plantMask(image: Rgba): PlantMask {
 			height - Math.max(2, Math.round(height * FOOT_SHARE)),
 		);
 	keepPlantParts(mask, width, height, horizon);
+	// A silhouette stands on a black ground line, which holds no foot to tell from its ground.
+	if (
+		background.ground &&
+		(surfaceAt(background.ground, 0.5, (horizon / height + 1) / 2)[0] as number) > FOOT_GROUND_LIGHT
+	)
+		followStemFoot(mask, lab, width, height, horizon);
 	if (!background.plain) {
 		let kept = 0;
 		for (let at = 0; at < mask.length; at++) kept += mask[at] as number;
@@ -1334,6 +1340,101 @@ export function plantMask(image: Rgba): PlantMask {
 		background,
 		...(plantToGround !== undefined ? { plantToGround } : {}),
 	};
+}
+
+/** How far below the horizon a stem's foot is followed, as a share of the plant's height above it. */
+const FOOT_REACH = 0.15;
+/** The CIELAB distance between a stem and the ground beside it at which the stem still shows. */
+const FOOT_CONTRAST = 6;
+/** The rows in turn that may lack that contrast before the foot ends. */
+const FOOT_GAP = 2;
+/** The share of the stem's contrast at the horizon under which the rows below are ground. */
+const FOOT_CONTRAST_SHARE = 0.25;
+/** The least CIELAB lightness of a ground on which a foot can be told from it. */
+const FOOT_GROUND_LIGHT = 12;
+/** The most of the frame's width a run at the horizon may take and still be a stem. */
+const FOOT_STEM_SHARE = 0.4;
+
+/**
+ * Follows a stem from the horizon down to its foot. The ground's fitted colour cannot tell a dark
+ * foot from dark ground, so an outline can end at the horizon while the stem runs on to its root
+ * collar, and every figure that is a share of the plant's height then counts from the wrong base.
+ * Where the outline's lowest row stands at the horizon, the widest run of that row is the stem.
+ * Each row below is the stem's while the columns under it differ in colour from the ground on
+ * either side of them, by a share of what the stem shows at the horizon, and the foot ends where
+ * that contrast is lost for a few rows in turn.
+ */
+function followStemFoot(
+	mask: Uint8Array,
+	lab: Float32Array,
+	width: number,
+	height: number,
+	horizon: number,
+): void {
+	const rowHolds = (y: number): boolean => {
+		for (let x = 0; x < width; x++) if (mask[y * width + x]) return true;
+		return false;
+	};
+	let bottom = height - 1;
+	while (bottom >= 0 && !rowHolds(bottom)) bottom--;
+	let top = 0;
+	while (top < bottom && !rowHolds(top)) top++;
+	// An outline that already runs on below the horizon, or ends above it, has its own foot.
+	if (bottom < 0 || Math.abs(bottom - horizon) > Math.max(2, Math.round(height * 0.01))) return;
+	let left = -1;
+	let right = -1;
+	for (let x = 0, start = -1; x <= width; x++) {
+		const on = x < width && mask[bottom * width + x] !== 0;
+		if (on && start < 0) start = x;
+		if (!on && start >= 0) {
+			if (x - start > right - left + 1 || left < 0) {
+				left = start;
+				right = x - 1;
+			}
+			start = -1;
+		}
+	}
+	const stem = right - left + 1;
+	if (left < 0 || stem > width * FOOT_STEM_SHARE) return;
+	const flank = Math.max(3, stem);
+	const mean = (y: number, from: number, to: number, into: number[]): number => {
+		let n = 0;
+		for (let x = Math.max(0, from); x <= Math.min(width - 1, to); x++) {
+			for (let c = 0; c < 3; c++)
+				into[c] = (into[c] as number) + (lab[(y * width + x) * 3 + c] as number);
+			n++;
+		}
+		return n;
+	};
+	const contrastAt = (y: number): number | undefined => {
+		const inside = [0, 0, 0];
+		const beside = [0, 0, 0];
+		const within = mean(y, left, right, inside);
+		const out = mean(y, left - flank, left - 1, beside) + mean(y, right + 1, right + flank, beside);
+		return within === 0 || out === 0
+			? undefined
+			: Math.hypot(
+					(inside[0] as number) / within - (beside[0] as number) / out,
+					(inside[1] as number) / within - (beside[1] as number) / out,
+					(inside[2] as number) / within - (beside[2] as number) / out,
+				);
+	};
+	// The stem shows against the ground beside it as it does at the horizon, or a share less.
+	const least = Math.max(FOOT_CONTRAST, FOOT_CONTRAST_SHARE * (contrastAt(bottom) ?? 0));
+	const last = Math.min(height - 1, bottom + Math.round((bottom - top + 1) * FOOT_REACH));
+	let reached = bottom;
+	for (let y = bottom + 1, misses = 0; y <= last && misses <= FOOT_GAP; y++) {
+		const contrast = contrastAt(y);
+		if (contrast === undefined) break;
+		if (contrast < least) {
+			misses++;
+			continue;
+		}
+		misses = 0;
+		for (let row = reached + 1; row <= y; row++)
+			for (let x = left; x <= right; x++) mask[row * width + x] = 1;
+		reached = y;
+	}
 }
 
 /** How far above the horizon, as a share of the frame's height, a background band may lie. */
