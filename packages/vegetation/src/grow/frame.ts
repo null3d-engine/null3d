@@ -61,10 +61,11 @@ const LENGTH_PASSES = 22;
 const WANDER_SIDE = 0.8;
 const WANDER_NOD = 0.5;
 /**
- * Axes that keep apart: the share of an axis's length past which it is its outer half, how many
- * times an axis may be shaped, and the step between one shaping's hash keys and the next's.
+ * Axes that keep apart: the share of an axis's length past which its wood is held clear of other
+ * wood (nearer its base it stands beside the wood it leaves), how many times an axis may be shaped,
+ * and the step between one shaping's hash keys and the next's.
  */
-const OUTER_FROM = 0.45;
+const OUTER_FROM = 0.2;
 const APART_TRIES = 8;
 const SHAPE_STEP = 16384;
 /** The rise of a unit direction above which a parent stands near plumb and has no ground side. */
@@ -257,8 +258,8 @@ export interface FrameBranchRule extends FrameAxisRule {
 	 */
 	readonly lift?: number;
 	/**
-	 * The least gap, as a share of the height, between the wood of the outer half of one of these
-	 * axes and the wood of every axis built before it, the wood it grows from apart. An axis that
+	 * The least gap, as a share of the height, between the wood of one of these axes past its first
+	 * fifth and the wood of every axis built before it, the wood it grows from apart. An axis that
 	 * would run nearer is shaped again with other elbows, a few times, and the shape that stands
 	 * clearest is kept, so no limb runs along another or passes through it. Left out, the axes are
 	 * laid without regard to each other.
