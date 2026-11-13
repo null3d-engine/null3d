@@ -873,6 +873,7 @@ function orderOf(kit: SpeciesKitData, grown: GrownPlant): SparseOrder {
 			grown.rows,
 			kit.record.sparse?.limbs ?? GREAT_LIMB_SHARE,
 			top >= 0 ? [top] : [],
+			kit.record.sparse?.foliage ?? FOLIAGE_FLOOR,
 		);
 	}
 	return grown.order;

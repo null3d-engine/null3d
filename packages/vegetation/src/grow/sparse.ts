@@ -21,7 +21,9 @@
 //
 // A plant of sockets thins by whole sockets instead, each with every row it holds, so a piece stays
 // whole or goes whole, and by whole branches first. Each branch that leaves a stem or a great limb
-// is a unit, and the sockets on a stem or limb itself are one more. The units stand in the
+// is a unit, and the sockets on a stem or limb itself are one more. A branch too large for the
+// sparsest plant to keep two clothed branches in every octant splits into the sockets on its own
+// axis and the branches that leave it. The units stand in the
 // walk's order and take places by reversed bits, so the kept units stand spread along every limb
 // and round the plant. A kept unit keeps at least half its pieces, spread along it by the same rule;
 // past that the units go whole, the last of the order first. So the sparsest plant
@@ -174,6 +176,8 @@ export function woodParts(skeleton: MacroSkeleton, share: number = GREAT_LIMB_SH
  * @param rows The shoot rows as grown, each with its node and, as its record, its axis.
  * @param limbs The least share of the thickest limb's radius that makes a limb great.
  * @param pinned Rows that stay at every sparseness, such as the row that holds the plant's top.
+ * @param floor The share of its foliage the sparsest plant keeps, which sets how large a branch a
+ *   plant of sockets keeps or drops whole.
  * @returns The order.
  * @category api/vegetation
  */
@@ -182,6 +186,7 @@ export function sparseOrder(
 	rows: ShootRows,
 	limbs: number = GREAT_LIMB_SHARE,
 	pinned: readonly number[] = [],
+	floor: number = FOLIAGE_FLOOR,
 ): SparseOrder {
 	const { axes, position, nodeCount } = skeleton;
 	const count = axes.count;
@@ -329,7 +334,16 @@ export function sparseOrder(
 	});
 	const sockets = byRows ? rowSockets(skeleton, rows) : undefined;
 	if (sockets) {
-		const thinned = socketPlaces(skeleton, sockets, list, least, structural, place, barePlace);
+		const thinned = socketPlaces(
+			skeleton,
+			sockets,
+			list,
+			least,
+			structural,
+			floor,
+			place,
+			barePlace,
+		);
 		return {
 			byRows,
 			carriers: thinned.carriers,
@@ -463,6 +477,9 @@ export function rowSockets(skeleton: MacroSkeleton, rows: ShootRows): Uint32Arra
 /** The least share of its pieces that a kept unit of a plant of sockets keeps before it goes whole. */
 const CLOTHED = 0.5;
 
+/** The fewest sockets a unit of a plant of sockets may hold before a larger branch splits. */
+const UNIT_LEAST = 6;
+
 /**
  * The places of a plant of sockets, by whole branches first. Every row takes its socket's place,
  * and the sockets stand in three runs: those that hold a carrier that never goes; then the clothed
@@ -480,6 +497,7 @@ function socketPlaces(
 	list: readonly number[],
 	leastRows: number,
 	structural: Uint8Array,
+	floor: number,
 	place: Uint32Array,
 	barePlace: Uint32Array,
 ): { readonly carriers: number; readonly least: number } {
@@ -490,16 +508,33 @@ function socketPlaces(
 	const unitOf = new Map<number, number>();
 	const units: number[][] = [];
 	const unitIndex = new Map<number, number>();
+	// The sockets on each axis and on every branch that leaves it.
+	const held = new Uint32Array(axes.count);
+	const counted = new Set<number>();
+	for (const row of list) {
+		const socket = sockets[row] as number;
+		if (counted.has(socket)) continue;
+		counted.add(socket);
+		const axis = buds.axis[socket] as number;
+		held[axis] = (held[axis] as number) + 1;
+	}
+	for (let a = axes.count - 1; a >= 0; a--) {
+		const parent = axes.parent[a] as number;
+		if (parent >= 0) held[parent] = (held[parent] as number) + (held[a] as number);
+	}
+	// The largest branch that keeps or goes whole: the sparsest plant keeps at least two clothed
+	// branches for each octant of its crown.
+	const most = Math.max(UNIT_LEAST, Math.floor((floor * counted.size) / (16 * CLOTHED)));
 	for (const row of list) {
 		const socket = sockets[row] as number;
 		earliest.set(socket, Math.min(earliest.get(socket) ?? NO_PLACE, place[row] as number));
 		if (unitOf.has(socket)) continue;
 		let axis = buds.axis[socket] as number;
 		let key = axes.count + axis;
-		if (!structural[axis]) {
+		if (!structural[axis] && (held[axis] as number) <= most) {
 			for (
 				let parent = axes.parent[axis] as number;
-				parent >= 0 && !structural[parent];
+				parent >= 0 && !structural[parent] && (held[parent] as number) <= most;
 				parent = axes.parent[axis] as number
 			)
 				axis = parent;
@@ -547,12 +582,14 @@ function socketPlaces(
 				bearing(a) - bearing(b) ||
 				a - b,
 		);
-		// A unit's sockets stand in the walk's order along it, and take places by reversed bits, so
-		// the pieces a unit keeps stand spread from its base to its tips.
+		// A unit's sockets stand in the walk's order along it, and take places by reversed bits from a
+		// start of its own, so the pieces a unit keeps stand spread from its base to its tips and no
+		// place along it, such as its tip, is always kept.
 		const along = reversedPlaces(members.length);
+		const start = hashAt(members[0] as number, 3) % members.length;
 		const core = Math.ceil(members.length * CLOTHED);
 		members.forEach((socket, i) => {
-			const rank = along[i] as number;
+			const rank = along[(i + start) % members.length] as number;
 			if (forced(socket)) always.push(socket);
 			else if (rank < core) clothed.push({ socket, unit: u, rank });
 			else rest.push({ socket, unit: u, share: rank / members.length });

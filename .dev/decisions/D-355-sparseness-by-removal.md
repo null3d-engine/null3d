@@ -108,18 +108,26 @@ first carriers of the order and every axis from each of them to the root.
   directed frame, thins by whole sockets and by whole branches first. A socket's rows all stand at
   its place, so each row belongs to the socket at its node that stands nearest it; the sockets of
   one shoot share a place and thin as one. Each branch that leaves a stem or a great limb is a unit,
-  and the sockets on a stem or limb itself are one more. The units take places by the reversed bits
-  of their place in the walk, so the kept units stand spread along every limb and round the plant.
-  A unit's sockets stand along it in the walk's order, those that leave one node by their bearing
-  round the plant, and take places by reversed bits too. A kept unit keeps at least half its
-  sockets; past that, whole units go, the last of the order first. So the sparsest plant is the
+  and the sockets on a stem or limb itself are one more. A branch too large for the sparsest plant
+  to keep two clothed branches in each octant of its crown (more than the floor's share of the
+  sockets over sixteen times the clothed half, and at least six) splits into the sockets on its own
+  axis and the branches that leave it. The units take places by the reversed bits of their place in
+  the walk, so the kept units stand spread along every limb and round the plant. A unit's sockets
+  stand along it in the walk's order, those that leave one node by their bearing round the plant,
+  and take places by reversed bits from a start of the unit's own, so no place along it, such as its
+  tip, is always kept. A kept unit keeps at least half its sockets; past that, whole units go, the
+  last of the order first. So the sparsest plant is the
   trunk, the great limbs and a few clothed branches. Each axis that carries foliage is cut back to
   its last kept socket, or the last kept branch that leaves it, so nothing kept ends in bare wood;
   wood that never carried foliage thins by its own spread as before. A socket whose place holds no
   kept piece leaves the thinned skeleton, and each kept socket keeps its size, rank, mass and
-  piece. On the directed Scots pine at half sparseness, the sockets at the axes' tips keep 0.71 and
-  the sockets along the axes 0.46, where an order that kept each axis's tip first gave 0.92 and
-  0.34; at the sparsest it keeps 0.38 of its wood, where that order kept 0.50.
+  piece. On the directed Scots pine of 2,763 sockets at half sparseness, the sockets at the axes'
+  tips keep 0.58 and the sockets along the axes 0.52, and at the sparsest it keeps 0.27 of its wood;
+  on the directed oak of 753 sockets, 0.52 and 0.55, every octant within 0.04 of the plant's share,
+  and 0.36 of its wood at the sparsest. An order that kept each axis's tip first gave the pine 0.92
+  and 0.34 and kept half its wood. Whole branches without the size cap left the oak, whose four
+  great axes carry a few large branches, with an octant at 0.01 of its sockets where the plant kept
+  0.31.
 
 Rejected:
 
