@@ -224,7 +224,7 @@ const HELD: readonly Held[] = [
 		base: { limb: 0.25, side: 0.5 },
 		plumb: ['leader'],
 		through: 0,
-		crossings: [0, 8],
+		crossings: [0, 4],
 		axesPerSocket: 1.0,
 		fine: ['twig'],
 		tall: [0.98, 1.02],
