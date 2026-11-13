@@ -278,6 +278,12 @@ export interface PlantReviewQuery {
 	 * trunk, read off the photograph. It sets the junction view's frame alone.
 	 */
 	readonly limbShare?: number;
+	/**
+	 * The row share on which a crown photograph's limb crosses the frame under its leaves. The
+	 * crown view then frames the limb that carries its foliage mass, low in the frame, and
+	 * `limbShare` is that limb's share of the frame's height.
+	 */
+	readonly limbRow?: number;
 	/** The column share on which a junction photograph's trunk meets its limb. */
 	readonly collarColumn?: number;
 	/**
@@ -382,6 +388,7 @@ const NUMBER_FIELDS = [
 	'subjectWidth',
 	'subjectHeight',
 	'limbShare',
+	'limbRow',
 	'collarColumn',
 	'limbLie',
 	'forkRow',
@@ -560,6 +567,7 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 		['subjectWidth', numbers.subjectWidth],
 		['subjectHeight', numbers.subjectHeight],
 		['limbShare', numbers.limbShare],
+		['limbRow', numbers.limbRow],
 		['collarColumn', numbers.collarColumn],
 	] as const)
 		if (value !== undefined && !(value > 0 && value <= 1))

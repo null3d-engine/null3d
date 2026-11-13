@@ -641,7 +641,17 @@ export function lowShot(subjects: PlantSubjects, lens: Lens, turn: number): Solv
 				within: [0.3, -50, 0.7, 0.4],
 			},
 		],
-		regions: [{ name: 'the leaves over the lower frame', box: [0.1, 0.4, 0.9, 1], min: 0.2 }],
+		regions: [
+			{ name: 'the leaves over the lower frame', box: [0.1, 0.4, 0.9, 1], min: 0.2 },
+			// The plant stands on its foot in the frame's lower middle, with open sky over it.
+			{
+				name: 'the plant at its foot',
+				box: [0.4, LOW_FOOT_ROW - 0.12, 0.6, LOW_FOOT_ROW],
+				min: 0.5,
+			},
+			{ name: 'the sky over the plant', box: [0, 0, 1, 0.1], max: 0.6 },
+			{ name: 'the plant in the frame', box: [0, 0, 1, 1], max: 0.9 },
+		],
 		facts: {
 			// The frame holds the whole plant, so its outline can be compared as a whole view's is.
 			whole: true,
@@ -685,7 +695,12 @@ export function underRimShot(subjects: PlantSubjects, turn: number): Solved {
 		kind: "the leaves' lower faces from under the plant's rim",
 		camera: { position, target: arch },
 		points: [{ name: "the leaves' arch over the rim", at: arch, within: [0.4, 0.4, 0.6, 0.6] }],
-		regions: [{ name: 'the leaves overhead', box: [0, 0, 1, 1], min: 0.2 }],
+		regions: [
+			{ name: 'the leaves overhead', box: [0, 0, 1, 1], min: 0.2 },
+			// The arch of leaves stands over the middle of the frame, and light comes through it.
+			{ name: 'the arch of leaves', box: [0.3, 0.3, 0.7, 0.7], min: 0.4, of: 'foliage' },
+			{ name: 'the light through the leaves', box: [0, 0, 1, 1], max: 0.97 },
+		],
 		facts: {
 			eye: position[1] - foot[1],
 			stand: RIM_STAND_SHARE * reach,
@@ -1181,6 +1196,14 @@ export interface CrownOutsideOptions {
 	readonly fill?: number;
 	/** Degrees the camera looks up at the lobe. */
 	readonly lookUp?: number;
+	/**
+	 * The row share on which the photograph's limb crosses the frame under its leaves, read off the
+	 * photograph. The view then frames the limb that carries the lobe: the limb lands on that row
+	 * with the lobe above it.
+	 */
+	readonly limbRow?: number;
+	/** The share of the frame's height that the photograph's limb takes, with `limbRow`. */
+	readonly limbShare?: number;
 }
 
 /** The most of a crown view's frame that the plant may cover: the rest is the sky behind the lobe. */
@@ -1192,6 +1215,24 @@ const CROWN_SIDE_MOST = 0.92;
 
 /** The least radius of a lobe a crown view frames, against the plant's largest. */
 const LOBE_LEAST = 0.25;
+
+/** How far along the great limb that carries a lobe a crown view frames it. */
+const CARRIER_ALONG = 0.6;
+
+/**
+ * The great limb that carries a lobe, far out along its run where its leaves hang over it: the
+ * limb the lobe names, or failing that the thickest great limb.
+ */
+function carrierOf(
+	subjects: PlantSubjects,
+	lobe: Lobe,
+): { readonly limb: GreatLimb; readonly at: AxisSample & { readonly direction: V3 } } | undefined {
+	if (isAbsent(subjects.limbs) || subjects.limbs.length === 0) return undefined;
+	const limb =
+		subjects.limbs.find((next) => next.id === lobe.limb) ??
+		subjects.limbs.reduce((best, next) => (next.radius > best.radius ? next : best));
+	return { limb, at: sampleAlong(limb.axis, CARRIER_ALONG) };
+}
 
 /**
  * The view of the crown's outside, as picture 04 shows it: one foliage mass at the crown's edge
@@ -1239,25 +1280,98 @@ export function crownOutsideShot(
 		-Math.sin(lookUp),
 		-outward[2] * Math.cos(lookUp),
 	];
-	const camera: Camera = { position: step(lobe.centre, from, distance), target: lobe.centre };
+	// Where the photograph shows the limb that carries its leaves, the frame is set on that limb.
+	// The camera stands below it and looks up square to its run, so the limb crosses the frame on
+	// its row with its leaves and the sky above it.
+	const carried = options.limbRow === undefined ? undefined : carrierOf(subjects, lobe);
+	const row = options.limbRow ?? 0.5;
+	const limbShare = options.limbShare ?? 0.1;
+	const side = carried ? across(carried.at.direction) : ([0, 0, 0] as V3);
+	const forward: V3 = carried
+		? normalize([side[0] * Math.cos(lookUp), Math.sin(lookUp), side[2] * Math.cos(lookUp)])
+		: [-from[0], -from[1], -from[2]];
+	const tallOnLimb = carried ? (2 * carried.at.radius) / limbShare : tall;
+	const camera: Camera = carried
+		? aim(carried.at.at, 0.5, row, forward, tallOnLimb, lens)
+		: { position: step(lobe.centre, from, distance), target: lobe.centre };
+	const run = 0.2 * tallOnLimb * lens.aspect;
 	return {
-		kind: "one foliage mass at the crown's edge, against the sky",
+		kind: carried
+			? "the limb that carries a foliage mass at the crown's edge, against the sky"
+			: "one foliage mass at the crown's edge, against the sky",
 		camera,
-		points: [
-			{
-				name: 'the lobe',
-				at: lobe.centre,
-				within: [0.35, 0.35, 0.65, 0.65],
-				size: {
-					metres: 2 * lobe.radius,
-					of: lens.aspect >= 1 ? 'height' : 'width',
-					min: fill * 0.7,
-					max: Math.min(1, fill * 1.3),
+		...(carried && {
+			apart: [
+				{
+					a: 'the limb running one way',
+					b: 'the limb running the other way',
+					least: 0.25,
 				},
-			},
-		],
+			],
+		}),
+		points: carried
+			? [
+					{
+						name: 'the limb low in the frame',
+						at: carried.at.at,
+						within: [0.3, row - 0.08, 0.7, row + 0.08],
+						size: {
+							metres: 2 * carried.at.radius,
+							of: 'height',
+							min: limbShare * 0.6,
+							max: limbShare * 1.6,
+						},
+					},
+					{
+						name: 'the limb running one way',
+						at: step(carried.at.at, carried.at.direction, run),
+						within: [-0.2, row - 0.35, 1.2, 1.2],
+					},
+					{
+						name: 'the limb running the other way',
+						at: step(carried.at.at, carried.at.direction, -run),
+						within: [-0.2, row - 0.35, 1.2, 1.2],
+					},
+				]
+			: [
+					{
+						name: 'the lobe',
+						at: lobe.centre,
+						within: [0.35, 0.35, 0.65, 0.65],
+						size: {
+							metres: 2 * lobe.radius,
+							of: lens.aspect >= 1 ? 'height' : 'width',
+							min: fill * 0.7,
+							max: Math.min(1, fill * 1.3),
+						},
+					},
+				],
 		regions: [
-			{ name: 'the foliage mass', box: [0.3, 0.3, 0.7, 0.7], min: 0.25, of: 'foliage' },
+			...(carried
+				? [
+						{
+							name: 'the limb under the leaves',
+							box: [0.46, row - 0.04, 0.54, row + 0.04] as const,
+							min: 0.5,
+							of: 'wood' as const,
+							thick: SUBJECT_WOOD * carried.at.radius,
+							thickMost: SUBJECT_WOOD_MOST * carried.at.radius,
+						},
+						{
+							name: 'the leaves over the limb',
+							box: [0.1, 0, 0.9, row - 0.1] as const,
+							min: 0.15,
+							of: 'foliage' as const,
+						},
+					]
+				: [
+						{
+							name: 'the foliage mass',
+							box: [0.3, 0.3, 0.7, 0.7] as const,
+							min: 0.25,
+							of: 'foliage' as const,
+						},
+					]),
 			{ name: 'the sky round the lobe', box: [0, 0, 1, 1], max: CROWN_MOST_COVER },
 			// A lobe hangs on wood and stands in the open: its branch shows in the frame, and sky
 			// shows at both its sides. A wall of leaves under a strip of sky has neither.
