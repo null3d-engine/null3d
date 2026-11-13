@@ -45,6 +45,9 @@ function whips(along: readonly [number, number], every: number, most: number): F
 		},
 		vary: 0.06,
 		most: 0.4,
+		// The strand at its end hangs a strand's length below it, so a fall ends that far above the
+		// first wood under it rather than running through that wood.
+		clears: STRAND,
 		// Still 10: a strand's stem is 2 mm; a whip is the thicker axis that carries them, a few
 		// millimetres where it leaves its branch.
 		radius: 0.18,
