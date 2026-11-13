@@ -794,6 +794,17 @@ fn plant_offset(input: VertexInput, mode: i32) -> vec3f {
     if (mode == MODE_FOLIAGE && material.matte > 0.5 && material.matte < 1.5) {
         moved += foliage_widen(input, moved);
     }
+    // A placed piece draws its fine edges a pixel wide in the matte too, as merged foliage does:
+    // under that, a flowering stalk thinner than a pixel rasterises as dots, and the heads that hang
+    // from it read as pieces in air while the colour picture draws the stalk whole.
+    if (
+        mode == MODE_SHOOTS &&
+        material.matte > 0.5 &&
+        material.matte < 1.5 &&
+        abs(input.colors.b * 255.0 - KIND_PIECE) < 0.5
+    ) {
+        moved += foliage_widen(input, moved);
+    }
     // A shoot's stem is drawn a pixel wide too: under that, the matte drops the stalk a leaf
     // cluster hangs from and the cluster reads as a piece in air.
     if (mode == MODE_SHOOTS && input.colors.b * 255.0 >= KIND_STEM * 0.5) {
@@ -1452,8 +1463,11 @@ fn surface(input: SurfaceInput) -> Surface {
     // A matte carries the texel's own coverage rather than a sharpened edge, so the review can weigh
     // a partly covered texel as the part of plant it is: the piece test joins a group through it, and
     // the openness test keeps the sky it does not cover. A sharpened edge would do the first and lose
-    // the second.
-    s.alpha = select(sharpen(alpha, width), alpha, matte);
+    // the second. It carries it only where the colour picture draws the texel at all: a texel under
+    // the cutoff draws nothing there, and a faint ghost of it in the matte reads as plant the picture
+    // does not show, such as a piece hanging in air.
+    let drawn = sharpen(alpha, width);
+    s.alpha = select(drawn, select(0.0, alpha, drawn > 0.0), matte);
     s.diffuseTransmission = select(share, 0.0, matte || parts);
     s.diffuseTransmissionColor = select(through, vec3f(0.0), matte || parts);
     return s;

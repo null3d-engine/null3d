@@ -561,7 +561,7 @@ function hasWood(asset: PlantAsset): boolean {
 }
 
 /** The asset as a view draws it: the wood alone, or one level at every distance. */
-function shaped(asset: PlantAsset, woodOnly: boolean): PlantAsset {
+function shaped(asset: PlantAsset, woodOnly: boolean, lod = LOD): PlantAsset {
 	// A view of the wood alone has no wood to draw on a ground plant. Its crown, sheaths and blades
 	// are that plant's body, so the view keeps them rather than drawing an empty picture.
 	const bare = woodOnly && hasWood(asset);
@@ -574,7 +574,6 @@ function shaped(asset: PlantAsset, woodOnly: boolean): PlantAsset {
 		from,
 	});
 	const empty = { parts: [], triangles: 0, bytes: 0 };
-	const lod = LOD;
 	const rows =
 		bare || (lod !== undefined && lod !== 0) ? { ...asset.shoots, count: 0 } : asset.shoots;
 	if (lod === undefined || lod === 3)
@@ -998,6 +997,7 @@ export default defineSketch(async (ctx) => {
 							laid: (QUERY.roll ?? 0) !== 0,
 							edge: QUERY.edge === true,
 							...(span !== undefined && { span, along: QUERY.along ?? 0.5 }),
+							...(QUERY.toward && { turn }),
 						}),
 					0,
 				);
@@ -1948,7 +1948,24 @@ export default defineSketch(async (ctx) => {
 				castShadows: !PLAIN && VIEW !== 'turntable',
 			},
 		);
-	const drawn = shaped(main, WOOD_ONLY);
+	// A matte or a picture of the parts draws the level alone that the colour picture draws from the
+	// first cell's camera. The colour picture leaves a level it does not draw out of its picture,
+	// and a matte that drew it too would read plant the picture does not show.
+	const plainLevel =
+		PLAIN && LOD === undefined && cells[0]
+			? drawnLevel(
+					mainKit,
+					main,
+					placedView,
+					Math.hypot(...sub(cells[0].view.position, [0, 0, 0])),
+					false,
+				).level
+			: undefined;
+	const drawn = shaped(
+		main,
+		WOOD_ONLY,
+		plainLevel !== undefined && plainLevel < 3 ? plainLevel : LOD,
+	);
 	const far = LOD === 3 && whole ? [await bakeFarPlant(kit, whole)] : undefined;
 	place(drawn, [0, 0, 0], mainKit, far);
 	if (VIEW === 'panels' && piece) place(shaped(piece, false), AWAY, pieceKit);

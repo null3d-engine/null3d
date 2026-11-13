@@ -636,7 +636,8 @@ async function correctWidths(
 		const off = Math.abs(measured.share - fix.target) > WIDTH_BAND;
 		const cropped = measured.clipped && fix.target < 1;
 		if (!off && !cropped) return undefined;
-		const scale = correctedScale(measured.share, fix.target, fix.fraction);
+		// The page applies a scale to the stand it solves, so a second pass builds on the first.
+		const scale = fix.scale * correctedScale(measured.share, fix.target, fix.fraction);
 		if (fix.close) return scale > CLOSE_CROP_MAX ? undefined : { ...fix, scale };
 		if (scale < WHOLE_SCALE_MIN || scale > WHOLE_SCALE_MAX) {
 			console.warn(
@@ -644,10 +645,12 @@ async function correctWidths(
 			);
 			return undefined;
 		}
-		// A whole view's stand already puts the plant's top and foot on its photograph's rows and
-		// moves only out for a redraw, so a plant drawn narrower than its photograph keeps its
-		// drawing: the width error is the plant's.
-		if (fix.stood && scale < 1) return undefined;
+		// A whole view's stand comes in for a redraw no nearer than its photograph's rows, so a plant
+		// whose stand already held those rows, or the frame, keeps its drawing when it is drawn
+		// narrower than its photograph: the width error is the plant's. One that stood back for its
+		// width comes in.
+		const held = (frameOf(file)?.facts as { stand?: { held?: string } } | undefined)?.stand?.held;
+		if (fix.stood && scale < 1 && held !== 'width' && held !== 'scale') return undefined;
 		return { ...fix, scale };
 	};
 	const fixes = new Map<string, WidthFix>();
