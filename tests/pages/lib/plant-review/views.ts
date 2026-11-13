@@ -165,12 +165,13 @@ export const VIEW_SPECS: Readonly<Record<PlantView, ViewSpec>> = {
 	fork: {
 		slots: [8],
 		fov: 50,
-		// The photographs frame a cut limb on the studio's own ground, so the view cuts one too: a
-		// fork inside a leafy crown carries neighbours the picture has not.
+		// The photographs frame a great limb's fork on the studio's own ground. The view frames a
+		// fork of the plant's own wood and draws only the wood near the joint, so no neighbour of
+		// the crown stands before it or behind it.
 		background: 'studio-grey',
 		sun: 'flat',
 		elevation: 0,
-		cutting: 'branch',
+		woodOnly: true,
 		size: [960, 720],
 	},
 	twigs: {

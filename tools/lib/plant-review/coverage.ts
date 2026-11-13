@@ -7,8 +7,12 @@ import type { StillResult, TurnResult, WindResult } from './compare.ts';
 import { fixed } from './compare.ts';
 import type { ReferenceSet } from './references.ts';
 
-/** Whether a reference file was compared in full, in part, or not at all. */
-export type CoverageStatus = 'compared' | 'partial' | 'missing';
+/**
+ * Whether a reference file was compared in full, in part, or not at all, was drawn as a picture
+ * that shows no subject, which compares nothing, or is not judged because it shows a stand of
+ * plants that one plant cannot draw.
+ */
+export type CoverageStatus = 'compared' | 'partial' | 'missing' | 'void' | 'not judged';
 
 /** One line of the coverage list. */
 export interface CoverageLine {
@@ -49,6 +53,26 @@ function stillLine(file: string, kind: string, result: StillResult | undefined):
 			status: 'missing',
 			render: '-',
 			result: `the render failed: ${result.error}`,
+		};
+	// A photograph of a stand is drawn and set beside its reference, and is not judged: it holds
+	// no pass back, since no single plant could match it.
+	if (result.standing?.kind === 'stand')
+		return {
+			file,
+			kind,
+			status: 'not judged',
+			render: `${result.renderFile} (view ${result.view})`,
+			result: result.standing.reason,
+		};
+	// A picture whose subject is missing was drawn and compares nothing: the tool's camera, or the
+	// file's mapping to a view, is what needs mending before the file counts as compared.
+	if (result.void !== undefined)
+		return {
+			file,
+			kind,
+			status: 'void',
+			render: `${result.renderFile} (view ${result.view})`,
+			result: `void: ${result.void}`,
 		};
 	// A picture with no usable outline still has edges: its directions are the figure it gets.
 	const edges =
@@ -146,7 +170,14 @@ export function coverageOf(
 		lines.push(unlisted ? { ...line, result: `${line.result}; ${unlisted}` } : line);
 	}
 	const compared = lines.filter((line) => line.status === 'compared').length;
-	return { lines, superseded, compared, inUse: lines.length, complete: compared === lines.length };
+	const waived = lines.filter((line) => line.status === 'not judged').length;
+	return {
+		lines,
+		superseded,
+		compared,
+		inUse: lines.length,
+		complete: compared + waived === lines.length,
+	};
 }
 
 /** The coverage list as Markdown. */

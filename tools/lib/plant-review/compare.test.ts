@@ -10,10 +10,12 @@ import {
 	alignTurn,
 	anchorColumn,
 	cameraWidthShare,
+	cropFault,
 	crownBoxSpread,
 	edgeDifference,
 	edgeProfile,
 	fittedMaskClause,
+	framingFault,
 	framingQuery,
 	hasSeparableOutline,
 	iou,
@@ -871,5 +873,52 @@ describe('the mask check gate', () => {
 		expect(plainTurnOf('sky-meadow')).toBe(false);
 		// The page's default background is the natural one.
 		expect(plainTurnOf(undefined)).toBe(false);
+	});
+});
+
+describe("a whole view's frame against its photograph's", () => {
+	/** A plant's box in a frame 640 by 480, from shares of the frame. */
+	const framed = (left: number, top: number, right: number, bottom: number) => ({
+		box: {
+			left: Math.round(left * 640),
+			top: Math.round(top * 480),
+			right: Math.round(right * 640) - 1,
+			bottom: Math.round(bottom * 480) - 1,
+		},
+		width: 640,
+		height: 480,
+	});
+	const photograph = framed(0.1, 0.2, 0.9, 0.9);
+
+	test('holds when the plant stands at the same size, whatever its own shape and place', () => {
+		expect(framingFault(photograph, framed(0.1, 0.2, 0.9, 0.9))).toBe(undefined);
+		// A plant a third narrower at the photograph's height is the plant's shape, not the frame's.
+		expect(framingFault(photograph, framed(0.25, 0.2, 0.75, 0.9))).toBe(undefined);
+		// A sixth smaller both ways is inside the band, and so is the same plant higher in the frame.
+		expect(framingFault(photograph, framed(0.17, 0.32, 0.83, 0.9))).toBe(undefined);
+		expect(framingFault(photograph, framed(0.1, 0.05, 0.9, 0.75))).toBe(undefined);
+	});
+
+	test('fails a plant drawn at a third of the size, and says both sizes', () => {
+		expect(framingFault(photograph, framed(0.37, 0.67, 0.63, 0.9))).toBe(
+			"the render's plant takes 0.23 of the frame's height and 0.26 of its width, against the photograph's 0.70 and 0.80, so it is drawn too small",
+		);
+		expect(framingFault(framed(0.3, 0.5, 0.7, 0.9), framed(0.05, 0.1, 0.95, 0.9))).toContain(
+			'so it is drawn too large',
+		);
+	});
+
+	test('fails a plant the frame crops where the photograph holds it whole', () => {
+		const clear = { left: false, top: false, right: false, bottom: false };
+		expect(cropFault(clear, clear)).toBe(undefined);
+		expect(cropFault(clear, { ...clear, bottom: true, right: true })).toBe(
+			"the render's plant runs off the frame's right and bottom edges, where the photograph holds it whole",
+		);
+		// A photograph that crops its own plant allows the same crop, and no other.
+		const cropped = { ...clear, bottom: true };
+		expect(cropFault(cropped, cropped)).toBe(undefined);
+		expect(cropFault(cropped, { ...clear, bottom: true, top: true })).toContain(
+			"frame's top edge,",
+		);
 	});
 });
