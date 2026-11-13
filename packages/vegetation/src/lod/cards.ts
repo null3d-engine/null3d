@@ -11,7 +11,7 @@
 // of the way up the card, for the shoot's bend, and the plane: 0 and 1 for the crossed vertical
 // planes, 2 for the horizontal one, over 2.
 import type { MeshArrays, ShootRows, SpeciesKitData } from '../asset';
-import { atan2, length3, normalize3, quatRotate, type Vector3 } from '../core/math';
+import { cos, length3, normalize3, quatRotate, sin, type Vector3 } from '../core/math';
 import { MeshWriter } from '../leaf/writer';
 import type { MeshInput } from '../stages';
 import { VARIANT_RECORDS } from '../wind/records';
@@ -52,25 +52,18 @@ const RIM_SECTORS = 16;
 /** What a card plane's atlas cell pictures. */
 interface Pictured {
 	/**
-	 * The edge of the picture: points on the plane's right and up extents, each from -1 to 1. For
-	 * each row of the plane's texels, they are the left side of its first texel of at least half
-	 * cover and the right side of its last. The picture lies inside their hull.
+	 * The edge of the picture: points on the plane's right and up extents, each from -1 to 1, two
+	 * numbers a point. For each row of the plane's texels, they are the left side of its first texel
+	 * of at least half cover and the right side of its last, at the row's bottom and top, each point
+	 * once. The picture lies inside their hull.
 	 */
-	readonly edge: readonly (readonly [right: number, up: number])[];
+	readonly edge: Float64Array;
 	/** The share of the plane that the picture covers. */
 	readonly share: number;
 }
 
 /** The whole plane, for a kit with no atlas. */
-const WHOLE_PLANE: Pictured = {
-	edge: [
-		[-1, -1],
-		[1, -1],
-		[1, 1],
-		[-1, 1],
-	],
-	share: 1,
-};
+const WHOLE_PLANE: Pictured = { edge: new Float64Array(CARD_CORNERS.flat()), share: 1 };
 
 /** Each atlas's pictures, by the cell's place in it, read once. */
 const PICTURED = new WeakMap<Uint8Array, Map<number, Pictured>>();
@@ -92,7 +85,15 @@ function picturedOf(
 	const key = (y * size + x) * 4096 + w;
 	let found = known.get(key);
 	if (!found) {
-		const edge: [number, number][] = [];
+		const edge: number[] = [];
+		// A row that starts or ends where the row below it does shares that point with it.
+		const seen = new Set<number>();
+		const point = (across: number, up: number): void => {
+			const at = across * (h + 1) + up;
+			if (seen.has(at)) return;
+			seen.add(at);
+			edge.push((across / w) * 2 - 1, (up / h) * 2 - 1);
+		};
 		let covered = 0;
 		for (let j = 0; j < h; j++) {
 			let left = -1;
@@ -104,10 +105,12 @@ function picturedOf(
 				covered++;
 			}
 			if (left < 0) continue;
-			for (const up of [(j / h) * 2 - 1, ((j + 1) / h) * 2 - 1])
-				edge.push([(left / w) * 2 - 1, up], [((right + 1) / w) * 2 - 1, up]);
+			for (const up of [j, j + 1]) {
+				point(left, up);
+				point(right + 1, up);
+			}
 		}
-		found = { edge, share: w * h > 0 ? covered / (w * h) : 0 };
+		found = { edge: new Float64Array(edge), share: w * h > 0 ? covered / (w * h) : 0 };
 		known.set(key, found);
 	}
 	return found;
@@ -142,6 +145,41 @@ export interface FoliageHull {
 /** Each plant's hull, by its rows, found once. */
 const HULLS = new WeakMap<ShootRows, FoliageHull>();
 
+/**
+ * The edges between the sectors round an axis, for a number of sectors: the direction of each, as
+ * its cosine and sine, from a half turn back round to a half turn forward.
+ */
+function sectorEdges(sectors: number): Float64Array {
+	const edges = new Float64Array((sectors + 1) * 2);
+	for (let k = 0; k <= sectors; k++) {
+		const turn = -Math.PI + (k * 2 * Math.PI) / sectors;
+		edges[k * 2] = cos(turn);
+		edges[k * 2 + 1] = sin(turn);
+	}
+	return edges;
+}
+
+const RIM_EDGES = sectorEdges(RIM_SECTORS);
+const HULL_EDGES = sectorEdges(HULL_SECTORS);
+
+/**
+ * The sector round an axis that a direction stands in, counted from a half turn back: the sectors
+ * of its half of the turn are passed while the direction stands beyond their far edge. A direction
+ * of no length stands at no turn, as the arctangent gives.
+ */
+function sectorOf(dx: number, dz: number, sectors: number, edges: Float64Array): number {
+	const half = sectors / 2;
+	if (dx === 0 && dz === 0) return half;
+	let k = dz < 0 ? 0 : half;
+	const last = k + half - 1;
+	while (
+		k < last &&
+		(edges[(k + 1) * 2] as number) * dz - (edges[(k + 1) * 2 + 1] as number) * dx >= 0
+	)
+		k++;
+	return k;
+}
+
 /** The place in a hull's table of a point's band and sector. */
 function hullCell(hull: FoliageHull, x: number, y: number, z: number): number {
 	const tall = Math.max(1e-9, hull.high - hull.low);
@@ -149,44 +187,83 @@ function hullCell(hull: FoliageHull, x: number, y: number, z: number): number {
 		HULL_BANDS - 1,
 		Math.max(0, Math.floor(((y - hull.low) / tall) * HULL_BANDS)),
 	);
-	const turn = atan2(z - hull.z, x - hull.x) / (2 * Math.PI) + 0.5;
-	const sector = Math.min(HULL_SECTORS - 1, Math.max(0, Math.floor(turn * HULL_SECTORS)));
-	return band * HULL_SECTORS + sector;
+	return band * HULL_SECTORS + sectorOf(x - hull.x, z - hull.z, HULL_SECTORS, HULL_EDGES);
+}
+
+/** The points that `rowEdge` writes, three numbers a point; it grows as a row needs. */
+let edgePoints = new Float64Array(3 * 1024);
+
+/** A plane's middle and its right and up half-extents, scaled and turned as its row places them. */
+const MIDDLE: Vector3 = [0, 0, 0];
+const RIGHT: Vector3 = [0, 0, 0];
+const UP: Vector3 = [0, 0, 0];
+const SCALED: Vector3 = [0, 0, 0];
+
+/** Scales a vector of a card plane and turns it as a row turns its shoot. */
+function turned(
+	rows: ShootRows,
+	r: number,
+	v: Readonly<Vector3>,
+	scale: number,
+	out: Vector3,
+): void {
+	SCALED[0] = (v[0] as number) * scale;
+	SCALED[1] = (v[1] as number) * scale;
+	SCALED[2] = (v[2] as number) * scale;
+	quatRotate(rows.rotation, r * 4, SCALED, out);
 }
 
 /**
- * Calls back with each point on the edge of the picture of each of a row's card planes, in plant
- * space, for a card moved by `shift` and grown by `grow` about each plane's middle.
+ * Writes into `edgePoints` each point on the edge of the picture of each of a row's first card
+ * planes, in plant space, for a card moved by a shift and grown about each plane's middle. A plane
+ * is turned once, and each point is its middle and its extents in proportion.
+ *
+ * @returns The number of points.
  */
-function picturedCorners(
+function rowEdge(
 	kit: SpeciesKitData,
 	rows: ShootRows,
 	r: number,
 	planes: number,
 	grow: number,
-	shift: Readonly<Vector3>,
-	each: (x: number, y: number, z: number) => void,
-): void {
+	shiftX: number,
+	shiftY: number,
+	shiftZ: number,
+): number {
 	const prototype = kit.prototypes[rows.prototype[r] as number];
-	if (!prototype) return;
+	if (!prototype) return 0;
 	const scale = rows.scale[r] as number;
-	const local: Vector3 = [0, 0, 0];
-	const world: Vector3 = [0, 0, 0];
-	for (const plane of prototype.card.planes.slice(0, planes)) {
-		for (const [sx, sy] of picturedOf(kit, plane.front).edge) {
-			for (let c = 0; c < 3; c++)
-				local[c] =
-					((plane.centre[c] as number) +
-						grow * (sx * (plane.right[c] as number) + sy * (plane.up[c] as number))) *
-					scale;
-			quatRotate(rows.rotation, r * 4, local, world);
-			each(
-				(rows.position[r * 3] as number) + world[0] + shift[0],
-				(rows.position[r * 3 + 1] as number) + world[1] + shift[1],
-				(rows.position[r * 3 + 2] as number) + world[2] + shift[2],
-			);
+	const px = (rows.position[r * 3] as number) + shiftX;
+	const py = (rows.position[r * 3 + 1] as number) + shiftY;
+	const pz = (rows.position[r * 3 + 2] as number) + shiftZ;
+	let count = 0;
+	const cardPlanes = prototype.card.planes;
+	for (let k = 0; k < Math.min(planes, cardPlanes.length); k++) {
+		const plane = cardPlanes[k] as (typeof cardPlanes)[number];
+		const edge = picturedOf(kit, plane.front).edge;
+		const need = (count + edge.length / 2) * 3;
+		if (need > edgePoints.length) {
+			const more = new Float64Array(Math.max(need, edgePoints.length * 2));
+			more.set(edgePoints.subarray(0, count * 3));
+			edgePoints = more;
+		}
+		turned(rows, r, plane.centre, scale, MIDDLE);
+		turned(rows, r, plane.right, scale, RIGHT);
+		turned(rows, r, plane.up, scale, UP);
+		const mx = px + MIDDLE[0];
+		const my = py + MIDDLE[1];
+		const mz = pz + MIDDLE[2];
+		for (let i = 0; i < edge.length; i += 2) {
+			const u = grow * (edge[i] as number);
+			const v = grow * (edge[i + 1] as number);
+			const at = count * 3;
+			edgePoints[at] = mx + u * RIGHT[0] + v * UP[0];
+			edgePoints[at + 1] = my + u * RIGHT[1] + v * UP[1];
+			edgePoints[at + 2] = mz + u * RIGHT[2] + v * UP[2];
+			count++;
 		}
 	}
+	return count;
 }
 
 /** No move of a card from its row's own place. */
@@ -203,7 +280,6 @@ export function foliageHull(input: Pick<MeshInput, 'kit' | 'rows' | 'skeleton'>)
 	const { rows, kit, skeleton } = input;
 	const known = HULLS.get(rows);
 	if (known) return known;
-	const points: number[] = [];
 	const x0 = (skeleton.bounds.min[0] + skeleton.bounds.max[0]) / 2;
 	const z0 = (skeleton.bounds.min[2] + skeleton.bounds.max[2]) / 2;
 	let low = Number.POSITIVE_INFINITY;
@@ -214,9 +290,14 @@ export function foliageHull(input: Pick<MeshInput, 'kit' | 'rows' | 'skeleton'>)
 	// the farthest of each sector, with how far each of those reaches.
 	const ends = new Int32Array(5 + RIM_SECTORS).fill(-1);
 	const farthest = new Float64Array(RIM_SECTORS);
-	for (let r = 0; r < rows.count; r++)
-		picturedCorners(kit, rows, r, Number.POSITIVE_INFINITY, 1, NO_SHIFT, (x, y, z) => {
-			points.push(x, y, z);
+	let points = 0;
+	for (let r = 0; r < rows.count; r++) {
+		const count = rowEdge(kit, rows, r, Number.POSITIVE_INFINITY, 1, 0, 0, 0);
+		points += count;
+		for (let i = 0; i < count * 3; i += 3) {
+			const x = edgePoints[i] as number;
+			const y = edgePoints[i + 1] as number;
+			const z = edgePoints[i + 2] as number;
 			if (y < low) low = y;
 			if (y > high) {
 				high = y;
@@ -239,32 +320,36 @@ export function foliageHull(input: Pick<MeshInput, 'kit' | 'rows' | 'skeleton'>)
 				ends[4] = r;
 			}
 			const reach = (x - x0) ** 2 + (z - z0) ** 2;
-			const turn = atan2(z - z0, x - x0) / (2 * Math.PI) + 0.5;
-			const sector = Math.min(RIM_SECTORS - 1, Math.max(0, Math.floor(turn * RIM_SECTORS)));
+			const sector = sectorOf(x - x0, z - z0, RIM_SECTORS, RIM_EDGES);
 			if (reach > (farthest[sector] as number)) {
 				farthest[sector] = reach;
 				ends[5 + sector] = r;
 			}
-		});
+		}
+	}
 	const rim = new Uint8Array(rows.count);
 	for (const r of ends) if (r >= 0) rim[r] = 1;
 	const hull: FoliageHull = {
 		x: x0,
 		z: z0,
-		low: points.length > 0 ? low : 0,
-		high: points.length > 0 ? high : 0,
+		low: points > 0 ? low : 0,
+		high: points > 0 ? high : 0,
 		across,
 		depth,
 		reach: new Float32Array(HULL_BANDS * HULL_SECTORS),
 		rim,
 	};
+	// The bands are known once the lowest and highest points are, so a second pass reads the reach.
 	const own = new Float32Array(HULL_BANDS * HULL_SECTORS);
-	for (let i = 0; i < points.length; i += 3) {
-		const x = points[i] as number;
-		const z = points[i + 2] as number;
-		const cell = hullCell(hull, x, points[i + 1] as number, z);
-		const reach = (x - hull.x) ** 2 + (z - hull.z) ** 2;
-		if (reach > (own[cell] as number)) own[cell] = reach;
+	for (let r = 0; r < rows.count; r++) {
+		const count = rowEdge(kit, rows, r, Number.POSITIVE_INFINITY, 1, 0, 0, 0);
+		for (let i = 0; i < count * 3; i += 3) {
+			const x = edgePoints[i] as number;
+			const z = edgePoints[i + 2] as number;
+			const cell = hullCell(hull, x, edgePoints[i + 1] as number, z);
+			const reach = (x - hull.x) ** 2 + (z - hull.z) ** 2;
+			if (reach > (own[cell] as number)) own[cell] = reach;
+		}
 	}
 	// A cell reaches as far as its neighbours do, so a card that leans across a band's or a sector's
 	// edge is judged by the crown beside it and not by an empty slice of it.
@@ -284,6 +369,122 @@ export function foliageHull(input: Pick<MeshInput, 'kit' | 'rows' | 'skeleton'>)
 		}
 	HULLS.set(rows, hull);
 	return hull;
+}
+
+/** The corners of a card plane in plant space, as `surelyInside` reads them: x, y, z each. */
+const PLANE_CORNERS = new Float64Array(12);
+
+/**
+ * Whether every point of a row's grown card pictures surely stands inside the leaf form's hull,
+ * without testing them one by one. A plane's picture lies inside the plane, whose corners bound
+ * every height and every place across and in depth, and whose farthest corner from the plant's
+ * axis bounds every reach. So where each plane's corners stand inside the hull's height and box,
+ * and its farthest corner is within the least reach of every cell the plane can cross, each point
+ * passes the test that `growthInHull` makes point by point. A plane that falls short of that is
+ * left to that test, so the answer is the same either way.
+ */
+function surelyInside(
+	hull: FoliageHull,
+	kit: SpeciesKitData,
+	rows: ShootRows,
+	r: number,
+	planes: number,
+	grow: number,
+	shiftX: number,
+	shiftY: number,
+	shiftZ: number,
+): boolean {
+	const prototype = kit.prototypes[rows.prototype[r] as number];
+	if (!prototype) return true;
+	const scale = rows.scale[r] as number;
+	const px = (rows.position[r * 3] as number) + shiftX;
+	const py = (rows.position[r * 3 + 1] as number) + shiftY;
+	const pz = (rows.position[r * 3 + 2] as number) + shiftZ;
+	const tall = (hull.high - hull.low) * HULL_SLACK;
+	const span = Math.max(1e-9, hull.high - hull.low);
+	const cardPlanes = prototype.card.planes;
+	for (let k = 0; k < Math.min(planes, cardPlanes.length); k++) {
+		const plane = cardPlanes[k] as (typeof cardPlanes)[number];
+		turned(rows, r, plane.centre, scale, MIDDLE);
+		turned(rows, r, plane.right, scale, RIGHT);
+		turned(rows, r, plane.up, scale, UP);
+		let lowest = Number.POSITIVE_INFINITY;
+		let highest = Number.NEGATIVE_INFINITY;
+		let farthest = 0;
+		for (let c = 0; c < 4; c++) {
+			const [cu, cv] = CARD_CORNERS[c] as readonly [number, number];
+			const x = px + MIDDLE[0] + grow * (cu * RIGHT[0] + cv * UP[0]);
+			const y = py + MIDDLE[1] + grow * (cu * RIGHT[1] + cv * UP[1]);
+			const z = pz + MIDDLE[2] + grow * (cu * RIGHT[2] + cv * UP[2]);
+			if (y < hull.low - tall || y > hull.high + tall) return false;
+			if (x < hull.across[0] || x > hull.across[1] || z < hull.depth[0] || z > hull.depth[1])
+				return false;
+			lowest = Math.min(lowest, y);
+			highest = Math.max(highest, y);
+			farthest = Math.max(farthest, (x - hull.x) ** 2 + (z - hull.z) ** 2);
+			PLANE_CORNERS[c * 3] = x - hull.x;
+			PLANE_CORNERS[c * 3 + 2] = z - hull.z;
+		}
+		// The sectors the plane crosses: every sector where its outline seen from above holds the
+		// axis, else the shorter arc between its corners' sectors.
+		let around = true;
+		let turnSign = 0;
+		for (let c = 0; c < 4; c++) {
+			const ax = PLANE_CORNERS[c * 3] as number;
+			const az = PLANE_CORNERS[c * 3 + 2] as number;
+			const bx = PLANE_CORNERS[((c + 1) % 4) * 3] as number;
+			const bz = PLANE_CORNERS[((c + 1) % 4) * 3 + 2] as number;
+			const cross = ax * bz - az * bx;
+			const sign = cross > 0 ? 1 : cross < 0 ? -1 : 0;
+			if (sign === 0 || (turnSign !== 0 && sign !== turnSign)) around = false;
+			if (sign !== 0) turnSign = sign;
+		}
+		const firstBand = Math.min(
+			HULL_BANDS - 1,
+			Math.max(0, Math.floor(((lowest - hull.low) / span) * HULL_BANDS)),
+		);
+		const lastBand = Math.min(
+			HULL_BANDS - 1,
+			Math.max(0, Math.floor(((highest - hull.low) / span) * HULL_BANDS)),
+		);
+		let from = 0;
+		let steps = HULL_SECTORS;
+		if (!around) {
+			const taken = new Uint8Array(HULL_SECTORS);
+			for (let c = 0; c < 4; c++)
+				taken[
+					sectorOf(
+						PLANE_CORNERS[c * 3] as number,
+						PLANE_CORNERS[c * 3 + 2] as number,
+						HULL_SECTORS,
+						HULL_EDGES,
+					)
+				] = 1;
+			// The arc is all the sectors but the widest run of untaken ones.
+			let gap = 0;
+			let gapEnd = 0;
+			for (let s = 0; s < HULL_SECTORS; s++) {
+				if (taken[s] !== 1) continue;
+				let run = 0;
+				for (let t = 1; t < HULL_SECTORS && taken[(s + t) % HULL_SECTORS] !== 1; t++) run++;
+				if (run > gap || gap === 0) {
+					gap = run;
+					gapEnd = s;
+				}
+			}
+			from = (gapEnd + gap + 1) % HULL_SECTORS;
+			steps = HULL_SECTORS - gap;
+		}
+		let least = Number.POSITIVE_INFINITY;
+		for (let band = firstBand; band <= lastBand; band++)
+			for (let s = 0; s < steps; s++)
+				least = Math.min(
+					least,
+					hull.reach[band * HULL_SECTORS + ((from + s) % HULL_SECTORS)] as number,
+				);
+		if (farthest > least * (1 + HULL_SLACK)) return false;
+	}
+	return true;
 }
 
 /**
@@ -314,39 +515,57 @@ export function growthInHull(
 	if (!(wanted > 1)) return 1;
 	const { kit, rows } = input;
 	const hull = foliageHull(input);
+	const [sx, sy, sz] = shift as Vector3;
 	// The way from the cards to the middle of the plant, which a card with no room draws back along.
 	const inward = normalize3([
-		hull.x - (rows.position[r * 3] as number) - shift[0],
-		(hull.low + hull.high) / 2 - (rows.position[r * 3 + 1] as number) - shift[1],
-		hull.z - (rows.position[r * 3 + 2] as number) - shift[2],
+		hull.x - (rows.position[r * 3] as number) - sx,
+		(hull.low + hull.high) / 2 - (rows.position[r * 3 + 1] as number) - sy,
+		hull.z - (rows.position[r * 3 + 2] as number) - sz,
 	]);
 	// How far the pictures of the grown cards reach against that way.
 	const outward = (grow: number): number => {
 		let most = Number.NEGATIVE_INFINITY;
-		picturedCorners(kit, rows, r, planes, grow, shift, (x, y, z) => {
-			most = Math.max(most, -(x * inward[0] + y * inward[1] + z * inward[2]));
-		});
+		const count = rowEdge(kit, rows, r, planes, grow, sx, sy, sz);
+		for (let i = 0; i < count * 3; i += 3)
+			most = Math.max(
+				most,
+				-(
+					(edgePoints[i] as number) * inward[0] +
+					(edgePoints[i + 1] as number) * inward[1] +
+					(edgePoints[i + 2] as number) * inward[2]
+				),
+			);
 		return most;
 	};
-	const moved: Vector3 = [0, 0, 0];
+	const tall = (hull.high - hull.low) * HULL_SLACK;
 	const fits = (grow: number, move: number): boolean => {
-		for (let c = 0; c < 3; c++) moved[c] = (shift[c] as number) + move * (inward[c] as number);
-		let inside = true;
-		picturedCorners(kit, rows, r, planes, grow, moved, (x, y, z) => {
-			if (!inside) return;
-			const tall = (hull.high - hull.low) * HULL_SLACK;
-			if (y < hull.low - tall || y > hull.high + tall) inside = false;
-			else if (x < hull.across[0] || x > hull.across[1] || z < hull.depth[0] || z > hull.depth[1])
-				inside = false;
-			else if (
+		const count = rowEdge(
+			kit,
+			rows,
+			r,
+			planes,
+			grow,
+			sx + move * inward[0],
+			sy + move * inward[1],
+			sz + move * inward[2],
+		);
+		for (let i = 0; i < count * 3; i += 3) {
+			const x = edgePoints[i] as number;
+			const y = edgePoints[i + 1] as number;
+			const z = edgePoints[i + 2] as number;
+			if (y < hull.low - tall || y > hull.high + tall) return false;
+			if (x < hull.across[0] || x > hull.across[1] || z < hull.depth[0] || z > hull.depth[1])
+				return false;
+			if (
 				(x - hull.x) ** 2 + (z - hull.z) ** 2 >
 				(hull.reach[hullCell(hull, x, y, z)] as number) * (1 + HULL_SLACK)
 			)
-				inside = false;
-		});
-		return inside;
+				return false;
+		}
+		return true;
 	};
-	if (fits(wanted, 0)) return wanted;
+	if (surelyInside(hull, kit, rows, r, planes, wanted, sx, sy, sz) || fits(wanted, 0))
+		return wanted;
 	// Cards draw back only for a caller that takes the move.
 	const own = back ? outward(1) : 0;
 	const drawBack = (grow: number): number => (back ? Math.max(0, outward(grow) - own) : 0);
