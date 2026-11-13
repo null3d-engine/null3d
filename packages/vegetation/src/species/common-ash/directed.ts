@@ -233,6 +233,9 @@ export const frame: FrameSpec = {
 	},
 };
 
+/** The share of the sockets that bear a bunch of keys: the record's 0.06 times 1,399 over 3,606. */
+const KEYS_SHARE = 0.023;
+
 /**
  * The common ash's record with the frame as its growth and the branch end of still 21 at each
  * socket. The shoot rows are working figures, not measured ones: a kit with no pieces draws them.
@@ -240,4 +243,12 @@ export const frame: FrameSpec = {
 export const directed = {
 	...framedRecord(record, frame, { rows: { mean: 4, spread: 1 }, fan: 45, piece: 'branch-end' }),
 	pieces: PIECES.filter((piece) => piece.name === 'branch-end'),
+	// The record's keys hang from a share of the shoot tips, and the old grower's tree has 1,399 of
+	// them at seed 11, so the record means about 84 bunches. The frame carries a branch end at each
+	// of about 3,600 sockets, so the same share would hang two and a half times as many. Until a
+	// count of bunches from a picture exists, a socket bears keys at the share that keeps the
+	// record's own total. A bunch is about 2,430 triangles and 51 kilobytes at every tier.
+	extras: record.extras?.map((extra) =>
+		extra.kind === 'fruit' && extra.at === 'shoot-tip' ? { ...extra, share: KEYS_SHARE } : extra,
+	),
 };
