@@ -766,6 +766,9 @@ export function cutBranch(
 			buds.position[b * 3 + 2] as number,
 		]);
 		quatMultiply(q, 0, buds.frame, b * 4, frame);
+		// A socket that names its piece keeps it, with its size and its rank: a ground form's pieces
+		// stand nowhere but at its sockets. A frame's cut draws its own shoots.
+		const sockets = buds.sockets?.piece ? buds.sockets : undefined;
 		builder.addBud({
 			node: mappedNode,
 			x: p[0],
@@ -777,6 +780,16 @@ export function cutBranch(
 			light: buds.light[b] as number,
 			axis: axisMap[axis] as number,
 			woodRadius: buds.woodRadius[b] as number,
+			...(sockets
+				? {
+						socket: {
+							scale: sockets.scale[b] as number,
+							rank: sockets.rank[b] as number,
+							lobe: sockets.lobe[b] as number,
+							piece: sockets.piece?.[b] as number,
+						},
+					}
+				: {}),
 		});
 	}
 	return {

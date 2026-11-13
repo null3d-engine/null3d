@@ -116,16 +116,6 @@ export const BUD_FLOWER = 4;
  */
 export const BUD_AREOLE = 5;
 /**
- * Bud kind: a socket, where one piece of the kit attaches whole. Its frame stands the piece, +Y the
- * piece's own up and +Z the way it heads; its vigor names the piece's class; its wood radius holds
- * the piece's length in metres. A skeleton's sockets stand in the order the plant thins by, the
- * last to go first.
- *
- * @category api/vegetation
- */
-export const BUD_SOCKET = 6;
-
-/**
  * One plant's grown structure: nodes joined into axes, and the bud sites shoots attach to. Plain
  * typed arrays in plant space (metres, +Y up, the main stem's base at the origin), so it crosses
  * from a job worker without a copy.
@@ -228,15 +218,16 @@ export interface BudSites {
 	/** Wood radius at the bud, so the shoot's stem base matches it. */
 	readonly woodRadius: Float32Array;
 	/**
-	 * What each bud site holds when the sites are sockets, the ends of a scaffold plant's branches,
-	 * each of which carries one piece of foliage. Absent on every other skeleton.
+	 * What each bud site holds when the sites are sockets, each of which carries one piece: the
+	 * ends of a directed plant's branches, or the shoots of a ground form's stool. Absent on every
+	 * other skeleton.
 	 */
 	readonly sockets?: SocketSites;
 }
 
 /**
- * The sockets of a scaffold plant, one per bud site in the same order. A socket's place, its frame,
- * its axis and its wood are its bud site's; these are what a piece of foliage needs beside them.
+ * The sockets of a plant of pieces, one per bud site in the same order. A socket's place, its frame,
+ * its axis and its wood are its bud site's; these are what a piece needs beside them.
  *
  * @category api/vegetation
  */
@@ -250,6 +241,12 @@ export interface SocketSites {
 	readonly rank: Uint32Array;
 	/** The foliage mass the socket belongs to. */
 	readonly lobe: Uint16Array;
+	/**
+	 * The piece each socket carries, as its place among the plant's pieces in the order its kit
+	 * holds them, where the sockets carry different pieces: a tuft's sheath, blades and flowering
+	 * stems. Absent where every socket carries the one piece its record names.
+	 */
+	readonly piece?: Uint16Array;
 }
 
 /** A typed array type that the builder can grow. */
@@ -357,8 +354,13 @@ export interface BudInput {
 	readonly axis: number;
 	/** Wood radius at the bud. */
 	readonly woodRadius: number;
-	/** The socket the bud site is, on a scaffold plant: its piece's size, its rank and its mass. */
-	readonly socket?: { readonly scale: number; readonly rank: number; readonly lobe: number };
+	/** The socket the bud site is, on a plant of pieces: its piece's size, rank, mass and piece. */
+	readonly socket?: {
+		readonly scale: number;
+		readonly rank: number;
+		readonly lobe: number;
+		readonly piece?: number;
+	};
 }
 
 /**
@@ -412,6 +414,7 @@ export class SkeletonBuilder {
 	private socketScale: Float32Array | undefined;
 	private socketRank: Uint32Array | undefined;
 	private socketLobe: Uint16Array | undefined;
+	private socketPiece: Uint16Array | undefined;
 
 	/**
 	 * Adds an axis and returns its index. Its first and last nodes follow from the nodes added to it.
@@ -508,6 +511,7 @@ export class SkeletonBuilder {
 			if (this.socketScale) this.socketScale = grown(this.socketScale, size);
 			if (this.socketRank) this.socketRank = grown(this.socketRank, size);
 			if (this.socketLobe) this.socketLobe = grown(this.socketLobe, size);
+			if (this.socketPiece) this.socketPiece = grown(this.socketPiece, size);
 		}
 		this.budNode[index] = bud.node;
 		this.budPosition[index * 3] = bud.x;
@@ -528,6 +532,10 @@ export class SkeletonBuilder {
 			this.socketScale[index] = bud.socket.scale;
 			this.socketRank[index] = bud.socket.rank;
 			this.socketLobe[index] = bud.socket.lobe;
+			if (bud.socket.piece !== undefined) {
+				this.socketPiece ??= new Uint16Array(room);
+				this.socketPiece[index] = bud.socket.piece;
+			}
 		} else if (this.socketScale) this.socketScale[index] = 1;
 		this.budCount++;
 		return index;
@@ -608,6 +616,7 @@ export class SkeletonBuilder {
 								scale: trimmed(this.socketScale, buds),
 								rank: trimmed(this.socketRank, buds),
 								lobe: trimmed(this.socketLobe, buds),
+								...(this.socketPiece ? { piece: trimmed(this.socketPiece, buds) } : {}),
 							},
 						}
 					: {}),
@@ -658,5 +667,6 @@ export function skeletonBuffers(skeleton: MacroSkeleton): ArrayBuffer[] {
 		buds.axis,
 		buds.woodRadius,
 		...(buds.sockets ? [buds.sockets.scale, buds.sockets.rank, buds.sockets.lobe] : []),
+		...(buds.sockets?.piece ? [buds.sockets.piece] : []),
 	].map((array) => array.buffer as ArrayBuffer);
 }

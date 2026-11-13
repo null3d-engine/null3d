@@ -30,11 +30,12 @@ import type { GrassBlade, Species, Tuft, TuftPanicle, TuftPose, TuftSpikes } fro
 import type { TextureManifest } from '../core/textures';
 import { DETAILS, type Detail, spreadAt, spreadMean } from '../core/types';
 import { BLADE_ACROSS, BLADE_ROWS, bladeTexture, writeBlade } from '../leaf/grass-blade';
-import type { PieceClass } from '../leaf/ground-piece';
+import type { WrittenPiece } from '../leaf/ground-piece';
 import { MeshWriter } from '../leaf/writer';
 import type { CrownLight, GrowInput, MeshInput, MeshLevel } from '../stages';
 import { type AxisPath, axisPath, emptyFrame, frameAt } from '../wood/frames';
 import { axisBytes, leafStrip, stalkRange, wholePath, writeStem } from './ground';
+import { scaledSkeleton, targetHeight } from './height';
 import type { Grower } from './models';
 import { addSockets, discPlaces, type Socket } from './sockets';
 
@@ -244,11 +245,10 @@ function shapeAt(poses: readonly TuftPose[], age: number): number {
 	return poses.length - 1;
 }
 
-/** The class of piece a shoot's sheath column is, a blade's pose is, and a stem's pose is. */
+/** The piece a shoot's sheath column is, a blade's pose is, and a stem's pose is, in the list. */
 const SHEATH_CLASS = 0;
 const bladeClass = (pose: number): number => 1 + pose;
 const stalkClass = (plan: Plan, pose: number): number => 1 + plan.blades.length + pose;
-const classCount = (plan: Plan): number => 1 + plan.blades.length + plan.stalks.length;
 
 /**
  * How late a part goes when the plant is thinned, from 0 for a part of the least plant: the parts
@@ -306,7 +306,8 @@ export function growTuft(input: GrowInput): MacroSkeleton {
 			: 0;
 	const ranks = Math.max(1, growth.ranks);
 	const sockets: Socket[] = [];
-	const up: Vector3 = [0, 1, 0];
+	// An upright piece heads the level way its socket points.
+	const level = (heading: number): Vector3 => [cos(heading), 0, sin(heading)];
 	let top = 0;
 	// The box the placed pieces fill: each piece's own reach along its heading from its shoot.
 	const low: [number, number] = [-stoolRadius, -stoolRadius];
@@ -353,11 +354,11 @@ export function growTuft(input: GrowInput): MacroSkeleton {
 			axis,
 			node: base,
 			at,
-			up,
-			heading: place.heading,
+			direction: level(place.heading),
 			piece: SHEATH_CLASS,
-			length: column,
+			scale: column / plan.sheath,
 			keep: shootKeep,
+			group: i,
 		});
 		top = Math.max(top, column);
 		// The blades, the oldest first: it stands lowest and outermost, and it is the last to go.
@@ -380,11 +381,11 @@ export function growTuft(input: GrowInput): MacroSkeleton {
 				axis,
 				node: base,
 				at,
-				up,
-				heading,
+				direction: level(heading),
 				piece: bladeClass(pose),
-				length: shape.arch.length * size,
+				scale: size,
 				keep: Math.max(shootKeep, keepOf(k, blades, growth.least.blades)),
+				group: i,
 			});
 			top = Math.max(top, shape.top * size);
 			reaches(at, heading, shape.out * size);
@@ -402,22 +403,22 @@ export function growTuft(input: GrowInput): MacroSkeleton {
 				axis,
 				node: base,
 				at,
-				up,
-				heading,
+				direction: level(heading),
 				piece: stalkClass(plan, pose),
-				length: shape.arch.length * size,
+				scale: size,
 				keep: Math.max(shootKeep, keepOf(i, stalks, growth.least.stalks)),
+				group: i,
 			});
 			top = Math.max(top, shape.top * size);
 			reaches(at, heading, shape.out * size);
 		}
 	});
-	addSockets(builder, sockets, classCount(plan));
+	addSockets(builder, sockets);
 	const finished = builder.finish(0);
 	// The skeleton holds only the stool. The plant's top and its box are its pieces': the tallest
 	// piece, and each piece's reach from its shoot with half a blade's width beside it.
 	const beside = blade.width / 2;
-	return {
+	const grown: MacroSkeleton = {
 		...finished,
 		height: top,
 		bounds: {
@@ -425,6 +426,20 @@ export function growTuft(input: GrowInput): MacroSkeleton {
 			max: [high[0] + beside, top, high[1] + beside],
 		},
 	};
+	// A tuft is its pieces, so each variant stands at the height its record asks for it with its
+	// pieces scaled with it, and the height calibration after the grower finds nothing to scale.
+	const factor = top > 0 ? targetHeight(input.record, input.seed, input.variant) / top : 1;
+	const scaled = scaledSkeleton(grown, factor);
+	const placed = scaled.buds.sockets;
+	return placed
+		? {
+				...scaled,
+				buds: {
+					...scaled.buds,
+					sockets: { ...placed, scale: placed.scale.map((value) => value * factor) },
+				},
+			}
+		: scaled;
 }
 
 /**
@@ -805,81 +820,86 @@ function writePanicle(
 }
 
 /**
- * The classes of piece a tuft's sockets name: the shoot's sheath column, a blade in each of the
- * record's poses, and a flowering stem with its head in each of its leans.
+ * The pieces a tuft's sockets carry: the shoot's sheath column, a blade in each of the record's
+ * poses, and a flowering stem with its head in each of its leans. Each stands upright, heading the
+ * way its socket points.
  *
  * @param record The species record.
  * @param manifest The texture manifest.
- * @returns The classes, in the order of their vigor bands.
+ * @returns The pieces, in the order a socket names them by.
  * @category api/vegetation
  */
-export function tuftPieces(record: Species, manifest: TextureManifest): readonly PieceClass[] {
+export function tuftPieces(record: Species, manifest: TextureManifest): readonly WrittenPiece[] {
 	const { growth, blade } = tuftOf(record);
 	const plan = planOf(record);
 	const texture = bladeTexture(manifest);
 	const leaf = leafStrip(manifest);
 	const strip: Strip = { v: stalkRange(leaf), uHalf: leaf.stalkHalf };
-	const classes: PieceClass[] = [];
+	const classes: WrittenPiece[] = [];
 	classes.push({
-		name: 'piece-sheath',
-		variants: 1,
+		name: 'sheath',
+		attitude: 'upright',
 		length: plan.sheath,
 		leaves: 0,
-		write: (mesh, tier) => {
-			mesh.mark();
-			const half = plan.sheathWidth / 2;
-			writeRun(
-				mesh,
-				strip,
-				straight([0, 0, 0], [0, plan.sheath, 0]),
-				0,
-				plan.sheath,
-				3,
-				SHEATH_SIDES[tier] as number,
-				(s) => half * (1 - (1 - SHEATH_TAPER) * s),
-				[0, 1],
-				false,
-				false,
-				// The column takes the record's sheath colour where it gives one.
-				growth.sheathColour !== undefined,
-			);
-		},
+		parts: [
+			(mesh, tier) => {
+				mesh.mark();
+				const half = plan.sheathWidth / 2;
+				writeRun(
+					mesh,
+					strip,
+					straight([0, 0, 0], [0, plan.sheath, 0]),
+					0,
+					plan.sheath,
+					3,
+					SHEATH_SIDES[tier] as number,
+					(s) => half * (1 - (1 - SHEATH_TAPER) * s),
+					[0, 1],
+					false,
+					false,
+					// The column takes the record's sheath colour where it gives one.
+					growth.sheathColour !== undefined,
+				);
+			},
+		],
 	});
 	plan.blades.forEach((pose, k) => {
 		const path = pathOf(pose.arch);
 		classes.push({
-			name: `piece-blade-${k}`,
-			variants: 1,
+			name: `blade-${k}`,
+			attitude: 'upright',
 			length: pose.arch.length,
 			leaves: 1,
-			write: (mesh, tier) => {
-				const detail = DETAILS[tier] as Detail;
-				writeBlade(
-					mesh,
-					path,
-					{
-						length: path.length,
-						width: blade.width,
-						blade,
-						// Neighbouring shapes twist opposite ways.
-						twist: blade.twist * (k % 2 === 0 ? 1 : -1),
-						browning: 0,
-						dry: 0.5,
-					},
-					{
-						rows: BLADE_ROWS[detail],
-						across: BLADE_ACROSS[detail],
-						// The rows stand where the shared curve cuts the pose for this tier, so no row
-						// turns more than the curve's bound whatever the tier.
-						along: archPath(pose.arch, TIER_LEVEL[tier] as 0 | 1 | 2, BLADE_ROWS[detail]).along,
-					},
-					texture,
-					NO_BYTES,
-					undefined,
-					tier >= 2,
-				);
-				mesh.mark();
-			},
+			parts: [
+				(mesh, tier) => {
+					const detail = DETAILS[tier] as Detail;
+					writeBlade(
+						mesh,
+						path,
+						{
+							length: path.length,
+							width: blade.width,
+							blade,
+							// Neighbouring shapes twist opposite ways.
+							twist: blade.twist * (k % 2 === 0 ? 1 : -1),
+							browning: 0,
+							dry: 0.5,
+						},
+						{
+							rows: BLADE_ROWS[detail],
+							across: BLADE_ACROSS[detail],
+							// The rows stand where the shared curve cuts the pose for this tier, so no row
+							// turns more than the curve's bound whatever the tier.
+							along: archPath(pose.arch, TIER_LEVEL[tier] as 0 | 1 | 2, BLADE_ROWS[detail]).along,
+						},
+						texture,
+						NO_BYTES,
+						undefined,
+						tier >= 2,
+					);
+					mesh.mark();
+				},
+			],
 		});
 	});
 	const stems = growth.stalks;
@@ -888,17 +908,19 @@ export function tuftPieces(record: Species, manifest: TextureManifest): readonly
 			const path = pathOf(pose.arch);
 			const head = stems.head;
 			classes.push({
-				name: `piece-stalk-${k}`,
-				variants: 1,
+				name: `stalk-${k}`,
+				attitude: 'upright',
 				length: pose.arch.length,
 				leaves: 0,
-				write: (mesh, tier) => {
-					mesh.mark();
-					writeStalk(mesh, strip, path, pose.arch, tier, plan.stalkWidth, 1, stems.sides === 3);
-					if (head.kind === 'spike')
-						writeSpikes(mesh, strip, path, pose.arch, head, tier, plan.mound);
-					else writePanicle(mesh, strip, path, head, tier, plan.mound, plan.stalkWidth);
-				},
+				parts: [
+					(mesh, tier) => {
+						mesh.mark();
+						writeStalk(mesh, strip, path, pose.arch, tier, plan.stalkWidth, 1, stems.sides === 3);
+						if (head.kind === 'spike')
+							writeSpikes(mesh, strip, path, pose.arch, head, tier, plan.mound);
+						else writePanicle(mesh, strip, path, head, tier, plan.mound, plan.stalkWidth);
+					},
+				],
 			});
 		});
 	return classes;

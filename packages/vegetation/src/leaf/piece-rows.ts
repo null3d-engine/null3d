@@ -1,9 +1,12 @@
-// The rows of a plant that carries branch pieces at its sockets. A directed grower ends its wood in
-// sockets, each a bud site with a size, a rank and a group. This module puts one piece at each
-// socket, as rows of the kind the renderer draws for shoots: every part of the piece's chosen
-// variant is a row of its own at the socket's place, with one turn, one scale, one wind record and
-// one phase, so the parts move as one body. No shade or sky line thins the rows afterwards: the
-// grower placed the sockets where the foliage stands.
+// The rows of a plant that carries pieces at its sockets. A directed grower ends its wood in
+// sockets, each a bud site with a size, a rank and a group; a ground form's grower stands its
+// sockets on its stool or its rhizome, and writes the pieces they carry itself. This module puts
+// one piece at each socket, as rows of the kind the renderer draws for shoots: every part of the
+// piece's chosen variant is a row of its own at the socket's place, with one turn, one scale, one
+// wind record and one phase, so the parts move as one body. A socket carries the piece its record
+// names, or the piece the socket itself names where a plant's sockets carry different pieces. No
+// shade or sky line thins the rows afterwards: the grower placed the sockets where the foliage
+// stands.
 import type { ShootPrototype } from '../asset';
 import { hashAt } from '../core/hash';
 import { quatRotate, type Vector3 } from '../core/math';
@@ -18,19 +21,35 @@ export const PROTOTYPES_MOST = 255;
 
 /** The growth models that end their wood in sockets. */
 const DIRECTED: readonly GrowthModel[] = ['conifer'];
+/** The growth models whose growers write the pieces their sockets carry. */
+const WRITTEN: readonly GrowthModel[] = ['tuft'];
 
 /** The hash purposes of a socket's choices, apart from the shoot rows' own. */
 const Purpose = { Variant: 0x31, Phase: 0x32 } as const;
 
 /**
- * Whether a plant of this record carries branch pieces at sockets: it grows by a directed model and
- * its record gives pieces.
+ * Whether a plant of this record carries pieces at sockets: it grows by a directed model and its
+ * record gives pieces, or its grower writes its pieces.
  *
  * @param record The species record.
  * @returns Whether its kit holds pieces and its rows stand at sockets.
  */
 export function carriesPieces(record: Species): boolean {
-	return DIRECTED.includes(record.growth.model) && (record.pieces?.length ?? 0) > 0;
+	return (
+		(DIRECTED.includes(record.growth.model) && (record.pieces?.length ?? 0) > 0) ||
+		WRITTEN.includes(record.growth.model)
+	);
+}
+
+/**
+ * Whether a plant of this record writes its own pieces: its kit holds them in a cutting's kit too,
+ * since a cut piece of it is the pieces that stand on its frame.
+ *
+ * @param record The species record.
+ * @returns Whether its grower writes the pieces.
+ */
+export function writesPieces(record: Species): boolean {
+	return WRITTEN.includes(record.growth.model);
 }
 
 /**
@@ -98,14 +117,24 @@ export function pieceRows(input: DressInput): Row[] {
 	}
 	const named = socketPiece(record);
 	// A stand-in kit holds no pieces: each socket then carries the kit's first prototype.
-	const variants = (
+	const offered = (list: ShootPrototype[][] | undefined) =>
+		list?.filter((parts) => parts !== undefined && parts.length > 0);
+	const variants = offered(
 		(named !== undefined ? byName.get(named) : undefined) ??
-		byName.values().next().value ?? [[kit.prototypes[0] as ShootPrototype]]
-	).filter((parts) => parts !== undefined && parts.length > 0);
+			byName.values().next().value ?? [[kit.prototypes[0] as ShootPrototype]],
+	) as ShootPrototype[][];
 	if (variants.length === 0) return rows;
+	// A socket that names its piece names its place in the kit's order of pieces.
+	const own = sockets.piece;
+	const byPlace = own ? [...byName.values()].map(offered) : [];
 	const heading: Vector3 = [0, 0, 0];
 	for (let b = 0; b < buds.count; b++) {
-		const parts = variants[pick(Purpose.Variant, b) % variants.length] as ShootPrototype[];
+		const choices = own && byPlace.length > 0 ? byPlace[own[b] as number] : variants;
+		if (!choices || choices.length === 0)
+			throw new Error(
+				`@null3d/vegetation: '${record.id}' has no piece for a socket that names piece ${own?.[b]}`,
+			);
+		const parts = choices[pick(Purpose.Variant, b) % choices.length] as ShootPrototype[];
 		const first = parts[0] as ShootPrototype;
 		quatRotate(buds.frame, b * 4, [0, 1, 0], heading);
 		const node = buds.node[b] as number;
@@ -144,6 +173,7 @@ export function pieceRows(input: DressInput): Row[] {
 				node,
 				axis,
 				back: [back[0], back[1], back[2]],
+				socket: b,
 			});
 	}
 	return rows;
