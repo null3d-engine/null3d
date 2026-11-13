@@ -34,17 +34,19 @@ const boughs: FrameBranchRule = {
 	],
 	from: 'parent',
 	angleSpread: 8,
-	length: { outline: 0.94 },
+	length: { outline: 0.92 },
 	vary: 0.06,
 	least: 0.08,
-	most: 0.4,
+	most: 0.5,
 	radius: 0.5,
 	taper: 0.35,
 	shed: 0.7,
-	bends: [{ from: 0.2, to: 0.7, level: 4 }],
+	// Still 01: the boughs of a low limb rise from it to the dome's surface, so the crown is as
+	// wide at half its height as the limbs are long, and each arches over a little at its end.
+	bends: [{ from: 0.55, to: 1, by: 18 }],
 	sway: 30,
 	elbows: 7,
-	crook: 0.5,
+	crook: 0.42,
 	// A bough's clump is smaller the nearer its limb's end it leaves, as the crown's rim and top
 	// are made of smaller clumps than its body.
 	patch: {
@@ -70,19 +72,20 @@ const boughs: FrameBranchRule = {
 			angle: 52,
 			from: 'parent',
 			angleSpread: 8,
-			length: {
-				parent: [
-					[0, 0.42],
-					[1, 0.26],
-				],
-			},
+			// A branch ends inside the crown's surface, and none is longer than a clump is wide.
+			length: { outline: 0.9 },
 			vary: 0.12,
+			least: 0.03,
+			most: [
+				[0, 0.2],
+				[1, 0.1],
+			],
 			radius: 0.55,
 			taper: 0.35,
 			sway: 34,
 			elbows: 5,
 			crook: 0.4,
-			patch: clump(0.15),
+			patch: clump(0.13),
 		},
 	],
 };
