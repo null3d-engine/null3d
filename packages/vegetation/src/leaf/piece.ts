@@ -247,6 +247,12 @@ export interface PieceRule {
 	 */
 	readonly plane?: Vec3;
 	/**
+	 * Degrees the piece is turned about its own line at every socket, from its sky side up toward its
+	 * right. A living fern frond's flat blade stands rolled on the plant, so a frond seen from the
+	 * crown's side shows its face rather than its edge. Absent, 0.
+	 */
+	readonly roll?: number;
+	/**
 	 * The ground side in the piece's frame, where it is not its attitude's own: a piece that stands
 	 * upright on its socket names the way back along its line, so its side stems lift toward its tip.
 	 */
@@ -285,6 +291,8 @@ export interface PiecePrototype
 	readonly parts: number;
 	/** The unit normal of the piece's flat plane in its rest frame, where its rule names one. */
 	readonly plane?: Vec3;
+	/** Degrees it is turned about its own line at every socket, where its rule says so. */
+	readonly roll?: number;
 	/** Where the part may carry an extra, in the piece's rest frame, in rank order. */
 	readonly sites: readonly PieceSite[];
 }
@@ -1009,6 +1017,7 @@ export function piecePrototypes(
 					part,
 					parts: parts.length,
 					...(rule.plane ? { plane: rule.plane } : {}),
+					...(rule.roll ? { roll: rule.roll } : {}),
 					sites: pieceSites(plan),
 					...meshedPlan(plan, leaves),
 				});

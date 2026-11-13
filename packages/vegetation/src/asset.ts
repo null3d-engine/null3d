@@ -114,6 +114,8 @@ export interface PrototypePiece {
 	readonly attitude: PieceAttitude;
 	/** The unit normal of the piece's flat plane in its rest frame, where it has one. */
 	readonly plane?: Vec3;
+	/** Degrees it is turned about its own line at every socket (`PieceRule.roll`). */
+	readonly roll?: number;
 }
 
 /**
