@@ -130,10 +130,15 @@ const Purpose = {
 	LeafAzimuth: 14,
 } as const;
 
-/** A bud's mesh at a tier: faces around, and whether its profile is rounded or a plain cone. */
+/**
+ * A bud's mesh at a tier: faces around, and whether its profile is rounded, swells to a point, or
+ * runs straight to its tip in one band.
+ */
 export interface BudShape {
 	readonly sides: number;
 	readonly round: boolean;
+	/** A plain cone in one band, for a bud a few pixels long at the distances the tier draws. */
+	readonly cone?: boolean;
 }
 
 /** How a tier meshes a shoot's wood and buds. */
@@ -148,6 +153,11 @@ export interface ShootCut {
 	readonly clusterCone?: boolean;
 	/** An axil's bud; absent, the axils draw none. */
 	readonly axil?: BudShape;
+	/**
+	 * Metres below which a bud draws as a plain cone of one band: a shorter one is a few pixels long
+	 * at the distances the tier draws. Absent, every bud takes its shape's own profile.
+	 */
+	readonly coneBelow?: number;
 	/**
 	 * Metres below which an axil's bud is left out: a smaller one hides under its leaf and spans a
 	 * pixel or two at the distances the tier draws. Absent, every axil's bud is drawn.
@@ -1430,24 +1440,34 @@ export function meshShoot(
 		}
 		const w = bud.width / 2;
 		const l = bud.length;
-		const profile: [number, number][] = shape.round
+		const cone = shape.cone === true || (!bud.mark && bud.length < (cut.coneBelow ?? 0));
+		const profile: [number, number][] = cone
 			? [
-					[w * 0.6, 0],
-					[w, l * 0.35],
-					[w * 0.7, l * 0.72],
+					[w, 0],
 					[0, l],
 				]
-			: [
-					[w * 0.5, 0],
-					[w, l * 0.4],
-					[0, l],
-				];
-		lathe(mesh, profile, bud.at, bud.direction, shape.sides, [
-			bendByte(bud.along, plan.span),
-			0,
-			SURFACE_BUD,
-			255,
-		]);
+			: shape.round
+				? [
+						[w * 0.6, 0],
+						[w, l * 0.35],
+						[w * 0.7, l * 0.72],
+						[0, l],
+					]
+				: [
+						[w * 0.5, 0],
+						[w, l * 0.4],
+						[0, l],
+					];
+		lathe(
+			mesh,
+			profile,
+			bud.at,
+			bud.direction,
+			shape.sides,
+			[bendByte(bud.along, plan.span), 0, SURFACE_BUD, 255],
+			undefined,
+			cone,
+		);
 	}
 	for (const leaf of plan.leaves) {
 		const source = leafMeshes[leaf.mesh];

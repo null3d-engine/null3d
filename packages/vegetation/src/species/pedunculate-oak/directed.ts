@@ -1,10 +1,11 @@
-// The pedunculate oak as a directed frame: one massive bole that divides over a zone into seven
-// great limbs, which fan from near level at the bottom to upright at the top and stand on every
-// side of the trunk; each limb's boughs, one at a place; and the boughs' branches, under clumps of
-// foliage. The limbs are crooked all the way and thin where a bough leaves. The proportions are
-// from the species' measured targets (still 01, the primary tree) and from the description of the
-// real tree in the first review of its frame, which read stills 01, 02, 03, 04, 18 and 20, the
-// whole-tree turning video and the winter oak. Shares are of the tree's height.
+// The pedunculate oak as a directed frame: one massive bole on a rounded flare that gives six great
+// limbs over a zone, from near level to steep, standing on every side of the trunk, and then runs on
+// and divides into three rising limbs that carry the dome; each limb's boughs, one at a place; and
+// the boughs' branches, under clumps of foliage. The limbs are crooked all the way and thin where a
+// bough leaves. The proportions are from the species' measured targets (still 01, the primary tree)
+// and from the description of the real tree in the first review of its frame, which read stills 01,
+// 02, 03, 04, 18 and 20, the whole-tree turning video and the winter oak. Shares are of the tree's
+// height.
 import {
 	type FrameBranchRule,
 	type FrameSide,
@@ -15,16 +16,15 @@ import { PIECES } from './pieces';
 import { record } from './record';
 
 /**
- * The sockets along the wood under a clump, each of which carries the branch end of still 21. A
- * branch end is 0.79 m wide on a tree 20 m tall, and one leaves the wood every half of that, each
- * turned on round the wood from the last, so the ends stand about a branch end's width apart. The
- * still: a side shoot leaves its stem at 45 to 85 degrees.
+ * The fine wood that clothes a clump, each twig ending in a socket that carries the branch end of
+ * still 21. A branch end is 0.86 m long and 0.79 m wide on a tree 20 m tall, so the sockets stand
+ * a branch end's width apart over the clump's surface and a branch end's reach inside it.
  */
-const ENDS = { every: 0.79 / 20 / 2, angle: 60 } as const;
+const ENDS = { pitch: 0.79 / 20, reach: 0.86 / 20 } as const;
 
 /** A rounded clump of foliage. The real tree's rim is ten to twelve clumps with sky bays between. */
 const clump = (width: number) =>
-	({ kind: 'clump', width, depth: width * 0.7, sockets: ENDS }) as const;
+	({ kind: 'clump', width, depth: width * 0.7, fill: ENDS }) as const;
 
 /**
  * The boughs of a great limb and their branches. The real tree: each limb carries five to eight
@@ -76,7 +76,7 @@ const boughs: FrameBranchRule = {
 			[0, 0.14],
 			[1, 0.085],
 		],
-		sockets: ENDS,
+		fill: ENDS,
 	},
 	children: [
 		{
@@ -108,6 +108,39 @@ const boughs: FrameBranchRule = {
 			patch: clump(0.13),
 		},
 	],
+};
+
+/**
+ * The skirts of a low limb: branches from its outer half that leave its sides lowered toward the
+ * ground and hang as far as a fifth of the height, each under a small clump. Stills 01, 02 and 18:
+ * the crown's underside hangs lower far out than near the bole, in lobes of leaf under the low
+ * limbs' outer reach, down to a tenth of the height at still 02. A skirt's branch ends
+ * where the piece at its end meets the lower boundary, so its leaf hangs down to the boundary and
+ * never under it.
+ */
+const skirts: FrameBranchRule = {
+	name: 'skirt',
+	role: 'branch',
+	count: { every: 0.07, least: 2, most: 4 },
+	along: [0.5, 0.95],
+	stagger: 0.3,
+	around: 'sides',
+	lift: -45,
+	jitter: 20,
+	angle: 80,
+	from: 'parent',
+	angleSpread: 8,
+	length: { outline: 0.95 },
+	vary: 0.1,
+	least: 0.03,
+	most: 0.2,
+	radius: 0.4,
+	taper: 0.35,
+	sway: 30,
+	elbows: 5,
+	crook: 0.4,
+	apart: 0.006,
+	patch: clump(0.11),
 };
 
 /**
@@ -189,10 +222,14 @@ const STILL_02_RIGHT: Reading = {
 	],
 };
 
-/** A side of the outline, from its reading on a still. */
-function side(toward: number, read: Reading): FrameSide {
+/**
+ * A side of the outline, from its reading on a still taken from a direction round the plant: still
+ * 01's camera stands toward 90 degrees and still 02's toward 0.
+ */
+function side(toward: number, seen: number, read: Reading): FrameSide {
 	return {
 		toward,
+		seen,
 		reach: [
 			read.foot,
 			...(read.hung ? [read.hung] : []),
@@ -211,25 +248,36 @@ export const frame: FrameSpec = {
 	// The outline, side by side, with no two sides averaged. Still 01 gives the two sides it looks
 	// across; still 02, a quarter turn on, gives the two it looks along.
 	outline: [
-		side(0, STILL_01_RIGHT),
-		side(90, STILL_02_LEFT),
-		side(180, STILL_01_LEFT),
-		side(270, STILL_02_RIGHT),
+		side(0, 90, STILL_01_RIGHT),
+		side(90, 0, STILL_02_LEFT),
+		side(180, 90, STILL_01_LEFT),
+		side(270, 0, STILL_02_RIGHT),
 	],
 	stems: {
 		name: 'trunk',
 		count: 1,
-		// Still 01: 0.16 of the height across below the limbs, on a flared foot. The real tree: a
-		// bole 0.12 to 0.16 across.
+		// Still 01, read row by row from the trunk's line: the bole is narrowest, 0.155 of the height
+		// across, a tenth of the way up, and its foot flares on a rounded curve to 0.168 at 0.075 of the
+		// height, 0.194 at 0.054, 0.213 at 0.043 and 0.23 at 0.032, where the grass hides it. Over the
+		// fork zone the bole gives its wood to the low limbs, and above them it runs on, a third as
+		// thick as at its foot, to where it divides.
 		width: [
-			[0, 0.26],
-			[0.03, 0.19],
-			[0.06, 0.165],
+			[0, 0.262],
+			[0.012, 0.25],
+			[0.022, 0.24],
+			[0.032, 0.229],
+			[0.043, 0.212],
+			[0.054, 0.194],
+			[0.075, 0.168],
+			[0.1, 0.156],
 			[0.15, 0.155],
 			[0.25, 0.12],
+			[0.35, 0.071],
 		],
-		// The real tree: the bole divides over a zone between 0.15 and 0.25 of the height.
-		length: { share: 0.25 },
+		// The real tree: the low limbs leave over a zone between 0.15 and 0.25 of the height. Stills 01
+		// and 03: the bole runs on above them and divides into rising limbs, and none runs on as a
+		// stem to the top.
+		length: { share: 0.35 },
 		sway: 2,
 		elbows: 2,
 		children: [
@@ -237,82 +285,79 @@ export const frame: FrameSpec = {
 				name: 'limb',
 				role: 'limb',
 				// The real tree: six or seven great limbs, which leave over the zone and stand on
-				// every side. Each is stated by itself, lowest first: its direction round the trunk,
-				// its angle, its reach and its course are each a figure by its place. The shares here
-				// are of the bole's own length.
-				count: 7,
-				along: [0.7, 1],
+				// every side. Each low limb is stated by itself, lowest first: its direction round the
+				// trunk, its angle, its reach and its course are each a figure by its place. The shares
+				// here are of the bole's own length, which runs on past them.
+				count: 6,
+				along: [0.5, 0.6786],
 				stagger: 0,
 				// Still 01, where +X is the picture's right: the fourth limb is the long low limb on
 				// the right, which leaves at 0.21 of the height, and the fifth is the low limb on the
-				// left, which leaves at 0.23 and stands a little toward the camera. The seven stand a
-				// seventh of a turn apart: the first two are the low limbs toward and away from the
-				// camera, the third and the sixth stand between at steeper angles, and the seventh is
-				// the upright one.
-				around: [103, 257, 309, 0, 206, 154, 51],
+				// left, which leaves at 0.23 and stands a little toward the camera. The first two are the
+				// low limbs toward and away from the camera, and the third and the sixth stand between
+				// at steeper angles.
+				around: [103, 257, 309, 0, 206, 154],
 				jitter: 5,
 				// Still 01: the right limb leaves 21 degrees above level and the left one nearly level;
-				// the real tree's limbs fan from there to upright in the middle.
+				// the steeper two rise at half that from plumb.
 				angle: [
 					[0, 72],
-					[0.167, 74],
-					[0.333, 44],
-					[0.5, 69],
-					[0.667, 82],
-					[0.833, 40],
-					[1, 12],
+					[0.2, 74],
+					[0.4, 44],
+					[0.6, 69],
+					[0.8, 82],
+					[1, 40],
 				],
 				from: 'plumb',
 				angleSpread: 2,
 				// Still 01: the right limb's foliage is the crown's widest reach, and its bare wood
 				// shows two thirds of the way out. Its wood ends half a clump short of the outline, so
-				// the clump at its end stands on the outline. The others' wood runs out nearly to the
-				// rim, and the upright limb's end is the crown's highest wood.
+				// the clump at its end stands on the outline. The others' wood runs out nearly to the rim,
+				// and still 02 shows the two toward and away from still 01's camera carrying its widest
+				// reach on both sides, so theirs runs out furthest.
 				length: {
 					outline: [
-						[0, 0.9],
-						[0.167, 0.9],
-						[0.333, 0.84],
-						[0.5, 0.89],
-						[0.667, 0.9],
-						[0.833, 0.84],
-						[1, 0.93],
+						[0, 0.95],
+						[0.2, 0.95],
+						[0.4, 0.84],
+						[0.6, 0.89],
+						[0.8, 0.9],
+						[1, 0.84],
 					],
 				},
 				vary: 0.03,
 				// Still 03, from below, each limb's width across its run a little way out from the
 				// fork, in the picture's own pixels: the left limb 72, the right limb 62, the limb
-				// over the camera 43, the two steeper limbs 48 and 41, and the trunk's upright
-				// continuation 110. The limb away from the camera does not show and takes the figure
-				// of the one toward it. The real tree: the thickest limb leaves at half the bole's
-				// width. Each share here gives its limb that thickness beside the left limb's, on a
-				// bole that thins over the zone the limbs leave in.
+				// over the camera 43, and the two steeper limbs 48 and 41. The limb away from the camera
+				// does not show and takes the figure of the one toward it. The real tree: the thickest
+				// limb leaves at half the bole's width. Each share here gives its limb that thickness
+				// beside the left limb's, on a bole that thins over the zone the limbs leave in.
 				radius: [
 					[0, 0.268],
-					[0.167, 0.274],
-					[0.333, 0.321],
-					[0.5, 0.421],
-					[0.667, 0.5],
-					[0.833, 0.302],
-					[1, 0.827],
+					[0.2, 0.274],
+					[0.4, 0.321],
+					[0.6, 0.421],
+					[0.8, 0.5],
+					[1, 0.302],
 				],
 				taper: 0.3,
 				shed: 0.7,
 				// Still 01: the right limb rises to 0.29 of the height over its first third, then runs
 				// level and dips a little at its end. The real tree: the low limbs run out near level
-				// and dip at their ends, and no foliage lies on the ground.
+				// and dip at their ends, and no foliage lies on the ground. Still 02 shows the two
+				// toward and away from still 01's camera in profile, rising a little more, to the
+				// crown's widest band a third of the way up.
 				bends: [
 					{
 						from: 0.1,
 						to: 0.4,
 						level: [
-							[0, 12],
-							[0.167, 10],
-							[0.333, 50],
-							[0.5, 4],
-							[0.667, 6],
-							[0.833, 54],
-							[1, 78],
+							[0, 18],
+							[0.2, 16],
+							[0.4, 50],
+							[0.6, 4],
+							[0.8, 6],
+							[1, 54],
 						],
 					},
 					{
@@ -320,11 +365,10 @@ export const frame: FrameSpec = {
 						to: 1,
 						by: [
 							[0, 8],
-							[0.167, 8],
-							[0.333, 0],
-							[0.5, 6],
-							[0.667, 6],
-							[0.833, 0],
+							[0.2, 8],
+							[0.4, 0],
+							[0.6, 6],
+							[0.8, 6],
 							[1, 0],
 						],
 					},
@@ -336,6 +380,61 @@ export const frame: FrameSpec = {
 				// Still 03, from below: the limbs spread to every side and none lies along another.
 				apart: 0.02,
 				patch: clump(0.2),
+				children: [skirts, boughs],
+			},
+			{
+				name: 'crown',
+				role: 'limb',
+				// Stills 01 and 03: where the bole ends it divides into three rising limbs, each about
+				// as thick as a low limb: one runs up near the trunk's line and carries the top, which
+				// still 02 shows standing off toward the camera of still 01, and the other two rise to
+				// the picture's left and right in still 01 and arch out under the dome's shoulders.
+				count: 3,
+				along: [1, 1],
+				around: [80, 230, 10],
+				jitter: 5,
+				angle: [
+					[0, 16],
+					[0.5, 34],
+					[1, 34],
+				],
+				from: 'plumb',
+				angleSpread: 3,
+				// The middle limb ends inside the dome, so the clumps of its boughs make the top, which
+				// still 01 shows as broad as a fifth of the height either side a little under it.
+				length: {
+					outline: [
+						[0, 0.86],
+						[0.5, 0.9],
+						[1, 0.9],
+					],
+				},
+				vary: 0.03,
+				// Still 03: the bole above the low limbs divides into limbs a little over half its
+				// width, none of them near the bole's thickness.
+				radius: [
+					[0, 0.62],
+					[0.5, 0.58],
+					[1, 0.6],
+				],
+				taper: 0.3,
+				shed: 0.7,
+				bends: [
+					{
+						from: 0.4,
+						to: 0.9,
+						by: [
+							[0, 4],
+							[0.5, 16],
+							[1, 16],
+						],
+					},
+				],
+				sway: 26,
+				elbows: 8,
+				crook: 0.5,
+				apart: 0.02,
+				patch: clump(0.18),
 				children: [boughs],
 			},
 		],
@@ -343,11 +442,45 @@ export const frame: FrameSpec = {
 };
 
 /**
+ * The foot of the framed oak. The frame's trunk already flares to still 01's foot, so the stem base
+ * adds no flare of its own. It keeps still 14's buttresses as low, rounded lobes with furrows between
+ * them, and short roots that sink into the litter close to the foot.
+ */
+const base = {
+	...record.base,
+	flare: { amount: 0, height: 0.5 },
+	buttress: {
+		lobes: { mean: 9, spread: 1.5 },
+		amount: 0.12,
+		sharpness: 1.5,
+		height: 0.5,
+		round: 0.6,
+	},
+	roots: {
+		count: { mean: 6, spread: 1 },
+		length: { mean: 0.7, spread: 0.2 },
+		radius: 0.18,
+		dive: 0.3,
+		ridge: 1,
+	},
+} as const;
+
+/**
  * The pedunculate oak's record with the frame as its growth and the branch end of still 21 at each
  * socket. The shoot rows are the figures the scaffold build's oak states for the same branch ends;
  * a kit with no pieces draws them.
  */
 export const directed = {
-	...framedRecord(record, frame, { rows: { mean: 5, spread: 1 }, fan: 45, piece: 'branch-end' }),
+	...framedRecord(record, frame, {
+		rows: { mean: 5, spread: 1 },
+		fan: 45,
+		piece: 'branch-end',
+		// The bake worker's reading of round `pedunculate-oak-ef69fe7b9`: with every branch end's
+		// flat side to the sky, a crown seen from the side shows most of its cards slanted or edge
+		// on, and the sky shows through. A real crown's rosettes face every way, so each piece rolls
+		// up to a quarter turn either way about its own line and tilts a little off the wood's.
+		turn: { roll: 90, tilt: 25 },
+	}),
+	base,
 	pieces: PIECES.filter((piece) => piece.name === 'branch-end'),
 };

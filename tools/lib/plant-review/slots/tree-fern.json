@@ -63,10 +63,10 @@
 		"turn": 270
 	},
 	"21-branch-studio.png": {
-		"turn": 270
+		"piece": "frond-arched"
 	},
 	"22-subbranch-studio.png": {
-		"turn": 270
+		"piece": "frond-arched"
 	},
 	"23-leaf-cluster-studio.png": {
 		"turn": 270

@@ -110,10 +110,10 @@ const FACING = 0.15;
 const BLEND_RINGS = [5, 3, 2] as const;
 
 /**
- * The section sparsity of a branch that a card level draws only to hold a card: one straight run of
- * three sides, with square ends and no blend onto its parent.
+ * The section sparsity of a branch that a card level draws only to hold a card: half the level's
+ * own sections, so it follows its path and joins its parent in fewer rings.
  */
-const SUPPORT_SECTIONS = 1;
+const SUPPORT_SECTIONS = 0.5;
 
 /** The parts of a plant's wood: its trunk, its great limbs and its branches. */
 const PART_TRUNK = 0;
@@ -231,9 +231,9 @@ function woodAxes(
 	const planned = (a: number) => plan?.tubes[partOf(a)];
 	// The thinnest sections draw an axis as one run: its wood does not divide at a codominant child.
 	const single = (a: number) => (planned(a)?.sections ?? input.sections ?? 0) >= 1;
-	// The branches a card level draws beside its own orders, so the cards it keeps stay joined. Such
-	// a branch is finer than the level's wood and stands under a far card, so it draws as one
-	// straight run of the fewest sides. A plan joins its cards itself and draws no such branch.
+	// The branches a card level draws beside its own orders, so the cards it keeps stay joined. Each
+	// draws along its own path and joins its parent as the level's wood does, with half the level's
+	// sections, since it stands under a card. A plan joins its cards itself and draws no such branch.
 	const support = level > 0 && !plan ? supportAxes(input, level as 1 | 2) : undefined;
 	const supportTube = support
 		? tubeDetail(level, input.detail, input.coarseness ?? 0, SUPPORT_SECTIONS)

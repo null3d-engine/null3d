@@ -19,9 +19,11 @@ import {
 	fittedMaskClause,
 	frameFiguresHold,
 	frameScale,
+	frameTilt,
 	framingFault,
 	framingQuery,
 	hasSeparableOutline,
+	horizonTilt,
 	iou,
 	levelName,
 	MASK_GATE_NATURAL,
@@ -34,6 +36,7 @@ import {
 	patchDifference,
 	patchLab,
 	plainTurnOf,
+	plantRows,
 	profileError,
 	rubricBand,
 	rubricFrames,
@@ -984,5 +987,38 @@ describe('a picture that answers nothing', () => {
 		);
 		expect(levelName({ level: { name: 'leaf form', forced: true } })).toBe('leaf form, forced');
 		expect(levelName({})).toBe(undefined);
+	});
+});
+
+describe("a picture's rows against its plant's own height", () => {
+	// A plant 10 m tall, 15 m from a camera 2 m up that tilts 12 degrees up, through a 45 degree lens.
+	const fov = 45;
+	const tilt = { pitch: (12 * Math.PI) / 180, fov };
+	const rowOf = (height: number) =>
+		0.5 - Math.tan(Math.atan2(height - 2, 15) - tilt.pitch) / (2 * Math.tan((fov * Math.PI) / 360));
+
+	test("reads the plant's share of its height from a tilted camera's rows", () => {
+		const rows = plantRows(rowOf(10), rowOf(0), tilt);
+		expect(rows?.share(rowOf(5)) as number).toBeCloseTo(0.5, 6);
+		expect(rows?.eye as number).toBeCloseTo(0.2, 6);
+		// The picture's share of the plant's rows down to its middle is not the plant's half.
+		const picture = (rowOf(5) - rowOf(10)) / (rowOf(0) - rowOf(10));
+		expect(Math.abs(picture - 0.5)).toBeGreaterThan(0.03);
+	});
+
+	test("takes a level camera's rows as the plant's shares", () => {
+		const rows = plantRows(0.2, 0.8, { pitch: 0, fov });
+		expect(rows?.share(0.35) as number).toBeCloseTo(0.25, 6);
+		expect(rows?.eye as number).toBeCloseTo(0.5, 6);
+	});
+
+	test("finds a photograph's tilt from its horizon's row, and a drawing's from its camera", () => {
+		expect(horizonTilt(rowOf(2), fov).pitch).toBeCloseTo(tilt.pitch, 6);
+		const frame = {
+			cell: {
+				camera: { position: [0, 2, 15], target: [0, 2 + 15 * Math.tan(tilt.pitch), 0], fov },
+			},
+		} as unknown as Parameters<typeof frameTilt>[0];
+		expect(frameTilt(frame)?.pitch as number).toBeCloseTo(tilt.pitch, 6);
 	});
 });
