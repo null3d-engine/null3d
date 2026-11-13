@@ -113,6 +113,12 @@ const DRESSED: readonly Dressed[] = [
 		piece: 'branch-end',
 		flat: false,
 	},
+	{
+		title: 'the weeping willow, framed, with its long strands at sockets',
+		module: () => loadSpecies('weeping-willow'),
+		piece: 'strand-long',
+		flat: false,
+	},
 ];
 
 for (const dressed of DRESSED)

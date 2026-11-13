@@ -224,17 +224,18 @@ const HELD: readonly Held[] = [
 		directed: weepingWillowDirected,
 		heightMean: spreadMean(weepingWillowDirected.size.height),
 		record: weepingWillowRecord,
-		counts: { trunk: 1, great: 3, upper: 3, secondary: 6, branch: [18, 54], whip: [100, 400] },
-		// Six level limbs in three pairs leave no gap wider than a pair's share and its jitter.
+		counts: { trunk: 1, great: 3, upper: 3, secondary: 9, branch: [100, 200], whip: [600, 1400] },
+		// Nine level limbs, three to each great limb, leave no gap wider than a great limb's share
+		// and its jitter.
 		round: { rule: 'secondary', gap: 110, lean: 0.25 },
 		base: { great: 0.5, upper: 0.55, secondary: 0.55, branch: 0.5, whip: 0.3 },
 		// A whip hangs by its own weight.
 		plumb: ['trunk', 'whip'],
 		// The heads' foliage stands above the highest wood.
 		through: 13,
-		axesPerSocket: 1.242,
+		// Every whip and branch carries strands along it, so an axis carries several sockets.
+		axesPerSocket: 0.184,
 		tall: [0.93, 1.02],
-		open: ['spread'],
 	},
 	{
 		id: 'holm-oak',
