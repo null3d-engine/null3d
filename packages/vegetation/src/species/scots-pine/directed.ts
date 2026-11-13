@@ -6,13 +6,24 @@
 // is another tree of the same habit: its limbs show best against the sky, so the limb levels, the
 // limbs' course and their thickness are read on it.
 import type { BarkSpec, BaseSpec, Species } from '../../core/record';
+import { PIECES } from './pieces';
 import { record } from './record';
 
 const { forms: _forms, ...own } = record;
 
+/**
+ * The needle pairs. Still 12 and the fact sheet: a needle is about twenty-two times as long as it
+ * is wide.
+ */
+const needles: Species['foliage'] =
+	record.foliage.kind === 'fascicle'
+		? { ...record.foliage, needle: { ...record.foliage.needle, width: 0.0027 } }
+		: record.foliage;
+
 /** The Scots pine's record with the directed frame in place of the grown one. */
 export const directed: Species = {
 	...own,
+	pieces: PIECES,
 	// Still 01: the bole is 0.076 of the height across at breast height.
 	size: { ...record.size, dbh: 1.5 },
 	growth: {
@@ -104,8 +115,20 @@ export const directed: Species = {
 		top: { limbs: 4, leave: 45, end: 0, radius: 0.5 },
 		// Still 02, six pads: 0.23 to 0.35 of the height wide, and 0.38 as deep as wide.
 		// One pad a limb: the limb's arms spread under it.
-		patch: { kind: 'pad', each: 'limb', width: [0.23, 0.35], depth: 0.38 },
+		patch: {
+			kind: 'pad',
+			each: 'limb',
+			width: [0.23, 0.35],
+			depth: 0.38,
+			// A bough is 0.55 m long and 0.83 as wide, and it stands on its socket tilted up, so
+			// boughs half a metre apart tile a pad. Still 09: a side twig leaves its branch at 40
+			// to 60 degrees.
+			// Stills 04 and 20: the brushes stand on twigs that rise from the limb, which gives a
+			// pad its depth. The rise is read by eye.
+			sockets: { piece: 'bough', pitch: 0.5, twig: 55, lift: 35 },
+		},
 	},
+	foliage: needles,
 	bark: {
 		...(record.bark as BarkSpec),
 		// Still 01 and the turning video: grey plates to 0.35 of the height, orange flakes above
