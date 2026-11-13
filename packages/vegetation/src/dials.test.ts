@@ -1,7 +1,6 @@
 // The two dials are separate: sparseness thins leaves and limbs and keeps every piece joined to the
 // root; polygon count changes only how smooth or blocky the same plant looks. The tests below state
-// the rule; where the current generator cannot meet it, the test is skipped with the gap and its
-// measured figures in its name, so the rule is not weakened.
+// the rule, and every one of them runs.
 import { describe, expect, it } from 'bun:test';
 import { scaledBudget } from '../../../tests/lib/run-budget.ts';
 import type { PlantAsset } from './asset';
@@ -180,10 +179,14 @@ describe('the connectivity helper', () => {
 		LONG,
 	);
 
-	it.skip('welds coincident vertices into one triangle component (GAP: the mesher joins by surface welds, not shared vertices: 834 near-wood components, 3 far-wood)', () => {
-		const asset = growPlantNow(kit, { seed: 11, variant: 0, near: true });
-		const input = meshInput(asset);
-		expect(geometryComponents(meshWood(input, 0))).toBe(1);
-		expect(geometryComponents(meshWood(input, 2))).toBe(1);
-	});
+	it(
+		'welds the mesher surface seams into one body at the near and far levels',
+		() => {
+			const asset = growPlantNow(kit, { seed: 11, variant: 0, near: true });
+			const input = meshInput(asset);
+			expect(geometryComponents(meshWood(input, 0))).toBe(1);
+			expect(geometryComponents(meshWood(input, 2))).toBe(1);
+		},
+		LONG,
+	);
 });

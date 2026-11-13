@@ -14,6 +14,7 @@ import { cos, sin } from '../core/math';
 import type { LeafShape, Species } from '../core/record';
 import type { TextureManifest } from '../core/textures';
 import { DETAILS, type Detail, spreadMean } from '../core/types';
+import { WOOD_RADIUS_RANGE } from '../wood/wood-mesh';
 import { compoundLeaf } from './compound';
 import type { FoliageBuilder } from './kinds';
 import {
@@ -27,7 +28,7 @@ import {
 	triangulate,
 } from './outline';
 import { LeafSurface } from './surface';
-import { MeshWriter, SURFACE_LEAF } from './writer';
+import { MeshWriter, SURFACE_LEAF, SURFACE_PETIOLE } from './writer';
 
 /**
  * How finely a leaf's outline is cut into triangles: bands along the midrib, bands across each half,
@@ -334,8 +335,10 @@ function addStalk(
 				],
 				normal,
 				[u, v],
-				[t, 0],
-				LEAF_COLOUR,
+				// The petiole's radius in the wood's units, so the shader widens a stalk thinner than
+				// the least drawn width, as it widens the wood and the shoot stems.
+				[Math.min(1, radius / WOOD_RADIUS_RANGE), 0],
+				[0, 0, SURFACE_PETIOLE, 255],
 			);
 		}
 	}
