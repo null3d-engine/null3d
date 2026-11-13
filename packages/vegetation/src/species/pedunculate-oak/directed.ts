@@ -20,10 +20,11 @@ import { record } from './record';
 
 /**
  * The fine wood that clothes a clump, each twig ending in a socket that carries the branch end of
- * still 21. A branch end is 0.86 m long and 0.79 m wide on a tree 20 m tall, so the sockets stand
- * a branch end's width apart over the clump's surface and a branch end's reach inside it.
+ * still 21. A branch end is 0.86 m long and 0.79 m wide on a tree 20 m tall. The sockets stand a
+ * branch end's reach inside the clump's surface and closer together than its width, so neighbouring
+ * branch ends overlap as a real crown's do and the clump reads closed at the first card level.
  */
-const ENDS = { pitch: 0.79 / 20, reach: 0.86 / 20 } as const;
+const ENDS = { pitch: (0.79 * 0.82) / 20, reach: 0.86 / 20 } as const;
 
 /** A rounded clump of foliage. The real tree's rim is ten to twelve clumps with sky bays between. */
 const clump = (width: number) =>
