@@ -5,7 +5,12 @@
 // from the species' measured targets (still 01, the primary tree) and from the description of the
 // real tree in the first review of its frame, which read stills 01, 02, 03, 04, 18 and 20, the
 // whole-tree turning video and the winter oak. Shares are of the tree's height.
-import { type FrameBranchRule, type FrameSpec, framedRecord } from '../../grow/frame';
+import {
+	type FrameBranchRule,
+	type FrameSide,
+	type FrameSpec,
+	framedRecord,
+} from '../../grow/frame';
 import { record } from './record';
 
 /** A rounded clump of foliage. The real tree's rim is ten to twelve clumps with sky bays between. */
@@ -94,29 +99,99 @@ const boughs: FrameBranchRule = {
 	],
 };
 
+/**
+ * One side of the crown as a whole still shows it, read on the still's own columns from the
+ * trunk's line. Every figure is a share of the tree's height in that still.
+ */
+interface Reading {
+	/** The lowest foliage on the side: its height, and its distance from the trunk's line. */
+	readonly foot: readonly [number, number];
+	/** Where foliage hangs into the band under the first one read: that band's top and its reach. */
+	readonly hung?: readonly [number, number];
+	/**
+	 * The reach in bands a sixteenth of the height deep, from the third band above the ground to
+	 * the top: the farthest foliage from the trunk's line in each.
+	 */
+	readonly reach: readonly number[];
+	/**
+	 * The lower boundary at each twentieth of the height out from the trunk's line, from a tenth
+	 * out: the lowest foliage over the columns there. Nearest the trunk it is the wood where the
+	 * limbs leave.
+	 */
+	readonly under: readonly number[];
+}
+
+// Still 01, right of the trunk's line: the side the long low limb is on, and the wider one. A
+// spray hangs low near the trunk here.
+const STILL_01_RIGHT: Reading = {
+	foot: [0.1, 0.25],
+	hung: [0.125, 0.388],
+	reach: [
+		0.809, 0.909, 0.909, 0.894, 0.848, 0.848, 0.754, 0.75, 0.73, 0.669, 0.549, 0.523, 0.35, 0.228,
+	],
+	under: [
+		0.11, 0.16, 0.1, 0.1, 0.13, 0.13, 0.12, 0.13, 0.21, 0.18, 0.18, 0.2, 0.18, 0.17, 0.16, 0.21,
+		0.22,
+	],
+};
+
+// Still 01, left of the trunk's line: the shorter side, and no foliage hangs under its first band.
+const STILL_01_LEFT: Reading = {
+	foot: [0.13, 0.4],
+	reach: [
+		0.759, 0.813, 0.805, 0.811, 0.733, 0.741, 0.759, 0.73, 0.623, 0.615, 0.602, 0.374, 0.32, 0.171,
+	],
+	under: [0.11, 0.19, 0.2, 0.17, 0.15, 0.13, 0.13, 0.16, 0.18, 0.24, 0.24, 0.23, 0.19, 0.18, 0.21],
+};
+
+// Still 02, a quarter turn on, left of the trunk's line: the side that faces still 01's camera.
+// The crown is widest higher up than in still 01, and its foliage hangs lower far out.
+const STILL_02_LEFT: Reading = {
+	foot: [0.1, 0.6],
+	hung: [0.125, 0.61],
+	reach: [
+		0.691, 0.745, 0.763, 0.773, 0.798, 0.782, 0.694, 0.694, 0.667, 0.63, 0.519, 0.449, 0.318, 0.245,
+	],
+	under: [0.12, 0.15, 0.15, 0.13, 0.13, 0.2, 0.16, 0.12, 0.12, 0.11, 0.1, 0.18, 0.18, 0.24, 0.39],
+};
+
+// Still 02, right of the trunk's line: the side away from still 01's camera. The tree's top
+// stands off the trunk's line toward the other side, so the top band is narrow here.
+const STILL_02_RIGHT: Reading = {
+	foot: [0.1, 0.4],
+	hung: [0.125, 0.665],
+	reach: [
+		0.682, 0.797, 0.836, 0.836, 0.81, 0.792, 0.788, 0.783, 0.721, 0.608, 0.598, 0.513, 0.355, 0.055,
+	],
+	under: [
+		0.11, 0.16, 0.14, 0.13, 0.15, 0.1, 0.1, 0.11, 0.11, 0.16, 0.13, 0.12, 0.13, 0.23, 0.22, 0.29,
+	],
+};
+
+/** A side of the outline, from its reading on a still. */
+function side(toward: number, read: Reading): FrameSide {
+	return {
+		toward,
+		reach: [
+			read.foot,
+			...(read.hung ? [read.hung] : []),
+			...read.reach.map((reach, band) => [(band + 2.5) / 16, reach] as const),
+			[1, 0],
+		],
+		under: read.under.map((height, step) => [0.1 + step * 0.05, height] as const),
+	};
+}
+
 /** The pedunculate oak's frame. */
 export const frame: FrameSpec = {
-	// Still 01, the mean of the outline's two half widths in 16 bands from the crown's base up.
+	// The outline, side by side, with no two sides averaged. Still 01 gives the two sides it looks
+	// across; still 02, a quarter turn on, gives the two it looks along.
 	outline: [
-		[0.13, 0.6],
-		[0.156, 0.768],
-		[0.219, 0.847],
-		[0.281, 0.845],
-		[0.344, 0.84],
-		[0.406, 0.78],
-		[0.469, 0.785],
-		[0.531, 0.76],
-		[0.594, 0.734],
-		[0.656, 0.67],
-		[0.719, 0.634],
-		[0.781, 0.569],
-		[0.844, 0.443],
-		[0.906, 0.333],
-		[0.969, 0.192],
-		[1, 0],
+		side(0, STILL_01_RIGHT),
+		side(90, STILL_02_LEFT),
+		side(180, STILL_01_LEFT),
+		side(270, STILL_02_RIGHT),
 	],
-	// The crown is built nearly round. Still 01 looks across the wide side.
-	plan: { narrow: 0.86, turn: 0 },
 	stems: {
 		name: 'trunk',
 		count: 1,

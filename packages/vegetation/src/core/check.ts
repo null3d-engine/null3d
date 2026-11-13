@@ -650,7 +650,18 @@ function growthProblems(record: Species, out: string[]): void {
 		spreadProblems(growth.sockets.rows, 'growth.sockets.rows', true, out);
 		if (!(growth.sockets.fan >= 0 && growth.sockets.fan <= 120))
 			out.push(`growth.sockets.fan is ${growth.sockets.fan}; it is degrees from 0 to 120`);
-		curveProblems(growth.frame.outline, 'growth.frame.outline', out);
+		const sides = growth.frame.outline;
+		if (sides.length < 2)
+			out.push(`growth.frame.outline has ${sides.length} sides; an outline states two or more`);
+		sides.forEach((side, k) => {
+			const path = `growth.frame.outline[${k}]`;
+			if (!(side.toward >= 0 && side.toward < 360))
+				out.push(`${path}.toward is ${side.toward}; it is degrees from 0 to under 360`);
+			if (k > 0 && side.toward <= (sides[k - 1]?.toward ?? 0))
+				out.push(`${path}.toward is ${side.toward}; the sides run in their order round the plant`);
+			curveProblems(side.reach, `${path}.reach`, out);
+			curveProblems(side.under, `${path}.under`, out);
+		});
 		if (!(growth.frame.stems.count >= 1))
 			out.push(
 				`growth.frame.stems.count is ${growth.frame.stems.count}; a plant has one stem or more`,

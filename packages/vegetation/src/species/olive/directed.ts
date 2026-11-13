@@ -8,7 +8,7 @@
 // work: six columns wound half a turn from the ground to the fork, each 0.3 of the waist wide, with
 // grooves 0.4 of a column deep, a dark opening 0.05 wide and 0.075 tall at 0.20 of the height, two
 // or three burrs on the lower bole, and one or two roots from each column.
-import { type FrameBranchRule, type FrameSpec, framedRecord } from '../../grow/frame';
+import { evenOutline, type FrameBranchRule, type FrameSpec, framedRecord } from '../../grow/frame';
 import { record } from './record';
 
 /**
@@ -69,29 +69,31 @@ const branches: FrameBranchRule = {
 /** The olive's frame. */
 export const frame: FrameSpec = {
 	// Still 01, the outline's half width in bands from the top down to the foliage foot.
-	outline: [
-		[0.26, 0.5],
-		[0.271, 0.55],
-		[0.313, 0.6],
-		[0.354, 0.66],
-		[0.396, 0.69],
-		[0.438, 0.725],
-		[0.479, 0.785],
-		[0.521, 0.81],
-		[0.563, 0.805],
-		[0.604, 0.785],
-		[0.688, 0.76],
-		[0.729, 0.75],
-		[0.771, 0.68],
-		[0.813, 0.635],
-		[0.854, 0.395],
-		[0.896, 0.385],
-		[0.938, 0.325],
-		[0.979, 0.18],
-		[1, 0],
-	],
-	// The crown is built nearly round. Still 01 looks across the wide side.
-	plan: { narrow: 0.8, turn: 0 },
+	outline: evenOutline(
+		[
+			[0.26, 0.5],
+			[0.271, 0.55],
+			[0.313, 0.6],
+			[0.354, 0.66],
+			[0.396, 0.69],
+			[0.438, 0.725],
+			[0.479, 0.785],
+			[0.521, 0.81],
+			[0.563, 0.805],
+			[0.604, 0.785],
+			[0.688, 0.76],
+			[0.729, 0.75],
+			[0.771, 0.68],
+			[0.813, 0.635],
+			[0.854, 0.395],
+			[0.896, 0.385],
+			[0.938, 0.325],
+			[0.979, 0.18],
+			[1, 0],
+		],
+		// The crown is built nearly round. Still 01 looks across the wide side.
+		0.8,
+	),
 	stems: {
 		name: 'trunk',
 		count: 1,

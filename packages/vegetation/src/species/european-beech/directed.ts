@@ -4,6 +4,7 @@
 // names the reference picture it was read on. Shares are of the tree's height. Still 01 and the
 // whole-tree turning video are the one tree the frame follows; still 18 shows the limbs' course.
 import {
+	evenOutline,
 	type FrameBend,
 	type FrameBranchRule,
 	type FrameSpec,
@@ -83,28 +84,30 @@ function boughs(ends: readonly FrameBend[]): FrameBranchRule {
 /** The European beech's frame. */
 export const frame: FrameSpec = {
 	// Still 01, the outline's half width in 24 bands from the top down, each at its own height.
-	outline: [
-		[0.021, 0.39],
-		[0.063, 0.655],
-		[0.104, 0.685],
-		[0.188, 0.71],
-		[0.271, 0.695],
-		[0.354, 0.69],
-		[0.438, 0.665],
-		[0.521, 0.635],
-		[0.604, 0.615],
-		[0.688, 0.585],
-		[0.729, 0.535],
-		[0.771, 0.525],
-		[0.813, 0.465],
-		[0.854, 0.435],
-		[0.896, 0.37],
-		[0.938, 0.275],
-		[0.979, 0.175],
-		[1, 0],
-	],
-	// The crown is built nearly round. Still 01 looks across the wide side.
-	plan: { narrow: 0.8, turn: 0 },
+	outline: evenOutline(
+		[
+			[0.021, 0.39],
+			[0.063, 0.655],
+			[0.104, 0.685],
+			[0.188, 0.71],
+			[0.271, 0.695],
+			[0.354, 0.69],
+			[0.438, 0.665],
+			[0.521, 0.635],
+			[0.604, 0.615],
+			[0.688, 0.585],
+			[0.729, 0.535],
+			[0.771, 0.525],
+			[0.813, 0.465],
+			[0.854, 0.435],
+			[0.896, 0.37],
+			[0.938, 0.275],
+			[0.979, 0.175],
+			[1, 0],
+		],
+		// The crown is built nearly round. Still 01 looks across the wide side.
+		0.8,
+	),
 	stems: {
 		name: 'trunk',
 		count: 1,
