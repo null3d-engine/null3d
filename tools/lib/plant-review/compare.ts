@@ -57,6 +57,7 @@ import type { RunFrame } from './render.ts';
 import { type PictureNote, type Standing, standReason } from './review-data.ts';
 import type { SheathTarget } from './sheath.ts';
 import {
+	areaCovers,
 	contractHeld,
 	holdsWholePlant,
 	lackReason,
@@ -1678,10 +1679,17 @@ export interface StillResult extends PairMetrics {
 	/** Why the picture's outline is not read, where the review data says its reference's cannot be. */
 	readonly outlineVoid?: string;
 	/**
-	 * Why the plant has no such part as the photograph shows, where its view found none: no figure
-	 * is read from the picture, and the rows it carries fail on it.
+	 * Why the plant fails the picture: it has no such part as the photograph shows, or the camera
+	 * holds the part's place and the picture does not show it. No figure is read from the picture
+	 * but its areas', and the rows it carries fail on it.
 	 */
 	readonly lacks?: string;
+	/**
+	 * The cover of each area of a solved view's contract, read from its picture of the parts: wood
+	 * of the subject's thickness, leaves over it, open sky. Figures for the eye beside the
+	 * photograph, and the reasons of a void or a fail.
+	 */
+	readonly areas?: readonly { readonly name: string; readonly cover: number }[];
 	/**
 	 * Whether a check confirmed that the picture shows its photograph's subject: a solved view
 	 * whose contract held and whose regions were read from the picture, or a whole view that passed
@@ -2186,18 +2194,23 @@ export function compareStills(
 			]);
 			continue;
 		}
-		// A part the photograph shows and the plant does not have is the plant's fault: the picture
-		// carries no figure, and the rows it carries fail on it.
-		const lacks = lackReason(frame.facts);
-		if (lacks !== undefined) {
-			unread({ lacks }, ['PLANT LACKS', 'THE SUBJECT']);
-			continue;
-		}
-		// A close picture whose subject is missing decides nothing, and no figure is read from it.
-		// The parts in flat colours, where the run drew them: the regions of a solved view's contract
+		// The parts in flat colours, where the run drew them: the areas of a solved view's contract
 		// are read from that picture, which is cut and layered as the colour picture is.
 		const partsPicture =
 			frame.parts === undefined ? undefined : partsOf(readImage(join(runDir, frame.parts)));
+		const areas = areaCovers(frame.facts, partsPicture);
+		// A part the photograph shows and the plant does not have, or hides where the camera holds
+		// its place, is the plant's fault: the picture carries no figure but its areas', and the
+		// rows it carries fail on it.
+		const lacks = lackReason(frame.facts, own, partsPicture);
+		if (lacks !== undefined) {
+			unread({ lacks, ...(areas.length > 0 && { areas }) }, [
+				'PLANT LACKS OR',
+				'HIDES THE SUBJECT',
+			]);
+			continue;
+		}
+		// A picture whose camera or framing failed decides nothing, and no figure is read from it.
 		const voided =
 			voidReason(frame.facts, own, partsPicture) ??
 			emptySubject(frame.facts) ??
@@ -2424,6 +2437,7 @@ export function compareStills(
 			...(sheathFigure ? { sheath: sheathFigure } : {}),
 			...(framing ? { framing } : {}),
 			...(levelName(frame.cell) !== undefined && { level: levelName(frame.cell) }),
+			...(areas.length > 0 && { areas }),
 			// A solved view whose contract held, or a whole view that passed the framing check.
 			subjectChecked:
 				(contractHeld(frame.facts) &&
