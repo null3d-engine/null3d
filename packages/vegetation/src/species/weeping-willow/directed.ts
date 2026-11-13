@@ -74,8 +74,17 @@ function whips(along: readonly [number, number], every: number, most: number): F
  * edge, and the whips hang from it. Stills 05 and 08: a limb's whips hang from its branches. Stills
  * 01 and 18: the crown's top is a row of rounded heads where branches arch over, and below the
  * widest row the curtain's sides are plumb, so the outermost wood stands at the crown's edge.
+ *
+ * @param along The shares of the limb's length they leave between.
+ * @param length How long each runs.
+ * @param shape The longest any runs, as a share of the height, and the degrees of the limb's
+ *   ground side none leaves toward, where a limb's branches differ from the rest.
  */
-function branches(along: readonly [number, number], length: FrameLength): FrameBranchRule {
+function branches(
+	along: readonly [number, number],
+	length: FrameLength,
+	shape: { readonly most?: number; readonly clear?: number } = {},
+): FrameBranchRule {
 	return {
 		name: 'branch',
 		role: 'branch',
@@ -85,7 +94,7 @@ function branches(along: readonly [number, number], length: FrameLength): FrameB
 		// Each turned on round its limb from the last, so no two leave together, and none from a
 		// level limb's underside: the limb's strands hang from its own run there.
 		around: 'spiral',
-		clear: 100,
+		clear: shape.clear ?? 100,
 		jitter: 15,
 		// Still 08: an arm leaves at about 55 degrees and arches to level and on over.
 		angle: [
@@ -96,10 +105,12 @@ function branches(along: readonly [number, number], length: FrameLength): FrameB
 		angleSpread: 6,
 		length,
 		vary: 0.05,
-		most: 0.45,
+		most: shape.most ?? 0.45,
 		radius: 0.5,
 		taper: 0.3,
-		bends: [{ from: 0.1, to: 0.8, level: -68 }],
+		// Stills 01, 02 and 18: the crown is a dome whose surface is the branches' crests, so each
+		// rises straight for nearly half its run before it arches over.
+		bends: [{ from: 0.45, to: 0.95, level: -68 }],
 		sway: 10,
 		elbows: 4,
 		// A branch's wood passes through no other wood.
@@ -255,17 +266,20 @@ export const frame: FrameSpec = {
 						bends: [{ from: 0.45, to: 1, by: 55 }],
 						sway: 10,
 						elbows: 5,
-						// The top limbs stand at the crown's edge already, so their branches take a share
-						// of the limb's own length. They arch over the tree's middle, so their own wood
-						// carries no falls: those would hang in front of the trunk.
-						children: [
-							branches([0.45, 1], {
-								parent: [
-									[0, 0.45],
-									[1, 0.3],
-								],
-							}),
-						],
+						// Strands hang from the limb's own arch over the tree's middle, so its end is
+						// clothed. Its wood carries no falls: those would hang in front of the trunk.
+						patch: {
+							kind: 'hang',
+							width: 0.07,
+							depth: 0.1,
+							along: 0.6,
+							sockets: { every: 0.25 / 13, angle: 70 },
+						},
+						// Stills 01, 02 and 18: the dome's upper shoulders are the top limbs' branches,
+						// which run out toward the outline. They leave the limb's rising part, before it
+						// arches over, and from its upper side only, so none heads in over the middle
+						// through its own limb or another's; the longest stops short of the dome's top.
+						children: [branches([0.3, 0.7], { outline: 0.94 }, { clear: 200, most: 0.3 })],
 					},
 					{
 						name: 'secondary',
@@ -293,7 +307,9 @@ export const frame: FrameSpec = {
 						elbows: 5,
 						// Still 18: the limbs spread round the tree and none lies along another.
 						apart: 0.015,
-						children: [branches([0.3, 0.92], { outline: 0.97 }), whips([0.75, 1], 0.045, 4)],
+						// Their branches leave past the stretch where the three limbs still stand close
+						// together, so none runs through a sibling limb.
+						children: [branches([0.4, 0.92], { outline: 0.97 }), whips([0.75, 1], 0.045, 4)],
 					},
 				],
 			},
