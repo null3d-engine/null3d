@@ -301,6 +301,12 @@ export interface PieceRule {
 	 */
 	readonly plane?: Vec3;
 	/**
+	 * Degrees the piece is turned about its own line at every socket, from its sky side up toward its
+	 * right. A living fern frond's flat blade stands rolled on the plant, so a frond seen from the
+	 * crown's side shows its face rather than its edge. Absent, 0.
+	 */
+	readonly roll?: number;
+	/**
 	 * The ground side in the piece's frame, where it is not its attitude's own: a piece that stands
 	 * upright on its socket names the way back along its line, so its side stems lift toward its tip.
 	 */
@@ -321,6 +327,12 @@ export interface PieceRule {
 	 * a piece that is a third as deep as it is wide stands its side stems within about 20 degrees.
 	 */
 	readonly depth?: number;
+	/**
+	 * The least metres between two leaf nodes of the piece's stems, however close a stem's leaves
+	 * are set: 2 mm where absent. A rule states a smaller one where its photographs measure leaves
+	 * closer than that.
+	 */
+	readonly nodeLeast?: number;
 	/**
 	 * How the piece's blades bend at their stalks. Where absent a blade bends out of its own face,
 	 * as the species' leaf does. With `plane` the piece's leaves are built with no bend at the stalk,
@@ -409,6 +421,8 @@ export interface PiecePrototype
 	readonly parts: number;
 	/** The unit normal of the piece's flat plane in its rest frame, where its rule names one. */
 	readonly plane?: Vec3;
+	/** Degrees it is turned about its own line at every socket, where its rule says so. */
+	readonly roll?: number;
 	/** Where the part may carry an extra, in the piece's rest frame, in rank order. */
 	readonly sites: readonly PieceSite[];
 }
@@ -698,7 +712,7 @@ export function planPiece(
 		const points: AxisPoint[] = [{ at: [...start.at], radius: footRadius, along: start.along }];
 		axes.push(points);
 		const leavesBy = leafRule(stem);
-		const gap = stem.leaves ? Math.max(0.002, stem.leaves.gap) : 0;
+		const gap = stem.leaves ? Math.max(rule.nodeLeast ?? NODE_LEAST, stem.leaves.gap) : 0;
 		// A stem runs in straight steps short enough to read as a curve, and a node falls on a step's end.
 		// A hook turns at most a few degrees a step, so a strand leaves its branch on a curve.
 		const most = stem.hook
@@ -1248,6 +1262,7 @@ export function piecePrototypes(
 					part,
 					parts: parts.length,
 					...(rule.plane ? { plane: rule.plane } : {}),
+					...(rule.roll ? { roll: rule.roll } : {}),
 					sites: pieceSites(plan),
 					...meshedPlan(plan, own, PIECE_CUTS),
 					...(brushes ? { brushes } : {}),
@@ -1316,6 +1331,8 @@ export interface StudioLayout {
 	readonly placed: readonly PlacedPiece[];
 }
 
+/** The least metres between two leaf nodes of a stem, where its rule states none. */
+const NODE_LEAST = 0.002;
 /** The tier whose leaf meshes a brush card pictures: the finest a kit below ultra builds. */
 const BRUSH_PICTURE_TIER: Detail = 'high';
 /** Degrees a piece that turns up stands above its socket's own direction. */

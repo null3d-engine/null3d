@@ -14,18 +14,20 @@ export const brackenRecord: Species = {
 	size: { height: { mean: 1.1, spread: 0.3 }, aspect: 1.8 },
 	growth: {
 		model: 'frond-colony',
-		fronds: { mean: 16, spread: 4 },
-		rhizome: { length: 1, branches: { mean: 3, spread: 1 }, spacing: { mean: 0.28, spread: 0.08 } },
-		stipe: { length: { mean: 0.85, spread: 0.25 }, lean: { mean: 6, spread: 5 } },
+		fronds: { mean: 16, spread: 1 },
+		patch: { long: 1.75, short: 1.04 },
+		rhizome: { depth: 0.06, radius: 0.02 },
+		heights: { tall: [0.65, 1], short: [0.42, 0.5], shortShare: 0.19 },
+		stipe: { length: { mean: 0.88, spread: 0.06 }, lean: { mean: 2.5, spread: 2.5 }, bend: 0.15 },
+		tilt: [0, 30],
+		least: 5,
 		frond: {
 			kind: 'bipinnate',
 			length: { mean: 0.66, spread: 0.14 },
 			petiole: { length: 0, width: 0.009, teeth: 0 },
 			droop: [
 				[0, 0],
-				[0.12, 52],
-				[0.4, 80],
-				[1, 102],
+				[1, 15],
 			],
 			twist: 8,
 			pinnae: {
@@ -96,7 +98,7 @@ export const brackenRecord: Species = {
 		flutter: { kind: 'leaflet', amplitude: 0.2, frequency: 4 },
 	},
 	lod: {
-		nearFoliage: 'merged',
+		nearFoliage: 'instanced',
 		switchPixels: [40, 16, 120],
 		woodOrders: [1, 0],
 		impostor: { views: 8, texels: 64 },

@@ -41,11 +41,12 @@ export const record: Species = {
 		// Still 01, read on a 2.6 times crop, in mound heights. The inner blades stand within 10
 		// degrees of plumb; the middle ones leave at 20 to 30 degrees from plumb and end 0.6 to 0.8
 		// high; the outer ones leave at 45 to 60 degrees, arch at 0.4 to 0.5 and end 0.1 to 0.35 above
-		// the soil, 0.7 to 0.8 out.
+		// the soil, 0.7 to 0.8 out. The baseline drew no blade arching low, so the outer pose takes
+		// the low end: 0.12 above the soil, 0.8 out.
 		poses: [
 			{ share: 0.4, leave: 85, apex: 0.95, drop: 0, reach: 0.08 },
 			{ share: 0.35, leave: 65, apex: 0.72, drop: 0.02, reach: 0.4 },
-			{ share: 0.25, leave: 38, apex: 0.45, drop: 0.23, reach: 0.75 },
+			{ share: 0.25, leave: 38, apex: 0.45, drop: 0.33, reach: 0.8 },
 		],
 		bladeSpread: 0.12,
 		stalks: {
@@ -84,8 +85,10 @@ export const record: Species = {
 		blade: {
 			// Stills 12 and 24: blades of even width that close in a short blunt hood. Still 01: a
 			// blade is as long as the mound is tall and 9 px across against a mound of 262 px, so
-			// 0.034 of its length. Stills 12 and 24 show a blade's segment, which is broader for its
-			// length than a whole blade.
+			// 0.034 of its length. Still 23, the full-size studio shoot, shows four full blades read
+			// base to tip at 0.04 to 0.05 of their length wide, so the pictures' broad blade holds
+			// over the fact sheet's 2 to 4 mm; both figures stand for the owner. A 3 mm blade drew the
+			// tuft as hairs at the whole view.
 			length: { mean: 0.26, spread: 0.03 },
 			width: 0.0085,
 			profile: [

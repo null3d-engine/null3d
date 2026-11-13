@@ -18,21 +18,23 @@ export const record: Species = {
 	name: 'Pendulous sedge',
 	latin: 'Carex pendula',
 	form: 'wide fountain of broad keeled leaves under tall bowed stems with hanging spikes',
-	// The fact sheet: flowering stems 1 to 2 m and a leaf mound 0.6 to 1 m tall. The turning video's
-	// first frame (still 02) stands the tallest stem at 1.69 mound heights, so a mound of 0.60 m puts
-	// the stems' top at 1.01 m: the smallest plant that meets both.
-	size: { height: { mean: 1.01, spread: 0.08 }, aspect },
+	// The scale inside the fact sheet's ranges at which the most of its sizes stand inside theirs,
+	// at still 02's proportions (stems 1.69 mound heights, a blade 1.5, the mound 1.6 as wide as
+	// tall): a mound of 0.625 to 0.667 m holds the mound (0.6 to 1 m), the stems (1 to 2 m), the
+	// blade's length (0.5 to 1 m) and the mound's width (1 to 1.5 m). The record takes 0.643 m, so
+	// the stems stand 1.09 m. The blade's width and the spike's size stay outside theirs, as the
+	// conflicts recorded for the owner.
+	size: { height: { mean: 1.09, spread: 0.08 }, aspect },
 	growth: {
 		model: 'tuft',
 		// Still 02: the highest blade stands 250 px above the soil and the highest stem 423 px.
 		mound: 0.59,
 		// The blades cannot be counted on a photograph, so the shoots are counted by how full the
-		// mound is, on the mound's real shape: blades that come to rest on the soil and shoot bases
-		// that are spindles. Still 02's mound (left tip to right tip, mound top to soil), read as
-		// plant or sky in ten bands of height, is 0.735 full and its upper five bands 0.58. A
-		// drawing of the same size reads 0.51 there at thirty-six shoots, 0.54 at forty-two, 0.57
-		// at forty-eight and 0.58 at fifty-six, so the count is fifty-six, eight either way.
-		// Twenty-two of them flower (still 02).
+		// mound is. Still 02's mound (left tip to right tip, mound top to soil), read as plant or sky
+		// in ten bands of height, is 0.735 full, its upper five bands 0.58 and its lowest two 0.92
+		// and 0.95: its foot is hidden. Fifty-six shoots hide the drawing's foot; with blades that
+		// reach as far out as the photograph's, its upper five bands then read 0.73 and its lowest
+		// two 0.84 and 0.77. Forty-four of them flower.
 		shoots: { mean: 56, spread: 8 },
 		// Fifty-six shoot bases of one and a half blade widths (still 07) pack a disc 0.76 of the
 		// mound's height across; the brown zone at the foot of still 02 spans 0.84 of it.
@@ -48,9 +50,13 @@ export const record: Species = {
 		// Stills 08, 22 and 23: a sedge's leaves leave their shoot in three ranks.
 		ranks: 3,
 		// Still 02, traced on a 3.4 times crop of the mound's left half, in mound heights from each
-		// blade's own shoot. The youngest blade stands near plumb with its tip leaning out. A middle
-		// blade rises steeply, turns right over and hangs plumb. The oldest rises, runs out and
-		// comes down steeply at the mound's rim, its tip about 75 degrees below level.
+		// blade's own shoot. The youngest blade stands near plumb with its tip leaning out. The
+		// oldest rises, runs out and comes down steeply at the mound's rim, its tip about 75 degrees
+		// below level. Still 02's right half on a three times crop: a middle blade stands up and out
+		// at about 75 degrees, arches over and comes down at about 65 degrees; few blades fall plumb,
+		// and the younger blades between end in the air. Still 02's mound is 1.74 times as wide at
+		// its foot as the plant is tall and 1.51 times at 0.45 of its height, so a middle blade
+		// lands 0.9 mound heights out and the oldest 1.35.
 		// A blade that can be traced is one that stands clear of the rest, the largest of its kind:
 		// the young blade traced stands 1.1 high, the middle one arches at 0.98, the mound's own
 		// top, and the oldest rises 0.8 and lands 1.35 out. The oldest blades land from 0.9 to 1.5
@@ -58,13 +64,15 @@ export const record: Species = {
 		// four fifths of its size and a blade's length strays a quarter either side of its pose's.
 		poses: [
 			{ share: 0.25, leave: 85, apex: 0.88, drop: 0.04, reach: 0.16 },
-			{ share: 0.4, leave: 85, apex: 0.78, drop: 0.78, reach: 0.38, tip: 90 },
-			{ share: 0.35, leave: 75, apex: 0.62, drop: 0.62, reach: 1.05, tip: 75 },
+			{ share: 0.4, leave: 75, apex: 0.78, drop: 0.78, reach: 0.9, tip: 65 },
+			{ share: 0.35, leave: 75, apex: 0.62, drop: 0.62, reach: 1.35, tip: 75 },
 		],
 		bladeSpread: 0.25,
 		stalks: {
-			// Still 02: twenty-two stems, thirteen clear of the mound and about nine inside it.
-			count: { mean: 22, spread: 2 },
+			// Still 02: fifteen to twenty stems stand clear of the mound, round the whole tuft, and
+			// more inside it. With the mound as wide and full as the photograph's, the shorter stems
+			// stand inside it, so a stem rises from most shoots: forty-four of the fifty-six.
+			count: { mean: 44, spread: 4 },
 			// The fact sheet: the spikes stand in flower through summer and stay brown into winter.
 			seasons: ['blossom', 'summer', 'autumn', 'winter'],
 			// Still 02: the stems' highest points spread evenly from the mound's top to 1.69 of it.
@@ -116,9 +124,9 @@ export const record: Species = {
 		kind: 'grass-blade',
 		blade: {
 			// A middle blade's length on still 02: 1.5 mound heights.
-			length: { mean: 0.9, spread: 0.22 },
+			length: { mean: 0.96, spread: 0.24 },
 			// Still 02: a blade is 16 px across against a mound of 250 px, 0.064 of its height.
-			width: 0.038,
+			width: 0.041,
 			// Stills 07 and 12: the blade narrows at its foot where it leaves the sheath, and holds
 			// its width to where its point begins.
 			profile: [
@@ -127,7 +135,7 @@ export const record: Species = {
 				[1, 0.95],
 			],
 			// Still 12: the leaf holds its full width to four and a half widths from its tip, then
-			// closes to a fine point; on the record's blade of 0.9 m that is 0.19 of its length.
+			// closes to a fine point; on the record's blade of 0.96 m that is 0.19 of its length.
 			tip: 'pointed',
 			tipLength: 0.19,
 			// Stills 08, 12 and 16: the blade is a shallow open V, about 15 degrees each side of flat.

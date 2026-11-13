@@ -1535,12 +1535,16 @@ function prototypeOf(
 	shootClass: ShootClass,
 	cutting = false,
 ): UncardedPrototype {
+	// A class of cards draws its leaves alone, each as the low tier's cut-out card at every tier.
+	const cards = shootClass.cards === true;
+	const drawn = cards ? { ...plan, axes: [], buds: [] } : plan;
+	const meshes = cards ? leaves.map(() => leaves[0] ?? []) : leaves;
 	return {
 		index,
 		class: shootClass.name,
 		...(cutting ? { cutting: true as const } : {}),
 		vigor: shootClass.vigor,
-		...meshedPlan(plan, leaves),
+		...meshedPlan(drawn, meshes),
 	};
 }
 
