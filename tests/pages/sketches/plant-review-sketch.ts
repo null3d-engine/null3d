@@ -439,7 +439,8 @@ function standView(
 ): View {
 	const middle = QUERY.targetY ?? 0.5;
 	const fill = QUERY.fill ?? 0.8;
-	const asked = QUERY.top !== undefined && QUERY.fill === undefined;
+	// A photograph whose foot is lost names its top row alone, whatever fill a slot gives the view.
+	const asked = QUERY.top !== undefined && (QUERY.footLost || QUERY.fill === undefined);
 	const corners = (): Float32Array => {
 		const out = new Float32Array(24);
 		for (let c = 0; c < 8; c++)
