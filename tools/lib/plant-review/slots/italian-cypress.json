@@ -4,6 +4,10 @@
 		"distance": 2,
 		"elevation": 30
 	},
+	"10-foliage-sprays.png": {
+		"view": "crown",
+		"distance": 0.45
+	},
 	"20-young-cypress.png": {
 		"view": "whole"
 	},

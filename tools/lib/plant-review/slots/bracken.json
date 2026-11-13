@@ -9,7 +9,9 @@
 	"02-whole-plant-profile.png": {
 		"view": "cluster",
 		"piece": "leaf-grown",
-		"toward": true,
+		"edge": true,
+		"along": 0,
+		"span": 1.6,
 		"background": "sky-meadow",
 		"skyShare": 0.357,
 		"daylight": 1.524,
