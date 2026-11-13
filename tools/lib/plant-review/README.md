@@ -169,10 +169,12 @@ the pictures were drawn at.
   judge the row, since it measures the taper of a plant that does not fill its box.
 - A picture that the review data sets aside is listed under the row's `setAside`, with its reason.
   It is not among the row's evidence, and its figures are not among the row's figures. A picture
-  whose outline is void is listed under `outlineVoids`.
+  whose outline is void is listed under `outlineVoids`. Every `_pictures` entry cites its `ruling`, and the verdict lists them all under `rulings`, which the ledger prints under the species.
 - Row 2 holds a cut branch's four density figures where a run measured them (`cutBranch` on the
   still's result): the wood per tip and the tips per area within a quarter of the photograph's, the
-  share of fan joints at most a tenth above it, and the kinks at least half of it. The reviewer
+  share of fan joints at most a tenth above it, and the kinks at least half of it. Lengths are in
+  piece lengths. A figure that either picture cannot give is null and is left out, and so are the
+  wood per tip and the kinks unless `cutBranch.bare` says the piece carries no leaf. The reviewer
   judges the row.
 - A picture of a part that the plant does not have is listed under the row's `lacking`, and the
   tool fails the row on it. The species' reference set holds the photograph, so the species has the

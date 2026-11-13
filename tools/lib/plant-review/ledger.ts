@@ -7,6 +7,7 @@
 
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join } from 'node:path';
+import type { PictureRuling } from './review-data.ts';
 import {
 	type Balance,
 	ROW_NAMES,
@@ -51,6 +52,8 @@ export interface LedgerLine {
 	readonly coverage: boolean;
 	/** The pictures drawn and not measured, which the eye judges and which pass no row alone. */
 	readonly drawn: readonly string[];
+	/** The pictures a ruling takes out of their rows or of their outline figures, with the ruling. */
+	readonly rulings: readonly PictureRuling[];
 	readonly balance: RowVerdict;
 	readonly rows: readonly RowVerdict[];
 	readonly passes: number;
@@ -237,6 +240,7 @@ export function ledgerOf(paths: readonly string[]): Ledger {
 				path: null,
 				coverage: false,
 				drawn: [],
+				rulings: [],
 				balance: 'unjudged',
 				rows: ROW_NAMES.map(() => 'unjudged'),
 				passes: 0,
@@ -258,6 +262,7 @@ export function ledgerOf(paths: readonly string[]): Ledger {
 			path,
 			coverage: verdict.coverage.complete,
 			drawn: verdict.coverage.drawn ?? [],
+			rulings: verdict.rulings ?? [],
 			balance: verdict.balance.verdict,
 			rows,
 			passes,
@@ -331,6 +336,10 @@ export function ledgerText(ledger: Ledger): string {
 		if (line.drawn.length > 0)
 			lines.push(
 				`${''.padEnd(wide)}  ${line.drawn.length} drawn and not measured, for the eye: ${line.drawn.join(', ')}`,
+			);
+		for (const entry of line.rulings)
+			lines.push(
+				`${''.padEnd(wide)}  by ruling, ${entry.picture} is ${entry.effect === 'outline-void' ? 'read with no outline' : `set aside as ${entry.effect}`}: ${entry.ruling}`,
 			);
 	}
 	lines.push(

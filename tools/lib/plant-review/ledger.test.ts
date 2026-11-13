@@ -152,6 +152,14 @@ describe('the ledger of a folder of runs', () => {
 				inUse: 30,
 				drawn: ['07-limb-leaving-trunk.png', '17-trunk-taper.png'],
 			},
+			rulings: [
+				{
+					picture: '30-x.png',
+					effect: 'second-form',
+					reason: 'r',
+					ruling: 'the owner ruled it a second form',
+				},
+			],
 		});
 		runFolder(folder, {
 			...verdict,
@@ -176,6 +184,9 @@ describe('the ledger of a folder of runs', () => {
 		);
 		expect(ledgerText(ledgerOf([folder]))).toContain(
 			'2 drawn and not measured, for the eye: 07-limb-leaving-trunk.png, 17-trunk-taper.png',
+		);
+		expect(ledgerText(ledgerOf([folder]))).toContain(
+			'by ruling, 30-x.png is set aside as second-form: the owner ruled it a second form',
 		);
 	});
 
