@@ -34,7 +34,7 @@ scene.createInstances(rock, 5_000, { material: stone }); // the first draw plans
 await rock.buildLevels(); // resolves with the levels once they are in
 ```
 
-Each level about halves the triangles of the level above, down to a few dozen, and keeps its measured error, so it switches in at once where the error covers less than the `lodThreshold` setting's pixels. The levels name the mesh's own vertices, so they cost indices alone, and the mesh keeps its vertex and triangle order: raycasts and `updateVertices` see the mesh as it was made. The [geometry page](../api/geometry.md#levels-of-detail) gives the `levels` option, which turns the plan off or on, and the meshes that plan none: meshes that pose or move, meshes that a shader shapes, meshes whose vertices change, and meshes whose levels you set by hand.
+Each level about halves the triangles of the level above, down to a few dozen, and keeps its measured error, so it switches in at once where the error covers less than the `lodThreshold` setting's pixels. The threshold is live, and the governor can raise it to 4 or 8 pixels, where such a switch shows; a measured level then fades, as [Fading between levels](#fading-between-levels) describes. The levels name the mesh's own vertices, so they cost indices alone, and the mesh keeps its vertex and triangle order: raycasts and `updateVertices` see the mesh as it was made. The [geometry page](../api/geometry.md#levels-of-detail) gives the `levels` option, which turns the plan off or on, and the meshes that plan none: meshes that pose or move, meshes that a shader shapes, meshes whose vertices change, and meshes whose levels you set by hand.
 
 A mesh of separate quads plans as any other mesh unless it asks for cards with `levels: { cards: true }`. The walls of a building kit are separate quads too, and thinning them as cards would cut holes in them. Without cards, a level drops only whole small pieces, such as a shutter's slats, where they cover under a pixel.
 
@@ -96,7 +96,7 @@ The loader also holds back a level that the camera never shows. It fetches the s
 
 Each level has about half the triangles of the level above, down to a few dozen triangles. A mesh of a million triangles takes 15 levels to get there. Each level shares the mesh's vertices. The loader stores each level over the base mesh's own vertices, so the level costs the GPU its indices alone. The tool orders the vertices coarsest level first, so a coarse level reads a stretch at the start of the vertex buffer. Some levels keep a copy of their vertices instead. A level of cards brings positions of its own, and a level whose base mesh the engine had to split into parts cannot share them. Each level stores its error in the units of the mesh's own positions. The tool stores the levels with the `MSFT_lod` glTF extension. Each node with levels keeps its errors in its extras, as `NULL3D_lod_error`. It also writes the screen coverage that each error implies, in `MSFT_screencoverage`, for a screen 1,080 pixels high. The loader reads the coverage that comes beside an error to tell a measured error from a hand-set one, and reads the coverage alone as the measure for a file that holds no errors. `assets.loadGltf` gives each mesh its levels. So a model's copies and its instance batches pick their levels with no code. Other glTF loaders draw the full mesh.
 
-A measured error changes the picture by less than a pixel at its switch. Such a level switches at once. The loader reads an error as measured only where the file also gives the coverage that the tool writes beside it. A file that gives errors alone holds switch distances that its author set by hand. Those levels fade, as levels given by a distance or a coverage do. A file may bring its own levels, such as levels made in Blender, with errors in the units of the mesh's positions. `assets optimize` keeps them. It stores each level's positions in its base mesh's integer steps, and converts their errors to those steps.
+A measured error changes the picture by less than a pixel at a small threshold, so such a level switches at once there. The loader reads an error as measured only where the file also gives the coverage that the tool writes beside it. A file that gives errors alone holds switch distances that its author set by hand. Those levels fade, as levels given by a distance or a coverage do. A file may bring its own levels, such as levels made in Blender, with errors in the units of the mesh's positions. `assets optimize` keeps them. It stores each level's positions in its base mesh's integer steps, and converts their errors to those steps.
 
 ## Cluster levels
 
@@ -163,17 +163,19 @@ The same factor moves the distance at which the object hides. A detailed hero ob
 
 A level that switches in at once can pop. The engine fades only where a switch would show:
 
-- A level with a measured error, which the asset tool writes and a mesh made in code plans, changes the picture by under a pixel at its switch. It switches at once, so it pays for no second draw. A file's error counts as measured only where the file also gives the coverage that the tool writes beside it.
-- A level given by a distance, by a coverage or by a hand-set error changes the picture more. It fades.
+- A level with a measured error, which the asset tool writes and a mesh made in code plans, changes the picture by under a pixel at a small threshold. It switches at once there, so it pays for no second draw. A governed threshold above about one and a half pixels makes the switch show, and the level fades then. A file's error counts as measured only where the file also gives the coverage that the tool writes beside it.
+- A level given by a distance, by a coverage or by a hand-set error changes the picture more. It fades at every threshold.
 
 A fading level hands over in a short band past its switch distance. The band is 8% of the distance long, and the old level and the new one both draw in it. A 4 × 4 dither pattern gives each pixel to one of them, and the share of the new level grows across the band. Each copy shifts the pattern by a phase from a hash of the copy, so neighboring copies do not line up into one grid. The two levels of a band take the same phase, so no pixel draws twice. Nothing sorts.
 
 ```ts
-// A hand-set error fades by default. This one switches at once.
+// A hand-set error fades by default. This one switches at once while the threshold stays small.
 mesh.setLevels(levels, { fade: false });
 // One level decides for itself.
 mesh.setLevels([{ mesh: low, distance: 80, fade: false }]);
 ```
+
+Above about one and a half pixels the engine fades a level whose switch is an error that would otherwise switch at once, whatever the level says, because the switch shows at that size. The band costs a second draw there, and nothing at a smaller threshold.
 
 The fragments that the dither drops cost a tile GPU, such as a phone's or an Apple GPU's, its hidden-surface removal. So only the objects inside a band draw with the dither. The shader builds of the bands download with the first mesh whose levels fade. These builds follow the level, whatever the `lodFade` quality setting, because a hand-set level pops without them.
 
@@ -193,7 +195,7 @@ pixels = diameter × factor × threshold / distance
 
 The object hides where that diameter covers fewer pixels than the `lodThreshold` setting. The render height, the render scale and the governor's doubled threshold all feed the factor, so they move the hide distance too. An orthographic camera hides an object by its diameter and the camera's zoom alone.
 
-The object draws nothing past the band that follows the hide distance. That band, 8% of the hide distance long, thins the coarsest level out with the same dither. A shrinking object then fades away instead of popping. The band needs a fading build, which a level that fades has. A mesh whose levels all switch at once disappears at the hide distance.
+The object draws nothing past the band that follows the hide distance. That band, 8% of the hide distance long, thins the coarsest level out with the same dither. A shrinking object then fades away instead of popping. The band needs a fading build, which a level that fades has. A mesh whose levels all switch at once, which a small threshold keeps, disappears at the hide distance.
 
 A shadow map hides a caster whose bounds cover fewer of the map's texels than the `lodShadowThreshold` setting. A pebble 1 cm across draws nothing in a cascade whose texels are 2 cm wide, wherever the camera stands. The shadow passes draw no band.
 

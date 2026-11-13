@@ -339,8 +339,9 @@ await mesh.buildLevels({ cards: false });  // (0.2) plan now, or await the plan 
 mesh.setLevels([{ mesh: mid, error: 0.02 }, { mesh: far, distance: 80, material: farShading }]);  // (0.2) levels by hand, most detailed first; wins over a plan
 // every object and batch of `mesh` draws the coarsest level whose switch the distance passes:
 // error (in the mesh's units), distance (meters at scale 1) or coverage (a share of the screen height);
-// a level given by distance or a hand-set error fades over a band, a measured error switches at once;
-// setLevels(levels, { fade: false }) or { fade } on one level switches it at once; switches grow; E1221 for bad levels;
+// a level given by distance or a hand-set error fades over a band; a measured error switches at once
+// while the governed threshold stays small, and fades above about one and a half pixels;
+// setLevels(levels, { fade: false }) or { fade } on one level switches it at once below that point; switches grow; E1221 for bad levels;
 // a level's `material` shades its own way, and a level without one draws with the level before's
 object.setLevelBias(0.5);   // (0.2) this object's own threshold: below 1 keeps detail, above 1 turns coarse sooner
 object.setDrawRange(8, 120);   // (0.2) draw only between 8 m and 120 m, fading at each edge; batch.setDrawRange too

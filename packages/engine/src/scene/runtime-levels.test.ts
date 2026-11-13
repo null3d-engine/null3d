@@ -67,6 +67,8 @@ function engine(options: { split?: boolean; format?: number; parts?: number } = 
 		updates: 0,
 		/** The sets of levels that the scene took. */
 		handOvers: 0,
+		/** The flags word of each set of levels: fading bits low, measured bits high. */
+		flags: [] as number[],
 		/** The ids of the level meshes that the plan made, in the order that it made them. */
 		made: [] as number[],
 		/** The pieces that each mesh took: over a list of its own, its own list, or at its making. */
@@ -134,8 +136,9 @@ function engine(options: { split?: boolean; format?: number; parts?: number } = 
 			record.pieces.push({ mesh, count });
 			return 1;
 		},
-		setMeshLevels: (base: number, count: number) => {
+		setMeshLevels: (base: number, count: number, flags: number) => {
 			record.handOvers++;
+			record.flags.push(flags);
 			record.levels.set(base, [...new Uint32Array(memory.buffer, staging, count)]);
 			record.values.set(base, [...new Float32Array(memory.buffer, staging + 4 * count, count)]);
 			return 0;
@@ -290,6 +293,21 @@ describe('the automatic levels of a mesh made in code', () => {
 		await settled();
 		expect(asked).toHaveLength(1);
 		expect(await mesh.buildLevels()).toHaveLength(3);
+	});
+
+	test('mark planned levels as measured so a raised threshold fades their switch', async () => {
+		const { geometry, record } = engine();
+		const mesh = geometry.fromArrays(strip(20_000));
+		draw(mesh);
+		const planned = await mesh.buildLevels();
+		// The plan takes no fade bit and marks every lower level as a measured error, in the high
+		// half of the flags word, so the engine fades the level once the threshold shows it.
+		expect(record.flags.at(-1)).toBe(((1 << (planned.length + 1)) - 2) << 16);
+		// A level set by hand names no measured bit.
+		const level = planned[0];
+		if (!level) throw new Error('the plan made no level');
+		mesh.setLevels([{ mesh: level.mesh, distance: 50 }]);
+		expect(record.flags.at(-1)).toBe(0b10);
 	});
 
 	test('drop the automatic levels of a mesh that a material draws with moved vertices', async () => {

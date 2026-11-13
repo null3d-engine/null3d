@@ -679,8 +679,8 @@ export interface QualitySettings {
 	 * Whether a mesh's distance band, from `setDrawRange`, fades at each edge over a short band
 	 * where a dither pattern drops a growing share of the pixels, so the mesh does not pop. False
 	 * cuts each edge at once. A level of detail's own hand-over follows the level: a hand-set
-	 * level fades whatever this setting, and a measured one switches at once. It changes during
-	 * play.
+	 * level fades whatever this setting, and a measured one switches at once while the governed
+	 * threshold stays small and fades above about one and a half pixels. It changes during play.
 	 */
 	lodFade: boolean;
 	/**

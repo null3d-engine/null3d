@@ -4487,11 +4487,12 @@ pub fn has_levels() -> u32 {
 /// Gives mesh `base`, by its id that counts from 1, the `count` lower levels of detail whose mesh
 /// ids, then whose switch values as the bits of 32-bit floats, then whose switch measures, then
 /// whose material ids, the staging words hold, from the most detailed down. A material of 0 draws
-/// the level with the level before's. With `count` 0 the mesh loses its levels. The bits of
-/// `fades`, counted from the base level, mark the levels that hand over in a fading band. The next
-/// frame rebuilds the draw tables. Fails with the problem for levels that the mesh cannot take.
+/// the level with the level before's. With `count` 0 the mesh loses its levels. The low 16 bits of
+/// `flags`, counted from the base level, mark the levels that hand over in a fading band, and the
+/// high 16 bits the levels whose switch is a measured error. The next frame rebuilds the draw
+/// tables. Fails with the problem for levels that the mesh cannot take.
 #[wasm_bindgen(js_name = setMeshLevels)]
-pub fn set_mesh_levels(base: u32, count: u32, fades: u32) -> u32 {
+pub fn set_mesh_levels(base: u32, count: u32, flags: u32) -> u32 {
     with_engine(|e| {
         let count = count as usize;
         if e.staging.len() < 4 * count {
@@ -4529,7 +4530,7 @@ pub fn set_mesh_levels(base: u32, count: u32, fades: u32) -> u32 {
             floats,
             measures,
             material_ids,
-            fades as u16,
+            flags,
         );
         match set {
             Ok(()) => {

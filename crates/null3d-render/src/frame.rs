@@ -18,7 +18,7 @@ use null3d_core::handle::Handle;
 use null3d_core::instances::{BatchTable, InstanceBatch};
 use null3d_core::jobs::JobSystem;
 use null3d_core::layers::ALL_LAYERS;
-use null3d_core::levels::{FADE_BAND, LevelRule, LightLens, Switch};
+use null3d_core::levels::{FADE_BAND, LevelRule, LightLens, MEASURED_FADE_FROM, Switch};
 use null3d_core::lights::{
     AUTO_FALLBACK, FillLight, LightShadow, LightTable, LightView, MAX_FILL_DIRECTIONAL_LIGHTS,
     SunShadow, VisibleLight, farthest_receiver_distance, ladder_distance,
@@ -1379,6 +1379,12 @@ pub struct LevelQuality {
     pub distance_bands: bool,
 }
 
+/// True when a governed threshold, in pixels, is high enough that a measured level's switch shows,
+/// so the level hands over in a fading band.
+fn measured_fades_at(threshold: f32) -> bool {
+    threshold > MEASURED_FADE_FROM
+}
+
 impl Default for LevelQuality {
     fn default() -> Self {
         Self {
@@ -2622,10 +2628,11 @@ impl SceneSettings {
 
     /// Gives the mesh with engine id `base` the lower levels `meshes`, from the most detailed
     /// down, with their switch `values` and the `switches` that measure them, and the `materials`
-    /// that they draw with (0 for the level before's), or with none takes its levels away. The bits
-    /// of `fades` mark the levels that hand over in a fading band. Every mesh must be live, with
-    /// the base mesh's vertex attributes. The frame builders take the change when the scene's
-    /// structure changes next.
+    /// that they draw with (0 for the level before's), or with none takes its levels away. The low
+    /// 16 bits of `flags` mark the levels that hand over in a fading band, and the high 16 bits the
+    /// levels whose switch is a measured error. Every mesh must be live, with the base mesh's
+    /// vertex attributes. The frame builders take the change when the scene's structure changes
+    /// next.
     pub fn set_mesh_levels(
         &mut self,
         base: u32,
@@ -2633,7 +2640,7 @@ impl SceneSettings {
         values: &[f32],
         switches: &[Switch],
         materials: &[u32],
-        fades: u16,
+        flags: u32,
     ) -> Result<(), LevelError> {
         let format = |mesh: u32| Some(self.meshes.mesh(mesh.checked_sub(1)?)?.format);
         let Some(own) = format(base) else {
@@ -2654,7 +2661,7 @@ impl SceneSettings {
         };
         let shared = !meshes.is_empty() && meshes.iter().all(|&mesh| shares(mesh));
         self.levels
-            .set(base, meshes, values, switches, materials, fades, shared)
+            .set(base, meshes, values, switches, materials, flags, shared)
     }
 
     /// Takes the levels away from the meshes that are no longer live, and from the meshes whose
@@ -2746,10 +2753,13 @@ impl SceneSettings {
         self.level_quality
     }
 
-    /// Sets how the levels of detail are picked. Returns true when the distance bands turned on or
-    /// off, which changes the buckets, so the scene's structure must count as changed.
+    /// Sets how the levels of detail are picked. Returns true when the buckets change: the
+    /// distance bands turned on or off, or the governed threshold crossed the point where a
+    /// measured level starts to fade. Either way the scene's structure must count as changed.
     pub fn set_level_quality(&mut self, quality: LevelQuality) -> bool {
-        let rebuild = quality.distance_bands != self.level_quality.distance_bands;
+        let rebuild = quality.distance_bands != self.level_quality.distance_bands
+            || measured_fades_at(quality.threshold)
+                != measured_fades_at(self.level_quality.threshold);
         self.level_quality = quality;
         rebuild
     }
@@ -2785,6 +2795,13 @@ impl SceneSettings {
     /// quality settings turn on.
     pub(crate) fn levels_fade(&self) -> bool {
         self.level_quality.distance_bands
+    }
+
+    /// True when a measured level hands over in a fading band: the governed threshold is high
+    /// enough that a measured switch shows, so the level fades where it would otherwise switch at
+    /// once.
+    pub(crate) fn measured_levels_fade(&self) -> bool {
+        measured_fades_at(self.level_quality.threshold)
     }
 
     /// The level inputs of `view`, for a canvas of `canvas` pixels drawn at the frame's render scale.
