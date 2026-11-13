@@ -5,10 +5,8 @@
 import type { SpeciesKitData } from '../asset';
 import { radians, tan } from '../core/math';
 import { notBuilt } from '../core/not-built';
-import type { Species } from '../core/record';
-import { type Detail, spreadMax } from '../core/types';
+import { spreadMax } from '../core/types';
 import type { MeshInput } from '../stages';
-import { cardTexels } from './card-bake';
 
 /**
  * The view the asset's level distances are measured for: a 1080-pixel render at 60 degrees.
@@ -22,23 +20,6 @@ export const REFERENCE_VIEW = { height: 1080, fov: 60 } as const;
  * are small tufts, such as a cactus's spine clusters, still draws its nearest wood near the camera.
  */
 const LEAST_SHOOT = 0.4;
-
-/**
- * The pixels the longest shoot spans where the first card level starts: the record's first switch
- * pixels, but never more than the texels its card's picture gives the shoot at the kit's tier, so a
- * card is never drawn larger than its own picture. A plant whose foliage is one mesh draws no shoot
- * cards and keeps the record's pixels.
- *
- * @param record The species record.
- * @param detail The kit's tier, which sets the card cells.
- * @returns The pixels.
- * @category api/vegetation
- */
-export function firstCardPixels(record: Species, detail: Detail): number {
-	const pixels = record.lod.switchPixels[0];
-	if (record.lod.nearFoliage === 'merged') return pixels;
-	return Math.min(pixels, cardTexels(record, detail));
-}
 
 /**
  * The longest shoot of a kit at its largest placement scale, in metres, and never shorter than the
@@ -58,8 +39,9 @@ export function shootReach(kit: Pick<SpeciesKitData, 'record' | 'prototypes'>): 
 
 /**
  * Metres at which the first card level starts at a view: where the longest shoot, at its largest
- * placement scale, spans the first card pixels at the kit's tier. The page's hand-over from real
- * shoots to cards and the asset's own level distances both come from this one rule.
+ * placement scale, spans the record's first switch pixels. The page's hand-over from real shoots to
+ * cards and the asset's own level distances both come from this one rule. Most records ask for more
+ * pixels than a card's cell holds texels, so near its start a card is drawn larger than its picture.
  *
  * @param kit The species' kit.
  * @param view The render height in pixels and the vertical field of view in degrees.
@@ -67,12 +49,12 @@ export function shootReach(kit: Pick<SpeciesKitData, 'record' | 'prototypes'>): 
  * @category api/vegetation
  */
 export function firstCardStart(
-	kit: Pick<SpeciesKitData, 'record' | 'prototypes' | 'detail'>,
+	kit: Pick<SpeciesKitData, 'record' | 'prototypes'>,
 	view: { readonly height: number; readonly fov: number },
 ): number {
 	return (
 		(shootReach(kit) * view.height) /
-		(2 * tan(radians(view.fov / 2)) * firstCardPixels(kit.record, kit.detail))
+		(2 * tan(radians(view.fov / 2)) * kit.record.lod.switchPixels[0])
 	);
 }
 
