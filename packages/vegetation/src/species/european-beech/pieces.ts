@@ -1,16 +1,13 @@
 // The European beech's pieces: the branch end of flat level sprays its sockets carry, and the twig at
 // its top. Each value names the reference picture it was measured on.
 //
-// The cut branch of still 21 is a metre tall, which makes its leaf 5.6 centimetres (40 pixels at 1.4
-// millimetres), inside the species' 5 to 10. The record's leaf is 13, so a piece draws its leaves at
-// half of that until the record's own length moves.
+// The cut branch of still 21 is a metre tall over 715 pixels, which makes its leaf 8 to 9
+// centimetres (55 to 65 pixels at full size), inside the species' 5 to 10. The record's leaf is 13,
+// so a piece draws its leaves at 0.65 of that until the record's own length moves.
 import type { PieceLeaves, PieceRule, PieceStem, PieceStudio } from '../../leaf/piece';
 
-/**
- * A piece's leaf over the record's: 5.6 centimetres measured on still 21 and about 7 on still 22,
- * over 13.
- */
-const LEAF_SCALE = 0.5;
+/** A piece's leaf over the record's: 8.5 centimetres measured on still 21, over 13. */
+const LEAF_SCALE = 0.65;
 
 /**
  * The leaves along a twig. Stills 09 and 04: alternate in two rows, one each 0.6 to 0.8 of a leaf's
@@ -18,7 +15,7 @@ const LEAF_SCALE = 0.5;
  */
 function rows(from: number): PieceLeaves {
 	return {
-		gap: 0.032,
+		gap: 0.045,
 		from,
 		phyllotaxis: { kind: 'distichous', flatten: 0.9 },
 		angle: 55,
@@ -28,58 +25,71 @@ function rows(from: number): PieceLeaves {
 }
 
 /**
- * A flat spray. Still 09: a zigzag twig with four to five alternate side twigs at 40 to 50 degrees,
- * all in one plane, four to six leaves on each, about 28 leaves in all. Still 21: 30 to 45
- * centimetres long.
+ * A limb of the branch end with its flat spray. Still 21: a bare grey limb whose outer half is a
+ * spray 40 to 55 centimetres long and 20 to 25 wide, leaves in two rows on the limb and on short
+ * side twigs, all in the branch's own plane. Still 09: four to five alternate side twigs at 40 to
+ * 50 degrees, four to six leaves on each.
  */
-const SPRAY: PieceStem = {
-	length: { mean: 0.43, spread: 0.06 },
-	radius: [0.0025, 0.001],
-	zigzag: 12,
-	leaves: rows(0.12),
-	sides: [
-		{
-			stem: {
-				length: { mean: 0.15, spread: 0.03 },
-				radius: [0.0015, 0.0008],
-				zigzag: 12,
-				leaves: rows(0.15),
+function limb(length: number): PieceStem {
+	return {
+		length: { mean: length, spread: length * 0.07 },
+		radius: [0.004, 0.001],
+		zigzag: 10,
+		leaves: rows(0.45),
+		sides: [
+			{
+				stem: {
+					length: { mean: 0.14, spread: 0.03 },
+					radius: [0.0015, 0.0008],
+					zigzag: 12,
+					leaves: rows(0.2),
+				},
+				gap: 0.085,
+				from: 0.45,
+				to: 0.92,
+				arrangement: 'alternate',
+				angle: { mean: 48, spread: 6 },
+				lengthAlong: [
+					[0, 1.1],
+					[1, 0.6],
+				],
 			},
-			gap: 0.075,
-			from: 0.12,
-			to: 0.85,
-			arrangement: 'alternate',
-			angle: { mean: 45, spread: 5 },
-			lengthAlong: [
-				[0, 1],
-				[1, 0.55],
-			],
-		},
-	],
-};
+		],
+	};
+}
+
+/** One limb that leaves a stem of `length` metres at a share of it, to the right or the left. */
+function fork(stem: PieceStem, at: number, length: number, angle: number, left = false) {
+	return {
+		stem,
+		gap: 0.04 * length,
+		from: at - 0.04,
+		to: at,
+		arrangement: 'alternate' as const,
+		angle: { mean: angle, spread: 5 },
+		turn: left ? 180 : 0,
+	};
+}
 
 /** The European beech's pieces. */
 export const PIECES: readonly PieceRule[] = [
-	// Still 21: a slender axis a metre long. Four sprays leave it, two each side in turn, at 60 to 80
-	// degrees, and its own top is a fifth. The piece is 1.25 times as wide as tall.
+	// Still 21: a slender grey stem a metre tall, bare for its lowest 0.28. Three limbs: one to the
+	// left from 0.28, 75 to 90 centimetres long; one to the right from 0.3, 55 to 60; and the stem's
+	// own top with a short limb at 0.55. Each ends in a flat spray, and the whole branch lies in one
+	// plane, which a tree holds level. The piece is 1.27 times as wide as tall.
 	{
 		name: 'branch-end',
 		attitude: 'level',
 		variants: 2,
 		stem: {
-			length: { mean: 1, spread: 0.05 },
-			radius: [0.005, 0.0012],
-			zigzag: 10,
+			...limb(0.95),
+			radius: [0.006, 0.001],
 			leaves: rows(0.68),
 			sides: [
-				{
-					stem: SPRAY,
-					gap: 0.14,
-					from: 0.22,
-					to: 0.8,
-					arrangement: 'alternate',
-					angle: { mean: 70, spread: 8 },
-				},
+				fork(limb(0.8), 0.28, 0.95, 58, true),
+				fork(limb(0.58), 0.3, 0.95, 62),
+				fork(limb(0.4), 0.55, 0.95, 50, true),
+				...(limb(0.95).sides ?? []).map((side) => ({ ...side, from: 0.68 })),
 			],
 		},
 	},
