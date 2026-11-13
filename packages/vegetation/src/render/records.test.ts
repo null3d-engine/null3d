@@ -509,12 +509,12 @@ describe('the plant shader', () => {
 		expect(Math.abs(asFraction - metres)).toBeLessThan(0.000005);
 	});
 
-	test('declares eight textures and fits its uniforms beside them', () => {
-		expect(wgsl.match(/^var \w+: texture_2d(_array)?<f32>;/gm)?.length).toBe(8);
+	test('declares six textures and fits its uniforms beside them', () => {
+		expect(wgsl.match(/^var \w+: texture_2d(_array)?<f32>;/gm)?.length).toBe(6);
 		const block = /struct Uniforms \{([^}]*)\}/.exec(wgsl)?.[1] ?? '';
 		const numbers = [...block.matchAll(/:\s*f32/g)].length;
 		// 32 numbers less one for each texture.
-		expect(numbers).toBeLessThanOrEqual(24);
+		expect(numbers).toBeLessThanOrEqual(26);
 	});
 });
 

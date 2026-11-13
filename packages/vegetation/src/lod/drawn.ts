@@ -6,7 +6,7 @@
 // edge, and, where asked, an eye inside the plant's fullest foliage, where most rows stand within
 // the switch distance at once.
 import type { PlantAsset, SpeciesKitData } from '../asset';
-import { pow } from '../core/math';
+import { length3, pow, radians, tan } from '../core/math';
 import { DETAILS, spreadMax, type Vec3 } from '../core/types';
 
 /**
@@ -68,7 +68,7 @@ export function shootSwitchDistance(kit: SpeciesKitData, view: PlantView): numbe
 	const scale = kit.record.shoots ? spreadMax(kit.record.shoots.placement.scale) : 1;
 	longest *= scale;
 	const pixels = kit.record.lod.switchPixels[0];
-	return (longest * view.height) / (2 * Math.tan((view.fov * Math.PI) / 360) * pixels);
+	return (longest * view.height) / (2 * tan(radians(view.fov / 2)) * pixels);
 }
 
 /** Where an eye stands. */
@@ -122,7 +122,7 @@ export function drawnAtOnce(
 		let drawn = 0;
 		for (let r = 0; r < rows.count; r++) {
 			const distance =
-				Math.hypot(
+				length3(
 					(rows.position[r * 3] as number) - eye[0],
 					(rows.position[r * 3 + 1] as number) - eye[1],
 					(rows.position[r * 3 + 2] as number) - eye[2],
