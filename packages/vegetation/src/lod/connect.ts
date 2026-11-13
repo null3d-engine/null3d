@@ -2,6 +2,7 @@
 // level thins the wood by its orders and the cards by their share; every card whose branch went is
 // dropped, so the level's plant is one body reaching the root.
 import { AXIS_LIMB, AXIS_STEM, AXIS_STIPE } from '../core/graph';
+import { length3 } from '../core/math';
 import type { MeshInput, MeshLevel } from '../stages';
 import { connectedCards } from './cards';
 
@@ -94,42 +95,38 @@ function pointToTriangle(
 		apz = pz - az;
 	const d1 = abx * apx + aby * apy + abz * apz;
 	const d2 = acx * apx + acy * apy + acz * apz;
-	if (d1 <= 0 && d2 <= 0) return Math.hypot(apx, apy, apz);
+	if (d1 <= 0 && d2 <= 0) return length3(apx, apy, apz);
 	const bpx = px - bx,
 		bpy = py - by,
 		bpz = pz - bz;
 	const d3 = abx * bpx + aby * bpy + abz * bpz;
 	const d4 = acx * bpx + acy * bpy + acz * bpz;
-	if (d3 >= 0 && d4 <= d3) return Math.hypot(bpx, bpy, bpz);
+	if (d3 >= 0 && d4 <= d3) return length3(bpx, bpy, bpz);
 	const vc = d1 * d4 - d3 * d2;
 	if (vc <= 0 && d1 >= 0 && d3 <= 0) {
 		const v = d1 / (d1 - d3);
-		return Math.hypot(px - (ax + abx * v), py - (ay + aby * v), pz - (az + abz * v));
+		return length3(px - (ax + abx * v), py - (ay + aby * v), pz - (az + abz * v));
 	}
 	const cpx = px - cx,
 		cpy = py - cy,
 		cpz = pz - cz;
 	const d5 = abx * cpx + aby * cpy + abz * cpz;
 	const d6 = acx * cpx + acy * cpy + acz * cpz;
-	if (d6 >= 0 && d5 <= d6) return Math.hypot(cpx, cpy, cpz);
+	if (d6 >= 0 && d5 <= d6) return length3(cpx, cpy, cpz);
 	const vb = d5 * d2 - d1 * d6;
 	if (vb <= 0 && d2 >= 0 && d6 <= 0) {
 		const w = d2 / (d2 - d6);
-		return Math.hypot(px - (ax + acx * w), py - (ay + acy * w), pz - (az + acz * w));
+		return length3(px - (ax + acx * w), py - (ay + acy * w), pz - (az + acz * w));
 	}
 	const va = d3 * d6 - d5 * d4;
 	if (va <= 0 && d4 - d3 >= 0 && d5 - d6 >= 0) {
 		const w = (d4 - d3) / (d4 - d3 + (d5 - d6));
-		return Math.hypot(
-			px - (bx + (cx - bx) * w),
-			py - (by + (cy - by) * w),
-			pz - (bz + (cz - bz) * w),
-		);
+		return length3(px - (bx + (cx - bx) * w), py - (by + (cy - by) * w), pz - (bz + (cz - bz) * w));
 	}
 	const den = 1 / (va + vb + vc);
 	const v = vb * den;
 	const w = vc * den;
-	return Math.hypot(
+	return length3(
 		px - (ax + abx * v + acx * w),
 		py - (ay + aby * v + acy * w),
 		pz - (az + abz * v + acz * w),
