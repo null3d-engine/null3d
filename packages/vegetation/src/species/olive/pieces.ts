@@ -52,10 +52,35 @@ const SPRAY: PieceStem = {
 
 /** The olive's pieces. */
 export const PIECES: readonly PieceRule[] = [
-	// Stills 21 and 04: the leafy spray is the piece. A branch end carries nine to ten of them, which
-	// is more leaves than one prototype may hold at the finest tier, so the branch end's own axis is
-	// wood of the plant's frame with a spray at each socket.
-	{ name: 'spray', attitude: 'along', variants: 4, stem: SPRAY },
+	// Still 21: a straight pale axis a centimetre thick, a metre long, bare for its lowest third.
+	// Seven to eight sprays leave it above that, one each seven centimetres to one side and the
+	// other, at 40 to 50 degrees, the lowest the longest, and its own top is leafy. The piece is 1.06
+	// times as wide as tall. The turning video shows it flat: edge on it is a third as wide.
+	{
+		name: 'branch-end',
+		// The photograph's branch stands upright and its sprays arch down round it.
+		attitude: 'upright',
+		variants: 2,
+		stem: {
+			length: { mean: 0.95, spread: 0.05 },
+			radius: [0.005, 0.0015],
+			leaves: pairs(0.72, 0.033),
+			sides: [
+				{
+					stem: SPRAY,
+					gap: 0.075,
+					from: 0.36,
+					to: 0.9,
+					arrangement: 'alternate',
+					angle: { mean: 48, spread: 6 },
+					lengthAlong: [
+						[0, 1.2],
+						[1, 0.6],
+					],
+				},
+			],
+		},
+	},
 	// Still 22: a twig 35 centimetres long with nine pairs of leaves and two side shoots, at a
 	// quarter and a half of its length, at 45 to 50 degrees.
 	{
@@ -84,18 +109,8 @@ export const PIECES: readonly PieceRule[] = [
 	},
 ];
 
-/** The studio photographs of the olive's cut wood, each laid out from the pieces. */
+/** The studio photographs of the olive's cut wood, each one piece standing on its cut. */
 export const STUDIO: readonly PieceStudio[] = [
-	// Still 21: a straight pale axis a centimetre thick, bare for its lowest 28 centimetres. Seven to
-	// eight sprays leave it above that, one each seven centimetres to one side and the other, at 40 to
-	// 50 degrees, and its own top is a spray. The piece is 1.06 times as wide as tall.
-	{
-		still: 21,
-		piece: 'spray',
-		stand: {
-			stem: { length: 0.72, radius: [0.005, 0.002], bud: false },
-			along: { piece: 'spray', gap: 0.075, from: 0.36, angle: 48 },
-		},
-	},
+	{ still: 21, piece: 'branch-end' },
 	{ still: 22, piece: 'twig' },
 ];

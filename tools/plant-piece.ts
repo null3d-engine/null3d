@@ -133,6 +133,8 @@ writeFileSync(
 			pieces: pieces.map((piece) => ({
 				piece: piece.piece,
 				variant: piece.variant,
+				part: piece.part,
+				parts: piece.parts,
 				attitude: piece.attitude,
 				leaves: piece.leaves,
 				length: Number(piece.length.toFixed(3)),

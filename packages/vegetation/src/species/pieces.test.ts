@@ -96,8 +96,18 @@ for (const { id, pieces, studio } of SPECIES)
 		}, LONG);
 
 		it('builds every variant of every rule', () => {
-			expect(built.length).toBe(pieces.reduce((sum, rule) => sum + rule.variants, 0));
+			const variants = new Set(built.map((piece) => `${piece.piece}:${piece.variant}`));
+			expect(variants.size).toBe(pieces.reduce((sum, rule) => sum + rule.variants, 0));
 			for (const piece of built) expect(piece.leaves).toBeGreaterThan(0);
+			// A variant's parts together hold every leaf of its plan, each once.
+			for (const [r, rule] of pieces.entries())
+				for (let variant = 0; variant < rule.variants; variant++) {
+					const parts = built.filter((p) => p.piece === rule.name && p.variant === variant);
+					expect(parts.length).toBe(parts[0]?.parts ?? 0);
+					expect(parts.reduce((sum, p) => sum + p.leaves, 0)).toBe(
+						planPiece(module.record, rule, pieceKey(r, variant), 4).leaves.length,
+					);
+				}
 		});
 
 		it('plans each variant as one joined body with no bare stem end', () => {

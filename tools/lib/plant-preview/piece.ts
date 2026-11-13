@@ -98,14 +98,23 @@ export function studioScene(
 		placed.push({ prototype: prototypes.length - 1, position: [0, 0, 0], rotation: [0, 0, 0, 1] });
 	}
 	let leaves = 0;
-	const variantsOf = (name: string): number[] =>
-		pieces.flatMap((piece, index) => (piece.piece === name ? [index] : []));
+	// A piece's variants by name, each with the prototypes of its parts.
+	const variantsOf = (name: string): number[][] => {
+		const byVariant = new Map<number, number[]>();
+		for (const [index, piece] of pieces.entries())
+			if (piece.piece === name)
+				byVariant.set(piece.variant, [...(byVariant.get(piece.variant) ?? []), index]);
+		return [...byVariant.values()];
+	};
 	for (const piece of layout.placed as readonly PlacedPiece[]) {
 		const variants = variantsOf(piece.piece);
-		const prototype = variants[piece.pick % Math.max(1, variants.length)];
-		if (prototype === undefined) throw new Error(`no piece named '${piece.piece}' was built`);
-		leaves += (pieces[prototype] as PiecePrototype).leaves;
-		placed.push({ prototype, position: piece.position, rotation: piece.rotation });
+		const parts = variants[piece.pick % Math.max(1, variants.length)];
+		if (!parts) throw new Error(`no piece named '${piece.piece}' was built`);
+		// Every part of the variant stands at the one socket with the one turn.
+		for (const prototype of parts) {
+			leaves += (pieces[prototype] as PiecePrototype).leaves;
+			placed.push({ prototype, position: piece.position, rotation: piece.rotation });
+		}
 	}
 	const count = placed.length;
 	const rows: ShootRows = {
