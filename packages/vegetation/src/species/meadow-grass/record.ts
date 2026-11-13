@@ -25,10 +25,8 @@ export const record: Species = {
 		// Still 01: the leaf mound is 262 px tall under heads that reach 525 px.
 		mound: 0.5,
 		// Still 01: twelve flowering stems; still 04: about forty-five blades at its fullest ring,
-		// three or four to a shoot, read at the whole view's 8.5 mm blade. The fact sheet's blade is
-		// 2 to 4 mm, and a 3 mm blade covers a third of the mound that one of 8.5 mm does, so the
-		// mound holds about three times the blades: forty-five shoots.
-		shoots: { mean: 45, spread: 6 },
+		// three or four to a shoot. So about sixteen shoots.
+		shoots: { mean: 16, spread: 3 },
 		// Still 01: the sheath bases span 96 px at the soil against a mound of 262 px.
 		stool: 0.36,
 		// Stills 01 and 03: pale green sheath columns stand 0.12 to 0.15 of the mound's height, each
@@ -43,11 +41,12 @@ export const record: Species = {
 		// Still 01, read on a 2.6 times crop, in mound heights. The inner blades stand within 10
 		// degrees of plumb; the middle ones leave at 20 to 30 degrees from plumb and end 0.6 to 0.8
 		// high; the outer ones leave at 45 to 60 degrees, arch at 0.4 to 0.5 and end 0.1 to 0.35 above
-		// the soil, 0.7 to 0.8 out.
+		// the soil, 0.7 to 0.8 out. The baseline drew no blade arching low, so the outer pose takes
+		// the low end: 0.12 above the soil, 0.8 out.
 		poses: [
 			{ share: 0.4, leave: 85, apex: 0.95, drop: 0, reach: 0.08 },
 			{ share: 0.35, leave: 65, apex: 0.72, drop: 0.02, reach: 0.4 },
-			{ share: 0.25, leave: 38, apex: 0.45, drop: 0.23, reach: 0.75 },
+			{ share: 0.25, leave: 38, apex: 0.45, drop: 0.33, reach: 0.8 },
 		],
 		bladeSpread: 0.12,
 		stalks: {
@@ -85,12 +84,13 @@ export const record: Species = {
 		kind: 'grass-blade',
 		blade: {
 			// Stills 12 and 24: blades of even width that close in a short blunt hood. Still 01: a
-			// blade is as long as the mound is tall. The fact sheet: 2 to 4 mm wide. Still 01 reads 9 px
-			// across against a mound of 262 px, 8.5 mm, where a blade spans a few pixels; by the leaf
-			// as the ruler the fact sheet's width holds until full blades are read on a full-size
-			// studio picture, and both figures stand for the owner.
+			// blade is as long as the mound is tall and 9 px across against a mound of 262 px, so
+			// 0.034 of its length. Still 23, the full-size studio shoot, shows four full blades read
+			// base to tip at 0.04 to 0.05 of their length wide, so the pictures' broad blade holds
+			// over the fact sheet's 2 to 4 mm; both figures stand for the owner. A 3 mm blade drew the
+			// tuft as hairs at the whole view.
 			length: { mean: 0.26, spread: 0.03 },
-			width: 0.003,
+			width: 0.0085,
 			profile: [
 				[0, 0.85],
 				[0.1, 1],
@@ -156,13 +156,14 @@ export const record: Species = {
 			// Each cap keeps about fifteen per cent above its read.
 			kitBytes: { low: 821_000, medium: 1_031_000, high: 1_293_000, ultra: 1_626_000 },
 			// A plant is rows of the kit's pieces, so a variant's bytes are the same at every tier.
-			// Measured over the four variants at seed 11, in summer and in blossom, with forty-five
-			// shoots: the largest reads 110,283 bytes, and 1,480 and 756 triangles at the two card
-			// levels. Each cap keeps about fifteen per cent above its read.
-			variantBytes: { low: 127_000, medium: 127_000, high: 127_000, ultra: 127_000 },
+			// Measured over the four variants at seed 11, in summer and in blossom: the largest reads
+			// 43,435 bytes; 20,756 triangles at the nearest level at the high tier and 29,284 at the
+			// ultra; and 586 and 300 at the two card levels. Each cap keeps about fifteen per cent
+			// above its read, and the nearest level's holds the ultra tier.
+			variantBytes: { low: 50_000, medium: 50_000, high: 50_000, ultra: 50_000 },
 			lod0Triangles: 33_700,
-			lod1Triangles: 1_700,
-			lod2Triangles: 870,
+			lod1Triangles: 680,
+			lod2Triangles: 350,
 			downloadBytes: 350_000,
 			downloadHalfBytes: 120_000,
 			growMilliseconds: 150,
