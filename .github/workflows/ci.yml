@@ -1209,6 +1209,12 @@ jobs:
           mode: download
           name: page-wasm
       - uses: ./.github/actions/playwright-chromium
+      # The specs' imports of a package's sub-path resolve to its built `lib` in a bare Bun/Node
+      # loader, which passes no source condition, and only the pack step makes that `lib`. The jobs
+      # that run the specs therefore build the `lib` of every package the spec chain reaches;
+      # .dev/image-tests.md names why.
+      - name: Build the packages' lib that the specs load
+        run: bun tools/build-package.ts impostors
       # The website build's compiled shaders, which the test keeps between runs. An entry is named by
       # its source and the compiler's version, so a kept entry never serves another compiler. The key
       # starts empty when the compiler or the plugin changes, so the folder holds no old compiler's
@@ -1293,6 +1299,12 @@ jobs:
           mode: download
           name: page-wasm
       - uses: ./.github/actions/playwright-chromium
+      # The specs' imports of a package's sub-path resolve to its built `lib` in a bare Bun/Node
+      # loader, which passes no source condition, and only the pack step makes that `lib`. The jobs
+      # that run the specs therefore build the `lib` of every package the spec chain reaches;
+      # .dev/image-tests.md names why.
+      - name: Build the packages' lib that the specs load
+        run: bun tools/build-package.ts impostors
       # The compiled WGSL of the pages, from the build job, so the dev server and the page builds
       # compile none of it. A failed download only makes the first page of each module slow.
       - uses: ./.github/actions/archive
@@ -1372,6 +1384,12 @@ jobs:
           mode: download
           name: page-wasm
       - uses: ./.github/actions/playwright-chromium
+      # The specs' imports of a package's sub-path resolve to its built `lib` in a bare Bun/Node
+      # loader, which passes no source condition, and only the pack step makes that `lib`. The jobs
+      # that run the specs therefore build the `lib` of every package the spec chain reaches;
+      # .dev/image-tests.md names why.
+      - name: Build the packages' lib that the specs load
+        run: bun tools/build-package.ts impostors
       - uses: ./.github/actions/archive
         timeout-minutes: 5
         continue-on-error: true
@@ -1429,6 +1447,12 @@ jobs:
           mode: download
           name: page-wasm
       - uses: ./.github/actions/playwright-chromium
+      # The specs' imports of a package's sub-path resolve to its built `lib` in a bare Bun/Node
+      # loader, which passes no source condition, and only the pack step makes that `lib`. The jobs
+      # that run the specs therefore build the `lib` of every package the spec chain reaches;
+      # .dev/image-tests.md names why.
+      - name: Build the packages' lib that the specs load
+        run: bun tools/build-package.ts impostors
       - uses: ./.github/actions/archive
         timeout-minutes: 5
         continue-on-error: true
@@ -1517,6 +1541,12 @@ jobs:
           mode: download
           name: page-wasm
       - uses: ./.github/actions/playwright-chromium
+      # The specs' imports of a package's sub-path resolve to its built `lib` in a bare Bun/Node
+      # loader, which passes no source condition, and only the pack step makes that `lib`. The jobs
+      # that run the specs therefore build the `lib` of every package the spec chain reaches;
+      # .dev/image-tests.md names why.
+      - name: Build the packages' lib that the specs load
+        run: bun tools/build-package.ts impostors
       - uses: ./.github/actions/archive
         timeout-minutes: 5
         continue-on-error: true
@@ -1589,6 +1619,12 @@ jobs:
           mode: download
           name: page-wasm
       - uses: ./.github/actions/playwright-chromium
+      # The specs' imports of a package's sub-path resolve to its built `lib` in a bare Bun/Node
+      # loader, which passes no source condition, and only the pack step makes that `lib`. The jobs
+      # that run the specs therefore build the `lib` of every package the spec chain reaches;
+      # .dev/image-tests.md names why.
+      - name: Build the packages' lib that the specs load
+        run: bun tools/build-package.ts impostors
       - uses: ./.github/actions/archive
         timeout-minutes: 5
         continue-on-error: true
@@ -1666,6 +1702,12 @@ jobs:
           mode: download
           name: page-wasm
       - uses: ./.github/actions/playwright-chromium
+      # The specs' imports of a package's sub-path resolve to its built `lib` in a bare Bun/Node
+      # loader, which passes no source condition, and only the pack step makes that `lib`. The jobs
+      # that run the specs therefore build the `lib` of every package the spec chain reaches;
+      # .dev/image-tests.md names why.
+      - name: Build the packages' lib that the specs load
+        run: bun tools/build-package.ts impostors
       - uses: ./.github/actions/archive
         timeout-minutes: 5
         continue-on-error: true
@@ -1788,6 +1830,12 @@ jobs:
           name: load-pages
           root: target
       - uses: ./.github/actions/playwright-chromium
+      # The specs' imports of a package's sub-path resolve to its built `lib` in a bare Bun/Node
+      # loader, which passes no source condition, and only the pack step makes that `lib`. The jobs
+      # that run the specs therefore build the `lib` of every package the spec chain reaches;
+      # .dev/image-tests.md names why.
+      - name: Build the packages' lib that the specs load
+        run: bun tools/build-package.ts impostors
       - uses: ./.github/actions/archive
         timeout-minutes: 5
         continue-on-error: true
@@ -1859,6 +1907,12 @@ jobs:
           name: load-pages
           root: target
       - uses: ./.github/actions/playwright-chromium
+      # The specs' imports of a package's sub-path resolve to its built `lib` in a bare Bun/Node
+      # loader, which passes no source condition, and only the pack step makes that `lib`. The jobs
+      # that run the specs therefore build the `lib` of every package the spec chain reaches;
+      # .dev/image-tests.md names why.
+      - name: Build the packages' lib that the specs load
+        run: bun tools/build-package.ts impostors
       # The benchmark pages' build holds S6's pages, which load the city's files.
       - uses: ./.github/actions/archive
         timeout-minutes: 5
