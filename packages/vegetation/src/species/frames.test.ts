@@ -16,6 +16,7 @@ import {
 import {
 	bareEnds,
 	baseShare,
+	crownFaults,
 	crownFill,
 	endAzimuth,
 	imbalance,
@@ -56,6 +57,14 @@ const PLAN_LEAST = 0.75;
  */
 const FILL_MEAN: readonly [number, number] = [0.75, 1.15];
 const FILL_SIDE = 0.5;
+/**
+ * The crown's shape, band by band. On each of four sides, every one of 16 height bands between the
+ * outline's foot and nine tenths of its top must fill 0.6 to 1.2 of the outline there. A tree may
+ * name at most this many bands that it is excused, each with its reason. The mean above guards
+ * against a missing side; this guards against a crown that is wide at some heights only.
+ */
+const BAND_FILL: readonly [number, number] = [0.6, 1.2];
+const EXCUSED_MOST = 2;
 /** The longest share of a limb or a branch that may hold one direction. */
 const STRAIGHT_MOST = 0.2;
 /** The most of its thickest radius an axis may drop between two nodes: a stem's foot, and the rest. */
@@ -77,6 +86,13 @@ interface Held {
 	readonly plumb: readonly string[];
 	/** The plant's height over the record's, as the least and the most. */
 	readonly tall: readonly [number, number];
+	/**
+	 * Whether the crown does not yet hold its outline band by band, and the bands it is excused, by
+	 * their number from the ground, each with its reason. A tree whose crown is open here is known to
+	 * fail the band test: the test then expects the failure, and fails when the tree starts to hold.
+	 */
+	readonly open?: boolean;
+	readonly excused?: Readonly<Record<number, string>>;
 }
 
 const HELD: readonly Held[] = [
@@ -91,6 +107,7 @@ const HELD: readonly Held[] = [
 		// A fall hangs by its own weight.
 		plumb: ['leader', 'fall'],
 		tall: [0.98, 1.02],
+		open: true,
 	},
 	{
 		id: 'common-alder',
@@ -103,6 +120,7 @@ const HELD: readonly Held[] = [
 		base: { limb: 0.25, twig: 0.5 },
 		plumb: ['leader'],
 		tall: [0.98, 1.02],
+		open: true,
 	},
 	{
 		id: 'weeping-willow',
@@ -116,6 +134,7 @@ const HELD: readonly Held[] = [
 		plumb: ['trunk', 'whip'],
 		// The heads' foliage stands above the highest wood.
 		tall: [0.93, 1.02],
+		open: true,
 	},
 	{
 		id: 'holm-oak',
@@ -128,6 +147,7 @@ const HELD: readonly Held[] = [
 		plumb: [],
 		// The top masses' foliage stands above the highest twig.
 		tall: [0.97, 1.06],
+		open: true,
 	},
 	{
 		id: 'hawthorn-shrub',
@@ -141,6 +161,7 @@ const HELD: readonly Held[] = [
 		plumb: ['shoot'],
 		// The leading shoots' tips are the plant's top.
 		tall: [0.95, 1.08],
+		open: true,
 	},
 	{
 		id: 'european-beech',
@@ -153,6 +174,7 @@ const HELD: readonly Held[] = [
 		plumb: ['trunk'],
 		// The top tiers' foliage stands above the highest wood.
 		tall: [0.93, 1.02],
+		open: true,
 	},
 	{
 		id: 'common-ash',
@@ -165,6 +187,7 @@ const HELD: readonly Held[] = [
 		plumb: ['trunk'],
 		// The outline's top is blunt, so the bunches on the highest tips stand a little over it.
 		tall: [0.95, 1.05],
+		open: true,
 	},
 	{
 		id: 'olive',
@@ -176,6 +199,7 @@ const HELD: readonly Held[] = [
 		base: { outer: 0.34, centre: 0.55, branch: 0.6, spray: 0.6 },
 		plumb: ['trunk'],
 		tall: [0.93, 1.05],
+		open: true,
 	},
 	{
 		id: 'pedunculate-oak',
@@ -188,6 +212,7 @@ const HELD: readonly Held[] = [
 		base: { bough: 0.5, branch: 0.55 },
 		plumb: ['trunk'],
 		tall: [0.95, 1.04],
+		open: true,
 	},
 ];
 
@@ -241,6 +266,22 @@ for (const held of HELD)
 				expect(fill.mean).toBeGreaterThanOrEqual(FILL_MEAN[0]);
 				expect(fill.mean).toBeLessThanOrEqual(FILL_MEAN[1]);
 				expect(fill.least).toBeGreaterThanOrEqual(FILL_SIDE);
+			}
+		});
+
+		const banded = held.open ? it.failing : it;
+		banded('holds the outline it states band by band, on four sides', () => {
+			expect(Object.keys(held.excused ?? {}).length).toBeLessThanOrEqual(EXCUSED_MOST);
+			for (const seed of SEEDS) {
+				const faults = crownFaults(
+					planOf(held, seed),
+					held.spec,
+					4,
+					16,
+					BAND_FILL[0],
+					BAND_FILL[1],
+				).filter((fault) => held.excused?.[fault.band] === undefined);
+				expect(faults).toEqual([]);
 			}
 		});
 
