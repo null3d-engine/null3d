@@ -1,0 +1,137 @@
+// The weeping willow's pieces: the leafy strands its hanging whips carry. A whip is wood of the
+// plant's frame; a strand is the piece at each of the whip's sockets. Each value names the reference
+// picture it was measured on.
+//
+// The cut branch of still 21 is a metre tall, which makes its leaf blade 8 to 9 centimetres, inside
+// the species' 8 to 15. The record's leaf is 11.5 centimetres, so a strand draws its leaves at 0.74
+// of that until the record's own length moves.
+import type { PieceRule, PieceStem, PieceStudio } from '../../leaf/piece';
+
+/** A strand's leaf over the record's: 8.5 centimetres measured on still 21, over 11.5. */
+const LEAF_SCALE = 0.74;
+
+/**
+ * One hanging strand of a stated length. Stills 19 and 21: a strand leaves the top or the outer side
+ * of an arching twig and turns plumb within a few centimetres. Stills 10 and 28: the stem is about
+ * two millimetres thick. Still 21: one leaf each 2 to 2.5 centimetres, alternate, to both sides and
+ * round the strand, held 15 to 25 degrees off it with its tip down. Stills 10 and 23: the tip's
+ * leaves are young and small, and a slim bud lies in each axil.
+ */
+function strand(length: number, spread: number): PieceStem {
+	return {
+		length: { mean: length, spread },
+		radius: [0.0015, 0.0008],
+		hook: { angle: 100, length: 0.045 },
+		zigzag: 2,
+		leaves: {
+			gap: 0.022,
+			from: 0.05 / length,
+			phyllotaxis: { kind: 'distichous', flatten: 0, turn: 35 },
+			angle: 20,
+			angleSpread: 6,
+			scale: [
+				[0, LEAF_SCALE],
+				[0.88, LEAF_SCALE],
+				[1, LEAF_SCALE * 0.45],
+			],
+			// Stills 19 and 21: a blade hangs along its strand and faces away from it.
+			hang: 0.5,
+			face: { turn: 180, spread: 70 },
+		},
+	};
+}
+
+/** The weeping willow's pieces. */
+export const PIECES: readonly PieceRule[] = [
+	// Still 22: the strands of a 35-centimetre sub-branch.
+	{ name: 'strand-short', attitude: 'plumb', variants: 2, stem: strand(0.3, 0.04) },
+	// Still 21: the strands of the cut branch hang 45 to 85 centimetres.
+	{ name: 'strand', attitude: 'plumb', variants: 3, stem: strand(0.65, 0.2) },
+	// Still 19: one complete strand is 10.5 leaf lengths, about 1.1 metres.
+	{ name: 'strand-long', attitude: 'plumb', variants: 2, stem: strand(1.1, 0.08) },
+];
+
+/** The studio photographs of the willow's cut wood, each laid out from the pieces. */
+export const STUDIO: readonly PieceStudio[] = [
+	// Still 21: an axis 60 centimetres long and 1.5 centimetres thick forks into two arms at 30 to 40
+	// degrees. Each arm rises 30 to 40 centimetres, arches over within 20 and carries four to five
+	// strands on its arch; two side twigs carry two to three each. 13 to 14 strands, one each seven
+	// centimetres of arching twig.
+	{
+		still: 21,
+		piece: 'strand',
+		stand: {
+			stem: {
+				length: 0.6,
+				radius: [0.0075, 0.005],
+				bud: false,
+				sides: [
+					{
+						stem: {
+							length: { mean: 0.55, spread: 0.05 },
+							radius: [0.004, 0.002],
+							droop: 100,
+							droopOver: [0.55, 1],
+							bud: false,
+						},
+						gap: 0.03,
+						from: 0.9,
+						to: 1,
+						arrangement: 'alternate',
+						angle: { mean: 35, spread: 5 },
+					},
+					{
+						stem: {
+							length: { mean: 0.25, spread: 0.04 },
+							radius: [0.003, 0.0015],
+							droop: 70,
+							droopOver: [0.3, 1],
+							bud: false,
+						},
+						gap: 0.12,
+						from: 0.45,
+						to: 0.85,
+						arrangement: 'alternate',
+						angle: { mean: 50, spread: 8 },
+					},
+				],
+			},
+			along: { piece: 'strand', gap: 0.055, from: 0.5 },
+		},
+	},
+	// Still 22: a yellow twig 33 centimetres tall stands in its clamp; three strands leave its top
+	// and hang back down beside it.
+	{
+		still: 22,
+		piece: 'strand-short',
+		stand: {
+			lean: 4,
+			stem: {
+				length: 0.33,
+				radius: [0.003, 0.002],
+				bud: false,
+				sides: [
+					{
+						stem: { length: 0.09, radius: [0.002, 0.0015], droop: 50, bud: false },
+						gap: 0.01,
+						from: 0.91,
+						to: 1,
+						arrangement: 'alternate',
+						angle: { mean: 60, spread: 15 },
+					},
+				],
+			},
+		},
+	},
+	// Still 19: a shoot hangs from its branch and parts within its first 25 centimetres into four
+	// strands, each about a metre long.
+	{
+		still: 19,
+		piece: 'strand-long',
+		stand: {
+			lean: 176,
+			stem: { length: 0.25, radius: [0.003, 0.0015], bud: false },
+			along: { piece: 'strand-long', gap: 0.07, from: 0.2 },
+		},
+	},
+];

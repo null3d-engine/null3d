@@ -29,15 +29,17 @@ import {
 	sin,
 	type Vector3,
 } from '../core/math';
-import type { Phyllotaxis, ShootClass, Species } from '../core/record';
+import type { Phyllotaxis, ShootClass, ShootSpec, Species } from '../core/record';
 import type { TextureManifest } from '../core/textures';
 import {
 	BEND_PIECE_LEAST,
+	type Curve,
 	curveAt,
 	DETAILS,
 	type Detail,
 	LATERAL_GAP_MOST,
 	SIDE_SHOOTS_MOST,
+	type Spread,
 	spreadAt,
 	spreadMean,
 } from '../core/types';
@@ -118,7 +120,7 @@ const AXIL_BUD: Readonly<Record<Detail, BudShape | undefined>> = {
 const SHADE_TIER = DETAILS.indexOf('medium');
 
 /** One point along an axis of the plan. */
-interface AxisPoint {
+export interface AxisPoint {
 	readonly at: Vector3;
 	readonly radius: number;
 	/** Metres along the shoot from the attach point. */
@@ -157,7 +159,7 @@ export interface PlannedLeaf {
 }
 
 /** One bud of the plan. */
-interface PlannedBud {
+export interface PlannedBud {
 	readonly at: Vector3;
 	readonly direction: Vector3;
 	readonly length: number;
@@ -243,7 +245,7 @@ interface AxisStart {
 }
 
 /** Projects `v` square to the unit `axis`, then scales it to unit length; `fallback` when it vanishes. */
-function square(
+export function square(
 	v: Readonly<Vector3>,
 	axis: Readonly<Vector3>,
 	fallback: Readonly<Vector3>,
@@ -255,7 +257,7 @@ function square(
 }
 
 /** Turns `v` about the unit `axis` by `degrees`. */
-function turn(v: Readonly<Vector3>, axis: Readonly<Vector3>, degrees: number): Vector3 {
+export function turn(v: Readonly<Vector3>, axis: Readonly<Vector3>, degrees: number): Vector3 {
 	const q = [0, 0, 0, 1];
 	quatAxisAngle(axis, radians(degrees), q);
 	return quatRotate(q, 0, v, [0, 0, 0]);
@@ -521,6 +523,237 @@ function spreadRound(
 }
 
 /**
+ * A leaf's turn from leaf space: the upper face looks toward the shoot's tip, turned toward the sky
+ * side by `share`. At a share of 1 the lamina squares across the shoot, which is how a rosette's
+ * blades stand: a camera looking down the twig sees every one of them face on.
+ *
+ * @param direction The way the leaf leaves, a unit vector.
+ * @param stem The stem's direction at the leaf's node.
+ * @param sky The sky side at the node.
+ * @param radial The way the stalk leaves the stem.
+ * @param share The share of the turn toward the sky side, 0 to 1.
+ * @returns The turn, x, y, z, w.
+ */
+export function leafTurn(
+	direction: Vector3,
+	stem: Vector3,
+	sky: Vector3,
+	radial: Vector3,
+	share: number,
+): number[] {
+	const adaxial = square(stem, direction, radial);
+	const skyward = square(sky, direction, adaxial);
+	const w = share;
+	const face = normalize3([
+		adaxial[0] * (1 - w) + skyward[0] * w,
+		adaxial[1] * (1 - w) + skyward[1] * w,
+		adaxial[2] * (1 - w) + skyward[2] * w,
+	]);
+	const rotation = [0, 0, 0, 1];
+	quatFromFrame(direction, face, rotation);
+	return rotation;
+}
+
+/** What a node's leaves are placed by: the species' leaf measures and the stem's own rule. */
+export interface LeafRule {
+	/** The species' salt and the hash key of the prototype the leaves belong to. */
+	readonly salt: number;
+	readonly key: number;
+	readonly phyllotaxis: Phyllotaxis;
+	/** Degrees a leaf stands from its stem, base to tip, and the half-width of its spread. */
+	readonly leafAngle: Curve;
+	readonly leafAngleSpread: number;
+	/** The angle a needle stands at, which replaces the leaf angle. */
+	readonly needleAngle: number | undefined;
+	/** The share by which needles turn toward the shoot's two sides. */
+	readonly ranks: number;
+	/** A leaf's size along the stem, base to tip, over the species' own spread of sizes. */
+	readonly leafScale: Curve;
+	readonly leafSpread: Spread;
+	readonly leafMean: number;
+	/** The blade's length in metres, 0 for a leaf that carries no axil bud. */
+	readonly leafLength: number;
+	/** The leaf meshes a leaf may draw. */
+	readonly leafMeshes: number;
+	readonly budLength: number;
+	readonly budWidth: number;
+	/** A leaf's turn from its direction and its node's frame. */
+	readonly rotate: (direction: Vector3, stem: Vector3, sky: Vector3, radial: Vector3) => number[];
+}
+
+/**
+ * Places the leaves of one node, each with its axillary bud.
+ *
+ * @param rule The leaf rule.
+ * @param leaves The plan's leaves, which gain the node's.
+ * @param buds The plan's buds, which gain the node's axil buds.
+ * @param axis The axis the node stands on.
+ * @param node The node's index along its axis.
+ * @param at The node's place.
+ * @param stem The stem's direction at the node.
+ * @param sky The sky side at the node.
+ * @param radius The stem's radius at the node.
+ * @param along Metres along the shoot from the attach point.
+ * @param t The node's share of its growth unit, 0 at its foot and 1 at its tip.
+ * @param azimuthStart Degrees about the stem where the axis's first leaf stands.
+ * @param crowded How much the node's internode shrinks below the shoot's own spacing, 0 to 1.
+ * @param plateFace The face a plate run holds its blades to, where the node belongs to one.
+ */
+export function placeNodeLeaves(
+	rule: LeafRule,
+	leaves: PlannedLeaf[],
+	buds: PlannedBud[],
+	axis: number,
+	node: number,
+	at: Vector3,
+	stem: Vector3,
+	sky: Vector3,
+	radius: number,
+	along: number,
+	t: number,
+	azimuthStart: number,
+	crowded: number,
+	plateFace?: Vector3,
+): void {
+	const { phyllotaxis, ranks, leafMean, leafSpread } = rule;
+	const draw = (purpose: number, a = 0, b = 0) => unitAt(rule.salt, rule.key, purpose, a, b);
+	// A plate run holds every blade to its own face, so the run reads as one shingle rather than
+	// a tuft that turns with the stem.
+	const face = plateFace ?? sky;
+	const side = normalize3(cross3(stem, face, [0, 0, 0]));
+	const azimuths = nodeAzimuths(phyllotaxis, node, azimuthStart, (key) =>
+		phyllotaxis.kind === 'rosette-spur'
+			? spreadAt(phyllotaxis.leaves, draw(Purpose.Spur, axis, key))
+			: 1,
+	);
+	const spread = rule.leafAngleSpread;
+	const leafAngle =
+		rule.needleAngle ??
+		curveAt(rule.leafAngle, t) +
+			(spread > 0 ? (draw(Purpose.LeafAngle, axis, node) * 2 - 1) * spread : 0);
+	for (let k = 0; k < azimuths.length; k++) {
+		let azimuth = radians(azimuths[k] as number);
+		// Two-ranked needles turn toward the shoot's two sides.
+		if (ranks > 0) {
+			const toward = cos(azimuth) >= 0 ? 0 : Math.PI;
+			let gap = toward - azimuth;
+			gap -= 2 * Math.PI * Math.round(gap / (2 * Math.PI));
+			azimuth += gap * ranks;
+		}
+		const radial = normalize3([
+			side[0] * cos(azimuth) + face[0] * sin(azimuth),
+			side[1] * cos(azimuth) + face[1] * sin(azimuth),
+			side[2] * cos(azimuth) + face[2] * sin(azimuth),
+		]);
+		const a = radians(leafAngle);
+		const direction = normalize3([
+			stem[0] * cos(a) + radial[0] * sin(a),
+			stem[1] * cos(a) + radial[1] * sin(a),
+			stem[2] * cos(a) + radial[2] * sin(a),
+		]);
+		const rotation = rule.rotate(direction, stem, face, radial);
+		const key = node * 8 + k;
+		const size =
+			curveAt(rule.leafScale, t) *
+			(leafMean > 0 ? spreadAt(leafSpread, draw(Purpose.LeafSize, axis, key)) / leafMean : 1);
+		// A crowded node's leaves root inside the twig's own surface, so a rosette's inner blades
+		// meet the wood they stand on instead of stopping a hairline short of it.
+		const out = radius * (1 - CROWDED_ROOT * crowded);
+		leaves.push({
+			at: [at[0] + radial[0] * out, at[1] + radial[1] * out, at[2] + radial[2] * out],
+			rotation,
+			scale: Math.max(0.05, size),
+			mesh: hashAt(rule.salt, rule.key, Purpose.LeafMesh, axis, key) % rule.leafMeshes,
+			phase: hashAt(rule.salt, rule.key, Purpose.Phase, axis, key) & 255,
+			along,
+			axis,
+			node,
+			stem: [...stem],
+			sky: [...face],
+			radial,
+			direction,
+			crowded,
+		});
+		if (rule.leafLength > 0 && rule.budLength > 0) {
+			const lean = radians(BUD_LEAN);
+			buds.push({
+				at: [at[0] + radial[0] * radius, at[1] + radial[1] * radius, at[2] + radial[2] * radius],
+				direction: normalize3([
+					stem[0] * cos(lean) + radial[0] * sin(lean),
+					stem[1] * cos(lean) + radial[1] * sin(lean),
+					stem[2] * cos(lean) + radial[2] * sin(lean),
+				]),
+				cluster: false,
+				// Axil buds grow toward the tip cluster's size where the nodes crowd into a rosette.
+				length: rule.budLength * (0.55 + 0.35 * crowded),
+				width: rule.budWidth * (0.55 + 0.35 * crowded),
+				along,
+			});
+		}
+	}
+}
+
+/**
+ * Adds the bud cluster at an axis's tip: the terminal bud and the buds stacked below it.
+ *
+ * @param buds The plan's buds, which gain the cluster.
+ * @param bud The species' bud measures.
+ * @param tipRadius The twig's radius at its tip.
+ * @param at The tip.
+ * @param direction The twig's direction at its tip.
+ * @param sky The sky side at the tip.
+ * @param along Metres along the shoot from the attach point.
+ */
+export function addBudCluster(
+	buds: PlannedBud[],
+	bud: ShootSpec['bud'],
+	tipRadius: number,
+	at: Vector3,
+	direction: Vector3,
+	sky: Vector3,
+	along: number,
+): void {
+	const budLength = bud.length;
+	const budWidth = bud.width;
+	if (budLength <= 0) return;
+	const count = Math.max(0, Math.round(bud.tipCluster) - 1);
+	const step = bud.cluster?.step ?? CLUSTER_STEP;
+	const lean = radians(bud.cluster?.lean ?? CLUSTER_LEAN);
+	buds.push({
+		at: [...at],
+		direction: [...direction],
+		length: budLength,
+		width: budWidth,
+		along,
+		cluster: true,
+		stack: budLength * (count > 0 ? 0.35 + step * (count - 1) + 1 : 1),
+	});
+	for (let k = 0; k < count; k++) {
+		const outward = turn(sky, direction, k * GOLDEN);
+		// The cluster stacks down the twig's last centimetres, each bud a step below the last on a
+		// spiral, standing on the bark and leaning out from the terminal bud.
+		const back = budLength * (0.35 + step * k);
+		const out = tipRadius + budWidth * 0.2;
+		buds.push({
+			at: [
+				at[0] - direction[0] * back + outward[0] * out,
+				at[1] - direction[1] * back + outward[1] * out,
+				at[2] - direction[2] * back + outward[2] * out,
+			],
+			direction: normalize3([
+				direction[0] * cos(lean) + outward[0] * sin(lean),
+				direction[1] * cos(lean) + outward[1] * sin(lean),
+				direction[2] * cos(lean) + outward[2] * sin(lean),
+			]),
+			cluster: true,
+			length: budLength * 0.8,
+			width: budWidth * 0.85,
+			along: along - back,
+		});
+	}
+}
+
+/**
  * Plans one prototype from the record: its axes, its leaves and its buds.
  *
  * @param record The species record.
@@ -567,30 +800,22 @@ export function planShoot(
 	const flatten = phyllotaxis.kind === 'distichous' ? phyllotaxis.flatten : 0;
 	/** A two-ranked shoot keeps its laterals in the plane of its leaf ranks. */
 	const twoRanked = phyllotaxis.kind === 'distichous';
-	/**
-	 * A leaf's turn from leaf space: the upper face looks toward the shoot's tip, turned toward the sky
-	 * side. `flatToAxis` sets the share that instead squares the lamina across the shoot, which is how a
-	 * rosette's blades stand: a camera looking down the twig sees every one of them face on.
-	 */
+	// A leaf's upper face looks toward the shoot's tip, turned toward the sky side by the species'
+	// share. A rosette names its own share, which squares the lamina across the shoot.
 	const leafRotation = (
 		direction: Vector3,
 		stem: Vector3,
 		sky: Vector3,
 		radial: Vector3,
 		skyShare?: number,
-	): number[] => {
-		const adaxial = square(stem, direction, radial);
-		const skyward = square(sky, direction, adaxial);
-		const w = skyShare ?? Math.min(1, skyTurn + flatten * (1 - skyTurn));
-		const face = normalize3([
-			adaxial[0] * (1 - w) + skyward[0] * w,
-			adaxial[1] * (1 - w) + skyward[1] * w,
-			adaxial[2] * (1 - w) + skyward[2] * w,
-		]);
-		const rotation = [0, 0, 0, 1];
-		quatFromFrame(direction, face, rotation);
-		return rotation;
-	};
+	): number[] =>
+		leafTurn(
+			direction,
+			stem,
+			sky,
+			radial,
+			skyShare ?? Math.min(1, skyTurn + flatten * (1 - skyTurn)),
+		);
 	const [baseRadius, tipRadius] = shootClass.stem?.radius ?? shoots.stem.radius;
 	// Degrees a lateral of this class leans from its parent.
 	const leanAngle = shootClass.lateral ?? LATERAL_ANGLE;
@@ -774,6 +999,23 @@ export function planShoot(
 		}
 	};
 
+	const leafRule: LeafRule = {
+		salt,
+		key: 0x5400 + index,
+		phyllotaxis,
+		leafAngle: shootClass.leafAngle,
+		leafAngleSpread: shootClass.leafAngleSpread ?? 0,
+		needleAngle,
+		ranks,
+		leafScale: shootClass.leafScale,
+		leafSpread,
+		leafMean,
+		leafLength,
+		leafMeshes,
+		budLength,
+		budWidth,
+		rotate: leafRotation,
+	};
 	/** The leaves of one node, each with its axillary bud. */
 	const placeLeaves = (
 		axis: number,
@@ -787,122 +1029,27 @@ export function planShoot(
 		azimuthStart: number,
 		crowded: number,
 		plateFace?: Vector3,
-	): void => {
-		// A plate run holds every blade to its own face, so the run reads as one shingle rather than
-		// a tuft that turns with the stem.
-		const face = plateFace ?? sky;
-		const side = normalize3(cross3(stem, face, [0, 0, 0]));
-		const azimuths = nodeAzimuths(phyllotaxis, node, azimuthStart, (key) =>
-			phyllotaxis.kind === 'rosette-spur'
-				? spreadAt(phyllotaxis.leaves, draw(Purpose.Spur, axis, key))
-				: 1,
-		);
-		const spread = shootClass.leafAngleSpread ?? 0;
-		const leafAngle =
-			needleAngle ??
-			curveAt(shootClass.leafAngle, t) +
-				(spread > 0 ? (draw(Purpose.LeafAngle, axis, node) * 2 - 1) * spread : 0);
-		for (let k = 0; k < azimuths.length; k++) {
-			let azimuth = radians(azimuths[k] as number);
-			// Two-ranked needles turn toward the shoot's two sides.
-			if (ranks > 0) {
-				const toward = cos(azimuth) >= 0 ? 0 : Math.PI;
-				let gap = toward - azimuth;
-				gap -= 2 * Math.PI * Math.round(gap / (2 * Math.PI));
-				azimuth += gap * ranks;
-			}
-			const radial = normalize3([
-				side[0] * cos(azimuth) + face[0] * sin(azimuth),
-				side[1] * cos(azimuth) + face[1] * sin(azimuth),
-				side[2] * cos(azimuth) + face[2] * sin(azimuth),
-			]);
-			const a = radians(leafAngle);
-			const direction = normalize3([
-				stem[0] * cos(a) + radial[0] * sin(a),
-				stem[1] * cos(a) + radial[1] * sin(a),
-				stem[2] * cos(a) + radial[2] * sin(a),
-			]);
-			const rotation = leafRotation(direction, stem, face, radial);
-			const key = node * 8 + k;
-			const size =
-				curveAt(shootClass.leafScale, t) *
-				(leafMean > 0 ? spreadAt(leafSpread, draw(Purpose.LeafSize, axis, key)) / leafMean : 1);
-			// A crowded node's leaves root inside the twig's own surface, so a rosette's inner blades
-			// meet the wood they stand on instead of stopping a hairline short of it.
-			const out = radius * (1 - CROWDED_ROOT * crowded);
-			leaves.push({
-				at: [at[0] + radial[0] * out, at[1] + radial[1] * out, at[2] + radial[2] * out],
-				rotation,
-				scale: Math.max(0.05, size),
-				mesh: hashAt(salt, 0x5400 + index, Purpose.LeafMesh, axis, key) % leafMeshes,
-				phase: hashAt(salt, 0x5400 + index, Purpose.Phase, axis, key) & 255,
-				along,
-				axis,
-				node,
-				stem: [...stem],
-				sky: [...face],
-				radial,
-				direction,
-				crowded,
-			});
-			if (leafLength > 0 && budLength > 0) {
-				const lean = radians(BUD_LEAN);
-				buds.push({
-					at: [at[0] + radial[0] * radius, at[1] + radial[1] * radius, at[2] + radial[2] * radius],
-					direction: normalize3([
-						stem[0] * cos(lean) + radial[0] * sin(lean),
-						stem[1] * cos(lean) + radial[1] * sin(lean),
-						stem[2] * cos(lean) + radial[2] * sin(lean),
-					]),
-					cluster: false,
-					// Axil buds grow toward the tip cluster's size where the nodes crowd into a rosette.
-					length: budLength * (0.55 + 0.35 * crowded),
-					width: budWidth * (0.55 + 0.35 * crowded),
-					along,
-				});
-			}
-		}
-	};
-
-	/** The bud cluster at an axis's tip: the terminal bud and the buds stacked below it. */
-	const addCluster = (at: Vector3, direction: Vector3, sky: Vector3, along: number): void => {
-		if (budLength <= 0) return;
-		const count = Math.max(0, Math.round(shoots.bud.tipCluster) - 1);
-		const step = shoots.bud.cluster?.step ?? CLUSTER_STEP;
-		const lean = radians(shoots.bud.cluster?.lean ?? CLUSTER_LEAN);
-		buds.push({
-			at: [...at],
-			direction: [...direction],
-			length: budLength,
-			width: budWidth,
+	): void =>
+		placeNodeLeaves(
+			leafRule,
+			leaves,
+			buds,
+			axis,
+			node,
+			at,
+			stem,
+			sky,
+			radius,
 			along,
-			cluster: true,
-			stack: budLength * (count > 0 ? 0.35 + step * (count - 1) + 1 : 1),
-		});
-		for (let k = 0; k < count; k++) {
-			const outward = turn(sky, direction, k * GOLDEN);
-			// The cluster stacks down the twig's last centimetres, each bud a step below the last on a
-			// spiral, standing on the bark and leaning out from the terminal bud.
-			const back = budLength * (0.35 + step * k);
-			const out = tipRadius + budWidth * 0.2;
-			buds.push({
-				at: [
-					at[0] - direction[0] * back + outward[0] * out,
-					at[1] - direction[1] * back + outward[1] * out,
-					at[2] - direction[2] * back + outward[2] * out,
-				],
-				direction: normalize3([
-					direction[0] * cos(lean) + outward[0] * sin(lean),
-					direction[1] * cos(lean) + outward[1] * sin(lean),
-					direction[2] * cos(lean) + outward[2] * sin(lean),
-				]),
-				cluster: true,
-				length: budLength * 0.8,
-				width: budWidth * 0.85,
-				along: along - back,
-			});
-		}
-	};
+			t,
+			azimuthStart,
+			crowded,
+			plateFace,
+		);
+
+	/** The bud cluster at an axis's tip. */
+	const addCluster = (at: Vector3, direction: Vector3, sky: Vector3, along: number): void =>
+		addBudCluster(buds, shoots.bud, tipRadius, at, direction, sky, along);
 
 	const units = years;
 	grow({
@@ -1043,14 +1190,17 @@ export function meshShoot(
 	return mesh;
 }
 
-/** One prototype from a plan: its tiers meshed and shaded, its reach and bounds measured. */
-function prototypeOf(
+/**
+ * A plan meshed at every tier and shaded, with its reach and its bounding radius measured.
+ *
+ * @param plan The plan.
+ * @param leaves The species' leaf meshes at every tier, low first.
+ * @returns The meshes and the measures.
+ */
+export function meshedPlan(
 	plan: ShootPlan,
 	leaves: readonly (readonly PrototypeArrays[])[],
-	index: number,
-	shootClass: ShootClass,
-	cutting = false,
-): UncardedPrototype {
+): Pick<UncardedPrototype, 'length' | 'radius' | 'leaves' | 'tiers'> {
 	const writers = DETAILS.map((detail, tier) => meshShoot(plan, leaves[tier] ?? [], detail));
 	shootOcclusion(writers, SHADE_TIER);
 	const tiers = writers.map((writer) =>
@@ -1063,15 +1213,23 @@ function prototypeOf(
 			radius,
 			length3(positions[i] as number, positions[i + 1] as number, positions[i + 2] as number),
 		);
+	return { length: plan.reach, radius, leaves: plan.leaves.length, tiers };
+}
+
+/** One prototype from a plan: its tiers meshed and shaded, its reach and bounds measured. */
+function prototypeOf(
+	plan: ShootPlan,
+	leaves: readonly (readonly PrototypeArrays[])[],
+	index: number,
+	shootClass: ShootClass,
+	cutting = false,
+): UncardedPrototype {
 	return {
 		index,
 		class: shootClass.name,
 		...(cutting ? { cutting: true as const } : {}),
 		vigor: shootClass.vigor,
-		length: plan.reach,
-		radius,
-		leaves: plan.leaves.length,
-		tiers,
+		...meshedPlan(plan, leaves),
 	};
 }
 

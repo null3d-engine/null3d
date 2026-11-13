@@ -1,0 +1,609 @@
+// The branch pieces: what a plant's sockets carry. A piece is a shoot plan of several orders, laid
+// out by a measured rule instead of grown year by year: a stem of a stated length and curve, leaves
+// at a stated spacing along it, and side stems at a stated spacing, angle and arrangement, each a
+// stem of the same kind. The rule's numbers are read from the species' cut-branch photographs.
+//
+// A piece is planned in its own rest frame and is turned when it is placed. Its attach point is the
+// origin, its line is +Y and +Z is its sky side. A hanging piece's line is the way it hangs, so its
+// ground side is +Y; every other piece's ground side is -Z.
+//
+// The plan is a shoot plan, so the shoot mesher draws it at every tier and the same vertex limit
+// holds. Each stem ends in the species' bud or in a leaf, so no stem of a piece ends bare.
+import type { PrototypeArrays } from '../asset';
+import { unitAt } from '../core/hash';
+import {
+	acos,
+	cos,
+	cross3,
+	length3,
+	normalize3,
+	PI,
+	quatFromFrame,
+	radians,
+	sin,
+	type Vector3,
+} from '../core/math';
+import type { Phyllotaxis, Species } from '../core/record';
+import { type Curve, curveAt, type Spread, spreadAt, spreadMean } from '../core/types';
+import {
+	type AxisPoint,
+	addBudCluster,
+	type LeafRule,
+	leafTurn,
+	meshedPlan,
+	type PlannedBud,
+	type PlannedLeaf,
+	placeNodeLeaves,
+	type ShootPlan,
+	square,
+	turn,
+	type UncardedPrototype,
+} from './shoot';
+
+/**
+ * How a piece is turned where a socket carries it: along the socket's own direction, hanging plumb,
+ * with its plane level, or with its tip turned up.
+ */
+export type PieceAttitude = 'along' | 'plumb' | 'level' | 'up';
+
+/** The leaves along one stem of a piece. */
+export interface PieceLeaves {
+	/** Metres between one node and the next. */
+	readonly gap: number;
+	/** The share of the stem's length below which no leaf stands. */
+	readonly from?: number;
+	/** The leaf arrangement; the species' own where absent. */
+	readonly phyllotaxis?: Phyllotaxis;
+	/** Degrees a leaf stands from the stem, foot to tip. */
+	readonly angle: Curve;
+	/** The half-width of an even spread on that angle, in degrees. */
+	readonly angleSpread?: number;
+	/** A leaf's size over the species' own leaf, foot to tip. */
+	readonly scale?: Curve;
+	/** The share a leaf's upper face turns toward the sky side; the species' own where absent. */
+	readonly skyward?: number;
+	/**
+	 * The share by which a leaf hangs: 0 leaves it at its angle from the stem, 1 turns it straight
+	 * toward the ground side, whichever way its stem runs. A leaf on a long stalk hangs this way.
+	 */
+	readonly hang?: number;
+	/**
+	 * How a blade is rolled about its own midrib: degrees from facing its stem, and the half-width
+	 * of an even spread on them. A hanging leaf faces away from its twig, at 180. Where this or
+	 * `hang` is named, the leaf takes no turn toward the sky side.
+	 */
+	readonly face?: { readonly turn: number; readonly spread: number };
+}
+
+/** The side stems along one stem of a piece. */
+export interface PieceSides {
+	/** The side stem's own rule. */
+	readonly stem: PieceStem;
+	/** Metres along the parent between one side stem, or one pair, and the next. */
+	readonly gap: number;
+	/** The shares of the parent's length between which side stems leave. */
+	readonly from?: number;
+	readonly to?: number;
+	/**
+	 * Where each side stem stands round its parent: `alternate` to one side and the other in turn, in
+	 * the parent's own plane; `opposite` in pairs, each pair a quarter turn from the last; `spiral` by
+	 * the golden angle.
+	 */
+	readonly arrangement: 'alternate' | 'opposite' | 'spiral';
+	/** Degrees a side stem leaves at from its parent. */
+	readonly angle: Spread;
+	/** A side stem's length over its rule's, by its place along the parent, foot to tip. */
+	readonly lengthAlong?: Curve;
+}
+
+/** One stem of a piece. */
+export interface PieceStem {
+	/** Metres from its foot to its tip. */
+	readonly length: Spread;
+	/** Its radius in metres at its foot and at its tip. */
+	readonly radius: readonly [foot: number, tip: number];
+	/**
+	 * A hook at its foot: degrees it starts off its line, toward the sky side, the metres it runs
+	 * that way, and the metres over which it then turns onto the line. A hanging twig leaves its
+	 * branch this way.
+	 */
+	readonly hook?: { readonly angle: number; readonly length: number; readonly rise?: number };
+	/** Degrees it turns toward the ground side over the stretch `droopOver` names; below 0 it lifts. */
+	readonly droop?: number;
+	/** The shares of its length between which it droops; its whole length where absent. */
+	readonly droopOver?: readonly [from: number, to: number];
+	/** Degrees it turns at each node, to one side and the other in turn. */
+	readonly zigzag?: number;
+	/** Its leaves, where it carries any. */
+	readonly leaves?: PieceLeaves;
+	/** Its side stems, one rule for each kind. */
+	readonly sides?: readonly PieceSides[];
+	/** Whether it ends in the species' bud; it does where this is absent. */
+	readonly bud?: boolean;
+}
+
+/** One kind of piece of a species. */
+export interface PieceRule {
+	/** The piece's name, unique in its species. */
+	readonly name: string;
+	/** How a socket turns it. */
+	readonly attitude: PieceAttitude;
+	/** How many variants the kit holds, each with its own draws. */
+	readonly variants: number;
+	/** Its main stem. */
+	readonly stem: PieceStem;
+}
+
+/** A piece's prototype: its meshes at every tier, with how a socket holds it. */
+export interface PiecePrototype
+	extends Pick<UncardedPrototype, 'length' | 'radius' | 'leaves' | 'tiers'> {
+	/** The rule it was planned by, and which of the rule's variants it is. */
+	readonly piece: string;
+	readonly variant: number;
+	readonly attitude: PieceAttitude;
+}
+
+/** The golden angle in degrees. */
+const GOLDEN = 137.50776405;
+/** The longest straight run of a stem in metres, so a curve reads as a curve. */
+const STEP_MOST = 0.025;
+/** The fewest straight runs of a stem. */
+const STEPS_LEAST = 6;
+/** Degrees a side stem's place round its parent may move from its arrangement. */
+const SIDE_WANDER = 14;
+/** The most stems a plan may hold, which guards a rule that would never end. */
+const STEMS_MOST = 4096;
+/** The hash key of the first piece, clear of the shoot prototypes' keys. */
+const PIECE_KEY = 0x6400;
+
+/** Purposes of the pieces' hash keys, apart from the shoot prototypes'. */
+const Purpose = {
+	Length: 0x41,
+	Start: 0x42,
+	SideAngle: 0x43,
+	SideTurn: 0x44,
+	SideStart: 0x45,
+	Roll: 0x46,
+} as const;
+
+/**
+ * The unit `v` turned toward the unit `target` by `degrees`, and no farther than `target` itself.
+ * Below 0 it turns away, and no farther than the opposite of `target`.
+ */
+function toward(v: Readonly<Vector3>, target: Readonly<Vector3>, degrees: number): Vector3 {
+	const aim: Readonly<Vector3> = degrees >= 0 ? target : [-target[0], -target[1], -target[2]];
+	const along = Math.min(1, Math.max(-1, v[0] * aim[0] + v[1] * aim[1] + v[2] * aim[2]));
+	const off = (acos(along) * 180) / PI;
+	const step = Math.min(Math.abs(degrees), off);
+	if (step < 1e-6) return [...v];
+	const axis = cross3(v, aim, [0, 0, 0]);
+	// A vector that points straight away from its aim turns about its own sky side.
+	if (length3(axis[0], axis[1], axis[2]) < 1e-6) cross3(v, square([0, 0, 1], v, [1, 0, 0]), axis);
+	return normalize3(turn(v, normalize3(axis), step));
+}
+
+/** What one stem of a plan grows from. */
+interface StemStart {
+	readonly at: Vector3;
+	/** The stem's line, which a hook turns onto. */
+	readonly line: Vector3;
+	readonly sky: Vector3;
+	readonly along: number;
+	/** The stem's length over its rule's. */
+	readonly scale: number;
+}
+
+/**
+ * Plans one variant of a piece: its axes, its leaves and its buds.
+ *
+ * @param record The species record.
+ * @param rule The piece's rule.
+ * @param key The variant's hash key, unique among the species' pieces.
+ * @param leafMeshes The leaf meshes it may place.
+ * @param ground The ground side in the piece's frame, for a piece that stands another way than
+ * its attitude holds it, as a cut branch in a clamp does.
+ * @param lean Degrees the piece's line leans from +Y toward +X, for a cut that leans in its clamp.
+ * @returns The plan.
+ */
+export function planPiece(
+	record: Species,
+	rule: PieceRule,
+	key: number,
+	leafMeshes: number,
+	ground?: Readonly<Vector3>,
+	lean = 0,
+): ShootPlan {
+	const shoots = record.shoots;
+	if (!shoots)
+		throw new Error(`@null3d/vegetation: '${record.id}' has no shoots to build pieces of`);
+	const foliage = record.foliage;
+	if (foliage.kind !== 'blade')
+		throw new Error(`@null3d/vegetation: '${record.id}' has no blade leaf to build pieces of`);
+	const salt = record.seedSalt;
+	const draw = (purpose: number, a = 0, b = 0) => unitAt(salt, PIECE_KEY + key, purpose, a, b);
+	const down: Readonly<Vector3> = ground ?? (rule.attitude === 'plumb' ? [0, 1, 0] : [0, 0, -1]);
+	const leafSpread = foliage.leaf.length;
+	const leafMean = spreadMean(leafSpread);
+	const axes: AxisPoint[][] = [];
+	const leaves: PlannedLeaf[] = [];
+	const buds: PlannedBud[] = [];
+	let span = 0;
+
+	const leafRule = (stem: PieceStem): LeafRule | undefined => {
+		const own = stem.leaves;
+		if (!own || leafMeshes <= 0) return undefined;
+		const phyllotaxis = own.phyllotaxis ?? shoots.phyllotaxis;
+		const skyTurn = Math.min(1, Math.max(0, own.skyward ?? shoots.placement.skyward));
+		const flatten = phyllotaxis.kind === 'distichous' ? phyllotaxis.flatten : 0;
+		const share = Math.min(1, skyTurn + flatten * (1 - skyTurn));
+		return {
+			salt,
+			key: PIECE_KEY + key,
+			phyllotaxis,
+			leafAngle: own.angle,
+			leafAngleSpread: own.angleSpread ?? 0,
+			needleAngle: undefined,
+			ranks: 0,
+			leafScale: own.scale ?? 1,
+			leafSpread,
+			leafMean,
+			leafLength: leafMean,
+			leafMeshes,
+			budLength: shoots.bud.length,
+			budWidth: shoots.bud.width,
+			rotate: (direction, stemLine, sky, radial) =>
+				leafTurn(direction, stemLine, sky, radial, share),
+		};
+	};
+
+	/** A leaf turned as it hangs: toward the ground side by its share, and rolled about its midrib. */
+	const hung = (leaf: PlannedLeaf, own: PieceLeaves, axis: number, index: number): PlannedLeaf => {
+		const share = Math.min(1, Math.max(0, own.hang ?? 0));
+		const mixed: Vector3 = [
+			leaf.direction[0] * (1 - share) + down[0] * share,
+			leaf.direction[1] * (1 - share) + down[1] * share,
+			leaf.direction[2] * (1 - share) + down[2] * share,
+		];
+		const direction =
+			length3(mixed[0], mixed[1], mixed[2]) < 1e-6 ? leaf.direction : normalize3(mixed);
+		const roll =
+			(own.face?.turn ?? 0) + (draw(Purpose.Roll, axis, index) * 2 - 1) * (own.face?.spread ?? 0);
+		const face = turn(square(leaf.stem, direction, leaf.radial), direction, roll);
+		const rotation = [0, 0, 0, 1];
+		quatFromFrame(direction, face, rotation);
+		return { ...leaf, direction, rotation };
+	};
+
+	const grow = (stem: PieceStem, start: StemStart): void => {
+		if (axes.length >= STEMS_MOST)
+			throw new Error(`@null3d/vegetation: the piece '${rule.name}' passed ${STEMS_MOST} stems`);
+		const axis = axes.length;
+		const [footRadius, tipRadius] = stem.radius;
+		const length = Math.max(0.005, spreadAt(stem.length, draw(Purpose.Length, axis)) * start.scale);
+		const points: AxisPoint[] = [{ at: [...start.at], radius: footRadius, along: start.along }];
+		axes.push(points);
+		const leavesBy = leafRule(stem);
+		const gap = stem.leaves ? Math.max(0.002, stem.leaves.gap) : 0;
+		// A stem runs in straight steps short enough to read as a curve, and a node falls on a step's end.
+		const perNode = gap > 0 ? Math.max(1, Math.ceil(gap / STEP_MOST)) : 1;
+		const step = gap > 0 ? gap / perNode : Math.min(STEP_MOST, length / STEPS_LEAST);
+		const steps = Math.max(1, Math.round(length / step));
+		const run = length / steps;
+		const leafFrom = (stem.leaves?.from ?? 0) * length;
+		const [droopFrom, droopTo] = stem.droopOver ?? [0, 1];
+		const droopSpan = Math.max(1e-6, (droopTo - droopFrom) * length);
+		const hook = stem.hook;
+		let direction: Vector3 = [...start.line];
+		let sky = square(start.sky, direction, [0, 0, 1]);
+		if (hook) {
+			const a = radians(hook.angle);
+			direction = normalize3([
+				start.line[0] * cos(a) + sky[0] * sin(a),
+				start.line[1] * cos(a) + sky[1] * sin(a),
+				start.line[2] * cos(a) + sky[2] * sin(a),
+			]);
+			sky = square(sky, direction, [0, 0, 1]);
+		}
+		let at: Vector3 = [...start.at];
+		let along = start.along;
+		let zig = 1;
+		let node = 0;
+		const azimuthStart = draw(Purpose.Start, axis) * 360;
+		// Each step's end with its frame, where a side stem may leave.
+		const frames: { at: Vector3; direction: Vector3; sky: Vector3; along: number }[] = [];
+		for (let k = 0; k < steps; k++) {
+			const from = k * run;
+			const rise = hook?.rise ?? 0;
+			if (hook && from >= rise && from < rise + hook.length)
+				direction = toward(direction, start.line, (hook.angle * run) / hook.length);
+			const mid = from + run / 2;
+			if (stem.droop && mid >= droopFrom * length && mid <= droopTo * length)
+				direction = toward(direction, down, (stem.droop * run) / droopSpan);
+			const atNode = gap > 0 && (k + 1) % perNode === 0;
+			if (atNode && stem.zigzag) {
+				direction = turn(direction, sky, zig * stem.zigzag);
+				zig = -zig;
+			}
+			normalize3(direction);
+			sky = square(sky, direction, [0, 0, 1]);
+			at = [at[0] + direction[0] * run, at[1] + direction[1] * run, at[2] + direction[2] * run];
+			along += run;
+			const share = (k + 1) / steps;
+			const radius = footRadius + (tipRadius - footRadius) * share;
+			points.push({ at: [...at], radius, along });
+			frames.push({ at: [...at], direction: [...direction], sky: [...sky], along });
+			if (atNode && leavesBy && from + run >= leafFrom - 1e-9) {
+				const first = leaves.length;
+				placeNodeLeaves(
+					leavesBy,
+					leaves,
+					buds,
+					axis,
+					node,
+					at,
+					direction,
+					sky,
+					radius,
+					along,
+					share,
+					azimuthStart,
+					0,
+				);
+				const own = stem.leaves;
+				if (own && (own.hang !== undefined || own.face))
+					for (let i = first; i < leaves.length; i++)
+						leaves[i] = hung(leaves[i] as PlannedLeaf, own, axis, i);
+			}
+			if (atNode) node++;
+		}
+		span = Math.max(span, along);
+		points[points.length - 1] = { ...(points[points.length - 1] as AxisPoint), unitEnd: true };
+		if (stem.bud !== false) addBudCluster(buds, shoots.bud, tipRadius, at, direction, sky, along);
+		for (const [s, sides] of (stem.sides ?? []).entries()) {
+			const first = (sides.from ?? 0) * length;
+			const last = (sides.to ?? 1) * length;
+			const sideStart = draw(Purpose.SideStart, axis, s) * 360;
+			for (let n = 0; first + (n + 0.5) * sides.gap <= last + 1e-9; n++) {
+				const place = first + (n + 0.5) * sides.gap;
+				const frame = frames[Math.min(steps - 1, Math.max(0, Math.round(place / run) - 1))];
+				if (!frame) continue;
+				const t = place / length;
+				const wander = (draw(Purpose.SideTurn, axis, s * 4096 + n) - 0.5) * SIDE_WANDER;
+				const azimuths =
+					sides.arrangement === 'alternate'
+						? [90 + (n % 2) * 180 + wander]
+						: sides.arrangement === 'opposite'
+							? [sideStart + (n % 2) * 90 + wander, sideStart + (n % 2) * 90 + 180 + wander]
+							: [sideStart + n * GOLDEN + wander];
+				for (const [k, azimuth] of azimuths.entries()) {
+					const outward = turn(frame.sky, frame.direction, azimuth);
+					const lean = radians(
+						spreadAt(sides.angle, draw(Purpose.SideAngle, axis, s * 4096 + n * 2 + k)),
+					);
+					grow(sides.stem, {
+						at: [...frame.at],
+						line: normalize3([
+							frame.direction[0] * cos(lean) + outward[0] * sin(lean),
+							frame.direction[1] * cos(lean) + outward[1] * sin(lean),
+							frame.direction[2] * cos(lean) + outward[2] * sin(lean),
+						]),
+						sky: frame.sky,
+						along: frame.along,
+						scale: start.scale * curveAt(sides.lengthAlong ?? 1, t),
+					});
+				}
+			}
+		}
+	};
+
+	grow(rule.stem, {
+		at: [0, 0, 0],
+		line: [sin(radians(lean)), cos(radians(lean)), 0],
+		sky: [0, 0, 1],
+		along: 0,
+		scale: 1,
+	});
+	let reach = 0;
+	for (const points of axes)
+		for (const point of points)
+			reach = Math.max(reach, length3(point.at[0], point.at[1], point.at[2]));
+	return { axes, leaves, buds, reach, span: Math.max(span, 1e-6) };
+}
+
+/**
+ * The hash key of one variant of one of a species' pieces.
+ *
+ * @param rule The rule's index among the species' pieces.
+ * @param variant The variant.
+ * @returns The key.
+ */
+export function pieceKey(rule: number, variant: number): number {
+	return rule * 16 + variant;
+}
+
+/**
+ * Builds a species' pieces, each variant at every detail tier, from its leaf meshes.
+ *
+ * @param record The species record.
+ * @param rules The species' piece rules.
+ * @param leaves The species' leaf meshes at every tier, low first.
+ * @returns The prototypes, each rule's variants together, in the rules' order.
+ */
+export function piecePrototypes(
+	record: Species,
+	rules: readonly PieceRule[],
+	leaves: readonly (readonly PrototypeArrays[])[],
+): PiecePrototype[] {
+	const leafMeshes = Math.min(...leaves.map((tier) => tier.length));
+	const out: PiecePrototype[] = [];
+	for (const [r, rule] of rules.entries())
+		for (let variant = 0; variant < Math.min(16, Math.max(1, rule.variants)); variant++)
+			out.push({
+				piece: rule.name,
+				variant,
+				attitude: rule.attitude,
+				...meshedPlan(planPiece(record, rule, pieceKey(r, variant), leafMeshes), leaves),
+			});
+	return out;
+}
+
+/**
+ * How a studio photograph of cut wood is laid out from a species' pieces: one piece alone, or the
+ * bare wood of the cut standing in its clamp with pieces at its sockets.
+ */
+export interface PieceStudio {
+	/** The reference still's number. */
+	readonly still: number;
+	/** The piece drawn alone, or the piece at the tip of each stem of the stand. */
+	readonly piece: string;
+	/** The cut's bare wood, standing upright from its foot, where the photograph shows it. */
+	readonly stand?: {
+		readonly stem: PieceStem;
+		/** Degrees the cut leans from plumb in its clamp, toward the picture's right. */
+		readonly lean?: number;
+		/** Pieces along the stand's side stems: metres between sockets and where on a stem they start. */
+		readonly along?: { readonly piece: string; readonly gap: number; readonly from: number };
+	};
+	/** Degrees the camera stands round the layout; at 0 it looks along -Z. */
+	readonly turn?: number;
+}
+
+/** One piece of a layout: which piece, and where it stands in the layout's space, +Y up. */
+export interface PlacedPiece {
+	readonly piece: string;
+	/** A number that picks among the piece's variants. */
+	readonly pick: number;
+	readonly position: Vector3;
+	/** Its turn from the piece's rest frame, x, y, z, w. */
+	readonly rotation: number[];
+}
+
+/** A studio layout: the stand's plan, where the photograph shows one, and the placed pieces. */
+export interface StudioLayout {
+	readonly stand?: ShootPlan;
+	readonly placed: readonly PlacedPiece[];
+}
+
+/** Degrees a piece that turns up stands above its socket's own direction. */
+const UP_LIFT = 30;
+/** The most metres from a stem's tip within which another stem's foot means the tip forks and carries no piece. */
+const FORK_REACH = 0.05;
+const WORLD_UP: Readonly<Vector3> = [0, 1, 0];
+
+/** `v` laid level: its part square to the world's up, or `fallback` where it stands plumb. */
+function level(v: Readonly<Vector3>, fallback: Readonly<Vector3>): Vector3 {
+	const flat: Vector3 = [v[0], 0, v[2]];
+	return length3(flat[0], flat[1], flat[2]) < 1e-4 ? [...fallback] : normalize3(flat);
+}
+
+/**
+ * The turn that holds a piece at a socket, from the piece's rest frame to the layout's space.
+ *
+ * @param attitude How the piece is held.
+ * @param heading The socket's direction: the way its wood runs, or the way the piece leaves it.
+ * @returns The turn, x, y, z, w.
+ */
+export function pieceTurn(attitude: PieceAttitude, heading: Readonly<Vector3>): number[] {
+	const out = [0, 0, 0, 1];
+	const flat = level(heading, [1, 0, 0]);
+	if (attitude === 'plumb') quatFromFrame([0, -1, 0], flat, out);
+	else if (attitude === 'level') quatFromFrame(flat, WORLD_UP, out);
+	else if (attitude === 'up')
+		quatFromFrame(toward(normalize3([...heading]), WORLD_UP, UP_LIFT), WORLD_UP, out);
+	else quatFromFrame(normalize3([...heading]), WORLD_UP, out);
+	return out;
+}
+
+/**
+ * Lays out a studio photograph's cut from a species' pieces.
+ *
+ * @param record The species record.
+ * @param rules The species' piece rules.
+ * @param studio The photograph's layout.
+ * @returns The stand's plan and the placed pieces.
+ */
+export function layStudio(
+	record: Species,
+	rules: readonly PieceRule[],
+	studio: PieceStudio,
+): StudioLayout {
+	const attitudeOf = (name: string): PieceAttitude => {
+		const rule = rules.find((candidate) => candidate.name === name);
+		if (!rule) throw new Error(`@null3d/vegetation: '${record.id}' has no piece named '${name}'`);
+		return rule.attitude;
+	};
+	if (!studio.stand)
+		return {
+			placed: [
+				{
+					piece: studio.piece,
+					pick: 0,
+					position: [0, 0, 0],
+					rotation: pieceTurn(attitudeOf(studio.piece), [1, 0, 0]),
+				},
+			],
+		};
+	// The cut stands in its clamp: its line is up, and the ground is below it.
+	const stand = planPiece(
+		record,
+		{ name: `stand-${studio.still}`, attitude: 'along', variants: 1, stem: studio.stand.stem },
+		pieceKey(15, studio.still % 16),
+		0,
+		[0, -1, 0],
+		studio.stand.lean ?? 0,
+	);
+	const placed: PlacedPiece[] = [];
+	const along = studio.stand.along;
+	for (const [a, points] of stand.axes.entries()) {
+		const tip = points[points.length - 1] as AxisPoint;
+		const before = points[points.length - 2] as AxisPoint;
+		const heading = normalize3([
+			tip.at[0] - before.at[0],
+			tip.at[1] - before.at[1],
+			tip.at[2] - before.at[2],
+		]);
+		// A short stem's tip stands near its own parent's other forks, so its reach is its own share.
+		const reach = Math.min(FORK_REACH, (tip.along - (points[0] as AxisPoint).along) / 2);
+		const forks = stand.axes.some((other, b) => {
+			const foot = (other[0] as AxisPoint).at;
+			return (
+				b !== a && length3(foot[0] - tip.at[0], foot[1] - tip.at[1], foot[2] - tip.at[2]) < reach
+			);
+		});
+		if (!forks)
+			placed.push({
+				piece: studio.piece,
+				pick: a,
+				position: [...tip.at],
+				rotation: pieceTurn(attitudeOf(studio.piece), heading),
+			});
+		// A stand of one stem carries its side pieces on that stem; a forked stand on its arms.
+		if (!along || (a === 0 && stand.axes.length > 1)) continue;
+		const foot = (points[0] as AxisPoint).along;
+		const length = tip.along - foot;
+		let next = along.from * length;
+		let side = 1;
+		for (let k = 1; k < points.length; k++) {
+			const point = points[k] as AxisPoint;
+			if (point.along - foot < next || point.along - foot > length - along.gap / 2) continue;
+			const last = points[k - 1] as AxisPoint;
+			const run = normalize3([
+				point.at[0] - last.at[0],
+				point.at[1] - last.at[1],
+				point.at[2] - last.at[2],
+			]);
+			// A side piece leaves to one side of its stem and the other in turn, level with the ground.
+			const flat = level(run, [0, 0, 1]);
+			const out: Vector3 = [-flat[2] * side, 0, flat[0] * side];
+			placed.push({
+				piece: along.piece,
+				pick: a * 64 + k,
+				position: [...point.at],
+				rotation: pieceTurn(attitudeOf(along.piece), out),
+			});
+			side = -side;
+			next += along.gap;
+		}
+	}
+	return { stand, placed };
+}
