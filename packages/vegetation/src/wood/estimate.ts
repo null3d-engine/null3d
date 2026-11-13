@@ -4,7 +4,7 @@
 // bend rings of each fork's leaders and each tip's cap. It builds no vertex, no weld and no stem
 // foot, so it runs in a small share of the mesher's time and comes within a few per cent of its
 // count at the nearest level, where a triangle target is read.
-import { AXIS_STEM, type MacroSkeleton } from '../core/graph';
+import { AXIS_CULM, AXIS_STEM, type MacroSkeleton } from '../core/graph';
 import { acos, PI } from '../core/math';
 import type { MeshInput, MeshLevel } from '../stages';
 import { axisPath, KINK_BEND, type PathSample, roundKinks, sampleAt } from './frames';
@@ -97,7 +97,7 @@ export function woodLadderTriangles(
 		const part = parts?.[a] ?? 2;
 		if ((axes.order[a] as number) > orders) continue;
 		if (part !== 0 && keep && keep[a] !== 1) continue;
-		if (parent < 0 && axes.kind[a] !== AXIS_STEM) continue;
+		if (parent < 0 && axes.kind[a] !== AXIS_STEM && axes.kind[a] !== AXIS_CULM) continue;
 		let path: ReturnType<typeof pathOf> | null = null;
 		for (let step = 0; step < ladder.length; step++) {
 			const tube = (ladder[step] as readonly (TubeDetail | null)[])[part];

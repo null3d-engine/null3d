@@ -1,0 +1,34 @@
+{
+	"11-leaflet-group.png": {
+		"roll": 50,
+		"cutFrom": 2.1,
+		"cutSpan": 0.4
+	},
+	"12-single-leaflet-upper.png": {
+		"roll": -45
+	},
+	"13-single-leaflet-underside.png": {
+		"roll": -40.5
+	},
+	"22-subbranch-studio.png": {
+		"span": 3.1,
+		"cut": 1.7,
+		"cutFrom": 1.5,
+		"cutSpan": 1.7
+	},
+	"23-leaf-cluster-studio.png": {
+		"roll": -55,
+		"cutFrom": 0.3,
+		"cutSpan": 0.4
+	},
+	"24-leaf-texture-upper.png": {
+		"roll": -45
+	},
+	"25-leaf-texture-underside.png": {
+		"roll": -45
+	},
+	"21-branch-studio.png": {
+		"cutFrom": 0,
+		"cutSpan": 4.2
+	}
+}

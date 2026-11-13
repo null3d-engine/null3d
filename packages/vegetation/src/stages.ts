@@ -6,6 +6,7 @@ import type { MeshArrays, ShootRows, SpeciesKitData } from './asset';
 import type { MacroSkeleton } from './core/graph';
 import type { Species } from './core/record';
 import type { Detail, Season, Vec3 } from './core/types';
+import type { CuttingOptions } from './cutting';
 
 /**
  * What a grower takes: the record, the seed, the variant and the season.
@@ -79,6 +80,8 @@ export interface DressInput extends GrowInput {
 	 * Absent, the prune lights the crown of the rows it is given.
 	 */
 	readonly pruneLight?: CrownLight;
+	/** The cutting this variant is, where it is a piece rather than a whole plant. */
+	readonly cutting?: CuttingOptions;
 	/**
 	 * The plant as grown, on a plant that sparseness took foliage from: its skeleton and its rows
 	 * before the thinning. They keep the number each site and stem had as grown, so a choice keyed

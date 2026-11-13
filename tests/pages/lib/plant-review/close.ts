@@ -1,36 +1,31 @@
-// The cameras of the close and partial views, each placed the way its reference photograph frames
-// its subject. A view first finds its subject in the plant: the stem's first fork seen from its foot,
-// a great limb leaving the stem at a wide angle, a limb dividing into two arms, a limb of the crown's
-// outer surface, a branch with its side branches, or a twig with its end clusters. It then frames
-// the subject at the share of the picture that the photograph gives it, and stands on the side from
-// which the least of the rest of the plant comes between the lens and the subject, so one subject
-// shows clear as the photograph shows it. It reads only the skeleton, the shoot rows and the shoot
-// prototypes, so it holds for every species.
+// The close views whose subject is a piece of the crown that the skeleton and the shoot rows name
+// directly: a branch across its own run, a twig with its end clusters, a limb's hanging strands and
+// a tuft's flowering heads. Each finds its subject in the plant, frames it at the share of the
+// picture that its photograph gives it, and stands on the side from which the least of the rest of
+// the plant comes between the lens and the subject. The limbs that leave the stem and the places a
+// limb divides are read here too, for the subjects that the solved views frame. Everything reads
+// only the skeleton, the shoot rows and the shoot prototypes, so it holds for every species.
 
 import { BUD_FLOWER } from '../../../../packages/vegetation/src/core/graph';
 import {
 	type AxisPoint,
+	across,
 	chainOf,
-	cross,
 	dot,
-	facing,
-	firstForkHeight,
 	lengthOf,
 	mainStem,
 	nodeAt,
 	normalize,
 	pointAlong,
-	stemAt,
 	stemFoot,
+	step,
 	turnedAbout,
 	type V3,
 } from './anatomy';
-import { LEAST_ROW_GAP, rowAngle } from './framing';
 import type { MacroSkeleton, ShootPrototype, ShootRows } from './plant-types';
 import {
 	type Clutter,
 	clearest,
-	lensAxes,
 	plantSpheres,
 	type Shot,
 	type SubjectMark,
@@ -65,90 +60,12 @@ export interface Lens {
 }
 
 const DEG = Math.PI / 180;
-/** The height of a standing person's eye, in metres. */
-const EYE = 1.6;
-/** Metres a camera that looks up the stem stands from the bark: a step back, as a person stands. */
-const BELOW_STANDOFF = 1;
-/** The lowest a view up a plant shorter than a person drops its lens, in metres above the ground. */
-const BELOW_LOWEST_EYE = 0.2;
-/**
- * The highest a camera that looks up a stemless plant stands, as a share of the plant's height: a
- * tuft or a rosette has no stem at eye height, so its photograph is taken from near its foot.
- */
-const STEMLESS_EYE = 0.3;
-/** How far beyond its widest radius a stemless plant's camera stands, as a multiple of that radius. */
-const STEMLESS_STAND = 1.05;
-/**
- * The least height of a crown's base, in a person's eye heights, at which a view up the stem
- * frames the bole from its foot to the crown's base; under it, the bole is too short for that.
- */
-const CLEAN_BOLE_EYES = 2;
-/** The steepest a camera that looks up the stem pitches, in degrees, short of straight up. */
-const STEEPEST = 85;
-/** Metres a camera keeps clear of the wood and the leaves round it where it stands. */
-const CLEARANCE = 0.25;
-/** Degrees a view up the stem walks round it at a time, to find a stand clear of low branches. */
-const WALK_STEP = 15;
-/**
- * The stretch of a great limb, as shares of its length, within which the view from inside the
- * crown stands by its most level point, and the step it searches that stretch in.
- */
-const INSIDE_STRETCH = [0.15, 0.6, 0.05] as const;
-/**
- * Degrees more steeply than the most level great limb that the view from inside the crown still
- * weighs a limb at, each degree of tilt costing it a little against a clearer view.
- */
-const INSIDE_TILT = 10;
-/** The share of the frame's height that the great limb's thickness fills from inside the crown. */
-const INSIDE_LIMB_SHARE = 0.25;
 /** Degrees a close camera may look down on its subject: the photographs look level or up. */
 const LOOK_DOWN = 12;
-/**
- * The share of the frame's height that a limb's thickness fills where it leaves the stem: the
- * photograph stands close on the crotch, so the stem fills one side and the other limbs fall out.
- */
-const JUNCTION_LIMB_SHARE = 0.55;
-/** The share of the frame's width the stem's own surface takes when a picture gives no box. */
-const JUNCTION_STEM_SHARE = 0.3;
-/** The least radius, against the thickest limb that leaves the stem, of a limb a junction view takes. */
-const JUNCTION_THICK = 0.5;
-/**
- * The share of the thickest limb's radius down to which a thinner limb still joins the candidates,
- * so a crown-rosette's dead skirt, whose stipes leave the trunk below the living crown, can give a
- * junction whose crotch stands clear of the fronds. The thickness bonus ranks it below a thick limb.
- *
- * The premise that a thin limb means a dead skirt fails where a species' dead fronds leave at the
- * stem top: the tree fern has no stipe below its crown, and its only clear thin crotch is a living
- * frond this rule excludes. Its picture 07 is a stated subject limit with three measured attempts,
- * and no per-species admission. A species whose thin living limb should stand needs its own record.
- */
-const JUNCTION_SKIRT_THICK = 0.2;
 /** Degrees within which a limb that leaves the stem carries the stem's own line on. */
 const LEADER_ANGLE = 45;
-/** The share of the frame's height that the limb below a fork fills with its thickness. */
-const FORK_LIMB_SHARE = 0.28;
-/**
- * How many times the reach of a fork's arms the frame's height spans: the photograph shows both arms
- * and the twigs they carry, with the limb coming up to the joint from below.
- */
-const FORK_ARM_SPAN = 2.2;
-/**
- * The limb's diameters that the arms' reach may pull the frame out to, so a fork inside a crown does
- * not frame the crown above it. The photograph's frame spans about twenty of them.
- */
-const FORK_REACH_DIAMETERS = 20;
 /** The least radius of an arm, against its limb's radius at the fork, for a division to be a fork. */
 const FORK_ARM = 0.5;
-/** The radius a fork's limb is sought at, against the stem's radius at breast height. */
-const FORK_STEM_SHARE = 0.27;
-/** The row share at which the photograph's fork stands, a little under the middle of the frame. */
-const FORK_ROW = 0.6;
-/** The least radius of each arm against its limb's for the photograph's fork of two even arms. */
-const FORK_EVEN = 0.65;
-/** The least sine of the angle the photograph's fork opens at. */
-const FORK_OPEN = 0.55;
-/** How many times thicker or thinner than the sought limb a fork's limb may be. */
-const FORK_SIZE = 2;
 /** The most forks or limbs a view weighs, nearest its sought thickness first. */
 const MOST_SUBJECTS = 24;
 /** The share of the frame's height that a twig fills from its base to its farthest cluster. */
@@ -159,53 +76,21 @@ const TWIG_LEAVES = 4.5;
 const MOST_TWIGS = 48;
 /** The share of the frame left clear round a framed piece. */
 const MARGIN = 0.08;
-/**
- * The share of the frame's height that a view of the bole keeps above where the bole first
- * divides, where its photograph shows the limbs leaving the fork; its foot stands on the frame's
- * lower margin.
- */
-const BOLE_TOP = 0.2;
-/**
- * The share of its height by which a view of the crown's outer surface frames above its limb, so
- * the limb runs low across the frame and its shoots rise above it, as the photograph shows them.
- */
-const SURFACE_LIFT = 0.3;
 
 /**
  * How each view weighs a frame, from its photograph: how much of the frame its subject fills, and
- * how plain the ground behind it is. A junction stands before a busy wood; a fork, a cut branch and
- * a twig before a plain ground; the crown's outside is a surface whose depth is its subject.
+ * how plain the ground behind it is. A cut branch and a twig stand before a plain ground.
  */
 const WEIGHINGS = {
-	junction: { behind: 0.15, fill: 0.7, short: 1 },
-	inside: { behind: 0, fill: 0.5, short: 1, behindFills: true },
-	bark: { behind: 0.25, fill: 0.3, short: 1 },
-	bole: { behind: 0.1, fill: 0.3, short: 1 },
-	fork: { behind: 0.5, fill: 0.3, short: 1 },
-	surface: { behind: 0, fill: 0.55, short: 1, behindFills: true },
 	branch: { behind: 1, fill: 0.3, short: 1 },
 	twig: { behind: 1, fill: 0.45, short: 1 },
 } as const satisfies Record<string, Weighing>;
 
 /**
- * The height of a view's cameras over their subject, as the angle up from the subject, in degrees:
- * as far as each photograph looks up at its subject or down on it. The crown's outside is seen from
- * under its lower rim, looking up past its edge. Inside the crown, under its rim and at a fork, the
- * camera looks up far enough that the meadow stays out of the frame, as those photographs show only
- * sky and crown behind their subject.
+ * The height of a twig view's cameras over their subject, as the angle up from the subject, in
+ * degrees: as far as the photograph looks up at its twig or down on it.
  */
-const RISE = {
-	junction: [-25, -5],
-	inside: [-50, -32],
-	bark: [-20, LOOK_DOWN],
-	fork: [-60, -12],
-	surface: [-32, -23],
-	twig: [-30, LOOK_DOWN],
-} as const satisfies Record<string, readonly [number, number]>;
-/** Tips that stand a camera under the crown's rim, looking up at it. */
-const SURFACE_TIPS = [25, 28, 31] as const;
-/** Tips that stand a camera under a great limb inside the crown, looking up along it. */
-const INSIDE_TIPS = [35, 40, 45] as const;
+const TWIG_RISE = [-30, LOOK_DOWN] as const;
 
 /** A vector turned about the vertical axis by an angle in radians. */
 function yawed(v: readonly number[], angle: number): V3 {
@@ -215,15 +100,6 @@ function yawed(v: readonly number[], angle: number): V3 {
 		(v[0] as number) * c + (v[2] as number) * s,
 		v[1] as number,
 		-(v[0] as number) * s + (v[2] as number) * c,
-	];
-}
-
-/** The point `metres` from `at` along a direction. */
-function step(at: readonly number[], direction: readonly number[], metres: number): V3 {
-	return [
-		(at[0] as number) + (direction[0] as number) * metres,
-		(at[1] as number) + (direction[1] as number) * metres,
-		(at[2] as number) + (direction[2] as number) * metres,
 	];
 }
 
@@ -237,12 +113,6 @@ function between(skeleton: MacroSkeleton, a: number, b: number): V3 {
 	const p = nodeAt(skeleton, a);
 	const q = nodeAt(skeleton, b);
 	return normalize([q[0] - p[0], q[1] - p[1], q[2] - p[2]]);
-}
-
-/** A unit vector square to `v`, level where it can be: across a direction's run. */
-function across(v: V3): V3 {
-	const level = cross([0, 1, 0], v);
-	return Math.hypot(...level) > 1e-3 ? normalize(level) : [1, 0, 0];
 }
 
 /**
@@ -309,9 +179,6 @@ interface Subject<T> {
  * photographs see a limb, a fork or a twig across its run, not end on.
  */
 const SQUARE = 0.25;
-
-/** The turns and tips of a camera that keeps near square to its subject. */
-const SQUARE_TURNS = [0, -15, 15] as const;
 
 /** The degrees the cameras round a subject turn about its spin, and tip up or down. */
 const TURNS = [0, -25, 25, -50, 50] as const;
@@ -392,172 +259,6 @@ function bestOf<T>(
 	return best && { subject: best.subject, shot: best.shot, clutter: best.clutter };
 }
 
-/** How a view up the stem stands and looks. */
-export interface BelowFraming {
-	/** Degrees the camera pitches up, at most. */
-	readonly elevation: number;
-	/** The row share on which the bark where the stem first divides lands. */
-	readonly forkRow?: number;
-	/**
-	 * The row shares on which the ground at the stem's bark and the crown's base land: with both,
-	 * the camera stands as far back and pitches up as far as puts each where it is asked.
-	 */
-	readonly footRow?: number;
-	readonly crownRow?: number;
-	/** Degrees the look turns to the right of the stem. */
-	readonly aside?: number;
-	/** Stem radii from the stem's axis at which the camera stands, in place of a step back. */
-	readonly stand?: number;
-}
-
-/** Where a camera at eye height stands and how far it looks up, to see a bole from foot to fork. */
-interface BoleStand {
-	/** Metres up the camera stands. */
-	readonly eye: number;
-	/** Metres the camera stands back from the bark, level. */
-	readonly bark: number;
-	/** Radians the camera looks up. */
-	readonly pitch: number;
-}
-
-/**
- * The stand from which a bole `top` metres tall shows from its foot to its top: a person's eye
- * height, or half the bole's height on a bole too low for that, so far back and pitched up so far
- * that the ground at the bark lands on `footRow` and the bole's top on `topRow`.
- */
-function boleStand(top: number, lens: Lens, topRow: number, footRow: number): BoleStand {
-	const eye = Math.min(EYE, top / 2);
-	const above = rowAngle(topRow, lens.fov);
-	const below = -rowAngle(footRow, lens.fov);
-	const bark = distanceSpanning(top, eye, above + below);
-	return { eye, bark, pitch: Math.atan2(top - eye, bark) - above };
-}
-
-/**
- * The view up the stem from its foot. The camera stands at a person's eye height, `stand` stem
- * radii from the stem's axis as the photograph's camera stands, or else a step back from the bark.
- * With `forkRow`, it pitches up until the bark where the stem first divides lands on that row of
- * the frame, as a photograph that looks up the whole height frames where the bole divides; without
- * it, or where that would look steeper than `elevation`, it pitches by `elevation`. With `footRow`
- * and `crownRow`, it stands as far back and pitches up as far as puts the ground at the bark and the
- * crown's base on those rows, as a photograph that looks up a tall clean bole from a few steps away
- * frames it. `aside` turns the look to the right
- * of the stem by that many degrees, so the stem enters the frame from its lower left, as a
- * photograph of the crown's underside shows it.
- */
-export function belowView(
-	plant: ClosePlant,
-	turn: number,
-	lens: Lens,
-	framing: BelowFraming,
-): CloseView {
-	const { elevation, forkRow, footRow, crownRow, aside = 0, stand } = framing;
-	const { skeleton } = plant;
-	const foot = stemFoot(skeleton);
-	const fork = firstForkHeight(skeleton);
-	// A bole framed from its foot to its crown's base needs the base above the foot in the frame
-	// and well above the eye; otherwise the camera takes the plain view up the stem, and says so.
-	const warnings: string[] = [];
-	let bole: BoleStand | undefined;
-	if (footRow !== undefined && crownRow !== undefined) {
-		if (footRow - crownRow < LEAST_ROW_GAP - 1e-9)
-			warnings.push(
-				"the crown's row does not stand well above the foot's row, so the camera takes the plain view up the stem",
-			);
-		else if (skeleton.crownBase < CLEAN_BOLE_EYES * EYE)
-			warnings.push(
-				"the crown's base stands under twice a person's eye height, so the camera takes the plain view up the stem",
-			);
-		else bole = boleStand(skeleton.crownBase, lens, crownRow, footRow);
-	}
-
-	// A plant taller than a person is looked up at from a person's eye height. A shorter plant
-	// stands under the eye entirely, so the camera drops to a height within it: a few steps back
-	// at that height the crown still stands above the lens and the view reads up through the plant.
-	const eye = bole?.eye ?? Math.min(EYE, Math.max(BELOW_LOWEST_EYE, skeleton.height * 0.35));
-	// A plant with no stem at eye height, such as a tuft or a rosette, has no bark to look up: its
-	// camera stands low at the rim of its own spread and looks up through the leaves, as a photograph
-	// taken from the plant's foot does. A stem's radius would put it inside the plant.
-	// A short plant has no stem at a person's eye height whatever kind it is, so the test looks for
-	// one within the plant: a fern's stipes are a stem to look up, a tuft has none at any height.
-	const stemless = stemAt(skeleton, Math.min(EYE, skeleton.height * 0.5)) === undefined;
-	const spread =
-		Math.max(
-			(skeleton.bounds.max[0] as number) - (skeleton.bounds.min[0] as number),
-			(skeleton.bounds.max[2] as number) - (skeleton.bounds.min[2] as number),
-		) / 2;
-	const height = stemless ? Math.max(0.1, Math.min(EYE, skeleton.height * STEMLESS_EYE)) : eye;
-	const radius = stemAt(skeleton, height)?.radius ?? stemAt(skeleton, 1)?.radius ?? 0.1;
-	const reach = bole
-		? bole.bark + radius
-		: stemless
-			? spread * STEMLESS_STAND
-			: stand !== undefined
-				? stand * radius
-				: radius + BELOW_STANDOFF;
-	const standAt = (t: number): V3 => {
-		const o = facing(t);
-		return [foot[0] + o[0] * reach, height, foot[2] + o[2] * reach];
-	};
-	// A low branch or its leaves may stand where the photographer would: the camera walks round the
-	// stem, a step to either side in turn, to the nearest stand clear of the plant.
-	let walked: number | undefined;
-	for (let k = 0; k <= 180 / WALK_STEP && walked === undefined; k++) {
-		const offsets = k === 0 ? [0] : [k * WALK_STEP, -k * WALK_STEP];
-		walked = offsets.find((o) => standsClear(plant, standAt(turn + o * DEG)));
-	}
-	if (walked === undefined)
-		warnings.push(
-			'no stand round the stem is clear of the plant, so the camera keeps the one its turn asks',
-		);
-	const out = facing(turn + (walked ?? 0) * DEG);
-	const position = standAt(turn + (walked ?? 0) * DEG);
-	let pitch = bole ? bole.pitch / DEG : Math.min(STEEPEST, elevation);
-	if (!bole && forkRow !== undefined && fork !== undefined && fork > height) {
-		// The fork shows where the bark nearest the camera divides, a radius nearer than the axis.
-		const near = reach - (stemAt(skeleton, fork)?.radius ?? 0);
-		const forkAngle = Math.atan2(fork - height, Math.max(0.1, near)) / DEG;
-		pitch = Math.max(0, Math.min(pitch, forkAngle - rowAngle(forkRow, lens.fov) / DEG));
-	}
-	const level = yawed([-out[0], 0, -out[2]], -aside * DEG);
-	const look: V3 = [
-		level[0] * Math.cos(pitch * DEG),
-		Math.sin(pitch * DEG),
-		level[2] * Math.cos(pitch * DEG),
-	];
-	return {
-		position,
-		target: step(position, look, 1),
-		subject: {
-			kind: stemless ? 'the plant from its foot' : 'the stem from its foot',
-			...(bole && { crownBase: skeleton.crownBase }),
-			standoff: stemless ? reach : reach - radius,
-			stemRadius: radius,
-			fork: fork ?? null,
-			pitch,
-			aside,
-			walked: walked ?? 0,
-			...(warnings.length > 0 && { warning: warnings.join('; ') }),
-		},
-	};
-}
-
-/** Whether a camera at `position` stands clear of the plant's wood and leaves by `CLEARANCE`. */
-function standsClear(plant: ClosePlant, position: V3): boolean {
-	const spheres = plantSpheres(plant.skeleton, plant.shoots, plant.prototypes, position, 1);
-	const d = spheres.data;
-	for (let i = 0; i < spheres.count; i++) {
-		const gap =
-			Math.hypot(
-				(d[i * 4] as number) - position[0],
-				(d[i * 4 + 1] as number) - position[1],
-				(d[i * 4 + 2] as number) - position[2],
-			) - (d[i * 4 + 3] as number);
-		if (gap < CLEARANCE) return false;
-	}
-	return true;
-}
-
 /** A limb that leaves the main stem: where, the stem's radius and direction there, and its own. */
 export interface Departure {
 	readonly axis: number;
@@ -612,323 +313,6 @@ export function departures(skeleton: MacroSkeleton): {
 	return {
 		limbs: list.filter((d) => d !== leader).sort((a, b) => b.radius - a.radius),
 		...(leader && { leader }),
-	};
-}
-
-/** The share of its picture's frame that a close view's subject box takes across and down. */
-export interface SubjectBoxShare {
-	readonly width: number;
-	readonly height: number;
-}
-
-/**
- * The frame's height that a junction view takes: the limb's thickness must not outgrow the
- * photograph's subject box height share, and the stem's width must not outgrow its width share, so
- * the frame takes whichever need is the larger. Without the shares, the frame keeps the limb at its
- * own share and puts the stem's surface across the width, so the join and both limbs it joins stand
- * in the picture rather than a wall of bark.
- */
-export function junctionFrameHeight(
-	limbDiameter: number,
-	stemDiameter: number,
-	shares: SubjectBoxShare | undefined,
-	aspect: number,
-): number {
-	if (!shares)
-		return Math.max(
-			limbDiameter / JUNCTION_LIMB_SHARE,
-			stemDiameter / (JUNCTION_STEM_SHARE * aspect),
-		);
-	return Math.max(limbDiameter / shares.height, stemDiameter / (shares.width * aspect));
-}
-
-/**
- * The limbs a junction view takes as its candidates: a great limb, or a thinner stipe of the dead
- * skirt whose crotch stands below the living crown, and each running out of the frame as the
- * photograph's limb does.
- */
-export function junctionCandidates(
-	limbs: readonly Departure[],
-	thickest: number,
-	lens: Lens,
-	crownBase: number,
-): readonly Departure[] {
-	return limbs.filter(
-		(d) =>
-			(d.radius >= JUNCTION_THICK * thickest ||
-				(d.radius >= JUNCTION_SKIRT_THICK * thickest && d.at[1] < crownBase)) &&
-			d.length >= ((2 * d.radius) / JUNCTION_LIMB_SHARE) * lens.aspect,
-	);
-}
-
-/**
- * The view of a great limb leaving the stem. It takes the thick limbs that leave the stem and run
- * on past the frame, each seen side on across the plane of the stem and the limb so its angle of
- * departure shows at its true size, framed so the limb's thickness and the stem's width take the
- * shares of the frame that the photograph's subject box gives them, and stands where the fewest
- * other limbs come between the lens and the junction. The stem and the limb that carries it on
- * stand in as the photograph's trunk.
- */
-export function junctionView(
-	plant: ClosePlant,
-	lens: Lens,
-	shares?: SubjectBoxShare,
-): CloseView | undefined {
-	const { skeleton } = plant;
-	const { limbs, leader } = departures(skeleton);
-	const thickest = limbs[0]?.radius ?? 0;
-	const stem = mainStem(skeleton);
-	// A thick limb that runs out of the frame, as the photograph's does, rather than ending in it.
-	const thick = junctionCandidates(limbs, thickest, lens, skeleton.crownBase);
-	// A limb leaves level where it stands square to the stem's line, rising or drooping alike. Every
-	// thick limb is a candidate: the near-level departure is a bonus, so a crotch that stands clear
-	// of the crown can win over a level one buried behind it.
-	const off = (d: Departure) => Math.abs(90 - d.angle);
-	const subjects: Subject<Departure>[] = thick.flatMap((limb) => {
-		const height = junctionFrameHeight(2 * limb.radius, 2 * limb.stem.radius, shares, lens.aspect);
-		return [
-			{
-				// The crotch: where the limb's underside leaves the stem's surface.
-				target: step(
-					step(limb.at, limb.direction, limb.stem.radius),
-					[0, -1, 0],
-					limb.radius * 0.5,
-				),
-				normal: normalize(cross(limb.stem.direction, limb.direction)),
-				spin: limb.stem.direction,
-				distance: distanceFor(height, lens.fov),
-				mark: {
-					axes: markAxes(skeleton, [stem, leader?.axis ?? -1], [limb.axis]),
-					band: limb.stem.radius + height / 2,
-				},
-				// A thick limb and a wide departure are what the photograph shows, and a limb
-				// running to the right reads as its limb does.
-				bonus: (shot: Shot) =>
-					0.1 * (limb.radius / thickest) +
-					0.1 * Math.sin(Math.min(90, limb.angle) * DEG) +
-					0.1 * (1 - Math.min(off(limb), 90) / 90) +
-					(dot(limb.direction, lensAxes(shot).right) > 0 ? 0.03 : 0),
-				facts: limb,
-			},
-		];
-	});
-	// The limbs of a whorl stand round the junction, so its cameras walk further round the stem.
-	const found = bestOf(
-		plant,
-		subjects,
-		lens,
-		WEIGHINGS.junction,
-		RISE.junction,
-		[0, -25, 25, -50, 50, -75, 75],
-	);
-	if (!found) return undefined;
-	const limb = found.subject.facts;
-	return {
-		...found.shot,
-		clutter: found.clutter,
-		subject: {
-			kind: 'a limb leaving the stem',
-			axis: limb.axis,
-			radius: limb.radius,
-			stemRadius: limb.stem.radius,
-			angle: limb.angle,
-			length: limb.length,
-			height: limb.at[1],
-		},
-	};
-}
-
-/** The great limbs that leave the stem and run out of a frame `height` metres tall. */
-function greatLimbs(skeleton: MacroSkeleton, frame: (limb: Departure) => number): Departure[] {
-	const { limbs } = departures(skeleton);
-	const thickest = limbs[0]?.radius ?? 0;
-	return limbs.filter((d) => d.radius >= JUNCTION_THICK * thickest && d.length >= frame(d));
-}
-
-/** A point on a limb and how level the limb runs there, in degrees above or below level. */
-interface LevelPoint {
-	readonly limb: Departure;
-	readonly at: AxisPoint;
-	readonly tilt: number;
-}
-
-/** The most level point of a limb within the stretch the view from inside the crown searches. */
-function levelPoint(skeleton: MacroSkeleton, limb: Departure): LevelPoint {
-	const [from, to, by] = INSIDE_STRETCH;
-	let best: LevelPoint | undefined;
-	for (let share = from; share <= to + 1e-9; share += by) {
-		const at = pointAlong(skeleton, limb.axis, share);
-		const tilt = Math.abs(Math.asin(Math.max(-1, Math.min(1, at.direction[1])))) / DEG;
-		if (!best || tilt < best.tilt) best = { limb, at, tilt };
-	}
-	return best as LevelPoint;
-}
-
-/**
- * The view from inside the crown beside a great limb, as its photograph stands: under the limb and
- * beside it, near enough that the limb's thickness fills a share of the frame, looking up across
- * it into the crown, so the limb crosses the lower part of the frame and the crown's underside
- * fills the rest. It takes the great limb that runs most nearly level, at its most level stretch,
- * as the photograph's limb is carried almost level.
- */
-export function insideView(plant: ClosePlant, lens: Lens): CloseView | undefined {
-	const { skeleton } = plant;
-	const tall = (p: LevelPoint) => (2 * p.at.radius) / INSIDE_LIMB_SHARE;
-	const points = greatLimbs(skeleton, () => 0)
-		.map((limb) => levelPoint(skeleton, limb))
-		.filter((p) => p.limb.length >= tall(p) * lens.aspect);
-	const flattest = points.reduce((least, p) => Math.min(least, p.tilt), 90);
-	const subjects: Subject<LevelPoint>[] = points
-		.filter((p) => p.tilt <= flattest + INSIDE_TILT)
-		.map((point) => {
-			const height = tall(point);
-			return {
-				// The limb runs low in the frame, the crown above it.
-				target: step(point.at.at, [0, 1, 0], SURFACE_LIFT * height),
-				normal: across(point.at.direction),
-				spin: point.at.direction,
-				distance: distanceFor(height, lens.fov),
-				mark: { axes: markAxes(skeleton, [], [point.limb.axis]), band: height / 2 },
-				bonus: () => 0.01 * (INSIDE_TILT - (point.tilt - flattest)),
-				facts: point,
-			};
-		});
-	// The camera keeps near square to the limb, so the limb crosses the frame as the photograph's does.
-	const found = bestOf(
-		plant,
-		subjects,
-		lens,
-		WEIGHINGS.inside,
-		RISE.inside,
-		[0, -20, 20],
-		INSIDE_TIPS,
-	);
-	if (!found) return undefined;
-	const point = found.subject.facts;
-	return {
-		...found.shot,
-		clutter: found.clutter,
-		subject: {
-			kind: 'a great limb from inside the crown',
-			axis: point.limb.axis,
-			radius: point.at.radius,
-			tilt: point.tilt,
-		},
-	};
-}
-
-/**
- * The view of the bark on a great limb, as its photograph shows it: the limb crossing the frame,
- * its thickness filling `girth` of the frame's height, `share` of the way along it, seen across its
- * run from the side where the least of the rest of the plant stands in front of it.
- */
-export function barkLimbView(
-	plant: ClosePlant,
-	lens: Lens,
-	girth: number,
-	share: number,
-): CloseView | undefined {
-	const { skeleton } = plant;
-	const tall = (d: Departure) => (2 * pointAlong(skeleton, d.axis, share).radius) / girth;
-	const subjects: Subject<Departure>[] = greatLimbs(skeleton, (d) => tall(d) * lens.aspect).map(
-		(limb) => {
-			const at = pointAlong(skeleton, limb.axis, share);
-			const height = tall(limb);
-			return {
-				target: at.at,
-				normal: across(at.direction),
-				spin: at.direction,
-				distance: distanceFor(height, lens.fov),
-				mark: { axes: markAxes(skeleton, [limb.axis]), band: height / 2 },
-				bonus: () => 0,
-				facts: limb,
-			};
-		},
-	);
-	const found = bestOf(plant, subjects, lens, WEIGHINGS.bark, RISE.bark);
-	if (!found) return undefined;
-	const limb = found.subject.facts;
-	return {
-		...found.shot,
-		clutter: found.clutter,
-		subject: {
-			kind: 'the bark on a great limb',
-			axis: limb.axis,
-			radius: pointAlong(skeleton, limb.axis, share).radius,
-			share,
-		},
-	};
-}
-
-/**
- * The level distance from the bark at which a run of bark from the ground up to `top`, seen from
- * an eye `eye` metres up, spans `angle` radians of the frame's height. The eye stands no higher
- * than the run's middle, so the span shrinks as the eye steps back and one distance gives it.
- */
-function distanceSpanning(top: number, eye: number, angle: number): number {
-	let near = 1e-3;
-	let far = 1e4;
-	for (let k = 0; k < 60; k++) {
-		const middle = Math.sqrt(near * far);
-		if (Math.atan2(top - eye, middle) + Math.atan2(eye, middle) > angle) near = middle;
-		else far = middle;
-	}
-	return Math.sqrt(near * far);
-}
-
-/**
- * The view of the bole from its foot to where it first divides, as its photograph frames it: from
- * a person's eye height, or from half the bole's height on a bole too low for that, so far back and
- * pitched up so far that the ground at the bark lands on the frame's lower margin and the first
- * division lands a set share of the frame below its top, with the limbs leaving it above. It stands
- * on the side of the stem where the least of the plant crosses in front of the bole; the turns nearest
- * `turn` win a tie, so a plant with nothing in the way keeps the view its query asks.
- */
-export function trunkView(plant: ClosePlant, lens: Lens, turn: number): CloseView | undefined {
-	const { skeleton } = plant;
-	const stem = mainStem(skeleton);
-	if (stem < 0) return undefined;
-	const foot = stemFoot(skeleton);
-	const fork = firstForkHeight(skeleton) ?? Math.max(skeleton.crownBase, skeleton.height * 0.3);
-	const { eye, bark, pitch } = boleStand(fork, lens, BOLE_TOP, 1 - MARGIN);
-	const back = bark + (stemAt(skeleton, eye)?.radius ?? 0);
-	const target: V3 = [foot[0], eye + back * Math.tan(pitch), foot[2]];
-	const out = facing(turn);
-	const normal: V3 = [out[0] * Math.cos(pitch), -Math.sin(pitch), out[2] * Math.cos(pitch)];
-	const distance = back / Math.cos(pitch);
-	const { leader } = departures(skeleton);
-	const subjects: Subject<number>[] = [
-		{
-			target,
-			normal,
-			spin: [0, 1, 0],
-			distance,
-			// The bole and what carries it on are the subject; the limbs that leave it count as
-			// what stands round it.
-			mark: { axes: markAxes(skeleton, [stem, leader?.axis ?? -1]), band: distance },
-			bonus: (shot: Shot) => {
-				const away = normalize([shot.position[0] - target[0], 0, shot.position[2] - target[2]]);
-				return 0.02 * dot(away, out);
-			},
-			sides: [1],
-			facts: stem,
-		},
-	];
-	// Turning about the upright keeps each camera at the eye's height and pitch.
-	const turns = Array.from({ length: 360 / WALK_STEP }, (_, k) => k * WALK_STEP - 180 + WALK_STEP);
-	const found = bestOf(plant, subjects, lens, WEIGHINGS.bole, [-90, 90], turns, [0]);
-	const shot = found?.shot ?? { position: step(target, normal, distance), target };
-	return {
-		...shot,
-		...(found && { clutter: found.clutter }),
-		subject: {
-			kind: 'the bole to its first division',
-			turned: (Math.atan2(shot.position[0] - target[0], shot.position[2] - target[2]) - turn) / DEG,
-			fork,
-			eye,
-			pitch: pitch / DEG,
-			stand: back,
-		},
 	};
 }
 
@@ -987,203 +371,6 @@ export function forks(skeleton: MacroSkeleton): Fork[] {
 	return out;
 }
 
-/**
- * The roll, in radians about a shot's line of sight, that turns the picture until `direction`
- * points up the frame; none where the direction runs along the line of sight.
- */
-function rollUpright(shot: Shot, direction: V3): number {
-	const { forward, right, up } = lensAxes(shot);
-	const across = dot(direction, right);
-	const along = dot(direction, up);
-	if (Math.hypot(across, along) < 0.2 * Math.hypot(...direction)) return 0;
-	const wanted = normalize([
-		right[0] * across + up[0] * along,
-		right[1] * across + up[1] * along,
-		right[2] * across + up[2] * along,
-	]);
-	return Math.atan2(dot(cross(up, wanted), forward), dot(up, wanted));
-}
-
-/**
- * The items that pass each test in turn, a test passed over where nothing would be left, and
- * whether each test held.
- */
-function preferring<T>(
-	items: readonly T[],
-	...tests: readonly ((item: T) => boolean)[]
-): { readonly kept: T[]; readonly held: boolean[] } {
-	let kept = [...items];
-	const held: boolean[] = [];
-	for (const test of tests) {
-		const passing = kept.filter(test);
-		held.push(passing.length > 0);
-		if (passing.length > 0) kept = passing;
-	}
-	return { kept, held };
-}
-
-/** The normal of the plane a fork's two arms part in. */
-function planeNormal(fork: Fork): V3 {
-	const plane = cross(fork.on, fork.out);
-	return Math.hypot(...plane) > 1e-3 ? normalize(plane) : across(fork.into);
-}
-
-/**
- * How far a fork's arms run from its joint, their twigs included: the farthest node of the two
- * subtrees the joint divides into. The photograph frames both arms and the twigs they carry, so the
- * frame follows this reach rather than the limb's thickness alone.
- */
-function armsReach(skeleton: MacroSkeleton, fork: Fork): number {
-	const { axes, position } = skeleton;
-	// Every axis that descends from the two arms, by walking each one's parents.
-	const inside = new Set<number>([fork.arm, fork.limb]);
-	for (let a = 0; a < axes.count; a++) {
-		let parent = axes.parent[a] as number;
-		for (let guard = 0; parent >= 0 && guard <= axes.count; guard++) {
-			if (inside.has(parent)) {
-				inside.add(a);
-				break;
-			}
-			parent = axes.parent[parent] as number;
-		}
-	}
-	let reach = 0;
-	for (const axis of inside)
-		for (let n = axes.first[axis] as number; n <= (axes.last[axis] as number); n++) {
-			const at = skeleton.position;
-			reach = Math.max(
-				reach,
-				Math.hypot(
-					(at[n * 3] as number) - fork.at[0],
-					(at[n * 3 + 1] as number) - fork.at[1],
-					(at[n * 3 + 2] as number) - fork.at[2],
-				),
-			);
-		}
-	return reach;
-}
-
-/**
- * The view of a limb dividing into two. It takes the forks whose limb is nearest `thin` metres of
- * radius, or a share of the stem's own radius, away from the stem, seen square to the plane of the
- * two arms so the fork opens at its true angle, from the side where the least of the rest of the
- * plant stands in front of the fork or behind it. The frame spans both arms and the twigs they
- * carry, at least as far as the limb below the joint fills the share of it that the photograph
- * gives, and never out into the crown above them; `span` asks for a frame height in metres instead,
- * as it does for a limb. Arms nearer the limb's own size, and a fork that stands upright so a level
- * camera sees it square, make the likelier subject.
- */
-/**
- * What the fork view's wishes keep of a plant's divisions, each count among those left by the wish
- * before it, so a fork view that draws no fork can say which wish emptied it. A count above zero
- * with no subject means the divisions exist but no camera sees one clear.
- */
-export function forkCandidates(
-	skeleton: MacroSkeleton,
-	thin?: number,
-): {
-	readonly total: number;
-	readonly counts: readonly number[];
-	readonly kept: number;
-	readonly sought: number;
-} {
-	const stemRadius = stemAt(skeleton, 1.3)?.radius ?? stemAt(skeleton, 0.3)?.radius ?? 0.1;
-	const sought = thin ?? FORK_STEM_SHARE * stemRadius;
-	const stem = mainStem(skeleton);
-	const all = forks(skeleton);
-	const outside = all.filter((f) => f.reach > stemRadius + 2 * f.radius);
-	const wishes = [
-		(f: Fork) => (skeleton.axes.parent[f.limb] as number) === stem,
-		(f: Fork) => Math.abs(Math.log(f.radius / sought)) <= Math.log(FORK_SIZE),
-		(f: Fork) => f.armRadius >= FORK_EVEN * f.radius,
-		(f: Fork) => Math.hypot(...cross(f.on, f.out)) >= FORK_OPEN,
-	];
-	let kept = outside;
-	const counts: number[] = [outside.length];
-	for (const wish of wishes) {
-		const passing = kept.filter(wish);
-		if (passing.length > 0) kept = passing;
-		counts.push(passing.length);
-	}
-	return { total: all.length, counts, kept: kept.length, sought };
-}
-
-export function forkView(
-	plant: ClosePlant,
-	lens: Lens,
-	thin?: number,
-	span?: number,
-): CloseView | undefined {
-	const { skeleton } = plant;
-	const stemRadius = stemAt(skeleton, 1.3)?.radius ?? stemAt(skeleton, 0.3)?.radius ?? 0.1;
-	const sought = thin ?? FORK_STEM_SHARE * stemRadius;
-	// The photograph's fork: a great limb, one that leaves the stem, dividing into two even arms that
-	// part wide, in an upright plane, on a limb that rises into it, so the limb comes up from the
-	// lower edge and both arms leave upward. Each wish in turn narrows the forks that meet the wishes
-	// before it, where any of those forks meets it.
-	const stem = mainStem(skeleton);
-	const { kept, held } = preferring(
-		forks(skeleton).filter((f) => f.reach > stemRadius + 2 * f.radius),
-		(f) => (skeleton.axes.parent[f.limb] as number) === stem,
-		(f) => Math.abs(Math.log(f.radius / sought)) <= Math.log(FORK_SIZE),
-		(f) => f.armRadius >= FORK_EVEN * f.radius,
-		(f) => Math.hypot(...cross(f.on, f.out)) >= FORK_OPEN,
-	);
-	const subjects: Subject<Fork>[] = kept
-		.sort((a, b) => Math.abs(Math.log(a.radius / sought)) - Math.abs(Math.log(b.radius / sought)))
-		.slice(0, MOST_SUBJECTS)
-		.map((fork) => {
-			// The photograph frames both arms and their twigs with the limb coming up to the joint from
-			// below. The frame never runs past the arms' own reach into the crown above them.
-			const reach = Math.min(armsReach(skeleton, fork), FORK_REACH_DIAMETERS * 2 * fork.radius);
-			const height = span ?? Math.max((2 * fork.radius) / FORK_LIMB_SHARE, FORK_ARM_SPAN * reach);
-			const normal = planeNormal(fork);
-			const size = Math.max(0, 1 - Math.abs(Math.log(fork.radius / sought)));
-			// The photograph's fork opens wide: arms that part at a right angle show it best.
-			const opening = Math.hypot(...cross(fork.on, fork.out));
-			return {
-				// The joint stands a little under the frame's middle, the limb coming up to it from
-				// below and both arms above it.
-				target: step(fork.at, fork.into, (FORK_ROW - 0.5) * height),
-				normal,
-				spin: fork.into,
-				distance: distanceFor(height, lens.fov),
-				mark: { axes: markAxes(skeleton, [fork.limb, fork.arm]), band: height / 2 },
-				bonus: () =>
-					0.15 * size +
-					0.1 * (fork.armRadius / fork.radius) +
-					0.1 * opening +
-					0.1 * (1 - Math.abs(normal[1])),
-				facts: fork,
-			};
-		});
-	// The photograph sees its fork square to the two arms, so every camera keeps near that line.
-	const best = bestOf(plant, subjects, lens, WEIGHINGS.fork, RISE.fork, SQUARE_TURNS, SQUARE_TURNS);
-	if (!best) return undefined;
-	const fork = best.subject.facts;
-	return {
-		...best.shot,
-		// The camera turns about its line of sight until the limb comes up to the fork from the
-		// frame's lower edge, as in the photograph, wherever the fork leans.
-		roll: rollUpright(best.shot, fork.into),
-		clutter: best.clutter,
-		subject: {
-			kind: 'a limb dividing into two',
-			node: fork.node,
-			radius: fork.radius,
-			armRadius: fork.armRadius,
-			sought,
-			height: fork.at[1],
-			reach: fork.reach,
-			// Which of the photograph's wishes were met, each among the forks that meet the wishes
-			// before it: a great limb, then a limb near the sought size, then two even arms, then a
-			// wide opening. A wish not met says no fork that meets the earlier wishes meets it, not
-			// that the plant has no such fork at all.
-			wishes: { great: held[0], size: held[1], even: held[2], wide: held[3] },
-		},
-	};
-}
-
 /** What a limb view frames: where along the limb, the wood's radius, and the frame's metres. */
 export interface LimbFraming {
 	/** The share of the way along the limb that the view looks at. */
@@ -1205,7 +392,7 @@ interface Piece {
 }
 
 /** The pieces of wood whose radius `share` of the way along stands nearest `thin`, furthest first. */
-function limbPieces(skeleton: MacroSkeleton, share: number, thin: number): Piece[] {
+export function limbPieces(skeleton: MacroSkeleton, share: number, thin: number): Piece[] {
 	const { axes } = skeleton;
 	const foot = stemFoot(skeleton);
 	const tolerance = Math.max(0.005, thin * 0.25);
@@ -1275,67 +462,6 @@ export function limbView(
 	};
 }
 
-/**
- * The view of the crown's outer surface as its photograph shows it: from under the crown's lower
- * rim, looking up past its edge. It takes the pieces of wood whose radius `share` of the way along
- * stands nearest `thin` metres, the furthest out first and the lowest preferred, and stands inside
- * the rim and under it, looking out and up at the photograph's angle, so the rim's shoots stand
- * against what lies beyond the crown. It frames `span` metres above the limb, so the limb runs low
- * across the frame and its shoots rise above it.
- */
-export function surfaceView(
-	plant: ClosePlant,
-	lens: Lens,
-	framing: Omit<LimbFraming, 'lookUp'>,
-): CloseView | undefined {
-	const { skeleton } = plant;
-	const foot = stemFoot(skeleton);
-	const pieces = limbPieces(skeleton, framing.share, framing.thin);
-	const outermost = pieces[0]?.reach ?? 1;
-	const base = skeleton.crownBase;
-	const top = Math.max(base + 0.1, skeleton.height);
-	const distance = spanDistance(framing.span, framing.thin, lens.fov);
-	const lift = framing.span * SURFACE_LIFT;
-	const subjects: Subject<Piece>[] = pieces.slice(0, MOST_SUBJECTS).map((piece) => {
-		const outward = normalize([piece.point.at[0] - foot[0], 0, piece.point.at[2] - foot[2]]);
-		const low = 1 - Math.min(1, Math.max(0, (piece.point.at[1] - base) / (top - base)));
-		return {
-			target: [piece.point.at[0], piece.point.at[1] + lift, piece.point.at[2]],
-			// The camera stands on the stem's side of the rim, looking out past it.
-			normal: [-outward[0], 0, -outward[2]],
-			spin: [0, 1, 0],
-			sides: [1],
-			distance,
-			mark: { band: framing.span * 0.25 },
-			bonus: () => 0.05 * (piece.reach / outermost) + 0.1 * low,
-			facts: piece,
-		};
-	});
-	const found = bestOf(
-		plant,
-		subjects,
-		lens,
-		WEIGHINGS.surface,
-		RISE.surface,
-		[0, -30, 30, -60, 60],
-		SURFACE_TIPS,
-	);
-	if (!found) return undefined;
-	const piece = found.subject.facts;
-	return {
-		...found.shot,
-		clutter: found.clutter,
-		subject: {
-			kind: "the crown's outer rim from under it",
-			axis: piece.axis,
-			radius: piece.point.radius,
-			reach: piece.reach,
-			height: piece.point.at[1],
-			span: framing.span,
-		},
-	};
-}
-
 /** The direction a shoot row grows: its frame's +Y. */
 function shootDirection(rows: ShootRows, row: number): V3 {
 	const x = rows.rotation[row * 4] as number;
@@ -1394,7 +520,7 @@ export function twigView(plant: ClosePlant, lens: Lens): CloseView | undefined {
 			};
 		},
 	);
-	const found = bestOf(plant, subjects, lens, WEIGHINGS.twig, RISE.twig, [0, -45, 45, 90]);
+	const found = bestOf(plant, subjects, lens, WEIGHINGS.twig, TWIG_RISE, [0, -45, 45, 90]);
 	if (!found) return undefined;
 	return {
 		...found.shot,

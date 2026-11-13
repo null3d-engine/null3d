@@ -130,6 +130,58 @@ export function levelBands(
 }
 
 /**
+ * The level of detail that a placed copy draws at a distance, and the distances its levels switch at.
+ *
+ * @category api/vegetation
+ */
+export interface DrawnLevel {
+	/** 0 for the nearest level, 1 and 2 for the card levels, 3 for the far card. */
+	readonly level: 0 | 1 | 2 | 3;
+	/** The level in words. */
+	readonly name: 'leaf form' | 'first card level' | 'second card level' | 'far card';
+	/** The distance each level starts to draw at, in metres, in level order; the far card's last. */
+	readonly starts: readonly number[];
+}
+
+const LEVEL_NAMES = ['leaf form', 'first card level', 'second card level', 'far card'] as const;
+
+/**
+ * The level that `placePlants` draws a copy of a variant at, a distance from the camera: its real
+ * shoots and nearest wood, one of its two card levels, or its far card. A page uses it to say
+ * which level a picture shows, since a figure read from a picture holds for that level alone.
+ *
+ * @param kit The species' kit.
+ * @param asset The grown variant, as the page places it.
+ * @param view The page's render height, field of view and switch bias, as `placePlants` takes them.
+ * @param distance Metres from the camera to the copy, at a copy's scale of 1.
+ * @param far Whether the page gave `placePlants` the far cards.
+ * @returns The level, its name and every level's start.
+ * @category api/vegetation
+ */
+export function drawnLevel(
+	kit: SpeciesKit,
+	asset: PlantAsset,
+	view: PlaceOptions['view'],
+	distance: number,
+	far = false,
+): DrawnLevel {
+	const bias = switchScale(view.switchBias);
+	const scale = viewScale(view) * bias;
+	const impostor = far ? asset.impostor.from * scale : FAR;
+	const bands = levelBands(asset, firstCardStart(kit, view) * bias, scale, impostor);
+	let level: 0 | 1 | 2 | 3 = 0;
+	bands.forEach((band, index) => {
+		if (band.parts.length > 0 && distance >= band.from) level = Math.min(index, 2) as 0 | 1 | 2;
+	});
+	if (distance >= impostor) level = 3;
+	return {
+		level,
+		name: LEVEL_NAMES[level],
+		starts: [...bands.map((band) => band.from), impostor],
+	};
+}
+
+/**
  * Places a species' copies at fixed places: their levels in bands of distance, the far cards past
  * the impostor's distance when the page gives the far bakes, and real shoot rows near the camera
  * for the first copies, up to the near table's slots.

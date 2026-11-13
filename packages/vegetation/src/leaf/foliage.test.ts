@@ -5,13 +5,14 @@ import { describe, expect, it } from 'bun:test';
 import type { ShootRows } from '../asset';
 import { AXIS_LIMB, AXIS_STEM, BUD_LATERAL, SkeletonBuilder } from '../core/graph';
 import { placeholderSkeleton } from '../core/placeholder';
-import type { NeedleShape, Species } from '../core/record';
+import type { NeedleShape, ScaleSpray, Species } from '../core/record';
 import type { Season } from '../core/types';
 import { DETAILS } from '../core/types';
 import { fascicleMesh } from './fascicle';
 import { placeShoots } from './instancer';
 import { needleMesh } from './needle';
 import { OAK_MANIFEST, oakRecord, testKit } from './oak.test-support';
+import { builder as sprayBuilder, sprayMesh } from './scale-spray';
 import { inLeaf } from './season';
 
 const NEEDLE: NeedleShape = {
@@ -50,24 +51,67 @@ describe('the needle', () => {
 });
 
 describe('the fascicle', () => {
-	it('bundles its needles round a sheath', () => {
-		const record: Species = {
-			...oakRecord(),
-			foliage: { kind: 'fascicle', needle: { ...NEEDLE, length: 0.06 }, sheath: 0.008, twist: 30 },
-			shoots: { ...oakRecord().shoots!, phyllotaxis: { kind: 'fascicle', needles: 3 } },
-		};
+	const record: Species = {
+		...oakRecord(),
+		foliage: { kind: 'fascicle', needle: { ...NEEDLE, length: 0.06 }, sheath: 0.008, twist: 30 },
+		shoots: { ...oakRecord().shoots!, phyllotaxis: { kind: 'fascicle', needles: 3 } },
+	};
+
+	it('bundles its round needles in a sheath at the finest tier', () => {
 		const one = needleMesh(
 			{ ...NEEDLE, length: 0.06, section: 'half-round' },
 			OAK_MANIFEST,
-			'high',
+			'ultra',
 		);
-		const bundle = fascicleMesh(record, OAK_MANIFEST, 'high');
+		const bundle = fascicleMesh(record, OAK_MANIFEST, 'ultra');
 		let stem = 0;
 		for (let i = 2; i < bundle.colors.length; i += 4) if (bundle.colors[i] === 85) stem++;
 		expect(stem).toBeGreaterThan(0);
 		expect(bundle.positions.length / 3 - stem).toBe((one.positions.length / 3) * 3);
 		// The needles part a little: their tips stand apart, near the bundle's height.
 		expect(top(bundle.positions)).toBeGreaterThan(0.059);
+	});
+
+	it('draws each needle as one flat blade of two triangles at every other tier', () => {
+		for (const detail of ['low', 'medium', 'high'] as const) {
+			const bundle = fascicleMesh(record, OAK_MANIFEST, detail);
+			expect(bundle.indices.length / 3).toBe(3 * 2);
+			expect(bundle.positions.length / 3).toBe(3 * 4);
+			// No sheath is drawn, and the blades reach the needle's length.
+			for (let i = 2; i < bundle.colors.length; i += 4) expect(bundle.colors[i]).not.toBe(85);
+			expect(top(bundle.positions)).toBeGreaterThan(0.059);
+		}
+	});
+
+	it('stands the two blades of a pair square to each other, so a brush covers from every side', () => {
+		const pair: Species = {
+			...record,
+			foliage: { kind: 'fascicle', needle: { ...NEEDLE, length: 0.06 }, sheath: 0.008, twist: 0 },
+			shoots: { ...oakRecord().shoots!, phyllotaxis: { kind: 'fascicle', needles: 2 } },
+		};
+		const bundle = fascicleMesh(pair, OAK_MANIFEST, 'high');
+		// Each blade's face normal, from its first three corners, laid level.
+		const normals = [0, 4].map((first) => {
+			const at = (k: number) =>
+				[0, 1, 2].map((c) => bundle.positions[(first + k) * 3 + c] as number);
+			const [a, b, d] = [at(0), at(1), at(3)];
+			const u = [0, 1, 2].map((c) => (b[c] as number) - (a[c] as number));
+			const v = [0, 1, 2].map((c) => (d[c] as number) - (a[c] as number));
+			const n = [
+				(u[1] as number) * (v[2] as number) - (u[2] as number) * (v[1] as number),
+				(u[2] as number) * (v[0] as number) - (u[0] as number) * (v[2] as number),
+				(u[0] as number) * (v[1] as number) - (u[1] as number) * (v[0] as number),
+			];
+			const length = Math.hypot(n[0] as number, n[1] as number, n[2] as number);
+			return n.map((c) => c / length);
+		});
+		const [first, second] = normals as [number[], number[]];
+		const dot =
+			(first[0] as number) * (second[0] as number) +
+			(first[1] as number) * (second[1] as number) +
+			(first[2] as number) * (second[2] as number);
+		// Square within the few degrees that the needles part from the bundle's line.
+		expect(Math.abs(dot)).toBeLessThan(0.1);
 	});
 });
 
@@ -116,6 +160,73 @@ describe('the seasons on shoots', () => {
 		};
 		expect(inLeaf(blossom, 'blossom', 0.5, 0.2)).toBe(true);
 		expect(inLeaf(blossom, 'blossom', 0.5, 0.3)).toBe(false);
+	});
+});
+
+describe('the scale spray', () => {
+	const SPRAY: ScaleSpray = {
+		orders: 2,
+		segment: 0.022,
+		radius: 0.0012,
+		flatten: 0.3,
+		dead: 0.05,
+		optics: {
+			reflectance: [0.05, 0.1, 0.03],
+			reflectanceBack: [0.1, 0.15, 0.07],
+			transmittance: [0.04, 0.08, 0.02],
+			roughness: [0.55, 0.7],
+		},
+	};
+
+	it('builds a cord that divides, with its scales on the texture', () => {
+		for (const detail of DETAILS) {
+			const mesh = sprayMesh(SPRAY, OAK_MANIFEST, detail);
+			const triangles = mesh.indices.length / 3;
+			expect(triangles).toBeGreaterThan(10);
+			expect(triangles).toBeLessThan(900);
+			// The first cord runs a segment, and the child cords carry the spray above it.
+			expect(top(mesh.positions)).toBeGreaterThan(SPRAY.segment);
+			expect(top(mesh.positions)).toBeLessThan(SPRAY.segment * 2);
+			let low = 1;
+			let high = 0;
+			for (let i = 0; i < mesh.uvs.length; i += 2) {
+				low = Math.min(low, mesh.uvs[i] as number, mesh.uvs[i + 1] as number);
+				high = Math.max(high, mesh.uvs[i] as number, mesh.uvs[i + 1] as number);
+			}
+			expect(low).toBeGreaterThanOrEqual(0);
+			expect(high).toBeLessThanOrEqual(1);
+		}
+	});
+
+	it('draws its oldest cords as dead wood when the record asks', () => {
+		const live = sprayMesh({ ...SPRAY, dead: 0 }, OAK_MANIFEST, 'high');
+		const dead = sprayMesh({ ...SPRAY, dead: 1 }, OAK_MANIFEST, 'high');
+		const stem = (colors: Uint8Array) => {
+			let count = 0;
+			for (let i = 2; i < colors.length; i += 4) if (colors[i] === 85) count++;
+			return count;
+		};
+		// A live spray is foliage throughout; a dead one draws its cords as stem.
+		expect(stem(live.colors)).toBe(0);
+		expect(stem(dead.colors)).toBeGreaterThan(0);
+		expect(stem(dead.colors)).toBeLessThan(dead.colors.length / 4);
+	});
+
+	it('gives the shoots a few different sprays', () => {
+		const record: Species = {
+			...oakRecord(),
+			foliage: { kind: 'scale-spray', spray: SPRAY },
+		};
+		const leaves = sprayBuilder.leaves(record, OAK_MANIFEST, 'high');
+		expect(leaves.length).toBe(3);
+		expect(new Set(leaves.map((leaf) => leaf.positions.join(','))).size).toBe(3);
+		// Every leaf is a whole spray: its first cord runs a segment and its side cords carry the
+		// spray above it, which is the frond the leaf close-ups frame.
+		for (const leaf of leaves)
+			expect(top((leaf as { positions: Float32Array }).positions)).toBeGreaterThan(SPRAY.segment);
+		expect(top((leaves[0] as { positions: Float32Array }).positions)).toBeLessThan(
+			SPRAY.segment * 2,
+		);
 	});
 });
 

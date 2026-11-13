@@ -91,6 +91,21 @@ export function normalize(a: readonly number[]): V3 {
 		: [0, 1, 0];
 }
 
+/** The point `metres` from `at` along a direction. */
+export function step(at: readonly number[], direction: readonly number[], metres: number): V3 {
+	return [
+		(at[0] as number) + (direction[0] as number) * metres,
+		(at[1] as number) + (direction[1] as number) * metres,
+		(at[2] as number) + (direction[2] as number) * metres,
+	];
+}
+
+/** A unit vector square to `v`, level where it can be: across a direction's run. */
+export function across(v: readonly number[]): V3 {
+	const level = cross([0, 1, 0], v);
+	return Math.hypot(...level) > 1e-3 ? normalize(level) : [1, 0, 0];
+}
+
 /** The chain of one axis: its parent node before its base (when it has one), then its own nodes. */
 export function chainOf(skeleton: MacroSkeleton, axis: number): number[] {
 	const { axes } = skeleton;
@@ -219,6 +234,42 @@ function pointAtHeight(skeleton: MacroSkeleton, axis: number, y: number): AxisPo
 export function stemAt(skeleton: MacroSkeleton, y: number): AxisPoint | undefined {
 	const stem = mainStem(skeleton);
 	return stem < 0 ? undefined : pointAtHeight(skeleton, stem, y);
+}
+
+/**
+ * The turn that looks into the widest gap between the main stem's first-order limbs, so a camera
+ * stands between two limbs instead of in front of one. Undefined when the stem carries fewer than
+ * two limbs reaching clear of its centre.
+ */
+export function limbGapTurn(skeleton: MacroSkeleton): number | undefined {
+	const { axes } = skeleton;
+	const stem = mainStem(skeleton);
+	if (stem < 0) return undefined;
+	const angles: number[] = [];
+	for (let a = 0; a < axes.count; a++) {
+		if ((axes.parent[a] as number) !== stem || (axes.order[a] as number) !== 1) continue;
+		const base = nodeAt(skeleton, axes.first[a] as number);
+		const centre = pointAtHeight(skeleton, stem, base[1]);
+		if (!centre) continue;
+		const dx = base[0] - centre.at[0];
+		const dz = base[2] - centre.at[2];
+		if (Math.hypot(dx, dz) < 1e-4) continue;
+		angles.push(Math.atan2(dx, dz));
+	}
+	if (angles.length < 2) return undefined;
+	angles.sort((p, q) => p - q);
+	let widest = 0;
+	let middle = angles[0] as number;
+	for (let n = 0; n < angles.length; n++) {
+		const from = angles[n] as number;
+		const to =
+			n + 1 < angles.length ? (angles[n + 1] as number) : (angles[0] as number) + 2 * Math.PI;
+		if (to - from > widest) {
+			widest = to - from;
+			middle = from + (to - from) / 2;
+		}
+	}
+	return middle;
 }
 
 /**

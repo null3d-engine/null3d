@@ -22,7 +22,7 @@ import type { Rgb } from '../core/types';
 import { DETAILS, type Detail } from '../core/types';
 import { outlineMask, textureOutline } from '../leaf/outline';
 import type { UncardedPrototype } from '../leaf/shoot';
-import { SURFACE_EXTRA, SURFACE_LEAF } from '../leaf/writer';
+import { leafSurface, SURFACE_EXTRA, SURFACE_PIECE_SHEATH, SURFACE_STEM } from '../leaf/writer';
 import type { CardAtlas } from '../stages';
 import { rasterise, rasterTarget } from './raster';
 
@@ -137,6 +137,8 @@ export interface Palette {
 	readonly upper: Rgb;
 	readonly lower: Rgb;
 	readonly stem: Rgb;
+	/** A tuft's sheath colour at the column's foot, where the record gives one. */
+	readonly sheath?: Rgb;
 	readonly profile:
 		| { readonly upper: readonly number[]; readonly lower: readonly number[] }
 		| undefined;
@@ -185,6 +187,8 @@ export function paletteOf(record: Species, manifest: TextureManifest): Palette {
 				: undefined;
 	const stem = manifest.bark?.young.mean ?? barkColourOf(record, manifest);
 	const extras = (record.extras ?? []).map((extra) => extra.colour);
+	const sheathColour = record.growth.model === 'tuft' ? record.growth.sheathColour : undefined;
+	const sheath = sheathColour ? { sheath: sheathColour.foot } : {};
 	if (leaf) {
 		const outline = textureOutline(leaf);
 		const mask = outlineMask(outline.points, MASK_SIZE);
@@ -195,6 +199,7 @@ export function paletteOf(record: Species, manifest: TextureManifest): Palette {
 			upper: leaf.mean.upper,
 			lower: leaf.mean.lower,
 			stem,
+			...sheath,
 			profile: {
 				upper: normalised(leaf.profile.upper, areas(leaf.profile.upper)),
 				lower: normalised(leaf.profile.lower, areas(leaf.profile.lower)),
@@ -209,6 +214,7 @@ export function paletteOf(record: Species, manifest: TextureManifest): Palette {
 		upper: optics?.reflectance ?? [0.08, 0.16, 0.04],
 		lower: optics?.reflectanceBack ?? optics?.reflectance ?? [0.08, 0.16, 0.04],
 		stem,
+		...sheath,
 		profile: undefined,
 		base: 0,
 		tip: 1,
@@ -342,7 +348,7 @@ function drawPlane(
 		let nz = lerp(mesh.normals, 3, 2);
 		const facing = (nx * normal[0] + ny * normal[1] + nz * normal[2]) * toward;
 		let rgb: Rgb;
-		if (kind === SURFACE_LEAF) {
+		if (leafSurface(kind)) {
 			const u = lerp(mesh.uvs, 2, 0);
 			const v = lerp(mesh.uvs, 2, 1);
 			if (palette.mask) {
@@ -372,7 +378,8 @@ function drawPlane(
 				Math.max(0, Math.floor(lerp(mesh.uvs, 2, 0) * 8)),
 			);
 			rgb = palette.extras[index] ?? palette.stem;
-		} else rgb = palette.stem;
+		} else if (kind === SURFACE_PIECE_SHEATH) rgb = palette.sheath ?? palette.stem;
+		else rgb = palette.stem;
 		if (facing < 0) {
 			nx = -nx;
 			ny = -ny;
@@ -397,7 +404,7 @@ function drawPlane(
 		surface[at] = ox;
 		surface[at + 1] = oy;
 		surface[at + 2] = depth;
-		surface[at + 3] = (kind === SURFACE_LEAF ? 128 : 0) + Math.min(127, shade);
+		surface[at + 3] = (leafSurface(kind) ? 128 : 0) + Math.min(127, shade);
 		return true;
 	});
 }

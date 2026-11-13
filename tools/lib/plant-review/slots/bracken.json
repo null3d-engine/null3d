@@ -166,5 +166,22 @@
 	"25-leaf-texture-underside.png": {
 		"fill": 0.985,
 		"targetY": 0.5
+	},
+	"_pictures": {
+		"03-whole-from-below.png": {
+			"standing": "stand",
+			"reason": "many stalks rise from the lower edge under a roof of leaves, seen from the ground inside a stand",
+			"ruling": "the owner ruled that a stand picture is not judged until the review page plants a stand"
+		},
+		"04-canopy-from-above.png": {
+			"standing": "stand",
+			"reason": "leaves overlap into a closed carpet with no ground showing, seen from above a stand",
+			"ruling": "the owner ruled that a stand picture is not judged until the review page plants a stand"
+		},
+		"06-inside-stand.png": {
+			"standing": "stand",
+			"reason": "stalks stand at eye level under a roof of leaves, seen from inside a stand",
+			"ruling": "the owner ruled that a stand picture is not judged until the review page plants a stand"
+		}
 	}
 }

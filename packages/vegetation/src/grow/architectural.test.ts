@@ -4,9 +4,11 @@ import { describe, expect, it } from 'bun:test';
 import type { MacroSkeleton } from '../core/graph';
 import { AXIS_STEM, BUD_LATERAL } from '../core/graph';
 import { hashBytes, unitAt } from '../core/hash';
+import { spreadAt } from '../core/types';
 import { record } from '../species/scots-pine/record';
-import { growArchitectural } from './architectural';
-import { envelopeVolume } from './envelope';
+import { ENVELOPE_ROUND, growArchitectural } from './architectural';
+import { envelopeVolume, insetVolume, smoothedVolume } from './envelope';
+import { shootReach } from './self-organizing';
 
 /** The pine grown at one seed and variant. */
 function grown(seed = 11, variant = 0): MacroSkeleton {
@@ -89,12 +91,17 @@ describe('the architectural grower', () => {
 
 	it('caps the wood inside the envelope', () => {
 		expect(record.envelope).toBeDefined();
-		// The grower turns the outline by the variant's own angle, which is its second hash purpose.
-		const turn = unitAt(11, record.seedSalt >>> 0, 0, 2) * 2 * Math.PI;
-		const volume = envelopeVolume(
-			record.envelope as NonNullable<typeof record.envelope>,
-			skeleton.height,
-			turn,
+		// The grower turns the outline by the variant's own angle, which is its second hash purpose,
+		// and scales it by the height its own first hash purpose draws, not by the built tree's top.
+		const salt = record.seedSalt >>> 0;
+		const turn = unitAt(11, salt, 0, 2) * 2 * Math.PI;
+		const drawn = spreadAt(record.size.height, unitAt(11, salt, 0, 1));
+		const volume = smoothedVolume(
+			insetVolume(
+				envelopeVolume(record.envelope as NonNullable<typeof record.envelope>, drawn, turn),
+				shootReach(record) * 0.6,
+			),
+			ENVELOPE_ROUND,
 		);
 		for (let n = 0; n < skeleton.nodeCount; n++) {
 			const axis = skeleton.axisOf[n] as number;
@@ -108,7 +115,7 @@ describe('the architectural grower', () => {
 				skeleton.position[n * 3 + 2] as number,
 			);
 			// A node on the outline sits at the boundary, within the step that found it.
-			expect(room).toBeGreaterThan(-0.15);
+			expect(room).toBeGreaterThan(-0.02);
 		}
 	});
 

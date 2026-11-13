@@ -13,7 +13,7 @@
 // many leaves the plant grows.
 import type { ShootPrototype, ShootRows } from '../asset';
 import type { MacroSkeleton } from '../core/graph';
-import { BUD_AREOLE, BUD_DORMANT, BUD_TERMINAL } from '../core/graph';
+import { BUD_AREOLE, BUD_DORMANT, BUD_FLOWER, BUD_TERMINAL } from '../core/graph';
 import { hashAt, unitAt } from '../core/hash';
 import {
 	cos,
@@ -28,12 +28,13 @@ import {
 	sin,
 	type Vector3,
 } from '../core/math';
-import type { Species } from '../core/record';
+import type { Scaffold, Species } from '../core/record';
 import { curveAt, spreadAt } from '../core/types';
 import { rowCentre } from '../crown/density';
 import { crownSkyAt, lightCrown } from '../crown/visibility';
 import { bareTrimmed } from '../grow/coarsen';
 import type { CrownLight, DressInput } from '../stages';
+import { carriesPieces, pieceRows } from './piece-rows';
 import { inLeaf } from './season';
 
 /** Sky visibility and bent normal of a row before the crown's light gives it its own. */
@@ -61,7 +62,14 @@ const Purpose = {
 	Spacing: 7,
 	Season: 8,
 	Clump: 9,
+	Vigor: 11,
+	Fan: 12,
 } as const;
+
+/** The golden angle, which spreads a socket's rows evenly round its line. */
+const GOLDEN = Math.PI * (3 - Math.sqrt(5));
+/** The least share of a socket's fan that one of its side rows leans out by. */
+const FAN_LEAST = 0.5;
 
 /**
  * The prototypes a bud of this vigor may draw: those whose class's range holds it, or those of the
@@ -131,7 +139,7 @@ function tropismTurn(record: Species): number {
 }
 
 /** A row under construction. */
-interface Row {
+export interface Row {
 	prototype: number;
 	position: Vector3;
 	rotation: number[];
@@ -143,6 +151,11 @@ interface Row {
 	axis: number;
 	/** From the row's place back to the far end of the stretch it serves. */
 	back: Vector3;
+	/**
+	 * The socket the row stands at, for a part of a piece: every part of one socket takes one
+	 * place in the space-filling order, so a card level keeps or drops the piece whole.
+	 */
+	socket?: number;
 }
 
 /** A variant's shoot rows and the skeleton they stand on, its bare wood trimmed where the record asks. */
@@ -444,9 +457,15 @@ function skyPruned(input: DressInput, rows: Row[], line: number): Row[] {
  */
 function placedRows(input: DressInput, bySky = true): Row[] {
 	const { record, seed, variant, skeleton, kit } = input;
+	// A plant that carries pieces at sockets stands its foliage where its grower put the sockets.
+	if (carriesPieces(record)) return pieceRows(input);
 	const shoots = record.shoots;
 	const rows: Row[] = [];
 	if (!shoots || kit.prototypes.length === 0) return rows;
+	// A scaffold plant's foliage stands at its sockets, where its foliage masses put it: no shade or
+	// sky line thins it afterwards.
+	if (record.growth.model === 'scaffold' || record.growth.model === 'frame')
+		return socketRows(input, record.growth);
 	const salt = record.seedSalt;
 	const draw = (purpose: number, a = 0, b = 0) => unitAt(seed, salt, variant * 64 + purpose, a, b);
 	const pick = (purpose: number, a = 0, b = 0) => hashAt(seed, salt, variant * 64 + purpose, a, b);
@@ -520,8 +539,9 @@ function placedRows(input: DressInput, bySky = true): Row[] {
 		const axis = buds.axis[b] as number;
 		const kind = buds.kind[b] as number;
 		// A dormant bud carries nothing, and it is no anchor for the stretch the next shoot's count
-		// shares: a culm's sheath buds must not stretch its tip's shoot down the bare culm.
-		if (kind === BUD_DORMANT) continue;
+		// shares: a culm's sheath buds must not stretch its tip's shoot down the bare culm. A flower
+		// site carries its flower, which is an extra, and no shoot.
+		if (kind === BUD_DORMANT || kind === BUD_FLOWER) continue;
 		const at: Vector3 = [
 			buds.position[b * 3] as number,
 			buds.position[b * 3 + 1] as number,
@@ -732,6 +752,103 @@ function placedRows(input: DressInput, bySky = true): Row[] {
 	return bySky ? skyPruned(input, rows, shoots.placement.skyPrune ?? 0) : rows;
 }
 
+/**
+ * The rows of a scaffold plant: every socket holds the record's count of rows at its branch end.
+ * The first runs on along the socket's own line and takes the socket's vigor; the others lean out
+ * from that line by up to the record's fan, each a golden angle round it from the last, and draw a
+ * vigor of their own, so one socket carries shoots of several classes as a branch end does. Each
+ * row's scale is the record's, times its socket's own.
+ */
+function socketRows(
+	input: DressInput,
+	growth: { readonly sockets: Pick<Scaffold['sockets'], 'rows' | 'fan'> },
+): Row[] {
+	const { record, seed, variant, skeleton, kit } = input;
+	const rows: Row[] = [];
+	const shoots = record.shoots;
+	if (!shoots) return rows;
+	const salt = record.seedSalt;
+	const draw = (purpose: number, a = 0, b = 0) => unitAt(seed, salt, variant * 64 + purpose, a, b);
+	const pick = (purpose: number, a = 0, b = 0) => hashAt(seed, salt, variant * 64 + purpose, a, b);
+	const { buds, position } = skeleton;
+	const skyward = Math.min(1, Math.max(0, shoots.placement.skyward));
+	const fan = radians(Math.min(120, Math.max(0, growth.sockets.fan)));
+	const bare =
+		kit.prototypes.some((p) => p.leaves === 0) && kit.prototypes.some((p) => p.leaves > 0);
+	const up: Vector3 = [0, 1, 0];
+	const frame = [0, 0, 0, 1];
+	const roll = [0, 0, 0, 1];
+	const along: Vector3 = [0, 0, 0];
+	const side: Vector3 = [0, 0, 0];
+	const fore: Vector3 = [0, 0, 0];
+	for (let b = 0; b < buds.count; b++) {
+		const at: Vector3 = [
+			buds.position[b * 3] as number,
+			buds.position[b * 3 + 1] as number,
+			buds.position[b * 3 + 2] as number,
+		];
+		const node = buds.node[b] as number;
+		const axis = buds.axis[b] as number;
+		const parentNode = skeleton.parent[node] as number;
+		const back: Vector3 =
+			parentNode >= 0
+				? [
+						(position[parentNode * 3] as number) - at[0],
+						(position[parentNode * 3 + 1] as number) - at[1],
+						(position[parentNode * 3 + 2] as number) - at[2],
+					]
+				: [0, 0, 0];
+		const crownShare =
+			(at[1] - skeleton.crownBase) / Math.max(1e-6, skeleton.height - skeleton.crownBase);
+		const leafy = inLeaf(record, input.season, crownShare, draw(Purpose.Season, b));
+		const offered = bare ? kit.prototypes.filter((p) => p.leaves > 0 === leafy) : kit.prototypes;
+		const size = buds.sockets?.scale[b] ?? 1;
+		const record16 = skeleton.axes.record[axis] as number;
+		quatRotate(buds.frame, b * 4, [0, 1, 0], along);
+		quatRotate(buds.frame, b * 4, [1, 0, 0], side);
+		quatRotate(buds.frame, b * 4, [0, 0, 1], fore);
+		const count = Math.max(1, Math.round(spreadAt(growth.sockets.rows, draw(Purpose.Count, b))));
+		const first = draw(Purpose.Azimuth, b) * 2 * Math.PI;
+		for (let k = 0; k < count; k++) {
+			const direction: Vector3 = [along[0], along[1], along[2]];
+			if (k > 0) {
+				const lean = fan * (FAN_LEAST + (1 - FAN_LEAST) * draw(Purpose.Fan, b, k));
+				const round = first + k * GOLDEN;
+				const c = cos(lean);
+				const s = sin(lean);
+				const cr = cos(round);
+				const sr = sin(round);
+				for (let i = 0; i < 3; i++)
+					direction[i as 0] = along[i as 0] * c + (side[i as 0] * cr + fore[i as 0] * sr) * s;
+				normalize3(direction);
+			}
+			const vigor = k === 0 ? (buds.vigor[b] as number) : draw(Purpose.Vigor, b, k);
+			const candidates = prototypesFor(offered, vigor).map(
+				(index) => (offered[index] as ShootPrototype).index,
+			);
+			if (candidates.length === 0) continue;
+			// +Y along the shoot, +Z toward the sky, then rolled about +Y by what skyward leaves.
+			quatFromFrame(direction, up, frame);
+			const turn = (draw(Purpose.Roll, b, k) * 2 - 1) * Math.PI * (1 - skyward);
+			quatAxisAngle([0, 1, 0], turn, roll);
+			const rotation = [0, 0, 0, 1];
+			quatMultiply(frame, 0, roll, 0, rotation);
+			rows.push({
+				prototype: candidates[pick(Purpose.Prototype, b, k) % candidates.length] as number,
+				position: [at[0], at[1], at[2]],
+				rotation,
+				scale: spreadAt(shoots.placement.scale, draw(Purpose.Scale, b, k)) * size,
+				record: record16,
+				phase: pick(Purpose.Phase, b, k) & 255,
+				node,
+				axis,
+				back,
+			});
+		}
+	}
+	return rows;
+}
+
 /** The rows' indices along the space-filling curve through the plant's bounds. */
 function spaceRanks(rows: readonly Row[], bounds: DressInput['skeleton']['bounds']): number[] {
 	const side = Math.max(
@@ -741,6 +858,31 @@ function spaceRanks(rows: readonly Row[], bounds: DressInput['skeleton']['bounds
 	);
 	const keys = rows.map((row) => spaceKey(row.position, bounds.min, side));
 	return keys.map((_, r) => r).sort((a, b) => (keys[a] as number) - (keys[b] as number) || a - b);
+}
+
+/**
+ * Each row's place in the space-filling order: its rank, or for the parts of a piece the rank of
+ * their socket among the sockets, so the parts of one socket share one place.
+ */
+function rowOrder(rows: readonly Row[], bounds: DressInput['skeleton']['bounds']): Uint32Array {
+	const order = new Uint32Array(rows.length);
+	const ranked = spaceRanks(rows, bounds);
+	let place = 0;
+	const placed = new Map<number, number>();
+	for (const r of ranked) {
+		const socket = (rows[r] as Row).socket;
+		if (socket === undefined) {
+			order[r] = place++;
+			continue;
+		}
+		let at = placed.get(socket);
+		if (at === undefined) {
+			at = place++;
+			placed.set(socket, at);
+		}
+		order[r] = at;
+	}
+	return order;
 }
 
 /** The rows as the table's typed arrays, with their space-filling order. */
@@ -770,9 +912,6 @@ function packRows(rows: readonly Row[], bounds: DressInput['skeleton']['bounds']
 		out.back.set(row.back, r * 3);
 		out.node[r] = row.node;
 	});
-	const ranked = spaceRanks(rows, bounds);
-	ranked.forEach((row, rank) => {
-		out.order[row] = rank;
-	});
+	out.order.set(rowOrder(rows, bounds));
 	return out;
 }
