@@ -114,6 +114,7 @@ export function keptSkeleton(
 			cutFrom: axes.cutFrom[a] as number,
 			cutTo: axes.cutTo[a] as number,
 			grownBark: (axes.grownBark[a] as number) === 1,
+			fine: (axes.fine?.[a] ?? 0) === 1,
 		});
 		for (let n = axes.first[a] as number; n <= end; n++) {
 			const p = skeleton.parent[n] as number;
