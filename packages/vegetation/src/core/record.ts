@@ -858,9 +858,9 @@ export interface Conifer {
 		 * shell the crown's reach by height is its outline, a closed surface round the trunk's line:
 		 * the sockets tile it in rows from its lowest named height to its top, each inside it by the
 		 * part of a piece that stands out from its socket, and each pulls its twig from the limb whose
-		 * end stands nearest. Each limb runs
-		 * on until it stands a piece's length inside the outline, and its patch is the part of the
-		 * shell its sockets tile.
+		 * end stands nearest. Each limb runs on until it stands a piece's length inside the outline,
+		 * and its patch is the part of the shell its sockets tile. A trunk that runs to the tip
+		 * carries no piece there: the shell's top rows close the top.
 		 */
 		readonly kind: 'pad' | 'dome' | 'shell';
 		/**

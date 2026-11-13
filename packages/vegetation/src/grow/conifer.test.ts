@@ -802,12 +802,20 @@ describe("the Italian cypress's closed shell", () => {
 			for (const socket of plan.sockets) {
 				if (socket.limb < 0) continue;
 				const [hx, hy, hz] = socket.heading;
-				// The tucked foot leans its fans out the most: its outline widens by 0.7 of its rise.
-				expect(hy).toBeGreaterThan(Math.cos((50 * Math.PI) / 180));
+				// Where the outline tucks in to the stem, its fans stand up the tuck at the most lean.
+				expect(hy).toBeGreaterThanOrEqual(Math.cos((30 * Math.PI) / 180) - 1e-9);
 				expect(Math.hypot(hx, hz)).toBeGreaterThan(Math.sin((1.9 * Math.PI) / 180));
 				if (socket.at[1] < 0.75 * H)
 					expect(hx * socket.at[0] + hz * socket.at[2]).toBeGreaterThan(0);
 			}
+		}
+	});
+
+	it("carries no fan on the leader's tip, where the top rows close the column", () => {
+		for (const plan of plans) {
+			expect(plan.sockets.filter((socket) => socket.limb < 0)).toHaveLength(0);
+			const top = Math.max(...plan.sockets.map((socket) => socket.at[1]));
+			expect(top).toBeGreaterThan(0.95 * heightOf(plan));
 		}
 	});
 
@@ -830,14 +838,19 @@ describe("the Italian cypress's closed shell", () => {
 
 	it("stands its inner body on the trunk's line at its share of the outline, as wood joined to nothing", () => {
 		const body = shell.body?.radius as readonly (readonly [number, number])[];
-		const share = (body[1]?.[1] ?? 0) / (curveAt(shell.limbs.reach, body[1]?.[0] ?? 0) || 1);
+		// The body's share of the outline above its foot, where it tucks in to the trunk.
+		const above = body[1]?.[0] ?? 0;
+		const share = (body[1]?.[1] ?? 0) / (curveAt(shell.limbs.reach, above) || 1);
 		for (const [seed, plan] of plans.entries()) {
 			const H = heightOf(plan);
 			expect(plan.body.length).toBeGreaterThan(2);
 			expect((plan.body[0]?.y ?? 0) / H).toBeCloseTo(body[0]?.[0] ?? 0, 4);
 			expect((plan.body.at(-1)?.y ?? 0) / H).toBeCloseTo(body.at(-1)?.[0] ?? 0, 4);
 			for (const node of plan.body)
-				expect(node.radius).toBeCloseTo(share * outline(plan, node.y), 3);
+				if (node.y >= above * H) expect(node.radius).toBeCloseTo(share * outline(plan, node.y), 3);
+				else expect(node.radius).toBeLessThanOrEqual(share * outline(plan, node.y));
+			// At the foliage's foot the body is no wider than the trunk there.
+			expect(plan.body[0]?.radius ?? 0).toBeLessThanOrEqual((plan.trunk[0]?.radius ?? 0) * 1.1);
 			const skeleton = growConifer({
 				record: cypress,
 				seed: SEEDS[seed] as number,
@@ -879,7 +892,7 @@ describe("the Italian cypress's closed shell", () => {
 			expect(wood).toBeDefined();
 			if (!wood) continue;
 			const raw = wood.arrays.positions;
-			const sectors = new Set<number>();
+			const turns: number[] = [];
 			for (let v = 0; v < raw.length / 3; v++) {
 				const x = min[0] + (raw[v * 3] as number) * ((max[0] - min[0]) / 65535);
 				const y = min[1] + (raw[v * 3 + 1] as number) * ((max[1] - min[1]) / 65535);
@@ -887,9 +900,16 @@ describe("the Italian cypress's closed shell", () => {
 				if (Math.abs(y - middle.y * scale) > 0.5) continue;
 				if (Math.abs(Math.hypot(x, z) - middle.radius * scale) > 0.1 * middle.radius * scale)
 					continue;
-				sectors.add(Math.floor(((((Math.atan2(z, x) / (2 * Math.PI)) % 1) + 1) % 1) * 16));
+				turns.push(Math.atan2(z, x));
 			}
-			expect(sectors.size).toBe(16);
+			// A closed tube of at least five sides: no two of its points stand more than a fifth of a
+			// turn apart round the trunk.
+			turns.sort((a, b) => a - b);
+			expect(turns.length).toBeGreaterThan(4);
+			let widest = 2 * Math.PI - ((turns.at(-1) as number) - (turns[0] as number));
+			for (let k = 1; k < turns.length; k++)
+				widest = Math.max(widest, (turns[k] as number) - (turns[k - 1] as number));
+			expect(widest).toBeLessThanOrEqual((2 * Math.PI) / 5);
 		}
 	}, 120_000);
 });

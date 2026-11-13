@@ -14,11 +14,15 @@ const { forms: _forms, ...own } = record;
 /**
  * Picture 01, the outline's half width by height: the medians of bands a twentieth of the height
  * tall, read by script, each at its band's middle. The foliage starts where 0.011 of the height of
- * trunk shows under it, and the top closes to a rounded point.
+ * trunk shows under it and tucks in to it, as pictures 02 and 18 show over their short bare stems:
+ * the lowest band's median, 0.060, is held by a curve that rises from 0.035 at the foliage's foot.
+ * The top band's median, 0.017, stands at its middle, where the shell ends, so the top is blunt, as
+ * picture 18's is.
  */
 const OUTLINE: readonly (readonly [number, number])[] = [
-	[0.011, 0.05],
-	[0.025, 0.06],
+	[0.011, 0.035],
+	[0.02, 0.052],
+	[0.05, 0.068],
 	[0.075, 0.077],
 	[0.125, 0.082],
 	[0.2, 0.084],
@@ -34,7 +38,7 @@ const OUTLINE: readonly (readonly [number, number])[] = [
 	[0.825, 0.0545],
 	[0.875, 0.046],
 	[0.925, 0.033],
-	[0.97, 0.012],
+	[0.975, 0.017],
 ];
 
 /** The inner body's share of the outline's half width: a share proposed by the specification, not measured. */
@@ -42,6 +46,12 @@ const BODY = 0.6;
 
 /** The inner body's top, as a share of the height: the point above it is too narrow to hide it. */
 const BODY_TOP = 0.95;
+
+/** The inner body's half width at the foliage's foot: the trunk's own there (picture 02's foot). */
+const BODY_FOOT = 0.016;
+
+/** The height from which the inner body takes its share of the outline, above the foot's curve. */
+const BODY_FROM = 0.05;
 
 /**
  * The inner body's tint on the trunk's bark: the leaf texture's mean over the bark's, in the shade
@@ -133,9 +143,14 @@ export const directed: Species = {
 		// A dark inner body stands behind the fans at the specification's share of the outline, from
 		// the foliage's foot to where the point narrows, so a crease shows shade and never sky.
 		body: {
-			radius: OUTLINE.filter(([at]) => at <= BODY_TOP).map(
-				([at, half]) => [at, half * BODY] as const,
-			),
+			// At the foliage's foot the body is no wider than the trunk, so the column tucks in to its
+			// stem; from the foot's curve up it takes its share of the outline.
+			radius: [
+				[OUTLINE[0]?.[0] ?? 0, BODY_FOOT],
+				...OUTLINE.filter(([at]) => at >= BODY_FROM && at <= BODY_TOP).map(
+					([at, half]) => [at, half * BODY] as const,
+				),
+			],
 		},
 		patch: {
 			kind: 'shell',
@@ -203,15 +218,8 @@ export const directed: Species = {
 		],
 	},
 	// Picture 14: a modest flare, the foot about 1.3 times the stem above it; pictures 14, 06 and 07:
-	// round, with no flutes and no buttress.
+	// round, with no flutes, no buttress and no root that shows.
 	base: {
 		flare: { amount: 0.3, height: 0.3 },
-		roots: {
-			count: { mean: 3, spread: 1 },
-			length: { mean: 0.45, spread: 0.1 },
-			radius: 0.15,
-			dive: 0.45,
-			ridge: 1,
-		},
 	},
 };
