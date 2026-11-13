@@ -27,7 +27,7 @@ use crate::cells::CELL_SHIFT;
 use crate::instances::{BatchTable, InstanceBatch};
 use crate::jobs::JobSystem;
 use crate::layers::shares_layer;
-use crate::levels::{DrawRange, LevelLink, LevelRule, Picked, fade_values};
+use crate::levels::{DrawRange, LevelLink, LevelRule, Picked};
 use crate::occlusion::OcclusionBuffer;
 use crate::shared::SharedMut;
 use crate::world::{SphereArrays, UNBOUNDED_RADIUS};
@@ -943,17 +943,9 @@ pub fn batch_ranges<'a>(batches: &'a BatchTable, batch: &'a InstanceBatch) -> Ro
 /// level, and marks a hidden row in the bucket it would have drawn from.
 #[inline]
 fn count_picked(histogram: &mut [u32], home: u32, picked: Picked, codes: bool) {
-    let words = if codes { 2 } else { 1 };
-    match picked {
-        Picked::One(bucket) => histogram[bucket as usize] += words,
-        Picked::Fade { new, old, .. } => {
-            histogram[new as usize] += 2;
-            histogram[old as usize] += 2;
-        }
-        Picked::FadeIn { bucket, .. } => histogram[bucket as usize] += 2,
-        Picked::FadeOut { old, .. } => histogram[old as usize] += 2,
-        Picked::Hidden if codes => histogram[home as usize] += 2,
-        Picked::Hidden => {}
+    let (entries, len, words) = picked.entries(home, codes);
+    for entry in &entries[..len] {
+        histogram[entry.bucket as usize] += words as u32;
     }
 }
 
@@ -1354,62 +1346,19 @@ pub fn cull_into_buckets<'a>(
                 let code = |bucket: u32, hidden: bool, fade: f32| {
                     choice.map_or(0, |choice| choice.code(bucket, hidden, fade))
                 };
-                match picked {
-                    Picked::One(bucket) => {
-                        put(bucket, entry(row));
-                        if codes {
-                            put(bucket, code(bucket, false, 0.0));
-                        }
-                    }
-                    Picked::Fade { new, old, t } => {
-                        let (fade_new, fade_old) = fade_values(t);
-                        put(new, entry(row));
+                let (entries, len, words) = picked.entries(home, codes);
+                for written in &entries[..len] {
+                    put(written.bucket, entry(row));
+                    if words == 2 {
                         put(
-                            new,
+                            written.bucket,
                             if codes {
-                                code(new, false, fade_new)
+                                code(written.bucket, written.hidden, written.fade)
                             } else {
-                                fade_new.to_bits()
-                            },
-                        );
-                        put(old, entry(row));
-                        put(
-                            old,
-                            if codes {
-                                code(old, false, fade_old)
-                            } else {
-                                fade_old.to_bits()
+                                written.fade.to_bits()
                             },
                         );
                     }
-                    Picked::FadeIn { bucket, t } => {
-                        let fade = t.max(1.0e-6);
-                        put(bucket, entry(row));
-                        put(
-                            bucket,
-                            if codes {
-                                code(bucket, false, fade)
-                            } else {
-                                fade.to_bits()
-                            },
-                        );
-                    }
-                    Picked::FadeOut { old, t } => {
-                        put(old, entry(row));
-                        put(
-                            old,
-                            if codes {
-                                code(old, false, -t)
-                            } else {
-                                (-t).to_bits()
-                            },
-                        );
-                    }
-                    Picked::Hidden if codes => {
-                        put(home, entry(row));
-                        put(home, code(home, true, 0.0));
-                    }
-                    Picked::Hidden => {}
                 }
             }
         } else {

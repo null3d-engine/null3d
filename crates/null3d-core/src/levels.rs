@@ -16,9 +16,12 @@
 //! `scale` is the largest axis scale of the source's world matrix. For a level given by its error,
 //! and for the rule that hides a small bound, `distance` is the level distance: the distance from
 //! the view's camera to the center of the source's bounding sphere, less half its radius
-//! ([`LEVEL_RADIUS_SHARE`]). For a level given by a distance or by coverage, and for a distance band,
-//! it is the distance to the sphere's nearest point. Both are at least [`LEAST_DISTANCE`], and 1 for
-//! an orthographic camera, whose pixels do not shrink with distance.
+//! ([`LEVEL_RADIUS_SHARE`]), capped at a multiple of the distance to its nearest point
+//! ([`LEVEL_NEAREST_SHARE`]), so a camera beside a large mesh measures the surface below it. For a
+//! level given by a distance or by coverage, and for a distance band, it is the distance to the
+//! sphere's nearest point. Both are at least [`LEAST_DISTANCE`]. An orthographic camera keeps 1 for
+//! an error, whose pixels do not shrink with distance, and the nearest point for a distance, a
+//! coverage or a band.
 //! `factor` is the render height in pixels times the projection's `P[1][1]`, over twice the
 //! threshold in pixels. `bias` raises or lowers the source's own threshold, as Godot's `lod_bias`
 //! raises or lowers an object's: a bias above 1 makes every switch happen nearer, so the source
@@ -92,8 +95,17 @@ pub const LEAST_DISTANCE: f32 = 1.0e-3;
 /// nearest point of the bounds keeps a large mesh's fine levels far out, where its near side shows
 /// them and the rest of the mesh does not. Half the radius keeps the near side within the threshold
 /// in the desert's held frames, at about 14% fewer triangles than the nearest point; the center
-/// itself lets the near side of a large copy show its level (D-137).
+/// itself lets the near side of a large copy show its level (D-137). [`LEVEL_NEAREST_SHARE`] caps
+/// the result near a large mesh, where half its radius can be far larger than the surface below the
+/// camera.
 pub const LEVEL_RADIUS_SHARE: f32 = 0.5;
+
+/// The multiple of the distance to a bounding sphere's nearest point that caps the level distance
+/// for an error. The half-radius measure alone treats a camera in the outer half of a large sphere
+/// as far from the surface below it: a ground two kilometres across holds the camera 293 m from
+/// the surface it stands on. The cap brings a camera near the surface back to the nearest point,
+/// at the cost of comparing the error over two pixels there rather than one (D-347).
+pub const LEVEL_NEAREST_SHARE: f32 = 2.0;
 
 /// What a level's switch distance is measured by.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -332,6 +344,61 @@ pub enum Picked {
     },
 }
 
+/// One bucket that a pick writes: the bucket, the fade value that its word holds (positive for the
+/// new level of a band, negative for the old), and whether the source draws only its hidden marker.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct PickedEntry {
+    /// The bucket that the entry draws in.
+    pub bucket: u32,
+    /// The fade value of a fading level, or 0 for a level that draws whole.
+    pub fade: f32,
+    /// True for a source that a levels view draws at its base bucket, marked hidden.
+    pub hidden: bool,
+}
+
+impl Picked {
+    /// The buckets that this pick writes: one, two for a fading band, or the base bucket of a
+    /// hidden source in a levels view. Returns the entries, how many are used, and the words that
+    /// each takes in a view's list: one for a level without a band or a levels view, two otherwise.
+    /// The count pass, the place pass and the copy count all write their lists through this, so
+    /// one rule names the buckets and the words they take.
+    pub fn entries(&self, home: u32, codes: bool) -> ([PickedEntry; 2], usize, usize) {
+        let fading = !matches!(self, Self::One(_));
+        let words = if codes || fading { 2 } else { 1 };
+        let entry = |bucket, fade, hidden| PickedEntry {
+            bucket,
+            fade,
+            hidden,
+        };
+        match *self {
+            Self::One(bucket) => (
+                [entry(bucket, 0.0, false), PickedEntry::default()],
+                1,
+                words,
+            ),
+            Self::Fade { new, old, t } => {
+                let (fade_new, fade_old) = fade_values(t);
+                (
+                    [entry(new, fade_new, false), entry(old, fade_old, false)],
+                    2,
+                    words,
+                )
+            }
+            Self::FadeIn { bucket, t } => (
+                [
+                    entry(bucket, t.max(LEAST_FADE), false),
+                    PickedEntry::default(),
+                ],
+                1,
+                words,
+            ),
+            Self::FadeOut { old, t } => ([entry(old, -t, false), PickedEntry::default()], 1, words),
+            Self::Hidden if codes => ([entry(home, 0.0, true), PickedEntry::default()], 1, words),
+            Self::Hidden => ([PickedEntry::default(); 2], 0, words),
+        }
+    }
+}
+
 impl LevelRule {
     /// The rule of a view drawn `render_height` pixels high with the projection's `P[1][1]` of
     /// `p11`, with a threshold of `threshold` pixels and a fading band of `band`.
@@ -405,26 +472,27 @@ impl LevelRule {
 
     /// The distance that the rule compares for a bounding sphere whose center lies at `center`
     /// relative to the camera and whose radius is `radius`: the distance to its nearest point, at
-    /// least [`LEAST_DISTANCE`], or 1 for an orthographic camera.
+    /// least [`LEAST_DISTANCE`]. This is the distance of a level given by a distance, of a level
+    /// given by coverage, and of a draw range, which their authors set in meters, and it holds for
+    /// an orthographic camera too. A level given by an error compares [`LevelRule::error_distance`]
+    /// instead, which stays 1 for an orthographic camera because its pixels do not shrink with
+    /// distance.
     #[inline(always)]
     pub fn distance(&self, center: [f32; 3], radius: f32) -> f32 {
-        if self.orthographic {
-            1.0
-        } else {
-            nearest(center, radius)
-        }
+        nearest(center, radius)
     }
 
     /// The distance at which the view compares errors for a bounding sphere whose center lies at
     /// `center` relative to the camera and whose radius is `radius` ([`Measure`]): the camera's
-    /// level distance, at [`LEVEL_RADIUS_SHARE`] of the radius inside the bounds, or a perspective
-    /// light's distance to the nearest point. A light keeps the nearest point because a caster's
-    /// level must stay within a texel of its surface everywhere, which the normal bias hides.
+    /// level distance, at [`LEVEL_RADIUS_SHARE`] of the radius inside the bounds but no more than
+    /// [`LEVEL_NEAREST_SHARE`] times the nearest point, or a perspective light's distance to the
+    /// nearest point. A light keeps the nearest point because a caster's level must stay within a
+    /// texel of its surface everywhere, which the normal bias hides.
     #[inline(always)]
     pub fn error_distance(&self, center: [f32; 3], radius: f32) -> f32 {
         match self.measure {
             Measure::Camera if self.orthographic => 1.0,
-            Measure::Camera => nearest(center, LEVEL_RADIUS_SHARE * radius),
+            Measure::Camera => level_distance(center, radius),
             Measure::Parallel => 1.0,
             Measure::From(eye) => nearest(
                 [center[0] - eye[0], center[1] - eye[1], center[2] - eye[2]],
@@ -440,6 +508,9 @@ impl LevelRule {
     #[inline(always)]
     pub fn patch_distance(&self, center: [f32; 3], radius: f32) -> f32 {
         match self.measure {
+            // An orthographic camera compares a patch's error by the shader's measure of 1, since
+            // its pixels do not shrink with distance.
+            Measure::Camera if self.orthographic => 1.0,
             Measure::Camera => self.distance(center, radius),
             _ => self.error_distance(center, radius),
         }
@@ -652,6 +723,16 @@ impl LevelRule {
         }
         Picked::One(level)
     }
+}
+
+/// The distance at which a camera compares a level's error: the distance to the sphere's center
+/// less [`LEVEL_RADIUS_SHARE`] of its radius, capped at [`LEVEL_NEAREST_SHARE`] times the distance
+/// to its nearest point. The cap keeps a camera beside a large mesh measuring the surface below it
+/// rather than a fraction of the mesh's size.
+#[inline(always)]
+fn level_distance(center: [f32; 3], radius: f32) -> f32 {
+    let half = nearest(center, LEVEL_RADIUS_SHARE * radius);
+    half.min(LEVEL_NEAREST_SHARE * nearest(center, radius))
 }
 
 /// The distance to the nearest point of a sphere at `center` of radius `radius`, at least
@@ -895,9 +976,10 @@ mod tests {
         // A sphere that reaches past the camera measures the least distance.
         assert_eq!(rule.distance([0.5, 0.0, 0.0], 2.0), LEAST_DISTANCE);
         assert_eq!(rule.distance([-1.0, 0.0, 0.0], 2.0), LEAST_DISTANCE);
-        // An orthographic camera measures the same distance wherever the sphere lies.
+        // An orthographic camera measures the distance to the nearest point too, which a draw
+        // range or a level given by a distance compares.
         let flat = LevelRule::new(1000.0, 0.2, true, 1.0, 0.0);
-        assert_eq!(flat.distance([1e5, 0.0, 0.0], 1e4), 1.0);
+        assert_eq!(flat.distance([1e5, 0.0, 0.0], 1e4), 9.0e4);
     }
 
     #[test]
@@ -919,6 +1001,24 @@ mod tests {
     }
 
     #[test]
+    fn a_camera_beside_a_large_mesh_measures_the_surface_below_it() {
+        let rule = LevelRule::new(1080.0, 1.732, false, 1.0, 0.0);
+        // A ground 2 km across has a radius of about 1414 m and a half radius of 707 m. A camera
+        // 1,000 m from its centre stands on the surface, where the half-radius measure would be
+        // 293 m. The nearest point beside the camera keeps the level distance at the least.
+        let ground = rule.error_distance([1000.0, 1.7, 0.0], 1_414.2);
+        assert!(ground < 0.01, "a camera on the ground measures {ground} m");
+        // Outside the sphere the cap is twice the distance to the nearest point.
+        let outside = rule.error_distance([2000.0, 0.0, 0.0], 1_414.2);
+        assert!(
+            (outside - 2.0 * (2000.0 - 1_414.2)).abs() < 0.01,
+            "{outside}"
+        );
+        // A small sphere keeps the half-radius measure: radius 4 m centred 7 m away measures 5 m.
+        assert_eq!(rule.error_distance([0.0, 0.0, -7.0], 4.0), 5.0);
+    }
+
+    #[test]
     fn errors_measure_halfway_into_the_bounds_and_hand_set_distances_to_the_nearest_point() {
         let rule = LevelRule::new(1000.0, 1.0, false, 1.0, 0.0);
         // A sphere of radius 2 m centered 5 m away: its nearest point lies 3 m away, and its level
@@ -934,10 +1034,11 @@ mod tests {
         // A tree of patches keeps the nearest point, so a child is never measured farther than
         // its parent.
         assert_eq!(rule.patch_distance([3.0, 4.0, 0.0], 2.0), 3.0);
-        // An orthographic camera measures 1 for both.
+        // An orthographic camera measures the nearest point for a distance or a range, and 1 for
+        // an error, whose pixels do not shrink with distance.
         let flat = LevelRule::new(1000.0, 0.2, true, 1.0, 0.0);
         let far = flat.distances([1e5, 0.0, 0.0], 1e4);
-        assert_eq!((far.camera, far.error), (1.0, 1.0));
+        assert_eq!((far.camera, far.error), (9.0e4, 1.0));
     }
 
     #[test]
@@ -956,18 +1057,51 @@ mod tests {
         let links = links([0.0, 0.01, 0.04, 0.2], false);
         // A view 10 m high on 1,000 pixels: P[1][1] is 0.2, so 100 pixels a meter at threshold 1.
         let rule = LevelRule::new(1000.0, 0.2, true, 1.0, 0.0);
-        let distance = rule.distance([1e5, 0.0, 0.0], 1.0);
-        assert_eq!(distance, 1.0);
+        let at = rule.distances([1e5, 0.0, 0.0], 1.0);
+        // The camera's distance to the sphere is far, and its error distance stays 1, since an
+        // orthographic camera's pixels do not shrink with distance.
+        assert_eq!((at.camera, at.error), (1e5 - 1.0, 1.0));
         // An error passes while it covers less than a pixel: level 1's 1 cm covers exactly one
         // pixel at scale 1, so the base level draws, and half a pixel at scale 0.5.
         let cases = [(1.0, 0), (0.5, 1), (0.2, 2), (0.04, 3)];
         for (scale, level) in cases {
             assert_eq!(
-                rule.pick(&links, 0, scale, 1.0, distance, 1.0, DrawRange::NONE),
+                rule.pick(&links, 0, scale, 1.0, at, 1.0, DrawRange::NONE),
                 Picked::One(level),
                 "{scale}"
             );
         }
+    }
+
+    #[test]
+    fn an_orthographic_view_uses_the_nearest_point_for_a_range_and_a_distance_level() {
+        let rule = LevelRule::new(1000.0, 0.2, true, 1.0, 0.0);
+        // A sphere of radius 2 m 10 m from the camera has its nearest point 8 m away.
+        let at = rule.distances([0.0, 0.0, -10.0], 2.0);
+        assert_eq!(at.camera, 8.0);
+        // A band that starts at 8 m draws it. Measured as 1, the band would hide it everywhere.
+        let range = DrawRange {
+            start: 8.0,
+            end: 120.0,
+        };
+        let errors = links([0.0, 100.0, 200.0, 300.0], false);
+        assert_eq!(
+            rule.pick(&errors, 0, 1.0, 2.0, at, 1.0, range),
+            Picked::One(0)
+        );
+        // A level given by a distance of 6 m switches in past 6 m, so it draws at 8 m and not at
+        // the 5 m of a nearer sphere.
+        let by_distance = links_by([6.0, 20.0, 100.0], Switch::Distance, false);
+        assert_eq!(
+            rule.pick(&by_distance, 0, 1.0, 2.0, at, 1.0, DrawRange::NONE),
+            Picked::One(1)
+        );
+        let close = rule.distances([0.0, 0.0, -7.0], 2.0);
+        assert_eq!(close.camera, 5.0);
+        assert_eq!(
+            rule.pick(&by_distance, 0, 1.0, 2.0, close, 1.0, DrawRange::NONE),
+            Picked::One(0)
+        );
     }
 
     #[test]
@@ -1252,15 +1386,17 @@ mod tests {
         // A view 10 m high on 1,000 pixels draws 100 pixels a meter at a threshold of one pixel.
         let rule = LevelRule::new(1000.0, 0.2, true, 1.0, 0.0);
         let links = links([0.0, 0.01, 0.04, 0.2], false);
-        let distance = rule.distance([1e5, 0.0, 0.0], 0.005);
+        let at = rule.distances([1e5, 0.0, 0.0], 0.005);
+        // The error distance stays 1 for an orthographic camera.
+        assert_eq!(at.error, 1.0);
         // A diameter of 1 cm covers exactly one pixel, and 9.8 mm covers under it. The base level
         // draws at a scale of 1, where level 1's error covers exactly a pixel too.
         assert_eq!(
-            rule.pick(&links, 0, 1.0, 0.005, distance, 1.0, DrawRange::NONE),
+            rule.pick(&links, 0, 1.0, 0.005, at, 1.0, DrawRange::NONE),
             Picked::One(0)
         );
         assert_eq!(
-            rule.pick(&links, 0, 1.0, 0.0049, distance, 1.0, DrawRange::NONE),
+            rule.pick(&links, 0, 1.0, 0.0049, at, 1.0, DrawRange::NONE),
             Picked::Hidden
         );
     }
