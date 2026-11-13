@@ -1052,6 +1052,7 @@ function growCutting(
 				NO_TRIANGLES,
 				NO_TRIANGLES,
 			],
+			shoots: shootTriangles(kit, rows),
 		},
 	};
 }
@@ -1237,6 +1238,19 @@ function referenceOf(kit: SpeciesKitData, input: BudgetInput): PartTriangles | u
 const now = () => (typeof performance === 'undefined' ? Date.now() : performance.now());
 
 /**
+ * The triangles a variant's shoot rows draw at the kit's detail: each row draws one prototype of
+ * the kit, which no level's own mesh holds.
+ */
+function shootTriangles(kit: SpeciesKitData, rows: PlantAsset['shoots']): number {
+	const tier = DETAILS.indexOf(kit.detail);
+	let triangles = 0;
+	for (let r = 0; r < rows.count; r++)
+		triangles +=
+			(kit.prototypes[rows.prototype[r] as number]?.tiers[tier]?.indices.length ?? 0) / 3;
+	return triangles;
+}
+
+/**
  * Grows one variant on this thread: its skeleton, its shoot rows, its crown light, its wind records
  * and its three levels. Call `loadPlantCode` first. The nearest level's wood is meshed only when
  * `near` is set; otherwise `growNearWoodNow` meshes it in the background.
@@ -1317,6 +1331,7 @@ export function growPlantNow(kit: SpeciesKitData, options: GrowOptions): PlantAs
 						clusters: [built[0].clusters, built[1].clusters, built[2].clusters] as const,
 					}
 				: {}),
+			shoots: record.lod.nearFoliage === 'instanced' ? shootTriangles(kit, mesh.rows) : 0,
 		},
 	};
 	return asset;

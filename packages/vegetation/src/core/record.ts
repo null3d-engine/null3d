@@ -807,7 +807,7 @@ export interface Conifer {
 		readonly plan: { readonly narrow: number; readonly turn: number };
 		/**
 		 * A limb's radius beside the trunk over the trunk's radius at that height, for the shortest
-		 * limb and for the longest.
+		 * limb and for the longest. A limb between them takes its place by its reach.
 		 */
 		readonly radius: readonly [short: number, long: number];
 		/**
@@ -815,7 +815,10 @@ export interface Conifer {
 		 * there, and the distance over which it fades, as a share of the plant's height.
 		 */
 		readonly collar: { readonly swell: number; readonly over: number };
-		/** A limb's radius where its foliage patch begins, over its radius past the collar. */
+		/**
+		 * A limb's radius where its foliage patch begins, over its radius past the collar. Under the
+		 * patch the limb thins on to its end.
+		 */
 		readonly taper: number;
 		/** The most degrees a limb's sideways sway turns it from its course, in slow bends. */
 		readonly wander: number;
@@ -829,13 +832,17 @@ export interface Conifer {
 	 * The limbs that carry on where the trunk divides, spread evenly round it: how many, the degrees
 	 * above level they leave and end at, and each one's radius over the trunk's where it divides.
 	 * The way each runs through its middle is solved so that its foliage patch's top stands at the
-	 * plant's height. Absent on a plant whose trunk runs to its tip.
+	 * plant's height, the first one's at the height and each further one's a step lower. With a
+	 * leader, the first limb carries on as the plant's leader: it reaches that share as far as the
+	 * crown does there, and its patch stands over the trunk's line. Absent on a plant whose trunk
+	 * runs to its tip.
 	 */
 	readonly top?: {
 		readonly limbs: number;
 		readonly leave: number;
 		readonly end: number;
 		readonly radius: number;
+		readonly leader?: number;
 	};
 	/** The foliage patch at a limb's end, which the sockets of its foliage fill. */
 	readonly patch: {
@@ -851,18 +858,24 @@ export interface Conifer {
 		 * patch takes at most seven tenths of its limb's reach.
 		 */
 		readonly width: readonly [short: number, long: number];
+		/**
+		 * Where one patch a limb: the share of the limb's reach, at its outer end, that the patch
+		 * lies along. The patch is then that long along its limb and no wider than it is long, so
+		 * the foliage clothes the limb's outer part and its inner part stays bare. Absent, a patch
+		 * is round and takes at most a stated share of its limb's reach.
+		 */
+		readonly along?: number;
 		/** The patch's depth over its width. */
 		readonly depth: number;
 		/**
 		 * The sockets that fill a patch: the piece each carries, by its name among the record's
-		 * pieces, the metres between one socket and the next, the degrees a side twig leaves at from
-		 * the wood under the patch, and the degrees it rises above level. Absent, a patch carries no
-		 * socket.
+		 * pieces, the metres between one socket and the next over the patch's dome, and the most
+		 * degrees above level that a piece leaves its socket at, where the dome faces the sky.
+		 * Absent, a patch carries no socket.
 		 */
 		readonly sockets?: {
 			readonly piece: string;
 			readonly pitch: number;
-			readonly twig: number;
 			readonly lift: number;
 		};
 	};
