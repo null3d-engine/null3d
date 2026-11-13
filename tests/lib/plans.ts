@@ -1949,8 +1949,10 @@ export function vegetationPlan(): PlanItem<Check>[] {
 /**
  * The forest's budget route at the cells whose rows the forest note owes: the tablet at Low on
  * WebGL2, and the Ultra preset on a device whose row records the memory. Each page draws the near
- * trees through the vegetation add-on at a 300-triangle level budget, with the sparse form as the
- * route's default; the far rows keep the demo's own cards.
+ * trees through the vegetation add-on at the route's default level budget; the far rows keep the
+ * demo's own cards. The render scale is fixed at 1, which is the scale the frame ceilings were
+ * measured at, so the governor cannot trade scale for time inside a row. A run that sweeps budgets
+ * adds `--switches budget=<triangles>`, which overrides the route's default on every page.
  */
 export function forestBudgetPlan(): PlanItem<Check>[] {
 	const items: PlanItem<Check>[] = [
@@ -1972,8 +1974,8 @@ export function forestBudgetPlan(): PlanItem<Check>[] {
 						`preset=${preset}`,
 						'target-fps=1',
 						'seconds=5',
+						'render-scale=1',
 						'route=addon',
-						'budget=300',
 					],
 					timeoutSeconds: VEGETATION_TIMEOUT_SECONDS,
 				},

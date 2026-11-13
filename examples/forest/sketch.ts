@@ -21,7 +21,9 @@ export default defineSketch(async (ctx) => {
 	// form, and `?budget=<triangles>` draws them at that level budget instead. Without the route the
 	// demo draws its own trees. The far rows keep the demo's own cards either way, so the add-on's
 	// far band stays out until its far cards land.
-	const params = new URLSearchParams(location.search);
+	// The sketch runs in the engine's worker, so its own address carries the page's switches; the
+	// document's address belongs to the page that started it.
+	const params = new URL(import.meta.url).searchParams;
 	const route = params.get('route') === 'addon';
 	const asked = Number(params.get('budget') ?? 0);
 	const budgets =
