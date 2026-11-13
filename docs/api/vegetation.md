@@ -74,7 +74,7 @@ export default defineSketch(async (ctx) => {
 
 ## The plant core
 
-A species is a folder of its own with a record and an entry. The record is a `Species`. It names one of eight growth models and that model's numbers. It also gives the outline that the plant fills, its shoots, leaves, bark, seasons, wind and detail levels, and its own budget. The registry lists the folders, and [Vegetation species](vegetation-species.md) lists every species from its record.
+A species is a folder of its own with a record and an entry. The record is a `Species`. It names a growth model and that model's numbers. It also gives the outline that the plant fills, its shoots, leaves, bark, seasons, wind and detail levels, and its own budget. The registry lists the folders, and [Vegetation species](vegetation-species.md) lists every species from its record.
 
 ```ts
 import { checkSpecies, isSpeciesId, loadSpecies, speciesIds } from '@null3d/vegetation';

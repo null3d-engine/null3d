@@ -34,6 +34,7 @@ import { rowCentre } from '../crown/density';
 import { crownSkyAt, lightCrown } from '../crown/visibility';
 import { bareTrimmed } from '../grow/coarsen';
 import type { CrownLight, DressInput } from '../stages';
+import { carriesPieces, pieceRows } from './piece-rows';
 import { inLeaf } from './season';
 
 /** Sky visibility and bent normal of a row before the crown's light gives it its own. */
@@ -131,7 +132,7 @@ function tropismTurn(record: Species): number {
 }
 
 /** A row under construction. */
-interface Row {
+export interface Row {
 	prototype: number;
 	position: Vector3;
 	rotation: number[];
@@ -443,6 +444,8 @@ function skyPruned(input: DressInput, rows: Row[], line: number): Row[] {
  */
 function placedRows(input: DressInput, bySky = true): Row[] {
 	const { record, seed, variant, skeleton, kit } = input;
+	// A plant that carries pieces at sockets stands its foliage where its grower put the sockets.
+	if (carriesPieces(record)) return pieceRows(input);
 	const shoots = record.shoots;
 	const rows: Row[] = [];
 	if (!shoots || kit.prototypes.length === 0) return rows;
