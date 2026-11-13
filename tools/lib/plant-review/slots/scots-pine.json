@@ -54,7 +54,10 @@
 		"sunAzimuth": -50,
 		"sunRise": 48,
 		"skyShare": 0.4,
-		"daylight": 2.3
+		"daylight": 2.3,
+		"limbShare": 0.3,
+		"collarColumn": 0.5,
+		"limbLie": 15
 	},
 	"08-limb-fork.png": {
 		"sunAzimuth": -60,
