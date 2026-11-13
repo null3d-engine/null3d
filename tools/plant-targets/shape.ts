@@ -16,6 +16,8 @@ const STEM_BANDS = [
 	[0.06, 0.12],
 	[0.12, 0.18],
 ] as const;
+/** The share of the plant's height that the bands reach up to. */
+const STEM_REACH = STEM_BANDS[2][1];
 /** How many widths of the stem below the crown a band above the crown's start may stand. */
 const STEM_ALIKE = 1.5;
 /** The most of a row's whole span that a stem behind hanging foliage may fill. */
@@ -142,6 +144,10 @@ export interface StemFigures {
  * @param breastShare Breast height as a share of the plant's height, or null when it is not known.
  * @param trustedBottom The lowest row whose outline is trusted: the plant's foot, or the row above
  *   the horizon where the foot stands below it and the ground hides part of the stem.
+ * @param fine The width of the stem's run in a row, in mask pixels, read from the picture at its
+ *   own size, or null where it cannot be read. The stem's width, its width at breast height and
+ *   its flare take it in place of the mask's whole pixels, which read a slim stem a pixel wide or
+ *   narrow.
  */
 export function stemOf(
 	mask: Uint8Array,
@@ -151,11 +157,13 @@ export function stemOf(
 	crownRow: number,
 	breastShare: number | null,
 	trustedBottom = box.bottom,
+	fine?: (row: number) => number | null,
 ): StemFigures {
 	const tall = box.bottom - box.top + 1;
 	const bottom = Math.min(box.bottom, Math.max(box.top, trustedBottom));
 	const runs = axisRuns(mask, width, box, axis);
 	const runWidth = (y: number): number => spanWidth(runs, y);
+	const fineWidth = (y: number): number => (runWidth(y) > 0 ? (fine?.(y) ?? runWidth(y)) : 0);
 	const spans = rowSpans(mask, width, box.bottom + 1);
 	const none = (reason: string): StemFigures => ({
 		bareShare: null,
@@ -186,7 +194,7 @@ export function stemOf(
 		const first = Math.min(bottom, box.bottom - Math.round(tall * from));
 		const last = Math.max(floor, box.bottom - Math.max(2, Math.round(tall * to)));
 		for (let y = first; y > last; y--) {
-			low.push(runWidth(y));
+			low.push(fineWidth(y));
 			const across = spanWidth(spans, y);
 			shares.push(across === 0 ? 1 : runWidth(y) / across);
 		}
@@ -211,7 +219,7 @@ export function stemOf(
 		return none(
 			box.bottom - crownRow < 2
 				? 'the crown starts at the foot, so no stem shows below it'
-				: bottom - crownRow < 2
+				: bottom - Math.max(crownRow, box.bottom - Math.round(tall * STEM_REACH)) < 2
 					? 'the stem below the crown stands under the horizon, where the ground hides it'
 					: 'the outline holds no run of plant at its foot',
 		);
@@ -249,7 +257,7 @@ export function stemOf(
 	else {
 		const foot: number[] = [];
 		for (let r = bottom; r > bottom - Math.max(2, Math.round(tall * FLARE_BAND)); r--)
-			foot.push(runWidth(r));
+			foot.push(fineWidth(r));
 		foot.sort((p, q) => p - q);
 		// The wider rows of the foot band: a row broken by grass reads narrow, and is not the foot.
 		flare = rounded((foot[Math.floor(foot.length * FLARE_QUANTILE)] as number) / stem, 3);
@@ -264,7 +272,7 @@ export function stemOf(
 			missing.breastHeightWidth = 'breast height stands above the bare stem in this view';
 		else if (row > bottom)
 			missing.breastHeightWidth = 'breast height stands below the horizon in this view';
-		else breastHeightWidth = rounded(runWidth(row) / tall);
+		else breastHeightWidth = rounded(fineWidth(row) / tall);
 	}
 	// A line through the middle of the stem's run in each row where the run is the stem alone.
 	let lean: number | null = null;

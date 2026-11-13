@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { blank, type Rgba } from '../lib/plant-review/image.ts';
 import type { Box } from '../lib/plant-review/references.ts';
 import { endsAtHorizon, followStem } from './foot.ts';
 import {
@@ -11,7 +12,7 @@ import {
 	stemOf,
 } from './shape.ts';
 import { boxOf, disc, empty, fill, HEIGHT, line, lollipop, WIDTH } from './shapes.fixture.ts';
-import { figuresOf } from './whole.ts';
+import { figuresOf, measureView } from './whole.ts';
 
 describe('the outline of a disc', () => {
 	const mask = empty();
@@ -274,12 +275,15 @@ describe('a stem cut at the horizon', () => {
 		const box = boxOf(mask);
 		expect(box.bottom).toBe(299);
 		expect(endsAtHorizon(box, 300, HEIGHT)).toBe(true);
-		expect(followStem(lab, WIDTH, HEIGHT, mask, box, 200)).toEqual({
-			kind: 'stem',
-			foot: 340,
-			left: 195,
-			right: 204,
-		});
+		const stem = followStem(lab, WIDTH, HEIGHT, mask, box, 200);
+		if (stem.kind !== 'stem') throw new Error(stem.kind);
+		expect(stem.foot).toBe(340);
+		expect(stem.runs).toHaveLength(41);
+		// A pixel is read with its neighbours, so a run's ends stand within a pixel of the stem's.
+		for (const [from, to] of stem.runs) {
+			expect(Math.abs(from - 195)).toBeLessThanOrEqual(1);
+			expect(Math.abs(to - 204)).toBeLessThanOrEqual(1);
+		}
 	});
 
 	test('finds no stem where the plant stands on the horizon', () => {
@@ -293,6 +297,73 @@ describe('a stem cut at the horizon', () => {
 		fill(mask, 100, 200, 299, 299);
 		expect(followStem(lab, WIDTH, HEIGHT, mask, boxOf(mask), 200)).toEqual({ kind: 'mass' });
 		expect(endsAtHorizon({ left: 0, top: 0, right: 10, bottom: 340 }, 300, HEIGHT)).toBe(false);
+	});
+});
+
+describe('a picture whose trunk runs on below the horizon', () => {
+	/**
+	 * A photograph-like picture, twice the mask's work width: a plain sky, a mottled ground below a
+	 * horizon, and a tree whose trunk stands on the ground well below the horizon line. The trunk
+	 * is a colour the ground's own spread hides from an outline, as bark on heath is.
+	 */
+	function photograph(footRow: number, trunk: number): Rgba {
+		const wide = 1280;
+		const tall = 860;
+		const horizon = 640;
+		const image = blank(wide, tall, [150, 190, 235]);
+		const put = (x: number, y: number, colour: readonly number[]): void => {
+			for (let c = 0; c < 3; c++) image.data[(y * wide + x) * 4 + c] = colour[c] as number;
+		};
+		for (let y = horizon; y < tall; y++)
+			for (let x = 0; x < wide; x++) {
+				// Tufts of two browns and a green, a few pixels across.
+				const tuft = (Math.floor(x / 6) * 7 + Math.floor(y / 5) * 13) % 3;
+				put(x, y, tuft === 0 ? [120, 105, 70] : tuft === 1 ? [95, 100, 60] : [140, 120, 85]);
+			}
+		for (let y = 100; y <= footRow; y++)
+			for (let x = 640 - trunk / 2; x < 640 + trunk / 2; x++) put(x, y, [70, 62, 58]);
+		for (let y = 60; y <= 420; y++)
+			for (let x = 400; x < 880; x++)
+				if (((x - 640) / 240) ** 2 + ((y - 240) / 180) ** 2 <= 1) put(x, y, [40, 110, 45]);
+		return image;
+	}
+
+	test('takes the height from the foot, and says where the outline ended', () => {
+		const result = measureView(photograph(700, 24), null);
+		if ('problem' in result) throw new Error(result.problem);
+		const { foot, heightToWidth, crown, trunk } = result.figures;
+		expect(foot.rows.frame).toBe(860);
+		expect(Math.abs((foot.rows.horizon as number) - 640)).toBeLessThanOrEqual(3);
+		// The review's outline ends at the horizon; the foot is found 60 rows below it.
+		expect(Math.abs(foot.rows.outline - 639)).toBeLessThanOrEqual(4);
+		expect(Math.abs(foot.rows.foot - 700)).toBeLessThanOrEqual(4);
+		expect(foot.followed).toBeGreaterThan(0.07);
+		expect(foot.belowHorizon).toBeGreaterThan(0.07);
+		// The tree is 641 rows from its top to its foot and 480 wide; from the horizon it is 581.
+		expect(Math.abs(heightToWidth - 641 / 480)).toBeLessThan(0.02);
+		expect(Math.abs(crown.base - (700 - 420) / 641)).toBeLessThan(0.02);
+		// The trunk is 24 pixels of the picture wide: 12 of the mask's, read to a part of a pixel.
+		expect(Math.abs((trunk.width as number) - 24 / 641)).toBeLessThan(0.002);
+		expect(trunk.stems).toBe(1);
+		// The foot stands under the horizon, where the ground hides it, so it gives no flare.
+		expect(trunk.flare).toBeNull();
+	});
+
+	test('gives no stem where the whole foot of the stem stands under the horizon', () => {
+		const result = measureView(photograph(800, 24), null);
+		if ('problem' in result) throw new Error(result.problem);
+		expect(Math.abs(result.figures.foot.rows.foot - 800)).toBeLessThanOrEqual(4);
+		expect(result.figures.trunk.width).toBeNull();
+		expect(result.figures.missing['trunk.width']).toContain('under the horizon');
+	});
+
+	test("reads a slim trunk at the picture's own size, not in whole mask pixels", () => {
+		// A trunk 9 pixels wide is 4.5 of the mask's pixels, which the mask holds as 4 or 5.
+		const result = measureView(photograph(641, 9), null);
+		if ('problem' in result) throw new Error(result.problem);
+		const tall = 641 - 60 + 1;
+		expect(Math.abs((result.figures.trunk.width as number) - 9 / tall)).toBeLessThan(0.0012);
+		expect(result.figures.foot.followed).toBeLessThan(0.01);
 	});
 });
 
