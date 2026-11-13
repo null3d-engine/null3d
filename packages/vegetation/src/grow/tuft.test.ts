@@ -108,12 +108,12 @@ function turned(q: ArrayLike<number>, at: number, v: readonly number[]): number[
 	];
 }
 
-/** The lowest and highest points of the placed pieces, in metres. */
-function standing(grown: Grown): { low: number; top: number } {
+/** The box the placed pieces fill, in metres: its least and greatest corner. */
+function standing(grown: Grown): { low: number; top: number; min: number[]; max: number[] } {
 	const { shoots } = grown.asset;
 	const tier = DETAILS.indexOf('high');
-	let low = 0;
-	let top = 0;
+	const min = [0, 0, 0];
+	const max = [0, 0, 0];
 	for (let r = 0; r < shoots.count; r++) {
 		const positions = grown.kit.prototypes[shoots.prototype[r] as number]?.tiers[tier]?.positions;
 		if (!positions) throw new Error('a row names no prototype');
@@ -124,12 +124,14 @@ function standing(grown: Grown): { low: number; top: number } {
 				positions[i + 1] as number,
 				positions[i + 2] as number,
 			]);
-			const y = (shoots.position[r * 3 + 1] as number) + (p[1] as number) * scale;
-			low = Math.min(low, y);
-			top = Math.max(top, y);
+			for (let k = 0; k < 3; k++) {
+				const at = (shoots.position[r * 3 + k] as number) + (p[k] as number) * scale;
+				min[k] = Math.min(min[k] as number, at);
+				max[k] = Math.max(max[k] as number, at);
+			}
 		}
 	}
-	return { low, top };
+	return { low: min[1] as number, top: max[1] as number, min, max };
 }
 
 for (const id of TUFTS) {
@@ -373,6 +375,23 @@ for (const id of TUFTS) {
 				// The stool's mound stays with the plant.
 				expect(piece.levels[0].parts.map((drawn) => drawn.name)).not.toContain('foliage');
 			}
+		});
+
+		it('states a box that holds its pieces and little air beside them', () => {
+			const { min, max } = standing(grown);
+			const { bounds } = asset.skeleton;
+			const width = (max[0] as number) - (min[0] as number);
+			// A page stands its camera by this box, so a box wider than the plant stands it too far.
+			for (const k of [0, 2]) {
+				expect(bounds.min[k] as number).toBeLessThanOrEqual((min[k] as number) + 0.02 * width);
+				expect(bounds.max[k] as number).toBeGreaterThanOrEqual((max[k] as number) - 0.02 * width);
+				expect(bounds.min[k] as number).toBeGreaterThanOrEqual((min[k] as number) - 0.08 * width);
+				expect(bounds.max[k] as number).toBeLessThanOrEqual((max[k] as number) + 0.08 * width);
+			}
+			expect(Math.abs(bounds.max[1] - (max[1] as number))).toBeLessThanOrEqual(
+				0.03 * (max[1] as number),
+			);
+			expect(bounds.min[1]).toBe(0);
 		});
 
 		it('grows the same plant each time, and another for another variant', () => {
