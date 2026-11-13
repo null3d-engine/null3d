@@ -122,9 +122,31 @@ function splitAcross(points: readonly number[], at: number): number[][] {
 export function leafTriangles(
 	outline: LeafOutline,
 	detail: Detail,
+	narrow = false,
 ): { readonly points: number[]; readonly triangles: number[] } {
+	if (narrow)
+		return detail === 'low' || detail === 'medium' ? cardLeaf(outline) : foldedCard(outline);
 	const tier = TIERS[detail];
 	return tier.card ? cardLeaf(outline) : cutLeaf(outline, tier);
+}
+
+/**
+ * A narrow leaflet's card split along its midrib: two quads, four triangles, so the leaf's fold
+ * bends it into two planes that meet at the crease.
+ *
+ * @param outline The leaf's outline.
+ * @returns The points, u then v, and the four triangles.
+ */
+function foldedCard(outline: LeafOutline): {
+	readonly points: number[];
+	readonly triangles: number[];
+} {
+	const card = cardLeaf(outline).points;
+	const [left, low, right, , , high] = card as [number, number, number, number, number, number];
+	return {
+		points: [left, low, 0.5, low, right, low, right, high, 0.5, high, left, high],
+		triangles: [0, 1, 4, 0, 4, 5, 1, 2, 3, 1, 3, 4],
+	};
 }
 
 /**
@@ -235,7 +257,7 @@ export function bladeMesh(
 	length = spreadMean(shape.length),
 ): PrototypeArrays {
 	const surface = new LeafSurface(shape, outline, length);
-	const { points, triangles } = leafTriangles(outline, detail);
+	const { points, triangles } = leafTriangles(outline, detail, shape.narrow === true);
 	const mesh = new MeshWriter();
 	const made = new Map<number, number>();
 	const p = [0, 0, 0];
@@ -271,7 +293,8 @@ export function bladeMesh(
 			mesh.indices.push(vertex);
 		}
 	}
-	const stalkSides = TIERS[detail].stalkSides;
+	// A narrow leaflet's card runs from the stalk's foot, so it draws no stalk of its own.
+	const stalkSides = shape.narrow ? -1 : TIERS[detail].stalkSides;
 	if (stalkSides >= 0) addStalk(mesh, surface, shape, outline, stalkSides);
 	addSori(mesh, surface, shape, outline, length);
 	return mesh.finishPrototype();

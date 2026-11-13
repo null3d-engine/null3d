@@ -9,31 +9,24 @@
 // close to a point at the tip, with no end pair (still 10).
 import type { PieceLeaves, PieceRule, PieceSides, PieceStem, PieceStudio } from '../../leaf/piece';
 
-/** The frond's length. The fact sheet: 4 to 6 m; picture 01: 0.40 of the palm's height. */
+/** The frond's length. Picture 01: 0.40 of the palm's height, 6 m at 15 m; the fact sheet: 4 to 6 m. */
 export const FROND = 6;
-
-/**
- * The finest mesh a leaflet takes: the cut-out card, four corners. A frond of 300 leaflets in the
- * finer meshes passes the kit's bytes, the near level's triangles and, at the ultra tier, a
- * prototype's vertex limit; the card keeps the fact sheet's count. The reviewer judges a close view
- * of one frond at the high tier against stills 21 and 22 before this stands as the default.
- */
-const LEAFLET_MESH = 'low';
 
 /** The share of the frond's length that the spines take, from its foot (stills 07 and 21). */
 const SPINE_ZONE = 0.22;
 
 /**
- * The leaflets: about 150 a side (the fact sheet's 100 to 200), in groups of three a side at lifts of
- * -30, 0 and 30 degrees, a group every 0.094 m over the frond's upper 0.78. Each leaves 45 degrees
- * forward of square (stills 09 and 22). The longest, 0.40 m, stand at the middle of the frond, the
- * fact sheet's longest; they shorten to a third of that at the tip (stills 10 and 21).
+ * The leaflets: about 80 a side (picture 04: 22 to 26 along 300 px of a 1,000 px rachis), in groups
+ * of three a side at lifts of -30, 0 and 30 degrees, a group every 0.17 m over the frond's upper
+ * 0.78. Each leaves 50 degrees from the rachis, the specification's 40 to 50 degrees forward of
+ * square (stills 09 and 22). The longest stand at the middle of the frond; they shorten to a third
+ * of that at the tip (stills 10 and 21).
  */
 const LEAFLETS: PieceLeaves = {
-	gap: ((1 - SPINE_ZONE) * FROND) / 50,
+	gap: ((1 - SPINE_ZONE) * FROND) / 27,
 	from: SPINE_ZONE,
 	ranked: [-30, 0, 30],
-	angle: 45,
+	angle: 50,
 	angleSpread: 5,
 	scale: [
 		[SPINE_ZONE, 0.6],
@@ -83,7 +76,9 @@ function rachis(droop: number, droopOver: readonly [number, number]): PieceStem 
 
 /**
  * The date palm's pieces. Each is one variant: a frond's look varies by its rank's angle and length
- * and its place round the trunk, and a second variant of each would double the kit's bytes.
+ * and its place round the trunk, and a second variant of each would double the kit's bytes. The
+ * leaflet is narrow (directed.ts): a card at the low and medium tiers, folded at its midrib at the
+ * high and ultra tiers.
  */
 export const PIECES: readonly PieceRule[] = [
 	// Picture 01: the inner, young fronds stand straight, and the lowest living ones run nearly
@@ -92,7 +87,7 @@ export const PIECES: readonly PieceRule[] = [
 		name: 'frond-straight',
 		attitude: 'along',
 		variants: 1,
-		leafDetail: LEAFLET_MESH,
+		lengthwise: true,
 		stem: rachis(15, [0.4, 1]),
 	},
 	// Picture 01: the upper middle fronds leave at 50 to 60 degrees with their tips 0.55 of the frond
@@ -104,7 +99,7 @@ export const PIECES: readonly PieceRule[] = [
 		name: 'frond-arched',
 		attitude: 'along',
 		variants: 1,
-		leafDetail: LEAFLET_MESH,
+		lengthwise: true,
 		stem: rachis(60, [0.35, 1]),
 	},
 	// Picture 01 and still 20: a dead frond hangs nearly straight, its leaflets folded down along the
@@ -113,7 +108,7 @@ export const PIECES: readonly PieceRule[] = [
 		name: 'frond-dead',
 		attitude: 'along',
 		variants: 1,
-		leafDetail: LEAFLET_MESH,
+		lengthwise: true,
 		stem: {
 			...rachis(10, [0, 1]),
 			leaves: { ...LEAFLETS, ranked: [-20, 0], angle: 18, angleSpread: 6 },

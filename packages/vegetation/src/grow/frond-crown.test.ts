@@ -341,39 +341,43 @@ describe('the frond pieces', () => {
 			});
 
 			it(
-				"meshes the leaflets no finer than the rule names, at the fact sheet's count",
+				"draws a narrow leaflet as a card far off and folded at its midrib near, at the picture's count",
 				() => {
 					const { kit, record } = of(id);
+					const leaf = record.foliage.kind === 'blade' ? record.foliage.leaf : undefined;
+					if (!leaf?.narrow) return;
 					const tiers = leavesByTier(kit);
-					// The leaf-kind vertices of one leaf mesh; its stalk is of another kind.
-					const perLeaf = (tier: number) =>
-						verticesOf(tiers[tier]?.[0] as PrototypeArrays, SURFACE_LEAF).length;
-					for (const prototype of kit.prototypes.filter((p: ShootPrototype) => p.piece)) {
-						const rule = (record.pieces ?? []).find(
-							(r) => r.name === prototype.piece?.name,
-						) as PieceRule;
-						const most = rule.leafDetail ? DETAILS.indexOf(rule.leafDetail) : DETAILS.length - 1;
-						const high = prototype.tiers[DETAILS.indexOf('high')] as PrototypeArrays;
-						expect(verticesOf(high, SURFACE_LEAF).length).toBe(
-							prototype.leaves * perLeaf(Math.min(most, DETAILS.indexOf('high'))),
+					const leafTriangles = (mesh: PrototypeArrays) => {
+						let count = 0;
+						for (let t = 0; t < mesh.indices.length; t += 3)
+							if ((mesh.colors[(mesh.indices[t] as number) * 4 + 2] as number) === SURFACE_LEAF)
+								count++;
+						return count;
+					};
+					// One leaflet: two triangles at the low and medium tiers, four at the high and ultra tiers,
+					// whose two halves stand at the leaf's fold to each other.
+					expect(tiers.map((tier) => leafTriangles(tier[0] as PrototypeArrays))).toEqual([
+						2, 2, 4, 4,
+					]);
+					const near = tiers[DETAILS.indexOf('high')]?.[0] as PrototypeArrays;
+					const normals = new Set<string>();
+					for (let i = 0; i < near.normals.length; i += 3)
+						normals.add(
+							[0, 1, 2].map((k) => Math.round((near.normals[i + k] as number) * 20)).join(','),
 						);
-					}
-					// A living frond holds at least the fact sheet's least, a hundred leaflets a side.
+					expect(normals.size).toBeGreaterThanOrEqual(2);
+					// Every frond's leaflets take that mesh at each tier the kit holds.
+					for (const prototype of kit.prototypes.filter((p: ShootPrototype) => p.piece))
+						for (const tier of ['low', 'medium', 'high'] as const)
+							expect(leafTriangles(prototype.tiers[DETAILS.indexOf(tier)] as PrototypeArrays)).toBe(
+								prototype.leaves *
+									leafTriangles(tiers[DETAILS.indexOf(tier)]?.[0] as PrototypeArrays),
+							);
+					// A living frond holds the picture's count: about 80 leaflets a side.
 					const living = kit.prototypes.filter(
 						(p: ShootPrototype) => p.piece && !p.piece.name.includes('dead'),
 					);
-					for (const prototype of living) expect(prototype.leaves).toBeGreaterThanOrEqual(200);
-					// The same rule with no finest mesh takes the high tier's own leaf mesh.
-					const rule = (record.pieces ?? [])[0] as PieceRule;
-					const { leafDetail: _finest, ...fine } = rule;
-					const [own] = piecePrototypes(record, [fine], tiers);
-					const ownHigh = (own as NonNullable<typeof own>).tiers[
-						DETAILS.indexOf('high')
-					] as PrototypeArrays;
-					expect(verticesOf(ownHigh, SURFACE_LEAF).length).toBe(
-						(own as NonNullable<typeof own>).leaves * perLeaf(DETAILS.indexOf('high')),
-					);
-					expect(perLeaf(DETAILS.indexOf('high'))).toBeGreaterThan(perLeaf(0));
+					for (const prototype of living) expect(prototype.leaves).toBeGreaterThanOrEqual(150);
 				},
 				LONG,
 			);
