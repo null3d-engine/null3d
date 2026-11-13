@@ -747,9 +747,9 @@ pub(crate) struct BandView<'a> {
 }
 
 /// Notes, for each mesh that a loader watches, the bands whose patches a view draws this frame, so
-/// that the loader holds a band until the band above it drew. A mesh that the scene holds no
-/// source of restarts its warm-up, as a level does, so a page that loads a model before it
-/// instantiates it keeps its bands.
+/// that the loader holds a band until the band above it drew. A mesh that the path draws no tree
+/// of restarts its warm-up, as a level does, so a page that loads a model before it instantiates
+/// it keeps its bands.
 ///
 /// A patch that the tree's walk picks for the view is a pick, as it is for the walk that fills the
 /// view's patch runs ([`PatchTree::walk`]). The count reads the tree of each watched mesh alone, and a frame with no loader waiting
@@ -768,7 +768,10 @@ pub(crate) fn note_stage_bands(
     let mut slots = scene.slots().high_water() as usize;
     slots = slots.min(scene.meshes().len());
     let meshes = &scene.meshes()[..slots];
-    watches.hold(view.frame, |mesh| meshes.contains(&mesh));
+    // A tree that the path draws is present even when no scene object draws its mesh, as a batch
+    // of rows does. A watch held on the scene's slots alone would never find such a mesh, and the
+    // engine would keep counting every source without culling while the watch waited.
+    watches.hold(view.frame, &draws_tree);
     let placed = view.offsets;
     let world = scene.world(parity);
     let matrices = world.matrices();
