@@ -3,6 +3,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
 	frameExtent,
+	liftedToGround,
 	type WholeFraming,
 	wholeStand,
 } from '../../../tests/pages/lib/plant-review/whole-stand.ts';
@@ -222,6 +223,45 @@ describe('the stand of a whole view', () => {
 			expect(tightest).toBeLessThan(0.0125);
 			expect(base).toBeCloseTo(0.8512, 2);
 		}
+	});
+
+	test('holds a blade that dips through the ground in front of a low camera to where it meets the ground', () => {
+		// A tuft whose front blade runs toward the camera and dips under the ground near its tip.
+		const tuft = crown(0.5, 0.6, 0, 0.05);
+		const blade = new Float32Array([0, 0.3, 0.2, 0, 0.12, 0.8, 0, 0.02, 1.2, 0, -0.04, 1.35]);
+		const leaves = new Float32Array([...tuft, ...blade]);
+		const lifted = liftedToGround(leaves, 0);
+		expect(lifted[lifted.length - 2]).toBe(0);
+		expect(lifted[lifted.length - 5]).toBeCloseTo(0.02, 6);
+		expect(liftedToGround(tuft, -1)).toBe(tuft);
+		const framing: WholeFraming = {
+			fov: 38,
+			aspect: 768 / 516,
+			horizon: 0.9256,
+			top: 0.0465,
+			base: 0.9256,
+			targetX: 0.5117,
+			widthShare: 0.9297,
+		};
+		const stand = wholeStand(lifted, [0, 0, 0], 0, framing, 0.6);
+		const forward: [number, number, number] = [
+			stand.target[0] - stand.position[0],
+			stand.target[1] - stand.position[1],
+			stand.target[2] - stand.position[2],
+		];
+		const length = Math.hypot(...forward);
+		const where = frameExtent(
+			new Float32Array([0, 0, 1.35]),
+			stand.position,
+			forward.map((v) => v / length) as never,
+			38,
+			768 / 516,
+		);
+		// Where the blade meets the ground lands inside the frame.
+		expect(where.base).toBeLessThanOrEqual(0.995);
+		// Dropped, as the ground drops a root, it would stand outside the stand that left it out.
+		const dropped = wholeStand(leaves, [0, 0, 0], 0, framing, 0.6);
+		expect(stand.distance).toBeGreaterThan(dropped.distance);
 	});
 
 	test('leaves out what grows under the ground, which the ground hides', () => {

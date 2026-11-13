@@ -123,6 +123,28 @@ export function frameExtent(
 }
 
 /**
+ * Foliage points with those under the ground lifted onto it. A leaf never grows in the soil, so a
+ * leaf point under the ground belongs to a blade that dips through it, and the blade is drawn down
+ * to where it meets the ground. Close to a low camera that meeting can stand far out in the frame
+ * from the blade's last point above the ground, so the point counts at the ground, where it stood
+ * over: never nearer the plant than the blade's own meeting. Wood is not lifted: roots grow in the
+ * soil, and the ground hides them whole.
+ *
+ * @param points Foliage points as x, y and z.
+ * @param ground The ground's height.
+ * @returns The points, or a copy with every point under the ground lifted onto it.
+ */
+export function liftedToGround(points: Float32Array, ground: number): Float32Array {
+	let below = -1;
+	for (let i = 1; i < points.length && below < 0; i += 3)
+		if ((points[i] as number) < ground) below = i;
+	if (below < 0) return points;
+	const out = new Float32Array(points);
+	for (let i = below; i < out.length; i += 3) if ((out[i] as number) < ground) out[i] = ground;
+	return out;
+}
+
+/**
  * The stand of a whole view of a plant on the points it draws.
  *
  * The horizon's row sets the camera's pitch. The camera then stands where the highest drawn point

@@ -86,7 +86,7 @@ import {
 	subjectsOfSkeleton,
 } from '../lib/plant-review/subjects';
 import { BACKGROUND_COLOURS, type PlantView, VIEW_SPECS } from '../lib/plant-review/views';
-import { wholeStand } from '../lib/plant-review/whole-stand';
+import { liftedToGround, wholeStand } from '../lib/plant-review/whole-stand';
 
 const QUERY = readPlantReviewQuery(new URL(import.meta.url).searchParams);
 const VIEW: PlantView = QUERY.view ?? 'whole';
@@ -418,7 +418,7 @@ function fit(bounds: Bounds, turn: number, elevation: number, aspect: number, fo
 	return orbit(centre, distance, elevation, turn, fov);
 }
 
-/** Where the first whole view's drawn points landed in its frame, which the page posts with its facts. */
+/** Where each whole view's drawn points landed in its frame; the page posts the last, the stand it drew. */
 const STAND_ROWS: Record<string, number | string>[] = [];
 
 /**
@@ -468,16 +468,16 @@ function standView(
 		},
 		height,
 	);
-	if (STAND_ROWS.length < 1)
-		STAND_ROWS.push({
-			top: Number(stand.extent.top.toFixed(4)),
-			base: Number(stand.extent.base.toFixed(4)),
-			left: Number(stand.extent.left.toFixed(4)),
-			right: Number(stand.extent.right.toFixed(4)),
-			askedTop: Number(stand.asked.top.toFixed(4)),
-			askedBase: Number((stand.asked.base ?? 1).toFixed(4)),
-			held: stand.held,
-		});
+	STAND_ROWS.push({
+		top: Number(stand.extent.top.toFixed(4)),
+		base: Number(stand.extent.base.toFixed(4)),
+		left: Number(stand.extent.left.toFixed(4)),
+		right: Number(stand.extent.right.toFixed(4)),
+		askedTop: Number(stand.asked.top.toFixed(4)),
+		askedBase: Number((stand.asked.base ?? 1).toFixed(4)),
+		held: stand.held,
+		points: points === undefined ? 0 : Math.floor(points.length / 3),
+	});
 	return { position: stand.position as V3, target: stand.target as V3, fov: FOV };
 }
 
@@ -827,7 +827,8 @@ export default defineSketch(async (ctx) => {
 		const near = parts === main.levels[0]?.parts;
 		const lists = [
 			...parts.map((part) => partPositions(part, mainKit.box)),
-			...(near ? [shootPositions(main, mainKit)] : []),
+			// A leaf that dips through the ground is drawn down to it, so its points count there.
+			...(near ? [liftedToGround(shootPositions(main, mainKit), foot[1])] : []),
 		].filter((list) => list.length > 0);
 		let out: Float32Array | undefined;
 		if (lists.length > 0) {
@@ -2069,6 +2070,7 @@ export default defineSketch(async (ctx) => {
 			},
 		}),
 		...(limb >= 0 && { limb: { axis: limb, nodes: chainOf(skeleton, limb).length } }),
+		...(STAND_ROWS.length > 0 && { stand: STAND_ROWS[STAND_ROWS.length - 1] }),
 		elevation,
 		cells: cells.map((cell) => ({
 			turn: cell.turn / DEG,
