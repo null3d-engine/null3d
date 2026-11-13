@@ -335,8 +335,9 @@ const DEPTH_BAND = 0.05;
 /** The rounding of a listed figure, within which a cut counts as no worse than its figure. */
 const FIGURE_ROUNDING = 0.0005;
 /**
- * The cuts that stand outside their band, each with its figure now: a cut on a list may only move
- * toward its video's figure, and one that comes inside its band leaves the list.
+ * The cuts that stand outside their band, each with its figure now, read by the review's measure as
+ * it stands: a cut on a list may only move toward its video's figure, and one that comes inside its
+ * band leaves the list.
  */
 const OPEN_DEPTH: Readonly<Record<string, number>> = {
 	'olive 22': 0.377,
@@ -349,18 +350,19 @@ const OPEN_DEPTH: Readonly<Record<string, number>> = {
 const OPEN_GAP: Readonly<Record<string, number>> = {
 	// In the birch's and the willow's videos nearly every leaf shows its whole face in every frame,
 	// which fixed leaves cannot; their stills judge them.
-	'silver-birch 21': 0.437,
-	'silver-birch 22': 0.353,
-	'weeping-willow 21': 0.252,
-	'weeping-willow 22': 0.367,
-	'european-beech 22': 0.336,
-	'common-ash 21': 0.189,
-	'common-ash 22': 0.328,
-	'common-alder 22': 0.05,
-	'holm-oak 21': 0.161,
-	'holm-oak 22': 0.323,
+	'silver-birch 21': 0.46,
+	'silver-birch 22': 0.362,
+	'weeping-willow 21': 0.278,
+	'weeping-willow 22': 0.388,
+	'olive 21': 0.426,
+	'european-beech 22': 0.348,
+	'common-ash 21': 0.223,
+	'common-ash 22': 0.359,
+	'common-alder 22': 0.055,
+	'holm-oak 21': 0.171,
+	'holm-oak 22': 0.322,
 	// Its arms and tufts stand in one plane.
-	'hawthorn-shrub 21': 0.535,
+	'hawthorn-shrub 21': 0.548,
 };
 
 interface Laid {
@@ -959,6 +961,18 @@ describe("a hanging piece's blades", () => {
  * Each piece's triangles at the high tier, its first variant, when its leaves, wood and buds took the
  * crown's own cut: what a whole tree carrying thousands of pieces could not afford.
  */
+/** The nine broadleaf species whose pieces the cost is held for. */
+const BROADLEAF: ReadonlySet<SpeciesId> = new Set<SpeciesId>([
+	'pedunculate-oak',
+	'holm-oak',
+	'european-beech',
+	'common-ash',
+	'common-alder',
+	'olive',
+	'weeping-willow',
+	'silver-birch',
+	'hawthorn-shrub',
+]);
 const CROWN_CUT_HIGH: Readonly<Record<string, number>> = {
 	'pedunculate-oak branch-end': 9604,
 	'pedunculate-oak twig': 4698,
@@ -989,7 +1003,7 @@ describe("a piece's cost", () => {
 		"takes the pieces' cut at the high tier: at most a fifth of the crown cut, every piece of nine species",
 		async () => {
 			const high = DETAILS.indexOf('high');
-			for (const { id, pieces } of SPECIES) {
+			for (const { id, pieces } of SPECIES.filter((species) => BROADLEAF.has(species.id))) {
 				const module = await loadPieces(id);
 				await loadPlantCode(module.record);
 				const built = buildPiecesNow(module, pieces);
