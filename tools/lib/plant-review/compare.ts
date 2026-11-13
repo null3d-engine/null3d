@@ -55,7 +55,14 @@ import {
 import type { RunFrame } from './render.ts';
 import { type PictureNote, type Standing, standReason } from './review-data.ts';
 import type { SheathTarget } from './sheath.ts';
-import { contractHeld, lackReason, partsOf, regionsRead, voidReason } from './subject-check.ts';
+import {
+	contractHeld,
+	holdsWholePlant,
+	lackReason,
+	partsOf,
+	regionsRead,
+	voidReason,
+} from './subject-check.ts';
 
 /** The bins of an edge-direction profile: twelve of fifteen degrees across half a turn. */
 const EDGE_BINS = 12;
@@ -2099,11 +2106,17 @@ export function compareStills(
 		// never an outline: a mask fitted to a picture with no plain border invents one.
 		const drawn = frame.query?.view ?? slot.view;
 		// A reference whose outline joins its background, as the review data records, has none to read.
-		const noOutline = !hasSeparableOutline(
-			drawn,
-			slot.kind,
-			frame.query?.noOutline === true || pictureNote?.outline !== undefined,
-		);
+		// A solved close view stands inside the plant, where the frame cuts it and a matte reads
+		// fuller than the picture. Its outline is not compared and its pieces are not counted, save
+		// where its camera holds the whole plant, as a low plant's does.
+		const closeInside = partsPicture !== undefined && !holdsWholePlant(frame.facts);
+		const noOutline =
+			closeInside ||
+			!hasSeparableOutline(
+				drawn,
+				slot.kind,
+				frame.query?.noOutline === true || pictureNote?.outline !== undefined,
+			);
 		// A close view of the wood takes no fitted sky or ground: its photograph has neither.
 		const fittedKind =
 			refPlant.background.plain || WOOD_CLOSE_VIEWS.has(drawn)
@@ -2179,7 +2192,9 @@ export function compareStills(
 		// A fork's picture draws only the wood near the joint's depth, so the cut leaves pieces that
 		// hang free in it by design, and the gate does not read it.
 		const ownParts =
-			own && drawn !== 'fork' ? piecePartsAtOwnWidth(own.mask, own.width, own.height) : null;
+			own && drawn !== 'fork' && !closeInside
+				? piecePartsAtOwnWidth(own.mask, own.width, own.height)
+				: null;
 		const pieces = parts
 			? {
 					reference:
@@ -2248,12 +2263,12 @@ export function compareStills(
 					}),
 			surfaceDeltaE,
 			barkColour,
-			// A masked close view reads its bark difference off the same patches, since the page's own
-			// figure averages a plant mask that on a thin stem is mostly the backdrop.
-			barkDeltaE:
-				barkMaskOn && barkColour
-					? Number(deltaE2000(barkColour.reference, barkColour.render).toFixed(2))
-					: shown.barkDeltaE,
+			// A bark close view reads its bark difference off the same patches: the page's own figure
+			// averages a plant mask, which a bark picture does not have and which on a thin stem is
+			// mostly the backdrop.
+			barkDeltaE: barkColour
+				? Number(deltaE2000(barkColour.reference, barkColour.render).toFixed(2))
+				: shown.barkDeltaE,
 			edgeDifference: edges,
 			pieces,
 			connectivity,

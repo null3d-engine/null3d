@@ -368,6 +368,29 @@ function boleTop(subjects: PlantSubjects, trunk: TrunkSubject): Maybe<AxisSample
 	return at ?? lacking('the trunk has no great limb or fork, and no crown base stands on it');
 }
 
+/** The point where a limb's centre line comes out of the trunk's surface. */
+function limbExit(limb: GreatLimb): V3 {
+	const t = limb.trunkDirection;
+	const l = limb.direction;
+	const along = dot(l, t);
+	const off = Math.hypot(l[0] - t[0] * along, l[1] - t[1] * along, l[2] - t[2] * along);
+	return step(limb.joint, l, limb.trunkRadius / Math.max(off, 0.3));
+}
+
+/**
+ * Where the trunk's body parts into its limbs to the eye: the trunk at the height of the lowest
+ * point at which a great limb's centre line comes out of the bark. Undefined for a trunk with no
+ * great limb, or one whose centre line does not reach that height.
+ */
+function partingOf(subjects: PlantSubjects, trunk: TrunkSubject): AxisSample | undefined {
+	if (isAbsent(subjects.limbs) || subjects.limbs.length === 0) return undefined;
+	const lowest = subjects.limbs.reduce(
+		(least, limb) => Math.min(least, limbExit(limb)[1]),
+		Infinity,
+	);
+	return sampleAtHeight(trunk.axis, lowest);
+}
+
 /** The trunk's radius at a height, or at breast height where its centre line misses that height. */
 function trunkRadius(trunk: TrunkSubject, height: number): number {
 	return sampleAtHeight(trunk.axis, height)?.radius ?? trunk.breast.radius;
@@ -428,14 +451,18 @@ const LEAST_BOLE = 0.3;
 export function belowShot(subjects: PlantSubjects, lens: Lens, options: BelowOptions): Solved {
 	if (isAbsent(subjects.trunk)) return lowShot(subjects, lens, options.turn);
 	const trunk = subjects.trunk;
-	const top = boleTop(subjects, trunk);
-	if (isAbsent(top)) return top;
+	const ended = boleTop(subjects, trunk);
+	if (isAbsent(ended)) return ended;
+	// Seen from below, the trunk's body ends where its limbs come out of its bark, which on a
+	// thick trunk is well above the joints on its centre line.
+	const top = partingOf(subjects, trunk) ?? ended;
 	const forkRow = options.forkRow ?? 0.42;
 	const trunkShare = options.trunkShare ?? 0.42;
 	const ground = trunk.base[1];
 	const rise = top.at[1] - ground;
 	if (rise < LEAST_BOLE) return lowShot(subjects, lens, options.turn);
-	const eye = Math.max(LOWEST_EYE, Math.min(EYE, BELOW_EYE_SHARE * rise));
+	// The eye stays under the joints on the trunk's centre line, so it never stands among the limbs.
+	const eye = Math.max(LOWEST_EYE, Math.min(EYE, BELOW_EYE_SHARE * (ended.at[1] - ground)));
 	const radius = trunkRadius(trunk, ground + eye);
 	const above = rowAngle(forkRow, lens.fov);
 	const halfFov = (lens.fov * DEG) / 2;
@@ -606,7 +633,13 @@ export function lowShot(subjects: PlantSubjects, lens: Lens, turn: number): Solv
 			},
 		],
 		regions: [{ name: 'the leaves over the lower frame', box: [0.1, 0.4, 0.9, 1], min: 0.2 }],
-		facts: { eye, stand: distance, pitch: pitch / DEG },
+		facts: {
+			// The frame holds the whole plant, so its outline can be compared as a whole view's is.
+			whole: true,
+			eye,
+			stand: distance,
+			pitch: pitch / DEG,
+		},
 	};
 }
 
@@ -881,9 +914,7 @@ export function junctionShot(
 		// Where the limb's centre line comes out of the trunk's surface: along the limb from the
 		// joint until it stands the trunk's radius off the trunk's line. The limb's own middle then
 		// lands on the frame's middle row, however steeply it rises through the trunk.
-		const along = dot(l, t);
-		const off = Math.hypot(l[0] - t[0] * along, l[1] - t[1] * along, l[2] - t[2] * along);
-		const crotch = step(limb.joint, l, limb.trunkRadius / Math.max(off, 0.3));
+		const crotch = limbExit(limb);
 		const camera = aim(crotch, column, 0.5, forward, tall, lens);
 		const blocked = blockedBy(subjects, camera.position, step(crotch, from, limb.trunkRadius), {
 			trunk: true,
@@ -900,6 +931,9 @@ export function junctionShot(
 	const rises = dot(limb.direction, axesOf(forward).up) >= 0;
 	const baseAt = step(crotch, limb.direction, limb.radius);
 	const base = project(camera, lens, baseAt);
+	// The area read on the limb is a quarter of its own thickness each way, so a thin limb that
+	// rises across the frame still fills it.
+	const within = Math.min(0.05, (0.25 * 2 * limb.radius) / tall);
 	return {
 		kind: 'a great limb leaving the trunk',
 		camera,
@@ -933,7 +967,7 @@ export function junctionShot(
 			// The limb itself where it leaves the trunk: thinner wood or leaves across it hide it.
 			{
 				name: 'the limb where it leaves the trunk',
-				box: [base.x - 0.05, base.y - 0.05, base.x + 0.05, base.y + 0.05],
+				box: [base.x - within, base.y - within, base.x + within, base.y + within],
 				min: 0.6,
 				of: 'wood',
 				thick: SUBJECT_WOOD * limb.radius,
@@ -1548,7 +1582,7 @@ export interface BarkBaseOptions {
 }
 
 /** The share of the frame's width that the trunk's foot takes. */
-const BASE_TRUNK_SHARE = 0.6;
+const BASE_TRUNK_SHARE = 0.5;
 /** The row share on which the ground at the trunk's centre lands. */
 const BASE_ROW = 0.72;
 /** The degrees below level that the upper edge of a view of the trunk's foot looks at least. */
