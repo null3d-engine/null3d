@@ -38,6 +38,8 @@ import { frame as holmOak } from './holm-oak/directed';
 import { record as holmOakRecord } from './holm-oak/record';
 import { frame as olive } from './olive/directed';
 import { record as oliveRecord } from './olive/record';
+import { frame as pedunculateOak } from './pedunculate-oak/directed';
+import { record as pedunculateOakRecord } from './pedunculate-oak/record';
 import { frame as silverBirch } from './silver-birch/directed';
 import { record as silverBirchRecord } from './silver-birch/record';
 import { frame as weepingWillow } from './weeping-willow/directed';
@@ -165,6 +167,18 @@ const HELD: readonly Held[] = [
 		plumb: ['trunk'],
 		tall: [0.93, 1.05],
 	},
+	{
+		id: 'pedunculate-oak',
+		spec: pedunculateOak,
+		record: pedunculateOakRecord,
+		counts: { trunk: 1, limb: 7, bough: [35, 56], branch: [70, 224] },
+		// Seven limbs at their own stated directions: six an eighth of a turn apart and one gap of two.
+		round: { rule: 'limb', gap: 112, lean: 0.25 },
+		// A limb's share runs from 0.42 at the lowest to 0.5 at the highest, so it is not held here.
+		base: { bough: 0.5, branch: 0.55 },
+		plumb: ['trunk'],
+		tall: [0.95, 1.04],
+	},
 ];
 
 /** A species' frame at one seed. */
@@ -223,14 +237,17 @@ for (const held of HELD)
 		it("thins every axis evenly from the measured share of its parent's radius", () => {
 			for (const seed of SEEDS) {
 				const plan = planOf(held, seed);
-				for (const axis of plan.axes) {
+				plan.axes.forEach((axis, index) => {
+					const forks = new Set(
+						plan.axes.filter((child) => child.parent === index).map((child) => child.parentNode),
+					);
 					expect(thickens(axis)).toBe(false);
-					expect(steepestStep(axis)).toBeLessThanOrEqual(
+					expect(steepestStep(axis, forks)).toBeLessThanOrEqual(
 						axis.role === 'stem' ? STEP_STEM : STEP_MOST,
 					);
 					const share = held.base[axis.rule];
 					if (share !== undefined) expect(baseShare(plan, axis)).toBeCloseTo(share, 2);
-				}
+				});
 			}
 		});
 
