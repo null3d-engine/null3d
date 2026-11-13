@@ -325,6 +325,12 @@ export interface PieceRule {
 	 */
 	readonly depth?: number;
 	/**
+	 * The least metres between two leaf nodes of the piece's stems, however close a stem's leaves
+	 * are set: 2 mm where absent. A rule states a smaller one where its photographs measure leaves
+	 * closer than that.
+	 */
+	readonly nodeLeast?: number;
+	/**
 	 * How the piece's blades bend at their stalks. Where absent a blade bends out of its own face,
 	 * as the species' leaf does. With `plane` the piece's leaves are built with no bend at the stalk,
 	 * and each blade turns about its own normal instead, toward the ground side, by the species' own
@@ -692,7 +698,7 @@ export function planPiece(
 		const points: AxisPoint[] = [{ at: [...start.at], radius: footRadius, along: start.along }];
 		axes.push(points);
 		const leavesBy = leafRule(stem);
-		const gap = stem.leaves ? Math.max(0.002, stem.leaves.gap) : 0;
+		const gap = stem.leaves ? Math.max(rule.nodeLeast ?? NODE_LEAST, stem.leaves.gap) : 0;
 		// A stem runs in straight steps short enough to read as a curve, and a node falls on a step's end.
 		// A hook turns at most a few degrees a step, so a strand leaves its branch on a curve.
 		const most = stem.hook
@@ -1302,6 +1308,8 @@ export interface StudioLayout {
 	readonly placed: readonly PlacedPiece[];
 }
 
+/** The least metres between two leaf nodes of a stem, where its rule states none. */
+const NODE_LEAST = 0.002;
 /** The tier whose leaf meshes a brush card pictures: the finest a kit below ultra builds. */
 const BRUSH_PICTURE_TIER: Detail = 'high';
 /** Degrees a piece that turns up stands above its socket's own direction. */
