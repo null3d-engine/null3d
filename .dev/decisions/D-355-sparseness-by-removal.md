@@ -105,9 +105,10 @@ first carriers of the order and every axis from each of them to the root.
   grown. The extras, the bark's peel, a column's ribs, the stem's flare and the wind phase key on
   those. So the fruit that stays hangs where the grown plant hung it.
 - **A plant of sockets.** A plant whose foliage stands at sockets, such as a tuft of pieces or a
-  directed frame, thins by whole sockets and by whole branches first. A socket's rows all stand at
-  its place, so each row belongs to the socket at its node that stands nearest it; the sockets of
-  one shoot share a place and thin as one. Each branch that leaves a stem or a great limb is a unit,
+  directed frame, thins by whole sockets and by whole branches first. Each row names the socket it
+  stands at. The sockets at one node that the grower gave one group, such as a tuft's sheath, blades
+  and flowering stem, are one shoot, which thins whole; two pieces of different groups thin apart
+  even where they stand at one place. Each branch that leaves a stem or a great limb is a unit,
   and the sockets on a stem or limb itself are one more. A branch too large for the sparsest plant
   to keep two clothed branches in each octant of its crown (more than the floor's share of the
   sockets over 64 times the clothed half, about eight clothed branches an octant, and at least six)

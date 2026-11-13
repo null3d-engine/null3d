@@ -420,9 +420,28 @@ function cutBack(
 }
 
 /**
- * The socket a point at a node stands at, on a plant of sockets: the socket at that node that
- * stands nearest it. Every row of a socket stands at the socket's own place, and the sockets of one
- * shoot share a place, so the rows of a shoot all find its first socket.
+ * The first socket of each socket's shoot, on a plant of sockets: the sockets at one node that the
+ * grower gave one group, such as a tuft's sheath, blades and flowering stem, are one shoot, which
+ * thins whole. Undefined on a plant without sockets.
+ */
+function shootOf(skeleton: MacroSkeleton): Uint32Array | undefined {
+	const { buds } = skeleton;
+	const sockets = buds.sockets;
+	if (!sockets) return undefined;
+	const first = new Map<string, number>();
+	const out = new Uint32Array(buds.count);
+	for (let b = 0; b < buds.count; b++) {
+		const key = `${buds.node[b] as number}:${sockets.lobe[b] as number}`;
+		const at = first.get(key);
+		if (at === undefined) first.set(key, b);
+		out[b] = at ?? b;
+	}
+	return out;
+}
+
+/**
+ * The socket a point at a node stands at, for rows that name no socket: the socket at that node
+ * that stands nearest it.
  */
 function socketFinder(
 	skeleton: MacroSkeleton,
@@ -455,28 +474,34 @@ function socketFinder(
 }
 
 /**
- * Each row's socket on a plant of sockets: the socket at the row's node that stands nearest the
- * row. A shoot whose sockets share one place is one socket here, so it thins whole.
+ * Each row's shoot on a plant of sockets, as the first socket of that shoot: the socket the row
+ * names, or for rows that name none the socket at the row's node that stands nearest it. The sockets
+ * at one node that the grower gave one group are one shoot, so a shoot thins whole, and two pieces
+ * of different groups thin apart even where they stand at one place.
  *
- * @param skeleton The skeleton as grown.
- * @param rows The shoot rows as grown, each with its node.
- * @returns One socket per row, or undefined on a plant without sockets.
+ * @param skeleton The skeleton the rows stand on.
+ * @param rows The shoot rows, each with its node.
+ * @returns One shoot per row, or undefined on a plant without sockets.
  * @category api/vegetation
  */
 export function rowSockets(skeleton: MacroSkeleton, rows: ShootRows): Uint32Array | undefined {
 	const nodes = rows.node;
-	if (!skeleton.buds.sockets || !nodes || rows.count === 0) return undefined;
-	const find = socketFinder(skeleton);
+	const shoots = shootOf(skeleton);
+	if (!shoots || !nodes || rows.count === 0) return undefined;
+	const named = rows.socket;
+	const find = named ? undefined : socketFinder(skeleton);
 	const out = new Uint32Array(rows.count);
 	for (let r = 0; r < rows.count; r++) {
-		const socket = find(
-			nodes[r] as number,
-			rows.position[r * 3] as number,
-			rows.position[r * 3 + 1] as number,
-			rows.position[r * 3 + 2] as number,
-		);
-		if (socket < 0) return undefined;
-		out[r] = socket;
+		const socket = named
+			? (named[r] as number)
+			: (find as ReturnType<typeof socketFinder>)(
+					nodes[r] as number,
+					rows.position[r * 3] as number,
+					rows.position[r * 3 + 1] as number,
+					rows.position[r * 3 + 2] as number,
+				);
+		if (socket < 0 || socket >= shoots.length) return undefined;
+		out[r] = shoots[socket] as number;
 	}
 	return out;
 }
@@ -760,29 +785,22 @@ export function sparsePlant(
 	const keepTo = new Int32Array(count);
 	for (let a = 0; a < count; a++) keepTo[a] = stays[a] ? (axes.last[a] as number) : -1;
 	if (order.bySockets && nodes) cutBack(skeleton, rows, order, kept, keepTo);
-	// On a plant of sockets the bud sites are its sockets, and a socket whose place holds no kept
-	// piece leaves with its piece. The sockets of one shoot share its place and go with it.
+	// On a plant of sockets the bud sites are its sockets, and a socket whose shoot holds no kept
+	// piece leaves with it.
 	let budKept: Uint8Array | undefined;
-	if (order.socketOf && nodes) {
+	const shoots = order.socketOf ? shootOf(skeleton) : undefined;
+	if (order.socketOf && shoots && nodes) {
 		const held = new Uint8Array(buds.count);
 		for (let r = 0; r < rows.count; r++)
 			if ((order.place[r] as number) < kept) held[order.socketOf[r] as number] = 1;
-		const find = socketFinder(skeleton);
 		budKept = new Uint8Array(buds.count);
-		for (let b = 0; b < buds.count; b++) {
-			const at = find(
-				buds.node[b] as number,
-				buds.position[b * 3] as number,
-				buds.position[b * 3 + 1] as number,
-				buds.position[b * 3 + 2] as number,
-			);
-			budKept[b] = held[at] as number;
-		}
+		for (let b = 0; b < buds.count; b++) budKept[b] = held[shoots[b] as number] as number;
 	}
 	const {
 		skeleton: thinned,
 		axisOut,
 		nodeOut,
+		budOut,
 	} = keptSkeleton(skeleton, keepTo, skeleton.crownBase, budKept);
 	const axisOrigin = new Uint32Array(thinned.axes.count);
 	for (let a = 0; a < count; a++) {
@@ -824,6 +842,7 @@ export function sparsePlant(
 		...(rows.back ? { back: new Float32Array(held * 3) } : {}),
 		node: new Uint32Array(held),
 		id: new Uint32Array(held),
+		...(rows.socket ? { socket: new Uint32Array(held) } : {}),
 	};
 	let at = 0;
 	for (let r = 0; r < rows.count; r++) {
@@ -840,6 +859,7 @@ export function sparsePlant(
 		if (rows.back && out.back) out.back.set(rows.back.subarray(r * 3, r * 3 + 3), at * 3);
 		out.node[at] = nodeOut[nodes[r] as number] as number;
 		out.id[at] = rows.id?.[r] ?? r;
+		if (rows.socket && out.socket) out.socket[at] = budOut[rows.socket[r] as number] as number;
 		at++;
 	}
 	return { skeleton: frame, rows: out };
