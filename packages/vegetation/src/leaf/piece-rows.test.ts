@@ -115,7 +115,7 @@ const DRESSED: readonly Dressed[] = [
 	},
 	{
 		title: 'the weeping willow, framed, with its long strands at sockets',
-		module: () => loadSpecies('weeping-willow'),
+		module: async () => ({ record: willowDirected, textures: willowTextures }),
 		piece: 'strand-long',
 		flat: false,
 	},
