@@ -30,7 +30,7 @@ import type { GrassBlade, Species, Tuft, TuftPanicle, TuftPose, TuftSpikes } fro
 import type { TextureManifest } from '../core/textures';
 import { DETAILS, type Detail, spreadAt, spreadMean } from '../core/types';
 import { BLADE_ACROSS, BLADE_ROWS, bladeTexture, writeBlade } from '../leaf/grass-blade';
-import type { PieceClass } from '../leaf/piece';
+import type { PieceClass } from '../leaf/ground-piece';
 import { MeshWriter } from '../leaf/writer';
 import type { CrownLight, GrowInput, MeshInput, MeshLevel } from '../stages';
 import { type AxisPath, axisPath, emptyFrame, frameAt } from '../wood/frames';
