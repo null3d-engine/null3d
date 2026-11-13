@@ -215,6 +215,12 @@ export interface PieceRule {
 	 */
 	readonly far?: PieceStem;
 	/**
+	 * Degrees the piece is turned about its own line at every socket, from its sky side up toward its
+	 * right. A living fern frond's flat blade stands rolled on the plant, so a frond seen from the
+	 * crown's side shows its face rather than its edge. Absent, 0.
+	 */
+	readonly roll?: number;
+	/**
 	 * The ground side in the piece's frame, where it is not its attitude's own: a piece that stands
 	 * upright on its socket names the way back along its line, so its side stems lift toward its tip.
 	 */
@@ -241,6 +247,8 @@ export interface PiecePrototype
 	readonly plane?: Vec3;
 	/** Whether its cards keep only the planes along its line, where its rule says so. */
 	readonly lengthwise?: boolean;
+	/** Degrees it is turned about its own line at every socket, where its rule says so. */
+	readonly roll?: number;
 }
 
 /** The golden angle in degrees. */
@@ -757,6 +765,7 @@ export function piecePrototypes(
 					parts: parts.length,
 					...(rule.plane ? { plane: rule.plane } : {}),
 					...(rule.lengthwise ? { lengthwise: true } : {}),
+					...(rule.roll ? { roll: rule.roll } : {}),
 					...near,
 					tiers,
 				});

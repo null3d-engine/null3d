@@ -409,6 +409,32 @@ describe('the frond pieces', () => {
 	}
 });
 
+describe('the frond roll', () => {
+	it('turns each frond of a rolled rule about its own line by the stated roll, and no other', () => {
+		for (const id of SPECIES) {
+			const { kit, record } = of(id);
+			const asset = growPlantNow(kit, { seed: 11, variant: 0, near: true });
+			const rows = asset.shoots;
+			for (let r = 0; r < rows.count; r++) {
+				const prototype = kit.prototypes[rows.prototype[r] as number] as ShootPrototype;
+				const rule = (record.pieces ?? []).find((p) => p.name === prototype.piece?.name);
+				if (!rule) continue;
+				const line: Vector3 = [0, 0, 0];
+				const sky: Vector3 = [0, 0, 0];
+				quatRotate(rows.rotation, r * 4, [0, 1, 0], line);
+				quatRotate(rows.rotation, r * 4, [0, 0, 1], sky);
+				// The unrolled sky side: the world's up made square to the line.
+				const along = line[1];
+				const level: Vector3 = [-line[0] * along, 1 - line[1] * along, -line[2] * along];
+				const size = Math.hypot(level[0], level[1], level[2]);
+				const cos = (sky[0] * level[0] + sky[1] * level[1] + sky[2] * level[2]) / size;
+				const angle = (Math.acos(Math.min(1, Math.max(-1, cos))) * 180) / Math.PI;
+				expect(Math.abs(angle - Math.abs(rule.roll ?? 0))).toBeLessThan(0.5);
+			}
+		}
+	});
+});
+
 describe('the radical inverse', () => {
 	it('spreads every leading run of indices evenly over the unit range', () => {
 		for (const count of [2, 4, 8, 16]) {

@@ -116,6 +116,8 @@ export interface PrototypePiece {
 	readonly plane?: Vec3;
 	/** Whether its cards keep only the two planes that run along its line (`PieceRule.lengthwise`). */
 	readonly lengthwise?: boolean;
+	/** Degrees it is turned about its own line at every socket (`PieceRule.roll`). */
+	readonly roll?: number;
 }
 
 /**

@@ -28,14 +28,17 @@ import {
 	cross3,
 	normalize3,
 	PI,
+	quatAxisAngle,
 	quatFromFrame,
+	quatMultiply,
+	quatRotate,
 	radians,
 	sin,
 	type Vector3,
 } from '../core/math';
 import type { FrondCrown, Species } from '../core/record';
 import { curveAt, spreadAt, spreadMean } from '../core/types';
-import type { PieceRule } from '../leaf/piece';
+import { type PieceRule, pieceKey, pieceTurn, planPiece } from '../leaf/piece';
 import { pieceVigor } from '../leaf/piece-rows';
 import type { GrowInput } from '../stages';
 import { targetHeight } from './height';
@@ -163,20 +166,52 @@ function pieceNamed(record: Species, name: string): { rule: PieceRule; index: nu
 	return { rule: pieces[index] as PieceRule, index };
 }
 
+/** Each record's crown rise, found once: planning its fronds is the costly part. */
+const RISES = new WeakMap<Species, number>();
+
 /**
  * The highest a living frond of the crown reaches above the growing point, in metres: the crown's
- * own height, which the trunk stands under.
+ * own height, which the trunk stands under. Each rank's piece is planned and held as its sockets
+ * hold it, rolled where its rule says, so a leaflet or a pinna that stands above the rachis counts.
  *
  * @param record The species record.
  * @returns The crown's rise above the growing point.
  */
 export function crownRise(record: Species): number {
+	const known = RISES.get(record);
+	if (known !== undefined) return known;
 	const growth = crownOf(record);
+	const leaf =
+		record.foliage.kind === 'blade'
+			? spreadMean(record.foliage.leaf.length)
+			: record.foliage.kind === 'needle' || record.foliage.kind === 'fascicle'
+				? spreadMean(record.foliage.needle.length)
+				: 0;
+	const turn = [0, 0, 0, 1];
+	const rolled = [0, 0, 0, 1];
+	const point: Vector3 = [0, 0, 0];
+	const placed: Vector3 = [0, 0, 0];
 	let rise = 0;
 	for (const rank of growth.fronds.ranks) {
-		const { rule } = pieceNamed(record, rank.piece);
-		rise = Math.max(rise, stemReach(rule, Math.min(LEAVE_MOST, rank.leave), rank.length).top);
+		const { rule, index } = pieceNamed(record, rank.piece);
+		const plan = planPiece(record, rule, pieceKey(index, 0), 1);
+		const held = pieceTurn(rule.attitude, heading(0, Math.min(LEAVE_MOST, rank.leave)));
+		quatAxisAngle([0, 1, 0], radians(rule.roll ?? 0), turn);
+		quatMultiply(held, 0, turn, 0, rolled);
+		const top = (at: Readonly<Vector3>) => {
+			quatRotate(rolled, 0, at, placed);
+			rise = Math.max(rise, placed[1] * rank.length);
+		};
+		for (const axis of plan.axes) for (const p of axis) top(p.at);
+		for (const l of plan.leaves) {
+			const reach = leaf * l.scale;
+			point[0] = l.at[0] + l.direction[0] * reach;
+			point[1] = l.at[1] + l.direction[1] * reach;
+			point[2] = l.at[2] + l.direction[2] * reach;
+			top(point);
+		}
 	}
+	RISES.set(record, rise);
 	return rise;
 }
 
