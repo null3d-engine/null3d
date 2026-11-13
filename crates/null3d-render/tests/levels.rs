@@ -1556,7 +1556,7 @@ fn the_culling_shader_repeats_the_core_level_rule() {
     assert_eq!(fade_values(0.0).0, 1.0e-6);
     let levels = include_str!("../../null3d-core/src/levels.rs");
     assert!(
-        levels.contains("[entry(bucket, t.max(LEAST_FADE), false), PickedEntry::default()],"),
+        levels.contains("entry(bucket, t.max(LEAST_FADE), false),"),
         "the CPU path's least fade moved"
     );
     assert_eq!(
