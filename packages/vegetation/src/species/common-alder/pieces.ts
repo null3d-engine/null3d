@@ -5,7 +5,14 @@
 // The cut branch of still 21 is a metre tall over 725 pixels, which makes its round leaf 9 to 10
 // centimetres across (65 to 75 pixels at full size), inside the species' 4 to 10. The record's leaf
 // is 7, so a piece draws its leaves at 1.3 of that until the record's own length moves.
-import type { PieceLeaves, PieceRule, PieceStem, PieceStudio } from '../../leaf/piece';
+import {
+	oneMark,
+	type PieceLeaves,
+	type PieceRule,
+	type PieceStem,
+	type PieceStudio,
+	withMarks,
+} from '../../leaf/piece';
 
 /** A piece's leaf over the record's: 9.5 centimetres measured on still 21, over 7. */
 const LEAF_SCALE = 1.3;
@@ -183,8 +190,8 @@ export const PIECES: readonly PieceRule[] = [
 								from: 0.5,
 								to: 0.66,
 								share: 1,
-								length: { mean: 0.026, spread: 0.003 },
-								width: 0.017,
+								length: { mean: 0.033, spread: 0.003 },
+								width: 0.021,
 								stalk: 0.035,
 								count: { mean: 4, spread: 0.4 },
 							},
@@ -200,6 +207,33 @@ export const PIECES: readonly PieceRule[] = [
 		},
 	},
 ];
+
+/**
+ * The pieces in catkin. Still 19: three male catkins hang plumb from a twig's end, each eight to
+ * ten centimetres long, five cone lengths, and about eight millimetres thick. The cones are part of
+ * the pieces in every season.
+ */
+export const FRUIT_PIECES: readonly PieceRule[] = PIECES.map((rule) =>
+	withMarks(rule, (stem, order) =>
+		order > 0 && stem.leaves
+			? [
+					oneMark(
+						{
+							kind: 'body',
+							share: 0.5,
+							length: { mean: 0.09, spread: 0.01 },
+							width: 0.008,
+							stalk: 0.01,
+							count: { mean: 3, spread: 0.5 },
+						},
+						stem.length,
+						0.92,
+						1,
+					),
+				]
+			: undefined,
+	),
+);
 
 /** The studio photographs of the alder's cut wood, each one piece standing on its cut. */
 export const STUDIO: readonly PieceStudio[] = [

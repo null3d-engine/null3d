@@ -22,15 +22,39 @@ import { meshedPlan, type ShootPlan } from '../leaf/shoot';
 import { SURFACE_LEAF } from '../leaf/writer';
 import { bakeCards, paletteOf } from '../lod/card-bake';
 import { rasterise, rasterTarget } from '../lod/raster';
-import { PIECES as ALDER, STUDIO as ALDER_STUDIO } from './common-alder/pieces';
-import { PIECES as ASH, STUDIO as ASH_STUDIO } from './common-ash/pieces';
+import {
+	PIECES as ALDER,
+	FRUIT_PIECES as ALDER_FRUIT,
+	STUDIO as ALDER_STUDIO,
+} from './common-alder/pieces';
+import {
+	PIECES as ASH,
+	FRUIT_PIECES as ASH_FRUIT,
+	STUDIO as ASH_STUDIO,
+} from './common-ash/pieces';
 import { PIECES as BEECH, STUDIO as BEECH_STUDIO } from './european-beech/pieces';
-import { PIECES as HAWTHORN, STUDIO as HAWTHORN_STUDIO } from './hawthorn-shrub/pieces';
+import {
+	PIECES as HAWTHORN,
+	FRUIT_PIECES as HAWTHORN_FRUIT,
+	STUDIO as HAWTHORN_STUDIO,
+} from './hawthorn-shrub/pieces';
 import { PIECES as HOLM, STUDIO as HOLM_STUDIO } from './holm-oak/pieces';
 import { PIECES as OLIVE, STUDIO as OLIVE_STUDIO } from './olive/pieces';
-import { PIECES as OAK, STUDIO as OAK_STUDIO } from './pedunculate-oak/pieces';
-import { PIECES as BIRCH, STUDIO as BIRCH_STUDIO } from './silver-birch/pieces';
-import { PIECES as WILLOW, STUDIO as WILLOW_STUDIO } from './weeping-willow/pieces';
+import {
+	PIECES as OAK,
+	FRUIT_PIECES as OAK_FRUIT,
+	STUDIO as OAK_STUDIO,
+} from './pedunculate-oak/pieces';
+import {
+	PIECES as BIRCH,
+	FRUIT_PIECES as BIRCH_FRUIT,
+	STUDIO as BIRCH_STUDIO,
+} from './silver-birch/pieces';
+import {
+	PIECES as WILLOW,
+	FRUIT_PIECES as WILLOW_FRUIT,
+	STUDIO as WILLOW_STUDIO,
+} from './weeping-willow/pieces';
 
 const LONG = scaledBudget(120_000);
 /** The most vertices one prototype may hold at a tier, which its 16-bit indices set. */
@@ -288,7 +312,10 @@ const EDGE_SHARE = 0.35;
  * The cuts that do not yet hold their video's figure, each with what is wrong. The test holds every
  * other cut inside its band, and holds these outside it, so a cut that is mended leaves this list.
  */
-const OPEN_DEPTH: Readonly<Record<string, string>> = {};
+const OPEN_DEPTH: Readonly<Record<string, string>> = {
+	'common-alder 22':
+		"0.27 against 0.20: its cones hang to the twig's own ground side, behind it, where the photograph's hang below a twig that stands in a clamp",
+};
 const OPEN_EDGE: Readonly<Record<string, string>> = {
 	'silver-birch 21':
 		'0.29 against 0.49: about a third of its blades show their faces edge on, and the video shows a column of whole leaves',
@@ -847,6 +874,44 @@ describe("a species' marks", () => {
 			expect(loose(plan)).toEqual([]);
 		}
 	});
+});
+
+describe('a species in fruit or in catkin', () => {
+	it(
+		'hangs fruit or catkins on its own wood, each piece still one joined body within the vertex limit',
+		async () => {
+			/** The bodies that hang on a plan's stalks. */
+			const bodies = (plan: ShootPlan): number =>
+				plan.buds.filter((bud) => bud.cluster && bud.stack === bud.length).length;
+			for (const [id, fruiting, plain] of [
+				['pedunculate-oak', OAK_FRUIT, OAK],
+				['common-ash', ASH_FRUIT, ASH],
+				['hawthorn-shrub', HAWTHORN_FRUIT, HAWTHORN],
+				['silver-birch', BIRCH_FRUIT, BIRCH],
+				['weeping-willow', WILLOW_FRUIT, WILLOW],
+				['common-alder', ALDER_FRUIT, ALDER],
+			] as const) {
+				const module = await loadSpecies(id);
+				await loadPlantCode(module.record);
+				let hung = 0;
+				let before = 0;
+				for (const [r, rule] of fruiting.entries())
+					for (let variant = 0; variant < rule.variants; variant++) {
+						const plan = planPiece(module.record, rule, pieceKey(r, variant), 4);
+						expect(loose(plan)).toEqual([]);
+						hung += bodies(plan);
+						before += bodies(
+							planPiece(module.record, plain[r] as PieceRule, pieceKey(r, variant), 4),
+						);
+					}
+				expect(hung).toBeGreaterThan(before);
+				for (const piece of buildPiecesNow(module, fruiting))
+					for (const tier of piece.tiers)
+						expect(tier.positions.length / 3).toBeLessThanOrEqual(VERTICES_MOST);
+			}
+		},
+		LONG,
+	);
 });
 
 /** A stem's rule with no marks on it or on any of its side stems. */

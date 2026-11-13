@@ -6,7 +6,15 @@
 // and its longest thorn another tenth. With the record's leaf of 3.5 centimetres the pictured branch
 // is 36 centimetres tall, its longest thorn 3.6 centimetres and its cut 1.3 centimetres thick, all of
 // them a hawthorn's own sizes. The piece keeps the leaf's true size and the photograph's proportions.
-import type { PieceLeaves, PieceMark, PieceRule, PieceStem, PieceStudio } from '../../leaf/piece';
+import {
+	oneMark,
+	type PieceLeaves,
+	type PieceMark,
+	type PieceRule,
+	type PieceStem,
+	type PieceStudio,
+	withMarks,
+} from '../../leaf/piece';
 
 /**
  * The thorns along a stem. Stills 19, 21 and 22: one straight woody thorn at most nodes, one and a
@@ -173,6 +181,33 @@ export const PIECES: readonly PieceRule[] = [
 		},
 	},
 ];
+
+/**
+ * The pieces in fruit, the hawthorn's default season. Still 22 shows three to six flower buds on
+ * stalks of one to two centimetres above each tuft; each becomes a round haw about nine millimetres
+ * through, and the whole views show them red through the crown. No still shows a haw close.
+ */
+export const FRUIT_PIECES: readonly PieceRule[] = PIECES.map((rule) =>
+	withMarks(rule, (stem) =>
+		stem.leaves
+			? [
+					oneMark(
+						{
+							kind: 'body',
+							share: 0.7,
+							length: { mean: 0.009, spread: 0.001 },
+							width: 0.009,
+							stalk: 0.015,
+							count: { mean: 4, spread: 2 },
+						},
+						stem.length,
+						0.8,
+						1,
+					),
+				]
+			: undefined,
+	),
+);
 
 /** The studio photographs of the hawthorn's cut wood, each one piece standing on its cut. */
 export const STUDIO: readonly PieceStudio[] = [

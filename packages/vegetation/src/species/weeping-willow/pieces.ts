@@ -5,7 +5,7 @@
 // The cut branch of still 21 is a metre tall, which makes its leaf blade 8 to 9 centimetres, inside
 // the species' 8 to 15. The record's leaf is 11.5 centimetres, so a strand draws its leaves at 0.74
 // of that until the record's own length moves.
-import type { PieceRule, PieceStem, PieceStudio } from '../../leaf/piece';
+import { type PieceRule, type PieceStem, type PieceStudio, withMarks } from '../../leaf/piece';
 
 /** A strand's leaf over the record's: 8.5 centimetres measured on still 21, over 11.5. */
 const LEAF_SCALE = 0.74;
@@ -89,6 +89,30 @@ export const PIECES: readonly PieceRule[] = [
 		stem: strand(1.1, 0.08),
 	},
 ];
+
+/**
+ * The pieces in catkin. Still 20: slim catkins three to five centimetres long and half a
+ * centimetre thick stand along the hanging strands among the young leaves, one at a node each
+ * three to five centimetres.
+ */
+export const FRUIT_PIECES: readonly PieceRule[] = PIECES.map((rule) =>
+	withMarks(rule, (_stem, order) =>
+		order === 0
+			? [
+					{
+						kind: 'body',
+						gap: 0.045,
+						from: 0.1,
+						to: 0.9,
+						share: 0.6,
+						length: { mean: 0.04, spread: 0.008 },
+						width: 0.005,
+						stalk: 0.004,
+					},
+				]
+			: undefined,
+	),
+);
 
 /** The studio photographs of the willow's cut wood, each laid out from the pieces. */
 export const STUDIO: readonly PieceStudio[] = [
