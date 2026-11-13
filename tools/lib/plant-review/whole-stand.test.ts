@@ -227,6 +227,24 @@ describe('the stand of a whole view', () => {
 		}
 	});
 
+	test('stands a plant whose photograph lost its foot by its top row and its share of the width', () => {
+		const mound = crown(5, 6, 0, 0.5);
+		const framing: WholeFraming = {
+			fov: 30,
+			aspect: 1.5,
+			horizon: 0.52,
+			top: 0.05,
+			targetX: 0.5,
+			widthShare: 0.6,
+		};
+		for (const turn of [0, 1.3]) {
+			const stand = wholeStand(mound, [0, 0, 0], turn, framing, 6);
+			expect(stand.extent.top).toBeCloseTo(0.05, 2);
+			expect(stand.extent.right - stand.extent.left).toBeCloseTo(0.6, 2);
+			expect(stand.extent.base).toBeLessThanOrEqual(0.99);
+		}
+	});
+
 	test('reads a blade that dips through the ground in front of a low camera where it meets the ground', () => {
 		// A tuft whose front blade runs toward the camera and dips under the ground near its tip.
 		const tuft = crown(0.5, 0.6, 0, 0.05);

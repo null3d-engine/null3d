@@ -155,7 +155,8 @@ export function liftedToGround(points: Float32Array, ground: number): Float32Arr
  * The horizon's row sets the camera's pitch. The camera then stands where the highest drawn point
  * lands on the asked top row and the lowest lands on the asked foot row, or, where the framing
  * names an eye height in place of a foot row, at that height where the highest point lands on the
- * top row. If the plant is then wider than its photograph's share of the frame, the camera stands
+ * top row. A framing that names neither, since its photograph lost the plant's foot below the
+ * horizon, stands the plant at its photograph's share of the width with its top on the top row. If the plant is then wider than its photograph's share of the frame, the camera stands
  * back until it is not, and keeps the foot on its row. A redraw's scale moves the camera out the
  * same way, never in. Last, the camera stands back as little as holds every drawn point inside the
  * frame.
@@ -217,6 +218,18 @@ export function wholeStand(
 			if (Math.abs(scale - 1) < NEAR && Math.abs(off) < NEAR) break;
 			eye = Math.max(lowest, eye - off * 2 * distance * half);
 			distance *= Math.max(0.2, Math.min(5, scale));
+		}
+	} else if (framing.eye === undefined && framing.widthShare !== undefined) {
+		// The photograph's foot is lost below its horizon, so no row marks it: the plant takes its
+		// photograph's share of the width, and its highest point lands on the asked top row.
+		const share = Math.min(WIDEST, framing.widthShare);
+		for (let pass = 0; pass < 24; pass++) {
+			const at = extentAt(distance, eye);
+			const scale = (at.right - at.left) / share;
+			const off = at.top - framing.top;
+			if (Math.abs(scale - 1) < NEAR && Math.abs(off) < NEAR) break;
+			distance *= Math.max(0.2, Math.min(5, scale));
+			eye = Math.max(lowest, eye - off * 2 * distance * half);
 		}
 	} else {
 		// An eye height asked: the highest point's row falls as the camera steps back, so one

@@ -460,7 +460,9 @@ function standView(
 			aspect,
 			horizon: QUERY.horizon ?? 0.62,
 			top: asked ? (QUERY.top as number) : middle - fill / 2,
-			...(asked ? { eye: QUERY.eye ?? EYE } : { base: middle + fill / 2 }),
+			// A photograph whose foot is lost below its horizon names no foot row and no eye height:
+			// the plant stands by its top row and its share of the width.
+			...(QUERY.footLost ? {} : asked ? { eye: QUERY.eye ?? EYE } : { base: middle + fill / 2 }),
 			targetX: QUERY.targetX ?? 0.5,
 			...(QUERY.widthShare !== undefined &&
 				QUERY.widthShare < 1 && { widthShare: QUERY.widthShare }),
