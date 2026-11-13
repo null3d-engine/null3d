@@ -23,7 +23,7 @@ import {
 	pieceRecord,
 	planPiece,
 } from '../leaf/piece';
-import { meshedPlan, type ShootPlan } from '../leaf/shoot';
+import { meshedPlan, plannedBrushes, type ShootPlan } from '../leaf/shoot';
 import { SURFACE_LEAF } from '../leaf/writer';
 import { bakeCards, paletteOf } from '../lod/card-bake';
 import { rasterise, rasterTarget } from '../lod/raster';
@@ -50,6 +50,7 @@ import {
 	STUDIO as HAWTHORN_STUDIO,
 } from './hawthorn-shrub/pieces';
 import { PIECES as HOLM, STUDIO as HOLM_STUDIO } from './holm-oak/pieces';
+import { PIECES as CYPRESS, STUDIO as CYPRESS_STUDIO } from './italian-cypress/pieces';
 import { PIECES as OLIVE, STUDIO as OLIVE_STUDIO } from './olive/pieces';
 import {
 	PIECES as OAK,
@@ -102,6 +103,7 @@ const SPECIES: readonly {
 	{ id: 'holm-oak', pieces: HOLM, studio: HOLM_STUDIO },
 	{ id: 'hawthorn-shrub', pieces: HAWTHORN, studio: HAWTHORN_STUDIO },
 	{ id: 'scots-pine', pieces: PINE, studio: PINE_STUDIO },
+	{ id: 'italian-cypress', pieces: CYPRESS, studio: CYPRESS_STUDIO },
 ];
 
 const distance = (a: readonly number[], b: readonly number[]): number =>
@@ -1171,5 +1173,25 @@ describe('the piece planner', () => {
 		const held = planPiece(module.record, floor, pieceKey(0, 0), 4).leaves.length;
 		// The bough sets a needle pair every 1.2 mm; at the default step it keeps one every 2 mm.
 		expect(stated / held).toBeGreaterThan(1.5);
+	});
+
+	it("pictures each stem's overlapping sprays of a cypress fan as one brush run, where the needle rule pictures none", async () => {
+		const module = await loadSpecies('italian-cypress');
+		const fan = CYPRESS.find((rule) => rule.name === 'fan');
+		expect(fan?.brushGap).toBeGreaterThan(0);
+		if (!fan) return;
+		for (let variant = 0; variant < fan.variants; variant++) {
+			const plan = planPiece(module.record, fan, pieceKey(0, variant), 3);
+			const perStem = new Map<number, number>();
+			for (const leaf of plan.leaves) perStem.set(leaf.axis, (perStem.get(leaf.axis) ?? 0) + 1);
+			const stems = [...perStem].filter(([, count]) => count > 1).map(([axis]) => axis);
+			const runs = plannedBrushes(plan, fan.brushGap);
+			expect(runs.map((run) => run.axis).sort((a, b) => a - b)).toEqual(
+				stems.sort((a, b) => a - b),
+			);
+			for (const run of runs) expect(run.leaves.length).toBe(perStem.get(run.axis) ?? 0);
+			// Two of a stem's radii is a few millimetres, far closer than the cords stand.
+			expect(plannedBrushes(plan)).toHaveLength(0);
+		}
 	});
 });

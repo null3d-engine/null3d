@@ -765,6 +765,16 @@ function growthProblems(record: Species, out: string[]): void {
 			if (patch.each !== 'limb')
 				out.push("growth.patch.along is given but growth.patch.each is not 'limb'");
 		}
+		if (patch.kind === 'shell') {
+			if (patch.each !== 'limb')
+				out.push("growth.patch.kind is 'shell' but growth.patch.each is not 'limb'");
+			if (!patch.sockets)
+				out.push("growth.patch.kind is 'shell' but growth.patch.sockets is absent");
+		}
+		const rise = patch.sockets?.rise;
+		if (rise !== undefined && !(rise > 0))
+			out.push(`growth.patch.sockets.rise is ${rise}; it is metres and must be above 0`);
+		if (growth.body) curveProblems(growth.body.radius, 'growth.body.radius', out);
 	}
 	if (growth.model === 'architectural') {
 		if (growth.orders.length === 0)
