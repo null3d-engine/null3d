@@ -368,7 +368,7 @@ function figuresOf(row: number, pair: StillResult, run: string): Figure[] {
 				? [
 						{
 							...base,
-							name: 'crown width over height',
+							name: 'crown width over height, in the picture',
 							value: rounded(pair.crownBox.render.width / pair.crownBox.render.height),
 							reference: rounded(pair.crownBox.reference.width / pair.crownBox.reference.height),
 							band: null,
