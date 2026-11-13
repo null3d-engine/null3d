@@ -170,7 +170,6 @@ export function placeStaticPlants(
 	const cards: ImpostorBatch[] = [];
 	const meshes: MeshGeometry[] = [];
 	const widest = copies.scale.reduce((most, s) => Math.max(most, s), 0);
-	const bound = plantBoundingRadius(kit.box) * widest;
 	const castShadows = options.castShadows ?? true;
 	const slots = takeNearSlots(kit, copies);
 
@@ -178,6 +177,8 @@ export function placeStaticPlants(
 		const rows = copiesOf(copies, variant);
 		if (rows.length === 0) return;
 		const impostor = options.far ? asset.impostor.from * scale : FAR;
+		// Each variant's parts share one sphere of its own reach, so its levels switch together.
+		const bound = plantBoundingRadius(kit, asset) * widest;
 		const bands = levelBands(asset, near, scale, impostor);
 		const placed: InstanceBatch[] = [];
 		// The batches of the band that reaches the impostor's distance, with the distance they start at.
