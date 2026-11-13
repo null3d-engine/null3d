@@ -244,9 +244,9 @@
 				0.12
 			],
 			"mean": [
-				0.14411,
-				0.07538,
-				0.04727
+				0.13628,
+				0.08214,
+				0.05019
 			]
 		}
 	},
@@ -283,8 +283,8 @@
 		},
 		{
 			"file": "young-color.ktx2",
-			"sha256": "7f6e4600a4e68df47e1b92b5181b7b6a1acf376a9a88fcd8c982f2e02fc04232",
-			"bytes": 54429
+			"sha256": "4e583e90fe8bbcc9c5b47cd0d2deccd4226a218b4ebfad5545d707554ea6e7ef",
+			"bytes": 54492
 		},
 		{
 			"file": "young-normal.ktx2",
@@ -303,8 +303,8 @@
 		},
 		{
 			"file": "young-color-half.ktx2",
-			"sha256": "2f13dae7bb14c82ee3c893da957b50ac04575294e1892ac3d0cc3271fad0172f",
-			"bytes": 14078
+			"sha256": "3421ab664523242d07ecdfa6dd7bf1e5c83fe9c4dbd7e6b87200c7eaa4b11108",
+			"bytes": 14159
 		},
 		{
 			"file": "young-normal-half.ktx2",
