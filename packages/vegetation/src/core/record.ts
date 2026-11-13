@@ -2611,12 +2611,6 @@ export interface LodSpec {
 	 * wood it grows from. Absent, the line spans only the stretch behind the row, as it always has.
 	 */
 	readonly cardStalkToFoliage?: boolean;
-	/**
-	 * The width, in texels, of a card's guaranteed strand: the shoot's own axis drawn as one
-	 * connected line down the card, so a card whose leaves scatter into separate islands still joins
-	 * the shoot it pictures. 0 or absent, a card draws no strand.
-	 */
-	readonly cardStrand?: number;
 	/** The impostor's views across and texels per view. */
 	readonly impostor: { readonly views: number; readonly texels: number };
 	/** The level that casts shadows. */
