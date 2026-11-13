@@ -111,6 +111,39 @@ const boughs: FrameBranchRule = {
 };
 
 /**
+ * The skirts of a low limb: branches from its outer half that leave its sides lowered toward the
+ * ground and hang as far as a fifth of the height, each under a small clump. Stills 01, 02 and 18:
+ * the crown's underside hangs lower far out than near the bole, in lobes of leaf under the low
+ * limbs' outer reach, down to a tenth of the height at still 02. A skirt's branch ends
+ * where the piece at its end meets the lower boundary, so its leaf hangs down to the boundary and
+ * never under it.
+ */
+const skirts: FrameBranchRule = {
+	name: 'skirt',
+	role: 'branch',
+	count: { every: 0.07, least: 2, most: 4 },
+	along: [0.5, 0.95],
+	stagger: 0.3,
+	around: 'sides',
+	lift: -45,
+	jitter: 20,
+	angle: 80,
+	from: 'parent',
+	angleSpread: 8,
+	length: { outline: 0.95 },
+	vary: 0.1,
+	least: 0.03,
+	most: 0.2,
+	radius: 0.4,
+	taper: 0.35,
+	sway: 30,
+	elbows: 5,
+	crook: 0.4,
+	apart: 0.006,
+	patch: clump(0.11),
+};
+
+/**
  * One side of the crown as a whole still shows it, read on the still's own columns from the
  * trunk's line. Every figure is a share of the tree's height in that still.
  */
@@ -189,10 +222,14 @@ const STILL_02_RIGHT: Reading = {
 	],
 };
 
-/** A side of the outline, from its reading on a still. */
-function side(toward: number, read: Reading): FrameSide {
+/**
+ * A side of the outline, from its reading on a still taken from a direction round the plant: still
+ * 01's camera stands toward 90 degrees and still 02's toward 0.
+ */
+function side(toward: number, seen: number, read: Reading): FrameSide {
 	return {
 		toward,
+		seen,
 		reach: [
 			read.foot,
 			...(read.hung ? [read.hung] : []),
@@ -211,10 +248,10 @@ export const frame: FrameSpec = {
 	// The outline, side by side, with no two sides averaged. Still 01 gives the two sides it looks
 	// across; still 02, a quarter turn on, gives the two it looks along.
 	outline: [
-		side(0, STILL_01_RIGHT),
-		side(90, STILL_02_LEFT),
-		side(180, STILL_01_LEFT),
-		side(270, STILL_02_RIGHT),
+		side(0, 90, STILL_01_RIGHT),
+		side(90, 0, STILL_02_LEFT),
+		side(180, 90, STILL_01_LEFT),
+		side(270, 0, STILL_02_RIGHT),
 	],
 	stems: {
 		name: 'trunk',
@@ -275,11 +312,13 @@ export const frame: FrameSpec = {
 				angleSpread: 2,
 				// Still 01: the right limb's foliage is the crown's widest reach, and its bare wood
 				// shows two thirds of the way out. Its wood ends half a clump short of the outline, so
-				// the clump at its end stands on the outline. The others' wood runs out nearly to the rim.
+				// the clump at its end stands on the outline. The others' wood runs out nearly to the rim,
+				// and still 02 shows the two toward and away from still 01's camera carrying its widest
+				// reach on both sides, so theirs runs out furthest.
 				length: {
 					outline: [
-						[0, 0.9],
-						[0.2, 0.9],
+						[0, 0.95],
+						[0.2, 0.95],
 						[0.4, 0.84],
 						[0.6, 0.89],
 						[0.8, 0.9],
@@ -305,14 +344,16 @@ export const frame: FrameSpec = {
 				shed: 0.7,
 				// Still 01: the right limb rises to 0.29 of the height over its first third, then runs
 				// level and dips a little at its end. The real tree: the low limbs run out near level
-				// and dip at their ends, and no foliage lies on the ground.
+				// and dip at their ends, and no foliage lies on the ground. Still 02 shows the two
+				// toward and away from still 01's camera in profile, rising a little more, to the
+				// crown's widest band a third of the way up.
 				bends: [
 					{
 						from: 0.1,
 						to: 0.4,
 						level: [
-							[0, 12],
-							[0.2, 10],
+							[0, 18],
+							[0.2, 16],
 							[0.4, 50],
 							[0.6, 4],
 							[0.8, 6],
@@ -339,7 +380,7 @@ export const frame: FrameSpec = {
 				// Still 03, from below: the limbs spread to every side and none lies along another.
 				apart: 0.02,
 				patch: clump(0.2),
-				children: [boughs],
+				children: [skirts, boughs],
 			},
 			{
 				name: 'crown',
@@ -430,7 +471,16 @@ const base = {
  * a kit with no pieces draws them.
  */
 export const directed = {
-	...framedRecord(record, frame, { rows: { mean: 5, spread: 1 }, fan: 45, piece: 'branch-end' }),
+	...framedRecord(record, frame, {
+		rows: { mean: 5, spread: 1 },
+		fan: 45,
+		piece: 'branch-end',
+		// The bake worker's reading of round `pedunculate-oak-ef69fe7b9`: with every branch end's
+		// flat side to the sky, a crown seen from the side shows most of its cards slanted or edge
+		// on, and the sky shows through. A real crown's rosettes face every way, so each piece rolls
+		// up to a quarter turn either way about its own line and tilts a little off the wood's.
+		turn: { roll: 90, tilt: 25 },
+	}),
 	base,
 	pieces: PIECES.filter((piece) => piece.name === 'branch-end'),
 };

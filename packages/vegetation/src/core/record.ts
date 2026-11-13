@@ -738,6 +738,13 @@ export interface Framed {
 		 * socket holds shoot rows.
 		 */
 		readonly piece?: string;
+		/**
+		 * The most degrees each piece turns at its socket: its roll about its own line, from the
+		 * side toward the sky, and its tilt off the wood's line. Each is a share spread evenly over
+		 * the sockets in their order, so no two neighbours turn alike and the crown's leaf faces
+		 * every way. Absent, every piece's flat side faces the sky.
+		 */
+		readonly turn?: { readonly roll: number; readonly tilt: number };
 	};
 }
 

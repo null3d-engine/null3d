@@ -14,6 +14,7 @@ import { curveAt, spreadMean } from '../core/types';
 import {
 	evenOutline,
 	FRAME_TURN_MOST,
+	type FrameBranchRule,
 	type FrameNode,
 	type FramePatch,
 	type FramePlan,
@@ -46,6 +47,7 @@ import {
 	thickens,
 	underBoundary,
 	widestGap,
+	woodCrossings,
 	woodThrough,
 } from '../grow/frame-measure';
 import { stemSection, surfaceRoots } from '../wood/flare';
@@ -166,6 +168,11 @@ interface Held {
 	 * the same commit.
 	 */
 	readonly through: number;
+	/**
+	 * The same by straight runs between the nodes, twigs among them: the pairs of axes on no line of
+	 * descent, and the axes that run back through an elder, summed over the seeds. Both may only fall.
+	 */
+	readonly crossings: readonly [apart: number, descent: number];
 	/** The plant's height over the record's, as the least and the most. */
 	readonly tall: readonly [number, number];
 	/** The axes for each socket over the seeds, to three places: also a number that may only fall. */
@@ -198,6 +205,7 @@ const HELD: readonly Held[] = [
 		// A fall hangs by its own weight.
 		plumb: ['leader', 'fall'],
 		through: 0,
+		crossings: [0, 9],
 		axesPerSocket: 1.0,
 		tall: [0.98, 1.02],
 		open: ['spread'],
@@ -215,6 +223,7 @@ const HELD: readonly Held[] = [
 		base: { limb: 0.25, side: 0.5 },
 		plumb: ['leader'],
 		through: 0,
+		crossings: [0, 8],
 		axesPerSocket: 1.0,
 		fine: ['twig'],
 		tall: [0.98, 1.02],
@@ -235,6 +244,7 @@ const HELD: readonly Held[] = [
 		// The heads' foliage stands above the highest wood.
 		through: 13,
 		// Every whip and branch carries strands along it, so an axis carries several sockets.
+		crossings: [30, 4],
 		axesPerSocket: 0.184,
 		tall: [0.93, 1.02],
 	},
@@ -252,6 +262,7 @@ const HELD: readonly Held[] = [
 		plumb: [],
 		through: 2,
 		// Every twig that clothes a clump is an axis that ends in a socket.
+		crossings: [14, 5],
 		axesPerSocket: 1.079,
 		fine: ['twig'],
 		tall: [0.97, 1.06],
@@ -270,6 +281,7 @@ const HELD: readonly Held[] = [
 		plumb: ['shoot'],
 		// The leading shoots' tips are the plant's top.
 		through: 3,
+		crossings: [5, 0],
 		axesPerSocket: 1.0,
 		tall: [0.95, 1.08],
 	},
@@ -286,6 +298,7 @@ const HELD: readonly Held[] = [
 		plumb: ['trunk'],
 		// The top tiers' foliage stands above the highest wood.
 		through: 3,
+		crossings: [6, 3],
 		axesPerSocket: 1.007,
 		tall: [0.93, 1.02],
 		open: ['fill'],
@@ -311,6 +324,7 @@ const HELD: readonly Held[] = [
 		plumb: ['trunk'],
 		// The outline's top is blunt, so the bunches on the highest tips stand a little over it.
 		through: 0,
+		crossings: [2, 0],
 		axesPerSocket: 1.0,
 		fine: ['twig'],
 		tall: [0.95, 1.05],
@@ -327,6 +341,7 @@ const HELD: readonly Held[] = [
 		base: { outer: 0.34, centre: 0.55, branch: 0.6, spray: 0.6 },
 		plumb: ['trunk'],
 		through: 5,
+		crossings: [5, 1],
 		axesPerSocket: 1.463,
 		tall: [0.93, 1.05],
 		open: ['spread'],
@@ -341,17 +356,19 @@ const HELD: readonly Held[] = [
 			trunk: 1,
 			limb: 6,
 			crown: 3,
+			skirt: [12, 24],
 			bough: [45, 72],
 			branch: [90, 288],
-			twig: [3500, 6500],
+			twig: [6000, 9000],
 		},
 		// Six low limbs at their own stated directions: five a seventh of a turn apart and one gap of
-		// two.
-		round: { rule: 'limb', gap: 112, lean: 0.25 },
+		// two, 103 degrees, where the rising limbs stand; each limb's end wanders with its elbows.
+		round: { rule: 'limb', gap: 120, lean: 0.25 },
 		// A limb's share runs from 0.42 at the lowest to 0.5 at the highest, so it is not held here.
 		base: { bough: 0.5, branch: 0.55 },
 		plumb: ['trunk'],
 		through: 0,
+		crossings: [0, 0],
 		// Every twig that clothes a clump is an axis that ends in a socket.
 		axesPerSocket: 1,
 		fine: ['twig'],
@@ -688,12 +705,14 @@ for (const held of HELD)
 					const piece = growth.model === 'frame' && growth.sockets.piece !== undefined;
 					expect(table.scale[b]).toBeCloseTo(piece ? 1 : plan.scale / held.heightMean, 5);
 					expect(skeleton.buds.position[b * 3 + 1]).toBeCloseTo(socket.at[1], 4);
+					// The bud runs along its socket's heading, or within the tilt the record states.
 					quatRotate(skeleton.buds.frame, b * 4, [0, 1, 0], along);
+					const tilt = growth.model === 'frame' ? (growth.sockets.turn?.tilt ?? 0) : 0;
 					expect(
 						along[0] * socket.heading[0] +
 							along[1] * socket.heading[1] +
 							along[2] * socket.heading[2],
-					).toBeGreaterThan(0.999);
+					).toBeGreaterThan(Math.min(0.999, Math.cos((tilt * Math.PI) / 180) - 1e-6));
 				});
 				// The first quarter of the ranks stands in every quarter round the trunk that any
 				// socket stands in, so a plant thinned to it keeps every side.
@@ -809,6 +828,17 @@ for (const held of HELD)
 			let pairs = 0;
 			for (const seed of SEEDS) pairs += woodThrough(planOf(held, seed)).length;
 			expect(pairs).toBe(held.through);
+		});
+
+		it('passes no wood through other wood by straight runs, beyond the pairs it is known to', () => {
+			let apart = 0;
+			let descent = 0;
+			for (const seed of SEEDS) {
+				const found = woodCrossings(planOf(held, seed));
+				apart += found.apart.length;
+				descent += found.descent.length;
+			}
+			expect([apart, descent]).toEqual([...held.crossings]);
 		});
 
 		it('keeps its branch count to its sockets, at the figure it is known by', () => {
@@ -982,11 +1012,13 @@ describe("the pedunculate oak's frame against its photographs", () => {
 	const LANDMARK_REACH = 0.89;
 	const REACH_WITHIN = 0.05;
 	/**
-	 * Stills 01 and 03: where the trunk ends it divides into at least this many rising limbs, and
-	 * no limb that leaves it is thicker than this share of the trunk where it leaves, so none runs
-	 * on as a stem.
+	 * Stills 01 and 03: where the trunk ends it divides into at least this many rising limbs, which
+	 * share it about evenly, the thickest at most this many times the thinnest; and no limb that
+	 * leaves the trunk is thicker than this share of it where it leaves. A leader 0.64 of the bole
+	 * with thinner limbs beside it fails, as does a bole that runs on as one stem.
 	 */
 	const DIVIDES_INTO = 3;
+	const DIVIDES_EVEN = 1.25;
 	const LIMB_MOST = 0.65;
 	/**
 	 * Still 01's bole, read row by row from its foot row (587 of 688, the measuring worker's), where
@@ -1114,20 +1146,51 @@ describe("the pedunculate oak's frame against its photographs", () => {
 		}
 	});
 
+	/** Whether a frame's bole divides into rising limbs that share it, with no limb run on as a stem. */
+	const divides = (plan: FramePlan): boolean => {
+		const trunk = plan.axes[0] as FramePlan['axes'][number];
+		const end = trunk.nodes.length - 1;
+		const limbs = plan.axes.filter((axis) => axis.parent === 0);
+		const division = limbs.filter((limb) => limb.parentNode === end).map((limb) => limb.base);
+		return (
+			division.length >= DIVIDES_INTO &&
+			Math.max(...division) / Math.min(...division) <= DIVIDES_EVEN &&
+			limbs.every(
+				(limb) => limb.base / (trunk.nodes[limb.parentNode] as FrameNode).radius <= LIMB_MOST,
+			)
+		);
+	};
+
 	it('divides its bole into rising limbs, and runs no limb on as a stem', () => {
-		for (const seed of SEEDS) {
-			const plan = planOf(oak, seed);
-			const trunk = plan.axes[0] as FramePlan['axes'][number];
-			const end = trunk.nodes.length - 1;
-			const limbs = plan.axes.filter((axis) => axis.parent === 0);
-			expect(limbs.filter((limb) => limb.parentNode === end).length).toBeGreaterThanOrEqual(
-				DIVIDES_INTO,
-			);
-			for (const limb of limbs)
-				expect(limb.base / (trunk.nodes[limb.parentNode] as FrameNode).radius).toBeLessThanOrEqual(
-					LIMB_MOST,
-				);
-		}
+		for (const seed of SEEDS) expect(divides(planOf(oak, seed))).toBe(true);
+	});
+
+	it('fails the oak whose bole runs on as a leader 0.64 of its thickness', () => {
+		// The rising limb near the trunk's line at 0.64 of the bole where it leaves, running to the
+		// top, with the two others half as thick.
+		const [low, rising] = oak.spec.stems.children as [FrameBranchRule, FrameBranchRule];
+		const leader: FrameSpec = {
+			...oak.spec,
+			stems: {
+				...oak.spec.stems,
+				children: [
+					low,
+					{
+						...rising,
+						radius: [
+							[0, 0.64],
+							[0.5, 0.32],
+							[1, 0.32],
+						],
+						length: { outline: 0.93 },
+					},
+				],
+			},
+		};
+		for (const seed of SEEDS)
+			expect(
+				divides(planFrame(leader, { record: oak.record, seed, variant: 0, season: 'summer' })),
+			).toBe(false);
 	});
 
 	it("stands on still 01's rounded foot, with no fins", () => {
@@ -1185,8 +1248,9 @@ describe("the pedunculate oak's frame against its photographs", () => {
 
 	it('fails the oak built with its clumps first on three of the four', () => {
 		expect(clumpsFirst.commit).toBe('5b5c56272');
-		// One patch in eight that a view shows near the trunk's line hangs under the boundary.
-		expect(underFork(clumps)).toBe(26);
+		// Eighteen patches that a view shows near the trunk's line hang under the boundary; those the
+		// trunk hides behind it in a view are not read there.
+		expect(underFork(clumps)).toBe(18);
 		expect(lumps(clumps)).toEqual([2, 1]);
 		expect(lumpsHold(clumps)).toBe(false);
 		const shares = thickness(clumps);
