@@ -199,11 +199,12 @@ export interface FrameBranchRule extends FrameAxisRule {
 	/** Degrees the leaving angle may differ, either way. */
 	readonly angleSpread?: number;
 	/**
-	 * How long each runs, the share its length may differ by, either way, and the longest it may run
-	 * as a share of the height, by its place.
+	 * How long each runs, the share its length may differ by, either way, and the shortest and the
+	 * longest it may run as shares of the height, by its place.
 	 */
 	readonly length: FrameLength;
 	readonly vary?: number;
+	readonly least?: Curve;
 	readonly most?: Curve;
 	/** Its radius where it leaves as a share of the parent's radius there, by its place. */
 	readonly radius: Curve;
@@ -569,6 +570,8 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 		if ('vary' in rule && rule.vary) length *= 1 + (draw(Purpose.Vary, id) * 2 - 1) * rule.vary;
 		if ('most' in rule && rule.most !== undefined)
 			length = Math.min(length, curveAt(rule.most, place) * scale);
+		if ('least' in rule && rule.least !== undefined)
+			length = Math.max(length, curveAt(rule.least, place) * scale);
 		length = Math.max(length, 0.01 * scale);
 
 		// Where each child leaves, as shares of this axis's length.
