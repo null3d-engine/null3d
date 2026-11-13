@@ -237,9 +237,8 @@ function rowEdge(
 	const py = (rows.position[r * 3 + 1] as number) + shiftY;
 	const pz = (rows.position[r * 3 + 2] as number) + shiftZ;
 	let count = 0;
-	const cardPlanes = prototype.card.planes;
-	for (let k = 0; k < Math.min(planes, cardPlanes.length); k++) {
-		const plane = cardPlanes[k] as (typeof cardPlanes)[number];
+	for (const plane of prototype.card.planes) {
+		if (plane.role >= planes) continue;
 		const edge = picturedOf(kit, plane.front).edge;
 		const need = (count + edge.length / 2) * 3;
 		if (need > edgePoints.length) {
@@ -402,9 +401,8 @@ function surelyInside(
 	const pz = (rows.position[r * 3 + 2] as number) + shiftZ;
 	const tall = (hull.high - hull.low) * HULL_SLACK;
 	const span = Math.max(1e-9, hull.high - hull.low);
-	const cardPlanes = prototype.card.planes;
-	for (let k = 0; k < Math.min(planes, cardPlanes.length); k++) {
-		const plane = cardPlanes[k] as (typeof cardPlanes)[number];
+	for (const plane of prototype.card.planes) {
+		if (plane.role >= planes) continue;
 		turned(rows, r, plane.centre, scale, MIDDLE);
 		turned(rows, r, plane.right, scale, RIGHT);
 		turned(rows, r, plane.up, scale, UP);
@@ -648,23 +646,23 @@ export function cardRows(
 }
 
 /**
- * The area of the picture on a row's cards as a camera sees it: that of the plane that pictures
- * the most, since the crossed planes show one shoot from each side.
+ * The area of the picture on a row's cards as a camera sees it: that of the role whose planes
+ * picture the most, since the crossed planes show one shoot from each side. A piece cut along its
+ * line pictures it in several planes of each role, which together show the whole piece.
  */
 function rowCover(kit: SpeciesKitData, rows: ShootRows, r: number): number {
 	const prototype = kit.prototypes[rows.prototype[r] as number];
 	if (!prototype) return 0;
-	let most = 0;
-	for (const plane of prototype.card.planes) {
-		const area =
+	const byRole = [0, 0, 0];
+	for (const plane of prototype.card.planes)
+		byRole[plane.role] =
+			(byRole[plane.role] as number) +
 			4 *
-			length3(plane.right[0], plane.right[1], plane.right[2]) *
-			length3(plane.up[0], plane.up[1], plane.up[2]) *
-			picturedOf(kit, plane.front).share;
-		if (area > most) most = area;
-	}
+				length3(plane.right[0], plane.right[1], plane.right[2]) *
+				length3(plane.up[0], plane.up[1], plane.up[2]) *
+				picturedOf(kit, plane.front).share;
 	const scale = rows.scale[r] as number;
-	return most * scale * scale;
+	return Math.max(...byRole) * scale * scale;
 }
 
 /**
@@ -933,7 +931,7 @@ export function cardMesh(input: MeshInput, level: 1 | 2): MeshArrays {
 		const px = rows.position[r * 3] as number;
 		const py = rows.position[r * 3 + 1] as number;
 		const pz = rows.position[r * 3 + 2] as number;
-		prototype.card.planes.forEach((plane, k) => {
+		prototype.card.planes.forEach((plane) => {
 			const n = normalize3([
 				plane.right[1] * plane.up[2] - plane.right[2] * plane.up[1],
 				plane.right[2] * plane.up[0] - plane.right[0] * plane.up[2],
@@ -953,7 +951,7 @@ export function cardMesh(input: MeshInput, level: 1 | 2): MeshArrays {
 					[px + back[0] + world[0], py + back[1] + world[1], pz + back[2] + world[2]],
 					normal,
 					[(rx + ((sx + 1) / 2) * rw) / size, (ry + ((sy + 1) / 2) * rh) / size],
-					[(sy + 1) / 2, k / 2],
+					[plane.along[0] + ((sy + 1) / 2) * (plane.along[1] - plane.along[0]), plane.role / 2],
 					colour,
 				);
 			}
@@ -1076,6 +1074,11 @@ export interface CardCluster {
 	readonly anchor?: Vector3;
 	/** Whether a line joins it to its anchor: its cards touch neither the wood nor a joined card. */
 	readonly stalk: boolean;
+	/**
+	 * The card planes it draws: those of its prototype whose role is under the level's count, three
+	 * at most on a card that is not cut along its piece, two for each stretch of one that is.
+	 */
+	readonly faces?: number;
 }
 
 /**
@@ -1373,7 +1376,8 @@ export function cardClusters(
 		if (!prototype || !first) return Number.POSITIVE_INFINITY;
 		quatRotate(rows.rotation, r * 4, [first.centre[0], first.centre[1], first.centre[2]], lead);
 		let nearest = Number.POSITIVE_INFINITY;
-		for (const plane of prototype.card.planes.slice(0, planes)) {
+		for (const plane of prototype.card.planes) {
+			if (plane.role >= planes) continue;
 			quatRotate(rows.rotation, r * 4, [plane.centre[0], plane.centre[1], plane.centre[2]], edge);
 			quatRotate(rows.rotation, r * 4, [plane.right[0], plane.right[1], plane.right[2]], right);
 			quatRotate(rows.rotation, r * 4, [plane.up[0], plane.up[1], plane.up[2]], up);
@@ -1533,6 +1537,10 @@ export function cardClusters(
 	return made.map(({ joined, ...cluster }) => ({
 		...cluster,
 		stalk: !joined && cluster.anchor !== undefined,
+		faces:
+			kit.prototypes[rows.prototype[cluster.row] as number]?.card.planes.filter(
+				(plane) => plane.role < planes,
+			).length ?? 0,
 	}));
 }
 
@@ -1541,13 +1549,14 @@ export function cardClusters(
  * cluster that takes one.
  *
  * @param clusters The clusters.
- * @param planes The card planes each cluster draws, from 1 to 3.
+ * @param planes The card planes each cluster draws, from 1 to 3, where a cluster does not say.
  * @returns The count.
  * @category api/vegetation
  */
 export function clusterTriangles(clusters: readonly CardCluster[], planes: number): number {
 	let triangles = 0;
-	for (const cluster of clusters) triangles += 2 * planes + (cluster.stalk ? STALK_TRIANGLES : 0);
+	for (const cluster of clusters)
+		triangles += 2 * (cluster.faces ?? planes) + (cluster.stalk ? STALK_TRIANGLES : 0);
 	return triangles;
 }
 
@@ -1592,7 +1601,8 @@ export function clusterCardMesh(
 		local[1] = (lead?.centre[1] ?? 0) * scale;
 		local[2] = (lead?.centre[2] ?? 0) * scale;
 		quatRotate(rows.rotation, r * 4, local, first0);
-		prototype.card.planes.slice(0, planes).forEach((plane, k) => {
+		prototype.card.planes.forEach((plane) => {
+			if (plane.role >= planes) return;
 			const n = normalize3([
 				plane.right[1] * plane.up[2] - plane.right[2] * plane.up[1],
 				plane.right[2] * plane.up[0] - plane.right[0] * plane.up[2],
@@ -1616,7 +1626,7 @@ export function clusterCardMesh(
 					],
 					normal,
 					[(rx + ((sx + 1) / 2) * rw) / size, (ry + ((sy + 1) / 2) * rh) / size],
-					[(sy + 1) / 2, k / 2],
+					[plane.along[0] + ((sy + 1) / 2) * (plane.along[1] - plane.along[0]), plane.role / 2],
 					colour,
 				);
 			}
