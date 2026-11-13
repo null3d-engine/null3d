@@ -428,7 +428,11 @@ export const record: Species = {
 			outline: 'texture',
 			// Stills 21 and 22: the stalk stands a little over a millimetre across. A stout stalk draws
 			// its leaves joined at a cut piece's scale, but it is not this species' own, so the record
-			// keeps the thin one and the piece's loose groups are stated instead.
+			// keeps the thin one and the piece's loose groups are stated instead. This stalk grows the
+			// crown the species ships, and that crown keeps it. The branch pieces wear the twig
+			// photograph's stalk (`PIECE_LEAF` in pieces.ts): 1.5 centimetres, 0.21 of the blade, the
+			// median of ten leaves on still 22. The record takes it when the plant built of pieces
+			// replaces this crown.
 			petiole: { length: 0.012, radius: 0.0016, flat: 0, droop: 20 },
 			fold: 12,
 			curl: 10,

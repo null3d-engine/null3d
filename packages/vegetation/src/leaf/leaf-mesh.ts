@@ -260,7 +260,7 @@ export function bladeMesh(
 			const key = onMidrib ? index * 3 + side + 1 : index * 3 + 1;
 			let vertex = made.get(key);
 			if (vertex === undefined) {
-				const x = (u - 0.5) * surface.scale;
+				const x = (u - 0.5) * surface.across;
 				const along = surface.extra + (v - outline.petiole[1]) * surface.scale;
 				surface.place(x, along, p);
 				surface.normal(x, along, onMidrib ? side : 0, n);
@@ -290,7 +290,7 @@ function addStalk(
 	const flat = shape.petiole.flat;
 	const across = radius * (1 - 0.6 * flat);
 	const normalWise = radius * (1 + 0.6 * flat);
-	const stalkU = Math.max(radius / surface.scale, 0.5 / outline.texels);
+	const stalkU = Math.max(radius / surface.across, 0.5 / outline.texels);
 	const centre = [0, 0, 0];
 	const tangent = [0, 0, 0];
 	const count = sides > 0 ? sides + 1 : 2;

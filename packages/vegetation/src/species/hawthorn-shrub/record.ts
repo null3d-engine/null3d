@@ -284,6 +284,10 @@ export const record: Species = {
 			// wedge base, three to four centimetres from base to tip, on a stalk about a quarter of that.
 			length: { mean: 0.035, spread: 0.006 },
 			outline: 'texture',
+			// This stalk grows the crown the species ships, and that crown keeps it. The branch pieces
+			// wear the twig photograph's stalk (`PIECE_LEAF` in pieces.ts): 1.25 centimetres, 0.36 of
+			// the blade, the median of eight full leaves on still 22. The record takes it when the
+			// plant built of pieces replaces this crown.
 			petiole: { length: 0.009, radius: 0.0005, flat: 0, droop: 10 },
 			fold: 8,
 			curl: 10,

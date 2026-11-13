@@ -24,7 +24,7 @@ import {
 	sin,
 	type Vector3,
 } from '../core/math';
-import type { Phyllotaxis, Species } from '../core/record';
+import type { LeafShape, Phyllotaxis, Species } from '../core/record';
 import { type Curve, curveAt, type Spread, spreadAt, spreadMean } from '../core/types';
 import {
 	type AxisPoint,
@@ -236,6 +236,55 @@ export interface PieceRule {
 	 * degrees and no farther than the ground side. A hanging blade then stays in the plane it lies in.
 	 */
 	readonly leafDroop?: 'plane';
+}
+
+/**
+ * The leaf a species' pieces wear where it differs from the record's: the record's blade with these
+ * fields over it. A species states one while its record's leaf also grows the crown it ships, which
+ * keeps its own leaf until a plant built of pieces replaces it.
+ */
+export interface PieceLeaf extends Partial<Pick<LeafShape, 'length' | 'breadth'>> {
+	/** Metres of stalk from the stem to the blade's base. */
+	readonly stalk?: number;
+}
+
+/**
+ * The record a species' pieces are built by: the species' own, its blade taking the pieces' leaf.
+ * The pieces' leaf meshes and their plans both read it, so a plan sizes its leaves by the meshes it
+ * places.
+ *
+ * @param record The species record.
+ * @param leaf The pieces' leaf, or nothing where the pieces wear the record's.
+ * @returns The record to build the pieces by.
+ */
+export function pieceRecord(record: Species, leaf: PieceLeaf | undefined): Species {
+	if (!leaf) return record;
+	const foliage = record.foliage;
+	if (foliage.kind !== 'blade')
+		throw new Error(
+			`@null3d/vegetation: '${record.id}' states a leaf for its pieces, and its foliage is '${foliage.kind}', not a blade`,
+		);
+	if (leaf.breadth !== undefined && !(leaf.breadth > 0 && leaf.breadth <= 2))
+		throw new Error(
+			`@null3d/vegetation: the pieces' leaf breadth of '${record.id}' is ${leaf.breadth}; it is a share of the outline's width, above 0 and at most 2`,
+		);
+	if (leaf.stalk !== undefined && !(leaf.stalk > 0))
+		throw new Error(
+			`@null3d/vegetation: the pieces' leaf stalk of '${record.id}' is ${leaf.stalk}; it is metres and must be above 0`,
+		);
+	const own = foliage.leaf;
+	return {
+		...record,
+		foliage: {
+			...foliage,
+			leaf: {
+				...own,
+				length: leaf.length ?? own.length,
+				...(leaf.breadth === undefined ? {} : { breadth: leaf.breadth }),
+				petiole: { ...own.petiole, length: leaf.stalk ?? own.petiole.length },
+			},
+		},
+	};
 }
 
 /** A piece's prototype: its meshes at every tier, with how a socket holds it. */
