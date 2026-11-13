@@ -109,6 +109,18 @@ describe("a photograph's outline", () => {
 		expect(Math.abs((plant.footFollowedFrom as number) - 319)).toBeLessThanOrEqual(2);
 	});
 
+	test('follows the stem, not a speck wider than it at the horizon', () => {
+		// A dark speck of the stem's colour stands across the horizon under the crown, wider than the
+		// stem, and its last row is the stem's.
+		const image = photograph(350);
+		for (let y = 315; y <= 322; y++)
+			for (let x = 250; x < 290; x++) image.data.set([70, 62, 58], (y * 640 + x) * 4);
+		const plant = plantMask(image);
+		const found = boxOf(plant.mask, plant.width, plant.height) as Box;
+		expect(Math.abs(found.bottom - 350)).toBeLessThanOrEqual(2);
+		expect(Math.abs((plant.footFollowedFrom as number) - 319)).toBeLessThanOrEqual(2);
+	});
+
 	test('names no followed row where the plant stands on the horizon', () => {
 		const plant = plantMask(photograph(319));
 		const found = boxOf(plant.mask, plant.width, plant.height) as Box;
