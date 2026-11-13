@@ -719,6 +719,8 @@ function cuttingProblems(record: Species, out: string[]): void {
 	for (const part of ['branch', 'subbranch', 'cluster'] as const) {
 		const hint = record.cuttings?.[part];
 		if (!hint) continue;
+		if (hint.density !== undefined && !(hint.density >= 0.25 && hint.density <= 8))
+			out.push(`cuttings.${part}.density is ${hint.density}; it is a share from 0.25 to 8`);
 		if ('shoot' in hint) {
 			if (!names.has(hint.shoot))
 				out.push(`cuttings.${part}.shoot '${hint.shoot}' names no class in shoots.classes`);

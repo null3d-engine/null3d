@@ -227,6 +227,12 @@
 		"date": "2026-11-10",
 		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head in the one idle window, each drawing completed and compared before acceptance, and a CI drawing on a pull request replaces them"
 	},
+	"chromium-swiftshader/compat/plant-italian-cypress.png": {
+		"test": "plant-italian-cypress",
+		"tier": "compat",
+		"date": "2026-11-08",
+		"reason": "the card growth changed every plant picture; the Mac's SwiftShader agrees with CI's byte for byte, and CI redraws its own set from this branch"
+	},
 	"chromium-swiftshader/compat/plant-olive.png": {
 		"test": "plant-olive",
 		"tier": "compat",
@@ -592,6 +598,12 @@
 		"tier": "webgl2",
 		"date": "2026-11-10",
 		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head in the one idle window, each drawing completed and compared before acceptance, and a CI drawing on a pull request replaces them"
+	},
+	"chromium-swiftshader/webgl2/plant-italian-cypress.png": {
+		"test": "plant-italian-cypress",
+		"tier": "webgl2",
+		"date": "2026-11-08",
+		"reason": "the card growth changed every plant picture; the Mac's SwiftShader agrees with CI's byte for byte, and CI redraws its own set from this branch"
 	},
 	"chromium-swiftshader/webgl2/plant-olive.png": {
 		"test": "plant-olive",
@@ -988,6 +1000,12 @@
 		"tier": "webgpu",
 		"date": "2026-11-10",
 		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head in the one idle window, each drawing completed and compared before acceptance, and a CI drawing on a pull request replaces them"
+	},
+	"chromium-swiftshader/webgpu/plant-italian-cypress.png": {
+		"test": "plant-italian-cypress",
+		"tier": "webgpu",
+		"date": "2026-11-08",
+		"reason": "the card growth changed every plant picture; the Mac's SwiftShader agrees with CI's byte for byte, and CI redraws its own set from this branch"
 	},
 	"chromium-swiftshader/webgpu/plant-olive.png": {
 		"test": "plant-olive",

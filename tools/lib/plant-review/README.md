@@ -86,7 +86,6 @@ The command ends with status 1 when a frame failed or when the coverage is not c
 | `placeholders` | Grow stand-ins; on by default for an id that is not registered. |
 | `horizon`, `fill`, `targetY`, `targetX`, `top`, `eye` | A whole-plant framing in screen shares, which stands the camera on the ground as a reference's camera stood. |
 | `along`, `span` | How far along a limb a limb view looks, and the metres of bark a bark view frames. |
-| `barkZone` | The record's bark zone whose own height a bark view frames, as an index into its zones. |
 | `thin` | Metres of radius that a limb view frames: it picks the exposed limb that carries that thickness, so young bark shows. A fork view takes the fork whose limb is nearest that radius. |
 | `surface` | A limb view of the crown's outer rim, seen from under it looking up past its edge, rather than of one branch against a plain ground. |
 | `forkRow`, `aside` | A view up the stem: the row on which the bark where the stem divides lands, and the degrees the look turns to the right of the stem. |

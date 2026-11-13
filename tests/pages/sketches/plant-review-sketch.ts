@@ -786,8 +786,11 @@ export default defineSketch(async (ctx) => {
 	// shoots the studio piece needs and holds no card levels.
 	const plantCut = cutHint !== undefined && 'order' in cutHint;
 	const needsCutKit = cutsClass || (plantCut && record.cuttings?.density !== undefined);
+	// The part goes with the request: a record may give the piece a shoot density of its own.
 	const pieceKit =
-		cutting && needsCutKit ? await prepareSpecies(ctx, module, { ...prepare, cutting: true }) : kit;
+		cutting && needsCutKit
+			? await prepareSpecies(ctx, module, { ...prepare, cutting: cutting.part })
+			: kit;
 	const [whole, piece] = await Promise.all([
 		needsWhole ? growPlant(kit, grow) : undefined,
 		cutting ? growPlant(pieceKit, { ...grow, cutting }) : undefined,
