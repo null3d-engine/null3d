@@ -39,47 +39,103 @@ export function woodTriangles(
 	input: Pick<MeshInput, 'skeleton' | 'record' | 'detail' | 'coarseness' | 'sections'>,
 	level: MeshLevel,
 ): number {
-	const { skeleton } = input;
 	const tube = tubeDetail(level, input.detail, input.coarseness ?? 0, input.sections ?? 0);
-	const keep = level === 0 ? 255 : (input.record.lod.woodOrders[level - 1] ?? 255);
+	const counts = woodPartTriangles(input, level, undefined, [tube, tube, tube]);
+	return counts[0] + counts[1] + counts[2];
+}
+
+/**
+ * About how many triangles each part of a level's wood holds: its trunk, its great limbs and its
+ * branches, each at a detail of its own.
+ *
+ * @param input The dressed variant.
+ * @param level The level.
+ * @param parts The part of each skeleton axis: 0 its trunk, 1 a great limb, 2 a branch; all
+ *   branches when absent.
+ * @param tubes The detail of each part's wood, or `null` for a part that is not drawn.
+ * @param keep Per axis, 1 for a limb or branch that is drawn; all of them when absent.
+ * @returns The three counts.
+ */
+export function woodPartTriangles(
+	input: Pick<MeshInput, 'skeleton' | 'record'>,
+	level: MeshLevel,
+	parts: Uint8Array | undefined,
+	tubes: readonly (TubeDetail | null)[],
+	keep?: Uint8Array,
+): [number, number, number] {
+	return woodLadderTriangles(input, level, parts, [tubes], keep)[0] as [number, number, number];
+}
+
+/**
+ * About how many triangles each part of a level's wood holds at each of several details: one walk
+ * of the axes, each axis's curve made once and its rings counted at every detail.
+ *
+ * @param input The dressed variant.
+ * @param level The level.
+ * @param parts The part of each skeleton axis: 0 its trunk, 1 a great limb, 2 a branch; all
+ *   branches when absent.
+ * @param ladder For each detail, the tube of each part's wood, or `null` for a part not drawn.
+ * @param keep Per axis, 1 for a limb or branch that is drawn; all of them when absent.
+ * @returns For each detail, the three counts.
+ */
+export function woodLadderTriangles(
+	input: Pick<MeshInput, 'skeleton' | 'record'>,
+	level: MeshLevel,
+	parts: Uint8Array | undefined,
+	ladder: readonly (readonly (TubeDetail | null)[])[],
+	keep?: Uint8Array,
+): [number, number, number][] {
+	const { skeleton } = input;
+	const orders = level === 0 ? 255 : (input.record.lod.woodOrders[level - 1] ?? 255);
 	const sample: PathSample = { radius: 0, height: 0 };
 	const axes = skeleton.axes;
-	const meshed = new Uint8Array(axes.count);
-	let triangles = 0;
+	// Per detail, whether each axis is meshed there: a child needs its parent.
+	const meshed = ladder.map(() => new Uint8Array(axes.count));
+	const out = ladder.map((): [number, number, number] => [0, 0, 0]);
 	for (let a = 0; a < axes.count; a++) {
 		const parent = axes.parent[a] as number;
-		if ((axes.order[a] as number) > keep) continue;
-		const kind = axes.kind[a] as number;
-		if (parent < 0 ? kind !== AXIS_STEM && kind !== AXIS_CULM : !meshed[parent]) continue;
-		const path = pathOf(skeleton, a);
-		if (!path) continue;
-		meshed[a] = 1;
-		const arcs = ringArcs(
-			path,
-			0,
-			(s) => sampleAt(path, s, sample).radius,
-			tube,
-			() => false,
-		);
-		let sides = 0;
-		let before = 0;
-		for (const s of arcs) {
-			const r = sampleAt(path, s, sample).radius;
-			sides = heldSides(sidesFor(2 * PI * r, r, tube), sides);
-			if (before > 0) triangles += before + sides;
-			before = sides;
+		const part = parts?.[a] ?? 2;
+		if ((axes.order[a] as number) > orders) continue;
+		if (part !== 0 && keep && keep[a] !== 1) continue;
+		if (parent < 0 && axes.kind[a] !== AXIS_STEM && axes.kind[a] !== AXIS_CULM) continue;
+		let path: ReturnType<typeof pathOf> | null = null;
+		for (let step = 0; step < ladder.length; step++) {
+			const tube = (ladder[step] as readonly (TubeDetail | null)[])[part];
+			if (!tube || (parent >= 0 && !(meshed[step] as Uint8Array)[parent])) continue;
+			if (path === null) path = pathOf(skeleton, a);
+			if (!path) break;
+			const curve = path;
+			(meshed[step] as Uint8Array)[a] = 1;
+			const arcs = ringArcs(
+				curve,
+				0,
+				(s) => sampleAt(curve, s, sample).radius,
+				tube,
+				() => false,
+			);
+			let triangles = 0;
+			let sides = 0;
+			let before = 0;
+			for (const s of arcs) {
+				const r = sampleAt(curve, s, sample).radius;
+				sides = heldSides(sidesFor(2 * PI * r, r, tube), sides);
+				if (before > 0) triangles += before + sides;
+				before = sides;
+			}
+			const r0 = curve.radius[0] as number;
+			const first = sidesFor(2 * PI * r0, r0, tube);
+			if (parent >= 0) {
+				const full = r0 < THIN ? BLEND_THIN : r0 < 2.5 * THIN ? BLEND_SMALL : BLEND_WIDE;
+				const blend =
+					tube.sections >= 1 ? 0 : Math.max(1, Math.round(full - (full - 1) * tube.sections));
+				triangles += 2 * first * blend + forkBend(skeleton, a, tube);
+			}
+			if (tube.sections < 1) triangles += 2 * sides * TIP_RINGS;
+			const counts = out[step] as [number, number, number];
+			counts[part] = (counts[part] as number) + triangles;
 		}
-		const r0 = path.radius[0] as number;
-		const first = sidesFor(2 * PI * r0, r0, tube);
-		if (parent >= 0) {
-			const full = r0 < THIN ? BLEND_THIN : r0 < 2.5 * THIN ? BLEND_SMALL : BLEND_WIDE;
-			const blend =
-				tube.sections >= 1 ? 0 : Math.max(1, Math.round(full - (full - 1) * tube.sections));
-			triangles += 2 * first * blend + forkBend(skeleton, a, tube);
-		}
-		if (tube.sections < 1) triangles += 2 * sides * TIP_RINGS;
 	}
-	return triangles;
+	return out;
 }
 
 /**

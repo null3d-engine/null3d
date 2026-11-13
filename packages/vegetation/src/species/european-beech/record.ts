@@ -500,11 +500,6 @@ export const record: Species = {
 		// 1.4 m ahead of the row, where the stretch behind the row cannot reach it.
 		cardStalk: 2,
 		cardStalkToFoliage: true,
-		// The far cards grow past the shoots, so their gaps fall on a neighbour's leaves. A step at
-		// the leaf back-face base (9d28b90d7) read 0.1174 and 0.0964 against 0.1186 and 0.0942, so
-		// the second view stood 0.0022 open; this larger step holds it. The cost is the distant
-		// view's outline, 0.8113 to 0.7882, and the silhouette's eight pieces for six.
-		cardGrow: 1.15,
 		woodOrders: [2, 1],
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
@@ -531,9 +526,9 @@ export const record: Species = {
 	textures: 'own',
 	variants: 6,
 	seedSalt: 2357111317,
-	// The owner's ruling, and the floors the measured runs used: the broadleaf keeps little wood and
-	// less leaf, and coarsens more than any other species, because its crown carries the most.
-	sparse: { limbs: 0.32, leaves: 0.38, coarseness: 0.65 },
+	// The sparsest form keeps this share of the crown's shoots, each whole: about the leaf area
+	// below which the crown stops reading as its species.
+	sparse: { foliage: 0.09 },
 	roundBand,
 	cuttings: {
 		// The wide prototype suits the branch's three sprays; the tall one suits the sub-branch.

@@ -55,6 +55,8 @@ const SMALLEST_FAR = 0.025;
 const FEWEST_PIXELS = 5;
 /** The first hash purpose of the extras, past every purpose the instancer uses. */
 const PURPOSE = 40;
+/** The first hash purpose of the sites a triangle maximum keeps, past the extras' and the groups'. */
+const THIN = 1 << 20;
 /**
  * The first hash purpose of an extra group, past the entries' own purposes, so a group and an entry
  * number never draw the same sites.
@@ -70,6 +72,11 @@ const STALK_SIDES = 4;
 
 /** One place an extra may hang from: its point, its outward direction and its wind record. */
 interface Site {
+	/**
+	 * The site's number among the extra's sites on the plant as grown, which keys its random
+	 * choices: a sparser plant keeps the number, so the same sites carry the same extras.
+	 */
+	readonly key: number;
 	readonly at: Vector3;
 	readonly direction: Vector3;
 	readonly record: number;
@@ -234,17 +241,31 @@ function tipOf(prototype: ShootPrototype, share: number): WoodTip {
 	return tip;
 }
 
-/** The sites of one extra in a dressed variant. */
+/**
+ * The sites of one extra in a dressed variant. The sites are numbered through the plant as grown:
+ * a plant that sparseness took foliage from walks the grown plant's rows or bud sites, numbers each
+ * site there, and keeps the sites whose row or bud it still holds.
+ */
 function sitesOf(input: MeshInput, extra: ExtraSpec): Site[] {
 	const { rows, kit, skeleton } = input;
+	const grown = input.grown;
 	const base = input.variant * VARIANT_RECORDS;
 	const out: Site[] = [];
 	const up: Vector3 = [0, 1, 0];
+	let key = 0;
+	// The next row or bud this plant holds, in the grown plant's order.
+	let held = 0;
 	if (extra.at === 'shoot-tip' || extra.at === 'node' || extra.at === 'spur') {
-		for (let r = 0; r < rows.count; r++) {
-			const prototype = kit.prototypes[rows.prototype[r] as number];
+		const all = grown?.rows ?? rows;
+		const ids = grown ? rows.id : undefined;
+		for (let g = 0; g < all.count; g++) {
+			let r = g;
+			if (ids) r = held < rows.count && ids[held] === g ? held++ : -1;
+			const prototype = kit.prototypes[all.prototype[g] as number];
 			if (!prototype) continue;
 			if (extra.at === 'spur' && prototype.class !== 'spur') continue;
+			const site = key++;
+			if (r < 0) continue;
 			const scale = rows.scale[r] as number;
 			// A shoot bends, so its drawn tip is not on the straight line its base points along.
 			// Take the prototype's own wood tip, turned into the row's frame, so a part that
@@ -255,6 +276,7 @@ function sitesOf(input: MeshInput, extra: ExtraSpec): Site[] {
 			const reach = quatRotate(rows.rotation, r * 4, wood?.at ?? ([0, 0, 0] as Vector3), [0, 0, 0]);
 			const tip: Vector3 = extra.at === 'shoot-tip' ? reach : [0, 0, 0];
 			out.push({
+				key: site,
 				at: [
 					(rows.position[r * 3] as number) + tip[0] * scale,
 					(rows.position[r * 3 + 1] as number) + tip[1] * scale,
@@ -268,10 +290,13 @@ function sitesOf(input: MeshInput, extra: ExtraSpec): Site[] {
 		return out;
 	}
 	const buds = skeleton.buds;
-	const axes = skeleton.axes;
-	for (let b = 0; b < buds.count; b++) {
-		const kind = buds.kind[b] as number;
-		const y = buds.position[b * 3 + 1] as number;
+	const all = grown?.skeleton ?? skeleton;
+	const origins = grown ? buds.origin : undefined;
+	for (let g = 0; g < all.buds.count; g++) {
+		let b = g;
+		if (origins) b = held < buds.count && origins[held] === g ? held++ : -1;
+		const kind = all.buds.kind[g] as number;
+		const y = all.buds.position[g * 3 + 1] as number;
 		let take: boolean;
 		switch (extra.at) {
 			case 'areole':
@@ -284,17 +309,24 @@ function sitesOf(input: MeshInput, extra: ExtraSpec): Site[] {
 				take = kind === BUD_FLOWER;
 				break;
 			case 'stem-tip':
-				take = kind === BUD_TERMINAL && (axes.kind[buds.axis[b] as number] as number) === AXIS_CULM;
+				take =
+					kind === BUD_TERMINAL &&
+					(all.axes.kind[all.buds.axis[g] as number] as number) === AXIS_CULM;
 				break;
 			case 'culm-node':
 				// The dormant buds a culm grower leaves along its lower nodes carry the sheaths.
-				take = kind === BUD_DORMANT && (axes.kind[buds.axis[b] as number] as number) === AXIS_CULM;
+				take =
+					kind === BUD_DORMANT &&
+					(all.axes.kind[all.buds.axis[g] as number] as number) === AXIS_CULM;
 				break;
 			default:
-				take = kind === BUD_TERMINAL && y > skeleton.height * 0.85;
+				take = kind === BUD_TERMINAL && y > all.height * 0.85;
 		}
 		if (!take) continue;
+		const site = key++;
+		if (b < 0) continue;
 		out.push({
+			key: site,
 			at: [buds.position[b * 3] as number, y, buds.position[b * 3 + 2] as number],
 			direction: quatRotate(buds.frame, b * 4, up, [0, 0, 0]),
 			record: base + (skeleton.axes.record[buds.axis[b] as number] as number),
@@ -1024,12 +1056,21 @@ export function extrasMesh(input: MeshInput, level: MeshLevel): MeshArrays | und
 				: STALK_SIDES;
 		// The stalks take the band colour where the record gives one, as an acorn's peduncle does.
 		const stalkBand = extra.bandColour ? 1 : 0;
-		sitesOf(input, extra).forEach((given: Site, s) => {
+		sitesOf(input, extra).forEach((given: Site) => {
+			const s = given.key;
 			// Extras that name one group pick the same sites, so the parts of one fruit hang on one
 			// twig; each part keeps its own place on the shoot through its tip share and offset.
 			const purpose =
 				input.variant * 64 + (extra.group === undefined ? PURPOSE + index : GROUP + extra.group);
 			if (unitAt(input.seed, salt, purpose, s) >= extra.share) return;
+			// A triangle maximum may draw a share of the sites: a draw of its own, by the site's number
+			// as grown, so the sites that stay at a share stay at every larger one. The parts of one
+			// fruit share the draw, as they share their sites.
+			if (
+				input.extrasShare !== undefined &&
+				unitAt(input.seed, salt, THIN + purpose, s) >= input.extrasShare
+			)
+				return;
 			const turn = unitAt(input.seed, salt, purpose, s, 1) * 2 * Math.PI;
 			// A fruit that stands beside its site moves with its whole body, stalks included.
 			const offset = extra.offset;
