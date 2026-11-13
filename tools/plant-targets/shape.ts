@@ -386,30 +386,96 @@ export function risingRuns(mask: Uint8Array, width: number, box: Box): Run[][] {
 	return rows;
 }
 
+/** Where one side of an outline first stands clear of the stem, from the foot up. */
+export interface ClearRow {
+	/** The row, counted from the top. */
+	readonly row: number;
+	/** Its height over the plant's height, up from the foot. */
+	readonly share: number;
+}
+
+/** The outline's reach to each side of the axis, as shares of the plant's height. */
+export interface Envelope {
+	/** Each side's greatest reach in each height band, from the ground up. */
+	readonly left: readonly number[];
+	readonly right: readonly number[];
+	/** Each side's mean reach over the rows of each band: a lone tip near a band's edge moves it little. */
+	readonly leftMean: readonly number[];
+	readonly rightMean: readonly number[];
+	/**
+	 * The lowest row on each side whose outline reaches further from the axis than half the stem's
+	 * width and a share of the plant's height, or null where no row does. An outline cannot tell
+	 * foliage from a bare limb or a second stem there, so any of them counts.
+	 */
+	readonly clear: { readonly left: ClearRow | null; readonly right: ClearRow | null };
+}
+
+/** How far past half the stem's width, as a share of the plant's height, an outline stands clear. */
+const OUTLINE_CLEAR = 0.05;
+
 /**
- * The outline's reach to each side of the axis in each height band, from the ground up, as shares
- * of the plant's height.
+ * The outline's reach to each side of the axis in each height band, from the ground up, and the
+ * row where each side first stands clear of the stem.
+ *
+ * @param stemWidth The stem's own width in mask pixels, or null where it is not known; the middle
+ *   width of the run at the axis over the lowest band then stands for it.
  */
 export function envelopeOf(
 	mask: Uint8Array,
 	width: number,
 	box: Box,
 	axis: number,
+	stemWidth: number | null = null,
 	bands = ENVELOPE_BANDS,
-): { readonly left: number[]; readonly right: number[] } {
+): Envelope {
 	const tall = box.bottom - box.top + 1;
 	const left = new Array<number>(bands).fill(0);
 	const right = new Array<number>(bands).fill(0);
+	const leftSum = new Array<number>(bands).fill(0);
+	const rightSum = new Array<number>(bands).fill(0);
+	const rows = new Array<number>(bands).fill(0);
 	const spans = rowSpans(mask, width, box.bottom + 1);
+	const reach = (y: number): readonly [number, number] =>
+		(spans[y * 2] as number) < 0
+			? [0, 0]
+			: [
+					Math.max(0, axis - (spans[y * 2] as number)),
+					Math.max(0, (spans[y * 2 + 1] as number) - axis),
+				];
+	const bandOf = (y: number): number =>
+		Math.min(bands - 1, Math.floor(((box.bottom - y) * bands) / tall));
 	for (let y = box.top; y <= box.bottom; y++) {
-		if ((spans[y * 2] as number) < 0) continue;
-		const band = Math.min(bands - 1, Math.floor(((box.bottom - y) * bands) / tall));
-		left[band] = Math.max(left[band] as number, axis - (spans[y * 2] as number));
-		right[band] = Math.max(right[band] as number, (spans[y * 2 + 1] as number) - axis);
+		const band = bandOf(y);
+		const [toLeft, toRight] = reach(y);
+		rows[band] = (rows[band] as number) + 1;
+		leftSum[band] = (leftSum[band] as number) + toLeft;
+		rightSum[band] = (rightSum[band] as number) + toRight;
+		left[band] = Math.max(left[band] as number, toLeft);
+		right[band] = Math.max(right[band] as number, toRight);
 	}
+	let stem = stemWidth;
+	if (stem === null) {
+		const runs = axisRuns(mask, width, box, axis);
+		const widths: number[] = [];
+		for (let y = box.bottom; y >= box.top && bandOf(y) === 0; y--)
+			if ((runs[y * 2] as number) >= 0) widths.push(spanWidth(runs, y));
+		widths.sort((a, b) => a - b);
+		stem = widths[widths.length >> 1] ?? 0;
+	}
+	const beyond = stem / 2 + OUTLINE_CLEAR * tall;
+	const clearOf = (side: 0 | 1): ClearRow | null => {
+		for (let y = box.bottom; y >= box.top; y--)
+			if ((reach(y)[side] as number) > beyond)
+				return { row: y, share: rounded((box.bottom - y) / tall) };
+		return null;
+	};
+	const share = (v: number) => rounded(v / tall);
 	return {
-		left: left.map((v) => rounded(Math.max(0, v) / tall)),
-		right: right.map((v) => rounded(Math.max(0, v) / tall)),
+		left: left.map(share),
+		right: right.map(share),
+		leftMean: leftSum.map((v, band) => share(v / Math.max(1, rows[band] as number))),
+		rightMean: rightSum.map((v, band) => share(v / Math.max(1, rows[band] as number))),
+		clear: { left: clearOf(0), right: clearOf(1) },
 	};
 }
 

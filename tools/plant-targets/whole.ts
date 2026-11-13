@@ -2,7 +2,7 @@
 // the review tool's, cleaned of the ground strip at the plant's foot as the fit tool cleans it, and
 // the crown's start and its two gap figures are the review's own. The stem, the radius profile, the
 // lumps and the holes are read from the same outline.
-import { deltaE76, labOf, type Rgba } from '../lib/plant-review/image.ts';
+import { deltaE76, labImage, labOf, type Rgba, resizeToWidth } from '../lib/plant-review/image.ts';
 import {
 	axisRuns,
 	type Box,
@@ -11,8 +11,10 @@ import {
 	surfaceAt,
 } from '../lib/plant-review/references.ts';
 import { frameOutline } from '../plant-fit/silhouettes.ts';
-import { endsAtHorizon, PLAIN_GROUND, wideFoot } from './foot.ts';
+import { endsAtHorizon, footInView, PLAIN_GROUND, wideFoot } from './foot.ts';
 import {
+	type ClearRow,
+	type Envelope,
 	envelopeOf,
 	type LimbFigures,
 	type LobeFigures,
@@ -85,8 +87,11 @@ export interface ViewFigures {
 	};
 	/** The limbs that show apart at the first fork, or null where they cannot be counted. */
 	readonly limbs: LimbFigures | null;
-	/** The outline's reach each side of the axis in height bands from the ground up. */
-	readonly envelope: { readonly left: readonly number[]; readonly right: readonly number[] };
+	/**
+	 * The outline's reach each side of the axis in height bands from the ground up, and the row where
+	 * each side first stands clear of the stem, a row of the picture at its own size.
+	 */
+	readonly envelope: Envelope;
 	readonly lobes: LobeFigures;
 	readonly sky: SkyFigures & {
 		/** The review's enclosed gap: background between each crown row's outermost plant. */
@@ -155,7 +160,7 @@ export function figuresOf(
 			stems: stem.stems,
 		},
 		limbs: 'reason' in limbs ? null : limbs,
-		envelope: envelopeOf(mask, width, box, axis),
+		envelope: envelopeOf(mask, width, box, axis, stem.width === null ? null : stem.width * tall),
 		lobes: lobesOf(mask, width, box, axis, crown.row),
 		sky: {
 			enclosedGap: crown.enclosedGap,
@@ -267,14 +272,23 @@ export function measureView(
 	// The review's outline follows a stem below the horizon to its foot, and says from which row.
 	// It cannot follow a mass: a tuft or a colony that ends at the horizon on a photographed ground
 	// has lost at most the ground below it. Where that ground is a thin band the loss is small and
-	// the outline stands; otherwise it is refused.
+	// the outline stands, and where the ground under the foot is of another colour the foot stands
+	// in view on it; otherwise it is refused.
 	if (
 		horizonRow !== null &&
 		plant.footFollowedFrom === undefined &&
 		(background.ground?.noise ?? 0) >= PLAIN_GROUND &&
 		endsAtHorizon(outline.box, horizonRow, height) &&
 		wideFoot(plant.mask, width, outline.box, outline.foot) &&
-		(height - 1 - outline.box.bottom) / (outline.box.bottom - outline.box.top + 1) >= MASS_LOSS
+		(height - 1 - outline.box.bottom) / (outline.box.bottom - outline.box.top + 1) >= MASS_LOSS &&
+		!footInView(
+			labImage(image.width > width ? resizeToWidth(image, width) : image),
+			width,
+			height,
+			plant.mask,
+			outline.box,
+			outline.foot,
+		)
 	)
 		return {
 			problem:
@@ -310,9 +324,18 @@ export function measureView(
 	);
 	// A row of the mask as a row of the picture at its own size.
 	const own = (row: number): number => Math.round(((row + 0.5) * image.height) / height - 0.5);
+	const ownRow = (clear: ClearRow | null): ClearRow | null =>
+		clear && { row: own(clear.row), share: clear.share };
 	return {
 		figures: {
 			...figures,
+			envelope: {
+				...figures.envelope,
+				clear: {
+					left: ownRow(figures.envelope.clear.left),
+					right: ownRow(figures.envelope.clear.right),
+				},
+			},
 			foot: {
 				rows: {
 					frame: image.height,
