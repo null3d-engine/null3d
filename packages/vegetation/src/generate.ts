@@ -332,6 +332,16 @@ function thinnedGrowth(growth: Species['growth'], thin: number): Species['growth
 					between: growth.tiers.between * thin,
 				},
 			};
+		// A directed conifer states its limb count, so the share moves that count and the levels
+		// share out what is left.
+		case 'conifer':
+			return {
+				...growth,
+				limbs: {
+					...growth.limbs,
+					count: Math.max(growth.limbs.levels.length, Math.round(growth.limbs.count * thin)),
+				},
+			};
 		case 'crown-rosette':
 			return {
 				...growth,
