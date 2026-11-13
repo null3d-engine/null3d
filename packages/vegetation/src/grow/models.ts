@@ -37,6 +37,7 @@ const GROWERS: Readonly<Record<GrowthModel, () => Promise<{ readonly grower: Gro
 	architectural: () => import('./architectural'),
 	conifer: () => import('./conifer'),
 	'crown-rosette': () => import('./crown-rosette'),
+	'frond-crown': () => import('./frond-crown'),
 	culm: () => import('./culm'),
 	rosette: () => import('./rosette'),
 	'frond-colony': () => import('./frond-colony'),
