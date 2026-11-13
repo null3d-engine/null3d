@@ -17,6 +17,13 @@ export const PLANT_SEASONS = ['summer', 'autumn', 'winter', 'blossom'] as const;
 /** The quality presets, which set the mesh tier. */
 export const PLANT_PRESETS = ['low', 'medium', 'high', 'ultra'] as const;
 
+/**
+ * A limb view's composition, where a plant's limbs leave one stem as a cluster rather than along a
+ * branch: `arms` frames the stem's top with its limbs either side, `between` stands close between
+ * two of them, and `elbow` frames the sharpest turn of one limb's run into its rise.
+ */
+export const PLANT_COMPOSITIONS = ['arms', 'between', 'elbow'] as const;
+
 /** The level a query forces: the nearest level, the two card levels, or the impostor. */
 export type ForcedLevel = 0 | 1 | 2 | 3;
 
@@ -98,10 +105,20 @@ export interface PlantReviewQuery {
 	readonly size?: readonly [number, number];
 	/** The light. */
 	readonly sun?: PlantSun;
+	/**
+	 * A limb view's composition: the stem's top with its limb cluster, or between the limbs. A plant
+	 * whose limbs run along a branch leaves it absent and frames one limb. With it, `along` is the
+	 * share of the plant's height where the camera stands and `span` the metres it frames across.
+	 * Between the limbs, the camera stands close to the stem in the widest gap between two limbs, and
+	 * an elbow composition stands across the limb's sharpest turn.
+	 */
+	readonly composition?: (typeof PLANT_COMPOSITIONS)[number];
 	/** The cutting candidate, 0 for the best. */
 	readonly pick?: number;
 	/** The cutting's length in metres. */
 	readonly cut?: number;
+	/** Metres above the ground where a mid-trunk bark view stands, where the species' trunk is tall. */
+	readonly barkHeight?: number;
 	/**
 	 * The shoots a branch or sub-branch cutting carries, in place of the record hint's count, so two
 	 * pictures of one species can show different numbers of side shoots.
@@ -336,6 +353,7 @@ const NUMBER_FIELDS = [
 	'time',
 	'pick',
 	'cut',
+	'barkHeight',
 	'shoots',
 	'ring',
 	'lean',
@@ -434,7 +452,16 @@ export function plantReviewQuery(query: PlantReviewQuery): string {
 		const value = query[name];
 		if (value !== undefined) params.set(name, short(value));
 	}
-	for (const name of ['background', 'sky', 'ground', 'lamp', 'season', 'preset', 'sun'] as const) {
+	for (const name of [
+		'background',
+		'sky',
+		'ground',
+		'lamp',
+		'season',
+		'preset',
+		'sun',
+		'composition',
+	] as const) {
 		const value = query[name];
 		if (value) params.set(name, value);
 	}
@@ -577,6 +604,7 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 		cardJoin = joinText;
 	}
 	const sun = oneOf('sun', params.get('sun'), PLANT_SUNS);
+	const composition = oneOf('composition', params.get('composition'), PLANT_COMPOSITIONS);
 	const placeholders = params.get('placeholders');
 	const pressed = params.get('pressed');
 	return {
@@ -594,6 +622,7 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 		...(season && { season }),
 		...(preset && { preset }),
 		...(sun && { sun }),
+		...(composition && { composition }),
 		...(lod !== undefined && { lod }),
 		...(cardJoin !== undefined && { cardJoin }),
 		...(size && { size }),

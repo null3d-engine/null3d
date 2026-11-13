@@ -33,7 +33,9 @@ import {
 	facing,
 	flowerSites,
 	largestLimb,
+	limbGapTurn,
 	limbNear,
+	nodeAt,
 	normalize,
 	pointAlong,
 	sheathColumn,
@@ -54,6 +56,7 @@ import {
 	forkView,
 	insideView,
 	junctionView,
+	limbPieces,
 	limbView,
 	spikeView,
 	strandsView,
@@ -1254,6 +1257,56 @@ export default defineSketch(async (ctx) => {
 				break;
 			}
 			case 'limb': {
+				// A plant whose limbs leave one stem as a cluster, as a saguaro's arms do, is
+				// photographed as the stem's top with its limbs either side, or from between them,
+				// rather than as one limb's run. The query names that composition, and the camera
+				// stands on the stem at the share of its height the query gives.
+				if (QUERY.composition) {
+					// A limb's elbow: the node where the limb turns most sharply from its run to its
+					// rise, seen across the turn with the run and the rise in frame.
+					if (QUERY.composition === 'elbow') {
+						const pieces = limbPieces(
+							skeleton,
+							QUERY.along ?? 0.5,
+							QUERY.thin ?? Math.max(0.02, height * 0.02),
+						);
+						const piece = pieces[0];
+						if (piece) {
+							const first = skeleton.axes.first[piece.axis] as number;
+							const last = skeleton.axes.last[piece.axis] as number;
+							let at = piece.point.at as V3;
+							let sharpest = 0;
+							for (let n = Math.max(first + 1, 0); n < last; n++) {
+								const a = nodeAt(skeleton, n - 1);
+								const b = nodeAt(skeleton, n);
+								const c = nodeAt(skeleton, n + 1);
+								const u = normalize(sub(b, a));
+								const v = normalize(sub(c, b));
+								const turnAt = Math.acos(
+									Math.max(-1, Math.min(1, u[0] * v[0] + u[1] * v[1] + u[2] * v[2])),
+								);
+								if (turnAt > sharpest) {
+									sharpest = turnAt;
+									at = b;
+								}
+							}
+							const span = QUERY.span ?? Math.max(1, height * 0.15);
+							const across = (span * 0.5) / (Math.tan((fov * DEG) / 2) * aspect);
+							return orbit(at, across + piece.point.radius, e, turn, fov);
+						}
+					}
+					const at = stemAt(skeleton, height * (QUERY.along ?? 0.78));
+					if (at) {
+						const span = QUERY.span ?? Math.max(1.5, height * 0.35);
+						const across = (span * 0.5) / (Math.tan((fov * DEG) / 2) * aspect);
+						// Between the limbs, the camera stands close to the stem, in the widest gap between
+						// two limbs, so the picture holds the stem with one limb's turn at its edge, as a
+						// photograph of the cluster's gap shows.
+						const near = QUERY.composition === 'between' ? 0.45 : 1;
+						const atTurn = QUERY.composition === 'between' ? (limbGapTurn(skeleton) ?? turn) : turn;
+						return orbit(at.at, across * near + at.radius, e, atTurn, fov);
+					}
+				}
 				// One branch with its side branches seen across its run, from the side where the least of
 				// the plant stands in front of it; or, for the crown's outside, its lower rim seen from
 				// under it, looking up past its edge.
@@ -1301,12 +1354,14 @@ export default defineSketch(async (ctx) => {
 			}
 			case 'bark-mid': {
 				// A bark zone of its own: the camera stands where that zone covers the wood, so the
-				// surface is the one the zone's texture source shows.
+				// surface is the one the zone's texture source shows. A slot that names a height stands
+				// there instead, for a trunk whose zones are wider than the picture's frame.
 				const zone = QUERY.barkZone === undefined ? undefined : record.bark?.zones[QUERY.barkZone];
 				const y =
-					zone?.by === 'height'
+					QUERY.barkHeight ??
+					(zone?.by === 'height'
 						? Math.min(skeleton.height * 0.9, (zone.from + zone.to) / 2)
-						: Math.min(1.5, skeleton.height * 0.3);
+						: Math.min(1.5, skeleton.height * 0.3));
 				// A plant with no single trunk, such as a tuft of culms, shows the thickest stem
 				// surface that crosses the height the picture frames.
 				const stem = stemAt(skeleton, y) ?? stemSurfaceAt(skeleton, y)?.at;
@@ -1371,7 +1426,7 @@ export default defineSketch(async (ctx) => {
 					fov,
 					0.05,
 				);
-				if (bole) return bole;
+				if (bole) return scaledStand(bole, QUERY.standScale);
 				break;
 			}
 			case 'branch':

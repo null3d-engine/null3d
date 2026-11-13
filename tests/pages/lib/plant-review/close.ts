@@ -1205,7 +1205,7 @@ interface Piece {
 }
 
 /** The pieces of wood whose radius `share` of the way along stands nearest `thin`, furthest first. */
-function limbPieces(skeleton: MacroSkeleton, share: number, thin: number): Piece[] {
+export function limbPieces(skeleton: MacroSkeleton, share: number, thin: number): Piece[] {
 	const { axes } = skeleton;
 	const foot = stemFoot(skeleton);
 	const tolerance = Math.max(0.005, thin * 0.25);
