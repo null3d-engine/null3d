@@ -190,6 +190,23 @@ describe('the stand of a whole view', () => {
 		}
 	});
 
+	test("brings a plant that stood back for its width in by a redraw's scale, no nearer than its rows", () => {
+		const framing = FRAMINGS[0]?.framing as WholeFraming;
+		// Wider than its photograph's share, though the frame holds it whole on its rows.
+		const wide = crown(8, 6, 3, 1);
+		const first = wholeStand(wide, [0, 0, 0], 0, framing, 9);
+		expect(first.held).toBe('width');
+		// Asked to come in far, it stops on its rows: the top on the asked top row.
+		const furthest = wholeStand(wide, [0, 0, 0], 0, { ...framing, scale: 0.3 }, 9);
+		expect(furthest.extent.top).toBeCloseTo(0.1744, 2);
+		expect(furthest.extent.base).toBeCloseTo(0.8791, 2);
+		// Asked to come in a little, it comes in by the scale from the stand that drew it.
+		const nearer = wholeStand(wide, [0, 0, 0], 0, { ...framing, scale: 0.97 }, 9);
+		expect(nearer.distance).toBeLessThan(first.distance);
+		expect(nearer.distance).toBeGreaterThanOrEqual(furthest.distance);
+		expect(nearer.extent.base).toBeCloseTo(0.8791, 2);
+	});
+
 	test("moves the camera out for a redraw's scale above one, and keeps the foot on its row", () => {
 		const framing = FRAMINGS[0]?.framing as WholeFraming;
 		const tree = crown(6, 8, 4, 0.5);
