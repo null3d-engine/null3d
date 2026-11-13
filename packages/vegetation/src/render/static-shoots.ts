@@ -16,8 +16,8 @@
 import type { InstanceBatch, Material, MeshGeometry, SketchContext, Texture } from '@null3d/engine';
 import type { ImpostorBatch } from '@null3d/impostors';
 import type { PlantAsset, PlantPart } from '../asset';
-import { DETAILS, type Detail, type Season, spreadMax } from '../core/types';
-import { REFERENCE_VIEW } from '../lod/levels';
+import { DETAILS, type Detail, type Season } from '../core/types';
+import { firstCardStart, REFERENCE_VIEW } from '../lod/levels';
 import { EDGE_BAND, handOverToCards } from './hand-over';
 import {
 	type PlantMaterials,
@@ -53,23 +53,6 @@ function viewScale(view: PlaceOptions['view']): number {
 	const page = view.height / Math.tan((view.fov * Math.PI) / 360);
 	const reference = REFERENCE_VIEW.height / Math.tan((REFERENCE_VIEW.fov * Math.PI) / 360);
 	return page / reference;
-}
-
-/**
- * The distance at which a copy hands its shoots to its first card level: where the species'
- * longest shoot, at its largest scale, covers the record's first switch pixels at the page's view.
- *
- * @param kit The species' kit.
- * @param view The page's render height and vertical field of view.
- * @returns Metres, at a copy's scale of 1.
- */
-export function shootSwitchDistance(kit: SpeciesKit, view: PlaceOptions['view']): number {
-	let longest = 0;
-	for (const prototype of kit.prototypes) longest = Math.max(longest, prototype.length);
-	const scale = kit.record.shoots ? spreadMax(kit.record.shoots.placement.scale) : 1;
-	longest *= scale;
-	const pixels = kit.record.lod.switchPixels[0];
-	return (longest * view.height) / (2 * Math.tan((view.fov * Math.PI) / 360) * pixels);
 }
 
 /**
@@ -169,7 +152,8 @@ export function placeStaticPlants(
 	// The page's switch bias moves every switch distance by one factor.
 	const bias = switchScale(options.view.switchBias);
 	const scale = viewScale(options.view) * bias;
-	const near = shootSwitchDistance(kit, options.view) * bias;
+	// The shoots hand over to the first card level by the rule that sets the asset's own start.
+	const near = firstCardStart(kit, options.view) * bias;
 	writePlantWind(kit, assets);
 	setPlacedUniforms([materials.cards], { nearDistance: near });
 	// The season the copies stand in, which a stem whose colour turns reads for its bark, and the

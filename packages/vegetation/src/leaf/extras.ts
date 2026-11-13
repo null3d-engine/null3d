@@ -35,8 +35,9 @@ import {
 	type Vector3,
 } from '../core/math';
 import type { ExtraSpec } from '../core/record';
-import { spreadAt, spreadMax } from '../core/types';
+import { spreadAt } from '../core/types';
 import { crownSkyAt } from '../crown/visibility';
+import { firstCardPixels, shootReach } from '../lod/levels';
 import type { MeshInput, MeshLevel } from '../stages';
 import { VARIANT_RECORDS } from '../wind/records';
 import { lathe, MeshWriter, SURFACE_STEM, sideAxes } from './writer';
@@ -373,16 +374,16 @@ function sizeOf(extra: ExtraSpec): number {
 }
 
 /**
- * The pixels an extra spans where a card level starts: its breadth over the largest shoot's length,
+ * The pixels an extra spans where a card level starts: its breadth over the longest shoot's reach,
  * times the pixels that shoot spans at the level's switch. Undefined for a plant without shoots.
  */
 function pixelsAt(input: MeshInput, extra: ExtraSpec, level: 1 | 2): number | undefined {
-	const shoots = input.record.shoots;
-	let longest = 0;
-	for (const prototype of input.kit.prototypes) longest = Math.max(longest, prototype.length);
-	if (!shoots || longest <= 0) return undefined;
-	longest *= spreadMax(shoots.placement.scale);
-	return (breadthOf(extra) / longest) * (input.record.lod.switchPixels[level - 1] as number);
+	if (!input.record.shoots || input.kit.prototypes.length === 0) return undefined;
+	const pixels =
+		level === 1
+			? firstCardPixels(input.record, input.kit.detail)
+			: input.record.lod.switchPixels[1];
+	return (breadthOf(extra) / shootReach(input.kit)) * pixels;
 }
 
 /** The colour bytes of one extra: its axis's wind record, its entry in the record and its sky. */
