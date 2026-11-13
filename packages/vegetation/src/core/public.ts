@@ -31,6 +31,7 @@ export {
 	BUD_DORMANT,
 	BUD_FLOWER,
 	BUD_LATERAL,
+	BUD_SOCKET,
 	BUD_SPUR,
 	BUD_TERMINAL,
 	type BudSites,
@@ -105,8 +106,11 @@ export type {
 	ThickLeaf,
 	TrunkShape,
 	Tuft,
-	TuftHeads,
+	TuftPanicle,
+	TuftPose,
 	TuftSoil,
+	TuftSpikes,
+	TuftStalks,
 	WindSpec,
 } from './record';
 export { isSpeciesId, loadSpecies, type SpeciesId, speciesIds } from './registry';

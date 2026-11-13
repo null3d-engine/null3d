@@ -232,6 +232,13 @@ describe('an arch fitted to measured figures', () => {
 		expect(fit.arch.length).toBeLessThan(2.7);
 	});
 
+	it('points the tip at the angle read on the photograph', () => {
+		for (const tip of [0, 40, 75, 90]) {
+			const fit = archFromFigures({ leave: 80, tip, apex: 0.6, drop: 0.5, reach: 0.9 });
+			expect(fit.arch.leave - fit.arch.turn).toBeCloseTo(-tip, 9);
+		}
+	});
+
 	it('says how far it misses figures that no arch can meet', () => {
 		// A part cannot reach farther than its own length.
 		expect(archFromFigures({ length: 1, leave: 60, apex: 0.2, reach: 1.4 }).miss).toBeGreaterThan(

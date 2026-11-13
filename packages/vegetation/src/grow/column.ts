@@ -248,8 +248,11 @@ function armPlans(input: GrowInput, growth: Column, height: number): ArmPlan[] {
 	const tiers = arms.tiers;
 	const count = Math.max(0, Math.round(spreadAt(arms.count, draw(input, Purpose.Arms))));
 	if (tiers.length === 0) return [];
-	const turn = draw(input, Purpose.ArmAzimuth) * 2 * PI;
 	const planar = input.variant < arms.plane;
+	// A plane of arms stands across the view from +Z, the side a whole picture of the plant is
+	// taken from, so the picture shows every arm clear of the stem. Arms round the stem start at a
+	// turn of their own.
+	const turn = planar ? 0 : draw(input, Purpose.ArmAzimuth) * 2 * PI;
 	const plans: ArmPlan[] = [];
 	for (let k = 0; k < count; k++) {
 		const tier = tiers[k % tiers.length] as ColumnArmTier;
@@ -469,7 +472,7 @@ export function growColumn(input: GrowInput): MacroSkeleton {
 		domeAt: arcAt(stemPath.path, (trunk[shaftNodes - 1] as Laid).at),
 		domeHeight: stemDome,
 		domeRadius: topRadius,
-		ribs: ribPlan(growth, input.seed, salt, input.variant, stemAxis, (trunk[0] as Laid).radius),
+		ribs: ribPlan(growth, input.seed, salt, input.variant, stemAxis, false),
 	};
 	placeFlowerRing(builder, stem, frame);
 	// Arms leave the stem, each on an axis of its own from the node nearest its height.
@@ -555,7 +558,7 @@ export function growColumn(input: GrowInput): MacroSkeleton {
 			domeAt: arcAt(armPath.path, (arm[shaftCount - 1] as Laid).at),
 			domeHeight,
 			domeRadius: tipRadius,
-			ribs: ribPlan(growth, input.seed, salt, input.variant, armAxis, (arm[0] as Laid).radius),
+			ribs: ribPlan(growth, input.seed, salt, input.variant, armAxis, true),
 		};
 		placeFlowerRing(builder, run, frame);
 		// The arm's first stretch stands inside the weld to the stem, so its areoles start past it.
