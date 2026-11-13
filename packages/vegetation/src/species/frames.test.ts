@@ -237,14 +237,14 @@ const HELD: readonly Held[] = [
 		// Nine level limbs, three to each great limb, leave no gap wider than a great limb's share
 		// and its jitter.
 		round: { rule: 'secondary', gap: 110, lean: 0.25 },
-		base: { great: 0.5, upper: 0.55, secondary: 0.55, branch: 0.5, whip: 0.3 },
+		base: { great: 0.5, upper: 0.55, secondary: 0.55, branch: 0.5, whip: 0.18 },
 		// A whip hangs by its own weight.
 		plumb: ['trunk', 'whip'],
 		// The heads' foliage stands above the highest wood.
 		through: 13,
 		crossings: [30, 4],
 		// Every whip and branch carries strands along it, so an axis carries several sockets.
-		axesPerSocket: 0.184,
+		axesPerSocket: 0.195,
 		tall: [0.93, 1.02],
 	},
 	{
