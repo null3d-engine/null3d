@@ -1066,8 +1066,6 @@ export function speciesProblems(record: Species): string[] {
 		out.push('lod.woodOrders keeps more orders at the second card level than at the first');
 	if (lod.cardStalk !== undefined && !(lod.cardStalk >= 0 && lod.cardStalk <= 8))
 		out.push(`lod.cardStalk is ${lod.cardStalk}; it is pixels from 0 to 8`);
-	if (lod.cardStrand !== undefined && !(lod.cardStrand >= 0 && lod.cardStrand <= 4))
-		out.push(`lod.cardStrand is ${lod.cardStrand}; it is texels from 0 to 4`);
 	const cardCell = lod.cardCell;
 	if (cardCell)
 		for (const detail of ['low', 'medium', 'high', 'ultra'] as const) {
