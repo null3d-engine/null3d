@@ -1847,6 +1847,31 @@ export function keepPlantParts(
  */
 export type PlantHabit = 'mound' | 'clump';
 
+/**
+ * A silhouette photograph's plant mask read as the drawn matte is read: a texel is plant only where
+ * it is darker than half, so a texel the plant covers in part counts as the sky it mostly shows.
+ * The photograph's own mask counts any texel the plant darkens at all, which closes a crown's small
+ * gaps where the matte keeps them, and the two sides of a gap figure would then be read by two
+ * rules. The mask keeps its own handling of the ground band and the frame's sides.
+ *
+ * @param plant The photograph's plant mask.
+ * @param image The photograph, at any size: it is read at the mask's.
+ * @returns The mask with every texel lighter than half cleared.
+ */
+export function halfDarkMask(plant: PlantMask, image: Rgba): PlantMask {
+	const work = image.width > plant.width ? resizeToWidth(image, plant.width) : image;
+	const mask = new Uint8Array(plant.mask);
+	for (let at = 0; at < mask.length; at++) {
+		if (!mask[at]) continue;
+		const luma =
+			0.2126 * (work.data[at * 4] as number) +
+			0.7152 * (work.data[at * 4 + 1] as number) +
+			0.0722 * (work.data[at * 4 + 2] as number);
+		if (luma >= 128) mask[at] = 0;
+	}
+	return { ...plant, mask };
+}
+
 /** The plant's outline from a matte: the plant drawn dark on white, as the silhouette view draws it. */
 export function matteMask(image: Rgba): PlantMask {
 	const work = image.width > WORK_WIDTH ? resizeToWidth(image, WORK_WIDTH) : image;

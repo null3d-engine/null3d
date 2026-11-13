@@ -1,19 +1,36 @@
-// The triangles one copy of a plant draws at once. Every shoot row nearer the eye than the switch
-// distance draws its prototype at the tier its distance asks for, and the nearest level's meshes
-// draw whole. The count is taken from the worst of a few stated eyes: a standing person beside the
-// trunk, one at the crown's edge, and, where asked, an eye inside the plant's fullest foliage,
-// where most rows stand within the switch distance at once.
+// The triangles one copy of a plant draws at once, as the engine draws it. The nearest level's
+// meshes draw whole, and every shoot row whose bounds come within the shoot switch distance, and
+// the little past it that rows draw to, draws its prototype at the kit's one tier. The switch
+// distance follows the page's view: its render height, its lens and its switch bias. The count is
+// taken from the worst of a few stated eyes: a standing person beside the trunk, one at the crown's
+// edge, and, where asked, an eye inside the plant's fullest foliage, where most rows stand within
+// the switch distance at once.
 import type { PlantAsset, SpeciesKitData } from '../asset';
-import { length3, radians, tan } from '../core/math';
-import { DETAILS, type Detail, spreadMax, type Vec3 } from '../core/types';
-import { REFERENCE_VIEW } from './levels';
+import { length3, pow } from '../core/math';
+import { DETAILS, type Vec3 } from '../core/types';
+import { firstCardStart } from './levels';
 
-/** The tiers a near shoot row draws at, out from the eye, as shares of the switch distance. */
-const NEAR_BANDS: readonly (readonly [share: number, detail: Detail])[] = [
-	[0.25, 'high'],
-	[0.5, 'medium'],
-	[1.04, 'low'],
-];
+/**
+ * The page's view, which turns every species' switch pixels into metres. A page gives one view to
+ * every `placePlants` call, so its switch bias moves the level switches of all its species at once.
+ *
+ * @category api/vegetation
+ */
+export interface PlantView {
+	/** The page's render height in pixels. */
+	readonly height: number;
+	/** The camera's vertical field of view in degrees. */
+	readonly fov: number;
+	/**
+	 * Stops by which every level switch moves nearer: each switch distance is multiplied by two to the
+	 * power of minus the bias. 1 switches at half the distance, -1 at twice it, 0 as the species
+	 * gives. 0 by default.
+	 */
+	readonly switchBias?: number;
+}
+
+/** How far past the switch distance a shoot row draws, and how far inside it a card gives way. */
+export const SHOOT_REACH = 1.04;
 
 /** A standing person's eye height in metres. */
 const EYE_HEIGHT = 1.7;
@@ -24,6 +41,33 @@ const BESIDE_TRUNK = 0.5;
 /** The most rows tried as the place of an eye inside the foliage. */
 const FOLIAGE_EYES = 1024;
 
+/**
+ * The factor that a page's distance-switch bias gives every switch distance: two to the power of
+ * minus the bias, so a bias of 1 switches each level at half the distance and -1 at twice it.
+ *
+ * @param bias The bias in stops; 0 leaves every distance as it is.
+ * @returns The factor.
+ * @category api/vegetation
+ */
+export function switchScale(bias = 0): number {
+	if (!Number.isFinite(bias))
+		throw new Error(`@null3d/vegetation: a switch bias of ${bias} is not a number of stops.`);
+	return bias === 0 ? 1 : pow(2, -bias);
+}
+
+/**
+ * The distance at which a copy hands its shoots to its first card level: where the species'
+ * longest shoot, at its largest scale, covers the record's first switch pixels at the page's view.
+ *
+ * @param kit The species' kit.
+ * @param view The page's render height and vertical field of view.
+ * @returns Metres, at a copy's scale of 1.
+ */
+export function shootSwitchDistance(kit: SpeciesKitData, view: PlantView): number {
+	// The page's hand-over and this count read one rule, so the count is what the page draws.
+	return firstCardStart(kit, view);
+}
+
 /** Where an eye stands. */
 export type EyePlace = 'trunk' | 'edge' | 'foliage';
 
@@ -31,58 +75,48 @@ export type EyePlace = 'trunk' | 'edge' | 'foliage';
 export interface DrawnAtOnce {
 	/** Triangles drawn at once. */
 	readonly triangles: number;
+	/** The shoot rows drawn at once. */
+	readonly rows: number;
 	/** Which stated eye gives it, and where that eye stands in plant space. */
 	readonly eye: EyePlace;
 	readonly at: Vec3;
 }
 
 /**
- * The distance at which a copy hands its shoot rows to its first card level at the reference view:
- * where the kit's longest shoot, at its largest scale, covers the record's first switch pixels.
- *
- * @param kit The species' kit.
- * @returns Metres, at a copy's scale of 1.
- */
-export function referenceShootSwitch(kit: SpeciesKitData): number {
-	const record = kit.record;
-	let longest = 0;
-	for (const prototype of kit.prototypes) longest = Math.max(longest, prototype.length);
-	longest *= record.shoots ? spreadMax(record.shoots.placement.scale) : 1;
-	return (
-		(longest * REFERENCE_VIEW.height) /
-		(2 * tan(radians(REFERENCE_VIEW.fov / 2)) * record.lod.switchPixels[0])
-	);
-}
-
-/**
- * The triangles one copy draws at once, from the worst of the stated eyes: beside the trunk and at
+ * The triangles one copy draws at once from the worst of the stated eyes: beside the trunk and at
  * the crown's edge at a standing person's height, and, where asked, at the shoot row whose
- * neighbours within the switch distance draw the most. Each row inside the switch distance draws
- * at its band's tier, and the nearest level's meshes draw whole.
+ * neighbours draw the most. The nearest level's meshes draw whole, and each row whose bounds come
+ * within the switch distance at the view, past which rows give way to cards, draws at the kit's
+ * tier. A row's bounds are its prototype's reach from the row's place at the row's scale.
  *
  * @param kit The species' kit.
- * @param asset The grown variant.
- * @param inside Whether an eye inside the foliage counts too. Without it, an eye inside the crown
- *   is the near pool's to bound, which cuts the switch distance nearer at run time.
+ * @param asset The grown variant, at a copy's scale of 1.
+ * @param view The page's render height, lens and switch bias.
+ * @param inside Whether an eye inside the foliage counts too.
  * @returns The worst count and its eye.
+ * @category api/vegetation
  */
-export function drawnAtOnce(kit: SpeciesKitData, asset: PlantAsset, inside = true): DrawnAtOnce {
-	const split = referenceShootSwitch(kit);
+export function drawnAtOnce(
+	kit: SpeciesKitData,
+	asset: PlantAsset,
+	view: PlantView,
+	inside = true,
+): DrawnAtOnce {
+	const range = shootSwitchDistance(kit, view) * switchScale(view.switchBias) * SHOOT_REACH;
 	const rows = asset.shoots;
-	// Each row's reach past its place, and its triangles in each band, at each band's tier.
+	const tier = DETAILS.indexOf(kit.detail);
+	// Each row's reach past its place and its triangles at the kit's tier.
 	const reach = new Float32Array(rows.count);
-	const tiers = NEAR_BANDS.map(() => new Float64Array(rows.count));
+	const triangles = new Float64Array(rows.count);
 	for (let r = 0; r < rows.count; r++) {
 		const prototype = kit.prototypes[rows.prototype[r] as number];
 		if (!prototype) continue;
 		reach[r] = prototype.radius * (rows.scale[r] as number);
-		NEAR_BANDS.forEach(([, detail], band) => {
-			(tiers[band] as Float64Array)[r] =
-				(prototype.tiers[DETAILS.indexOf(detail)]?.indices.length ?? 0) / 3;
-		});
+		triangles[r] = (prototype.tiers[tier]?.indices.length ?? 0) / 3;
 	}
-	const countFrom = (eye: Readonly<Vec3>): number => {
-		let triangles = asset.levels[0].triangles;
+	const countFrom = (eye: Readonly<Vec3>): { triangles: number; rows: number } => {
+		let sum = asset.levels[0].triangles;
+		let drawn = 0;
 		for (let r = 0; r < rows.count; r++) {
 			const distance =
 				length3(
@@ -90,10 +124,11 @@ export function drawnAtOnce(kit: SpeciesKitData, asset: PlantAsset, inside = tru
 					(rows.position[r * 3 + 1] as number) - eye[1],
 					(rows.position[r * 3 + 2] as number) - eye[2],
 				) - (reach[r] as number);
-			const band = NEAR_BANDS.findIndex(([share]) => distance < share * split);
-			if (band >= 0) triangles += (tiers[band] as Float64Array)[r] as number;
+			if (distance >= range) continue;
+			sum += triangles[r] as number;
+			drawn++;
 		}
-		return triangles;
+		return { triangles: sum, rows: drawn };
 	};
 	const { centre, radius } = asset.crown;
 	const eyes: [EyePlace, Vec3][] = [
@@ -110,10 +145,42 @@ export function drawnAtOnce(kit: SpeciesKitData, asset: PlantAsset, inside = tru
 				rows.position[r * 3 + 2] as number,
 			],
 		]);
-	let worst: DrawnAtOnce = { triangles: -1, eye: 'trunk', at: [0, 0, 0] };
+	let worst: DrawnAtOnce = { triangles: -1, rows: 0, eye: 'trunk', at: [0, 0, 0] };
 	for (const [eye, at] of eyes) {
-		const triangles = countFrom(at);
-		if (triangles > worst.triangles) worst = { triangles, eye, at };
+		const count = countFrom(at);
+		if (count.triangles > worst.triangles) worst = { ...count, eye, at };
 	}
 	return worst;
+}
+
+/**
+ * The tallest views the quality presets give a page: a window 1080 CSS pixels tall at the High
+ * preset's device pixel ratio of at most 2 and render scale of at most 1, so 2160 pixels, through
+ * the engine's reference lens of 60 degrees and the review's whole-view lens of 30.
+ */
+export const TALLEST_VIEWS: readonly PlantView[] = [
+	{ height: 2160, fov: 60 },
+	{ height: 2160, fov: 30 },
+];
+
+/**
+ * The triangles one copy draws at once at the worst of the tallest views, from the worst of the
+ * stated eyes.
+ *
+ * @param kit The species' kit.
+ * @param asset The grown variant, at a copy's scale of 1.
+ * @param inside Whether an eye inside the foliage counts too.
+ * @returns The worst count, its eye and its view.
+ */
+export function drawnAtTallest(
+	kit: SpeciesKitData,
+	asset: PlantAsset,
+	inside = true,
+): DrawnAtOnce & { readonly view: PlantView } {
+	let worst: (DrawnAtOnce & { view: PlantView }) | undefined;
+	for (const view of TALLEST_VIEWS) {
+		const drawn = drawnAtOnce(kit, asset, view, inside);
+		if (!worst || drawn.triangles > worst.triangles) worst = { ...drawn, view };
+	}
+	return worst as DrawnAtOnce & { view: PlantView };
 }

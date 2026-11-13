@@ -75,8 +75,10 @@ import {
 	forkShot,
 	insideShot,
 	junctionShot,
+	limbShot,
 	placedPieceShot,
 	type Solved,
+	siteShot,
 	underRimShot,
 } from '../lib/plant-review/subject-shots';
 import {
@@ -460,7 +462,9 @@ function standView(
 			aspect,
 			horizon: QUERY.horizon ?? 0.62,
 			top: asked ? (QUERY.top as number) : middle - fill / 2,
-			...(asked ? { eye: QUERY.eye ?? EYE } : { base: middle + fill / 2 }),
+			// A photograph whose foot is lost below its horizon names no foot row and no eye height:
+			// the plant stands by its top row and its share of the width.
+			...(QUERY.footLost ? {} : asked ? { eye: QUERY.eye ?? EYE } : { base: middle + fill / 2 }),
 			targetX: QUERY.targetX ?? 0.5,
 			...(QUERY.widthShare !== undefined &&
 				QUERY.widthShare < 1 && { widthShare: QUERY.widthShare }),
@@ -959,8 +963,33 @@ export default defineSketch(async (ctx) => {
 		const lens = { fov, aspect };
 		// A close view that names a class of piece frames the outermost placed piece of that class.
 		const placed = QUERY.piece !== undefined && SPEC.whole !== true;
-		switch (placed ? 'placed piece' : view) {
+		const marked = QUERY.site !== undefined && SPEC.whole !== true;
+		switch (placed ? 'placed piece' : marked ? 'site' : view) {
+			case 'site': {
+				// A close view that names a class of site frames the site that faces it best.
+				const found = solvedAt(
+					view,
+					lens,
+					() =>
+						siteShot(subjectsOf(), QUERY.site as string, lens, {
+							span: QUERY.span ?? Math.max(0.1, height * 0.03),
+							edge: QUERY.edge === true,
+							turn,
+						}),
+					0,
+					0.02,
+				);
+				if (found) return found;
+				break;
+			}
 			case 'placed piece': {
+				// A part of the piece is framed the span wide, or as many leaf lengths wide as the
+				// slot's cut pieces are, at the slot's share along it.
+				const span =
+					QUERY.span ??
+					(QUERY.leaves !== undefined && leafLength !== undefined
+						? QUERY.leaves * leafLength
+						: undefined);
 				const found = solvedAt(
 					view,
 					lens,
@@ -968,6 +997,7 @@ export default defineSketch(async (ctx) => {
 						placedPieceShot(subjectsOf(), QUERY.piece as string, lens, {
 							laid: (QUERY.roll ?? 0) !== 0,
 							edge: QUERY.edge === true,
+							...(span !== undefined && { span, along: QUERY.along ?? 0.5 }),
 						}),
 					0,
 				);
@@ -1328,6 +1358,25 @@ export default defineSketch(async (ctx) => {
 				break;
 			}
 			case 'limb': {
+				// A slot that names a great limb frames that limb across its run, from the side.
+				if (QUERY.limbRank !== undefined) {
+					const found = solvedAt(
+						view,
+						lens,
+						() =>
+							limbShot(subjectsOf(), lens, {
+								rank: QUERY.limbRank as number,
+								along: QUERY.along ?? 0.5,
+								span: QUERY.span ?? Math.max(0.5, height * 0.15),
+								elevation: e,
+								turn,
+							}),
+						0,
+						0.05,
+					);
+					if (found) return found;
+					break;
+				}
 				// A plant whose limbs leave one stem as a cluster, as a saguaro's arms do, is
 				// photographed as the stem's top with its limbs either side, or from between them,
 				// rather than as one limb's run. The query names that composition, and the camera
