@@ -639,6 +639,13 @@ function growthProblems(record: Species, out: string[]): void {
 		if (!(growth.areoles > 0))
 			out.push(`growth.areoles is ${growth.areoles}; it is metres and must be above 0`);
 	}
+	if (record.foliage.kind === 'blade') {
+		const breadth = record.foliage.leaf.breadth;
+		if (breadth !== undefined && !(breadth > 0 && breadth <= 2))
+			out.push(
+				`foliage.leaf.breadth is ${breadth}; it is a share of the outline's width, above 0 and at most 2`,
+			);
+	}
 	if (record.foliage.kind === 'blade' && record.foliage.compound) {
 		const compound = record.foliage.compound;
 		spreadProblems(compound.leaflets, 'foliage.compound.leaflets', true, out);
