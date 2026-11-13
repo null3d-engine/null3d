@@ -708,7 +708,7 @@ function growFull(kit: SpeciesKitData, options: GrowOptions): GrownPlant {
 					1,
 				)
 			: rows.count > 0
-				? Math.max(skeleton.height, cardTop(kit, rows, record.lod.cardGrow ?? 1))
+				? Math.max(skeleton.height, cardTop(kit, rows))
 				: 0;
 		if (top > 0 && Math.abs(top - target) / target > HEIGHT_RESIDUAL) {
 			const corrective = target / top;
@@ -749,7 +749,7 @@ interface Dressed {
 function orderOf(kit: SpeciesKitData, grown: GrownPlant): SparseOrder {
 	if (!grown.order) {
 		// The row that holds the drawn top stays, so every sparseness keeps the plant's height.
-		const top = topRow(kit, grown.rows, grown.input.record.lod.cardGrow ?? 1);
+		const top = topRow(kit, grown.rows);
 		grown.order = sparseOrder(
 			grown.input.skeleton,
 			grown.rows,

@@ -42,10 +42,10 @@ export function targetHeight(record: Species, seed: number, variant: number): nu
 }
 
 /** A prototype card's highest corner above its shoot, in prototype metres. */
-function cardReach(card: Card, widen: number): number {
+function cardReach(card: Card): number {
 	let top = 0;
 	for (const plane of card.planes) {
-		const y = plane.centre[1] + widen * (Math.abs(plane.right[1]) + Math.abs(plane.up[1]));
+		const y = plane.centre[1] + Math.abs(plane.right[1]) + Math.abs(plane.up[1]);
 		if (y > top) top = y;
 	}
 	return top;
@@ -64,11 +64,10 @@ function cardReach(card: Card, widen: number): number {
 export function crownReach(kit: SpeciesKitData, record: Species): number {
 	const placement = record.shoots?.placement;
 	if (!placement) return 0;
-	const widen = Math.max(0, record.lod.cardGrow ?? 1);
 	let local = 0;
 	for (const prototype of kit.prototypes) {
 		if (prototype.cutting) continue;
-		const reach = cardReach(prototype.card, widen);
+		const reach = cardReach(prototype.card);
 		if (reach > local) local = reach;
 	}
 	const curve = placement.scaleByHeight === undefined ? 1 : curveAt(placement.scaleByHeight, 1);
@@ -76,7 +75,7 @@ export function crownReach(kit: SpeciesKitData, record: Species): number {
 }
 
 /** The highest point of one shoot row's cards, in metres. */
-function rowTop(kit: SpeciesKitData, rows: ShootRows, r: number, widen: number): number {
+function rowTop(kit: SpeciesKitData, rows: ShootRows, r: number): number {
 	const prototype = kit.prototypes[rows.prototype[r] as number];
 	if (!prototype) return Number.NEGATIVE_INFINITY;
 	const local: Vector3 = [0, 0, 0];
@@ -89,7 +88,8 @@ function rowTop(kit: SpeciesKitData, rows: ShootRows, r: number, widen: number):
 			for (let c = 0; c < 3; c++)
 				local[c] =
 					(plane.centre[c] as number) +
-					widen * (sx * (plane.right[c] as number) + sy * (plane.up[c] as number));
+					sx * (plane.right[c] as number) +
+					sy * (plane.up[c] as number);
 			local[0] *= scale;
 			local[1] *= scale;
 			local[2] *= scale;
@@ -101,18 +101,17 @@ function rowTop(kit: SpeciesKitData, rows: ShootRows, r: number, widen: number):
 }
 
 /**
- * The highest point of the drawn card level, in metres: every shoot's card planes, grown about
- * their centres as the card level grows them, turned and placed as the shoot places them.
+ * The highest point of the drawn card level, in metres: every shoot's card planes at the shoot's
+ * own size, turned and placed as the shoot places them.
  *
  * @param kit The species' kit.
  * @param rows The dressed shoot rows.
- * @param widen The growth of each card about its centre.
  * @returns The card level's top.
  * @category api/vegetation
  */
-export function cardTop(kit: SpeciesKitData, rows: ShootRows, widen: number): number {
+export function cardTop(kit: SpeciesKitData, rows: ShootRows): number {
 	let top = 0;
-	for (let r = 0; r < rows.count; r++) top = Math.max(top, rowTop(kit, rows, r, widen));
+	for (let r = 0; r < rows.count; r++) top = Math.max(top, rowTop(kit, rows, r));
 	return top;
 }
 
@@ -121,14 +120,13 @@ export function cardTop(kit: SpeciesKitData, rows: ShootRows, widen: number): nu
  *
  * @param kit The species' kit.
  * @param rows The dressed shoot rows.
- * @param widen The growth of each card about its centre.
  * @returns The row, or -1 when no row draws a card.
  */
-export function topRow(kit: SpeciesKitData, rows: ShootRows, widen: number): number {
+export function topRow(kit: SpeciesKitData, rows: ShootRows): number {
 	let best = -1;
 	let top = Number.NEGATIVE_INFINITY;
 	for (let r = 0; r < rows.count; r++) {
-		const reach = rowTop(kit, rows, r, widen);
+		const reach = rowTop(kit, rows, r);
 		if (reach > top) {
 			top = reach;
 			best = r;

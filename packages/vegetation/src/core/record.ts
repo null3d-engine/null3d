@@ -2189,13 +2189,6 @@ export interface LodSpec {
 	/** Macro orders that the first and second card levels keep as wood. */
 	readonly woodOrders: readonly [lod1: number, lod2: number];
 	/**
-	 * How much a shoot's card grows past the shoots it stands for, 1 by default. A card is a picture
-	 * of one shoot with transparent gaps between its leaves, and at a whole view neighbouring cards
-	 * do not meet, so the crown breaks into pieces. Growing them makes the gaps fall on a
-	 * neighbour's leaves instead of on sky.
-	 */
-	readonly cardGrow?: number;
-	/**
 	 * Texels a side of one cell of the card atlas, at each tier, where the species' leaves are
 	 * thinner than the default cell can hold: each entry is a power of two from 64 to 256, and 64
 	 * by default. A needle a millimetre and a half across is under one texel of a 64 cell, so its

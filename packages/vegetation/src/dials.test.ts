@@ -7,7 +7,7 @@ import { scaledBudget } from '../../../tests/lib/run-budget.ts';
 import type { PlantAsset } from './asset';
 import { loadSpecies } from './core/registry';
 import { buildKitNow, growPlantNow, loadPlantCode } from './generate';
-import { cardKeep, cardMesh, connectedCards } from './lod/cards';
+import { cardMesh, cardRows, connectedCards } from './lod/cards';
 import { connectedBody, geometryComponents } from './lod/connect';
 import type { MeshInput } from './stages';
 import { meshWood } from './wood/wood-mesh';
@@ -45,10 +45,9 @@ function meshInput(asset: PlantAsset): MeshInput {
 /** The rows a card level draws, after the join rule. */
 function drawnCards(input: MeshInput, level: 1 | 2): number {
 	const flags = connectedCards(input, level);
+	const kept = cardRows(input, level);
 	let count = 0;
-	for (let r = 0; r < input.rows.count; r++)
-		if (cardKeep(input.rows.order[r] as number, level, input.cards ?? 1) > 0 && flags[r] === 1)
-			count++;
+	for (let r = 0; r < input.rows.count; r++) if ((kept[r] as number) > 0 && flags[r] === 1) count++;
 	return count;
 }
 

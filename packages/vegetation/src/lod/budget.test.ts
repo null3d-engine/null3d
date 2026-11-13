@@ -58,14 +58,14 @@ const LEVELS = [0, 0.5, 1] as const;
  * leaves. A stalk is a line with no area, so the matte does not count it.
  */
 const FLOORS: readonly (readonly [woody: number, ground: number])[] = [
-	[0.96, 0.97],
-	[0.96, 0.97],
-	[0.79, 0.84],
-	[0.7, 0.53],
-	[0.36, 0.39],
-	[0.32, 0.21],
-	[0.28, 0.03],
-	[0.16, 0],
+	[0.95, 0.97],
+	[0.95, 0.97],
+	[0.73, 0.84],
+	[0.5, 0.53],
+	[0.3, 0.39],
+	[0.26, 0.21],
+	[0.17, 0.03],
+	[0.09, 0],
 ];
 
 /** The side of the cells a level's triangles are read in, in metres, to see whether it is one body. */
