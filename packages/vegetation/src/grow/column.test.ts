@@ -10,6 +10,7 @@ import { acos } from '../core/math';
 import type { Column } from '../core/record';
 import { loadSpecies } from '../core/registry';
 import { buildKitNow, growPlantNow, loadPlantCode } from '../generate';
+import { zoneHolds } from '../wood/uv';
 import { toTriangle } from './body.fixture';
 
 /** The saguaro's kit, with its grown variants. */
@@ -74,7 +75,7 @@ describe('the saguaro frame', () => {
 				const tip = (nodes[nodes.length - 1] as number[])[1] as number;
 				const at = tier.at as { mean: number; spread: number };
 				const top = tier.top as { mean: number; spread: number };
-				// An arm leaves from the stem's node nearest its height, a node's spacing away at most.
+				// An arm leaves at its own height on the stem.
 				expect(Math.abs(base / skeleton.height - at.mean)).toBeLessThanOrEqual(at.spread + 0.02);
 				expect(Math.abs(tip / skeleton.height - top.mean)).toBeLessThanOrEqual(top.spread + 0.01);
 			});
@@ -103,14 +104,14 @@ describe('the saguaro frame', () => {
 	});
 
 	it('stands the first variant in one plane and spreads the others round the stem', async () => {
+		// An arm's heading is the level line from its first node to its next.
 		const headingsOf = (skeleton: MacroSkeleton): number[] =>
 			armsOf(skeleton).map((arm) => {
 				const first = skeleton.axes.first[arm] as number;
-				const joint = skeleton.axes.parentNode[arm] as number;
 				return Math.atan2(
-					(skeleton.position[first * 3 + 2] as number) -
-						(skeleton.position[joint * 3 + 2] as number),
-					(skeleton.position[first * 3] as number) - (skeleton.position[joint * 3] as number),
+					(skeleton.position[first * 3 + 5] as number) -
+						(skeleton.position[first * 3 + 2] as number),
+					(skeleton.position[first * 3 + 3] as number) - (skeleton.position[first * 3] as number),
 				);
 			});
 		const { grow, growth } = await saguaro();
@@ -313,6 +314,74 @@ describe('the saguaro frame', () => {
 		);
 		expect(rise).toBeGreaterThan(0);
 		expect(aside / rise).toBeLessThan(0.02);
+		// Still 21 lays the arm with its cut to the left: it reaches toward +X, which a studio
+		// picture taken from +Z shows to the right.
+		expect(b[0] as number).toBeGreaterThan(1);
+		// It stands on the studio floor, and the corky foot's colour holds only on the stem's foot,
+		// so the arm is green down to its cut.
+		const zones = kit.record.bark?.zones ?? [];
+		const cork = zones.filter((zone) => zone.layer === 1);
+		expect(cork.length).toBeGreaterThan(0);
+		for (let n = 0; n < arm.skeleton.nodeCount; n++)
+			for (const zone of cork)
+				expect(
+					zoneHolds(
+						zone,
+						arm.skeleton.radius[n] as number,
+						arm.skeleton.position[n * 3 + 1] as number,
+					),
+				).toBe(false);
+		const whole = growPlantNow(kit, { seed: 11, variant: 0, near: true }).skeleton;
+		expect(cork.some((zone) => zoneHolds(zone, whole.radius[0] as number, 0.5))).toBe(true);
+	});
+
+	it("keeps the primary plant's lower elbows inside still 01's outline", async () => {
+		const { grow, growth } = await saguaro();
+		const { skeleton } = grow(0);
+		// Still 01 read from its true foot: how far the lower arms' outer edge stands from the stem's
+		// axis at three heights through their elbows, as shares of the plant's height.
+		const photograph: readonly [at: number, out: number][] = [
+			[0.44, 0.113],
+			[0.48, 0.151],
+			[0.52, 0.165],
+		];
+		const lower = armsOf(skeleton).filter((_, k) => k % growth.arms.tiers.length === 0);
+		expect(lower.length).toBe(2);
+		for (const arm of lower) {
+			// The arm's centre line, node by node from the stem's, as circles of its girth in the
+			// plane its arms stand in.
+			const nodes = [skeleton.axes.parentNode[arm] as number];
+			for (
+				let n = skeleton.axes.first[arm] as number;
+				n <= (skeleton.axes.last[arm] as number);
+				n++
+			)
+				nodes.push(n);
+			for (const [at, out] of photograph) {
+				const y = at * skeleton.height;
+				// The stem's axis at this height: it leans a little.
+				const stem = nodesOf(skeleton, 0);
+				const above = stem.findIndex((point) => (point[1] as number) >= y);
+				const [low, high] = [stem[above - 1], stem[above]] as [number[], number[]];
+				const share = (y - (low[1] as number)) / ((high[1] as number) - (low[1] as number));
+				const axis = (low[0] as number) + share * ((high[0] as number) - (low[0] as number));
+				let edge = 0;
+				for (let i = 0; i + 1 < nodes.length; i++)
+					for (let s = 0; s <= 16; s++) {
+						const t = s / 16;
+						const [p, q] = [nodes[i] as number, nodes[i + 1] as number];
+						const lerp = (k: number) =>
+							(skeleton.position[p * 3 + k] as number) * (1 - t) +
+							(skeleton.position[q * 3 + k] as number) * t;
+						const r = (skeleton.radius[p] as number) * (1 - t) + (skeleton.radius[q] as number) * t;
+						const d = y - lerp(1);
+						if (Math.abs(d) < r)
+							edge = Math.max(edge, Math.abs(lerp(0) - axis) + Math.sqrt(r * r - d * d));
+					}
+				// No wider than the photograph's edge, give or take two of its rows.
+				expect([arm, at, edge / skeleton.height <= out + 0.002]).toEqual([arm, at, true]);
+			}
+		}
 	});
 
 	it("turns every arm's elbow on a radius of at least the arm's own width", async () => {
