@@ -237,8 +237,8 @@ function scaledCurve(curve: Curve, factor: number): Curve {
 }
 
 /**
- * Builds a species' branch pieces on this thread, each variant at every detail tier, from the
- * species' own leaf meshes. Call `loadPlantCode` first.
+ * Builds a species' branch pieces on this thread, each variant at every detail tier, from the leaf
+ * meshes the species' foliage cuts for pieces. Call `loadPlantCode` first.
  *
  * @param source The species' record and texture manifest, such as its module.
  * @param rules The species' piece rules.
@@ -253,9 +253,21 @@ export function buildPiecesNow(
 	bare = false,
 	leaf?: PieceLeaf,
 ): PiecePrototype[] {
-	const record = pieceRecord(source.record, leaf);
+	return piecesOf(pieceRecord(source.record, leaf), source.textures.manifest, rules, bare);
+}
+
+/**
+ * A species' branch pieces, each variant at every detail tier, built by the record they are given.
+ * A piece wears the leaves its kind cuts for pieces, which are far cheaper than the crown's, so a
+ * kit that carries pieces builds them here as the piece builder does.
+ */
+function piecesOf(
+	record: Species,
+	manifest: KitSource['textures']['manifest'],
+	rules: readonly PieceRule[],
+	bare: boolean,
+): PiecePrototype[] {
 	const builder = foliage(record.foliage.kind);
-	const manifest = source.textures.manifest;
 	const leavesOf = (from: Species) =>
 		bare ? DETAILS.map(() => []) : pieceLeaves(builder, from, manifest);
 	const leaves = leavesOf(record);
@@ -466,7 +478,8 @@ export function buildKitNow(source: KitSource, options: KitOptions = {}): Specie
 	};
 	// A species whose grower writes its own pieces builds them where a tree builds its shoots, in a
 	// cutting's kit too; a stand-in's holds none. A plant that carries branch pieces at its sockets
-	// keeps those in the kit, each part a prototype of its own; any other keeps its shoot prototypes.
+	// keeps those in the kit, each part a prototype of its own, built as the piece builder builds
+	// them; any other keeps its shoot prototypes.
 	const written =
 		writesPieces(record) && placeholders !== true
 			? grower(record.growth.model).pieces?.(record, manifest)
@@ -479,9 +492,7 @@ export function buildKitNow(source: KitSource, options: KitOptions = {}): Specie
 					placeholders,
 					() =>
 						pieces
-							? piecePrototypes(record, pieces, pieceLeaves(builder, record, manifest)).map(
-									kitPiece,
-								)
+							? piecesOf(record, manifest, pieces, false).map(kitPiece)
 							: shootPrototypes(record, manifest, leavesByTier, cutting !== false),
 					() => placeholderPrototypes(record, leavesByTier),
 				);
@@ -852,6 +863,7 @@ function rowsCopy(rows: ShootRows): ShootRows {
 		order: rows.order.slice(),
 		...(rows.back ? { back: rows.back.slice() } : {}),
 		...(rows.node ? { node: rows.node.slice() } : {}),
+		...(rows.socket ? { socket: rows.socket.slice() } : {}),
 	};
 }
 
