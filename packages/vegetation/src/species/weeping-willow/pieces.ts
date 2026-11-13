@@ -5,7 +5,20 @@
 // The cut branch of still 21 is a metre tall, which makes its leaf blade 8 to 9 centimetres, inside
 // the species' 8 to 15. The record's leaf is 11.5 centimetres, so a strand draws its leaves at 0.74
 // of that until the record's own length moves.
-import { type PieceRule, type PieceStem, type PieceStudio, withMarks } from '../../leaf/piece';
+import {
+	type PieceLeaf,
+	type PieceRule,
+	type PieceStem,
+	type PieceStudio,
+	withMarks,
+} from '../../leaf/piece';
+
+/**
+ * The leaf the pieces wear: the record's, with its card bent along its length at the high tier. The
+ * blade is long and narrow and curls along its length, so a flat card reads as a straight lance
+ * close up; in two bands it keeps the curl.
+ */
+export const PIECE_LEAF: PieceLeaf = { cardBands: 2 };
 
 /** A strand's leaf over the record's: 8.5 centimetres measured on still 21, over 11.5. */
 const LEAF_SCALE = 0.74;

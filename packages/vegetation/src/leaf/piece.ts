@@ -63,9 +63,11 @@ import {
  * only where the stem bends: 8 degrees at the high tier and 15 at the medium. Where a piece's leaves
  * close round its stem, at every tier, no ring of the wood they hide shows, so its rings stand far
  * apart. An axil's bud hides under its leaf, so the medium tier draws none and the high tier only
- * one long enough to show, as the beech's long buds are. The tip clusters, which mark a species, are
- * separate three-sided buds at the high tier and one cone at the medium. Thorns are three-sided at
- * both, and a fruiting body is round at the high tier. The ultra tier keeps the crown's finest cut.
+ * one long enough to show, as the beech's long buds are. A bud under 1.5 centimetres is a few pixels
+ * long in a piece's own picture, so at the high tier it is a three-sided cone of one band, and a
+ * longer one keeps its swell; the tip clusters, which mark a species, keep their buds apart there and
+ * draw as one cone at the medium tier. Thorns are three-sided cones at both, and a fruiting body is
+ * round at the high tier. The ultra tier keeps the crown's finest cut.
  */
 export const PIECE_CUTS: Readonly<Record<Detail, ShootCut>> = {
 	low: { ...SHOOT_CUTS.low, thinHidden: true },
@@ -86,7 +88,8 @@ export const PIECE_CUTS: Readonly<Record<Detail, ShootCut>> = {
 		cluster: { sides: 3, round: false },
 		axil: { sides: 3, round: false },
 		axilLeast: 0.015,
-		thorn: { sides: 3, round: false },
+		coneBelow: 0.015,
+		thorn: { sides: 3, round: false, cone: true },
 		body: { sides: 4, round: true },
 	},
 	ultra: { ...SHOOT_CUTS.ultra, thinHidden: true },
@@ -350,7 +353,7 @@ export interface PieceRule {
  * fields over it. A species states one while its record's leaf also grows the crown it ships, which
  * keeps its own leaf until a plant built of pieces replaces it.
  */
-export interface PieceLeaf extends Partial<Pick<LeafShape, 'length' | 'breadth'>> {
+export interface PieceLeaf extends Partial<Pick<LeafShape, 'length' | 'breadth' | 'cardBands'>> {
 	/** Metres of stalk from the stem to the blade's base. */
 	readonly stalk?: number;
 }
@@ -375,6 +378,13 @@ export function pieceRecord(record: Species, leaf: PieceLeaf | undefined): Speci
 		throw new Error(
 			`@null3d/vegetation: the pieces' leaf breadth of '${record.id}' is ${leaf.breadth}; it is a share of the outline's width, above 0 and at most 2`,
 		);
+	if (
+		leaf.cardBands !== undefined &&
+		!(Number.isInteger(leaf.cardBands) && leaf.cardBands >= 1 && leaf.cardBands <= 4)
+	)
+		throw new Error(
+			`@null3d/vegetation: the pieces' leaf card bands of '${record.id}' is ${leaf.cardBands}; it is a whole number from 1 to 4`,
+		);
 	if (leaf.stalk !== undefined && !(leaf.stalk > 0))
 		throw new Error(
 			`@null3d/vegetation: the pieces' leaf stalk of '${record.id}' is ${leaf.stalk}; it is metres and must be above 0`,
@@ -388,6 +398,7 @@ export function pieceRecord(record: Species, leaf: PieceLeaf | undefined): Speci
 				...own,
 				length: leaf.length ?? own.length,
 				...(leaf.breadth === undefined ? {} : { breadth: leaf.breadth }),
+				...(leaf.cardBands === undefined ? {} : { cardBands: leaf.cardBands }),
 				petiole: { ...own.petiole, length: leaf.stalk ?? own.petiole.length },
 			},
 		},
@@ -512,6 +523,8 @@ interface StemStart {
  * @param ground The ground side in the piece's frame, for a piece that stands another way than
  * its attitude holds it, as a cut branch in a clamp does.
  * @param lean Degrees the piece's line leans from +Y toward +X, for a cut that leans in its clamp.
+ * @param fall The way a hanging mark falls in the piece's frame, where a photograph's gravity is not
+ * the piece's own ground side; its ground side where absent.
  * @returns The plan.
  */
 export function planPiece(
@@ -521,6 +534,7 @@ export function planPiece(
 	leafMeshes: number,
 	ground?: Readonly<Vector3>,
 	lean = 0,
+	fall?: Readonly<Vector3>,
 ): ShootPlan {
 	const shoots = record.shoots;
 	if (!shoots)
@@ -866,11 +880,12 @@ export function planPiece(
 				for (let c = 0; c < count; c++) {
 					// Each body hangs toward the ground side, a little out from the stem and apart
 					// from its neighbours.
-					const apart = turn(out, down, c * GOLDEN);
+					const below = fall ?? down;
+					const apart = turn(out, below, c * GOLDEN);
 					const way = normalize3([
-						down[0] + apart[0] * 0.4,
-						down[1] + apart[1] * 0.4,
-						down[2] + apart[2] * 0.4,
+						below[0] + apart[0] * 0.4,
+						below[1] + apart[1] * 0.4,
+						below[2] + apart[2] * 0.4,
 					]);
 					const end: Vector3 = [
 						frame.at[0] + way[0] * stalk,
@@ -1192,6 +1207,7 @@ export function splitPlan(
  * @param leaves The species' leaf meshes at every tier, low first.
  * @param straight The same meshes built with no bend at the stalk, for the rules whose blades bend
  * in their own plane; the species' own where absent.
+ * @param fall The way a hanging mark falls in each piece's frame, for a lone cut in a clamp.
  * @returns The prototypes, each rule's variants together and each variant's parts together, in the
  * rules' order.
  */
@@ -1200,6 +1216,7 @@ export function piecePrototypes(
 	rules: readonly PieceRule[],
 	leaves: readonly (readonly PrototypeArrays[])[],
 	straight: readonly (readonly PrototypeArrays[])[] = leaves,
+	fall?: Readonly<Vector3>,
 ): PiecePrototype[] {
 	const pictureTier = DETAILS.indexOf(BRUSH_PICTURE_TIER);
 	const out: PiecePrototype[] = [];
@@ -1211,7 +1228,7 @@ export function piecePrototypes(
 		// longest, and its side stems' longest. Every run draws from the one of its kind.
 		let pictures: BrushPicture[] | undefined;
 		for (let variant = 0; variant < Math.min(16, Math.max(1, rule.variants)); variant++) {
-			const whole = planPiece(record, rule, pieceKey(r, variant), leafMeshes);
+			const whole = planPiece(record, rule, pieceKey(r, variant), leafMeshes, undefined, 0, fall);
 			if (rule.brushCards && !pictures) {
 				const runs = plannedBrushes(whole);
 				const longest = (own: boolean) =>
@@ -1290,6 +1307,12 @@ export interface PieceStudio {
 	readonly scale?: number;
 	/** Degrees either side of the stand's plane its arms stand, as a piece rule's `depth` is. */
 	readonly depth?: number;
+	/**
+	 * The way the photograph's gravity pulls in a lone piece's own frame, where the cut stands in a
+	 * clamp and not as a socket holds it: its hanging marks fall that way. The piece's ground side
+	 * where absent.
+	 */
+	readonly fall?: Vec3;
 }
 
 /** One piece of a layout: which piece, and where it stands in the layout's space, +Y up. */
