@@ -66,9 +66,10 @@ export const PIECES: readonly PieceRule[] = [
 						length: { mean: 0.28, spread: 0.015 },
 						radius: [0.0055, 0.003],
 						// A side branch leaves at 40 to 68 degrees and stands 20 to 30 degrees from
-						// the bough's line at its tip.
+						// the bough's line at its tip. It runs straight over its bare part and turns
+						// up inside its brush (by eye on still 21).
 						droop: -30,
-						droopOver: [0.15, 1],
+						droopOver: [0.55, 1],
 						// The inner 0.25 to 0.30 of a side branch is bare.
 						leaves: brush(0.28, ...BOUGH_BRUSH),
 						bud: false,
