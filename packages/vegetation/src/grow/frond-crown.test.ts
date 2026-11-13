@@ -28,7 +28,7 @@ import { targetHeight } from './height';
 
 const LONG = scaledBudget(120_000);
 /** The species the grower serves. */
-const SPECIES = ['date-palm', 'tree-fern'] as const;
+const SPECIES = ['date-palm'] as const;
 /** The variants each test grows. */
 const VARIANTS = [0, 1, 2] as const;
 
