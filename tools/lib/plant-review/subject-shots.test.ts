@@ -19,10 +19,13 @@ import {
 	forkShot,
 	insideShot,
 	junctionShot,
+	limbShot,
 	lowShot,
+	placedPieceShot,
 	project,
 	type Solved,
 	type SubjectShot,
+	siteShot,
 	underRimShot,
 } from '../../../tests/pages/lib/plant-review/subject-shots.ts';
 import {
@@ -33,6 +36,7 @@ import {
 	isAbsent,
 	type Lobe,
 	type PlantSubjects,
+	sampleAlong,
 	type TrunkSubject,
 } from '../../../tests/pages/lib/plant-review/subjects.ts';
 import { PART, type Parts, partsCheck } from './subject-check.ts';
@@ -117,6 +121,7 @@ function tree(over: Partial<PlantSubjects> = {}): PlantSubjects {
 		lobes: [],
 		twigTips: absent('none in this test'),
 		pieces: absent('none in this test'),
+		sites: absent('none in this test'),
 		leaf: { length: 0.1 },
 		...over,
 	};
@@ -858,6 +863,7 @@ function shareOfWidth(shot: SubjectShot, lens: typeof WIDE, at: V3, metres: numb
 
 describe('the view of one branch piece', () => {
 	const piece = {
+		class: 'bough',
 		socket: [2, 6, 1] as V3,
 		direction: normalize([1, -0.6, 0.2]),
 		length: 1.1,
@@ -887,6 +893,161 @@ describe('the view of one branch piece', () => {
 		const wide = shotOf(branchPieceShot({ ...piece, spread: 2 }, TALL));
 		expect(wide.facts.frame as number).toBeCloseTo(4 / (0.85 * TALL.aspect), 9);
 		expect(isAbsent(branchPieceShot({ ...piece, length: 0 }, TALL))).toBe(true);
+	});
+
+	test('frames the outermost placed piece of a class, and draws only the slab that holds it', () => {
+		const inner = { ...piece, socket: [0.5, 9, 0] as V3, direction: [0, 1, 0] as V3 };
+		const stalk = { ...piece, class: 'stalk-0', socket: [7, 0.2, 0] as V3 };
+		// Placed pieces come outermost first, so the view frames the first bough, not the inner one.
+		const plant = tree({ pieces: [stalk, piece, inner] });
+		const shot = shotOf(placedPieceShot(plant, 'bough', TALL));
+		expect(shot.facts.class).toBe('bough');
+		expect(shot.facts.socket).toEqual(piece.socket);
+		expect(checkShot(shot, TALL).present).toBe(true);
+		const middle: V3 = [
+			piece.socket[0] + (piece.direction[0] as number) * 0.55,
+			piece.socket[1] + (piece.direction[1] as number) * 0.55,
+			piece.socket[2] + (piece.direction[2] as number) * 0.55,
+		];
+		const depth = project(shot.camera, TALL, middle).depth;
+		expect(shot.near as number).toBeLessThan(depth);
+		expect(shot.far as number).toBeGreaterThan(depth);
+		expect((shot.far as number) - (shot.near as number)).toBeCloseTo(2 * piece.spread, 6);
+		// A class names its pieces by their leading words.
+		expect(shotOf(placedPieceShot(plant, 'stalk', TALL)).facts.class).toBe('stalk-0');
+	});
+
+	test("looks along an arching piece's side when asked, so its arch shows", () => {
+		const stalk = {
+			class: 'stalk-0',
+			socket: [0, 0.2, 0] as V3,
+			direction: normalize([0, 1, 1]),
+			length: 0.8,
+			spread: 0.15,
+			face: normalize([0, 1, -1]),
+			side: [1, 0, 0] as V3,
+		};
+		const shot = shotOf(placedPieceShot(tree({ pieces: [stalk] }), 'stalk', TALL, { edge: true }));
+		const { forward } = cameraAxes(shot.camera);
+		expect(forward[0]).toBeCloseTo(-1, 6);
+		expect(checkShot(shot, TALL).present).toBe(true);
+		// The slab is the stalk's own depth along the line of sight, so the plant beside it is cut.
+		const thin = shotOf(
+			placedPieceShot(
+				tree({ pieces: [{ ...stalk, length: 0.4, depth: { face: 0.12, side: 0.03 } }] }),
+				'stalk',
+				TALL,
+				{ edge: true },
+			),
+		);
+		expect((thin.far as number) - (thin.near as number)).toBeCloseTo(0.06, 6);
+		// Square to its face, the camera looks down onto the arch instead.
+		const faced = shotOf(placedPieceShot(tree({ pieces: [stalk] }), 'stalk', TALL));
+		expect(cameraAxes(faced.camera).forward[0]).toBeCloseTo(0, 6);
+	});
+
+	test('frames a span of a placed piece round the share of its run asked', () => {
+		const head = shotOf(
+			placedPieceShot(tree({ pieces: [piece] }), 'bough', TALL, { span: 0.3, along: 0.85 }),
+		);
+		const at: V3 = [
+			piece.socket[0] + (piece.direction[0] as number) * 1.1 * 0.85,
+			piece.socket[1] + (piece.direction[1] as number) * 1.1 * 0.85,
+			piece.socket[2] + (piece.direction[2] as number) * 1.1 * 0.85,
+		];
+		const landed = project(head.camera, TALL, at);
+		expect(landed.x).toBeCloseTo(0.5, 6);
+		expect(landed.y).toBeCloseTo(0.5, 6);
+		// The frame is the span wide at the piece.
+		expect(2 * landed.depth * Math.tan((TALL.fov * DEG) / 2) * TALL.aspect).toBeCloseTo(0.3, 6);
+		expect(checkShot(head, TALL).present).toBe(true);
+	});
+
+	test('fails the plant that places pieces but none of the class its photograph shows', () => {
+		const plant = tree({ pieces: [piece] });
+		const missing = placedPieceShot(plant, 'cone', TALL);
+		expect(isAbsent(missing) && missing.lacks).toBe(true);
+		expect(isAbsent(missing) && missing.absent).toBe(
+			'the plant places no piece of the class cone; its pieces are bough',
+		);
+		// A plant that places no pieces at all is a fault of the view's mapping, not of the plant.
+		const none = placedPieceShot(tree({ pieces: absent('its rows are shoots') }), 'bough', TALL);
+		expect(isAbsent(none) && none.lacks).toBeFalsy();
+	});
+});
+
+describe('the view of a marked site', () => {
+	// Two nest holes on a stem of radius 0.5, one facing +Z and one facing -X, and an areole.
+	const holes = [
+		{ class: 'dormant', at: [0, 8, 0.5] as V3, normal: [0, 0, 1] as V3, radius: 0.5, axis: 0 },
+		{ class: 'dormant', at: [-0.5, 7, 0] as V3, normal: [-1, 0, 0] as V3, radius: 0.5, axis: 0 },
+		{ class: 'areole', at: [0.5, 2, 0] as V3, normal: [1, 0, 0] as V3, radius: 0.5, axis: 0 },
+	];
+	const plant = tree({ sites: holes });
+
+	test('frames the site of the class that faces the camera side best, looking into it, the span wide', () => {
+		const shot = shotOf(siteShot(plant, 'dormant', WIDE, { span: 1, turn: -Math.PI / 2 }));
+		expect(shot.facts.height).toBe(7);
+		const landed = landing(shot, WIDE, 'the dormant site');
+		expect(landed.x).toBeCloseTo(0.5, 6);
+		expect(landed.y).toBeCloseTo(0.5, 6);
+		expect(cameraAxes(shot.camera).forward[0]).toBeCloseTo(1, 6);
+		expect(2 * landed.depth * Math.tan((WIDE.fov * DEG) / 2) * WIDE.aspect).toBeCloseTo(1, 6);
+		expect(checkShot(shot, WIDE).present).toBe(true);
+	});
+
+	test('looks along the surface beside the site for an edge view', () => {
+		const shot = shotOf(siteShot(plant, 'areole', WIDE, { span: 0.2, edge: true, turn: 0 }));
+		const { forward } = cameraAxes(shot.camera);
+		// Square to the site's normal, level: what stands out of the site shows in profile.
+		expect(dot(forward, [1, 0, 0])).toBeCloseTo(0, 6);
+		expect(forward[1]).toBeCloseTo(0, 6);
+		expect(checkShot(shot, WIDE).present).toBe(true);
+	});
+
+	test('fails the plant that marks no site of the class its photograph shows', () => {
+		const missing = siteShot(plant, 'flower', WIDE, { span: 1, turn: 0 });
+		expect(isAbsent(missing) && missing.lacks).toBe(true);
+		expect(isAbsent(missing) && missing.absent).toBe(
+			'the plant marks no flower site; its sites are dormant, areole',
+		);
+	});
+});
+
+describe('the view of a great limb across its run', () => {
+	test('frames the limb named by its rank from the side of its plane, the span wide', () => {
+		const plant = tree();
+		const shot = shotOf(
+			limbShot(plant, WIDE, { rank: 1, along: 0.5, span: 3, elevation: 0, turn: 0 }),
+		);
+		const limb = landing(shot, WIDE, 'the limb');
+		expect(limb.x).toBeCloseTo(0.5, 6);
+		expect(limb.y).toBeCloseTo(0.5, 6);
+		// The first limb leaves toward +X, so the camera looks along Z, across the limb's plane.
+		const { forward } = cameraAxes(shot.camera);
+		expect(Math.abs(forward[2])).toBeCloseTo(1, 6);
+		expect(forward[0]).toBeCloseTo(0, 6);
+		// The frame's width at the limb is the span.
+		const first = (plant.limbs as readonly GreatLimb[])[0] as GreatLimb;
+		const depth = project(shot.camera, WIDE, sampleAlong(first.axis, 0.5).at).depth;
+		expect(2 * depth * Math.tan((WIDE.fov * DEG) / 2) * WIDE.aspect).toBeCloseTo(3, 6);
+		expect(checkShot(shot, WIDE).present).toBe(true);
+	});
+
+	test('looks up at the limb from below for a negative elevation, and stands on the side nearer the turn', () => {
+		const plant = tree();
+		const below = shotOf(
+			limbShot(plant, WIDE, { rank: 1, along: 0.5, span: 3, elevation: -30, turn: Math.PI }),
+		);
+		const { forward } = cameraAxes(below.camera);
+		expect(forward[1]).toBeCloseTo(Math.sin((30 * Math.PI) / 180), 6);
+		// The turn of a half circle stands the camera on the -Z side, looking toward +Z.
+		expect(forward[2]).toBeGreaterThan(0);
+	});
+
+	test('fails the plant that has fewer great limbs than the rank asked', () => {
+		const missing = limbShot(tree(), WIDE, { rank: 3, along: 0.5, span: 3, elevation: 0, turn: 0 });
+		expect(isAbsent(missing) && missing.lacks).toBe(true);
 	});
 });
 

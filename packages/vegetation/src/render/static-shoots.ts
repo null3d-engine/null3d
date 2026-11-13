@@ -17,6 +17,7 @@ import type { InstanceBatch, Material, MeshGeometry, SketchContext, Texture } fr
 import type { ImpostorBatch } from '@null3d/impostors';
 import type { PlantAsset, PlantPart } from '../asset';
 import { DETAILS, type Detail, type Season } from '../core/types';
+import { SHOOT_REACH, switchScale } from '../lod/drawn';
 import { firstCardStart, REFERENCE_VIEW } from '../lod/levels';
 import { EDGE_BAND, handOverToCards } from './hand-over';
 import {
@@ -26,7 +27,7 @@ import {
 	prototypeGeometry,
 	setPlacedUniforms,
 } from './material';
-import { type PlacedPlants, type PlaceOptions, type PlantCopies, switchScale } from './place';
+import type { PlacedPlants, PlaceOptions, PlantCopies } from './place';
 import { toHalf, writeShootRow } from './records';
 import { farCards } from './stand-in';
 import { NEAR_SLOT_TEXELS, NEAR_SLOTS, type SpeciesKit, writePlantWind } from './textures';
@@ -38,9 +39,6 @@ const SEASON_KIND: Readonly<Record<Season, number>> = {
 	winter: 2,
 	blossom: 3,
 };
-
-/** How far past the switch distance a shoot row draws, and how far inside it a card gives way. */
-const SHOOT_REACH = 1.04;
 
 /** The far edge of a band with no end, in metres. */
 const FAR = 1e9;

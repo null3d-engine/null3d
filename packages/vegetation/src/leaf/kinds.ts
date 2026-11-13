@@ -24,6 +24,15 @@ export interface FoliageBuilder {
 		detail: Detail,
 		age?: number,
 	): readonly PrototypeArrays[];
+	/**
+	 * The leaf meshes a branch piece wears at one tier, for a kind that cuts them more coarsely than
+	 * the crown's: a tree carries thousands of pieces. Absent, a piece wears the crown's leaves.
+	 */
+	pieceLeaves?(
+		record: Species,
+		manifest: TextureManifest,
+		detail: Detail,
+	): readonly PrototypeArrays[];
 }
 
 /** A plant with no leaves, such as a bare saguaro, builds none. */

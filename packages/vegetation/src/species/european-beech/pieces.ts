@@ -2,28 +2,47 @@
 // its top. Each value names the reference picture it was measured on.
 //
 // The leaf is the ruler. The beech has no fact sheet, so a piece's leaf is 9 centimetres, taken from
-// the species' range of 5 to 10; several full leaves read on still 21 at full size are 8 to 9. The
-// record's own leaf is 13 and is owed a change. A piece is written in shares of its photograph's
-// height and sized by the leaf's share of that height.
-import type { PieceLeaves, PieceRule, PieceStem, PieceStudio } from '../../leaf/piece';
+// the species' range of 5 to 10; several full leaves read on still 21 at full size are 8 to 9. A
+// piece is written in shares of its photograph's height and sized by the leaf's share of that
+// height.
+import type { PieceLeaf, PieceLeaves, PieceRule, PieceStem, PieceStudio } from '../../leaf/piece';
 
-/** A leaf's length in metres, from the species' range. */
+/** A leaf's length in metres. */
 const LEAF = 0.09;
-/** The record's leaf length in metres. */
-const RECORD_LEAF = 0.13;
+/**
+ * A leaf's width over its length. 24 full leaves read at full size on stills 11, 22 and 23 are 0.42
+ * to 0.65 as wide as long, with a median of 0.55; still 21's smaller leaves read about 0.6.
+ */
+const LEAF_WIDTH = 0.55;
+/** The texture contour's width over its blade's length. */
+const CONTOUR_WIDTH = 0.75;
+
+/**
+ * The leaf the pieces wear: 9 centimetres long, with the record's share of spread, and drawn at the
+ * photographs' width, about 0.73 of the texture contour's. The record's leaf grows the crown the
+ * species ships, so it keeps its own length and outline until a plant built of pieces replaces
+ * that crown.
+ */
+export const PIECE_LEAF: PieceLeaf = {
+	length: { mean: LEAF, spread: 0.014 },
+	breadth: LEAF_WIDTH / CONTOUR_WIDTH,
+};
+
 /** A leaf's share of the branch end's height on still 21: 55 to 65 pixels of 715. */
 const LEAF_SHARE = 0.0845;
 /** A leaf's share of the twig's height on still 22, where the twig's stem is 0.38 of a unit. */
 const TWIG_LEAF_SHARE = 0.0715;
-/** A branch end's leaf over the record's, in a branch one unit tall. */
-const LEAF_SCALE = LEAF_SHARE / RECORD_LEAF;
-/** The twig's leaf over the record's, in the twig's own unit. */
-const TWIG_LEAF_SCALE = TWIG_LEAF_SHARE / RECORD_LEAF;
+/** A branch end's leaf over the pieces' leaf, in a branch one unit tall. */
+const LEAF_SCALE = LEAF_SHARE / LEAF;
+/** The twig's leaf over the pieces' leaf, in the twig's own unit. */
+const TWIG_LEAF_SCALE = TWIG_LEAF_SHARE / LEAF;
+/** A node's spacing along a spray, in a branch one unit tall: a row's two nodes 1.1 leaf widths apart. */
+const ROW_GAP = (1.1 * LEAF_WIDTH * LEAF_SHARE) / 2;
 
 /**
  * The leaves along a twig. Stills 09, 04 and 21: alternate in two rows that lie in the spray's own
- * plane, each leaf 60 to 80 degrees from its twig. Neighbours in a row just touch, so a node comes
- * each three and a half centimetres.
+ * plane, each leaf 60 to 80 degrees from its twig. Neighbours in a row just touch: two nodes apart
+ * is a little more than a leaf's width, so a node comes each 2.7 centimetres.
  *
  * @param from The share of the twig's length below which no leaf stands.
  * @param tilt Degrees the two rows stand round the twig off the piece's own plane; a drawn place
@@ -31,7 +50,7 @@ const TWIG_LEAF_SCALE = TWIG_LEAF_SHARE / RECORD_LEAF;
  */
 function rows(from: number, tilt?: number): PieceLeaves {
 	return {
-		gap: 0.035,
+		gap: ROW_GAP,
 		from,
 		phyllotaxis: { kind: 'distichous', flatten: 0.9 },
 		...(tilt === undefined ? {} : { heading: tilt }),
