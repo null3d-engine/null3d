@@ -6,7 +6,9 @@
 // cut-branch figures of the photograph and of the drawing, read by the targets tool's measure.
 //
 //   bun run plants:piece <species> [--still <n,n>] [--refs <folder or slug>] [--out <dir>]
-//     [--name <prefix>]
+//     [--name <prefix>] [--bare]
+//
+// `--bare` draws the pieces without their leaves, for the photographs of a leafless plant.
 //
 // A species' pieces and layouts are `PIECES` and `STUDIO` in its `pieces.ts`. Its reference folder
 // is `<id>` under the corpus that NULL3D_PLANT_REFERENCES names, or the repository's
@@ -41,7 +43,7 @@ const REFERENCES =
 	process.env.NULL3D_PLANT_REFERENCES ??
 	join(REPO_ROOT, '.internal/coordination/tree-corpus/generated');
 
-const [named] = positionals(new Set());
+const [named] = positionals(new Set(['--bare']));
 if (!named || !isSpeciesId(named)) {
 	console.error(
 		`Name a species: bun run plants:piece <species> [--still <n,n>] [--refs <folder or slug>] [--out <dir>] [--name <prefix>]\n\nspecies: ${speciesIds().join(', ')}`,
@@ -80,7 +82,7 @@ const module = await loadSpecies(species);
 await loadPlantCode(module.record);
 const started = performance.now();
 const kit = buildKitNow(module, { detail: 'high', placeholders: 'missing' });
-const pieces = buildPiecesNow(module, PIECES);
+const pieces = buildPiecesNow(module, PIECES, flag('bare'));
 const built = performance.now() - started;
 
 /** The four cut-branch figures of a picture in words, or why it gives none. */

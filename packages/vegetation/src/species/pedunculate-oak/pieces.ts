@@ -42,10 +42,12 @@ function sideShoot(length: number, spread: number): PieceStem {
 		sides: [
 			{
 				stem: { length: 0.08, radius: [0.0025, 0.0018], leaves: tuft(0.08, 6) },
-				gap: 0.25,
+				gap: 0.2,
 				from: 0.3,
 				to: 0.8,
-				arrangement: 'spiral',
+				// Still 21: the short shoots lie in the branch's plane with the rest; one carries the
+				// tuft at the branch's middle.
+				arrangement: 'alternate',
 				angle: { mean: 55, spread: 8 },
 			},
 		],
