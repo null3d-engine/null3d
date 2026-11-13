@@ -93,7 +93,13 @@ import { extrasMesh } from './leaf/extras';
 import { groundPiecePrototypes } from './leaf/ground-piece';
 import { dressShoots, pruneLight } from './leaf/instancer';
 import { foliage, loadFoliage } from './leaf/kinds';
-import { type PiecePrototype, type PieceRule, piecePrototypes } from './leaf/piece';
+import {
+	type PieceLeaf,
+	type PiecePrototype,
+	type PieceRule,
+	piecePrototypes,
+	pieceRecord,
+} from './leaf/piece';
 import { carriesPieces, kitPiece, PROTOTYPES_MOST } from './leaf/piece-rows';
 import { inLeaf } from './leaf/season';
 import { shootPrototypes } from './leaf/shoot';
@@ -236,20 +242,43 @@ function scaledCurve(curve: Curve, factor: number): Curve {
  * @param rules The species' piece rules.
  * @param bare Whether the pieces carry no leaves, as a deciduous plant's do in winter: the wood and
  * the bud at each stem's end.
+ * @param leaf The leaf the species' pieces wear where it differs from the record's.
  * @returns The pieces, each rule's variants together, in the rules' order.
  */
 export function buildPiecesNow(
 	source: KitSource,
 	rules: readonly PieceRule[],
 	bare = false,
+	leaf?: PieceLeaf,
 ): PiecePrototype[] {
-	const builder = foliage(source.record.foliage.kind);
+	const record = pieceRecord(source.record, leaf);
+	const builder = foliage(record.foliage.kind);
 	const manifest = source.textures.manifest;
-	return piecePrototypes(
-		source.record,
-		rules,
-		DETAILS.map((tier) => (bare ? [] : builder.leaves(source.record, manifest, tier))),
-	);
+	// A piece wears its kind's piece leaves where the kind cuts them apart from the crown's.
+	const leavesOf = (from: Species) =>
+		DETAILS.map((tier) =>
+			bare
+				? []
+				: builder.pieceLeaves
+					? builder.pieceLeaves(from, manifest, tier)
+					: builder.leaves(from, manifest, tier),
+		);
+	const leaves = leavesOf(record);
+	// A rule whose blades bend in their own plane takes leaves built with no bend at the stalk.
+	const straight =
+		record.foliage.kind === 'blade' && rules.some((rule) => rule.leafDroop === 'plane')
+			? leavesOf({
+					...record,
+					foliage: {
+						...record.foliage,
+						leaf: {
+							...record.foliage.leaf,
+							petiole: { ...record.foliage.leaf.petiole, droop: 0 },
+						},
+					},
+				})
+			: leaves;
+	return piecePrototypes(record, rules, leaves, straight);
 }
 
 /**

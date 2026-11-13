@@ -14,8 +14,10 @@ import type { LeafOutline } from './outline';
  * @category api/vegetation
  */
 export class LeafSurface {
-	/** Metres per unit of texture coordinate. */
+	/** Metres per unit of texture coordinate along the midrib. */
 	readonly scale: number;
+	/** Metres per unit of texture coordinate across the midrib: the scale times the leaf's breadth. */
+	readonly across: number;
 	/** Metres of stalk before the texture's drawn stalk starts. */
 	readonly extra: number;
 	/** Metres from the attach point to the blade's base along the midrib. */
@@ -41,6 +43,7 @@ export class LeafSurface {
 	 */
 	constructor(shape: LeafShape, outline: LeafOutline, length: number) {
 		this.scale = length / (outline.tip[1] - outline.base[1]);
+		this.across = this.scale * (shape.breadth ?? 1);
 		const drawn = (outline.base[1] - outline.petiole[1]) * this.scale;
 		this.extra = Math.max(0, shape.petiole.length - drawn);
 		this.stalk = this.extra + drawn;
@@ -48,7 +51,7 @@ export class LeafSurface {
 		let widest = 0;
 		for (let i = 0; i < outline.points.length; i += 2)
 			widest = Math.max(widest, Math.abs((outline.points[i] as number) - 0.5));
-		this.halfWidth = Math.max(widest * this.scale, 1e-6);
+		this.halfWidth = Math.max(widest * this.across, 1e-6);
 		this.droop = radians(shape.petiole.droop);
 		this.curl = radians(shape.curl);
 		this.fold = radians(shape.fold);

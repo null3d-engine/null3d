@@ -10,30 +10,76 @@ import type { SpeciesId } from '../core/registry';
 import { loadSpecies } from '../core/registry';
 import { DETAILS } from '../core/types';
 import { buildPiecesNow, loadPlantCode } from '../generate';
+import { bladeMesh, outlineOf } from '../leaf/leaf-mesh';
 import {
 	layStudio,
+	type PieceLeaf,
 	type PiecePrototype,
 	type PieceRule,
 	type PieceStudio,
 	pieceKey,
+	pieceRecord,
 	planPiece,
 } from '../leaf/piece';
 import { meshedPlan, type ShootPlan } from '../leaf/shoot';
 import { SURFACE_LEAF } from '../leaf/writer';
 import { bakeCards, paletteOf } from '../lod/card-bake';
 import { rasterise, rasterTarget } from '../lod/raster';
-import { PIECES as ALDER, STUDIO as ALDER_STUDIO } from './common-alder/pieces';
-import { PIECES as ASH, STUDIO as ASH_STUDIO } from './common-ash/pieces';
-import { PIECES as BEECH, STUDIO as BEECH_STUDIO } from './european-beech/pieces';
-import { PIECES as HAWTHORN, STUDIO as HAWTHORN_STUDIO } from './hawthorn-shrub/pieces';
+import {
+	PIECES as ALDER,
+	FRUIT_PIECES as ALDER_FRUIT,
+	PIECE_LEAF as ALDER_LEAF,
+	STUDIO as ALDER_STUDIO,
+} from './common-alder/pieces';
+import {
+	PIECES as ASH,
+	FRUIT_PIECES as ASH_FRUIT,
+	STUDIO as ASH_STUDIO,
+} from './common-ash/pieces';
+import {
+	PIECES as BEECH,
+	PIECE_LEAF as BEECH_LEAF,
+	STUDIO as BEECH_STUDIO,
+} from './european-beech/pieces';
+import {
+	PIECES as HAWTHORN,
+	FRUIT_PIECES as HAWTHORN_FRUIT,
+	PIECE_LEAF as HAWTHORN_LEAF,
+	STUDIO as HAWTHORN_STUDIO,
+} from './hawthorn-shrub/pieces';
 import { PIECES as HOLM, STUDIO as HOLM_STUDIO } from './holm-oak/pieces';
 import { PIECES as OLIVE, STUDIO as OLIVE_STUDIO } from './olive/pieces';
-import { PIECES as OAK, STUDIO as OAK_STUDIO } from './pedunculate-oak/pieces';
+import {
+	PIECES as OAK,
+	FRUIT_PIECES as OAK_FRUIT,
+	STUDIO as OAK_STUDIO,
+} from './pedunculate-oak/pieces';
 import { PIECES as PINE, STUDIO as PINE_STUDIO } from './scots-pine/pieces';
-import { PIECES as BIRCH, STUDIO as BIRCH_STUDIO } from './silver-birch/pieces';
-import { PIECES as WILLOW, STUDIO as WILLOW_STUDIO } from './weeping-willow/pieces';
+import {
+	PIECES as BIRCH,
+	FRUIT_PIECES as BIRCH_FRUIT,
+	STUDIO as BIRCH_STUDIO,
+} from './silver-birch/pieces';
+import {
+	PIECES as WILLOW,
+	FRUIT_PIECES as WILLOW_FRUIT,
+	STUDIO as WILLOW_STUDIO,
+} from './weeping-willow/pieces';
 
 const LONG = scaledBudget(120_000);
+/** The leaf a species' pieces wear, where it differs from the record's. */
+const PIECE_LEAVES: Partial<Record<SpeciesId, PieceLeaf>> = {
+	'european-beech': BEECH_LEAF,
+	'common-alder': ALDER_LEAF,
+	'hawthorn-shrub': HAWTHORN_LEAF,
+};
+
+/** A species' module with the record its pieces are built by. */
+async function loadPieces(id: SpeciesId): Promise<SpeciesModule> {
+	const module = await loadSpecies(id);
+	return { ...module, record: pieceRecord(module.record, PIECE_LEAVES[id]) };
+}
+
 /** The most vertices one prototype may hold at a tier, which its 16-bit indices set. */
 const VERTICES_MOST = 65_535;
 /** Metres within which two points of a plan are the same place. */
@@ -102,7 +148,7 @@ for (const { id, pieces, studio } of SPECIES)
 		let module: SpeciesModule;
 		let built: PiecePrototype[];
 		beforeAll(async () => {
-			module = await loadSpecies(id);
+			module = await loadPieces(id);
 			await loadPlantCode(module.record);
 			built = buildPiecesNow(module, pieces);
 		}, LONG);
@@ -291,14 +337,16 @@ const EDGE_SHARE = 0.35;
  * other cut inside its band, and holds these outside it, so a cut that is mended leaves this list.
  */
 const OPEN_DEPTH: Readonly<Record<string, string>> = {
-	'silver-birch 22':
-		'0.49 against 0.27: a blade bends at its stalk out of its own face, so a blade that faces the camera reaches toward it',
-	'weeping-willow 22': '0.46 against 0.23: the same bend at the stalk, 40 degrees in the record',
+	'common-alder 22':
+		"0.27 against 0.20: its cones hang to the twig's own ground side, behind it, where the photograph's hang below a twig that stands in a clamp",
+	'weeping-willow 22':
+		"0.31 against 0.23: its strands' leaves hang to every side, and at the high tier each long blade is a folded card that keeps its tilt but not its curl (0.29 as meshed blades)",
 };
 const OPEN_EDGE: Readonly<Record<string, string>> = {
 	'silver-birch 21':
-		'0.20 against 0.49: its strands hang in the planes of their arms, so edge on they stack into a line',
-	'weeping-willow 22': '0.14 against 0.47: three strands in one plane, edge on',
+		'0.29 against 0.49: about a third of its blades show their faces edge on, and the video shows a column of whole leaves',
+	'weeping-willow 22':
+		"0.26 against 0.47: a strand's leaves stand to every side, so half show their faces from any side, and the video shows each leaf whole in every frame",
 	'hawthorn-shrub 21': '0.20 against 0.40: its arms and tufts stand in one plane',
 };
 
@@ -451,7 +499,7 @@ describe('a cut keeps what its turning video shows from the side', () => {
 			// The cuts that stand on the wrong side of their band's edge for their list.
 			const wrong: string[] = [];
 			for (const { id, pieces, studio, still, depth, edge } of TURNING) {
-				const module = await loadSpecies(id);
+				const module = await loadPieces(id);
 				await loadPlantCode(module.record);
 				const layout = studio.find((candidate) => candidate.still === still);
 				expect(layout).toBeDefined();
@@ -509,7 +557,7 @@ describe("a piece's wood", () => {
 		'is as thick at its cut as its photograph shows, within a quarter, read from the built mesh',
 		async () => {
 			for (const { id, pieces, piece, photograph } of CUT_THICKNESS) {
-				const module = await loadSpecies(id);
+				const module = await loadPieces(id);
 				await loadPlantCode(module.record);
 				const built = buildPiecesNow(module, pieces, true).filter(
 					(part) => part.piece === piece && part.variant === 0,
@@ -546,7 +594,7 @@ describe("a piece's wood", () => {
 		'bends on curves: no stem of any piece turns a corner at one joint',
 		async () => {
 			for (const { id, pieces } of SPECIES) {
-				const module = await loadSpecies(id);
+				const module = await loadPieces(id);
 				await loadPlantCode(module.record);
 				for (const [r, rule] of pieces.entries())
 					for (let variant = 0; variant < rule.variants; variant++) {
@@ -574,7 +622,7 @@ describe("a piece's wood", () => {
 
 	it('tapers: every stem is at least as thick at its foot as at its tip', async () => {
 		for (const { id, pieces } of SPECIES) {
-			const module = await loadSpecies(id);
+			const module = await loadPieces(id);
 			await loadPlantCode(module.record);
 			for (const [r, rule] of pieces.entries()) {
 				const plan = planPiece(module.record, rule, pieceKey(r, 0), 4);
@@ -589,7 +637,7 @@ describe("a piece's wood", () => {
 
 describe("the ash's branch end, as still 21 and its turning video count it", () => {
 	it('carries six leaves: one pair under the bud at each of its three ends, in its own plane', async () => {
-		const module = await loadSpecies('common-ash');
+		const module = await loadPieces('common-ash');
 		await loadPlantCode(module.record);
 		const rule = ASH[0] as PieceRule;
 		for (let variant = 0; variant < rule.variants; variant++) {
@@ -622,15 +670,39 @@ describe("the ash's branch end, as still 21 and its turning video count it", () 
 });
 
 describe("the beech's branch end, as still 21 shows it at full size", () => {
+	it("wears a leaf 0.5 to 0.6 as wide as long, as the photographs' full leaves are", async () => {
+		const module = await loadPieces('european-beech');
+		const foliage = module.record.foliage;
+		if (foliage.kind !== 'blade') throw new Error('the beech has blade leaves');
+		const outline = outlineOf(foliage.leaf, module.textures.manifest);
+		const mesh = bladeMesh(foliage.leaf, outline, 'high');
+		let left = Number.POSITIVE_INFINITY;
+		let right = Number.NEGATIVE_INFINITY;
+		let low = Number.POSITIVE_INFINITY;
+		let high = Number.NEGATIVE_INFINITY;
+		for (let i = 0; i < mesh.uvs.length / 2; i++) {
+			if ((mesh.uvs[i * 2 + 1] as number) < outline.base[1]) continue;
+			const x = mesh.positions[i * 3] as number;
+			const y = mesh.positions[i * 3 + 1] as number;
+			left = Math.min(left, x);
+			right = Math.max(right, x);
+			low = Math.min(low, y);
+			high = Math.max(high, y);
+		}
+		const ratio = (right - left) / (high - low);
+		expect(ratio).toBeGreaterThan(0.5);
+		expect(ratio).toBeLessThan(0.6);
+	});
+
 	it('is a bare forked stem whose leaves stand on thin twigs, 45 to 95 degrees out', async () => {
-		const module = await loadSpecies('european-beech');
+		const module = await loadPieces('european-beech');
 		await loadPlantCode(module.record);
 		const rule = BEECH[0] as PieceRule;
 		const scale = rule.scale ?? 1;
 		for (let variant = 0; variant < rule.variants; variant++) {
 			const plan = planPiece(module.record, rule, pieceKey(0, variant), 4);
-			// The photograph holds 100 to 120 leaves; the piece's leaf is rounder, so it holds fewer.
-			expect(plan.leaves.length).toBeGreaterThanOrEqual(75);
+			// The photograph holds 100 to 120 leaves.
+			expect(plan.leaves.length).toBeGreaterThanOrEqual(100);
 			expect(plan.leaves.length).toBeLessThanOrEqual(120);
 			const points = plan.axes.flat();
 			for (const leaf of plan.leaves) {
@@ -662,11 +734,212 @@ describe("the beech's branch end, as still 21 shows it at full size", () => {
 	});
 });
 
+/** The dot product of two vectors. */
+const dot = (a: readonly number[], b: readonly number[]): number =>
+	(a[0] as number) * (b[0] as number) +
+	(a[1] as number) * (b[1] as number) +
+	(a[2] as number) * (b[2] as number);
+
+/** A rule with the species' own bend at the stalk. */
+function speciesDroop(rule: PieceRule): PieceRule {
+	const { leafDroop: _droop, ...rest } = rule;
+	return rest;
+}
+
+/**
+ * The root mean square of the leaves' reach to the piece's flank over their reach to its sky
+ * side: 1 where the leaves stand to every side alike, 0 where they lie in the piece's plane.
+ */
+function flankOverSky(plan: ShootPlan): number {
+	let flank = 0;
+	let sky = 0;
+	for (const leaf of plan.leaves) {
+		flank += (leaf.direction[0] as number) ** 2;
+		sky += (leaf.direction[2] as number) ** 2;
+	}
+	return Math.sqrt(flank / Math.max(sky, 1e-9));
+}
+
+describe("a hanging piece's blades", () => {
+	it(
+		"turn at their stalks about their own normals, toward the ground, by the species' droop",
+		async () => {
+			for (const [id, rules] of [
+				['weeping-willow', WILLOW],
+				['silver-birch', BIRCH],
+			] as const) {
+				const module = await loadPieces(id);
+				await loadPlantCode(module.record);
+				const foliage = module.record.foliage;
+				if (foliage.kind !== 'blade') throw new Error(`${id} has no blade leaf`);
+				const droop = foliage.leaf.petiole.droop;
+				for (const [r, rule] of rules.entries()) {
+					expect(rule.leafDroop).toBe('plane');
+					const bent = planPiece(module.record, rule, pieceKey(r, 0), 4);
+					const straight = planPiece(module.record, speciesDroop(rule), pieceKey(r, 0), 4);
+					expect(bent.leaves.length).toBe(straight.leaves.length);
+					for (const [i, leaf] of bent.leaves.entries()) {
+						const before = straight.leaves[i] ?? leaf;
+						const normal = quatRotate(leaf.rotation, 0, [0, 0, 1], [0, 0, 0]);
+						// The blade keeps its face, and its midrib stays in its own plane.
+						expect(
+							dot(normal, quatRotate(before.rotation, 0, [0, 0, 1], [0, 0, 0])),
+						).toBeGreaterThan(0.9999);
+						expect(Math.abs(dot(leaf.direction, normal))).toBeLessThan(1e-4);
+						// It turns no farther than the species' stalk droop, and toward the ground side,
+						// which is the way a hanging piece's line runs.
+						const turned = Math.min(1, dot(leaf.direction, before.direction));
+						expect((Math.acos(turned) * 180) / Math.PI).toBeLessThanOrEqual(droop + 0.01);
+						expect(leaf.direction[1] as number).toBeGreaterThanOrEqual(
+							(before.direction[1] as number) - 1e-6,
+						);
+					}
+				}
+			}
+		},
+		LONG,
+	);
+
+	it(
+		"keep the built willow blade within 12 degrees of its own plane, where the species' leaf leaves it by 40",
+		async () => {
+			const module = await loadPieces('weeping-willow');
+			await loadPlantCode(module.record);
+			const strand = WILLOW[0] as PieceRule;
+			// One leaf on a short stem, by the strand's own leaf rule.
+			const one: PieceRule = {
+				...strand,
+				variants: 1,
+				stem: {
+					length: 0.02,
+					radius: [0.001, 0.001],
+					bud: false,
+					leaves: {
+						...(strand.stem.leaves as NonNullable<PieceRule['stem']['leaves']>),
+						gap: 0.02,
+						from: 0.5,
+					},
+				},
+			};
+			/** The built blade's greatest distance from its planned plane over its reach. */
+			const offPlane = (rule: PieceRule): number => {
+				const plan = planPiece(module.record, rule, pieceKey(0, 0), 4);
+				expect(plan.leaves.length).toBe(1);
+				const leaf = plan.leaves[0] as ShootPlan['leaves'][number];
+				const normal = quatRotate(leaf.rotation, 0, [0, 0, 1], [0, 0, 0]);
+				const mesh = buildPiecesNow(module, [rule])[0]?.tiers[DETAILS.indexOf('high')];
+				if (!mesh) throw new Error('the one-leaf piece built no mesh');
+				let off = 0;
+				let reach = 0;
+				for (let i = 0; i < mesh.positions.length / 3; i++) {
+					if ((mesh.colors[i * 4 + 2] as number) !== SURFACE_LEAF) continue;
+					const v = [
+						(mesh.positions[i * 3] as number) - (leaf.at[0] as number),
+						(mesh.positions[i * 3 + 1] as number) - (leaf.at[1] as number),
+						(mesh.positions[i * 3 + 2] as number) - (leaf.at[2] as number),
+					];
+					off = Math.max(off, Math.abs(dot(v, normal)));
+					reach = Math.max(reach, Math.hypot(v[0] as number, v[1] as number, v[2] as number));
+				}
+				expect(reach).toBeGreaterThan(0.05);
+				return off / reach;
+			};
+			// The sine of 12 degrees, and of 25.
+			expect(offPlane(one)).toBeLessThan(0.21);
+			expect(offPlane(speciesDroop(one))).toBeGreaterThan(0.42);
+		},
+		LONG,
+	);
+
+	it("hang to every side of a willow strand, and near the plane of a birch strand's arch", async () => {
+		// The willow sub-branch's turning video, frames 0 and 30: a strand's leafy band is 0.10 to
+		// 0.13 of the twig's height wide face on, and the three strands in line make a column 0.15
+		// wide, so a strand is as deep as it is wide.
+		const willow = await loadPieces('weeping-willow');
+		await loadPlantCode(willow.record);
+		for (const [r, rule] of WILLOW.entries()) {
+			const ratio = flankOverSky(planPiece(willow.record, rule, pieceKey(r, 0), 4));
+			expect(ratio).toBeGreaterThan(0.6);
+			expect(ratio).toBeLessThan(1.67);
+		}
+		// The birch sub-branch's turning video, frame 72: edge on, the arching twig is 0.214 as wide
+		// as tall against 0.781 face on, and its leaves hang beside it. Their midribs lean out of
+		// the arch's plane by under 12 degrees in the root mean square, and not by nothing.
+		const birch = await loadPieces('silver-birch');
+		await loadPlantCode(birch.record);
+		for (const [r, rule] of BIRCH.entries()) {
+			const leaves = planPiece(birch.record, rule, pieceKey(r, 0), 4).leaves;
+			const lean = Math.sqrt(
+				leaves.reduce((sum, leaf) => sum + (leaf.direction[0] as number) ** 2, 0) /
+					Math.max(1, leaves.length),
+			);
+			expect(lean).toBeGreaterThan(0.02);
+			expect(lean).toBeLessThan(0.21);
+		}
+	});
+});
+
+/**
+ * Each piece's triangles at the high tier, its first variant, when its leaves, wood and buds took the
+ * crown's own cut: what a whole tree carrying thousands of pieces could not afford.
+ */
+const CROWN_CUT_HIGH: Readonly<Record<string, number>> = {
+	'pedunculate-oak branch-end': 9604,
+	'pedunculate-oak twig': 4698,
+	'holm-oak branch-end': 36432,
+	'holm-oak twig': 4166,
+	'european-beech branch-end': 18186,
+	'european-beech twig': 2062,
+	'common-ash branch-end': 2864,
+	'common-ash twig': 1686,
+	'common-alder branch-end': 6914,
+	'common-alder twig': 1840,
+	'olive branch-end': 39850,
+	'olive twig': 5040,
+	'weeping-willow strand-short': 1962,
+	'weeping-willow strand': 5758,
+	'weeping-willow strand-long': 10498,
+	'silver-birch strand-short': 2082,
+	'silver-birch strand': 2840,
+	'silver-birch strand-long': 6582,
+	'silver-birch strand-arch-short': 3090,
+	'silver-birch strand-arch': 3382,
+	'hawthorn-shrub branch-end': 9822,
+	'hawthorn-shrub twig': 5958,
+};
+
+describe("a piece's cost", () => {
+	it(
+		"takes the pieces' cut at the high tier: at most a fifth of the crown cut, every piece of nine species",
+		async () => {
+			const high = DETAILS.indexOf('high');
+			// The nine broadleaf trees' pieces; the pine's bough is a conifer's and its own tests hold it.
+			for (const { id, pieces } of SPECIES.filter((species) => species.id !== 'scots-pine')) {
+				const module = await loadPieces(id);
+				await loadPlantCode(module.record);
+				const built = buildPiecesNow(module, pieces);
+				for (const rule of pieces) {
+					const drawn = built
+						.filter((piece) => piece.piece === rule.name && piece.variant === 0)
+						.reduce((sum, piece) => sum + (piece.tiers[high]?.indices.length ?? 0) / 3, 0);
+					const crown = CROWN_CUT_HIGH[`${id} ${rule.name}`];
+					expect(crown).toBeDefined();
+					expect(drawn).toBeLessThanOrEqual((crown ?? 0) / 5);
+					// The oak carries thousands of branch ends, so its own is held to 1,000 triangles.
+					if (id === 'pedunculate-oak' && rule.name === 'branch-end')
+						expect(drawn).toBeLessThanOrEqual(1000);
+				}
+			}
+		},
+		LONG,
+	);
+});
+
 describe("a species' marks", () => {
 	it(
 		"stands a straight thorn of one to four centimetres at most nodes of the hawthorn's branch",
 		async () => {
-			const module = await loadSpecies('hawthorn-shrub');
+			const module = await loadPieces('hawthorn-shrub');
 			await loadPlantCode(module.record);
 			const rule = HAWTHORN[0] as PieceRule;
 			const plan = planPiece(module.record, rule, pieceKey(0, 0), 4);
@@ -692,7 +965,7 @@ describe("a species' marks", () => {
 			['common-alder', ALDER],
 			['olive', OLIVE],
 		] as const) {
-			const module = await loadSpecies(id);
+			const module = await loadPieces(id);
 			await loadPlantCode(module.record);
 			const plan = planPiece(module.record, rules[0] as PieceRule, pieceKey(0, 0), 4);
 			const bodies = plan.buds.filter((bud) => bud.cluster && bud.stack === bud.length);
@@ -707,6 +980,44 @@ describe("a species' marks", () => {
 			expect(loose(plan)).toEqual([]);
 		}
 	});
+});
+
+describe('a species in fruit or in catkin', () => {
+	it(
+		'hangs fruit or catkins on its own wood, each piece still one joined body within the vertex limit',
+		async () => {
+			/** The bodies that hang on a plan's stalks. */
+			const bodies = (plan: ShootPlan): number =>
+				plan.buds.filter((bud) => bud.cluster && bud.stack === bud.length).length;
+			for (const [id, fruiting, plain] of [
+				['pedunculate-oak', OAK_FRUIT, OAK],
+				['common-ash', ASH_FRUIT, ASH],
+				['hawthorn-shrub', HAWTHORN_FRUIT, HAWTHORN],
+				['silver-birch', BIRCH_FRUIT, BIRCH],
+				['weeping-willow', WILLOW_FRUIT, WILLOW],
+				['common-alder', ALDER_FRUIT, ALDER],
+			] as const) {
+				const module = await loadPieces(id);
+				await loadPlantCode(module.record);
+				let hung = 0;
+				let before = 0;
+				for (const [r, rule] of fruiting.entries())
+					for (let variant = 0; variant < rule.variants; variant++) {
+						const plan = planPiece(module.record, rule, pieceKey(r, variant), 4);
+						expect(loose(plan)).toEqual([]);
+						hung += bodies(plan);
+						before += bodies(
+							planPiece(module.record, plain[r] as PieceRule, pieceKey(r, variant), 4),
+						);
+					}
+				expect(hung).toBeGreaterThan(before);
+				for (const piece of buildPiecesNow(module, fruiting))
+					for (const tier of piece.tiers)
+						expect(tier.positions.length / 3).toBeLessThanOrEqual(VERTICES_MOST);
+			}
+		},
+		LONG,
+	);
 });
 
 /** A stem's rule with no marks on it or on any of its side stems. */
@@ -724,7 +1035,7 @@ describe('a piece through the card bake', () => {
 	it(
 		"gives the oak's branch end three planes whose front cell holds its leaf tufts",
 		async () => {
-			const module = await loadSpecies('pedunculate-oak');
+			const module = await loadPieces('pedunculate-oak');
 			await loadPlantCode(module.record);
 			const built = buildPiecesNow(module, OAK);
 			const { atlas, cells } = bakeCards(
