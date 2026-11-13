@@ -1,8 +1,8 @@
 // Draws a species' directed frame on the CPU beside its whole-plant reference pictures and beside
 // the skeleton its registered record grows, each from the camera its picture asks for. A species
-// has a directed frame when its folder holds a `directed.ts` that exports a `directed` record. The
-// frame's wood is drawn by order, and each limb's foliage patch as two rings of marks: its top and
-// its underside.
+// has a directed frame when its folder holds a `directed.ts` that exports a `directed` record, which
+// grows by the conifer schedule, or a `frame`, which is a tree of axis rules. The frame's wood is
+// drawn by order, and each foliage patch as two rings of marks: its top and its underside.
 //
 //   bun --conditions=null3d-source tools/plant-frame-preview.ts <species> [--seed <n>]
 //     [--variant <n>] [--refs <folder>] [--out <dir>] [--name <prefix>]
@@ -18,11 +18,8 @@ import type { MacroSkeleton } from '../packages/vegetation/src/core/graph.ts';
 import type { Species } from '../packages/vegetation/src/core/record.ts';
 import { isSpeciesId, loadSpecies, speciesIds } from '../packages/vegetation/src/core/registry.ts';
 import { buildKitNow, growPlantNow, loadPlantCode } from '../packages/vegetation/src/generate.ts';
-import {
-	type ConiferPlan,
-	growConifer,
-	planConifer,
-} from '../packages/vegetation/src/grow/conifer.ts';
+import { growConifer, planConifer } from '../packages/vegetation/src/grow/conifer.ts';
+import { type FrameSpec, frameSkeleton, planFrame } from '../packages/vegetation/src/grow/frame.ts';
 import { REPO_ROOT } from '../tests/lib/server.ts';
 import { type PreviewCamera, standingCamera, upwardCamera } from './lib/plant-preview/camera.ts';
 import {
@@ -78,10 +75,13 @@ if (!existsSync(directedPath)) {
 	console.error(`${species} has no directed frame: ${directedPath} is missing`);
 	process.exit(2);
 }
-const directed = ((await import(directedPath)) as { readonly directed: Species }).directed;
-if (directed.growth.model !== 'conifer') {
+const stated = (await import(directedPath)) as {
+	readonly directed?: Species;
+	readonly frame?: FrameSpec;
+};
+if (!stated.frame && stated.directed?.growth.model !== 'conifer') {
 	console.error(
-		`${species}'s directed frame grows by '${directed.growth.model}', which this tool does not draw`,
+		`${species}'s directed.ts exports neither a frame nor a record that grows by the conifer schedule`,
 	);
 	process.exit(2);
 }
@@ -100,11 +100,31 @@ const BY_ORDER: Paint = {
 	mark: [40, 150, 70],
 };
 
+/** A foliage patch as the sheet rings it. */
+interface Ringed {
+	readonly centre: readonly [number, number, number];
+	readonly width: number;
+	readonly depth: number;
+}
+
+/** A directed frame as the sheet draws it, whichever planner made it. */
+interface Drawn {
+	/** The plant's height in metres. */
+	readonly height: number;
+	readonly skeleton: MacroSkeleton;
+	readonly patches: readonly Ringed[];
+	/** The trunk's radius at a person's eye height, in metres. */
+	readonly eyeRadius: number;
+	/** The frame's figures for the sheet's record, and one line that sums it up. */
+	readonly figures: Record<string, unknown>;
+	readonly summary: string;
+}
+
 /** The marks of every patch: a ring round its top and a ring round its underside. */
-function patchMarks(plan: ConiferPlan): Float32Array {
-	const marks = new Float32Array(plan.limbs.length * RING * 2 * 3);
+function patchMarks(patches: readonly Ringed[]): Float32Array {
+	const marks = new Float32Array(patches.length * RING * 2 * 3);
 	let at = 0;
-	for (const { patch } of plan.limbs)
+	for (const patch of patches)
 		for (const lift of [0.5, -0.5])
 			for (let k = 0; k < RING; k++) {
 				const angle = (k / RING) * 2 * Math.PI;
@@ -116,7 +136,11 @@ function patchMarks(plan: ConiferPlan): Float32Array {
 }
 
 /** One skeleton's picture from a camera, with its patches' rings where it has a plan. */
-function skeletonPicture(camera: PreviewCamera, skeleton: MacroSkeleton, plan?: ConiferPlan): Rgba {
+function skeletonPicture(
+	camera: PreviewCamera,
+	skeleton: MacroSkeleton,
+	patches?: readonly Ringed[],
+): Rgba {
 	const big = {
 		...camera,
 		width: camera.width * FACTOR,
@@ -126,7 +150,7 @@ function skeletonPicture(camera: PreviewCamera, skeleton: MacroSkeleton, plan?: 
 	};
 	const drawing = canvas(big.width, big.height);
 	drawWood(drawing, big, skeleton, { least: FACTOR, tone: (order) => order });
-	if (plan) drawMarks(drawing, big, patchMarks(plan), 1, 0);
+	if (patches) drawMarks(drawing, big, patchMarks(patches), 1, 0);
 	return painted(drawing, FACTOR, BY_ORDER);
 }
 
@@ -151,12 +175,97 @@ function provenance(): { readonly commit: string; readonly dirty: boolean } {
 
 const module = await loadSpecies(species);
 await loadPlantCode(module.record);
-await loadPlantCode(directed);
 const kit = buildKitNow(module, { detail: 'high', placeholders: 'missing' });
 const grown = growPlantNow(kit, { seed, variant, season: kit.record.seasons.default, near: true });
-const input = { record: directed, seed, variant, season: directed.seasons.default } as const;
-const plan = planConifer(input);
-const frame = growConifer(input);
+
+/** A share of the plant's height, to four places. */
+const share = (metres: number, height: number): number => Number((metres / height).toFixed(4));
+
+/** A frame that a tree of axis rules states, planned on the registered record's size and seed. */
+function ruleFrame(spec: FrameSpec): Drawn {
+	const plan = planFrame(spec, {
+		record: module.record,
+		seed,
+		variant,
+		season: module.record.seasons.default,
+	});
+	const skeleton = frameSkeleton(plan);
+	const H = plan.height;
+	const stem = plan.axes[0];
+	const byRule = new Map<string, number>();
+	for (const axis of plan.axes) byRule.set(axis.rule, (byRule.get(axis.rule) ?? 0) + 1);
+	const counts = [...byRule].map(([rule, count]) => `${count} ${rule}`).join(', ');
+	return {
+		height: H,
+		skeleton,
+		patches: plan.patches,
+		eyeRadius: stem?.nodes.find((node) => node.y >= BELOW.eye)?.radius ?? 0.5,
+		figures: {
+			height: Number(H.toFixed(3)),
+			crownBase: share(plan.crownBase, H),
+			nodes: skeleton.nodeCount,
+			axes: skeleton.axes.count,
+			patches: plan.patches.length,
+			axesByRule: Object.fromEntries(byRule),
+			firstOrder: plan.axes
+				.filter((axis) => axis.order === 1)
+				.map((axis) => {
+					const end = axis.nodes[axis.nodes.length - 1];
+					const from = plan.axes[axis.parent]?.nodes[axis.parentNode];
+					return {
+						rule: axis.rule,
+						index: axis.index,
+						azimuth: Number((((axis.azimuth % 360) + 360) % 360).toFixed(1)),
+						leaves: share(from?.y ?? 0, H),
+						length: share(axis.length, H),
+						reach: share(Math.hypot(end?.x ?? 0, end?.z ?? 0), H),
+						ends: share(end?.y ?? 0, H),
+					};
+				}),
+		},
+		summary: `directed frame ${H.toFixed(2)} m tall, ${counts}, ${plan.patches.length} patches, ${skeleton.nodeCount} nodes`,
+	};
+}
+
+/** A frame that the conifer schedule grows from a directed record. */
+async function coniferFrame(directed: Species): Promise<Drawn> {
+	await loadPlantCode(directed);
+	const input = { record: directed, seed, variant, season: directed.seasons.default } as const;
+	const plan = planConifer(input);
+	const skeleton = growConifer(input);
+	const H = plan.height;
+	const topLimbs = plan.limbs.filter((limb) => limb.top).length;
+	return {
+		height: H,
+		skeleton,
+		patches: plan.limbs.map((limb) => limb.patch),
+		eyeRadius: plan.trunk.find((node) => node.y >= BELOW.eye)?.radius ?? 0.5,
+		figures: {
+			height: Number(H.toFixed(3)),
+			crownBase: share(plan.crownBase, H),
+			trunkNodes: plan.trunk.length,
+			limbsPerLevel: plan.perLevel,
+			topLimbs,
+			nodes: skeleton.nodeCount,
+			axes: skeleton.axes.count,
+			limbs: plan.limbs.map((limb) => ({
+				level: limb.level,
+				slot: limb.slot,
+				azimuth: Number((((limb.azimuth % 360) + 360) % 360).toFixed(1)),
+				place: Number(limb.place.toFixed(3)),
+				reach: share(limb.reach, H),
+				leaves: share(plan.trunk[limb.trunkNode]?.y ?? 0, H),
+				patchWidth: share(limb.patch.width, H),
+				patchDepth: share(limb.patch.depth, H),
+			})),
+		},
+		summary: `directed frame ${H.toFixed(2)} m tall, ${plan.limbs.length} limbs (${plan.perLevel.join(', ')} by level and ${topLimbs} at the top), ${skeleton.nodeCount} nodes`,
+	};
+}
+
+const drawn = stated.frame
+	? ruleFrame(stated.frame)
+	: await coniferFrame(stated.directed as Species);
 
 const strips: Rgba[] = [];
 if (existsSync(folder)) {
@@ -176,8 +285,8 @@ if (existsSync(folder)) {
 				strip([
 					{ caption: `${still.file} (turn ${turn})`, picture: resizeToWidth(image, PANEL) },
 					{
-						caption: 'directed frame, with each limb patch ringed',
-						picture: skeletonPicture(camera(plan.height), frame, plan),
+						caption: 'directed frame, with each foliage patch ringed',
+						picture: skeletonPicture(camera(drawn.height), drawn.skeleton, drawn.patches),
 					},
 					{
 						caption: "the registered record's skeleton",
@@ -188,7 +297,7 @@ if (existsSync(folder)) {
 		} else {
 			const reference = resizeToWidth(image, PANEL);
 			const camera = upwardCamera(
-				BELOW.radii * (plan.trunk.find((node) => node.y >= BELOW.eye)?.radius ?? 0.5),
+				BELOW.radii * drawn.eyeRadius,
 				BELOW.eye,
 				BELOW.pitch,
 				BELOW.fov,
@@ -199,8 +308,8 @@ if (existsSync(folder)) {
 				strip([
 					{ caption: `${still.file} (from the foot, looking up)`, picture: reference },
 					{
-						caption: 'directed frame, with each limb patch ringed',
-						picture: skeletonPicture(camera, frame, plan),
+						caption: 'directed frame, with each foliage patch ringed',
+						picture: skeletonPicture(camera, drawn.skeleton, drawn.patches),
 					},
 					{
 						caption: "the registered record's skeleton",
@@ -230,32 +339,8 @@ if (strips.length > 0) {
 	writePng(path, page);
 	console.log(`  ${path}`);
 }
-const H = plan.height;
-const figures = {
-	species,
-	seed,
-	variant,
-	commit,
-	dirty,
-	height: Number(H.toFixed(3)),
-	crownBase: Number((plan.crownBase / H).toFixed(4)),
-	trunkNodes: plan.trunk.length,
-	limbsPerLevel: plan.perLevel,
-	topLimbs: plan.limbs.filter((limb) => limb.top).length,
-	nodes: frame.nodeCount,
-	axes: frame.axes.count,
-	limbs: plan.limbs.map((limb) => ({
-		level: limb.level,
-		slot: limb.slot,
-		azimuth: Number((((limb.azimuth % 360) + 360) % 360).toFixed(1)),
-		place: Number(limb.place.toFixed(3)),
-		reach: Number((limb.reach / H).toFixed(4)),
-		leaves: Number(((plan.trunk[limb.trunkNode]?.y ?? 0) / H).toFixed(4)),
-		patchWidth: Number((limb.patch.width / H).toFixed(4)),
-		patchDepth: Number((limb.patch.depth / H).toFixed(4)),
-	})),
-};
+const figures = { species, seed, variant, commit, dirty, ...drawn.figures };
 writeFileSync(join(out, `${prefix}-frame.json`), `${JSON.stringify(figures, null, '\t')}\n`);
 console.log(
-	`${species} seed ${seed} variant ${variant} at ${commit.slice(0, 9)}${dirty ? ' with changes' : ''}: directed frame ${H.toFixed(2)} m tall, ${plan.limbs.length} limbs (${plan.perLevel.join(', ')} by level and ${figures.topLimbs} at the top), ${frame.nodeCount} nodes; the registered record's skeleton holds ${grown.skeleton.nodeCount} nodes on ${grown.skeleton.axes.count} axes`,
+	`${species} seed ${seed} variant ${variant} at ${commit.slice(0, 9)}${dirty ? ' with changes' : ''}: ${drawn.summary}; the registered record's skeleton holds ${grown.skeleton.nodeCount} nodes on ${grown.skeleton.axes.count} axes`,
 );
