@@ -759,3 +759,17 @@ describe('a piece through the card bake', () => {
 		LONG,
 	);
 });
+
+describe('the piece planner', () => {
+	it("keeps a stem's leaf nodes 2 mm apart unless its rule states a smaller step", async () => {
+		const module = await loadSpecies('scots-pine');
+		const bough = PINE.find((rule) => rule.name === 'bough');
+		expect(bough?.nodeLeast).toBeLessThan(0.002);
+		if (!bough) return;
+		const { nodeLeast: _least, ...floor } = bough;
+		const stated = planPiece(module.record, bough, pieceKey(0, 0), 4).leaves.length;
+		const held = planPiece(module.record, floor, pieceKey(0, 0), 4).leaves.length;
+		// The bough sets a needle pair every 1.2 mm; at the default step it keeps one every 2 mm.
+		expect(stated / held).toBeGreaterThan(1.5);
+	});
+});
