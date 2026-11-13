@@ -33,7 +33,8 @@ function brush(
 ): NonNullable<PieceStem['leaves']> {
 	return {
 		gap,
-		phyllotaxis: { kind: 'whorled', count: pairs },
+		// One pair at a node follows the species' own spiral; more stand in a ring at the node.
+		...(pairs > 1 ? { phyllotaxis: { kind: 'whorled', count: pairs } as const } : {}),
 		from,
 		angle: [
 			[from, low],
