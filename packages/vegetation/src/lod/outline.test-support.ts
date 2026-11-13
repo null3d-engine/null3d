@@ -4,6 +4,8 @@
 // cards, which hold the same outline, so a matte costs thousands of triangles and not millions.
 // Only the tests import this file.
 import type { PlantAsset, PlantPart, SpeciesKitData } from '../asset';
+import { quatRotate, type Vector3 } from '../core/math';
+import { DETAILS } from '../core/types';
 import type { MeshInput } from '../stages';
 import { cardMesh } from './cards';
 import { dequantisePosition } from './quantise';
@@ -31,6 +33,8 @@ const FRAME_MARGIN = 0.2;
  * @param asset The grown variant.
  * @param level The level.
  * @param size Pixels along each side of each view.
+ * @param shoots How the nearest level's shoot rows are drawn: as their cards, or `leaves` for the
+ *   triangles of each row's prototype at the kit's tier, the plant's leaf form itself.
  * @returns The matte.
  */
 export function outlineMatte(
@@ -38,6 +42,7 @@ export function outlineMatte(
 	asset: PlantAsset,
 	level: 0 | 1 | 2,
 	size = 128,
+	shoots: 'cards' | 'leaves' = 'cards',
 ): OutlineMatte {
 	const covered = new Uint8Array(size * size * 2);
 	// The frame: the skeleton's bounds with a margin for the foliage. Every sparseness and maximum
@@ -112,10 +117,34 @@ export function outlineMatte(
 		draw(positions, arrays.indices, uvs);
 	};
 	for (const part of asset.levels[level].parts) drawPart(part);
+	// The nearest level's shoot rows as the leaves they are: each row's prototype, placed.
+	if (level === 0 && shoots === 'leaves' && asset.shootDetail !== 'none') {
+		const rows = asset.shoots;
+		const tier = DETAILS.indexOf(kit.detail);
+		const from: Vector3 = [0, 0, 0];
+		const to: Vector3 = [0, 0, 0];
+		for (let r = 0; r < rows.count; r++) {
+			const arrays = kit.prototypes[rows.prototype[r] as number]?.tiers[tier];
+			if (!arrays) continue;
+			const scale = rows.scale[r] as number;
+			const placed = new Float32Array(arrays.positions.length);
+			for (let i = 0; i < placed.length; i += 3) {
+				from[0] = (arrays.positions[i] as number) * scale;
+				from[1] = (arrays.positions[i + 1] as number) * scale;
+				from[2] = (arrays.positions[i + 2] as number) * scale;
+				quatRotate(rows.rotation, r * 4, from, to);
+				placed[i] = to[0] + (rows.position[r * 3] as number);
+				placed[i + 1] = to[1] + (rows.position[r * 3 + 1] as number);
+				placed[i + 2] = to[2] + (rows.position[r * 3 + 2] as number);
+			}
+			draw(placed, arrays.indices);
+		}
+	}
 	// The nearest level's shoot rows, where it draws them: as their cards.
-	if (level === 0 && asset.shoots.count > 0 && asset.shootDetail !== 'none') {
+	if (level === 0 && shoots === 'cards' && asset.shoots.count > 0 && asset.shootDetail !== 'none') {
 		const input = {
-			record: kit.record,
+			// The nearest level draws all its wood, so its cards make up for none.
+			record: { ...kit.record, lod: { ...kit.record.lod, woodOrders: [255, 255] } },
 			seed: asset.seed,
 			variant: asset.variant,
 			season: asset.season,
@@ -157,4 +186,36 @@ export function outlineOverlap(a: OutlineMatte, b: OutlineMatte): number {
 		either += inA | inB;
 	}
 	return either === 0 ? 1 : both / either;
+}
+
+/**
+ * The share of sky inside a plant's outline in the front view of a matte: over the rows of pixels a
+ * crown stands in, the pixels between each row's first and last covered pixel that nothing covers.
+ * Two mattes of one plant are read against one outline, the first's, so a level that draws less is
+ * read as more open and not as a smaller plant.
+ *
+ * @param outline The matte whose rows give the outline: the plant's leaf form.
+ * @param matte The matte whose cover is read inside it.
+ * @param from The lowest row read, as a share of the matte's height: above the bare trunk.
+ * @returns The sky share, from 0 to 1.
+ */
+export function skyShare(outline: OutlineMatte, matte: OutlineMatte, from = 0): number {
+	const { size } = outline;
+	let inside = 0;
+	let open = 0;
+	for (let y = Math.floor(from * size); y < size; y++) {
+		let first = -1;
+		let last = -1;
+		for (let x = 0; x < size; x++)
+			if (outline.covered[y * size + x]) {
+				if (first < 0) first = x;
+				last = x;
+			}
+		if (first < 0) continue;
+		for (let x = first; x <= last; x++) {
+			inside++;
+			if (!matte.covered[y * size + x]) open++;
+		}
+	}
+	return inside === 0 ? 0 : open / inside;
 }

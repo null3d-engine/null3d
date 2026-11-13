@@ -1,14 +1,17 @@
 // The card levels: each shoot row becomes its prototype's three card planes in the first card
-// level, in plant space. The second level keeps every second card of the first in the rows'
-// space-filling order, and each kept card grows about its middle by the square root of that step,
-// so the thinned crown covers about as much as the full one (D-241's card rule).
+// level, in plant space, at the size of the shoot the card pictures. The second level keeps every
+// second card of the first in the rows' space-filling order, and every row that sets the leaf
+// form's extent. Each kept card grows about its middle to make up the cover of the card that went,
+// by the square root of that step at most (D-241's card rule), and only as far as the plant's leaf
+// form reaches: a card's picture never stands outside the hull of the shoots drawn at their own
+// size, so every level is the same plant, as tall, as wide and as deep.
 //
 // A card vertex carries its row's wind record (high and low byte, global in the species' table), the
 // row's flutter phase, and the row's sky visibility. Its second texture coordinate holds the share
 // of the way up the card, for the shoot's bend, and the plane: 0 and 1 for the crossed vertical
 // planes, 2 for the horizontal one, over 2.
-import type { MeshArrays } from '../asset';
-import { normalize3, quatRotate, type Vector3 } from '../core/math';
+import type { MeshArrays, ShootRows, SpeciesKitData } from '../asset';
+import { atan2, normalize3, quatRotate, type Vector3 } from '../core/math';
 import { MeshWriter } from '../leaf/writer';
 import type { MeshInput } from '../stages';
 import { VARIANT_RECORDS } from '../wind/records';
@@ -30,24 +33,449 @@ const SEED_REACH = 2.5;
 /** Metres between two cards within which their leaves meet, so one joins the other's clump. */
 const CARD_REACH = 2;
 
+/** Texels of the card atlas with at least this coverage are the picture; the rest is clear. */
+const OPAQUE = 128;
+
+/** The bands of height and the sectors round the plant that the leaf form's hull is read in. */
+const HULL_BANDS = 24;
+const HULL_SECTORS = 24;
+
+/** How far past the leaf form's hull a grown card's picture may stand, as a share: none to speak of. */
+const HULL_SLACK = 1e-4;
+
+/** The halvings that find how far a card may grow inside the hull. */
+const GROW_STEPS = 6;
+
+/** The sectors round the plant in each of which the row that reaches farthest is a row of the rim. */
+const RIM_SECTORS = 16;
+
+/** What a card plane's atlas cell pictures. */
+interface Pictured {
+	/**
+	 * The edge of the picture: points on the plane's right and up extents, each from -1 to 1. For
+	 * each row of the plane's texels, they are the left side of its first texel of at least half
+	 * cover and the right side of its last. The picture lies inside their hull.
+	 */
+	readonly edge: readonly (readonly [right: number, up: number])[];
+	/** The share of the plane that the picture covers. */
+	readonly share: number;
+}
+
+/** The whole plane, for a kit with no atlas. */
+const WHOLE_PLANE: Pictured = {
+	edge: [
+		[-1, -1],
+		[1, -1],
+		[1, 1],
+		[-1, 1],
+	],
+	share: 1,
+};
+
+/** Each atlas's pictures, by the cell's place in it, read once. */
+const PICTURED = new WeakMap<Uint8Array, Map<number, Pictured>>();
+
+/** The picture on one card plane. */
+function picturedOf(
+	kit: SpeciesKitData,
+	cell: readonly [number, number, number, number],
+): Pictured {
+	const size = kit.cards.size;
+	const pixels = kit.cards.color;
+	if (size <= 0 || pixels.length < size * size * 4) return WHOLE_PLANE;
+	let known = PICTURED.get(pixels);
+	if (!known) {
+		known = new Map();
+		PICTURED.set(pixels, known);
+	}
+	const [x, y, w, h] = cell;
+	const key = (y * size + x) * 4096 + w;
+	let found = known.get(key);
+	if (!found) {
+		const edge: [number, number][] = [];
+		let covered = 0;
+		for (let j = 0; j < h; j++) {
+			let left = -1;
+			let right = -1;
+			for (let i = 0; i < w; i++) {
+				if ((pixels[((y + j) * size + x + i) * 4 + 3] as number) < OPAQUE) continue;
+				if (left < 0) left = i;
+				right = i;
+				covered++;
+			}
+			if (left < 0) continue;
+			for (const up of [(j / h) * 2 - 1, ((j + 1) / h) * 2 - 1])
+				edge.push([(left / w) * 2 - 1, up], [((right + 1) / w) * 2 - 1, up]);
+		}
+		found = { edge, share: w * h > 0 ? covered / (w * h) : 0 };
+		known.set(key, found);
+	}
+	return found;
+}
+
 /**
- * Whether a card level keeps a row, and how much it grows the row's cards: every second row of the
- * level above in the space-filling order, grown by the square root of the step. A share below one
- * thins the level's own rows further, by the same rule, so the kept cards grow to hold the crown
- * they stood on; the review tool tests the share to measure what the cards buy.
+ * The hull of a plant's leaf form: how far the pictures of its shoots, each at its own size, reach
+ * from the plant's axis in each band of height and each sector round it, and their lowest and
+ * highest points. A grown card's picture stays inside it.
+ */
+export interface FoliageHull {
+	/** The plant's axis. */
+	readonly x: number;
+	readonly z: number;
+	/** The lowest and the highest point of the leaf form's pictures. */
+	readonly low: number;
+	readonly high: number;
+	/** The least and the most the pictures reach across and in depth: x, then z. */
+	readonly across: readonly [number, number];
+	readonly depth: readonly [number, number];
+	/** The square of the farthest reach, per band of height then sector. */
+	readonly reach: Float32Array;
+	/**
+	 * One flag per row, 1 for a row of the rim: the row whose picture stands highest, each row
+	 * whose picture ends the leaf form across or in depth, and the row that reaches farthest from
+	 * the plant's axis in each sector round it. Every card level keeps these rows, so it is as tall
+	 * and as wide as the leaf form from every side.
+	 */
+	readonly rim: Uint8Array;
+}
+
+/** Each plant's hull, by its rows, found once. */
+const HULLS = new WeakMap<ShootRows, FoliageHull>();
+
+/** The place in a hull's table of a point's band and sector. */
+function hullCell(hull: FoliageHull, x: number, y: number, z: number): number {
+	const tall = Math.max(1e-9, hull.high - hull.low);
+	const band = Math.min(
+		HULL_BANDS - 1,
+		Math.max(0, Math.floor(((y - hull.low) / tall) * HULL_BANDS)),
+	);
+	const turn = atan2(z - hull.z, x - hull.x) / (2 * Math.PI) + 0.5;
+	const sector = Math.min(HULL_SECTORS - 1, Math.max(0, Math.floor(turn * HULL_SECTORS)));
+	return band * HULL_SECTORS + sector;
+}
+
+/**
+ * Calls back with each point on the edge of the picture of each of a row's card planes, in plant
+ * space, for a card moved by `shift` and grown by `grow` about each plane's middle.
+ */
+function picturedCorners(
+	kit: SpeciesKitData,
+	rows: ShootRows,
+	r: number,
+	planes: number,
+	grow: number,
+	shift: Readonly<Vector3>,
+	each: (x: number, y: number, z: number) => void,
+): void {
+	const prototype = kit.prototypes[rows.prototype[r] as number];
+	if (!prototype) return;
+	const scale = rows.scale[r] as number;
+	const local: Vector3 = [0, 0, 0];
+	const world: Vector3 = [0, 0, 0];
+	for (const plane of prototype.card.planes.slice(0, planes)) {
+		for (const [sx, sy] of picturedOf(kit, plane.front).edge) {
+			for (let c = 0; c < 3; c++)
+				local[c] =
+					((plane.centre[c] as number) +
+						grow * (sx * (plane.right[c] as number) + sy * (plane.up[c] as number))) *
+					scale;
+			quatRotate(rows.rotation, r * 4, local, world);
+			each(
+				(rows.position[r * 3] as number) + world[0] + shift[0],
+				(rows.position[r * 3 + 1] as number) + world[1] + shift[1],
+				(rows.position[r * 3 + 2] as number) + world[2] + shift[2],
+			);
+		}
+	}
+}
+
+/** No move of a card from its row's own place. */
+const NO_SHIFT: Readonly<Vector3> = [0, 0, 0];
+
+/**
+ * The hull of a dressed variant's leaf form.
+ *
+ * @param input The dressed variant.
+ * @returns The hull.
+ * @category api/vegetation
+ */
+export function foliageHull(input: Pick<MeshInput, 'kit' | 'rows' | 'skeleton'>): FoliageHull {
+	const { rows, kit, skeleton } = input;
+	const known = HULLS.get(rows);
+	if (known) return known;
+	const points: number[] = [];
+	const x0 = (skeleton.bounds.min[0] + skeleton.bounds.max[0]) / 2;
+	const z0 = (skeleton.bounds.min[2] + skeleton.bounds.max[2]) / 2;
+	let low = Number.POSITIVE_INFINITY;
+	let high = Number.NEGATIVE_INFINITY;
+	const across: [number, number] = [Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY];
+	const depth: [number, number] = [Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY];
+	// The rows that set the extent: the highest, the two ends across, the two ends in depth, then
+	// the farthest of each sector, with how far each of those reaches.
+	const ends = new Int32Array(5 + RIM_SECTORS).fill(-1);
+	const farthest = new Float64Array(RIM_SECTORS);
+	for (let r = 0; r < rows.count; r++)
+		picturedCorners(kit, rows, r, Number.POSITIVE_INFINITY, 1, NO_SHIFT, (x, y, z) => {
+			points.push(x, y, z);
+			if (y < low) low = y;
+			if (y > high) {
+				high = y;
+				ends[0] = r;
+			}
+			if (x < across[0]) {
+				across[0] = x;
+				ends[1] = r;
+			}
+			if (x > across[1]) {
+				across[1] = x;
+				ends[2] = r;
+			}
+			if (z < depth[0]) {
+				depth[0] = z;
+				ends[3] = r;
+			}
+			if (z > depth[1]) {
+				depth[1] = z;
+				ends[4] = r;
+			}
+			const reach = (x - x0) ** 2 + (z - z0) ** 2;
+			const turn = atan2(z - z0, x - x0) / (2 * Math.PI) + 0.5;
+			const sector = Math.min(RIM_SECTORS - 1, Math.max(0, Math.floor(turn * RIM_SECTORS)));
+			if (reach > (farthest[sector] as number)) {
+				farthest[sector] = reach;
+				ends[5 + sector] = r;
+			}
+		});
+	const rim = new Uint8Array(rows.count);
+	for (const r of ends) if (r >= 0) rim[r] = 1;
+	const hull: FoliageHull = {
+		x: x0,
+		z: z0,
+		low: points.length > 0 ? low : 0,
+		high: points.length > 0 ? high : 0,
+		across,
+		depth,
+		reach: new Float32Array(HULL_BANDS * HULL_SECTORS),
+		rim,
+	};
+	const own = new Float32Array(HULL_BANDS * HULL_SECTORS);
+	for (let i = 0; i < points.length; i += 3) {
+		const x = points[i] as number;
+		const z = points[i + 2] as number;
+		const cell = hullCell(hull, x, points[i + 1] as number, z);
+		const reach = (x - hull.x) ** 2 + (z - hull.z) ** 2;
+		if (reach > (own[cell] as number)) own[cell] = reach;
+	}
+	// A cell reaches as far as its neighbours do, so a card that leans across a band's or a sector's
+	// edge is judged by the crown beside it and not by an empty slice of it.
+	for (let band = 0; band < HULL_BANDS; band++)
+		for (let sector = 0; sector < HULL_SECTORS; sector++) {
+			let most = 0;
+			for (let db = -1; db <= 1; db++) {
+				const b = band + db;
+				if (b < 0 || b >= HULL_BANDS) continue;
+				for (let ds = -1; ds <= 1; ds++)
+					most = Math.max(
+						most,
+						own[b * HULL_SECTORS + ((sector + ds + HULL_SECTORS) % HULL_SECTORS)] as number,
+					);
+			}
+			hull.reach[band * HULL_SECTORS + sector] = most;
+		}
+	HULLS.set(rows, hull);
+	return hull;
+}
+
+/**
+ * How much a row's cards may grow about their middles and keep their pictures inside the leaf
+ * form's hull: the growth asked for where that fits, or else the most that does, never under 1.
+ * Cards with no room to grow where they stand draw back from the hull as they grow, toward the
+ * middle of the plant, so their pictures reach no farther out than at their own size.
+ *
+ * @param input The dressed variant.
+ * @param r The row whose prototype and turn the cards take.
+ * @param wanted The growth asked for.
+ * @param planes The card planes drawn, every plane by default.
+ * @param shift How far the cards stand from the row's own place.
+ * @param back Receives how far the grown cards draw back from where they stood. Cards grow where
+ *   they stand for a caller that gives none.
+ * @returns The growth.
+ * @category api/vegetation
+ */
+export function growthInHull(
+	input: Pick<MeshInput, 'kit' | 'rows' | 'skeleton'>,
+	r: number,
+	wanted: number,
+	planes = Number.POSITIVE_INFINITY,
+	shift: Readonly<Vector3> = NO_SHIFT,
+	back?: Vector3,
+): number {
+	if (back) back.fill(0);
+	if (!(wanted > 1)) return 1;
+	const { kit, rows } = input;
+	const hull = foliageHull(input);
+	// The way from the cards to the middle of the plant, which a card with no room draws back along.
+	const inward = normalize3([
+		hull.x - (rows.position[r * 3] as number) - shift[0],
+		(hull.low + hull.high) / 2 - (rows.position[r * 3 + 1] as number) - shift[1],
+		hull.z - (rows.position[r * 3 + 2] as number) - shift[2],
+	]);
+	// How far the pictures of the grown cards reach against that way.
+	const outward = (grow: number): number => {
+		let most = Number.NEGATIVE_INFINITY;
+		picturedCorners(kit, rows, r, planes, grow, shift, (x, y, z) => {
+			most = Math.max(most, -(x * inward[0] + y * inward[1] + z * inward[2]));
+		});
+		return most;
+	};
+	const moved: Vector3 = [0, 0, 0];
+	const fits = (grow: number, move: number): boolean => {
+		for (let c = 0; c < 3; c++) moved[c] = (shift[c] as number) + move * (inward[c] as number);
+		let inside = true;
+		picturedCorners(kit, rows, r, planes, grow, moved, (x, y, z) => {
+			if (!inside) return;
+			const tall = (hull.high - hull.low) * HULL_SLACK;
+			if (y < hull.low - tall || y > hull.high + tall) inside = false;
+			else if (x < hull.across[0] || x > hull.across[1] || z < hull.depth[0] || z > hull.depth[1])
+				inside = false;
+			else if (
+				(x - hull.x) ** 2 + (z - hull.z) ** 2 >
+				(hull.reach[hullCell(hull, x, y, z)] as number) * (1 + HULL_SLACK)
+			)
+				inside = false;
+		});
+		return inside;
+	};
+	if (fits(wanted, 0)) return wanted;
+	// Cards draw back only for a caller that takes the move.
+	const own = back ? outward(1) : 0;
+	const drawBack = (grow: number): number => (back ? Math.max(0, outward(grow) - own) : 0);
+	let low = 1;
+	let lowMove = 0;
+	let high = wanted;
+	for (let step = 0; step <= GROW_STEPS; step++) {
+		// The first try is the growth asked for; each later one halves what is left.
+		const middle = step === 0 ? wanted : (low + high) / 2;
+		const move = drawBack(middle);
+		if (fits(middle, move)) {
+			low = middle;
+			lowMove = move;
+			if (step === 0) break;
+		} else high = middle;
+	}
+	if (back) for (let c = 0; c < 3; c++) back[c] = lowMove * (inward[c] as number);
+	return low;
+}
+
+/** How many rows of the space-filling order a card level takes one of. */
+function cardStep(level: 1 | 2, share = 1): number {
+	const own = 1 << (level - 1);
+	return Math.max(1, Math.round(own / Math.max(0.05, Math.min(1, share))));
+}
+
+/**
+ * Whether a card level's step keeps a row, and the most it may grow the row's cards: every second
+ * row of the level above in the space-filling order, grown by the square root of the step where
+ * the leaf form's hull has that much room (`growthInHull`). A share below one thins the level's
+ * own rows further, by the same rule; the review tool tests the share to measure what the cards
+ * buy. A level also keeps the rows of the leaf form's rim (`cardRows`).
  *
  * @param order The row's rank on the space-filling curve.
  * @param level The card level.
  * @param share The share of the level's own card rows to keep, from 0.05 to 1.
- * @returns The growth of the row's cards, or 0 when the level drops it.
+ * @returns The most the row's cards may grow, or 0 when the step drops it.
  * @category api/vegetation
  */
 export function cardKeep(order: number, level: 1 | 2, share = 1): number {
-	const own = 1 << (level - 1);
-	const every = Math.max(1, Math.round(own / Math.max(0.05, Math.min(1, share))));
+	const every = cardStep(level, share);
 	if (order % every !== 0) return 0;
 	const grow = Math.sqrt(every);
 	return grow;
+}
+
+/**
+ * The most each row's cards may grow at a card level, 0 for a row the level drops. A level keeps
+ * the row each step of the space-filling order names (`cardKeep`), and it keeps every row of the
+ * leaf form's rim. A rim row takes the place of its step's own row, so the level holds no more
+ * cards for it unless two rows of one step both stand on the rim.
+ *
+ * @param input The dressed variant.
+ * @param level The card level.
+ * @returns One growth per row.
+ * @category api/vegetation
+ */
+export function cardRows(
+	input: Pick<MeshInput, 'kit' | 'rows' | 'skeleton' | 'cards'>,
+	level: 1 | 2,
+): Float32Array {
+	const { rows } = input;
+	const every = cardStep(level, input.cards ?? 1);
+	const grow = Math.sqrt(every);
+	const out = new Float32Array(rows.count);
+	const rim = every > 1 ? foliageHull(input).rim : undefined;
+	// The steps whose own row gives its place to a row of the rim.
+	const given = new Set<number>();
+	if (rim)
+		for (let r = 0; r < rows.count; r++) {
+			const order = rows.order[r] as number;
+			if (rim[r] === 1 && order % every !== 0) given.add(Math.floor(order / every));
+		}
+	for (let r = 0; r < rows.count; r++) {
+		const order = rows.order[r] as number;
+		if (rim?.[r] === 1 || (order % every === 0 && !given.has(Math.floor(order / every))))
+			out[r] = grow;
+	}
+	return out;
+}
+
+/**
+ * The area of the picture on a row's cards as a camera sees it: that of the plane that pictures
+ * the most, since the crossed planes show one shoot from each side.
+ */
+function rowCover(kit: SpeciesKitData, rows: ShootRows, r: number): number {
+	const prototype = kit.prototypes[rows.prototype[r] as number];
+	if (!prototype) return 0;
+	let most = 0;
+	for (const plane of prototype.card.planes) {
+		const area =
+			4 *
+			Math.hypot(plane.right[0], plane.right[1], plane.right[2]) *
+			Math.hypot(plane.up[0], plane.up[1], plane.up[2]) *
+			picturedOf(kit, plane.front).share;
+		if (area > most) most = area;
+	}
+	const scale = rows.scale[r] as number;
+	return most * scale * scale;
+}
+
+/**
+ * How much a level's cards grow to make up the cover of the wood the level does not draw: the
+ * square root of one and that wood's share of the cover of the leaf form's cards. A branch's cover
+ * is the area a camera sees of it from its side. A level that draws all the wood grows nothing.
+ *
+ * @param input The dressed variant.
+ * @param drawn Whether the level draws an axis.
+ * @returns The growth, 1 or more.
+ */
+function woodMakeUp(input: MeshInput, drawn: (axis: number) => boolean): number {
+	const { skeleton, rows, kit } = input;
+	const { axes, position, radius } = skeleton;
+	let wood = 0;
+	for (let a = 0; a < axes.count; a++) {
+		if (drawn(a)) continue;
+		for (let n = axes.first[a] as number; n < (axes.last[a] as number); n++)
+			wood +=
+				Math.hypot(
+					(position[n * 3 + 3] as number) - (position[n * 3] as number),
+					(position[n * 3 + 4] as number) - (position[n * 3 + 1] as number),
+					(position[n * 3 + 5] as number) - (position[n * 3 + 2] as number),
+				) *
+				((radius[n] as number) + (radius[n + 1] as number));
+	}
+	if (wood <= 0) return 1;
+	let cards = 0;
+	for (let r = 0; r < rows.count; r++) cards += rowCover(kit, rows, r);
+	return cards > 0 ? Math.sqrt(1 + wood / cards) : 1;
 }
 
 /**
@@ -70,8 +498,9 @@ function joinOf(input: MeshInput): CardJoin {
 function keptRows(input: MeshInput, level: 1 | 2): number[] {
 	const { rows, kit } = input;
 	const kept: number[] = [];
+	const grows = cardRows(input, level);
 	for (let r = 0; r < rows.count; r++) {
-		if (cardKeep(rows.order[r] as number, level, input.cards ?? 1) === 0) continue;
+		if (grows[r] === 0) continue;
 		if (!kit.prototypes[rows.prototype[r] as number]) continue;
 		kept.push(r);
 	}
@@ -251,7 +680,6 @@ export function cardMesh(input: MeshInput, level: 1 | 2): MeshArrays {
 	const { rows, kit } = input;
 	const mesh = new MeshWriter();
 	const size = kit.cards.size || 1;
-	const widen = Math.max(0, input.record.lod.cardGrow ?? 1);
 	const base = input.variant * VARIANT_RECORDS;
 	const local: Vector3 = [0, 0, 0];
 	const world: Vector3 = [0, 0, 0];
@@ -260,11 +688,21 @@ export function cardMesh(input: MeshInput, level: 1 | 2): MeshArrays {
 	const { position, axisOf, nodeCount } = skeleton;
 	const keep = input.record.lod.woodOrders[level - 1] ?? 255;
 	const twigs = input.cardJoin === 'twig' ? new Set(cardTwigs(input, level)) : undefined;
+	const grows = cardRows(input, level);
+	const back: Vector3 = [0, 0, 0];
+	const support = supportAxes(input, level);
+	const more = woodMakeUp(
+		input,
+		(axis) => (skeleton.axes.order[axis] as number) <= keep || support?.[axis] === 1,
+	);
 	for (let r = 0; r < rows.count; r++) {
-		const grow = cardKeep(rows.order[r] as number, level, input.cards ?? 1);
-		if (grow === 0) continue;
+		const most = (grows[r] as number) * more;
+		if (most === 0 || connected[r] === 0) continue;
 		const prototype = kit.prototypes[rows.prototype[r] as number];
 		if (!prototype) continue;
+		// A card grows to make up the cover its level does not draw, a dropped neighbour's and the
+		// dropped wood's, as far as the leaf form's hull lets it.
+		const grow = growthInHull(input, r, most, undefined, NO_SHIFT, back);
 		const scale = rows.scale[r] as number;
 		const record = base + (rows.record[r] as number);
 		const colour = [
@@ -276,7 +714,6 @@ export function cardMesh(input: MeshInput, level: 1 | 2): MeshArrays {
 		const px = rows.position[r * 3] as number;
 		const py = rows.position[r * 3 + 1] as number;
 		const pz = rows.position[r * 3 + 2] as number;
-		if (connected[r] === 0) continue;
 		prototype.card.planes.forEach((plane, k) => {
 			const n = normalize3([
 				plane.right[1] * plane.up[2] - plane.right[2] * plane.up[1],
@@ -290,11 +727,11 @@ export function cardMesh(input: MeshInput, level: 1 | 2): MeshArrays {
 				for (let c = 0; c < 3; c++)
 					local[c] =
 						((plane.centre[c] as number) +
-							grow * widen * (sx * (plane.right[c] as number) + sy * (plane.up[c] as number))) *
+							grow * (sx * (plane.right[c] as number) + sy * (plane.up[c] as number))) *
 						scale;
 				quatRotate(rows.rotation, r * 4, local, world);
 				mesh.vertex(
-					[px + world[0], py + world[1], pz + world[2]],
+					[px + back[0] + world[0], py + back[1] + world[1], pz + back[2] + world[2]],
 					normal,
 					[(rx + ((sx + 1) / 2) * rw) / size, (ry + ((sy + 1) / 2) * rh) / size],
 					[(sy + 1) / 2, k / 2],
@@ -357,7 +794,7 @@ export function cardMesh(input: MeshInput, level: 1 | 2): MeshArrays {
 					[centre[0] * scale, centre[1] * scale, centre[2] * scale],
 					world,
 				);
-				to = [px + world[0], py + world[1], pz + world[2]];
+				to = [px + back[0] + world[0], py + back[1] + world[1], pz + back[2] + world[2]];
 			}
 			const dx = to[0] - from[0];
 			const dy = to[1] - from[1];
@@ -686,7 +1123,6 @@ export function cardClusters(
 	const { rows, kit } = input;
 	const total = walk.length;
 	const clusters = Math.max(0, Math.min(total, Math.floor(count)));
-	const widen = Math.max(0, input.record.lod.cardGrow ?? 1);
 	const centre: Vector3 = [0, 0, 0];
 	const local: Vector3 = [0, 0, 0];
 	/** The middle of a row's first card plane, in plant space. */
@@ -725,7 +1161,7 @@ export function cardClusters(
 			const dx = point[0] - (cluster.centre[0] + (edge[0] - lead[0]) * scale);
 			const dy = point[1] - (cluster.centre[1] + (edge[1] - lead[1]) * scale);
 			const dz = point[2] - (cluster.centre[2] + (edge[2] - lead[2]) * scale);
-			const half = cluster.grow * widen * scale;
+			const half = cluster.grow * scale;
 			const rl = Math.sqrt(right[0] ** 2 + right[1] ** 2 + right[2] ** 2) || 1;
 			const ul = Math.sqrt(up[0] ** 2 + up[1] ** 2 + up[2] ** 2) || 1;
 			const across = Math.max(
@@ -805,7 +1241,6 @@ export function cardClusters(
 		spread = Math.sqrt(spread) * CLUSTER_SPREAD;
 		const plane = kit.prototypes[rows.prototype[row] as number]?.card.planes[0];
 		const half =
-			widen *
 			(rows.scale[row] as number) *
 			(plane
 				? Math.max(
@@ -814,7 +1249,14 @@ export function cardClusters(
 					)
 				: 0);
 		const fit = half > 1e-9 ? (spread + half) / half : 1;
-		const grow = Math.max(1, Math.min(Math.sqrt(members), fit));
+		// The cluster's cards stand at the middle of its rows and grow to make up their cover, as far
+		// as the leaf form's hull lets them.
+		cardCentre(row, centre);
+		const grow = growthInHull(input, row, Math.max(1, Math.min(Math.sqrt(members), fit)), planes, [
+			middle[0] - centre[0],
+			middle[1] - centre[1],
+			middle[2] - centre[2],
+		]);
 		const onAxis = anchorOf(input, row, drawn);
 		const anchor = onAxis && surface ? surface(onAxis) : onAxis;
 		const joined =
@@ -908,7 +1350,6 @@ export function clusterCardMesh(
 	const { rows, kit } = input;
 	const mesh = new MeshWriter();
 	const size = kit.cards.size || 1;
-	const widen = Math.max(0, input.record.lod.cardGrow ?? 1);
 	const base = input.variant * VARIANT_RECORDS;
 	const local: Vector3 = [0, 0, 0];
 	const world: Vector3 = [0, 0, 0];
@@ -945,9 +1386,7 @@ export function clusterCardMesh(
 				for (let c = 0; c < 3; c++)
 					local[c] =
 						((plane.centre[c] as number) +
-							cluster.grow *
-								widen *
-								(sx * (plane.right[c] as number) + sy * (plane.up[c] as number))) *
+							cluster.grow * (sx * (plane.right[c] as number) + sy * (plane.up[c] as number))) *
 						scale;
 				quatRotate(rows.rotation, r * 4, local, world);
 				mesh.vertex(

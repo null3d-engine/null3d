@@ -515,9 +515,6 @@ export const record: Species = {
 		// a shoot of this length spans half a column of pixels at the switch, and the nearer rows
 		// carry only the shoots a walk up to the curtain needs.
 		switchPixels: [500, 12, 160],
-		// The cards stand well past the shoots they picture, so a hanging shoot's card overlaps its
-		// neighbours and the far crown reads as one curtain rather than a fringe of specks.
-		cardGrow: 4,
 		// Stills 01 and 02: a card's twig is thinner than a pixel at a whole view, so each draws its
 		// supporting twig as a line and the join shows.
 		cardStalk: 4,

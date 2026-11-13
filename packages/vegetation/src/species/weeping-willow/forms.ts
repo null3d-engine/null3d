@@ -160,10 +160,6 @@ export const forms: Readonly<Record<string, SpeciesForm>> = {
 		base: { flare: { amount: 0.25, height: 0.3 }, buttress: null, roots: null, flutes: null },
 		// A young willow bears no catkins.
 		extras: null,
-		// The young form's shoots are short, so the mature cards would stand about four times their
-		// bounds and fill a crown far wider than this form's own vase. This form grows its cards at
-		// its own scale, and nothing else takes the species' detail levels.
-		lod: { cardGrow: 1.1 },
 		// No turning video shows this form, so the all-round check takes the form's own band.
 		roundBand: null,
 	},

@@ -13,7 +13,7 @@ import { placeShoots } from '../leaf/instancer';
 import { OAK_MANIFEST, oakRecord, testKit } from '../leaf/oak.test-support';
 import { record as oak } from '../species/pedunculate-oak/record';
 import { bakeCards, paletteOf } from './card-bake';
-import { cardKeep, cardMesh, connectedCards } from './cards';
+import { cardKeep, cardMesh, cardRows, connectedCards, foliageHull } from './cards';
 
 /** sRGB byte to linear. */
 const linear = (byte: number) => {
@@ -308,26 +308,51 @@ describe('the card levels', () => {
 		expect(reached).toBeGreaterThan(0);
 	});
 
-	it('keeps every second card in the thinned level, each grown by the square root of two', () => {
+	it('keeps every second card in the thinned level, and every row of the rim', () => {
 		const second = cardMesh(mesh, 2);
-		const kept = drawnRows(2).filter((r) => (rows.order[r] as number) % 2 === 0).length;
-		expect(second.indices.length / 3).toBe(kept * 6);
+		const keeps = cardRows(mesh, 2);
+		const drawn = new Set(drawnRows(2));
+		expect(second.indices.length / 3).toBe(drawn.size * 6);
+		const rim = foliageHull(mesh).rim;
+		expect(rim.some((flag) => flag === 1)).toBe(true);
+		// Each step of two rows keeps its own row, or the row of the rim that stands in its place.
+		const stepHasRim = new Set<number>();
+		for (let r = 0; r < rows.count; r++)
+			if (rim[r] === 1) stepHasRim.add((rows.order[r] as number) >> 1);
+		for (let r = 0; r < rows.count; r++) {
+			const order = rows.order[r] as number;
+			const own = order % 2 === 0 && !stepHasRim.has(order >> 1);
+			expect([r, (keeps[r] as number) > 0]).toEqual([r, rim[r] === 1 || own]);
+			if ((keeps[r] as number) > 0) expect(keeps[r] as number).toBeCloseTo(Math.SQRT2, 6);
+		}
 		expect(cardKeep(4, 2)).toBeCloseTo(Math.SQRT2, 12);
 		expect(cardKeep(3, 2)).toBe(0);
 		expect(cardKeep(3, 1)).toBe(1);
 	});
 
-	it('thins a card level further by the same rule, the kept cards growing to hold the crown', () => {
-		const half = cardMesh({ ...mesh, cards: 0.5 }, 2);
-		const everyFour = drawnRows(2).filter((r) => (rows.order[r] as number) % 4 === 0).length;
-		expect(half.indices.length / 3).toBe(everyFour * 6);
+	it('thins a card level further by the same rule', () => {
+		for (const [share, every] of [
+			[0.5, 4],
+			[0.25, 8],
+		] as const) {
+			const thinned = { ...mesh, cards: share };
+			const level = cardMesh(thinned, 2);
+			const keeps = cardRows(thinned, 2);
+			const rim = foliageHull(thinned).rim;
+			const flags = connectedCards(thinned, 2);
+			let drawn = 0;
+			for (let r = 0; r < rows.count; r++) {
+				if (flags[r] === 1) drawn++;
+				// A row the step drops stays only where it stands on the rim.
+				if ((rows.order[r] as number) % every !== 0)
+					expect([share, r, (keeps[r] as number) > 0]).toEqual([share, r, rim[r] === 1]);
+			}
+			expect(level.indices.length / 3).toBe(drawn * 6);
+		}
 		expect(cardKeep(0, 2, 0.5)).toBe(2);
 		expect(cardKeep(2, 2, 0.5)).toBe(0);
-		const quarter = cardMesh({ ...mesh, cards: 0.25 }, 2);
-		const everyEight = drawnRows(2).filter((r) => (rows.order[r] as number) % 8 === 0).length;
-		expect(quarter.indices.length / 3).toBe(everyEight * 6);
 		expect(cardKeep(0, 2, 0.25)).toBeCloseTo(2 * Math.SQRT2, 12);
-		// A share of one keeps the level's own cards and their size.
+		// A share of one keeps the level's own cards.
 		expect(cardKeep(0, 2, 1)).toBeCloseTo(Math.SQRT2, 12);
 	});
 });

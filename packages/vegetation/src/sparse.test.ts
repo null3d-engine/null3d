@@ -19,7 +19,7 @@ import {
 } from './generate';
 import { cardTop } from './grow/height';
 import { FOLIAGE_FLOOR, GREAT_LIMB_SHARE, structuralAxes } from './grow/sparse';
-import { cardKeep } from './lod/cards';
+import { cardRows } from './lod/cards';
 import { connectedBody } from './lod/connect';
 import type { MeshInput } from './stages';
 
@@ -188,7 +188,7 @@ function drawnTop(kit: SpeciesKitData, asset: PlantAsset): number {
 	let top = Number.NEGATIVE_INFINITY;
 	const { position, nodeCount } = asset.skeleton;
 	for (let n = 0; n < nodeCount; n++) top = Math.max(top, position[n * 3 + 1] as number);
-	return Math.max(top, cardTop(kit, asset.shoots, kit.record.lod.cardGrow ?? 1));
+	return Math.max(top, cardTop(kit, asset.shoots));
 }
 
 for (const id of SPECIES) {
@@ -275,8 +275,7 @@ for (const id of SPECIES) {
 							]);
 							if (level === 0) continue;
 							let share = 0;
-							for (let r = 0; r < plant.shoots.count; r++)
-								if (cardKeep(plant.shoots.order[r] as number, level) > 0) share++;
+							for (const grow of cardRows(input, level)) if (grow > 0) share++;
 							expect([at, level, body.cards]).toEqual([at, level, share]);
 						}
 						// As tall, on the same trunk and great limbs, in the same frame.
@@ -317,10 +316,10 @@ for (const id of SPECIES) {
 						}
 						before = plant;
 					}
-					// The sparsest plant keeps the floor's share of its carriers.
+					// The sparsest plant keeps the floor's share of its carriers, to the whole carrier.
 					const floor = kit.record.sparse?.foliage ?? FOLIAGE_FLOOR;
 					const sparsest = carriers(plants[plants.length - 1] as PlantAsset).size;
-					expect([id, seed, sparsest >= Math.round(fullCarriers.size * floor)]).toEqual([
+					expect([id, seed, sparsest >= Math.floor(fullCarriers.size * floor)]).toEqual([
 						id,
 						seed,
 						true,
