@@ -4,6 +4,7 @@
 // stands every piece on its cut wood.
 import { beforeAll, describe, expect, it } from 'bun:test';
 import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
+import { quatRotate } from '../core/math';
 import type { SpeciesModule } from '../core/record';
 import type { SpeciesId } from '../core/registry';
 import { loadSpecies } from '../core/registry';
@@ -17,8 +18,10 @@ import {
 	pieceKey,
 	planPiece,
 } from '../leaf/piece';
-import type { ShootPlan } from '../leaf/shoot';
-import { bakeCards } from '../lod/card-bake';
+import { meshedPlan, type ShootPlan } from '../leaf/shoot';
+import { SURFACE_LEAF } from '../leaf/writer';
+import { bakeCards, paletteOf } from '../lod/card-bake';
+import { rasterise, rasterTarget } from '../lod/raster';
 import { PIECES as ALDER, STUDIO as ALDER_STUDIO } from './common-alder/pieces';
 import { PIECES as ASH, STUDIO as ASH_STUDIO } from './common-ash/pieces';
 import { PIECES as BEECH, STUDIO as BEECH_STUDIO } from './european-beech/pieces';
@@ -210,63 +213,267 @@ for (const { id, pieces, studio } of SPECIES)
 	});
 
 /**
- * How deep each species' cut branch is against its width, read from its turning video as its
- * narrowest outline over its widest: the branch-turntable video for a branch end and the
- * subbranch-turntable video for a twig.
+ * What each species' turning videos show of its two cuts (still 21 with `branch-turntable`, still 22
+ * with `subbranch-turntable`): `depth` is the cut's narrowest outline over its widest as it turns,
+ * and `edge` is the share of its own box that the cut covers in the narrowest frame. Both are read
+ * by `bun run plants:piece <species> --turns`.
  */
-const DEPTH_OVER_WIDTH: readonly {
+const TURNING: readonly {
 	readonly id: SpeciesId;
 	readonly pieces: readonly PieceRule[];
-	readonly piece: string;
-	readonly video: number;
+	readonly studio: readonly PieceStudio[];
+	readonly still: number;
+	readonly depth: number;
+	readonly edge: number;
 }[] = [
-	{ id: 'pedunculate-oak', pieces: OAK, piece: 'branch-end', video: 0.33 },
-	{ id: 'pedunculate-oak', pieces: OAK, piece: 'twig', video: 0.37 },
-	{ id: 'olive', pieces: OLIVE, piece: 'branch-end', video: 0.38 },
-	{ id: 'olive', pieces: OLIVE, piece: 'twig', video: 0.31 },
-	{ id: 'european-beech', pieces: BEECH, piece: 'branch-end', video: 0.24 },
-	{ id: 'european-beech', pieces: BEECH, piece: 'twig', video: 0.29 },
-	{ id: 'common-ash', pieces: ASH, piece: 'branch-end', video: 0.18 },
-	{ id: 'common-ash', pieces: ASH, piece: 'twig', video: 0.33 },
-	{ id: 'common-alder', pieces: ALDER, piece: 'branch-end', video: 0.29 },
-	{ id: 'common-alder', pieces: ALDER, piece: 'twig', video: 0.2 },
-	{ id: 'holm-oak', pieces: HOLM, piece: 'branch-end', video: 0.3 },
-	{ id: 'holm-oak', pieces: HOLM, piece: 'twig', video: 0.35 },
-	{ id: 'hawthorn-shrub', pieces: HAWTHORN, piece: 'branch-end', video: 0.22 },
+	{ id: 'pedunculate-oak', pieces: OAK, studio: OAK_STUDIO, still: 21, depth: 0.33, edge: 0.358 },
+	{ id: 'pedunculate-oak', pieces: OAK, studio: OAK_STUDIO, still: 22, depth: 0.37, edge: 0.366 },
+	{ id: 'silver-birch', pieces: BIRCH, studio: BIRCH_STUDIO, still: 21, depth: 0.21, edge: 0.493 },
+	{ id: 'silver-birch', pieces: BIRCH, studio: BIRCH_STUDIO, still: 22, depth: 0.27, edge: 0.233 },
+	{
+		id: 'weeping-willow',
+		pieces: WILLOW,
+		studio: WILLOW_STUDIO,
+		still: 21,
+		depth: 0.37,
+		edge: 0.55,
+	},
+	{
+		id: 'weeping-willow',
+		pieces: WILLOW,
+		studio: WILLOW_STUDIO,
+		still: 22,
+		depth: 0.23,
+		edge: 0.466,
+	},
+	{ id: 'olive', pieces: OLIVE, studio: OLIVE_STUDIO, still: 21, depth: 0.38, edge: 0.297 },
+	{ id: 'olive', pieces: OLIVE, studio: OLIVE_STUDIO, still: 22, depth: 0.31, edge: 0.252 },
+	{
+		id: 'european-beech',
+		pieces: BEECH,
+		studio: BEECH_STUDIO,
+		still: 21,
+		depth: 0.24,
+		edge: 0.248,
+	},
+	{ id: 'european-beech', pieces: BEECH, studio: BEECH_STUDIO, still: 22, depth: 0.29, edge: 0.31 },
+	{ id: 'common-ash', pieces: ASH, studio: ASH_STUDIO, still: 21, depth: 0.18, edge: 0.269 },
+	{ id: 'common-ash', pieces: ASH, studio: ASH_STUDIO, still: 22, depth: 0.33, edge: 0.207 },
+	{ id: 'common-alder', pieces: ALDER, studio: ALDER_STUDIO, still: 21, depth: 0.29, edge: 0.365 },
+	{ id: 'common-alder', pieces: ALDER, studio: ALDER_STUDIO, still: 22, depth: 0.2, edge: 0.325 },
+	{ id: 'holm-oak', pieces: HOLM, studio: HOLM_STUDIO, still: 21, depth: 0.3, edge: 0.427 },
+	{ id: 'holm-oak', pieces: HOLM, studio: HOLM_STUDIO, still: 22, depth: 0.35, edge: 0.365 },
+	{
+		id: 'hawthorn-shrub',
+		pieces: HAWTHORN,
+		studio: HAWTHORN_STUDIO,
+		still: 21,
+		depth: 0.22,
+		edge: 0.402,
+	},
+	{
+		id: 'hawthorn-shrub',
+		pieces: HAWTHORN,
+		studio: HAWTHORN_STUDIO,
+		still: 22,
+		depth: 0.39,
+		edge: 0.301,
+	},
 ];
-/** How far a built piece's depth over width may stand from its video's. */
-const DEPTH_BAND = 0.12;
+/** How far a built cut's depth over width may stand from its video's, as a share of the video's. */
+const DEPTH_SHARE = 0.3;
+/** The same for its cover seen edge on. */
+const EDGE_SHARE = 0.35;
+/**
+ * The cuts that do not yet hold their video's figure, each with what is wrong. The test holds every
+ * other cut inside its band, and holds these outside it, so a cut that is mended leaves this list.
+ */
+const OPEN_DEPTH: Readonly<Record<string, string>> = {
+	'silver-birch 22':
+		'0.49 against 0.27: a blade bends at its stalk out of its own face, so a blade that faces the camera reaches toward it',
+	'weeping-willow 22': '0.46 against 0.23: the same bend at the stalk, 40 degrees in the record',
+	'hawthorn-shrub 22':
+		'0.61 against 0.39: as deep in metres as the video, but too narrow face on, its spurs short',
+};
+const OPEN_EDGE: Readonly<Record<string, string>> = {
+	'silver-birch 21':
+		'0.20 against 0.49: its strands hang in the planes of their arms, so edge on they stack into a line',
+	'weeping-willow 22': '0.14 against 0.47: three strands in one plane, edge on',
+	'common-ash 21':
+		'0.38 against 0.27: more leaves than the photograph, which the owner ruled a limit of the reference',
+	'hawthorn-shrub 21': '0.20 against 0.40: its arms and tufts stand in one plane',
+	'hawthorn-shrub 22': '0.16 against 0.30: the same, on a twig too narrow face on',
+};
 
-describe('a piece keeps the depth its turning video shows', () => {
+/** A laid cut's triangles: three corners each, with each corner's leaf texture place. */
+interface Laid {
+	readonly points: Float64Array;
+	readonly uvs: Float32Array;
+	/** One per corner: whether its triangle is a leaf's. */
+	readonly leaf: Uint8Array;
+}
+
+/** A studio layout's meshes at the tier a close view draws, each turned and placed as laid. */
+function laidTriangles(
+	module: SpeciesModule,
+	pieces: readonly PieceRule[],
+	studio: PieceStudio,
+): Laid[] {
+	const tier = DETAILS.indexOf('high');
+	const built = buildPiecesNow(module, pieces);
+	const layout = layStudio(module.record, pieces, studio);
+	const out: Laid[] = [];
+	const add = (
+		mesh: PiecePrototype['tiers'][number] | undefined,
+		rotation: readonly number[],
+		position: readonly number[],
+	): void => {
+		if (!mesh) return;
+		const count = mesh.indices.length;
+		const points = new Float64Array(count * 3);
+		const uvs = new Float32Array(count * 2);
+		const leaf = new Uint8Array(count);
+		const v: [number, number, number] = [0, 0, 0];
+		for (let k = 0; k < count; k++) {
+			const i = mesh.indices[k] as number;
+			v[0] = mesh.positions[i * 3] as number;
+			v[1] = mesh.positions[i * 3 + 1] as number;
+			v[2] = mesh.positions[i * 3 + 2] as number;
+			quatRotate(rotation as number[], 0, v, v);
+			points[k * 3] = v[0] + (position[0] as number);
+			points[k * 3 + 1] = v[1] + (position[1] as number);
+			points[k * 3 + 2] = v[2] + (position[2] as number);
+			uvs[k * 2] = mesh.uvs[i * 2] as number;
+			uvs[k * 2 + 1] = mesh.uvs[i * 2 + 1] as number;
+			leaf[k] = (mesh.colors[i * 4 + 2] as number) === SURFACE_LEAF ? 1 : 0;
+		}
+		out.push({ points, uvs, leaf });
+	};
+	if (layout.stand)
+		add(
+			meshedPlan(
+				layout.stand,
+				DETAILS.map(() => []),
+			).tiers[tier],
+			[0, 0, 0, 1],
+			[0, 0, 0],
+		);
+	for (const placed of layout.placed) {
+		const variants = [
+			...new Set(built.filter((p) => p.piece === placed.piece).map((p) => p.variant)),
+		];
+		const variant = variants[placed.pick % Math.max(1, variants.length)];
+		for (const part of built.filter((p) => p.piece === placed.piece && p.variant === variant))
+			add(part.tiers[tier], placed.rotation, placed.position);
+	}
+	return out;
+}
+
+/** Pixels down the edge-on picture that a cut's cover is read on. */
+const EDGE_ROWS = 240;
+/** Texels a side of the leaf outline the card bake makes. */
+const LEAF_MASK = 512;
+
+/**
+ * A laid cut's depth over its width, and the share of its own box it covers seen edge on: its
+ * triangles drawn along the layout's X axis, a leaf's kept only where its outline covers it.
+ */
+function turned(
+	module: SpeciesModule,
+	meshes: readonly Laid[],
+): { readonly depth: number; readonly edge: number } {
+	const low = [Infinity, Infinity, Infinity];
+	const high = [-Infinity, -Infinity, -Infinity];
+	for (const mesh of meshes)
+		for (let i = 0; i < mesh.points.length; i++) {
+			low[i % 3] = Math.min(low[i % 3] as number, mesh.points[i] as number);
+			high[i % 3] = Math.max(high[i % 3] as number, mesh.points[i] as number);
+		}
+	const [x0, y0, z0] = low as [number, number, number];
+	const [x1, y1, z1] = high as [number, number, number];
+	const scale = EDGE_ROWS / (y1 - y0);
+	const width = Math.max(2, Math.ceil((z1 - z0) * scale) + 2);
+	const target = rasterTarget(width, EDGE_ROWS + 2);
+	const covered = new Uint8Array(width * (EDGE_ROWS + 2));
+	const mask = paletteOf(module.record, module.textures.manifest).mask;
+	for (const mesh of meshes) {
+		const count = mesh.points.length / 3;
+		const screen = new Float64Array(count * 3);
+		const indices = new Uint32Array(count);
+		for (let k = 0; k < count; k++) {
+			screen[k * 3] = ((mesh.points[k * 3 + 2] as number) - z0) * scale + 1;
+			screen[k * 3 + 1] = (y1 - (mesh.points[k * 3 + 1] as number)) * scale + 1;
+			screen[k * 3 + 2] = (mesh.points[k * 3] as number) - x0 + 1;
+			indices[k] = k;
+		}
+		rasterise(target, screen, indices, (f) => {
+			const a = f.triangle * 3;
+			if (mesh.leaf[a] && mask) {
+				const u =
+					(mesh.uvs[a * 2] as number) * f.w0 +
+					(mesh.uvs[a * 2 + 2] as number) * f.w1 +
+					(mesh.uvs[a * 2 + 4] as number) * f.w2;
+				const v =
+					(mesh.uvs[a * 2 + 1] as number) * f.w0 +
+					(mesh.uvs[a * 2 + 3] as number) * f.w1 +
+					(mesh.uvs[a * 2 + 5] as number) * f.w2;
+				const mx = Math.min(LEAF_MASK - 1, Math.max(0, Math.floor(u * LEAF_MASK)));
+				const my = Math.min(LEAF_MASK - 1, Math.max(0, Math.floor(v * LEAF_MASK)));
+				if (!mask[my * LEAF_MASK + mx]) return false;
+			}
+			covered[f.y * width + f.x] = 1;
+			return true;
+		});
+	}
+	// The covered pixels' own box, and the share of it they fill.
+	let left = width;
+	let right = -1;
+	let top = EDGE_ROWS + 2;
+	let bottom = -1;
+	let count = 0;
+	for (let y = 0; y < EDGE_ROWS + 2; y++)
+		for (let x = 0; x < width; x++)
+			if (covered[y * width + x]) {
+				count++;
+				left = Math.min(left, x);
+				right = Math.max(right, x);
+				top = Math.min(top, y);
+				bottom = Math.max(bottom, y);
+			}
+	return {
+		depth: (z1 - z0) / (x1 - x0),
+		edge: count / Math.max(1, (right - left + 1) * (bottom - top + 1)),
+	};
+}
+
+describe('a cut keeps what its turning video shows from the side', () => {
 	it(
-		'is as deep against its width as its cut branch, in every variant, read from the built mesh',
+		'is as deep against its width, and covers as much of its box edge on, as its video, all eighteen cuts',
 		async () => {
-			for (const { id, pieces, piece, video } of DEPTH_OVER_WIDTH) {
+			const seen: string[] = [];
+			// The cuts that stand on the wrong side of their band's edge for their list.
+			const wrong: string[] = [];
+			for (const { id, pieces, studio, still, depth, edge } of TURNING) {
 				const module = await loadSpecies(id);
 				await loadPlantCode(module.record);
-				const built = buildPiecesNow(module, pieces).filter((part) => part.piece === piece);
-				const variants = new Set(built.map((part) => part.variant));
-				expect(variants.size).toBeGreaterThan(0);
-				for (const variant of variants) {
-					// The extent of every part of the variant across its plane and through it.
-					let left = Infinity;
-					let right = -Infinity;
-					let back = Infinity;
-					let front = -Infinity;
-					for (const part of built.filter((candidate) => candidate.variant === variant)) {
-						const positions = part.tiers[DETAILS.indexOf('high')]?.positions ?? [];
-						for (let i = 0; i < positions.length; i += 3) {
-							left = Math.min(left, positions[i] as number);
-							right = Math.max(right, positions[i] as number);
-							back = Math.min(back, positions[i + 2] as number);
-							front = Math.max(front, positions[i + 2] as number);
-						}
-					}
-					const depth = (front - back) / (right - left);
-					// A piece laid flat to win a face-on figure fails here, and so does a round bush.
-					expect(Math.abs(depth - video)).toBeLessThan(DEPTH_BAND);
-				}
+				const layout = studio.find((candidate) => candidate.still === still);
+				expect(layout).toBeDefined();
+				if (!layout) continue;
+				const built = turned(module, laidTriangles(module, pieces, layout));
+				const key = `${id} ${still}`;
+				seen.push(
+					`${key}: depth ${built.depth.toFixed(2)} against ${depth}, edge-on cover ${built.edge.toFixed(2)} against ${edge}`,
+				);
+				const depthHeld = Math.abs(built.depth - depth) <= DEPTH_SHARE * depth;
+				const edgeHeld = Math.abs(built.edge - edge) <= EDGE_SHARE * edge;
+				// A cut on a list is held outside its band; every other cut inside it.
+				if (depthHeld === key in OPEN_DEPTH)
+					wrong.push(`${key}: depth ${built.depth.toFixed(2)} against ${depth}`);
+				if (edgeHeld === key in OPEN_EDGE)
+					wrong.push(`${key}: edge-on cover ${built.edge.toFixed(2)} against ${edge}`);
 			}
+			if (process.env.NULL3D_PIECE_FIGURES) console.log(seen.join('\n'));
+			expect(wrong).toEqual([]);
 		},
 		LONG,
 	);
