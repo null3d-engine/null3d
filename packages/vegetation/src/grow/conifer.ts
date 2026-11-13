@@ -18,7 +18,7 @@ import {
 import { unitAt } from '../core/hash';
 import { acos, atan2, cos, PI, quatFromFrame, radians, sin, tan, type Vector3 } from '../core/math';
 import type { Conifer, Species } from '../core/record';
-import { curveAt, spreadAt, spreadMean } from '../core/types';
+import { type Curve, curveAt, spreadAt, spreadMean } from '../core/types';
 import type { GrowInput } from '../stages';
 import type { Grower } from './models';
 
@@ -83,6 +83,24 @@ const REACH_LEAST = 0.1;
  */
 const PIECE_REACH = 0.85;
 const SHELL_LEAST = 0.3;
+/**
+ * The share of its length that a piece standing up a closed shell reaches out from its socket: its
+ * half depth and the lean of its tip.
+ */
+const SHELL_FACE = 0.2;
+/** The heights a shell's outline is walked in, from its foot to its top. */
+const SHELL_STEPS = 512;
+/** The share of a spacing that a shell socket may stand off its row and off its place in the row. */
+const SHELL_JITTER = 0.15;
+/** The least degrees a shell piece leans off plumb, so its face always looks out or in. */
+const SHELL_LEAN_LEAST = 2;
+/**
+ * The most degrees a shell piece leans off plumb: where the outline tucks in to the stem, its
+ * pieces stand up the tuck rather than splay out along it.
+ */
+const SHELL_LEAN_MOST = 30;
+/** The passes that find how far a limb runs to stand inside a shell. */
+const SHELL_PASSES = 20;
 /** The most degrees a piece's line swings from the way its patch faces, to one side or the other. */
 const BOUGH_SWING = 35;
 /** The least and the most size of a piece in a patch over the piece's own. */
@@ -142,6 +160,8 @@ const Purpose = {
 	TrunkPhase: 8,
 	TrunkTurn: 9,
 	TopTurn: 10,
+	ShellTurn: 15,
+	ShellPlace: 16,
 } as const;
 
 /** One point of an axis of the frame. */
@@ -288,6 +308,8 @@ export interface ConiferPlan {
 	readonly sockets: readonly ConiferSocket[];
 	/** The limbs at each level, lowest first, without the top limbs. */
 	readonly perLevel: readonly number[];
+	/** The inner body's nodes from its foot up the trunk's line, where the record gives one. */
+	readonly body: readonly ConiferNode[];
 	/** The height of the lowest patch's underside in metres. */
 	readonly crownBase: number;
 }
@@ -464,6 +486,112 @@ function courseTo(course: Course, height: number): Path {
 /** `size` less a piece's reach, and no less than a share of itself. */
 function shellInside(size: number, reach: number): number {
 	return Math.max(size - reach, size * SHELL_LEAST);
+}
+
+/** The lowest and highest shares of the height a curve names; a constant names the whole height. */
+function curveBounds(curve: Curve): readonly [number, number] {
+	if (typeof curve === 'number' || curve.length === 0) return [0, 1];
+	return [
+		(curve[0] as readonly [number, number])[0],
+		(curve[curve.length - 1] as readonly [number, number])[0],
+	];
+}
+
+/** A socket's place on a closed shell, before a limb takes it. */
+interface ShellPlace {
+	readonly at: Vector3;
+	readonly heading: Vector3;
+	readonly scale: number;
+	/** Whether it stands in the shell's lowest or highest row, which a thinned plant keeps. */
+	readonly end: boolean;
+}
+
+/** What a closed shell's sockets are laid from. */
+interface ShellRule {
+	/** The outline's metres from the trunk's line at a height in metres, toward a direction in radians. */
+	readonly outline: (y: number, azimuth: number) => number;
+	/** The trunk's line at a height in metres. */
+	readonly lineAt: (y: number) => readonly [number, number];
+	/** The metres of the outline's foot and top. */
+	readonly from: number;
+	readonly to: number;
+	/** Metres between neighbours in a row, and between one row and the next up the outline. */
+	readonly pitch: number;
+	readonly rise: number;
+	/** Degrees a piece leans out from the outline. */
+	readonly lean: number;
+	/** Metres a socket stands inside the outline. */
+	readonly inset: number;
+	/** Radians round the trunk where the lowest row's first socket stands. */
+	readonly turn: number;
+	/** A draw from 0 to 1 for a row and a place in it. */
+	readonly draw: (row: number, place: number) => number;
+}
+
+/**
+ * The sockets of a closed shell: rows a rise apart up the outline from its foot to its top, each
+ * row as many sockets as its round holds at the pitch, each row turned on from the one below by
+ * half its spacing, as bricks lie. Each socket stands its inset inside the outline, and its piece
+ * stands up the outline there, leaning out from it, so its face looks out.
+ */
+function shellPlaces(rule: ShellRule): ShellPlace[] {
+	const { outline, lineAt, from, to, pitch, rise, lean, inset, draw } = rule;
+	if (!(to > from)) return [];
+	// The outline's length up its wide side to each walked height, so the rows stand a rise apart
+	// along it however steeply it narrows.
+	const heights: number[] = [];
+	const lengths: number[] = [0];
+	for (let k = 0; k <= SHELL_STEPS; k++) heights.push(from + ((to - from) * k) / SHELL_STEPS);
+	for (let k = 1; k <= SHELL_STEPS; k++) {
+		const dy = (heights[k] as number) - (heights[k - 1] as number);
+		const dr = outline(heights[k] as number, 0) - outline(heights[k - 1] as number, 0);
+		lengths.push((lengths[k - 1] as number) + Math.sqrt(dy * dy + dr * dr));
+	}
+	const whole = lengths[SHELL_STEPS] as number;
+	const heightAt = (s: number): number => {
+		let k = 1;
+		while (k < SHELL_STEPS && (lengths[k] as number) < s) k++;
+		const a = lengths[k - 1] as number;
+		const b = lengths[k] as number;
+		const t = b > a ? clamp((s - a) / (b - a), 0, 1) : 0;
+		return (heights[k - 1] as number) + ((heights[k] as number) - (heights[k - 1] as number)) * t;
+	};
+	const rows = Math.max(1, Math.round(whole / rise));
+	const step = whole / rows;
+	const slopeStep = (to - from) / SHELL_STEPS;
+	const places: ShellPlace[] = [];
+	let phase = rule.turn;
+	for (let row = 0; row < rows; row++) {
+		const y0 = heightAt((row + 0.5) * step);
+		// The row's round: the mean of its wide and narrow sides' distances, less the inset.
+		const round = 2 * PI * Math.max(0, (outline(y0, 0) + outline(y0, PI / 2)) / 2 - inset);
+		const count = Math.max(1, Math.round(round / pitch));
+		const spacing = (2 * PI) / count;
+		if (row > 0) phase += spacing / 2;
+		for (let j = 0; j < count; j++) {
+			const azimuth = phase + (j + (draw(row, j * 2) * 2 - 1) * SHELL_JITTER) * spacing;
+			const y = clamp(y0 + (draw(row, j * 2 + 1) * 2 - 1) * SHELL_JITTER * step, from, to);
+			const reach = outline(y, azimuth);
+			const out = Math.max(reach - inset, reach * SHELL_LEAST);
+			const [lx, lz] = lineAt(y);
+			const c = cos(azimuth);
+			const n = sin(azimuth);
+			// The outline's slope there, outward over upward, and the piece's lean out from it.
+			const below = outline(clamp(y - slopeStep, from, to), azimuth);
+			const above = outline(clamp(y + slopeStep, from, to), azimuth);
+			const rising = Math.min(to, y + slopeStep) - Math.max(from, y - slopeStep);
+			const slope = rising > 0 ? (above - below) / rising : 0;
+			const off = clamp((atan2(slope, 1) * 180) / PI + lean, -SHELL_LEAN_MOST, SHELL_LEAN_MOST);
+			const tilt = radians(Math.abs(off) < SHELL_LEAN_LEAST ? SHELL_LEAN_LEAST : off);
+			places.push({
+				at: [lx + c * out, y, lz + n * out],
+				heading: [sin(tilt) * c, cos(tilt), sin(tilt) * n],
+				scale: BOUGH_SIZE[0] + (BOUGH_SIZE[1] - BOUGH_SIZE[0]) * draw(row + rows, j),
+				end: row === 0 || row === rows - 1,
+			});
+		}
+	}
+	return places;
 }
 
 /**
@@ -666,13 +794,16 @@ function twigPath(
  * sockets stand evenly over a dome inside the patch's own, one to each square pitch, and each pulls
  * one curved twig from the nearest wood, the nearest socket first. Every twig ends in a socket, so
  * no wood ends bare. Each patch orders its sockets so that any first share of them is spread over
- * it, and the plant's one rank takes the same share of every patch.
+ * it, and the plant's one rank takes the same share of every patch. On a closed shell the sockets
+ * are the shell's own places, each filled from the limb whose end stands nearest it, and the
+ * limbs' ends, inside the shell, carry none.
  */
 function socketsOf(
 	record: Species,
 	limbs: readonly ConiferLimb[],
 	patches: readonly ConiferPatch[],
 	trunk: readonly ConiferNode[],
+	shell: readonly ShellPlace[],
 	draw: (limb: number, carrier: number) => number,
 ): { twigs: ConiferTwig[]; sockets: ConiferSocket[] } {
 	const g = growthOf(record);
@@ -687,6 +818,24 @@ function socketsOf(
 	const pieceReach = piece ? spreadMean(piece.stem.length) * PIECE_REACH : 0;
 	const steepest = clamp(rule.lift, 0, LIFT_MOST);
 	const filled = g.patch.each === 'limb';
+	const onShell = g.patch.kind === 'shell';
+	const byLimb: ShellPlace[][] = limbs.map(() => []);
+	for (const place of shell) {
+		let nearest = -1;
+		let least = Number.POSITIVE_INFINITY;
+		limbs.forEach((limb, l) => {
+			const last = limb.nodes[limb.nodes.length - 1] as ConiferNode;
+			const far =
+				(last.x - place.at[0]) * (last.x - place.at[0]) +
+				(last.y - place.at[1]) * (last.y - place.at[1]) +
+				(last.z - place.at[2]) * (last.z - place.at[2]);
+			if (far < least) {
+				least = far;
+				nearest = l;
+			}
+		});
+		if (nearest >= 0) (byLimb[nearest] as ShellPlace[]).push(place);
+	}
 	/** One patch's sockets before their ranks: the ends first. */
 	interface Draft extends Omit<ConiferSocket, 'rank' | 'patch'> {
 		readonly end: boolean;
@@ -727,9 +876,10 @@ function socketsOf(
 	patches.forEach((patch, i) => {
 		patchIndex.set(patch, i);
 	});
-	// The patch on the trunk's tip carries one socket, on the tip.
+	// The patch on the trunk's tip carries one socket, on the tip. A shell's top rows close the top
+	// themselves, so its leader carries none: a piece there would stand above them as a spire.
 	patches.forEach((patch, i) => {
-		if (patch.limb >= 0) return;
+		if (patch.limb >= 0 || onShell) return;
 		const tip = trunk[trunk.length - 1] as ConiferNode;
 		rankInto(i, [
 			{
@@ -804,12 +954,14 @@ function socketsOf(
 		];
 		/** The height of the patch's floor at a place. */
 		const floorAt = (x: number, z: number): number => centre[1] - depth / 2 + slope * laid(x, z)[0];
-		const drafts: Draft[] = [
-			endOf(limb.nodes, -1, trunkFrom),
-			...limb.arms.map((arm, a) => endOf(arm.nodes, a, limb.nodes[arm.node] as ConiferNode)),
-		];
-		/** A socket the dome asks for, before wood reaches it. */
-		const wanted: { at: Vector3; heading: Vector3; scale: number }[] = [];
+		const drafts: Draft[] = onShell
+			? []
+			: [
+					endOf(limb.nodes, -1, trunkFrom),
+					...limb.arms.map((arm, a) => endOf(arm.nodes, a, limb.nodes[arm.node] as ConiferNode)),
+				];
+		/** A socket the dome or the shell asks for, before wood reaches it. */
+		const wanted: { at: Vector3; heading: Vector3; scale: number; end: boolean }[] = [];
 		const least = pitch * SOCKET_APART * (pitch * SOCKET_APART);
 		const apart = (a: Readonly<Vector3>, b: Readonly<Vector3>): boolean =>
 			(a[0] - b[0]) * (a[0] - b[0]) +
@@ -818,50 +970,55 @@ function socketsOf(
 			least;
 		const clear = (at: Readonly<Vector3>): boolean =>
 			drafts.every((draft) => apart(draft.at, at)) && wanted.every((want) => apart(want.at, at));
-		// The patch is a dome on its floor: as long as the patch along its limb, as wide across
-		// it, as deep at its middle. The pieces' tips stand on the dome, so their sockets stand on
-		// a dome inside it, a piece's reach smaller.
-		const long = shellInside(length / 2, pieceReach);
-		const half = shellInside(width / 2, pieceReach);
-		const tall = shellInside(depth, pieceReach);
-		// One socket to each square pitch of the dome that passes midway through the pieces.
-		const count = Math.max(
-			1,
-			Math.round(
-				domeArea((length / 2 + long) / 2, (width / 2 + half) / 2, (depth + tall) / 2) /
-					(pitch * pitch),
-			),
-		);
-		const places = domePlaces(long, half, tall, count, draw(l, 63));
-		for (let i = 0; i < count; i++) {
-			const { t, turn } = places[i] as (typeof places)[number];
-			const ring = Math.sqrt(Math.max(0, 1 - t * t));
-			const u = long * ring * cos(turn);
-			const v = half * ring * sin(turn);
-			const x = centre[0] + along[0] * u - along[2] * v;
-			const z = centre[2] + along[2] * u + along[0] * v;
-			const at: Vector3 = [x, floorAt(x, z) + tall * t, z];
-			if (!clear(at)) continue;
-			// A piece leaves the dome the way the dome faces, no steeper than the record's lift, and
-			// swung to one side or the other by its own share of the most, so neighbours do not stand
-			// as a comb. Each piece takes its own size.
-			const outU = (ring * cos(turn)) / long;
-			const outV = (ring * sin(turn)) / half;
-			const out = Math.sqrt(outU * outU + outV * outV);
-			const faceUp = (atan2(t / tall, out) * 180) / PI;
-			const lift = radians(Math.min(faceUp, steepest));
-			// The level way the dome faces there, in the plant's space.
-			const faces = atan2(along[2] * outU + along[0] * outV, along[0] * outU - along[2] * outV);
-			const swing = radians(
-				(draw(l * 64 + 1, 4096 + i) < 0.5 ? 1 : -1) *
-					BOUGH_SWING *
-					(0.3 + 0.7 * draw(l * 64 + 2, 4096 + i)),
+		if (onShell) {
+			for (const place of byLimb[l] as ShellPlace[]) if (clear(place.at)) wanted.push(place);
+		} else {
+			// The patch is a dome on its floor: as long as the patch along its limb, as wide across
+			// it, as deep at its middle. The pieces' tips stand on the dome, so their sockets stand on
+			// a dome inside it, a piece's reach smaller.
+			const long = shellInside(length / 2, pieceReach);
+			const half = shellInside(width / 2, pieceReach);
+			const tall = shellInside(depth, pieceReach);
+			// One socket to each square pitch of the dome that passes midway through the pieces.
+			const count = Math.max(
+				1,
+				Math.round(
+					domeArea((length / 2 + long) / 2, (width / 2 + half) / 2, (depth + tall) / 2) /
+						(pitch * pitch),
+				),
 			);
-			wanted.push({
-				at,
-				heading: [cos(lift) * cos(faces + swing), sin(lift), cos(lift) * sin(faces + swing)],
-				scale: BOUGH_SIZE[0] + (BOUGH_SIZE[1] - BOUGH_SIZE[0]) * draw(l * 64 + 3, 8192 + i),
-			});
+			const places = domePlaces(long, half, tall, count, draw(l, 63));
+			for (let i = 0; i < places.length; i++) {
+				const { t, turn } = places[i] as (typeof places)[number];
+				const ring = Math.sqrt(Math.max(0, 1 - t * t));
+				const u = long * ring * cos(turn);
+				const v = half * ring * sin(turn);
+				const x = centre[0] + along[0] * u - along[2] * v;
+				const z = centre[2] + along[2] * u + along[0] * v;
+				const at: Vector3 = [x, floorAt(x, z) + tall * t, z];
+				if (!clear(at)) continue;
+				// A piece leaves the dome the way the dome faces, no steeper than the record's lift, and
+				// swung to one side or the other by its own share of the most, so neighbours do not stand
+				// as a comb. Each piece takes its own size.
+				const outU = (ring * cos(turn)) / long;
+				const outV = (ring * sin(turn)) / half;
+				const out = Math.sqrt(outU * outU + outV * outV);
+				const faceUp = (atan2(t / tall, out) * 180) / PI;
+				const lift = radians(Math.min(faceUp, steepest));
+				// The level way the dome faces there, in the plant's space.
+				const faces = atan2(along[2] * outU + along[0] * outV, along[0] * outU - along[2] * outV);
+				const swing = radians(
+					(draw(l * 64 + 1, 4096 + i) < 0.5 ? 1 : -1) *
+						BOUGH_SWING *
+						(0.3 + 0.7 * draw(l * 64 + 2, 4096 + i)),
+				);
+				wanted.push({
+					at,
+					heading: [cos(lift) * cos(faces + swing), sin(lift), cos(lift) * sin(faces + swing)],
+					scale: BOUGH_SIZE[0] + (BOUGH_SIZE[1] - BOUGH_SIZE[0]) * draw(l * 64 + 3, 8192 + i),
+					end: false,
+				});
+			}
 		}
 		// The wood a twig can leave: the limb's run under the patch and each arm, then each twig
 		// that leaves them. A twig that leaves a twig carries no twig of its own.
@@ -996,7 +1153,7 @@ function socketsOf(
 			if (!path) {
 				// The socket stands on the wood itself.
 				drafts.push({
-					end: false,
+					end: want.end,
 					scale: want.scale,
 					twig: foot.twig,
 					limb: l,
@@ -1028,7 +1185,7 @@ function socketsOf(
 			}
 			grown.carries.push({ draft: drafts.length, node: grown.points.length - 1 });
 			drafts.push({
-				end: false,
+				end: want.end,
 				scale: want.scale,
 				twig,
 				limb: l,
@@ -1036,7 +1193,8 @@ function socketsOf(
 				node: grown.points.length - 1,
 				radius: tipRadius,
 				at: [want.at[0], want.at[1], want.at[2]],
-				heading: leaves(path.arrives, want.heading),
+				// A piece on a shell stands up the shell however its twig arrives.
+				heading: onShell ? want.heading : leaves(path.arrives, want.heading),
 			});
 			// The twig's old end no longer runs on; its new end does. Every new node below the
 			// deepest order is a place a new twig may leave.
@@ -1477,12 +1635,57 @@ export function planConifer(input: GrowInput): ConiferPlan {
 		}
 		return high - low;
 	};
-	for (let pass = 0; pass < PLAN_PASSES; pass++) {
-		const wide = planWidth(0);
-		const cross = planWidth(90);
-		if (!(wide > 0 && cross > 0)) break;
-		across = clamp((across * narrow * wide) / cross, 0.5, 2);
-	}
+	// A shell's outline is the crown's reach by height, so its narrow side is the record's share
+	// of its wide side as it stands.
+	const onShell = g.patch.kind === 'shell';
+	if (onShell) across = narrow;
+	else
+		for (let pass = 0; pass < PLAN_PASSES; pass++) {
+			const wide = planWidth(0);
+			const cross = planWidth(90);
+			if (!(wide > 0 && cross > 0)) break;
+			across = clamp((across * narrow * wide) / cross, 0.5, 2);
+		}
+	// A shell stands from the lowest height its outline names to the highest, and each limb runs on
+	// until it stands a piece's length inside it.
+	const [shellFoot, shellTop] = curveBounds(g.limbs.reach);
+	const shellFrom = shellFoot * height;
+	const shellTo = shellTop * height;
+	/** The shell's metres from the trunk's line at a height, toward a direction in radians. */
+	const outline = (y: number, azimuth: number): number =>
+		y < shellFrom || y > shellTo ? 0 : levelReach(y) * stretch((azimuth * 180) / PI);
+	const socketPiece = record.pieces?.find((piece) => piece.name === g.patch.sockets?.piece);
+	const pieceLength = socketPiece ? spreadMean(socketPiece.stem.length) : 0;
+	let outlineMost = 0;
+	for (let k = 0; k <= SHELL_STEPS; k++)
+		outlineMost = Math.max(
+			outlineMost,
+			levelReach(shellFrom + ((shellTo - shellFrom) * k) / SHELL_STEPS),
+		);
+	/**
+	 * How far a limb's course runs out to stand its share of the way to a piece's length inside the
+	 * shell, at the height its end reaches, and the shell's reach there.
+	 */
+	const shellOut = (
+		courseOf: (out: number) => Course,
+		share: number,
+		azimuth: number,
+	): { out: number; reach: number } => {
+		const toward = radians(azimuth);
+		let low = 0;
+		let high = outlineMost;
+		for (let pass = 0; pass < SHELL_PASSES; pass++) {
+			const mid = (low + high) / 2;
+			const walked = coursePath(courseOf(mid));
+			const endY = (walked.points[walked.points.length - 1] as Vector3)[1];
+			const wants = share * shellInside(outline(endY, toward), pieceLength);
+			if (mid > wants) high = mid;
+			else low = mid;
+		}
+		const walked = coursePath(courseOf(low));
+		const endY = (walked.points[walked.points.length - 1] as Vector3)[1];
+		return { out: low, reach: Math.max(low, outline(endY, toward)) };
+	};
 
 	const limbs: ConiferLimb[] = [];
 	/** Adds one limb from its seat, its place in the length order and its course. */
@@ -1501,14 +1704,7 @@ export function planConifer(input: GrowInput): ConiferPlan {
 	): void => {
 		const node = trunkNodeAt(y);
 		const start = trunk[node] as ConiferNode;
-		const reach = Math.max(start.radius * 2, span * stretch(azimuth));
-		const { width, length } = patchSize(place, reach, most, !top);
-		const depth = width * g.patch.depth;
-		// Under one patch a limb, the wood runs on past the patch's middle. With a patch at each end,
-		// the limb stops at the middle of its own.
-		const perEnd = g.patch.each === 'end';
-		const out = perEnd ? reach - width / 2 : reach - length * (1 - UNDER_PATCH);
-		const course: Course = {
+		const courseOf = (out: number): Course => ({
 			from: [start.x, start.y, start.z],
 			azimuth: radians(azimuth),
 			leave: lifts.leave,
@@ -1520,14 +1716,29 @@ export function planConifer(input: GrowInput): ConiferPlan {
 			wander: g.limbs.wander,
 			wave: WANDER_WAVE * height,
 			phase: draw(Purpose.Wander, level, slot) * 2 * PI,
-		};
+		});
+		// On a shell the limb takes its share of the crown's reach at its own height, and its patch
+		// reaches out to the shell where its end stands.
+		const inShell = onShell
+			? shellOut(courseOf, span / Math.max(1e-6, levelReach(y)), azimuth)
+			: undefined;
+		const reach = inShell?.reach ?? Math.max(start.radius * 2, span * stretch(azimuth));
+		const { width, length } = patchSize(place, reach, most, !top);
+		const depth = width * g.patch.depth;
+		// Under one patch a limb, the wood runs on past the patch's middle. With a patch at each end,
+		// the limb stops at the middle of its own.
+		const perEnd = g.patch.each === 'end';
+		const course = courseOf(
+			inShell?.out ?? (perEnd ? reach - width / 2 : reach - length * (1 - UNDER_PATCH)),
+		);
 		// A patch's floor passes through its limb's end. It falls with the limb where the limb falls
 		// under it, from where the limb comes under the patch to its end, and is level where the
 		// limb rises or carries a patch on each end. The patch lies along the straight way between
 		// those two places.
 		const floorOf = (walked: Path): { slope: number; middle: number; lies: Vector3 } => {
 			const last = walked.points[walked.points.length - 1] as Vector3;
-			if (perEnd || lower !== undefined) return { slope: 0, middle: last[1], lies: walked.heading };
+			if (perEnd || onShell || lower !== undefined)
+				return { slope: 0, middle: last[1], lies: walked.heading };
 			const span = length * UNDER_PATCH;
 			let at = walked.points.length - 1;
 			while (at > 0 && walked.length - (walked.along[at - 1] as number) <= span) at--;
@@ -1557,7 +1768,7 @@ export function planConifer(input: GrowInput): ConiferPlan {
 			lower === undefined
 				? coursePath(course)
 				: courseTo(course, height - depth * (1 + TOP_STEP * lower));
-		if (lower === undefined && topOf(path) > height) {
+		if (lower === undefined && !onShell && topOf(path) > height) {
 			let low = course.out * REACH_LEAST;
 			let high = course.out;
 			for (let pass = 0; pass < 12; pass++) {
@@ -1577,7 +1788,7 @@ export function planConifer(input: GrowInput): ConiferPlan {
 		const collar = Math.max(1e-6, g.limbs.collar.over * height);
 		const past = beside / swell;
 		const taper = clamp(g.limbs.taper, 0.05, 1);
-		const bare = Math.max(1e-6, path.length - (perEnd ? 0 : length * UNDER_PATCH));
+		const bare = Math.max(1e-6, path.length - (perEnd || onShell ? 0 : length * UNDER_PATCH));
 		const nodes: ConiferNode[] = path.points.map((point, k) => {
 			const s = path.along[k] as number;
 			const fade = 1 + (swell - 1) * (1 - eased(s / collar));
@@ -1592,7 +1803,7 @@ export function planConifer(input: GrowInput): ConiferPlan {
 		// wood spreads under the whole patch and no two arms part from one point.
 		const arms: ConiferArm[] = [];
 		const count = Math.max(0, Math.round(g.limbs.arms.count));
-		const under = perEnd ? path.length * ARMS_OVER : length * UNDER_PATCH;
+		const under = perEnd || onShell ? path.length * ARMS_OVER : length * UNDER_PATCH;
 		const patchAt = (
 			centre: Vector3,
 			heading: Vector3,
@@ -1654,10 +1865,11 @@ export function planConifer(input: GrowInput): ConiferPlan {
 					wave: WANDER_WAVE * height,
 					phase: draw(Purpose.ArmWander, level, slot * 16 + k) * 2 * PI,
 				});
-			let armLift = clamp(rise, -ARM_LIFT_MOST, ARM_LIFT_MOST);
+			// On a shell the arms rise beside their limb.
+			let armLift = onShell ? rise : clamp(rise, -ARM_LIFT_MOST, ARM_LIFT_MOST);
 			let armPath = armCourse(armLift);
 			// Under one patch a limb, an arm that would end past the patch's rim reaches less far.
-			if (!perEnd) {
+			if (!perEnd && !onShell) {
 				const middle: readonly [number, number] = [
 					end[0] - floor.lies[0] * (under - length / 2),
 					end[2] - floor.lies[2] * (under - length / 2),
@@ -1710,18 +1922,19 @@ export function planConifer(input: GrowInput): ConiferPlan {
 			trunkNode: node,
 			nodes,
 			arms,
-			patch: perEnd
-				? patchAt([end[0], end[1], end[2]], path.heading, reach - width)
-				: patchAt(
-						[
-							end[0] - floor.lies[0] * (under - length / 2),
-							floor.middle + depth / 2,
-							end[2] - floor.lies[2] * (under - length / 2),
-						],
-						floor.lies,
-						reach - length,
-						floor.slope,
-					),
+			patch:
+				perEnd || onShell
+					? patchAt([end[0], end[1], end[2]], path.heading, reach - width)
+					: patchAt(
+							[
+								end[0] - floor.lies[0] * (under - length / 2),
+								floor.middle + depth / 2,
+								end[2] - floor.lies[2] * (under - length / 2),
+							],
+							floor.lies,
+							reach - length,
+							floor.slope,
+						),
 		});
 	};
 
@@ -1803,9 +2016,44 @@ export function planConifer(input: GrowInput): ConiferPlan {
 		);
 		crownBase = Math.min(crownBase, patch.centre[1] - patch.depth / 2 - fall);
 	}
-	const { twigs, sockets } = socketsOf(record, limbs, patches, trunk, (limb, carrier) =>
+	const rule = g.patch.sockets;
+	const shell =
+		onShell && rule
+			? shellPlaces({
+					outline,
+					lineAt,
+					from: shellFrom,
+					to: shellTo,
+					pitch: Math.max(0.05, rule.pitch),
+					rise: Math.max(0.05, rule.rise ?? rule.pitch),
+					lean: rule.lift,
+					inset: pieceLength * SHELL_FACE,
+					turn: draw(Purpose.ShellTurn) * 2 * PI,
+					draw: (row, place) => draw(Purpose.ShellPlace, row, place),
+				})
+			: [];
+	// A shell's foliage stands from its foot to its top.
+	if (shell.length > 0) {
+		crownBase = Math.min(crownBase, shellFrom);
+		top = Math.max(top, shellTo);
+	}
+	const { twigs, sockets } = socketsOf(record, limbs, patches, trunk, shell, (limb, carrier) =>
 		draw(Purpose.TwigSide, limb, carrier),
 	);
+	// The inner body: a round body on the trunk's line, in steps of the trunk's own, its radius
+	// the record's share of the height at each height.
+	const body: ConiferNode[] = [];
+	if (g.body) {
+		const [foot, crown] = curveBounds(g.body.radius);
+		const from = foot * height;
+		const to = crown * height;
+		const steps = Math.max(2, Math.ceil((to - from) / TRUNK_STEP));
+		for (let k = 0; k <= steps; k++) {
+			const y = from + ((to - from) * k) / steps;
+			const [x, z] = lineAt(y);
+			body.push({ x, y, z, radius: Math.max(1e-4, curveAt(g.body.radius, y / height) * height) });
+		}
+	}
 	return {
 		height: top,
 		trunk,
@@ -1814,6 +2062,7 @@ export function planConifer(input: GrowInput): ConiferPlan {
 		twigs,
 		sockets,
 		perLevel,
+		body,
 		crownBase: Math.max(0, crownBase),
 	};
 }
@@ -1911,6 +2160,23 @@ export function growConifer(input: GrowInput): MacroSkeleton {
 			}
 			armsAt.push({ axis: armAxis, nodes: armNodes });
 		});
+	}
+	// The inner body is wood of its own, joined to nothing: far thicker than the trunk it stands
+	// round, it would otherwise meet the trunk as a fork. Every card level keeps it.
+	if (plan.body.length > 1) {
+		const axis = builder.addAxis({ parent: -1, parentNode: -1, order: 1, kind: AXIS_LIMB });
+		let last = -1;
+		for (const node of plan.body)
+			last = builder.addNode({
+				x: node.x,
+				y: node.y,
+				z: node.z,
+				radius: node.radius,
+				parent: last,
+				axis,
+				light: 0,
+				age: ageAt(node.y),
+			});
 	}
 	// A twig leaves a limb, an arm or an earlier twig. Its order names its kind of wood: a twig, or
 	// a twig that leaves a twig.
