@@ -134,13 +134,19 @@ export function partCover(parts: Parts, region: ContractRegion): number {
 	const { left, top, right, bottom, area } = boxOf(parts.width, parts.height, region.box);
 	if (area === 0) return 0;
 	const thick = region.thick ?? 0;
+	const most = region.thickMost ?? Infinity;
 	let count = 0;
 	for (let y = top; y < bottom; y++)
 		for (let x = left; x < right; x++) {
 			const at = y * parts.width + x;
 			const kind = parts.kind[at] as number;
 			if (region.of === 'wood')
-				count += kind === PART.wood && (parts.radius[at] as number) >= thick ? 1 : 0;
+				count +=
+					kind === PART.wood &&
+					(parts.radius[at] as number) >= thick &&
+					(parts.radius[at] as number) <= most
+						? 1
+						: 0;
 			else if (region.of === 'foliage') count += kind === PART.foliage ? 1 : 0;
 			else count += kind === PART.none ? 0 : 1;
 		}
@@ -158,6 +164,8 @@ export interface MatteCheck {
 function coveredBy(region: ContractRegion): string {
 	if (region.of === 'foliage') return 'leaves';
 	if (region.of !== 'wood') return 'plant';
+	if (region.thick && region.thickMost)
+		return `wood ${region.thick.toFixed(2)} to ${region.thickMost.toFixed(2)} m in radius`;
 	return region.thick ? `wood ${region.thick.toFixed(2)} m in radius or more` : 'wood';
 }
 

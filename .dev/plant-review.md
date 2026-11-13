@@ -387,6 +387,22 @@ to an edge of the frame that the photograph's plant stands clear of, and names t
 saved runs the oak's profile ran off the right and lower edges, and the Scots pine's and the weeping
 willow's whole views ran off the lower edge.
 
+Three more pictures are void, each a fault of the camera or of the file's view and none a
+judgement of the plant:
+
+- A close view whose subject takes none of the frame. A camera that stands in the plane of an arm
+  or a fan sees it edge on, and the picture holds no subject.
+- A picture the page also drew for another photograph that was asked for differently. The light or
+  the height that one of them asked for then changed nothing, and one drawing does not count for
+  two.
+- A whole view whose frame the plant covers from edge to edge, or holds no plant at all. It has no
+  outline, so no overlap or gap is read from it.
+
+**A figure names the level it was drawn at.** A plant draws as its leaf form near the camera, then
+as two card levels, then as a far card. The page reports the level of each picture, the run's
+record keeps it, and the summary and the verdict print it beside each figure. A figure with no
+level named is a note, since the same view reads differently at another level.
+
 A whole view is void as well when its plant is not drawn at its photograph's size. The plant's box must
 match the photograph's within a fifth, in height or in width. A render smaller in both, or larger in
 both, was framed from the wrong distance. Its figures would compare a small plant with a large one.

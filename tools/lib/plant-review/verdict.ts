@@ -56,6 +56,8 @@ export interface Figure {
 	readonly band: Band | null;
 	/** The run the figure was measured in. */
 	readonly run: string;
+	/** The level of detail the figure's picture was drawn at, where the page reported it. */
+	readonly level?: string;
 }
 
 /** Who passed a row, when, and the review file that holds the reading. */
@@ -279,7 +281,7 @@ function rounded(value: number): number {
 
 /** The figures a picture gives a row, where the row has figures. */
 function figuresOf(row: number, pair: StillResult, run: string): Figure[] {
-	const base = { picture: pair.file, run };
+	const base = { picture: pair.file, run, ...(pair.level !== undefined && { level: pair.level }) };
 	switch (row) {
 		case 2: {
 			// A cut branch's density, where the run measured it on both pictures of the piece. A

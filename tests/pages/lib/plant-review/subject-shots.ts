@@ -80,14 +80,23 @@ export interface ContractRegion {
 	readonly of?: 'wood' | 'foliage';
 	/** For wood, the least radius in metres that counts, so a twig is not taken for a limb. */
 	readonly thick?: number;
+	/** For wood, the greatest radius in metres that counts, so a trunk is not taken for a limb. */
+	readonly thickMost?: number;
 }
 
-/** The share of a subject's own radius below which wood across it is another, thinner part. */
-const SUBJECT_WOOD = 0.5;
+/**
+ * The shares of a wood subject's own radius between which wood is the subject's: thinner wood
+ * across it is a branch, and thicker wood is the trunk or a greater limb. The parts picture reads
+ * a radius within a few hundredths, so the bounds allow for the subject's own taper and flare.
+ */
+const SUBJECT_WOOD = 0.75;
+const SUBJECT_WOOD_MOST = 1.4;
+/** The most of a whole frame that leaves may cover in a picture of bark. */
+const MOST_LEAVES_IN_BARK = 0.5;
 /** The most of a frame that wood may cover before it is a wall of bark across the picture. */
 const MOST_WOOD = 0.7;
 /** The most of a wood subject's part of the picture that leaves may lie over. */
-const MOST_LEAVES_OVER = 0.25;
+const MOST_LEAVES_OVER = 0.2;
 
 /** A solved shot: the camera, and the contract its picture must meet. */
 export interface SubjectShot {
@@ -777,6 +786,7 @@ export function boleShot(subjects: PlantSubjects, lens: Lens, options: BoleOptio
 				min: 0.7,
 				of: 'wood',
 				thick: SUBJECT_WOOD * middle.radius,
+				thickMost: SUBJECT_WOOD_MOST * middle.radius,
 			},
 		],
 		facts: {
@@ -931,6 +941,7 @@ export function junctionShot(
 	const rises = dot(limb.direction, axesOf(forward).up) >= 0;
 	const baseAt = step(crotch, limb.direction, limb.radius);
 	const base = project(camera, lens, baseAt);
+	const joined = project(camera, lens, step(crotch, limb.direction, 0.5 * limb.radius));
 	// The area read on the limb is a quarter of its own thickness each way, so a thin limb that
 	// rises across the frame still fills it.
 	const within = Math.min(0.05, (0.25 * 2 * limb.radius) / tall);
@@ -969,6 +980,15 @@ export function junctionShot(
 				name: 'the limb where it leaves the trunk',
 				box: [base.x - within, base.y - within, base.x + within, base.y + within],
 				min: 0.6,
+				of: 'wood',
+				thick: SUBJECT_WOOD * limb.radius,
+				thickMost: SUBJECT_WOOD_MOST * limb.radius,
+			},
+			// Between the bark and that area the wood runs on unbroken: a limb joins its trunk.
+			{
+				name: 'the wood between the trunk and the limb',
+				box: [joined.x - within, joined.y - within, joined.x + within, joined.y + within],
+				min: 0.9,
 				of: 'wood',
 				thick: SUBJECT_WOOD * limb.radius,
 			},
@@ -1126,7 +1146,8 @@ export function forkShot(subjects: PlantSubjects, lens: Lens, options: ForkOptio
 				box: [0.44, FORK_ROW - 0.06, 0.56, FORK_ROW + 0.06],
 				min: 0.6,
 				of: 'wood',
-				thick: SUBJECT_WOOD * fork.radius,
+				thick: SUBJECT_WOOD * Math.min(...fork.armRadii, fork.radius),
+				thickMost: SUBJECT_WOOD_MOST * fork.radius,
 			},
 			{ name: 'the plain ground round the fork', box: [0, 0, 1, 1], max: 0.75 },
 		],
@@ -1164,6 +1185,10 @@ export interface CrownOutsideOptions {
 
 /** The most of a crown view's frame that the plant may cover: the rest is the sky behind the lobe. */
 const CROWN_MOST_COVER = 0.75;
+/** The least of a crown view's frame that wood covers: the branch its leaves hang on. */
+const CROWN_LEAST_WOOD = 0.01;
+/** The most of a strip at a lobe's side that the plant may cover. */
+const CROWN_SIDE_MOST = 0.92;
 
 /** The least radius of a lobe a crown view frames, against the plant's largest. */
 const LOBE_LEAST = 0.25;
@@ -1234,6 +1259,17 @@ export function crownOutsideShot(
 		regions: [
 			{ name: 'the foliage mass', box: [0.3, 0.3, 0.7, 0.7], min: 0.25, of: 'foliage' },
 			{ name: 'the sky round the lobe', box: [0, 0, 1, 1], max: CROWN_MOST_COVER },
+			// A lobe hangs on wood and stands in the open: its branch shows in the frame, and sky
+			// shows at both its sides. A wall of leaves under a strip of sky has neither.
+			{
+				name: 'the branch that carries the leaves',
+				box: [0, 0, 1, 1],
+				min: CROWN_LEAST_WOOD,
+				max: 0.4,
+				of: 'wood',
+			},
+			{ name: "the sky at the lobe's left", box: [0, 0.15, 0.12, 0.85], max: CROWN_SIDE_MOST },
+			{ name: "the sky at the lobe's right", box: [0.88, 0.15, 1, 0.85], max: CROWN_SIDE_MOST },
 		],
 		facts: {
 			radius: lobe.radius,
@@ -1359,7 +1395,21 @@ export function crownUndersideShot(
 				? [{ name: 'the foliage over the limb', at: lobe.centre, within: [0, 0, 1, 1] as const }]
 				: []),
 		],
-		regions: [{ name: 'the crown against the sky', box: [0, 0, 1, 1], min: 0.15, max: 0.95 }],
+		regions: [
+			{ name: 'the crown against the sky', box: [0, 0, 1, 1], min: 0.15, max: 0.95 },
+			// The limb the camera looks up along is in the picture as wood of its own thickness.
+			...[0.3, 0.6].map((share) => {
+				const sample = sampleAlong(limb.axis, share);
+				const at = project(camera, lens, sample.at);
+				return {
+					name: `the great limb ${share} of the way along it`,
+					box: [at.x - 0.04, at.y - 0.04, at.x + 0.04, at.y + 0.04] as const,
+					min: 0.5,
+					of: 'wood' as const,
+					thick: SUBJECT_WOOD * sample.radius,
+				};
+			}),
+		],
 		facts: {
 			limb: limb.id,
 			eye,
@@ -1706,6 +1756,7 @@ export function barkMidShot(subjects: PlantSubjects, lens: Lens, options: BarkMi
 				min: 0.9,
 				of: 'wood',
 				thick: SUBJECT_WOOD * at.radius,
+				thickMost: SUBJECT_WOOD_MOST * at.radius,
 			},
 		],
 		facts: { height, span: tall, radius: at.radius, barkShare: covered },
@@ -1820,11 +1871,18 @@ export function barkLimbShot(
 				min: 0.85,
 				of: 'wood',
 				thick: SUBJECT_WOOD * at.radius,
+				thickMost: SUBJECT_WOOD_MOST * at.radius,
 			},
 			{
 				name: 'the leaves over the limb',
 				box: [0.3, 0.3, 0.7, 0.7],
 				max: MOST_LEAVES_OVER,
+				of: 'foliage',
+			},
+			{
+				name: 'the leaves in the picture',
+				box: [0, 0, 1, 1],
+				max: MOST_LEAVES_IN_BARK,
 				of: 'foliage',
 			},
 			{ name: 'the ground beside the limb', box: [0, 0, 1, 1], max: 0.9 },

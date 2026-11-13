@@ -35,6 +35,7 @@ import {
 	type PlantSubjects,
 	type TrunkSubject,
 } from '../../../tests/pages/lib/plant-review/subjects.ts';
+import { PART, type Parts, partsCheck } from './subject-check.ts';
 
 const DEG = Math.PI / 180;
 /** A landscape still's lens and a portrait still's. */
@@ -940,5 +941,114 @@ describe('what stands on a sight line', () => {
 		expect(blockedBy(subjects, [4, 9, 3], [4, 3, -3], { trunk: true })).toBe('limb 1');
 		expect(blockedBy(subjects, [4, 9, 3], [4, 3, -3], { trunk: true, limbs: [1] })).toBe(undefined);
 		expect(blockedBy(subjects, [10, 1, 5], [10, 1, -5])).toBe(undefined);
+	});
+});
+
+/** A picture of the parts made by hand: what each texel shows, by its place as shares of the frame. */
+function painted(
+	paint: (x: number, y: number) => { kind: number; radius?: number },
+	size = 256,
+): Parts {
+	const kind = new Uint8Array(size * size);
+	const radius = new Float32Array(size * size);
+	for (let j = 0; j < size; j++)
+		for (let i = 0; i < size; i++) {
+			const texel = paint((i + 0.5) / size, (j + 0.5) / size);
+			kind[j * size + i] = texel.kind;
+			radius[j * size + i] = texel.radius ?? 0;
+		}
+	return { kind, radius, width: size, height: size };
+}
+
+const GROUND = { kind: PART.none };
+const LEAF = { kind: PART.foliage };
+const woodOf = (radius: number) => ({ kind: PART.wood, radius });
+
+// The independent reviewer made wrong pictures by hand and handed them to the check: each showed
+// another thing than the view's subject, and each passed. Every one must fail, and a picture of
+// the subject itself must pass.
+describe("a view's areas against pictures that do not show its subject", () => {
+	test('the bark on a limb: a trunk, a thin branch and a limb under leaves all fail', () => {
+		const shot = shotOf(barkLimbShot(tree(), TALL, { girth: 0.38, along: 0.3 }));
+		const limb = shot.facts.radius as number;
+		const fails = (paint: Parameters<typeof painted>[0]) =>
+			partsCheck(painted(paint), shot.regions ?? []).present === false;
+		const band = (y: number) => y > 0.3 && y < 0.7;
+		// The limb itself across the frame, with nothing over it.
+		expect(fails((_x, y) => (band(y) ? woodOf(limb) : GROUND))).toBe(false);
+		// The trunk's bark in place of the limb's.
+		expect(fails((x) => (x < 0.85 ? woodOf(0.5) : GROUND))).toBe(true);
+		// A branch half as thick as the limb.
+		expect(fails((_x, y) => (y > 0.375 && y < 0.625 ? woodOf(0.51 * limb) : GROUND))).toBe(true);
+		// The limb in the middle of the frame, with leaves over a quarter of it and all round it.
+		expect(
+			fails((x, y) => {
+				const core = x > 0.4 && x < 0.6 && y > 0.4 && y < 0.6;
+				const middle = x > 0.3 && x < 0.7 && y > 0.3 && y < 0.7;
+				if (core) return woodOf(limb);
+				if (middle) return x < 0.4 ? LEAF : woodOf(limb);
+				return y < 0.9 ? LEAF : GROUND;
+			}),
+		).toBe(true);
+	});
+
+	test("a limb's join: a wall of trunk, a trunk alone and a block that does not join it all fail", () => {
+		// A bole three times as thick as its limb, so the two are told apart by their radius.
+		const subjects = tree({
+			trunk: trunkOf(14, 0.9, 5),
+			limbs: [limbOf(1, 5, [1, 0.25, 0], 0.3, 8, 0.9)],
+		});
+		const shot = shotOf(junctionShot(subjects, TALL));
+		const regions = shot.regions ?? [];
+		const limb = shot.facts.radius as number;
+		const trunk = shot.facts.trunkRadius as number;
+		const fails = (paint: Parameters<typeof painted>[0]) =>
+			partsCheck(painted(paint), regions).present === false;
+		const at = (name: string) => {
+			const box = regions.find((region) => region.name === name)?.box as readonly number[];
+			return {
+				x: ((box[0] as number) + (box[2] as number)) / 2,
+				y: ((box[1] as number) + (box[3] as number)) / 2,
+				box,
+			};
+		};
+		const base = at('the limb where it leaves the trunk');
+		const collar = { x: 0.47, y: 0.5 };
+		// The limb's line from the collar through its base, and a band of wood along it.
+		const lineY = (x: number) =>
+			collar.y + ((base.y - collar.y) * (x - collar.x)) / (base.x - collar.x);
+		const joined = (x: number, y: number) =>
+			x < collar.x ? woodOf(trunk) : Math.abs(y - lineY(x)) < 0.14 ? woodOf(limb) : GROUND;
+		expect(fails(joined)).toBe(false);
+		// A wall of trunk bark with one corner open, and no limb.
+		expect(fails((x, y) => (x > 0.75 && y > 0.8 ? GROUND : woodOf(trunk)))).toBe(true);
+		// The trunk alone.
+		expect(fails((x) => (x < collar.x ? woodOf(trunk) : GROUND))).toBe(true);
+		// The trunk, and a block of limb wood that hangs where the limb's area is and meets nothing.
+		expect(
+			fails((x, y) => {
+				if (x < collar.x) return woodOf(trunk);
+				const [left, top, right, bottom] = base.box as readonly [number, number, number, number];
+				return x >= left && x <= right && y >= top && y <= bottom ? woodOf(limb) : GROUND;
+			}),
+		).toBe(true);
+	});
+
+	test("the crown's outside: a wall of leaves and a ball of leaves on no wood both fail", () => {
+		const lobes: Lobe[] = [{ centre: [5, 8, 0], radius: 2, limb: 1 }];
+		const shot = shotOf(crownOutsideShot(tree({ lobes }), TALL, { turn: 90 * DEG }));
+		const fails = (paint: Parameters<typeof painted>[0]) =>
+			partsCheck(painted(paint), shot.regions ?? []).present === false;
+		const ball = (x: number, y: number, r: number) => Math.hypot(x - 0.5, y - 0.5) < r;
+		// A mass of leaves in the open, on the branch that carries it.
+		expect(
+			fails((x, y) =>
+				ball(x, y, 0.3) ? LEAF : y > 0.8 && y < 0.83 && x > 0.1 && x < 0.9 ? woodOf(0.05) : GROUND,
+			),
+		).toBe(false);
+		// One flat wall of leaves under a strip of sky.
+		expect(fails((_x, y) => (y > 0.26 ? LEAF : GROUND))).toBe(true);
+		// A ball of leaves and no wood anywhere.
+		expect(fails((x, y) => (ball(x, y, 0.2) ? LEAF : GROUND))).toBe(true);
 	});
 });

@@ -253,6 +253,12 @@ export interface PlantReviewQuery {
 	 */
 	readonly barkZone?: number;
 	/**
+	 * Metres above the ground at which a bark view of the trunk reads the surface, where the
+	 * photograph shows the surface of one height: a column's skin above its corky foot, or a hole
+	 * high in its trunk. It goes before the bark zone's own height.
+	 */
+	readonly barkHeight?: number;
+	/**
 	 * Metres that a close view covers: the bark or limb a bark or limb view frames, the sheath a
 	 * ground plant's sheath view frames, or the width a cut view shows across the frame, where the
 	 * reference is a picture of a part of the piece rather than the whole of it.
@@ -371,6 +377,7 @@ const NUMBER_FIELDS = [
 	'along',
 	'thin',
 	'barkZone',
+	'barkHeight',
 	'span',
 	'subjectWidth',
 	'subjectHeight',
@@ -535,6 +542,10 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 	if (numbers.girth !== undefined && (numbers.girth <= 0 || numbers.girth > 1))
 		throw new Error(
 			`girth=${numbers.girth} is a share of the frame that a limb fills: give a number above 0, up to 1.`,
+		);
+	if (numbers.barkHeight !== undefined && numbers.barkHeight < 0)
+		throw new Error(
+			`barkHeight=${numbers.barkHeight} is metres above the ground: give a number of 0 or more.`,
 		);
 	if (numbers.leaves !== undefined && numbers.leaves <= 0)
 		throw new Error(`leaves=${numbers.leaves} is a frame in leaf lengths: give a number above 0.`);
