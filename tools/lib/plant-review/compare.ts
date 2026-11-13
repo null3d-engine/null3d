@@ -1890,6 +1890,8 @@ export function compareStills(
 		// A bark close view photographs the bark against bark, and a bark texture is a cut-out of
 		// the material, so neither separates a plant from a background. Their rows read colour,
 		// never an outline: a mask fitted to a picture with no plain border invents one.
+		// The same holds for a picture whose slot names its own background as the subject,
+		// such as a far scrub band the fitted sky and ground admit.
 		const drawn = frame.query?.view ?? slot.view;
 		const noOutline = !hasSeparableOutline(drawn, slot.kind, frame.query?.noOutline === true);
 		const fittedKind = refPlant.background.plain

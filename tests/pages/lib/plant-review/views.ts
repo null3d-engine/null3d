@@ -25,6 +25,7 @@ export const PLANT_VIEWS = [
 	'leaf-upper',
 	'leaf-under',
 	'soil',
+	'section',
 	'bark-base',
 	'bark-mid',
 	'bark-limb',
@@ -265,6 +266,14 @@ export const VIEW_SPECS: Readonly<Record<PlantView, ViewSpec>> = {
 		background: 'studio-grey',
 		sun: 'flat',
 		elevation: 10,
+		size: [960, 720],
+	},
+	section: {
+		slots: [13, 16],
+		fov: 30,
+		background: 'white',
+		sun: 'flat',
+		elevation: 0,
 		size: [960, 720],
 	},
 	'bark-base': {
