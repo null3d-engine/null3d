@@ -878,10 +878,12 @@ export function junctionShot(
 			side[2] * Math.cos(lookUp) - level.up[2] * Math.sin(lookUp),
 		]);
 		const forward: V3 = [-from[0], -from[1], -from[2]];
-		// Where the trunk's surface meets the limb: out from the joint toward the limb's side.
+		// Where the limb's centre line comes out of the trunk's surface: along the limb from the
+		// joint until it stands the trunk's radius off the trunk's line. The limb's own middle then
+		// lands on the frame's middle row, however steeply it rises through the trunk.
 		const along = dot(l, t);
-		const outward = normalize([l[0] - t[0] * along, l[1] - t[1] * along, l[2] - t[2] * along]);
-		const crotch = step(limb.joint, outward, limb.trunkRadius);
+		const off = Math.hypot(l[0] - t[0] * along, l[1] - t[1] * along, l[2] - t[2] * along);
+		const crotch = step(limb.joint, l, limb.trunkRadius / Math.max(off, 0.3));
 		const camera = aim(crotch, column, 0.5, forward, tall, lens);
 		const blocked = blockedBy(subjects, camera.position, step(crotch, from, limb.trunkRadius), {
 			trunk: true,
@@ -896,7 +898,7 @@ export function junctionShot(
 	}
 	const { limb, tall, camera, crotch, forward } = chosen;
 	const rises = dot(limb.direction, axesOf(forward).up) >= 0;
-	const baseAt = step(limb.joint, limb.direction, limb.trunkRadius + limb.radius);
+	const baseAt = step(crotch, limb.direction, limb.radius);
 	const base = project(camera, lens, baseAt);
 	return {
 		kind: 'a great limb leaving the trunk',
