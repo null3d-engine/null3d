@@ -36,14 +36,14 @@ function rows(from: number): PieceLeaves {
 function limb(length: number): PieceStem {
 	return {
 		length: { mean: length, spread: length * 0.07 },
-		radius: [0.004, 0.001],
+		radius: [0.006, 0.0015],
 		zigzag: 10,
 		leaves: rows(0.45),
 		sides: [
 			{
 				stem: {
 					length: { mean: 0.14, spread: 0.03 },
-					radius: [0.0015, 0.0008],
+					radius: [0.002, 0.001],
 					zigzag: 12,
 					leaves: rows(0.2),
 				},
@@ -89,7 +89,8 @@ export const PIECES: readonly PieceRule[] = [
 		depth: 13,
 		stem: {
 			...limb(0.95),
-			radius: [0.006, 0.001],
+			// Still 21: the stem is 0.021 of the branch's height thick at its cut (15 of 727 pixels).
+			radius: [0.0103, 0.003],
 			leaves: rows(0.68),
 			sides: [
 				fork(limb(0.8), 0.28, 0.95, 58, true),
@@ -110,14 +111,15 @@ export const PIECES: readonly PieceRule[] = [
 		depth: 16,
 		stem: {
 			length: { mean: 0.35, spread: 0.03 },
-			radius: [0.002, 0.0008],
+			// Still 22: the twig is 0.02 of its height thick at its cut.
+			radius: [0.0036, 0.0012],
 			zigzag: 14,
 			leaves: { ...rows(0.25), gap: 0.05, scale: TWIG_LEAF_SCALE },
 			sides: [
 				{
 					stem: {
 						length: { mean: 0.11, spread: 0.02 },
-						radius: [0.0012, 0.0008],
+						radius: [0.0018, 0.001],
 						zigzag: 14,
 						leaves: { ...rows(0.3), gap: 0.05, scale: TWIG_LEAF_SCALE },
 					},

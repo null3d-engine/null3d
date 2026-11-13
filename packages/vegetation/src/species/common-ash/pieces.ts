@@ -46,13 +46,14 @@ export const PIECES: readonly PieceRule[] = [
 		depth: 5,
 		stem: {
 			length: { mean: 0.6, spread: 0.05 },
-			radius: [0.006, 0.004],
+			// Still 21: the stem is 0.03 of the picture's height thick (19 to 23 of 683 pixels).
+			radius: [0.0088, 0.006],
 			leaves: bunch(0.6, 2),
 			sides: [
 				{
 					stem: {
 						length: { mean: 0.14, spread: 0.03 },
-						radius: [0.004, 0.003],
+						radius: [0.006, 0.004],
 						droop: -25,
 						leaves: bunch(0.14, 1),
 					},
@@ -76,7 +77,8 @@ export const PIECES: readonly PieceRule[] = [
 		scale: 1 / LEAF_SCALE,
 		stem: {
 			length: { mean: 0.35, spread: 0.03 },
-			radius: [0.004, 0.003],
+			// Still 22: the twig is 0.04 of its height thick (28 of 693 pixels).
+			radius: [0.007, 0.005],
 			leaves: { ...bunch(0.35, 2), gap: 0.12, from: 0.3 },
 		},
 	},

@@ -88,7 +88,8 @@ export const STUDIO: readonly PieceStudio[] = [
 		stand: {
 			stem: {
 				length: 0.6,
-				radius: [0.0075, 0.005],
+				// Still 21: the stem is 0.02 of the branch's height thick (15 of 737 pixels).
+				radius: [0.01, 0.007],
 				bud: false,
 				sides: [
 					// The left arm rises steeply and arches over at the branch's top; the right arm
@@ -97,7 +98,7 @@ export const STUDIO: readonly PieceStudio[] = [
 					{
 						stem: {
 							length: 0.5,
-							radius: [0.004, 0.002],
+							radius: [0.006, 0.003],
 							droop: 100,
 							droopOver: [0.55, 1],
 							bud: false,
@@ -112,7 +113,7 @@ export const STUDIO: readonly PieceStudio[] = [
 					{
 						stem: {
 							length: 0.6,
-							radius: [0.004, 0.002],
+							radius: [0.006, 0.003],
 							droop: 90,
 							droopOver: [0.55, 1],
 							bud: false,

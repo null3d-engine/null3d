@@ -33,7 +33,7 @@ function pairs(from: number, gap: number, flat = 0.8): PieceLeaves {
  */
 const SPRAY: PieceStem = {
 	length: { mean: 0.52, spread: 0.15 },
-	radius: [0.003, 0.0012],
+	radius: [0.004, 0.0015],
 	droop: 105,
 	droopOver: [0.33, 1],
 	leaves: pairs(0.15, 0.033),
@@ -41,7 +41,7 @@ const SPRAY: PieceStem = {
 		{
 			stem: {
 				length: { mean: 0.3, spread: 0.07 },
-				radius: [0.0018, 0.001],
+				radius: [0.0022, 0.0012],
 				droop: 50,
 				leaves: pairs(0.15, 0.033),
 			},
@@ -69,7 +69,8 @@ export const PIECES: readonly PieceRule[] = [
 		depth: 26,
 		stem: {
 			length: { mean: 0.95, spread: 0.05 },
-			radius: [0.005, 0.0015],
+			// Still 21: the axis is 0.023 of the branch's height thick at its cut (17 of 735 pixels).
+			radius: [0.0115, 0.004],
 			leaves: pairs(0.72, 0.033),
 			sides: [
 				{
@@ -95,7 +96,8 @@ export const PIECES: readonly PieceRule[] = [
 		variants: 2,
 		stem: {
 			length: { mean: 0.35, spread: 0.03 },
-			radius: [0.002, 0.001],
+			// Still 22: the twig is 0.014 of its height thick at its cut.
+			radius: [0.0025, 0.001],
 			leaves: pairs(0.3, 0.027, 0),
 			sides: [
 				{

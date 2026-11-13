@@ -272,6 +272,117 @@ describe('a piece keeps the depth its turning video shows', () => {
 	);
 });
 
+/**
+ * How thick each cut is at its foot, as a share of the cut's height, read on the full-size
+ * photograph as the stem's width in pixels over the piece's height in pixels (stills 21 and 22).
+ */
+const CUT_THICKNESS: readonly {
+	readonly id: SpeciesId;
+	readonly pieces: readonly PieceRule[];
+	readonly piece: string;
+	readonly photograph: number;
+}[] = [
+	{ id: 'pedunculate-oak', pieces: OAK, piece: 'branch-end', photograph: 0.023 },
+	{ id: 'pedunculate-oak', pieces: OAK, piece: 'twig', photograph: 0.032 },
+	{ id: 'olive', pieces: OLIVE, piece: 'branch-end', photograph: 0.023 },
+	{ id: 'olive', pieces: OLIVE, piece: 'twig', photograph: 0.014 },
+	{ id: 'european-beech', pieces: BEECH, piece: 'branch-end', photograph: 0.021 },
+	{ id: 'european-beech', pieces: BEECH, piece: 'twig', photograph: 0.02 },
+	{ id: 'common-ash', pieces: ASH, piece: 'branch-end', photograph: 0.03 },
+	{ id: 'common-ash', pieces: ASH, piece: 'twig', photograph: 0.04 },
+	{ id: 'common-alder', pieces: ALDER, piece: 'branch-end', photograph: 0.028 },
+	{ id: 'common-alder', pieces: ALDER, piece: 'twig', photograph: 0.028 },
+	{ id: 'holm-oak', pieces: HOLM, piece: 'branch-end', photograph: 0.037 },
+	{ id: 'holm-oak', pieces: HOLM, piece: 'twig', photograph: 0.026 },
+	{ id: 'hawthorn-shrub', pieces: HAWTHORN, piece: 'branch-end', photograph: 0.03 },
+	{ id: 'hawthorn-shrub', pieces: HAWTHORN, piece: 'twig', photograph: 0.025 },
+];
+/** The most degrees a stem may turn at one joint between two of its straight runs. */
+const JOINT_MOST = 15;
+
+describe("a piece's wood", () => {
+	it(
+		'is as thick at its cut as its photograph shows, within a quarter, read from the built mesh',
+		async () => {
+			for (const { id, pieces, piece, photograph } of CUT_THICKNESS) {
+				const module = await loadSpecies(id);
+				await loadPlantCode(module.record);
+				const built = buildPiecesNow(module, pieces, true).filter(
+					(part) => part.piece === piece && part.variant === 0,
+				);
+				// The leafless piece's own height, and its width across the lowest fiftieth of it.
+				let low = Infinity;
+				let high = -Infinity;
+				for (const part of built) {
+					const positions = part.tiers[DETAILS.indexOf('high')]?.positions ?? [];
+					for (let i = 1; i < positions.length; i += 3) {
+						low = Math.min(low, positions[i] as number);
+						high = Math.max(high, positions[i] as number);
+					}
+				}
+				let left = Infinity;
+				let right = -Infinity;
+				for (const part of built) {
+					const positions = part.tiers[DETAILS.indexOf('high')]?.positions ?? [];
+					for (let i = 0; i < positions.length; i += 3)
+						if ((positions[i + 1] as number) <= low + (high - low) / 50) {
+							left = Math.min(left, positions[i] as number);
+							right = Math.max(right, positions[i] as number);
+						}
+				}
+				const share = (right - left) / (high - low);
+				expect(share).toBeGreaterThan(photograph * 0.75);
+				expect(share).toBeLessThan(photograph * 1.25);
+			}
+		},
+		LONG,
+	);
+
+	it(
+		'bends on curves: no stem of any piece turns a corner at one joint',
+		async () => {
+			for (const { id, pieces } of SPECIES) {
+				const module = await loadSpecies(id);
+				await loadPlantCode(module.record);
+				for (const [r, rule] of pieces.entries())
+					for (let variant = 0; variant < rule.variants; variant++) {
+						const plan = planPiece(module.record, rule, pieceKey(r, variant), 4);
+						for (const points of plan.axes)
+							for (let k = 1; k + 1 < points.length; k++) {
+								const before = points[k - 1]?.at ?? [0, 0, 0];
+								const here = points[k]?.at ?? [0, 0, 0];
+								const after = points[k + 1]?.at ?? [0, 0, 0];
+								const a = [here[0] - before[0], here[1] - before[1], here[2] - before[2]];
+								const b = [after[0] - here[0], after[1] - here[1], after[2] - here[2]];
+								const cosine =
+									((a[0] as number) * (b[0] as number) +
+										(a[1] as number) * (b[1] as number) +
+										(a[2] as number) * (b[2] as number)) /
+									(Math.hypot(...a) * Math.hypot(...b));
+								const degrees = (Math.acos(Math.min(1, Math.max(-1, cosine))) * 180) / Math.PI;
+								expect(degrees).toBeLessThan(JOINT_MOST);
+							}
+					}
+			}
+		},
+		LONG,
+	);
+
+	it('tapers: every stem is at least as thick at its foot as at its tip', async () => {
+		for (const { id, pieces } of SPECIES) {
+			const module = await loadSpecies(id);
+			await loadPlantCode(module.record);
+			for (const [r, rule] of pieces.entries()) {
+				const plan = planPiece(module.record, rule, pieceKey(r, 0), 4);
+				for (const points of plan.axes)
+					expect(points[0]?.radius ?? 0).toBeGreaterThanOrEqual(
+						points[points.length - 1]?.radius ?? 0,
+					);
+			}
+		}
+	});
+});
+
 describe('a piece through the card bake', () => {
 	it(
 		"gives the oak's branch end three planes whose front cell holds its leaf tufts",
