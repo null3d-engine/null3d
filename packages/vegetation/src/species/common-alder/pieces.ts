@@ -1,15 +1,21 @@
 // The common alder's pieces: the branch end its sockets carry and the forked twig at its top. Each
-// value names the reference picture it was measured on. The cut branch of still 21 is a metre tall,
-// which makes its leaf about 7 centimetres, the record's own leaf. The cones and catkins are not
-// part of a piece yet.
+// value names the reference picture it was measured on. The cones and catkins are not part of a
+// piece yet.
+//
+// The cut branch of still 21 is a metre tall over 725 pixels, which makes its round leaf 9 to 10
+// centimetres across (65 to 75 pixels at full size), inside the species' 4 to 10. The record's leaf
+// is 7, so a piece draws its leaves at 1.3 of that until the record's own length moves.
 import type { PieceLeaves, PieceRule, PieceStem, PieceStudio } from '../../leaf/piece';
 
+/** A piece's leaf over the record's: 9.5 centimetres measured on still 21, over 7. */
+const LEAF_SCALE = 1.3;
+
 /**
- * The leaves along a shoot. Still 21: alternate, one each 4 to 6 centimetres, held 50 to 70 degrees
- * off the shoot.
+ * The leaves along a shoot. Still 21: alternate, one each 5 to 7 centimetres, held 50 to 70 degrees
+ * off the shoot, their faces open to the branch's sky side.
  */
 function leaves(from: number): PieceLeaves {
-	return { gap: 0.045, from, angle: 60, angleSpread: 10, skyward: 0.9 };
+	return { gap: 0.06, from, angle: 60, angleSpread: 10, skyward: 0.9, scale: LEAF_SCALE };
 }
 
 /** A side shoot. Still 21: 15 to 25 centimetres long with four to six leaves. */
@@ -56,7 +62,7 @@ export const PIECES: readonly PieceRule[] = [
 					from: 0,
 					to: 0.3,
 					arrangement: 'alternate',
-					angle: { mean: 38, spread: 4 },
+					angle: { mean: 46, spread: 4 },
 				},
 				{
 					stem: SHOOT,
