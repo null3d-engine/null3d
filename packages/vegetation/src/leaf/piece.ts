@@ -498,6 +498,8 @@ interface StemStart {
  * @param ground The ground side in the piece's frame, for a piece that stands another way than
  * its attitude holds it, as a cut branch in a clamp does.
  * @param lean Degrees the piece's line leans from +Y toward +X, for a cut that leans in its clamp.
+ * @param fall The way a hanging mark falls in the piece's frame, where a photograph's gravity is not
+ * the piece's own ground side; its ground side where absent.
  * @returns The plan.
  */
 export function planPiece(
@@ -507,6 +509,7 @@ export function planPiece(
 	leafMeshes: number,
 	ground?: Readonly<Vector3>,
 	lean = 0,
+	fall?: Readonly<Vector3>,
 ): ShootPlan {
 	const shoots = record.shoots;
 	if (!shoots)
@@ -852,11 +855,12 @@ export function planPiece(
 				for (let c = 0; c < count; c++) {
 					// Each body hangs toward the ground side, a little out from the stem and apart
 					// from its neighbours.
-					const apart = turn(out, down, c * GOLDEN);
+					const below = fall ?? down;
+					const apart = turn(out, below, c * GOLDEN);
 					const way = normalize3([
-						down[0] + apart[0] * 0.4,
-						down[1] + apart[1] * 0.4,
-						down[2] + apart[2] * 0.4,
+						below[0] + apart[0] * 0.4,
+						below[1] + apart[1] * 0.4,
+						below[2] + apart[2] * 0.4,
 					]);
 					const end: Vector3 = [
 						frame.at[0] + way[0] * stalk,
@@ -1178,6 +1182,7 @@ export function splitPlan(
  * @param leaves The species' leaf meshes at every tier, low first.
  * @param straight The same meshes built with no bend at the stalk, for the rules whose blades bend
  * in their own plane; the species' own where absent.
+ * @param fall The way a hanging mark falls in each piece's frame, for a lone cut in a clamp.
  * @returns The prototypes, each rule's variants together and each variant's parts together, in the
  * rules' order.
  */
@@ -1186,6 +1191,7 @@ export function piecePrototypes(
 	rules: readonly PieceRule[],
 	leaves: readonly (readonly PrototypeArrays[])[],
 	straight: readonly (readonly PrototypeArrays[])[] = leaves,
+	fall?: Readonly<Vector3>,
 ): PiecePrototype[] {
 	const out: PiecePrototype[] = [];
 	for (const [r, rule] of rules.entries()) {
@@ -1193,7 +1199,10 @@ export function piecePrototypes(
 		const leafMeshes = Math.min(...own.map((tier) => tier.length));
 		const finest = own[own.length - 1] ?? [];
 		for (let variant = 0; variant < Math.min(16, Math.max(1, rule.variants)); variant++) {
-			const parts = splitPlan(planPiece(record, rule, pieceKey(r, variant), leafMeshes), finest);
+			const parts = splitPlan(
+				planPiece(record, rule, pieceKey(r, variant), leafMeshes, undefined, 0, fall),
+				finest,
+			);
 			for (const [part, plan] of parts.entries())
 				out.push({
 					piece: rule.name,
@@ -1244,6 +1253,12 @@ export interface PieceStudio {
 	readonly scale?: number;
 	/** Degrees either side of the stand's plane its arms stand, as a piece rule's `depth` is. */
 	readonly depth?: number;
+	/**
+	 * The way the photograph's gravity pulls in a lone piece's own frame, where the cut stands in a
+	 * clamp and not as a socket holds it: its hanging marks fall that way. The piece's ground side
+	 * where absent.
+	 */
+	readonly fall?: Vec3;
 }
 
 /** One piece of a layout: which piece, and where it stands in the layout's space, +Y up. */
