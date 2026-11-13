@@ -208,14 +208,15 @@ const HELD: readonly Held[] = [
 		directed: commonAlderDirected,
 		heightMean: spreadMean(commonAlderDirected.size.height),
 		record: commonAlderRecord,
-		counts: { leader: 1, limb: 24, twig: [24, 168] },
+		counts: { leader: 1, limb: 24, side: [70, 105], twig: [2600, 3500] },
 		// Twenty-four limbs a golden angle apart leave no gap wider than two even shares and their
 		// jitter.
 		round: { rule: 'limb', gap: 46, lean: 0.25 },
-		base: { limb: 0.25, twig: 0.5 },
+		base: { limb: 0.25, side: 0.5 },
 		plumb: ['leader'],
 		through: 0,
 		axesPerSocket: 1.0,
+		fine: ['twig'],
 		tall: [0.98, 1.02],
 	},
 	{
