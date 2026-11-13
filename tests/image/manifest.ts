@@ -3858,10 +3858,12 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		swiftShaderSwitches: ['preset=low'],
 		expect: { hdr: false },
 		timeoutSeconds: 600,
-		// Firefox on Linux cannot draw this page: in drawn run 43312279951 its browser's shared page
-		// process stopped answering on this picture twice, 90 seconds the last time, so the runner
-		// closed the turn. Chromium's software path and the real GPU draw it at the same head, and a
-		// lighter gust cannot hold the property the picture checks, so this browser skips it.
+		// Firefox on Linux skips this picture, and the fault is the wind field's reader rather than
+		// the browser's limit. In drawn run 43346825811 the same page with the send's strength at
+		// zero drew in 108 seconds (job 131633715875), while the strength of ten stopped the runner
+		// page twice, 90 seconds each time, and drew nothing (job 131633715943). The same container
+		// also stopped demo-creek once and creek-water-close once in that run. The skip stays so the
+		// Firefox job keeps its meaning; the reader's cost there is open work.
 		without: ['Firefox'],
 	},
 	// Creek on a near-square canvas at a render scale below the whole canvas, from the opening view
