@@ -3,11 +3,25 @@
 	"leaf": {
 		"upper": 24,
 		"lower": 25,
-		"alpha": { "floor": 16, "solid": 240 },
+		"alpha": {
+			"floor": 16,
+			"solid": 240
+		},
+		"gaps": {
+			"luminance": 0.04,
+			"ramp": 0.4
+		},
 		"erode": 1,
 		"margin": 0.02,
-		"delight": { "radius": 0.06, "strength": 1 },
-		"relief": { "veins": 1, "pucker": 0.5, "depth": 0.0016 }
+		"delight": {
+			"radius": 0.06,
+			"strength": 1
+		},
+		"relief": {
+			"veins": 1,
+			"pucker": 0.5,
+			"depth": 0.0016
+		}
 	},
 	"bark": {
 		"zones": [
@@ -17,7 +31,10 @@
 				"tile": [0.5, 0.5],
 				"depth": 0.035,
 				"smooth": 6,
-				"delight": { "radius": 0.2, "strength": 1 }
+				"delight": {
+					"radius": 0.2,
+					"strength": 1
+				}
 			}
 		],
 		"young": {
@@ -26,7 +43,10 @@
 			"tile": [0.16, 0.16],
 			"depth": 0.012,
 			"smooth": 4,
-			"delight": { "radius": 0.18, "strength": 1 }
+			"delight": {
+				"radius": 0.18,
+				"strength": 1
+			}
 		}
 	},
 	"quality": {

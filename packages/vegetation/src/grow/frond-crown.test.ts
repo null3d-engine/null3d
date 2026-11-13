@@ -21,7 +21,7 @@ import {
 	piecePrototypes,
 	planPiece,
 } from '../leaf/piece';
-import { SURFACE_LEAF, SURFACE_STEM } from '../leaf/writer';
+import { SURFACE_LEAF, SURFACE_PIECE, SURFACE_STEM } from '../leaf/writer';
 import { radicalInverse } from './frond-crown';
 import { targetHeight } from './height';
 
@@ -199,6 +199,9 @@ function strayFromPlan(
 	return most;
 }
 
+/** Whether a vertex's surface kind is a leaf's: a living leaf, or a browned piece's leaf. */
+const leafKind = (kind: number) => kind === SURFACE_LEAF || kind === SURFACE_PIECE;
+
 /** The leaf meshes a species' pieces take at every tier, low first, as the kit step builds them. */
 function leavesByTier(kit: SpeciesKitData): (readonly PrototypeArrays[])[] {
 	const builder = foliage(kit.record.foliage.kind);
@@ -368,8 +371,7 @@ describe('the frond pieces', () => {
 					const leafTriangles = (mesh: PrototypeArrays) => {
 						let count = 0;
 						for (let t = 0; t < mesh.indices.length; t += 3)
-							if ((mesh.colors[(mesh.indices[t] as number) * 4 + 2] as number) === SURFACE_LEAF)
-								count++;
+							if (leafKind(mesh.colors[(mesh.indices[t] as number) * 4 + 2] as number)) count++;
 						return count;
 					};
 					// One leaflet: two triangles at the low and medium tiers, four at the high and ultra tiers,
@@ -411,6 +413,30 @@ describe('the frond pieces', () => {
 			);
 		});
 	}
+});
+
+describe('the dead fronds', () => {
+	it('draw their leaves browned to the full, and the living fronds not at all', () => {
+		for (const id of SPECIES) {
+			const { kit, record } = of(id);
+			for (const prototype of kit.prototypes.filter((p: ShootPrototype) => p.piece)) {
+				const rule = (record.pieces ?? []).find((r) => r.name === prototype.piece?.name);
+				const mesh = prototype.tiers[DETAILS.indexOf('high')] as PrototypeArrays;
+				let browned = 0;
+				let living = 0;
+				for (let i = 0; i < mesh.colors.length / 4; i++) {
+					const kind = mesh.colors[i * 4 + 2] as number;
+					if (kind === SURFACE_PIECE) {
+						browned++;
+						expect(mesh.uvs1[i * 2 + 1]).toBeCloseTo(rule?.browning ?? 0, 5);
+					} else if (kind === SURFACE_LEAF) living++;
+				}
+				if (rule?.browning) expect(living).toBe(0);
+				else expect(browned).toBe(0);
+				expect(browned + living).toBeGreaterThan(0);
+			}
+		}
+	});
 });
 
 describe('the frond roll', () => {

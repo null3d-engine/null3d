@@ -56,6 +56,7 @@ import {
 	turn,
 	type UncardedPrototype,
 } from './shoot';
+import { SURFACE_LEAF, SURFACE_PIECE } from './writer';
 
 /**
  * How each tier meshes a piece's wood and buds. A tree carries thousands of pieces, so a piece's
@@ -334,6 +335,11 @@ export interface PieceRule {
 	 * crown's side shows its face rather than its edge. Absent, 0.
 	 */
 	readonly roll?: number;
+	/**
+	 * How far the piece's leaves have browned, from 0 to 1: a dead frond's leaflets draw toward the
+	 * species' autumn colour by this share, as a placed piece's own browning. Absent, 0.
+	 */
+	readonly browning?: number;
 	/**
 	 * The ground side in the piece's frame, where it is not its attitude's own: a piece that stands
 	 * upright on its socket names the way back along its line, so its side stems lift toward its tip.
@@ -1241,6 +1247,23 @@ export function splitPlan(
 }
 
 /**
+ * Marks a mesh's leaves as a piece's own surface with their browning, so the plant material draws
+ * them toward the species' autumn colour by that share. A piece's vertex holds the share along its
+ * part where a leaf's holds its metres, so the metres become a share of the leaf's length and the
+ * leaf flutters as before.
+ */
+function browned(mesh: PrototypeArrays, browning: number, leafLength: number): void {
+	const share = Math.min(1, Math.max(0, browning));
+	const length = Math.max(1e-3, leafLength);
+	for (let i = 0; i < mesh.colors.length / 4; i++) {
+		if ((mesh.colors[i * 4 + 2] as number) !== SURFACE_LEAF) continue;
+		mesh.colors[i * 4 + 2] = SURFACE_PIECE;
+		mesh.uvs1[i * 2] = Math.min(1, Math.max(0, (mesh.uvs1[i * 2] as number) / length));
+		mesh.uvs1[i * 2 + 1] = share;
+	}
+}
+
+/**
  * Builds a species' pieces, each variant at every detail tier, from its leaf meshes. A variant too
  * large for one prototype comes as several parts.
  *
@@ -1259,6 +1282,13 @@ export function piecePrototypes(
 	straight: readonly (readonly PrototypeArrays[])[] = leaves,
 ): PiecePrototype[] {
 	const pictureTier = DETAILS.indexOf(BRUSH_PICTURE_TIER);
+	const foliage = record.foliage;
+	const leafLength =
+		foliage.kind === 'blade'
+			? spreadMean(foliage.leaf.length)
+			: foliage.kind === 'needle' || foliage.kind === 'fascicle'
+				? spreadMean(foliage.needle.length)
+				: 1;
 	const out: PiecePrototype[] = [];
 	for (const [r, rule] of rules.entries()) {
 		const own = rule.leafDroop === 'plane' ? straight : leaves;
@@ -1312,6 +1342,7 @@ export function piecePrototypes(
 							t <= DETAILS.indexOf('medium') ? farTiers[t] : tier,
 						) as unknown as typeof near.tiers)
 					: near.tiers;
+				if (rule.browning) for (const tier of tiers) browned(tier, rule.browning, leafLength);
 				out.push({
 					piece: rule.name,
 					variant,
