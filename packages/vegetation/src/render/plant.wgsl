@@ -168,6 +168,11 @@ const CUTOFF: f32 = 0.5;
 // the share of the texel that the leaves cover, so a small rise keeps a far card's thinnest leaves
 // from falling under the cutoff without inventing coverage that the mip does not hold.
 const CARD_MIP_LIFT: f32 = 0.05;
+// The steepest fall, a mip level, of the coverage a card's texel must reach to draw, which the card
+// surface's third byte holds as a share of it (the card bake's `CARD_CUT_FALL_MOST`).
+const CARD_CUT_FALL_MOST: f32 = 0.3;
+// The lowest coverage a card's texel must reach at any mip level, so faint averages never draw.
+const CARD_CUT_LEAST: f32 = 0.08;
 // One turn, for the phases that the records and the vertex colours carry.
 const TURN: f32 = 6.283185307179586;
 // The wind speed at which a species' sway is measured: its record gives the metres at the top for
@@ -962,15 +967,27 @@ fn uv_scale(mode: i32) -> f32 {
     return 1.0 / TEXTURE_UV_STEPS;
 }
 
-/// A card's alpha, raised with the mip level that its sample reads. A mip level averages the leaves'
-/// coverage with the gaps between them, so far away a card's alpha falls under the cutoff and its
-/// leaves would vanish; raising it by a quarter for each level keeps the share of the card that
-/// leaves cover near the full-size texture's.
-fn card_alpha(alpha: f32, gx: vec2f, gy: vec2f) -> f32 {
+/// The mip level a card's sample reads: 0 where the card draws at full size or larger.
+fn card_level(gx: vec2f, gy: vec2f) -> f32 {
     let texels = vec2f(textureDimensions(colour).xy);
     let footprint = max(length(gx * texels), length(gy * texels));
-    let level = max(log2(max(footprint, 1.0)), 0.0);
-    return saturate(alpha * (1.0 + level * CARD_MIP_LIFT));
+    return max(log2(max(footprint, 1.0)), 0.0);
+}
+
+/// A card's alpha, raised with the mip level that its sample reads. A mip level averages the leaves'
+/// coverage with the gaps between them, so far away a card's alpha falls under the cutoff and its
+/// leaves would vanish; raising it a little for each level keeps the share of the card that leaves
+/// cover nearer the full-size texture's. The shadow a card casts and its matte read this.
+fn card_alpha(alpha: f32, gx: vec2f, gy: vec2f) -> f32 {
+    return saturate(alpha * (1.0 + card_level(gx, gy) * CARD_MIP_LIFT));
+}
+
+/// A card's alpha moved so the colour picture's cut at one half falls where the card's own cut lies
+/// at the mip level its sample reads: one half at full size, lower by the fall the bake measured for
+/// the card's cell at each coarser level, which keeps the share of the card that full size draws.
+fn card_cut_alpha(alpha: f32, fall_byte: f32, level: f32) -> f32 {
+    let cut = max(CARD_CUT_LEAST, CUTOFF - fall_byte * CARD_CUT_FALL_MOST * level);
+    return saturate(alpha - cut + CUTOFF);
 }
 
 /// The coverage a point casts: a leaf's or a card's texel, and wood and stems whole.
@@ -1037,6 +1054,9 @@ fn surface(input: SurfaceInput) -> Surface {
     var occlusion = 1.0;
     var sky_normal = vec3f(0.0);
     var sheen = 0.0;
+    // The alpha the colour picture cuts: a card's moves to its own cut for the mip level it reads;
+    // every other role cuts its own alpha.
+    var cut_alpha = -1.0;
 
     if (mode == MODE_WOOD) {
         let radius = input.uv1.x * WOOD_RADIUS_SPAN;
@@ -1231,6 +1251,7 @@ fn surface(input: SurfaceInput) -> Surface {
                 base = texel.rgb;
             }
             alpha = card_alpha(texel.a, gx, gy);
+            cut_alpha = card_cut_alpha(texel.a, surface_texel.z, card_level(gx, gy));
             // A card's coverage: a hashed share of the crown's leaf groups gives way, so the crown
             // shows sky between them while the leaves of the rest keep their mass. At 1, or when the
             // record names none, the card draws whole.
@@ -1238,10 +1259,12 @@ fn surface(input: SurfaceInput) -> Surface {
             if (card_cover < 0.999) {
                 if (value3(input.relativePosition * 5.0) > card_cover) {
                     alpha = 0.0;
+                    cut_alpha = 0.0;
                 }
             }
             if (near_copy && length(input.relativePosition) < material.nearDistance * 0.96) {
                 alpha = 0.0;
+                cut_alpha = 0.0;
             }
             let e = (surface_texel.xy * 255.0 - vec2f(128.0)) / 127.0;
             let card_normal = octahedral(clamp(e, vec2f(-1.0), vec2f(1.0)));
@@ -1398,7 +1421,8 @@ fn surface(input: SurfaceInput) -> Surface {
     let variance = 0.5 * (dot(dnx, dnx) + dot(dny, dny));
     let a = roughness * roughness;
     let widened = sqrt(sqrt(a * a + min(2.0 * variance, 0.18)));
-    let width = fwidth(alpha);
+    let drawn = select(alpha, cut_alpha, cut_alpha >= 0.0);
+    let width = fwidth(drawn);
     let n_dot_v = saturate(dot(normal, input.viewDirection));
     through /= max(1.0 - gloss_albedo(widened, n_dot_v), 0.5);
 
@@ -1424,7 +1448,7 @@ fn surface(input: SurfaceInput) -> Surface {
     // a partly covered texel as the part of plant it is: the piece test joins a group through it, and
     // the openness test keeps the sky it does not cover. A sharpened edge would do the first and lose
     // the second.
-    s.alpha = select(sharpen(alpha, width), alpha, matte);
+    s.alpha = select(sharpen(drawn, width), alpha, matte);
     s.diffuseTransmission = select(share, 0.0, matte || parts);
     s.diffuseTransmissionColor = select(through, vec3f(0.0), matte || parts);
     return s;
