@@ -78,6 +78,12 @@ import {
 	turnShots,
 } from './lib/plant-review/render.ts';
 import { type SheathTarget, sheathTargetOf } from './lib/plant-review/sheath.ts';
+import {
+	mergeVerdict,
+	toolVerdict,
+	VERDICT_FILE,
+	type Verdict,
+} from './lib/plant-review/verdict.ts';
 
 /** Where the reference folders are when `--refs` names a slug. */
 const REFERENCES =
@@ -967,6 +973,24 @@ function compareRun(
 		(pair) => (pair.connectivity?.floating.length ?? 0) > 0,
 	);
 	const voids = [...stills.values()].filter((pair) => pair.void !== undefined);
+	// The run's verdict: the tool's rows are written fresh, and a row a reviewer judged is kept.
+	const verdictPath = join(dir, VERDICT_FILE);
+	const fresh = toolVerdict({
+		species: manifest.species,
+		run: manifest.run,
+		commit: manifest.commit,
+		dirty: manifest.dirty,
+		seed: manifest.seed,
+		variant: manifest.variant,
+		preset: manifest.preset,
+		coverage,
+		slots: set.stills,
+		stills,
+	});
+	const verdict = existsSync(verdictPath)
+		? mergeVerdict(JSON.parse(readFileSync(verdictPath, 'utf8')) as Verdict, fresh)
+		: fresh;
+	writeFileSync(verdictPath, `${JSON.stringify(verdict, null, '\t')}\n`);
 	summary.push(
 		'### Coverage',
 		'',
@@ -978,6 +1002,7 @@ function compareRun(
 					`- ${voids.length} picture${voids.length === 1 ? ' is' : 's are'} void, with no subject to compare: ${voids.map((pair) => pair.file).join(', ')}. A void picture is a fault of the tool's camera or of the file's view, and it neither passes nor fails a row.`,
 				]
 			: []),
+		`- ${VERDICT_FILE} holds this run's rows: ${verdict.rows.filter((row) => row.verdict === 'pass').length} pass, ${verdict.rows.filter((row) => row.verdict === 'fail').length} fail, ${verdict.rows.filter((row) => row.verdict === 'void').length} void and ${verdict.rows.filter((row) => row.verdict === 'unjudged').length} wait for a reviewer. \`bun run plants:ledger\` counts from it.`,
 		...(maskFailures.length > 0
 			? [
 					`- The mask check fails on ${maskFailures.length} turn${maskFailures.length === 1 ? '' : 's'}: ${maskFailures.map((turn) => turn.video).join(', ')}. A matte that the colour outline cannot follow is not a matte a row can be judged on.`,
