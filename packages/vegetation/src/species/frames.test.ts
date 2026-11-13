@@ -28,6 +28,8 @@ import {
 } from '../grow/frame-measure';
 import { frame as commonAlder } from './common-alder/directed';
 import { record as commonAlderRecord } from './common-alder/record';
+import { frame as commonAsh } from './common-ash/directed';
+import { record as commonAshRecord } from './common-ash/record';
 import { frame as europeanBeech } from './european-beech/directed';
 import { record as europeanBeechRecord } from './european-beech/record';
 import { frame as hawthornShrub } from './hawthorn-shrub/directed';
@@ -137,6 +139,18 @@ const HELD: readonly Held[] = [
 		plumb: ['trunk'],
 		// The top tiers' foliage stands above the highest wood.
 		tall: [0.93, 1.02],
+	},
+	{
+		id: 'common-ash',
+		spec: commonAsh,
+		record: commonAshRecord,
+		counts: { trunk: 1, limb: 4, top: 2, branch: [12, 36], twig: [24, 144] },
+		// Two crossed pairs stand a quarter turn apart.
+		round: { rule: 'limb', gap: 110, lean: 0.2 },
+		base: { limb: 0.52, top: 0.62, branch: 0.45, twig: 0.5 },
+		plumb: ['trunk'],
+		// The outline's top is blunt, so the bunches on the highest tips stand a little over it.
+		tall: [0.95, 1.05],
 	},
 ];
 
