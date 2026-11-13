@@ -24,6 +24,8 @@ function fakeCore() {
 	let slot = 0;
 	let batch = 0;
 	const bounds: [number, number][] = [];
+	/** Each batch id whose draw range the engine set. */
+	const drawRanges: number[] = [];
 	const glue = {
 		sceneCapacity: () => CAPACITY,
 		sceneArrays: (field: number) => AT.fields + field * 256,
@@ -36,6 +38,12 @@ function fakeCore() {
 			bounds.push([id, radius]);
 			return 0;
 		},
+		reserveBatchRanges: () => 0,
+		meshCenter: () => 0,
+		setBatchDrawRange: (id: number) => {
+			drawRanges.push(id);
+			return 0;
+		},
 		lastErrorCode: () => 0,
 		lastErrorDetail: () => 0,
 	};
@@ -43,7 +51,7 @@ function fakeCore() {
 	const scene = new Scene(core, { frame: 1 }, false);
 	const box = new MeshGeometry(1, 1, core);
 	const paint = new Material(1, core, 'materials.standard');
-	return { scene, bounds, box, paint };
+	return { scene, bounds, drawRanges, box, paint };
 }
 
 /** The error that `call` throws. */
@@ -78,5 +86,32 @@ describe('a batch bound', () => {
 			expect(thrown(() => lanes.setBoundingRadius(radius)).code).toBe('E1203');
 		}
 		expect(bounds).toEqual([]);
+	});
+});
+
+describe('a draw range', () => {
+	test('refuses a start below 0 or past its end on a mesh and on a batch', () => {
+		const { scene, drawRanges, box, paint } = fakeCore();
+		const object = scene.createMesh({ mesh: box, material: paint });
+		for (const [start, end] of [
+			[-1, 10],
+			[10, 10],
+			[20, 10],
+		] as const) {
+			expect(thrown(() => object.setDrawRange(start, end)).code).toBe('E1108');
+		}
+		expect(object.drawRange).toEqual([0, Number.POSITIVE_INFINITY]);
+		object.setDrawRange(8, 120);
+		expect(object.drawRange).toEqual([8, 120]);
+		const batch = scene.createInstances(box, 3, { material: paint });
+		for (const [start, end] of [
+			[-1, 10],
+			[10, 10],
+		] as const) {
+			expect(thrown(() => batch.setDrawRange(start, end)).code).toBe('E1108');
+		}
+		batch.setDrawRange(4, 60);
+		// The batch and each of its parts take the range.
+		expect(drawRanges.length).toBeGreaterThan(0);
 	});
 });

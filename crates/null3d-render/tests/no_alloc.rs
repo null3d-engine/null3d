@@ -1671,3 +1671,62 @@ fn frames_with_the_probe_grid_allocate_nothing() {
         );
     }
 }
+
+#[test]
+fn frames_with_levels_a_draw_range_and_a_tree_allocate_nothing() {
+    let _only = CountingAllocator::exclusive();
+    CountingAllocator::track_this_thread();
+    let mut world = World::new();
+    // The first object's mesh takes two levels, a distance range and a tree of one patch, so the
+    // frames walk the levels, the range and the patches.
+    let slot = world.scene.slots().resolve(world.objects[0]).unwrap() as usize;
+    let mesh = world.scene.meshes()[slot];
+    {
+        let settings = world.renderer.settings_mut();
+        let lower = [base_sphere(0.5, [6, 4]), base_sphere(0.5, [4, 3])]
+            .map(|level| settings.meshes_mut().add(&level).unwrap() + 1);
+        settings
+            .set_mesh_levels(
+                mesh,
+                &lower,
+                &[0.01, 0.05],
+                &[null3d_core::levels::Switch::Error; 2],
+                &[0, 0],
+                0,
+            )
+            .unwrap();
+    }
+    world
+        .renderer
+        .set_mesh_patches(
+            mesh,
+            Some(
+                null3d_render::patches::PatchTree::new(
+                    vec![0, 1, 2],
+                    vec![[0.0, 0.0, 0.0, 1.0]],
+                    vec![[0, 3, 0, 0]],
+                    0,
+                    4,
+                )
+                .unwrap(),
+            ),
+        )
+        .unwrap();
+    world
+        .scene
+        .apply_commands(
+            &[Command::set_draw_range(world.objects[0], 1.0, 400.0)],
+            world.frame,
+        )
+        .unwrap();
+    for frame in 1..=4 {
+        world.frame = frame;
+        world.record(frame == 1);
+    }
+    CountingAllocator::arm();
+    for frame in 5..=60 {
+        world.frame = frame;
+        world.record(false);
+    }
+    assert_eq!(CountingAllocator::disarm(), 0);
+}
