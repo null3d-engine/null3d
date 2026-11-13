@@ -7,11 +7,11 @@ import { files as willowTextures } from '@null3d/vegetation-textures/weeping-wil
 import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
 import type { PlantAsset, SpeciesKitData } from '../asset';
 import { hashBytes } from '../core/hash';
-import { quatRotate, type Vector3 } from '../core/math';
 import type { SpeciesModule } from '../core/record';
 import { loadSpecies } from '../core/registry';
 import { DETAILS } from '../core/types';
 import { buildKitNow, buildPiecesNow, growPlantNow, loadPlantCode } from '../generate';
+import { foliageBox } from '../lod/card-size.test-support';
 import { drawnAtOnce, TALLEST_VIEWS } from '../lod/drawn';
 import { directed as oakDirected } from '../species/pedunculate-oak/directed';
 import { directed as willowDirected } from '../species/weeping-willow/directed';
@@ -19,70 +19,6 @@ import { PIECES as WILLOW_PIECES } from '../species/weeping-willow/pieces';
 import { carriesPieces, PROTOTYPES_MOST } from './piece-rows';
 
 const LONG = scaledBudget(120_000);
-
-/** A box in plant space. */
-interface Box {
-	readonly min: number[];
-	readonly max: number[];
-}
-
-/** An empty box that any point widens. */
-const emptyBox = (): Box => ({
-	min: [Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY],
-	max: [Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY],
-});
-
-/** The box of every placed row's mesh: its prototype's own box, scaled, turned and moved. */
-function placedBox(kit: SpeciesKitData, asset: PlantAsset): Box {
-	const tier = DETAILS.indexOf(kit.detail);
-	const boxes = kit.prototypes.map((prototype) => {
-		const box = emptyBox();
-		const positions = prototype.tiers[tier]?.positions ?? new Float32Array(0);
-		for (let i = 0; i < positions.length; i += 3)
-			for (let k = 0; k < 3; k++) {
-				box.min[k] = Math.min(box.min[k] as number, positions[i + k] as number);
-				box.max[k] = Math.max(box.max[k] as number, positions[i + k] as number);
-			}
-		return box;
-	});
-	const rows = asset.shoots;
-	const out = emptyBox();
-	const corner: Vector3 = [0, 0, 0];
-	const turned: Vector3 = [0, 0, 0];
-	for (let r = 0; r < rows.count; r++) {
-		const box = boxes[rows.prototype[r] as number] as Box;
-		const scale = rows.scale[r] as number;
-		for (let c = 0; c < 8; c++) {
-			for (let k = 0; k < 3; k++)
-				corner[k as 0] = ((c & (1 << k) ? box.max : box.min)[k] as number) * scale;
-			quatRotate(rows.rotation, r * 4, corner, turned);
-			for (let k = 0; k < 3; k++) {
-				const at = turned[k as 0] + (rows.position[r * 3 + k] as number);
-				out.min[k] = Math.min(out.min[k] as number, at);
-				out.max[k] = Math.max(out.max[k] as number, at);
-			}
-		}
-	}
-	return out;
-}
-
-/** The box of a card level's cards, read from their quantised positions inside the species' box. */
-function cardBox(kit: SpeciesKitData, asset: PlantAsset, level: 1 | 2): Box {
-	const out = emptyBox();
-	for (const part of asset.levels[level].parts) {
-		if (part.name !== 'cards') continue;
-		const positions = part.arrays.positions;
-		for (let i = 0; i < positions.length; i += 3)
-			for (let k = 0; k < 3; k++) {
-				const low = kit.box.min[k] as number;
-				const at =
-					low + ((positions[i + k] as number) / 65535) * ((kit.box.max[k] as number) - low);
-				out.min[k] = Math.min(out.min[k] as number, at);
-				out.max[k] = Math.max(out.max[k] as number, at);
-			}
-	}
-	return out;
-}
 
 /** A plant that carries pieces at its sockets, as these tests grow it. */
 interface Dressed {
@@ -196,15 +132,16 @@ for (const dressed of DRESSED)
 				typeof height === 'number'
 					? [height, height]
 					: [height.mean - height.spread, height.mean + height.spread];
-			const near = placedBox(kit, asset);
+			const near = foliageBox(kit, asset, 0);
 			const top = near.max[1] as number;
 			// The top of the drawn boughs stands inside the heights the record may draw.
 			expect(top).toBeGreaterThanOrEqual(low);
 			expect(top).toBeLessThanOrEqual(high * 1.01);
-			// Each card level stands as tall and as wide as the boughs it stands for: a far tree larger
-			// than the near one is a different tree.
+			// Each card level's pictures stand as tall and as wide as the boughs they stand for: a far
+			// tree larger than the near one is a different tree. A card's clear margin draws nothing,
+			// so it is not read.
 			for (const level of [1, 2] as const) {
-				const far = cardBox(kit, asset, level);
+				const far = foliageBox(kit, asset, level);
 				expect(Math.abs((far.max[1] as number) - top)).toBeLessThan(0.015 * top);
 				for (const k of [0, 2] as const) {
 					const wide = (near.max[k] as number) - (near.min[k] as number);
