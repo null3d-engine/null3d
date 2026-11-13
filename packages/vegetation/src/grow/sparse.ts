@@ -650,9 +650,14 @@ function socketPlaces(
 			if (own) own.push(socket);
 			else byAxis.set(axis, [socket]);
 		}
-		for (const own of byAxis.values()) {
-			const along = reversedPlaces(own.length);
-			const start = hashAt(own[0] as number, 3) % own.length;
+		const ranks = buds.sockets?.rank;
+		for (const [axis, own] of byAxis) {
+			// The sockets on a stem or great limb itself, such as a palm's or a fern's crown of fronds,
+			// go in the rank their grower gave them, which spreads the kept ones round the crown.
+			const byRank = structural[axis] === 1 && ranks !== undefined;
+			if (byRank) own.sort((a, b) => (ranks[a] as number) - (ranks[b] as number) || a - b);
+			const along = byRank ? own.map((_, i) => i) : reversedPlaces(own.length);
+			const start = byRank ? 0 : hashAt(own[0] as number, 3) % own.length;
 			// An axis of three sockets or more keeps at least half; a shorter one keeps one of two, or,
 			// inside a larger unit, its one socket by a draw of its own, so short axes are not kept
 			// before long ones. A unit of one socket keeps it until the unit goes.
@@ -791,10 +796,18 @@ export function sparsePlant(
 	const shoots = order.socketOf ? shootOf(skeleton) : undefined;
 	if (order.socketOf && shoots && nodes) {
 		const held = new Uint8Array(buds.count);
-		for (let r = 0; r < rows.count; r++)
+		const grown = new Uint8Array(buds.count);
+		for (let r = 0; r < rows.count; r++) {
+			grown[order.socketOf[r] as number] = 1;
 			if ((order.place[r] as number) < kept) held[order.socketOf[r] as number] = 1;
+		}
+		// A bud site whose shoot never held a row, such as a palm's flower site, is no socket: it
+		// stays while its node stays.
 		budKept = new Uint8Array(buds.count);
-		for (let b = 0; b < buds.count; b++) budKept[b] = held[shoots[b] as number] as number;
+		for (let b = 0; b < buds.count; b++) {
+			const shoot = shoots[b] as number;
+			budKept[b] = grown[shoot] === 1 ? (held[shoot] as number) : 1;
+		}
 	}
 	const {
 		skeleton: thinned,
