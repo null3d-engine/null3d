@@ -2,17 +2,17 @@
 // the review tool's, cleaned of the ground strip at the plant's foot as the fit tool cleans it, and
 // the crown's start and its two gap figures are the review's own. The stem, the radius profile, the
 // lumps and the holes are read from the same outline.
-import { deltaE76, labImage, labOf, type Rgba, resizeToWidth } from '../lib/plant-review/image.ts';
+import { deltaE76, labOf, type Rgba } from '../lib/plant-review/image.ts';
 import {
+	axisRuns,
 	type Box,
 	measurePlant,
 	type PlantMask,
 	surfaceAt,
 } from '../lib/plant-review/references.ts';
 import { frameOutline } from '../plant-fit/silhouettes.ts';
-import { endsAtHorizon, followStem, PLAIN_GROUND } from './foot.ts';
+import { endsAtHorizon, PLAIN_GROUND, wideFoot } from './foot.ts';
 import {
-	axisRuns,
 	envelopeOf,
 	type LimbFigures,
 	type LobeFigures,
@@ -260,40 +260,28 @@ export function measureView(
 	const outline = frameOutline(image, 0);
 	if (outline.problem || !outline.box || outline.foot === null)
 		return { problem: outline.problem ?? 'no plant is found' };
-	let plant = outline.mask;
+	const plant = outline.mask;
 	const { width, height, background } = plant;
 	const horizon = outline.measures.horizon;
 	const horizonRow = horizon === null ? null : Math.floor(horizon * height);
-	let followed = 0;
-	const outlineEnd = outline.box.bottom;
-	// Below a horizon the outline is not reliable. On a ground that is drawn plain, as under a
-	// silhouette, the plant stands on the ground's edge. On a photographed ground an outline that
-	// ends at the horizon may have lost its foot there, so the stem is followed down to its end.
+	// The review's outline follows a stem below the horizon to its foot, and says from which row.
+	// It cannot follow a mass: a tuft or a colony that ends at the horizon on a photographed ground
+	// has lost at most the ground below it. Where that ground is a thin band the loss is small and
+	// the outline stands; otherwise it is refused.
 	if (
 		horizonRow !== null &&
+		plant.footFollowedFrom === undefined &&
 		(background.ground?.noise ?? 0) >= PLAIN_GROUND &&
-		endsAtHorizon(outline.box, horizonRow, height)
-	) {
-		const work = image.width === width ? image : resizeToWidth(image, width);
-		const stem = followStem(labImage(work), width, height, plant.mask, outline.box, outline.foot);
-		// A mass that ends at the horizon has lost at most the ground below it. Where that ground
-		// is a thin band the loss is small and the outline stands; otherwise it is refused.
-		const most = (height - 1 - outline.box.bottom) / (outline.box.bottom - outline.box.top + 1);
-		if (stem.kind === 'mass' && most >= MASS_LOSS)
-			return {
-				problem:
-					'the outline ends at the horizon on a mass too wide to be a stem, so the part of the plant that stands against the ground below is lost',
-			};
-		if (stem.kind === 'stem') {
-			const mask = plant.mask.slice();
-			stem.runs.forEach(([from, to], k) => {
-				const y = (outline.box as Box).bottom + 1 + k;
-				mask.fill(1, y * width + from, y * width + to + 1);
-			});
-			followed = stem.foot - outline.box.bottom;
-			plant = { ...plant, mask };
-		}
-	}
+		endsAtHorizon(outline.box, horizonRow, height) &&
+		wideFoot(plant.mask, width, outline.box, outline.foot) &&
+		(height - 1 - outline.box.bottom) / (outline.box.bottom - outline.box.top + 1) >= MASS_LOSS
+	)
+		return {
+			problem:
+				'the outline ends at the horizon on a mass too wide to be a stem, so the part of the plant that stands against the ground below is lost',
+		};
+	const outlineEnd = Math.min(plant.footFollowedFrom ?? outline.box.bottom, outline.box.bottom);
+	const followed = outline.box.bottom - outlineEnd;
 	// The crown's start and its gaps come from the review's own measure, on the cleaned outline.
 	const measures = measurePlant(image, plant);
 	const box = measures.box;

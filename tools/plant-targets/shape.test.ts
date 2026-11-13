@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { blank, type Rgba } from '../lib/plant-review/image.ts';
 import type { Box } from '../lib/plant-review/references.ts';
-import { endsAtHorizon, followStem } from './foot.ts';
+import { endsAtHorizon, wideFoot } from './foot.ts';
 import {
 	ENVELOPE_BANDS,
 	envelopeOf,
@@ -250,53 +250,15 @@ describe('the stem below a crown', () => {
 	});
 });
 
-describe('a stem cut at the horizon', () => {
-	/** A picture's colours: pale sky above the horizon, mottled ground below, and a dark stem. */
-	function scene(stemBottom: number): { lab: Float32Array; mask: Uint8Array } {
-		const lab = new Float32Array(WIDTH * HEIGHT * 3);
-		const mask = empty();
-		for (let y = 0; y < HEIGHT; y++)
-			for (let x = 0; x < WIDTH; x++) {
-				const at = (y * WIDTH + x) * 3;
-				const stem = x >= 195 && x <= 204 && y >= 100 && y <= stemBottom;
-				// The ground's lightness steps from pixel to pixel, as a meadow's does.
-				lab[at] = stem ? 35 : y < 300 ? 80 : 55 + (((x * 7 + y * 13) % 5) - 2);
-				lab[at + 1] = stem ? 6 : y < 300 ? -2 : -8;
-				lab[at + 2] = stem ? 14 : y < 300 ? -12 : 24;
-				// The outline holds the stem above the horizon only, and a crown on top of it.
-				if (stem && y < 300) mask[y * WIDTH + x] = 1;
-			}
-		disc(mask, 200, 90, 60);
-		return { lab, mask };
-	}
-
-	test('follows the stem down to the row where it ends', () => {
-		const { lab, mask } = scene(340);
-		const box = boxOf(mask);
-		expect(box.bottom).toBe(299);
-		expect(endsAtHorizon(box, 300, HEIGHT)).toBe(true);
-		const stem = followStem(lab, WIDTH, HEIGHT, mask, box, 200);
-		if (stem.kind !== 'stem') throw new Error(stem.kind);
-		expect(stem.foot).toBe(340);
-		expect(stem.runs).toHaveLength(41);
-		// A pixel is read with its neighbours, so a run's ends stand within a pixel of the stem's.
-		for (const [from, to] of stem.runs) {
-			expect(Math.abs(from - 195)).toBeLessThanOrEqual(1);
-			expect(Math.abs(to - 204)).toBeLessThanOrEqual(1);
-		}
-	});
-
-	test('finds no stem where the plant stands on the horizon', () => {
-		const { lab, mask } = scene(299);
-		expect(followStem(lab, WIDTH, HEIGHT, mask, boxOf(mask), 200)).toEqual({ kind: 'none' });
-	});
-
-	test('calls a wide last row a mass', () => {
-		const { lab } = scene(299);
-		const mask = empty();
-		fill(mask, 100, 200, 299, 299);
-		expect(followStem(lab, WIDTH, HEIGHT, mask, boxOf(mask), 200)).toEqual({ kind: 'mass' });
-		expect(endsAtHorizon({ left: 0, top: 0, right: 10, bottom: 340 }, 300, HEIGHT)).toBe(false);
+describe('an outline that ends at the horizon', () => {
+	test('is told by its last row, and a wide foot from a stem', () => {
+		const stem = lollipop(0).mask;
+		expect(endsAtHorizon(boxOf(stem), 380, HEIGHT)).toBe(true);
+		expect(endsAtHorizon(boxOf(stem), 340, HEIGHT)).toBe(false);
+		expect(wideFoot(stem, WIDTH, boxOf(stem), 200)).toBe(false);
+		const tuft = empty();
+		fill(tuft, 100, 200, 299, 380);
+		expect(wideFoot(tuft, WIDTH, boxOf(tuft), 200)).toBe(true);
 	});
 });
 
