@@ -46,6 +46,9 @@ export const directed: Species = {
 			// a frame; the dome hides those behind it. About 32 in all, 28 to 36.
 			count: { mean: 32, spread: 4 },
 			divergence: 137.5,
+			// Picture 01 and the turning video: one even radiating fountain, every rank spread evenly
+			// round the trunk.
+			layout: 'rings',
 			// Pictures 06 and 07: the stalks leave one growing point, packed side by side.
 			clasp: 0.15,
 			// Picture 01, from the growing point: the inner fronds leave at 60 to 70 degrees, the middle
