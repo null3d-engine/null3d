@@ -11,6 +11,11 @@ const KEEL_STEPS = 8192;
 export const SURFACE_LEAF = 0;
 export const SURFACE_STEM = 85;
 /**
+ * A brush card: crossed quads that picture a dense run of a piece's leaves, drawn from the card
+ * atlas where the bake keeps the run's own picture. It sways and takes light as a leaf does.
+ */
+export const SURFACE_BRUSH = 8;
+/**
  * A placed piece's own surface: drawn as the leaf is, with its second coordinates the share along
  * its part and its own browning, as a merged plant's foliage holds them.
  */
