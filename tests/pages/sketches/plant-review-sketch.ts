@@ -998,6 +998,7 @@ export default defineSketch(async (ctx) => {
 							laid: (QUERY.roll ?? 0) !== 0,
 							edge: QUERY.edge === true,
 							...(span !== undefined && { span, along: QUERY.along ?? 0.5 }),
+							...(QUERY.toward && { turn }),
 						}),
 					0,
 				);
