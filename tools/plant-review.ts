@@ -285,11 +285,11 @@ function stillShot(
 		matte && outline,
 		slot.file,
 		STILL_HOLD,
-		// A view solved from the plant's subjects draws its parts in flat colours too: its contract
-		// names areas of the picture that must show wood, foliage or open air, and that picture says
-		// which each texel shows. A matte cannot: close up it blends every level's soft coverage and
-		// reads fuller than the colour picture.
-		matte && SOLVED_VIEWS.has(query.view ?? slot.view),
+		// A view solved from the plant's subjects, or framing a placed piece, draws its parts in
+		// flat colours too: its contract names areas of the picture that must show wood, foliage or
+		// open air, and that picture says which each texel shows. A matte cannot: close up it
+		// blends every level's soft coverage and reads fuller than the colour picture.
+		matte && (SOLVED_VIEWS.has(query.view ?? slot.view) || query.piece !== undefined),
 	);
 }
 
@@ -642,14 +642,19 @@ async function correctWidths(
 		if (target === undefined || target >= 1) continue;
 		const file = shot.cells[0]?.file;
 		if (!file) continue;
+		// Only a whole view's stand and a close view of the crown's outside take a redraw's scale;
+		// a cut piece is fitted to its own points, so a redraw would draw the same picture.
+		const stood = shot.query.view === 'whole' || shot.query.view === 'silhouette';
+		const close = shot.query.view === 'limb' && shot.query.surface === true;
+		if (!stood && !close) continue;
 		// A species whose crown's openness passes its band between the framing's stand and the full
 		// correction names the share of the correction it takes; every other picture takes it all.
 		const fix = redraw(file, {
 			target,
 			silhouette: shot.query.view === 'silhouette',
 			scale: 1,
-			close: shot.query.view === 'limb' && shot.query.surface === true,
-			stood: shot.query.view === 'whole' || shot.query.view === 'silhouette',
+			close,
+			stood,
 			fraction: Math.min(1, Math.max(0, shot.query.widthFraction ?? 1)),
 		});
 		if (fix) fixes.set(file, fix);
