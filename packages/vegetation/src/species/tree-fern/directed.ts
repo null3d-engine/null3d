@@ -41,9 +41,10 @@ export const directed: Species = {
 			lean: { mean: 1, spread: 1 },
 		},
 		fronds: {
-			// Picture 05, the view from below: 16 stalks (10 clear spokes and about 6 shorter ones aimed
-			// at the lens); picture 01 shows 16 to 18.
-			count: { mean: 18, spread: 2 },
+			// Picture 01 at full size: about 17 fronds from one side (seven on the left, three facing
+			// the lens, seven on the right), and the dome hides those behind it; picture 05, a close
+			// view from below, shows 16 stalks of the inner crown. About 22 in all, 20 to 24.
+			count: { mean: 22, spread: 2 },
 			divergence: 137.5,
 			// Pictures 06 and 07: the stalks leave one growing point, packed side by side.
 			clasp: 0.15,
@@ -78,9 +79,9 @@ export const directed: Species = {
 		},
 	},
 	pieces: PIECES,
-	// The sparsest fern keeps three tenths of each group of sockets, spread round the trunk: nine
-	// living fronds from every rank and five skirt fronds, so the dome and the skirt still read (the
-	// specification asks eight and six).
+	// The sparsest fern keeps three tenths of each group of sockets, spread round the trunk: about
+	// nine living fronds from every rank and five skirt fronds, so the dome and the skirt still read
+	// (the specification asks eight and six).
 	sparse: { limbs: 0.3, leaves: 1, coarseness: 0 },
 	// The pieces read their bud and leaf-turn figures here; no shoot class grows on this plant.
 	shoots: {
@@ -123,9 +124,9 @@ export const directed: Species = {
 			...record.lod.budget,
 			// The fronds are pieces in the kit, shared by every plant, where the grown fern drew them in
 			// each plant's own mesh. Measured at seed 11 over the four variants, kit and variants
-			// together: 0.85, 0.92, 2.10 and 3.31 MB at the low, medium, high and ultra tiers, against
+			// together: 0.85, 0.92, 2.11 and 3.32 MB at the low, medium, high and ultra tiers, against
 			// the grown fern's 5.01, 5.06, 5.21 and 5.43 MB. The kit's own: 0.66, 0.71, 1.86 and 3.03 MB;
-			// a plant's at most 78 KB. Near, every pinnule is a card: 138,698 triangles at the high tier
+			// a plant's at most 80 KB. Near, every pinnule is a card: 165,934 triangles at the high tier
 			// against the grown fern's 50,393.
 			kitBytes: { low: 1_500_000, medium: 1_500_000, high: 1_900_000, ultra: 3_100_000 },
 			variantBytes: { low: 150_000, medium: 150_000, high: 150_000, ultra: 150_000 },
