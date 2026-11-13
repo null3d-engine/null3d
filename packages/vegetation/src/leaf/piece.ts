@@ -57,6 +57,12 @@ export interface PieceLeaves {
 	readonly from?: number;
 	/** The leaf arrangement; the species' own where absent. */
 	readonly phyllotaxis?: Phyllotaxis;
+	/**
+	 * Degrees round the stem at which its first leaf stands, counted from the stem's side in the
+	 * piece's own plane toward its sky side: at 0 an opposite pair lies in that plane, at 90 it points
+	 * to the sky side and away from it. A drawn place where absent.
+	 */
+	readonly heading?: number;
 	/** Degrees a leaf stands from the stem, foot to tip. */
 	readonly angle: Curve;
 	/** The half-width of an even spread on that angle, in degrees. */
@@ -79,9 +85,10 @@ export interface PieceLeaves {
 		readonly turn: number;
 		readonly spread: number;
 		/**
-		 * Whether the blade lies in the piece's own plane, the plane of its line and its sky side,
-		 * so that it shows its whole face from the piece's flank. The turn and its spread then count
-		 * from that plane. A hanging strand's leaves lie this way: the strand is flat.
+		 * Whether the blade lies in the piece's own plane, so that it shows its whole face from the
+		 * side the piece is wide to: a hanging piece's flank, to one side or the other, and any other
+		 * piece's sky side. The turn and its spread then count from that plane, the turn to one side
+		 * or the other. A hanging strand's leaves lie this way: the strand is flat.
 		 */
 		readonly inPlane?: boolean;
 	};
@@ -396,10 +403,20 @@ export function planPiece(
 			length3(mixed[0], mixed[1], mixed[2]) < 1e-6 ? leaf.direction : normalize3(mixed);
 		const roll =
 			(own.face?.turn ?? 0) + (draw(Purpose.Roll, axis, index) * 2 - 1) * (own.face?.spread ?? 0);
-		// A blade in the piece's plane faces the piece's flank, to one side or the other.
-		const flank: Vector3 = [draw(Purpose.Roll, axis, index + 4096) < 0.5 ? 1 : -1, 0, 0];
+		// A blade in a hanging piece's plane faces the piece's flank, to one side or the other; in
+		// any other piece's plane it faces the sky side.
+		const flank: Vector3 =
+			rule.attitude === 'plumb'
+				? [draw(Purpose.Roll, axis, index + 4096) < 0.5 ? 1 : -1, 0, 0]
+				: [0, 0, 1];
+		// An in-plane blade's own turn rolls it off the plane to one side or the other.
+		const side = draw(Purpose.Roll, axis, index + 8192) < 0.5 ? 1 : -1;
 		const face = own.face?.inPlane
-			? turn(square(flank, direction, leaf.radial), direction, roll - (own.face?.turn ?? 0))
+			? turn(
+					square(flank, direction, leaf.radial),
+					direction,
+					roll + (side - 1) * (own.face?.turn ?? 0),
+				)
 			: turn(square(leaf.stem, direction, leaf.radial), direction, roll);
 		const rotation = [0, 0, 0, 1];
 		quatFromFrame(direction, face, rotation);
@@ -501,6 +518,10 @@ export function planPiece(
 		let along = start.along;
 		let zig = 1;
 		let node = 0;
+		// Nodes that carry leaves so far: a stem with a stated heading counts its nodes from the
+		// first that does, so the heading is that node's own.
+		let leafNode = 0;
+		const headed = stem.leaves?.heading !== undefined;
 		let kinks = 0;
 		// The turn still owed from the last bend, in and out of the stem's plane, and the runs left.
 		let bendIn = 0;
@@ -509,7 +530,7 @@ export function planPiece(
 		const ownLeaves = leaves.length;
 		// Leaves that stand closer than a third of a leaf's length crowd into a tuft at the stem's end.
 		const crowded = gap > 0 ? Math.min(1, Math.max(0, 1 - gap / (leafMean / 3))) : 0;
-		const azimuthStart = draw(Purpose.Start, axis) * 360;
+		const azimuthStart = stem.leaves?.heading ?? draw(Purpose.Start, axis) * 360;
 		// Each step's end with its frame, where a side stem may leave.
 		const frames: { at: Vector3; direction: Vector3; sky: Vector3; along: number }[] = [];
 		for (let k = 0; k < steps; k++) {
@@ -567,7 +588,7 @@ export function planPiece(
 					leaves,
 					buds,
 					axis,
-					node,
+					headed ? leafNode++ : node,
 					at,
 					direction,
 					sky,
