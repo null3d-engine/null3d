@@ -50,6 +50,11 @@ export interface SparseOrder {
 	/** Each row's place in the order, or each axis's on a plant without rows: 0 is the last to go. */
 	readonly place: Uint32Array;
 	/**
+	 * The carriers as the walk from the root meets them, a row's index or an axis's: each axis's
+	 * foliage is one run of the list, so a stretch of the list is a neighbourhood of the crown.
+	 */
+	readonly list: Uint32Array;
+	/**
 	 * Each bare branch's place among the carriers: a branch that carries no foliage stays while the
 	 * axis it leaves stays and the plant keeps more carriers than this.
 	 */
@@ -123,6 +128,24 @@ export function structuralAxes(skeleton: MacroSkeleton, share: number): Uint8Arr
 		if (base >= share * (thickest[axes.parent[a] as number] as number)) out[a] = 1;
 	}
 	return out;
+}
+
+/**
+ * The part of the plant each axis's wood belongs to: 0 for the trunk, an axis with no parent; 1 for
+ * a great limb; 2 for a branch. A sparser plant's axes take the parts they had as grown, since its
+ * stems and great limbs all stay.
+ *
+ * @param skeleton The skeleton.
+ * @param share The least share of the thickest limb's radius that makes a limb great.
+ * @returns One part per axis.
+ * @category api/vegetation
+ */
+export function woodParts(skeleton: MacroSkeleton, share: number = GREAT_LIMB_SHARE): Uint8Array {
+	const great = structuralAxes(skeleton, share);
+	const parts = new Uint8Array(skeleton.axes.count);
+	for (let a = 0; a < parts.length; a++)
+		parts[a] = (skeleton.axes.parent[a] as number) < 0 ? 0 : great[a] ? 1 : 2;
+	return parts;
 }
 
 /**
@@ -285,7 +308,16 @@ export function sparseOrder(
 			? 0
 			: Math.floor(((bareAt[i] as number) * list.length) / Math.max(1, bare.length));
 	});
-	return { byRows, carriers: list.length, place, barePlace, structural, carried, least };
+	return {
+		byRows,
+		carriers: list.length,
+		place,
+		list: Uint32Array.from(list),
+		barePlace,
+		structural,
+		carried,
+		least,
+	};
 }
 
 /**
@@ -321,6 +353,8 @@ export interface SparsePlant {
  * @param rows The shoot rows as grown, each with its node and, as its record, its axis.
  * @param order The plant's order.
  * @param keep The carriers to keep.
+ * @param least The fewest carriers the plant may keep: the order's own least for a sparseness,
+ *   which holds the plant's height and outline, and fewer where a triangle maximum must go below it.
  * @returns The sparser plant, or undefined when nothing goes.
  * @category api/vegetation
  */
@@ -329,8 +363,9 @@ export function sparsePlant(
 	rows: ShootRows,
 	order: SparseOrder,
 	keep: number,
+	least: number = order.least,
 ): SparsePlant | undefined {
-	const kept = Math.min(order.carriers, Math.max(order.least, Math.round(keep)));
+	const kept = Math.min(order.carriers, Math.max(least, Math.round(keep)));
 	if (kept >= order.carriers) return undefined;
 	const { axes, buds } = skeleton;
 	const count = axes.count;

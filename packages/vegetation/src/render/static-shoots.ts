@@ -16,7 +16,7 @@
 import type { InstanceBatch, Material, MeshGeometry, SketchContext, Texture } from '@null3d/engine';
 import type { ImpostorBatch } from '@null3d/impostors';
 import type { PlantAsset, PlantPart } from '../asset';
-import { DETAILS, type Season, spreadMax } from '../core/types';
+import { DETAILS, type Detail, type Season, spreadMax } from '../core/types';
 import { REFERENCE_VIEW } from '../lod/levels';
 import { EDGE_BAND, handOverToCards } from './hand-over';
 import {
@@ -72,6 +72,17 @@ export function shootSwitchDistance(kit: SpeciesKit, view: PlaceOptions['view'])
 	return (longest * view.height) / (2 * Math.tan((view.fov * Math.PI) / 360) * pixels);
 }
 
+/**
+ * Whether a variant draws its shoot rows near the camera. A triangle maximum may leave the rows to
+ * the nearest level's cards, and the variant then draws like one with no shoots.
+ *
+ * @param asset The grown variant.
+ * @returns Whether its rows draw.
+ */
+export function drawsShoots(asset: PlantAsset): boolean {
+	return asset.shoots.count > 0 && asset.shootDetail !== 'none';
+}
+
 /** The copies of one variant, by index into the copies. */
 function copiesOf(copies: PlantCopies, variant: number): number[] {
 	const rows: number[] = [];
@@ -120,7 +131,7 @@ export function levelBands(
 	impostor: number,
 ): Band[] {
 	const starts = asset.levels.map((level, index) =>
-		index === 0 ? 0 : index === 1 && asset.shoots.count > 0 ? near : level.from * scale,
+		index === 0 ? 0 : index === 1 && drawsShoots(asset) ? near : level.from * scale,
 	);
 	return asset.levels.map((level, index) => {
 		let to = impostor;
@@ -199,7 +210,7 @@ export function placeStaticPlants(
 				meshes.push(mesh);
 				// The first card level of a copy with real shoots draws from the copy out: its shader
 				// leaves the pixels inside the switch distance to the shoots.
-				const nearCards = part.name === 'cards' && band === bands[1] && asset.shoots.count > 0;
+				const nearCards = part.name === 'cards' && band === bands[1] && drawsShoots(asset);
 				const batch = ctx.scene.createInstances(mesh, rows.length, {
 					material,
 					castShadows,
@@ -308,7 +319,7 @@ function takeNearSlots(kit: SpeciesKit, copies: PlantCopies): Map<number, number
 }
 
 /**
- * The shoot rows of one variant's copies with slots: one batch per prototype at the kit's tier,
+ * The shoot rows of one variant's copies with slots: one batch per prototype at the rows' tier,
  * each row one shoot of one copy, placed in the world, drawing to the switch distance.
  */
 function shootBatches(
@@ -323,8 +334,9 @@ function shootBatches(
 ): InstanceBatch[] {
 	const shoots = asset.shoots;
 	const nearCopies = rows.filter((copy) => slots.has(copy));
-	if (shoots.count === 0 || nearCopies.length === 0) return [];
-	const tier = DETAILS.indexOf(kit.detail);
+	if (!drawsShoots(asset) || nearCopies.length === 0) return [];
+	// The kit's tier, or the tier below it that a triangle maximum gave the rows.
+	const tier = DETAILS.indexOf((asset.shootDetail as Detail | undefined) ?? kit.detail);
 	// Rows per prototype, so each batch is sized once.
 	const counts = new Array<number>(kit.prototypes.length).fill(0);
 	for (let r = 0; r < shoots.count; r++) {

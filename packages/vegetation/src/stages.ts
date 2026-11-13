@@ -85,6 +85,11 @@ export interface DressInput extends GrowInput {
 	 * on one falls the same way on the sparser plant. Absent on a plant as grown.
 	 */
 	readonly grown?: { readonly skeleton: MacroSkeleton; readonly rows: ShootRows };
+	/**
+	 * The share of each extra's sites that draws it, from 0 to 1, where a triangle maximum thins the
+	 * extras. A site that draws at a share draws at every larger one. Every site when absent.
+	 */
+	readonly extrasShare?: number;
 }
 
 /**

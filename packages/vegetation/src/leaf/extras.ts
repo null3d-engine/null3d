@@ -55,6 +55,8 @@ const SMALLEST_FAR = 0.025;
 const FEWEST_PIXELS = 5;
 /** The first hash purpose of the extras, past every purpose the instancer uses. */
 const PURPOSE = 40;
+/** The first hash purpose of the sites a triangle maximum keeps, past the extras' and the groups'. */
+const THIN = 1 << 20;
 /**
  * The first hash purpose of an extra group, past the entries' own purposes, so a group and an entry
  * number never draw the same sites.
@@ -1055,6 +1057,14 @@ export function extrasMesh(input: MeshInput, level: MeshLevel): MeshArrays | und
 			const purpose =
 				input.variant * 64 + (extra.group === undefined ? PURPOSE + index : GROUP + extra.group);
 			if (unitAt(input.seed, salt, purpose, s) >= extra.share) return;
+			// A triangle maximum may draw a share of the sites: a draw of its own, by the site's number
+			// as grown, so the sites that stay at a share stay at every larger one. The parts of one
+			// fruit share the draw, as they share their sites.
+			if (
+				input.extrasShare !== undefined &&
+				unitAt(input.seed, salt, THIN + purpose, s) >= input.extrasShare
+			)
+				return;
 			const turn = unitAt(input.seed, salt, purpose, s, 1) * 2 * Math.PI;
 			// A fruit that stands beside its site moves with its whole body, stalks included.
 			const offset = extra.offset;

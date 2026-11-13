@@ -382,3 +382,605 @@ export function cardMesh(input: MeshInput, level: 1 | 2): MeshArrays {
 	}
 	return mesh.finishMesh();
 }
+
+/** The triangles of one stalk: a line of two faces from a card to the wood. */
+export const STALK_TRIANGLES = 4;
+
+/**
+ * How near a card's plane must pass to the drawn wood, or to another card's middle, for the two to
+ * count as touching, in metres.
+ */
+const CARD_TOUCH = 0.2;
+
+/** The cells a side of the grid that finds a cluster's neighbours, and half of them. */
+const GRID_SPAN = 4096;
+const GRID_HALF = GRID_SPAN / 2;
+
+/** How many root-mean-square distances of its rows from its middle a cluster's cards cover. */
+const CLUSTER_SPREAD = 1.25;
+
+/**
+ * One cluster of a level's cards under a triangle maximum: a run of neighbouring shoot rows drawn as
+ * one card set.
+ *
+ * @category api/vegetation
+ */
+export interface CardCluster {
+	/** The row whose prototype, turn and bytes the cluster's cards take. */
+	readonly row: number;
+	/** The rows it stands for. */
+	readonly rows: number;
+	/** The centre of its cards, in plant space. */
+	readonly centre: Vector3;
+	/** How much its cards grow about their centre. */
+	readonly grow: number;
+	/** How far its cards reach from their centre, in metres. */
+	readonly reach: number;
+	/** The nearest point of the drawn wood under it, where the level draws wood it hangs on. */
+	readonly anchor?: Vector3;
+	/** Whether a line joins it to its anchor: its cards touch neither the wood nor a joined card. */
+	readonly stalk: boolean;
+}
+
+/**
+ * How a level draws an axis's wood: not at all, along the axis, or as one straight run from its
+ * base to its tip.
+ */
+export type DrawnWood = 0 | 1 | 2;
+
+/** The point where an axis leaves its parent, or its own base for an axis with no parent. */
+function junction(skeleton: MeshInput['skeleton'], axis: number, out: Vector3): Vector3 {
+	const { axes, position } = skeleton;
+	const parent = axes.parent[axis] as number;
+	const node = axes.parentNode[axis] as number;
+	if (parent < 0 || node < 0) {
+		const first = axes.first[axis] as number;
+		out[0] = position[first * 3] as number;
+		out[1] = position[first * 3 + 1] as number;
+		out[2] = position[first * 3 + 2] as number;
+		return out;
+	}
+	const next = Math.min(node + 1, axes.last[parent] as number);
+	const t = axes.parentT[axis] as number;
+	for (let k = 0; k < 3; k++)
+		out[k] = (position[node * 3 + k] as number) * (1 - t) + (position[next * 3 + k] as number) * t;
+	return out;
+}
+
+/**
+ * The nearest point of the drawn wood under a shoot row: the row's own node where its axis is
+ * drawn, or else the place where the first axis above it that is drawn takes the branch it hangs
+ * on. On an axis drawn as one straight run, the point is moved onto that run.
+ */
+function anchorOf(
+	input: MeshInput,
+	row: number,
+	drawn: (axis: number) => DrawnWood,
+): Vector3 | undefined {
+	const { skeleton, rows } = input;
+	const { axes, position, axisOf } = skeleton;
+	if (!rows.node) return undefined;
+	const node = rows.node[row] as number;
+	let axis = axisOf[node] as number;
+	const at: Vector3 = [
+		position[node * 3] as number,
+		position[node * 3 + 1] as number,
+		position[node * 3 + 2] as number,
+	];
+	while (axis >= 0 && drawn(axis) === 0) {
+		junction(skeleton, axis, at);
+		axis = axes.parent[axis] as number;
+	}
+	if (axis < 0) return undefined;
+	if (drawn(axis) === 2) {
+		const from = junction(skeleton, axis, [0, 0, 0]);
+		const tip = axes.last[axis] as number;
+		const dx = (position[tip * 3] as number) - from[0];
+		const dy = (position[tip * 3 + 1] as number) - from[1];
+		const dz = (position[tip * 3 + 2] as number) - from[2];
+		const length = dx * dx + dy * dy + dz * dz;
+		const along =
+			length > 1e-12
+				? Math.min(
+						1,
+						Math.max(
+							0,
+							((at[0] - from[0]) * dx + (at[1] - from[1]) * dy + (at[2] - from[2]) * dz) / length,
+						),
+					)
+				: 0;
+		at[0] = from[0] + dx * along;
+		at[1] = from[1] + dy * along;
+		at[2] = from[2] + dz * along;
+	}
+	return at;
+}
+
+/** The most triangles a wood mesh may hold for its surface to be searched triangle by triangle. */
+const SEARCHED_TRIANGLES = 2048;
+
+/**
+ * The nearest point of a wood mesh's surface to a point: by its triangles where the mesh is small,
+ * as a few straight runs are, and by its vertices where it is fine enough that a vertex is near
+ * every point of it.
+ *
+ * @param wood The wood's mesh.
+ * @returns A function from a point to the nearest point of the surface, or undefined for no wood.
+ * @category api/vegetation
+ */
+export function woodSurface(wood: MeshArrays): ((point: Vector3) => Vector3) | undefined {
+	const { positions, indices } = wood;
+	if (indices.length === 0) return undefined;
+	if (indices.length / 3 <= SEARCHED_TRIANGLES)
+		return (point) => {
+			let best = Number.POSITIVE_INFINITY;
+			const out: Vector3 = [point[0], point[1], point[2]];
+			const near: Vector3 = [0, 0, 0];
+			for (let t = 0; t < indices.length; t += 3) {
+				nearestOnTriangle(
+					point,
+					positions,
+					(indices[t] as number) * 3,
+					(indices[t + 1] as number) * 3,
+					(indices[t + 2] as number) * 3,
+					near,
+				);
+				const d = (near[0] - point[0]) ** 2 + (near[1] - point[1]) ** 2 + (near[2] - point[2]) ** 2;
+				if (d < best) {
+					best = d;
+					out[0] = near[0];
+					out[1] = near[1];
+					out[2] = near[2];
+				}
+			}
+			return out;
+		};
+	// A grid of the vertices, searched outward ring by ring of cells from the point's own.
+	const cell = SURFACE_CELL;
+	const key = (x: number, y: number, z: number) =>
+		((x + GRID_HALF) * GRID_SPAN + (y + GRID_HALF)) * GRID_SPAN + (z + GRID_HALF);
+	const grid = new Map<number, number[]>();
+	for (let v = 0; v < positions.length; v += 3) {
+		const k = key(
+			Math.floor((positions[v] as number) / cell),
+			Math.floor((positions[v + 1] as number) / cell),
+			Math.floor((positions[v + 2] as number) / cell),
+		);
+		const list = grid.get(k);
+		if (list) list.push(v);
+		else grid.set(k, [v]);
+	}
+	return (point) => {
+		const x = Math.floor(point[0] / cell);
+		const y = Math.floor(point[1] / cell);
+		const z = Math.floor(point[2] / cell);
+		let best = Number.POSITIVE_INFINITY;
+		let found = -1;
+		for (let ring = 0; ring <= SURFACE_RINGS; ring++) {
+			for (let dx = -ring; dx <= ring; dx++)
+				for (let dy = -ring; dy <= ring; dy++)
+					for (let dz = -ring; dz <= ring; dz++) {
+						if (Math.max(Math.abs(dx), Math.abs(dy), Math.abs(dz)) !== ring) continue;
+						for (const v of grid.get(key(x + dx, y + dy, z + dz)) ?? []) {
+							const d =
+								((positions[v] as number) - point[0]) ** 2 +
+								((positions[v + 1] as number) - point[1]) ** 2 +
+								((positions[v + 2] as number) - point[2]) ** 2;
+							if (d < best) {
+								best = d;
+								found = v;
+							}
+						}
+					}
+			// A vertex found in a ring is the nearest once the next ring out cannot hold a nearer one.
+			if (found >= 0 && best <= (ring * cell) ** 2) break;
+		}
+		return found < 0
+			? [point[0], point[1], point[2]]
+			: [
+					positions[found] as number,
+					positions[found + 1] as number,
+					positions[found + 2] as number,
+				];
+	};
+}
+
+/** The side of the cells that hold a fine wood mesh's vertices, in metres, and the rings searched. */
+const SURFACE_CELL = 0.5;
+const SURFACE_RINGS = 12;
+
+/** The nearest point of a triangle to a point. */
+function nearestOnTriangle(
+	p: Readonly<Vector3>,
+	v: ArrayLike<number>,
+	a: number,
+	b: number,
+	c: number,
+	out: Vector3,
+): void {
+	const at = (i: number, k: number) => v[i + k] as number;
+	const sub = (i: number, j: number): Vector3 => [
+		at(i, 0) - at(j, 0),
+		at(i, 1) - at(j, 1),
+		at(i, 2) - at(j, 2),
+	];
+	const dot = (x: Readonly<Vector3>, y: Readonly<Vector3>) =>
+		x[0] * y[0] + x[1] * y[1] + x[2] * y[2];
+	const ab = sub(b, a);
+	const ac = sub(c, a);
+	const ap: Vector3 = [p[0] - at(a, 0), p[1] - at(a, 1), p[2] - at(a, 2)];
+	const set = (wa: number, wb: number, wc: number) => {
+		for (let k = 0; k < 3; k++) out[k] = wa * at(a, k) + wb * at(b, k) + wc * at(c, k);
+	};
+	const d1 = dot(ab, ap);
+	const d2 = dot(ac, ap);
+	if (d1 <= 0 && d2 <= 0) {
+		set(1, 0, 0);
+		return;
+	}
+	const bp: Vector3 = [p[0] - at(b, 0), p[1] - at(b, 1), p[2] - at(b, 2)];
+	const d3 = dot(ab, bp);
+	const d4 = dot(ac, bp);
+	if (d3 >= 0 && d4 <= d3) {
+		set(0, 1, 0);
+		return;
+	}
+	const vc = d1 * d4 - d3 * d2;
+	if (vc <= 0 && d1 >= 0 && d3 <= 0) {
+		const t = d1 / (d1 - d3 || 1);
+		set(1 - t, t, 0);
+		return;
+	}
+	const cp: Vector3 = [p[0] - at(c, 0), p[1] - at(c, 1), p[2] - at(c, 2)];
+	const d5 = dot(ab, cp);
+	const d6 = dot(ac, cp);
+	if (d6 >= 0 && d5 <= d6) {
+		set(0, 0, 1);
+		return;
+	}
+	const vb = d5 * d2 - d1 * d6;
+	if (vb <= 0 && d2 >= 0 && d6 <= 0) {
+		const t = d2 / (d2 - d6 || 1);
+		set(1 - t, 0, t);
+		return;
+	}
+	const va = d3 * d6 - d5 * d4;
+	if (va <= 0 && d4 - d3 >= 0 && d5 - d6 >= 0) {
+		const t = (d4 - d3) / (d4 - d3 + (d5 - d6) || 1);
+		set(0, 1 - t, t);
+		return;
+	}
+	const sum = va + vb + vc || 1;
+	set(va / sum, vb / sum, vc / sum);
+}
+
+/**
+ * The clusters of a level's cards under a triangle maximum. The rows stand in the order a walk of
+ * the plant meets them, so a run of the list is a neighbourhood of the crown; the list is cut into
+ * `count` runs, and each run draws one card set at the middle of its rows' cards. A cluster of one
+ * row is that row's own card. A larger one grows by the square root of its rows, so the crown keeps
+ * its cover, but never past the reach of the rows it stands for.
+ *
+ * Every cluster stays joined to the plant: one of its card planes passes the wood the level draws,
+ * or the middle of a joined cluster, within a hand's breadth, or it takes a stalk, a line to the
+ * wood.
+ *
+ * @param input The dressed variant.
+ * @param walk The rows in the order a walk of the plant meets them.
+ * @param count The clusters to make, from 1 to the rows.
+ * @param drawn How the level draws each axis's wood.
+ * @param planes The card planes each cluster draws, from 1 to 3.
+ * @param surface The nearest point of the drawn wood's surface to a point, so a cluster hangs on
+ *   wood that is drawn and not on an axis inside it; the axis's own place when absent.
+ * @returns The clusters.
+ * @category api/vegetation
+ */
+export function cardClusters(
+	input: MeshInput,
+	walk: ArrayLike<number>,
+	count: number,
+	drawn: (axis: number) => DrawnWood,
+	planes = 3,
+	surface?: (point: Vector3) => Vector3,
+): CardCluster[] {
+	const { rows, kit } = input;
+	const total = walk.length;
+	const clusters = Math.max(0, Math.min(total, Math.floor(count)));
+	const widen = Math.max(0, input.record.lod.cardGrow ?? 1);
+	const centre: Vector3 = [0, 0, 0];
+	const local: Vector3 = [0, 0, 0];
+	/** The middle of a row's first card plane, in plant space. */
+	const cardCentre = (r: number, out: Vector3): Vector3 => {
+		const plane = kit.prototypes[rows.prototype[r] as number]?.card.planes[0];
+		const scale = rows.scale[r] as number;
+		local[0] = (plane?.centre[0] ?? 0) * scale;
+		local[1] = (plane?.centre[1] ?? 0) * scale;
+		local[2] = (plane?.centre[2] ?? 0) * scale;
+		quatRotate(rows.rotation, r * 4, local, out);
+		out[0] += rows.position[r * 3] as number;
+		out[1] += rows.position[r * 3 + 1] as number;
+		out[2] += rows.position[r * 3 + 2] as number;
+		return out;
+	};
+	const edge: Vector3 = [0, 0, 0];
+	const right: Vector3 = [0, 0, 0];
+	const up: Vector3 = [0, 0, 0];
+	const lead: Vector3 = [0, 0, 0];
+	/** The distance from a point to the nearest of a cluster's card planes, as the mesh draws them. */
+	const toCards = (
+		cluster: { readonly row: number; readonly centre: Vector3; readonly grow: number },
+		point: Readonly<Vector3>,
+	): number => {
+		const r = cluster.row;
+		const prototype = kit.prototypes[rows.prototype[r] as number];
+		const scale = rows.scale[r] as number;
+		const first = prototype?.card.planes[0];
+		if (!prototype || !first) return Number.POSITIVE_INFINITY;
+		quatRotate(rows.rotation, r * 4, [first.centre[0], first.centre[1], first.centre[2]], lead);
+		let nearest = Number.POSITIVE_INFINITY;
+		for (const plane of prototype.card.planes.slice(0, planes)) {
+			quatRotate(rows.rotation, r * 4, [plane.centre[0], plane.centre[1], plane.centre[2]], edge);
+			quatRotate(rows.rotation, r * 4, [plane.right[0], plane.right[1], plane.right[2]], right);
+			quatRotate(rows.rotation, r * 4, [plane.up[0], plane.up[1], plane.up[2]], up);
+			const dx = point[0] - (cluster.centre[0] + (edge[0] - lead[0]) * scale);
+			const dy = point[1] - (cluster.centre[1] + (edge[1] - lead[1]) * scale);
+			const dz = point[2] - (cluster.centre[2] + (edge[2] - lead[2]) * scale);
+			const half = cluster.grow * widen * scale;
+			const rl = Math.sqrt(right[0] ** 2 + right[1] ** 2 + right[2] ** 2) || 1;
+			const ul = Math.sqrt(up[0] ** 2 + up[1] ** 2 + up[2] ** 2) || 1;
+			const across = Math.max(
+				0,
+				Math.abs((dx * right[0] + dy * right[1] + dz * right[2]) / rl) - rl * half,
+			);
+			const along = Math.max(0, Math.abs((dx * up[0] + dy * up[1] + dz * up[2]) / ul) - ul * half);
+			const nx = right[1] * up[2] - right[2] * up[1];
+			const ny = right[2] * up[0] - right[0] * up[2];
+			const nz = right[0] * up[1] - right[1] * up[0];
+			const nl = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
+			const off = Math.abs(dx * nx + dy * ny + dz * nz) / nl;
+			nearest = Math.min(nearest, Math.sqrt(across * across + along * along + off * off));
+		}
+		return nearest;
+	};
+	const made: {
+		row: number;
+		rows: number;
+		centre: Vector3;
+		grow: number;
+		reach: number;
+		anchor?: Vector3;
+		joined: boolean;
+	}[] = [];
+	let longest = 0;
+	// Where each run ends. An even cut would often fall inside a branch's foliage and join the end
+	// of one branch to the start of the next, so each cut moves, within a quarter of a run, to the
+	// widest step between two neighbours of the walk: the place where the walk leaves a branch.
+	const ends = new Uint32Array(clusters);
+	const window = clusters > 0 ? Math.floor(total / clusters / 4) : 0;
+	const before: Vector3 = [0, 0, 0];
+	for (let c = 0; c < clusters; c++) {
+		const even = Math.floor(((c + 1) * total) / clusters);
+		let cut = even;
+		if (c < clusters - 1 && window > 0) {
+			let widest = -1;
+			for (let i = Math.max(1, even - window); i <= Math.min(total - 1, even + window); i++) {
+				cardCentre(walk[i - 1] as number, before);
+				cardCentre(walk[i] as number, centre);
+				const step =
+					(centre[0] - before[0]) ** 2 +
+					(centre[1] - before[1]) ** 2 +
+					(centre[2] - before[2]) ** 2;
+				if (step > widest) {
+					widest = step;
+					cut = i;
+				}
+			}
+		}
+		ends[c] = cut;
+	}
+	for (let c = 0; c < clusters; c++) {
+		const from = c === 0 ? 0 : (ends[c - 1] as number);
+		const to = ends[c] as number;
+		const members = to - from;
+		if (members <= 0) continue;
+		const row = walk[from + (members >> 1)] as number;
+		const middle: Vector3 = [0, 0, 0];
+		for (let i = from; i < to; i++) {
+			cardCentre(walk[i] as number, centre);
+			middle[0] += centre[0] / members;
+			middle[1] += centre[1] / members;
+			middle[2] += centre[2] / members;
+		}
+		// How far the run's rows stand from its middle, as the root of their mean square: a card
+		// that covers this much holds most of the run without following its farthest shoot.
+		let spread = 0;
+		for (let i = from; i < to && members > 1; i++) {
+			cardCentre(walk[i] as number, centre);
+			spread +=
+				((centre[0] - middle[0]) ** 2 +
+					(centre[1] - middle[1]) ** 2 +
+					(centre[2] - middle[2]) ** 2) /
+				members;
+		}
+		spread = Math.sqrt(spread) * CLUSTER_SPREAD;
+		const plane = kit.prototypes[rows.prototype[row] as number]?.card.planes[0];
+		const half =
+			widen *
+			(rows.scale[row] as number) *
+			(plane
+				? Math.max(
+						Math.sqrt(plane.right[0] ** 2 + plane.right[1] ** 2 + plane.right[2] ** 2),
+						Math.sqrt(plane.up[0] ** 2 + plane.up[1] ** 2 + plane.up[2] ** 2),
+					)
+				: 0);
+		const fit = half > 1e-9 ? (spread + half) / half : 1;
+		const grow = Math.max(1, Math.min(Math.sqrt(members), fit));
+		const onAxis = anchorOf(input, row, drawn);
+		const anchor = onAxis && surface ? surface(onAxis) : onAxis;
+		const joined =
+			anchor !== undefined && toCards({ row, centre: middle, grow }, anchor) <= CARD_TOUCH;
+		const reach = grow * half;
+		longest = Math.max(longest, reach);
+		made.push({
+			row,
+			rows: members,
+			centre: middle,
+			grow,
+			reach,
+			joined,
+			...(anchor ? { anchor } : {}),
+		});
+	}
+	// The clusters whose cards touch a joined cluster's are joined too. A grid of cells as wide as
+	// the longest reach finds each cluster's neighbours without comparing every pair.
+	if (made.some((cluster) => !cluster.joined) && longest > 0) {
+		const cell = 2 * longest;
+		// A cell's key: its three indices, each within a span that holds any plant, in one number.
+		const key = (x: number, y: number, z: number) =>
+			((x + GRID_HALF) * GRID_SPAN + (y + GRID_HALF)) * GRID_SPAN + (z + GRID_HALF);
+		const grid = new Map<number, number[]>();
+		const cellOf = (p: Vector3) =>
+			[Math.floor(p[0] / cell), Math.floor(p[1] / cell), Math.floor(p[2] / cell)] as const;
+		made.forEach((cluster, index) => {
+			const [x, y, z] = cellOf(cluster.centre);
+			const list = grid.get(key(x, y, z));
+			if (list) list.push(index);
+			else grid.set(key(x, y, z), [index]);
+		});
+		const queue: number[] = [];
+		made.forEach((cluster, index) => {
+			if (cluster.joined) queue.push(index);
+		});
+		while (queue.length > 0) {
+			const a = made[queue.pop() as number] as (typeof made)[number];
+			const [x, y, z] = cellOf(a.centre);
+			for (let dx = -1; dx <= 1; dx++)
+				for (let dy = -1; dy <= 1; dy++)
+					for (let dz = -1; dz <= 1; dz++)
+						for (const other of grid.get(key(x + dx, y + dy, z + dz)) ?? []) {
+							const b = made[other] as (typeof made)[number];
+							if (b.joined) continue;
+							// A card's planes pass through its middle, so two clusters touch where a plane
+							// of one passes the middle of the other.
+							if (toCards(a, b.centre) <= CARD_TOUCH || toCards(b, a.centre) <= CARD_TOUCH) {
+								b.joined = true;
+								queue.push(other);
+							}
+						}
+		}
+	}
+	return made.map(({ joined, ...cluster }) => ({
+		...cluster,
+		stalk: !joined && cluster.anchor !== undefined,
+	}));
+}
+
+/**
+ * The triangles of some card clusters: two for each plane of each cluster, and a stalk's for each
+ * cluster that takes one.
+ *
+ * @param clusters The clusters.
+ * @param planes The card planes each cluster draws, from 1 to 3.
+ * @returns The count.
+ * @category api/vegetation
+ */
+export function clusterTriangles(clusters: readonly CardCluster[], planes: number): number {
+	let triangles = 0;
+	for (const cluster of clusters) triangles += 2 * planes + (cluster.stalk ? STALK_TRIANGLES : 0);
+	return triangles;
+}
+
+/**
+ * The cards of some clusters, as one mesh: each cluster's planes about its centre, and a stalk to
+ * its anchor where it takes one.
+ *
+ * @param input The dressed variant.
+ * @param clusters The clusters.
+ * @param planes The card planes each cluster draws, from 1 to 3: the two upright ones first.
+ * @returns The cards' mesh.
+ * @category api/vegetation
+ */
+export function clusterCardMesh(
+	input: MeshInput,
+	clusters: readonly CardCluster[],
+	planes: number,
+): MeshArrays {
+	const { rows, kit } = input;
+	const mesh = new MeshWriter();
+	const size = kit.cards.size || 1;
+	const widen = Math.max(0, input.record.lod.cardGrow ?? 1);
+	const base = input.variant * VARIANT_RECORDS;
+	const local: Vector3 = [0, 0, 0];
+	const world: Vector3 = [0, 0, 0];
+	const first0: Vector3 = [0, 0, 0];
+	for (const cluster of clusters) {
+		const r = cluster.row;
+		const prototype = kit.prototypes[rows.prototype[r] as number];
+		if (!prototype) continue;
+		const scale = rows.scale[r] as number;
+		const record = base + (rows.record[r] as number);
+		const colour = [
+			(record >>> 8) & 255,
+			record & 255,
+			rows.phase[r] as number,
+			rows.sky[r] as number,
+		];
+		const lead = prototype.card.planes[0];
+		// The card set keeps its own shape and turn, and moves so its first plane's middle stands on
+		// the cluster's centre.
+		local[0] = (lead?.centre[0] ?? 0) * scale;
+		local[1] = (lead?.centre[1] ?? 0) * scale;
+		local[2] = (lead?.centre[2] ?? 0) * scale;
+		quatRotate(rows.rotation, r * 4, local, first0);
+		prototype.card.planes.slice(0, planes).forEach((plane, k) => {
+			const n = normalize3([
+				plane.right[1] * plane.up[2] - plane.right[2] * plane.up[1],
+				plane.right[2] * plane.up[0] - plane.right[0] * plane.up[2],
+				plane.right[0] * plane.up[1] - plane.right[1] * plane.up[0],
+			]);
+			const normal = quatRotate(rows.rotation, r * 4, n, [0, 0, 0]);
+			const first = mesh.vertices;
+			const [rx, ry, rw, rh] = plane.front;
+			for (const [sx, sy] of CARD_CORNERS) {
+				for (let c = 0; c < 3; c++)
+					local[c] =
+						((plane.centre[c] as number) +
+							cluster.grow *
+								widen *
+								(sx * (plane.right[c] as number) + sy * (plane.up[c] as number))) *
+						scale;
+				quatRotate(rows.rotation, r * 4, local, world);
+				mesh.vertex(
+					[
+						cluster.centre[0] + world[0] - first0[0],
+						cluster.centre[1] + world[1] - first0[1],
+						cluster.centre[2] + world[2] - first0[2],
+					],
+					normal,
+					[(rx + ((sx + 1) / 2) * rw) / size, (ry + ((sy + 1) / 2) * rh) / size],
+					[(sy + 1) / 2, k / 2],
+					colour,
+				);
+			}
+			mesh.quad(first, first + 1, first + 2, first + 3);
+		});
+		if (!cluster.stalk || !cluster.anchor) continue;
+		const from = cluster.centre;
+		const to = cluster.anchor;
+		const dx = to[0] - from[0];
+		const dy = to[1] - from[1];
+		const dz = to[2] - from[2];
+		const length = Math.sqrt(dx * dx + dy * dy + dz * dz);
+		if (length <= 1e-6) continue;
+		// A line of two faces, which the vertex stage widens to the record's least width on screen.
+		const normal: Vector3 = [dx / length, dy / length, dz / length];
+		const first = mesh.vertices;
+		mesh.vertex(from, normal, [0, 0], [0, STALK_PLANE], colour);
+		mesh.vertex(from, normal, [1, 0], [0, STALK_PLANE], colour);
+		mesh.vertex(to, normal, [1, 0], [1, STALK_PLANE], colour);
+		mesh.vertex(to, normal, [0, 0], [1, STALK_PLANE], colour);
+		mesh.quad(first, first + 1, first + 2, first + 3);
+		mesh.quad(first + 3, first + 2, first + 1, first);
+	}
+	return mesh.finishMesh();
+}
