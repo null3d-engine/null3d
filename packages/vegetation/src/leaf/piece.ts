@@ -159,6 +159,34 @@ export interface PieceStem {
 	readonly sides?: readonly PieceSides[];
 	/** Whether it ends in the species' bud; it does where this is absent. */
 	readonly bud?: boolean;
+	/** The thorns, fruits, cones or catkins that stand along it. */
+	readonly marks?: readonly PieceMark[];
+}
+
+/**
+ * A species' mark along a stem: a thorn that stands off the wood, or a body, such as a fruit, a
+ * cone or a catkin, that hangs from it on a stalk. It is part of the piece's own mesh, so the piece
+ * carries it wherever a socket holds it. Its length and width are the mark's real size in metres,
+ * as the species' bud is; its gap and stalk are lengths of the rule.
+ */
+export interface PieceMark {
+	readonly kind: 'thorn' | 'body';
+	/** Metres along the stem between one place for a mark and the next. */
+	readonly gap: number;
+	/** The shares of the stem's length between which marks stand. */
+	readonly from?: number;
+	readonly to?: number;
+	/** The share of those places that carry one. */
+	readonly share: number;
+	/** Its length, and its width across. */
+	readonly length: Spread;
+	readonly width: number;
+	/** Degrees a thorn stands from its stem. */
+	readonly angle?: number;
+	/** Metres of stalk a body hangs on. */
+	readonly stalk?: number;
+	/** Bodies at one place, each on a stalk of its own. */
+	readonly count?: Spread;
 }
 
 /** One kind of piece of a species. */
@@ -242,6 +270,8 @@ const HOOK_TURN_MOST = 12;
 const BEND_RUNS = 3;
 /** The share of a kink's angle by which it also turns out of the stem's plane. */
 const KINK_OUT = 0.4;
+/** The radius in metres of the stalk a body hangs on. */
+const MARK_STALK = 0.0007;
 /** The most stems a plan may hold, which guards a rule that would never end. */
 const STEMS_MOST = 4096;
 /** The hash key of the first piece, clear of the shoot prototypes' keys. */
@@ -257,6 +287,9 @@ const Purpose = {
 	Roll: 0x46,
 	Kink: 0x47,
 	Fan: 0x48,
+	Mark: 0x49,
+	MarkTurn: 0x4a,
+	MarkSize: 0x4b,
 } as const;
 
 /**
@@ -558,6 +591,74 @@ export function planPiece(
 		if (stem.leaves?.fan) fanned(ownLeaves, stem.leaves.fan, axis);
 		points[points.length - 1] = { ...(points[points.length - 1] as AxisPoint), unitEnd: true };
 		if (stem.bud !== false) addBudCluster(buds, shoots.bud, tipRadius, at, direction, sky, along);
+		for (const [m, mark] of (stem.marks ?? []).entries()) {
+			const first = (mark.from ?? 0) * length;
+			const last = (mark.to ?? 1) * length;
+			for (let n = 0; first + (n + 0.5) * mark.gap <= last + 1e-9; n++) {
+				const key = m * 4096 + n;
+				if (draw(Purpose.Mark, axis, key) >= mark.share) continue;
+				const place = first + (n + 0.5) * mark.gap;
+				const frame = frames[Math.min(steps - 1, Math.max(0, Math.round(place / run) - 1))];
+				if (!frame) continue;
+				// To one side of the stem and the other in turn, within 40 degrees of its plane.
+				const out = turn(
+					frame.sky,
+					frame.direction,
+					90 + (n % 2) * 180 + (draw(Purpose.MarkTurn, axis, key) - 0.5) * 80,
+				);
+				const size = spreadAt(mark.length, draw(Purpose.MarkSize, axis, key));
+				if (mark.kind === 'thorn') {
+					const a = radians(mark.angle ?? 80);
+					buds.push({
+						at: [...frame.at],
+						direction: normalize3([
+							frame.direction[0] * cos(a) + out[0] * sin(a),
+							frame.direction[1] * cos(a) + out[1] * sin(a),
+							frame.direction[2] * cos(a) + out[2] * sin(a),
+						]),
+						length: size,
+						width: mark.width,
+						along: frame.along,
+						cluster: false,
+					});
+					continue;
+				}
+				const count = Math.max(
+					1,
+					Math.round(spreadAt(mark.count ?? 1, draw(Purpose.MarkSize, axis, key + 2048))),
+				);
+				const stalk = mark.stalk ?? 0;
+				for (let c = 0; c < count; c++) {
+					// Each body hangs toward the ground side, a little out from the stem and apart
+					// from its neighbours.
+					const apart = turn(out, down, c * GOLDEN);
+					const way = normalize3([
+						down[0] + apart[0] * 0.4,
+						down[1] + apart[1] * 0.4,
+						down[2] + apart[2] * 0.4,
+					]);
+					const end: Vector3 = [
+						frame.at[0] + way[0] * stalk,
+						frame.at[1] + way[1] * stalk,
+						frame.at[2] + way[2] * stalk,
+					];
+					if (stalk > 0)
+						axes.push([
+							{ at: [...frame.at], radius: MARK_STALK, along: frame.along },
+							{ at: end, radius: MARK_STALK, along: frame.along + stalk, unitEnd: true },
+						]);
+					buds.push({
+						at: end,
+						direction: way,
+						length: size,
+						width: mark.width,
+						along: frame.along + stalk,
+						cluster: true,
+						stack: size,
+					});
+				}
+			}
+		}
 		for (const [s, sides] of (stem.sides ?? []).entries()) {
 			const first = (sides.from ?? 0) * length;
 			const last = (sides.to ?? 1) * length;

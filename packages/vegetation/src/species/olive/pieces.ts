@@ -36,6 +36,21 @@ const SPRAY: PieceStem = {
 	radius: [0.004, 0.0015],
 	droop: 105,
 	droopOver: [0.33, 1],
+	// Stills 21, 04 and 19: about twelve olives on the branch, singly or in twos, each two
+	// centimetres long, hanging on stalks of one to two centimetres from the middle of a spray.
+	marks: [
+		{
+			kind: 'body',
+			gap: 0.11,
+			from: 0.3,
+			to: 0.75,
+			share: 0.5,
+			length: { mean: 0.02, spread: 0.003 },
+			width: 0.014,
+			stalk: 0.015,
+			count: { mean: 1.4, spread: 0.5 },
+		},
+	],
 	leaves: pairs(0.15, 0.033),
 	sides: [
 		{

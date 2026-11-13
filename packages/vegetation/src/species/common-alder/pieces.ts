@@ -1,6 +1,6 @@
 // The common alder's pieces: the branch end its sockets carry and the forked twig at its top. Each
-// value names the reference picture it was measured on. The cones and catkins are not part of a
-// piece yet.
+// value names the reference picture it was measured on. Each arm carries its woody cones; the
+// catkins are not part of a piece yet.
 //
 // The cut branch of still 21 is a metre tall over 725 pixels, which makes its round leaf 9 to 10
 // centimetres across (65 to 75 pixels at full size), inside the species' 4 to 10. The record's leaf
@@ -35,6 +35,22 @@ function arm(length: number): PieceStem {
 		radius: [0.008, 0.002],
 		// Still 21: the arms bend a little along their length.
 		kink: { length: 0.15, angle: 8 },
+		// Stills 21 and 09: groups of three to four dark woody cones hang on stalks of three to five
+		// centimetres from behind the shoot tips, each cone two centimetres long, three groups on the
+		// branch.
+		marks: [
+			{
+				kind: 'body',
+				gap: 0.3,
+				from: 0.35,
+				to: 0.95,
+				share: 0.8,
+				length: { mean: 0.02, spread: 0.003 },
+				width: 0.013,
+				stalk: 0.035,
+				count: { mean: 3.5, spread: 0.5 },
+			},
+		],
 		leaves: leaves(0.55),
 		sides: [
 			{
