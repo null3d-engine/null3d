@@ -3862,7 +3862,20 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		// process stopped answering on this picture twice, 90 seconds the last time, so the runner
 		// closed the turn. Chromium's software path and the real GPU draw it at the same head, and a
 		// lighter gust cannot hold the property the picture checks, so this browser skips it.
-		without: ['Firefox'],
+		// A probe run takes the skip off so both strengths draw on that container; the skip returns
+		// with the reading.
+	},
+	// Probe for the Firefox stall: the same page with no gust sent, so the two strengths run in one
+	// plan and the page that stops, if only one does, names the field's reader as the owner.
+	{
+		name: 'creek-gust-none',
+		sketch: 'examples/showcase/creek/sketch.ts?gust=0&gust-at=8.4',
+		hold: 9,
+		tiers: ['webgl2'],
+		switches: ['hdr=off'],
+		swiftShaderSwitches: ['preset=low'],
+		expect: { hdr: false },
+		timeoutSeconds: 600,
 	},
 	// Creek on a near-square canvas at a render scale below the whole canvas, from the opening view
 	// and from the low pass along the bank. The scene draws into a corner of the depth copy, which
