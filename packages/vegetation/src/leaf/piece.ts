@@ -63,9 +63,11 @@ import {
  * only where the stem bends: 8 degrees at the high tier and 15 at the medium. Where a piece's leaves
  * close round its stem, at every tier, no ring of the wood they hide shows, so its rings stand far
  * apart. An axil's bud hides under its leaf, so the medium tier draws none and the high tier only
- * one long enough to show, as the beech's long buds are. The tip clusters, which mark a species, are
- * separate three-sided buds at the high tier and one cone at the medium. Thorns are three-sided at
- * both, and a fruiting body is round at the high tier. The ultra tier keeps the crown's finest cut.
+ * one long enough to show, as the beech's long buds are. A bud under 1.5 centimetres is a few pixels
+ * long in a piece's own picture, so at the high tier it is a three-sided cone of one band, and a
+ * longer one keeps its swell; the tip clusters, which mark a species, keep their buds apart there and
+ * draw as one cone at the medium tier. Thorns are three-sided cones at both, and a fruiting body is
+ * round at the high tier. The ultra tier keeps the crown's finest cut.
  */
 export const PIECE_CUTS: Readonly<Record<Detail, ShootCut>> = {
 	low: { ...SHOOT_CUTS.low, thinHidden: true },
@@ -86,7 +88,8 @@ export const PIECE_CUTS: Readonly<Record<Detail, ShootCut>> = {
 		cluster: { sides: 3, round: false },
 		axil: { sides: 3, round: false },
 		axilLeast: 0.015,
-		thorn: { sides: 3, round: false },
+		coneBelow: 0.015,
+		thorn: { sides: 3, round: false, cone: true },
 		body: { sides: 4, round: true },
 	},
 	ultra: { ...SHOOT_CUTS.ultra, thinHidden: true },
@@ -298,6 +301,12 @@ export interface PieceRule {
 	 */
 	readonly plane?: Vec3;
 	/**
+	 * Degrees the piece is turned about its own line at every socket, from its sky side up toward its
+	 * right. A living fern frond's flat blade stands rolled on the plant, so a frond seen from the
+	 * crown's side shows its face rather than its edge. Absent, 0.
+	 */
+	readonly roll?: number;
+	/**
 	 * The ground side in the piece's frame, where it is not its attitude's own: a piece that stands
 	 * upright on its socket names the way back along its line, so its side stems lift toward its tip.
 	 */
@@ -319,6 +328,12 @@ export interface PieceRule {
 	 */
 	readonly depth?: number;
 	/**
+	 * The least metres between two leaf nodes of the piece's stems, however close a stem's leaves
+	 * are set: 2 mm where absent. A rule states a smaller one where its photographs measure leaves
+	 * closer than that.
+	 */
+	readonly nodeLeast?: number;
+	/**
 	 * How the piece's blades bend at their stalks. Where absent a blade bends out of its own face,
 	 * as the species' leaf does. With `plane` the piece's leaves are built with no bend at the stalk,
 	 * and each blade turns about its own normal instead, toward the ground side, by the species' own
@@ -338,7 +353,7 @@ export interface PieceRule {
  * fields over it. A species states one while its record's leaf also grows the crown it ships, which
  * keeps its own leaf until a plant built of pieces replaces it.
  */
-export interface PieceLeaf extends Partial<Pick<LeafShape, 'length' | 'breadth'>> {
+export interface PieceLeaf extends Partial<Pick<LeafShape, 'length' | 'breadth' | 'cardBands'>> {
 	/** Metres of stalk from the stem to the blade's base. */
 	readonly stalk?: number;
 }
@@ -363,6 +378,13 @@ export function pieceRecord(record: Species, leaf: PieceLeaf | undefined): Speci
 		throw new Error(
 			`@null3d/vegetation: the pieces' leaf breadth of '${record.id}' is ${leaf.breadth}; it is a share of the outline's width, above 0 and at most 2`,
 		);
+	if (
+		leaf.cardBands !== undefined &&
+		!(Number.isInteger(leaf.cardBands) && leaf.cardBands >= 1 && leaf.cardBands <= 4)
+	)
+		throw new Error(
+			`@null3d/vegetation: the pieces' leaf card bands of '${record.id}' is ${leaf.cardBands}; it is a whole number from 1 to 4`,
+		);
 	if (leaf.stalk !== undefined && !(leaf.stalk > 0))
 		throw new Error(
 			`@null3d/vegetation: the pieces' leaf stalk of '${record.id}' is ${leaf.stalk}; it is metres and must be above 0`,
@@ -376,6 +398,7 @@ export function pieceRecord(record: Species, leaf: PieceLeaf | undefined): Speci
 				...own,
 				length: leaf.length ?? own.length,
 				...(leaf.breadth === undefined ? {} : { breadth: leaf.breadth }),
+				...(leaf.cardBands === undefined ? {} : { cardBands: leaf.cardBands }),
 				petiole: { ...own.petiole, length: leaf.stalk ?? own.petiole.length },
 			},
 		},
@@ -398,6 +421,8 @@ export interface PiecePrototype
 	readonly parts: number;
 	/** The unit normal of the piece's flat plane in its rest frame, where its rule names one. */
 	readonly plane?: Vec3;
+	/** Degrees it is turned about its own line at every socket, where its rule says so. */
+	readonly roll?: number;
 	/** Where the part may carry an extra, in the piece's rest frame, in rank order. */
 	readonly sites: readonly PieceSite[];
 }
@@ -684,7 +709,7 @@ export function planPiece(
 		const points: AxisPoint[] = [{ at: [...start.at], radius: footRadius, along: start.along }];
 		axes.push(points);
 		const leavesBy = leafRule(stem);
-		const gap = stem.leaves ? Math.max(0.002, stem.leaves.gap) : 0;
+		const gap = stem.leaves ? Math.max(rule.nodeLeast ?? NODE_LEAST, stem.leaves.gap) : 0;
 		// A stem runs in straight steps short enough to read as a curve, and a node falls on a step's end.
 		// A hook turns at most a few degrees a step, so a strand leaves its branch on a curve.
 		const most = stem.hook
@@ -1231,6 +1256,7 @@ export function piecePrototypes(
 					part,
 					parts: parts.length,
 					...(rule.plane ? { plane: rule.plane } : {}),
+					...(rule.roll ? { roll: rule.roll } : {}),
 					sites: pieceSites(plan),
 					...meshedPlan(plan, own, PIECE_CUTS),
 					...(brushes ? { brushes } : {}),
@@ -1293,6 +1319,8 @@ export interface StudioLayout {
 	readonly placed: readonly PlacedPiece[];
 }
 
+/** The least metres between two leaf nodes of a stem, where its rule states none. */
+const NODE_LEAST = 0.002;
 /** The tier whose leaf meshes a brush card pictures: the finest a kit below ultra builds. */
 const BRUSH_PICTURE_TIER: Detail = 'high';
 /** Degrees a piece that turns up stands above its socket's own direction. */

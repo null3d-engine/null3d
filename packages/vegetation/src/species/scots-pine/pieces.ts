@@ -17,9 +17,11 @@ const FORK_PAIRS = [0.0036, 1] as const;
  * size on the photograph and on the drawing. One brush reads as a pair each 2.4 to 3.6 mm of shoot
  * and the other as closer than 2 mm, so the range is about 1.2 to 2.7 mm. Still 22's count of 20
  * to 25 pairs on 8 cm is of the one face its camera sees, which is a pair each 1.6 to 2 mm round
- * the whole shoot. The bough takes 2 mm.
+ * the whole shoot. The bough takes the range's dense end, 1.2 mm: at 2 mm the whole bough stood
+ * 0.60 open within its outline against still 21's 0.37, with its needle 60 mm long as still 21
+ * reads it (57 to 73 mm) and its brushes shaped as still 21's.
  */
-const BOUGH_PAIRS = [0.002, 1] as const;
+const BOUGH_PAIRS = [0.0012, 1] as const;
 
 /**
  * The needle pairs of a shoot's leafy end, from the angle the needles stand at where the brush
@@ -49,10 +51,12 @@ function brush(
 }
 
 /**
- * Still 21: a brush is 0.21 to 0.28 of the bough's length across and a needle 0.10 of it long, so
- * the needles stand nearly square to the shoot where the brush begins. They close toward its tip.
+ * Still 21: a brush is 0.21 to 0.28 of the bough's length across and a needle 0.10 to 0.13 of it
+ * long (57 to 73 mm). Stills 21 and 04, by eye: the needles stand out nearly square to the shoot
+ * along the whole tuft, so a tuft reads as a round mass; at 85 degrees closing to 75 the bough is
+ * 0.92 as wide as tall against still 21's 0.91.
  */
-const BOUGH_BRUSH = [75, 40] as const;
+const BOUGH_BRUSH = [85, 75] as const;
 /**
  * Still 22: the needles stand 50 to 60 degrees from the shoot where the brush begins and 25 to 40
  * degrees near its tip.
@@ -79,6 +83,8 @@ export const PIECES: readonly PieceRule[] = [
 		// below the finest tier each brush draws as a card of its own picture: the bough keeps its
 		// brushes' cover at a small share of their triangles.
 		brushCards: true,
+		// A pair each 1.2 mm, below the planner's own 2 mm between nodes.
+		nodeLeast: 0.0012,
 		ground: [0, -1, 0],
 		// The fan lies in the plane of the bough's line and its sides.
 		plane: [0, 0, 1],

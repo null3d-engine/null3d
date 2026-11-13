@@ -190,6 +190,23 @@ describe('the stand of a whole view', () => {
 		}
 	});
 
+	test("brings a plant that stood back for its width in by a redraw's scale, no nearer than its rows", () => {
+		const framing = FRAMINGS[0]?.framing as WholeFraming;
+		// Wider than its photograph's share, though the frame holds it whole on its rows.
+		const wide = crown(8, 6, 3, 1);
+		const first = wholeStand(wide, [0, 0, 0], 0, framing, 9);
+		expect(first.held).toBe('width');
+		// Asked to come in far, it stops on its rows: the top on the asked top row.
+		const furthest = wholeStand(wide, [0, 0, 0], 0, { ...framing, scale: 0.3 }, 9);
+		expect(furthest.extent.top).toBeCloseTo(0.1744, 2);
+		expect(furthest.extent.base).toBeCloseTo(0.8791, 2);
+		// Asked to come in a little, it comes in by the scale from the stand that drew it.
+		const nearer = wholeStand(wide, [0, 0, 0], 0, { ...framing, scale: 0.97 }, 9);
+		expect(nearer.distance).toBeLessThan(first.distance);
+		expect(nearer.distance).toBeGreaterThanOrEqual(furthest.distance);
+		expect(nearer.extent.base).toBeCloseTo(0.8791, 2);
+	});
+
 	test("moves the camera out for a redraw's scale above one, and keeps the foot on its row", () => {
 		const framing = FRAMINGS[0]?.framing as WholeFraming;
 		const tree = crown(6, 8, 4, 0.5);
@@ -243,6 +260,25 @@ describe('the stand of a whole view', () => {
 			expect(stand.extent.right - stand.extent.left).toBeCloseTo(0.6, 2);
 			expect(stand.extent.base).toBeLessThanOrEqual(0.99);
 		}
+	});
+
+	test("widens a lost-foot stand's width share by a redraw's scale, its top still on its row", () => {
+		const mound = crown(5, 6, 0, 0.5);
+		const framing: WholeFraming = {
+			fov: 30,
+			aspect: 1.5,
+			horizon: 0.52,
+			top: 0.05,
+			targetX: 0.5,
+			widthShare: 0.6,
+		};
+		const first = wholeStand(mound, [0, 0, 0], 0, framing, 6);
+		expect(first.held).toBe('width');
+		// The drawing measured 0.5 of the width where its photograph takes 0.6.
+		const redrawn = wholeStand(mound, [0, 0, 0], 0, { ...framing, scale: 0.5 / 0.6 }, 6);
+		expect(redrawn.extent.right - redrawn.extent.left).toBeCloseTo(0.72, 2);
+		expect(redrawn.extent.top).toBeCloseTo(0.05, 2);
+		expect(redrawn.distance).toBeLessThan(first.distance);
 	});
 
 	test('reads a blade that dips through the ground in front of a low camera where it meets the ground', () => {

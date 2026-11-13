@@ -15,8 +15,9 @@ export interface WholeFraming extends ScreenFraming {
 	readonly widthShare?: number;
 	/**
 	 * A factor on the camera's distance from a redraw that corrects the drawn width by what the
-	 * picture itself measured. It only moves the camera out: below 1 it keeps the asked rows'
-	 * stand. The foot stays on its row, and the plant stays inside the frame.
+	 * picture itself measured, against the stand that drew it. It moves the camera out, or in no
+	 * nearer than the asked rows' stand. The foot stays on its row, and the plant stays inside the
+	 * frame.
 	 */
 	readonly scale?: number;
 }
@@ -157,8 +158,8 @@ export function liftedToGround(points: Float32Array, ground: number): Float32Arr
  * names an eye height in place of a foot row, at that height where the highest point lands on the
  * top row. A framing that names neither, since its photograph lost the plant's foot below the
  * horizon, stands the plant at its photograph's share of the width with its top on the top row. If the plant is then wider than its photograph's share of the frame, the camera stands
- * back until it is not, and keeps the foot on its row. A redraw's scale moves the camera out the
- * same way, never in. Last, the camera stands back as little as holds every drawn point inside the
+ * back until it is not, and keeps the foot on its row. A redraw's scale moves the camera from there,
+ * out, or in no nearer than the rows' stand. Last, the camera stands back as little as holds every drawn point inside the
  * frame.
  *
  * @param points The points the plant draws at the level the view draws, as x, y and z.
@@ -207,6 +208,7 @@ export function wholeStand(
 		}
 	};
 	let held: WholeStand['held'] = 'rows';
+	let lostFoot = false;
 	if (askedBase !== undefined) {
 		// Two rows asked: the span between them sets the distance and their middle the height.
 		const askedSpan = askedBase - framing.top;
@@ -221,8 +223,12 @@ export function wholeStand(
 		}
 	} else if (framing.eye === undefined && framing.widthShare !== undefined) {
 		// The photograph's foot is lost below its horizon, so no row marks it: the plant takes its
-		// photograph's share of the width, and its highest point lands on the asked top row.
-		const share = Math.min(WIDEST, framing.widthShare);
+		// photograph's share of the width, and its highest point lands on the asked top row. The
+		// stand is held by that width, so a redraw's scale corrects the share its points take: a
+		// plant whose drawn edges stand inside its points, as fading blade tips do, takes more.
+		lostFoot = true;
+		held = 'width';
+		const share = Math.min(WIDEST, framing.widthShare / (framing.scale ?? 1));
 		for (let pass = 0; pass < 24; pass++) {
 			const at = extentAt(distance, eye);
 			const scale = (at.right - at.left) / share;
@@ -243,24 +249,28 @@ export function wholeStand(
 		}
 		distance = Math.sqrt(near * far);
 	}
-	if (framing.scale !== undefined && framing.scale > 0 && framing.scale !== 1) {
-		// A redraw moves the camera out from the stand on the asked rows, never in: a nearer camera
-		// draws the plant taller than its photograph's share of the frame, so a plant narrower than
-		// its photograph keeps the rows' stand, and its width error is the plant's own.
-		distance *= Math.max(1, framing.scale);
+	// The plant takes no more of the frame's width than its photograph's does; a stand on a lost
+	// foot already set its width.
+	const rows = distance;
+	const widest = Math.min(WIDEST, framing.widthShare ?? WIDEST);
+	for (let pass = 0; pass < 8 && !lostFoot; pass++) {
+		const at = extentAt(distance, eye);
+		const over = (at.right - at.left) / widest;
+		if (over <= 1 + NEAR) break;
+		distance *= over;
+		pinFoot();
+		held = 'width';
+	}
+	if (!lostFoot && framing.scale !== undefined && framing.scale > 0 && framing.scale !== 1) {
+		// A redraw corrects the drawn width by what its picture measured, from the stand that drew
+		// it: out, or in no nearer than the stand on the asked rows. A nearer camera would draw the
+		// plant taller than its photograph's share of the frame, so a plant narrower than its
+		// photograph keeps the rows' stand, and its width error is the plant's own. A plant that
+		// stood back for width comes in where its drawn edges stand inside its points, as a fern's
+		// fading tips do.
+		distance = Math.max(rows, distance * framing.scale);
 		pinFoot();
 		held = 'scale';
-	} else {
-		// The plant takes no more of the frame's width than its photograph's does.
-		const widest = Math.min(WIDEST, framing.widthShare ?? WIDEST);
-		for (let pass = 0; pass < 8; pass++) {
-			const at = extentAt(distance, eye);
-			const over = (at.right - at.left) / widest;
-			if (over <= 1 + NEAR) break;
-			distance *= over;
-			pinFoot();
-			held = 'width';
-		}
 	}
 	// No drawn point leaves the frame, whatever the rows and the width asked for. The camera stands
 	// back as little as holds every point: a step by the share a point runs over overshoots, since
@@ -284,7 +294,7 @@ export function wholeStand(
 		if (base > 1 - EDGE) eye = Math.max(lowest, eye - (base - (1 - EDGE)) * 2 * distance * half);
 		return overAt(extentAt(distance, eye));
 	};
-	let over = overAt(extentAt(distance, eye));
+	let over = settle(distance);
 	if (over > 1 + NEAR) {
 		held = 'frame';
 		let near = distance;

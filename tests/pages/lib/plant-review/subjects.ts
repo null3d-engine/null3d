@@ -139,7 +139,7 @@ export interface BranchPiece {
 	readonly length: number;
 	/** Metres the piece spreads to either side of its line. */
 	readonly spread: number;
-	/** The side of the piece its leaves face, where it has one. */
+	/** The side of the piece's plane that faces up, where it has one. */
 	readonly face?: V3;
 	/** The piece's own side, square to its face, along which an arching piece shows its arch. */
 	readonly side?: V3;
@@ -521,6 +521,15 @@ export function subjectsOfSkeleton(
 	};
 }
 
+/**
+ * The side of a piece's plane that faces up: its +Z, or the other way where +Z points down. A grower
+ * names one face +Z, the sky side of a branch piece or the lower face of a fern's leaf, and a view
+ * of the piece's face looks on its upper side either way.
+ */
+function upward(normal: V3): V3 {
+	return normal[1] >= 0 ? normal : [-normal[0], -normal[1], -normal[2]];
+}
+
 /** A vector of a piece's own frame, turned as one of the plant's rows turns its prototype. */
 function turnedBy(rows: ShootRows, r: number, x: number, y: number, z: number): V3 {
 	const out: [number, number, number] = [0, 0, 0];
@@ -584,7 +593,7 @@ function runOf(meshes: readonly Float32Array[]): PieceRun {
  * The branch pieces a plant places at its sockets, read from its rows. A piece's parts stand as
  * rows one after another at one place, with one turn and one scale. The piece runs from its socket
  * toward its farthest vertex, so an arching piece runs to its tip, spreads as far as its vertices
- * stand off that line, faces its +Z, the sky side of a branch piece, and has its +X for its side.
+ * stand off that line, faces the side of its plane that looks up, and has its +X for its side.
  * The pieces come outermost first, so a view of one frames a piece at the plant's rim.
  *
  * @param rows The plant's rows.
@@ -640,7 +649,7 @@ export function piecesOfRows(
 				direction,
 				length,
 				spread: run.spread * scale,
-				face: turnedBy(rows, r, 0, 0, 1),
+				face: upward(turnedBy(rows, r, 0, 0, 1)),
 				side: turnedBy(rows, r, 1, 0, 0),
 				depth: { face: run.face * scale, side: run.side * scale },
 				out: Math.hypot(
