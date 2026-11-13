@@ -16,7 +16,7 @@ import { record } from './record';
  * bends of 20 to 40 degrees to one side and the other in turn, each rounded, and it is never
  * straight for more than five of its widths.
  */
-const crooked = { sway: 32, elbows: 3 } as const;
+const crooked = { sway: 32, elbows: 4, crook: 0.35 } as const;
 
 /**
  * The branches a limb ends in. Still 05: a limb divides into two or three branches, and those
