@@ -6,11 +6,24 @@
 import type { PieceLeaves, PieceRule, PieceStem, PieceStudio } from '../../leaf/piece';
 
 /**
+ * How far a spray's pairs lean into the branch's plane. Still 21 shows both leaves of nearly every
+ * pair beside their spray, and the turning video's narrowest frame still shows the pairs' faces:
+ * leaning 0.3 of the way holds both views inside the review standard's band.
+ */
+const SPRAY_FLAT = 0.3;
+/**
+ * The same for the twig and its side shoots. Still 22: each pair stands a quarter turn from the last,
+ * and the sub-branch's turning video shows the twig 0.31 as deep as it is wide, so its pairs lean 0.35
+ * of the way into its plane.
+ */
+const TWIG_FLAT = 0.35;
+
+/**
  * The leaves along a twig. Stills 10, 11 and 23: opposite pairs, each a quarter turn from the last.
  * Still 21: a pair each 3.3 centimetres along a spray, held about 40 degrees from the stem, and
  * drooping with it. Still 22: a pair each 2.7 centimetres on a twig.
  */
-function pairs(from: number, gap: number, flat = 0.5): PieceLeaves {
+function pairs(from: number, gap: number, flat = SPRAY_FLAT): PieceLeaves {
 	return {
 		gap,
 		from,
@@ -18,9 +31,6 @@ function pairs(from: number, gap: number, flat = 0.5): PieceLeaves {
 		angle: 42,
 		angleSpread: 8,
 		hang: 0.25,
-		// Still 21: both leaves of nearly every pair show beside their spray, so the pairs lie in the
-		// branch's plane, as its turning video shows the whole branch flat. Stills 10, 22 and 23: on
-		// an upright twig each pair stands a quarter turn from the last, so the twig takes none.
 		flat,
 	};
 }
@@ -81,7 +91,7 @@ export const PIECES: readonly PieceRule[] = [
 		attitude: 'upright',
 		variants: 2,
 		// The turning video of the cut branch: edge on it is 0.38 as wide as face on.
-		depth: 26,
+		depth: 24,
 		stem: {
 			length: { mean: 0.95, spread: 0.05 },
 			// Still 21: the axis is 0.023 of the branch's height thick at its cut (17 of 735 pixels).
@@ -110,17 +120,19 @@ export const PIECES: readonly PieceRule[] = [
 		name: 'twig',
 		attitude: 'along',
 		variants: 2,
+		// The sub-branch's turning video: its side shoots stand near the twig's plane.
+		depth: 20,
 		stem: {
 			length: { mean: 0.35, spread: 0.03 },
 			// Still 22: the twig is 0.014 of its height thick at its cut.
 			radius: [0.0025, 0.001],
-			leaves: pairs(0.3, 0.027, 0),
+			leaves: pairs(0.3, 0.027, TWIG_FLAT),
 			sides: [
 				{
 					stem: {
 						length: { mean: 0.14, spread: 0.03 },
 						radius: [0.0015, 0.001],
-						leaves: pairs(0.2, 0.027, 0),
+						leaves: pairs(0.2, 0.027, TWIG_FLAT),
 					},
 					gap: 0.09,
 					from: 0.2,

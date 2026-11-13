@@ -15,8 +15,20 @@ import {
  * millimetres thick. Stills 09 and 22: one leaf each three to four centimetres, alternate, the first
  * a few centimetres from the branch, the blade hanging within thirty degrees of the strand. Stills
  * 11 and 22: some nodes carry a short shoot of two leaves. Stills 10 and 23: a bud at the tip.
+ *
+ * @param length The strand's length in metres.
+ * @param spread The spread of that length.
+ * @param hook How the strand leaves its wood before it hangs.
+ * @param foot The stem's radius at its foot.
+ * @param shoots Metres between the short shoots of two leaves.
  */
-function strand(length: number, spread: number, hook: PieceStem['hook'], foot = 0.001): PieceStem {
+function strand(
+	length: number,
+	spread: number,
+	hook: PieceStem['hook'],
+	foot = 0.001,
+	shoots = 0.14,
+): PieceStem {
 	return {
 		length: { mean: length, spread },
 		radius: [foot, 0.0006],
@@ -52,7 +64,7 @@ function strand(length: number, spread: number, hook: PieceStem['hook'], foot = 
 						face: { turn: 0, spread: 40, inPlane: true },
 					},
 				},
-				gap: 0.14,
+				gap: shoots,
 				from: 0.15,
 				to: 0.9,
 				arrangement: 'spiral',
@@ -94,15 +106,15 @@ export const PIECES: readonly PieceRule[] = [
 	},
 	// Still 22, read at full size: a leaf is 0.13 of the twig's height, so the record's leaf of five
 	// centimetres makes the twig 0.385 metres tall. It rises for 0.75 of that height, arches through
-	// about 150 degrees over 0.58 and ends pointing down: 0.56 metres of twig with fourteen to
-	// fifteen leaves.
+	// about 150 degrees over 0.58 and ends pointing down: 0.56 metres of twig with seventeen leaves,
+	// thirteen along it and two short shoots of two.
 	{
 		name: 'strand-arch-short',
 		attitude: 'plumb',
 		leafDroop: 'plane',
 		variants: 2,
 		// Still 22: the twig is 0.016 of its height thick at its cut (11 to 13 of 712 pixels).
-		stem: strand(0.56, 0.04, { angle: 165, rise: 0.29, length: 0.22 }, 0.003),
+		stem: strand(0.56, 0.04, { angle: 165, rise: 0.29, length: 0.22 }, 0.003, 0.2),
 	},
 	// Still 21: the arms of a cut branch rise, arch over and hang 30 to 72 centimetres. A branch's own
 	// end is this piece.
