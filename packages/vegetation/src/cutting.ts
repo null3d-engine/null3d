@@ -237,7 +237,10 @@ function shootHint(record: Species, part: CuttingPart): ShootClass['name'] | und
  * @category api/vegetation
  */
 export function cutsShoot(record: Species, part: CuttingPart): boolean {
-	return part === 'cluster' || shootHint(record, part) !== undefined;
+	// A cluster that names a plant cut keeps a section of one long axis, as a fern's blade section
+	// does, rather than one shoot prototype from the kit.
+	const plantCluster = part === 'cluster' && plantHint(record, part) !== undefined;
+	return !plantCluster && (part === 'cluster' || shootHint(record, part) !== undefined);
 }
 
 /**
@@ -482,6 +485,22 @@ export interface CutBranch {
 }
 
 /**
+ * The arc length of one axis's polyline, from its first node to its last, so a piece cut from it
+ * knows the share of the original axis its own run covers.
+ */
+function axisLength(skeleton: MacroSkeleton, axis: number): number {
+	const first = skeleton.axes.first[axis] as number;
+	const last = skeleton.axes.last[axis] as number;
+	let total = 0;
+	for (let n = first + 1; n <= last; n++) {
+		const a = nodeAt(skeleton, n - 1);
+		const b = nodeAt(skeleton, n);
+		total += length3(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
+	}
+	return total;
+}
+
+/**
  * Points along one axis's polyline between two distances from its first node, with the radius
  * interpolated: a piece that keeps a span of a long axis is laid out at its own spacing rather than
  * at its parent's node spacing, which may be coarser than the piece.
@@ -644,6 +663,13 @@ export function cutBranch(
 	const place = (p: Readonly<Vector3>): Vector3 =>
 		quatRotate(q, 0, [p[0] - cut[0], p[1] - cut[1], p[2] - cut[2]], moved);
 	const builder = new SkeletonBuilder();
+	// The share of its original axis the piece's root covers, so the foliage reads the record's
+	// curves where the piece stood rather than across the piece.
+	const run = axisLength(skeleton, root);
+	const spanOfRun = (metres: number): number =>
+		run > 1e-6 ? Math.max(0, Math.min(1, metres / run)) : 1;
+	const rootFrom = spanned ? spanOfRun(begin) : 0;
+	const rootTo = spanned ? spanOfRun(begin + (span as number)) : spanOfRun(length);
 	const axisMap = new Int32Array(axes.count).fill(-1);
 	const nodeMap = new Int32Array(skeleton.nodeCount).fill(-1);
 	let cutNode = -1;
@@ -664,6 +690,8 @@ export function cutBranch(
 			kind: isRoot && !onWood(skeleton, a) ? AXIS_ROOT : (axes.kind[a] as number),
 			barkV: axes.barkV[a] as number,
 			barkU: axes.barkU[a] as number,
+			cutFrom: isRoot ? rootFrom : (axes.cutFrom[a] as number),
+			cutTo: isRoot ? rootTo : (axes.cutTo[a] as number),
 		});
 		axisMap[a] = mapped;
 		if (isRoot && spanned) {
