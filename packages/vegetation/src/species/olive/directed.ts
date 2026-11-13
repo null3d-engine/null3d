@@ -61,7 +61,7 @@ const branches: FrameBranchRule = {
 			bends: [{ from: 0.45, to: 1, by: 28 }],
 			sway: 22,
 			elbows: 3,
-			patch: { kind: 'mass', width: 0.24, depth: 0.18 },
+			patch: { kind: 'mass', width: 0.19, depth: 0.15 },
 		},
 	],
 };
@@ -116,27 +116,30 @@ export const frame: FrameSpec = {
 				...crooked,
 				name: 'outer',
 				role: 'limb',
-				// Still 01: the outer limbs leave at 0.36 of the height. Stills 03 and 05: limbs stand
-				// round the trunk in every direction. The shares here are of the trunk's own length.
-				count: 3,
-				along: [0.68, 0.74],
+				// Stills 03 and 05, from below: five to six limbs stand round the trunk in every
+				// direction; still 01 shows four in profile, which is the count seen from one side. The
+				// frame has six: four outer limbs here and the centre pair. Still 01: the outer limbs
+				// leave at 0.36 of the height. The shares here are of the trunk's own length.
+				count: 4,
+				along: [0.66, 0.76],
 				around: 'ring',
-				jitter: 15,
-				// Still 01: 60 to 70 degrees from plumb.
+				jitter: 12,
+				// Still 01: the far left limb leaves at 65 to 70 degrees from plumb and the right one
+				// at 60, and each runs out nearly level.
 				angle: [
-					[0, 68],
-					[1, 60],
+					[0, 70],
+					[1, 62],
 				],
 				from: 'plumb',
 				angleSpread: 4,
-				// Still 01: a limb runs 0.25 to 0.35 of the height bare before it breaks into branches.
-				length: { share: 0.3 },
-				vary: 0.12,
+				// Still 01: a limb runs a third of the height bare before it breaks into branches.
+				length: { share: 0.33 },
+				vary: 0.1,
 				// Still 01: 0.32 to 0.36 of the waist, and 0.6 of that at half its length.
 				radius: 0.34,
 				taper: 0.3,
-				// Still 01: an outer limb spreads nearly level and turns up toward its end.
-				bends: [{ from: 0.45, to: 0.9, by: -18 }],
+				// Still 01: an outer limb turns level over its first half and runs out so.
+				bends: [{ from: 0.1, to: 0.5, level: 6 }],
 				children: [branches],
 			},
 			{

@@ -272,9 +272,9 @@ const HELD: readonly Held[] = [
 		directed: oliveDirected,
 		heightMean: spreadMean(oliveDirected.size.height),
 		record: oliveRecord,
-		counts: { trunk: 1, outer: 3, centre: 2, branch: 15, spray: 45 },
-		// Three outer limbs leave a third of a turn apart; each one's end wanders with its elbows.
-		round: { rule: 'outer', gap: 170, lean: 0.3 },
+		counts: { trunk: 1, outer: 4, centre: 2, branch: 18, spray: 54 },
+		// Four outer limbs leave a quarter of a turn apart; each one's end wanders with its elbows.
+		round: { rule: 'outer', gap: 140, lean: 0.3 },
 		base: { outer: 0.34, centre: 0.55, branch: 0.6, spray: 0.6 },
 		plumb: ['trunk'],
 		tall: [0.93, 1.05],
