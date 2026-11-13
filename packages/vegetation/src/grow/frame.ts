@@ -1678,15 +1678,15 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 				centre[1] = (over + under) / 2;
 			}
 			const flat = Math.sqrt(run[0] * run[0] + run[2] * run[2]);
+			// The patch covers the piece's footprint: the piece is the pitch wide and lies its reach
+			// out from the socket, so a piece longer than it is wide lies along a patch as long.
+			const width = Math.max(fill.pitch, fill.reach * flat);
 			return {
 				kind: 'spray',
 				axis,
 				centre,
-				begins: Math.max(
-					0,
-					Math.sqrt(centre[0] * centre[0] + centre[2] * centre[2]) - fill.pitch / 2,
-				),
-				width: fill.pitch,
+				begins: Math.max(0, Math.sqrt(centre[0] * centre[0] + centre[2] * centre[2]) - width / 2),
+				width,
 				depth,
 				along: flat > 0.2 ? [run[0] / flat, 0, run[2] / flat] : [1, 0, 0],
 			};

@@ -1234,6 +1234,33 @@ describe("the pedunculate oak's frame against its photographs", () => {
 		}
 	});
 
+	it('clothes the end of every twig when its piece reaches further than it is wide', () => {
+		// The common alder's branch end reaches 1.22 times its width; the oak's 1.09.
+		const reaching = (rule: FrameBranchRule): FrameBranchRule => ({
+			...rule,
+			...(rule.patch?.fill
+				? {
+						patch: {
+							...rule.patch,
+							fill: { pitch: rule.patch.fill.pitch, reach: rule.patch.fill.pitch * 1.22 },
+						},
+					}
+				: {}),
+			...(rule.children ? { children: rule.children.map(reaching) } : {}),
+		});
+		const long: FrameSpec = {
+			...oak.spec,
+			stems: {
+				...oak.spec.stems,
+				children: (oak.spec.stems.children ?? []).map(reaching),
+			},
+		};
+		for (const seed of SEEDS)
+			expect(
+				bareEnds(planFrame(long, { record: oak.record, seed, variant: 0, season: 'summer' })),
+			).toEqual([]);
+	});
+
 	it('fails the oak built with its clumps first on three of the four', () => {
 		expect(clumpsFirst.commit).toBe('5b5c56272');
 		// Eighteen patches that a view shows near the trunk's line hang under the boundary; those the
