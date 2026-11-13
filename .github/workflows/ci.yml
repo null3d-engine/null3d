@@ -1215,16 +1215,20 @@ jobs:
       # .dev/image-tests.md names why.
       - name: Build the packages' lib that the specs load
         run: bun tools/build-package.ts impostors
-      # The website build's compiled shaders, which the test keeps between runs. An entry is named by
-      # its source and the compiler's version, so a kept entry never serves another compiler. The key
-      # starts empty when the compiler or the plugin changes, so the folder holds no old compiler's
-      # entries, and takes the newest folder of the same compiler when only the demos change.
+      # The website build's compiled shaders, which the test keeps between runs. The build records
+      # the inputs of a project's shader compile beside the compiler, in shader-compiler.stamp.json:
+      # its own sources, the library modules, the templates that a project builds with, and the
+      # engine's version. The key adds the demos and the site page, which decide the requests. An
+      # engine shader that the site never compiles is not one of those inputs, so its change keeps
+      # every entry. Each entry also names its own source and the compiler's version, so a restored
+      # entry never serves another source or another compiler. The broad restore key lets a change
+      # to one input reuse every entry that it leaves valid.
       - uses: actions/cache@v4
         with:
           path: ~/.cache/null3d/fresh-project-shaders
-          key: fresh-project-shaders-${{ hashFiles('crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.lock', 'rust-toolchain.toml', 'packages/vite-plugin/**') }}-${{ hashFiles('examples/**') }}
+          key: fresh-project-shaders-${{ hashFiles('packages/vite-plugin/dist/shader-compiler.stamp.json', 'packages/engine/package.json', 'examples/**', 'tests/fresh-project.ts', 'tsconfig.web.base.json') }}
           restore-keys: |
-            fresh-project-shaders-${{ hashFiles('crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.lock', 'rust-toolchain.toml', 'packages/vite-plugin/**') }}-
+            fresh-project-shaders-
       # The step packs the packages, builds a fresh project and a website page of the demos, and
       # starts them in a browser. Its limit ends a stuck browser before the job's, with the step
       # named as the one that ran out of time.

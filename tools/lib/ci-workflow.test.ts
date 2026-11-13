@@ -552,6 +552,30 @@ describe("CI's workflow", () => {
 		expect(missing).toEqual([]);
 	});
 
+	it("keys the fresh project's shader cache on the inputs that its build reads", () => {
+		const cache = (jobNamed('packages').steps ?? []).find(
+			({ uses, with: given }) =>
+				uses === 'actions/cache@v4' && String(given?.path).endsWith('fresh-project-shaders'),
+		);
+		const key = String(cache?.with?.key);
+		// The build records the inputs of a project's shader compile beside the compiler: its own
+		// sources, the library modules, the templates and the engine's version. The demos and the
+		// site page decide the requests.
+		for (const input of [
+			'packages/vite-plugin/dist/shader-compiler.stamp.json',
+			'packages/engine/package.json',
+			'examples/**',
+			'tests/fresh-project.ts',
+		])
+			expect(key, input).toContain(input);
+		// An engine entry shader that the site never compiles is not an input, so its change keeps
+		// every compiled entry.
+		expect(key).not.toContain('crates/null3d-shaders');
+		expect(key).not.toContain('Cargo.lock');
+		// A broad restore reuses every entry that a changed input leaves valid.
+		expect(String(cache?.with?.['restore-keys']).trim()).toBe('fresh-project-shaders-');
+	});
+
 	it('makes git give up on a stalled transfer, so a checkout tries its fetch again', () => {
 		const env = (workflow as { env?: Record<string, unknown> }).env ?? {};
 		expect(Number(env.GIT_HTTP_LOW_SPEED_LIMIT)).toBeGreaterThan(0);
