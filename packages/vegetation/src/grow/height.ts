@@ -172,6 +172,24 @@ export function scaledSkeleton(skeleton: MacroSkeleton, factor: number): MacroSk
 	};
 }
 
+/**
+ * The skeleton scaled by `factor` with the pieces at its sockets scaled with it, for a plant that is
+ * its pieces, such as a tuft or a frond colony, whose size is the plant's own.
+ */
+export function scaledWithPieces(skeleton: MacroSkeleton, factor: number): MacroSkeleton {
+	const scaled = scaledSkeleton(skeleton, factor);
+	const sockets = scaled.buds.sockets;
+	return sockets
+		? {
+				...scaled,
+				buds: {
+					...scaled.buds,
+					sockets: { ...sockets, scale: sockets.scale.map((value) => value * factor) },
+				},
+			}
+		: scaled;
+}
+
 /** The shoot rows with every position, scale and stalk vector scaled by `factor`. */
 export function scaledRows(rows: ShootRows, factor: number): ShootRows {
 	return {

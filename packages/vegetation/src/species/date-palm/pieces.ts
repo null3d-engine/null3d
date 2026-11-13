@@ -87,7 +87,6 @@ export const PIECES: readonly PieceRule[] = [
 		name: 'frond-straight',
 		attitude: 'along',
 		variants: 1,
-		lengthwise: true,
 		stem: rachis(15, [0.4, 1]),
 	},
 	// Picture 01: the upper middle fronds leave at 50 to 60 degrees with their tips 0.55 of the frond
@@ -99,7 +98,6 @@ export const PIECES: readonly PieceRule[] = [
 		name: 'frond-arched',
 		attitude: 'along',
 		variants: 1,
-		lengthwise: true,
 		stem: rachis(60, [0.35, 1]),
 	},
 	// Picture 01 and still 20: a dead frond hangs nearly straight, its leaflets folded down along the
@@ -108,7 +106,6 @@ export const PIECES: readonly PieceRule[] = [
 		name: 'frond-dead',
 		attitude: 'along',
 		variants: 1,
-		lengthwise: true,
 		// A dead frond is brown to the tips (pictures 01, 05 and 20).
 		browning: 1,
 		stem: {

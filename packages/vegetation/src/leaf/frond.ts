@@ -138,7 +138,7 @@ export function frondShapeOf(record: Species): FrondShape {
 }
 
 /** The pinnae of a pinnate or bipinnate frond. */
-function pinnaeOf(shape: FrondShape): PinnaSpec {
+export function pinnaeOf(shape: FrondShape): PinnaSpec {
 	if ((shape.kind === 'pinnate' || shape.kind === 'bipinnate') && shape.pinnae) return shape.pinnae;
 	throw new Error(
 		`@null3d/vegetation: a '${shape.kind}' frond is not built; pinnate and bipinnate fronds with pinnae are`,
@@ -451,7 +451,7 @@ interface FrondVertex {
  * @param second The second coordinates of each vertex: share along and browning on a plant, metres
  *   along and across in the kit's leaf.
  */
-function writeBlade(
+export function writeBlade(
 	mesh: MeshWriter,
 	blade: FrondBlade,
 	outline: LeafOutline,
@@ -528,7 +528,7 @@ function writeBlade(
 }
 
 /** How much of the pinnae's fold a grid can show: none until it has two rows to a pinna. */
-function foldWeight(cut: LeafCut, pinnae: PinnaSpec): number {
+export function foldWeight(cut: LeafCut, pinnae: PinnaSpec): number {
 	const perPinna = cut.rows / Math.max(1, spreadMean(pinnae.count));
 	return Math.max(0, Math.min(1, (perPinna - 2) / 2));
 }

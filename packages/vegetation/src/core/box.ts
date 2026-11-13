@@ -78,7 +78,7 @@ export function speciesBox(record: Species): SpeciesBox {
 			: growth.model === 'frond-crown'
 				? longestPiece(record)
 				: growth.model === 'frond-colony'
-					? growth.rhizome.length + spreadMax(growth.frond.length)
+					? (growth.patch.long / 2) * height + spreadMax(growth.frond.length)
 					: 0;
 	const reach = Math.max(
 		Math.max(0.5 * record.size.aspect, envelopeReach(record), 0.25) * height,

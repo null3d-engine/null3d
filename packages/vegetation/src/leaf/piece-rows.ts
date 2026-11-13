@@ -23,7 +23,7 @@ export const PROTOTYPES_MOST = 255;
 /** The growth models that end their wood in sockets. */
 const DIRECTED: readonly GrowthModel[] = ['conifer', 'frame', 'frond-crown'];
 /** The growth models whose growers write the pieces their sockets carry. */
-const WRITTEN: readonly GrowthModel[] = ['tuft'];
+const WRITTEN: readonly GrowthModel[] = ['tuft', 'frond-colony'];
 
 /** The hash purposes of a socket's choices, apart from the shoot rows' own. */
 const Purpose = { Variant: 0x31, Phase: 0x32 } as const;
@@ -77,7 +77,6 @@ export function kitPiece(piece: PiecePrototype, index: number): UncardedPrototyp
 			parts: piece.parts,
 			attitude: piece.attitude,
 			...(piece.plane ? { plane: piece.plane } : {}),
-			...(piece.lengthwise ? { lengthwise: true } : {}),
 			...(piece.roll ? { roll: piece.roll } : {}),
 		},
 	};
