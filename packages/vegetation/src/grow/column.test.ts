@@ -10,6 +10,7 @@ import { acos } from '../core/math';
 import type { Column } from '../core/record';
 import { loadSpecies } from '../core/registry';
 import { buildKitNow, growPlantNow, loadPlantCode } from '../generate';
+import { toTriangle } from './body.fixture';
 
 /** The saguaro's kit, with its grown variants. */
 async function saguaro() {
@@ -54,47 +55,6 @@ function turns(points: readonly number[][]): number[] {
 		found.push((acos(Math.min(1, Math.max(-1, dot / length))) * 180) / Math.PI);
 	}
 	return found;
-}
-
-/** The distance from a point to a triangle. */
-function toTriangle(p: number[], a: number[], b: number[], c: number[]): number {
-	const sub = (x: number[], y: number[]) =>
-		[0, 1, 2].map((k) => (x[k] as number) - (y[k] as number));
-	const dot = (x: number[], y: number[]) =>
-		x.reduce((sum, value, k) => sum + value * (y[k] as number), 0);
-	const ab = sub(b, a);
-	const ac = sub(c, a);
-	const ap = sub(p, a);
-	const d1 = dot(ab, ap);
-	const d2 = dot(ac, ap);
-	let nearest: number[];
-	if (d1 <= 0 && d2 <= 0) nearest = a;
-	else {
-		const bp = sub(p, b);
-		const d3 = dot(ab, bp);
-		const d4 = dot(ac, bp);
-		const cp = sub(p, c);
-		const d5 = dot(ab, cp);
-		const d6 = dot(ac, cp);
-		const vc = d1 * d4 - d3 * d2;
-		const vb = d5 * d2 - d1 * d6;
-		const va = d3 * d6 - d5 * d4;
-		if (d3 >= 0 && d4 <= d3) nearest = b;
-		else if (d6 >= 0 && d5 <= d6) nearest = c;
-		else if (vc <= 0 && d1 >= 0 && d3 <= 0)
-			nearest = a.map((x, k) => x + (ab[k] as number) * (d1 / (d1 - d3)));
-		else if (vb <= 0 && d2 >= 0 && d6 <= 0)
-			nearest = a.map((x, k) => x + (ac[k] as number) * (d2 / (d2 - d6)));
-		else if (va <= 0 && d4 - d3 >= 0 && d5 - d6 >= 0) {
-			const w = (d4 - d3) / (d4 - d3 + (d5 - d6));
-			nearest = b.map((x, k) => x + ((c[k] as number) - x) * w);
-		} else {
-			const v = vb / (va + vb + vc);
-			const w = vc / (va + vb + vc);
-			nearest = a.map((x, k) => x + (ab[k] as number) * v + (ac[k] as number) * w);
-		}
-	}
-	return Math.sqrt(dot(sub(p, nearest), sub(p, nearest)));
 }
 
 describe('the saguaro frame', () => {

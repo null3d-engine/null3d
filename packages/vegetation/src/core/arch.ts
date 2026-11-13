@@ -65,7 +65,7 @@ export interface ArchPath {
  *
  * @category api/vegetation
  */
-export const MOST_TURN: readonly [number, number, number] = [12, 20, 30];
+export const MOST_TURN: readonly [number, number, number] = [8, 15, 25];
 
 /** The most segments a path is cut into. */
 const MOST_SEGMENTS = 512;
@@ -277,6 +277,11 @@ export interface ArchFigures {
 	readonly drop?: number;
 	/** How far out from the base the tip ends. */
 	readonly reach?: number;
+	/**
+	 * Degrees below the horizontal that the tip points at, from 0 to 90, for a part whose tip was
+	 * read on the photograph. Left out, the fit finds how far the part turns.
+	 */
+	readonly tip?: number;
 }
 
 /**
@@ -387,8 +392,11 @@ export function archFromFigures(figures: ArchFigures): ArchFit {
 	const value: [number, number, number, number] = [figures.leave ?? 45, 0, 1, 1];
 	const low: readonly number[] = [-30, 0, 1, FIT_LEAST_TO];
 	const high: readonly number[] = [90, 1, FIT_MOST_POWER, 1];
-	const sum = (): void =>
-		measure(figures, value[0], value[1] * (value[0] - FIT_TIP), value[2], value[3]);
+	// A measured tip fixes the turn, whatever the leaving angle the search tries.
+	const tip = figures.tip === undefined ? undefined : -Math.min(90, Math.max(0, figures.tip));
+	const turnOf = (): number =>
+		tip === undefined ? value[1] * (value[0] - FIT_TIP) : Math.max(0, value[0] - tip);
+	const sum = (): void => measure(figures, value[0], turnOf(), value[2], value[3]);
 	let best = Number.POSITIVE_INFINITY;
 	const start = [...value];
 	for (let l = freeLeave ? 0 : 4; l <= 4; l++)
@@ -439,7 +447,7 @@ export function archFromFigures(figures: ArchFigures): ArchFit {
 		arch: {
 			length: trial.length,
 			leave: value[0],
-			turn: value[1] * (value[0] - FIT_TIP),
+			turn: turnOf(),
 			power: value[2],
 			to: value[3],
 		},

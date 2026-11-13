@@ -45,6 +45,11 @@ export interface BladeDetail {
 	readonly rows: number;
 	/** 0 draws a flat strip of two points across; 1 a V of three; 2 a rounded V of five. */
 	readonly across: number;
+	/**
+	 * The shares along the blade where its rows stand, collar first and tip last, for a blade whose
+	 * path says where it turns. Left out, `rows` rows crowd toward the tip.
+	 */
+	readonly along?: ArrayLike<number>;
 }
 
 /**
@@ -140,14 +145,16 @@ export function writeBlade(
 	const points =
 		detail.across === 0 ? [-1, 1] : detail.across === 1 ? [-1, 0, 1] : [-1, -0.5, 0, 0.5, 1];
 	const columns = points.length;
-	const rows = Math.max(2, detail.rows);
+	const cuts = detail.along;
+	const rows = cuts ? cuts.length - 1 : Math.max(2, detail.rows);
 	const colour = [bytes.high, bytes.low, bytes.phase, 255];
 	const p = [0, 0, 0];
 	const packed = [0, 0, 0, 127];
 	const dryStart = 1 - form.blade.dryTip;
 	for (let r = 0; r <= rows; r++) {
-		// Rows crowd toward the tip, where the blade closes and arches most.
-		const t = 1 - pow(1 - r / rows, 1.35);
+		// Rows crowd toward the tip, where the blade closes and arches most, unless the path's own
+		// cuts place them.
+		const t = cuts ? (cuts[r] as number) : 1 - pow(1 - r / rows, 1.35);
 		frameAt(path, t * path.length, frame);
 		const half = bladeHalf(form, t);
 		const fold = radians(foldAt(form, t));

@@ -79,8 +79,10 @@ import { grower, loadGrower } from './grow/models';
 import { extrasMesh } from './leaf/extras';
 import { dressShoots, pruneLight } from './leaf/instancer';
 import { foliage, loadFoliage } from './leaf/kinds';
+import { piecePrototypes } from './leaf/piece';
 import { inLeaf } from './leaf/season';
 import { shootPrototypes } from './leaf/shoot';
+import { socketRows } from './leaf/socket-rows';
 import { bakeCards } from './lod/card-bake';
 import { cardMesh } from './lod/cards';
 import { bakeFar } from './lod/impostor';
@@ -532,12 +534,20 @@ export function buildKitNow(source: KitSource, options: KitOptions = {}): Specie
 		color: new Uint8Array(0),
 		surface: new Uint8Array(0),
 	};
-	if (record.shoots) {
-		const uncarded = stage(
-			placeholders,
-			() => shootPrototypes(record, manifest, leavesByTier, cutting),
-			() => placeholderPrototypes(record, leavesByTier),
-		);
+	// A species whose skeleton carries sockets builds its classes of piece where a tree builds its
+	// shoots. A cutting's kit and a stand-in's hold none.
+	const pieces =
+		!record.shoots && !cutting && placeholders !== true
+			? grower(record.growth.model).pieces?.(record, manifest)
+			: undefined;
+	if (record.shoots || pieces) {
+		const uncarded = pieces
+			? piecePrototypes(pieces)
+			: stage(
+					placeholders,
+					() => shootPrototypes(record, manifest, leavesByTier, cutting),
+					() => placeholderPrototypes(record, leavesByTier),
+				);
 		// A cutting kit holds no card levels: its pieces are drawn at the nearest level alone.
 		const baked = cutting
 			? { atlas: cards, cells: uncarded.map(() => ({ planes: [] })) }
@@ -766,7 +776,11 @@ function dress(kit: SpeciesKitData, options: GrowOptions): MeshInput {
 		record.lod.nearFoliage === 'instanced' && kit.prototypes.length > 0
 			? stage(
 					placeholders,
-					() => dressShoots(dressInput),
+					// A record with shoots dresses its buds; one without stands a piece at each socket.
+					() =>
+						record.shoots
+							? dressShoots(dressInput)
+							: { rows: socketRows(dressInput), skeleton: dressInput.skeleton },
 					() => ({ rows: placeholderRows(dressInput), skeleton: dressInput.skeleton }),
 				)
 			: { rows: emptyRows(), skeleton: dressInput.skeleton };
@@ -1010,14 +1024,21 @@ function levelParts(mesh: MeshInput, level: MeshLevel): PlantPart[] {
 			() => placeholderFoliage(mesh, level),
 		);
 		parts.push(...partOf(kit, 'foliage', merged, TEXTURE_UV_STEPS));
-	} else if (level > 0) {
-		const cardLevel = level as 1 | 2;
-		const cards = stage(
-			placeholders,
-			() => cardMesh(mesh, cardLevel),
-			() => placeholderCardMesh(mesh, cardLevel),
-		);
-		parts.push(...partOf(kit, 'cards', cards, TEXTURE_UV_STEPS));
+	} else {
+		if (level > 0) {
+			const cardLevel = level as 1 | 2;
+			const cards = stage(
+				placeholders,
+				() => cardMesh(mesh, cardLevel),
+				() => placeholderCardMesh(mesh, cardLevel),
+			);
+			parts.push(...partOf(kit, 'cards', cards, TEXTURE_UV_STEPS));
+		}
+		// A plant whose pieces stand at sockets may draw a part of its own beside them, such as
+		// what lies in the soil under a stool.
+		const own =
+			!record.shoots && placeholders !== true ? grower(record.growth.model).foliage : undefined;
+		if (own) parts.push(...partOf(kit, 'foliage', own(mesh, level), TEXTURE_UV_STEPS));
 	}
 	const extras = stage(
 		placeholders,
