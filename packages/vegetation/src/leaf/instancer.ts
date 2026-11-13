@@ -356,10 +356,11 @@ export function dressShoots(input: DressInput): DressedShoots {
 				: input.skeleton;
 		return { rows: finishedRows(rows, skeleton), skeleton };
 	}
-	const { skeleton, axisOut } = trimmed;
+	const { skeleton, axisOut, nodeOut } = trimmed;
 	for (const row of rows) {
 		const axis = axisOut[row.axis] as number;
 		row.axis = axis;
+		row.node = nodeOut[row.node] as number;
 		row.record = skeleton.axes.record[axis] as number;
 	}
 	return { rows: finishedRows(rows, skeleton), skeleton };
@@ -757,6 +758,7 @@ function packRows(rows: readonly Row[], bounds: DressInput['skeleton']['bounds']
 		bent: new Uint8Array(count).fill(BENT_UP),
 		order: new Uint32Array(count),
 		back: new Float32Array(count * 3),
+		node: new Uint32Array(count),
 	};
 	rows.forEach((row, r) => {
 		out.prototype[r] = row.prototype;
@@ -766,6 +768,7 @@ function packRows(rows: readonly Row[], bounds: DressInput['skeleton']['bounds']
 		out.record[r] = row.record;
 		out.phase[r] = row.phase;
 		out.back.set(row.back, r * 3);
+		out.node[r] = row.node;
 	});
 	const ranked = spaceRanks(rows, bounds);
 	ranked.forEach((row, rank) => {
