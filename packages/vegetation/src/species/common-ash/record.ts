@@ -437,7 +437,7 @@ export const record: Species = {
 			// cutting class among them; each cap sits above its figure, and the low tier's just under
 			// the owner's cap for a tree.
 			kitBytes: { low: 2_680_000, medium: 3_150_000, high: 5_900_000, ultra: 11_600_000 },
-			// The ash as its frame of branch ends, measured on 14 November 2026 at seed 11 over every
+			// The ash as its frame of branch ends, measured at seed 11 over every
 			// variant and the seasons the walk grows: its largest variant is 6.67, 6.73, 6.81 and 6.93
 			// MB from the coarsest tier up, the keys' bunches and its first card level's supporting
 			// wood among them; each cap is that measure and a twentieth, by the lead's ruling for a
