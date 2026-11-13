@@ -28,6 +28,8 @@ import {
 } from '../grow/frame-measure';
 import { frame as commonAlder } from './common-alder/directed';
 import { record as commonAlderRecord } from './common-alder/record';
+import { frame as holmOak } from './holm-oak/directed';
+import { record as holmOakRecord } from './holm-oak/record';
 import { frame as silverBirch } from './silver-birch/directed';
 import { record as silverBirchRecord } from './silver-birch/record';
 import { frame as weepingWillow } from './weeping-willow/directed';
@@ -94,6 +96,18 @@ const HELD: readonly Held[] = [
 		plumb: ['trunk', 'whip'],
 		// The heads' foliage stands above the highest wood.
 		tall: [0.93, 1.02],
+	},
+	{
+		id: 'holm-oak',
+		spec: holmOak,
+		record: holmOakRecord,
+		counts: { stem: 8, arm: 16, fork: 32, twig: 96 },
+		// Six outer stems stand a sixth of a turn apart, and the two inner ones lean where they will.
+		round: { rule: 'stem', gap: 80, lean: 0.2 },
+		base: { arm: 0.65, fork: 0.65, twig: 0.65 },
+		plumb: [],
+		// The top masses' foliage stands above the highest twig.
+		tall: [0.97, 1.06],
 	},
 ];
 
