@@ -120,6 +120,9 @@ describe('the saguaro frame', () => {
 			expect(Math.abs(Math.sin(heading - (primary[0] as number)))).toBeLessThan(1e-6);
 		// The plane holds arms to both sides.
 		expect(primary.some((heading) => Math.cos(heading - (primary[0] as number)) < 0)).toBe(true);
+		// It stands across the view from +Z, which a whole picture is taken from: every arm leaves
+		// along the X axis, so none hides behind the stem or another arm.
+		for (const heading of primary) expect(Math.abs(Math.sin(heading))).toBeLessThan(1e-6);
 		for (let variant = 1; variant < 6; variant++) {
 			const headings = headingsOf(grow(variant).skeleton).sort((a, b) => a - b);
 			const even = (2 * Math.PI) / headings.length;

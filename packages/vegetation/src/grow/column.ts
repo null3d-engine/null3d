@@ -248,8 +248,11 @@ function armPlans(input: GrowInput, growth: Column, height: number): ArmPlan[] {
 	const tiers = arms.tiers;
 	const count = Math.max(0, Math.round(spreadAt(arms.count, draw(input, Purpose.Arms))));
 	if (tiers.length === 0) return [];
-	const turn = draw(input, Purpose.ArmAzimuth) * 2 * PI;
 	const planar = input.variant < arms.plane;
+	// A plane of arms stands across the view from +Z, the side a whole picture of the plant is
+	// taken from, so the picture shows every arm clear of the stem. Arms round the stem start at a
+	// turn of their own.
+	const turn = planar ? 0 : draw(input, Purpose.ArmAzimuth) * 2 * PI;
 	const plans: ArmPlan[] = [];
 	for (let k = 0; k < count; k++) {
 		const tier = tiers[k % tiers.length] as ColumnArmTier;
