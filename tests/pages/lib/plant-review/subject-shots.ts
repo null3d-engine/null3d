@@ -517,44 +517,89 @@ export function belowShot(subjects: PlantSubjects, lens: Lens, options: BelowOpt
 	};
 }
 
-/** The rows the foot and the top of a plant seen from a low eye land on. */
-const LOW_ROWS = { foot: 0.95, top: 0.08 } as const;
-/** The share of a stemless plant's height at which the low eye stands. */
-const LOW_EYE_SHARE = 0.15;
+/** The share of a trunkless plant's height at which the low eye stands. */
+const LOW_EYE_SHARE = 0.07;
+/** How far from the plant's foot the low eye stands, as a share of its height: inside its rim. */
+const LOW_STAND_SHARE = 0.45;
+/** The row share on which the plant's foot lands, seen from the low eye. */
+const LOW_FOOT_ROW = 0.92;
 
 /**
- * The view of a plant with no trunk from a low eye beside it, as picture 03 of a tuft or a rosette
- * shows it: the camera near the ground, looking up through the plant, its foot on the frame's lower
- * edge and its top near the upper one.
+ * The view of a plant with no trunk from a low eye, as picture 03 of a tuft, a rosette or a mound
+ * shows it: the lens just above the ground and inside the plant's rim, pitched up until the plant's
+ * foot lands near the frame's lower edge. The shoot bases then stand at the bottom centre, the
+ * leaves arch over the lower part of the frame, and the sky stands above them. A camera outside the
+ * rim that held the whole plant would look over it at the sky.
  */
 export function lowShot(subjects: PlantSubjects, lens: Lens, turn: number): Solved {
 	const tall = subjects.height;
 	if (!(tall > 0)) return absent('the plant has no height to look up');
-	const eye = Math.max(LOWEST_EYE, Math.min(EYE, LOW_EYE_SHARE * tall));
-	const above = rowAngle(LOW_ROWS.top, lens.fov);
-	const below = -rowAngle(LOW_ROWS.foot, lens.fov);
-	const distance = distanceSpanning(tall, eye, above + below);
-	const pitch = Math.atan2(tall - eye, distance) - above;
+	const eye = Math.max(LOWEST_EYE, LOW_EYE_SHARE * tall);
+	const distance = LOW_STAND_SHARE * tall;
+	// The foot lies below the eye by the angle its row takes below the line of sight.
+	const pitch = -Math.atan2(eye, distance) - rowAngle(LOW_FOOT_ROW, lens.fov);
 	const out = facing(turn);
 	const foot = subjects.foot;
 	const position: V3 = [foot[0] + out[0] * distance, foot[1] + eye, foot[2] + out[2] * distance];
 	return {
-		kind: 'the plant from a low eye beside it',
+		kind: 'the plant from a low eye inside its rim',
 		camera: pitched(position, [-out[0], 0, -out[2]], pitch, distance),
 		points: [
 			{
 				name: "the plant's foot",
 				at: foot,
-				within: [0.3, LOW_ROWS.foot - 0.06, 0.7, LOW_ROWS.foot + 0.06],
+				within: [0.4, LOW_FOOT_ROW - 0.06, 0.6, LOW_FOOT_ROW + 0.06],
 			},
 			{
 				name: "the plant's top",
 				at: [foot[0], foot[1] + tall, foot[2]],
-				within: [0.2, LOW_ROWS.top - 0.06, 0.8, LOW_ROWS.top + 0.06],
+				within: [0.3, -50, 0.7, 0.4],
 			},
 		],
-		regions: [{ name: 'the plant over the lower half', box: [0.1, 0.5, 0.9, 1], min: 0.15 }],
+		regions: [{ name: 'the leaves over the lower frame', box: [0.1, 0.4, 0.9, 1], min: 0.2 }],
 		facts: { eye, stand: distance, pitch: pitch / DEG },
+	};
+}
+
+/** The share of a trunkless plant's height at which the eye stands under its leaves. */
+const RIM_EYE_SHARE = 0.12;
+/** How far from the plant's foot that eye stands, and how far out it looks, as shares of its reach. */
+const RIM_STAND_SHARE = 0.3;
+const RIM_AIM_SHARE = 0.8;
+/** The height it looks at, as a share of the plant's height: the leaves' arch over the rim. */
+const RIM_AIM_HEIGHT = 0.6;
+
+/**
+ * The view from under the leaves of a plant with no trunk, as picture 05 of a tuft or a mound shows
+ * it: the lens low under the leaves, a third of the way out from the foot, looking outward and up at
+ * the leaves' arch over the rim, so the lower faces of the outer leaves fill the frame.
+ */
+export function underRimShot(subjects: PlantSubjects, turn: number): Solved {
+	const tall = subjects.height;
+	const reach = subjects.reach;
+	if (!(tall > 0) || !(reach > 0)) return absent('the plant has no leaves to stand under');
+	const out = facing(turn);
+	const foot = subjects.foot;
+	const position: V3 = [
+		foot[0] + out[0] * RIM_STAND_SHARE * reach,
+		foot[1] + Math.max(LOWEST_EYE, RIM_EYE_SHARE * tall),
+		foot[2] + out[2] * RIM_STAND_SHARE * reach,
+	];
+	const arch: V3 = [
+		foot[0] + out[0] * RIM_AIM_SHARE * reach,
+		foot[1] + RIM_AIM_HEIGHT * tall,
+		foot[2] + out[2] * RIM_AIM_SHARE * reach,
+	];
+	return {
+		kind: "the leaves' lower faces from under the plant's rim",
+		camera: { position, target: arch },
+		points: [{ name: "the leaves' arch over the rim", at: arch, within: [0.4, 0.4, 0.6, 0.6] }],
+		regions: [{ name: 'the leaves overhead', box: [0, 0, 1, 1], min: 0.2 }],
+		facts: {
+			eye: position[1] - foot[1],
+			stand: RIM_STAND_SHARE * reach,
+			pitch: Math.atan2(arch[1] - position[1], (RIM_AIM_SHARE - RIM_STAND_SHARE) * reach) / DEG,
+		},
 	};
 }
 

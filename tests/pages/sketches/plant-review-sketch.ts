@@ -79,8 +79,8 @@ import {
 	forkShot,
 	insideShot,
 	junctionShot,
-	lowShot,
 	type Solved,
+	underRimShot,
 } from '../lib/plant-review/subject-shots';
 import { isAbsent, type PlantSubjects, subjectsOfSkeleton } from '../lib/plant-review/subjects';
 import { BACKGROUND_COLOURS, type PlantView, VIEW_SPECS } from '../lib/plant-review/views';
@@ -1076,14 +1076,14 @@ export default defineSketch(async (ctx) => {
 			}
 			case 'crown-underside': {
 				// From under a great limb, looking back up along it into the crown. A plant with no
-				// trunk has no limb to stand under, so it is seen from a low eye beside it, up through
-				// its leaves.
+				// trunk has no limb to stand under, so it is seen from under its own rim, looking out
+				// and up at the lower faces of its leaves.
 				const found = solvedAt(
 					view,
 					lens,
 					() =>
 						isAbsent(subjectsOf().trunk)
-							? lowShot(subjectsOf(), lens, turn)
+							? underRimShot(subjectsOf(), turn)
 							: crownUndersideShot(subjectsOf(), lens, { turn }),
 					0,
 					0.1,
