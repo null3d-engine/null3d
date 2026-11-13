@@ -762,9 +762,13 @@ function growFull(kit: SpeciesKitData, options: GrowOptions): GrownPlant {
 	// keeps its own size. An instanced plant draws its cards, and a merged plant its foliage mesh;
 	// both are scaled through the skeleton, and each is measured at its own drawn level.
 	const merged = record.lod.nearFoliage === 'merged';
+	// A directed crown lays its trunk and its fronds at the variant's drawn height itself: a palm
+	// grows taller by its trunk, and a scale of the skeleton alone would leave the pieces at its
+	// sockets their own size.
 	const target =
 		!options.cutting &&
 		placeholders !== true &&
+		record.growth.model !== 'frond-crown' &&
 		(merged
 			? grower(record.growth.model).foliage !== undefined
 			: record.lod.nearFoliage === 'instanced' && kit.prototypes.length > 0)
