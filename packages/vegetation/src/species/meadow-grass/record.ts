@@ -171,13 +171,15 @@ export const record: Species = {
 			// 68,951 bytes, 19,468 of them the root ball of stills 14 and 21, and its cap keeps a
 			// twentieth above that read, as the lead ruled for the roots the pictures ask for. Drawn
 			// at once at the tallest view, the first variant reads 22,268 triangles at the high tier
-			// and 31,436 at the ultra; the two card levels read 658 and 354 at most. The other caps
-			// keep about fifteen per cent above their reads before the card bake's cut, and the
-			// nearest level's holds the ultra tier.
+			// and 31,436 at the ultra; the two card levels read 658 and 354 at most. The card bake's
+			// cut and the blades' quarter twist moved the second card level from 300 to 354, so its
+			// cap keeps a twentieth above that read, as the lead ruled. The other caps keep about
+			// fifteen per cent above their reads before the card bake's cut, and the nearest level's
+			// holds the ultra tier.
 			variantBytes: { low: 72_400, medium: 72_400, high: 72_400, ultra: 72_400 },
 			lod0Triangles: 33_700,
 			lod1Triangles: 680,
-			lod2Triangles: 350,
+			lod2Triangles: 372,
 			downloadBytes: 350_000,
 			downloadHalfBytes: 120_000,
 			growMilliseconds: 150,
