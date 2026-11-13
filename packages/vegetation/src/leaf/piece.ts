@@ -187,6 +187,29 @@ export interface PiecePrototype
 	 */
 	readonly part: number;
 	readonly parts: number;
+	/** Where the part may carry an extra, in the piece's rest frame, in rank order. */
+	readonly sites: readonly PieceSite[];
+}
+
+/**
+ * A place on a piece where an extra may stand: a thorn, a fruit, a cone or a catkin. It is given in
+ * the piece's rest frame, so a socket's turn and place carry it into the plant with the piece.
+ */
+export interface PieceSite {
+	/** A stem's end, or a node where a leaf stands. */
+	readonly kind: 'tip' | 'node';
+	readonly at: Vector3;
+	/** The stem's run at the site. */
+	readonly direction: Vector3;
+	/** The way a leaf's stalk leaves the stem at a node; the stem's run at a tip. */
+	readonly out: Vector3;
+	/** Metres along the piece from its attach point, which the bend weight reads. */
+	readonly along: number;
+	/**
+	 * The site's place in its kind's order, 0 first. A share of a kind's sites taken from the front
+	 * of the order is spread evenly along every stem.
+	 */
+	readonly rank: number;
 }
 
 /** The golden angle in degrees. */
@@ -572,6 +595,58 @@ export function pieceKey(rule: number, variant: number): number {
 	return rule * 16 + variant;
 }
 
+/** The bits of `value` below `bits`, reversed: the order that spreads a count evenly. */
+function reversed(value: number, bits: number): number {
+	let out = 0;
+	for (let k = 0; k < bits; k++) if (value & (1 << k)) out |= 1 << (bits - 1 - k);
+	return out;
+}
+
+/**
+ * The sites of a plan: one at every stem's end and one at every node that carries a leaf, each kind
+ * ranked so that a share taken from the front of its order is spread evenly over the piece.
+ *
+ * @param plan The plan, or one part of a split plan.
+ * @returns The sites, the tips first, each kind in rank order.
+ */
+export function pieceSites(plan: ShootPlan): PieceSite[] {
+	const tips: Omit<PieceSite, 'rank'>[] = [];
+	for (const points of plan.axes) {
+		const tip = points[points.length - 1] as AxisPoint;
+		const before = (points[points.length - 2] ?? points[0]) as AxisPoint;
+		const run: Vector3 = [
+			tip.at[0] - before.at[0],
+			tip.at[1] - before.at[1],
+			tip.at[2] - before.at[2],
+		];
+		const direction: Vector3 = length3(run[0], run[1], run[2]) < 1e-9 ? [0, 1, 0] : normalize3(run);
+		tips.push({ kind: 'tip', at: [...tip.at], direction, out: [...direction], along: tip.along });
+	}
+	// One site for a node, whatever number of leaves stand at it.
+	const nodes: Omit<PieceSite, 'rank'>[] = [];
+	const seen = new Set<string>();
+	for (const leaf of plan.leaves) {
+		const key = `${leaf.axis}:${leaf.node}`;
+		if (seen.has(key)) continue;
+		seen.add(key);
+		nodes.push({
+			kind: 'node',
+			at: [...leaf.at],
+			direction: [...leaf.stem],
+			out: [...leaf.radial],
+			along: leaf.along,
+		});
+	}
+	const ranked = (sites: Omit<PieceSite, 'rank'>[]): PieceSite[] => {
+		const bits = Math.max(1, Math.ceil(Math.log2(Math.max(2, sites.length))));
+		return sites
+			.map((site, index) => ({ site, order: reversed(index, bits) }))
+			.sort((a, b) => a.order - b.order)
+			.map(({ site }, rank) => ({ ...site, rank }));
+	};
+	return [...ranked(tips), ...ranked(nodes)];
+}
+
 /** The most vertices a part may hold at the finest tier, under the prototype's own limit. */
 export const PART_VERTICES_MOST = 60_000;
 
@@ -694,6 +769,7 @@ export function piecePrototypes(
 					attitude: rule.attitude,
 					part,
 					parts: parts.length,
+					sites: pieceSites(plan),
 					...meshedPlan(plan, leaves),
 				});
 		}
