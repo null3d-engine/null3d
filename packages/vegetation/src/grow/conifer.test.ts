@@ -738,7 +738,8 @@ describe("the Italian cypress's closed shell", () => {
 	const shell = cypress.growth as Conifer;
 	const rule = shell.patch.sockets;
 	const pitch = rule?.pitch ?? 0;
-	const fan = cypress.pieces?.find((piece) => piece.name === rule?.piece);
+	const names = typeof rule?.piece === 'string' ? [rule.piece] : (rule?.piece ?? []);
+	const fan = cypress.pieces?.find((piece) => piece.name === names[0]);
 	const fanLength = fan ? spreadMean(fan.stem.length) : 0;
 	const [foot, crown] = [
 		(shell.limbs.reach as readonly (readonly [number, number])[])[0]?.[0] ?? 0,
@@ -809,6 +810,20 @@ describe("the Italian cypress's closed shell", () => {
 					expect(hx * socket.at[0] + hz * socket.at[2]).toBeGreaterThan(0);
 			}
 		}
+	});
+
+	it('shares its sockets between the plume and the forked plume, each a fair share of them', () => {
+		const places = names.map((name) => cypress.pieces?.findIndex((piece) => piece.name === name));
+		expect(places.length).toBe(2);
+		for (const plan of plans) {
+			const counts = places.map(
+				(place) => plan.sockets.filter((socket) => socket.piece === place).length,
+			);
+			expect(counts.reduce((sum, count) => sum + count, 0)).toBe(plan.sockets.length);
+			for (const count of counts) expect(count / plan.sockets.length).toBeGreaterThan(0.4);
+		}
+		const skeleton = growConifer({ record: cypress, seed: 11, variant: 0, season: 'summer' });
+		expect(skeleton.buds.sockets?.piece).toBeDefined();
 	});
 
 	it("carries no fan on the leader's tip, where the top rows close the column", () => {

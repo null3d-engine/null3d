@@ -1175,13 +1175,12 @@ describe('the piece planner', () => {
 		expect(stated / held).toBeGreaterThan(1.5);
 	});
 
-	it("pictures each stem's overlapping sprays of a cypress fan as one brush run, where the needle rule leaves some out", async () => {
+	it("pictures each stem's overlapping sprays of a cypress plume as one brush run, where the needle rule leaves some out", async () => {
 		const module = await loadSpecies('italian-cypress');
-		const fan = CYPRESS.find((rule) => rule.name === 'fan');
-		expect(fan?.brushGap).toBeGreaterThan(0);
-		if (!fan) return;
-		for (let variant = 0; variant < fan.variants; variant++) {
-			const plan = planPiece(module.record, fan, pieceKey(0, variant), 3);
+		expect(CYPRESS.length).toBe(2);
+		for (const [r, fan] of CYPRESS.entries()) {
+			expect(fan.brushGap).toBeGreaterThan(0);
+			const plan = planPiece(module.record, fan, pieceKey(r, 0), 3);
 			const perStem = new Map<number, number>();
 			for (const leaf of plan.leaves) perStem.set(leaf.axis, (perStem.get(leaf.axis) ?? 0) + 1);
 			const stems = [...perStem].filter(([, count]) => count > 1).map(([axis]) => axis);

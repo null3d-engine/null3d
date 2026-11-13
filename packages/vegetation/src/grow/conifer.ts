@@ -101,6 +101,8 @@ const SHELL_LEAN_LEAST = 2;
 const SHELL_LEAN_MOST = 30;
 /** The passes that find how far a limb runs to stand inside a shell. */
 const SHELL_PASSES = 20;
+/** The limb number under which a socket draws its piece, past every real limb's. */
+const PIECE_DRAW = 4095;
 /** The most degrees a piece's line swings from the way its patch faces, to one side or the other. */
 const BOUGH_SWING = 35;
 /** The least and the most size of a piece in a patch over the piece's own. */
@@ -287,6 +289,8 @@ export interface ConiferSocket {
 	/** Its place in plant space, and the level direction its wood runs in there. */
 	readonly at: Vector3;
 	readonly heading: Vector3;
+	/** The piece it carries, by its place among the record's pieces, where the sockets name several. */
+	readonly piece?: number;
 }
 
 /**
@@ -312,6 +316,12 @@ export interface ConiferPlan {
 	readonly body: readonly ConiferNode[];
 	/** The height of the lowest patch's underside in metres. */
 	readonly crownBase: number;
+}
+
+/** The names of the pieces a conifer's sockets carry, as the record names them. */
+function socketPieceNames(g: Conifer): readonly string[] {
+	const piece = g.patch.sockets?.piece;
+	return piece === undefined ? [] : typeof piece === 'string' ? [piece] : piece;
 }
 
 /** The record's conifer growth, or an error for another model. */
@@ -813,7 +823,14 @@ function socketsOf(
 	if (!rule) return { twigs, sockets };
 	const pitch = Math.max(0.05, rule.pitch);
 	// A twig thins to the radius of the piece's own cut end.
-	const piece = record.pieces?.find((candidate) => candidate.name === rule.piece);
+	const names = socketPieceNames(g);
+	const piece = record.pieces?.find((candidate) => candidate.name === names[0]);
+	// Where the sockets name several pieces, each name's place among the record's pieces, which the
+	// kit builds in that order.
+	const choices =
+		names.length > 1
+			? names.map((name) => record.pieces?.findIndex((candidate) => candidate.name === name) ?? -1)
+			: [];
 	const tipRadius = piece?.stem.radius[0] ?? 0.01;
 	const pieceReach = piece ? spreadMean(piece.stem.length) * PIECE_REACH : 0;
 	const steepest = clamp(rule.lift, 0, LIFT_MOST);
@@ -1284,7 +1301,18 @@ function socketsOf(
 		.sort((a, b) => a.entry.key - b.entry.key || a.i - b.i)
 		.forEach(({ entry }, rank) => {
 			const { end: _end, ...socket } = entry.draft;
-			sockets.push({ ...socket, patch: entry.patch, rank });
+			const choice =
+				choices.length > 0
+					? choices[
+							Math.min(choices.length - 1, Math.floor(draw(PIECE_DRAW, rank) * choices.length))
+						]
+					: undefined;
+			sockets.push({
+				...socket,
+				patch: entry.patch,
+				rank,
+				...(choice !== undefined && choice >= 0 ? { piece: choice } : {}),
+			});
 		});
 	// The sockets stand in their patches' order, as the bud sites are written.
 	sockets.sort((a, b) => a.patch - b.patch || a.rank - b.rank);
@@ -1654,7 +1682,7 @@ export function planConifer(input: GrowInput): ConiferPlan {
 	/** The shell's metres from the trunk's line at a height, toward a direction in radians. */
 	const outline = (y: number, azimuth: number): number =>
 		y < shellFrom || y > shellTo ? 0 : levelReach(y) * stretch((azimuth * 180) / PI);
-	const socketPiece = record.pieces?.find((piece) => piece.name === g.patch.sockets?.piece);
+	const socketPiece = record.pieces?.find((piece) => piece.name === socketPieceNames(g)[0]);
 	const pieceLength = socketPiece ? spreadMean(socketPiece.stem.length) : 0;
 	let outlineMost = 0;
 	for (let k = 0; k <= SHELL_STEPS; k++)
@@ -2239,7 +2267,12 @@ export function growConifer(input: GrowInput): MacroSkeleton {
 			light: 1,
 			axis: wood.axis,
 			woodRadius: socket.radius,
-			socket: { scale: socket.scale, rank: socket.rank, lobe: socket.patch },
+			socket: {
+				scale: socket.scale,
+				rank: socket.rank,
+				lobe: socket.patch,
+				...(socket.piece !== undefined ? { piece: socket.piece } : {}),
+			},
 		});
 	}
 	return builder.finish(plan.crownBase);

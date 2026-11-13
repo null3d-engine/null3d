@@ -771,6 +771,12 @@ function growthProblems(record: Species, out: string[]): void {
 			if (!patch.sockets)
 				out.push("growth.patch.kind is 'shell' but growth.patch.sockets is absent");
 		}
+		const named = patch.sockets?.piece;
+		for (const name of named === undefined ? [] : typeof named === 'string' ? [named] : named)
+			if (!record.pieces?.some((piece) => piece.name === name))
+				out.push(
+					`growth.patch.sockets.piece names '${name}', which is none of the record's pieces`,
+				);
 		const rise = patch.sockets?.rise;
 		if (rise !== undefined && !(rise > 0))
 			out.push(`growth.patch.sockets.rise is ${rise}; it is metres and must be above 0`);

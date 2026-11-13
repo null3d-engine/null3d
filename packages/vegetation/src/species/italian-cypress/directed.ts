@@ -160,7 +160,8 @@ export const directed: Species = {
 			width: [0.02, 0.03],
 			depth: 1,
 			sockets: {
-				piece: 'fan',
+				// Each socket takes the plume of still 21 or the forked plume of still 08.
+				piece: ['fan', 'fork'],
 				// Picture 04: about twenty fans round the column where it is widest, each as wide as
 				// its spacing, and the rows' tips 0.23 to 0.29 of the column's width apart up it, 0.74
 				// of a fan's height. The fan of picture 21 is 0.38 of its length wide, so at 0.52 m a

@@ -81,10 +81,16 @@ export function kitPiece(piece: PiecePrototype, index: number): UncardedPrototyp
 	};
 }
 
-/** The piece that a record's sockets carry, by name, where its growth names one. */
+/**
+ * The piece that a record's sockets carry, by name, where its growth names one; the first, where
+ * it names several and each socket names its own.
+ */
 function socketPiece(record: Species): string | undefined {
 	const growth = record.growth;
-	if (growth.model === 'conifer') return growth.patch.sockets?.piece;
+	if (growth.model === 'conifer') {
+		const piece = growth.patch.sockets?.piece;
+		return typeof piece === 'string' ? piece : piece?.[0];
+	}
 	return growth.model === 'frame' ? growth.sockets.piece : undefined;
 }
 

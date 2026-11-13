@@ -884,13 +884,14 @@ export interface Conifer {
 		readonly depth: number;
 		/**
 		 * The sockets that fill a patch: the piece each carries, by its name among the record's
-		 * pieces, the metres between one socket and the next over the patch's dome, and the most
+		 * pieces, or several names, each socket taking one of them by a draw, the metres between one
+		 * socket and the next over the patch's dome, and the most
 		 * degrees above level that a piece leaves its socket at, where the dome faces the sky. On a
 		 * shell the pitch is the metres between neighbours in a row, and each piece stands up the
 		 * shell, leaning out from it by the lift's degrees. Absent, a patch carries no socket.
 		 */
 		readonly sockets?: {
-			readonly piece: string;
+			readonly piece: string | readonly string[];
 			readonly pitch: number;
 			readonly lift: number;
 			/**
