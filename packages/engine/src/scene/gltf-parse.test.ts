@@ -2019,9 +2019,16 @@ describe('trees of cluster patches', () => {
 		expect(message(broken(withWords([4, 3, 0, 0, 3, 3, 1, 0])))).toContain(
 			'patch 0 names no whole triangles of its tree',
 		);
-		// A patch that is its own parent.
+		// A patch that is its own parent, and one whose parent comes after it.
 		expect(message(broken(withWords([0, 3, 1, 0, 3, 3, 1, 0])))).toContain(
 			'patch 0 names the patch 1 as its parent',
+		);
+		expect(message(broken(withWords([0, 3, 2, 0, 3, 3, 0, 0])))).toContain(
+			'patch 0 names the patch 2 as its parent',
+		);
+		// Two patches that name one run of the tree's indices.
+		expect(message(broken(withWords([0, 3, 0, 0, 0, 3, 0, 0])))).toContain(
+			'patches 0 and 1 name one index',
 		);
 		// An index past the box's vertices.
 		expect(
