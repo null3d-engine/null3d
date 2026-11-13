@@ -3,8 +3,9 @@
 // the little past it that rows draw to, draws its prototype at the kit's one tier. The switch
 // distance follows the page's view: its render height, its lens and its switch bias. The count is
 // taken from the worst of a few stated eyes: a standing person beside the trunk, one at the crown's
-// edge, and, where asked, an eye inside the plant's fullest foliage, where most rows stand within
-// the switch distance at once.
+// edge, and, where asked, eyes inside the plant: at each shoot's own place, at the crown's middle and
+// on a grid through the rows' box, so the count finds where most rows stand within the switch
+// distance at once.
 import type { PlantAsset, SpeciesKitData } from '../asset';
 import { length3, pow } from '../core/math';
 import { DETAILS, type Vec3 } from '../core/types';
@@ -40,6 +41,13 @@ const BESIDE_TRUNK = 0.5;
 
 /** The most rows tried as the place of an eye inside the foliage. */
 const FOLIAGE_EYES = 1024;
+
+/**
+ * Eyes a side of the grid laid through the box of the plant's rows, which finds the places between
+ * shoots where the most rows stand in range at once: on a pine, the most a shoot's own place sees
+ * falls about a tenth short of the most between them.
+ */
+const GRID_EYES = 9;
 
 /**
  * The factor that a page's distance-switch bias gives every switch distance: two to the power of
@@ -84,8 +92,8 @@ export interface DrawnAtOnce {
 
 /**
  * The triangles one copy draws at once from the worst of the stated eyes: beside the trunk and at
- * the crown's edge at a standing person's height, and, where asked, at the shoot row whose
- * neighbours draw the most. The nearest level's meshes draw whole, and each row whose bounds come
+ * the crown's edge at a standing person's height, and, where asked, inside the plant: at the shoot
+ * rows' own places, at the crown's middle and on a grid through the rows' box. The nearest level's meshes draw whole, and each row whose bounds come
  * within the switch distance at the view, past which rows give way to cards, draws at the kit's
  * tier. A row's bounds are its prototype's reach from the row's place at the row's scale.
  *
@@ -145,6 +153,24 @@ export function drawnAtOnce(
 				rows.position[r * 3 + 2] as number,
 			],
 		]);
+	if (inside && rows.count > 0) {
+		// The crown's middle, and a grid through the box the rows stand in.
+		eyes.push(['foliage', [centre[0] as number, centre[1] as number, centre[2] as number]]);
+		const low = [Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY];
+		const high = [Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY];
+		for (let r = 0; r < rows.count; r++)
+			for (let k = 0; k < 3; k++) {
+				const v = rows.position[r * 3 + k] as number;
+				low[k] = Math.min(low[k] as number, v);
+				high[k] = Math.max(high[k] as number, v);
+			}
+		const step = (k: number, i: number) =>
+			(low[k] as number) + (((high[k] as number) - (low[k] as number)) * i) / (GRID_EYES - 1);
+		for (let i = 0; i < GRID_EYES; i++)
+			for (let j = 0; j < GRID_EYES; j++)
+				for (let k = 0; k < GRID_EYES; k++)
+					eyes.push(['foliage', [step(0, i), step(1, j), step(2, k)]]);
+	}
 	let worst: DrawnAtOnce = { triangles: -1, rows: 0, eye: 'trunk', at: [0, 0, 0] };
 	for (const [eye, at] of eyes) {
 		const count = countFrom(at);

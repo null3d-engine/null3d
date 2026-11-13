@@ -7,8 +7,9 @@
 // eye, the same wherever the scene's eye stands, so the budget holds from any eye and a copy's grant
 // moves only when the order of distances does: as the eye walks towards a copy, the copies nearer
 // than it only drop out, so its grant only rises, and past it only falls. A copy that holds a grant
-// keeps it while the scene stays within the budget, and a new grant must fit a twentieth inside it,
-// so two copies at nearly one distance do not trade a grant back and forth.
+// stands a metre nearer in the order than it is and keeps its grant while the scene stays within the
+// budget, and a new grant must fit a twentieth inside it, so copies at nearly one distance do not
+// trade a grant back and forth as the camera sways.
 
 import type { PlantAsset, SpeciesKitData } from '../asset';
 import { log } from '../core/math';
@@ -25,8 +26,16 @@ export const GRANT_TEXEL = 2;
 /** The share of the budget that a new grant must fit inside. */
 const NEW_GRANT_SHARE = 0.95;
 
+/**
+ * Metres nearer than its distance that a copy holding a grant stands in the order, so a newcomer
+ * takes its place only when it is clearly nearer, not at every step of a camera that sways.
+ */
+export const HOLD_MARGIN = 1;
+
 /** One copy that may draw real pieces, as the eye sees it. */
 export interface BudgetCandidate {
+	/** The copy's own key, which its last grant is kept by. */
+	readonly id: number;
 	/** Metres from the eye to the copy. */
 	readonly distance: number;
 	/** The triangles its real pieces draw at once when they draw to its switch, from its worst eye. */
@@ -36,18 +45,25 @@ export interface BudgetCandidate {
 }
 
 /**
- * The copies nearest first: by their distance to the whole metre, then by their place in the list,
- * so two copies at nearly one distance do not trade places at every step of the eye.
+ * The copies nearest first, by their exact distance, a copy that holds a grant standing a margin
+ * nearer than it is; two at one distance by their keys.
  *
  * @param candidates The copies.
+ * @param last The grant each copy holds, by its key.
  * @returns Their indices, nearest first.
  */
-export function nearestFirst(candidates: readonly { readonly distance: number }[]): number[] {
+export function nearestFirst(
+	candidates: readonly BudgetCandidate[],
+	last?: ReadonlyMap<number, number>,
+): number[] {
+	const place = candidates.map(
+		(c) => c.distance - ((last?.get(c.id) ?? GRANT_NONE) > GRANT_NONE ? HOLD_MARGIN : 0),
+	);
 	const order = candidates.map((_, i) => i);
 	order.sort(
 		(a, b) =>
-			Math.floor((candidates[a] as { distance: number }).distance) -
-				Math.floor((candidates[b] as { distance: number }).distance) || a - b,
+			(place[a] as number) - (place[b] as number) ||
+			(candidates[a] as BudgetCandidate).id - (candidates[b] as BudgetCandidate).id,
 	);
 	return order;
 }
@@ -57,21 +73,23 @@ export function nearestFirst(candidates: readonly { readonly distance: number }[
  *
  * @param candidates The copies that may draw real pieces.
  * @param budget The scene's triangles for real pieces.
- * @param last The grants of the last hand-out, one per copy in the same order, if any.
- * @returns One grant per copy: none, to the switch or to the texel range.
+ * @param last The grant each copy holds from the last hand-out, by its key.
+ * @returns One grant per copy, in the list's order: none, to the switch or to the texel range.
  */
 export function handOut(
 	candidates: readonly BudgetCandidate[],
 	budget: number,
-	last?: Uint8Array,
+	last?: ReadonlyMap<number, number>,
 ): Uint8Array {
 	if (!Number.isFinite(budget) || budget < 0)
 		throw new Error(`@null3d/vegetation: a pieces budget of ${budget} is no count of triangles.`);
-	const order = nearestFirst(candidates);
+	const order = nearestFirst(candidates, last);
 	const grants = new Uint8Array(candidates.length);
 	// A grant the copy held is kept to the whole budget; a new one must fit a twentieth inside it.
 	const limit = (i: number, grant: number) =>
-		(last?.[i] ?? GRANT_NONE) >= grant ? budget : budget * NEW_GRANT_SHARE;
+		(last?.get((candidates[i] as BudgetCandidate).id) ?? GRANT_NONE) >= grant
+			? budget
+			: budget * NEW_GRANT_SHARE;
 	let spent = 0;
 	// Every copy to its switch, nearest first, until the first that does not fit.
 	for (const i of order) {
@@ -81,7 +99,7 @@ export function handOut(
 		spent += cost;
 		grants[i] = GRANT_SWITCH;
 	}
-	// Then on to the texel range, nearest first, with what is left.
+	// Then on to the texel range, nearest first, with what is left, until the first that does not fit.
 	for (const i of order) {
 		if (grants[i] !== GRANT_SWITCH) continue;
 		const c = candidates[i] as BudgetCandidate;

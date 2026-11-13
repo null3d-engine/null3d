@@ -18,6 +18,9 @@ import { standInNearPool } from './stand-in';
 /** Metres the camera moves before the pool hands its budget out again. */
 const MOVE = 0.5;
 
+/** The most copies one placement in a pool holds, which spaces the copies' keys. */
+const COPIES_PER_PLACEMENT = 2 ** 24;
+
 /**
  * The near pool's caps, the preset's by default, and the camera it hands pieces out from.
  *
@@ -90,7 +93,8 @@ export function createNearPool(ctx: SketchContext, options: NearPoolOptions = {}
 	const most = options.copies ?? caps.copies;
 	if (!Number.isFinite(budget) || budget < 0)
 		throw new Error(`@null3d/vegetation: a near pool of ${budget} triangles is no budget.`);
-	const members: { member: PoolMember; last: Uint8Array }[] = [];
+	const members: { member: PoolMember; serial: number; last: Uint8Array }[] = [];
+	let serials = 0;
 	const eye = new Float64Array(3);
 	const handed = new Float64Array(3);
 	let fresh = true;
@@ -99,13 +103,16 @@ export function createNearPool(ctx: SketchContext, options: NearPoolOptions = {}
 
 	const handAll = () => {
 		const list: BudgetCandidate[] = [];
-		const owner: number[] = [];
-		const last: number[] = [];
-		members.forEach(({ member, last: held }, m) => {
+		const last = new Map<number, number>();
+		members.forEach(({ member, serial, last: held }) => {
 			const place = member.copies.position;
 			for (let copy = 0; copy < member.copies.count; copy++) {
 				const costs = member.costOf(copy);
+				// A copy's key is its placement's serial and its own index, so its grant stays its own
+				// however the list is ordered or culled.
+				const id = serial * COPIES_PER_PLACEMENT + copy;
 				list.push({
+					id,
 					distance: Math.hypot(
 						(place[copy * 3] as number) - (eye[0] as number),
 						(place[copy * 3 + 1] as number) - (eye[1] as number),
@@ -114,13 +121,12 @@ export function createNearPool(ctx: SketchContext, options: NearPoolOptions = {}
 					toSwitch: costs.toSwitch,
 					toTexel: costs.toTexel,
 				});
-				owner.push(m);
-				last.push(held[copy] as number);
+				if ((held[copy] as number) !== GRANT_NONE) last.set(id, held[copy] as number);
 			}
 		});
-		const grants = handOut(list, budget, Uint8Array.from(last));
+		const grants = handOut(list, budget, last);
 		// The nearest copies first, and no more of them than the pool's count of copies.
-		const order = nearestFirst(list);
+		const order = nearestFirst(list, last);
 		let granted = 0;
 		for (const i of order) {
 			if (grants[i] === GRANT_NONE) continue;
@@ -155,7 +161,11 @@ export function createNearPool(ctx: SketchContext, options: NearPoolOptions = {}
 			return triangles;
 		},
 		join(member) {
-			const entry = { member, last: new Uint8Array(member.copies.count) };
+			if (member.copies.count > COPIES_PER_PLACEMENT)
+				throw new Error(
+					`@null3d/vegetation: a placement of ${member.copies.count} copies passes the near pool's ${COPIES_PER_PLACEMENT}.`,
+				);
+			const entry = { member, serial: serials++, last: new Uint8Array(member.copies.count) };
 			members.push(entry);
 			fresh = true;
 			return () => {
