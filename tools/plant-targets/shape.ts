@@ -6,7 +6,13 @@
 //
 // Lengths are shares of the plant's height unless a figure says otherwise, so a figure read from a
 // picture of any size compares with one read from another.
-import { type Box, components, PIECE_BRIDGE, rowSpans } from '../lib/plant-review/references.ts';
+import {
+	axisRuns,
+	type Box,
+	components,
+	PIECE_BRIDGE,
+	rowSpans,
+} from '../lib/plant-review/references.ts';
 
 /** Height bands of an outline's radius profile, from the ground up. */
 export const ENVELOPE_BANDS = 16;
@@ -64,33 +70,6 @@ const GRID_CELL_FLOOR = 0.01;
 export function rounded(value: number, digits = 4): number {
 	const fixed = Number(value.toFixed(digits));
 	return fixed === 0 ? 0 : fixed;
-}
-
-/**
- * Each row's run of plant nearest the axis: its first and last column, or -1 for an empty row.
- * Below the crown the run is the stem, apart from the boughs and the foliage that hang beside it.
- */
-export function axisRuns(mask: Uint8Array, width: number, box: Box, axis: number): Int32Array {
-	const runs = new Int32Array((box.bottom + 1) * 2).fill(-1);
-	for (let y = box.top; y <= box.bottom; y++) {
-		let start = -1;
-		let nearest = Number.POSITIVE_INFINITY;
-		for (let x = box.left; x <= box.right + 1; x++) {
-			const on = x <= box.right && mask[y * width + x] !== 0;
-			if (on && start < 0) start = x;
-			if (!on && start >= 0) {
-				const end = x - 1;
-				const distance = axis < start ? start - axis : axis > end ? axis - end : 0;
-				if (distance < nearest) {
-					nearest = distance;
-					runs[y * 2] = start;
-					runs[y * 2 + 1] = end;
-				}
-				start = -1;
-			}
-		}
-	}
-	return runs;
 }
 
 /**
