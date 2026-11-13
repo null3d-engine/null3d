@@ -9,6 +9,7 @@ import {
 	type FramePlan,
 	type FrameSpec,
 	outlineRadius,
+	outlineSpan,
 } from './frame';
 
 /** The degrees a run of an axis may stray from its first piece and still count as straight. */
@@ -83,25 +84,51 @@ export function longestStraight(axis: FrameAxis): number {
 
 /**
  * The largest drop in radius between neighbouring nodes of an axis, as a share of the axis's
- * thickest radius. An axis that thins evenly over many nodes drops a small share at each. The drop
- * just past a node where another axis leaves is the fork's own and is not counted.
+ * thickest radius. An axis that thins evenly over many nodes drops a small share at each. Just past
+ * a node where other axes leave, the axis may also drop by what those axes took of its
+ * cross-section, and only the drop beyond that is counted.
  *
  * @param axis The axis.
- * @param forks The axis's nodes where another axis leaves.
+ * @param forks For each of the axis's nodes where other axes leave, the share of its radius the
+ *   axis keeps past it when it gives up the whole of their cross-sections.
  * @returns The share, 0 for an axis of one radius.
  * @category api/vegetation
  */
-export function steepestStep(axis: FrameAxis, forks?: ReadonlySet<number>): number {
+export function steepestStep(axis: FrameAxis, forks?: ReadonlyMap<number, number>): number {
 	let thickest = 0;
 	for (const node of axis.nodes) thickest = Math.max(thickest, node.radius);
 	let most = 0;
-	for (let k = 1; k < axis.nodes.length; k++)
-		if (!forks?.has(k - 1))
-			most = Math.max(
-				most,
-				Math.abs((axis.nodes[k - 1] as FrameNode).radius - (axis.nodes[k] as FrameNode).radius),
-			);
+	for (let k = 1; k < axis.nodes.length; k++) {
+		const from = (axis.nodes[k - 1] as FrameNode).radius;
+		const drop = Math.abs(from - (axis.nodes[k] as FrameNode).radius);
+		const kept = forks?.get(k - 1);
+		most = Math.max(most, kept === undefined ? drop : Math.max(0, drop - from * (1 - kept)));
+	}
 	return thickest > 0 ? most / thickest : 0;
+}
+
+/**
+ * For each node of an axis where other axes leave, the share of its radius the axis keeps past it
+ * when it gives up the whole of their cross-sections: the root of one less the sum of the squares
+ * of their radii over its own.
+ *
+ * @param plan The frame.
+ * @param index The axis's index in the plan.
+ * @returns The kept share at each such node.
+ * @category api/vegetation
+ */
+export function forkShares(plan: FramePlan, index: number): Map<number, number> {
+	const axis = plan.axes[index] as FrameAxis;
+	const taken = new Map<number, number>();
+	for (const child of plan.axes) {
+		if (child.parent !== index) continue;
+		const at = (axis.nodes[child.parentNode] as FrameNode).radius;
+		const share = Math.min(0.95, child.base / Math.max(1e-9, at));
+		taken.set(child.parentNode, (taken.get(child.parentNode) ?? 0) + share * share);
+	}
+	const kept = new Map<number, number>();
+	for (const [node, squares] of taken) kept.set(node, Math.sqrt(Math.max(0.05, 1 - squares)));
+	return kept;
 }
 
 /**
@@ -315,9 +342,16 @@ export function crownBands(plan: FramePlan, spec: FrameSpec, sides = 8, bands = 
 			const high = ((band + 1) / bands) * plan.scale;
 			let built = 0;
 			for (const patch of plan.patches) {
-				if (patch.centre[1] + patch.depth / 2 < low || patch.centre[1] - patch.depth / 2 > high)
-					continue;
-				built = Math.max(built, patch.centre[0] * c + patch.centre[2] * s + patch.width / 2);
+				// A patch is as wide in a band as its rounded body is at the band's nearest height.
+				const off = Math.max(0, low - patch.centre[1], patch.centre[1] - high);
+				const share = off / Math.max(1e-9, patch.depth / 2);
+				if (share >= 1) continue;
+				built = Math.max(
+					built,
+					patch.centre[0] * c +
+						patch.centre[2] * s +
+						(patch.width / 2) * Math.sqrt(1 - share * share),
+				);
 			}
 			row.push({
 				height: (band + 0.5) / bands,
@@ -403,9 +437,7 @@ export function crownFaults(
 	most = 1.2,
 ): CrownFault[] {
 	const out: CrownFault[] = [];
-	const foot = typeof spec.outline === 'number' ? 0 : (spec.outline[0]?.[0] ?? 0);
-	const top =
-		typeof spec.outline === 'number' ? 1 : (spec.outline[spec.outline.length - 1]?.[0] ?? 1);
+	const { foot, top } = outlineSpan(spec);
 	crownBands(plan, spec, sides, bands).forEach((row, side) => {
 		row.forEach((band, k) => {
 			if (band.height < foot || band.height > 0.9 * top || band.stated <= 0) return;
@@ -414,5 +446,82 @@ export function crownFaults(
 				out.push({ side: (side * 360) / sides, band: k, height: band.height, fill });
 		});
 	});
+	return out;
+}
+
+/**
+ * The pairs of a frame's axes whose wood passes through each other: two axes, neither grown from
+ * the other, with a node of each nearer than the sum of the two radii. Two axes that leave one
+ * parent are read past their first fifth, since they stand together where they leave.
+ *
+ * @param plan The frame.
+ * @returns The pairs, each as the two axes' indices.
+ * @category api/vegetation
+ */
+export function woodThrough(plan: FramePlan): [number, number][] {
+	const out: [number, number][] = [];
+	const count = plan.axes.length;
+	/** Each axis's forebears, itself among them. */
+	const lines = plan.axes.map((_, index) => {
+		const line = new Set<number>();
+		for (let up = index; up >= 0; up = (plan.axes[up] as FrameAxis).parent) line.add(up);
+		return line;
+	});
+	// A box round each axis's wood, so two axes far apart are not read node by node.
+	const boxes = plan.axes.map((axis) => {
+		const box = [
+			Number.POSITIVE_INFINITY,
+			Number.POSITIVE_INFINITY,
+			Number.POSITIVE_INFINITY,
+			Number.NEGATIVE_INFINITY,
+			Number.NEGATIVE_INFINITY,
+			Number.NEGATIVE_INFINITY,
+		];
+		for (const node of axis.nodes) {
+			box[0] = Math.min(box[0] as number, node.x - node.radius);
+			box[1] = Math.min(box[1] as number, node.y - node.radius);
+			box[2] = Math.min(box[2] as number, node.z - node.radius);
+			box[3] = Math.max(box[3] as number, node.x + node.radius);
+			box[4] = Math.max(box[4] as number, node.y + node.radius);
+			box[5] = Math.max(box[5] as number, node.z + node.radius);
+		}
+		return box;
+	});
+	for (let i = 0; i < count; i++)
+		for (let j = i + 1; j < count; j++) {
+			if ((lines[i] as Set<number>).has(j) || (lines[j] as Set<number>).has(i)) continue;
+			const p = boxes[i] as number[];
+			const q = boxes[j] as number[];
+			if (
+				(p[0] as number) > (q[3] as number) ||
+				(q[0] as number) > (p[3] as number) ||
+				(p[1] as number) > (q[4] as number) ||
+				(q[1] as number) > (p[4] as number) ||
+				(p[2] as number) > (q[5] as number) ||
+				(q[2] as number) > (p[5] as number)
+			)
+				continue;
+			const a = plan.axes[i] as FrameAxis;
+			const b = plan.axes[j] as FrameAxis;
+			const siblings = a.parent === b.parent;
+			let through = false;
+			for (let k = 0; k < a.nodes.length && !through; k++) {
+				if (siblings && (a.along[k] as number) < 0.2) continue;
+				const one = a.nodes[k] as FrameNode;
+				for (let m = 0; m < b.nodes.length; m++) {
+					if (siblings && (b.along[m] as number) < 0.2) continue;
+					const other = b.nodes[m] as FrameNode;
+					const reach = one.radius + other.radius;
+					const dx = one.x - other.x;
+					const dy = one.y - other.y;
+					const dz = one.z - other.z;
+					if (dx * dx + dy * dy + dz * dz < reach * reach) {
+						through = true;
+						break;
+					}
+				}
+			}
+			if (through) out.push([i, j]);
+		}
 	return out;
 }

@@ -93,6 +93,11 @@ export interface TubeDetail {
 	readonly sections: number;
 	/** Metres the longest step between rings may reach. */
 	readonly step: number;
+	/**
+	 * Whether a peeling bark's strips stand on the wood at the nearest level. A triangle maximum
+	 * folds them away once it coarsens the wood under them. They stand when absent.
+	 */
+	readonly fins?: boolean;
 }
 
 /**
@@ -374,6 +379,8 @@ export class AxisRings {
 	welded = 0;
 	/** Whether the first ring is the parent's own last ring, as a fork's leader's is. */
 	shared = false;
+	/** Whether the axis ends open: its last ring is a ring of its wood, not the apex of a rounded end. */
+	open = false;
 	/** Per ring: first vertex, sides, arc length on the path, `v` at the centre. */
 	first = new Int32Array(16);
 	sides = new Int32Array(16);

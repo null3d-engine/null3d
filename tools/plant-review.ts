@@ -13,7 +13,7 @@
 // when none answers there. tools/lib/plant-review/README.md describes every part.
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { isAbsolute, join, resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { isSpeciesId, loadSpecies } from '../packages/vegetation/src/core/registry.ts';
 import { REPO_ROOT } from '../tests/lib/server.ts';
 import type { PlantReviewQuery } from '../tests/pages/lib/plant-review/query.ts';
@@ -84,6 +84,7 @@ import {
 } from './lib/plant-review/render.ts';
 import { pictureRulings, reviewDataOfSpecies } from './lib/plant-review/review-data.ts';
 import { type SheathTarget, sheathTargetOf } from './lib/plant-review/sheath.ts';
+import { referenceFolder as storeFolder } from './lib/plant-review/store.ts';
 import {
 	mergeVerdict,
 	toolVerdict,
@@ -91,10 +92,6 @@ import {
 	type Verdict,
 } from './lib/plant-review/verdict.ts';
 
-/** Where the reference folders are when `--refs` names a slug. */
-const REFERENCES =
-	process.env.NULL3D_PLANT_REFERENCES ??
-	join(REPO_ROOT, '.internal/coordination/tree-corpus/generated');
 /** Where runs go by default. */
 const RENDERS = join(REPO_ROOT, '.internal/coordination/tree-renders');
 /** The sketch time a still holds at, and the wind clock's time at a wind clip's first frame. */
@@ -751,8 +748,7 @@ function parts(): Set<string> {
 function referenceFolder(species: string): string | undefined {
 	const text = flag('refs') ? option('refs') : undefined;
 	const named = text ?? species;
-	const folder =
-		isAbsolute(named) || named.includes('/') ? resolve(named) : join(REFERENCES, named);
+	const folder = storeFolder(named);
 	if (existsSync(join(folder, 'INDEX.md')) || existsSync(folder)) return folder;
 	if (text)
 		throw new Error(`--refs ${text} is not a reference folder, and ${folder} does not exist`);

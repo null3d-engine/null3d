@@ -105,11 +105,12 @@ export function shootTriangles(kit: SpeciesKitData, rows: ShootRows, detail: Det
 
 /**
  * Triangles of one copy's nearest level: its meshes, wood included once it is meshed, and its shoot
- * rows at a tier.
+ * rows at the tier they draw at.
  *
  * @param kit The species' kit.
  * @param asset The grown variant.
- * @param detail The tier the variant grew at; the kit's by default.
+ * @param detail The tier the variant grew at, which its rows draw at unless a triangle maximum
+ *   moved them; the kit's by default.
  * @returns The count.
  * @category api/vegetation
  */
@@ -118,7 +119,11 @@ export function nearTriangles(
 	asset: PlantAsset,
 	detail: Detail = kit.detail,
 ): number {
-	return asset.levels[0].triangles + shootTriangles(kit, asset.shoots, detail);
+	// A triangle maximum may draw the rows at a lower tier, or draw cards in their place.
+	const drawn = asset.shootDetail ?? detail;
+	return (
+		asset.levels[0].triangles + (drawn === 'none' ? 0 : shootTriangles(kit, asset.shoots, drawn))
+	);
 }
 
 /**

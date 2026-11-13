@@ -21,9 +21,8 @@ export const record: Species = {
 	envelope,
 	roundBand,
 	// The sparsest form still reads as a bracken patch: six fronds of the colony's fifteen keep
-	// the four masses apart, half the blade area keeps the fronds leafy rather than bare stems,
-	// and coarsening past this merges the pinnae into a single blade.
-	sparse: { limbs: 0.4, leaves: 0.5, coarseness: 0.6 },
+	// the four masses apart.
+	sparse: { foliage: 0.4 },
 	growth: {
 		model: 'frond-colony',
 		// Still 01 and the turntable: about twenty fronds stand in one patch, their blades

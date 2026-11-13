@@ -201,6 +201,11 @@ export interface AxisTable {
 	readonly cutTo: Float32Array;
 	/** Whether each axis draws the grown bark layer rather than the young bark; 0 for young bark. */
 	readonly grownBark: Uint8Array;
+	/**
+	 * Each axis's index in the plant as grown, on a skeleton that axes were removed from, so a choice
+	 * keyed on an axis stays the same on the sparser plant. Absent on a skeleton as grown.
+	 */
+	readonly origin?: Uint32Array;
 }
 
 /**
@@ -227,6 +232,11 @@ export interface BudSites {
 	readonly axis: Uint32Array;
 	/** Wood radius at the bud, so the shoot's stem base matches it. */
 	readonly woodRadius: Float32Array;
+	/**
+	 * Each bud site's index in the plant as grown, on a skeleton that axes were removed from. Absent
+	 * on a skeleton as grown.
+	 */
+	readonly origin?: Uint32Array;
 	/**
 	 * What each bud site holds when the sites are sockets, the ends of a scaffold plant's branches,
 	 * each of which carries one piece of foliage. Absent on every other skeleton.
@@ -620,6 +630,54 @@ export class SkeletonBuilder {
 			height: max[1] as number,
 		};
 	}
+}
+
+/**
+ * A copy of a skeleton that shares no array with it, so one may be written or moved to another
+ * thread while the other is read.
+ *
+ * @param skeleton The skeleton.
+ * @returns The copy.
+ * @category api/vegetation
+ */
+export function skeletonCopy(skeleton: MacroSkeleton): MacroSkeleton {
+	const { axes, buds } = skeleton;
+	return {
+		...skeleton,
+		position: skeleton.position.slice(),
+		radius: skeleton.radius.slice(),
+		parent: skeleton.parent.slice(),
+		axisOf: skeleton.axisOf.slice(),
+		light: skeleton.light.slice(),
+		age: skeleton.age.slice(),
+		flags: skeleton.flags.slice(),
+		axes: {
+			...axes,
+			first: axes.first.slice(),
+			last: axes.last.slice(),
+			parent: axes.parent.slice(),
+			parentNode: axes.parentNode.slice(),
+			parentT: axes.parentT.slice(),
+			order: axes.order.slice(),
+			kind: axes.kind.slice(),
+			record: axes.record.slice(),
+			barkV: axes.barkV.slice(),
+			barkU: axes.barkU.slice(),
+			...(axes.origin ? { origin: axes.origin.slice() } : {}),
+		},
+		buds: {
+			...buds,
+			node: buds.node.slice(),
+			position: buds.position.slice(),
+			frame: buds.frame.slice(),
+			kind: buds.kind.slice(),
+			vigor: buds.vigor.slice(),
+			light: buds.light.slice(),
+			axis: buds.axis.slice(),
+			woodRadius: buds.woodRadius.slice(),
+			...(buds.origin ? { origin: buds.origin.slice() } : {}),
+		},
+	};
 }
 
 /**
