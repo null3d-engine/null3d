@@ -450,12 +450,12 @@ export const record: Species = {
 			// classes stand in the cutting kit alone, so the plant's kit carries the crown's classes
 			// only, while a studio piece pays for its own leaves and no card levels.
 			kitBytes: { low: 1_150_000, medium: 1_880_000, high: 3_300_000, ultra: 7_650_000 },
-			// The largest of seed 11's six variants measures 5.24, 5.36, 5.52 and 5.69 MB.
-			variantBytes: { low: 5_280_000, medium: 5_400_000, high: 5_560_000, ultra: 5_730_000 },
+			// The largest of seed 11's six variants measures 6.17, 6.21, 6.25 and 6.30 MB.
+			variantBytes: { low: 6_210_000, medium: 6_250_000, high: 6_290_000, ultra: 6_340_000 },
 			lod0Triangles: 2_900_000,
-			// The largest variant draws 110,503 triangles at the middle card level and 10,633 at the
-			// farthest, so each cap sits just above its own figure.
-			lod1Triangles: 115_000,
+			// The largest variant draws at most 121,797 triangles at the middle card level and 7,956
+			// at the farthest over the four tiers, so each cap sits just above its own figure.
+			lod1Triangles: 124_000,
 			lod2Triangles: 11_000,
 			downloadBytes: 1_000_000,
 			downloadHalfBytes: 350_000,
