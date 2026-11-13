@@ -73,6 +73,12 @@ export interface PieceLeaves {
 	 * `hang` is named, the leaf takes no turn toward the sky side.
 	 */
 	readonly face?: { readonly turn: number; readonly spread: number };
+	/**
+	 * A flat rosette: the stem's leaves fan out in the plane that faces the piece's sky side, spread
+	 * evenly to `reach` degrees either side of the stem, the lowest leaf the widest, and each blade
+	 * faces the sky side within `tilt` degrees. An oak's end tuft stands this way.
+	 */
+	readonly fan?: { readonly reach: number; readonly tilt: number };
 }
 
 /** The side stems along one stem of a piece. */
@@ -170,6 +176,7 @@ const Purpose = {
 	SideStart: 0x45,
 	Roll: 0x46,
 	Kink: 0x47,
+	Fan: 0x48,
 } as const;
 
 /**
@@ -280,6 +287,32 @@ export function planPiece(
 		return { ...leaf, direction, rotation };
 	};
 
+	/**
+	 * Lays the leaves from `first` on into a flat rosette: evenly through the fan either side of
+	 * their stem, in the plane that faces the sky side, the lowest leaf the widest.
+	 */
+	const fanned = (first: number, fan: NonNullable<PieceLeaves['fan']>, axis: number): void => {
+		const count = leaves.length - first;
+		const up: Vector3 = [-down[0], -down[1], -down[2]];
+		for (let k = 0; k < count; k++) {
+			const leaf = leaves[first + k] as PlannedLeaf;
+			// The stem's own run laid in the rosette's plane, and the plane's other axis.
+			const ahead = square(leaf.stem, up, [0, 1, 0]);
+			const side = normalize3(cross3(up, ahead, [0, 0, 0]));
+			// The lowest leaf stands widest, to one side and the other in turn.
+			const angle = radians(fan.reach) * (1 - (k + 0.5) / count) * (k % 2 === 0 ? 1 : -1);
+			const direction = normalize3([
+				ahead[0] * cos(angle) + side[0] * sin(angle),
+				ahead[1] * cos(angle) + side[1] * sin(angle),
+				ahead[2] * cos(angle) + side[2] * sin(angle),
+			]);
+			const tilt = (draw(Purpose.Fan, axis, k) * 2 - 1) * fan.tilt;
+			const rotation = [0, 0, 0, 1];
+			quatFromFrame(direction, turn(up, direction, tilt), rotation);
+			leaves[first + k] = { ...leaf, direction, rotation };
+		}
+	};
+
 	const grow = (stem: PieceStem, start: StemStart): void => {
 		if (axes.length >= STEMS_MOST)
 			throw new Error(`@null3d/vegetation: the piece '${rule.name}' passed ${STEMS_MOST} stems`);
@@ -315,6 +348,7 @@ export function planPiece(
 		let zig = 1;
 		let node = 0;
 		let kinks = 0;
+		const ownLeaves = leaves.length;
 		// Leaves that stand closer than a third of a leaf's length crowd into a tuft at the stem's end.
 		const crowded = gap > 0 ? Math.min(1, Math.max(0, 1 - gap / (leafMean / 3))) : 0;
 		const azimuthStart = draw(Purpose.Start, axis) * 360;
@@ -385,6 +419,7 @@ export function planPiece(
 			if (atNode) node++;
 		}
 		span = Math.max(span, along);
+		if (stem.leaves?.fan) fanned(ownLeaves, stem.leaves.fan, axis);
 		points[points.length - 1] = { ...(points[points.length - 1] as AxisPoint), unitEnd: true };
 		if (stem.bud !== false) addBudCluster(buds, shoots.bud, tipRadius, at, direction, sky, along);
 		for (const [s, sides] of (stem.sides ?? []).entries()) {

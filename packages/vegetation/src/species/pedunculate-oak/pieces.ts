@@ -2,34 +2,30 @@
 // top. Each value names the reference picture it was measured on; stills of the bare winter oak are
 // named as such.
 //
-// The cut branch of still 21 is a metre tall, which makes a leaf tuft 19 centimetres across and a
-// leaf 9 to 10 centimetres. The record's leaf is 12, so a piece draws its leaves at 0.8 of that
-// until the record's own length moves.
+// The cut branch of still 21 is a metre tall, and a leaf tuft on it is 0.22 of that across, which
+// makes a leaf 10 to 11 centimetres. The record's leaf is 12, so a piece draws its leaves at 0.9 of
+// that until the record's own length moves.
 import type { PieceLeaves, PieceRule, PieceStem, PieceStudio } from '../../leaf/piece';
 
-/** A piece's leaf over the record's: 9.5 centimetres measured on still 21, over 12. */
-const LEAF_SCALE = 0.8;
+/** A piece's leaf over the record's: 10.8 centimetres measured on still 21, over 12. */
+const LEAF_SCALE = 0.9;
 
 /**
  * The tuft at a shoot's end. Stills 09, 10 and 21: six to ten leaves crowd in a shoot's last five
- * centimetres and radiate all round it, the outer ones standing wider than the inner.
+ * centimetres. Stills 21 and 22: they lie as one flat rosette that faces out of the branch's plane,
+ * fanned all round the shoot's tip, so a tuft is two leaf lengths across.
  */
-function tuft(length: number, leaves: number): PieceLeaves {
+function tuft(length: number, leaves: number, scale = LEAF_SCALE): PieceLeaves {
 	const run = 0.05;
 	return {
 		gap: run / leaves,
 		from: 1 - run / length,
-		angle: [
-			[1 - run / length, 85],
-			[1, 50],
-		],
-		angleSpread: 8,
-		// Stills 21 and 22: the blades of a tuft lie open to the sky side, face on to the camera.
-		skyward: 0.85,
+		angle: 60,
 		scale: [
-			[1 - run / length, LEAF_SCALE],
-			[1, LEAF_SCALE * 0.8],
+			[1 - run / length, scale],
+			[1, scale * 0.85],
 		],
+		fan: { reach: 150, tilt: 18 },
 	};
 }
 
@@ -41,8 +37,8 @@ function sideShoot(length: number, spread: number): PieceStem {
 	return {
 		length: { mean: length, spread },
 		radius: [0.004, 0.002],
-		kink: { length: 0.11, angle: 22 },
-		leaves: tuft(length, 7),
+		kink: { length: 0.13, angle: 16 },
+		leaves: tuft(length, 9),
 		sides: [
 			{
 				stem: { length: 0.08, radius: [0.0025, 0.0018], leaves: tuft(0.08, 6) },
@@ -59,7 +55,7 @@ function sideShoot(length: number, spread: number): PieceStem {
 /** The pedunculate oak's pieces. */
 export const PIECES: readonly PieceRule[] = [
 	// Still 21: a branch end a metre long, 1.2 centimetres thick at its cut. Five side shoots leave
-	// one at a time, one each 10 to 12 centimetres from 0.2 of its length, at 45 to 60 degrees. They
+	// one at a time, one each 10 to 12 centimetres from 0.2 of its length, at 50 to 70 degrees. They
 	// are 15 to 42 centimetres long, the longest at the middle. The stem ends in a tuft of its own.
 	{
 		name: 'branch-end',
@@ -69,28 +65,29 @@ export const PIECES: readonly PieceRule[] = [
 			length: { mean: 1, spread: 0.06 },
 			radius: [0.006, 0.0025],
 			kink: { length: 0.115, angle: 9 },
-			leaves: tuft(1, 8),
+			leaves: tuft(1, 9),
 			sides: [
 				{
-					stem: sideShoot(0.3, 0.1),
+					stem: sideShoot(0.4, 0.06),
 					gap: 0.115,
-					from: 0.17,
+					from: 0.13,
 					to: 0.75,
 					// Still 21 and the winter oak's 21: the side shoots stand left and right in turn, in
 					// one plane, which the photographs show face on.
 					arrangement: 'alternate',
-					angle: { mean: 52, spread: 8 },
+					angle: { mean: 63, spread: 7 },
 					lengthAlong: [
-						[0, 0.7],
-						[0.45, 1.25],
+						[0, 0.8],
+						[0.4, 1.1],
 						[1, 0.6],
 					],
 				},
 			],
 		},
 	},
-	// Still 22 and the winter oak's 22: a twig 35 centimetres long with three side shoots 6 to 10
-	// centimetres long at 50 to 60 degrees, and a tuft of five to seven leaves at each end.
+	// Still 22 and the winter oak's 22: a twig 35 centimetres long with three side shoots 10 to 14
+	// centimetres long at 50 to 60 degrees, and a tuft of five to seven leaves at each end. At that
+	// length its leaves are about 7.5 centimetres, 0.62 of the record's.
 	{
 		name: 'twig',
 		attitude: 'along',
@@ -99,13 +96,13 @@ export const PIECES: readonly PieceRule[] = [
 			length: { mean: 0.35, spread: 0.03 },
 			radius: [0.004, 0.002],
 			kink: { length: 0.09, angle: 12 },
-			leaves: tuft(0.35, 6),
+			leaves: tuft(0.35, 6, 0.62),
 			sides: [
 				{
 					stem: {
-						length: { mean: 0.08, spread: 0.02 },
+						length: { mean: 0.12, spread: 0.02 },
 						radius: [0.0025, 0.0018],
-						leaves: tuft(0.08, 6),
+						leaves: tuft(0.12, 6, 0.62),
 					},
 					gap: 0.09,
 					from: 0.18,
