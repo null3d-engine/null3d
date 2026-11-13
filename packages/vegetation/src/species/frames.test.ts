@@ -233,18 +233,19 @@ const HELD: readonly Held[] = [
 		directed: weepingWillowDirected,
 		heightMean: spreadMean(weepingWillowDirected.size.height),
 		record: weepingWillowRecord,
-		counts: { trunk: 1, great: 3, upper: 3, secondary: 6, branch: [18, 54], whip: [100, 400] },
-		// Six level limbs in three pairs leave no gap wider than a pair's share and its jitter.
+		counts: { trunk: 1, great: 3, upper: 3, secondary: 9, branch: [100, 200], whip: [600, 1400] },
+		// Nine level limbs, three to each great limb, leave no gap wider than a great limb's share
+		// and its jitter.
 		round: { rule: 'secondary', gap: 110, lean: 0.25 },
-		base: { great: 0.5, upper: 0.55, secondary: 0.55, branch: 0.5, whip: 0.3 },
+		base: { great: 0.5, upper: 0.55, secondary: 0.55, branch: 0.5, whip: 0.18 },
 		// A whip hangs by its own weight.
 		plumb: ['trunk', 'whip'],
 		// The heads' foliage stands above the highest wood.
 		through: 13,
 		crossings: [30, 4],
-		axesPerSocket: 1.242,
+		// Every whip and branch carries strands along it, so an axis carries several sockets.
+		axesPerSocket: 0.195,
 		tall: [0.93, 1.02],
-		open: ['spread'],
 	},
 	{
 		id: 'holm-oak',
@@ -252,15 +253,19 @@ const HELD: readonly Held[] = [
 		directed: holmOakDirected,
 		heightMean: spreadMean(holmOakDirected.size.height),
 		record: holmOakRecord,
-		counts: { stem: 8, arm: 16, fork: 32, twig: 96 },
-		// Six outer stems stand a sixth of a turn apart, and the two inner ones lean where they will.
+		counts: { stem: 10, arm: 20, fork: 40, branch: [110, 120], side: [20, 80], twig: [300, 1200] },
+		// Eight outer stems stand an eighth of a turn apart, and the two inner ones lean where they
+		// will.
 		round: { rule: 'stem', gap: 80, lean: 0.2 },
-		base: { arm: 0.65, fork: 0.65, twig: 0.65 },
+		base: { arm: 0.65, fork: 0.65, branch: 0.65, side: 0.5 },
 		plumb: [],
-		// The top masses' foliage stands above the highest twig.
-		through: 5,
-		crossings: [14, 5],
-		axesPerSocket: 1.583,
+		// Raised from 2 with the crown drawn in a quarter turn on to its turning video's width: the
+		// same wood stands nearer together there.
+		through: 3,
+		crossings: [11, 0],
+		// Every twig that clothes a clump is an axis that ends in a socket.
+		axesPerSocket: 1.08,
+		fine: ['twig'],
 		tall: [0.97, 1.06],
 	},
 	{
