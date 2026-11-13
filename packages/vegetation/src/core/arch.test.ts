@@ -1,9 +1,19 @@
 // The rules the shared curve states: a path cut for a level of detail never turns more between two
 // neighbouring segments than that level allows, whatever count is asked for; it turns one way only;
-// its length is the arch's; a straight run costs one segment; and the arch fitted to a part's
-// measured figures stands on them.
+// its length is the arch's; a straight run costs one segment; a chain of arches holds the same
+// bound where two of them meet; and the arch fitted to a part's measured figures stands on them.
 import { describe, expect, it } from 'bun:test';
-import { type Arch, archFromFigures, archPath, archSegments, MOST_TURN } from './arch';
+import {
+	type Arch,
+	type ArchChain,
+	archFromFigures,
+	archPath,
+	archSegments,
+	chainArches,
+	chainLength,
+	chainPath,
+	MOST_TURN,
+} from './arch';
 import { unitAt } from './hash';
 import { acos, radians } from './math';
 
@@ -23,6 +33,17 @@ function turns(path: ReturnType<typeof archPath>): number[] {
 		found.push(ax * by - ay * bx <= 0 ? angle : -angle);
 	}
 	return found;
+}
+
+/** Degrees between the last segment of one path and the first of the next laid on from its end. */
+function joinTurn(a: ReturnType<typeof archPath>, b: ReturnType<typeof archPath>): number {
+	const n = a.segments;
+	const ax = (a.out[n] as number) - (a.out[n - 1] as number);
+	const ay = (a.up[n] as number) - (a.up[n - 1] as number);
+	const bx = (b.out[1] as number) - (b.out[0] as number);
+	const by = (b.up[1] as number) - (b.up[0] as number);
+	const dot = (ax * bx + ay * by) / Math.sqrt((ax * ax + ay * ay) * (bx * bx + by * by));
+	return (acos(Math.min(1, Math.max(-1, dot))) * 180) / Math.PI;
 }
 
 /** The length of a path's segments together. */
@@ -164,6 +185,113 @@ describe('the shared curve', () => {
 	});
 });
 
+/** A chain drawn from a seed: two to five links, each turning either way with any stretch and power. */
+function drawnChain(seed: number): ArchChain {
+	const count = 2 + Math.floor(unitAt(seed, 20) * 4);
+	const links = Array.from({ length: count }, (_, k) => {
+		const { leave: _leave, ...link } = drawn(seed * 8 + k + 1);
+		return link;
+	});
+	return { leave: -30 + 120 * unitAt(seed, 21), links };
+}
+
+describe('a chain of arches', () => {
+	it('is the arch itself when it has one link', () => {
+		const arch = drawn(3);
+		const { leave, ...link } = arch;
+		const chain = chainPath({ leave, links: [link] }, 1, 7);
+		const alone = archPath(arch, 1, 7);
+		expect([...chain.out, ...chain.up, ...chain.along]).toEqual([
+			...alone.out,
+			...alone.up,
+			...alone.along,
+		]);
+	});
+
+	it('leaves each link in the direction the one before it ends in', () => {
+		for (let seed = 0; seed < 50; seed++) {
+			const chain = drawnChain(seed);
+			const arches = chainArches(chain);
+			expect(arches[0]?.leave).toBe(chain.leave);
+			for (let k = 1; k < arches.length; k++) {
+				const before = arches[k - 1] as Arch;
+				expect((arches[k] as Arch).leave).toBeCloseTo(before.leave - before.turn, 9);
+			}
+		}
+	});
+
+	it('never turns more between two segments than its level allows, joins included', () => {
+		for (let seed = 0; seed < 200; seed++) {
+			const chain = drawnChain(seed);
+			for (const level of LEVELS) {
+				const most = Math.max(...turns(chainPath(chain, level)).map(Math.abs));
+				expect(most).toBeLessThanOrEqual(MOST_TURN[level] + 1e-6);
+			}
+		}
+	});
+
+	it('cuts a join finer where its links cut alone would turn more than the level allows', () => {
+		// A short turn gathered hard toward its end, then an even turn: each link cut alone ends and
+		// starts within the bound, and the two half-turns at the join add up past it.
+		for (const level of LEVELS) {
+			const most = MOST_TURN[level];
+			const chain: ArchChain = {
+				leave: 30,
+				links: [
+					{ length: 1, turn: most * 0.92, power: 8.4 },
+					{ length: 0.62, turn: most * 1.96 },
+				],
+			};
+			const [a, b] = chainArches(chain).map((arch) => archPath(arch, level)) as [
+				ReturnType<typeof archPath>,
+				ReturnType<typeof archPath>,
+			];
+			expect(joinTurn(a, b)).toBeGreaterThan(most);
+			const joinedPath = chainPath(chain, level);
+			expect(Math.max(...turns(joinedPath).map(Math.abs))).toBeLessThanOrEqual(most + 1e-6);
+		}
+	});
+
+	it('keeps the length of its links and shares the length along the whole chain', () => {
+		for (let seed = 0; seed < 50; seed++) {
+			const chain = drawnChain(seed);
+			const path = chainPath(chain, 0, 64);
+			const total = chainLength(chain);
+			expect(measured(path)).toBeLessThanOrEqual(total * (1 + 1e-9));
+			expect(measured(path)).toBeGreaterThan(total * 0.995);
+			expect(path.along[0]).toBe(0);
+			expect(path.along[path.segments]).toBe(1);
+			for (let i = 1; i <= path.segments; i++)
+				expect(path.along[i] as number).toBeGreaterThan(path.along[i - 1] as number);
+		}
+	});
+
+	it('brings a blade down to the soil and lays it there', () => {
+		// A blade that rises, turns over to 75 degrees below level, then turns back up through those
+		// 75 degrees on a radius of 5 cm and lies level for 20 cm.
+		const radius = 0.05;
+		const chain: ArchChain = {
+			leave: 75,
+			links: [
+				{ length: 0.9, turn: 150, power: 2 },
+				{ length: radius * radians(75), turn: -75 },
+				{ length: 0.2, turn: 0 },
+			],
+		};
+		const path = chainPath(chain, 0);
+		const tip = path.segments;
+		expect(path.elevation[tip] as number).toBeCloseTo(0, 9);
+		// The lying run is level: its two ends stand at one height.
+		expect(path.up[tip] as number).toBeCloseTo(path.up[tip - 1] as number, 9);
+		expect(Math.max(...turns(path).map(Math.abs))).toBeLessThanOrEqual(MOST_TURN[0] + 1e-6);
+	});
+
+	it('is the same path each time', () => {
+		const chain = drawnChain(9);
+		expect([...chainPath(chain, 2, 5).out]).toEqual([...chainPath(chain, 2, 5).out]);
+	});
+});
+
 describe('an arch fitted to measured figures', () => {
 	it('stands on figures that one arch can meet', () => {
 		// The figures of a known arch, read back from its own path.
@@ -230,6 +358,13 @@ describe('an arch fitted to measured figures', () => {
 		expect(fit.miss).toBeLessThan(0.01);
 		expect(fit.arch.length).toBeGreaterThan(2.5);
 		expect(fit.arch.length).toBeLessThan(2.7);
+	});
+
+	it('points the tip at the angle read on the photograph', () => {
+		for (const tip of [0, 40, 75, 90]) {
+			const fit = archFromFigures({ leave: 80, tip, apex: 0.6, drop: 0.5, reach: 0.9 });
+			expect(fit.arch.leave - fit.arch.turn).toBeCloseTo(-tip, 9);
+		}
 	});
 
 	it('says how far it misses figures that no arch can meet', () => {

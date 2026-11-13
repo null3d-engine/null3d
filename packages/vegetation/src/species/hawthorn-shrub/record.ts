@@ -284,6 +284,10 @@ export const record: Species = {
 			// wedge base, three to four centimetres from base to tip, on a stalk about a quarter of that.
 			length: { mean: 0.035, spread: 0.006 },
 			outline: 'texture',
+			// This stalk grows the crown the species ships, and that crown keeps it. The branch pieces
+			// wear the twig photograph's stalk (`PIECE_LEAF` in pieces.ts): 1.25 centimetres, 0.36 of
+			// the blade, the median of eight full leaves on still 22. The record takes it when the
+			// plant built of pieces replaces this crown.
 			petiole: { length: 0.009, radius: 0.0005, flat: 0, droop: 10 },
 			fold: 8,
 			curl: 10,
@@ -413,10 +417,6 @@ export const record: Species = {
 	lod: {
 		nearFoliage: 'instanced',
 		switchPixels: [240, 12, 160],
-		// The cards stand a quarter larger than the shoots they picture, so a gap between one
-		// shoot's leaves falls on a neighbour's leaves rather than on sky, while the crown stays
-		// within the outline the camera frames.
-		cardGrow: 1.25,
 		// A card's twig is thinner than a pixel at a whole view, so each draws its supporting twig as
 		// a line wide enough to hold the leaf group in the picture, running on to the card's foliage.
 		cardStalk: 3,
@@ -448,9 +448,9 @@ export const record: Species = {
 	textures: 'own',
 	variants: 6,
 	seedSalt: 1870652341,
-	// A first pass at the floors a phone's lighter form keeps, set from the species' form and to
-	// be measured on the phone set before they are trusted.
-	sparse: { limbs: 0.5, leaves: 0.5, coarseness: 0.55 },
+	// The sparsest form keeps this share of the crown's shoots, each whole: about the leaf area
+	// below which the crown stops reading as its species.
+	sparse: { foliage: 0.11 },
 	roundBand,
 	cuttings: {
 		// Still 21: the branch keeps the spray's years of stiff twigs, bare between the leaf tufts.

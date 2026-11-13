@@ -22,16 +22,16 @@ import type { Rgb } from '../core/types';
 import { DETAILS, type Detail } from '../core/types';
 import { outlineMask, textureOutline } from '../leaf/outline';
 import type { UncardedPrototype } from '../leaf/shoot';
-import { SURFACE_EXTRA, SURFACE_LEAF, SURFACE_STEM } from '../leaf/writer';
+import { leafSurface, SURFACE_EXTRA, SURFACE_PIECE_SHEATH, SURFACE_STEM } from '../leaf/writer';
 import type { CardAtlas } from '../stages';
 import { rasterise, rasterTarget } from './raster';
 
 /**
- * Texels a side of one card cell by tier. A card first shows where its shoot spans the record's
- * first switch pixels, a few tens of pixels, so 64 texels hold it on every tier, as the oak's review
- * against its references shows; a finer cell costs four times the atlas memory for no visible gain.
- * A prototype without leaves (a bare winter twin) takes a cell of half the side: its card holds
- * thin stems and buds.
+ * Texels a side of one card cell by tier. The first card level starts where its longest shoot spans
+ * the record's first switch pixels, which on most species is more than a cell holds, so near its
+ * start a card is drawn larger than its picture; a finer cell costs four times the atlas memory. A
+ * prototype without leaves (a bare winter twin) takes a cell of half the side: its card holds thin
+ * stems and buds.
  *
  * @category api/vegetation
  */
@@ -148,6 +148,8 @@ export interface Palette {
 	readonly upper: Rgb;
 	readonly lower: Rgb;
 	readonly stem: Rgb;
+	/** A tuft's sheath colour at the column's foot, where the record gives one. */
+	readonly sheath?: Rgb;
 	readonly profile:
 		| { readonly upper: readonly number[]; readonly lower: readonly number[] }
 		| undefined;
@@ -155,8 +157,6 @@ export interface Palette {
 	readonly tip: number;
 	readonly mask: Uint8Array | undefined;
 	readonly extras: readonly Rgb[];
-	/** The width, in texels, of each card's guaranteed strand; 0 draws none. */
-	readonly strand: number;
 }
 
 /**
@@ -198,7 +198,8 @@ export function paletteOf(record: Species, manifest: TextureManifest): Palette {
 				: undefined;
 	const stem = manifest.bark?.young.mean ?? barkColourOf(record, manifest);
 	const extras = (record.extras ?? []).map((extra) => extra.colour);
-	const strand = record.lod.cardStrand ?? 0;
+	const sheathColour = record.growth.model === 'tuft' ? record.growth.sheathColour : undefined;
+	const sheath = sheathColour ? { sheath: sheathColour.foot } : {};
 	if (leaf) {
 		const outline = textureOutline(leaf);
 		const mask = outlineMask(outline.points, MASK_SIZE);
@@ -209,6 +210,7 @@ export function paletteOf(record: Species, manifest: TextureManifest): Palette {
 			upper: leaf.mean.upper,
 			lower: leaf.mean.lower,
 			stem,
+			...sheath,
 			profile: {
 				upper: normalised(leaf.profile.upper, areas(leaf.profile.upper)),
 				lower: normalised(leaf.profile.lower, areas(leaf.profile.lower)),
@@ -217,19 +219,18 @@ export function paletteOf(record: Species, manifest: TextureManifest): Palette {
 			tip,
 			mask,
 			extras,
-			strand,
 		};
 	}
 	return {
 		upper: optics?.reflectance ?? [0.08, 0.16, 0.04],
 		lower: optics?.reflectanceBack ?? optics?.reflectance ?? [0.08, 0.16, 0.04],
 		stem,
+		...sheath,
 		profile: undefined,
 		base: 0,
 		tip: 1,
 		mask: undefined,
 		extras,
-		strand,
 	};
 }
 
@@ -358,7 +359,7 @@ function drawPlane(
 		let nz = lerp(mesh.normals, 3, 2);
 		const facing = (nx * normal[0] + ny * normal[1] + nz * normal[2]) * toward;
 		let rgb: Rgb;
-		if (kind === SURFACE_LEAF) {
+		if (leafSurface(kind)) {
 			const u = lerp(mesh.uvs, 2, 0);
 			const v = lerp(mesh.uvs, 2, 1);
 			if (palette.mask) {
@@ -388,7 +389,8 @@ function drawPlane(
 				Math.max(0, Math.floor(lerp(mesh.uvs, 2, 0) * 8)),
 			);
 			rgb = palette.extras[index] ?? palette.stem;
-		} else rgb = palette.stem;
+		} else if (kind === SURFACE_PIECE_SHEATH) rgb = palette.sheath ?? palette.stem;
+		else rgb = palette.stem;
 		if (facing < 0) {
 			nx = -nx;
 			ny = -ny;
@@ -413,138 +415,9 @@ function drawPlane(
 		surface[at] = ox;
 		surface[at + 1] = oy;
 		surface[at + 2] = depth;
-		surface[at + 3] = (kind === SURFACE_LEAF ? 128 : 0) + Math.min(127, shade);
+		surface[at + 3] = (leafSurface(kind) ? 128 : 0) + Math.min(127, shade);
 		return true;
 	});
-	if (palette.strand > 0)
-		stampStrand(
-			mesh,
-			points,
-			rect,
-			size,
-			layer,
-			palette.strand,
-			palette,
-			color,
-			surface,
-			halfDepth,
-			toward,
-		);
-}
-
-/** One ring's centre on a card's plane: its texel, its depth and its shade byte. */
-interface StrandPoint {
-	readonly x: number;
-	readonly y: number;
-	readonly depth: number;
-	readonly shade: number;
-}
-
-/**
- * Stamps a connected strand along each stem's own axis, through the empty texels between the
- * leaves, so a card whose leaf islands are separate still holds one piece. The stem's rings are
- * written in order and share their metres along the shoot, so a run of stem vertices is grouped by
- * that value; a value that falls starts another axis and a new strand. A texel a leaf or a bud
- * already covers keeps its own colour and surface.
- */
-function stampStrand(
-	mesh: PrototypeArrays,
-	points: Float64Array,
-	rect: [number, number, number, number],
-	size: number,
-	layer: number,
-	width: number,
-	palette: Palette,
-	color: Uint8Array,
-	surface: Uint8Array,
-	halfDepth: number,
-	toward: number,
-): void {
-	const [rx, ry, rw, rh] = rect;
-	const along = (index: number) => mesh.uvs[index * 2 + 1] as number;
-	const centreOf = (ring: readonly number[]): StrandPoint => {
-		let x = 0;
-		let y = 0;
-		let depth = 0;
-		let shade = 0;
-		for (const index of ring) {
-			x += points[index * 3] as number;
-			y += points[index * 3 + 1] as number;
-			depth += points[index * 3 + 2] as number;
-			shade += mesh.colors[index * 4 + 3] as number;
-		}
-		const n = ring.length;
-		return {
-			x: x / n,
-			y: y / n,
-			depth: depth / n,
-			shade: Math.round(Math.min(255, Math.max(0, shade / n)) / 2),
-		};
-	};
-	const stamp = (cx: number, cy: number, depth: number, shade: number): void => {
-		const before = Math.floor((width - 1) / 2);
-		for (let dy = -before; dy < width - before; dy++)
-			for (let dx = -before; dx < width - before; dx++) {
-				const x = cx + dx;
-				const y = cy + dy;
-				if (x < 0 || y < 0 || x >= rw || y >= rh) continue;
-				const at = (layer * size * size + (ry + y) * size + rx + x) * 4;
-				if (color[at + 3] !== 0) continue;
-				color[at] = srgbByte(palette.stem[0]);
-				color[at + 1] = srgbByte(palette.stem[1]);
-				color[at + 2] = srgbByte(palette.stem[2]);
-				color[at + 3] = 255;
-				surface[at] = 128;
-				surface[at + 1] = 128;
-				surface[at + 2] = Math.round(
-					128 + 127 * Math.max(-1, Math.min(1, (-depth * toward) / halfDepth)),
-				);
-				surface[at + 3] = shade;
-			}
-	};
-	let ring: number[] = [];
-	let ringAlong = 0;
-	let chain: StrandPoint[] = [];
-	const closeRing = (): void => {
-		if (ring.length === 0) return;
-		chain.push(centreOf(ring));
-		ring = [];
-	};
-	const closeChain = (): void => {
-		closeRing();
-		if (chain.length >= 2) {
-			for (let k = 1; k < chain.length; k++) {
-				const a = chain[k - 1] as StrandPoint;
-				const b = chain[k] as StrandPoint;
-				const steps = Math.max(1, Math.ceil(length3(b.x - a.x, b.y - a.y, 0)));
-				for (let s = 0; s <= steps; s++) {
-					const t = s / steps;
-					stamp(
-						Math.round(a.x + (b.x - a.x) * t),
-						Math.round(a.y + (b.y - a.y) * t),
-						a.depth + (b.depth - a.depth) * t,
-						Math.round(a.shade + (b.shade - a.shade) * t),
-					);
-				}
-			}
-		}
-		chain = [];
-	};
-	const count = mesh.positions.length / 3;
-	for (let index = 0; index < count; index++) {
-		if ((mesh.colors[index * 4 + 2] as number) !== SURFACE_STEM) {
-			closeChain();
-			continue;
-		}
-		const metres = along(index);
-		if (ring.length > 0 && metres !== ringAlong) {
-			closeRing();
-			if (metres < ringAlong) closeChain();
-		}
-		if (ring.length === 0) ringAlong = metres;
-		ring.push(index);
-	}
-	closeChain();
 }
 
 /** The farthest a prototype's points stand from a plane through the centre, either way. */

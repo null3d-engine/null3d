@@ -306,9 +306,6 @@ export const record: Species = {
 		nearFoliage: 'instanced',
 		switchPixels: [50, 12, 160],
 		woodOrders: [2, 1],
-		// A card stands wider than the shoot it pictures, so the cards of neighbouring shoots meet
-		// and the column reads as one mass rather than a scatter of tufts.
-		cardGrow: 5.5,
 		// A card's cord is thinner than a pixel at a whole view, so the card draws a two-pixel stalk
 		// to the wood it grows from and runs it on to the foliage's centre.
 		cardStalk: 3,

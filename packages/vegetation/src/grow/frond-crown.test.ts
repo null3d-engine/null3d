@@ -199,10 +199,14 @@ function strayFromPlan(
 	return most;
 }
 
-/** The species' leaf meshes at every tier, low first, as the kit step builds them. */
+/** The leaf meshes a species' pieces take at every tier, low first, as the kit step builds them. */
 function leavesByTier(kit: SpeciesKitData): (readonly PrototypeArrays[])[] {
 	const builder = foliage(kit.record.foliage.kind);
-	return DETAILS.map((tier) => builder.leaves(kit.record, kit.manifest, tier));
+	return DETAILS.map((tier) =>
+		builder.pieceLeaves
+			? builder.pieceLeaves(kit.record, kit.manifest, tier)
+			: builder.leaves(kit.record, kit.manifest, tier),
+	);
 }
 
 describe('the frond-crown grower', () => {

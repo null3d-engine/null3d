@@ -54,6 +54,39 @@ const STRAIGHT_STEP = 3;
 /** Steps a trial course is summed over while its length is found, and the passes that find it. */
 const TRIAL_STEPS = 32;
 const LENGTH_PASSES = 22;
+/**
+ * The steps a course is walked in to find where it first runs under the crown's lower boundary, and
+ * the halvings that place the crossing inside a step.
+ */
+const UNDER_STEPS = 16;
+const UNDER_PASSES = 10;
+/**
+ * How far a crooked axis may stray from its own line, sideways and up or down, as shares of its
+ * rule's sway: wide enough that its mean line wanders, and bounded so it keeps its course.
+ */
+const WANDER_SIDE = 0.8;
+const WANDER_NOD = 0.5;
+/**
+ * Axes that keep apart: the share of an axis's length past which its wood is held clear of other
+ * wood (nearer its base it stands beside the wood it leaves), how many times an axis may be shaped,
+ * and the step between one shaping's hash keys and the next's.
+ */
+const OUTER_FROM = 0.2;
+const APART_TRIES = 8;
+/**
+ * The wood built so far is kept so that the wood near a point is found without a read of all of
+ * it: wood up to this radius, as a share of the height, stands in a grid of cells this wide, and
+ * the few thicker points are read one by one.
+ */
+const WOOD_THIN = 0.01;
+const WOOD_CELL = 0.03;
+/** Half the cells a grid holds along one line, which no plant's wood reaches. */
+const WOOD_CELLS = 4096;
+const SHAPE_STEP = 16384;
+/** The rise of a unit direction above which a parent stands near plumb and has no ground side. */
+const PLUMB_NEAR = 0.9;
+/** The least radius a bend may have, in diameters of the wood where it bends. */
+const BEND_DIAMETERS = 3.4;
 /** The thinnest wood of a frame, in metres. */
 const RADIUS_LEAST = 0.0008;
 /** The most of its parent's radius an axis may take where it leaves. */
@@ -146,6 +179,13 @@ export interface FramePatchRule {
 	 * hanging whip's or a leafy shoot's does. Left out, the patch stands at the axis's end.
 	 */
 	readonly along?: number;
+	/**
+	 * Sockets along the wood under the patch, beside the one at the wood's end: the share of the
+	 * plant's height from one to the next, and the degrees each stands out from the wood's line.
+	 * They run back from the end for half the patch's width, each turned on round the wood from the
+	 * last and none on the wood's underside. Left out, the patch has the one socket at the end.
+	 */
+	readonly sockets?: { readonly every: number; readonly angle: number };
 }
 
 /** What every axis rule states. */
@@ -239,6 +279,21 @@ export interface FrameBranchRule extends FrameAxisRule {
 	 * negative figure lowers them toward its ground side.
 	 */
 	readonly lift?: number;
+	/**
+	 * The least gap, as a share of the height, between the wood of one of these axes past its first
+	 * fifth and the wood of every axis built before it, the axis it leaves apart. An axis that
+	 * would run nearer is shaped again with other elbows, a few times, and the shape that stands
+	 * clearest is kept, so no limb runs along another or passes through it. Left out, the axes are
+	 * laid without regard to each other.
+	 */
+	readonly apart?: number;
+	/**
+	 * Degrees of the parent's ground side that no axis leaves toward, when they stand round it on a
+	 * spiral or a ring: their places are drawn in round its sky side, so a level limb carries nothing
+	 * straight beneath it. A parent that stands near plumb has no ground side and is clothed all
+	 * round. Left out, 0.
+	 */
+	readonly clear?: number;
 	/** Degrees each may stand off its place round the parent. */
 	readonly jitter?: number;
 	/** Degrees each leaves at, by its place, measured from plumb or from the parent's own direction. */
@@ -255,15 +310,35 @@ export interface FrameBranchRule extends FrameAxisRule {
 }
 
 /**
+ * One side of a crown's outline: what a whole view of the plant shows to one side of the trunk's
+ * line. A view gives two sides, and each is stated by itself.
+ *
+ * @category api/vegetation
+ */
+export interface FrameSide {
+	/** The direction round the plant that the side faces, in degrees from 0 to 360. */
+	readonly toward: number;
+	/** The crown's reach to this side as a share of the height, by the share of the height. */
+	readonly reach: Curve;
+	/**
+	 * The crown's lower boundary on this side, as the view that looks across the side shows it: the
+	 * height that no foliage stands under, by the distance from the trunk's line in that view, both
+	 * as shares of the height.
+	 */
+	readonly under: Curve;
+}
+
+/**
  * A plant's directed frame as a species states it.
  *
  * @category api/vegetation
  */
 export interface FrameSpec {
-	/** The crown's radius on its wide side as a share of the height, by the share of the height. */
-	readonly outline: Curve;
-	/** The crown's narrow side as a share of its wide side, and the degrees its wide side lies at. */
-	readonly plan: { readonly narrow: number; readonly turn: number };
+	/**
+	 * The crown's outline: its sides in their order round the plant, two or more. Between two sides
+	 * the plan runs as a quarter of an ellipse runs between its half-axes.
+	 */
+	readonly outline: readonly FrameSide[];
 	/** The stems. */
 	readonly stems: FrameStemRule;
 }
@@ -326,6 +401,8 @@ export interface FramePatch {
 	readonly depth: number;
 	/** The level direction the axis runs in at the patch, a unit vector. */
 	readonly along: Vector3;
+	/** The sockets along the wood under the patch: the metres between them and their angle. */
+	readonly sockets?: { readonly every: number; readonly angle: number };
 }
 
 /**
@@ -365,6 +442,17 @@ function unit(x: number, y: number, z: number): Vector3 {
 /** The degrees between two unit directions. */
 function between(a: Readonly<Vector3>, b: Readonly<Vector3>): number {
 	return (acos(clamp(a[0] * b[0] + a[1] * b[1] + a[2] * b[2], -1, 1)) * 180) / PI;
+}
+
+/**
+ * Where a lean stands after a turn, held inside a bound either way: the turn goes the way it was
+ * drawn where that keeps the lean inside, the other way where only that does, and to the bound's
+ * farther edge where neither does.
+ */
+function strayed(lean: number, turn: number, bound: number): number {
+	if (Math.abs(lean + turn) <= bound) return lean + turn;
+	if (Math.abs(lean - turn) <= bound) return lean - turn;
+	return lean >= 0 ? -bound : bound;
 }
 
 /** A course cut into points. */
@@ -469,6 +557,13 @@ function tipOf(
 	return [x, y, z];
 }
 
+/** A point of the wood already built. */
+interface WoodPoint {
+	readonly at: Vector3;
+	readonly radius: number;
+	readonly axis: number;
+}
+
 /** An axis while its plan is built. */
 interface Built {
 	rule: string;
@@ -486,8 +581,76 @@ interface Built {
 }
 
 /**
- * The crown outline's radius in metres at a height and a direction round the plant: the species'
- * wide-side radius, drawn in across the plan's wide side to the plan's narrow share.
+ * An outline that is the same to both sides of each of its two axes: the stated reach along one
+ * axis and a share of it along the other. It states a crown that one curve was read for, and no
+ * lower boundary; a crown read side by side states its sides.
+ *
+ * @param reach The crown's reach along its wide axis as a share of the height, by the share of the
+ * height.
+ * @param narrow The reach along the other axis as a share of that.
+ * @param turn The degrees round the plant that the wide axis lies at.
+ * @returns The four sides.
+ * @category api/vegetation
+ */
+export function evenOutline(reach: Curve, narrow: number, turn = 0): FrameSide[] {
+	const share = clamp(narrow, 0.5, 1);
+	const drawn: Curve =
+		typeof reach === 'number' ? reach * share : reach.map(([at, width]) => [at, width * share]);
+	return [0, 90, 180, 270].map((quarter) => ({
+		toward: (((turn + quarter) % 360) + 360) % 360,
+		reach: quarter % 180 === 0 ? reach : drawn,
+		under: 0,
+	}));
+}
+
+/** A side's reach at a share of the height; outside the heights the side states there is no crown. */
+function reachAt(side: FrameSide, at: number): number {
+	if (typeof side.reach !== 'number') {
+		const first = side.reach[0];
+		const last = side.reach[side.reach.length - 1];
+		if ((last && at > last[0]) || (first && at < first[0])) return 0;
+	}
+	return curveAt(side.reach, at);
+}
+
+/**
+ * The two stated sides a direction stands between, and each one's weight there: all the first's on
+ * the first side, all the second's on the second, as the squares of a quarter turn's cosine and
+ * sine between them.
+ */
+function sidesAt(
+	spec: FrameSpec,
+	azimuth: number,
+): {
+	readonly from: FrameSide;
+	readonly to: FrameSide;
+	readonly first: number;
+	readonly second: number;
+} {
+	const sides = spec.outline;
+	const degrees = ((((azimuth * 180) / PI) % 360) + 360) % 360;
+	for (let k = 0; k < sides.length; k++) {
+		const from = sides[k] as FrameSide;
+		const to = sides[(k + 1) % sides.length] as FrameSide;
+		const span = (((to.toward - from.toward) % 360) + 360) % 360 || 360;
+		const off = (((degrees - from.toward) % 360) + 360) % 360;
+		if (off > span) continue;
+		const quarter = ((off / span) * PI) / 2;
+		const c = cos(quarter);
+		const s = sin(quarter);
+		return { from, to, first: c * c, second: s * s };
+	}
+	const only = sides[0] as FrameSide;
+	return { from: only, to: only, first: 1, second: 0 };
+}
+
+/** A weight under which a side has no say in a direction. */
+const SIDE_LEAST = 1e-9;
+
+/**
+ * The crown outline's radius in metres at a height and a direction round the plant. On a stated
+ * side it is that side's reach; between two it is the radius of the quarter ellipse whose half-axes
+ * are the two reaches, so a view from either side shows the reach that side states.
  *
  * @param spec The frame.
  * @param scale The plant's height in metres.
@@ -497,19 +660,57 @@ interface Built {
  * @category api/vegetation
  */
 export function outlineRadius(spec: FrameSpec, scale: number, y: number, azimuth: number): number {
-	// Above the outline's last stated height and below its first there is no crown.
-	if (typeof spec.outline !== 'number') {
-		const first = spec.outline[0];
-		const last = spec.outline[spec.outline.length - 1];
-		if ((last && y / scale > last[0]) || (first && y / scale < first[0])) return 0;
+	const { from, to, first, second } = sidesAt(spec, azimuth);
+	const a = first > SIDE_LEAST ? reachAt(from, y / scale) : 1;
+	const b = second > SIDE_LEAST ? reachAt(to, y / scale) : 1;
+	// A side with no crown at the height draws the outline in to the trunk's line.
+	if (a <= 0 || b <= 0) return 0;
+	return scale / Math.sqrt(first / (a * a) + second / (b * b));
+}
+
+/**
+ * The height that no foliage may stand under at a place beside the plant, in metres. Each stated
+ * side's lower boundary is read as the view across that side shows it, by the place's distance from
+ * the trunk's line in that view, and the place answers to every side it stands on: the highest of
+ * their boundaries there.
+ *
+ * @param spec The frame.
+ * @param scale The plant's height in metres.
+ * @param x The place's x in metres.
+ * @param z The place's z in metres.
+ * @returns The height in metres.
+ * @category api/vegetation
+ */
+export function outlineUnder(spec: FrameSpec, scale: number, x: number, z: number): number {
+	let highest = 0;
+	for (const side of spec.outline) {
+		const toward = radians(side.toward);
+		const reach = x * cos(toward) + z * sin(toward);
+		if (reach >= 0) highest = Math.max(highest, curveAt(side.under, reach / scale));
 	}
-	const wide = curveAt(spec.outline, y / scale) * scale;
-	const off = azimuth - radians(spec.plan.turn);
-	const narrow = clamp(spec.plan.narrow, 0.5, 1);
-	// An ellipse's radius toward a direction, its long half-axis 1 and its short one the narrow share.
-	const c = cos(off);
-	const s = sin(off) / narrow;
-	return wide / Math.sqrt(c * c + s * s);
+	return highest * scale;
+}
+
+/**
+ * The heights an outline's crown stands between, as shares of the plant's height: the lowest
+ * height any side states a reach at, and the highest.
+ *
+ * @param spec The frame.
+ * @returns The crown's foot and its top.
+ * @category api/vegetation
+ */
+export function outlineSpan(spec: FrameSpec): { readonly foot: number; readonly top: number } {
+	let foot = Number.POSITIVE_INFINITY;
+	let top = Number.NEGATIVE_INFINITY;
+	for (const side of spec.outline) {
+		const stated = typeof side.reach !== 'number' && side.reach.length > 0;
+		foot = Math.min(foot, stated ? (side.reach[0] as readonly [number, number])[0] : 0);
+		top = Math.max(
+			top,
+			stated ? (side.reach[side.reach.length - 1] as readonly [number, number])[0] : 1,
+		);
+	}
+	return { foot, top };
 }
 
 /**
@@ -529,11 +730,29 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 	const scale = spreadAt(record.size.height, draw(Purpose.Height));
 	const axes: Built[] = [];
 	const patches: FramePatch[] = [];
+	/** The wood built so far, each point with its radius and its axis, for the axes that keep apart. */
+	const thick: WoodPoint[] = [];
+	const thin = new Map<number, WoodPoint[]>();
+	const cell = WOOD_CELL * scale;
+	const cellOf = (at: number): number => Math.floor(at / cell);
+	const cellKey = (i: number, j: number, k: number): number =>
+		((i + WOOD_CELLS) * 2 * WOOD_CELLS + j + WOOD_CELLS) * 2 * WOOD_CELLS + k + WOOD_CELLS;
+	const addWood = (point: WoodPoint): void => {
+		if (point.radius > WOOD_THIN * scale) {
+			thick.push(point);
+			return;
+		}
+		const key = cellKey(cellOf(point.at[0]), cellOf(point.at[1]), cellOf(point.at[2]));
+		const held = thin.get(key);
+		if (held) held.push(point);
+		else thin.set(key, [point]);
+	};
 	// The height of the crown's widest row, in metres: the middle the outline is drawn in toward.
 	let middle = scale / 2;
-	if (typeof spec.outline !== 'number') {
-		let widest = Number.NEGATIVE_INFINITY;
-		for (const [at, radius] of spec.outline)
+	let widest = Number.NEGATIVE_INFINITY;
+	for (const side of spec.outline) {
+		if (typeof side.reach === 'number') continue;
+		for (const [at, radius] of side.reach)
 			if (radius > widest) {
 				widest = radius;
 				middle = at * scale;
@@ -560,213 +779,401 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 		const heading = flat > 1e-6 ? atan2(leave[2], leave[0]) : draw(Purpose.Heading, id) * 2 * PI;
 		const lift0 = (asin(clamp(leave[1], -1, 1)) * 180) / PI;
 
-		// The course's lift at each share of its length, from the bends in order.
-		const lifts: [number, number][] = [[0, lift0]];
-		let lift = lift0;
-		for (const bend of rule.bends ?? []) {
-			const from = clamp(bend.from, 0, 1);
-			const to = clamp(bend.to, from, 1);
-			if (from > (lifts[lifts.length - 1] as [number, number])[0]) lifts.push([from, lift]);
-			lift =
-				bend.level !== undefined ? curveAt(bend.level, place) : lift - curveAt(bend.by ?? 0, place);
-			lift = clamp(lift, -90, 90);
-			lifts.push([Math.max(to, from + 1e-6), lift]);
-		}
-		// The elbows: at each the course's lean changes, to one side and the other in turn, over a
-		// short stretch, and it holds its lean between them. An even course spends the whole stretch
-		// between two elbows turning; a crooked one stands its elbows at uneven steps and nods at each.
-		const elbows = Math.max(1, Math.round(rule.elbows));
-		const crook = clamp(rule.crook ?? 0, 0, 0.9);
-		const half = ((1 - crook) * 0.5) / elbows;
-		const spots: number[] = [];
-		const leans: number[] = [];
-		const nods: number[] = [];
-		let side = draw(Purpose.SwaySide, id) < 0.5 ? 1 : -1;
-		for (let k = 0; k < elbows; k++) {
-			spots.push((k + 0.5 + (draw(Purpose.Spot, id, k) * 2 - 1) * 0.45 * crook) / elbows);
-			leans.push(side * (rule.sway / 2) * (0.7 + (0.6 + 0.5 * crook) * draw(Purpose.Sway, id, k)));
-			nods.push(crook * (draw(Purpose.Nod, id, k) * 2 - 1) * (rule.sway / 2));
-			side = -side;
-		}
-		/** The lean and the nod at every share, from the elbows where they stand now. */
-		let sways: [number, number][] = [];
-		let dips: [number, number][] = [];
-		const elbowed = (): void => {
-			sways = [[0, 0]];
-			dips = [[0, 0]];
-			let lean = 0;
-			let nod = 0;
-			if (crook === 0) {
-				// An even wave reaches each lean at its elbow and ends half way to the lean that
-				// would follow, so every stretch of it turns, the first and the last too.
-				spots.forEach((spot, k) => {
-					sways.push([spot, leans[k] as number]);
-				});
-				const next = side * (rule.sway / 2) * (0.7 + 0.6 * draw(Purpose.Sway, id, elbows));
-				sways.push([1, ((leans[elbows - 1] as number) + next) / 2]);
-				return;
-			}
-			spots.forEach((spot, k) => {
-				const from = Math.max(spot - half, (sways[sways.length - 1] as [number, number])[0]);
-				const to = Math.min(1, Math.max(spot + half, from + 1e-6));
-				sways.push([from, lean], [to, leans[k] as number]);
-				dips.push([from, nod], [to, nods[k] as number]);
-				lean = leans[k] as number;
-				nod = nods[k] as number;
-			});
-		};
-		elbowed();
-		const across: Vector3 = [-sin(heading), 0, cos(heading)];
-		const tangent = (share: number): Vector3 => {
-			const base = direction(radians(curveAt(lifts, share)), heading);
-			const off = tan(radians(curveAt(sways, share)));
-			const nod = tan(radians(curveAt(dips, share)));
-			// The nod turns the course in its own upright plane, square to its line.
-			const upX = across[1] * base[2] - across[2] * base[1];
-			const upY = across[2] * base[0] - across[0] * base[2];
-			const upZ = across[0] * base[1] - across[1] * base[0];
-			return unit(
-				base[0] + across[0] * off + upX * nod,
-				base[1] + upY * nod,
-				base[2] + across[2] * off + upZ * nod,
-			);
-		};
-
-		// The length: stated, or found so that the tip stands where the rule says.
-		const lengthRule = rule.length;
-		let length = 0;
-		/** Finds the length from the course as it stands. */
-		const measure = (): void => {
-			if ('share' in lengthRule) length = curveAt(lengthRule.share, place) * scale;
-			else if ('parent' in lengthRule) length = curveAt(lengthRule.parent, place) * parentLength;
-			else {
-				/** How far past its mark a trial length's tip stands; it rises with the length. */
-				const past = (trial: number): number => {
-					const tip = tipOf(start, tangent, trial);
-					if ('outline' in lengthRule) {
-						// The outline drawn in toward the crown's middle: its radius and its height above
-						// and below the widest row both take the share.
-						const share = Math.max(0.05, curveAt(lengthRule.outline, place));
-						const reach = Math.sqrt(tip[0] * tip[0] + tip[2] * tip[2]);
-						const at = middle + (tip[1] - middle) / share;
-						return reach - share * outlineRadius(spec, scale, at, atan2(tip[2], tip[0]));
-					}
-					return tip[1] - curveAt(lengthRule.height, place) * scale;
-				};
-				let low = 0.01 * scale;
-				let high = 2 * scale;
-				// A hanging axis nears its mark from above, so its measure falls as it lengthens.
-				const falls = past(low) > 0 && 'height' in lengthRule;
-				for (let pass = 0; pass < LENGTH_PASSES; pass++) {
-					const trial = (low + high) / 2;
-					const over = falls ? -past(trial) : past(trial);
-					if (over < 0) low = trial;
-					else high = trial;
-				}
-				length = (low + high) / 2;
-			}
-			if (rule.vary) length *= 1 + (draw(Purpose.Vary, id) * 2 - 1) * rule.vary;
-			if (rule.most !== undefined) length = Math.min(length, curveAt(rule.most, place) * scale);
-			if (rule.least !== undefined) length = Math.max(length, curveAt(rule.least, place) * scale);
-			length = Math.max(length, 0.01 * scale);
-		};
-		measure();
-
-		// Where each child leaves, as shares of this axis's length.
 		interface Seat {
 			readonly rule: FrameBranchRule;
 			readonly index: number;
 			readonly count: number;
 			readonly share: number;
 		}
-		const seats: Seat[] = [];
-		(rule.children ?? []).forEach((child, c) => {
-			const [from, to] = child.along;
-			let count: number;
-			if (typeof child.count === 'number') count = Math.max(0, Math.round(child.count));
-			else if ('total' in child.count) {
-				const total = Math.max(0, Math.round(child.count.total));
-				count = Math.floor(((index + 1) * total) / among) - Math.floor((index * total) / among);
-			} else
-				count = clamp(
-					Math.round(((to - from) * length) / Math.max(1e-6, child.count.every * scale)),
-					child.count.least,
-					child.count.most,
-				);
-			const places = child.around === 'opposite' ? Math.ceil(count / 2) : count;
-			const gap = places > 1 ? (to - from) / (places - 1) : 0;
-			for (let k = 0; k < count; k++) {
-				const at = child.around === 'opposite' ? Math.floor(k / 2) : k;
-				// The seat at the parent's own end stays there, so the parent does not end bare.
-				const ends = at === places - 1 && to >= 1;
-				const off = ends
-					? 0
-					: (draw(Purpose.Stagger, id, c * 256 + at) * 2 - 1) * (child.stagger ?? 0) * gap;
-				seats.push({
-					rule: child,
-					index: k,
-					count,
-					share: clamp(places > 1 ? from + gap * at + off : (from + to) / 2, 0.02, 1),
-				});
-			}
-		});
+		/**
+		 * Shapes the axis once: its bends and elbows, its length, where its children leave, and its
+		 * points. Each attempt draws its own elbows, so an axis that runs too near another of its
+		 * kind may be shaped again.
+		 */
+		const drawn = (attempt: number) => {
+			const shape = id + attempt * SHAPE_STEP;
+			// The wood's radius along the axis before any fork thins it, which bounds how tightly it may
+			// bend: no bend's radius is under a stated count of the wood's diameters there.
+			const thick = (share: number, over: number): number =>
+				'width' in rule
+					? (curveAt(rule.width, (share * over) / scale) * scale) / 2
+					: baseRadius * (1 - (1 - clamp(rule.taper, 0.02, 1)) * share);
+			/** The most degrees a stretch of an axis may turn at a share of an axis of a length. */
+			const turnMost = (share: number, stretch: number, over: number): number =>
+				((stretch * over) / (BEND_DIAMETERS * 2 * Math.max(RADIUS_LEAST, thick(share, over)))) *
+				(180 / PI);
 
-		// A crooked axis turns where a child leaves: the elbow nearest each seat moves onto it, where
-		// that keeps the elbows in order and clear of each other, and the length is found again.
-		if (crook > 0 && seats.length > 0) {
-			const taken = new Set<number>();
-			for (const seat of seats) {
-				if (seat.share < half || seat.share > 1 - half) continue;
-				let best = -1;
-				for (let k = 0; k < spots.length; k++)
-					if (
-						!taken.has(k) &&
-						(best < 0 ||
-							Math.abs((spots[k] as number) - seat.share) <
-								Math.abs((spots[best] as number) - seat.share))
-					)
-						best = k;
-				if (best < 0 || Math.abs((spots[best] as number) - seat.share) > 0.5 / elbows) continue;
-				const before = best > 0 ? (spots[best - 1] as number) : -1;
-				const after = best + 1 < spots.length ? (spots[best + 1] as number) : 2;
-				if (seat.share - before < 2 * half || after - seat.share < 2 * half) continue;
-				spots[best] = seat.share;
-				taken.add(best);
-			}
-			if (taken.size > 0) {
-				elbowed();
+			// The elbows: at each the course's lean changes over a short stretch, and it holds its lean
+			// between them. An even course leans to one side and the other in turn and spends the whole
+			// stretch between two elbows turning. A crooked one stands its elbows at uneven steps; each
+			// turns by its own size toward its own side and nods up or down, so the axis's mean line
+			// wanders, and it turns back before it has strayed past the rule's sway.
+			const elbows = Math.max(1, Math.round(rule.elbows));
+			const crook = clamp(rule.crook ?? 0, 0, 0.9);
+			const half = ((1 - crook) * 0.5) / elbows;
+			const spots: number[] = [];
+			for (let k = 0; k < elbows; k++)
+				spots.push((k + 0.5 + (draw(Purpose.Spot, shape, k) * 2 - 1) * 0.45 * crook) / elbows);
+			const firstSide = draw(Purpose.SwaySide, shape) < 0.5 ? 1 : -1;
+			/** How far each elbow's turn is eased, from 1 for none, so that no bend is too tight. */
+			const eases = new Array<number>(elbows + 1).fill(1);
+			/** The stretch of the axis each elbow turns over, as its first and last shares. */
+			let ramps: [number, number][] = [];
+			/** The lift, the lean and the nod at every share, shaped for an axis of a length. */
+			let lifts: [number, number][] = [];
+			let sways: [number, number][] = [];
+			let dips: [number, number][] = [];
+			const bent = (over: number): void => {
+				// The lift at each share, from the bends in order. A bend turns no more than its stretch
+				// of this wood may.
+				lifts = [[0, lift0]];
+				let lift = lift0;
+				for (const bend of rule.bends ?? []) {
+					const from = clamp(bend.from, 0, 1);
+					const to = clamp(bend.to, from, 1);
+					if (from > (lifts[lifts.length - 1] as [number, number])[0]) lifts.push([from, lift]);
+					const asked =
+						bend.level !== undefined
+							? curveAt(bend.level, place) - lift
+							: -curveAt(bend.by ?? 0, place);
+					const most = turnMost((from + to) / 2, to - from, over);
+					lift = clamp(lift + clamp(asked, -most, most), -90, 90);
+					lifts.push([Math.max(to, from + 1e-6), lift]);
+				}
+				sways = [[0, 0]];
+				dips = [[0, 0]];
+				ramps = [];
+				if (crook === 0) {
+					// An even wave reaches each lean at its elbow and ends half way to the lean that
+					// would follow, so every stretch of it turns, the first and the last too.
+					let side = firstSide;
+					const leans: number[] = [];
+					for (let k = 0; k <= elbows; k++) {
+						leans.push(
+							side *
+								(rule.sway / 2) *
+								(0.7 + 0.6 * draw(Purpose.Sway, shape, k)) *
+								(eases[k] as number),
+						);
+						side = -side;
+					}
+					// The whole wave is eased by one share where its tightest stretch would bend too far.
+					let ease = 1;
+					for (let k = 0; k < elbows; k++) {
+						const turn = Math.abs((leans[k] as number) - (k > 0 ? (leans[k - 1] as number) : 0));
+						const most = turnMost(spots[k] as number, 1 / elbows, over);
+						if (turn > most) ease = Math.min(ease, most / turn);
+					}
+					spots.forEach((spot, k) => {
+						ramps.push([k > 0 ? (spots[k - 1] as number) : 0, spot]);
+						sways.push([spot, (leans[k] as number) * ease]);
+					});
+					ramps.push([spots[elbows - 1] as number, 1]);
+					sways.push([1, (((leans[elbows - 1] as number) + (leans[elbows] as number)) / 2) * ease]);
+					return;
+				}
+				let lean = 0;
+				let nod = 0;
+				spots.forEach((spot, k) => {
+					// The elbow's own turn: its size, and how much of it is sideways and how much a nod.
+					const size =
+						rule.sway * (0.35 + 0.55 * draw(Purpose.Sway, shape, k)) * (eases[k] as number);
+					const round = draw(Purpose.Nod, shape, k) * 2 * PI;
+					// A sideways turn is never less than half the elbow's size, so no elbow is a straight.
+					const sideways = Math.max(size / 2, Math.abs(size * cos(round)));
+					const toward = draw(Purpose.SwaySide, shape, k + 1) < 0.5 ? 1 : -1;
+					const turnSide = strayed(lean, sideways * toward, rule.sway * WANDER_SIDE) - lean;
+					const turnNod = strayed(nod, size * 0.6 * sin(round), rule.sway * WANDER_NOD) - nod;
+					// The elbow's room: half the way to the elbows either side of it, or to the axis's ends.
+					const before = k > 0 ? (spot - (spots[k - 1] as number)) / 2 : spot;
+					const after = k + 1 < spots.length ? ((spots[k + 1] as number) - spot) / 2 : 1 - spot;
+					const room = Math.max(1e-6, Math.min(before, after));
+					// Its stretch is as wide as this wood needs to turn that far, and where its room is
+					// less, it turns less.
+					const turn = Math.sqrt(turnSide * turnSide + turnNod * turnNod);
+					const needs = turn / Math.max(1e-9, turnMost(spot, 1, over)) / 2;
+					const wide = Math.min(room, Math.max(half, needs));
+					const ease = needs > wide ? wide / needs : 1;
+					const from = Math.max(spot - wide, (sways[sways.length - 1] as [number, number])[0]);
+					const to = Math.min(1, Math.max(spot + wide, from + 1e-6));
+					ramps.push([from, to]);
+					sways.push([from, lean], [to, lean + turnSide * ease]);
+					dips.push([from, nod], [to, nod + turnNod * ease]);
+					lean += turnSide * ease;
+					nod += turnNod * ease;
+				});
+			};
+			const across: Vector3 = [-sin(heading), 0, cos(heading)];
+			const tangent = (share: number): Vector3 => {
+				const base = direction(radians(curveAt(lifts, share)), heading);
+				const off = tan(radians(curveAt(sways, share)));
+				const nod = tan(radians(curveAt(dips, share)));
+				// The nod turns the course in its own upright plane, square to its line.
+				const upX = across[1] * base[2] - across[2] * base[1];
+				const upY = across[2] * base[0] - across[0] * base[2];
+				const upZ = across[0] * base[1] - across[1] * base[0];
+				return unit(
+					base[0] + across[0] * off + upX * nod,
+					base[1] + upY * nod,
+					base[2] + across[2] * off + upZ * nod,
+				);
+			};
+			/**
+			 * Shapes the course for an axis of a length. A bend and an elbow that fall together turn more
+			 * tightly than either alone, so the course is walked, and where its tightest turn is under the
+			 * least radius the leans and nods are eased until it is not.
+			 */
+			const shaped = (over: number): void => {
+				eases.fill(1);
+				bent(over);
+				for (let pass = 0; pass < 4; pass++) {
+					let tight = false;
+					let before = tangent(0);
+					for (let k = 1; k <= TRIAL_STEPS * 2; k++) {
+						const share = k / (TRIAL_STEPS * 2);
+						const here = tangent(share);
+						const turn = between(before, here);
+						before = here;
+						if (turn < 1e-6) continue;
+						const most = turnMost(share, 1 / (TRIAL_STEPS * 2), over);
+						if (turn <= most) continue;
+						// The elbow whose stretch holds this place turns less.
+						const middle = share - 0.5 / (TRIAL_STEPS * 2);
+						for (let e = 0; e < ramps.length; e++) {
+							const [from, to] = ramps[e] as [number, number];
+							if (middle < from || middle > to) continue;
+							eases[e] = Math.max(0.2, (eases[e] as number) * Math.max(0.5, most / turn));
+							tight = true;
+						}
+					}
+					if (!tight) break;
+					bent(over);
+				}
+			};
+
+			// The length: stated, or found so that the tip stands where the rule says.
+			const lengthRule = rule.length;
+			// A first length to shape the bends for, before the course is measured.
+			let length =
+				'share' in lengthRule
+					? curveAt(lengthRule.share, place) * scale
+					: 'parent' in lengthRule
+						? curveAt(lengthRule.parent, place) * parentLength
+						: 0.3 * scale;
+			shaped(length);
+			/**
+			 * The length, up to a stated one, at which a course that runs down first takes its tip
+			 * under the crown's lower boundary, or deeper under it than where it left. A course that
+			 * does not run down keeps its length, since wood may run along the boundary.
+			 */
+			const aboveUnder = (most: number): number => {
+				// A tip stands a length along the course's mean heading, whatever the length.
+				const run = tipOf([0, 0, 0], tangent, 1);
+				if (run[1] >= 0) return most;
+				const under = (trial: number): number =>
+					outlineUnder(spec, scale, start[0] + run[0] * trial, start[2] + run[2] * trial) -
+					(start[1] + run[1] * trial);
+				const from = Math.max(0, under(0));
+				let clear = 0;
+				for (let k = 1; k <= UNDER_STEPS; k++) {
+					const trial = (most * k) / UNDER_STEPS;
+					if (under(trial) <= from) {
+						clear = trial;
+						continue;
+					}
+					let low = clear;
+					let high = trial;
+					for (let pass = 0; pass < UNDER_PASSES; pass++) {
+						const middle = (low + high) / 2;
+						if (under(middle) <= from) low = middle;
+						else high = middle;
+					}
+					return low;
+				}
+				return most;
+			};
+			/** Finds the length from the course as it stands. */
+			const measure = (): void => {
+				if ('share' in lengthRule) length = curveAt(lengthRule.share, place) * scale;
+				else if ('parent' in lengthRule) length = curveAt(lengthRule.parent, place) * parentLength;
+				else {
+					/** How far past its mark a trial length's tip stands; it rises with the length. */
+					const past = (trial: number): number => {
+						const tip = tipOf(start, tangent, trial);
+						if ('outline' in lengthRule) {
+							// The outline drawn in toward the crown's middle: its radius and its height above
+							// and below the widest row both take the share.
+							const share = Math.max(0.05, curveAt(lengthRule.outline, place));
+							const reach = Math.sqrt(tip[0] * tip[0] + tip[2] * tip[2]);
+							const at = middle + (tip[1] - middle) / share;
+							return reach - share * outlineRadius(spec, scale, at, atan2(tip[2], tip[0]));
+						}
+						return tip[1] - curveAt(lengthRule.height, place) * scale;
+					};
+					let low = 0.01 * scale;
+					let high = 2 * scale;
+					// A hanging axis nears its mark from above, so its measure falls as it lengthens.
+					const falls = past(low) > 0 && 'height' in lengthRule;
+					for (let pass = 0; pass < LENGTH_PASSES; pass++) {
+						const trial = (low + high) / 2;
+						const over = falls ? -past(trial) : past(trial);
+						if (over < 0) low = trial;
+						else high = trial;
+					}
+					length = (low + high) / 2;
+				}
+				if (rule.vary) length *= 1 + (draw(Purpose.Vary, id) * 2 - 1) * rule.vary;
+				if (rule.most !== undefined) length = Math.min(length, curveAt(rule.most, place) * scale);
+				if (rule.least !== undefined) length = Math.max(length, curveAt(rule.least, place) * scale);
+				if ('outline' in lengthRule) length = aboveUnder(length);
+				length = Math.max(length, 0.01 * scale);
+			};
+			// The bends are shaped for the length, and the length is found from the bends, twice over.
+			for (let pass = 0; pass < 2; pass++) {
 				measure();
+				shaped(length);
+			}
+			measure();
+
+			// Where each child leaves, as shares of this axis's length.
+			const seats: Seat[] = [];
+			(rule.children ?? []).forEach((child, c) => {
+				const [from, to] = child.along;
+				let count: number;
+				if (typeof child.count === 'number') count = Math.max(0, Math.round(child.count));
+				else if ('total' in child.count) {
+					const total = Math.max(0, Math.round(child.count.total));
+					count = Math.floor(((index + 1) * total) / among) - Math.floor((index * total) / among);
+				} else
+					count = clamp(
+						Math.round(((to - from) * length) / Math.max(1e-6, child.count.every * scale)),
+						child.count.least,
+						child.count.most,
+					);
+				const places = child.around === 'opposite' ? Math.ceil(count / 2) : count;
+				const gap = places > 1 ? (to - from) / (places - 1) : 0;
+				for (let k = 0; k < count; k++) {
+					const at = child.around === 'opposite' ? Math.floor(k / 2) : k;
+					// The seat at the parent's own end stays there, so the parent does not end bare.
+					const ends = at === places - 1 && to >= 1;
+					const off = ends
+						? 0
+						: (draw(Purpose.Stagger, id, c * 256 + at) * 2 - 1) * (child.stagger ?? 0) * gap;
+					seats.push({
+						rule: child,
+						index: k,
+						count,
+						share: clamp(places > 1 ? from + gap * at + off : (from + to) / 2, 0.02, 1),
+					});
+				}
+			});
+
+			// A crooked axis turns where a child leaves: the elbow nearest each seat moves onto it, where
+			// that keeps the elbows in order and clear of each other, and the length is found again.
+			if (crook > 0 && seats.length > 0) {
+				const taken = new Set<number>();
+				for (const seat of seats) {
+					if (seat.share < half || seat.share > 1 - half) continue;
+					let best = -1;
+					for (let k = 0; k < spots.length; k++)
+						if (
+							!taken.has(k) &&
+							(best < 0 ||
+								Math.abs((spots[k] as number) - seat.share) <
+									Math.abs((spots[best] as number) - seat.share))
+						)
+							best = k;
+					if (best < 0 || Math.abs((spots[best] as number) - seat.share) > 0.5 / elbows) continue;
+					const before = best > 0 ? (spots[best - 1] as number) : -1;
+					const after = best + 1 < spots.length ? (spots[best + 1] as number) : 2;
+					if (seat.share - before < 2 * half || after - seat.share < 2 * half) continue;
+					spots[best] = seat.share;
+					taken.add(best);
+				}
+				if (taken.size > 0) {
+					shaped(length);
+					measure();
+					shaped(length);
+				}
+			}
+			const stem = role === 'stem' ? (rule as FrameStemRule) : undefined;
+			// A stem is also cut where its width is stated, so its foot's flare keeps its shape.
+			const widths =
+				stem && typeof stem.width !== 'number'
+					? stem.width.map((knot) => (knot[0] * scale) / length).filter((share) => share < 1)
+					: [];
+			const knots = [...lifts.map((knot) => knot[0]), ...sways.map((knot) => knot[0]), ...widths];
+			// What the axis keeps of its cross-section past each child, by the share where the child
+			// leaves.
+			const shed = stem ? 0 : clamp(rule.shed ?? 0, 0, 1);
+			const forks: [number, number][] = [];
+			if (shed > 0)
+				for (const seat of seats) {
+					const among = seat.count > 1 ? seat.index / (seat.count - 1) : 0;
+					const ratio = Math.min(BASE_MOST, curveAt(seat.rule.radius, among));
+					forks.push([seat.share, Math.sqrt(Math.max(0.05, 1 - shed * ratio * ratio))]);
+				}
+			const kept = (share: number): number => {
+				let keeps = 1;
+				for (const [at, keep] of forks) if (at < share - 1e-9) keeps *= keep;
+				return keeps;
+			};
+			const laid = lay(
+				start,
+				tangent,
+				length,
+				knots,
+				seats.map((seat) => seat.share),
+			);
+			return { laid, seats, length, tangent, stem, kept };
+		};
+		let pick = drawn(0);
+		const apart = 'apart' in rule && rule.apart ? rule.apart * scale : 0;
+		/**
+		 * The least gap between the wood of an attempt's outer half and the wood of every axis built
+		 * before it, the axis it leaves apart: the distance between their lines less both radii. The
+		 * wood its parent grew from counts, so a branch does not end against its bough's own limb.
+		 * Where no wood stands nearer than the gap the rule asks for, the figure is only known to be
+		 * at least that gap.
+		 */
+		const room = (attempt: typeof pick): number => {
+			let least = Number.POSITIVE_INFINITY;
+			const taper = clamp((rule as FrameBranchRule).taper, 0.02, 1);
+			attempt.laid.points.forEach((point, k) => {
+				const share = attempt.laid.along[k] as number;
+				if (share < OUTER_FROM) return;
+				const own = baseRadius * (1 - (1 - taper) * share);
+				const gap = (other: WoodPoint): void => {
+					if (other.axis === parent) return;
+					const dx = point[0] - other.at[0];
+					const dy = point[1] - other.at[1];
+					const dz = point[2] - other.at[2];
+					least = Math.min(least, Math.sqrt(dx * dx + dy * dy + dz * dz) - other.radius - own);
+				};
+				for (const other of thick) gap(other);
+				// Thin wood farther off than this stands clear by more than the gap asked for.
+				const near = apart + own + WOOD_THIN * scale;
+				for (let i = cellOf(point[0] - near); i <= cellOf(point[0] + near); i++)
+					for (let j = cellOf(point[1] - near); j <= cellOf(point[1] + near); j++)
+						for (let c = cellOf(point[2] - near); c <= cellOf(point[2] + near); c++) {
+							const held = thin.get(cellKey(i, j, c));
+							if (held) for (const other of held) gap(other);
+						}
+			});
+			return least;
+		};
+		if (apart > 0 && axes.length > 0) {
+			let clear = room(pick);
+			for (let attempt = 1; attempt < APART_TRIES && clear < apart; attempt++) {
+				const next = drawn(attempt);
+				const found = room(next);
+				if (found > clear) {
+					pick = next;
+					clear = found;
+				}
 			}
 		}
-		const stem = role === 'stem' ? (rule as FrameStemRule) : undefined;
-		// A stem is also cut where its width is stated, so its foot's flare keeps its shape.
-		const widths =
-			stem && typeof stem.width !== 'number'
-				? stem.width.map((knot) => (knot[0] * scale) / length).filter((share) => share < 1)
-				: [];
-		const knots = [...lifts.map((knot) => knot[0]), ...sways.map((knot) => knot[0]), ...widths];
-		// What the axis keeps of its cross-section past each child, by the share where the child
-		// leaves.
-		const shed = stem ? 0 : clamp(rule.shed ?? 0, 0, 1);
-		const forks: [number, number][] = [];
-		if (shed > 0)
-			for (const seat of seats) {
-				const among = seat.count > 1 ? seat.index / (seat.count - 1) : 0;
-				const ratio = Math.min(BASE_MOST, curveAt(seat.rule.radius, among));
-				forks.push([seat.share, Math.sqrt(Math.max(0.05, 1 - shed * ratio * ratio))]);
-			}
-		const kept = (share: number): number => {
-			let keeps = 1;
-			for (const [at, keep] of forks) if (at < share - 1e-9) keeps *= keep;
-			return keeps;
-		};
-		const laid = lay(
-			start,
-			tangent,
-			length,
-			knots,
-			seats.map((seat) => seat.share),
-		);
+		const { laid, seats, length, tangent, stem, kept } = pick;
 		const taper = stem ? 1 : clamp((rule as FrameBranchRule).taper, 0.02, 1);
 		const radiusAt = (share: number): number =>
 			Math.max(
@@ -802,6 +1209,8 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 			nodes,
 			along,
 		});
+		for (const node of nodes)
+			addWood({ at: [node.x, node.y, node.z], radius: node.radius, axis: id });
 
 		const end = nodes[nodes.length - 1] as FrameNode;
 		const lastTangent = tangent(1);
@@ -815,7 +1224,17 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 			let width = curveAt(patch.width, place) * scale;
 			let depth = curveAt(patch.depth, place) * scale;
 			let centre: Vector3;
-			if (patch.along === undefined) centre = [end.x, end.y + (patch.offset ?? 0) * depth, end.z];
+			if (patch.along === undefined)
+				// Foliage stands on the crown's lower boundary where its wood runs along it or ends at
+				// it, and never under it.
+				centre = [
+					end.x,
+					Math.max(
+						end.y + (patch.offset ?? 0) * depth,
+						outlineUnder(spec, scale, end.x, end.z) + depth / 2,
+					),
+					end.z,
+				];
 			else {
 				// The patch clothes the axis: it holds every node past the share where it begins.
 				const low = [Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY];
@@ -846,6 +1265,9 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 				width,
 				depth,
 				along: level,
+				...(patch.sockets
+					? { sockets: { every: patch.sockets.every * scale, angle: patch.sockets.angle } }
+					: {}),
 			});
 		}
 
@@ -879,6 +1301,16 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 			else
 				round =
 					(seat.index % 2 === 0 ? 1 : -1) * (sides.get(child) as number) * (90 - (child.lift ?? 0));
+			// Round a parent that leans, the places are drawn in away from its ground side.
+			if (
+				child.clear &&
+				child.from === 'parent' &&
+				(child.around === 'spiral' || child.around === 'ring') &&
+				Math.abs(t[1]) < PLUMB_NEAR
+			) {
+				const wrapped = ((((round + jitter) % 360) + 540) % 360) - 180;
+				round = wrapped * (1 - clamp(child.clear, 0, 300) / 360) - jitter;
+			}
 			round = radians(round + jitter);
 			const angle = radians(
 				curveAt(child.angle, childPlace) +
@@ -1024,18 +1456,21 @@ export function frameSkeleton(plan: FramePlan): MacroSkeleton {
 }
 
 /**
- * A socket of a frame: the end of the wood under a foliage patch, which carries one piece.
+ * A socket of a frame: a place on its wood that carries foliage.
  *
  * @category api/vegetation
  */
 export interface FrameSocket {
 	/** The patch it carries the foliage of, by its index in the plan: the socket's mass. */
 	readonly patch: number;
-	/** The axis whose end it is, by its index in the plan. */
+	/** The axis it stands on, by its index in the plan. */
 	readonly axis: number;
+	/** The node of that axis it hangs from, and the share of the axis's length it stands at. */
+	readonly node: number;
+	readonly along: number;
 	/** Where it stands, in metres. */
 	readonly at: Vector3;
-	/** The direction the wood runs in at its end, a unit vector: the way its piece grows. */
+	/** The way its piece grows, a unit vector: along the wood at the wood's end, out from it elsewhere. */
 	readonly heading: Vector3;
 	/**
 	 * Its rank across the whole plant, from 0: the sockets below any rank stand spread through the
@@ -1044,16 +1479,23 @@ export interface FrameSocket {
 	readonly rank: number;
 }
 
+/** The share of an axis's length, from its end, that sockets along the wood may run back over. */
+const SOCKETS_BACK = 0.8;
+/** The degrees to each side of the wood's upper side that a socket along the wood may stand at. */
+const SOCKETS_ROUND = 110;
+
 /**
- * The sockets of a frame: one at the end of every axis that carries a foliage patch, ranked once
- * across the whole plant.
+ * The sockets of a frame: one at the end of each axis that carries a patch, and, where the patch
+ * states them, more along the wood under it, each standing out from the wood and turned on round
+ * it from the last. All are ranked once across the plant.
  *
  * @param plan The frame.
- * @returns The sockets, in the patches' order.
+ * @returns The sockets, patch by patch, each patch's end socket first.
  * @category api/vegetation
  */
 export function frameSockets(plan: FramePlan): FrameSocket[] {
-	const ends = plan.patches.map((patch, index) => {
+	const found: Omit<FrameSocket, 'rank'>[] = [];
+	plan.patches.forEach((patch, index) => {
 		const axis = plan.axes[patch.axis] as FrameAxis;
 		const last = axis.nodes.length - 1;
 		const end = axis.nodes[last] as FrameNode;
@@ -1061,15 +1503,67 @@ export function frameSockets(plan: FramePlan): FrameSocket[] {
 			last > 0
 				? (axis.nodes[last - 1] as FrameNode)
 				: ((plan.axes[axis.parent]?.nodes[axis.parentNode] as FrameNode | undefined) ?? end);
-		return {
+		found.push({
 			patch: index,
 			axis: patch.axis,
-			at: [end.x, end.y, end.z] as Vector3,
+			node: last,
+			along: 1,
+			at: [end.x, end.y, end.z],
 			heading: unit(end.x - from.x, end.y - from.y, end.z - from.z),
-		};
+		});
+		const rule = patch.sockets;
+		if (!rule || last < 1 || !(rule.every > 0)) return;
+		const back = Math.min(patch.width / 2, axis.length * SOCKETS_BACK);
+		let node = last - 1;
+		for (let k = 1; k * rule.every <= back; k++) {
+			const share = 1 - (k * rule.every) / axis.length;
+			while (node > 0 && (axis.along[node] as number) > share) node--;
+			const a = axis.nodes[node] as FrameNode;
+			const b = axis.nodes[node + 1] as FrameNode;
+			const span = (axis.along[node + 1] as number) - (axis.along[node] as number);
+			const t = span > 0 ? (share - (axis.along[node] as number)) / span : 0;
+			const line = unit(b.x - a.x, b.y - a.y, b.z - a.z);
+			// The wood's upper side, square to its line, and the level direction square to both. A
+			// plumb axis has no upper side, and its sockets stand all round it.
+			const plumb = Math.abs(line[1]) > PLUMB_NEAR;
+			const up = plumb
+				? unit(1 - line[0] * line[0], -line[0] * line[1], -line[0] * line[2])
+				: unit(-line[1] * line[0], 1 - line[1] * line[1], -line[1] * line[2]);
+			const side: Vector3 = [
+				line[1] * up[2] - line[2] * up[1],
+				line[2] * up[0] - line[0] * up[2],
+				line[0] * up[1] - line[1] * up[0],
+			];
+			// Each is turned on from the last by the golden angle, folded onto the arc it may stand in.
+			const turned = (((index + k) * GOLDEN) % 360) / 360;
+			const round = radians(plumb ? turned * 360 : (turned * 2 - 1) * SOCKETS_ROUND);
+			const out: Vector3 = [
+				up[0] * cos(round) + side[0] * sin(round),
+				up[1] * cos(round) + side[1] * sin(round),
+				up[2] * cos(round) + side[2] * sin(round),
+			];
+			const lean = radians(rule.angle);
+			const radius = a.radius + (b.radius - a.radius) * t;
+			found.push({
+				patch: index,
+				axis: patch.axis,
+				node,
+				along: share,
+				at: [
+					a.x + (b.x - a.x) * t + out[0] * radius,
+					a.y + (b.y - a.y) * t + out[1] * radius,
+					a.z + (b.z - a.z) * t + out[2] * radius,
+				],
+				heading: unit(
+					line[0] * cos(lean) + out[0] * sin(lean),
+					line[1] * cos(lean) + out[1] * sin(lean),
+					line[2] * cos(lean) + out[2] * sin(lean),
+				),
+			});
+		}
 	});
-	const ranks = thinningRanks(ends.map((socket) => socket.at));
-	return ends.map((socket, k) => ({ ...socket, rank: ranks[k] as number }));
+	const ranks = thinningRanks(found.map((socket) => socket.at));
+	return found.map((socket, k) => ({ ...socket, rank: ranks[k] as number }));
 }
 
 /**
@@ -1088,18 +1582,21 @@ export function growFrame(input: GrowInput): MacroSkeleton {
 	const plan = planFrame(growth.frame, input);
 	const builder = new SkeletonBuilder();
 	const written = writeAxes(plan, builder);
-	const scale = plan.scale / Math.max(1e-6, spreadMean(input.record.size.height));
+	// Shoot rows grow with the plant; a branch piece is the size its leaves make it.
+	const scale =
+		growth.sockets.piece === undefined
+			? plan.scale / Math.max(1e-6, spreadMean(input.record.size.height))
+			: 1;
 	const frame = new Float32Array(4);
 	for (const socket of frameSockets(plan)) {
 		const wood = written[socket.axis] as Written;
-		const end = (plan.axes[socket.axis] as FrameAxis).nodes.length - 1;
 		quatFromFrame(
 			socket.heading,
 			Math.abs(socket.heading[1]) > 0.99 ? [1, 0, 0] : [0, 1, 0],
 			frame,
 		);
 		builder.addBud({
-			node: wood.nodes[end] as number,
+			node: wood.nodes[socket.node] as number,
 			x: socket.at[0],
 			y: socket.at[1],
 			z: socket.at[2],
@@ -1108,7 +1605,7 @@ export function growFrame(input: GrowInput): MacroSkeleton {
 			vigor: 1,
 			light: 1,
 			axis: wood.axis,
-			woodRadius: ((plan.axes[socket.axis] as FrameAxis).nodes[end] as FrameNode).radius,
+			woodRadius: ((plan.axes[socket.axis] as FrameAxis).nodes[socket.node] as FrameNode).radius,
 			socket: { scale, rank: socket.rank, lobe: socket.patch },
 		});
 	}

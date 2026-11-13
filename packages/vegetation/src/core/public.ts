@@ -107,8 +107,11 @@ export type {
 	ThickLeaf,
 	TrunkShape,
 	Tuft,
-	TuftHeads,
+	TuftPanicle,
+	TuftPose,
 	TuftSoil,
+	TuftSpikes,
+	TuftStalks,
 	WindSpec,
 } from './record';
 export { isSpeciesId, loadSpecies, type SpeciesId, speciesIds } from './registry';

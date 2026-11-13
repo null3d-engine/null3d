@@ -4,7 +4,7 @@
 // of the mass. Each figure
 // names the reference picture it was read on. Shares are of the plant's height. Still 01 and the
 // whole-plant turning video are the one plant the frame follows.
-import { type FrameBranchRule, type FrameSpec, framedRecord } from '../../grow/frame';
+import { evenOutline, type FrameBranchRule, type FrameSpec, framedRecord } from '../../grow/frame';
 import { record } from './record';
 
 /**
@@ -90,27 +90,29 @@ const limb: FrameBranchRule = {
 /** The hawthorn's frame. */
 export const frame: FrameSpec = {
 	// Still 01, the outline's half width in bands from the top down: the leading shoots' tips.
-	outline: [
-		[0.05, 0.5],
-		[0.146, 0.7],
-		[0.188, 0.705],
-		[0.229, 0.735],
-		[0.313, 0.78],
-		[0.479, 0.785],
-		[0.521, 0.765],
-		[0.646, 0.745],
-		[0.688, 0.715],
-		[0.729, 0.65],
-		[0.771, 0.605],
-		[0.813, 0.56],
-		[0.854, 0.505],
-		[0.896, 0.385],
-		[0.938, 0.28],
-		[0.979, 0.265],
-		[1, 0],
-	],
-	// The dome is built nearly round. Still 01 looks across the wide side.
-	plan: { narrow: 0.85, turn: 0 },
+	outline: evenOutline(
+		[
+			[0.05, 0.5],
+			[0.146, 0.7],
+			[0.188, 0.705],
+			[0.229, 0.735],
+			[0.313, 0.78],
+			[0.479, 0.785],
+			[0.521, 0.765],
+			[0.646, 0.745],
+			[0.688, 0.715],
+			[0.729, 0.65],
+			[0.771, 0.605],
+			[0.813, 0.56],
+			[0.854, 0.505],
+			[0.896, 0.385],
+			[0.938, 0.28],
+			[0.979, 0.265],
+			[1, 0],
+		],
+		// The dome is built nearly round. Still 01 looks across the wide side.
+		0.85,
+	),
 	stems: {
 		name: 'stem',
 		// Stills 01 and 18: 6 to 10 stems; one stands plumb at the middle.

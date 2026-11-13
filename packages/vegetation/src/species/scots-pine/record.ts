@@ -336,9 +336,6 @@ export const record: Species = {
 		nearFoliage: 'instanced',
 		switchPixels: [320, 12, 160],
 		woodOrders: [2, 1],
-		// A brush's card stands a little larger than the shoots it pictures, so gaps between
-		// neighbouring brushes fall on needles rather than on sky.
-		cardGrow: 5.5,
 		// A card's twig is thinner than a pixel at a whole view, so the card draws a two-pixel stalk
 		// to the wood it grows from and runs it on to the foliage's centre.
 		cardStalk: 3,

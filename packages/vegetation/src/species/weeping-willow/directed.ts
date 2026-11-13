@@ -5,6 +5,7 @@
 // reference picture it was read on. Shares are of the tree's height. Still 01 and the whole-tree
 // turning video are the one tree the frame follows; still 18 shows the limbs' course best.
 import {
+	evenOutline,
 	type FrameBranchRule,
 	type FrameLength,
 	type FrameSpec,
@@ -93,33 +94,35 @@ function branches(
 /** The weeping willow's frame. */
 export const frame: FrameSpec = {
 	// Still 18, the outline's half width in 24 bands from the top down, each at its own height.
-	outline: [
-		[0, 0.5],
-		[0.021, 0.555],
-		[0.063, 0.66],
-		[0.146, 0.675],
-		[0.229, 0.695],
-		[0.313, 0.7],
-		[0.354, 0.715],
-		[0.396, 0.715],
-		[0.438, 0.705],
-		[0.479, 0.685],
-		[0.521, 0.665],
-		[0.563, 0.655],
-		[0.604, 0.65],
-		[0.646, 0.615],
-		[0.688, 0.555],
-		[0.729, 0.54],
-		[0.771, 0.515],
-		[0.813, 0.465],
-		[0.854, 0.405],
-		[0.896, 0.31],
-		[0.938, 0.21],
-		[0.979, 0.16],
-		[1, 0],
-	],
-	// The crown is built nearly round. Still 01 looks across the wide side.
-	plan: { narrow: 0.8, turn: 0 },
+	outline: evenOutline(
+		[
+			[0, 0.5],
+			[0.021, 0.555],
+			[0.063, 0.66],
+			[0.146, 0.675],
+			[0.229, 0.695],
+			[0.313, 0.7],
+			[0.354, 0.715],
+			[0.396, 0.715],
+			[0.438, 0.705],
+			[0.479, 0.685],
+			[0.521, 0.665],
+			[0.563, 0.655],
+			[0.604, 0.65],
+			[0.646, 0.615],
+			[0.688, 0.555],
+			[0.729, 0.54],
+			[0.771, 0.515],
+			[0.813, 0.465],
+			[0.854, 0.405],
+			[0.896, 0.31],
+			[0.938, 0.21],
+			[0.979, 0.16],
+			[1, 0],
+		],
+		// The crown is built nearly round. Still 01 looks across the wide side.
+		0.8,
+	),
 	stems: {
 		name: 'trunk',
 		count: 1,

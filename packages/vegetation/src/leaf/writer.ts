@@ -10,11 +10,39 @@ const KEEL_STEPS = 8192;
 /** Surface kinds in a prototype's third colour byte: leaf, stem or bud, extra. */
 export const SURFACE_LEAF = 0;
 export const SURFACE_STEM = 85;
+/**
+ * A brush card: crossed quads that picture a dense run of a piece's leaves, drawn from the card
+ * atlas where the bake keeps the run's own picture. It sways and takes light as a leaf does.
+ */
+export const SURFACE_BRUSH = 8;
+/**
+ * A placed piece's own surface: drawn as the leaf is, with its second coordinates the share along
+ * its part and its own browning, as a merged plant's foliage holds them.
+ */
+export const SURFACE_PIECE = 16;
+/** A placed piece's sheath column: drawn in the record's sheath colour, and it does not flutter. */
+export const SURFACE_PIECE_SHEATH = 32;
 /** The leaf's own petiole: a stalk thin enough that the shader widens it like fine wood. */
 export const SURFACE_PETIOLE = 42;
 /** A shoot's bud: drawn as its stem, in the record's bud colour where it gives one. */
 export const SURFACE_BUD = 128;
 export const SURFACE_EXTRA = 170;
+/**
+ * A merged plant's sheath column, marked in the byte that holds every other run's flutter phase:
+ * the material draws it in the record's sheath colour.
+ */
+export const SURFACE_SHEATH = 240;
+
+/**
+ * Whether a prototype's surface kind draws with the leaf's texture: a leaf, or a placed piece's
+ * own surface. The plant material draws every kind below half the stem's so.
+ *
+ * @param kind The surface kind.
+ * @returns Whether it is a leaf surface.
+ */
+export function leafSurface(kind: number): boolean {
+	return kind < SURFACE_STEM / 2 && kind !== SURFACE_PIECE_SHEATH;
+}
 
 /** A mesh under construction, in plain number lists. */
 export class MeshWriter {
