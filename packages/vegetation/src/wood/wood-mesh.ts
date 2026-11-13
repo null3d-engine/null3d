@@ -185,7 +185,11 @@ function woodAxes(input: MeshInput, keep: number, level: MeshLevel): WoodAxis[] 
 	const meshed = (a: number) =>
 		((axes.order[a] as number) <= keep || support?.[a] === 1) &&
 		(lastKept[a] as number) >= (axes.first[a] as number) &&
-		((axes.parent[a] as number) >= 0 || rooted(a) || (axes.kind[a] as number) === AXIS_LIMB);
+		((axes.parent[a] as number) >= 0 ||
+			rooted(a) ||
+			// A limb or a column's arm that was cut from its plant stands alone.
+			(axes.kind[a] as number) === AXIS_LIMB ||
+			(axes.kind[a] as number) === AXIS_ARM);
 	// Where each axis divides: the nodes short of its end where a codominant side child leaves.
 	const divides = new Uint8Array(skeleton.nodeCount);
 	if (!single)

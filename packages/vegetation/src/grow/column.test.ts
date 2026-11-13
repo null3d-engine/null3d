@@ -290,6 +290,21 @@ describe('the saguaro frame', () => {
 		}
 	});
 
+	it('draws the wood of an arm that is cut from the plant', async () => {
+		const { kit } = await saguaro();
+		const arm = growPlantNow(kit, {
+			seed: 11,
+			variant: 0,
+			near: true,
+			cutting: { part: 'branch' },
+		});
+		const wood = arm.levels[0].parts.find((part) => part.name === 'wood');
+		// The cut arm is the piece's only axis, and its body is drawn round it.
+		expect(arm.skeleton.axes.count).toBe(1);
+		expect(arm.skeleton.axes.kind[0]).toBe(AXIS_ARM);
+		expect((wood?.arrays.indices.length ?? 0) / 3).toBeGreaterThan(1000);
+	});
+
 	it('draws one spine cluster at each areole and no shoot at a flower site', async () => {
 		const { grow } = await saguaro();
 		const { skeleton, shoots } = grow(0);
