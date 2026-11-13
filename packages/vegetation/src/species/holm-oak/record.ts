@@ -33,7 +33,11 @@ export const record: Species = {
 		internode: { length: 0.25, ageFactor: 0.99 },
 		stems: {
 			count: { mean: 8, spread: 2 },
-			lean: { mean: 26, spread: 6 },
+			// The stems part just above the stool, so their lean sets how low the crown hangs round a
+			// standing eye beside the trunk. A wider lean closes the crown's sky gaps, but it brings
+			// the crown down round that eye, and the near band then draws about three times the
+			// triangles, over the species' own cap and the High preset's near pool.
+			lean: { mean: 22, spread: 6 },
 			stool: 0.45,
 			fused: 0.2,
 		},
