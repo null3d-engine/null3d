@@ -1,14 +1,9 @@
-// A plant whose outline ends at the horizon on a wide foot. The review's outline follows a stem
-// below the horizon to its foot, and it cannot follow a tuft or a colony there: a mass that stands
-// against ground of nearly its own colour is lost below the horizon line. These helpers tell such
-// an outline, so its figures are refused and not read from half a plant.
+// A plant whose outline ends at the horizon on a lost foot. The review's outline follows a stem
+// below the horizon to its foot, and it cannot follow a tuft, a colony or thin stalks there: a part
+// that stands against ground of nearly its own colour is lost below the horizon line. These helpers
+// tell such an outline, so its figures are refused and not read from part of a plant.
 import { deltaE76, labImage, type Rgba, resizeToWidth } from '../lib/plant-review/image.ts';
-import {
-	axisRuns,
-	type Box,
-	FOOT_STEM_SHARE,
-	type PlantMask,
-} from '../lib/plant-review/references.ts';
+import { axisRuns, type Box, type PlantMask } from '../lib/plant-review/references.ts';
 
 /** The rows above the outline's end whose run is the foot's. */
 const FOOT_ROWS = 6;
@@ -44,15 +39,6 @@ function footRuns(mask: Uint8Array, width: number, box: Box, axis: number): [num
 function middle(values: number[]): number {
 	values.sort((a, b) => a - b);
 	return values[values.length >> 1] ?? 0;
-}
-
-/**
- * Whether the outline's last rows are too wide to be a stem: the middle width of the run nearest
- * the axis, against the share of the plant's width that the review's stem follower takes as a stem.
- */
-export function wideFoot(mask: Uint8Array, width: number, box: Box, axis: number): boolean {
-	const widths = footRuns(mask, width, box, axis).map(([from, to]) => to - from + 1);
-	return middle(widths) > (box.right - box.left + 1) * FOOT_STEM_SHARE;
 }
 
 /**
@@ -92,10 +78,12 @@ export function footInView(
 }
 
 /**
- * Whether a whole plant's outline has lost its foot: it ends at the horizon on a mass too wide to be
- * a stem, over a photographed ground and not a plain band, a real share of its height above the
- * frame's foot, and the rows under it keep its own colour. The review's outline follows a stem below
- * the horizon to its foot and says from which row; it cannot follow a mass.
+ * Whether a whole plant's outline has lost its foot: it ends at the horizon where the review's stem
+ * follower followed no stem below it, over a photographed ground and not a plain band, a real share
+ * of its height above the frame's foot, and the rows under it keep its own colour. A mass too wide
+ * to be a stem, a tuft or a colony, is lost so, and so are thin stalks standing in grass of their
+ * own colour, which the follower does not take for a stem. A trunk that meets the ground at the
+ * horizon stands in view on it, of another colour.
  *
  * @param image The picture.
  * @param plant Its plant mask, at the work size.
@@ -114,7 +102,6 @@ export function footLost(
 	if (horizon === null || plant.footFollowedFrom !== undefined) return false;
 	if ((background.ground?.noise ?? 0) < PLAIN_GROUND) return false;
 	if (!endsAtHorizon(box, Math.floor(horizon * height), height)) return false;
-	if (!wideFoot(plant.mask, width, box, axis)) return false;
 	if ((height - 1 - box.bottom) / (box.bottom - box.top + 1) < MASS_LOSS) return false;
 	const lab = labImage(image.width > width ? resizeToWidth(image, width) : image);
 	return !footInView(lab, width, height, plant.mask, box, axis);
