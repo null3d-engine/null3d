@@ -262,6 +262,18 @@ export interface PlantReviewQuery {
 	/** The subject box's share of the picture's height, with `subjectWidth`. */
 	readonly subjectHeight?: number;
 	/**
+	 * The share of the frame's height that a junction photograph's limb takes where it leaves the
+	 * trunk, read off the photograph. It sets the junction view's frame alone.
+	 */
+	readonly limbShare?: number;
+	/** The column share on which a junction photograph's trunk meets its limb. */
+	readonly collarColumn?: number;
+	/**
+	 * The degrees a junction photograph's limb rises above level where it leaves the trunk: the
+	 * view frames the thick limb that lies nearest.
+	 */
+	readonly limbLie?: number;
+	/**
 	 * The row share on which a view up the stem puts the stem's first fork: the camera pitches up
 	 * until the fork lands there.
 	 */
@@ -356,6 +368,9 @@ const NUMBER_FIELDS = [
 	'span',
 	'subjectWidth',
 	'subjectHeight',
+	'limbShare',
+	'collarColumn',
+	'limbLie',
 	'forkRow',
 	'footRow',
 	'crownRow',
@@ -526,6 +541,8 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 	for (const [name, value] of [
 		['subjectWidth', numbers.subjectWidth],
 		['subjectHeight', numbers.subjectHeight],
+		['limbShare', numbers.limbShare],
+		['collarColumn', numbers.collarColumn],
 	] as const)
 		if (value !== undefined && !(value > 0 && value <= 1))
 			throw new Error(

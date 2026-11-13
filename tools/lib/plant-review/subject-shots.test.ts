@@ -204,7 +204,7 @@ describe('the view up the trunk', () => {
 		expect(checkShot(shot, lens).present).toBe(true);
 	});
 
-	test('never looks up less than its least pitch, however thick the bole', () => {
+	test('never looks down at the ground, however thick the bole', () => {
 		const subjects = tree({
 			trunk: trunkOf(8, 1.2, 4),
 			crownBase: 4,
@@ -212,9 +212,13 @@ describe('the view up the trunk', () => {
 		});
 		const lens = { fov: 70, aspect: 4 / 3 };
 		const shot = shotOf(belowShot(subjects, lens, { turn: 0 }));
-		expect(pitchOf(shot.camera)).toBeCloseTo(25, 4);
+		// The frame's lower edge looks five degrees above level, so the pitch is half the lens more.
+		expect(pitchOf(shot.camera)).toBeCloseTo(40, 4);
 		expect(shot.facts.trunkShare as number).toBeGreaterThan(0.42);
 		expect(landing(shot, lens, 'the top of the bole').y).toBeCloseTo(0.42, 6);
+		// The horizon stands below the frame, so the picture holds no ground.
+		expect(landing(shot, lens, 'the horizon').y).toBeGreaterThan(1);
+		expect(checkShot(shot, lens).present).toBe(true);
 	});
 
 	test('keeps the fork on the middle column of a trunk that leans', () => {
@@ -429,7 +433,7 @@ describe('the view of a limb leaving the trunk', () => {
 		expect(shot.facts.frame as number).toBeLessThan(3);
 		expect(checkShot(shot, TALL).present).toBe(true);
 		// A thin limb on the same bole still shows the trunk's round: the frame is 0.9 of its diameter.
-		const thin = tree({ trunk, limbs: [limbOf(1, 5, [1, 0.3, 0], 0.05, 3, 0.9)] });
+		const thin = tree({ trunk, limbs: [limbOf(1, 5, [1, 0.3, 0], 0.15, 3, 0.9)] });
 		expect(shotOf(junctionShot(thin, TALL)).facts.frame as number).toBeCloseTo(0.9 * 1.8, 9);
 	});
 
@@ -476,6 +480,45 @@ describe('the view of a limb leaving the trunk', () => {
 		const steep = tree({ limbs: [limbOf(1, 5, [0.2, 1, 0], 0.3, 8, 0.4)] });
 		expect(junctionShot(steep, TALL)).toEqual({
 			absent: 'no great limb leaves the trunk at a wide angle',
+			lacks: true,
+		});
+	});
+
+	test("frames by the photograph's own reading: the limb's share, the collar's column", () => {
+		const shot = shotOf(junctionShot(tree(), TALL, { limbShare: 0.5, column: 0.57 }));
+		// The limb's 0.6 m takes half the frame's height, whatever the trunk's width needs.
+		expect(shot.facts.frame as number).toBeCloseTo(0.6 / 0.5, 9);
+		const collar = landing(shot, TALL, 'the collar, where the limb meets the trunk');
+		expect(collar.x).toBeCloseTo(0.57, 6);
+		expect(checkShot(shot, TALL).present).toBe(true);
+	});
+
+	test("takes the thick limb that lies nearest the photograph's limb", () => {
+		// A thick limb that rises steeply, a thick one near level, and a thin one that is level.
+		const limbs = [
+			limbOf(1, 5, [1, 0.8, 0], 0.3, 8, 0.4),
+			limbOf(2, 6, [-1, 0.1, 0.2], 0.24, 6, 0.4),
+			limbOf(3, 7, [0, 0, 1], 0.1, 5, 0.4),
+		];
+		// With no lie given, the limb that shows most thickness across the picture is taken.
+		expect(shotOf(junctionShot(tree({ limbs }), TALL)).facts.limb).toBe(2);
+		expect(shotOf(junctionShot(tree({ limbs }), TALL, { lie: 40 })).facts.limb).toBe(1);
+		// The level limb is too thin beside the others to be the photograph's limb.
+		const level = shotOf(junctionShot(tree({ limbs }), TALL, { lie: 0 }));
+		expect(level.facts.limb).toBe(2);
+		expect(level.facts.lie as number).toBeCloseTo(5.6, 1);
+	});
+
+	test('says the plant lacks the join where every wide limb is a small share of the trunk', () => {
+		const twigs = tree({ limbs: [limbOf(1, 5, [1, 0.3, 0], 0.04, 3, 0.4)] });
+		expect(junctionShot(twigs, TALL)).toEqual({
+			absent:
+				"no limb that leaves the trunk at a wide angle is 0.15 of the trunk's thickness there: the thickest is 0.10",
+			lacks: true,
+		});
+		// A limb named by a slot that the plant does not have is the slot's fault, not the plant's.
+		expect(junctionShot(twigs, TALL, { limb: 9 })).toEqual({
+			absent: 'the plant has no great limb 9',
 		});
 	});
 });
@@ -546,6 +589,14 @@ describe('the view of a fork', () => {
 		const uneven = [forkOf({ armRadii: [0.12, 0.02] })];
 		expect(forkShot(tree({ forks: uneven }), TALL)).toEqual({
 			absent: 'no limb divides into two arms of like size: 1 divisions, none even and open',
+			lacks: true,
+		});
+		// A twig's even fork is not the photograph's: the limb must be a share of the trunk.
+		const twig = [forkOf({ radius: 0.03, armRadii: [0.028, 0.025] })];
+		expect(forkShot(tree({ forks: twig }), TALL)).toEqual({
+			absent:
+				"no limb 0.15 of the trunk's thickness divides into two arms of like size: the thickest that does is 0.06 of it",
+			lacks: true,
 		});
 		expect(forkShot(tree({ forks: absent('a cut piece carries no skeleton') }), TALL)).toEqual({
 			absent: 'a cut piece carries no skeleton',
@@ -561,7 +612,7 @@ describe("the view of the crown's outside", () => {
 		{ centre: [1, 6, 1], radius: 0.2 },
 	];
 
-	test('frames one lobe at the rim from outside the crown and below it', () => {
+	test('frames one lobe at the rim against the sky, from under the crown', () => {
 		const subjects = tree({ lobes });
 		const shot = shotOf(crownOutsideShot(subjects, TALL, { turn: 90 * DEG }));
 		const lobe = landing(shot, TALL, 'the lobe');
@@ -569,13 +620,15 @@ describe("the view of the crown's outside", () => {
 		expect(lobe.y).toBeCloseTo(0.5, 6);
 		// The turn faces +X, so the lobe on that side is the subject.
 		expect(shot.facts.limb).toBe(1);
-		// The camera stands farther out than the lobe, lower than it, and looks up.
-		expect(shot.facts.outside as number).toBeGreaterThan(2);
+		// The camera stands nearer the trunk than the lobe, lower than it, and looks up and outward,
+		// so the sky stands behind the lobe and not the rest of the crown.
+		expect(shot.facts.inside as number).toBeGreaterThan(2);
+		expect(shot.camera.position[0]).toBeLessThan(5);
 		expect(shot.camera.position[1]).toBeLessThan(8);
-		expect(pitchOf(shot.camera)).toBeCloseTo(20, 4);
+		expect(pitchOf(shot.camera)).toBeCloseTo(50, 4);
 		// The lobe's width takes its share of the frame's shorter side.
 		const size = checkShot(shot, TALL).points[0]?.size as number;
-		expect(size).toBeCloseTo(0.7, 1);
+		expect(size).toBeCloseTo(0.6, 1);
 		expect(checkShot(shot, TALL).present).toBe(true);
 	});
 
@@ -722,16 +775,18 @@ describe('the view from inside the crown', () => {
 });
 
 describe('the bark views', () => {
-	test("the foot fills half the frame's width, whatever the trunk's thickness", () => {
+	test("the foot fills its share of the frame's width from above, whatever the trunk's thickness", () => {
 		for (const radius of [0.08, 0.5, 2.5]) {
 			const subjects = tree({ trunk: trunkOf(14, radius, 5) });
 			for (const lens of [WIDE, TALL]) {
 				const shot = shotOf(barkBaseShot(subjects, lens, { turn: 0 }));
 				const foot = landing(shot, lens, "the trunk's foot");
 				expect(foot.x).toBeCloseTo(0.5, 6);
-				expect(foot.y).toBeCloseTo(0.85, 6);
-				expect(shareOfWidth(shot, lens, [0, 0, 0], 2 * radius)).toBeCloseTo(0.5, 6);
-				expect(pitchOf(shot.camera)).toBeCloseTo(-12, 6);
+				expect(foot.y).toBeCloseTo(0.72, 6);
+				expect(shareOfWidth(shot, lens, [0, 0, 0], 2 * radius)).toBeCloseTo(0.6, 6);
+				// The camera looks down past half its lens, so its upper edge stays under the horizon.
+				expect(pitchOf(shot.camera)).toBeCloseTo(-(lens.fov / 2 + 3), 6);
+				expect(landing(shot, lens, 'the horizon').y).toBeLessThan(0);
 				expect(checkShot(shot, lens).present).toBe(true);
 			}
 		}
