@@ -120,6 +120,8 @@ interface Pose {
 	readonly arch: Arch;
 	/** The highest point above the attach point, in metres. */
 	readonly top: number;
+	/** The farthest point out from the attach point along the heading, in metres. */
+	readonly out: number;
 }
 
 /** A tuft's sizes in metres and the poses of its pieces, from its record. */
@@ -143,12 +145,16 @@ const SHEATH_SPREAD = 0.15;
 /** The plans found, by the growth they were found from: a fit costs more than a plant's sockets. */
 const PLANS = new WeakMap<Tuft, Plan>();
 
-/** The highest point of an arch above its base, in metres. */
-function topOf(arch: Arch): number {
+/** How high an arch stands above its base and how far out it reaches, in metres. */
+function extentOf(arch: Arch): { top: number; out: number } {
 	const path = archPath(arch, 0, 24);
 	let top = 0;
-	for (let i = 0; i <= path.segments; i++) top = Math.max(top, path.up[i] as number);
-	return top;
+	let out = 0;
+	for (let i = 0; i <= path.segments; i++) {
+		top = Math.max(top, path.up[i] as number);
+		out = Math.max(out, path.out[i] as number);
+	}
+	return { top, out };
 }
 
 /** A tuft's plan. */
@@ -189,7 +195,7 @@ function planOf(record: Species): Plan {
 			from: (fit.arch.from ?? 0) * shown,
 			to: (fit.arch.to ?? 1) * shown,
 		};
-		blades.push({ arch, top: topOf(arch) });
+		blades.push({ arch, ...extentOf(arch) });
 	}
 	const stalks: Pose[] = [];
 	const stems = growth.stalks;
@@ -202,8 +208,9 @@ function planOf(record: Species): Plan {
 				from: stems.bow.from,
 			};
 			// The stem is as long as stands its highest point at the tallest stem's height.
-			const length = (stems.top[1] * mound) / topOf({ ...shape, length: 1 });
-			stalks.push({ arch: { ...shape, length }, top: stems.top[1] * mound });
+			const length = (stems.top[1] * mound) / extentOf({ ...shape, length: 1 }).top;
+			const arch = { ...shape, length };
+			stalks.push({ arch, ...extentOf(arch) });
 		}
 	const plan: Plan = {
 		mound,
@@ -260,7 +267,7 @@ function keepOf(index: number, count: number, least: number): number {
  * @category api/vegetation
  */
 export function growTuft(input: GrowInput): MacroSkeleton {
-	const { growth } = tuftOf(input.record);
+	const { growth, blade } = tuftOf(input.record);
 	const plan = planOf(input.record);
 	const { mound } = plan;
 	const builder = new SkeletonBuilder();
@@ -301,6 +308,17 @@ export function growTuft(input: GrowInput): MacroSkeleton {
 	const sockets: Socket[] = [];
 	const up: Vector3 = [0, 1, 0];
 	let top = 0;
+	// The box the placed pieces fill: each piece's own reach along its heading from its shoot.
+	const low: [number, number] = [-stoolRadius, -stoolRadius];
+	const high: [number, number] = [stoolRadius, stoolRadius];
+	const reaches = (at: Readonly<Vector3>, heading: number, out: number): void => {
+		const x = at[0] + cos(heading) * out;
+		const z = at[2] + sin(heading) * out;
+		low[0] = Math.min(low[0], x);
+		low[1] = Math.min(low[1], z);
+		high[0] = Math.max(high[0], x);
+		high[1] = Math.max(high[1], z);
+	};
 	places.forEach((place, i) => {
 		const unit = (k: number) => draw(input, Purpose.Shoot, i, k);
 		const shootKeep = keepOf(i, shoots, growth.least.shoots);
@@ -369,6 +387,7 @@ export function growTuft(input: GrowInput): MacroSkeleton {
 				keep: Math.max(shootKeep, keepOf(k, blades, growth.least.blades)),
 			});
 			top = Math.max(top, shape.top * size);
+			reaches(at, heading, shape.out * size);
 		}
 		if (stems && i < stalks) {
 			const draws = (m: number) => draw(input, Purpose.Stalk, i, m);
@@ -378,31 +397,32 @@ export function growTuft(input: GrowInput): MacroSkeleton {
 			// the spread of heights; the rest fall evenly between.
 			const share = i === 0 ? 1 : i === 1 ? 0 : (i * GOLDEN_SHARE) % 1;
 			const size = (stems.top[0] + (stems.top[1] - stems.top[0]) * share) / stems.top[1];
+			const heading = place.heading + (draws(0) - 0.5) * STALK_STRAY;
 			sockets.push({
 				axis,
 				node: base,
 				at,
 				up,
-				heading: place.heading + (draws(0) - 0.5) * STALK_STRAY,
+				heading,
 				piece: stalkClass(plan, pose),
 				length: shape.arch.length * size,
 				keep: Math.max(shootKeep, keepOf(i, stalks, growth.least.stalks)),
 			});
 			top = Math.max(top, shape.top * size);
+			reaches(at, heading, shape.out * size);
 		}
 	});
 	addSockets(builder, sockets, classCount(plan));
 	const finished = builder.finish(0);
-	// The skeleton holds only the stool. The plant's top and width are its pieces': the tallest
-	// piece, and the widest reach of any piece from its socket.
-	let reach = 0;
-	for (const socket of sockets) reach = Math.max(reach, socket.length);
+	// The skeleton holds only the stool. The plant's top and its box are its pieces': the tallest
+	// piece, and each piece's reach from its shoot with half a blade's width beside it.
+	const beside = blade.width / 2;
 	return {
 		...finished,
 		height: top,
 		bounds: {
-			min: [-stoolRadius - reach, 0, -stoolRadius - reach],
-			max: [stoolRadius + reach, top, stoolRadius + reach],
+			min: [low[0] - beside, 0, low[1] - beside],
+			max: [high[0] + beside, top, high[1] + beside],
 		},
 	};
 }
