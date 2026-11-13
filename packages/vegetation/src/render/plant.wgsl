@@ -1461,8 +1461,8 @@ fn surface(input: SurfaceInput) -> Surface {
     let variance = 0.5 * (dot(dnx, dnx) + dot(dny, dny));
     let a = roughness * roughness;
     let widened = sqrt(sqrt(a * a + min(2.0 * variance, 0.18)));
-    let drawn = select(alpha, cut_alpha, cut_alpha >= 0.0);
-    let width = fwidth(drawn);
+    let cut = select(alpha, cut_alpha, cut_alpha >= 0.0);
+    let width = fwidth(cut);
     let n_dot_v = saturate(dot(normal, input.viewDirection));
     through /= max(1.0 - gloss_albedo(widened, n_dot_v), 0.5);
 
@@ -1490,8 +1490,11 @@ fn surface(input: SurfaceInput) -> Surface {
     // A matte carries the texel's own coverage rather than a sharpened edge, so the review can weigh
     // a partly covered texel as the part of plant it is: the piece test joins a group through it, and
     // the openness test keeps the sky it does not cover. A sharpened edge would do the first and lose
-    // the second.
-    s.alpha = select(sharpen(drawn, width), alpha, matte);
+    // the second. It carries it only where the colour picture draws the texel at all: a texel under
+    // the cut draws nothing there, and a faint ghost of it in the matte reads as plant the picture
+    // does not show, such as a piece hanging in air.
+    let drawn = sharpen(cut, width);
+    s.alpha = select(drawn, select(0.0, alpha, drawn > 0.0), matte);
     s.diffuseTransmission = select(share, 0.0, matte || parts || silhouette);
     s.diffuseTransmissionColor = select(through, vec3f(0.0), matte || parts || silhouette);
     return s;
