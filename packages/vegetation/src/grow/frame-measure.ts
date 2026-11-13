@@ -831,3 +831,149 @@ export function woodThrough(plan: FramePlan): [number, number][] {
 		}
 	return out;
 }
+
+/** The least distance between two straight runs, each from one node to the next. */
+function runsApart(a0: FrameNode, a1: FrameNode, b0: FrameNode, b1: FrameNode): number {
+	const ux = a1.x - a0.x;
+	const uy = a1.y - a0.y;
+	const uz = a1.z - a0.z;
+	const vx = b1.x - b0.x;
+	const vy = b1.y - b0.y;
+	const vz = b1.z - b0.z;
+	const wx = a0.x - b0.x;
+	const wy = a0.y - b0.y;
+	const wz = a0.z - b0.z;
+	const a = ux * ux + uy * uy + uz * uz;
+	const b = ux * vx + uy * vy + uz * vz;
+	const c = vx * vx + vy * vy + vz * vz;
+	const d = ux * wx + uy * wy + uz * wz;
+	const e = vx * wx + vy * wy + vz * wz;
+	const square = a * c - b * b;
+	const clamp = (v: number): number => Math.min(1, Math.max(0, v));
+	let s = square > 1e-12 ? clamp((b * e - c * d) / square) : 0;
+	const t = c > 1e-12 ? clamp((b * s + e) / c) : 0;
+	s = a > 1e-12 ? clamp((b * t - d) / a) : 0;
+	const x = wx + s * ux - t * vx;
+	const y = wy + s * uy - t * vy;
+	const z = wz + s * uz - t * vz;
+	return Math.sqrt(x * x + y * y + z * z);
+}
+
+/**
+ * The share of two runs' joint thickness they must overlap by to count as one passing through the
+ * other, so that two that only graze are not counted.
+ */
+const CROSS_OVERLAP = 0.1;
+/** The share of an axis's length over which it stands beside the wood it leaves. */
+const CROSS_BESIDE = 0.2;
+/** The side of a cell of the grid the runs are sorted into, in metres. */
+const CROSS_CELL = 1;
+
+/**
+ * Whether a run of an axis stands where it leaves its parent, inside the reach of both radii from
+ * the parent's node it leaves, where a short branch stands inside its parent's thickness past its
+ * first fifth without passing through it.
+ */
+function inJunction(parent: FrameAxis, child: FrameAxis, p: FrameNode, q: FrameNode): boolean {
+	const seat = parent.nodes[child.parentNode] as FrameNode;
+	const reach = seat.radius + child.base;
+	const near = (n: FrameNode): boolean =>
+		(n.x - seat.x) ** 2 + (n.y - seat.y) ** 2 + (n.z - seat.z) ** 2 < reach * reach;
+	return near(p) && near(q);
+}
+
+/**
+ * The pairs of a frame's axes whose wood passes through each other, each axis read as straight runs
+ * between its nodes: two runs that come nearer than their joint thickness, less a tenth of it. Two
+ * axes that leave one parent are read past their first fifth, as is the younger of two on one line
+ * of descent, where a branch that runs back through its own elder is counted apart; a branch is
+ * read too only where it has left its parent's thickness.
+ *
+ * @param plan The frame.
+ * @returns The pairs of axes on no line of descent, and those on one, each as two indices.
+ * @category api/vegetation
+ */
+export function woodCrossings(plan: FramePlan): {
+	readonly apart: [number, number][];
+	readonly descent: [number, number][];
+} {
+	const { axes } = plan;
+	/** Whether one axis stands among the other's forebears. */
+	const elder = (old: number, young: number): boolean => {
+		for (let up = (axes[young] as FrameAxis).parent; up >= 0; up = (axes[up] as FrameAxis).parent)
+			if (up === old) return true;
+		return false;
+	};
+	// Each run, by its axis and its first node, in every cell its box touches.
+	const cells = new Map<string, number[]>();
+	const runs: [number, number][] = [];
+	axes.forEach((axis, index) => {
+		for (let k = 0; k + 1 < axis.nodes.length; k++) {
+			const p = axis.nodes[k] as FrameNode;
+			const q = axis.nodes[k + 1] as FrameNode;
+			const r = Math.max(p.radius, q.radius);
+			const id = runs.length;
+			runs.push([index, k]);
+			const lo = [Math.min(p.x, q.x) - r, Math.min(p.y, q.y) - r, Math.min(p.z, q.z) - r];
+			const hi = [Math.max(p.x, q.x) + r, Math.max(p.y, q.y) + r, Math.max(p.z, q.z) + r];
+			for (
+				let i = Math.floor((lo[0] as number) / CROSS_CELL);
+				i <= Math.floor((hi[0] as number) / CROSS_CELL);
+				i++
+			)
+				for (
+					let j = Math.floor((lo[1] as number) / CROSS_CELL);
+					j <= Math.floor((hi[1] as number) / CROSS_CELL);
+					j++
+				)
+					for (
+						let m = Math.floor((lo[2] as number) / CROSS_CELL);
+						m <= Math.floor((hi[2] as number) / CROSS_CELL);
+						m++
+					) {
+						const key = `${i},${j},${m}`;
+						const held = cells.get(key);
+						if (held) held.push(id);
+						else cells.set(key, [id]);
+					}
+		}
+	});
+	const found = new Map<number, boolean>();
+	const count = axes.length;
+	for (const held of cells.values())
+		for (let x = 0; x < held.length; x++)
+			for (let y = x + 1; y < held.length; y++) {
+				let [ai, ak] = runs[held[x] as number] as [number, number];
+				let [bi, bk] = runs[held[y] as number] as [number, number];
+				if (ai === bi) continue;
+				if (ai > bi) [ai, ak, bi, bk] = [bi, bk, ai, ak];
+				const key = ai * count + bi;
+				if (found.has(key)) continue;
+				const a = axes[ai] as FrameAxis;
+				const b = axes[bi] as FrameAxis;
+				const descent = elder(ai, bi) ? 1 : elder(bi, ai) ? -1 : 0;
+				const siblings = a.parent === b.parent;
+				if (
+					descent === 0 &&
+					siblings &&
+					((a.along[ak] as number) < CROSS_BESIDE || (b.along[bk] as number) < CROSS_BESIDE)
+				)
+					continue;
+				if (descent === 1 && (b.along[bk] as number) < CROSS_BESIDE) continue;
+				if (descent === -1 && (a.along[ak] as number) < CROSS_BESIDE) continue;
+				const a0 = a.nodes[ak] as FrameNode;
+				const a1 = a.nodes[ak + 1] as FrameNode;
+				const b0 = b.nodes[bk] as FrameNode;
+				const b1 = b.nodes[bk + 1] as FrameNode;
+				if (descent === 1 && b.parent === ai && inJunction(a, b, b0, b1)) continue;
+				if (descent === -1 && a.parent === bi && inJunction(b, a, a0, a1)) continue;
+				const reach = (a0.radius + a1.radius) / 2 + (b0.radius + b1.radius) / 2;
+				if (runsApart(a0, a1, b0, b1) < (1 - CROSS_OVERLAP) * reach) found.set(key, descent !== 0);
+			}
+	const apart: [number, number][] = [];
+	const line: [number, number][] = [];
+	for (const [key, descent] of found)
+		(descent ? line : apart).push([Math.floor(key / count), key % count]);
+	const order = (p: [number, number], q: [number, number]): number => p[0] - q[0] || p[1] - q[1];
+	return { apart: apart.sort(order), descent: line.sort(order) };
+}
