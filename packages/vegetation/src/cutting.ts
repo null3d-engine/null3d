@@ -385,9 +385,14 @@ function candidates(
 	const owners: number[][] = Array.from({ length: axes.count }, () => []);
 	// A cluster is one shoot: a leaf's own axis meshes no piece, so a cluster of a species without
 	// shoot prototypes refuses the leaf axes rather than drawing an empty still.
+	// A root is never the piece: a buried rhizome or a root ball goes with what stands on it. A
+	// colony's stalk is a piece though no axis carries it: it stands alone on its rhizome.
 	const isCandidate = (a: number) =>
-		(axes.parent[a] as number) >= 0 &&
-		(order === undefined ? (axes.order[a] as number) >= 1 : (axes.order[a] as number) === order) &&
+		((axes.parent[a] as number) >= 0 || (axes.kind[a] as number) === AXIS_STIPE) &&
+		(axes.kind[a] as number) !== AXIS_ROOT &&
+		(order === undefined
+			? (axes.order[a] as number) >= 1 || (axes.kind[a] as number) === AXIS_STIPE
+			: (axes.order[a] as number) === order) &&
 		(!cluster || (axes.kind[a] as number) !== AXIS_RACHIS);
 	for (const a of byDepth) {
 		const parent = axes.parent[a] as number;
