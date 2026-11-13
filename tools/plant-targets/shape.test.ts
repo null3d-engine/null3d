@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { blank, type Rgba } from '../lib/plant-review/image.ts';
 import type { Box } from '../lib/plant-review/references.ts';
-import { endsAtHorizon, wideFoot } from './foot.ts';
+import { endsAtHorizon, footInView, wideFoot } from './foot.ts';
 import {
 	ENVELOPE_BANDS,
 	envelopeOf,
@@ -259,6 +259,65 @@ describe('an outline that ends at the horizon', () => {
 		const tuft = empty();
 		fill(tuft, 100, 200, 299, 380);
 		expect(wideFoot(tuft, WIDTH, boxOf(tuft), 200)).toBe(true);
+	});
+});
+
+describe('a foot at the horizon', () => {
+	/** A block of plant on a ground, the ground's lightness under it given. */
+	function scene(groundUnder: number): { lab: Float32Array; mask: Uint8Array } {
+		const mask = empty();
+		fill(mask, 150, 200, 249, 380);
+		const lab = new Float32Array(WIDTH * HEIGHT * 3);
+		for (let y = 0; y < HEIGHT; y++)
+			for (let x = 0; x < WIDTH; x++) lab[(y * WIDTH + x) * 3] = y <= 380 ? 40 : groundUnder;
+		return { lab, mask };
+	}
+
+	test('stands in view on a ground of another colour', () => {
+		const { lab, mask } = scene(80);
+		expect(footInView(lab, WIDTH, HEIGHT, mask, boxOf(mask), 200)).toBe(true);
+	});
+
+	test('may run on below the horizon where the ground under it keeps its colour', () => {
+		const { lab, mask } = scene(44);
+		expect(footInView(lab, WIDTH, HEIGHT, mask, boxOf(mask), 200)).toBe(false);
+	});
+});
+
+describe('the outline beside a stem', () => {
+	// A stem 10 pixels wide from the foot to the top, a crown from the top down to row 250, and one
+	// leaf's row reaching out to the right from the stem at row 300, below the crown.
+	const mask = empty();
+	fill(mask, 195, 100, 204, 399);
+	fill(mask, 120, 100, 280, 250);
+	fill(mask, 205, 300, 260, 300);
+	const box = boxOf(mask);
+	const tall = box.bottom - box.top + 1;
+	const tipBand = Math.floor(((box.bottom - 300) * ENVELOPE_BANDS) / tall);
+
+	test("reads a lone tip at the band's greatest reach, and little in its mean", () => {
+		const envelope = envelopeOf(mask, WIDTH, box, 200, 10);
+		expect(envelope.right[tipBand]).toBeCloseTo(60 / tall, 3);
+		expect(envelope.rightMean[tipBand] as number).toBeLessThan(0.03);
+		expect(envelope.leftMean[tipBand]).toBeCloseTo(5 / tall, 3);
+	});
+
+	test('stands clear of the stem where the crown or the tip reaches out', () => {
+		for (const stemWidth of [10, null]) {
+			const { clear } = envelopeOf(mask, WIDTH, box, 200, stemWidth);
+			expect(clear.right?.row).toBe(300);
+			expect(clear.right?.share).toBeCloseTo((box.bottom - 300) / tall, 3);
+			expect(clear.left?.row).toBe(250);
+		}
+	});
+
+	test('names no clear row on a bare stem', () => {
+		const stem = empty();
+		fill(stem, 195, 100, 204, 399);
+		expect(envelopeOf(stem, WIDTH, boxOf(stem), 200, 10).clear).toEqual({
+			left: null,
+			right: null,
+		});
 	});
 });
 

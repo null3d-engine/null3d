@@ -2,12 +2,19 @@
 // below the horizon to its foot, and it cannot follow a tuft or a colony there: a mass that stands
 // against ground of nearly its own colour is lost below the horizon line. These helpers tell such
 // an outline, so its figures are refused and not read from half a plant.
+import { deltaE76 } from '../lib/plant-review/image.ts';
 import { axisRuns, type Box, FOOT_STEM_SHARE } from '../lib/plant-review/references.ts';
 
 /** The rows above the outline's end whose run is the foot's. */
 const FOOT_ROWS = 6;
 /** The spread of a ground that is drawn plain, as a CIELAB distance: a silhouette's ground band. */
 export const PLAIN_GROUND = 3;
+/**
+ * The least CIELAB distance between a foot's colour and the ground's under it for the foot to stand
+ * in view: about half the least that a reference's foot standing in view was measured apart, and
+ * five times what a reference's tuft that runs on below the horizon was.
+ */
+const FOOT_IN_VIEW = 15;
 /** Rows either side of the horizon within which an outline's last row ends at it. */
 const AT_HORIZON = 0.015;
 
@@ -16,16 +23,63 @@ export function endsAtHorizon(box: Box, horizonRow: number, height: number): boo
 	return box.bottom <= horizonRow + Math.max(2, Math.round(height * AT_HORIZON));
 }
 
+/** The run nearest the axis in each of the outline's last rows that holds one, lowest first. */
+function footRuns(mask: Uint8Array, width: number, box: Box, axis: number): [number, number][] {
+	const runs = axisRuns(mask, width, box, axis);
+	const found: [number, number][] = [];
+	for (let y = box.bottom; y > Math.max(box.top, box.bottom - FOOT_ROWS); y--)
+		if ((runs[y * 2] as number) >= 0)
+			found.push([runs[y * 2] as number, runs[y * 2 + 1] as number]);
+	return found;
+}
+
+/** The middle value of a list of numbers, or 0 for an empty list. */
+function middle(values: number[]): number {
+	values.sort((a, b) => a - b);
+	return values[values.length >> 1] ?? 0;
+}
+
 /**
  * Whether the outline's last rows are too wide to be a stem: the middle width of the run nearest
  * the axis, against the share of the plant's width that the review's stem follower takes as a stem.
  */
 export function wideFoot(mask: Uint8Array, width: number, box: Box, axis: number): boolean {
-	const runs = axisRuns(mask, width, box, axis);
-	const widths: number[] = [];
-	for (let y = box.bottom; y > Math.max(box.top, box.bottom - FOOT_ROWS); y--)
-		if ((runs[y * 2] as number) >= 0)
-			widths.push((runs[y * 2 + 1] as number) - (runs[y * 2] as number) + 1);
-	widths.sort((a, b) => a - b);
-	return (widths[widths.length >> 1] ?? 0) > (box.right - box.left + 1) * FOOT_STEM_SHARE;
+	const widths = footRuns(mask, width, box, axis).map(([from, to]) => to - from + 1);
+	return middle(widths) > (box.right - box.left + 1) * FOOT_STEM_SHARE;
+}
+
+/**
+ * Whether a foot that ends at the horizon stands in view on the ground: the rows under its run are
+ * of another colour than the foot. A tuft or a colony that runs on below the horizon keeps its own
+ * colour there, where the ground's fitted colour lost it.
+ *
+ * @param lab The picture's CIELAB colours at the mask's size.
+ */
+export function footInView(
+	lab: Float32Array,
+	width: number,
+	height: number,
+	mask: Uint8Array,
+	box: Box,
+	axis: number,
+): boolean {
+	const found = footRuns(mask, width, box, axis);
+	const from = middle(found.map(([left]) => left));
+	const to = middle(found.map(([, right]) => right));
+	const mean = (rows: readonly number[]): number[] | null => {
+		const sum = [0, 0, 0];
+		let pixels = 0;
+		for (const y of rows)
+			for (let x = from; x <= to; x++) {
+				for (let c = 0; c < 3; c++)
+					sum[c] = (sum[c] as number) + (lab[(y * width + x) * 3 + c] as number);
+				pixels++;
+			}
+		return pixels === 0 ? null : sum.map((v) => v / pixels);
+	};
+	const rows = (start: number, end: number): number[] =>
+		Array.from({ length: Math.max(0, end - start + 1) }, (_, k) => start + k);
+	const foot = mean(rows(box.bottom - FOOT_ROWS + 1, box.bottom));
+	const under = mean(rows(box.bottom + 1, Math.min(height - 1, box.bottom + FOOT_ROWS)));
+	return foot !== null && under !== null && deltaE76(foot, under) >= FOOT_IN_VIEW;
 }
