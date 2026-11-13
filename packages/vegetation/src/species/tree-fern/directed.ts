@@ -123,13 +123,12 @@ export const directed: Species = {
 			...record.lod.budget,
 			// The fronds are pieces in the kit, shared by every plant, where the grown fern drew them in
 			// each plant's own mesh. Measured at seed 11 over the four variants, kit and variants
-			// together: 0.85, 0.92, 2.11 and 3.32 MB at the low, medium, high and ultra tiers, against
-			// the grown fern's 5.01, 5.06, 5.21 and 5.43 MB. The kit's own: 0.66, 0.71, 1.86 and 3.03 MB;
-			// a plant's at most 80 KB. Near, every pinnule is a card: 165,934 triangles at the high tier
-			// against the grown fern's 50,393.
-			kitBytes: { low: 1_500_000, medium: 1_500_000, high: 1_900_000, ultra: 3_100_000 },
+			// together: 0.85, 0.92, 1.04 and 1.16 MB at the low, medium, high and ultra tiers, against
+			// the grown fern's 5.01, 5.06, 5.21 and 5.43 MB. The kit's own: 0.66, 0.71, 0.79 and 0.88 MB;
+			// a plant's at most 76 KB. One card a pinna: the near form is 17,298 triangles at the high
+			// tier against the grown fern's 50,393, so the record's near budget stands.
+			kitBytes: { low: 1_000_000, medium: 1_000_000, high: 1_000_000, ultra: 1_000_000 },
 			variantBytes: { low: 150_000, medium: 150_000, high: 150_000, ultra: 150_000 },
-			lod0Triangles: 250_000,
 		},
 	},
 	cuttings: { leaf: { pressed: true } },

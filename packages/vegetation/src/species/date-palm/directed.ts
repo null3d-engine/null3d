@@ -33,11 +33,15 @@ export const directed: Species = {
 			// Picture 01 (an eye on a crop): the growing point, where the rachises meet, stands at 0.73
 			// of the height; the turning video reads 0.70 to 0.73.
 			height: 0.73 * HEIGHT,
-			// Pictures 01 and 02: the same width from the foot to just under the crown. The foot's
+			// Pictures 01 and 02: the same width from the foot to just under the crown. Pictures 05
+			// and 16: inside the crown the trunk ends among the frond bases that clasp its top metre,
+			// so it closes there to a blunt cone rather than standing up as a flat cap. The foot's
 			// flare is the stem base's (below).
 			width: [
 				[0, 0.064 * HEIGHT],
-				[1, 0.064 * HEIGHT],
+				[0.92, 0.064 * HEIGHT],
+				[0.97, 0.045 * HEIGHT],
+				[1, 0.02 * HEIGHT],
 			],
 			// Pictures 01, 02 and 18: plumb and straight.
 			lean: { mean: 1, spread: 1 },
@@ -75,12 +79,51 @@ export const directed: Species = {
 		// point among the lowest living fronds.
 		flowers: {
 			count: { mean: 4.5, spread: 0.5 },
-			from: 0.03 * HEIGHT,
-			to: 0.1 * HEIGHT,
-			leave: 40,
+			from: 0.01 * HEIGHT,
+			to: 0.03 * HEIGHT,
+			// The stalk arches out before it hangs, so the bunch stands clear of the trunk.
+			leave: 20,
 		},
 	},
 	pieces: PIECES,
+	extras: [
+		{
+			// Picture 01: four or five bunches, each a ball about 0.06 of the height across (0.9 m) of
+			// many thin strands lined with dates, on a stalk 0.08 of the height long (1.2 m) that arches
+			// out and hangs; still 19: a date three times as long as its strand is thick, yellow turning
+			// orange. The fact sheet: dates 3 to 7 cm, yellow to orange-brown. Each date hangs on its own
+			// strand from the stalk's end, so the bunch splays to the ball's width.
+			kind: 'fruit',
+			at: 'flower',
+			share: 1,
+			count: { mean: 90, spread: 15 },
+			seasons: ['summer', 'autumn'],
+			shape: {
+				lathe: [
+					[0.002, 0],
+					[0.007, 0.004],
+					[0.0095, 0.012],
+					[0.0095, 0.028],
+					[0.0085, 0.04],
+					[0.006, 0.05],
+					[0.003, 0.058],
+					[0.0008, 0.063],
+					[0, 0.066],
+				],
+				sides: 8,
+				stalk: 0.08 * HEIGHT,
+				pedicel: 0.3,
+				stalkSides: 5,
+			},
+			colour: [0.6, 0.3, 0.03],
+			// The stalk is the orange of the picture's bunch stems.
+			stalkColour: [0.5, 0.28, 0.05],
+			roughness: [0.45, 0.6],
+			// The stalk leaves its site outward and bends down by this much more, so the bunch hangs
+			// clear of the trunk, within one and a half trunk widths of its axis as picture 01 shows.
+			hang: 30,
+		},
+	],
 	// The specification's sparsest palm keeps 10 living fronds and 3 dead ones of 35, so the crown
 	// still reads as a ball on a column: a share of 0.37 of its fronds.
 	sparse: { foliage: 0.37 },
@@ -145,12 +188,13 @@ export const directed: Species = {
 		budget: {
 			...record.lod.budget,
 			// The fronds are pieces in the kit, shared by every plant, where the grown palm drew them in
-			// each plant's own mesh. Measured at seed 11 over the three variants, kit and variants
-			// together: 1.77, 2.03, 2.38 and 2.76 MB at the low, medium, high and ultra tiers, against
-			// the grown palm's 9.45, 9.57, 9.72 and 9.99 MB. The kit's own: 0.73, 0.95, 1.29 and
-			// 1.66 MB; a plant's: at most 0.44 MB.
+			// each plant's own mesh, and each plant draws its own date bunches, about 90 dates on
+			// each of four or five. Measured at seed 11 over the three variants, kit and variants
+			// together: 4.06, 4.22, 4.44 and 4.83 MB at the low, medium, high and ultra tiers, against
+			// the grown palm's 9.45, 9.57, 9.72 and 9.99 MB. The kit's own: 0.73, 0.85, 1.06 and
+			// 1.43 MB; a plant's at most 1.38 MB, the dates most of it.
 			kitBytes: { low: 2_500_000, medium: 2_500_000, high: 2_500_000, ultra: 2_500_000 },
-			variantBytes: { low: 600_000, medium: 600_000, high: 600_000, ultra: 600_000 },
+			variantBytes: { low: 1_600_000, medium: 1_600_000, high: 1_600_000, ultra: 1_600_000 },
 		},
 	},
 	cuttings: { leaf: { pressed: true } },

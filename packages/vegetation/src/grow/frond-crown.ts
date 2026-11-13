@@ -74,7 +74,7 @@ const RING_JITTER = 12;
 const LEAVE_MOST = 88;
 /**
  * How far out from the trunk's axis a living frond's base stands, as a share of the trunk's radius
- * at the growing point: the youngest stand near the axis, the oldest at the trunk's surface.
+ * at the base's own height: the youngest stand near the axis, the oldest at the trunk's surface.
  */
 const BASE_IN = 0.3;
 const BASE_OUT = 0.9;
@@ -310,7 +310,7 @@ export function growFrondCrown(input: GrowInput): MacroSkeleton {
 				rank.leave + (draw(DRAW.frondLeave, i) * 2 - 1) * LEAVE_JITTER,
 			);
 			const drop = growth.fronds.clasp * age;
-			const out = topRadius * (BASE_IN + (BASE_OUT - BASE_IN) * age);
+			const out = radiusUnder(drop) * (BASE_IN + (BASE_OUT - BASE_IN) * age);
 			planned.push({
 				at: onTrunk(drop, azimuth, out),
 				direction: heading(azimuth, leave),

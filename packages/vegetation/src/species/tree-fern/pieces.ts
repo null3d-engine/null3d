@@ -3,10 +3,11 @@
 // was read on; lengths are metres on a fern 4.4 m tall (see directed.ts).
 //
 // A frond is twice divided (the fact sheet): a hairy rachis carrying thirty or more pairs of pinnae in
-// its own plane, each pinna cut into some seventeen pairs of lobed pinnules. Near, the high and ultra
-// tiers draw each pinnule; far, the low and medium tiers draw each pinna as one leaf whose picture
-// shows its pinnules, so the frond still reads twice divided.
-import type { PieceLeaves, PieceRule, PieceSides, PieceStem, PieceStudio } from '../../leaf/piece';
+// its own plane, each pinna cut into some seventeen pairs of lobed pinnules. Each pinna is one card of
+// the species' leaf, whose picture shows its pinnules apart with open gaps between them, so the frond
+// reads twice divided at every tier: beside still 21 it reads nearer than a card for each pinnule, at
+// a fourteenth of the triangles.
+import type { PieceLeaves, PieceRule, PieceStem, PieceStudio } from '../../leaf/piece';
 
 /** The frond's length. Picture 01: 0.6 of the fern's height, 2.64 m; the fact sheet: 1.5 to 3 m. */
 export const FROND = 2.64;
@@ -30,62 +31,23 @@ const PINNA_ALONG: readonly (readonly [number, number])[] = [
 
 /**
  * The longest pinna, in metres. Pictures 01 and 04: the blade is 0.25 to 0.3 of the frond wide at its
- * widest, and a pinna leaves at 75 degrees, so the longest pinna is 0.14 of the frond.
+ * widest, and a pinna leaves at 75 degrees, so the longest pinna is 0.14 of the frond. On a whole
+ * plant the whole pictures govern the frond's proportion (owner ruling 8); still 21's studio frond is
+ * 0.64 as wide as long, a small frond of 11 pinna pairs, which is recorded as a conflict in the
+ * reference.
  */
 const PINNA = 0.14 * FROND;
 
 /**
- * The species' leaf is one pinna (its texture, slot 24, is a pinna with its pinnules painted in), so a
- * pinna takes the leaf at its own size and a pinnule a small copy of it. Pictures 12 and 24: a pinna
- * is 0.32 as wide as long; its pinnules stand nearly square to its midrib, so one is about 0.17 of
- * the pinna long.
+ * The species' leaf is one pinna (its texture, slot 24, is a pinna with its pinnules apart), in
+ * metres at the leaf's own size. Pictures 12 and 24: a pinna is 0.32 as wide as long.
  */
 const LEAF = 0.36;
 
-/** The pinnules along one pinna: about 17 pairs, in the pinna's plane (pictures 09, 10 and 12). */
-const PINNULES: PieceLeaves = {
-	gap: PINNA / 17,
-	from: 0.04,
-	ranked: [0],
-	angle: 70,
-	angleSpread: 4,
-	scale: [
-		[0, (0.17 * PINNA) / LEAF],
-		[0.6, (0.15 * PINNA) / LEAF],
-		[1, (0.05 * PINNA) / LEAF],
-	],
-	skyward: 0.6,
-};
-
 /**
- * A pinna near: a thin hairy midrib carrying its pinnules (pictures 08, 09 and 22). It is nearly
- * straight, so it keeps a ring only where it bends 8 degrees, not one at each pinnule.
+ * The pinnae: near-opposite pairs in the frond's plane, 70 to 80 degrees to the rachis, a little
+ * forward (pictures 08, 21 and 22), hanging a little (picture 04), each one leaf.
  */
-const PINNA_STEM: PieceStem = {
-	length: { mean: PINNA, spread: 0.03 },
-	radius: [0.0025, 0.0006],
-	droop: 10,
-	rings: 8,
-	bud: false,
-	leaves: PINNULES,
-};
-
-/**
- * The pinnae along the rachis: near-opposite pairs in the frond's plane, 70 to 80 degrees to the
- * rachis, a little forward (pictures 08, 21 and 22), one side and the other in turn half a pair's
- * spacing apart.
- */
-const PINNAE: PieceSides = {
-	stem: PINNA_STEM,
-	gap: ((1 - STIPE) * FROND) / (2 * PAIRS),
-	from: STIPE,
-	to: 0.99,
-	arrangement: 'alternate',
-	angle: { mean: 75, spread: 4 },
-	lengthAlong: PINNA_ALONG,
-};
-
-/** The pinnae far: one leaf each, at the same places, sizes and angles, hanging a little (picture 04). */
 const PINNA_LEAVES: PieceLeaves = {
 	gap: ((1 - STIPE) * FROND) / PAIRS,
 	from: STIPE,
@@ -99,9 +61,9 @@ const PINNA_LEAVES: PieceLeaves = {
 /**
  * A frond's rachis, bent by its rank's arch: the degrees it turns toward its lower side and the
  * stretch it turns over. It is 0.012 of the frond thick at its foot, red-brown and hairy below and
- * thinning to its tip (pictures 05 and 08). The far mesh keeps a ring every 8 degrees of the arch.
+ * thinning to its tip (pictures 05 and 08). It keeps a ring every 8 degrees of its arch at every tier.
  */
-function rachis(droop: number, droopOver: readonly [number, number], near: boolean): PieceStem {
+function rachis(droop: number, droopOver: readonly [number, number]): PieceStem {
 	return {
 		length: { mean: FROND, spread: 0.15 },
 		radius: [0.006 * FROND, 0.002],
@@ -109,7 +71,7 @@ function rachis(droop: number, droopOver: readonly [number, number], near: boole
 		droopOver,
 		rings: 8,
 		bud: false,
-		...(near ? { sides: [PINNAE] } : { leaves: PINNA_LEAVES }),
+		leaves: PINNA_LEAVES,
 	};
 }
 
@@ -121,7 +83,7 @@ function rachis(droop: number, droopOver: readonly [number, number], near: boole
  */
 const ROLL = 60;
 
-/** A living frond of one arch: pinnules near, one leaf a pinna far, its blade rolled. */
+/** A living frond of one arch, its blade rolled. */
 function frond(name: string, droop: number, droopOver: readonly [number, number]): PieceRule {
 	return {
 		name,
@@ -129,8 +91,7 @@ function frond(name: string, droop: number, droopOver: readonly [number, number]
 		variants: 1,
 		lengthwise: true,
 		roll: ROLL,
-		stem: rachis(droop, droopOver, true),
-		far: rachis(droop, droopOver, false),
+		stem: rachis(droop, droopOver),
 	};
 }
 
@@ -157,7 +118,7 @@ export const PIECES: readonly PieceRule[] = [
 		// A dead frond is brown to the tips (pictures 01, 05 and 20).
 		browning: 1,
 		stem: {
-			...rachis(8, [0, 1], false),
+			...rachis(8, [0, 1]),
 			leaves: { ...PINNA_LEAVES, ranked: [20], angle: 25, angleSpread: 6 },
 		},
 	},
