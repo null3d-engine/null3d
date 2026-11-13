@@ -211,6 +211,14 @@ describe('the conifer frame as a skeleton', () => {
 					if (!end) continue;
 					expect(Math.hypot(end.x - centre[0], end.z - centre[2])).toBeLessThanOrEqual(width / 2);
 				}
+				// An arm reaches out under its pad: its end stands a fifth of the pad's width from its foot.
+				for (const arm of limb.arms) {
+					const foot = limb.nodes[arm.node];
+					const tip = arm.nodes[arm.nodes.length - 1];
+					expect(foot && tip).toBeTruthy();
+					if (foot && tip)
+						expect(Math.hypot(tip.x - foot.x, tip.z - foot.z)).toBeGreaterThan(width * 0.2);
+				}
 				expect(limb.arms.length).toBe(growth.limbs.arms.count);
 				expect(new Set(limb.arms.map((arm) => arm.node)).size).toBe(limb.arms.length);
 			}
@@ -294,5 +302,97 @@ describe("the giant sequoia's frame", () => {
 				);
 		}
 		expect(digest(growConifer(grown(11)))).toBe(digest(growConifer(grown(11))));
+	});
+});
+
+describe("the pine's sockets", () => {
+	const rule = growth.patch.sockets;
+	const pitch = rule?.pitch ?? 0;
+
+	it('fills every pad with ranked sockets, the ends of its limb and arms first', () => {
+		expect(rule).toBeDefined();
+		for (const seed of SEEDS) {
+			const plan = planConifer(input(seed));
+			plan.patches.forEach((_, patch) => {
+				const own = plan.sockets.filter((socket) => socket.patch === patch);
+				const limb = plan.limbs.find((candidate) => candidate.patch === plan.patches[patch]);
+				expect(limb).toBeDefined();
+				if (!limb) return;
+				// One socket on the limb's end and one on each arm's, then the twigs' sockets.
+				const ends = 1 + limb.arms.length;
+				expect(own.length).toBeGreaterThanOrEqual(ends);
+				// The ranks of a pad run from 0 with none repeated.
+				expect(own.map((socket) => socket.rank).sort((a, b) => a - b)).toEqual(
+					own.map((_, i) => i),
+				);
+				for (const socket of own) expect(socket.twig < 0).toBe(socket.rank < ends);
+			});
+		}
+	});
+
+	it('stands no two sockets of a pad nearer than seven tenths of the pitch, all inside the pad', () => {
+		const plan = planConifer(input(11));
+		plan.patches.forEach((patch, index) => {
+			const own = plan.sockets.filter((socket) => socket.patch === index);
+			for (let a = 0; a < own.length; a++) {
+				const first = own[a];
+				if (!first) continue;
+				expect(
+					Math.hypot(first.at[0] - patch.centre[0], first.at[2] - patch.centre[2]),
+				).toBeLessThanOrEqual(patch.width / 2 + 1e-6);
+				for (let b = a + 1; b < own.length; b++) {
+					const second = own[b];
+					if (!second) continue;
+					const apart = Math.hypot(
+						first.at[0] - second.at[0],
+						first.at[1] - second.at[1],
+						first.at[2] - second.at[2],
+					);
+					expect(apart).toBeGreaterThanOrEqual(pitch * 0.7 - 1e-6);
+				}
+			}
+		});
+	});
+
+	it('ends every twig in a socket, and thins any rank evenly over the pad', () => {
+		const plan = planConifer(input(11));
+		plan.twigs.forEach((twig, index) => {
+			const on = plan.sockets.filter((socket) => socket.twig === index);
+			expect(on.some((socket) => socket.node === twig.nodes.length - 1)).toBe(true);
+		});
+		// Half of a large pad's sockets, by rank, stand on both sides of its limb's line.
+		const largest = plan.patches.reduce((a, b) => (b.width > a.width ? b : a));
+		const index = plan.patches.indexOf(largest);
+		const own = plan.sockets.filter((socket) => socket.patch === index);
+		const kept = own.filter((socket) => socket.rank < own.length / 2);
+		const across: [number, number] = [-largest.along[2], largest.along[0]];
+		const sides = kept.map(
+			(socket) =>
+				(socket.at[0] - largest.centre[0]) * across[0] +
+				(socket.at[2] - largest.centre[2]) * across[1],
+		);
+		const left = sides.filter((side) => side < 0).length;
+		expect(left).toBeGreaterThan(kept.length * 0.25);
+		expect(left).toBeLessThan(kept.length * 0.75);
+	});
+
+	it('writes each socket as a bud site on its own wood', () => {
+		const plan = planConifer(input(11));
+		const skeleton = growConifer(input(11));
+		const { buds } = skeleton;
+		expect(buds.count).toBe(plan.sockets.length);
+		expect(buds.sockets).toBeDefined();
+		for (let b = 0; b < buds.count; b++) {
+			const node = buds.node[b] as number;
+			// The site stands at its node, and its axis is the node's own.
+			expect(buds.axis[b]).toBe(skeleton.axisOf[node] as number);
+			for (let k = 0; k < 3; k++)
+				expect(buds.position[b * 3 + k] as number).toBeCloseTo(
+					skeleton.position[node * 3 + k] as number,
+					4,
+				);
+			expect(buds.sockets?.rank[b]).toBe((plan.sockets[b] as (typeof plan.sockets)[number]).rank);
+			expect(buds.sockets?.lobe[b]).toBe((plan.sockets[b] as (typeof plan.sockets)[number]).patch);
+		}
 	});
 });
