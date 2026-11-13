@@ -449,3 +449,80 @@ export function crownFaults(
 	});
 	return out;
 }
+
+/**
+ * The pairs of a frame's axes whose wood passes through each other: two axes, neither grown from
+ * the other, with a node of each nearer than the sum of the two radii. Two axes that leave one
+ * parent are read past their first fifth, since they stand together where they leave.
+ *
+ * @param plan The frame.
+ * @returns The pairs, each as the two axes' indices.
+ * @category api/vegetation
+ */
+export function woodThrough(plan: FramePlan): [number, number][] {
+	const out: [number, number][] = [];
+	const count = plan.axes.length;
+	/** Each axis's forebears, itself among them. */
+	const lines = plan.axes.map((_, index) => {
+		const line = new Set<number>();
+		for (let up = index; up >= 0; up = (plan.axes[up] as FrameAxis).parent) line.add(up);
+		return line;
+	});
+	// A box round each axis's wood, so two axes far apart are not read node by node.
+	const boxes = plan.axes.map((axis) => {
+		const box = [
+			Number.POSITIVE_INFINITY,
+			Number.POSITIVE_INFINITY,
+			Number.POSITIVE_INFINITY,
+			Number.NEGATIVE_INFINITY,
+			Number.NEGATIVE_INFINITY,
+			Number.NEGATIVE_INFINITY,
+		];
+		for (const node of axis.nodes) {
+			box[0] = Math.min(box[0] as number, node.x - node.radius);
+			box[1] = Math.min(box[1] as number, node.y - node.radius);
+			box[2] = Math.min(box[2] as number, node.z - node.radius);
+			box[3] = Math.max(box[3] as number, node.x + node.radius);
+			box[4] = Math.max(box[4] as number, node.y + node.radius);
+			box[5] = Math.max(box[5] as number, node.z + node.radius);
+		}
+		return box;
+	});
+	for (let i = 0; i < count; i++)
+		for (let j = i + 1; j < count; j++) {
+			if ((lines[i] as Set<number>).has(j) || (lines[j] as Set<number>).has(i)) continue;
+			const p = boxes[i] as number[];
+			const q = boxes[j] as number[];
+			if (
+				(p[0] as number) > (q[3] as number) ||
+				(q[0] as number) > (p[3] as number) ||
+				(p[1] as number) > (q[4] as number) ||
+				(q[1] as number) > (p[4] as number) ||
+				(p[2] as number) > (q[5] as number) ||
+				(q[2] as number) > (p[5] as number)
+			)
+				continue;
+			const a = plan.axes[i] as FrameAxis;
+			const b = plan.axes[j] as FrameAxis;
+			const siblings = a.parent === b.parent;
+			let through = false;
+			for (let k = 0; k < a.nodes.length && !through; k++) {
+				if (siblings && (a.along[k] as number) < 0.2) continue;
+				const one = a.nodes[k] as FrameNode;
+				for (let m = 0; m < b.nodes.length; m++) {
+					if (siblings && (b.along[m] as number) < 0.2) continue;
+					const other = b.nodes[m] as FrameNode;
+					const reach = one.radius + other.radius;
+					const dx = one.x - other.x;
+					const dy = one.y - other.y;
+					const dz = one.z - other.z;
+					if (dx * dx + dy * dy + dz * dz < reach * reach) {
+						through = true;
+						break;
+					}
+				}
+			}
+			if (through) out.push([i, j]);
+		}
+	return out;
+}
