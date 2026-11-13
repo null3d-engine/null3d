@@ -86,6 +86,12 @@ export interface PieceLeaves {
 		readonly inPlane?: boolean;
 	};
 	/**
+	 * The share by which a leaf is laid into the piece's own plane, the plane that faces the rest
+	 * frame's +Z: at 1 its midrib lies in that plane and its blade faces +Z. A spray whose leaf
+	 * pairs all show beside their stem lies this way.
+	 */
+	readonly flat?: number;
+	/**
 	 * A flat rosette: the stem's leaves fan out in the plane that faces the piece's sky side, spread
 	 * evenly to `reach` degrees either side of the stem, the lowest leaf the widest, and each blade
 	 * faces the sky side within `tilt` degrees. An oak's end tuft stands this way.
@@ -314,6 +320,28 @@ export function planPiece(
 		return { ...leaf, direction, rotation };
 	};
 
+	/** A leaf laid into the plane that faces the rest frame's +Z, by a share. */
+	const flattened = (leaf: PlannedLeaf, share: number): PlannedLeaf => {
+		const s = Math.min(1, Math.max(0, share));
+		const d = leaf.direction;
+		const laid: Vector3 = [d[0], d[1], d[2] * (1 - s)];
+		// A leaf that pointed straight out of the plane lies along its stem.
+		const direction =
+			length3(laid[0], laid[1], laid[2]) < 1e-3
+				? square(leaf.stem, [0, 0, 1], [0, 1, 0])
+				: normalize3(laid);
+		const before = square(leaf.stem, direction, leaf.radial);
+		const out = square([0, 0, 1], direction, before);
+		const face = normalize3([
+			before[0] * (1 - s) + out[0] * s,
+			before[1] * (1 - s) + out[1] * s,
+			before[2] * (1 - s) + out[2] * s,
+		]);
+		const rotation = [0, 0, 0, 1];
+		quatFromFrame(direction, face, rotation);
+		return { ...leaf, direction, rotation };
+	};
+
 	/**
 	 * Lays the leaves from `first` on into a flat rosette: evenly through the fan either side of
 	 * their stem, in the plane that faces the sky side, the lowest leaf the widest.
@@ -442,6 +470,9 @@ export function planPiece(
 				if (own && (own.hang !== undefined || own.face))
 					for (let i = first; i < leaves.length; i++)
 						leaves[i] = hung(leaves[i] as PlannedLeaf, own, axis, i);
+				if (own?.flat)
+					for (let i = first; i < leaves.length; i++)
+						leaves[i] = flattened(leaves[i] as PlannedLeaf, own.flat);
 			}
 			if (atNode) node++;
 		}
