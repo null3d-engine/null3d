@@ -345,8 +345,6 @@ const OPEN_DEPTH: Readonly<Record<string, number>> = {
 	'common-alder 22': 0.26,
 };
 const OPEN_GAP: Readonly<Record<string, number>> = {
-	'pedunculate-oak 21': 0.256,
-	'pedunculate-oak 22': 0.214,
 	// In the birch's and the willow's videos nearly every leaf shows its whole face in every frame,
 	// which fixed leaves cannot; their stills judge them.
 	'silver-birch 21': 0.437,
