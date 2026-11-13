@@ -420,10 +420,10 @@ function reversedBits(index: number, bits: number): number {
 
 /**
  * The sockets of a frame and the twigs that carry them. A patch that every end carries holds one
- * socket, on its end. A patch that a limb's arms spread under is filled: side twigs leave the limb's
- * run and each arm, to one side and the other in turn, a pitch apart, level, and each twig carries a
- * socket every pitch along it. No two sockets of a patch stand nearer than a share of the pitch, and
- * a twig that would carry none is not grown, so no wood ends bare.
+ * socket, on its end. A patch that a limb's arms spread under is filled: a pair of side twigs, one
+ * to each side, leaves the limb's run and each arm every pitch, rising at the record's lift, and
+ * each twig carries a socket every pitch along it. No two sockets of a patch stand nearer than a
+ * share of the pitch, and a twig that would carry none is not grown, so no wood ends bare.
  */
 function socketsOf(
 	record: Species,
@@ -580,56 +580,60 @@ function socketsOf(
 				before = node;
 				if (since < pitch || carrier.taken.has(i) || !inside(node.x, node.z)) continue;
 				const along = headingAt(carrier.nodes, i, carrier.from);
-				const turn = side * radians(rule.twig);
-				const dir: Vector3 = [
-					along[0] * cos(turn) - along[2] * sin(turn),
-					0,
-					along[0] * sin(turn) + along[2] * cos(turn),
-				];
-				// The twig rises at the record's lift toward the patch's rim, in whole steps of a pitch,
-				// a few at most, so its sockets stand a pitch apart along it.
-				const run = pitch * cos(lift);
-				const rise = pitch * sin(lift);
-				let steps = 0;
-				while (
-					steps < TWIG_STEPS_MOST &&
-					inside(node.x + dir[0] * run * (steps + 1), node.z + dir[2] * run * (steps + 1))
-				)
-					steps++;
-				const foot = Math.max(tipRadius, Math.min(node.radius * TWIG_FOOT, tipRadius * 2));
-				const nodes: ConiferNode[] = [];
-				const made: Draft[] = [];
-				for (let k = 1; k <= steps; k++) {
-					const at: Vector3 = [
-						node.x + dir[0] * run * k,
-						node.y + rise * k,
-						node.z + dir[2] * run * k,
-					];
-					nodes.push({
-						x: at[0],
-						y: at[1],
-						z: at[2],
-						radius: Math.min(node.radius, foot + (tipRadius - foot) * (k / steps)),
-					});
-					if (!clear(at) || made.some((other) => other.node === k - 1)) continue;
-					made.push({
-						end: false,
-						twig: twigs.length,
-						limb: l,
-						arm: carrier.arm,
-						node: k - 1,
-						radius: (nodes[k - 1] as ConiferNode).radius,
-						at,
-						heading: dir,
-					});
-				}
-				// The twig ends at its last socket, and a twig with none is not grown.
-				const last = made[made.length - 1];
-				if (!last) continue;
-				twigs.push({ limb: l, arm: carrier.arm, node: i, nodes: nodes.slice(0, last.node + 1) });
-				drafts.push(...made);
-				side = -side;
 				since = 0;
+				// A pair of twigs leaves each such node, one to each side, as a pine's side branches
+				// leave in a ring at a year's end. The side that leads swaps from one node to the next.
+				for (const flank of [side, -side]) {
+					const turn = flank * radians(rule.twig);
+					const dir: Vector3 = [
+						along[0] * cos(turn) - along[2] * sin(turn),
+						0,
+						along[0] * sin(turn) + along[2] * cos(turn),
+					];
+					// The twig rises at the record's lift toward the patch's rim, in whole steps of a pitch,
+					// a few at most, so its sockets stand a pitch apart along it.
+					const run = pitch * cos(lift);
+					const rise = pitch * sin(lift);
+					let steps = 0;
+					while (
+						steps < TWIG_STEPS_MOST &&
+						inside(node.x + dir[0] * run * (steps + 1), node.z + dir[2] * run * (steps + 1))
+					)
+						steps++;
+					const foot = Math.max(tipRadius, Math.min(node.radius * TWIG_FOOT, tipRadius * 2));
+					const nodes: ConiferNode[] = [];
+					const made: Draft[] = [];
+					for (let k = 1; k <= steps; k++) {
+						const at: Vector3 = [
+							node.x + dir[0] * run * k,
+							node.y + rise * k,
+							node.z + dir[2] * run * k,
+						];
+						nodes.push({
+							x: at[0],
+							y: at[1],
+							z: at[2],
+							radius: Math.min(node.radius, foot + (tipRadius - foot) * (k / steps)),
+						});
+						if (!clear(at) || made.some((other) => other.node === k - 1)) continue;
+						made.push({
+							end: false,
+							twig: twigs.length,
+							limb: l,
+							arm: carrier.arm,
+							node: k - 1,
+							radius: (nodes[k - 1] as ConiferNode).radius,
+							at,
+							heading: dir,
+						});
+					}
+					// The twig ends at its last socket, and a twig with none is not grown.
+					const last = made[made.length - 1];
+					if (!last) continue;
+					twigs.push({ limb: l, arm: carrier.arm, node: i, nodes: nodes.slice(0, last.node + 1) });
+					drafts.push(...made);
+				}
+				side = -side;
 			}
 		});
 		rankInto(patchIndex.get(limb.patch) as number, drafts);
