@@ -46,9 +46,18 @@ function pair(file: string, over: Partial<StillResult> = {}): StillResult {
 		edgeDifference: null,
 		pieces: null,
 		connectivity: null,
+		subjectChecked: true,
 		...over,
 	};
 }
+
+/** A reviewer's pass, with all that makes it one. */
+const PASS = {
+	verdict: 'pass',
+	judge: 'reviewer',
+	reason: 'read beside its pictures',
+	review: { reviewer: 'a reviewer', date: '2026-11-13', file: 'review.md' },
+} as const;
 
 const SLOTS: Slot[] = [
 	slot(1, 'whole-distant', 'whole'),
@@ -89,6 +98,7 @@ function input(over: Partial<Record<string, Partial<StillResult>>> = {}): Verdic
 		variant: 0,
 		preset: 'high',
 		coverage: { complete: false, compared: 7, inUse: 8 },
+		skeleton: 'views/skeleton.png',
 		slots: SLOTS,
 		stills: new Map(
 			SLOTS.map((s) => [s.file, pair(s.file, results[s.file] as Partial<StillResult>)]),
@@ -188,6 +198,7 @@ describe("the tool's verdict of a run", () => {
 			'stills/01-whole-distant.png',
 			'stills/02-whole-profile.png',
 			'stills/18-silhouette.png',
+			'views/skeleton.png',
 		]);
 	});
 
@@ -309,6 +320,87 @@ describe('the pictures a verdict keeps apart', () => {
 	});
 });
 
+describe('what the tool writes without a reviewer', () => {
+	test('fails the rows of a picture whose part the plant lacks, with the reason', () => {
+		const verdict = toolVerdict(
+			input({
+				'08-limb-fork.png': {
+					view: 'fork',
+					lacks: 'no limb divides into two arms of like size: 0 divisions, none even and open',
+				},
+			}),
+		);
+		// Picture 08 carries rows 3 and 7.
+		for (const row of [3, 7]) {
+			expect(rowOf(verdict, row)).toMatchObject({
+				verdict: 'fail',
+				judge: 'tool',
+				reason:
+					'08-limb-fork.png: no limb divides into two arms of like size: 0 divisions, none even and open',
+			});
+		}
+		expect(rowOf(verdict, 1).verdict).toBe('unjudged');
+		expect(verdictFaults(verdict)).toEqual([]);
+	});
+
+	test('names the reference pictures of a row that the run did not compare', () => {
+		const verdict = toolVerdict(input({ '15-bark-mid-trunk.png': { error: 'not drawn' } }));
+		expect(rowOf(verdict, 8).notCompared).toEqual(['15-bark-mid-trunk.png']);
+		expect(rowOf(verdict, 8).evidence).toEqual([]);
+		expect(rowOf(verdict, 6).notCompared).toBe(undefined);
+	});
+
+	test('names the pictures no subject check confirmed, and the wood alone on rows 1 to 3', () => {
+		const verdict = toolVerdict(
+			input({
+				'12-single-leaf-upper.png': { view: 'leaf-upper', shapeIou: 0.84, subjectChecked: false },
+			}),
+		);
+		expect(rowOf(verdict, 4).unchecked).toEqual(['12-single-leaf-upper.png']);
+		expect(rowOf(verdict, 6).unchecked).toBe(undefined);
+		for (const row of [1, 2, 3])
+			expect(rowOf(verdict, row).evidence).toContain('views/skeleton.png');
+		expect(rowOf(verdict, 4).evidence).not.toContain('views/skeleton.png');
+	});
+
+	test('fails the balance on a spread outside its band, and leaves one inside it to a reviewer', () => {
+		const turn = {
+			video: 'oak-turntable.mp4',
+			reference: { width: 0.2, height: 0.1 },
+			render: { width: 0.4, height: 0.12 },
+			band: 0.25,
+			sheets: ['sheet-turn-oak-turntable-01.png'],
+		};
+		const lopsided = toolVerdict({ ...input(), turn }).balance;
+		expect(lopsided).toMatchObject({
+			verdict: 'fail',
+			judge: 'tool',
+			reason: 'crown box width spread over eight angles 0.4 above 0.25',
+			evidence: ['sheet-turn-oak-turntable-01.png'],
+		});
+		const even = toolVerdict({
+			...input(),
+			turn: { ...turn, render: { width: 0.22, height: 0.12 } },
+		});
+		expect(even.balance.verdict).toBe('unjudged');
+		expect(even.balance.figures.length).toBe(2);
+		// A reference less regular than the band sets the band.
+		const wide = toolVerdict({
+			...input(),
+			turn: { ...turn, reference: { width: 0.45, height: 0.1 } },
+		}).balance;
+		expect(wide.verdict).toBe('unjudged');
+		expect(wide.figures[0]?.band).toEqual({ min: null, max: 0.45 });
+		// A run with no turning video compared has no balance to judge.
+		expect(toolVerdict(input()).balance).toEqual({
+			verdict: 'unjudged',
+			judge: null,
+			evidence: [],
+			figures: [],
+		});
+	});
+});
+
 describe("a reviewer's rows", () => {
 	const fresh = toolVerdict(input());
 	const judged: Verdict = {
@@ -317,7 +409,7 @@ describe("a reviewer's rows", () => {
 			row.row === 1
 				? { ...row, verdict: 'fail', judge: 'reviewer', reason: 'the limbs leave too steeply' }
 				: row.row === 11
-					? { ...row, verdict: 'pass', judge: 'reviewer', neighbour: 'holm-oak' }
+					? { ...row, ...PASS, neighbour: 'holm-oak' }
 					: row,
 		),
 	};
@@ -369,7 +461,7 @@ describe('an unsound verdict', () => {
 	});
 
 	test('judges a row with no judge, or fails one with no reason', () => {
-		expect(verdictFaults(withRow(1, { verdict: 'pass', judge: null }))).toEqual([
+		expect(verdictFaults(withRow(1, { ...PASS, judge: null }))).toEqual([
 			'row 1 is judged pass and names no judge',
 		]);
 		expect(verdictFaults(withRow(1, { verdict: 'fail', judge: 'reviewer' }))).toEqual([
@@ -383,40 +475,67 @@ describe('an unsound verdict', () => {
 		]);
 	});
 
-	test('passes a row on nothing, on void pictures, or against a figure', () => {
-		expect(verdictFaults(withRow(5, { verdict: 'pass', judge: 'reviewer' }))).toEqual([
-			'row 5 passes on no picture',
+	test('passes a row with no reason, no reviewer, no day or no review file', () => {
+		expect(verdictFaults(withRow(7, { verdict: 'pass', judge: 'reviewer' }))).toEqual([
+			'row 7 passes and gives no reason',
+			'row 7 passes and names no reviewer',
+			'row 7 passes with no day of review, as year, month and day',
+			'row 7 passes and names no review file',
 		]);
+		expect(
+			verdictFaults(withRow(7, { ...PASS, review: { ...PASS.review, date: 'yesterday' } })),
+		).toEqual(['row 7 passes with no day of review, as year, month and day']);
+		expect(verdictFaults(withRow(7, PASS))).toEqual([]);
+	});
+
+	test('passes a row on nothing, on void pictures, or on pictures no check confirmed', () => {
+		expect(verdictFaults(withRow(5, PASS))).toEqual(['row 5 passes on no picture']);
 		const voided = withRow(4, {
-			verdict: 'pass',
-			judge: 'reviewer',
+			...PASS,
 			voids: [{ picture: '12-single-leaf-upper.png', reason: 'no subject' }],
 		});
 		expect(verdictFaults(voided)).toEqual([
 			'row 4 passes though every picture it names shows no subject',
 		]);
+		// A cut piece's view has no subject check, so the row cannot pass on it alone.
+		expect(verdictFaults(withRow(4, { ...PASS, unchecked: ['12-single-leaf-upper.png'] }))).toEqual(
+			['row 4 passes on pictures whose subject no check confirmed'],
+		);
 		// The tool passes no row, whatever its figures say.
-		expect(verdictFaults(withRow(10, { verdict: 'pass', judge: 'tool' }))).toEqual([
+		expect(verdictFaults(withRow(10, { ...PASS, judge: 'tool' }))).toEqual([
 			'row 10 is passed by the tool: only a reviewer passes a row',
 		]);
-		const row = rowOf(sound, 10);
-		const out = {
-			figures: [{ ...(row.figures[0] as (typeof row.figures)[number]), value: 7 }],
-		};
-		// A reviewer may overrule the figure, and says why.
-		expect(verdictFaults(withRow(10, { ...out, verdict: 'pass', judge: 'reviewer' }))).toEqual([
-			'row 10 is passed by a reviewer against a figure outside its band, and gives no reason',
+	});
+
+	test('passes rows 1 to 3 without the picture of the wood alone, or over a part the plant lacks', () => {
+		const row = rowOf(sound, 1);
+		const bare = row.evidence.filter((path) => !path.includes('skeleton'));
+		expect(verdictFaults(withRow(1, { ...PASS, evidence: bare }))).toEqual([
+			'row 1 passes without the picture of the wood alone, which the row is judged on',
 		]);
 		expect(
 			verdictFaults(
-				withRow(10, { ...out, verdict: 'pass', judge: 'reviewer', reason: 'the light differs' }),
+				withRow(3, {
+					...PASS,
+					lacking: [{ picture: '08-limb-fork.png', reason: 'no limb divides' }],
+				}),
 			),
-		).toEqual([]);
+		).toEqual(['row 3 passes though the plant lacks a part its photograph shows']);
 	});
 
 	test('passes row 11 with no built neighbour named', () => {
-		expect(verdictFaults(withRow(11, { verdict: 'pass', judge: 'reviewer' }))).toEqual([
+		expect(verdictFaults(withRow(11, PASS))).toEqual([
 			'row 11 passes and names no built neighbour',
+		]);
+	});
+
+	test('holds no balance, or passes it without a reviewer and a turning video', () => {
+		expect(verdictFaults({ ...sound, balance: undefined })).toEqual(['it holds no balance entry']);
+		expect(
+			verdictFaults({ ...sound, balance: { ...sound.balance, verdict: 'pass', judge: 'tool' } }),
+		).toContain('the balance is passed by the tool: only a reviewer passes it');
+		expect(verdictFaults({ ...sound, balance: { ...sound.balance, ...PASS } })).toEqual([
+			'the balance passes on no turning video',
 		]);
 	});
 

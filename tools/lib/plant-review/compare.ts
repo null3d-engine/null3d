@@ -55,7 +55,7 @@ import {
 import type { RunFrame } from './render.ts';
 import { type PictureNote, type Standing, standReason } from './review-data.ts';
 import type { SheathTarget } from './sheath.ts';
-import { voidReason } from './subject-check.ts';
+import { contractHeld, lackReason, voidReason } from './subject-check.ts';
 
 /** The bins of an edge-direction profile: twelve of fifteen degrees across half a turn. */
 const EDGE_BINS = 12;
@@ -1565,6 +1565,17 @@ export interface StillResult extends PairMetrics {
 	readonly standing?: { readonly kind: Standing; readonly reason: string };
 	/** Why the picture's outline is not read, where the review data says its reference's cannot be. */
 	readonly outlineVoid?: string;
+	/**
+	 * Why the plant has no such part as the photograph shows, where its view found none: no figure
+	 * is read from the picture, and the rows it carries fail on it.
+	 */
+	readonly lacks?: string;
+	/**
+	 * Whether a check confirmed that the picture shows its photograph's subject: a solved view
+	 * whose contract held, or a whole view that passed the framing check. A picture without one
+	 * may show another subject, so no row passes on such pictures alone.
+	 */
+	readonly subjectChecked?: boolean;
 	/** A cut branch's four density figures on both pictures, where the run measured them. */
 	readonly cutBranch?: {
 		readonly reference: CutBranchFigures;
@@ -1970,6 +1981,13 @@ export function compareStills(
 			]);
 			continue;
 		}
+		// A part the photograph shows and the plant does not have is the plant's fault: the picture
+		// carries no figure, and the rows it carries fail on it.
+		const lacks = lackReason(frame.facts);
+		if (lacks !== undefined) {
+			unread({ lacks }, ['PLANT LACKS', 'THE SUBJECT']);
+			continue;
+		}
 		// A close picture whose subject is missing decides nothing, and no figure is read from it.
 		const voided = voidReason(frame.facts, own);
 		if (voided !== undefined) {
@@ -1981,13 +1999,16 @@ export function compareStills(
 		const render = renderSideOf(runDir, frame, frame.file, false, habit);
 		// A whole view whose plant is cropped by the frame, or stands at another size than its
 		// photograph's, compares unlike things, so it is void before any figure is read.
-		const misframed =
+		const framingChecked = Boolean(
 			slot.framed &&
-			(slot.view === 'whole' || slot.view === 'silhouette') &&
-			frame.matte !== undefined &&
-			pictureNote?.outline === undefined &&
-			refSide.measures.box &&
-			render.measures.box
+				(slot.view === 'whole' || slot.view === 'silhouette') &&
+				frame.matte !== undefined &&
+				pictureNote?.outline === undefined &&
+				refSide.measures.box &&
+				render.measures.box,
+		);
+		const misframed =
+			framingChecked && refSide.measures.box && render.measures.box
 				? (cropFault(refSide.measures.clipped, render.measures.clipped) ??
 					framingFault(
 						{ box: refSide.measures.box, width: refPlant.width, height: refPlant.height },
@@ -2161,6 +2182,8 @@ export function compareStills(
 			...(frame.query?.sparse !== undefined ? { sparse: frame.query.sparse } : {}),
 			...(sheathFigure ? { sheath: sheathFigure } : {}),
 			...(framing ? { framing } : {}),
+			// A solved view whose contract held, or a whole view that passed the framing check.
+			subjectChecked: contractHeld(frame.facts) || framingChecked,
 			...(pictureNote?.outline !== undefined ? { outlineVoid: pictureNote.outline } : {}),
 			...(pictureNote?.standing !== undefined && pictureNote.reason !== undefined
 				? { standing: { kind: pictureNote.standing, reason: pictureNote.reason } }

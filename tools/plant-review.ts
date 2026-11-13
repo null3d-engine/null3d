@@ -391,9 +391,12 @@ function windShots(
 	});
 }
 
-/** The views a run draws alone, from `--views`. */
+/**
+ * The views a run draws alone, from `--views`. A run that draws every still also draws the wood
+ * alone, since the standard judges rows 1 to 3 on that picture and the verdict names it.
+ */
 function viewList(): PlantView[] {
-	if (!flag('views')) return [];
+	if (!flag('views')) return parts().has('stills') && !flag('stills') ? ['skeleton'] : [];
 	const text = option('views');
 	if (text === 'all') return [...PLANT_VIEWS];
 	const views = text.split(',') as PlantView[];
@@ -996,6 +999,7 @@ function compareRun(
 		coverage,
 		slots: set.stills,
 		stills,
+		...verdictViews(manifest, set, turns, limit),
 	});
 	const verdict = existsSync(verdictPath)
 		? mergeVerdict(JSON.parse(readFileSync(verdictPath, 'utf8')) as Verdict, fresh)
@@ -1049,6 +1053,37 @@ function compareRun(
 	);
 }
 
+/**
+ * What the verdict takes from a run beside its stills: the picture of the wood alone, where the
+ * run drew it, and the whole-plant turning video's spread over the standard's eight angles.
+ */
+function verdictViews(
+	manifest: Manifest,
+	set: ReferenceSet,
+	turns: ReadonlyMap<string, TurnResult>,
+	band: number,
+): Pick<Parameters<typeof toolVerdict>[0], 'skeleton' | 'turn'> {
+	const skeleton = manifest.frames.find(
+		(frame) => frame.group === 'views' && frame.query.view === 'skeleton' && !frame.error,
+	)?.file;
+	const video = set.turns.find((turn) => turn.piece === 'whole');
+	const result = video ? turns.get(video.file) : undefined;
+	return {
+		...(skeleton !== undefined && { skeleton }),
+		...(video &&
+			result &&
+			!result.error && {
+				turn: {
+					video: video.file,
+					reference: result.spread.reference,
+					render: result.spread.render,
+					band,
+					sheets: result.sheets,
+				},
+			}),
+	};
+}
+
 /** The edge-direction lines for the stills that give no outline, so a close-up still has a figure. */
 function edgeLines(pairs: readonly StillResult[]): string[] {
 	const lines: string[] = [];
@@ -1081,6 +1116,11 @@ function framingLines(pairs: readonly StillResult[]): string[] {
  */
 function voidLines(pairs: readonly StillResult[]): string[] {
 	return pairs.flatMap((pair) => [
+		...(pair.lacks === undefined
+			? []
+			: [
+					`- ${pair.file}: the plant lacks the part its photograph shows: ${pair.lacks}. The rows this picture carries fail on it.`,
+				]),
 		...(pair.void === undefined
 			? []
 			: [
