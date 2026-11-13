@@ -13,7 +13,7 @@
 // many leaves the plant grows.
 import type { ShootPrototype, ShootRows } from '../asset';
 import type { MacroSkeleton } from '../core/graph';
-import { BUD_AREOLE, BUD_DORMANT, BUD_TERMINAL } from '../core/graph';
+import { BUD_AREOLE, BUD_DORMANT, BUD_FLOWER, BUD_TERMINAL } from '../core/graph';
 import { hashAt, unitAt } from '../core/hash';
 import {
 	cos,
@@ -519,8 +519,9 @@ function placedRows(input: DressInput, bySky = true): Row[] {
 		const axis = buds.axis[b] as number;
 		const kind = buds.kind[b] as number;
 		// A dormant bud carries nothing, and it is no anchor for the stretch the next shoot's count
-		// shares: a culm's sheath buds must not stretch its tip's shoot down the bare culm.
-		if (kind === BUD_DORMANT) continue;
+		// shares: a culm's sheath buds must not stretch its tip's shoot down the bare culm. A flower
+		// site carries its flower, which is an extra, and no shoot.
+		if (kind === BUD_DORMANT || kind === BUD_FLOWER) continue;
 		const at: Vector3 = [
 			buds.position[b * 3] as number,
 			buds.position[b * 3 + 1] as number,

@@ -51,6 +51,7 @@ export type {
 	BaseSpec,
 	Clip,
 	Column,
+	ColumnArmTier,
 	CompoundLeaf,
 	CrownRosette,
 	Culm,
