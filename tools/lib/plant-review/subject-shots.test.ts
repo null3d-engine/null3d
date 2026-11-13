@@ -25,6 +25,7 @@ import {
 	project,
 	type Solved,
 	type SubjectShot,
+	siteShot,
 	underRimShot,
 } from '../../../tests/pages/lib/plant-review/subject-shots.ts';
 import {
@@ -120,6 +121,7 @@ function tree(over: Partial<PlantSubjects> = {}): PlantSubjects {
 		lobes: [],
 		twigTips: absent('none in this test'),
 		pieces: absent('none in this test'),
+		sites: absent('none in this test'),
 		leaf: { length: 0.1 },
 		...over,
 	};
@@ -971,6 +973,44 @@ describe('the view of one branch piece', () => {
 		// A plant that places no pieces at all is a fault of the view's mapping, not of the plant.
 		const none = placedPieceShot(tree({ pieces: absent('its rows are shoots') }), 'bough', TALL);
 		expect(isAbsent(none) && none.lacks).toBeFalsy();
+	});
+});
+
+describe('the view of a marked site', () => {
+	// Two nest holes on a stem of radius 0.5, one facing +Z and one facing -X, and an areole.
+	const holes = [
+		{ class: 'dormant', at: [0, 8, 0.5] as V3, normal: [0, 0, 1] as V3, radius: 0.5, axis: 0 },
+		{ class: 'dormant', at: [-0.5, 7, 0] as V3, normal: [-1, 0, 0] as V3, radius: 0.5, axis: 0 },
+		{ class: 'areole', at: [0.5, 2, 0] as V3, normal: [1, 0, 0] as V3, radius: 0.5, axis: 0 },
+	];
+	const plant = tree({ sites: holes });
+
+	test('frames the site of the class that faces the camera side best, looking into it, the span wide', () => {
+		const shot = shotOf(siteShot(plant, 'dormant', WIDE, { span: 1, turn: -Math.PI / 2 }));
+		expect(shot.facts.height).toBe(7);
+		const landed = landing(shot, WIDE, 'the dormant site');
+		expect(landed.x).toBeCloseTo(0.5, 6);
+		expect(landed.y).toBeCloseTo(0.5, 6);
+		expect(cameraAxes(shot.camera).forward[0]).toBeCloseTo(1, 6);
+		expect(2 * landed.depth * Math.tan((WIDE.fov * DEG) / 2) * WIDE.aspect).toBeCloseTo(1, 6);
+		expect(checkShot(shot, WIDE).present).toBe(true);
+	});
+
+	test('looks along the surface beside the site for an edge view', () => {
+		const shot = shotOf(siteShot(plant, 'areole', WIDE, { span: 0.2, edge: true, turn: 0 }));
+		const { forward } = cameraAxes(shot.camera);
+		// Square to the site's normal, level: what stands out of the site shows in profile.
+		expect(dot(forward, [1, 0, 0])).toBeCloseTo(0, 6);
+		expect(forward[1]).toBeCloseTo(0, 6);
+		expect(checkShot(shot, WIDE).present).toBe(true);
+	});
+
+	test('fails the plant that marks no site of the class its photograph shows', () => {
+		const missing = siteShot(plant, 'flower', WIDE, { span: 1, turn: 0 });
+		expect(isAbsent(missing) && missing.lacks).toBe(true);
+		expect(isAbsent(missing) && missing.absent).toBe(
+			'the plant marks no flower site; its sites are dormant, areole',
+		);
 	});
 });
 

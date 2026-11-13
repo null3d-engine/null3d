@@ -150,6 +150,11 @@ export interface PlantReviewQuery {
 	 */
 	readonly limbRank?: number;
 	/**
+	 * The class of a site the plant marks on its surface that a close view frames, such as a
+	 * saguaro's `dormant` site, its nest hole, or an `areole`: the site that faces the camera best.
+	 */
+	readonly site?: string;
+	/**
 	 * The radius of the ring a branch or sub-branch cutting's shoots stand on, as a share of the
 	 * piece's height, in place of the record hint's. A wide ring separates the shoots.
 	 */
@@ -505,6 +510,7 @@ export function plantReviewQuery(query: PlantReviewQuery): string {
 	if (query.form) params.set('form', query.form);
 	if (query.shoot) params.set('shoot', query.shoot);
 	if (query.piece) params.set('piece', query.piece);
+	if (query.site) params.set('site', query.site);
 	if (query.layout) params.set('layout', query.layout);
 	if (query.stem) params.set('stem', query.stem);
 	if (query.view) params.set('view', query.view);
@@ -564,6 +570,9 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 	const shoot = params.get('shoot');
 	if (shoot !== null && !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(shoot))
 		throw new Error(`shoot=${shoot} is not a class name: give a kebab-case word, such as twig.`);
+	const site = params.get('site');
+	if (site !== null && !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(site))
+		throw new Error(`site=${site} is not a class name: give a kebab-case word, such as areole.`);
 	const piece = params.get('piece');
 	if (piece !== null && !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(piece))
 		throw new Error(`piece=${piece} is not a class name: give a kebab-case word, such as bough.`);
@@ -684,6 +693,7 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 		...(form !== null && { form }),
 		...(shoot !== null && { shoot }),
 		...(piece !== null && { piece }),
+		...(site !== null && { site }),
 		...(stem !== null && { stem }),
 		...(layoutText !== null && { layout: layoutText as 'ring' | 'spray' | 'fan' }),
 		view,

@@ -78,6 +78,7 @@ import {
 	limbShot,
 	placedPieceShot,
 	type Solved,
+	siteShot,
 	underRimShot,
 } from '../lib/plant-review/subject-shots';
 import {
@@ -962,7 +963,25 @@ export default defineSketch(async (ctx) => {
 		const lens = { fov, aspect };
 		// A close view that names a class of piece frames the outermost placed piece of that class.
 		const placed = QUERY.piece !== undefined && SPEC.whole !== true;
-		switch (placed ? 'placed piece' : view) {
+		const marked = QUERY.site !== undefined && SPEC.whole !== true;
+		switch (placed ? 'placed piece' : marked ? 'site' : view) {
+			case 'site': {
+				// A close view that names a class of site frames the site that faces it best.
+				const found = solvedAt(
+					view,
+					lens,
+					() =>
+						siteShot(subjectsOf(), QUERY.site as string, lens, {
+							span: QUERY.span ?? Math.max(0.1, height * 0.03),
+							edge: QUERY.edge === true,
+							turn,
+						}),
+					0,
+					0.02,
+				);
+				if (found) return found;
+				break;
+			}
 			case 'placed piece': {
 				// A part of the piece is framed the span wide, or as many leaf lengths wide as the
 				// slot's cut pieces are, at the slot's share along it.
