@@ -119,15 +119,19 @@ export const directed: Species = {
 	lod: {
 		...record.lod,
 		nearFoliage: 'instanced',
+		// A frond's pinnae need the texels across it, so each stretch of its cut card takes a whole
+		// cell.
+		cardCuts: { cells: 'full' },
 		budget: {
 			...record.lod.budget,
 			// The fronds are pieces in the kit, shared by every plant, where the grown fern drew them in
-			// each plant's own mesh. Measured at seed 11 over the four variants, kit and variants
-			// together: 0.85, 0.92, 1.04 and 1.16 MB at the low, medium, high and ultra tiers, against
-			// the grown fern's 5.01, 5.06, 5.21 and 5.43 MB. The kit's own: 0.66, 0.71, 0.79 and 0.88 MB;
-			// a plant's at most 76 KB. One card a pinna: the near form is 17,298 triangles at the high
-			// tier against the grown fern's 50,393, so the record's near budget stands.
-			kitBytes: { low: 1_000_000, medium: 1_000_000, high: 1_000_000, ultra: 1_000_000 },
+			// each plant's own mesh, and each frond's cut card takes whole cells. Measured at seed 11
+			// over the four variants, kit and variants together: 2.00, 2.07, 2.19 and 2.31 MB at the
+			// low, medium, high and ultra tiers, against the grown fern's 5.01, 5.06, 5.21 and 5.43 MB.
+			// The kit's own: 1.71, 1.76, 1.84 and 1.93 MB (0.66 to 0.88 at half cells); a plant's at
+			// most 102 KB. One card a pinna: the near form is 17,298 triangles at the high tier against
+			// the grown fern's 50,393, so the record's near budget stands.
+			kitBytes: { low: 2_000_000, medium: 2_000_000, high: 2_000_000, ultra: 2_000_000 },
 			variantBytes: { low: 150_000, medium: 150_000, high: 150_000, ultra: 150_000 },
 		},
 	},

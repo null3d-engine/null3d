@@ -99,28 +99,26 @@ export const directed: Species = {
 			// many thin strands lined with dates, on a stalk 0.08 of the height long (1.2 m) that arches
 			// out and hangs; still 19: a date three times as long as its strand is thick, yellow turning
 			// orange. The fact sheet: dates 3 to 7 cm, yellow to orange-brown. Each date hangs on its own
-			// strand from the stalk's end, so the bunch splays to the ball's width.
+			// strand from the stalk's end, out to the ball's 0.45 m radius, so the bunch fills its
+			// outline: some 230 dates of five sides and five rings on four-sided strands, inside the
+			// plant's budget.
 			kind: 'fruit',
 			at: 'flower',
 			share: 1,
-			count: { mean: 90, spread: 15 },
+			count: { mean: 230, spread: 30 },
 			seasons: ['summer', 'autumn'],
 			shape: {
 				lathe: [
 					[0.002, 0],
-					[0.007, 0.004],
 					[0.0095, 0.012],
-					[0.0095, 0.028],
-					[0.0085, 0.04],
-					[0.006, 0.05],
-					[0.003, 0.058],
-					[0.0008, 0.063],
+					[0.0095, 0.04],
+					[0.005, 0.058],
 					[0, 0.066],
 				],
-				sides: 8,
+				sides: 5,
 				stalk: 0.08 * HEIGHT,
-				pedicel: 0.3,
-				stalkSides: 5,
+				pedicel: 0.45,
+				stalkSides: 4,
 			},
 			colour: [0.6, 0.3, 0.03],
 			// The stalk is the orange of the picture's bunch stems.
@@ -170,6 +168,11 @@ export const directed: Species = {
 			// is a card at the low and medium tiers and a card folded at its midrib at the high and
 			// ultra tiers: stills 09 and 12 and the fact sheet show the fold.
 			length: { mean: 0.66, spread: 0.05 },
+			// The upper face as the plant's own pictures show its leaflets (green pixels' means, in
+			// sRGB): 04 96 / 108 / 90, 09 114 / 126 / 99, 11 114 / 125 / 103, 12 110 / 128 / 107, 21
+			// 112 / 122 / 103 and 22 124 / 134 / 116, their mean 112 / 124 / 103. The texture's source,
+			// picture 24, is the darkest and yellowest of them (74 / 88 / 67), and the texture keeps it.
+			optics: { ...leaflet.optics, reflectance: [0.162, 0.201, 0.136] },
 			narrow: true,
 			outline: {
 				width: [
@@ -199,6 +202,9 @@ export const directed: Species = {
 	lod: {
 		...record.lod,
 		nearFoliage: 'instanced',
+		// A frond's leaflets need the texels across it: at half cells the palm's frond, 1.26 m
+		// across, draws 4.5 cm a texel across where whole cells give 2.1 cm.
+		cardCuts: { cells: 'full' },
 		budget: {
 			...record.lod.budget,
 			// The fronds are pieces in the kit, shared by every plant, where the grown palm drew them in
