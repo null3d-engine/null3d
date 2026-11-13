@@ -5,6 +5,7 @@
 
 import type { ShootPrototype } from '../asset';
 import type { EcoRule } from '../ecology/ecology';
+import type { FrameSpec } from '../grow/frame';
 import type { PieceRule } from '../leaf/piece';
 import type { MacroSkeleton } from './graph';
 import type { SpeciesTextureFiles } from './textures';
@@ -35,7 +36,10 @@ export interface Species {
 	readonly size: PlantSize;
 	/** How the large structure grows: the model and its numbers. */
 	readonly growth: Growth;
-	/** The outline the plant fills. Required for 'self-organizing'; a cap for the other models. */
+	/**
+	 * The outline the plant fills. Required for 'self-organizing' and 'scaffold'; a cap for the other
+	 * models.
+	 */
 	readonly envelope?: Envelope;
 	/**
 	 * The branch pieces that the plant's sockets carry, each a measured rule. A species that grows
@@ -203,6 +207,8 @@ export interface PlantSize {
  */
 export type Growth =
 	| SelfOrganizing
+	| Scaffold
+	| Framed
 	| Architectural
 	| Conifer
 	| CrownRosette
@@ -466,7 +472,108 @@ export interface SelfOrganizing {
 }
 
 /**
- * The stems of a self-organizing plant: one, or a stool of several.
+ * A tree built in a set order, each step from the record alone: the stem, the foliage masses of the
+ * crown packed inside the envelope, the great limbs that carry them, the branches that divide
+ * inside each mass, and a socket at every branch end, which holds the foliage. The gaps between the
+ * masses are the sky a viewer sees through the crown, and the socket count is the branch count.
+ *
+ * @category api/vegetation
+ */
+export interface Scaffold {
+	/** The model's name. */
+	readonly model: 'scaffold';
+	/** One stem, or a stool of several that share the crown. */
+	readonly stems: StemSpec;
+	/** The stem below and through its division into great limbs. */
+	readonly trunk: {
+		/**
+		 * The shares of the plant's height between which the great limbs leave the stem, lowest then
+		 * highest. The stem ends at the highest: a low pair divides a short bole into a spreading
+		 * crown, and a pair that runs to the top keeps one leader with limbs along it.
+		 */
+		readonly fork: readonly [from: number, to: number];
+		/** Degrees the stem strays from its line as it rises, in slow curves. */
+		readonly wander: number;
+	};
+	/** The crown's foliage masses: ellipsoids that stand against the envelope from inside. */
+	readonly lobes: {
+		/** Masses per plant. */
+		readonly count: Spread;
+		/**
+		 * The share of the distance between two neighbouring masses that stays open, from 0, where
+		 * neighbours touch, to 0.8. The open share is what shows sky through the crown and breaks its
+		 * outline into lumps.
+		 */
+		readonly gap: number;
+		/**
+		 * The share of the masses that stand inside the crown, behind the gaps the outer ones leave,
+		 * from 0, a hollow shell of foliage, to 0.5. They close the crown's middle to the sky without
+		 * closing its outline.
+		 */
+		readonly inner: number;
+		/** A mass's height over its width: below 1 a flat pad, above 1 a hanging strand. */
+		readonly flatten: number;
+		/** How much a mass's size varies from its neighbours', as a share of it, from 0 to 0.5. */
+		readonly vary: number;
+		/**
+		 * The share of the plant's height below which no mass stands, from 0 to 0.9: the crown's
+		 * underside, with sky and bare limbs under it.
+		 */
+		readonly floor: number;
+	};
+	/** The great limbs that leave the stem, each of which carries one group of masses. */
+	readonly limbs: {
+		/** Limbs per stem. */
+		readonly count: Spread;
+		/** How the limbs stand round the stem: a spiral by its divergence, or whorls of a count. */
+		readonly arrangement: Phyllotaxis;
+		/** Degrees the limbs' places round the stem vary by. */
+		readonly jitter: number;
+		/** Degrees between a limb and the stem's line where it leaves (t = 0 lowest limb, 1 highest). */
+		readonly angle: Curve;
+		/**
+		 * Degrees above level that a limb runs at its end (t = 0 lowest limb, 1 highest). Below 0 the
+		 * end dips.
+		 */
+		readonly end: Curve;
+		/** How far a limb strays sideways from its curve, as a share of its length, in slow bends. */
+		readonly wander: number;
+	};
+	/** The branches that run from a limb to each mass and divide inside it. */
+	readonly branches: {
+		/** The most degrees between a branch and its parent where it leaves. */
+		readonly angle: number;
+		/** Metres of one internode. */
+		readonly step: number;
+		/** The most degrees one internode turns from the last. */
+		readonly turn: number;
+		/** The least metres along a parent between two branches that leave it. */
+		readonly spacing: number;
+		/** How far each branch end turns toward the sky, from -1, hanging, through 0 to 1, upright. */
+		readonly lift: number;
+	};
+	/** The sockets at the branch ends, each of which holds one piece of foliage. */
+	readonly sockets: {
+		/**
+		 * Metres between two sockets, measured over the mass's surface, which their foliage covers.
+		 * Fewer sockets are fewer branches.
+		 */
+		readonly spacing: number;
+		/** Metres a socket stands inside its mass's surface: how far its foliage reaches past it. */
+		readonly inset: number;
+		/** The share of a mass's surface that carries sockets, its lit side, from 0.2 to 1. */
+		readonly lit: number;
+		/** Shoot rows that one socket holds. */
+		readonly rows: Spread;
+		/** Degrees the rows of one socket fan from its line. */
+		readonly fan: number;
+	};
+	/** Pipe model: a parent's diameter to the exponent is the sum of its children's, and a socket twig's radius in metres. */
+	readonly pipe: { readonly exponent: number; readonly tipRadius: number };
+}
+
+/**
+ * The stems of a self-organizing or scaffold plant: one, or a stool of several.
  *
  * @category api/vegetation
  */
@@ -607,6 +714,28 @@ export interface ArchitecturalOrder {
 	readonly upturn: number;
 	/** Degrees it bends over its length. */
 	readonly curve: number;
+}
+
+/**
+ * A plant built in a set order from a tree of axis rules: its stems and, under each, the axes that
+ * leave it, with their counts, places, angles, bends, lengths and widths as the species measured
+ * them, and a foliage patch on each axis whose rule states one. Every wood end that carries a patch
+ * is a socket, in the scaffold model's own socket record.
+ *
+ * @category api/vegetation
+ */
+export interface Framed {
+	/** The model's name. */
+	readonly model: 'frame';
+	/** The stems, the axes under them and the crown outline. */
+	readonly frame: FrameSpec;
+	/** What each socket holds, as the scaffold model states it. */
+	readonly sockets: {
+		/** Shoot rows that one socket holds. */
+		readonly rows: Spread;
+		/** Degrees the rows of one socket fan from its line. */
+		readonly fan: number;
+	};
 }
 
 /**

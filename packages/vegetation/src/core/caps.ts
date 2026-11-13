@@ -169,6 +169,8 @@ export const MODEL_CAPS: Readonly<Record<CapClass, ModelCaps>> = {
  */
 export const MODEL_CLASS: Readonly<Record<GrowthModel, CapClass>> = {
 	'self-organizing': 'tree',
+	scaffold: 'tree',
+	frame: 'tree',
 	architectural: 'tree',
 	conifer: 'tree',
 	'crown-rosette': 'palm',
