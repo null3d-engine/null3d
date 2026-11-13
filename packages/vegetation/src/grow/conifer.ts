@@ -1238,6 +1238,34 @@ export function planConifer(input: GrowInput): ConiferPlan {
 	// and by level, so no side of the crown and no height of it stands empty.
 	const places = seats.map((_, i) => (seats.length > 1 ? i / (seats.length - 1) : 1));
 	const placeOf = new Array<number>(seats.length).fill(-1);
+	// The short limbs, whose share of the crown's reach lies nearer the shortest limb's than the
+	// longest's, are shared over the levels by their seats as evenly as whole numbers allow, and a
+	// long limb leaves free the seats its level keeps for them, so no level holds two short limbs
+	// while another holds none.
+	const midShare = (curveAt(g.limbs.reachShare, 0) + curveAt(g.limbs.reachShare, 1)) / 2;
+	const isShort = (place: number): boolean => curveAt(g.limbs.reachShare, place) < midShare;
+	const shorts = places.filter(isShort).length;
+	// Each level's fair share of the short limbs, then whole numbers by the largest remainders.
+	const fair = perLevel.map((count) => (shorts * count) / Math.max(1, seats.length));
+	const quota = fair.map(Math.floor);
+	for (let left = shorts - quota.reduce((sum, q) => sum + q, 0); left > 0; left--) {
+		let most = 0;
+		for (let k = 1; k < quota.length; k++)
+			if (
+				(fair[k] as number) - (quota[k] as number) >
+				(fair[most] as number) - (quota[most] as number)
+			)
+				most = k;
+		(quota[most] as number)++;
+	}
+	const shortsAt = new Array<number>(levels.length).fill(0);
+	const freeAt = [...perLevel];
+	/** Whether a limb of a place may take a seat and still leave its level's seats for its short limbs. */
+	const fits = (i: number, place: number): boolean => {
+		const level = (seats[i] as Seat).level;
+		const owed = (quota[level] as number) - (shortsAt[level] as number);
+		return isShort(place) ? owed > 0 : (freeAt[level] as number) - 1 >= owed;
+	};
 	let reachMost = 0;
 	for (const seat of seats)
 		reachMost = Math.max(reachMost, curveAt(g.limbs.reach, seat.y / height));
@@ -1252,7 +1280,7 @@ export function planConifer(input: GrowInput): ConiferPlan {
 		for (let b = a + 1; b < seats.length; b++) {
 			const first = seats[a] as Seat;
 			const second = seats[b] as Seat;
-			if (first.level === second.level) continue;
+			if (first.level === second.level || !fits(a, 1) || !fits(b, 1)) continue;
 			const score =
 				180 - apart(first.azimuth, second.azimuth) + 180 * (lacks(first) + lacks(second));
 			if (score < pairScore - 1e-9) {
@@ -1333,6 +1361,8 @@ export function planConifer(input: GrowInput): ConiferPlan {
 			true,
 		);
 		placeOf[i] = place;
+		(freeAt[seat.level] as number)--;
+		if (isShort(place)) (shortsAt[seat.level] as number)++;
 	};
 	for (const limb of tops) share(limb.azimuth, limb.span, limb.place, limb.most, -1, true);
 	let n = seats.length - 1;
@@ -1348,8 +1378,10 @@ export function planConifer(input: GrowInput): ConiferPlan {
 				: undefined;
 		let best = -1;
 		let bestScore = Number.POSITIVE_INFINITY;
+		// A free seat that keeps its level's short seats, or any free seat where none does.
+		const anyFits = seats.some((_, i) => (placeOf[i] as number) < 0 && fits(i, place));
 		for (let i = 0; i < seats.length; i++) {
-			if ((placeOf[i] as number) >= 0) continue;
+			if ((placeOf[i] as number) >= 0 || (anyFits && !fits(i, place))) continue;
 			const seat = seats[i] as Seat;
 			let score: number;
 			if (side === undefined)
