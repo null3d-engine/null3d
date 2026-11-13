@@ -132,6 +132,14 @@ export interface PlantReviewQuery {
 	 */
 	readonly shoot?: string;
 	/**
+	 * The class of piece a close view frames as the plant places it, such as a pine's `bough` or a
+	 * tuft's `stalk`, in place of a cutting: the outermost placed piece of the class, square to its
+	 * face, with only the slab of the plant that holds it drawn.
+	 */
+	readonly piece?: string;
+	/** Whether a placed piece's view looks along the piece's side, so an arching piece shows its arch. */
+	readonly edge?: boolean;
+	/**
 	 * The radius of the ring a branch or sub-branch cutting's shoots stand on, as a share of the
 	 * piece's height, in place of the record hint's. A wide ring separates the shoots.
 	 */
@@ -464,6 +472,7 @@ const SWITCHES = [
 	'parts',
 	'fruit',
 	'surface',
+	'edge',
 	'lifted',
 	'barkMask',
 	'leafyBark',
@@ -483,6 +492,7 @@ export function plantReviewQuery(query: PlantReviewQuery): string {
 	const params = new URLSearchParams({ species: query.species });
 	if (query.form) params.set('form', query.form);
 	if (query.shoot) params.set('shoot', query.shoot);
+	if (query.piece) params.set('piece', query.piece);
 	if (query.layout) params.set('layout', query.layout);
 	if (query.stem) params.set('stem', query.stem);
 	if (query.view) params.set('view', query.view);
@@ -542,6 +552,9 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 	const shoot = params.get('shoot');
 	if (shoot !== null && !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(shoot))
 		throw new Error(`shoot=${shoot} is not a class name: give a kebab-case word, such as twig.`);
+	const piece = params.get('piece');
+	if (piece !== null && !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(piece))
+		throw new Error(`piece=${piece} is not a class name: give a kebab-case word, such as bough.`);
 	const stem = params.get('stem');
 	if (stem !== null && !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(stem))
 		throw new Error(`stem=${stem} is not a class name: give a kebab-case word, such as cut.`);
@@ -658,6 +671,7 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 		species,
 		...(form !== null && { form }),
 		...(shoot !== null && { shoot }),
+		...(piece !== null && { piece }),
 		...(stem !== null && { stem }),
 		...(layoutText !== null && { layout: layoutText as 'ring' | 'spray' | 'fan' }),
 		view,
@@ -688,5 +702,6 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 		parts: params.get('parts') === '1',
 		fruit: params.get('fruit') === '1',
 		surface: params.get('surface') === '1',
+		edge: params.get('edge') === '1',
 	};
 }
