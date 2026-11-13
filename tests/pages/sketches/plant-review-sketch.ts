@@ -1884,7 +1884,6 @@ export default defineSketch(async (ctx) => {
 			})()
 		: undefined;
 	facts = {
-		...(STAND_ROWS[0] ? { stand: STAND_ROWS[0] } : {}),
 		species: record.id,
 		name: record.name,
 		form: form ?? null,

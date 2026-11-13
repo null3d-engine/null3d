@@ -17,7 +17,7 @@
 import type { MeshArrays } from '../asset';
 import { AXIS_RACHIS, AXIS_STEM } from '../core/graph';
 import { cos, quatAxisAngle, quatRotate, radians, sin, tan, type Vector3 } from '../core/math';
-import type { FrondShape, LeafShape, PinnaSpec, Species } from '../core/record';
+import type { CrownRosette, FrondShape, LeafShape, PinnaSpec, Species } from '../core/record';
 import { curveAt, spreadMean } from '../core/types';
 import { crownSkyAt } from '../crown/visibility';
 import type { MeshInput, MeshLevel } from '../stages';
@@ -83,7 +83,8 @@ interface LeafletStyle {
 	 * between its pinna places, set denser than a whole frond's own count spreads them, and the
 	 * share of the nearest level's ribbon width its blades keep, so they stand apart inside the
 	 * piece's own box. A piece is its own small mesh, so it carries that density without the
-	 * variant's bytes. Absent, a piece keeps the frond's own count over the length it carries.
+	 * variant's bytes. Absent, a piece keeps the leaflets of the place on the frond it was cut
+	 * from: the record's curves are read at the shares of the original axis the piece covers.
 	 */
 	readonly closeCut?: { readonly spacing: number; readonly width: number };
 }
@@ -111,13 +112,18 @@ const STYLES: Readonly<Record<NonNullable<PinnaSpec['leaflet']>, LeafletStyle>> 
 	},
 };
 
-/** The record's crown-rosette frond, or a fault for another model. */
-function frondOf(record: Species): FrondShape {
+/** The record's crown-rosette growth, or a fault for another model. */
+function crownOf(record: Species): CrownRosette {
 	const growth = record.growth;
 	if (growth.model !== 'crown-rosette')
 		throw new Error(
 			`@null3d/vegetation: the palm foliage got a '${growth.model}' record, not a crown rosette`,
 		);
+	return growth;
+}
+
+/** The crown-rosette frond's pinnate shape, or a fault for another kind of frond. */
+function frondOf(growth: CrownRosette): FrondShape {
 	if (growth.frond.kind !== 'pinnate' || !growth.frond.pinnae)
 		throw new Error(
 			`@null3d/vegetation: a palm frond is drawn from pinnate pinnae, not a '${growth.frond.kind}' frond`,
@@ -136,14 +142,16 @@ function leafOf(record: Species): LeafShape {
 
 /**
  * Where each leaflet pair leaves the rachis, as shares of its length: spaced in step with the
- * leaflets' own length, close at the tip where they are short.
+ * leaflets' own length, close at the tip where they are short. The spacing reads the curve where
+ * the rachis stands on its original axis, so a span cut near a frond's tip carries the tip's
+ * spacing rather than the whole frond's.
  */
-function pinnaPlaces(pinnae: PinnaSpec, share: number): number[] {
+function pinnaPlaces(pinnae: PinnaSpec, share: number, shareAt: (at: number) => number): number[] {
 	const count = Math.max(1, Math.round(spreadMean(pinnae.count) * share));
 	const weight: number[] = [0];
 	for (let i = 0; i < PLACE_SAMPLES; i++) {
 		const t = (i + 0.5) / PLACE_SAMPLES;
-		weight.push((weight[i] as number) + 1 / (0.1 + curveAt(pinnae.length, t)));
+		weight.push((weight[i] as number) + 1 / (0.1 + curveAt(pinnae.length, shareAt(t))));
 	}
 	const total = weight[PLACE_SAMPLES] as number;
 	const places: number[] = [];
@@ -208,6 +216,7 @@ function leafletsOf(
 	petioleShare: number,
 	pinnaShare: number,
 	group: number,
+	shareAt: (at: number) => number,
 	closeBlade?: number,
 ): Leaflet[] {
 	const out: Leaflet[] = [];
@@ -220,7 +229,7 @@ function leafletsOf(
 		const spine = p < Math.round((pinnae.spines ?? 0) / 2);
 		// A close piece takes the species' own leaflet length, as the leaflet pictures show it;
 		// the whole frond takes the frond's share of its length.
-		const blade = closeBlade ?? curveAt(pinnae.length, place) * origin;
+		const blade = closeBlade ?? curveAt(pinnae.length, shareAt(place)) * origin;
 		for (let g = 0; g < group; g++) {
 			const at = place + (g - (group - 1) / 2) * GROUP_STEP;
 			if (at < 0 || at > 1) continue;
@@ -339,6 +348,9 @@ interface PalmFrond {
 	 * blade's base; the leaflets start past this lead.
 	 */
 	readonly lead: number;
+	/** The share of the axis this piece was cut from where its first and last nodes stand. */
+	readonly cutFrom: number;
+	readonly cutTo: number;
 	readonly age: number;
 	readonly record: number;
 	readonly phase: number;
@@ -388,6 +400,8 @@ function palmFronds(input: MeshInput): PalmFrond[] {
 		fronds.push({
 			path,
 			lead,
+			cutFrom: axes.cutFrom[axis] as number,
+			cutTo: axes.cutTo[axis] as number,
 			age: buds.vigor[b] as number,
 			record: input.variant * VARIANT_RECORDS + (axes.record[axis] as number),
 			phase: (axis * 97) & 255,
@@ -405,7 +419,8 @@ function palmFronds(input: MeshInput): PalmFrond[] {
  * @category api/vegetation
  */
 export function palmFoliage(input: MeshInput, level: MeshLevel): MeshArrays {
-	const shape = frondOf(input.record);
+	const growth = crownOf(input.record);
+	const shape = frondOf(growth);
 	const leaf = leafOf(input.record);
 	const pinnae = shape.pinnae as PinnaSpec;
 	const style = STYLES[pinnae.leaflet ?? 'pinna'];
@@ -454,9 +469,11 @@ export function palmFoliage(input: MeshInput, level: MeshLevel): MeshArrays {
 		// The frond's own run, past the lead that reaches out from the stem's axis to its base.
 		const length = frond.path.length - frond.lead;
 		if (length < 0.05) continue;
-		// A dead frond hangs as a brown mass in the skirt, where its leaflets read as the mass rather
-		// than as blades: it takes the coarsest grid and the fewest places at every level.
-		const mass = frond.age > 0.99;
+		// A dead frond usually hangs as a brown mass in the skirt, where its leaflets read as the
+		// mass rather than as blades, so it takes the coarsest grid and the fewest places at every
+		// level. A species whose dead skirt still shows its pinnae keeps the level's detail.
+		const dead = frond.age > 0.99;
+		const mass = dead && growth.crown.dead.blades !== true;
 		const origin = hasStem ? length : Math.max(length, recordFrond);
 		// A close cut piece takes its density from the picture's own leaflet spacing; a whole
 		// frond, grown or cut, takes the frond's count.
@@ -465,7 +482,15 @@ export function palmFoliage(input: MeshInput, level: MeshLevel): MeshArrays {
 			closeCut && style.closeCut
 				? Math.max(1, Math.round(length / style.closeCut.spacing))
 				: Math.max(1, Math.round(spreadMean(pinnae.count) * (length / origin)));
-		const places = pinnaPlaces({ ...pinnae, count }, 1);
+		// Where along the original axis this run stands: a whole frond covers the axis from 0 to 1,
+		// and a cut piece covers the shares it was taken from. The record's curves are read there,
+		// so a piece carries the pinnae of the place it came from. A species with a close cut of
+		// its own reads the curves along the piece instead.
+		const shareAt = (at: number): number =>
+			style.closeCut
+				? at
+				: Math.max(0, Math.min(1, frond.cutFrom + at * (frond.cutTo - frond.cutFrom)));
+		const places = pinnaPlaces({ ...pinnae, count }, 1, shareAt);
 		const closeBlade = closeCut ? spreadMean(leaf.length) : undefined;
 		// The bare stalk's share of the run. A species with a close cut measures it on the whole
 		// frond, and a spanned piece of it carries only the part of the stalk its span covers.
@@ -481,6 +506,7 @@ export function palmFoliage(input: MeshInput, level: MeshLevel): MeshArrays {
 			petioleShare,
 			mass ? style.deadShare : style.share[level],
 			style.group,
+			shareAt,
 			closeBlade,
 		);
 		const frondRibbon = mass ? deadRibbon : closeCut ? cutRibbon : ribbon;
@@ -495,7 +521,7 @@ export function palmFoliage(input: MeshInput, level: MeshLevel): MeshArrays {
 			point[1] = frame.position[1] as number;
 			point[2] = frame.position[2] as number;
 			// The leaflet leaves the rachis at its place's angle, on its own side.
-			const angle = radians(curveAt(pinnae.angle, leaflet.at));
+			const angle = radians(curveAt(pinnae.angle, shareAt(leaflet.at)));
 			const side = leaflet.side;
 			const outward: Vector3 = [
 				(frame.tangent[0] as number) * cos(angle) +
@@ -525,7 +551,7 @@ export function palmFoliage(input: MeshInput, level: MeshLevel): MeshArrays {
 				outward,
 				across,
 				normal,
-				curveAt(pinnae.droop, leaflet.at),
+				curveAt(pinnae.droop, shareAt(leaflet.at)),
 				(at) => {
 					bytes[0] = record >> 8;
 					bytes[1] = record & 255;

@@ -461,6 +461,12 @@ class WoodWriter {
 		this.colors = grown(this.colors, count * 4);
 	}
 
+	/** Whether the axis being written draws the grown bark layer rather than the young bark. */
+	grownBark = 0;
+
+	/** The species' young-bark radius in metres: the girth below which thin wood draws young bark. */
+	youngRadius = 0;
+
 	vertex(
 		rings: AxisRings,
 		i: number,
@@ -485,7 +491,11 @@ class WoodWriter {
 		uvs[w * 2] = u;
 		uvs[w * 2 + 1] = rings.vv[i] as number;
 		const uvs1 = this.uvs1;
-		uvs1[w * 2] = Math.min(1, (rings.pipe[i] as number) / WOOD_RADIUS_RANGE);
+		// A fleshy young shoot draws the grown bark layer: its radius is reported high enough that
+		// the shader's young wood test passes it over, and the displacement still fades on it.
+		const pipe = rings.pipe[i] as number;
+		const grown = this.grownBark ? Math.max(pipe, this.youngRadius * 1.5) : pipe;
+		uvs1[w * 2] = Math.min(1, grown / WOOD_RADIUS_RANGE);
 		uvs1[w * 2 + 1] = Math.min(1, Math.max(0, rings.mask[i] as number));
 		const colors = this.colors;
 		colors[w * 4] = (record >>> 8) & 255;
@@ -654,6 +664,7 @@ export interface WoodWelds {
  */
 class Mesher {
 	private readonly record: Species;
+	private readonly axes: MacroSkeleton['axes'];
 	private readonly bark: BarkScale;
 	private readonly tube: TubeDetail;
 	private readonly seed: number;
@@ -675,6 +686,7 @@ class Mesher {
 
 	constructor(input: MeshInput, level: MeshLevel, report: boolean) {
 		this.record = input.record;
+		this.axes = input.skeleton.axes;
 		this.seed = input.seed;
 		this.variant = input.variant;
 		this.crown = input.crown;
@@ -1931,6 +1943,8 @@ class Mesher {
 	/** Writes an axis's rings and the strips between them. */
 	private write(rings: AxisRings, bark: BarkRings, context: AxisContext, wood: WoodAxis): void {
 		const writer = this.writer;
+		writer.grownBark = (this.axes.grownBark[wood.axis] as number) ?? 0;
+		writer.youngRadius = this.record.bark?.youngRadius ?? 0;
 		const length = Math.max(context.path.length, 1e-6);
 		const firstVertex = writer.vertices;
 		const starts: number[] = [];

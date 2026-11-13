@@ -55,6 +55,10 @@ const DRAW = {
 	deadHang: 16,
 	deadTurn: 17,
 	spine: 18,
+	croziers: 19,
+	crozierTurn: 20,
+	crozierLength: 21,
+	crozierLean: 22,
 } as const;
 
 /** Metres between the stem's nodes. */
@@ -71,6 +75,19 @@ const RACHIS_TURN = 0.25;
 const CROWN_DEPTH = 0.7;
 /** Metres that a frond's base stands out from the stem's surface. */
 const FROND_STAND = 0.08;
+/** Metres between a crozier's nodes: fine enough that the wood mesher follows its coil. */
+const CROZIER_NODE = 0.03;
+/** Degrees a crozier's head turns through where the record names none. */
+const CROZIER_COIL = 540;
+/** The share of a crozier's length that its straight stalk takes before the head curls. */
+const CROZIER_STALK = 0.5;
+/** The head's first radius as a share of the crozier's length, and how far it shrinks by its tip. */
+const CROZIER_HEAD = 0.13;
+const CROZIER_TIGHTEN = 0.8;
+/** The least radius a crozier keeps, in metres of the wood mesh's ring. */
+const CROZIER_TIP = 0.004;
+/** Metres a crozier's foot stands out from the stem's axis: it rises from the growing point. */
+const CROZIER_STAND = 0.03;
 /** The share of a living frond's length that a dead frond keeps, where the record names none. */
 const DEAD_SHARE = 0.95;
 /** The least height of a sucker's stem, and the most, in metres. */
@@ -387,6 +404,105 @@ function layFrond(
 }
 
 /**
+ * Lays one crozier: a young frond still rolled at its tip. Its stalk rises from the crown at the
+ * youngest fronds' tilt, then its head curls in the vertical plane through its azimuth, tightening
+ * as it goes. The wood mesher draws the roll as a thick young stalk; no bud carries a blade, so the
+ * crozier is the roll itself.
+ */
+function layCrozier(
+	builder: SkeletonBuilder,
+	growth: CrownRosette,
+	stem: LaidStem,
+	draw: (purpose: number, index: number) => number,
+	first: number,
+	index: number,
+): void {
+	const croziers = growth.crown.croziers as NonNullable<CrownRosette['crown']['croziers']>;
+	const crown = growth.crown;
+	const length = Math.max(0.15, spreadAt(croziers.length, draw(DRAW.crozierLength, first + index)));
+	const coil = radians(croziers.coil ?? CROZIER_COIL);
+	const azimuth =
+		draw(DRAW.crozierTurn, first + index) * 2 * PI + radians(crown.divergence) * (first + index);
+	const lean = radians(
+		Math.max(4, curveAt(crown.tilt, 0) + draw(DRAW.crozierLean, first + index) * 8 - 4),
+	);
+	const horizontal: Vector3 = [cos(azimuth), 0, sin(azimuth)];
+	const side: Vector3 = [-horizontal[2], 0, horizontal[0]];
+	const stalk = normalize3([horizontal[0] * sin(lean), cos(lean), horizontal[2] * sin(lean)]);
+	// The head turns in the plane the stalk and the crown's side span, curling out over the top.
+	const turned = cross3(side, stalk, [0, 0, 0]);
+	const across = normalize3([-turned[0], -turned[1], -turned[2]]);
+	const p = builder.position;
+	const crownPoint: Vector3 = [
+		p[stem.top * 3] as number,
+		p[stem.top * 3 + 1] as number,
+		p[stem.top * 3 + 2] as number,
+	];
+	const base: Vector3 = [
+		crownPoint[0] + horizontal[0] * CROZIER_STAND,
+		crownPoint[1],
+		crownPoint[2] + horizontal[2] * CROZIER_STAND,
+	];
+	const radius = Math.max(croziers.radius ?? growth.frond.petiole.width / 2, 0.008);
+	const axis = builder.addAxis({
+		parent: stem.axis,
+		parentNode: stem.top,
+		parentT: 0,
+		order: 1,
+		kind: AXIS_RACHIS,
+		grownBark: croziers.bark === 'grown',
+	});
+	const stalkLength = length * CROZIER_STALK;
+	const headRadius = length * CROZIER_HEAD;
+	// The head's own length along the coil, with its radius tightening as it turns.
+	const coilLength = 0.5 * (1 + (1 - CROZIER_TIGHTEN)) * coil * headRadius;
+	const stalkCount = Math.max(2, Math.ceil(stalkLength / CROZIER_NODE));
+	const coilCount = Math.max(6, Math.ceil(coil / radians(18)));
+	let previous = -1;
+	const addPoint = (point: Vector3, share: number): void => {
+		// The head swells where the blade is rolled, then closes to a point.
+		const swell = 0.5 * radius * sin(PI * Math.min(1, Math.max(0, share)));
+		const width = Math.max(CROZIER_TIP, radius * (1 - 0.6 * share) + swell);
+		previous = builder.addNode({
+			x: point[0],
+			y: point[1],
+			z: point[2],
+			radius: width,
+			parent: previous,
+			axis,
+			light: 1,
+			age: 0,
+		});
+	};
+	for (let i = 0; i <= stalkCount; i++) {
+		const t = i / stalkCount;
+		const run = stalkLength * t;
+		addPoint(
+			[base[0] + stalk[0] * run, base[1] + stalk[1] * run, base[2] + stalk[2] * run],
+			run / length,
+		);
+	}
+	const head: Vector3 = [
+		base[0] + stalk[0] * stalkLength + across[0] * headRadius,
+		base[1] + stalk[1] * stalkLength + across[1] * headRadius,
+		base[2] + stalk[2] * stalkLength + across[2] * headRadius,
+	];
+	for (let i = 1; i <= coilCount; i++) {
+		const t = i / coilCount;
+		const angle = coil * t;
+		const r = headRadius * (1 - CROZIER_TIGHTEN * t);
+		addPoint(
+			[
+				head[0] - across[0] * r * cos(angle) - stalk[0] * r * sin(angle),
+				head[1] - across[1] * r * cos(angle) - stalk[1] * r * sin(angle),
+				head[2] - across[2] * r * cos(angle) - stalk[2] * r * sin(angle),
+			],
+			(stalkLength + coilLength * t) / length,
+		);
+	}
+}
+
+/**
  * Adds the date bunches' sites: a few flower buds at the crown, below the youngest fronds, where the
  * species' extras hang their stalked fruit.
  */
@@ -465,6 +581,12 @@ export function growCrownRosette(input: GrowInput): MacroSkeleton {
 			const reach = layFrond(builder, growth, laid, plan);
 			if (first === 0) lowest = Math.min(lowest, reach);
 		});
+		// A fern's crown also carries its young fronds, still rolled.
+		const croziers = Math.max(
+			0,
+			Math.round(spreadAt(growth.crown.croziers?.count ?? 0, draw(DRAW.croziers, first))),
+		);
+		for (let i = 0; i < croziers; i++) layCrozier(builder, growth, laid, draw, first, i);
 	};
 	layCrown(stem, 0);
 	addBunches(builder, growth, stem);

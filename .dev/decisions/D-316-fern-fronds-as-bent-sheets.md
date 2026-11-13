@@ -4,8 +4,9 @@ Status: decided. The frond builder (`packages/vegetation/src/leaf/frond.ts`) is 
 bipinnate fronds, with frond ages from crozier to brown. The frond-colony grower
 (`grow/frond-colony.ts`) is built. Also built: the crown-rosette grower (`grow/crown-rosette.ts`).
 It lays a palm's stem and its spiral of fronds. The palm frond builder (`leaf/palm-frond.ts`) draws
-a pinnate frond as separate leaflets along its rachis. Pending: fan and costapalmate fronds,
-tripinnate fronds and stem surfaces. Ruling 11 parks those with the palms and the tree fern.
+a pinnate frond as separate leaflets along its rachis. The tree fern draws on the same grower and
+builder, where the leaflet is the species' pinna, whose own picture carries its second division.
+Pending: fan and costapalmate fronds, tripinnate fronds and stem surfaces. Ruling 11 parks those with the palms and the tree fern.
 Task: none.
 
 Summary: a frond draws as one sheet cut by its texture's alpha. The sheet bends so that each pinna

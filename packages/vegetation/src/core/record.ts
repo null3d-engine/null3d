@@ -639,18 +639,42 @@ export interface CrownRosette {
 		 */
 		readonly depth?: number;
 		/**
+		 * Croziers: a fern's young fronds, still rolled at their tips. Their number, the length of
+		 * their stalk in metres, and the degrees their head coils through as it unrolls. Absent,
+		 * the crown carries none, as a palm's does.
+		 */
+		readonly croziers?: {
+			readonly count: Spread;
+			readonly length: Spread;
+			readonly coil?: number;
+			/**
+			 * Metres of radius at a crozier's foot: a fiddlehead is thick and fleshy, wider than the
+			 * stipe of the frond it will become. Absent, it takes the frond's own stipe width.
+			 */
+			readonly radius?: number;
+			/**
+			 * What a crozier's skin draws: `young`, the smooth young bark a thin shoot takes, or
+			 * `grown`, the species' grown bark layer with its zones, tint and hollows. A rolled
+			 * young frond is fleshy and hairy rather than smooth, so `grown` is what a fern's
+			 * fiddlehead takes. Absent, `young`, which changes no record that names no croziers.
+			 */
+			readonly bark?: 'young' | 'grown';
+		};
+		/**
 		 * Dead fronds: count, how far they hang, and a skirt that hides the stem top (fan palm).
-		 * `length` is the share of a living frond's length that a dead frond keeps, above 0 and at
-		 * most 1; absent, a dead frond keeps nearly all of it, as a palm's does.
+		 * `blades` keeps a dead frond's leaflets at the level's detail, as a tree fern's dead skirt
+		 * shows its pinnae; absent, a dead frond reads as a brown mass at the coarsest detail, as a
+		 * palm's skirt does. `length` is the share of a living frond's length that a dead frond
+		 * keeps, above 0 and at most 1; absent, a dead frond keeps nearly all of it, as a palm's
+		 * does.
 		 */
 		readonly dead: {
 			readonly count: Spread;
 			readonly hang: number;
 			readonly skirt: number;
+			readonly blades?: boolean;
 			readonly length?: number;
 		};
-		/** Young fronds rolled in the centre (tree fern croziers). */
-		readonly croziers?: Spread;
 	};
 	/** One frond. */
 	readonly frond: FrondShape;
@@ -710,9 +734,10 @@ export interface PinnaSpec {
 	/**
 	 * What the species' leaf picture holds, which sets how a crown rosette's frond draws each
 	 * leaflet. `pinna`: a divided leaflet whose picture carries its own lobes, as a tree fern's
-	 * does. Each place on the rachis carries a pair of them at the picture's own width, and the
-	 * picture is sampled across the leaflet. `blade`: one narrow simple leaflet, as a date palm's
-	 * is. Each place carries one, drawn wider than its picture where the frond stands far so the
+	 * does. Each place on the rachis carries a pair of them at the picture's own width, the
+	 * picture is sampled across the leaflet, and a piece cut from the frond keeps the leaflets
+	 * of the place it was cut from. `blade`: one narrow simple leaflet, as a date palm's is.
+	 * Each place carries one, drawn wider than its picture where the frond stands far so the
 	 * crown keeps its cover, its colour comes from the picture's midrib, and a short piece cut
 	 * from the frond sets its leaflets at a close photograph's own spacing. Absent, `pinna`.
 	 */
@@ -1543,6 +1568,16 @@ export interface LeafShape {
 	readonly wave: readonly [amplitude: number, count: number];
 	/** How the leaf looks under light. */
 	readonly optics: LeafOptics;
+	/**
+	 * The spore cases a fern's leaf carries under its lobes: how many stand along the midrib, their
+	 * radius in metres, and the spot of the leaf texture they take their colour from, as u and v.
+	 * A leaf that names none carries none.
+	 */
+	readonly sori?: {
+		readonly count: number;
+		readonly size: number;
+		readonly at: readonly [number, number];
+	};
 }
 
 /**

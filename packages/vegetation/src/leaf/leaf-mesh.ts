@@ -273,7 +273,87 @@ export function bladeMesh(
 	}
 	const stalkSides = TIERS[detail].stalkSides;
 	if (stalkSides >= 0) addStalk(mesh, surface, shape, outline, stalkSides);
+	addSori(mesh, surface, shape, outline, length);
 	return mesh.finishPrototype();
+}
+
+/** Sides of one sorus's disc. */
+const SORUS_SIDES = 8;
+
+/**
+ * The sori: small discs standing proud of the leaf's under face. Each takes its colour from the
+ * spot of the texture the record names, so the photograph's own spore cases are what is drawn; the
+ * disc's under-facing normal samples the leaf's lower face, and the material is two-sided.
+ */
+function addSori(
+	mesh: MeshWriter,
+	surface: LeafSurface,
+	shape: LeafShape,
+	outline: LeafOutline,
+	length: number,
+): void {
+	const sori = shape.sori;
+	if (!sori || sori.count <= 0 || sori.size <= 0) return;
+	const baseV = outline.base[1] as number;
+	const tipV = outline.tip[1] as number;
+	const centre = [0, 0, 0];
+	const normal = [0, 0, 0];
+	const along = [0, 0, 0];
+	const across = [0, 0, 0];
+	for (let i = 0; i < sori.count; i++) {
+		const share = (i + 1) / (sori.count + 1);
+		const t = surface.extra + share * length;
+		surface.place(0, t, centre);
+		surface.normal(0, t, 0, normal);
+		surface.tangent(t, along);
+		// Across the blade, square to its length and its normal.
+		across[0] =
+			(along[1] as number) * (normal[2] as number) - (along[2] as number) * (normal[1] as number);
+		across[1] =
+			(along[2] as number) * (normal[0] as number) - (along[0] as number) * (normal[2] as number);
+		across[2] =
+			(along[0] as number) * (normal[1] as number) - (along[1] as number) * (normal[0] as number);
+		// The disc stands under the blade, its face turned away from the leaf.
+		const lift = sori.size * 0.4;
+		const hub = mesh.vertex(
+			[
+				(centre[0] as number) - (normal[0] as number) * lift,
+				(centre[1] as number) - (normal[1] as number) * lift,
+				(centre[2] as number) - (normal[2] as number) * lift,
+			],
+			[-(normal[0] as number), -(normal[1] as number), -(normal[2] as number)],
+			sori.at,
+			[baseV + (tipV - baseV) * share, 0],
+			LEAF_COLOUR,
+		);
+		const first = mesh.vertices;
+		for (let k = 0; k <= SORUS_SIDES; k++) {
+			const angle = (2 * Math.PI * k) / SORUS_SIDES;
+			const dx = cos(angle) * sori.size;
+			const dy = sin(angle) * sori.size;
+			mesh.vertex(
+				[
+					(centre[0] as number) -
+						(normal[0] as number) * lift +
+						(along[0] as number) * dx +
+						(across[0] as number) * dy,
+					(centre[1] as number) -
+						(normal[1] as number) * lift +
+						(along[1] as number) * dx +
+						(across[1] as number) * dy,
+					(centre[2] as number) -
+						(normal[2] as number) * lift +
+						(along[2] as number) * dx +
+						(across[2] as number) * dy,
+				],
+				[-(normal[0] as number), -(normal[1] as number), -(normal[2] as number)],
+				sori.at,
+				[baseV + (tipV - baseV) * share, 0],
+				LEAF_COLOUR,
+			);
+		}
+		for (let k = 0; k < SORUS_SIDES; k++) mesh.indices.push(hub, first + k, first + k + 1);
+	}
 }
 
 /** The stalk: a tube of a few sides, or a ribbon, from the attach point to the blade's base. */

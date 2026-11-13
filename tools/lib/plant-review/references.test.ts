@@ -1131,6 +1131,30 @@ describe('the coverage matte', () => {
 		expect(binary.frameGap).toBeCloseTo(304 / 400, 4);
 		expect(fractional.frameGap).toBeCloseTo((300 + 2 + 2 * (1 - 128 / 255)) / 400, 4);
 	});
+
+	test("weights a texel's colour by the share of it a leaf covers", () => {
+		const width = 20;
+		const height = 20;
+		const mask = new Uint8Array(width * height);
+		for (let y = 5; y <= 14; y++) for (let x = 5; x <= 14; x++) mask[y * width + x] = 1;
+		const image = blank(width, height, [0, 0, 0]);
+		// One crown texel is half leaf and half sky, so its colour blends towards the white sky.
+		put(image, 14, 9, [255, 255, 255]);
+		const coverage = new Uint8Array(width * height);
+		for (let at = 0; at < coverage.length; at++) coverage[at] = mask[at] ? 255 : 0;
+		coverage[9 * width + 14] = 128;
+		const plain = measurePlant(image, mattePlant(width, height, mask));
+		const weighted = measurePlant(image, mattePlant(width, height, mask, coverage));
+		// The plain mean counts the half-covered texel whole, so its lightness is a hundredth of the
+		// white; the weighted mean takes only the share the leaf covers, which is half a hundredth.
+		expect(plain.foliage?.lab[0] as number).toBeCloseTo(1, 2);
+		expect(weighted.foliage?.lab[0] as number).toBeCloseTo(0.5, 1);
+		// A matte that covers every texel whole gives the plain mean back exactly.
+		const full = new Uint8Array(width * height).fill(255);
+		expect(measurePlant(image, mattePlant(width, height, mask, full)).foliage).toEqual(
+			plain.foliage,
+		);
+	});
 });
 
 describe('a fitted sky', () => {
