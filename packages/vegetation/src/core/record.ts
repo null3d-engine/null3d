@@ -2260,11 +2260,11 @@ export interface LodSpec {
 	 */
 	readonly cardGrow?: number;
 	/**
-	 * Texels a side of one cell of the card atlas, at each tier, where the species' leaves are
-	 * thinner than the default cell can hold: each entry is a power of two from 64 to 256, and 64
-	 * by default. A needle a millimetre and a half across is under one texel of a 64 cell, so its
-	 * card would draw only the bare twig; a cell of 128 holds it while the crown still reads green.
-	 * Each doubling costs four times the atlas memory.
+	 * Texels a side of one cell of the card atlas, at each tier, where the default cell does not
+	 * suit the species: each entry is a power of two from 32 to 256, and 64 by default. A needle a millimetre and a half across is under one texel
+	 * of a 64 cell, so its card would draw only the bare twig; a cell of 128 holds it while the
+	 * crown still reads green. A piece whose card first shows at two dozen pixels is held by a
+	 * cell of 32. Each doubling costs four times the atlas memory.
 	 */
 	readonly cardCell?: Readonly<Record<Detail, number>>;
 	/**
