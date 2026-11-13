@@ -22,7 +22,7 @@ import type { Rgb } from '../core/types';
 import { DETAILS, type Detail } from '../core/types';
 import { outlineMask, textureOutline } from '../leaf/outline';
 import type { UncardedPrototype } from '../leaf/shoot';
-import { SURFACE_EXTRA, SURFACE_LEAF, SURFACE_STEM } from '../leaf/writer';
+import { SURFACE_EXTRA, SURFACE_LEAF } from '../leaf/writer';
 import type { CardAtlas } from '../stages';
 import { rasterise, rasterTarget } from './raster';
 
@@ -144,8 +144,6 @@ export interface Palette {
 	readonly tip: number;
 	readonly mask: Uint8Array | undefined;
 	readonly extras: readonly Rgb[];
-	/** The width, in texels, of each card's guaranteed strand; 0 draws none. */
-	readonly strand: number;
 }
 
 /**
@@ -187,7 +185,6 @@ export function paletteOf(record: Species, manifest: TextureManifest): Palette {
 				: undefined;
 	const stem = manifest.bark?.young.mean ?? barkColourOf(record, manifest);
 	const extras = (record.extras ?? []).map((extra) => extra.colour);
-	const strand = record.lod.cardStrand ?? 0;
 	if (leaf) {
 		const outline = textureOutline(leaf);
 		const mask = outlineMask(outline.points, MASK_SIZE);
@@ -206,7 +203,6 @@ export function paletteOf(record: Species, manifest: TextureManifest): Palette {
 			tip,
 			mask,
 			extras,
-			strand,
 		};
 	}
 	return {
@@ -218,7 +214,6 @@ export function paletteOf(record: Species, manifest: TextureManifest): Palette {
 		tip: 1,
 		mask: undefined,
 		extras,
-		strand,
 	};
 }
 
@@ -405,135 +400,6 @@ function drawPlane(
 		surface[at + 3] = (kind === SURFACE_LEAF ? 128 : 0) + Math.min(127, shade);
 		return true;
 	});
-	if (palette.strand > 0)
-		stampStrand(
-			mesh,
-			points,
-			rect,
-			size,
-			layer,
-			palette.strand,
-			palette,
-			color,
-			surface,
-			halfDepth,
-			toward,
-		);
-}
-
-/** One ring's centre on a card's plane: its texel, its depth and its shade byte. */
-interface StrandPoint {
-	readonly x: number;
-	readonly y: number;
-	readonly depth: number;
-	readonly shade: number;
-}
-
-/**
- * Stamps a connected strand along each stem's own axis, through the empty texels between the
- * leaves, so a card whose leaf islands are separate still holds one piece. The stem's rings are
- * written in order and share their metres along the shoot, so a run of stem vertices is grouped by
- * that value; a value that falls starts another axis and a new strand. A texel a leaf or a bud
- * already covers keeps its own colour and surface.
- */
-function stampStrand(
-	mesh: PrototypeArrays,
-	points: Float64Array,
-	rect: [number, number, number, number],
-	size: number,
-	layer: number,
-	width: number,
-	palette: Palette,
-	color: Uint8Array,
-	surface: Uint8Array,
-	halfDepth: number,
-	toward: number,
-): void {
-	const [rx, ry, rw, rh] = rect;
-	const along = (index: number) => mesh.uvs[index * 2 + 1] as number;
-	const centreOf = (ring: readonly number[]): StrandPoint => {
-		let x = 0;
-		let y = 0;
-		let depth = 0;
-		let shade = 0;
-		for (const index of ring) {
-			x += points[index * 3] as number;
-			y += points[index * 3 + 1] as number;
-			depth += points[index * 3 + 2] as number;
-			shade += mesh.colors[index * 4 + 3] as number;
-		}
-		const n = ring.length;
-		return {
-			x: x / n,
-			y: y / n,
-			depth: depth / n,
-			shade: Math.round(Math.min(255, Math.max(0, shade / n)) / 2),
-		};
-	};
-	const stamp = (cx: number, cy: number, depth: number, shade: number): void => {
-		const before = Math.floor((width - 1) / 2);
-		for (let dy = -before; dy < width - before; dy++)
-			for (let dx = -before; dx < width - before; dx++) {
-				const x = cx + dx;
-				const y = cy + dy;
-				if (x < 0 || y < 0 || x >= rw || y >= rh) continue;
-				const at = (layer * size * size + (ry + y) * size + rx + x) * 4;
-				if (color[at + 3] !== 0) continue;
-				color[at] = srgbByte(palette.stem[0]);
-				color[at + 1] = srgbByte(palette.stem[1]);
-				color[at + 2] = srgbByte(palette.stem[2]);
-				color[at + 3] = 255;
-				surface[at] = 128;
-				surface[at + 1] = 128;
-				surface[at + 2] = Math.round(
-					128 + 127 * Math.max(-1, Math.min(1, (-depth * toward) / halfDepth)),
-				);
-				surface[at + 3] = shade;
-			}
-	};
-	let ring: number[] = [];
-	let ringAlong = 0;
-	let chain: StrandPoint[] = [];
-	const closeRing = (): void => {
-		if (ring.length === 0) return;
-		chain.push(centreOf(ring));
-		ring = [];
-	};
-	const closeChain = (): void => {
-		closeRing();
-		if (chain.length >= 2) {
-			for (let k = 1; k < chain.length; k++) {
-				const a = chain[k - 1] as StrandPoint;
-				const b = chain[k] as StrandPoint;
-				const steps = Math.max(1, Math.ceil(length3(b.x - a.x, b.y - a.y, 0)));
-				for (let s = 0; s <= steps; s++) {
-					const t = s / steps;
-					stamp(
-						Math.round(a.x + (b.x - a.x) * t),
-						Math.round(a.y + (b.y - a.y) * t),
-						a.depth + (b.depth - a.depth) * t,
-						Math.round(a.shade + (b.shade - a.shade) * t),
-					);
-				}
-			}
-		}
-		chain = [];
-	};
-	const count = mesh.positions.length / 3;
-	for (let index = 0; index < count; index++) {
-		if ((mesh.colors[index * 4 + 2] as number) !== SURFACE_STEM) {
-			closeChain();
-			continue;
-		}
-		const metres = along(index);
-		if (ring.length > 0 && metres !== ringAlong) {
-			closeRing();
-			if (metres < ringAlong) closeChain();
-		}
-		if (ring.length === 0) ringAlong = metres;
-		ring.push(index);
-	}
-	closeChain();
 }
 
 /** The farthest a prototype's points stand from a plane through the centre, either way. */
