@@ -45,11 +45,29 @@ function strand(length: number, spread: number): PieceStem {
 /** The weeping willow's pieces. */
 export const PIECES: readonly PieceRule[] = [
 	// Still 22: the strands of a 35-centimetre sub-branch.
-	{ name: 'strand-short', attitude: 'plumb', variants: 2, stem: strand(0.3, 0.04) },
+	{
+		name: 'strand-short',
+		attitude: 'plumb',
+		variants: 2,
+		scale: 1 / LEAF_SCALE,
+		stem: strand(0.3, 0.04),
+	},
 	// Still 21: the strands of the cut branch hang 45 to 85 centimetres.
-	{ name: 'strand', attitude: 'plumb', variants: 3, stem: strand(0.65, 0.2) },
+	{
+		name: 'strand',
+		attitude: 'plumb',
+		variants: 3,
+		scale: 1 / LEAF_SCALE,
+		stem: strand(0.65, 0.2),
+	},
 	// Still 19: one complete strand is 10.5 leaf lengths, about 1.1 metres.
-	{ name: 'strand-long', attitude: 'plumb', variants: 2, stem: strand(1.1, 0.08) },
+	{
+		name: 'strand-long',
+		attitude: 'plumb',
+		variants: 2,
+		scale: 1 / LEAF_SCALE,
+		stem: strand(1.1, 0.08),
+	},
 ];
 
 /** The studio photographs of the willow's cut wood, each laid out from the pieces. */
@@ -60,6 +78,7 @@ export const STUDIO: readonly PieceStudio[] = [
 	// centimetres of arching twig.
 	{
 		still: 21,
+		scale: 1 / LEAF_SCALE,
 		piece: 'strand',
 		stand: {
 			stem: {
@@ -104,6 +123,7 @@ export const STUDIO: readonly PieceStudio[] = [
 	// and hang back down beside it.
 	{
 		still: 22,
+		scale: 1 / LEAF_SCALE,
 		piece: 'strand-short',
 		stand: {
 			lean: 4,
@@ -128,6 +148,7 @@ export const STUDIO: readonly PieceStudio[] = [
 	// strands, each about a metre long.
 	{
 		still: 19,
+		scale: 1 / LEAF_SCALE,
 		piece: 'strand-long',
 		stand: {
 			lean: 176,

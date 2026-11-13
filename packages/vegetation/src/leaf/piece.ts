@@ -161,6 +161,14 @@ export interface PieceRule {
 	readonly attitude: PieceAttitude;
 	/** How many variants the kit holds, each with its own draws. */
 	readonly variants: number;
+	/**
+	 * The piece's real size over the lengths its rule states. A rule's lengths are read from a
+	 * photograph whose caption gives the piece's length, and the leaf is the ruler: where the
+	 * photograph's leaf is some share of the species' own, the rule draws its leaves at that share
+	 * and names the inverse here, so the piece is built with the species' own leaf and every length
+	 * and thickness of its wood grows with it. Buds keep the species' own size.
+	 */
+	readonly scale?: number;
 	/** Its main stem. */
 	readonly stem: PieceStem;
 }
@@ -529,7 +537,28 @@ export function planPiece(
 	for (const points of axes)
 		for (const point of points)
 			reach = Math.max(reach, length3(point.at[0], point.at[1], point.at[2]));
-	return { axes, leaves, buds, reach, span: Math.max(span, 1e-6) };
+	const size = rule.scale ?? 1;
+	if (size === 1) return { axes, leaves, buds, reach, span: Math.max(span, 1e-6) };
+	const sized = (v: Readonly<Vector3>): Vector3 => [v[0] * size, v[1] * size, v[2] * size];
+	return {
+		axes: axes.map((points) =>
+			points.map((point) => ({
+				...point,
+				at: sized(point.at),
+				radius: point.radius * size,
+				along: point.along * size,
+			})),
+		),
+		leaves: leaves.map((leaf) => ({
+			...leaf,
+			at: sized(leaf.at),
+			scale: leaf.scale * size,
+			along: leaf.along * size,
+		})),
+		buds: buds.map((bud) => ({ ...bud, at: sized(bud.at), along: bud.along * size })),
+		reach: reach * size,
+		span: Math.max(span, 1e-6) * size,
+	};
 }
 
 /**
@@ -698,6 +727,8 @@ export interface PieceStudio {
 	};
 	/** Degrees the camera stands round the layout; at 0 it looks along -Z. */
 	readonly turn?: number;
+	/** The stand's real size over the lengths it states, as a piece rule's `scale` is. */
+	readonly scale?: number;
 }
 
 /** One piece of a layout: which piece, and where it stands in the layout's space, +Y up. */
@@ -782,7 +813,13 @@ export function layStudio(
 	// The cut stands in its clamp: its line is up, and the ground is below it.
 	const stand = planPiece(
 		record,
-		{ name: `stand-${studio.still}`, attitude: 'along', variants: 1, stem: studio.stand.stem },
+		{
+			name: `stand-${studio.still}`,
+			attitude: 'along',
+			variants: 1,
+			stem: studio.stand.stem,
+			...(studio.scale === undefined ? {} : { scale: studio.scale }),
+		},
 		pieceKey(15, studio.still % 16),
 		0,
 		[0, -1, 0],
@@ -817,11 +854,12 @@ export function layStudio(
 		if (!along || (a === 0 && stand.axes.length > 1)) continue;
 		const foot = (points[0] as AxisPoint).along;
 		const length = tip.along - foot;
+		const gap = along.gap * (studio.scale ?? 1);
 		let next = along.from * length;
 		let side = 1;
 		for (let k = 1; k < points.length; k++) {
 			const point = points[k] as AxisPoint;
-			if (point.along - foot < next || point.along - foot > length - along.gap / 2) continue;
+			if (point.along - foot < next || point.along - foot > length - gap / 2) continue;
 			const last = points[k - 1] as AxisPoint;
 			const run = normalize3([
 				point.at[0] - last.at[0],
@@ -836,7 +874,7 @@ export function layStudio(
 					position: [...point.at],
 					rotation: pieceTurn('plumb', run),
 				});
-				next += along.gap;
+				next += gap;
 				continue;
 			}
 			// A side piece leaves to one side of its stem and the other in turn, level with the ground.
@@ -855,7 +893,7 @@ export function layStudio(
 				rotation: pieceTurn(attitudeOf(along.piece), out),
 			});
 			side = -side;
-			next += along.gap;
+			next += gap;
 		}
 	}
 	return { stand, placed };
