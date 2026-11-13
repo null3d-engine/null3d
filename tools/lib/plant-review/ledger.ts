@@ -49,6 +49,8 @@ export interface LedgerLine {
 	readonly commit: string | null;
 	readonly path: string | null;
 	readonly coverage: boolean;
+	/** The pictures drawn and not measured, which the eye judges and which pass no row alone. */
+	readonly drawn: readonly string[];
 	readonly balance: RowVerdict;
 	readonly rows: readonly RowVerdict[];
 	readonly passes: number;
@@ -234,6 +236,7 @@ export function ledgerOf(paths: readonly string[]): Ledger {
 				commit: null,
 				path: null,
 				coverage: false,
+				drawn: [],
 				balance: 'unjudged',
 				rows: ROW_NAMES.map(() => 'unjudged'),
 				passes: 0,
@@ -254,6 +257,7 @@ export function ledgerOf(paths: readonly string[]): Ledger {
 			commit: verdict.commit,
 			path,
 			coverage: verdict.coverage.complete,
+			drawn: verdict.coverage.drawn ?? [],
 			balance: verdict.balance.verdict,
 			rows,
 			passes,
@@ -324,6 +328,10 @@ export function ledgerText(ledger: Ledger): string {
 		});
 		if (taken.length > 0)
 			lines.push(`${''.padEnd(wide)}  pictures out of the rows: ${taken.join('; ')}`);
+		if (line.drawn.length > 0)
+			lines.push(
+				`${''.padEnd(wide)}  ${line.drawn.length} drawn and not measured, for the eye: ${line.drawn.join(', ')}`,
+			);
 	}
 	lines.push(
 		'',

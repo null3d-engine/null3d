@@ -40,13 +40,15 @@ import {
 	MASK_SUBJECT_FLOOR,
 	rubricBand,
 	SHEATH_VIEWS,
+	SOLVED_VIEWS,
 	type StillResult,
 	sweepMeasures,
 	type TurnResult,
 	viewSheets,
 	type WindResult,
+	WOOD_CLOSE_VIEWS,
 } from './lib/plant-review/compare.ts';
-import { coverageMarkdown, coverageOf } from './lib/plant-review/coverage.ts';
+import { coverageMarkdown, coverageOf, drawnText } from './lib/plant-review/coverage.ts';
 import {
 	deltaE2000,
 	onColour,
@@ -124,6 +126,8 @@ interface Manifest {
 	readonly seconds: number;
 	/** The species record's height band, so a sweep picture's height is read against it. */
 	readonly sizeBand?: { readonly mean: number; readonly spread: number };
+	/** Whether the run was asked for a part of the species' references, not for all of them. */
+	readonly part?: true;
 	readonly frames: readonly RunFrame[];
 }
 
@@ -204,11 +208,14 @@ function stillShot(
 		...slot.query,
 	};
 	const plant = plantMask(image);
-	if (
+	// A close view of the wood stands against leaves, woodland or the plant itself, so only a plain
+	// studio background separates its subject: a sky or a ground fitted to its border is not there,
+	// and its colours would paint the render's background with a leaf's green.
+	const separable =
 		plant.background.plain ||
-		skyMaskable(plant.background) ||
-		soilMaskable(plant.background, plant.height)
-	) {
+		(!WOOD_CLOSE_VIEWS.has(slot.view) &&
+			(skyMaskable(plant.background) || soilMaskable(plant.background, plant.height)));
+	if (separable) {
 		const measures = measurePlant(image, plant, habit);
 		// A plain background gives its own colour, which the render stands against. A silhouette
 		// draws black on white whatever its picture's colours and light, so it takes the framing alone.
@@ -263,12 +270,12 @@ function stillShot(
 	// is a flat swatch rather than a picture of the plant, so it is not given one. A fruit view keeps
 	// its outline whether or not the photograph separates, because a part that hangs from nothing
 	// shows only as a piece, and a piece needs the matte.
+	// A view solved from the plant's subjects draws its matte whatever its photograph's background:
+	// its contract names parts of the picture that must show plant or open ground, and only the
+	// matte can say which they show.
 	const outline =
-		(slot.kind !== 'texture' &&
-			(plant.background.plain ||
-				skyMaskable(plant.background) ||
-				soilMaskable(plant.background, plant.height)) &&
-			slot.view !== 'silhouette') ||
+		(slot.kind !== 'texture' && separable && slot.view !== 'silhouette') ||
+		SOLVED_VIEWS.has(query.view ?? slot.view) ||
 		slot.framed ||
 		slot.query?.fruit === true ||
 		CUTTING_VIEWS.includes(slot.view) ||
@@ -854,7 +861,7 @@ function compareRun(
 		summary.push(
 			'### Stills and texture sources',
 			'',
-			`- ${result.pairs.length} files beside a render of their view; ${masked.length} give an outline on a plain background in both pictures.`,
+			`- ${result.pairs.filter((pair) => !pair.error).length} of ${result.pairs.length} files drawn beside a render of their view; ${masked.length} give an outline on a plain background in both pictures.`,
 			...masked.map(
 				(pair) =>
 					`- ${pair.file}: shape IoU ${fixed(pair.shapeIou)}, width error ${fixed(pair.profileError, 3)}, gap ${fixed(pair.crownBoxGap?.reference)} against ${fixed(pair.crownBoxGap?.render)} in the crown box, enclosed ${fixed(pair.gap?.reference)} against ${fixed(pair.gap?.render)}${pair.gap?.renderByCoverage === undefined ? '' : ` (${fixed(pair.gap.renderByCoverage)} by the render's clear share, the earlier reading)`}, frame ${fixed(pair.frameGap?.reference)} against ${fixed(pair.frameGap?.render)}, leaf colour difference ${fixed(pair.foliageDeltaE, 1)}${barkClause(pair)}${pieceClause(pair)}${fittedMaskClause(pair)}.`,
@@ -1009,8 +1016,8 @@ function compareRun(
 		'### Coverage',
 		'',
 		coverage.complete
-			? `- Every one of the ${coverage.inUse} reference files in use was compared. coverage.md lists each with its render.`
-			: `- ${coverage.compared} of ${coverage.inUse} reference files in use were compared in full, so the species cannot pass. coverage.md lists each file and what it lacks.`,
+			? `- Every one of the ${coverage.inUse} reference files in use was compared${drawnText(coverage)}. coverage.md lists each with its render.`
+			: `- ${coverage.compared} of ${coverage.inUse} reference files in use were compared in full${drawnText(coverage)}, so the species cannot pass. coverage.md lists each file and what it lacks.`,
 		...(voids.length > 0
 			? [
 					`- ${voids.length} picture${voids.length === 1 ? ' is' : 's are'} void, with no subject to compare: ${voids.map((pair) => pair.file).join(', ')}. A void picture is a fault of the tool's camera or of the file's view, and it neither passes nor fails a row.`,
@@ -1045,6 +1052,15 @@ function compareRun(
 	writeFileSync(join(dir, 'coverage.json'), `${JSON.stringify(coverage, null, '\t')}\n`);
 	writeFileSync(join(dir, 'coverage.md'), coverageMarkdown(manifest.species, set.slug, coverage));
 	writeFileSync(join(dir, 'summary.md'), `${summary.join('\n')}\n`);
+	// A run asked for a part is sound when every reference it drew for was compared, or drawn for
+	// the eye: the species' completeness is the ledger's count, not this run's. A run of every
+	// reference is sound when it is complete and no check of it fails.
+	if (manifest.part) {
+		const asked = new Set(manifest.frames.flatMap((frame) => frame.reference ?? []));
+		return !coverage.lines.some(
+			(line) => asked.has(line.file) && (line.status === 'missing' || line.status === 'unmeasured'),
+		);
+	}
 	return (
 		coverage.complete &&
 		maskFailures.length === 0 &&
@@ -1368,6 +1384,7 @@ async function main(): Promise<void> {
 		windFps,
 		started: new Date(started).toISOString(),
 		seconds: Number(((Date.now() - started) / 1000).toFixed(1)),
+		...((flag('only') || flag('stills') || flag('views')) && { part: true as const }),
 		frames,
 	};
 	writeFileSync(join(dir, 'manifest.json'), `${JSON.stringify(manifest, null, '\t')}\n`);
