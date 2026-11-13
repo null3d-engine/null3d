@@ -185,6 +185,111 @@ describe('the saguaro frame', () => {
 		scaledBudget(60_000),
 	);
 
+	it("draws the record's ribs round the stem and round each arm", async () => {
+		const { kit, grow, growth } = await saguaro();
+		const { skeleton, levels } = grow(0);
+		const wood = levels[0].parts.find((part) => part.name === 'wood');
+		if (!wood) throw new Error('the level holds no wood');
+		const { min, max } = kit.box;
+		const metres = (i: number, k: number) =>
+			(min[k] as number) +
+			((wood.arrays.positions[i * 3 + k] as number) / 65535) *
+				((max[k] as number) - (min[k] as number));
+		// The crests of the drawn section round a straight stretch of an axis: the ring of vertices
+		// nearest a point of the axis, read round it, counts one crest for each place its radius
+		// peaks. A ring's vertices lie in one plane square to the axis.
+		const crests = (centre: readonly number[], along: readonly number[], reach: number): number => {
+			const [ax, ay, az] = along as [number, number, number];
+			// Two directions square to the axis, to read an angle round it.
+			const side = Math.abs(ay) < 0.9 ? [0, 1, 0] : [1, 0, 0];
+			const u = [
+				ay * (side[2] as number) - az * (side[1] as number),
+				az * (side[0] as number) - ax * (side[2] as number),
+				ax * (side[1] as number) - ay * (side[0] as number),
+			];
+			const ul = Math.hypot(...u);
+			const [ux, uy, uz] = u.map((value) => value / ul) as [number, number, number];
+			const [vx, vy, vz] = [ay * uz - az * uy, az * ux - ax * uz, ax * uy - ay * ux];
+			const near: { t: number; angle: number; radius: number }[] = [];
+			for (let i = 0; i < wood.arrays.positions.length / 3; i++) {
+				const p = [0, 1, 2].map((k) => metres(i, k) - (centre[k] as number)) as [
+					number,
+					number,
+					number,
+				];
+				const t = p[0] * ax + p[1] * ay + p[2] * az;
+				if (Math.abs(t) > 0.3) continue;
+				const x = p[0] * ux + p[1] * uy + p[2] * uz;
+				const y = p[0] * vx + p[1] * vy + p[2] * vz;
+				const radius = Math.hypot(x, y);
+				if (radius <= reach) near.push({ t, angle: Math.atan2(y, x), radius });
+			}
+			// The rings stand apart along the axis; the one nearest the point is read.
+			near.sort((a, b) => a.t - b.t);
+			const rings: (typeof near)[] = [];
+			for (const vertex of near) {
+				const ring = rings[rings.length - 1];
+				if (ring && vertex.t - (ring[ring.length - 1] as typeof vertex).t < 0.004)
+					ring.push(vertex);
+				else rings.push([vertex]);
+			}
+			const middle = (ring: typeof near) => ring.reduce((sum, v) => sum + v.t, 0) / ring.length;
+			const whole = rings.filter((ring) => ring.length >= 24);
+			whole.sort((a, b) => Math.abs(middle(a)) - Math.abs(middle(b)));
+			const nearest = whole[0];
+			if (!nearest) throw new Error('no ring of the drawn wood stands near the point');
+			// The seam's vertex stands twice in the ring.
+			const round = nearest
+				.sort((a, b) => a.angle - b.angle)
+				.filter((v, k, all) => k === 0 || v.angle - (all[k - 1] as typeof v).angle > 1e-4);
+			let peaks = 0;
+			for (let k = 0; k < round.length; k++) {
+				const before = (round[(k + round.length - 1) % round.length] as (typeof round)[number])
+					.radius;
+				const here = (round[k] as (typeof round)[number]).radius;
+				const after = (round[(k + 1) % round.length] as (typeof round)[number]).radius;
+				if (here > before + 1e-4 && here >= after - 1e-4) peaks++;
+			}
+			return peaks;
+		};
+		// A straight stretch of an axis at its middle: for the stem a pair of nodes a third of the
+		// way up, and for an arm the first pair of its upright run.
+		const stretch = (
+			axis: number,
+			arm: boolean,
+		): { at: number[]; along: number[]; radius: number } => {
+			const nodes = nodesOf(skeleton, axis);
+			const first = skeleton.axes.first[axis] as number;
+			for (let n = arm ? 1 : Math.floor(nodes.length / 3); n < nodes.length; n++) {
+				const [a, b] = [nodes[n - 1], nodes[n]] as [number[], number[]];
+				const step = [0, 1, 2].map((k) => (b[k] as number) - (a[k] as number));
+				const length = Math.hypot(...step);
+				const aside = Math.hypot(step[0] as number, step[2] as number);
+				if (length > 0.15 && (!arm || aside < 1e-3 * length))
+					return {
+						at: [0, 1, 2].map((k) => ((a[k] as number) + (b[k] as number)) / 2),
+						along: step.map((value) => value / length),
+						radius: skeleton.radius[first + n] as number,
+					};
+			}
+			throw new Error(`axis ${axis} has no straight stretch`);
+		};
+		const within = (count: number, spread: Column['ribs']) => {
+			const { mean, spread: stray } =
+				typeof spread === 'number' ? { mean: spread, spread: 0 } : spread;
+			expect(count).toBeGreaterThanOrEqual(Math.round(mean - stray));
+			expect(count).toBeLessThanOrEqual(Math.round(mean + stray));
+		};
+		const stem = stretch(0, false);
+		within(crests(stem.at, stem.along, stem.radius * 1.2), growth.ribs);
+		const arms = armsOf(skeleton);
+		expect(arms.length).toBeGreaterThan(0);
+		for (const arm of arms) {
+			const upright = stretch(arm, true);
+			within(crests(upright.at, upright.along, upright.radius * 1.2), growth.arms.ribs);
+		}
+	});
+
 	it('draws one spine cluster at each areole and no shoot at a flower site', async () => {
 		const { grow } = await saguaro();
 		const { skeleton, shoots } = grow(0);

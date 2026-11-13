@@ -1055,6 +1055,8 @@ export interface Column {
 		 * so a record that names any says in its comment which photograph shows it.
 		 */
 		readonly plane: number;
+		/** Ribs round an arm, which carries fewer than the column does. */
+		readonly ribs: Spread;
 		/** Degrees above the horizontal that an arm leaves the column at; a negative angle sags. */
 		readonly leave: number;
 		/**
