@@ -73,6 +73,15 @@ const WANDER_NOD = 0.5;
  */
 const OUTER_FROM = 0.2;
 const APART_TRIES = 8;
+/**
+ * The wood built so far is kept so that the wood near a point is found without a read of all of
+ * it: wood up to this radius, as a share of the height, stands in a grid of cells this wide, and
+ * the few thicker points are read one by one.
+ */
+const WOOD_THIN = 0.01;
+const WOOD_CELL = 0.03;
+/** Half the cells a grid holds along one line, which no plant's wood reaches. */
+const WOOD_CELLS = 4096;
 const SHAPE_STEP = 16384;
 /** The rise of a unit direction above which a parent stands near plumb and has no ground side. */
 const PLUMB_NEAR = 0.9;
@@ -170,6 +179,13 @@ export interface FramePatchRule {
 	 * hanging whip's or a leafy shoot's does. Left out, the patch stands at the axis's end.
 	 */
 	readonly along?: number;
+	/**
+	 * Sockets along the wood under the patch, beside the one at the wood's end: the share of the
+	 * plant's height from one to the next, and the degrees each stands out from the wood's line.
+	 * They run back from the end for half the patch's width, each turned on round the wood from the
+	 * last and none on the wood's underside. Left out, the patch has the one socket at the end.
+	 */
+	readonly sockets?: { readonly every: number; readonly angle: number };
 }
 
 /** What every axis rule states. */
@@ -385,6 +401,8 @@ export interface FramePatch {
 	readonly depth: number;
 	/** The level direction the axis runs in at the patch, a unit vector. */
 	readonly along: Vector3;
+	/** The sockets along the wood under the patch: the metres between them and their angle. */
+	readonly sockets?: { readonly every: number; readonly angle: number };
 }
 
 /**
@@ -537,6 +555,13 @@ function tipOf(
 		z += t[2] * step;
 	}
 	return [x, y, z];
+}
+
+/** A point of the wood already built. */
+interface WoodPoint {
+	readonly at: Vector3;
+	readonly radius: number;
+	readonly axis: number;
 }
 
 /** An axis while its plan is built. */
@@ -705,8 +730,23 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 	const scale = spreadAt(record.size.height, draw(Purpose.Height));
 	const axes: Built[] = [];
 	const patches: FramePatch[] = [];
-	/** Every point of the wood built so far, with its radius and its axis, for the axes that keep apart. */
-	const wood: { readonly at: Vector3; readonly radius: number; readonly axis: number }[] = [];
+	/** The wood built so far, each point with its radius and its axis, for the axes that keep apart. */
+	const thick: WoodPoint[] = [];
+	const thin = new Map<number, WoodPoint[]>();
+	const cell = WOOD_CELL * scale;
+	const cellOf = (at: number): number => Math.floor(at / cell);
+	const cellKey = (i: number, j: number, k: number): number =>
+		((i + WOOD_CELLS) * 2 * WOOD_CELLS + j + WOOD_CELLS) * 2 * WOOD_CELLS + k + WOOD_CELLS;
+	const addWood = (point: WoodPoint): void => {
+		if (point.radius > WOOD_THIN * scale) {
+			thick.push(point);
+			return;
+		}
+		const key = cellKey(cellOf(point.at[0]), cellOf(point.at[1]), cellOf(point.at[2]));
+		const held = thin.get(key);
+		if (held) held.push(point);
+		else thin.set(key, [point]);
+	};
 	// The height of the crown's widest row, in metres: the middle the outline is drawn in toward.
 	let middle = scale / 2;
 	let widest = Number.NEGATIVE_INFINITY;
@@ -1093,25 +1133,36 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 		 * The least gap between the wood of an attempt's outer half and the wood of every axis built
 		 * before it, the axis it leaves apart: the distance between their lines less both radii. The
 		 * wood its parent grew from counts, so a branch does not end against its bough's own limb.
+		 * Where no wood stands nearer than the gap the rule asks for, the figure is only known to be
+		 * at least that gap.
 		 */
 		const room = (attempt: typeof pick): number => {
 			let least = Number.POSITIVE_INFINITY;
+			const taper = clamp((rule as FrameBranchRule).taper, 0.02, 1);
 			attempt.laid.points.forEach((point, k) => {
 				const share = attempt.laid.along[k] as number;
 				if (share < OUTER_FROM) return;
-				const own =
-					baseRadius * (1 - (1 - clamp((rule as FrameBranchRule).taper, 0.02, 1)) * share);
-				for (const other of wood) {
-					if (other.axis === parent) continue;
+				const own = baseRadius * (1 - (1 - taper) * share);
+				const gap = (other: WoodPoint): void => {
+					if (other.axis === parent) return;
 					const dx = point[0] - other.at[0];
 					const dy = point[1] - other.at[1];
 					const dz = point[2] - other.at[2];
 					least = Math.min(least, Math.sqrt(dx * dx + dy * dy + dz * dz) - other.radius - own);
-				}
+				};
+				for (const other of thick) gap(other);
+				// Thin wood farther off than this stands clear by more than the gap asked for.
+				const near = apart + own + WOOD_THIN * scale;
+				for (let i = cellOf(point[0] - near); i <= cellOf(point[0] + near); i++)
+					for (let j = cellOf(point[1] - near); j <= cellOf(point[1] + near); j++)
+						for (let c = cellOf(point[2] - near); c <= cellOf(point[2] + near); c++) {
+							const held = thin.get(cellKey(i, j, c));
+							if (held) for (const other of held) gap(other);
+						}
 			});
 			return least;
 		};
-		if (apart > 0 && wood.length > 0) {
+		if (apart > 0 && axes.length > 0) {
 			let clear = room(pick);
 			for (let attempt = 1; attempt < APART_TRIES && clear < apart; attempt++) {
 				const next = drawn(attempt);
@@ -1159,7 +1210,7 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 			along,
 		});
 		for (const node of nodes)
-			wood.push({ at: [node.x, node.y, node.z], radius: node.radius, axis: id });
+			addWood({ at: [node.x, node.y, node.z], radius: node.radius, axis: id });
 
 		const end = nodes[nodes.length - 1] as FrameNode;
 		const lastTangent = tangent(1);
@@ -1214,6 +1265,9 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 				width,
 				depth,
 				along: level,
+				...(patch.sockets
+					? { sockets: { every: patch.sockets.every * scale, angle: patch.sockets.angle } }
+					: {}),
 			});
 		}
 
@@ -1402,18 +1456,21 @@ export function frameSkeleton(plan: FramePlan): MacroSkeleton {
 }
 
 /**
- * A socket of a frame: the end of the wood under a foliage patch, which carries one piece.
+ * A socket of a frame: a place on its wood that carries foliage.
  *
  * @category api/vegetation
  */
 export interface FrameSocket {
 	/** The patch it carries the foliage of, by its index in the plan: the socket's mass. */
 	readonly patch: number;
-	/** The axis whose end it is, by its index in the plan. */
+	/** The axis it stands on, by its index in the plan. */
 	readonly axis: number;
+	/** The node of that axis it hangs from, and the share of the axis's length it stands at. */
+	readonly node: number;
+	readonly along: number;
 	/** Where it stands, in metres. */
 	readonly at: Vector3;
-	/** The direction the wood runs in at its end, a unit vector: the way its piece grows. */
+	/** The way its piece grows, a unit vector: along the wood at the wood's end, out from it elsewhere. */
 	readonly heading: Vector3;
 	/**
 	 * Its rank across the whole plant, from 0: the sockets below any rank stand spread through the
@@ -1422,16 +1479,23 @@ export interface FrameSocket {
 	readonly rank: number;
 }
 
+/** The share of an axis's length, from its end, that sockets along the wood may run back over. */
+const SOCKETS_BACK = 0.8;
+/** The degrees to each side of the wood's upper side that a socket along the wood may stand at. */
+const SOCKETS_ROUND = 110;
+
 /**
- * The sockets of a frame: one at the end of every axis that carries a foliage patch, ranked once
- * across the whole plant.
+ * The sockets of a frame: one at the end of each axis that carries a patch, and, where the patch
+ * states them, more along the wood under it, each standing out from the wood and turned on round
+ * it from the last. All are ranked once across the plant.
  *
  * @param plan The frame.
- * @returns The sockets, in the patches' order.
+ * @returns The sockets, patch by patch, each patch's end socket first.
  * @category api/vegetation
  */
 export function frameSockets(plan: FramePlan): FrameSocket[] {
-	const ends = plan.patches.map((patch, index) => {
+	const found: Omit<FrameSocket, 'rank'>[] = [];
+	plan.patches.forEach((patch, index) => {
 		const axis = plan.axes[patch.axis] as FrameAxis;
 		const last = axis.nodes.length - 1;
 		const end = axis.nodes[last] as FrameNode;
@@ -1439,15 +1503,67 @@ export function frameSockets(plan: FramePlan): FrameSocket[] {
 			last > 0
 				? (axis.nodes[last - 1] as FrameNode)
 				: ((plan.axes[axis.parent]?.nodes[axis.parentNode] as FrameNode | undefined) ?? end);
-		return {
+		found.push({
 			patch: index,
 			axis: patch.axis,
-			at: [end.x, end.y, end.z] as Vector3,
+			node: last,
+			along: 1,
+			at: [end.x, end.y, end.z],
 			heading: unit(end.x - from.x, end.y - from.y, end.z - from.z),
-		};
+		});
+		const rule = patch.sockets;
+		if (!rule || last < 1 || !(rule.every > 0)) return;
+		const back = Math.min(patch.width / 2, axis.length * SOCKETS_BACK);
+		let node = last - 1;
+		for (let k = 1; k * rule.every <= back; k++) {
+			const share = 1 - (k * rule.every) / axis.length;
+			while (node > 0 && (axis.along[node] as number) > share) node--;
+			const a = axis.nodes[node] as FrameNode;
+			const b = axis.nodes[node + 1] as FrameNode;
+			const span = (axis.along[node + 1] as number) - (axis.along[node] as number);
+			const t = span > 0 ? (share - (axis.along[node] as number)) / span : 0;
+			const line = unit(b.x - a.x, b.y - a.y, b.z - a.z);
+			// The wood's upper side, square to its line, and the level direction square to both. A
+			// plumb axis has no upper side, and its sockets stand all round it.
+			const plumb = Math.abs(line[1]) > PLUMB_NEAR;
+			const up = plumb
+				? unit(1 - line[0] * line[0], -line[0] * line[1], -line[0] * line[2])
+				: unit(-line[1] * line[0], 1 - line[1] * line[1], -line[1] * line[2]);
+			const side: Vector3 = [
+				line[1] * up[2] - line[2] * up[1],
+				line[2] * up[0] - line[0] * up[2],
+				line[0] * up[1] - line[1] * up[0],
+			];
+			// Each is turned on from the last by the golden angle, folded onto the arc it may stand in.
+			const turned = (((index + k) * GOLDEN) % 360) / 360;
+			const round = radians(plumb ? turned * 360 : (turned * 2 - 1) * SOCKETS_ROUND);
+			const out: Vector3 = [
+				up[0] * cos(round) + side[0] * sin(round),
+				up[1] * cos(round) + side[1] * sin(round),
+				up[2] * cos(round) + side[2] * sin(round),
+			];
+			const lean = radians(rule.angle);
+			const radius = a.radius + (b.radius - a.radius) * t;
+			found.push({
+				patch: index,
+				axis: patch.axis,
+				node,
+				along: share,
+				at: [
+					a.x + (b.x - a.x) * t + out[0] * radius,
+					a.y + (b.y - a.y) * t + out[1] * radius,
+					a.z + (b.z - a.z) * t + out[2] * radius,
+				],
+				heading: unit(
+					line[0] * cos(lean) + out[0] * sin(lean),
+					line[1] * cos(lean) + out[1] * sin(lean),
+					line[2] * cos(lean) + out[2] * sin(lean),
+				),
+			});
+		}
 	});
-	const ranks = thinningRanks(ends.map((socket) => socket.at));
-	return ends.map((socket, k) => ({ ...socket, rank: ranks[k] as number }));
+	const ranks = thinningRanks(found.map((socket) => socket.at));
+	return found.map((socket, k) => ({ ...socket, rank: ranks[k] as number }));
 }
 
 /**
@@ -1466,18 +1582,21 @@ export function growFrame(input: GrowInput): MacroSkeleton {
 	const plan = planFrame(growth.frame, input);
 	const builder = new SkeletonBuilder();
 	const written = writeAxes(plan, builder);
-	const scale = plan.scale / Math.max(1e-6, spreadMean(input.record.size.height));
+	// Shoot rows grow with the plant; a branch piece is the size its leaves make it.
+	const scale =
+		growth.sockets.piece === undefined
+			? plan.scale / Math.max(1e-6, spreadMean(input.record.size.height))
+			: 1;
 	const frame = new Float32Array(4);
 	for (const socket of frameSockets(plan)) {
 		const wood = written[socket.axis] as Written;
-		const end = (plan.axes[socket.axis] as FrameAxis).nodes.length - 1;
 		quatFromFrame(
 			socket.heading,
 			Math.abs(socket.heading[1]) > 0.99 ? [1, 0, 0] : [0, 1, 0],
 			frame,
 		);
 		builder.addBud({
-			node: wood.nodes[end] as number,
+			node: wood.nodes[socket.node] as number,
 			x: socket.at[0],
 			y: socket.at[1],
 			z: socket.at[2],
@@ -1486,7 +1605,7 @@ export function growFrame(input: GrowInput): MacroSkeleton {
 			vigor: 1,
 			light: 1,
 			axis: wood.axis,
-			woodRadius: ((plan.axes[socket.axis] as FrameAxis).nodes[end] as FrameNode).radius,
+			woodRadius: ((plan.axes[socket.axis] as FrameAxis).nodes[socket.node] as FrameNode).radius,
 			socket: { scale, rank: socket.rank, lobe: socket.patch },
 		});
 	}
