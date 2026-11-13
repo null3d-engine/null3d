@@ -632,13 +632,19 @@ async function correctWidths(
 			frameOf(file),
 		);
 		if (measured === null) return undefined;
+		const held = (frameOf(file)?.facts as { stand?: { held?: string } } | undefined)?.stand?.held;
+		const drawn = `width: ${file} draws ${measured.share.toFixed(3)} of the width${measured.clipped ? ', touching a side' : ''} against ${fix.target.toFixed(3)}, at a stand scale of ${fix.scale.toFixed(3)}${held ? ` held by ${held}` : ''}`;
 		// A box that touches the frame's sides is a crop whatever its share reads, so it is redrawn
 		// even inside the band: a cropped frame cannot judge its subject.
 		const off = Math.abs(measured.share - fix.target) > WIDTH_BAND;
 		const cropped = measured.clipped && fix.target < 1;
-		if (!off && !cropped) return undefined;
+		if (!off && !cropped) {
+			console.log(`${drawn}: inside the band`);
+			return undefined;
+		}
 		// The page applies a scale to the stand it solves, so a second pass builds on the first.
 		const scale = fix.scale * correctedScale(measured.share, fix.target, fix.fraction);
+		console.log(`${drawn}: the correction asks a scale of ${scale.toFixed(3)}`);
 		if (fix.close) return scale > CLOSE_CROP_MAX ? undefined : { ...fix, scale };
 		if (scale < WHOLE_SCALE_MIN || scale > WHOLE_SCALE_MAX) {
 			console.warn(
@@ -650,8 +656,10 @@ async function correctWidths(
 		// whose stand already held those rows, or the frame, keeps its drawing when it is drawn
 		// narrower than its photograph: the width error is the plant's. One that stood back for its
 		// width comes in.
-		const held = (frameOf(file)?.facts as { stand?: { held?: string } } | undefined)?.stand?.held;
-		if (fix.stood && scale < 1 && held !== 'width' && held !== 'scale') return undefined;
+		if (fix.stood && scale < 1 && held !== 'width' && held !== 'scale') {
+			console.log(`width: ${file} keeps its stand, which held its photograph's rows`);
+			return undefined;
+		}
 		return { ...fix, scale };
 	};
 	const fixes = new Map<string, WidthFix>();
