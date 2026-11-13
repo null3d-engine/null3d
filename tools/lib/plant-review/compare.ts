@@ -922,24 +922,93 @@ export function fixed(value: number | null | undefined, digits = 2): string {
 	return value === null || value === undefined ? '-' : value.toFixed(digits);
 }
 
+/** A camera's tilt above the level, in radians, and its vertical lens, in degrees. */
+export interface CameraTilt {
+	readonly pitch: number;
+	readonly fov: number;
+}
+
+/** A drawn frame's camera tilt, as the page posted its camera; null where it posted none. */
+export function frameTilt(frame: RunFrame): CameraTilt | null {
+	const camera = (
+		frame.cell as { camera?: { position?: number[]; target?: number[]; fov?: number } } | undefined
+	)?.camera;
+	const p = camera?.position;
+	const t = camera?.target;
+	if (!p || !t || p.length < 3 || t.length < 3 || typeof camera?.fov !== 'number') return null;
+	const [px, py, pz] = p as [number, number, number];
+	const [tx, ty, tz] = t as [number, number, number];
+	return { pitch: Math.atan2(ty - py, Math.hypot(tx - px, tz - pz)), fov: camera.fov };
+}
+
+/** A photograph's camera tilt from its horizon's row share, through the lens its view is drawn with. */
+export function horizonTilt(horizon: number, fov: number): CameraTilt {
+	return { pitch: Math.atan((horizon - 0.5) * 2 * Math.tan((fov * Math.PI) / 360)), fov };
+}
+
+/** The tangent of the rise above the level of the ray through a row, a share of the frame from its top. */
+function riseAt(row: number, tilt: CameraTilt): number {
+	return Math.tan(tilt.pitch + Math.atan((0.5 - row) * 2 * Math.tan((tilt.fov * Math.PI) / 360)));
+}
+
+/**
+ * A picture's plant against its camera, read from the rows of its top and its foot as shares of the
+ * frame's height: the share of the plant's own height that lies between its top and a row, and the
+ * camera's eye as a share of the plant's height. The plant is taken to stand in one upright plane
+ * through its foot. A camera that tilts maps rows onto heights unevenly, so a picture's share of
+ * its plant's rows differs from the plant's share of its metres; a level camera maps them alike.
+ * Null where the rows span no rise.
+ */
+export function plantRows(
+	top: number,
+	foot: number,
+	tilt: CameraTilt,
+): { readonly share: (row: number) => number; readonly eye: number } | null {
+	const high = riseAt(top, tilt);
+	const low = riseAt(foot, tilt);
+	const span = high - low;
+	if (!(span > 1e-9)) return null;
+	return { share: (row) => (high - riseAt(row, tilt)) / span, eye: -low / span };
+}
+
+/** The camera's eye, as a share of the plant's height, below which a picture's heights are also given as the plant's. */
+export const LOW_EYE = 0.5;
+
+/** One side of a pair as a height figure reads it: its measures, its picture's rows and its camera's tilt. */
+interface HeightSide {
+	readonly measures: PlantMeasures;
+	readonly rows: number;
+	readonly tilt: CameraTilt | null;
+}
+
 /**
  * A note when a crown's box holds only a small share of its plant's own, which is the sign that the
  * crown's foot was found inside the foliage: a kit-cut piece has no bare stem below its leaves, and a
  * thick bole can fill the whole margin the finder looks for. The gap and crown figures then measure a
  * slice of the plant rather than its crown, so the run says so instead of letting a reader trust them.
+ * The share is the picture's, of the plant's rows. From a camera below the plant's middle, the plant's
+ * own share of its metres is given beside it.
  */
-function crownNote(reference: PlantMeasures, render: PlantMeasures): string | undefined {
-	const share = (measure: PlantMeasures): number => {
-		const box = measure.box;
+function crownNote(reference: HeightSide, render: HeightSide): string | undefined {
+	const share = (side: HeightSide): number => {
+		const box = side.measures.box;
 		if (!box) return 1;
 		const tall = box.bottom - box.top + 1;
-		return tall > 0 ? measure.crownBox.height / tall : 1;
+		return tall > 0 ? side.measures.crownBox.height / tall : 1;
 	};
-	const least = Math.min(share(reference), share(render));
+	const least = share(render) < share(reference) ? render : reference;
+	const picture = share(least);
 	// A view of the wood alone has no crown to measure, so nothing is being read from it.
-	if (least >= 0.4 || least <= 0.05) return undefined;
-	const percent = (least * 100).toFixed(0);
-	return `the crown's box holds ${percent} per cent of the plant's height, so its foot sits inside the foliage and its gap and crown figures measure a slice`;
+	if (picture >= 0.4 || picture <= 0.05) return undefined;
+	const percent = (value: number) => (value * 100).toFixed(0);
+	const box = least.measures.box as Box;
+	const rows =
+		least.tilt && plantRows(box.top / least.rows, (box.bottom + 1) / least.rows, least.tilt);
+	const own =
+		rows && rows.eye < LOW_EYE
+			? ` (${percent(rows.share((box.top + least.measures.crownBox.height) / least.rows))} per cent of the plant's own, from a camera at ${rows.eye.toFixed(2)} of its height)`
+			: '';
+	return `the crown's box holds ${percent(picture)} per cent of the plant's height in the picture${own}, so its foot sits inside the foliage and its gap and crown figures measure a slice`;
 }
 
 /** A CIELAB triple as three rounded figures, in the order light, red to green, blue to yellow. */
@@ -2477,7 +2546,21 @@ export function compareStills(
 				};
 		const framing = closeFraming(frame.facts);
 		// The crown's box is read from an outline, so only a picture compared by outline has its note.
-		const note = (masked ? crownNote(refSide.measures, render.measures) : undefined) ?? slot.note;
+		const tilt = frameTilt(frame);
+		const note =
+			(masked
+				? crownNote(
+						{
+							measures: refSide.measures,
+							rows: refPlant.height,
+							tilt:
+								tilt && refSide.measures.horizon !== null
+									? horizonTilt(refSide.measures.horizon, tilt.fov)
+									: null,
+						},
+						{ measures: render.measures, rows: render.plant.height, tilt },
+					)
+				: undefined) ?? slot.note;
 		results.push({
 			...shown,
 			file: slot.file,
