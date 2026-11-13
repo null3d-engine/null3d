@@ -10,7 +10,7 @@ import {
 	growPlantNow,
 	loadPlantCode,
 } from '../../packages/vegetation/src/generate.ts';
-import { aimedCamera, enlarged, type V3 } from '../../tools/lib/plant-preview/camera.ts';
+import { aimedCamera, type V3 } from '../../tools/lib/plant-preview/camera.ts';
 import { canvas, drawCardLevelWood, drawCards, matte } from '../../tools/lib/plant-preview/draw.ts';
 import type { Rgba } from '../../tools/lib/plant-review/image.ts';
 import { matteMask, measurePlant } from '../../tools/lib/plant-review/references.ts';
@@ -25,8 +25,6 @@ const SIZE = [768, 516] as const;
 const GROWTH = { seed: 11, variant: 0 } as const;
 /** How far the preview's sky gap may stand from the engine's. */
 const BAND = 0.03;
-/** Canvas pixels the preview draws for each pixel of its matte, a side. */
-const SUPERSAMPLE = 3;
 
 /** The review page's whole view of the plant at its first card level, drawn as a matte. */
 function reviewWindow(): string {
@@ -58,14 +56,12 @@ test("the preview's first card level holds the engine's sky gap", async ({ page 
 	await loadPlantCode(module.record);
 	const kit = buildKitNow(module, { detail: 'high', placeholders: 'missing' });
 	const asset = growPlantNow(kit, { ...GROWTH, season: kit.record.seasons.default, near: true });
-	const camera = enlarged(
-		aimedCamera(posted.position, posted.target, posted.fov, SIZE[0], SIZE[1]),
-		SUPERSAMPLE,
-	);
+	// One sample a pixel at the still's own size, as the engine draws it.
+	const camera = aimedCamera(posted.position, posted.target, posted.fov, SIZE[0], SIZE[1]);
 	const drawing = canvas(camera.width, camera.height);
 	drawCardLevelWood(drawing, camera, kit, asset, 1);
 	drawCards(drawing, camera, kit, asset, 1, SIZE[0]);
-	const preview = matte(drawing, SUPERSAMPLE);
+	const preview = matte(drawing, 1);
 
 	const drawn = { engine: enclosedGap(engine), preview: enclosedGap(preview) };
 	console.log(

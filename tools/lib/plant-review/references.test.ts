@@ -527,6 +527,14 @@ describe('a bole hidden by the boughs beside it', () => {
 });
 
 describe('the slots', () => {
+	test("read a cactus's ribs as its skin, and a leaf's ribs as the leaf's", () => {
+		expect(classifySlot('13-rib-close-up.png')?.view).toBe('bark-mid');
+		expect(classifySlot('08-areole-rows.png')?.note).toContain('cactus skin');
+		// A hosta's ribbed blade is its leaf, which the cactus skin rule would frame as bark.
+		expect(classifySlot('08-leaf-surface-ribs.png')?.note ?? '').not.toContain('cactus skin');
+		expect(classifySlot('08-leaf-surface-ribs.png')?.view).not.toBe('bark-mid');
+	});
+
 	test('sort stills by the words in their names before their numbers', () => {
 		expect(classifySlot('13-single-needle-underside.png')?.view).toBe('leaf-under');
 		// The whole-from-below and crown-underside photographs take their own views: one frames the

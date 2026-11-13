@@ -525,7 +525,8 @@ describe('the coarsest mip level a card reads', () => {
 });
 
 describe('the card bake along a long piece', () => {
-	const record = oakRecord();
+	const plain = oakRecord();
+	const record = { ...plain, lod: { ...plain.lod, cardCuts: { most: 4 } } };
 	const planesOf = (prototype: UncardedPrototype) =>
 		(bakeCards(record, OAK_MANIFEST, 'high', [prototype]).cells[0] as { planes: CardPlanes })
 			.planes;
@@ -561,6 +562,21 @@ describe('the card bake along a long piece', () => {
 		const perMetre = face.front[3] / (2 * Math.hypot(...(face.up as [number, number, number])));
 		const uncut = face.front[3] / 1.25;
 		expect(perMetre).toBeGreaterThan((planes.length / 2) * uncut * 0.8);
+	});
+
+	it('keeps a long piece whole where its record asks for no cut', () => {
+		const strip = prototypeOf(
+			ribbon(
+				Array.from({ length: 25 }, (_, k) => [(k / 24) * 1.2, 0] as const),
+				0.06,
+			),
+			'piece',
+			1,
+		);
+		const planes = (
+			bakeCards(plain, OAK_MANIFEST, 'high', [strip]).cells[0] as { planes: CardPlanes }
+		).planes;
+		expect(planes.map((plane) => plane.role)).toEqual([0, 1, 2]);
 	});
 
 	it('keeps three planes on a card about as long as it is wide', () => {
