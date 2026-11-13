@@ -144,6 +144,8 @@ export interface BudShape {
 	 * a cone that is seen whole and from below in one band each way.
 	 */
 	readonly double?: boolean;
+	/** The share of a double cone's length from its foot to its widest ring, a half where absent. */
+	readonly widest?: number;
 }
 
 /** How a tier meshes a shoot's wood and buds. */
@@ -1470,7 +1472,7 @@ export function meshShoot(
 			: double
 				? [
 						[0, 0],
-						[w, l * 0.5],
+						[w, l * (shape.widest ?? 0.5)],
 						[0, l],
 					]
 				: shape.round
