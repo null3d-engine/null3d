@@ -302,11 +302,36 @@ export const frame: FrameSpec = {
 };
 
 /**
+ * The foot of the framed willow. The frame's trunk already flares to still 01's foot, so the stem
+ * base adds no flare of its own, as the framed oak's does: low rounded lobes, and short roots that
+ * sink into the turf close to the foot.
+ */
+const base = {
+	...record.base,
+	flare: { amount: 0, height: 0.5 },
+	buttress: {
+		lobes: { mean: 6, spread: 1 },
+		amount: 0.1,
+		sharpness: 1.5,
+		height: 0.4,
+		round: 0.6,
+	},
+	roots: {
+		count: { mean: 5, spread: 1 },
+		length: { mean: 0.6, spread: 0.15 },
+		radius: 0.16,
+		dive: 0.3,
+		ridge: 0.9,
+	},
+} as const;
+
+/**
  * The weeping willow's record with the frame as its growth and the long hanging strand of still 19
  * at each socket. The shoot rows are working figures, not measured ones: a kit with no pieces draws
  * them.
  */
 export const directed = {
 	...framedRecord(record, frame, { rows: { mean: 4, spread: 1 }, fan: 45, piece: 'strand-long' }),
+	base,
 	pieces: PIECES.filter((piece) => piece.name === 'strand-long'),
 };
