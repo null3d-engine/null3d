@@ -52,6 +52,7 @@ export const PIECES: readonly PieceRule[] = [
 		name: 'branch-end',
 		attitude: 'along',
 		variants: 2,
+		scale: 1 / LEAF_SCALE,
 		stem: {
 			...arm(1),
 			radius: [0.006, 0.0012],
@@ -80,6 +81,7 @@ export const PIECES: readonly PieceRule[] = [
 		name: 'twig',
 		attitude: 'along',
 		variants: 2,
+		scale: 1 / LEAF_SCALE,
 		stem: {
 			length: { mean: 0.35, spread: 0.03 },
 			radius: [0.0025, 0.001],

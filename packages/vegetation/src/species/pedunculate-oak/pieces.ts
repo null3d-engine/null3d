@@ -7,8 +7,13 @@
 // that until the record's own length moves.
 import type { PieceLeaves, PieceRule, PieceStem, PieceStudio } from '../../leaf/piece';
 
-/** A piece's leaf over the record's: 10.8 centimetres measured on still 21, over 12. */
+/**
+ * The leaf's share of the record's 12 centimetres, were still 21's branch the metre its caption says:
+ * a tuft is 0.22 of the branch across. The leaf is the ruler, so the branch is 1.11 metres.
+ */
 const LEAF_SCALE = 0.9;
+/** The same for still 22's twig, captioned 35 centimetres: 0.62, so the twig is 56 centimetres. */
+const TWIG_LEAF_SCALE = 0.62;
 
 /**
  * The tuft at a shoot's end. Stills 09, 10 and 21: six to ten leaves crowd in a shoot's last five
@@ -63,6 +68,7 @@ export const PIECES: readonly PieceRule[] = [
 		name: 'branch-end',
 		attitude: 'along',
 		variants: 2,
+		scale: 1 / LEAF_SCALE,
 		stem: {
 			length: { mean: 1, spread: 0.06 },
 			radius: [0.006, 0.0025],
@@ -94,17 +100,18 @@ export const PIECES: readonly PieceRule[] = [
 		name: 'twig',
 		attitude: 'along',
 		variants: 2,
+		scale: 1 / TWIG_LEAF_SCALE,
 		stem: {
 			length: { mean: 0.35, spread: 0.03 },
 			radius: [0.004, 0.002],
 			kink: { length: 0.09, angle: 12 },
-			leaves: tuft(0.35, 6, 0.62),
+			leaves: tuft(0.35, 6, TWIG_LEAF_SCALE),
 			sides: [
 				{
 					stem: {
 						length: { mean: 0.12, spread: 0.02 },
 						radius: [0.0025, 0.0018],
-						leaves: tuft(0.12, 6, 0.62),
+						leaves: tuft(0.12, 6, TWIG_LEAF_SCALE),
 					},
 					gap: 0.09,
 					from: 0.18,
