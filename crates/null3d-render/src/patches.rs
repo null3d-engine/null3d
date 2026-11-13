@@ -746,6 +746,7 @@ impl PatchStorage {
         for (k, tree) in self.trees.iter_mut().enumerate() {
             if tree.is_some() && !live(k as u32 + 1) {
                 *tree = None;
+                self.generation = self.generation.wrapping_add(1);
             }
         }
     }

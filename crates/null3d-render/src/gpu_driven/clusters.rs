@@ -102,27 +102,6 @@ pub(super) fn list_room(picked: u32) -> u32 {
 /// The indices that a view's list keeps beyond a sixteenth of what it picks: a few patches' worth.
 const LIST_SPARE_INDICES: u32 = 4 * 3 * 128;
 
-/// A hash of a tree's patch records and its indices, so a rebuild that changes neither keeps the
-/// tables that the GPU holds.
-fn table_hash(patches: &[[u32; 8]], indices: &[u32]) -> u64 {
-    let mut hash = 0xcbf2_9ce4_8422_2325u64;
-    let mut mix = |word: u32| {
-        hash ^= u64::from(word);
-        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
-    };
-    mix(patches.len() as u32);
-    for patch in patches {
-        for &word in patch {
-            mix(word);
-        }
-    }
-    mix(indices.len() as u32);
-    for &word in indices {
-        mix(word);
-    }
-    hash
-}
-
 /// The scene's cluster tables and each view's buffers.
 #[derive(Debug, Default)]
 pub(super) struct Clusters {
@@ -130,9 +109,8 @@ pub(super) struct Clusters {
     tables: [u32; 2],
     /// The patches and the meshes of the table that the GPU holds.
     table_words: [u32; 2],
-    /// A hash of the patch table and the index table that the GPU holds. A structure change that
-    /// leaves the trees alone keeps both tables, so only the mesh records upload again.
-    tables_hash: u64,
+    /// The build count of the tables that the GPU holds, or `None` before it holds them.
+    tables_epoch: Option<u64>,
     /// The mesh records that the GPU holds, the scene layout's then the casters', so a record
     /// that changes without a new layout writes the table again: a tree's copy moves with its
     /// bucket's slice, and the casters' layout changes on its own.
@@ -235,14 +213,14 @@ impl Clusters {
         };
         let records_changed =
             self.records.len() != 2 * trees || (0..2 * trees).any(|k| self.records[k] != record(k));
-        let tables_hash = table_hash(&layout.cluster_patches, &layout.cluster_indices);
-        let tables_changed =
-            recreated || self.tables_hash != tables_hash || self.table_words != words;
-        // The patch table and the index table change only with the trees. A structure change that
-        // leaves them alone, such as a level arriving, writes only the mesh records, which follow
-        // the patches in the same buffer.
+        // The patch table and the index table change only with the trees, which the layout counts.
+        // A structure change that leaves them alone, such as a level arriving, writes only the mesh
+        // records, which follow the patches in the same buffer.
+        let tables_changed = recreated
+            || self.tables_epoch != Some(layout.cluster_tables_epoch())
+            || self.table_words != words;
         if tables_changed {
-            self.tables_hash = tables_hash;
+            self.tables_epoch = Some(layout.cluster_tables_epoch());
             self.table_words = words;
             if !layout.cluster_patches.is_empty() {
                 let mut table: Vec<u32> = Vec::with_capacity((patches * PATCH_WORDS) as usize);
