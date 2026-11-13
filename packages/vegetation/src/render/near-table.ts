@@ -46,7 +46,7 @@ export function heldNearSlots(kit: SpeciesKit): number {
 
 /**
  * Writes a slot's place into the table: the place's high halves and the copy's turn, then the
- * place's remainders and its scale.
+ * place's remainders and its scale, with all its rows drawn.
  *
  * @param table The species' table.
  * @param slot The slot.
@@ -70,6 +70,18 @@ export function writeSlotPlace(
 	}
 	table.data[at + 3] = turn;
 	table.data[at + 7] = scale;
+	table.data[at + 8] = 1;
+}
+
+/**
+ * Writes the share of a slot's rows that draws while they fade in or out: 1 draws them all.
+ *
+ * @param table The species' table.
+ * @param slot The slot.
+ * @param share From 0 to 1.
+ */
+export function writeSlotShare(table: NearTable, slot: number, share: number): void {
+	table.data[slot * NEAR_SLOT_TEXELS * 4 + 8] = share;
 }
 
 /**

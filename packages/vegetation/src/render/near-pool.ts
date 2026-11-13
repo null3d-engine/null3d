@@ -44,7 +44,10 @@ export interface NearPoolOptions {
  * @category api/vegetation
  */
 export interface NearPool {
-	/** Reads the camera; hands the budget out again when it has moved 0.5 m. Allocates nothing else. */
+	/**
+	 * Moves every crossfade on, and reads the camera: hands the budget out again when it has moved
+	 * 0.5 m or a slot has finished fading out. Call it once a frame.
+	 */
 	update(): void;
 	/** Copies drawing real pieces now, for the stats overlay and the tests. */
 	readonly copies: number;
@@ -102,7 +105,7 @@ export function createNearPool(ctx: SketchContext, options: NearPoolOptions = {}
 	let copies = 0;
 	let triangles = 0;
 
-	const handAll = () => {
+	const handAll = (now: number) => {
 		const list: BudgetCandidate[] = [];
 		const last = new Map<number, number>();
 		members.forEach(({ member, serial, last: held }) => {
@@ -141,7 +144,7 @@ export function createNearPool(ctx: SketchContext, options: NearPoolOptions = {}
 			const count = entry.member.copies.count;
 			const own = grants.subarray(first, first + count);
 			const ownOrder = order.filter((i) => i >= first && i < first + count).map((i) => i - first);
-			entry.last = entry.member.apply(own, ownOrder);
+			entry.last = entry.member.apply(own, ownOrder, now);
 			entry.last.forEach((grant, copy) => {
 				if (grant === GRANT_NONE) return;
 				const costs = entry.member.costOf(copy);
@@ -176,6 +179,9 @@ export function createNearPool(ctx: SketchContext, options: NearPoolOptions = {}
 			};
 		},
 		update() {
+			// The fades move on every frame; a slot whose rows have faded out may go to a waiting copy.
+			const now = ctx.time.now;
+			for (const { member } of members) if (member.advance(now)) fresh = true;
 			camera.getWorldPosition(eye);
 			const moved = length3(
 				(eye[0] as number) - (handed[0] as number),
@@ -185,7 +191,7 @@ export function createNearPool(ctx: SketchContext, options: NearPoolOptions = {}
 			if (!fresh && moved < MOVE) return;
 			fresh = false;
 			handed.set(eye);
-			handAll();
+			handAll(now);
 		},
 		destroy() {
 			members.length = 0;

@@ -1,33 +1,52 @@
 // The slots of a pool of real pieces: a copy that keeps its grant keeps its slot, a new grant takes a
-// free slot nearest copy first, a copy that loses its grant frees its slot, and a full pool turns the
+// free slot nearest copy first, a copy that loses its grant leaves its slot, which keeps its rows
+// fading out for the fade's length before another copy may take it, and a full pool turns the
 // farther copies away. Each pool is sized from the budget: the most copies it can grant at once.
 import { describe, expect, it } from 'bun:test';
-import { POOL_SLOTS, poolSizes, SlotPool } from './near-slots';
+import { FADE_SECONDS, POOL_SLOTS, poolSizes, SlotPool } from './near-slots';
 
 describe('the slots of a pool of real pieces', () => {
 	it('keeps a holder in its slot and gives a newcomer a free one', () => {
 		const pool = new SlotPool(3);
-		expect(pool.assign([4, 9])).toEqual([
-			{ slot: 0, copy: 4 },
-			{ slot: 1, copy: 9 },
+		expect(pool.assign([4, 9], 0)).toEqual([
+			{ slot: 0, copy: 4, kind: 'take' },
+			{ slot: 1, copy: 9, kind: 'take' },
 		]);
-		// Copy 9 stays where it is though it now comes first; 4 leaves, 7 takes the freed slot.
-		expect(pool.assign([9, 7])).toEqual([{ slot: 0, copy: 7 }]);
-		expect([...pool.holders]).toEqual([7, 9, -1]);
+		// Copy 9 stays where it is though it now comes first; 4 leaves its slot, and 7 takes a free one.
+		expect(pool.assign([9, 7], 1)).toEqual([
+			{ slot: 0, copy: 4, kind: 'leave' },
+			{ slot: 2, copy: 7, kind: 'take' },
+		]);
+		expect([...pool.holders]).toEqual([-1, 9, 7]);
 	});
 
-	it('frees the slots of copies that lose their grant', () => {
+	it('frees a slot only once its rows have faded out', () => {
+		const pool = new SlotPool(1);
+		pool.assign([1], 0);
+		expect(pool.assign([2], 10)).toEqual([{ slot: 0, copy: 1, kind: 'leave' }]);
+		// While copy 1's rows fade out, copy 2 has no slot.
+		expect(pool.refused).toEqual([2]);
+		expect(pool.assign([2], 10 + FADE_SECONDS / 2)).toEqual([]);
+		// Once they have faded, the slot is freed and taken in the same hand-out.
+		expect(pool.assign([2], 10 + FADE_SECONDS)).toEqual([
+			{ slot: 0, copy: -1, kind: 'free' },
+			{ slot: 0, copy: 2, kind: 'take' },
+		]);
+	});
+
+	it('gives a copy granted again the slot it is leaving', () => {
 		const pool = new SlotPool(2);
-		pool.assign([1, 2]);
-		expect(pool.assign([2])).toEqual([{ slot: 0, copy: -1 }]);
-		expect([...pool.holders]).toEqual([-1, 2]);
+		pool.assign([5], 0);
+		pool.assign([], 1);
+		expect(pool.assign([5], 1.1)).toEqual([{ slot: 0, copy: 5, kind: 'return' }]);
+		expect([...pool.holders]).toEqual([5, -1]);
 	});
 
 	it('turns the farther copies away when the pool is full', () => {
 		const pool = new SlotPool(2);
-		pool.assign([5]);
-		const moves = pool.assign([3, 5, 8, 1]);
-		expect(moves).toEqual([{ slot: 1, copy: 3 }]);
+		pool.assign([5], 0);
+		const moves = pool.assign([3, 5, 8, 1], 1);
+		expect(moves).toEqual([{ slot: 1, copy: 3, kind: 'take' }]);
 		expect(pool.refused).toEqual([8, 1]);
 	});
 

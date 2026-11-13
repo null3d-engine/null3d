@@ -79,8 +79,6 @@ const ALPHA_CUTOFF = 0.5;
 
 /** The uniforms that a placement sets on a material after it is made. */
 export interface PlacedUniforms {
-	/** The distance from the camera inside which a near copy's cards give way to its real shoots. */
-	readonly nearDistance?: number;
 	/** How far into autumn the leaves stand, from 0 for summer to 1 for turned. */
 	readonly season?: number;
 	/** The season the plant stands in: 0 summer, 1 autumn, 2 winter, 3 blossom. */
@@ -178,7 +176,6 @@ export function plantMaterials(
 				windLayer: field?.texture.layer ?? 0,
 				swayDistance,
 				mode: MODE[role],
-				nearDistance: 0,
 				displacement: 0,
 				season: 0,
 				seasonKind: 0,
@@ -193,8 +190,6 @@ export function plantMaterials(
 				material.setUniform('windHeading', heading);
 			},
 			setPlaced: (uniforms) => {
-				if (uniforms.nearDistance !== undefined)
-					material.setUniform('nearDistance', uniforms.nearDistance);
 				if (uniforms.season !== undefined) material.setUniform('season', uniforms.season);
 				if (uniforms.seasonKind !== undefined)
 					material.setUniform('seasonKind', uniforms.seasonKind);

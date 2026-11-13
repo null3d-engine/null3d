@@ -47,8 +47,6 @@ struct Uniforms {
     swayDistance: f32,
     // The role: 0 wood, 1 shoot rows, 2 cards, 3 merged foliage, 4 extras.
     mode: f32,
-    // The distance from the camera inside which a near copy's cards give way to its real shoots.
-    nearDistance: f32,
     // 1 to move the trunk's and the largest limbs' vertices by the bark's height, 0 to keep them.
     displacement: f32,
     // How far into autumn the leaves stand, from 0 for summer to 1 for turned.
@@ -204,7 +202,7 @@ const KIND_PIECE_SHEATH: f32 = 32.0;
 // A brush card of a piece: crossed quads that picture a dense run of its leaves from the card atlas.
 const KIND_BRUSH: f32 = 8.0;
 // Texels across the near table: two for each of its sixteen slots.
-const NEAR_TEXELS: f32 = 32.0;
+const NEAR_TEXELS: f32 = 48.0;
 // A leaf's reflectance at normal incidence and at grazing, as the plant materials set them.
 const LEAF_F0: f32 = 0.035;
 const LEAF_F90: f32 = 0.875;
@@ -303,6 +301,30 @@ fn near_texel(texel: i32) -> vec4f {
 /// that a half float keeps it: the parent wind record over 32; its last five bits plus the flutter
 /// phase; the sky visibility times 8 plus the bent normal's top three bits; the bent normal's low
 /// five bits times 16 plus the near slot.
+/// A 4x4 ordered dither at a pixel, turned by a phase: a share s of the pixels lies below s.
+fn plant_dither(pixel: vec2f, phase: f32) -> f32 {
+    var order = array<f32, 16>(0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0, 3.0, 11.0, 1.0, 9.0, 15.0, 7.0, 13.0, 5.0);
+    let turn = u32(max(phase, 0.0) + 0.5);
+    let x = (u32(max(pixel.x, 0.0)) + turn) & 3u;
+    let y = (u32(max(pixel.y, 0.0)) + (turn >> 2u)) & 3u;
+    return (order[y * 4u + x] + 0.5) / 16.0;
+}
+
+/// Whether a first card level's pixel gives way to its copy's real pieces. Its card row holds the
+/// copy's edge (x, 0 for none), the edge it fades from (y), how far the fade has come (z) and the
+/// phase of its dither (w): inside both edges the cards give way, outside both they draw, and between
+/// them they cross over the fade, the cards fading out as the pieces fade in, and back.
+fn cards_give_way(distance: f32, pixel: vec2f) -> bool {
+    let values = object.values;
+    let cut_new = values.x > 0.0 && distance < values.x * 0.96;
+    let cut_old = values.y > 0.0 && distance < values.y * 0.96;
+    if (cut_new == cut_old) {
+        return cut_new;
+    }
+    let dither = plant_dither(pixel, values.w);
+    return select(dither >= values.z, dither < values.z, cut_new);
+}
+
 struct ShootRow {
     record: i32,
     phase: f32,
@@ -838,8 +860,8 @@ fn shoot_offset(input: VertexInput) -> vec3f {
         return vec3f(0.0);
     }
     let row = shoot_row(object.values);
-    let high = near_texel(row.slot * 2);
-    let low = near_texel(row.slot * 2 + 1);
+    let high = near_texel(row.slot * 3);
+    let low = near_texel(row.slot * 3 + 1);
     let copy = high.xyz + low.xyz;
     let turn = high.w;
     let scale = max(low.w, 0.0001);
@@ -1260,15 +1282,15 @@ fn surface(input: SurfaceInput) -> Surface {
         mapped = normalize(mix(bark_normal, vec3f(0.0, 0.0, 1.0), lichen_mask * 0.35));
         occlusion = mix(1.0, input.vertexColor.a, WOOD_SHADE);
     } else if (mode == MODE_CARDS) {
-        // In the shell where a near copy draws its real shoots, its cards give way.
-        let near_copy = object.values.x > 0.5;
+        // In the shell where a copy draws its real pieces, its cards give way.
+        let give_way = cards_give_way(length(input.relativePosition), input.fragCoord.xy);
         if (abs(input.uv1.y - STALK_PLANE) < 0.1) {
             // A card's stalk: a shade of the young bark's tone, so the join the card's leaves stand
             // on shows without the line standing out pale against the leaves.
             base = header(HEADER_YOUNG).rgb * header(HEADER_YOUNG_TINT).rgb * CARD_STALK_SHADE;
             roughness = 0.85;
             occlusion = 1.0;
-            if (near_copy && length(input.relativePosition) < material.nearDistance * 0.96) {
+            if (give_way) {
                 alpha = 0.0;
             }
         } else {
@@ -1302,7 +1324,7 @@ fn surface(input: SurfaceInput) -> Surface {
                     cut_alpha = 0.0;
                 }
             }
-            if (near_copy && length(input.relativePosition) < material.nearDistance * 0.96) {
+            if (give_way) {
                 alpha = 0.0;
                 cut_alpha = 0.0;
             }
@@ -1467,7 +1489,7 @@ fn surface(input: SurfaceInput) -> Surface {
         }
         if (mode == MODE_SHOOTS) {
             let row = shoot_row(object.values);
-            let turn = near_texel(row.slot * 2).w;
+            let turn = near_texel(row.slot * 3).w;
             occlusion = saturate(row.sky / 250.0) * input.vertexColor.a;
             occlusion = mix(occlusion, 1.0, leaf_sky);
             sky_normal = out_of_turn(bent_normal(row.bent), turn);
@@ -1517,7 +1539,16 @@ fn surface(input: SurfaceInput) -> Surface {
     // the cut draws nothing there, and a faint ghost of it in the matte reads as plant the picture
     // does not show, such as a piece hanging in air.
     let drawn = sharpen(cut, width);
-    s.alpha = select(drawn, select(0.0, alpha, drawn > 0.0), matte);
+    // A slot's rows fading in or out draw a dithered share of their pixels.
+    var faded = 1.0;
+    if (mode == MODE_SHOOTS) {
+        let row = shoot_row(object.values);
+        let share = near_texel(row.slot * 3 + 2).x;
+        if (plant_dither(input.fragCoord.xy, f32(row.slot)) >= share) {
+            faded = 0.0;
+        }
+    }
+    s.alpha = select(drawn, select(0.0, alpha, drawn > 0.0), matte) * faded;
     s.diffuseTransmission = select(share, 0.0, matte || parts || silhouette);
     s.diffuseTransmissionColor = select(through, vec3f(0.0), matte || parts || silhouette);
     return s;

@@ -32,6 +32,7 @@ function member(xs: readonly number[], toSwitch: number, toTexel: number) {
 	const m: PoolMember = {
 		copies: copiesAt(xs),
 		costOf: () => ({ toSwitch, toTexel }),
+		advance: () => false,
 		apply(grants) {
 			calls.push(Uint8Array.from(grants));
 			return Uint8Array.from(grants);
@@ -52,7 +53,7 @@ function cameraAt(place: number[]) {
 	};
 }
 
-const ctx = { quality: { preset: 'high' } } as unknown as SketchContext;
+const ctx = { quality: { preset: 'high' }, time: { now: 0 } } as unknown as SketchContext;
 
 describe('the near pool', () => {
 	it('hands its budget out over every placement, nearest copy first', () => {
@@ -192,26 +193,48 @@ describe("a placement's pools of real pieces", () => {
 		expect(texelRows).toBe(sizes.texel * rows);
 		// Nothing granted: every row parked far below the ground.
 		expect(made.every((b) => b.scales.every((s) => s === 0))).toBe(true);
-		// The copy at 40 m takes a slot: its rows stand round it, the rest stay parked, and its
-		// cards give way inside its switch.
+		// The copy at 40 m takes a slot: its rows stand round it, fading in, the rest stay parked, and
+		// its cards cross from none to its switch.
+		const rowsNear = (x: number) => {
+			let count = 0;
+			for (const b of made)
+				for (let r = 0; r < b.positions.length / 3; r++)
+					if ((b.scales[r * 3] as number) > 0 && Math.abs((b.positions[r * 3] as number) - x) < 15)
+						count++;
+			return count;
+		};
+		const parkedOrNear = (xs: readonly number[]) =>
+			made.every((b) => {
+				for (let r = 0; r < b.positions.length / 3; r++)
+					if (
+						(b.scales[r * 3] as number) > 0 &&
+						!xs.some((x) => Math.abs((b.positions[r * 3] as number) - x) < 15)
+					)
+						return false;
+				return true;
+			});
+		const card4 = (copy: number) => Array.from(card.values.subarray(copy * 4, copy * 4 + 3));
 		const grants = new Uint8Array([GRANT_NONE, GRANT_SWITCH, GRANT_NONE]);
-		expect([...placed.apply(grants, [0, 1, 2])]).toEqual([...grants]);
-		let near = 0;
-		for (const b of made)
-			for (let r = 0; r < b.positions.length / 3; r++)
-				if ((b.scales[r * 3] as number) > 0) {
-					near++;
-					expect(Math.abs((b.positions[r * 3] as number) - 40)).toBeLessThan(15);
-				}
-		expect(near).toBe(rows);
-		expect([card.values[0], card.values[4], card.values[8]]).toEqual([0, 6, 0]);
-		// The grant moves to the copy at 80 m: the same slot's rows move with it.
-		placed.apply(new Uint8Array([GRANT_NONE, GRANT_NONE, GRANT_SWITCH]), [0, 1, 2]);
-		for (const b of made)
-			for (let r = 0; r < b.positions.length / 3; r++)
-				if ((b.scales[r * 3] as number) > 0)
-					expect(Math.abs((b.positions[r * 3] as number) - 80)).toBeLessThan(15);
-		expect([card.values[4], card.values[8]]).toEqual([0, 6]);
+		expect([...placed.apply(grants, [0, 1, 2], 10)]).toEqual([...grants]);
+		expect(rowsNear(40)).toBe(rows);
+		expect(parkedOrNear([40])).toBe(true);
+		expect(card4(1)).toEqual([6, 0, 0]);
+		// A quarter second on, the fade has settled.
+		expect(placed.advance(10.25)).toBe(false);
+		expect(card4(1)).toEqual([6, 6, 1]);
+		// The grant moves to the copy at 80 m: it takes the other slot and fades in while the copy at
+		// 40 m keeps its rows, fading out, and its cards cross back from its switch to none.
+		placed.apply(new Uint8Array([GRANT_NONE, GRANT_NONE, GRANT_SWITCH]), [0, 1, 2], 11);
+		expect([rowsNear(40), rowsNear(80)]).toEqual([rows, rows]);
+		expect([card4(1), card4(2)]).toEqual([
+			[0, 6, 0],
+			[6, 0, 0],
+		]);
+		// Once its rows have faded out, the slot it left frees, and the next hand-out parks them.
+		expect(placed.advance(11.25)).toBe(true);
+		placed.apply(new Uint8Array([GRANT_NONE, GRANT_NONE, GRANT_SWITCH]), [0, 1, 2], 11.25);
+		expect([rowsNear(40), rowsNear(80)]).toEqual([0, rows]);
+		expect(parkedOrNear([80])).toBe(true);
 		placed.destroy();
 	});
 });

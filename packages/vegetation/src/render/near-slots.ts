@@ -9,52 +9,92 @@ import { NEAR_SLOTS } from './textures';
 /** The slots a species' near table holds, which its two pools share. */
 export const POOL_SLOTS = NEAR_SLOTS;
 
-/** A slot that a pool gives to a copy, or frees with copy -1. */
+/** Seconds a copy's pieces take to fade in or out as its grant changes. */
+export const FADE_SECONDS = 0.25;
+
+/**
+ * What a pool does with a slot: gives it to a copy, takes it from a copy whose rows then fade out,
+ * frees it once they have faded, or gives it back to the copy that was leaving it.
+ */
+export type SlotMoveKind = 'take' | 'leave' | 'free' | 'return';
+
+/** A slot that changes hands, and the copy it goes to or comes from (-1 for a freed slot). */
 export interface SlotMove {
 	readonly slot: number;
 	readonly copy: number;
+	readonly kind: SlotMoveKind;
 }
 
 /** The slots of one pool and the copies that hold them. */
 export class SlotPool {
 	/** The copy each slot holds, or -1. */
 	readonly holders: Int32Array;
+	/** The copy whose rows each slot keeps while they fade out, or -1. */
+	readonly leaving: Int32Array;
+	/** When each leaving slot's rows have faded out, in seconds. */
+	readonly until: Float64Array;
 	/** The copies the last hand-out wanted that the pool had no slot for, in their order. */
 	refused: number[] = [];
 
 	constructor(size: number) {
 		this.holders = new Int32Array(size).fill(-1);
+		this.leaving = new Int32Array(size).fill(-1);
+		this.until = new Float64Array(size);
 	}
 
 	/**
 	 * Gives the pool's slots to the copies that want them, nearest first: as many as the pool holds,
-	 * each copy that holds a slot keeping it, the others taking the free slots in order, and the
-	 * copies past the pool's size refused.
+	 * each copy that holds a slot keeping it, a copy leaving a slot taking it back, the others taking
+	 * the free slots in order; a slot whose holder no longer wants it keeps that copy's rows fading
+	 * out until the fade ends, and only then frees.
 	 *
 	 * @param wanted The copies granted this pool's range, nearest first.
-	 * @returns The slots that change hands.
+	 * @param now The time in seconds.
+	 * @returns The slots that change hands, in the order they do.
 	 */
-	assign(wanted: readonly number[]): SlotMove[] {
-		const kept = new Set(wanted.slice(0, this.holders.length));
-		this.refused = wanted.slice(this.holders.length);
-		const moves = new Map<number, number>();
+	assign(wanted: readonly number[], now: number): SlotMove[] {
+		const moves: SlotMove[] = [];
+		const size = this.holders.length;
+		for (let slot = 0; slot < size; slot++)
+			if ((this.leaving[slot] as number) >= 0 && now >= (this.until[slot] as number)) {
+				this.leaving[slot] = -1;
+				moves.push({ slot, copy: -1, kind: 'free' });
+			}
+		const kept = wanted.slice(0, size);
+		this.refused = wanted.slice(size);
+		const keep = new Set(kept);
 		const held = new Set<number>();
-		this.holders.forEach((copy, slot) => {
-			if (copy < 0) return;
-			if (kept.has(copy)) held.add(copy);
+		for (let slot = 0; slot < size; slot++) {
+			const copy = this.holders[slot] as number;
+			if (copy < 0) continue;
+			if (keep.has(copy)) held.add(copy);
 			else {
 				this.holders[slot] = -1;
-				moves.set(slot, -1);
+				this.leaving[slot] = copy;
+				this.until[slot] = now + FADE_SECONDS;
+				moves.push({ slot, copy, kind: 'leave' });
 			}
-		});
-		let free = 0;
+		}
 		for (const copy of kept) {
 			if (held.has(copy)) continue;
-			while ((this.holders[free] as number) >= 0) free++;
+			const back = this.leaving.indexOf(copy);
+			if (back >= 0) {
+				this.leaving[back] = -1;
+				this.holders[back] = copy;
+				moves.push({ slot: back, copy, kind: 'return' });
+				continue;
+			}
+			let free = -1;
+			for (let slot = 0; slot < size && free < 0; slot++)
+				if ((this.holders[slot] as number) < 0 && (this.leaving[slot] as number) < 0) free = slot;
+			if (free < 0) {
+				this.refused.push(copy);
+				continue;
+			}
 			this.holders[free] = copy;
-			moves.set(free, copy);
+			moves.push({ slot: free, copy, kind: 'take' });
 		}
-		return [...moves.entries()].sort((a, b) => a[0] - b[0]).map(([slot, copy]) => ({ slot, copy }));
+		return moves;
 	}
 }
 

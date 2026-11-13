@@ -11,7 +11,6 @@ declare const shader: CompiledMaterial<
 		readonly windLayer: 'f32';
 		readonly swayDistance: 'f32';
 		readonly mode: 'f32';
-		readonly nearDistance: 'f32';
 		readonly displacement: 'f32';
 		readonly season: 'f32';
 		readonly seasonKind: 'f32';

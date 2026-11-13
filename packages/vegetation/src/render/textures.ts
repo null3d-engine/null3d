@@ -94,8 +94,11 @@ export interface PrepareOptions extends CoarsenessOptions {
 /** Slots in a species' near table: the copies that may draw real shoots at once. */
 export const NEAR_SLOTS = 16;
 
-/** Texels a near slot takes: the position's high halves and the turn, then the remainders and the scale. */
-export const NEAR_SLOT_TEXELS = 2;
+/**
+ * Texels a near slot takes: the position's high halves and the turn, then the remainders and the
+ * scale, then the share of the slot's rows drawn as they fade in or out.
+ */
+export const NEAR_SLOT_TEXELS = 3;
 
 /** The set of texture files that a preset loads: the half set on Low, the full set elsewhere. */
 export function textureSetFor(preset: QualityPreset): 'full' | 'half' {

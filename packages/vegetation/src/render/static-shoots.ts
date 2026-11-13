@@ -32,7 +32,7 @@ import {
 import { isPoolHost } from './near-pool';
 import { nearTable, writeCopyRows, writeSlotPlace } from './near-table';
 import type { PlacedPlants, PlaceOptions, PlantCopies } from './place';
-import { type CardRow, pooledShoots } from './pooled-shoots';
+import { type CardRow, DITHER_PHASES, pooledShoots } from './pooled-shoots';
 import { farCards } from './stand-in';
 import { NEAR_SLOTS, type SpeciesKit, writePlantWind } from './textures';
 
@@ -209,7 +209,6 @@ export function placeStaticPlants(
 	// The shoots hand over to the first card level by the rule that sets the asset's own start.
 	const near = firstCardStart(kit, options.view) * bias;
 	writePlantWind(kit, assets);
-	setPlacedUniforms([materials.cards], { nearDistance: near });
 	// The season the copies stand in, which a stem whose colour turns reads for its bark, and the
 	// autumn share the leaves take.
 	const season = assets[0]?.season ?? 'summer';
@@ -265,9 +264,11 @@ export function placeStaticPlants(
 				if (nearCards) {
 					const values = batch.values as Float32Array;
 					// Value x is the copy's near edge in metres, the distance its pieces draw to, and 0
-					// for a copy with none; the near pool writes it as it hands the pieces out.
+					// for a copy with none; y the edge it fades from, z how far the fade has come, and w
+					// the phase of its dither. The near pool writes them as it hands the pieces out.
 					rows.forEach((copy, row) => {
-						values[row * 4] = slots.has(copy) ? near : 0;
+						const edge = slots.has(copy) ? near : 0;
+						values.set([edge, edge, 1, copy % DITHER_PHASES], row * 4);
 						cardRows.set(copy, { batch, row });
 					});
 					batch.setDrawRange(0, band.to);

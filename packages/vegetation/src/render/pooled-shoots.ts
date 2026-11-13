@@ -11,11 +11,14 @@ import type { PlantAsset } from '../asset';
 import { DETAILS, type Detail } from '../core/types';
 import { SHOOT_REACH } from '../lod/drawn';
 import { prototypeGeometry } from './material';
-import { POOL_SLOTS, poolSizes, SlotPool } from './near-slots';
-import { nearTable, writeCopyRows, writeSlotPlace } from './near-table';
+import { FADE_SECONDS, POOL_SLOTS, poolSizes, SlotPool } from './near-slots';
+import { nearTable, writeCopyRows, writeSlotPlace, writeSlotShare } from './near-table';
 import type { PlantCopies } from './place';
 import { GRANT_SWITCH, GRANT_TEXEL, pieceCosts } from './plant-budget';
 import type { SpeciesKit } from './textures';
+
+/** The phases of the dither a copy's crossfade is drawn with, one per copy in turn. */
+export const DITHER_PHASES = 16;
 
 /** Where a parked row stands: far below any ground, past every range. */
 const PARKED = -1e7;
@@ -33,9 +36,17 @@ export interface PoolMember {
 	 *
 	 * @param grants One grant per copy, as the pool hands them out.
 	 * @param order The copies nearest first.
+	 * @param now The time in seconds.
 	 * @returns The grants the copies hold now.
 	 */
-	apply(grants: Uint8Array, order: readonly number[]): Uint8Array;
+	apply(grants: Uint8Array, order: readonly number[], now: number): Uint8Array;
+	/**
+	 * Moves every fade on: each changed copy's card edge and each slot's rows, over a quarter second.
+	 *
+	 * @param now The time in seconds.
+	 * @returns Whether a slot's rows finished fading out, so the pool may hand it on.
+	 */
+	advance(now: number): boolean;
 	/** Removes the pools' batches. */
 	destroy(): void;
 }
@@ -137,6 +148,26 @@ export function pooledShoots(
 	};
 	table.next += switchSize + texelSize;
 	const held = new Uint8Array(copies.count);
+	// Each copy's card fade: the edge it moves to and from, and when it began (NaN when settled).
+	const edgeTo = new Float32Array(copies.count);
+	const edgeFrom = new Float32Array(copies.count);
+	const cardBegan = new Float64Array(copies.count).fill(Number.NaN);
+	// Each slot's rows fade: the share drawn when the fade began, the share it moves to, and when.
+	const fades = [pools.switch, pools.texel].map((target) => ({
+		target,
+		from: new Float32Array(target.slots.holders.length),
+		to: new Float32Array(target.slots.holders.length),
+		began: new Float64Array(target.slots.holders.length).fill(Number.NaN),
+	}));
+
+	/** The share of a slot's rows drawn at a time, from its fade. */
+	const shareAt = (fade: (typeof fades)[number], slot: number, now: number) => {
+		const began = fade.began[slot] as number;
+		const to = fade.to[slot] as number;
+		if (Number.isNaN(began)) return to;
+		const from = fade.from[slot] as number;
+		return from + (to - from) * Math.min(1, (now - began) / FADE_SECONDS);
+	};
 
 	/** Writes a slot's rows for a copy, or parks them for none, and the copy's place in the table. */
 	const writeSlot = (target: Pool, slot: number, copy: number) => {
@@ -167,40 +198,104 @@ export function pooledShoots(
 			);
 	};
 
+	/** Starts a slot's rows fading towards a share from the share they draw now. */
+	const fadeSlot = (fade: (typeof fades)[number], slot: number, to: number, now: number) => {
+		fade.from[slot] = shareAt(fade, slot, now);
+		fade.to[slot] = to;
+		fade.began[slot] = now;
+		writeSlotShare(table, fade.target.first + slot, fade.from[slot] as number);
+	};
+
+	/** Writes a copy's card row: its edge, the edge it fades from, how far, and its dither's phase. */
+	const writeCard = (copy: number, progress: number) => {
+		const card = cards.get(copy);
+		if (!card) return undefined;
+		const values = card.batch.values as Float32Array;
+		values[card.row * 4] = edgeTo[copy] as number;
+		values[card.row * 4 + 1] = edgeFrom[copy] as number;
+		values[card.row * 4 + 2] = progress;
+		values[card.row * 4 + 3] = copy % DITHER_PHASES;
+		return card.batch;
+	};
+
 	return {
 		copies,
 		costOf: (copy) => costs[copies.variant[copy] as number] ?? { toSwitch: 0, toTexel: 0 },
-		apply(grants, order) {
+		apply(grants, order, now) {
 			const wantTexel = order.filter((copy) => grants[copy] === GRANT_TEXEL);
-			const texelMoves = pools.texel.slots.assign(wantTexel);
+			const texelMoves = pools.texel.slots.assign(wantTexel, now);
 			const demoted = new Set(pools.texel.slots.refused);
 			const wantSwitch = order.filter((copy) => grants[copy] === GRANT_SWITCH || demoted.has(copy));
-			const switchMoves = pools.switch.slots.assign(wantSwitch);
-			for (const move of texelMoves) writeSlot(pools.texel, move.slot, move.copy);
-			for (const move of switchMoves) writeSlot(pools.switch, move.slot, move.copy);
+			const switchMoves = pools.switch.slots.assign(wantSwitch, now);
+			const [switchFade, texelFade] = fades as [(typeof fades)[number], (typeof fades)[number]];
+			for (const [fade, moves] of [
+				[texelFade, texelMoves],
+				[switchFade, switchMoves],
+			] as const)
+				for (const move of moves) {
+					// A taken slot's rows fade in from nothing; a slot given back fades in from what it draws;
+					// a left slot's rows fade out where they stand; a freed slot parks them.
+					if (move.kind === 'take') {
+						writeSlot(fade.target, move.slot, move.copy);
+						fade.to[move.slot] = 0;
+						fade.began[move.slot] = Number.NaN;
+						fadeSlot(fade, move.slot, 1, now);
+					} else if (move.kind === 'return') fadeSlot(fade, move.slot, 1, now);
+					else if (move.kind === 'leave') fadeSlot(fade, move.slot, 0, now);
+					else writeSlot(fade.target, move.slot, -1);
+				}
 			if (texelMoves.length + switchMoves.length > 0) kit.textures.near.update(table.data);
-			const now = new Uint8Array(copies.count);
-			for (const copy of pools.texel.slots.holders) if (copy >= 0) now[copy] = GRANT_TEXEL;
-			for (const copy of pools.switch.slots.holders) if (copy >= 0) now[copy] = GRANT_SWITCH;
-			// Each copy's first card level gives way to its own pieces inside its own edge.
+			const grantsNow = new Uint8Array(copies.count);
+			for (const copy of pools.texel.slots.holders) if (copy >= 0) grantsNow[copy] = GRANT_TEXEL;
+			for (const copy of pools.switch.slots.holders) if (copy >= 0) grantsNow[copy] = GRANT_SWITCH;
+			// A copy whose grant changes crosses its first card level's edge from the old to the new.
 			const dirty = new Set<InstanceBatch>();
 			for (let copy = 0; copy < copies.count; copy++) {
-				if (now[copy] === held[copy]) continue;
-				const card = cards.get(copy);
-				if (card) {
-					const edge =
-						now[copy] === GRANT_TEXEL
-							? ranges.texel
-							: now[copy] === GRANT_SWITCH
-								? ranges.switch
-								: 0;
-					(card.batch.values as Float32Array)[card.row * 4] = edge;
-					dirty.add(card.batch);
-				}
+				if (grantsNow[copy] === held[copy]) continue;
+				edgeFrom[copy] = edgeTo[copy] as number;
+				edgeTo[copy] =
+					grantsNow[copy] === GRANT_TEXEL
+						? ranges.texel
+						: grantsNow[copy] === GRANT_SWITCH
+							? ranges.switch
+							: 0;
+				cardBegan[copy] = now;
+				const batch = writeCard(copy, 0);
+				if (batch) dirty.add(batch);
 			}
 			for (const batch of dirty) batch.markDirty();
-			held.set(now);
-			return now;
+			held.set(grantsNow);
+			return grantsNow;
+		},
+		advance(now) {
+			const dirty = new Set<InstanceBatch>();
+			for (let copy = 0; copy < copies.count; copy++) {
+				const began = cardBegan[copy] as number;
+				if (Number.isNaN(began)) continue;
+				const progress = Math.min(1, (now - began) / FADE_SECONDS);
+				if (progress >= 1) {
+					edgeFrom[copy] = edgeTo[copy] as number;
+					cardBegan[copy] = Number.NaN;
+				}
+				const batch = writeCard(copy, progress);
+				if (batch) dirty.add(batch);
+			}
+			for (const batch of dirty) batch.markDirty();
+			let rows = false;
+			let freed = false;
+			for (const fade of fades)
+				for (let slot = 0; slot < fade.began.length; slot++) {
+					if (Number.isNaN(fade.began[slot] as number)) continue;
+					const share = shareAt(fade, slot, now);
+					writeSlotShare(table, fade.target.first + slot, share);
+					rows = true;
+					if (now - (fade.began[slot] as number) >= FADE_SECONDS) {
+						fade.began[slot] = Number.NaN;
+						if ((fade.to[slot] as number) === 0) freed = true;
+					}
+				}
+			if (rows) kit.textures.near.update(table.data);
+			return freed;
 		},
 		destroy() {
 			for (const target of [pools.switch, pools.texel])
