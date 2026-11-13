@@ -45,11 +45,22 @@ const TOP_STEP = 0.45;
 /** The share of its patch's width that a limb runs on under it, and that an arm reaches. */
 const UNDER_PATCH = 0.7;
 const ARM_REACH = 0.36;
+/**
+ * Where a limb carries a patch at each end: the share of its length, at its outer end, along which
+ * its arms leave, and an arm's reach in patch widths, so the patches stand apart.
+ */
+const ARMS_OVER = 0.5;
+const ARM_APART = 1.15;
 /** The shares of a limb's run under its patch between which its arms leave. */
 const ARMS_FROM = 0.12;
 const ARMS_TO = 0.62;
 /** An arm's radius at its end over its radius where it leaves. */
 const ARM_TAPER = 0.5;
+/** The most degrees an arm runs above or below level, and the step it lowers by under the plant's height. */
+const ARM_LIFT_MOST = 20;
+const ARM_LIFT_STEP = 10;
+/** The least share of its reach that a limb keeps where the plant's height cuts it short. */
+const REACH_LEAST = 0.1;
 /** The limbs that stand one toward each side of the crown's plan. */
 const GREAT_LIMBS = 4;
 /** Years the oldest wood of a plant has stood, for the bark's age. */
@@ -89,7 +100,7 @@ export interface ConiferNode {
 export interface ConiferPatch {
 	/** A level plate on top of the limb's end, a dome round it, or a tile of a closed shell. */
 	readonly kind: Conifer['patch']['kind'];
-	/** The limb it belongs to, by its index in the plan. */
+	/** The limb it belongs to, by its index in the plan, or -1 for the patch on the trunk's tip. */
 	readonly limb: number;
 	/** The patch's middle in plant space, in metres. The limb ends under it. */
 	readonly centre: Vector3;
@@ -113,6 +124,8 @@ export interface ConiferArm {
 	readonly node: number;
 	/** Its nodes from the first past the limb to its end. */
 	readonly nodes: readonly ConiferNode[];
+	/** The patch at its end, on a plant whose every end carries one. */
+	readonly patch?: ConiferPatch;
 }
 
 /**
@@ -155,6 +168,8 @@ export interface ConiferPlan {
 	readonly trunk: readonly ConiferNode[];
 	/** The limbs, level by level from the lowest, then the top limbs. */
 	readonly limbs: readonly ConiferLimb[];
+	/** Every foliage patch: each limb's, then each arm's where the arms carry their own. */
+	readonly patches: readonly ConiferPatch[];
 	/** The limbs at each level, lowest first, without the top limbs. */
 	readonly perLevel: readonly number[];
 	/** The height of the lowest patch's underside in metres. */
@@ -349,7 +364,11 @@ export function planConifer(input: GrowInput): ConiferPlan {
 	const levels = g.limbs.levels;
 	const perLevel = limbsPerLevel(g.limbs.count, levels.length);
 	const dividesAt = clamp(g.trunk.dividesAt, 0.05, 1);
-	const trunkTop = dividesAt * height;
+	// A trunk that runs to the tip ends inside a patch of its own, whose top is the plant's height,
+	// so the leader does not end bare.
+	const tipWidth = dividesAt >= 1 ? g.patch.width[1] * height : 0;
+	const tipDepth = tipWidth * g.patch.depth;
+	const trunkTop = dividesAt * height - tipDepth / 2;
 
 	// The limbs' places round the trunk and up it. Each level stands its limbs evenly and turns on
 	// from the level below by the golden angle, so no limb stands over another.
@@ -576,8 +595,10 @@ export function planConifer(input: GrowInput): ConiferPlan {
 		const reach = Math.max(start.radius * 2, span * stretch(azimuth));
 		const width = patchWidth(place, reach);
 		const depth = width * g.patch.depth;
-		// The limb's wood runs on under its patch, past the patch's middle.
-		const out = reach - width * (1 - UNDER_PATCH);
+		// Under one patch a limb, the wood runs on past the patch's middle. With a patch at each end,
+		// the limb stops at the middle of its own.
+		const perEnd = g.patch.each === 'end';
+		const out = perEnd ? reach - width / 2 : reach - width * (1 - UNDER_PATCH);
 		const course: Course = {
 			from: [start.x, start.y, start.z],
 			azimuth: radians(azimuth),
@@ -592,10 +613,27 @@ export function planConifer(input: GrowInput): ConiferPlan {
 			phase: draw(Purpose.Wander, level, slot) * 2 * PI,
 		};
 		// A top limb ends where its patch's top stands at the plant's height, less its own step down.
-		const path =
+		// Any other limb whose patch would stand above the plant's height reaches less far, which
+		// rounds the crown's top.
+		const above = perEnd ? depth / 2 : depth;
+		let path =
 			lower === undefined
 				? coursePath(course)
 				: courseTo(course, height - depth * (1 + TOP_STEP * lower));
+		if (lower === undefined) {
+			const topOf = (walked: Path): number =>
+				((walked.points[walked.points.length - 1] as Vector3)[1] as number) + above;
+			if (topOf(path) > height) {
+				let low = course.out * REACH_LEAST;
+				let high = course.out;
+				for (let pass = 0; pass < 12; pass++) {
+					const mid = (low + high) / 2;
+					if (topOf(coursePath({ ...course, out: mid })) > height) high = mid;
+					else low = mid;
+				}
+				path = coursePath({ ...course, out: low });
+			}
+		}
 		// The radius beside the trunk is the record's ratio of the trunk's; the swelling fades over
 		// the collar's distance, and the limb then thins evenly to where its patch begins.
 		const beside = Math.max(1e-4, baseRatio * start.radius);
@@ -613,7 +651,16 @@ export function planConifer(input: GrowInput): ConiferPlan {
 		// wood spreads under the whole patch and no two arms part from one point.
 		const arms: ConiferArm[] = [];
 		const count = Math.max(0, Math.round(g.limbs.arms.count));
-		const under = width * UNDER_PATCH;
+		const under = perEnd ? path.length * ARMS_OVER : width * UNDER_PATCH;
+		const patchAt = (centre: Vector3, heading: Vector3, begins: number): ConiferPatch => ({
+			kind: g.patch.kind,
+			limb: limbs.length,
+			centre,
+			begins,
+			width,
+			depth,
+			along: heading,
+		});
 		const firstSide = draw(Purpose.ArmSide, level, slot) < 0.5 ? 1 : -1;
 		for (let k = 0; k < count; k++) {
 			const share = ARMS_FROM + ((ARMS_TO - ARMS_FROM) * (k + 0.5)) / count;
@@ -643,22 +690,35 @@ export function planConifer(input: GrowInput): ConiferPlan {
 					180) /
 				PI;
 			const side = k % 2 === 0 ? firstSide : -firstSide;
-			const armPath = coursePath({
-				from: here,
-				azimuth: flat + side * radians(g.limbs.arms.angle),
-				leave: rise,
-				run: rise,
-				end: rise,
-				out: width * ARM_REACH,
-				riseOver: 0,
-				endOver: 0,
-				wander: g.limbs.wander,
-				wave: WANDER_WAVE * height,
-				phase: draw(Purpose.ArmWander, level, slot * 16 + k) * 2 * PI,
-			});
+			// An arm runs no steeper than a stated lift, however steeply its limb hooks up there, and
+			// lower still where its own patch would stand above the plant's height.
+			const armCourse = (lift: number): Path =>
+				coursePath({
+					from: here,
+					azimuth: flat + side * radians(g.limbs.arms.angle),
+					leave: lift,
+					run: lift,
+					end: lift,
+					out: width * (perEnd ? ARM_APART : ARM_REACH),
+					riseOver: 0,
+					endOver: 0,
+					wander: g.limbs.wander,
+					wave: WANDER_WAVE * height,
+					phase: draw(Purpose.ArmWander, level, slot * 16 + k) * 2 * PI,
+				});
+			let armLift = clamp(rise, -ARM_LIFT_MOST, ARM_LIFT_MOST);
+			let armPath = armCourse(armLift);
+			for (let pass = 0; pass < 8 && perEnd; pass++) {
+				const armTop = (armPath.points[armPath.points.length - 1] as Vector3)[1] + depth / 2;
+				if (armTop <= height) break;
+				armLift -= ARM_LIFT_STEP;
+				armPath = armCourse(armLift);
+			}
 			const foot = (nodes[at] as ConiferNode).radius * g.limbs.arms.radius;
+			const armEnd = armPath.points[armPath.points.length - 1] as Vector3;
 			arms.push({
 				node: at,
+				...(perEnd ? { patch: patchAt(armEnd, armPath.heading, 0) } : {}),
 				nodes: armPath.points.map((point, i) => ({
 					x: point[0],
 					y: point[1],
@@ -670,7 +730,6 @@ export function planConifer(input: GrowInput): ConiferPlan {
 				})),
 			});
 		}
-		const index = limbs.length;
 		limbs.push({
 			level,
 			slot,
@@ -681,19 +740,17 @@ export function planConifer(input: GrowInput): ConiferPlan {
 			trunkNode: node,
 			nodes,
 			arms,
-			patch: {
-				kind: g.patch.kind,
-				limb: index,
-				centre: [
-					end[0] - path.heading[0] * (under - width / 2),
-					end[1] + depth / 2,
-					end[2] - path.heading[2] * (under - width / 2),
-				],
-				begins: reach - width,
-				width,
-				depth,
-				along: path.heading,
-			},
+			patch: perEnd
+				? patchAt([end[0], end[1], end[2]], path.heading, reach - width)
+				: patchAt(
+						[
+							end[0] - path.heading[0] * (under - width / 2),
+							end[1] + depth / 2,
+							end[2] - path.heading[2] * (under - width / 2),
+						],
+						path.heading,
+						reach - width,
+					),
 		});
 	};
 
@@ -734,12 +791,30 @@ export function planConifer(input: GrowInput): ConiferPlan {
 				{ leave: g.top.leave, run: g.top.leave / 2, end: g.top.end },
 				limb.slot,
 			);
+	const tip = trunk[trunk.length - 1] as ConiferNode;
+	const patches: ConiferPatch[] = [
+		...(tipWidth > 0
+			? [
+					{
+						kind: g.patch.kind,
+						limb: -1,
+						centre: [tip.x, tip.y, tip.z] as Vector3,
+						begins: 0,
+						width: tipWidth,
+						depth: tipDepth,
+						along: [1, 0, 0] as Vector3,
+					},
+				]
+			: []),
+		...limbs.map((limb) => limb.patch),
+		...limbs.flatMap((limb) => limb.arms.flatMap((arm) => (arm.patch ? [arm.patch] : []))),
+	];
 	let crownBase = height;
-	for (const limb of limbs) {
-		top = Math.max(top, limb.patch.centre[1] + limb.patch.depth / 2);
-		crownBase = Math.min(crownBase, limb.patch.centre[1] - limb.patch.depth / 2);
+	for (const patch of patches) {
+		top = Math.max(top, patch.centre[1] + patch.depth / 2);
+		crownBase = Math.min(crownBase, patch.centre[1] - patch.depth / 2);
 	}
-	return { height: top, trunk, limbs, perLevel, crownBase: Math.max(0, crownBase) };
+	return { height: top, trunk, limbs, patches, perLevel, crownBase: Math.max(0, crownBase) };
 }
 
 /**

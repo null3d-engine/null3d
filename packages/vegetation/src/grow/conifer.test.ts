@@ -6,6 +6,7 @@ import { speciesProblems } from '../core/check';
 import { AXIS_STEM, type MacroSkeleton } from '../core/graph';
 import { hashBytes } from '../core/hash';
 import type { Conifer } from '../core/record';
+import { directed as sequoia } from '../species/giant-sequoia/directed';
 import { directed } from '../species/scots-pine/directed';
 import { growConifer, limbsPerLevel, planConifer, TURN_MOST } from './conifer';
 
@@ -220,5 +221,78 @@ describe('the conifer frame as a skeleton', () => {
 		expect(digest(growConifer(input(11)))).toBe(digest(growConifer(input(11))));
 		expect(digest(growConifer(input(11)))).not.toBe(digest(growConifer(input(12))));
 		expect(digest(growConifer(input(11, 0)))).not.toBe(digest(growConifer(input(11, 1))));
+	});
+});
+
+describe("the giant sequoia's frame", () => {
+	const own = sequoia.growth as Conifer;
+	const grown = (seed: number) =>
+		({ record: sequoia, seed, variant: 0, season: 'summer' }) as const;
+
+	it("passes the record check and gives the record's limbs at every level", () => {
+		expect(speciesProblems(sequoia)).toEqual([]);
+		for (const seed of SEEDS) {
+			const plan = planConifer(grown(seed));
+			expect(plan.limbs.length).toBe(own.limbs.count);
+			// The plant's top is the record's height, within the spread a seed may draw.
+			expect(plan.height).toBeGreaterThanOrEqual(54);
+			expect(plan.height).toBeLessThanOrEqual(62);
+			expect(plan.perLevel).toEqual(limbsPerLevel(own.limbs.count, own.limbs.levels.length));
+			expect(Math.max(...plan.perLevel) - Math.min(...plan.perLevel)).toBeLessThanOrEqual(1);
+		}
+	});
+
+	it("carries a patch on every limb end and every arm end, each apart from its own limb's others", () => {
+		const plan = planConifer(grown(11));
+		// One on the trunk's tip, and one on every limb end and arm end.
+		expect(plan.patches.length).toBe(1 + own.limbs.count * (1 + own.limbs.arms.count));
+		expect(plan.height).toBeCloseTo(
+			Math.max(...plan.patches.map((patch) => patch.centre[1] + patch.depth / 2)),
+			3,
+		);
+		for (const limb of plan.limbs) {
+			const ends = [limb.patch, ...limb.arms.map((arm) => arm.patch)];
+			for (let a = 0; a < ends.length; a++)
+				for (let b = a + 1; b < ends.length; b++) {
+					const first = ends[a];
+					const second = ends[b];
+					expect(first && second).toBeTruthy();
+					if (!first || !second) continue;
+					const apart = Math.hypot(
+						first.centre[0] - second.centre[0],
+						first.centre[1] - second.centre[1],
+						first.centre[2] - second.centre[2],
+					);
+					expect(apart).toBeGreaterThan(first.width * 0.6);
+				}
+		}
+	});
+
+	it('dips its lower limbs and hooks every limb end up', () => {
+		const plan = planConifer(grown(11));
+		for (const limb of plan.limbs) {
+			const from = plan.trunk[limb.trunkNode];
+			const end = limb.nodes[limb.nodes.length - 1];
+			const before = limb.nodes[limb.nodes.length - 2];
+			expect(from && end && before).toBeTruthy();
+			if (!from || !end || !before) continue;
+			// The last piece rises.
+			expect(end.y).toBeGreaterThan(before.y);
+			// A limb of the lower crown passes below the height it leaves at.
+			if (from.y / plan.height < 0.45)
+				expect(Math.min(...limb.nodes.map((node) => node.y))).toBeLessThan(from.y);
+		}
+	});
+
+	it('turns no internode more than the bound and joins every axis', () => {
+		for (const seed of SEEDS) {
+			const skeleton = growConifer(grown(seed));
+			expect(sharpestTurn(skeleton)).toBeLessThanOrEqual(TURN_MOST);
+			for (let a = 1; a < skeleton.axes.count; a++)
+				expect(skeleton.axisOf[skeleton.parent[skeleton.axes.first[a] as number] as number]).toBe(
+					skeleton.axes.parent[a] as number,
+				);
+		}
+		expect(digest(growConifer(grown(11)))).toBe(digest(growConifer(grown(11))));
 	});
 });
