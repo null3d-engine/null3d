@@ -113,6 +113,8 @@ interface Reading {
 	 * the top: the farthest foliage from the trunk's line in each.
 	 */
 	readonly reach: readonly number[];
+	/** The height the bole stands bare to, which is the lower boundary on the trunk's line. */
+	readonly bare: number;
 	/**
 	 * The lower boundary at each twentieth of the height out from the trunk's line, from a tenth
 	 * out: the lowest foliage over the columns there. Nearest the trunk it is the wood where the
@@ -121,50 +123,58 @@ interface Reading {
 	readonly under: readonly number[];
 }
 
+// The reach, the foot's hang and the bare bole are the species' measured targets for each still;
+// the lower boundary is read on the same still from the same foot.
+
 // Still 01, right of the trunk's line: the side the long low limb is on, and the wider one. A
 // spray hangs low near the trunk here.
 const STILL_01_RIGHT: Reading = {
-	foot: [0.1, 0.25],
-	hung: [0.125, 0.388],
+	foot: [0.11, 0.2],
+	hung: [0.125, 0.244],
 	reach: [
-		0.809, 0.909, 0.909, 0.894, 0.848, 0.848, 0.754, 0.75, 0.73, 0.669, 0.549, 0.523, 0.35, 0.228,
+		0.787, 0.89, 0.894, 0.88, 0.835, 0.835, 0.77, 0.742, 0.722, 0.66, 0.54, 0.516, 0.344, 0.213,
 	],
+	bare: 0.186,
 	under: [
-		0.11, 0.16, 0.1, 0.1, 0.13, 0.13, 0.12, 0.13, 0.21, 0.18, 0.18, 0.2, 0.18, 0.17, 0.16, 0.21,
-		0.22,
+		0.11, 0.17, 0.11, 0.11, 0.14, 0.14, 0.13, 0.14, 0.22, 0.19, 0.19, 0.21, 0.19, 0.18, 0.17, 0.23,
+		0.25,
 	],
 };
 
 // Still 01, left of the trunk's line: the shorter side, and no foliage hangs under its first band.
 const STILL_01_LEFT: Reading = {
-	foot: [0.13, 0.4],
+	foot: [0.13, 0.35],
 	reach: [
-		0.759, 0.813, 0.805, 0.811, 0.733, 0.741, 0.759, 0.73, 0.623, 0.615, 0.602, 0.374, 0.32, 0.171,
+		0.749, 0.804, 0.797, 0.801, 0.725, 0.735, 0.749, 0.725, 0.619, 0.608, 0.598, 0.371, 0.323,
+		0.172,
 	],
-	under: [0.11, 0.19, 0.2, 0.17, 0.15, 0.13, 0.13, 0.16, 0.18, 0.24, 0.24, 0.23, 0.19, 0.18, 0.21],
+	bare: 0.186,
+	under: [0.12, 0.19, 0.21, 0.18, 0.16, 0.13, 0.15, 0.16, 0.25, 0.24, 0.24, 0.24, 0.19, 0.19, 0.22],
 };
 
 // Still 02, a quarter turn on, left of the trunk's line: the side that faces still 01's camera.
 // The crown is widest higher up than in still 01, and its foliage hangs lower far out.
 const STILL_02_LEFT: Reading = {
 	foot: [0.1, 0.6],
-	hung: [0.125, 0.61],
+	hung: [0.125, 0.608],
 	reach: [
-		0.691, 0.745, 0.763, 0.773, 0.798, 0.782, 0.694, 0.694, 0.667, 0.63, 0.519, 0.449, 0.318, 0.245,
+		0.691, 0.756, 0.764, 0.775, 0.802, 0.786, 0.697, 0.694, 0.67, 0.632, 0.519, 0.452, 0.317, 0.247,
 	],
-	under: [0.12, 0.15, 0.15, 0.13, 0.13, 0.2, 0.16, 0.12, 0.12, 0.11, 0.1, 0.18, 0.18, 0.24, 0.39],
+	bare: 0.164,
+	under: [0.12, 0.15, 0.15, 0.13, 0.13, 0.2, 0.16, 0.11, 0.12, 0.11, 0.1, 0.18, 0.18, 0.24, 0.35],
 };
 
 // Still 02, right of the trunk's line: the side away from still 01's camera. The tree's top
 // stands off the trunk's line toward the other side, so the top band is narrow here.
 const STILL_02_RIGHT: Reading = {
 	foot: [0.1, 0.4],
-	hung: [0.125, 0.665],
+	hung: [0.125, 0.675],
 	reach: [
-		0.682, 0.797, 0.836, 0.836, 0.81, 0.792, 0.788, 0.783, 0.721, 0.608, 0.598, 0.513, 0.355, 0.055,
+		0.675, 0.797, 0.834, 0.834, 0.81, 0.791, 0.788, 0.783, 0.718, 0.608, 0.594, 0.503, 0.354, 0.047,
 	],
+	bare: 0.164,
 	under: [
-		0.11, 0.16, 0.14, 0.13, 0.15, 0.1, 0.1, 0.11, 0.11, 0.16, 0.13, 0.12, 0.13, 0.23, 0.22, 0.29,
+		0.11, 0.15, 0.14, 0.13, 0.15, 0.1, 0.1, 0.1, 0.1, 0.16, 0.13, 0.12, 0.13, 0.22, 0.22, 0.27,
 	],
 };
 
@@ -178,7 +188,10 @@ function side(toward: number, read: Reading): FrameSide {
 			...read.reach.map((reach, band) => [(band + 2.5) / 16, reach] as const),
 			[1, 0],
 		],
-		under: read.under.map((height, step) => [0.1 + step * 0.05, height] as const),
+		under: [
+			[0, read.bare],
+			...read.under.map((height, step) => [0.1 + step * 0.05, height] as const),
+		],
 	};
 }
 
@@ -240,26 +253,37 @@ export const frame: FrameSpec = {
 				],
 				from: 'plumb',
 				angleSpread: 2,
-				// Still 01: the right limb's foliage reaches 0.90 of the height from the trunk, the
-				// crown's widest, and its bare wood shows to 0.57; the left limb's foliage reaches
-				// 0.81. The others' wood runs out nearly to the rim, and the upright limb's end is the
-				// crown's highest wood.
+				// Still 01: the right limb's foliage is the crown's widest reach, and its bare wood
+				// shows two thirds of the way out. Its wood ends half a clump short of the outline, so
+				// the clump at its end stands on the outline. The others' wood runs out nearly to the
+				// rim, and the upright limb's end is the crown's highest wood.
 				length: {
 					outline: [
 						[0, 0.9],
 						[0.167, 0.9],
 						[0.333, 0.84],
-						[0.5, 0.97],
+						[0.5, 0.89],
 						[0.667, 0.9],
 						[0.833, 0.84],
 						[1, 0.93],
 					],
 				},
 				vary: 0.03,
-				// The real tree: each limb leaves at a third to a half of the bole's width.
+				// Still 03, from below, each limb's width across its run a little way out from the
+				// fork, in the picture's own pixels: the left limb 72, the right limb 62, the limb
+				// over the camera 43, the two steeper limbs 48 and 41, and the trunk's upright
+				// continuation 110. The limb away from the camera does not show and takes the figure
+				// of the one toward it. The real tree: the thickest limb leaves at half the bole's
+				// width. Each share here gives its limb that thickness beside the left limb's, on a
+				// bole that thins over the zone the limbs leave in.
 				radius: [
-					[0, 0.42],
-					[1, 0.5],
+					[0, 0.268],
+					[0.167, 0.274],
+					[0.333, 0.321],
+					[0.5, 0.421],
+					[0.667, 0.5],
+					[0.833, 0.302],
+					[1, 0.827],
 				],
 				taper: 0.3,
 				shed: 0.7,

@@ -259,7 +259,7 @@ export interface FrameBranchRule extends FrameAxisRule {
 	readonly lift?: number;
 	/**
 	 * The least gap, as a share of the height, between the wood of one of these axes past its first
-	 * fifth and the wood of every axis built before it, the wood it grows from apart. An axis that
+	 * fifth and the wood of every axis built before it, the axis it leaves apart. An axis that
 	 * would run nearer is shaped again with other elbows, a few times, and the shape that stands
 	 * clearest is kept, so no limb runs along another or passes through it. Left out, the axes are
 	 * laid without regard to each other.
@@ -299,8 +299,9 @@ export interface FrameSide {
 	/** The crown's reach to this side as a share of the height, by the share of the height. */
 	readonly reach: Curve;
 	/**
-	 * The crown's lower boundary on this side: the height that no foliage stands under, by the
-	 * distance from the trunk's line, both as shares of the height.
+	 * The crown's lower boundary on this side, as the view that looks across the side shows it: the
+	 * height that no foliage stands under, by the distance from the trunk's line in that view, both
+	 * as shares of the height.
 	 */
 	readonly under: Curve;
 }
@@ -313,8 +314,7 @@ export interface FrameSide {
 export interface FrameSpec {
 	/**
 	 * The crown's outline: its sides in their order round the plant, two or more. Between two sides
-	 * the plan runs as a quarter of an ellipse runs between its half-axes, and the lower boundary
-	 * passes from the one side's to the other's.
+	 * the plan runs as a quarter of an ellipse runs between its half-axes.
 	 */
 	readonly outline: readonly FrameSide[];
 	/** The stems. */
@@ -636,30 +636,6 @@ export function outlineRadius(spec: FrameSpec, scale: number, y: number, azimuth
 	// A side with no crown at the height draws the outline in to the trunk's line.
 	if (a <= 0 || b <= 0) return 0;
 	return scale / Math.sqrt(first / (a * a) + second / (b * b));
-}
-
-/**
- * The height of the crown's lower boundary in metres at a distance from the trunk's line and a
- * direction round the plant: a stated side's own boundary on that side, and between two sides the
- * two boundaries by their weights.
- *
- * @param spec The frame.
- * @param scale The plant's height in metres.
- * @param reach The distance from the trunk's line in metres.
- * @param azimuth Radians round the plant.
- * @returns The height in metres.
- * @category api/vegetation
- */
-export function outlineFloor(
-	spec: FrameSpec,
-	scale: number,
-	reach: number,
-	azimuth: number,
-): number {
-	const { from, to, first, second } = sidesAt(spec, azimuth);
-	return (
-		(first * curveAt(from.under, reach / scale) + second * curveAt(to.under, reach / scale)) * scale
-	);
 }
 
 /**
@@ -1053,12 +1029,10 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 		};
 		let pick = drawn(0);
 		const apart = 'apart' in rule && rule.apart ? rule.apart * scale : 0;
-		// The wood this axis grows from, which it may stand as near as it likes.
-		const forebears = new Set<number>();
-		for (let up = parent; up >= 0; up = (axes[up] as Built).parent) forebears.add(up);
 		/**
 		 * The least gap between the wood of an attempt's outer half and the wood of every axis built
-		 * before it, its own forebears apart: the distance between their lines less both radii.
+		 * before it, the axis it leaves apart: the distance between their lines less both radii. The
+		 * wood its parent grew from counts, so a branch does not end against its bough's own limb.
 		 */
 		const room = (attempt: typeof pick): number => {
 			let least = Number.POSITIVE_INFINITY;
@@ -1068,7 +1042,7 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 				const own =
 					baseRadius * (1 - (1 - clamp((rule as FrameBranchRule).taper, 0.02, 1)) * share);
 				for (const other of wood) {
-					if (forebears.has(other.axis)) continue;
+					if (other.axis === parent) continue;
 					const dx = point[0] - other.at[0];
 					const dy = point[1] - other.at[1];
 					const dz = point[2] - other.at[2];
