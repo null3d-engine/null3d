@@ -1155,6 +1155,22 @@ export interface TuftHeads {
 }
 
 /**
+ * One tier of a column's arms: where they leave, how far out they stand and where they end.
+ *
+ * @category api/vegetation
+ */
+export interface ColumnArmTier {
+	/** The share of the plant's height where the tier's arms leave the column. */
+	readonly at: Spread;
+	/** Metres from the column's axis to the axis of an arm's upright part. */
+	readonly reach: Spread;
+	/** The share of the plant's height where an arm's tip ends. */
+	readonly top: Spread;
+	/** An arm's radius in metres: above its bend, and at its tip. */
+	readonly radius: readonly [number, number];
+}
+
+/**
  * A ribbed column with arms: saguaro.
  *
  * @category api/vegetation
@@ -1162,35 +1178,40 @@ export interface TuftHeads {
 export interface Column {
 	/** The model's name. */
 	readonly model: 'column';
-	/** Height in metres. */
+	/** Height in metres, to the top of the column's rounded end. */
 	readonly height: Spread;
-	/** Radius in metres by height (t = height / plant height). */
+	/** Radius in metres by height (t = height / plant height), below the rounded end. */
 	readonly radius: Curve;
+	/** The height of the rounded end of the column and of each arm, in radii of the wood below it. */
+	readonly dome: number;
 	/** Ribs around the column. */
 	readonly ribs: Spread;
-	/** Rib depth in metres. */
+	/** How deep a groove cuts between two ribs, as a share of the radius there, from 0 to 1. */
 	readonly ribDepth: number;
 	/** The arms. */
 	readonly arms: {
 		/** Arms per plant. */
 		readonly count: Spread;
+		/** The tiers, lowest first. The grower deals the arms among them in turn. */
+		readonly tiers: readonly ColumnArmTier[];
 		/**
-		 * Share of height where arms leave: one share for every arm, or one share per tier of arms,
-		 * lowest first. The grower deals the arms among the tiers in turn.
+		 * How many of the species' variants, from the first, stand their arms in one upright plane, a
+		 * tier's worth to one side and the next to the other. The rest spread their arms evenly
+		 * through the full circle. A variant in one plane is not balanced round its column, so a
+		 * record that names any says in its comment which photograph shows it.
 		 */
-		readonly from: number | readonly number[];
+		readonly plane: number;
+		/** Degrees above the horizontal that an arm leaves the column at; a negative angle sags. */
+		readonly leave: number;
 		/**
-		 * Metres out from the column where an arm turns upward: one distance for every arm, or one
-		 * distance per tier of arms, lowest first.
+		 * The radius of an arm's elbow at its centre line, in arm widths. An arm whose reach leaves
+		 * less room than that turns as tightly as its own girth allows.
 		 */
-		readonly elbow: number | readonly number[];
-		/** An arm's radius in metres. */
-		readonly radius: number;
-		/**
-		 * Metres an arm rises after its elbow: one spread for every arm, or one spread per tier of
-		 * arms, lowest first.
-		 */
-		readonly rise: Spread | readonly Spread[];
+		readonly elbow: number;
+		/** An arm's girth where it meets the column, as a share of its girth above the bend. */
+		readonly pinch: number;
+		/** An arm's girth in its bend, as a multiple of its girth above the bend. */
+		readonly swell: number;
 	};
 	/** Metres between areoles on a rib crest; each carries a spine-cluster prototype. */
 	readonly areoles: number;

@@ -1,14 +1,15 @@
-// The saguaro: one stout ribbed column that carries no crown, its whole height a stem. A few arms
-// leave it in two tiers from pinched junctions, run out nearly level, bend at an elbow and rise
-// parallel to the stem to rounded tips below its own. Every rib crest carries a line of
-// areoles, and each areole carries a spine cluster: the species' only "leaf", a card with the
-// cluster's own picture, standing with its longest spine down the stem. The skin is waxy grey-green
-// on the column and fresher on the arms, corky and grey-brown at the foot.
+// The saguaro: one stout ribbed column that carries no crown, its whole height a stem. Four arms
+// leave it a little below and a little above the middle, each out from a pinched joint, through one
+// smooth elbow and up beside the stem to a rounded tip below its own. Every rib crest carries a
+// line of areoles, and each areole carries a spine cluster: the species' only "leaf", a card with
+// the cluster's own picture, standing with its longest spine down the stem. The skin is waxy
+// grey-green on the column and fresher on the arms, corky and grey-brown at the foot.
 //
-// The envelope's aspect and the all-round band are measured from the reference turntable by the
-// fitting tool (fit.ts); the column's ribs, arms and areole spacing from the whole-plant stills and
-// the close views; the spine cluster from the two texture sources and the areole stills; the skin
-// from the skin stills. The record is plain data: no code runs in it.
+// The height is the fact sheet's. Every other length is a share of the height measured on still 01,
+// the first frame of the turning video, written here in metres at that height with the share beside
+// it. The ribs and the areole spacing come from the close views, the spine cluster from the two
+// texture sources and the areole stills, the skin from the skin stills. The envelope's aspect and
+// the all-round band are the fitting tool's (fit.ts). The record is plain data: no code runs in it.
 import type { Species } from '../../core/record';
 import { aspect, roundBand } from './fit';
 
@@ -18,46 +19,64 @@ export const record: Species = {
 	name: 'Saguaro',
 	latin: 'Carnegiea gigantea',
 	form: 'ribbed column with candelabrum arms',
-	// Stills 01, 02 and 17: the stem is a twentieth of the plant's height across at breast height,
-	// and hardly tapers above its corky foot. The fact sheet's 30 to 75 cm is the width over the
-	// whole plant's range.
-	size: { height: { mean: 12, spread: 1 }, dbh: 0.7, aspect },
+	// The fact sheet: a mature plant stands 10 to 15 m tall. Still 01: the stem is 0.089 of the
+	// height across below the arms.
+	size: { height: { mean: 12, spread: 1 }, dbh: 1.07, aspect },
 	growth: {
 		model: 'column',
 		height: { mean: 12, spread: 1 },
-		// Still 17: a column that hardly tapers above the foot. Stills 01 and 18: the arms' span is
-		// about a third of the height, so the widest ring of foliage stands at the arms.
+		// Still 01, the stem's width as a share of the height: 0.083 at the foot, 0.089 from just
+		// above it to the arms, 0.066 above the arms and 0.061 under the rounded top.
 		radius: [
-			[0, 0.58],
-			[0.12, 0.54],
-			[0.5, 0.51],
-			[0.85, 0.48],
-			[1, 0.41],
+			[0, 0.5],
+			[0.05, 0.534],
+			[0.44, 0.534],
+			[0.56, 0.396],
+			[0.92, 0.366],
+			[1, 0.366],
 		],
-		// Stills 04, 09 and 13: twelve to twenty ribs on the stem, their crests five to eight
-		// centimetres apart, and the cross-section's pleats a couple of centimetres deep.
-		ribs: { mean: 14, spread: 1 },
-		ribDepth: 0.02,
-		// Stills 01, 02, 06 and 07: three to six arms leave the stem singly in two tiers, each from a
-		// pinched junction; the lower tier leaves about a third of the way up and tips at half the
-		// height, the upper leaves just above half and tips at five sixths. The lower tier turns up
-		// inside the upper one's span, as the silhouette shows. Each arm runs out nearly level, bends
-		// at an elbow and rises parallel to the stem to a tip below its top.
+		// Still 04: the stem and each arm end in a rounded top 0.65 of a width tall.
+		dome: 1.3,
+		// Stills 09 and 13: eighteen ribs round the stem, and a groove 0.17 of the radius deep.
+		ribs: { mean: 18, spread: 1 },
+		ribDepth: 0.17,
+		// Still 01 and the turning video: four arms in two tiers. The lower pair leaves at 0.46 of
+		// the height and stands 0.145 of the height out from the stem's axis; the upper pair leaves
+		// at 0.51 and stands 0.081 out, close beside the stem. All four tips end at 0.78. An arm is
+		// 0.054 of the height across above its bend and 0.042 at its tip (0.047 and 0.037 on the
+		// upper pair) and 0.063 across in the bend. Where it meets the stem it is 0.65 of its girth
+		// on stills 07 and 21 and nearly its full girth on still 08, so the joint takes a value
+		// between them. Its underside sags a little below its joint (stills 01 and 05), so it
+		// leaves a few degrees below level, and its elbow turns on a radius of one and a half arm
+		// widths at the centre line (stills 01, 08 and 21) where its reach leaves room.
+		// The turning video and still 01 show the primary plant's four arms in one upright plane: the
+		// arms close up edge on twice in the turn. That plant is the first variant, and it is the
+		// species' named exception to the rule that a plant is balanced round its stem. The other
+		// variants spread their arms round the stem.
 		arms: {
-			count: { mean: 5, spread: 1 },
-			from: [0.33, 0.56],
-			elbow: [0.45, 0.85],
-			// Still 18: an arm reads about three quarters of the trunk's width, so the radius takes
-			// that share of the trunk's girth.
-			radius: 0.26,
-			rise: [
-				{ mean: 1.6, spread: 0.35 },
-				{ mean: 2.8, spread: 0.4 },
+			count: { mean: 4, spread: 1 },
+			tiers: [
+				{
+					at: { mean: 0.46, spread: 0.03 },
+					reach: { mean: 1.74, spread: 0.12 },
+					top: { mean: 0.78, spread: 0.03 },
+					radius: [0.324, 0.252],
+				},
+				{
+					at: { mean: 0.51, spread: 0.03 },
+					reach: { mean: 0.97, spread: 0.08 },
+					top: { mean: 0.78, spread: 0.03 },
+					radius: [0.282, 0.222],
+				},
 			],
+			plane: 1,
+			leave: -5,
+			elbow: 1.5,
+			pinch: 0.75,
+			swell: 1.17,
 		},
-		// Stills 09, 10 and 15: areoles one to three centimetres apart along every crest, each an
-		// oval pad about a centimetre long.
-		areoles: 0.03,
+		// Still 15: the areoles stand 0.45 of the gap between two crests apart along a crest.
+		areoles: 0.084,
 	},
 	shoots: {
 		// The areole's spine cluster, in four sizes, so neighbouring clusters differ a little.
