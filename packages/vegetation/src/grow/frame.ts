@@ -26,6 +26,9 @@ export const FRAME_TURN_MOST = 6;
 const STEP_SHARE = 1 / 12;
 const STEP_LEAST = 0.02;
 const STEP_MOST = 0.45;
+/** The degrees under which a stretch counts as straight, and how much longer its pieces may be. */
+const STRAIGHT_TURN = 0.5;
+const STRAIGHT_STEP = 3;
 /** Steps a trial course is summed over while its length is found, and the passes that find it. */
 const TRIAL_STEPS = 32;
 const LENGTH_PASSES = 22;
@@ -162,10 +165,15 @@ export interface FrameStemRule extends FrameAxisRule {
  */
 export interface FrameBranchRule extends FrameAxisRule {
 	readonly role: Exclude<FrameRole, 'stem'>;
-	/** How many leave each parent, or one for each stated share of the parent's length. */
+	/**
+	 * How many leave each parent; or one for each stated share of the height along the stretch of the
+	 * parent they leave from, within a least and a most; or a total that the rule's parents share as
+	 * evenly as whole numbers allow.
+	 */
 	readonly count:
 		| number
-		| { readonly every: number; readonly least: number; readonly most: number };
+		| { readonly every: number; readonly least: number; readonly most: number }
+		| { readonly total: number };
 	/** The shares of the parent's length between which they leave, the first and the last on them. */
 	readonly along: readonly [number, number];
 	/** How far each may stand off its even place along the parent, as a share of the step between. */
@@ -177,6 +185,12 @@ export interface FrameBranchRule extends FrameAxisRule {
 	readonly around: 'spiral' | 'ring' | 'opposite' | 'sides';
 	/** Degrees round the parent where the first one stands. Left out, each parent draws its own. */
 	readonly first?: number;
+	/**
+	 * Degrees the two sides are raised toward the parent's sky side when they stand to one side and
+	 * the other: 0 leaves them level with the parent, 90 puts every one on its sky side, and a
+	 * negative figure lowers them toward its ground side.
+	 */
+	readonly lift?: number;
 	/** Degrees each may stand off its place round the parent. */
 	readonly jitter?: number;
 	/** Degrees each leaves at, by its place, measured from plumb or from the parent's own direction. */
@@ -184,9 +198,13 @@ export interface FrameBranchRule extends FrameAxisRule {
 	readonly from: 'plumb' | 'parent';
 	/** Degrees the leaving angle may differ, either way. */
 	readonly angleSpread?: number;
-	/** How long each runs, and the share its length may differ by, either way. */
+	/**
+	 * How long each runs, the share its length may differ by, either way, and the longest it may run
+	 * as a share of the height, by its place.
+	 */
 	readonly length: FrameLength;
 	readonly vary?: number;
+	readonly most?: Curve;
 	/** Its radius where it leaves as a share of the parent's radius there, by its place. */
 	readonly radius: Curve;
 	/** Its radius at its tip as a share of its radius where it leaves. */
@@ -357,7 +375,9 @@ function lay(
 		const turn = between(t0, t1);
 		const dot = t0[0] * t1[0] + t0[1] * t1[1] + t0[2] * t1[2];
 		const normal = unit(t1[0] - dot * t0[0], t1[1] - dot * t0[1], t1[2] - dot * t0[2]);
-		const least = Math.max(1, Math.ceil(run / step), Math.ceil(turn / FRAME_TURN_MOST));
+		// A stretch that holds its direction needs no more pieces than its taper does.
+		const reach = turn < STRAIGHT_TURN ? step * STRAIGHT_STEP : step;
+		const least = Math.max(1, Math.ceil(run / reach), Math.ceil(turn / FRAME_TURN_MOST));
 		const path = archPath({ length: run, leave: 0, turn: turn < 1e-6 ? 0 : -turn }, 0, least);
 		for (let i = 1; i <= path.segments; i++) {
 			const out = path.out[i] as number;
@@ -470,6 +490,7 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 		parent: number,
 		parentNode: number,
 		index: number,
+		among: number,
 		place: number,
 		baseRadius: number,
 		parentLength: number,
@@ -546,6 +567,8 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 			length = (low + high) / 2;
 		}
 		if ('vary' in rule && rule.vary) length *= 1 + (draw(Purpose.Vary, id) * 2 - 1) * rule.vary;
+		if ('most' in rule && rule.most !== undefined)
+			length = Math.min(length, curveAt(rule.most, place) * scale);
 		length = Math.max(length, 0.01 * scale);
 
 		// Where each child leaves, as shares of this axis's length.
@@ -558,19 +581,26 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 		const seats: Seat[] = [];
 		(rule.children ?? []).forEach((child, c) => {
 			const [from, to] = child.along;
-			const count =
-				typeof child.count === 'number'
-					? Math.max(0, Math.round(child.count))
-					: clamp(
-							Math.round(((to - from) * length) / Math.max(1e-6, child.count.every * scale)),
-							child.count.least,
-							child.count.most,
-						);
+			let count: number;
+			if (typeof child.count === 'number') count = Math.max(0, Math.round(child.count));
+			else if ('total' in child.count) {
+				const total = Math.max(0, Math.round(child.count.total));
+				count = Math.floor(((index + 1) * total) / among) - Math.floor((index * total) / among);
+			} else
+				count = clamp(
+					Math.round(((to - from) * length) / Math.max(1e-6, child.count.every * scale)),
+					child.count.least,
+					child.count.most,
+				);
 			const places = child.around === 'opposite' ? Math.ceil(count / 2) : count;
 			const gap = places > 1 ? (to - from) / (places - 1) : 0;
 			for (let k = 0; k < count; k++) {
 				const at = child.around === 'opposite' ? Math.floor(k / 2) : k;
-				const off = (draw(Purpose.Stagger, id, c * 256 + at) * 2 - 1) * (child.stagger ?? 0) * gap;
+				// The seat at the parent's own end stays there, so the parent does not end bare.
+				const ends = at === places - 1 && to >= 1;
+				const off = ends
+					? 0
+					: (draw(Purpose.Stagger, id, c * 256 + at) * 2 - 1) * (child.stagger ?? 0) * gap;
 				seats.push({
 					rule: child,
 					index: k,
@@ -580,7 +610,13 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 			}
 		});
 
-		const knots = [...lifts.map((knot) => knot[0]), ...sways.map((knot) => knot[0])];
+		const stem = role === 'stem' ? (rule as FrameStemRule) : undefined;
+		// A stem is also cut where its width is stated, so its foot's flare keeps its shape.
+		const widths =
+			stem && typeof stem.width !== 'number'
+				? stem.width.map((knot) => (knot[0] * scale) / length).filter((share) => share < 1)
+				: [];
+		const knots = [...lifts.map((knot) => knot[0]), ...sways.map((knot) => knot[0]), ...widths];
 		const laid = lay(
 			start,
 			tangent,
@@ -588,7 +624,6 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 			knots,
 			seats.map((seat) => seat.share),
 		);
-		const stem = role === 'stem' ? (rule as FrameStemRule) : undefined;
 		const taper = stem ? 1 : clamp((rule as FrameBranchRule).taper, 0.02, 1);
 		const radiusAt = (share: number): number =>
 			Math.max(
@@ -696,7 +731,9 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 			else if (child.around === 'ring') round = phase + (seat.index * 360) / seat.count;
 			else if (child.around === 'opposite')
 				round = phase + Math.floor(seat.index / 2) * 90 + (seat.index % 2) * 180;
-			else round = (seat.index % 2 === 0 ? 1 : -1) * (sides.get(child) as number) * 90;
+			else
+				round =
+					(seat.index % 2 === 0 ? 1 : -1) * (sides.get(child) as number) * (90 - (child.lift ?? 0));
 			round = radians(round + jitter);
 			const angle = radians(
 				curveAt(child.angle, childPlace) +
@@ -731,6 +768,7 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 				id,
 				node,
 				seat.index,
+				seat.count,
 				childPlace,
 				Math.min(BASE_MOST, curveAt(child.radius, childPlace)) * here.radius,
 				length,
@@ -759,6 +797,7 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 			-1,
 			-1,
 			k,
+			count,
 			place,
 			0,
 			scale,
