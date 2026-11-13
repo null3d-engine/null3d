@@ -47,8 +47,12 @@ const BODY = 0.6;
 /** The inner body's top, as a share of the height: the point above it is too narrow to hide it. */
 const BODY_TOP = 0.95;
 
-/** The inner body's half width at the foliage's foot: the trunk's own there (picture 02's foot). */
-const BODY_FOOT = 0.016;
+/**
+ * The inner body's half width at the foliage's foot, inside the trunk's there (0.0155 of the height
+ * at the ground, picture 02's foot). The body is wood of its own, and a plant's trunk is its thickest
+ * stem at its foot, so the body stays thinner there than the trunk.
+ */
+const BODY_FOOT = 0.012;
 
 /** The height from which the inner body takes its share of the outline, above the foot's curve. */
 const BODY_FROM = 0.05;
@@ -143,7 +147,7 @@ export const directed: Species = {
 		// A dark inner body stands behind the fans at the specification's share of the outline, from
 		// the foliage's foot to where the point narrows, so a crease shows shade and never sky.
 		body: {
-			// At the foliage's foot the body is no wider than the trunk, so the column tucks in to its
+			// At the foliage's foot the body is narrower than the trunk, so the column tucks in to its
 			// stem; from the foot's curve up it takes its share of the outline.
 			radius: [
 				[OUTLINE[0]?.[0] ?? 0, BODY_FOOT],

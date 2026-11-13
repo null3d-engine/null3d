@@ -885,8 +885,8 @@ describe("the Italian cypress's closed shell", () => {
 			for (const node of plan.body)
 				if (node.y >= above * H) expect(node.radius).toBeCloseTo(share * outline(plan, node.y), 3);
 				else expect(node.radius).toBeLessThanOrEqual(share * outline(plan, node.y));
-			// At the foliage's foot the body is no wider than the trunk there.
-			expect(plan.body[0]?.radius ?? 0).toBeLessThanOrEqual((plan.trunk[0]?.radius ?? 0) * 1.1);
+			// At the foliage's foot the body is narrower than the trunk at the ground.
+			expect(plan.body[0]?.radius ?? 0).toBeLessThan(plan.trunk[0]?.radius ?? 0);
 			const skeleton = growConifer({
 				record: cypress,
 				seed: SEEDS[seed] as number,
@@ -901,6 +901,12 @@ describe("the Italian cypress's closed shell", () => {
 				)
 					loose.push(a);
 			expect(loose).toHaveLength(1);
+			// The trunk is the plant's thickest stem at its foot, as a view that frames the trunk
+			// finds it: the body, wood of its own, is thinner there.
+			const footOf = (a: number) => skeleton.radius[skeleton.axes.first[a] as number] as number;
+			for (let a = 0; a < skeleton.axes.count; a++)
+				if ((skeleton.axes.kind[a] as number) === AXIS_STEM)
+					expect(footOf(a)).toBeGreaterThan(footOf(loose[0] as number));
 			const axis = loose[0] as number;
 			expect(skeleton.axes.order[axis]).toBe(1);
 			expect((skeleton.axes.last[axis] as number) - (skeleton.axes.first[axis] as number) + 1).toBe(
