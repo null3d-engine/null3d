@@ -110,7 +110,9 @@ export const PIECES: readonly PieceRule[] = [
 		browning: 1,
 		stem: {
 			...rachis(10, [0, 1]),
-			leaves: { ...LEAFLETS, ranked: [-20, 0], angle: 18, angleSpread: 6 },
+			// Picture 20: each dead frond is about 0.11 as wide as long, its leaflets drooping 25
+			// degrees out from the rachis.
+			leaves: { ...LEAFLETS, ranked: [-20, 0], angle: 25, angleSpread: 6 },
 		},
 	},
 ];
