@@ -5,6 +5,7 @@
 // species.
 import type { InstanceBatch } from '@null3d/engine';
 import type { PlantAsset } from '../asset';
+import { cos, sin } from '../core/math';
 import type { PlantCopies } from './place';
 import { toHalf, writeShootRow } from './records';
 import { NEAR_SLOT_TEXELS, NEAR_SLOTS, type SpeciesKit } from './textures';
@@ -101,9 +102,9 @@ export function writeCopyRows(
 	const cz = copies.position[copy * 3 + 2] as number;
 	const turn = copies.turn[copy] as number;
 	const size = copies.scale[copy] as number;
-	const c = Math.cos(turn);
-	const s = Math.sin(turn);
-	const q = [0, Math.sin(turn / 2), 0, Math.cos(turn / 2)];
+	const c = cos(turn);
+	const s = sin(turn);
+	const q = [0, sin(turn / 2), 0, cos(turn / 2)];
 	let row = from;
 	for (let r = 0; r < shoots.count; r++) {
 		if ((shoots.prototype[r] as number) !== prototype) continue;

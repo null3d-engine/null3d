@@ -4,6 +4,7 @@
 // into its pools of slots and its copies' card edges. A stand-in kit's pool draws no real shoots.
 import type { SketchContext, Vec3Like } from '@null3d/engine';
 import { NEAR_CAPS } from '../core/caps';
+import { length3 } from '../core/math';
 import {
 	type BudgetCandidate,
 	GRANT_NONE,
@@ -19,7 +20,7 @@ import { standInNearPool } from './stand-in';
 const MOVE = 0.5;
 
 /** The most copies one placement in a pool holds, which spaces the copies' keys. */
-const COPIES_PER_PLACEMENT = 2 ** 24;
+const COPIES_PER_PLACEMENT = 16_777_216;
 
 /**
  * The near pool's caps, the preset's by default, and the camera it hands pieces out from.
@@ -113,7 +114,7 @@ export function createNearPool(ctx: SketchContext, options: NearPoolOptions = {}
 				const id = serial * COPIES_PER_PLACEMENT + copy;
 				list.push({
 					id,
-					distance: Math.hypot(
+					distance: length3(
 						(place[copy * 3] as number) - (eye[0] as number),
 						(place[copy * 3 + 1] as number) - (eye[1] as number),
 						(place[copy * 3 + 2] as number) - (eye[2] as number),
@@ -176,7 +177,7 @@ export function createNearPool(ctx: SketchContext, options: NearPoolOptions = {}
 		},
 		update() {
 			camera.getWorldPosition(eye);
-			const moved = Math.hypot(
+			const moved = length3(
 				(eye[0] as number) - (handed[0] as number),
 				(eye[1] as number) - (handed[1] as number),
 				(eye[2] as number) - (handed[2] as number),
