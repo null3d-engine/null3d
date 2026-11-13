@@ -152,6 +152,20 @@ export function stemSection(
 		lobes: lobes.map((lobe) => lobe.angle),
 		radius(h: number, theta: number, r: number): number {
 			const height = Math.max(0, h);
+			// The hollow's own share at this angle and height: full at its centre, zero at its edges
+			// and at its foot and head. It holds the charred face smooth, so the bark's ridges fade
+			// out inside it rather than running across it.
+			let hollow = 0;
+			if (scar && scarDepth > 0) {
+				const turn = (cos(angleBetween(theta, scarAngle)) - scarCos) / Math.max(1e-6, 1 - scarCos);
+				const across = Math.max(0, Math.min(1, turn));
+				const angular = across * across * (3 - 2 * across);
+				const up = (height - scarFrom) / scarSpan;
+				const vertical = up > 0 && up < 1 ? sin(PI * up) ** 2 : 0;
+				hollow = angular * vertical;
+			}
+			const smooth = 1 - hollow;
+			const smoothEnough = smooth > 0 ? smooth : 0;
 			let factor = 1 + (flare.height > 0 ? flare.amount * exp(-height / flare.height) : 0);
 			if (taper && height < taper.height) factor += taper.amount * (1 - height / taper.height);
 			let swell = 0;
@@ -163,23 +177,14 @@ export function stemSection(
 					pow(cos(d), sharpness * lobe.sharpness) *
 					lobeFade(height, lobe.height, round);
 			}
-			factor *= 1 + swell;
+			factor *= 1 + swell * smoothEnough;
 			let radius = r * factor;
 			if (flutes && fluteCount > 0 && height < flutes.height) {
 				const fade = 1 - height / flutes.height;
 				const groove = 0.5 + 0.5 * cos(fluteCount * theta + flutePhase);
-				radius -= flutes.depth * groove * groove * fade * fade;
+				radius -= flutes.depth * groove * groove * fade * fade * smoothEnough;
 			}
-			if (scar && scarDepth > 0) {
-				// The hollow stands widest and deepest about its centre, and closes to the healthy
-				// bark at both its angular edges and at its foot and head.
-				const turn = (cos(angleBetween(theta, scarAngle)) - scarCos) / Math.max(1e-6, 1 - scarCos);
-				const across = Math.max(0, Math.min(1, turn));
-				const angular = across * across * (3 - 2 * across);
-				const up = (height - scarFrom) / scarSpan;
-				const vertical = up > 0 && up < 1 ? sin(PI * up) ** 2 : 0;
-				radius -= scarDepth * angular * vertical;
-			}
+			radius -= scarDepth * hollow;
 			return Math.max(radius, r * 0.5);
 		},
 	};

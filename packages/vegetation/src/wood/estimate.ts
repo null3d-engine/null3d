@@ -4,7 +4,7 @@
 // bend rings of each fork's leaders and each tip's cap. It builds no vertex, no weld and no stem
 // foot, so it runs in a small share of the mesher's time and comes within a few per cent of its
 // count at the nearest level, where a triangle target is read.
-import { AXIS_STEM, type MacroSkeleton } from '../core/graph';
+import { AXIS_CULM, AXIS_STEM, type MacroSkeleton } from '../core/graph';
 import { acos, PI } from '../core/math';
 import type { MeshInput, MeshLevel } from '../stages';
 import { axisPath, KINK_BEND, type PathSample, roundKinks, sampleAt } from './frames';
@@ -49,7 +49,8 @@ export function woodTriangles(
 	for (let a = 0; a < axes.count; a++) {
 		const parent = axes.parent[a] as number;
 		if ((axes.order[a] as number) > keep) continue;
-		if (parent < 0 ? axes.kind[a] !== AXIS_STEM : !meshed[parent]) continue;
+		const kind = axes.kind[a] as number;
+		if (parent < 0 ? kind !== AXIS_STEM && kind !== AXIS_CULM : !meshed[parent]) continue;
 		const path = pathOf(skeleton, a);
 		if (!path) continue;
 		meshed[a] = 1;

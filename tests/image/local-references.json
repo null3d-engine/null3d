@@ -203,6 +203,12 @@
 		"date": "2026-11-10",
 		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head in the one idle window, each drawing completed and compared before acceptance, and a CI drawing on a pull request replaces them"
 	},
+	"chromium-swiftshader/compat/plant-giant-sequoia.png": {
+		"test": "plant-giant-sequoia",
+		"tier": "compat",
+		"date": "2026-11-08",
+		"reason": "the two software rasterisers agree byte for byte, and this branch draws the first reference before CI can"
+	},
 	"chromium-swiftshader/compat/plant-holm-oak.png": {
 		"test": "plant-holm-oak",
 		"tier": "compat",
@@ -220,6 +226,18 @@
 		"tier": "compat",
 		"date": "2026-11-10",
 		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head in the one idle window, each drawing completed and compared before acceptance, and a CI drawing on a pull request replaces them"
+	},
+	"chromium-swiftshader/compat/plant-italian-cypress.png": {
+		"test": "plant-italian-cypress",
+		"tier": "compat",
+		"date": "2026-11-08",
+		"reason": "the card growth changed every plant picture; the Mac's SwiftShader agrees with CI's byte for byte, and CI redraws its own set from this branch"
+	},
+	"chromium-swiftshader/compat/plant-olive.png": {
+		"test": "plant-olive",
+		"tier": "compat",
+		"date": "2026-11-08",
+		"reason": "the olive's crown gathered more densely, so this Mac redrew the software set with CI=1"
 	},
 	"chromium-swiftshader/compat/plant-pedunculate-oak.png": {
 		"test": "plant-pedunculate-oak",
@@ -268,6 +286,12 @@
 		"tier": "compat",
 		"date": "2026-11-08",
 		"reason": "the two software rasterisers agree byte for byte, and this branch draws the first reference before CI can"
+	},
+	"chromium-swiftshader/compat/plant-tree-fern.png": {
+		"test": "plant-tree-fern",
+		"tier": "compat",
+		"date": "2026-11-09",
+		"reason": "the cut-piece curve fix moved the pieces the panels view draws; this Mac's SwiftShader redrew the set from the branch, and CI's own drawing judges it"
 	},
 	"chromium-swiftshader/compat/probe-grid-wall-night.png": {
 		"test": "probe-grid-wall-night",
@@ -557,6 +581,12 @@
 		"date": "2026-11-10",
 		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head in the one idle window, each drawing completed and compared before acceptance, and a CI drawing on a pull request replaces them"
 	},
+	"chromium-swiftshader/webgl2/plant-giant-sequoia.png": {
+		"test": "plant-giant-sequoia",
+		"tier": "webgl2",
+		"date": "2026-11-08",
+		"reason": "the two software rasterisers agree byte for byte, and this branch draws the first reference before CI can"
+	},
 	"chromium-swiftshader/webgl2/plant-holm-oak.png": {
 		"test": "plant-holm-oak",
 		"tier": "webgl2",
@@ -574,6 +604,18 @@
 		"tier": "webgl2",
 		"date": "2026-11-10",
 		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head in the one idle window, each drawing completed and compared before acceptance, and a CI drawing on a pull request replaces them"
+	},
+	"chromium-swiftshader/webgl2/plant-italian-cypress.png": {
+		"test": "plant-italian-cypress",
+		"tier": "webgl2",
+		"date": "2026-11-08",
+		"reason": "the card growth changed every plant picture; the Mac's SwiftShader agrees with CI's byte for byte, and CI redraws its own set from this branch"
+	},
+	"chromium-swiftshader/webgl2/plant-olive.png": {
+		"test": "plant-olive",
+		"tier": "webgl2",
+		"date": "2026-11-08",
+		"reason": "the olive's crown gathered more densely, so this Mac redrew the software set with CI=1"
 	},
 	"chromium-swiftshader/webgl2/plant-pedunculate-oak.png": {
 		"test": "plant-pedunculate-oak",
@@ -622,6 +664,12 @@
 		"tier": "webgl2",
 		"date": "2026-11-08",
 		"reason": "the two software rasterisers agree byte for byte, and this branch draws the first reference before CI can"
+	},
+	"chromium-swiftshader/webgl2/plant-tree-fern.png": {
+		"test": "plant-tree-fern",
+		"tier": "webgl2",
+		"date": "2026-11-09",
+		"reason": "the cut-piece curve fix moved the pieces the panels view draws; this Mac's SwiftShader redrew the set from the branch, and CI's own drawing judges it"
 	},
 	"chromium-swiftshader/webgl2/probe-grid-wall-night.png": {
 		"test": "probe-grid-wall-night",
@@ -941,6 +989,12 @@
 		"date": "2026-11-10",
 		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head in the one idle window, each drawing completed and compared before acceptance, and a CI drawing on a pull request replaces them"
 	},
+	"chromium-swiftshader/webgpu/plant-giant-sequoia.png": {
+		"test": "plant-giant-sequoia",
+		"tier": "webgpu",
+		"date": "2026-11-08",
+		"reason": "the two software rasterisers agree byte for byte, and this branch draws the first reference before CI can"
+	},
 	"chromium-swiftshader/webgpu/plant-holm-oak.png": {
 		"test": "plant-holm-oak",
 		"tier": "webgpu",
@@ -958,6 +1012,18 @@
 		"tier": "webgpu",
 		"date": "2026-11-10",
 		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head in the one idle window, each drawing completed and compared before acceptance, and a CI drawing on a pull request replaces them"
+	},
+	"chromium-swiftshader/webgpu/plant-italian-cypress.png": {
+		"test": "plant-italian-cypress",
+		"tier": "webgpu",
+		"date": "2026-11-08",
+		"reason": "the card growth changed every plant picture; the Mac's SwiftShader agrees with CI's byte for byte, and CI redraws its own set from this branch"
+	},
+	"chromium-swiftshader/webgpu/plant-olive.png": {
+		"test": "plant-olive",
+		"tier": "webgpu",
+		"date": "2026-11-08",
+		"reason": "the olive's crown gathered more densely, so this Mac redrew the software set with CI=1"
 	},
 	"chromium-swiftshader/webgpu/plant-pedunculate-oak.png": {
 		"test": "plant-pedunculate-oak",
@@ -1006,6 +1072,12 @@
 		"tier": "webgpu",
 		"date": "2026-11-08",
 		"reason": "the two software rasterisers agree byte for byte, and this branch draws the first reference before CI can"
+	},
+	"chromium-swiftshader/webgpu/plant-tree-fern.png": {
+		"test": "plant-tree-fern",
+		"tier": "webgpu",
+		"date": "2026-11-09",
+		"reason": "the cut-piece curve fix moved the pieces the panels view draws; this Mac's SwiftShader redrew the set from the branch, and CI's own drawing judges it"
 	},
 	"chromium-swiftshader/webgpu/probe-grid-wall-night.png": {
 		"test": "probe-grid-wall-night",

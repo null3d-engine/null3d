@@ -18,18 +18,11 @@
 		"daylight": 2.9
 	},
 	"03-whole-from-below.png": {
-		"view": "whole",
 		"sunAzimuth": -30,
 		"sunRise": 62,
 		"skyShare": 0.45,
 		"sky": "#7fb0e6",
-		"daylight": 2.6,
-		"horizon": 0.9,
-		"fill": null,
-		"targetY": null,
-		"top": 0.02,
-		"eye": 0.3,
-		"fov": 65
+		"daylight": 2.6
 	},
 	"04-crown-outside.png": {
 		"sunAzimuth": -40,
@@ -54,7 +47,10 @@
 		"sunAzimuth": -50,
 		"sunRise": 48,
 		"skyShare": 0.4,
-		"daylight": 2.3
+		"daylight": 2.3,
+		"limbShare": 0.3,
+		"collarColumn": 0.5,
+		"limbLie": 15
 	},
 	"08-limb-fork.png": {
 		"sunAzimuth": -60,

@@ -14,6 +14,7 @@ import { capsFor, variantBytesOf } from '../core/caps';
 import { speciesProblems } from '../core/check';
 import { AXIS_CULM, AXIS_ROOT, BUD_FLOWER, BUD_TERMINAL, type MacroSkeleton } from '../core/graph';
 import type { GrassBlade, Species, ThickLeaf } from '../core/record';
+import { loadSpecies } from '../core/registry';
 import { noTextureFiles } from '../core/textures';
 import { DETAILS } from '../core/types';
 import { buildKitNow, growPlantNow, loadPlantCode } from '../generate';
@@ -302,6 +303,22 @@ describe('the pendulous sedge', () => {
 		expect(levels[2].triangles).toBe(without.levels[2].triangles);
 		// The plant above the soil is the same with and without it.
 		expect(assetOf(sedgeRecord).shoots.count).toBe(without.shoots.count);
+	});
+
+	it("leaves an unrhizomed plant's blades and stems byte-identical", async () => {
+		const module = await loadSpecies('sedge');
+		const growth = module.record.growth;
+		if (growth.model !== 'tuft') throw new Error('the species is not a tuft');
+		expect(growth.soil).toBeDefined();
+		const { soil: _soil, ...bare } = growth;
+		const kit = buildKitNow(
+			{ record: { ...module.record, growth: bare }, textures: noTextureFiles(module.record.id) },
+			{ placeholders: 'missing', detail: 'high' },
+		);
+		// The plant's bytes with the soil block stripped, at this record: a plant that names no
+		// soil grows exactly these. A deliberate record change re-records the figure, and the
+		// growth path that reads no soil must not move it.
+		expect(plantAssetDigest(growPlantNow(kit, OPTIONS))).toBe('1f94bdf88cd6e650');
 	});
 
 	it('ends its blades in long fine points', () => {

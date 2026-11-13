@@ -90,27 +90,11 @@ type SlotRule = Omit<Slot, 'file' | 'number' | 'name' | 'kind' | 'background'> &
 	readonly background?: PlantBackground;
 };
 
-/**
- * The stem radii from the stem's axis at which the photograph that looks up the whole height stands:
- * the distance at which a stem fills its share of the lower edge, at the photograph's pitch.
- */
-const STAND = 3.3;
+/** Looking up the trunk into the crown from beside it, the first fork a little above the frame's middle. */
+const FROM_BELOW: SlotRule = { view: 'below', framed: false };
 
-/** Looking up the whole height of the stem from its foot. */
-const FROM_BELOW: SlotRule = {
-	view: 'below',
-	elevation: 70,
-	query: { forkRow: 0.4, stand: STAND },
-	framed: false,
-};
-
-/** Looking up into the crown's underside from under it: the crown's box fills most of the frame, the trunk below. */
-const UNDERNEATH: SlotRule = {
-	view: 'crown-underside',
-	elevation: 60,
-	query: { aside: 40 },
-	framed: false,
-};
+/** Looking up into the crown's underside from under a great limb, back toward the trunk. */
+const UNDERNEATH: SlotRule = { view: 'crown-underside', framed: false };
 
 /**
  * Looking up a tall clean bole in leaf from a few steps back with a wide lens: the foot at the
@@ -141,6 +125,13 @@ const NEST_HOLES: SlotRule = {
 	framed: false,
 };
 
+/** A stem cut across: the cut face's rib star, woody ring and flesh. */
+const STEM_SECTION: SlotRule = {
+	view: 'section',
+	background: 'white',
+	framed: false,
+};
+
 /** A branch with its side branches: the branch cutting laid across a frame of the photograph's scale. */
 const SECONDARY_BRANCHING: SlotRule = {
 	view: 'branch',
@@ -162,6 +153,19 @@ const FINE_TWIGS: SlotRule = {
 /** The slot rules, first match wins: words in the still's name, and the slot they name. */
 const SLOT_RULES: readonly { readonly test: (name: string) => boolean; readonly slot: SlotRule }[] =
 	[
+		// A stem cut across is a section of its own, for the cactus and the sedge alike. It comes
+		// before the rib rule below, which would otherwise read the cactus's cross-section as a skin
+		// close-up.
+		{ test: (n) => /cross-section|cut-across/.test(n), slot: STEM_SECTION },
+		// A cactus's single spine cluster and single areole are the leaf's own card on a plain ground,
+		// as their studio stills are: the species' leaf is the cluster.
+		{
+			test: (n) => /spine-cluster|single-areole/.test(n),
+			slot: { view: 'leaf-upper', framed: false },
+		},
+		// Its ribs and areole rows are the skin's own close view: the species has no leaf or twig for
+		// the leaf and twig views to cut, and its body is one ribbed surface.
+		{ test: (n) => /rib|areoles/.test(n), slot: SKIN_CLOSE },
 		// A cactus's ribs, areoles and spine clusters are the skin's own close view: the species has no
 		// leaf or twig for the leaf and twig views to cut, and its body is one ribbed surface.
 		{ test: (n) => /rib|areole|spine/.test(n), slot: SKIN_CLOSE },
@@ -183,6 +187,36 @@ const SLOT_RULES: readonly { readonly test: (name: string) => boolean; readonly 
 		{
 			test: (n) => /arm-tip/.test(n),
 			slot: { view: 'limb', query: { span: 0.35, thin: 0.24 }, framed: false },
+		},
+		// Bamboo's own close views: the reference set frames a culm's foot, a node, a sheath and a cut
+		// section where no tree view fits.
+		{
+			test: (n) => n.includes('culm-base'),
+			slot: { view: 'bark-base', framed: false },
+		},
+		{
+			test: (n) => n.includes('culm-node'),
+			slot: { view: 'bark-mid', query: { span: 0.22 }, framed: false },
+		},
+		{
+			// A sheath sits at a young culm's lower nodes, so the view frames the foot, not a limb.
+			test: (n) => n.includes('culm-sheath'),
+			slot: { view: 'bark-base', background: 'studio-grey', query: { span: 0.35 }, framed: false },
+		},
+		{
+			test: (n) => n.includes('cut-culm'),
+			slot: { view: 'bark-mid', query: { span: 0.2 }, framed: false },
+		},
+		{
+			// A wall of bare culms at eye height: the bole view looks up the nearest culm, the closest
+			// view the set has to that surface.
+			test: (n) => n.includes('clump-outside'),
+			slot: { view: 'trunk', framed: false },
+		},
+		{
+			// The spring spear is its own form of the plant, framed whole against the sky.
+			test: (n) => n.includes('new-shoot'),
+			slot: { view: 'whole', framed: true, background: 'sky-meadow' },
 		},
 		// A cut piece on a plain ground, framed as its photograph frames it: the photograph's piece
 		// sets the rows its top and its foot land on.
@@ -207,14 +241,12 @@ const SLOT_RULES: readonly { readonly test: (name: string) => boolean; readonly 
 		},
 		{
 			// Looking up the whole height from the foot: the stem's first fork stands a little above the
-			// middle of the frame, with the first limbs running out from it, and the camera stands as
-			// far from the stem as the photograph's, measured in stem radii from its share of the frame.
+			// middle of the frame, with the first limbs running out from it.
 			test: (n) => n.includes('from-below'),
 			slot: FROM_BELOW,
 		},
 		{
-			// Looking up into the crown from beside the stem, which enters the frame from its lower left,
-			// from where the photograph that looks up the whole height stands.
+			// Looking up into the crown from under a great limb, the trunk low in the frame.
 			test: (n) => /(crown|canopy).*(underside|underneath)/.test(n),
 			slot: UNDERNEATH,
 		},
@@ -226,11 +258,27 @@ const SLOT_RULES: readonly { readonly test: (name: string) => boolean; readonly 
 		},
 		{ test: (n) => n.includes('inside'), slot: { view: 'inside', framed: false } },
 		{
-			// The crown's outer surface seen from outside it: a limb running low across the frame with
-			// its shoots rising against the sky, at the span a photograph of that surface covers, some
-			// thirty leaf lengths.
+			// The crown's outer surface seen from outside it: one foliage mass at the crown's edge
+			// against the sky.
 			test: (n) => /(crown|clump)-(outside|edge)/.test(n),
-			slot: { view: 'limb', query: { span: 2.8, thin: 0.06, surface: true }, framed: false },
+			slot: { view: 'limb', query: { surface: true }, framed: false },
+		},
+		{
+			test: (n) => n.includes('frond-base-on-trunk'),
+			slot: { view: 'junction', framed: false },
+		},
+		{
+			// A palm's frond from its base, cut and laid on a plain ground as its photograph shows
+			// it: the whole frond, framed at the scale of some seven leaflets, not the clasp on the
+			// trunk that a woody species' limb picture shows.
+			test: (n) => n.includes('frond-base') || n.includes('frond-mid'),
+			slot: {
+				view: 'branch',
+				background: 'studio-grey',
+				elevation: 0,
+				query: { leaves: 7.4 },
+				framed: false,
+			},
 		},
 		{
 			test: (n) => n.includes('limb-leaving') || n.includes('culm-base'),
@@ -1276,8 +1324,8 @@ const FOOT_SHARE = 0.03;
  * pixels. The picture is first shrunk to the work width. Returns a mask with no plant when the
  * border is neither plain nor a sky the surface fit models (see `skyMaskable`).
  */
-export function plantMask(image: Rgba): PlantMask {
-	const work = image.width > WORK_WIDTH ? resizeToWidth(image, WORK_WIDTH) : image;
+export function plantMask(image: Rgba, workWidth = WORK_WIDTH): PlantMask {
+	const work = image.width > workWidth ? resizeToWidth(image, workWidth) : image;
 	const { width, height } = work;
 	const lab = labImage(work);
 	const background = backgroundOf(lab, width, height);
@@ -1326,6 +1374,12 @@ export function plantMask(image: Rgba): PlantMask {
 			height - Math.max(2, Math.round(height * FOOT_SHARE)),
 		);
 	keepPlantParts(mask, width, height, horizon);
+	// A silhouette stands on a black ground line, which holds no foot to tell from its ground.
+	if (
+		background.ground &&
+		(surfaceAt(background.ground, 0.5, (horizon / height + 1) / 2)[0] as number) > FOOT_GROUND_LIGHT
+	)
+		followStemFoot(mask, lab, width, height, horizon);
 	if (!background.plain) {
 		let kept = 0;
 		for (let at = 0; at < mask.length; at++) kept += mask[at] as number;
@@ -1353,6 +1407,101 @@ export function plantMask(image: Rgba): PlantMask {
 		background,
 		...(plantToGround !== undefined ? { plantToGround } : {}),
 	};
+}
+
+/** How far below the horizon a stem's foot is followed, as a share of the plant's height above it. */
+const FOOT_REACH = 0.15;
+/** The CIELAB distance between a stem and the ground beside it at which the stem still shows. */
+const FOOT_CONTRAST = 6;
+/** The rows in turn that may lack that contrast before the foot ends. */
+const FOOT_GAP = 2;
+/** The share of the stem's contrast at the horizon under which the rows below are ground. */
+const FOOT_CONTRAST_SHARE = 0.25;
+/** The least CIELAB lightness of a ground on which a foot can be told from it. */
+const FOOT_GROUND_LIGHT = 12;
+/** The most of the frame's width a run at the horizon may take and still be a stem. */
+const FOOT_STEM_SHARE = 0.4;
+
+/**
+ * Follows a stem from the horizon down to its foot. The ground's fitted colour cannot tell a dark
+ * foot from dark ground, so an outline can end at the horizon while the stem runs on to its root
+ * collar, and every figure that is a share of the plant's height then counts from the wrong base.
+ * Where the outline's lowest row stands at the horizon, the widest run of that row is the stem.
+ * Each row below is the stem's while the columns under it differ in colour from the ground on
+ * either side of them, by a share of what the stem shows at the horizon, and the foot ends where
+ * that contrast is lost for a few rows in turn.
+ */
+function followStemFoot(
+	mask: Uint8Array,
+	lab: Float32Array,
+	width: number,
+	height: number,
+	horizon: number,
+): void {
+	const rowHolds = (y: number): boolean => {
+		for (let x = 0; x < width; x++) if (mask[y * width + x]) return true;
+		return false;
+	};
+	let bottom = height - 1;
+	while (bottom >= 0 && !rowHolds(bottom)) bottom--;
+	let top = 0;
+	while (top < bottom && !rowHolds(top)) top++;
+	// An outline that already runs on below the horizon, or ends above it, has its own foot.
+	if (bottom < 0 || Math.abs(bottom - horizon) > Math.max(2, Math.round(height * 0.01))) return;
+	let left = -1;
+	let right = -1;
+	for (let x = 0, start = -1; x <= width; x++) {
+		const on = x < width && mask[bottom * width + x] !== 0;
+		if (on && start < 0) start = x;
+		if (!on && start >= 0) {
+			if (x - start > right - left + 1 || left < 0) {
+				left = start;
+				right = x - 1;
+			}
+			start = -1;
+		}
+	}
+	const stem = right - left + 1;
+	if (left < 0 || stem > width * FOOT_STEM_SHARE) return;
+	const flank = Math.max(3, stem);
+	const mean = (y: number, from: number, to: number, into: number[]): number => {
+		let n = 0;
+		for (let x = Math.max(0, from); x <= Math.min(width - 1, to); x++) {
+			for (let c = 0; c < 3; c++)
+				into[c] = (into[c] as number) + (lab[(y * width + x) * 3 + c] as number);
+			n++;
+		}
+		return n;
+	};
+	const contrastAt = (y: number): number | undefined => {
+		const inside = [0, 0, 0];
+		const beside = [0, 0, 0];
+		const within = mean(y, left, right, inside);
+		const out = mean(y, left - flank, left - 1, beside) + mean(y, right + 1, right + flank, beside);
+		return within === 0 || out === 0
+			? undefined
+			: Math.hypot(
+					(inside[0] as number) / within - (beside[0] as number) / out,
+					(inside[1] as number) / within - (beside[1] as number) / out,
+					(inside[2] as number) / within - (beside[2] as number) / out,
+				);
+	};
+	// The stem shows against the ground beside it as it does at the horizon, or a share less.
+	const least = Math.max(FOOT_CONTRAST, FOOT_CONTRAST_SHARE * (contrastAt(bottom) ?? 0));
+	const last = Math.min(height - 1, bottom + Math.round((bottom - top + 1) * FOOT_REACH));
+	let reached = bottom;
+	for (let y = bottom + 1, misses = 0; y <= last && misses <= FOOT_GAP; y++) {
+		const contrast = contrastAt(y);
+		if (contrast === undefined) break;
+		if (contrast < least) {
+			misses++;
+			continue;
+		}
+		misses = 0;
+		for (let row = reached + 1; row <= y; row++)
+			for (let x = left; x <= right; x++) mask[row * width + x] = 1;
+		reached = y;
+	}
 }
 
 /** How far above the horizon, as a share of the frame's height, a background band may lie. */
@@ -1485,6 +1634,12 @@ export function keepPlantParts(
 		mask[at] = keep[labels[at] as number] && labels[at] ? 1 : 0;
 }
 
+/**
+ * How a plant stands, where that changes how its outline is read: a mound of leaves from its foot,
+ * or a clump of several bare stems from one stool.
+ */
+export type PlantHabit = 'mound' | 'clump';
+
 /** The plant's outline from a matte: the plant drawn dark on white, as the silhouette view draws it. */
 export function matteMask(image: Rgba): PlantMask {
 	const work = image.width > WORK_WIDTH ? resizeToWidth(image, WORK_WIDTH) : image;
@@ -1602,6 +1757,13 @@ export interface PlantMeasures {
 	readonly crownBox: { readonly width: number; readonly height: number };
 	/** The share of the crown's outline that shows background: the sky or ground through it. */
 	readonly gapFraction: number;
+	/**
+	 * The same gap with each clear texel of a render's matte counted by its clear share. A
+	 * photograph's outline has no such share, so the two sides of a pair are compared on
+	 * `gapFraction`, where a texel is sky or plant on both. This reading is kept beside it for a
+	 * render, since earlier figures were read this way; null for a picture with no coverage.
+	 */
+	readonly gapByCoverage: number | null;
 	/** The share of the crown's box that shows background: the figure the plant is judged on. */
 	readonly crownBoxGap: number;
 	/**
@@ -1643,6 +1805,24 @@ export function rowSpans(mask: Uint8Array, width: number, height: number): Int32
 			}
 		spans[y * 2] = left;
 		spans[y * 2 + 1] = right;
+	}
+	return spans;
+}
+
+/**
+ * Each row as one run as wide as the plant it holds, centred on the frame: the first and last
+ * columns of that run, or -1 for a row with no plant. A row of spread stems then reads as narrow as
+ * its stems together, and a row of foliage as wide as its foliage.
+ */
+export function filledSpans(mask: Uint8Array, width: number, height: number): Int32Array {
+	const spans = new Int32Array(height * 2).fill(-1);
+	for (let y = 0; y < height; y++) {
+		let filled = 0;
+		for (let x = 0; x < width; x++) filled += mask[y * width + x] ? 1 : 0;
+		if (filled === 0) continue;
+		const left = (width - filled) >> 1;
+		spans[y * 2] = left;
+		spans[y * 2 + 1] = left + filled - 1;
 	}
 	return spans;
 }
@@ -1733,7 +1913,7 @@ function lowestMedian(width: (y: number) => number, box: Box, tall: number): num
  * or 0 for a row with no plant. A row's outermost span joins a stem to the boughs that sweep beside
  * it and reads as wide as the crown, where the central run is the stem the boughs stand apart from.
  */
-function centralRuns(mask: Uint8Array, width: number, box: Box): Int32Array {
+export function centralRuns(mask: Uint8Array, width: number, box: Box): Int32Array {
 	const runs = new Int32Array(box.bottom + 1);
 	const centre = (box.left + box.right) / 2;
 	for (let y = box.top; y <= box.bottom; y++) {
@@ -1765,7 +1945,7 @@ export function crownStartRow(
 	spans: Int32Array,
 	box: Box,
 	central?: Int32Array,
-	moundForm = false,
+	habit?: PlantHabit,
 ): number {
 	const tall = box.bottom - box.top + 1;
 	const width = (y: number) => {
@@ -1848,7 +2028,7 @@ export function crownStartRow(
 	// that shows, the stem is the row's own central run: scan that, past the frame's bottom sliver
 	// and the foot's flare, for the first row above the stem that stands wider than the bole limit.
 	const stem =
-		central !== undefined && !moundForm && widest > 0 && trunk > widest * CORRUPT_TRUNK_SHARE
+		central !== undefined && habit !== 'mound' && widest > 0 && trunk > widest * CORRUPT_TRUNK_SHARE
 			? central
 			: undefined;
 	const boleLimit =
@@ -1914,26 +2094,46 @@ function crownStartFromTop(spans: Int32Array, box: Box, limit: number): number {
 	return box.bottom;
 }
 
-/** The mean CIELAB colour of the pixels that a test picks, or null when it picks none. */
+/**
+ * The mean CIELAB colour of the pixels that a test picks, or null when it picks none. A weight
+ * shares each pixel's influence: a render's matte gives the share of the texel its leaf covers, so
+ * a partly covered edge texel, whose colour blends towards the sky, does not count as a whole leaf.
+ */
 function meanColour(
 	lab: Float32Array,
 	count: number,
 	pick: (at: number) => boolean,
+	weight?: (at: number) => number,
 ): { lab: number[]; hex: string } | null {
 	const sum = [0, 0, 0];
 	let n = 0;
 	for (let at = 0; at < count; at++) {
 		if (!pick(at)) continue;
-		for (let c = 0; c < 3; c++) sum[c] = (sum[c] as number) + (lab[at * 3 + c] as number);
-		n++;
+		const share = weight ? weight(at) : 1;
+		if (share <= 0) continue;
+		for (let c = 0; c < 3; c++) sum[c] = (sum[c] as number) + (lab[at * 3 + c] as number) * share;
+		n += share;
 	}
 	if (n === 0) return null;
 	const mean = sum.map((v) => v / n);
 	return { lab: mean.map((v) => Number(v.toFixed(2))), hex: hexOf(srgbOf(mean)) };
 }
 
-/** Measures a plant from its outline in a picture. */
-export function measurePlant(image: Rgba, plant: PlantMask, moundForm = false): PlantMeasures {
+/**
+ * Measures a plant from its outline in a picture.
+ *
+ * A cut piece's crown bottom is its reference picture's own crown share of the plant's height: the
+ * same share on both sides bounds the same part of the piece, so a stem outside the picture's
+ * subject stays out of the box. A piece with no share takes its whole box. A mound's crown start
+ * stays at its foot.
+ */
+export function measurePlant(
+	image: Rgba,
+	plant: PlantMask,
+	habit?: PlantHabit,
+	piece = false,
+	subject?: number,
+): PlantMeasures {
 	const { width, height, mask, coverage, background } = plant;
 	const work = image.width === width ? image : resizeToWidth(image, width);
 	const lab = labImage(work);
@@ -1963,6 +2163,7 @@ export function measurePlant(image: Rgba, plant: PlantMask, moundForm = false): 
 			crownStart: 0,
 			crownBox: { width: 0, height: 0 },
 			gapFraction: 0,
+			gapByCoverage: null,
 			crownBoxGap: 0,
 			frameGap: 0,
 			solidity: 0,
@@ -1971,11 +2172,21 @@ export function measurePlant(image: Rgba, plant: PlantMask, moundForm = false): 
 			light: null,
 		};
 	const spans = rowSpans(mask, width, height);
-	const start = crownStartRow(spans, box, centralRuns(mask, width, box), moundForm);
 	const tall = box.bottom - box.top + 1;
+	// A clump's stems spread from its stool, so a row through them spans wide while it holds little
+	// plant. Its crown starts where the rows fill with foliage, so each row counts by the plant it
+	// holds, not by the span between its outermost stems.
+	const start = piece
+		? subject !== undefined
+			? Math.min(box.bottom, box.top + Math.max(1, Math.round(subject * tall)) - 1)
+			: box.bottom
+		: habit === 'clump'
+			? crownStartRow(filledSpans(mask, width, height), box)
+			: crownStartRow(spans, box, centralRuns(mask, width, box), habit);
 	// The crown's outline: in each crown row, everything between the row's outermost plant pixels.
 	let hull = 0;
 	let gaps = 0;
+	let clear = 0;
 	let crownWidth = 0;
 	let crownLeft = width;
 	let crownRight = -1;
@@ -1990,15 +2201,20 @@ export function measurePlant(image: Rgba, plant: PlantMask, moundForm = false): 
 		for (let x = left; x <= right; x++) {
 			hull++;
 			if (!mask[y * width + x]) {
-				// A render's matte carries how much of the texel a leaf covers, so the sky between
-				// thin leaves weighs as the part of the texel it holds rather than a whole one.
+				// A texel is sky or plant, on a render as on a photograph, so both sides of a pair
+				// count their sky one way. A render's matte also carries how much of the texel a
+				// leaf covers, which gives the second reading.
 				const at = y * width + x;
-				gaps += coverage ? 1 - (coverage[at] as number) / 255 : 1;
+				gaps++;
+				if (coverage) clear += 1 - (coverage[at] as number) / 255;
 			} else inCrown[y * width + x] = 1;
 		}
 	}
 	const sky = (at: number): number =>
 		coverage ? 1 - (coverage[at] as number) / 255 : mask[at] ? 0 : 1;
+	// A texel's own coverage shares its colour: an edge texel whose colour blends towards the sky
+	// barely counts, where a photograph has no coverage and every texel counts whole.
+	const leafShare = coverage ? (at: number) => (coverage[at] as number) / 255 : undefined;
 	let crownBoxSky = 0;
 	const crownBoxHeight = start - box.top + 1;
 	if (crownRight >= crownLeft)
@@ -2023,10 +2239,11 @@ export function measurePlant(image: Rgba, plant: PlantMask, moundForm = false): 
 		crownStart: Number(((box.bottom - start) / tall).toFixed(4)),
 		crownBox: { width: crownWidth, height: start - box.top + 1 },
 		gapFraction: hull > 0 ? Number((gaps / hull).toFixed(4)) : 0,
+		gapByCoverage: coverage ? (hull > 0 ? Number((clear / hull).toFixed(4)) : 0) : null,
 		crownBoxGap: crownBoxArea > 0 ? Number((crownBoxSky / crownBoxArea).toFixed(4)) : 0,
 		frameGap: Number((frameSky / (width * height)).toFixed(4)),
 		solidity: Number((covered / ((box.right - box.left + 1) * tall)).toFixed(4)),
-		foliage: meanColour(lab, width * height, (at) => inCrown[at] === 1),
+		foliage: meanColour(lab, width * height, (at) => inCrown[at] === 1, leafShare),
 		bark:
 			start < box.bottom
 				? meanColour(lab, width * height, (at) => {
