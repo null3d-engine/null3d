@@ -6,14 +6,17 @@
 // cut-branch figures of the photograph and of the drawing, read by the targets tool's measure.
 //
 //   bun run plants:piece <species> [--still <n,n>] [--refs <folder or slug>] [--out <dir>]
-//     [--name <prefix>] [--bare] [--turns]
+//     [--name <prefix>] [--bare] [--fruit] [--turns]
 //
-// `--bare` draws the pieces without their leaves, for the photographs of a leafless plant. `--turns`
+// `--bare` draws the pieces without their leaves, for the photographs of a leafless plant. `--fruit`
+// draws the species' `FRUIT_PIECES`, its pieces in fruit or in catkin, where it has them. `--turns`
 // also writes `<prefix>-turns.png`: each cut whose turning video the folder holds, drawn face on, at
 // an eighth of a turn and edge on, beside the video's widest, middle and narrowest frames, with each
 // one's width over height and the depth over width of both.
 //
-// A species' pieces and layouts are `PIECES` and `STUDIO` in its `pieces.ts`. Its reference folder
+// A species' pieces and layouts are `PIECES` and `STUDIO` in its `pieces.ts`; with `--bare` its
+// `BARE_STUDIO` is drawn in place of `STUDIO`, where the file has one, and its pieces wear its
+// `PIECE_LEAF` where it states one. Its reference folder
 // is `<id>` under the corpus that NULL3D_PLANT_REFERENCES names, or the repository's
 // `.internal/coordination/tree-corpus/generated`; `--refs` names another. The pictures go to
 // `target/plant-piece/<species>/`, or the folder `--out` names, as `<prefix>-pieces.png`, with every
@@ -32,6 +35,7 @@ import {
 import { buildKitNow, buildPiecesNow, loadPlantCode } from '../packages/vegetation/src/generate.ts';
 import {
 	layStudio,
+	type PieceLeaf,
 	type PieceRule,
 	type PieceStudio,
 } from '../packages/vegetation/src/leaf/piece.ts';
@@ -54,7 +58,7 @@ const REFERENCES =
 	process.env.NULL3D_PLANT_REFERENCES ??
 	join(REPO_ROOT, '.internal/coordination/tree-corpus/generated');
 
-const [named] = positionals(new Set(['--bare', '--turns']));
+const [named] = positionals(new Set(['--bare', '--fruit', '--turns']));
 if (!named || !isSpeciesId(named)) {
 	console.error(
 		`Name a species: bun run plants:piece <species> [--still <n,n>] [--refs <folder or slug>] [--out <dir>] [--name <prefix>]\n\nspecies: ${speciesIds().join(', ')}`,
@@ -85,15 +89,22 @@ if (!existsSync(source)) {
 	console.error(`${species} has no pieces yet: ${source} is missing.`);
 	process.exit(2);
 }
-const { PIECES, STUDIO } = (await import(source)) as {
+const layouts = (await import(source)) as {
 	PIECES: readonly PieceRule[];
 	STUDIO: readonly PieceStudio[];
+	BARE_STUDIO?: readonly PieceStudio[];
+	FRUIT_PIECES?: readonly PieceRule[];
+	PIECE_LEAF?: PieceLeaf;
 };
+// A species in fruit or in catkin takes its fruiting rules, where it states them.
+const PIECES = flag('fruit') && layouts.FRUIT_PIECES ? layouts.FRUIT_PIECES : layouts.PIECES;
+// A leafless plant's photographs take the species' leafless layouts, where it states them.
+const STUDIO = flag('bare') && layouts.BARE_STUDIO ? layouts.BARE_STUDIO : layouts.STUDIO;
 const module = await loadSpecies(species);
 await loadPlantCode(module.record);
 const started = performance.now();
 const kit = buildKitNow(module, { detail: 'high', placeholders: 'missing' });
-const pieces = buildPiecesNow(module, PIECES, flag('bare'));
+const pieces = buildPiecesNow(module, PIECES, flag('bare'), layouts.PIECE_LEAF);
 const built = performance.now() - started;
 
 /** The four cut-branch figures of a picture in words, or why it gives none. */
@@ -135,7 +146,7 @@ for (const studio of STUDIO) {
 	// The same layout with each piece drawn as its cards, which a whole view of a plant draws.
 	const carded = studioView(scene, reference, studio.turn ?? 0, pieceCards(scene));
 	const cardMatch = matchFigures(reference, carded);
-	const title = `${file}: ${scene.pieces} x ${studio.piece}${studio.stand ? ' on its cut wood' : ' alone'}, ${scene.leaves} leaves, drawn ${render.wide.toFixed(2)} m wide and ${render.tall.toFixed(2)} m tall`;
+	const title = `${file}: ${scene.pieces} x ${studio.piece ?? 'no piece'}${studio.stand ? ' on its cut wood' : ' alone'}, ${scene.leaves} leaves, drawn ${render.wide.toFixed(2)} m wide and ${render.tall.toFixed(2)} m tall`;
 	const strip = matchStrip(title, reference, render, match);
 	// The four cut-branch figures, read from the photograph and from the drawing by one measure.
 	const branchOf = { reference: branchWords(reference.image), render: branchWords(render.colour) };

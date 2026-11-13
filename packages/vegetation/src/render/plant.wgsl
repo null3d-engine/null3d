@@ -65,7 +65,8 @@ struct Uniforms {
 var wind: texture_2d_array<f32>;
 // The species' constants and wind records, read with textureLoad only.
 var records: texture_2d<f32>;
-// Bark colour (one layer a zone), leaf colour (upper, lower) or card colour (front, back).
+// Bark colour (one layer a zone), leaf colour (upper, lower) or card colour (front, back). Shoot
+// rows whose pieces draw brush cards read the card atlas here, since they draw no leaf.
 var colour: texture_2d_array<f32>;
 // Bark normal, leaf normal or card surface, in the same layers.
 var relief: texture_2d_array<f32>;
@@ -197,6 +198,8 @@ const KIND_SHEATH: f32 = 240.0;
 const KIND_PIECE: f32 = 16.0;
 /// A placed piece's sheath column, which draws in the record's sheath colour and does not flutter.
 const KIND_PIECE_SHEATH: f32 = 32.0;
+// A brush card of a piece: crossed quads that picture a dense run of its leaves from the card atlas.
+const KIND_BRUSH: f32 = 8.0;
 // Texels across the near table: two for each of its sixteen slots.
 const NEAR_TEXELS: f32 = 32.0;
 // A leaf's reflectance at normal incidence and at grazing, as the plant materials set them.
@@ -1004,6 +1007,9 @@ fn coverage(input: SurfaceInput) -> f32 {
             let layer = select(1, 0, input.frontFacing);
             alpha = card_alpha(textureSampleGrad(colour, colourSampler, uv, layer, gx, gy).a, gx, gy);
         }
+    } else if (mode == MODE_SHOOTS && abs(input.vertexColor.b * 255.0 - KIND_BRUSH) < 0.5) {
+        let layer = select(1, 0, input.frontFacing);
+        alpha = card_alpha(textureSampleGrad(colour, colourSampler, uv, layer, gx, gy).a, gx, gy);
     } else if (mode == MODE_FOLIAGE
         || (mode == MODE_SHOOTS && input.vertexColor.b * 255.0 < KIND_STEM * 0.5)) {
         let layer = select(1, 0, input.frontFacing);
@@ -1367,6 +1373,29 @@ fn surface(input: SurfaceInput) -> Surface {
             let face = max(header(HEADER_UPPER_MEAN).rgb, vec3f(0.0001));
             base = sheath_colour * clamp(strip / face, vec3f(0.55), vec3f(1.45));
             roughness = max(foot.w, 0.5);
+        } else if (mode == MODE_SHOOTS && abs(input.vertexColor.b * 255.0 - KIND_BRUSH) < 0.5) {
+            // A brush card: the card atlas's picture of a run of the piece's leaves, which a brush
+            // kit binds in the leaf's place, lit as a card of the first card level is, with the
+            // picture's own normals and shade.
+            let layer = select(1, 0, upper);
+            let texel = textureSampleGrad(colour, colourSampler, uv, layer, gx, gy);
+            let surface_texel = textureSampleGrad(relief, reliefSampler, uv, layer, gx, gy);
+            let brush_kind = surface_texel.a * 255.0;
+            let brush_leaf = brush_kind >= 127.5;
+            let self_shade = (brush_kind - select(0.0, 128.0, brush_leaf)) * 2.0 / 255.0;
+            if (brush_leaf) {
+                let light = leaf_light(texel.rgb, upper, 0.0);
+                base = light.base;
+                share = light.share;
+                through = light.through;
+                roughness = light.roughness;
+            } else {
+                base = texel.rgb;
+            }
+            alpha = card_alpha(texel.a, gx, gy);
+            let e = (surface_texel.xy * 255.0 - vec2f(128.0)) / 127.0;
+            mapped = octahedral(clamp(e, vec2f(-1.0), vec2f(1.0)));
+            occlusion = mix(input.vertexColor.a * saturate(self_shade), 1.0, leaf_sky);
         } else {
             let layer = select(1, 0, upper);
             let texel = textureSampleGrad(colour, colourSampler, uv, layer, gx, gy);

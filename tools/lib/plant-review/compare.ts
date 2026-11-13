@@ -34,6 +34,7 @@ import {
 	anyPlantMask,
 	type Box,
 	boxOf,
+	halfDarkMask,
 	hangingParts,
 	matteMask,
 	matteOwnMask,
@@ -57,6 +58,7 @@ import type { RunFrame } from './render.ts';
 import { type PictureNote, type Standing, standReason } from './review-data.ts';
 import type { SheathTarget } from './sheath.ts';
 import {
+	areaCovers,
 	contractHeld,
 	holdsWholePlant,
 	lackReason,
@@ -637,6 +639,13 @@ interface PairMetrics {
 	readonly crownBoxGap: { readonly reference: number; readonly render: number } | null;
 	readonly frameGap: { readonly reference: number; readonly render: number } | null;
 	/**
+	 * The drawn plant's share of the frame's height over its photograph's: its scale against the
+	 * photograph's. Where it differs from 1 by more than the frame band, the figures read on the
+	 * frame as a whole, the overlap as framed and the whole frame's sky share, compare a larger or a
+	 * smaller plant with the photograph's and are left out; the frame-free figures stand.
+	 */
+	readonly frameScale: number | null;
+	/**
 	 * The row share of each plant's foot, the lowest row of its outline. Every figure that is a
 	 * share of the plant's height counts from this row, so it stands beside them.
 	 */
@@ -650,9 +659,41 @@ interface PairMetrics {
 	readonly foliage: { readonly reference: string | null; readonly render: string | null };
 }
 
+/**
+ * How far a drawn plant's scale may stand from its photograph's before the figures read on the
+ * frame as a whole no longer compare like with like.
+ */
+export const FRAME_SCALE_BAND = 0.05;
+
+/**
+ * The drawn plant's share of the frame's height over its photograph's, from both outlines' boxes:
+ * its scale against the photograph's.
+ */
+export function frameScale(reference: FramedBox, render: FramedBox): number {
+	const tall = (side: FramedBox) => (side.box.bottom - side.box.top + 1) / side.height;
+	return Number((tall(render) / tall(reference)).toFixed(3));
+}
+
+/** Whether figures read on the frame as a whole compare like with like at a drawn plant's scale. */
+export function frameFiguresHold(scale: number | null): boolean {
+	return scale !== null && Math.abs(scale - 1) <= FRAME_SCALE_BAND;
+}
+
 /** Compares a reference frame with a render frame. */
 function pairMetrics(reference: Side, render: Side): PairMetrics {
 	const both = reference.measures.box !== null && render.measures.box !== null;
+	const scale =
+		reference.measures.box && render.measures.box
+			? frameScale(
+					{
+						box: reference.measures.box,
+						width: reference.plant.width,
+						height: reference.plant.height,
+					},
+					{ box: render.measures.box, width: render.plant.width, height: render.plant.height },
+				)
+			: null;
+	const framed = frameFiguresHold(scale);
 	const colour = (a: { lab: readonly number[] } | null, b: { lab: readonly number[] } | null) =>
 		a && b ? Number(deltaE2000(a.lab, b.lab).toFixed(2)) : null;
 	return {
@@ -662,7 +703,8 @@ function pairMetrics(reference: Side, render: Side): PairMetrics {
 			reference.normal && render.normal
 				? Number(iou(reference.normal, render.normal).toFixed(4))
 				: null,
-		frameIou: both ? Number(frameIou(reference.plant, render.plant).toFixed(4)) : null,
+		frameIou: both && framed ? Number(frameIou(reference.plant, render.plant).toFixed(4)) : null,
+		frameScale: scale,
 		footRow:
 			reference.measures.box && render.measures.box
 				? {
@@ -689,9 +731,10 @@ function pairMetrics(reference: Side, render: Side): PairMetrics {
 		crownBoxGap: both
 			? { reference: reference.measures.crownBoxGap, render: render.measures.crownBoxGap }
 			: null,
-		frameGap: both
-			? { reference: reference.measures.frameGap, render: render.measures.frameGap }
-			: null,
+		frameGap:
+			both && framed
+				? { reference: reference.measures.frameGap, render: render.measures.frameGap }
+				: null,
 		foliageDeltaE: colour(reference.measures.foliage, render.measures.foliage),
 		barkDeltaE: colour(reference.measures.bark, render.measures.bark),
 		crownBox: both
@@ -1678,10 +1721,17 @@ export interface StillResult extends PairMetrics {
 	/** Why the picture's outline is not read, where the review data says its reference's cannot be. */
 	readonly outlineVoid?: string;
 	/**
-	 * Why the plant has no such part as the photograph shows, where its view found none: no figure
-	 * is read from the picture, and the rows it carries fail on it.
+	 * Why the plant fails the picture: it has no such part as the photograph shows, or the camera
+	 * holds the part's place and the picture does not show it. No figure is read from the picture
+	 * but its areas', and the rows it carries fail on it.
 	 */
 	readonly lacks?: string;
+	/**
+	 * The cover of each area of a solved view's contract, read from its picture of the parts: wood
+	 * of the subject's thickness, leaves over it, open sky. Figures for the eye beside the
+	 * photograph, and the reasons of a void or a fail.
+	 */
+	readonly areas?: readonly { readonly name: string; readonly cover: number }[];
 	/**
 	 * Whether a check confirmed that the picture shows its photograph's subject: a solved view
 	 * whose contract held and whose regions were read from the picture, or a whole view that passed
@@ -2125,6 +2175,7 @@ export function compareStills(
 			gap: null,
 			crownBoxGap: null,
 			frameGap: null,
+			frameScale: null,
 			foliageDeltaE: null,
 			barkDeltaE: null,
 			crownBox: null,
@@ -2186,18 +2237,23 @@ export function compareStills(
 			]);
 			continue;
 		}
-		// A part the photograph shows and the plant does not have is the plant's fault: the picture
-		// carries no figure, and the rows it carries fail on it.
-		const lacks = lackReason(frame.facts);
-		if (lacks !== undefined) {
-			unread({ lacks }, ['PLANT LACKS', 'THE SUBJECT']);
-			continue;
-		}
-		// A close picture whose subject is missing decides nothing, and no figure is read from it.
-		// The parts in flat colours, where the run drew them: the regions of a solved view's contract
+		// The parts in flat colours, where the run drew them: the areas of a solved view's contract
 		// are read from that picture, which is cut and layered as the colour picture is.
 		const partsPicture =
 			frame.parts === undefined ? undefined : partsOf(readImage(join(runDir, frame.parts)));
+		const areas = areaCovers(frame.facts, partsPicture);
+		// A part the photograph shows and the plant does not have, or hides where the camera holds
+		// its place, is the plant's fault: the picture carries no figure but its areas', and the
+		// rows it carries fail on it.
+		const lacks = lackReason(frame.facts, own, partsPicture);
+		if (lacks !== undefined) {
+			unread({ lacks, ...(areas.length > 0 && { areas }) }, [
+				'PLANT LACKS OR',
+				'HIDES THE SUBJECT',
+			]);
+			continue;
+		}
+		// A picture whose camera or framing failed decides nothing, and no figure is read from it.
 		const voided =
 			voidReason(frame.facts, own, partsPicture) ??
 			emptySubject(frame.facts) ??
@@ -2210,7 +2266,12 @@ export function compareStills(
 		const drawnEarly = frame.query?.view ?? slot.view;
 		const piece = VIEW_SPECS[drawnEarly]?.cutting !== undefined;
 		const subject = piece ? subjectFile?.[slot.file]?.bottom : undefined;
-		const refPlant = plantMask(refImage);
+		// A silhouette is black on white in both pictures, so the photograph is read by the matte's
+		// own rule: a texel is plant where it is darker than half.
+		const refPlant =
+			slot.view === 'silhouette'
+				? halfDarkMask(plantMask(refImage), refImage)
+				: plantMask(refImage);
 		const refSide = side(slot.file, refImage, refPlant, false, habit, piece, subject);
 		const render = renderSideOf(runDir, frame, frame.file, false, habit, piece, subject);
 		// A whole view whose plant is cropped by the frame, or stands at another size than its
@@ -2376,6 +2437,7 @@ export function compareStills(
 					gap: null,
 					crownBoxGap: null,
 					frameGap: null,
+					frameScale: null,
 					barkDeltaE: null,
 					crownBox: null,
 					foliageDeltaE: refPlant.background.plain ? pair.foliageDeltaE : null,
@@ -2424,6 +2486,7 @@ export function compareStills(
 			...(sheathFigure ? { sheath: sheathFigure } : {}),
 			...(framing ? { framing } : {}),
 			...(levelName(frame.cell) !== undefined && { level: levelName(frame.cell) }),
+			...(areas.length > 0 && { areas }),
 			// A solved view whose contract held, or a whole view that passed the framing check.
 			subjectChecked:
 				(contractHeld(frame.facts) &&

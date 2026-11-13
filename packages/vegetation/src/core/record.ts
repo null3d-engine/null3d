@@ -727,12 +727,17 @@ export interface Framed {
 	readonly model: 'frame';
 	/** The stems, the axes under them and the crown outline. */
 	readonly frame: FrameSpec;
-	/** What each socket holds, as the scaffold model states it. */
+	/** What each socket holds: shoot rows as the scaffold model states them, or one branch piece. */
 	readonly sockets: {
 		/** Shoot rows that one socket holds. */
 		readonly rows: Spread;
 		/** Degrees the rows of one socket fan from its line. */
 		readonly fan: number;
+		/**
+		 * The branch piece each socket carries, by its name among the record's pieces. Absent, a
+		 * socket holds shoot rows.
+		 */
+		readonly piece?: string;
 	};
 }
 
@@ -802,7 +807,7 @@ export interface Conifer {
 		readonly plan: { readonly narrow: number; readonly turn: number };
 		/**
 		 * A limb's radius beside the trunk over the trunk's radius at that height, for the shortest
-		 * limb and for the longest.
+		 * limb and for the longest. A limb between them takes its place by its reach.
 		 */
 		readonly radius: readonly [short: number, long: number];
 		/**
@@ -810,7 +815,10 @@ export interface Conifer {
 		 * there, and the distance over which it fades, as a share of the plant's height.
 		 */
 		readonly collar: { readonly swell: number; readonly over: number };
-		/** A limb's radius where its foliage patch begins, over its radius past the collar. */
+		/**
+		 * A limb's radius where its foliage patch begins, over its radius past the collar. Under the
+		 * patch the limb thins on to its end.
+		 */
 		readonly taper: number;
 		/** The most degrees a limb's sideways sway turns it from its course, in slow bends. */
 		readonly wander: number;
@@ -824,13 +832,17 @@ export interface Conifer {
 	 * The limbs that carry on where the trunk divides, spread evenly round it: how many, the degrees
 	 * above level they leave and end at, and each one's radius over the trunk's where it divides.
 	 * The way each runs through its middle is solved so that its foliage patch's top stands at the
-	 * plant's height. Absent on a plant whose trunk runs to its tip.
+	 * plant's height, the first one's at the height and each further one's a step lower. With a
+	 * leader, the first limb carries on as the plant's leader: it reaches that share as far as the
+	 * crown does there, and its patch stands over the trunk's line. Absent on a plant whose trunk
+	 * runs to its tip.
 	 */
 	readonly top?: {
 		readonly limbs: number;
 		readonly leave: number;
 		readonly end: number;
 		readonly radius: number;
+		readonly leader?: number;
 	};
 	/** The foliage patch at a limb's end, which the sockets of its foliage fill. */
 	readonly patch: {
@@ -846,18 +858,24 @@ export interface Conifer {
 		 * patch takes at most seven tenths of its limb's reach.
 		 */
 		readonly width: readonly [short: number, long: number];
+		/**
+		 * Where one patch a limb: the share of the limb's reach, at its outer end, that the patch
+		 * lies along. The patch is then that long along its limb and no wider than it is long, so
+		 * the foliage clothes the limb's outer part and its inner part stays bare. Absent, a patch
+		 * is round and takes at most a stated share of its limb's reach.
+		 */
+		readonly along?: number;
 		/** The patch's depth over its width. */
 		readonly depth: number;
 		/**
 		 * The sockets that fill a patch: the piece each carries, by its name among the record's
-		 * pieces, the metres between one socket and the next, the degrees a side twig leaves at from
-		 * the wood under the patch, and the degrees it rises above level. Absent, a patch carries no
-		 * socket.
+		 * pieces, the metres between one socket and the next over the patch's dome, and the most
+		 * degrees above level that a piece leaves its socket at, where the dome faces the sky.
+		 * Absent, a patch carries no socket.
 		 */
 		readonly sockets?: {
 			readonly piece: string;
 			readonly pitch: number;
-			readonly twig: number;
 			readonly lift: number;
 		};
 	};
@@ -1113,25 +1131,35 @@ export interface FrondColony {
 	readonly model: 'frond-colony';
 	/** Fronds per colony. */
 	readonly fronds: Spread;
-	/** The buried rhizome: metres long, branches, and metres between fronds. */
-	readonly rhizome: {
-		readonly length: number;
-		readonly branches: Spread;
-		readonly spacing: Spread;
-		/**
-		 * Separate masses of fronds, where the photographs show ground between them: the number of
-		 * masses, the metres within which a mass's fronds scatter, and the metres from the colony's
-		 * middle to a mass's centre. Absent, the fronds stand evenly along the rhizome's lines and
-		 * their blades knit into one roof.
-		 */
-		readonly clump?: {
-			readonly count: number;
-			readonly radius: number;
-			readonly ring: number;
-		};
+	/**
+	 * The patch the fronds' feet stand in, spread evenly over an ellipse: its long and its short
+	 * width, as shares of the plant's height.
+	 */
+	readonly patch: { readonly long: number; readonly short: number };
+	/** The buried rhizome that joins the feet: metres under the soil, and its radius in metres. */
+	readonly rhizome: { readonly depth: number; readonly radius: number };
+	/**
+	 * A frond's size as a share of the tallest frond's: the range most fronds take, the range the
+	 * short fronds take, and the short fronds' share of the patch. The short fronds stand at the
+	 * patch's front edge, toward +Z.
+	 */
+	readonly heights: {
+		readonly tall: readonly [number, number];
+		readonly short: readonly [number, number];
+		readonly shortShare: number;
 	};
-	/** Stipe height and lean; the blade is held near horizontal on top. */
-	readonly stipe: { readonly length: Spread; readonly lean: Spread };
+	/**
+	 * The tallest frond's stalk, in metres; the degrees a stalk leans from plumb; and the radius
+	 * of the one curve in which its top turns over to hold the leaf, as a share of its length. A
+	 * frond's stalk is this length at the frond's own size.
+	 */
+	readonly stipe: { readonly length: Spread; readonly lean: Spread; readonly bend: number };
+	/**
+	 * Degrees above level that a stalk's end holds its leaf's midrib at, the least and the most.
+	 */
+	readonly tilt: readonly [number, number];
+	/** The fewest fronds a thinned patch keeps. */
+	readonly least: number;
 	/** One frond. */
 	readonly frond: FrondShape;
 	/** Young fronds still rolled. */
@@ -1778,6 +1806,12 @@ export interface ShootClass {
 	 */
 	readonly stem?: { readonly radius: readonly [base: number, tip: number] };
 	/**
+	 * Whether the shoot draws as its leaves alone, each a cut-out card of two triangles at every
+	 * tier, with no stem and no bud: a cactus's spine cluster, whose card carries its pad and spines
+	 * in its picture and stands in thousands on one plant.
+	 */
+	readonly cards?: boolean;
+	/**
 	 * How this class's leaves or buds stand along its shoots, where the species' arrangement does not
 	 * fit: a studio cutting's photograph shows leaves two-ranked along the twig, while the crown's
 	 * shoots spiral so they fill from every side. The species' `phyllotaxis` by default.
@@ -1880,6 +1914,12 @@ export interface LeafShape {
 	readonly length: Spread;
 	/** The texture's measured contour, or a parametric outline where no texture leaf exists. */
 	readonly outline: 'texture' | ParametricOutline;
+	/**
+	 * The blade's width over its outline's, 1 where absent. Below 1 the mesh narrows across the
+	 * midrib and the texture narrows with it, for a species whose leaves are slimmer than its
+	 * texture leaf.
+	 */
+	readonly breadth?: number;
 	/** The leaf stalk. */
 	readonly petiole: {
 		/** Metres long. */
@@ -2722,6 +2762,12 @@ export interface CutFromPlant {
 	readonly order: number;
 	/** Metres of wood from the cut to the farthest tip. */
 	readonly length: number;
+	/**
+	 * How the piece's photograph stands it: `as-grown` keeps the turn it grew with, as a saguaro's
+	 * arm stands on its elbow with its upright part plumb. Where it names none, the piece stands as
+	 * the cutting asks, upright on the line from its cut.
+	 */
+	readonly stands?: 'as-grown';
 	/**
 	 * The shoots this piece places over the crown's own, from 0.25 to 8: a density of its own, where
 	 * the piece covers more or less than the species' `cuttings.density`, which applies where it
