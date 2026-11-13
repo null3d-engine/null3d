@@ -91,15 +91,10 @@ const Purpose = {
 	Joint: 13,
 } as const;
 
-/**
- * A bud's mesh at a tier: faces around, and whether its profile is rounded, swells to a point, or
- * runs straight to its tip in one band.
- */
+/** A bud's mesh at a tier: faces around, and whether its profile is rounded or a plain cone. */
 export interface BudShape {
 	readonly sides: number;
 	readonly round: boolean;
-	/** A plain cone in one band, for a bud too small at the tier to show its swell. */
-	readonly cone?: boolean;
 }
 
 /** How a tier meshes a shoot's wood and buds. */
@@ -114,6 +109,19 @@ export interface ShootCut {
 	readonly clusterCone?: boolean;
 	/** An axil's bud; absent, the axils draw none. */
 	readonly axil?: BudShape;
+	/**
+	 * Metres below which an axil's bud is left out: a smaller one hides under its leaf and spans a
+	 * pixel or two at the distances the tier draws. Absent, every axil's bud is drawn.
+	 */
+	readonly axilLeast?: number;
+	/** A thorn's and a fruiting body's shapes; absent, a thorn takes the axil's and a body the cluster's. */
+	readonly thorn?: BudShape;
+	readonly body?: BudShape;
+	/**
+	 * Whether a tube of few sides stands wider than its stem's radius, so its outline is as wide as
+	 * the round stem's when averaged over a turn: a three-sided tube on the radius reads a sixth thin.
+	 */
+	readonly meanWidth?: boolean;
 	/**
 	 * Degrees a stem turns between two rings. Set, a ring stands only where the run from the last ring
 	 * meets the next run at that angle or more, so a straight run takes no rings between its ends.
@@ -193,6 +201,8 @@ export interface PlannedBud {
 	 * tip, along which the medium tier draws the whole cluster as one cone.
 	 */
 	readonly stack?: number;
+	/** The species' mark it draws, a thorn or a fruiting body, where it is one and not a bud. */
+	readonly mark?: 'thorn' | 'body';
 }
 
 /**
@@ -1136,6 +1146,8 @@ export function meshShoot(
 ): MeshWriter {
 	const mesh = new MeshWriter();
 	const sides = cut.stemSides;
+	// A regular polygon on a radius is, averaged over a turn, as wide as a circle that much smaller.
+	const widen = cut.meanWidth ? Math.PI / (sides * Math.sin(Math.PI / sides)) : 1;
 	for (const points of plan.axes) {
 		// Rings no closer than twice the stem's radius; a cut of year rings keeps one at each year's end,
 		// and a cut that names a turn keeps one only where the stem bends that far from its last ring, or
@@ -1155,7 +1167,7 @@ export function meshShoot(
 				)
 					continue;
 			}
-			path.push(point);
+			path.push(widen === 1 ? point : { ...point, radius: point.radius * widen });
 		}
 		mesh.mark();
 		tube(mesh, path, sides, (ring) => [
@@ -1166,9 +1178,17 @@ export function meshShoot(
 		]);
 	}
 	for (const bud of plan.buds) {
-		const shape = bud.cluster ? cut.cluster : cut.axil;
+		const shape =
+			bud.mark === 'thorn'
+				? (cut.thorn ?? cut.axil)
+				: bud.mark === 'body'
+					? (cut.body ?? cut.cluster)
+					: bud.cluster
+						? cut.cluster
+						: cut.axil;
 		mesh.mark();
 		if (!shape) continue;
+		if (!bud.cluster && !bud.mark && bud.length < (cut.axilLeast ?? 0)) continue;
 		if (bud.cluster && cut.clusterCone) {
 			// The whole cluster as one cone over its stack, drawn on its tip bud's part.
 			if (bud.stack === undefined) continue;
@@ -1193,23 +1213,18 @@ export function meshShoot(
 		}
 		const w = bud.width / 2;
 		const l = bud.length;
-		const profile: [number, number][] = shape.cone
+		const profile: [number, number][] = shape.round
 			? [
-					[w, 0],
+					[w * 0.6, 0],
+					[w, l * 0.35],
+					[w * 0.7, l * 0.72],
 					[0, l],
 				]
-			: shape.round
-				? [
-						[w * 0.6, 0],
-						[w, l * 0.35],
-						[w * 0.7, l * 0.72],
-						[0, l],
-					]
-				: [
-						[w * 0.5, 0],
-						[w, l * 0.4],
-						[0, l],
-					];
+			: [
+					[w * 0.5, 0],
+					[w, l * 0.4],
+					[0, l],
+				];
 		lathe(mesh, profile, bud.at, bud.direction, shape.sides, [
 			bendByte(bud.along, plan.span),
 			0,
