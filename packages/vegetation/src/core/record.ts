@@ -851,9 +851,24 @@ export interface Conifer {
 		readonly radius: number;
 		readonly leader?: number;
 	};
+	/**
+	 * A closed inner body inside the crown, in the shade of its foliage: one round body on the
+	 * trunk's line whose radius over the plant's height is given by height, from the lowest height
+	 * the curve names to the highest. A closed crown keeps it behind its pieces, so the gaps between
+	 * them show shade and never sky. Absent, the crown has none.
+	 */
+	readonly body?: { readonly radius: Curve };
 	/** The foliage patch at a limb's end, which the sockets of its foliage fill. */
 	readonly patch: {
-		/** A level plate on top of the limb's end, a dome round it, or a tile of a closed shell. */
+		/**
+		 * A level plate on top of the limb's end, a dome round it, or a tile of a closed shell. On a
+		 * shell the crown's reach by height is its outline, a closed surface round the trunk's line:
+		 * the sockets tile it in rows from its lowest named height to its top, each inside it by the
+		 * part of a piece that stands out from its socket, and each pulls its twig from the limb whose
+		 * end stands nearest. Each limb runs on until it stands a piece's length inside the outline,
+		 * and its patch is the part of the shell its sockets tile. A trunk that runs to the tip
+		 * carries no piece there: the shell's top rows close the top.
+		 */
 		readonly kind: 'pad' | 'dome' | 'shell';
 		/**
 		 * One patch a limb, which the limb's arms spread under, or one patch at the limb's end and one
@@ -877,13 +892,20 @@ export interface Conifer {
 		/**
 		 * The sockets that fill a patch: the piece each carries, by its name among the record's
 		 * pieces, the metres between one socket and the next over the patch's dome, and the most
-		 * degrees above level that a piece leaves its socket at, where the dome faces the sky.
-		 * Absent, a patch carries no socket.
+		 * degrees above level that a piece leaves its socket at, where the dome faces the sky. On a
+		 * shell the pitch is the metres between neighbours in a row, and each piece stands up the
+		 * shell, leaning out from it by the lift's degrees. Absent, a patch carries no socket.
 		 */
 		readonly sockets?: {
 			readonly piece: string;
 			readonly pitch: number;
 			readonly lift: number;
+			/**
+			 * On a shell, the metres between one row of sockets and the next, measured up the
+			 * outline. Each row turns on from the one below by half its pitch, as bricks lie. Absent,
+			 * the pitch.
+			 */
+			readonly rise?: number;
 		};
 	};
 }
