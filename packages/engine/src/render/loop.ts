@@ -146,11 +146,13 @@ export const CAPTURE_WAIT_CALLBACKS = 120;
 /**
  * How long a capture waits for any animation frame callback before it fails by the stopped clock.
  * A page that is hidden or throttled runs no callbacks at all, so the callback count alone never
- * ends the wait. The slowest measured software frame was 2.2 seconds, the wind demo's 16 frames in
- * 35 seconds on CI's software GPU, and this sits about 13 times above it, so a working slow page
- * still ends its wait by taking a frame.
+ * ends the wait. A working page also runs none while it builds its pipelines: the island's first
+ * frame takes about 200 seconds on CI's software renderer, and one run drew no frame of the island
+ * within 300 while its twelve heavy shards shared a runner. The clock therefore sits above a whole
+ * first frame, so a slow page ends its wait by taking a frame, and a page that has stopped still
+ * fails inside the page budgets, the tightest of which is ten minutes.
  */
-export const CAPTURE_CLOCK_MS = 30_000;
+export const CAPTURE_CLOCK_MS = 480_000;
 
 /**
  * Resolves once the frame loop on this thread has taken a frame after this call. It checks in this
