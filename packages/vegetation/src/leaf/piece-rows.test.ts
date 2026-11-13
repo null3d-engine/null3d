@@ -4,13 +4,78 @@
 import { beforeAll, describe, expect, it } from 'bun:test';
 import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
 import type { PlantAsset, SpeciesKitData } from '../asset';
-import { capsFor } from '../core/caps';
 import { hashBytes } from '../core/hash';
+import { quatRotate, type Vector3 } from '../core/math';
 import { loadSpecies } from '../core/registry';
+import { DETAILS } from '../core/types';
 import { buildKitNow, growPlantNow, loadPlantCode } from '../generate';
 import { carriesPieces, PROTOTYPES_MOST } from './piece-rows';
 
 const LONG = scaledBudget(120_000);
+
+/** A box in plant space. */
+interface Box {
+	readonly min: number[];
+	readonly max: number[];
+}
+
+/** An empty box that any point widens. */
+const emptyBox = (): Box => ({
+	min: [Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY],
+	max: [Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY],
+});
+
+/** The box of every placed row's mesh: its prototype's own box, scaled, turned and moved. */
+function placedBox(kit: SpeciesKitData, asset: PlantAsset): Box {
+	const tier = DETAILS.indexOf(kit.detail);
+	const boxes = kit.prototypes.map((prototype) => {
+		const box = emptyBox();
+		const positions = prototype.tiers[tier]?.positions ?? new Float32Array(0);
+		for (let i = 0; i < positions.length; i += 3)
+			for (let k = 0; k < 3; k++) {
+				box.min[k] = Math.min(box.min[k] as number, positions[i + k] as number);
+				box.max[k] = Math.max(box.max[k] as number, positions[i + k] as number);
+			}
+		return box;
+	});
+	const rows = asset.shoots;
+	const out = emptyBox();
+	const corner: Vector3 = [0, 0, 0];
+	const turned: Vector3 = [0, 0, 0];
+	for (let r = 0; r < rows.count; r++) {
+		const box = boxes[rows.prototype[r] as number] as Box;
+		const scale = rows.scale[r] as number;
+		for (let c = 0; c < 8; c++) {
+			for (let k = 0; k < 3; k++)
+				corner[k as 0] = ((c & (1 << k) ? box.max : box.min)[k] as number) * scale;
+			quatRotate(rows.rotation, r * 4, corner, turned);
+			for (let k = 0; k < 3; k++) {
+				const at = turned[k as 0] + (rows.position[r * 3 + k] as number);
+				out.min[k] = Math.min(out.min[k] as number, at);
+				out.max[k] = Math.max(out.max[k] as number, at);
+			}
+		}
+	}
+	return out;
+}
+
+/** The box of a card level's cards, read from their quantised positions inside the species' box. */
+function cardBox(kit: SpeciesKitData, asset: PlantAsset, level: 1 | 2): Box {
+	const out = emptyBox();
+	for (const part of asset.levels[level].parts) {
+		if (part.name !== 'cards') continue;
+		const positions = part.arrays.positions;
+		for (let i = 0; i < positions.length; i += 3)
+			for (let k = 0; k < 3; k++) {
+				const low = kit.box.min[k] as number;
+				const at =
+					low + ((positions[i + k] as number) / 65535) * ((kit.box.max[k] as number) - low);
+				out.min[k] = Math.min(out.min[k] as number, at);
+				out.max[k] = Math.max(out.max[k] as number, at);
+			}
+	}
+	return out;
+}
 
 describe('the Scots pine, grown with its boughs at sockets', () => {
 	let kit: SpeciesKitData;
@@ -77,15 +142,29 @@ describe('the Scots pine, grown with its boughs at sockets', () => {
 		}
 	});
 
-	it('draws the plant to its height and inside its caps', () => {
+	it("draws its foliage to the record's height, the far cards at the size of the boughs they picture", () => {
 		const height = kit.record.size.height;
 		const [low, high] =
 			typeof height === 'number'
 				? [height, height]
 				: [height.mean - height.spread, height.mean + height.spread];
-		expect(asset.skeleton.height).toBeGreaterThan(low * 0.9);
-		expect(asset.skeleton.height).toBeLessThanOrEqual(high);
-		expect(capsFor(kit.record)).toBeDefined();
+		const near = placedBox(kit, asset);
+		const top = near.max[1] as number;
+		// The top of the drawn boughs stands inside the heights the record may draw.
+		expect(top).toBeGreaterThanOrEqual(low);
+		expect(top).toBeLessThanOrEqual(high * 1.01);
+		// Each card level stands as tall and as wide as the boughs it stands for: a far tree larger
+		// than the near one is a different tree.
+		for (const level of [1, 2] as const) {
+			const far = cardBox(kit, asset, level);
+			expect(Math.abs((far.max[1] as number) - top)).toBeLessThan(0.015 * top);
+			for (const k of [0, 2] as const) {
+				const wide = (near.max[k] as number) - (near.min[k] as number);
+				expect(Math.abs((far.max[k] as number) - (far.min[k] as number) - wide)).toBeLessThan(
+					0.03 * wide,
+				);
+			}
+		}
 	});
 
 	it(
