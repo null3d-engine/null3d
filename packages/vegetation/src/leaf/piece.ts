@@ -24,7 +24,15 @@ import {
 	type Vector3,
 } from '../core/math';
 import type { Phyllotaxis, Species } from '../core/record';
-import { type Curve, curveAt, type Spread, spreadAt, spreadMean, type Vec3 } from '../core/types';
+import {
+	type Curve,
+	curveAt,
+	DETAILS,
+	type Spread,
+	spreadAt,
+	spreadMean,
+	type Vec3,
+} from '../core/types';
 import {
 	type AxisPoint,
 	addBudCluster,
@@ -159,10 +167,12 @@ export interface PieceStem {
 	 */
 	readonly kink?: { readonly length: number; readonly angle: number };
 	/**
-	 * The most degrees the stem turns between two rings that the low tier keeps. The low tier draws a
-	 * stem as straight runs between the rings it keeps, its foot and its tip where this is absent, as
-	 * suits a short twig; a long arched stem, such as a palm frond's rachis, names a bend so its far
-	 * mesh keeps its arch.
+	 * The most degrees the stem turns between two of its rings, at every tier: a ring stands at its
+	 * ends and wherever it has turned this far since the last. A long arched stem, such as a palm
+	 * frond's rachis, keeps its arch at the low tier, which otherwise draws its foot and its tip
+	 * alone, and a long thin straight one, such as a fern's pinna midrib, keeps a few rings at every
+	 * tier rather than one at each of its nodes. Absent, each tier keeps the rings its own spacing
+	 * gives.
 	 */
 	readonly rings?: number;
 	/** Its leaves, where it carries any. */
@@ -197,6 +207,13 @@ export interface PieceRule {
 	 * three planes.
 	 */
 	readonly lengthwise?: boolean;
+	/**
+	 * The main stem that the low and medium tiers draw in place of `stem`: a coarser plan of the same
+	 * piece, such as a fern frond whose pinnae are one leaf each far off where its near tiers draw
+	 * each pinnule. It holds the same variant's draws and must split into as many parts. Absent,
+	 * every tier draws `stem`.
+	 */
+	readonly far?: PieceStem;
 	/**
 	 * The ground side in the piece's frame, where it is not its attitude's own: a piece that stands
 	 * upright on its socket names the way back along its line, so its side stems lift toward its tip.
@@ -496,7 +513,11 @@ export function planPiece(
 					stem.rings;
 			if (ring) ringDirection = [...direction];
 			points.push(
-				ring ? { at: [...at], radius, along, unitEnd: true } : { at: [...at], radius, along },
+				ring
+					? { at: [...at], radius, along, unitEnd: true }
+					: stem.rings !== undefined
+						? { at: [...at], radius, along, plain: true }
+						: { at: [...at], radius, along },
 			);
 			frames.push({ at: [...at], direction: [...direction], sky: [...sky], along });
 			if (atNode && leavesBy && from + run >= leafFrom - 1e-9) {
@@ -709,8 +730,25 @@ export function piecePrototypes(
 	const out: PiecePrototype[] = [];
 	for (const [r, rule] of rules.entries())
 		for (let variant = 0; variant < Math.min(16, Math.max(1, rule.variants)); variant++) {
-			const parts = splitPlan(planPiece(record, rule, pieceKey(r, variant), leafMeshes), finest);
-			for (const [part, plan] of parts.entries())
+			const key = pieceKey(r, variant);
+			const parts = splitPlan(planPiece(record, rule, key, leafMeshes), finest);
+			const far = rule.far
+				? splitPlan(planPiece(record, { ...rule, stem: rule.far }, key, leafMeshes), finest)
+				: undefined;
+			if (far && far.length !== parts.length)
+				throw new Error(
+					`@null3d/vegetation: the piece '${rule.name}' splits into ${parts.length} parts near and ${far.length} far; give its far stem the same parts`,
+				);
+			for (const [part, plan] of parts.entries()) {
+				const near = meshedPlan(plan, leaves);
+				// The low and medium tiers take the far plan's meshes, where the rule names one.
+				const farPlan = far?.[part];
+				const farTiers = farPlan ? meshedPlan(farPlan, leaves).tiers : undefined;
+				const tiers = farTiers
+					? (near.tiers.map((tier, t) =>
+							t <= DETAILS.indexOf('medium') ? farTiers[t] : tier,
+						) as unknown as typeof near.tiers)
+					: near.tiers;
 				out.push({
 					piece: rule.name,
 					variant,
@@ -719,8 +757,10 @@ export function piecePrototypes(
 					parts: parts.length,
 					...(rule.plane ? { plane: rule.plane } : {}),
 					...(rule.lengthwise ? { lengthwise: true } : {}),
-					...meshedPlan(plan, leaves),
+					...near,
+					tiers,
 				});
+			}
 		}
 	return out;
 }

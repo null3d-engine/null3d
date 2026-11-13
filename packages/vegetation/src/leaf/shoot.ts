@@ -129,6 +129,8 @@ export interface AxisPoint {
 	readonly along: number;
 	/** Whether a year's growth unit ends here, where the low tier keeps a ring. */
 	readonly unitEnd?: boolean;
+	/** Whether no tier keeps a ring here: a stem that rings by its bend rings only where it bends. */
+	readonly plain?: boolean;
 }
 
 /** One leaf of the plan. */
@@ -1119,6 +1121,7 @@ export function meshShoot(
 			const last = path[path.length - 1];
 			const end = k === points.length - 1;
 			if (last && !end) {
+				if (point.plain) continue;
 				const gap = point.along - last.along;
 				if (gap < point.radius * 2 || (detail === 'low' && !point.unitEnd)) continue;
 			}
