@@ -131,7 +131,12 @@ export const PACKAGES: Readonly<Record<string, PackageBuild>> = {
 		compile: true,
 		shaders: false,
 		docs: false,
-		required: ['dist/shader-compiler.wasm', 'lib/client.d.ts', 'THIRD-PARTY-NOTICES.txt'],
+		required: [
+			'dist/shader-compiler.wasm',
+			'dist/shader-compiler.stamp.json',
+			'lib/client.d.ts',
+			'THIRD-PARTY-NOTICES.txt',
+		],
 	},
 	controls: {
 		compile: true,
