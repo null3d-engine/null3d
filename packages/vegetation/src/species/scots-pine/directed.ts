@@ -155,7 +155,8 @@ export const directed: Species = {
 			// brushes, each 0.21 to 0.28 of its length across, so seven of them tile a square 0.36 m
 			// on a side. At that spacing over the whole dome the crown reads more closed than stills
 			// 01, 02 and 18 at the first card level; one bough to each 0.42 m square brings 01 and 18
-			// inside the review's band.
+			// inside the review's band. Still 02 holds more sky inside its crown: its tree starts the
+			// crown at 0.33 of its height and holds more tiers, a different tree from picture 01's.
 			// Stills 04 and 20: the brushes on a pad's top stand turned up and those at its rim
 			// reach out. The steepest that a bough leaves its twig is read by eye.
 			sockets: { piece: 'bough', pitch: 0.42, lift: 45 },
@@ -176,6 +177,10 @@ export const directed: Species = {
 			// The kit of three bough variants holds 13,073,360 bytes at the finest tier, where each
 			// needle draws round; the tree model's cap there is 22,600,000.
 			kitBytes: { ...record.lod.budget.kitBytes, ultra: 13_200_000 },
+			// The default plant spends the triangles its best look needs. The first card level draws
+			// one card a bough and the twigs that carry them: 144,157 at seed 11 with pads as deep as
+			// still 02's thinnest. A shallower pad would fit 140,000 and fall below them.
+			lod1Triangles: 145_000,
 		},
 	},
 	bark: {
