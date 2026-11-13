@@ -610,10 +610,11 @@ export class MeshGeometry {
 	 * vertices, in their own order, so they cost indices alone: the mesh keeps its vertices and
 	 * triangles as they are. A mesh that the engine split into parts, past 65,535 vertices, shares
 	 * them part by part, and copies only the vertices of the triangles that cross from one part to
-	 * another. A large mesh spreads the work over frames: the engine reads one part of it in each
-	 * frame for the plan, and gives it one level in each frame, coarsest first, when the plan is
-	 * done. The mesh draws its full shape until the levels arrive, and every object and instance
-	 * batch that draws it then picks its level. The mesh and each level of 32,768 triangles or more
+	 * another. A large mesh spreads the work over frames. The engine reads one part of it in each
+	 * frame for the plan. It makes one level in each frame when the plan is done, and gives the
+	 * scene the whole set once, so the scene's draw tables rebuild once. The mesh draws its full
+	 * shape until the levels arrive, and every object and instance batch that draws it then picks
+	 * its level. The mesh and each level of 32,768 triangles or more
 	 * also get 8 to 16 pieces, which each copy skips where they lie outside the view or face away.
 	 * A smaller list that many copies draw gets a piece for each way it faces where its triangles
 	 * face a few ways, as a building's walls do. A mesh that one object draws, or a smaller mesh,
@@ -748,9 +749,9 @@ export class MeshGeometry {
 	/**
 	 * Gives the mesh the levels that a plan made, unless a later call ended the plan, or the plan
 	 * was the automatic default's and the mesh has refused automatic levels or holds levels set by
-	 * hand since. The levels arrive one a frame, coarsest first, so that no frame takes the work of
-	 * every level of a large mesh: each frame's set holds the levels made so far, and the mesh draws
-	 * its base mesh nearer than the finest of them. Hold mode takes them all at once.
+	 * hand since. The plan makes one level a frame, so that no frame takes the work of every level
+	 * of a large mesh. It gives the set to the scene once, when the plan ends. The scene's draw
+	 * tables then rebuild once, however many levels the plan made. Hold mode takes them all at once.
 	 */
 	private async takePlan(
 		output: LevelsTaskOutput,
@@ -775,18 +776,31 @@ export class MeshGeometry {
 		});
 		const old = this.built;
 		const made: MeshGeometry[] = [];
-		for (let k = planned.length - 1; k >= 0; k--) {
-			if (made.length > 0) await this.nextFrame();
-			if (ended()) return this.levels;
-			made.unshift(this.levelMesh(planned[k] as TaskLevel, call));
-			this.applyLevels(
-				made.map((mesh, j) => ({ mesh, error: errors[k + j] as number, fade: false })),
-				{},
-				call,
-			);
-			this.built = made.slice();
-			this.builtAutomatically = entry.automatic;
-			if (made.length === 1) this.freeMeshes(old, call);
+		try {
+			for (let k = planned.length - 1; k >= 0; k--) {
+				if (made.length > 0) await this.nextFrame();
+				if (ended()) {
+					this.freeMeshes(made, call);
+					return this.levels;
+				}
+				made.unshift(this.levelMesh(planned[k] as TaskLevel, call));
+			}
+			// One hand-over for the whole set: the scene rebuilds its draw tables once, and each
+			// level's mesh still arrives in its own frame.
+			if (made.length > 0) {
+				this.applyLevels(
+					made.map((mesh, j) => ({ mesh, error: errors[j] as number, fade: false })),
+					{},
+					call,
+				);
+				this.built = made.slice();
+				this.builtAutomatically = entry.automatic;
+				this.freeMeshes(old, call);
+			}
+		} catch (error) {
+			// The plan's levels that the scene does not name yet go with it.
+			this.freeMeshes(made, call);
+			throw error;
 		}
 		// The mesh's own pieces come last, in a frame of their own, since the copy of a large list
 		// takes as long as a level's. They take the place of the pieces of an earlier plan.

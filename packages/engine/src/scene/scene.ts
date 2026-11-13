@@ -4145,7 +4145,7 @@ export class Scene implements ViewHolder {
 
 	/**
 	 * @internal The frame that the sketch ran last, and whether hold mode steps the frames, which a
-	 * mesh reads to hand over its planned levels one a frame.
+	 * mesh reads to make its planned levels one a frame.
 	 */
 	get pace(): { readonly frame: number; readonly held?: boolean } {
 		return this.time;
