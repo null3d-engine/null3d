@@ -172,20 +172,53 @@ the pictures were drawn at.
   still's result): the wood per tip and the tips per area within a quarter of the photograph's, the
   share of fan joints at most a tenth above it, and the kinks at least half of it. The reviewer
   judges the row.
+- A picture of a part that the plant does not have is listed under the row's `lacking`, and the
+  tool fails the row on it. The species' reference set holds the photograph, so the species has the
+  part, and a plant grown without it is wrong. A void is different: the plant has the part and the
+  camera did not frame it.
+- A picture with no subject check is listed under the row's `unchecked`. A solved view is checked
+  by its contract, and a whole view by the crop and size checks. No row passes on unchecked
+  pictures alone.
+- A reference picture of the row that the run did not compare is listed under `notCompared`.
+- Rows 1 to 3 name the run's picture of the wood alone, `views/skeleton.png`, among their evidence.
+  A run that draws every still draws that picture too. None of those rows passes without it.
+- `balance` holds the plant's balance through the eight angles of the standard's coverage rule. Its
+  figures are the spread of the crown box's width and of its height over the whole-plant turning
+  video, each against its band. The tool fails the balance where a spread leaves its band.
+  Otherwise the balance waits for a reviewer, like a row.
 - A reviewer edits the file: sets a row's `verdict`, sets `judge` to `reviewer`, and gives a
-  `reason` for a fail or a void. Row 11 names its `neighbour`. A run compared again keeps every row
-  a reviewer judged and refreshes the rest.
+  `reason`. A pass also needs `review`: the reviewer's name, the day as year, month and day, and
+  the path of the review file that holds the reading. That file must exist and must name the row
+  as `row 6`, or name the `balance`. Row 11 names its `neighbour`. A run compared again keeps
+  every row a reviewer judged and refreshes the rest.
 
-`bun run plants:ledger <path...>` reads verdict files and prints the species by row table and the
-total. A path is a verdict file, a run folder, or a folder of either.
+`bun run plants:ledger <path...>` reads the verdict files of run folders and prints the species by
+row table and the total. A path is a run folder or a folder of run folders.
 
 ```sh
-bun run plants:ledger /tmp/plant-renders --species pedunculate-oak,silver-birch
+bun run plants:ledger /tmp/plant-renders
 ```
 
+The table always holds the standard's twenty species, and the total's base is always 240 rows. A
+species with no verdict counts as none of its twelve. Under each species the command prints how many
+pictures each row lost: not compared, void, of a part the plant lacks, set aside, or with no
+subject check. A species is done when its twelve rows and its balance pass and its run compared
+every reference file.
+
 The command ends with status 1 and prints no total when a verdict is unsound. A verdict is unsound
-when a row is missing, a judged row names no judge, a fail gives no reason, a figure names another
-run than the file's, a pass rests on no picture or only on void ones, a pass is the tool's and not a
-reviewer's, or the run folder's manifest names another run or commit. Two verdict files for
-one species stop the count too, and so does a species that `--species` names and no file holds.
+in each of these cases:
+
+- A row is missing, a judged row names no judge, or a fail or a void gives no reason.
+- A figure names another run than the file's.
+- The file is not `verdict.json` in its run folder, or the folder holds no manifest, or the
+  manifest names another run, commit or species.
+- The commit is not a commit's full name.
+- A picture the verdict names is not in the run folder.
+- A pass is the tool's, or lacks its reason, reviewer, day or review file.
+- A pass rests on no picture, only on void pictures, or only on pictures with no subject check.
+- A pass stands on a run drawn from a tree with changes, or on a run that did not compare every
+  reference file.
+- A row passes though the plant lacks a part its photograph shows.
+- Two verdict files name one species, or a file names a species outside the twenty.
+
 Quote a count of passing rows only from this command's output.

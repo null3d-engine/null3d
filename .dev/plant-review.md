@@ -385,6 +385,16 @@ The tool reads no figure from a void picture and writes the reason beside it. A 
 fault to fix in the tool's camera or in the file's mapping to a view. It never passes a row and
 never fails one. A row whose pictures are all void is void, and a void row is not a pass.
 
+**A part the plant lacks is a fail, not a void.** A void is for a camera or a framing failure on a
+plant that has the part. Where the species' reference shows a part and the grown plant has none,
+the plant is wrong: the tool fails the rows that the picture carries and names the missing part. A
+plant with no trunk fork under its crown fails the fork picture's rows. It does not void them.
+
+**A picture with no subject check passes no row alone.** A solved view is checked by its contract,
+and a whole view by the crop and size checks. A view with neither may show another subject than its
+photograph. The verdict lists such pictures as not checked, and a row that rests only on them cannot
+pass.
+
 **A same-angle conflict is a reference conflict; a cross-angle comparison is not.** When two
 reference pictures disagree, read the turn each is drawn at. Compare only figures at the same turn,
 and intersect their bands. A figure at turn 0 and a figure at turn 90 do not bind one projection.
@@ -617,6 +627,16 @@ The reviewer writes the rows into the run's verdict file, `verdict.json`, beside
 Each row is `pass`, `fail`, `void` or `unjudged`. It names its pictures, its figures and their
 bands, and its judge. The file names the run and the commit the pictures were drawn at.
 
+A pass names the reviewer, the day of the reading and the review file that holds it, and gives its
+reason. The review file must exist and must name the row.
+
+Rows 1 to 3 are judged on the picture of the wood alone, which the verdict names among their
+evidence. None of them passes without it.
+
+The verdict holds the balance through eight angles beside the twelve rows. Its figures are the
+spread of the crown box's width and of its height over the whole-plant turning video. The balance is
+judged like a row, and a species is not done until it passes.
+
 The tool passes no row. A plant can hold every figure and still not look like its photograph, so
 only a reviewer's entry passes a row. For rows 6, 8 and 10, whose bands this page states, the tool
 records the figures and a proposal: figures in band, or figures out of band with the ones outside.
@@ -629,13 +649,26 @@ Every count of passing rows comes from `bun run plants:ledger`, which reads the 
 prints the species by row table and the total. No count is kept by hand in a report, a record or a
 handoff. Discard any count that the command cannot rebuild from the files it names.
 
+The total's base is fixed: the standard's twenty species times its twelve rows, 240. A species
+with no verdict counts as none of its twelve, so a count over a few species cannot read as a count
+over all. Under each species the command prints how many pictures each row lost: not compared, void,
+of a part the plant lacks, set aside, or with no subject check.
+
 The command refuses to count in each of these cases:
 
 - A verdict lacks a row.
 - A figure names another run than its file.
-- A judged row names no judge, or a failed row gives no reason.
-- A pass rests on no picture, or only on void ones.
-- Two files name one species.
+- A judged row names no judge, or a failed or void row gives no reason.
+- A verdict file is not in its run folder, or the folder's manifest is absent or names another run,
+  commit or species.
+- The commit is not a commit's full name, or a picture the verdict names is not in the folder.
+- A pass lacks its reason, its reviewer, its day or its review file, or the review file does not
+  exist or does not name the row.
+- A pass rests on no picture, only on void ones, or only on pictures with no subject check.
+- A pass stands on a run drawn from a tree with changes, or on a run that did not compare every
+  reference file.
+- A row passes though the plant lacks a part its photograph shows.
+- Two files name one species, or a file names a species outside the twenty.
 
 A report quotes the command's total with the folder it read.
 

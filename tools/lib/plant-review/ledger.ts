@@ -1,11 +1,14 @@
-// The ledger of the plant review: the species by row table and its total, read from a folder of
-// verdict files and from nothing else. Every count that a report quotes comes from here, so a count
-// can always be rebuilt from the files it names. A verdict that is unsound, a species named twice
-// or a verdict whose run folder disagrees with it stops the count rather than entering it.
+// The ledger of the plant review: the species by row table and its total, read from verdict files
+// in their run folders and from nothing else. Every count that a report quotes comes from here, so
+// a count can always be rebuilt from the files it names. The total's base never moves: the twenty
+// species of the standard times its twelve rows, and a species with no verdict counts as none of
+// twelve. A pass is counted only with what makes it a reviewer's reading of a sound run: a clean
+// and complete run, its manifest, the pictures it names, and a review file that names the row.
 
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
-import { basename, dirname, join } from 'node:path';
+import { basename, dirname, isAbsolute, join } from 'node:path';
 import {
+	type Balance,
 	ROW_NAMES,
 	type RowVerdict,
 	VERDICT_FILE,
@@ -14,149 +17,274 @@ import {
 	verdictFaults,
 } from './verdict.ts';
 
-/** One verdict file and what it holds. */
-export interface LedgerEntry {
-	readonly path: string;
-	readonly verdict: Verdict;
+/** The twenty species the standard judges, which fix the total's base. */
+export const REVIEW_SPECIES = [
+	'bamboo',
+	'bracken',
+	'common-alder',
+	'common-ash',
+	'date-palm',
+	'european-beech',
+	'giant-sequoia',
+	'hawthorn-shrub',
+	'holm-oak',
+	'hosta',
+	'italian-cypress',
+	'meadow-grass',
+	'olive',
+	'pedunculate-oak',
+	'saguaro',
+	'scots-pine',
+	'sedge',
+	'silver-birch',
+	'tree-fern',
+	'weeping-willow',
+] as const;
+
+/** One species' line of the ledger. */
+export interface LedgerLine {
+	readonly species: string;
+	/** The run and commit its rows were read at, or null for a species with no verdict. */
+	readonly run: string | null;
+	readonly commit: string | null;
+	readonly path: string | null;
+	readonly coverage: boolean;
+	readonly balance: RowVerdict;
+	readonly rows: readonly RowVerdict[];
+	readonly passes: number;
+	/** Whether the species is done: twelve passes, the balance passed and every reference compared. */
+	readonly complete: boolean;
+	/** The pictures out of each row: not compared, void, set aside, lacking their part, or not checked. */
+	readonly taken: readonly {
+		readonly row: number;
+		readonly notCompared: number;
+		readonly voided: number;
+		readonly setAside: number;
+		readonly lacking: number;
+		readonly unchecked: number;
+	}[];
 }
 
 /** The ledger of a set of verdict files. */
 export interface Ledger {
-	/** One line per species, in name order: its twelve row verdicts in order. */
-	readonly species: readonly {
-		readonly species: string;
-		readonly run: string;
-		readonly commit: string;
-		readonly path: string;
-		readonly coverage: boolean;
-		readonly rows: readonly RowVerdict[];
-		readonly passes: number;
-	}[];
+	readonly species: readonly LedgerLine[];
 	/** The rows of every species together, by verdict. */
 	readonly totals: Readonly<Record<RowVerdict, number>>;
-	/** How many rows the species have between them. */
+	/** The total's base: the standard's species times its rows. */
 	readonly rows: number;
+	/** How many species are done. */
+	readonly complete: number;
 	/** What stops the count, one line each; none when the ledger is sound. */
 	readonly faults: readonly string[];
 }
 
 /**
- * The verdict files a path names: the file itself, the verdict of a run folder, or every verdict
- * file and run folder directly inside a folder. A path that names none is a fault of the caller's.
+ * The verdict files a path names: the verdict of a run folder, or of every run folder directly
+ * inside a folder. A verdict lives in its run folder beside the manifest and the pictures it is
+ * checked against, so a file anywhere else is named as a fault and not read.
  */
-export function verdictPaths(path: string): string[] {
+export function verdictPaths(path: string): { readonly found: string[]; readonly stray: string[] } {
 	if (!existsSync(path)) throw new Error(`${path} does not exist.`);
-	if (statSync(path).isFile()) return [path];
+	if (statSync(path).isFile())
+		return basename(path) === VERDICT_FILE
+			? { found: [path], stray: [] }
+			: { found: [], stray: [path] };
 	const own = join(path, VERDICT_FILE);
-	if (existsSync(own)) return [own];
+	if (existsSync(own)) return { found: [own], stray: [] };
 	const found: string[] = [];
+	const stray: string[] = [];
 	for (const name of readdirSync(path).sort()) {
 		const entry = join(path, name);
 		if (statSync(entry).isDirectory()) {
 			const inside = join(entry, VERDICT_FILE);
 			if (existsSync(inside)) found.push(inside);
-		} else if (name.endsWith('.json')) found.push(entry);
+		} else if (name.endsWith('.json')) stray.push(entry);
 	}
-	return found;
+	return { found, stray };
+}
+
+/** A commit's full name: forty hexadecimal digits, and not all zero. */
+function realCommit(commit: string): boolean {
+	return /^[0-9a-f]{40}$/.test(commit) && !/^0+$/.test(commit);
 }
 
 /**
- * What a verdict's own run folder says against it: a manifest of another run, commit or species,
- * a folder of another name, or a picture the verdict names that the folder does not hold. Only a
- * verdict kept in its run folder is read this way, since a copy elsewhere has no pictures beside it.
+ * What a verdict's run folder says against it: no manifest, a manifest of another run, commit or
+ * species, a commit that is no commit, or a picture the verdict names that the folder lacks.
  */
 function folderFaults(path: string, verdict: Verdict): string[] {
-	if (basename(path) !== VERDICT_FILE) return [];
 	const folder = dirname(path);
 	const faults: string[] = [];
 	const manifestPath = join(folder, 'manifest.json');
-	if (existsSync(manifestPath)) {
+	if (!existsSync(manifestPath)) faults.push('its run folder holds no manifest');
+	else {
 		const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as {
 			run?: string;
 			commit?: string;
 			species?: string;
+			dirty?: boolean;
 		};
 		for (const field of ['run', 'commit', 'species'] as const)
 			if (manifest[field] !== verdict[field])
 				faults.push(
 					`it names the ${field} ${verdict[field]}, and the manifest beside it names ${String(manifest[field])}`,
 				);
-	} else if (basename(folder) !== verdict.run)
-		faults.push(`it names the run ${verdict.run} and sits in the folder ${basename(folder)}`);
-	for (const row of verdict.rows)
-		for (const picture of row.evidence)
-			if (!existsSync(join(folder, picture)))
-				faults.push(`row ${row.row} names the picture ${picture}, which its run folder lacks`);
+		if (manifest.dirty !== verdict.dirty)
+			faults.push('it and the manifest beside it disagree about whether the run drew a clean tree');
+	}
+	if (!realCommit(verdict.commit))
+		faults.push(`its commit ${verdict.commit} is no commit's full name`);
+	const pictures = new Set([
+		...verdict.rows.flatMap((row) => row.evidence),
+		...verdict.balance.evidence,
+	]);
+	for (const picture of pictures)
+		if (!existsSync(join(folder, picture)))
+			faults.push(`it names the picture ${picture}, which its run folder lacks`);
 	return faults;
 }
 
 /**
- * The ledger of the verdict files that some paths name. With `expected`, a species of that list
- * with no verdict, and a verdict for a species outside it, are faults too.
+ * What a pass lacks of a sound run and a reviewer's reading: a clean tree, every reference
+ * compared, and a review file that exists and names the row.
  */
-export function ledgerOf(paths: readonly string[], expected?: readonly string[]): Ledger {
+function passFaults(
+	path: string,
+	verdict: Verdict,
+	entry: VerdictRow | Balance,
+	at: string,
+	names: readonly RegExp[],
+): string[] {
+	if (entry.verdict !== 'pass') return [];
 	const faults: string[] = [];
-	const entries: LedgerEntry[] = [];
-	const files = paths.flatMap((path) => verdictPaths(path));
-	if (files.length === 0) faults.push('no verdict file was found');
-	for (const path of files) {
-		let value: unknown;
-		try {
-			value = JSON.parse(readFileSync(path, 'utf8'));
-		} catch (error) {
-			faults.push(`${path}: it is not JSON: ${(error as Error).message}`);
-			continue;
+	if (verdict.dirty) faults.push(`${at} passes on a run drawn from a tree with changes`);
+	if (!verdict.coverage.complete)
+		faults.push(
+			`${at} passes though the run compared ${verdict.coverage.compared} of ${verdict.coverage.inUse} reference files`,
+		);
+	const file = entry.review?.file;
+	if (file) {
+		const review = isAbsolute(file) ? file : join(dirname(path), file);
+		if (!existsSync(review))
+			faults.push(`${at} names the review file ${file}, which does not exist`);
+		else {
+			const text = readFileSync(review, 'utf8');
+			if (!names.some((name) => name.test(text)))
+				faults.push(`${at} names the review file ${file}, which does not name it`);
 		}
-		const own = verdictFaults(value);
-		if (own.length > 0) {
-			faults.push(...own.map((fault) => `${path}: ${fault}`));
-			continue;
+	}
+	return faults;
+}
+
+/** The ledger of the verdict files that some paths name, over the standard's twenty species. */
+export function ledgerOf(paths: readonly string[]): Ledger {
+	const faults: string[] = [];
+	const bySpecies = new Map<string, { readonly path: string; readonly verdict: Verdict }[]>();
+	for (const given of paths) {
+		const { found, stray } = verdictPaths(given);
+		for (const path of stray)
+			faults.push(
+				`${path}: a verdict is read only as ${VERDICT_FILE} in its run folder, where its manifest and pictures check it`,
+			);
+		for (const path of found) {
+			let value: unknown;
+			try {
+				value = JSON.parse(readFileSync(path, 'utf8'));
+			} catch (error) {
+				faults.push(`${path}: it is not JSON: ${(error as Error).message}`);
+				continue;
+			}
+			const own = verdictFaults(value);
+			if (own.length > 0) {
+				faults.push(...own.map((fault) => `${path}: ${fault}`));
+				continue;
+			}
+			const verdict = value as Verdict;
+			const run = [
+				...folderFaults(path, verdict),
+				...verdict.rows.flatMap((row) =>
+					passFaults(path, verdict, row, `row ${row.row}`, [
+						new RegExp(`\\brow ${row.row}\\b`, 'i'),
+					]),
+				),
+				...passFaults(path, verdict, verdict.balance, 'the balance', [/\bbalance\b/i]),
+			];
+			faults.push(...run.map((fault) => `${path}: ${fault}`));
+			const list = bySpecies.get(verdict.species) ?? [];
+			list.push({ path, verdict });
+			bySpecies.set(verdict.species, list);
 		}
-		const verdict = value as Verdict;
-		faults.push(...folderFaults(path, verdict).map((fault) => `${path}: ${fault}`));
-		entries.push({ path, verdict });
 	}
-	const bySpecies = new Map<string, LedgerEntry[]>();
-	for (const entry of entries) {
-		const list = bySpecies.get(entry.verdict.species) ?? [];
-		list.push(entry);
-		bySpecies.set(entry.verdict.species, list);
-	}
-	for (const [species, list] of bySpecies)
+	for (const [species, list] of bySpecies) {
 		if (list.length > 1)
 			faults.push(
 				`${species} has ${list.length} verdict files, so its rows would count more than once: ${list.map((entry) => entry.path).join(', ')}`,
 			);
-	if (expected) {
-		for (const species of expected)
-			if (!bySpecies.has(species)) faults.push(`${species} has no verdict file`);
-		for (const species of bySpecies.keys())
-			if (!expected.includes(species))
-				faults.push(`${species} is not one of the species asked for`);
+		if (!(REVIEW_SPECIES as readonly string[]).includes(species))
+			faults.push(`${species} is not one of the standard's twenty species`);
 	}
 	const totals: Record<RowVerdict, number> = { pass: 0, fail: 0, void: 0, unjudged: 0 };
-	const species = [...bySpecies.entries()]
-		.sort(([a], [b]) => a.localeCompare(b))
-		.map(([name, list]) => {
-			const { path, verdict } = list[0] as LedgerEntry;
-			const rows = ROW_NAMES.map(
-				(_, index) => (verdict.rows.find((row) => row.row === index + 1) as VerdictRow).verdict,
-			);
-			for (const row of rows) totals[row]++;
+	const species = REVIEW_SPECIES.map((name): LedgerLine => {
+		const entry = bySpecies.get(name)?.[0];
+		if (!entry) {
+			totals.unjudged += ROW_NAMES.length;
 			return {
 				species: name,
-				run: verdict.run,
-				commit: verdict.commit,
-				path,
-				coverage: verdict.coverage.complete,
-				rows,
-				passes: rows.filter((row) => row === 'pass').length,
+				run: null,
+				commit: null,
+				path: null,
+				coverage: false,
+				balance: 'unjudged',
+				rows: ROW_NAMES.map(() => 'unjudged'),
+				passes: 0,
+				complete: false,
+				taken: [],
 			};
-		});
-	return { species, totals, rows: species.length * ROW_NAMES.length, faults };
+		}
+		const { path, verdict } = entry;
+		const ordered = ROW_NAMES.map(
+			(_, index) => verdict.rows.find((row) => row.row === index + 1) as VerdictRow,
+		);
+		const rows = ordered.map((row) => row.verdict);
+		for (const row of rows) totals[row]++;
+		const passes = rows.filter((row) => row === 'pass').length;
+		return {
+			species: name,
+			run: verdict.run,
+			commit: verdict.commit,
+			path,
+			coverage: verdict.coverage.complete,
+			balance: verdict.balance.verdict,
+			rows,
+			passes,
+			complete:
+				passes === ROW_NAMES.length &&
+				verdict.balance.verdict === 'pass' &&
+				verdict.coverage.complete,
+			taken: ordered
+				.map((row) => ({
+					row: row.row,
+					notCompared: row.notCompared?.length ?? 0,
+					voided: row.voids?.length ?? 0,
+					setAside: row.setAside?.length ?? 0,
+					lacking: row.lacking?.length ?? 0,
+					unchecked: row.unchecked?.length ?? 0,
+				}))
+				.filter(
+					(row) => row.notCompared + row.voided + row.setAside + row.lacking + row.unchecked > 0,
+				),
+		};
+	});
+	return {
+		species,
+		totals,
+		rows: REVIEW_SPECIES.length * ROW_NAMES.length,
+		complete: species.filter((line) => line.complete).length,
+		faults,
+	};
 }
 
-/** The letter a row's verdict takes in the table. */
+/** The letter a verdict takes in the table. */
 const LETTER: Readonly<Record<RowVerdict, string>> = {
 	pass: 'P',
 	fail: 'F',
@@ -165,9 +293,10 @@ const LETTER: Readonly<Record<RowVerdict, string>> = {
 };
 
 /**
- * The ledger as text: a line per species with its twelve rows, its passes, whether its run
- * compared every reference, and the run and commit the rows were read at; then the total. A ledger
- * with faults prints them and no total.
+ * The ledger as text: a line per species with its twelve rows, its balance, its passes, whether
+ * its run compared every reference, and the run and commit the rows were read at; under it, the
+ * pictures taken out of its rows; then the total over the standard's twenty species. A ledger with
+ * faults prints them and no total.
  */
 export function ledgerText(ledger: Ledger): string {
 	if (ledger.faults.length > 0)
@@ -178,16 +307,29 @@ export function ledgerText(ledger: Ledger): string {
 		].join('\n');
 	const wide = ledger.species.reduce((most, line) => Math.max(most, line.species.length), 7);
 	const numbers = ROW_NAMES.map((_, index) => String(index + 1).padStart(2)).join(' ');
-	const lines = [
-		`${'species'.padEnd(wide)}  ${numbers}  pass  coverage  run at commit`,
-		...ledger.species.map(
-			(line) =>
-				`${line.species.padEnd(wide)}  ${line.rows.map((row) => LETTER[row].padStart(2)).join(' ')}  ${String(line.passes).padStart(4)}  ${(line.coverage ? 'complete' : 'short').padEnd(8)}  ${line.run} at ${line.commit.slice(0, 9)}`,
-		),
+	const lines = [`${'species'.padEnd(wide)}  ${numbers}  bal  pass  coverage  run at commit`];
+	for (const line of ledger.species) {
+		lines.push(
+			`${line.species.padEnd(wide)}  ${line.rows.map((row) => LETTER[row].padStart(2)).join(' ')}  ${LETTER[line.balance].padStart(3)}  ${String(line.passes).padStart(4)}  ${(line.run === null ? '-' : line.coverage ? 'complete' : 'short').padEnd(8)}  ${line.run === null ? 'no verdict' : `${line.run} at ${(line.commit ?? '').slice(0, 9)}`}`,
+		);
+		const taken = line.taken.map((row) => {
+			const parts = [
+				row.notCompared > 0 ? `${row.notCompared} not compared` : '',
+				row.voided > 0 ? `${row.voided} void` : '',
+				row.lacking > 0 ? `${row.lacking} of a part the plant lacks` : '',
+				row.setAside > 0 ? `${row.setAside} set aside` : '',
+				row.unchecked > 0 ? `${row.unchecked} with no subject check` : '',
+			].filter(Boolean);
+			return `row ${row.row}: ${parts.join(', ')}`;
+		});
+		if (taken.length > 0)
+			lines.push(`${''.padEnd(wide)}  pictures out of the rows: ${taken.join('; ')}`);
+	}
+	lines.push(
 		'',
-		`P pass, F fail, V void (a picture with no subject: a tool fault, not a judgement), - unjudged.`,
-		`Total: ${ledger.totals.pass} of ${ledger.rows} rows pass over ${ledger.species.length} species; ${ledger.totals.fail} fail, ${ledger.totals.void} void, ${ledger.totals.unjudged} unjudged.`,
+		'P pass, F fail, V void (the camera did not frame a part the plant has), - unjudged. bal is the balance through eight angles.',
+		`Total: ${ledger.totals.pass} of ${ledger.rows} rows pass; ${ledger.totals.fail} fail, ${ledger.totals.void} void, ${ledger.totals.unjudged} unjudged. ${ledger.complete} of ${ledger.species.length} species are done.`,
 		'',
-	];
+	);
 	return lines.join('\n');
 }

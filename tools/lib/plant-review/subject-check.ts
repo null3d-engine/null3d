@@ -16,6 +16,11 @@ export interface PostedSubject {
 	readonly kind: string;
 	/** Why the plant gives the view no subject, when it gives none. */
 	readonly missing?: string;
+	/**
+	 * Whether the subject is missing because the plant has no such part. Otherwise the generator's
+	 * data cannot name the part, or a slot asked for one that is not there, which is the tool's fault.
+	 */
+	readonly lacks?: boolean;
 	/** Whether the subject's points land in the frame as the view's contract asks, and why not. */
 	readonly contract?: { readonly present: boolean; readonly reason?: string };
 	/** The parts of the picture that must show plant or open ground. */
@@ -30,6 +35,7 @@ export function postedSubject(facts: unknown): PostedSubject | undefined {
 	return {
 		kind: subject.kind,
 		...(typeof subject.missing === 'string' && { missing: subject.missing }),
+		...(subject.lacks === true && { lacks: true }),
 		...(contract &&
 			typeof contract.present === 'boolean' && {
 				contract: {
@@ -99,6 +105,21 @@ export function matteCheck(
 		: { present: false, reason: failures.join('; '), covers };
 }
 
+/**
+ * Why the plant lacks the part its photograph shows, or undefined when it has the part. A species'
+ * reference set holds the picture, so the species has the part: a plant grown without it fails the
+ * rows the picture carries. This is a judgement of the plant, where a void is a fault of the tool.
+ */
+export function lackReason(facts: unknown): string | undefined {
+	const subject = postedSubject(facts);
+	return subject?.lacks && subject.missing !== undefined ? subject.missing : undefined;
+}
+
+/** Whether a solved view's contract held on the camera that drew the picture. */
+export function contractHeld(facts: unknown): boolean {
+	return postedSubject(facts)?.contract?.present === true;
+}
+
 /** A picture's matte as a mask, at its own size. */
 export interface Matte {
 	readonly mask: Uint8Array;
@@ -113,7 +134,7 @@ export interface Matte {
  */
 export function voidReason(facts: unknown, matte?: Matte): string | undefined {
 	const subject = postedSubject(facts);
-	if (!subject) return undefined;
+	if (!subject || subject.lacks) return undefined;
 	if (subject.missing !== undefined) return `the view has no subject: ${subject.missing}`;
 	if (subject.contract && !subject.contract.present)
 		return `the subject is not in the frame: ${subject.contract.reason ?? 'no reason given'}`;
