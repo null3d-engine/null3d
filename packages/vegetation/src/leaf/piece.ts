@@ -808,6 +808,49 @@ export function planPiece(
 }
 
 /**
+ * A mark that stands at one place on a stem, between two shares of its length.
+ *
+ * @param mark The mark, without its spacing.
+ * @param length The stem's length in metres.
+ * @param from The share of the stem's length where the mark's stretch starts.
+ * @param to The share where it ends.
+ * @returns The mark, spaced so that one stands on that stretch.
+ */
+export function oneMark(
+	mark: Omit<PieceMark, 'gap' | 'from' | 'to'>,
+	length: Spread,
+	from: number,
+	to: number,
+): PieceMark {
+	return { ...mark, gap: 0.9 * (to - from) * spreadMean(length), from, to };
+}
+
+/**
+ * A rule with marks added to its stems: the same piece in fruit or in catkin.
+ *
+ * @param rule The piece's rule.
+ * @param marksOf The marks a stem gains, by its rule and its order, 0 for the piece's main stem;
+ * none where it returns nothing.
+ * @returns The rule, each stem with its own marks and the added ones.
+ */
+export function withMarks(
+	rule: PieceRule,
+	marksOf: (stem: PieceStem, order: number) => readonly PieceMark[] | undefined,
+): PieceRule {
+	const marked = (stem: PieceStem, order: number): PieceStem => {
+		const added = marksOf(stem, order) ?? [];
+		return {
+			...stem,
+			...(added.length > 0 ? { marks: [...(stem.marks ?? []), ...added] } : {}),
+			...(stem.sides
+				? { sides: stem.sides.map((side) => ({ ...side, stem: marked(side.stem, order + 1) })) }
+				: {}),
+		};
+	};
+	return { ...rule, stem: marked(rule.stem, 0) };
+}
+
+/**
  * The hash key of one variant of one of a species' pieces.
  *
  * @param rule The rule's index among the species' pieces.
@@ -1011,8 +1054,11 @@ export function piecePrototypes(
 export interface PieceStudio {
 	/** The reference still's number. */
 	readonly still: number;
-	/** The piece drawn alone, or the piece at the tip of each stem of the stand. */
-	readonly piece: string;
+	/**
+	 * The piece drawn alone, or the piece at the tip of each stem of the stand. A stand with no
+	 * piece is drawn as its own wood, each stem ending in the species' buds.
+	 */
+	readonly piece?: string;
 	/** The cut's bare wood, standing upright from its foot, where the photograph shows it. */
 	readonly stand?: {
 		readonly stem: PieceStem;
@@ -1102,20 +1148,25 @@ export function layStudio(
 		if (!rule) throw new Error(`@null3d/vegetation: '${record.id}' has no piece named '${name}'`);
 		return rule.attitude;
 	};
-	if (!studio.stand)
+	const piece = studio.piece;
+	if (!studio.stand) {
+		if (piece === undefined)
+			throw new Error(
+				`@null3d/vegetation: the layout of still ${studio.still} of '${record.id}' names no piece and no stand`,
+			);
 		return {
 			placed: [
 				{
-					piece: studio.piece,
+					piece,
 					pick: 0,
 					position: [0, 0, 0],
 					// A hanging piece hangs with its hook to the picture's right; any other stands on
 					// its cut, its sky side toward the camera.
-					rotation:
-						attitudeOf(studio.piece) === 'plumb' ? pieceTurn('plumb', [1, 0, 0]) : [0, 0, 0, 1],
+					rotation: attitudeOf(piece) === 'plumb' ? pieceTurn('plumb', [1, 0, 0]) : [0, 0, 0, 1],
 				},
 			],
 		};
+	}
 	// The cut stands in its clamp: its line is up, and the ground is below it.
 	const stand = planPiece(
 		record,
@@ -1150,12 +1201,12 @@ export function layStudio(
 				b !== a && length3(foot[0] - tip.at[0], foot[1] - tip.at[1], foot[2] - tip.at[2]) < reach
 			);
 		});
-		if (!forks)
+		if (!forks && piece !== undefined)
 			placed.push({
-				piece: studio.piece,
+				piece,
 				pick: a,
 				position: [...tip.at],
-				rotation: pieceTurn(attitudeOf(studio.piece), heading),
+				rotation: pieceTurn(attitudeOf(piece), heading),
 			});
 		// A stand of one stem carries its side pieces on that stem; a forked stand on its arms.
 		if (!along || (a === 0 && stand.axes.length > 1)) continue;

@@ -1,7 +1,13 @@
 // The silver birch's pieces: the hanging strands its branches carry. Each value names the reference
 // picture it was measured on. The cut branch of still 21 is a metre tall, which makes its leaf blade
 // five centimetres, the record's own leaf.
-import type { PieceRule, PieceStem, PieceStudio } from '../../leaf/piece';
+import {
+	oneMark,
+	type PieceRule,
+	type PieceStem,
+	type PieceStudio,
+	withMarks,
+} from '../../leaf/piece';
 
 /**
  * One hanging strand of a stated length. Stills 09 and 19: a strand leaves the upper side or the
@@ -108,6 +114,33 @@ export const PIECES: readonly PieceRule[] = [
 		stem: strand(0.62, 0.2, { angle: 150, rise: 0.03, length: 0.12 }, 0.002),
 	},
 ];
+
+/**
+ * The pieces in catkin. Still 35: two to four slim catkins hang plumb from a twig's end, each four
+ * to five centimetres long, a leaf's length, and six to seven times as long as thick. About half
+ * of the strands carry them.
+ */
+export const FRUIT_PIECES: readonly PieceRule[] = PIECES.map((rule) =>
+	withMarks(rule, (stem, order) =>
+		order === 0
+			? [
+					oneMark(
+						{
+							kind: 'body',
+							share: 0.5,
+							length: { mean: 0.045, spread: 0.006 },
+							width: 0.007,
+							stalk: 0.005,
+							count: { mean: 2.5, spread: 1 },
+						},
+						stem.length,
+						0.9,
+						1,
+					),
+				]
+			: undefined,
+	),
+);
 
 /** The studio photographs of the birch's cut wood, each laid out from the pieces. */
 export const STUDIO: readonly PieceStudio[] = [
