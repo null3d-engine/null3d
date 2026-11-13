@@ -830,7 +830,7 @@ const JUNCTION_LEAST_ANGLE = 25;
  */
 const SUBJECT_LEAST_TRUNK_SHARE = 0.15;
 /** The least radius of a limb against the thickest candidate's for its lie to choose it. */
-const JUNCTION_LIE_THICK = 0.5;
+const JUNCTION_LIE_THICK = 0.6;
 
 /** The degrees a limb rises above level where it leaves the trunk. */
 function lieOf(limb: GreatLimb): number {
