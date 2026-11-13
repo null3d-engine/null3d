@@ -7,18 +7,12 @@
 		"targetY": 0.45
 	},
 	"02-whole-plant-profile.png": {
-		"view": "cluster",
-		"piece": "leaf-grown",
-		"edge": true,
-		"along": 0,
-		"span": 1.6,
+		"view": "branch",
 		"background": "sky-meadow",
+		"elevation": 0,
 		"skyShare": 0.357,
 		"daylight": 1.524,
-		"fov": 24,
-		"fill": 0.55,
-		"targetY": 0.45,
-		"turn": 0
+		"fov": 24
 	},
 	"03-whole-from-below.png": {
 		"skyShare": 0.357,

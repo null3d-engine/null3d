@@ -1609,23 +1609,27 @@ export default defineSketch(async (ctx) => {
 			case 'leaf-under': {
 				// A span frames a part of the piece rather than the whole of it: the frame's middle
 				// stands on the piece at the share the query names, halfway up by default, and the
-				// span is the width it shows there.
+				// span is the width it shows there. A roll turns the frame about its line of sight, as
+				// a photograph that lays the piece across the frame does.
 				if (QUERY.span !== undefined && piece) {
 					const part = boundsOf(piece as PlantAsset, pieceKit);
 					const low = part.min[1] as number;
 					const high = part.max[1] as number;
 					const at = low + (high - low) * (QUERY.along ?? 0.5);
-					return orbit(
-						[
-							((part.min[0] as number) + (part.max[0] as number)) / 2,
-							at,
-							((part.min[2] as number) + (part.max[2] as number)) / 2,
-						],
-						spanDistance(QUERY.span, fov, aspect),
-						e,
-						turn,
-						fov,
-					);
+					return {
+						...orbit(
+							[
+								((part.min[0] as number) + (part.max[0] as number)) / 2,
+								at,
+								((part.min[2] as number) + (part.max[2] as number)) / 2,
+							],
+							spanDistance(QUERY.span, fov, aspect),
+							e,
+							turn,
+							fov,
+						),
+						...(QUERY.roll !== undefined && { roll: QUERY.roll * DEG }),
+					};
 				}
 				// A piece framed at the scale its photograph shows, in leaf lengths, stands on its cut:
 				// the cut on the frame's lower edge, the piece running up across it and off its far edge
