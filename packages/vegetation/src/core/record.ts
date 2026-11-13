@@ -726,6 +726,13 @@ export interface Conifer {
 		 * patch takes at most seven tenths of its limb's reach.
 		 */
 		readonly width: readonly [short: number, long: number];
+		/**
+		 * Where one patch a limb: the share of the limb's reach, at its outer end, that the patch
+		 * lies along. The patch is then that long along its limb and no wider than it is long, so
+		 * the foliage clothes the limb's outer part and its inner part stays bare. Absent, a patch
+		 * is round and takes at most a stated share of its limb's reach.
+		 */
+		readonly along?: number;
 		/** The patch's depth over its width. */
 		readonly depth: number;
 		/**

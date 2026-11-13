@@ -50,7 +50,10 @@ export const directed: Species = {
 		},
 		limbs: {
 			// Still 02: the limbs' wood crosses a line beside the trunk at these heights, in pairs.
-			// The turning video's bare bole is 0.466 of the height, so the lowest level stands there.
+			// Picture 01, with its foot followed below the horizon, starts the crown at 0.465 of the
+			// height, and the turning video's bare bole is 0.45 to 0.53 of it, median 0.466. So the
+			// lowest level stands there, and the lowest pads' floors fall with their limbs to about
+			// that height. Stills 18 (0.386) and 02 (0.33) are trees that start lower.
 			levels: [0.46, 0.52, 0.61, 0.69, 0.755],
 			// Still 02 shows 13 limbs in profile: six on its left and seven on its right. A profile
 			// misses the limbs that point toward and away from the camera, about half as many again,
@@ -135,10 +138,14 @@ export const directed: Species = {
 		top: { limbs: 4, leave: 45, end: 0, radius: 0.5, leader: 0.55 },
 		// Still 02, six pads: 0.23 to 0.35 of the height wide, and 0.38 as deep as wide.
 		// One pad a limb: the limb's arms spread under it.
+		// Stills 01 and 02 from the side: a pad clothes the outer part of its limb, which is bare for
+		// its inner 0.40 to 0.44 (02 on a grid, 01's two long limbs by eye). The pad lies along the
+		// outer two thirds of its limb's reach.
 		patch: {
 			kind: 'pad',
 			each: 'limb',
 			width: [0.23, 0.35],
+			along: 2 / 3,
 			depth: 0.38,
 			// Still 20: on a pad's top the brushes stand shoulder to shoulder. A bough carries seven
 			// brushes, each 0.21 to 0.28 of its length across, so seven of them tile a square 0.36 m

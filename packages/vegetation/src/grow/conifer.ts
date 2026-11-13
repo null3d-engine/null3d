@@ -111,8 +111,9 @@ const TWIG_TURN_SHARE = 0.9;
 /** The longest piece of a twig in metres, and the distance under which a socket stands on its foot. */
 const TWIG_STEP = 0.3;
 const TWIG_NONE = 0.05;
-/** Steps a patch's dome is measured in. */
+/** The bands a patch's dome is measured in, and the turns round each band. */
 const DOME_STEPS = 64;
+const DOME_TURNS = 32;
 /** The least distance between two sockets of one patch, as a share of the pitch. */
 const SOCKET_APART = 0.7;
 /** A twig's radius where it leaves over its parent's radius there, at most. */
@@ -166,7 +167,9 @@ export interface ConiferPatch {
 	readonly centre: Vector3;
 	/** Metres from the trunk's line to the patch's near edge: the limb's wood is bare up to there. */
 	readonly begins: number;
-	/** The patch's width in metres, along its limb and across it. */
+	/** The patch's length in metres along its limb. A round patch is as long as it is wide. */
+	readonly length: number;
+	/** The patch's width in metres across its limb. */
 	readonly width: number;
 	/** The patch's depth in metres, along plant +Y. */
 	readonly depth: number;
@@ -464,46 +467,80 @@ function shellInside(size: number, reach: number): number {
 }
 
 /**
- * The area of each band of a dome, from its rim up: half a spheroid of half width `half` and height
- * `tall`, cut into level bands of equal height.
+ * A dome cut into level bands of equal height from its rim up, and each band into equal turns: half
+ * an ellipsoid whose floor reaches `long` one way and `wide` the other and whose top stands `tall`
+ * above it. Each band holds its area up to each turn, the last being the band's whole area.
  */
-function domeBands(half: number, tall: number): number[] {
-	const bands: number[] = [];
+function domeBands(long: number, wide: number, tall: number): number[][] {
+	const bands: number[][] = [];
 	for (let k = 0; k < DOME_STEPS; k++) {
 		const t = (k + 0.5) / DOME_STEPS;
-		bands.push(
-			(2 * PI * half * Math.sqrt(half * half * t * t + tall * tall * (1 - t * t))) / DOME_STEPS,
-		);
+		const ring = 1 - t * t;
+		const turns: number[] = [0];
+		let sum = 0;
+		for (let j = 0; j < DOME_TURNS; j++) {
+			const turn = ((j + 0.5) / DOME_TURNS) * 2 * PI;
+			const c = cos(turn);
+			const d = sin(turn);
+			sum +=
+				(Math.sqrt(
+					tall * tall * ring * (wide * wide * c * c + long * long * d * d) +
+						long * long * wide * wide * t * t,
+				) *
+					2 *
+					PI) /
+				(DOME_TURNS * DOME_STEPS);
+			turns.push(sum);
+		}
+		bands.push(turns);
 	}
 	return bands;
 }
 
 /** The area of a dome in square metres. */
-function domeArea(half: number, tall: number): number {
-	return domeBands(half, tall).reduce((sum, band) => sum + band, 0);
+function domeArea(long: number, wide: number, tall: number): number {
+	return domeBands(long, wide, tall).reduce((sum, band) => sum + (band[DOME_TURNS] as number), 0);
 }
 
 /**
- * The heights of `count` places on a dome as shares of its height, the highest first, with the same
- * area of the dome to each.
+ * `count` places on a dome, the highest first, with the same area of the dome to each: each one's
+ * height as a share of the dome's and its turn round the dome in radians, from the long way. Each
+ * place turns on from the last by the golden angle, measured in the area of its own band, so the
+ * places stand evenly on a dome that is longer than wide.
  */
-function domeHeights(half: number, tall: number, count: number): number[] {
-	const bands = domeBands(half, tall);
-	const whole = bands.reduce((sum, band) => sum + band, 0);
-	const heights: number[] = [];
+function domePlaces(
+	long: number,
+	wide: number,
+	tall: number,
+	count: number,
+	phase: number,
+): { t: number; turn: number }[] {
+	const bands = domeBands(long, wide, tall);
+	const whole = bands.reduce((sum, band) => sum + (band[DOME_TURNS] as number), 0);
+	const places: { t: number; turn: number }[] = [];
 	let band = DOME_STEPS - 1;
 	let above = 0;
 	for (let i = 0; i < count; i++) {
 		// The area that lies above this place.
 		const want = ((i + 0.5) / count) * whole;
-		while (band > 0 && above + (bands[band] as number) < want) {
-			above += bands[band] as number;
+		while (band > 0 && above + ((bands[band] as number[])[DOME_TURNS] as number) < want) {
+			above += (bands[band] as number[])[DOME_TURNS] as number;
 			band--;
 		}
-		const into = clamp((want - above) / (bands[band] as number), 0, 1);
-		heights.push((band + 1 - into) / DOME_STEPS);
+		const turns = bands[band] as number[];
+		const into = clamp((want - above) / (turns[DOME_TURNS] as number), 0, 1);
+		const round = (((phase + (i * GOLDEN) / 360) % 1) + 1) % 1;
+		const held = round * (turns[DOME_TURNS] as number);
+		let j = 0;
+		while (j < DOME_TURNS - 1 && (turns[j + 1] as number) < held) j++;
+		const step = (turns[j + 1] as number) - (turns[j] as number);
+		const within = step > 0 ? clamp((held - (turns[j] as number)) / step, 0, 1) : 0;
+		places.push({
+			t: (band + 1 - into) / DOME_STEPS,
+			turn: ((j + within) / DOME_TURNS) * 2 * PI,
+		});
 	}
-	return heights;
+	return places;
 }
 
 /** A place on a patch's wood where a twig can leave, or where a twig can run on. */
@@ -759,10 +796,14 @@ function socketsOf(
 			});
 			return;
 		}
-		const { centre, width, depth, slope, along } = limb.patch;
+		const { centre, width, length, depth, slope, along } = limb.patch;
+		/** A place's metres from the patch's middle along its limb and across it. */
+		const laid = (x: number, z: number): [number, number] => [
+			(x - centre[0]) * along[0] + (z - centre[2]) * along[2],
+			(z - centre[2]) * along[0] - (x - centre[0]) * along[2],
+		];
 		/** The height of the patch's floor at a place. */
-		const floorAt = (x: number, z: number): number =>
-			centre[1] - depth / 2 + slope * ((x - centre[0]) * along[0] + (z - centre[2]) * along[2]);
+		const floorAt = (x: number, z: number): number => centre[1] - depth / 2 + slope * laid(x, z)[0];
 		const drafts: Draft[] = [
 			endOf(limb.nodes, -1, trunkFrom),
 			...limb.arms.map((arm, a) => endOf(arm.nodes, a, limb.nodes[arm.node] as ConiferNode)),
@@ -777,30 +818,40 @@ function socketsOf(
 			least;
 		const clear = (at: Readonly<Vector3>): boolean =>
 			drafts.every((draft) => apart(draft.at, at)) && wanted.every((want) => apart(want.at, at));
-		// The patch is a dome on a level floor: as wide as the patch, as deep at its middle. The
-		// pieces' tips stand on the dome, so their sockets stand on a dome inside it, a piece's
-		// reach smaller.
+		// The patch is a dome on its floor: as long as the patch along its limb, as wide across
+		// it, as deep at its middle. The pieces' tips stand on the dome, so their sockets stand on
+		// a dome inside it, a piece's reach smaller.
+		const long = shellInside(length / 2, pieceReach);
 		const half = shellInside(width / 2, pieceReach);
 		const tall = shellInside(depth, pieceReach);
 		// One socket to each square pitch of the dome that passes midway through the pieces.
-		const midHalf = (width / 2 + half) / 2;
-		const midTall = (depth + tall) / 2;
-		const count = Math.max(1, Math.round(domeArea(midHalf, midTall) / (pitch * pitch)));
-		const heights = domeHeights(half, tall, count);
-		const phase = draw(l, 63) * 2 * PI;
+		const count = Math.max(
+			1,
+			Math.round(
+				domeArea((length / 2 + long) / 2, (width / 2 + half) / 2, (depth + tall) / 2) /
+					(pitch * pitch),
+			),
+		);
+		const places = domePlaces(long, half, tall, count, draw(l, 63));
 		for (let i = 0; i < count; i++) {
-			const t = heights[i] as number;
+			const { t, turn } = places[i] as (typeof places)[number];
 			const ring = Math.sqrt(Math.max(0, 1 - t * t));
-			const turn = phase + i * radians(GOLDEN);
-			const x = centre[0] + half * ring * cos(turn);
-			const z = centre[2] + half * ring * sin(turn);
+			const u = long * ring * cos(turn);
+			const v = half * ring * sin(turn);
+			const x = centre[0] + along[0] * u - along[2] * v;
+			const z = centre[2] + along[2] * u + along[0] * v;
 			const at: Vector3 = [x, floorAt(x, z) + tall * t, z];
 			if (!clear(at)) continue;
 			// A piece leaves the dome the way the dome faces, no steeper than the record's lift, and
 			// swung to one side or the other by its own share of the most, so neighbours do not stand
 			// as a comb. Each piece takes its own size.
-			const faceUp = (atan2(t / tall, ring / half) * 180) / PI;
+			const outU = (ring * cos(turn)) / long;
+			const outV = (ring * sin(turn)) / half;
+			const out = Math.sqrt(outU * outU + outV * outV);
+			const faceUp = (atan2(t / tall, out) * 180) / PI;
 			const lift = radians(Math.min(faceUp, steepest));
+			// The level way the dome faces there, in the plant's space.
+			const faces = atan2(along[2] * outU + along[0] * outV, along[0] * outU - along[2] * outV);
 			const swing = radians(
 				(draw(l * 64 + 1, 4096 + i) < 0.5 ? 1 : -1) *
 					BOUGH_SWING *
@@ -808,15 +859,16 @@ function socketsOf(
 			);
 			wanted.push({
 				at,
-				heading: [cos(lift) * cos(turn + swing), sin(lift), cos(lift) * sin(turn + swing)],
+				heading: [cos(lift) * cos(faces + swing), sin(lift), cos(lift) * sin(faces + swing)],
 				scale: BOUGH_SIZE[0] + (BOUGH_SIZE[1] - BOUGH_SIZE[0]) * draw(l * 64 + 3, 8192 + i),
 			});
 		}
 		// The wood a twig can leave: the limb's run under the patch and each arm, then each twig
 		// that leaves them. A twig that leaves a twig carries no twig of its own.
-		const inside = (node: ConiferNode): boolean =>
-			(node.x - centre[0]) * (node.x - centre[0]) + (node.z - centre[2]) * (node.z - centre[2]) <=
-			(width / 2) * (width / 2);
+		const inside = (node: ConiferNode): boolean => {
+			const [u, v] = laid(node.x, node.z);
+			return (u * u) / ((length / 2) * (length / 2)) + (v * v) / ((width / 2) * (width / 2)) <= 1;
+		};
 		const feet: Foot[] = [];
 		limb.nodes.forEach((node, i) => {
 			if (inside(node))
@@ -1139,14 +1191,26 @@ export function planConifer(input: GrowInput): ConiferPlan {
 	/** The crown's reach in metres at a height, on its wide side. */
 	const levelReach = (y: number): number => curveAt(g.limbs.reach, y / height) * height;
 	/**
-	 * A patch's width in metres, from its limb's place in the length order and its reach. A top
-	 * limb's patch runs in nearly to the trunk's line, so the top limbs' patches close the crown's top.
+	 * A patch's width across its limb and its length along it, in metres. Its width is the record's
+	 * for its limb's place in the length order. Where the record says how much of a limb's reach
+	 * its patch lies along, a limb on the trunk carries a patch of that length, no wider than it is
+	 * long. Any other patch is round and takes no more than a share of its limb's reach: a top
+	 * limb's runs in nearly to the trunk's line, so the top limbs' patches close the crown's top.
 	 */
-	const patchWidth = (place: number, reach: number, most: number): number =>
-		Math.min(
-			(g.patch.width[0] + (g.patch.width[1] - g.patch.width[0]) * place) * height,
-			most * reach,
-		);
+	const patchSize = (
+		place: number,
+		reach: number,
+		most: number,
+		lies: boolean,
+	): { width: number; length: number } => {
+		const wide = (g.patch.width[0] + (g.patch.width[1] - g.patch.width[0]) * place) * height;
+		if (lies && g.patch.along !== undefined) {
+			const length = g.patch.along * reach;
+			return { width: Math.min(wide, length), length };
+		}
+		const width = Math.min(wide, most * reach);
+		return { width, length: width };
+	};
 
 	// The top limbs carry on where the trunk divides, evenly round it, the first near the plan's wide
 	// side. Each further one reaches a little less.
@@ -1163,6 +1227,7 @@ export function planConifer(input: GrowInput): ConiferPlan {
 			levelReach(trunkTop) *
 			(slot === 0 && leader !== undefined ? leader : 1 - (TOP_SHORTER * slot) / topCount),
 		most: slot === 0 && leader !== undefined ? PATCH_MOST_LEADER : PATCH_MOST_TOP,
+		lies: false,
 	}));
 
 	// Each limb's place in the length order, longest first. The two longest are the pair of seats on
@@ -1230,13 +1295,13 @@ export function planConifer(input: GrowInput): ConiferPlan {
 		level: number,
 		keep: boolean,
 	): number => {
-		const width = patchWidth(place, reach, most);
-		const half = (atan2(width / 2, Math.max(1e-6, reach - width / 2)) * 180) / PI;
+		const { width, length } = patchSize(place, reach, most, level >= 0);
+		const half = (atan2(width / 2, Math.max(1e-6, reach - length / 2)) * 180) / PI;
 		const added = new Array<number>(SECTORS).fill(0);
 		for (let k = 0; k < SECTOR_SAMPLES; k++) {
 			const at = azimuth - half + ((k + 0.5) / SECTOR_SAMPLES) * 2 * half;
 			const sector = Math.floor(((((at % 360) + 360) % 360) / 360) * SECTORS) % SECTORS;
-			(added[sector] as number) += (width * width) / SECTOR_SAMPLES;
+			(added[sector] as number) += (width * length) / SECTOR_SAMPLES;
 		}
 		const long =
 			reach / Math.max(1e-6, levelReach(level < 0 ? trunkTop : height * (levels[level] as number)));
@@ -1348,6 +1413,7 @@ export function planConifer(input: GrowInput): ConiferPlan {
 			place: placeOf[i] as number,
 			span: curveAt(g.limbs.reachShare, placeOf[i] as number) * levelReach(seat.y),
 			most: PATCH_MOST,
+			lies: true,
 		})),
 		...tops,
 	];
@@ -1365,10 +1431,17 @@ export function planConifer(input: GrowInput): ConiferPlan {
 		let high = 0;
 		for (const limb of spans) {
 			const reach = limb.span * stretch(limb.azimuth);
-			const width = patchWidth(limb.place, reach, limb.most);
-			const at = (reach - width / 2) * cos(radians(limb.azimuth - g.limbs.plan.turn - quarter));
-			low = Math.min(low, at - width / 2);
-			high = Math.max(high, at + width / 2);
+			const { width, length } = patchSize(limb.place, reach, limb.most, limb.lies);
+			// The patch's far edges that way: its middle, and its half length and half width as
+			// they show from there.
+			const off = radians(limb.azimuth - g.limbs.plan.turn - quarter);
+			const at = (reach - length / 2) * cos(off);
+			const edge = Math.sqrt(
+				(length / 2) * cos(off) * ((length / 2) * cos(off)) +
+					(width / 2) * sin(off) * ((width / 2) * sin(off)),
+			);
+			low = Math.min(low, at - edge);
+			high = Math.max(high, at + edge);
 		}
 		return high - low;
 	};
@@ -1397,12 +1470,12 @@ export function planConifer(input: GrowInput): ConiferPlan {
 		const node = trunkNodeAt(y);
 		const start = trunk[node] as ConiferNode;
 		const reach = Math.max(start.radius * 2, span * stretch(azimuth));
-		const width = patchWidth(place, reach, most);
+		const { width, length } = patchSize(place, reach, most, !top);
 		const depth = width * g.patch.depth;
 		// Under one patch a limb, the wood runs on past the patch's middle. With a patch at each end,
 		// the limb stops at the middle of its own.
 		const perEnd = g.patch.each === 'end';
-		const out = perEnd ? reach - width / 2 : reach - width * (1 - UNDER_PATCH);
+		const out = perEnd ? reach - width / 2 : reach - length * (1 - UNDER_PATCH);
 		const course: Course = {
 			from: [start.x, start.y, start.z],
 			azimuth: radians(azimuth),
@@ -1418,23 +1491,29 @@ export function planConifer(input: GrowInput): ConiferPlan {
 		};
 		// A patch's floor passes through its limb's end. It falls with the limb where the limb falls
 		// under it, from where the limb comes under the patch to its end, and is level where the
-		// limb rises or carries a patch on each end.
-		const floorOf = (walked: Path): { slope: number; middle: number } => {
+		// limb rises or carries a patch on each end. The patch lies along the straight way between
+		// those two places.
+		const floorOf = (walked: Path): { slope: number; middle: number; lies: Vector3 } => {
 			const last = walked.points[walked.points.length - 1] as Vector3;
-			if (perEnd || lower !== undefined) return { slope: 0, middle: last[1] };
-			const span = width * UNDER_PATCH;
+			if (perEnd || lower !== undefined) return { slope: 0, middle: last[1], lies: walked.heading };
+			const span = length * UNDER_PATCH;
 			let at = walked.points.length - 1;
 			while (at > 0 && walked.length - (walked.along[at - 1] as number) <= span) at--;
 			const near = walked.points[at] as Vector3;
 			const run = Math.sqrt(
 				(last[0] - near[0]) * (last[0] - near[0]) + (last[2] - near[2]) * (last[2] - near[2]),
 			);
-			const slope = run > 1e-6 ? Math.min(0, (last[1] - near[1]) / run) : 0;
-			return { slope, middle: last[1] - slope * (span - width / 2) };
+			if (run < 1e-6) return { slope: 0, middle: last[1], lies: walked.heading };
+			const slope = Math.min(0, (last[1] - near[1]) / run);
+			return {
+				slope,
+				middle: last[1] - slope * (span - length / 2),
+				lies: [(last[0] - near[0]) / run, 0, (last[2] - near[2]) / run],
+			};
 		};
 		/** The height of a patch's top over its floor's middle: a dome on a sloped floor stands higher. */
 		const rise = (slope: number): number =>
-			Math.sqrt(depth * depth + ((slope * width) / 2) * ((slope * width) / 2));
+			Math.sqrt(depth * depth + ((slope * length) / 2) * ((slope * length) / 2));
 		const topOf = (walked: Path): number => {
 			const floor = floorOf(walked);
 			return perEnd ? floor.middle + depth / 2 : floor.middle + rise(floor.slope);
@@ -1466,7 +1545,7 @@ export function planConifer(input: GrowInput): ConiferPlan {
 		const collar = Math.max(1e-6, g.limbs.collar.over * height);
 		const past = beside / swell;
 		const taper = clamp(g.limbs.taper, 0.05, 1);
-		const bare = Math.max(1e-6, path.length - (perEnd ? 0 : width * UNDER_PATCH));
+		const bare = Math.max(1e-6, path.length - (perEnd ? 0 : length * UNDER_PATCH));
 		const nodes: ConiferNode[] = path.points.map((point, k) => {
 			const s = path.along[k] as number;
 			const fade = 1 + (swell - 1) * (1 - eased(s / collar));
@@ -1481,7 +1560,7 @@ export function planConifer(input: GrowInput): ConiferPlan {
 		// wood spreads under the whole patch and no two arms part from one point.
 		const arms: ConiferArm[] = [];
 		const count = Math.max(0, Math.round(g.limbs.arms.count));
-		const under = perEnd ? path.length * ARMS_OVER : width * UNDER_PATCH;
+		const under = perEnd ? path.length * ARMS_OVER : length * UNDER_PATCH;
 		const patchAt = (
 			centre: Vector3,
 			heading: Vector3,
@@ -1492,6 +1571,7 @@ export function planConifer(input: GrowInput): ConiferPlan {
 			limb: limbs.length,
 			centre,
 			begins,
+			length,
 			width,
 			depth,
 			slope,
@@ -1547,17 +1627,21 @@ export function planConifer(input: GrowInput): ConiferPlan {
 			// Under one patch a limb, an arm that would end past the patch's rim reaches less far.
 			if (!perEnd) {
 				const middle: readonly [number, number] = [
-					end[0] - path.heading[0] * (under - width / 2),
-					end[2] - path.heading[2] * (under - width / 2),
+					end[0] - floor.lies[0] * (under - length / 2),
+					end[2] - floor.lies[2] * (under - length / 2),
 				];
 				let reachOut = width * ARM_REACH;
 				for (let pass = 0; pass < 8; pass++) {
 					const tip = armPath.points[armPath.points.length - 1] as Vector3;
-					const off = Math.sqrt(
-						(tip[0] - middle[0]) * (tip[0] - middle[0]) +
-							(tip[2] - middle[1]) * (tip[2] - middle[1]),
-					);
-					if (off <= (width / 2) * ARM_INSIDE) break;
+					// Where the arm's end lies in the patch, along it and across it, as shares of its
+					// half length and half width.
+					const u =
+						((tip[0] - middle[0]) * floor.lies[0] + (tip[2] - middle[1]) * floor.lies[2]) /
+						(length / 2);
+					const v =
+						((tip[2] - middle[1]) * floor.lies[0] - (tip[0] - middle[0]) * floor.lies[2]) /
+						(width / 2);
+					if (u * u + v * v <= ARM_INSIDE * ARM_INSIDE) break;
 					reachOut *= 0.85;
 					armPath = armCourse(armLift, reachOut);
 				}
@@ -1598,12 +1682,12 @@ export function planConifer(input: GrowInput): ConiferPlan {
 				? patchAt([end[0], end[1], end[2]], path.heading, reach - width)
 				: patchAt(
 						[
-							end[0] - path.heading[0] * (under - width / 2),
+							end[0] - floor.lies[0] * (under - length / 2),
 							floor.middle + depth / 2,
-							end[2] - path.heading[2] * (under - width / 2),
+							end[2] - floor.lies[2] * (under - length / 2),
 						],
-						path.heading,
-						reach - width,
+						floor.lies,
+						reach - length,
 						floor.slope,
 					),
 		});
@@ -1665,6 +1749,7 @@ export function planConifer(input: GrowInput): ConiferPlan {
 						limb: -1,
 						centre: [tip.x, tip.y, tip.z] as Vector3,
 						begins: 0,
+						length: tipWidth,
 						width: tipWidth,
 						depth: tipDepth,
 						slope: 0,
@@ -1677,7 +1762,7 @@ export function planConifer(input: GrowInput): ConiferPlan {
 	];
 	let crownBase = height;
 	for (const patch of patches) {
-		const fall = (Math.abs(patch.slope) * patch.width) / 2;
+		const fall = (Math.abs(patch.slope) * patch.length) / 2;
 		top = Math.max(
 			top,
 			patch.slope === 0
