@@ -71,6 +71,7 @@ import {
 	subjectShares,
 	TURN_VIEW,
 	type TurnVideo,
+	WORK_WIDTH,
 	withSlot,
 } from './lib/plant-review/references.ts';
 import {
@@ -865,7 +866,7 @@ function compareRun(
 			`- ${result.pairs.filter((pair) => !pair.error).length} of ${result.pairs.length} files drawn beside a render of their view; ${masked.length} give an outline on a plain background in both pictures.`,
 			...masked.map(
 				(pair) =>
-					`- ${pair.file}: shape IoU ${fixed(pair.shapeIou)}, width error ${fixed(pair.profileError, 3)}, gap ${fixed(pair.crownBoxGap?.reference)} against ${fixed(pair.crownBoxGap?.render)} in the crown box, enclosed ${fixed(pair.gap?.reference)} against ${fixed(pair.gap?.render)}${pair.gap?.renderByCoverage === undefined ? '' : ` (${fixed(pair.gap.renderByCoverage)} by the render's clear share, the earlier reading)`}, frame ${fixed(pair.frameGap?.reference)} against ${fixed(pair.frameGap?.render)}, leaf colour difference ${fixed(pair.foliageDeltaE, 1)}${barkClause(pair)}${pieceClause(pair)}${fittedMaskClause(pair)}.`,
+					`- ${pair.file}: shape IoU ${fixed(pair.shapeIou)}, width error ${fixed(pair.profileError, 3)}, gap ${fixed(pair.crownBoxGap?.reference)} against ${fixed(pair.crownBoxGap?.render)} in the crown box, enclosed ${fixed(pair.gap?.reference)} against ${fixed(pair.gap?.render)}${pair.gap?.renderByCoverage === undefined ? '' : ` (${fixed(pair.gap.renderByCoverage)} by the render's clear share, the earlier reading)`}, frame ${fixed(pair.frameGap?.reference)} against ${fixed(pair.frameGap?.render)}, foot row ${fixed(pair.footRow?.reference, 3)} against ${fixed(pair.footRow?.render, 3)}, leaf colour difference ${fixed(pair.foliageDeltaE, 1)}${barkClause(pair)}${pieceClause(pair)}${fittedMaskClause(pair)}.`,
 			),
 			...result.pairs.flatMap((pair) =>
 				pair.surfaceDeltaE !== null
@@ -1046,6 +1047,7 @@ function compareRun(
 		'',
 		"- The reference outline comes from colour against a plain background. Below the horizon it keeps only the plant that hangs down from above and is not a darker copy of the meadow, so foliage that sweeps the ground can be lost and a trunk's foot can be cut short.",
 		"- The render outline comes from the run's matte where the run drew one, so it is exact.",
+		`- Both pictures are shrunk to ${WORK_WIDTH} px wide before any outline figure is read, so the two are read at one size. A photograph's sky gap read at its own size stands higher, by 0.02 to 0.10 on a silhouette; a figure quoted from another size is not this run's figure.`,
 		'- A turning video is taken to turn at a steady rate over its arc; the alignment cannot repair a video that speeds up or stops short.',
 		"- A turn's renders are drawn as sheets of cells at a still's size, with the sun's shadows; a release build of the page draws the cells without them.",
 		'',
