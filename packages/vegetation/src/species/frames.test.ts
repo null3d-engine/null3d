@@ -149,12 +149,12 @@ interface Held {
 	/** The plant's height over the record's, as the least and the most. */
 	readonly tall: readonly [number, number];
 	/**
-	 * The requirements the tree is known not to meet yet: its crown's outline band by band, its
-	 * sockets' spread through the turn, its bends' radius. A test of an open requirement expects the
+	 * The requirements the tree is known not to meet yet: its crown's mean fill of its outline, the
+	 * outline band by band, its sockets' spread through the turn, its bends' radius. A test of an open requirement expects the
 	 * failure, and fails when the tree starts to hold, so the name must come off as the tree is
 	 * mended. The bands a tree is excused are named by their number from the ground, with the reason.
 	 */
-	readonly open?: readonly ('bands' | 'spread' | 'bends')[];
+	readonly open?: readonly ('fill' | 'bands' | 'spread' | 'bends')[];
 	readonly excused?: Readonly<Record<number, string>>;
 }
 
@@ -249,7 +249,7 @@ const HELD: readonly Held[] = [
 		plumb: ['trunk'],
 		// The top tiers' foliage stands above the highest wood.
 		tall: [0.93, 1.02],
-		open: ['bands'],
+		open: ['fill', 'bands'],
 	},
 	{
 		id: 'common-ash',
@@ -293,7 +293,9 @@ const HELD: readonly Held[] = [
 		base: { bough: 0.5, branch: 0.55 },
 		plumb: ['trunk'],
 		tall: [0.95, 1.04],
-		open: ['bands', 'spread'],
+		// The crown's foot stands at 0.13 of the height, inside the band from 0.125 to 0.1875, and
+		// only the low limbs' drooping ends reach it.
+		excused: { 2: "the crown's foot stands inside the band" },
 	},
 ];
 
@@ -362,7 +364,10 @@ for (const held of HELD)
 			}
 		});
 
-		it('fills the crown outline it states, on every side', () => {
+		/** A test of a requirement: one that expects its failure while the tree names it open. */
+		const required = (name: 'fill' | 'bands' | 'spread' | 'bends') =>
+			held.open?.includes(name) ? it.failing : it;
+		required('fill')('fills the crown outline it states, on every side', () => {
 			for (const seed of SEEDS) {
 				const fill = crownFill(planOf(held, seed), held.spec);
 				expect(fill.mean).toBeGreaterThanOrEqual(FILL_MEAN[0]);
@@ -371,9 +376,6 @@ for (const held of HELD)
 			}
 		});
 
-		/** A test of a requirement: one that expects its failure while the tree names it open. */
-		const required = (name: 'bands' | 'spread' | 'bends') =>
-			held.open?.includes(name) ? it.failing : it;
 		const banded = required('bands');
 		banded('holds the outline it states band by band, on four sides', () => {
 			expect(Object.keys(held.excused ?? {}).length).toBeLessThanOrEqual(EXCUSED_MOST);

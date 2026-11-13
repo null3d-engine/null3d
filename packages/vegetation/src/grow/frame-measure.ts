@@ -341,9 +341,16 @@ export function crownBands(plan: FramePlan, spec: FrameSpec, sides = 8, bands = 
 			const high = ((band + 1) / bands) * plan.scale;
 			let built = 0;
 			for (const patch of plan.patches) {
-				if (patch.centre[1] + patch.depth / 2 < low || patch.centre[1] - patch.depth / 2 > high)
-					continue;
-				built = Math.max(built, patch.centre[0] * c + patch.centre[2] * s + patch.width / 2);
+				// A patch is as wide in a band as its rounded body is at the band's nearest height.
+				const off = Math.max(0, low - patch.centre[1], patch.centre[1] - high);
+				const share = off / Math.max(1e-9, patch.depth / 2);
+				if (share >= 1) continue;
+				built = Math.max(
+					built,
+					patch.centre[0] * c +
+						patch.centre[2] * s +
+						(patch.width / 2) * Math.sqrt(1 - share * share),
+				);
 			}
 			row.push({
 				height: (band + 0.5) / bands,
