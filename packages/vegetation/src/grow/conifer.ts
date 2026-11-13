@@ -94,6 +94,11 @@ const SHELL_STEPS = 512;
 const SHELL_JITTER = 0.15;
 /** The least degrees a shell piece leans off plumb, so its face always looks out or in. */
 const SHELL_LEAN_LEAST = 2;
+/**
+ * The most degrees a shell piece leans off plumb: where the outline tucks in to the stem, its
+ * pieces stand up the tuck rather than splay out along it.
+ */
+const SHELL_LEAN_MOST = 30;
 /** The passes that find how far a limb runs to stand inside a shell. */
 const SHELL_PASSES = 20;
 /** The most degrees a piece's line swings from the way its patch faces, to one side or the other. */
@@ -576,7 +581,7 @@ function shellPlaces(rule: ShellRule): ShellPlace[] {
 			const above = outline(clamp(y + slopeStep, from, to), azimuth);
 			const rising = Math.min(to, y + slopeStep) - Math.max(from, y - slopeStep);
 			const slope = rising > 0 ? (above - below) / rising : 0;
-			const off = (atan2(slope, 1) * 180) / PI + lean;
+			const off = clamp((atan2(slope, 1) * 180) / PI + lean, -SHELL_LEAN_MOST, SHELL_LEAN_MOST);
 			const tilt = radians(Math.abs(off) < SHELL_LEAN_LEAST ? SHELL_LEAN_LEAST : off);
 			places.push({
 				at: [lx + c * out, y, lz + n * out],
@@ -871,9 +876,10 @@ function socketsOf(
 	patches.forEach((patch, i) => {
 		patchIndex.set(patch, i);
 	});
-	// The patch on the trunk's tip carries one socket, on the tip.
+	// The patch on the trunk's tip carries one socket, on the tip. A shell's top rows close the top
+	// themselves, so its leader carries none: a piece there would stand above them as a spire.
 	patches.forEach((patch, i) => {
-		if (patch.limb >= 0) return;
+		if (patch.limb >= 0 || onShell) return;
 		const tip = trunk[trunk.length - 1] as ConiferNode;
 		rankInto(i, [
 			{
