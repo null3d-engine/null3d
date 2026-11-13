@@ -71,7 +71,7 @@ const RACHIS_TURN = 0.25;
 const CROWN_DEPTH = 0.7;
 /** Metres that a frond's base stands out from the stem's surface. */
 const FROND_STAND = 0.08;
-/** The share of a living frond's length that a dead frond keeps. */
+/** The share of a living frond's length that a dead frond keeps, where the record names none. */
 const DEAD_SHARE = 0.95;
 /** The least height of a sucker's stem, and the most, in metres. */
 const SUCKER_HEIGHT = [0.6, 2.6] as const;
@@ -277,7 +277,11 @@ function frondPlans(
 		const drawn = spreadAt(shape.length, draw(DRAW.frondLength, first + i));
 		const length = Math.max(
 			0.4,
-			drawn * scale * (deadFrond ? DEAD_SHARE - 0.2 * crown.dead.skirt : 0.75 + 0.25 * share),
+			drawn *
+				scale *
+				(deadFrond
+					? (crown.dead.length ?? DEAD_SHARE) - 0.2 * crown.dead.skirt
+					: 0.75 + 0.25 * share),
 		);
 		plans.push({
 			node,

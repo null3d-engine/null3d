@@ -1,8 +1,14 @@
-// The palm frond's foliage: a pinnate frond drawn as separate leaflets along its rachis, rather
-// than one sheet cut from a picture of a whole blade. Each leaflet is a folded ribbon whose
-// silhouette comes from the species' own leaf texture, so it reads as the picture shows it: long,
-// narrow, V-folded, with a fine point. The leaflets leave the rachis in small groups at several
-// angles out of the frond's plane, so the frond reads bristly.
+// The pinnate frond's foliage, for a palm or a tree fern: a frond drawn as separate leaflets along
+// its rachis, rather than one sheet cut from a picture of a whole blade. Each leaflet is a folded
+// ribbon whose silhouette comes from the species' own leaf texture, so it reads as the picture
+// shows it. The leaflets leave the rachis in small groups at several angles out of the frond's
+// plane, so the frond reads bristly.
+//
+// A species' leaf picture holds one of two things, and the record's pinnae name which. A palm's
+// holds one narrow blade: long, V-folded, with a fine point. A tree fern's holds a whole pinna
+// with its lobes painted in. Each kind takes a style of its own below: how many leaflets stand at
+// a place, how wide a ribbon is, where it samples its picture, and how a piece cut from a frond
+// carries its leaflets.
 //
 // The rachis itself is the skeleton's rachis axis, which the wood mesher draws as thin wood. A
 // frond's age browns its leaflets. Each vertex carries the wind record, a flutter phase that drifts
@@ -21,63 +27,89 @@ import { type AxisPath, axisPath, emptyFrame, frameAt, type PathFrame } from '..
 import { type LeafOutline, textureOutline } from './outline';
 import { MeshWriter } from './writer';
 
-/** Leaflet rows along its length, and columns across it, at each level. */
-const GRID: Readonly<Record<MeshLevel, { readonly rows: number; readonly columns: number }>> = {
-	0: { rows: 1, columns: 3 },
+/** Leaflet rows along its length, and columns across it, at the two levels past the nearest. */
+const FAR_GRID: Readonly<Record<1 | 2, { readonly rows: number; readonly columns: number }>> = {
 	1: { rows: 1, columns: 2 },
 	2: { rows: 1, columns: 2 },
 };
+/** Columns across a leaflet at the nearest level. */
+const NEAR_COLUMNS = 3;
 
-/** The share of a frond's pinna places that a level draws. */
-const PINNA_SHARE: Readonly<Record<MeshLevel, number>> = { 0: 1, 1: 0.3, 2: 0.1 };
-
-/** The most leaflets that stand in one group at a rachis place. */
-const GROUP = 1;
 /** Degrees that a group member's angle departs from its place's. */
 const GROUP_ANGLE = 16;
 /** The share of a frond's length that a group member stands along from its place's. */
 const GROUP_STEP = 0.012;
-/** The narrowest a leaflet ribbon is drawn, as a share of the texture's own leaflet width. */
-const WIDTH_SHARE = 1.4;
-/**
- * The ribbon's width at the nearest level. A leaflet close to the eye shows the picture's own
- * proportion, narrow and stiff; the wider share above serves the far crown's silhouette, where a
- * thin ribbon would vanish between the camera and the coarse levels below.
- */
-const CLOSE_WIDTH_SHARE = 0.9;
-/**
- * The share of the nearest level's ribbon width that a spanned cut piece keeps. The leaflet
- * pictures show a rachis's blades standing apart; a piece drawn at the whole frond's close width
- * fills its own box with leaf, so the cut keeps narrow blades along the same rachis length.
- */
-const CUT_WIDTH_SHARE = 0.6;
 /** Degrees the planes of a V-section frond fan to either side of the rachis's own upper face. */
 const PLANE_FAN = 62;
-/**
- * The texture column the ribbon samples. Its own columns stand on the leaflet's silhouette, where
- * the picture's alpha runs out and a coarse mip averages it to nothing, so a crown drawn at any
- * distance would read as bare rachises. The midrib is solid along the whole blade: the colour comes
- * from there, and the ribbon's own columns give the shape.
- */
-const SAMPLE_U = 0.5;
 /** The share of a leaflet's length and width that a spine keeps. */
 const SPINE_LENGTH = 0.42;
 const SPINE_WIDTH = 0.16;
 /** Steps along a place's spacing, for the pinnae's own spacing curve. */
 const PLACE_SAMPLES = 64;
-/**
- * Metres between the pinna places of a close cut piece. The leaflet pictures show a close rachis's
- * leaflets set denser than a whole frond's own count spreads them, and a piece is its own small
- * mesh, so it can carry that density without the variant's bytes. A cut of a whole frond keeps the
- * frond's own spacing.
- */
-const CUT_PINNA_SPACING = 0.03;
-/**
- * The share of a dead frond's places the skirt draws. The skirt reads as a brown mass where its
- * dried leaflets hang close; the coarsest share leaves the rachises bare, and the middle share
- * costs more than the variant's bytes allow. This is the most that fits.
- */
-const DEAD_PINNA_SHARE = 1 / 7;
+
+/** How the frond draws one kind of leaflet. */
+interface LeafletStyle {
+	/** Rows along a leaflet at the nearest level. */
+	readonly rows: number;
+	/** The share of a frond's pinna places that each level draws. */
+	readonly share: Readonly<Record<MeshLevel, number>>;
+	/** The most leaflets that stand in one group at a rachis place. */
+	readonly group: number;
+	/**
+	 * The ribbon's width past the nearest level, as a share of the texture's own leaflet width. A
+	 * thin ribbon vanishes between the camera and the coarse levels, so a narrow blade is drawn
+	 * wider there for the far crown's silhouette.
+	 */
+	readonly width: number;
+	/** The ribbon's width at the nearest level, where a leaflet shows the picture's own proportion. */
+	readonly closeWidth: number;
+	/**
+	 * How far from the picture's midrib toward its drawn edge the ribbon's columns sample it, from
+	 * 0, the midrib alone, to 1, the edge. The ribbon's own columns stand on the leaflet's
+	 * silhouette, where the picture's alpha runs out and a coarse mip averages it to nothing. A
+	 * simple blade is solid along its midrib, so its colour comes from there and the ribbon's
+	 * columns give the shape. A divided pinna's picture holds its lobes, so its columns sample
+	 * across it, a little inside the edge.
+	 */
+	readonly sample: number;
+	/**
+	 * The share of a dead frond's places that a skirt drawn as a mass keeps. The skirt reads as a
+	 * brown mass where its dried leaflets hang close; the coarsest level's share leaves the
+	 * rachises bare, and the middle level's share costs more than the variant's bytes allow.
+	 */
+	readonly deadShare: number;
+	/**
+	 * A short piece cut from a frond, where the species' close photographs show one: metres
+	 * between its pinna places, set denser than a whole frond's own count spreads them, and the
+	 * share of the nearest level's ribbon width its blades keep, so they stand apart inside the
+	 * piece's own box. A piece is its own small mesh, so it carries that density without the
+	 * variant's bytes. Absent, a piece keeps the frond's own count over the length it carries.
+	 */
+	readonly closeCut?: { readonly spacing: number; readonly width: number };
+}
+
+/** The style of each kind of leaflet a record's pinnae may name. */
+const STYLES: Readonly<Record<NonNullable<PinnaSpec['leaflet']>, LeafletStyle>> = {
+	pinna: {
+		rows: 2,
+		share: { 0: 1, 1: 0.34, 2: 0.14 },
+		group: 2,
+		width: 0.62,
+		closeWidth: 0.62,
+		sample: 0.8,
+		deadShare: 0.14,
+	},
+	blade: {
+		rows: 1,
+		share: { 0: 1, 1: 0.3, 2: 0.1 },
+		group: 1,
+		width: 1.4,
+		closeWidth: 0.9,
+		sample: 0,
+		deadShare: 1 / 7,
+		closeCut: { spacing: 0.03, width: 0.6 },
+	},
+};
 
 /** The record's crown-rosette frond, or a fault for another model. */
 function frondOf(record: Species): FrondShape {
@@ -172,16 +204,16 @@ interface Leaflet {
 function leafletsOf(
 	pinnae: PinnaSpec,
 	origin: number,
-	level: MeshLevel,
 	places: readonly number[],
 	petioleShare: number,
+	pinnaShare: number,
+	group: number,
 	closeBlade?: number,
-	pinnaShare?: number,
 ): Leaflet[] {
 	const out: Leaflet[] = [];
 	const planes = Math.max(1, pinnae.planes);
 	// A coarser level keeps every so many places along the whole frond, so its tip keeps leaflets.
-	const stride = Math.max(1, Math.round(1 / (pinnaShare ?? PINNA_SHARE[level])));
+	const stride = Math.max(1, Math.round(1 / pinnaShare));
 	places.forEach((place, p) => {
 		if (p % stride !== 0) return;
 		if (place < petioleShare) return;
@@ -189,8 +221,8 @@ function leafletsOf(
 		// A close piece takes the species' own leaflet length, as the leaflet pictures show it;
 		// the whole frond takes the frond's share of its length.
 		const blade = closeBlade ?? curveAt(pinnae.length, place) * origin;
-		for (let g = 0; g < GROUP; g++) {
-			const at = place + (g - (GROUP - 1) / 2) * GROUP_STEP;
+		for (let g = 0; g < group; g++) {
+			const at = place + (g - (group - 1) / 2) * GROUP_STEP;
 			if (at < 0 || at > 1) continue;
 			for (const side of [-1, 1] as const) {
 				const k = (p + g + (side < 0 ? 1 : 0)) % planes;
@@ -208,13 +240,17 @@ function leafletsOf(
 	return out;
 }
 
-/** What a leaflet's ribbon needs: the outline, the row and column grid, and the fold. */
+/**
+ * What a leaflet's ribbon needs: the outline, the row and column grid, the fold, its width over
+ * the texture leaflet's own, and how far from the midrib its columns sample the picture.
+ */
 interface RibbonShape {
 	readonly outline: LeafOutline;
 	readonly rows: number;
 	readonly columns: number;
 	readonly fold: number;
 	readonly widthShare: number;
+	readonly sample: number;
 }
 
 /** Writes one leaflet's folded ribbon: rows along it, whose outer columns follow the texture. */
@@ -275,7 +311,7 @@ function writeLeaflet(
 			normalAt[0] = normal[0] * cos(tilt) + across[0] * sin(tilt);
 			normalAt[1] = normal[1] * cos(tilt) + across[1] * sin(tilt);
 			normalAt[2] = normal[2] * cos(tilt) + across[2] * sin(tilt);
-			const u = SAMPLE_U;
+			const u = 0.5 + (uLow + (uHigh - uLow) * column - 0.5) * shape.sample;
 			mesh.vertex(at, normalAt, [u, v], [second[0], second[1]], colour(at));
 		}
 	}
@@ -372,29 +408,30 @@ export function palmFoliage(input: MeshInput, level: MeshLevel): MeshArrays {
 	const shape = frondOf(input.record);
 	const leaf = leafOf(input.record);
 	const pinnae = shape.pinnae as PinnaSpec;
+	const style = STYLES[pinnae.leaflet ?? 'pinna'];
 	if (!input.kit.manifest.leaf)
 		throw new Error('@null3d/vegetation: a palm frond needs the species leaf texture');
 	const outline = textureOutline(input.kit.manifest.leaf);
-	const grid = GRID[level];
 	const ribbon: RibbonShape = {
 		outline,
-		rows: grid.rows,
-		columns: grid.columns,
+		rows: level === 0 ? style.rows : FAR_GRID[level].rows,
+		columns: level === 0 ? NEAR_COLUMNS : FAR_GRID[level].columns,
 		fold: leaf.fold,
-		widthShare: level === 0 ? CLOSE_WIDTH_SHARE : WIDTH_SHARE,
+		widthShare: level === 0 ? style.closeWidth : style.width,
+		sample: style.sample,
 	};
 	// The dead ribbons keep the far width at every level, so the skirt stays a mass in a close view.
 	const deadRibbon: RibbonShape = {
 		...ribbon,
-		rows: GRID[2].rows,
-		columns: GRID[2].columns,
-		widthShare: WIDTH_SHARE,
+		rows: FAR_GRID[2].rows,
+		columns: FAR_GRID[2].columns,
+		widthShare: style.width,
 	};
-	// A spanned cut piece keeps the same rachis length and leaflet length as the picture, with
+	// A close cut piece keeps the same rachis length and leaflet length as the picture, with
 	// narrower blades, so its leaflets stand apart inside its own box.
 	const cutRibbon: RibbonShape = {
 		...ribbon,
-		widthShare: ribbon.widthShare * CUT_WIDTH_SHARE,
+		widthShare: ribbon.widthShare * (style.closeCut?.width ?? 1),
 	};
 	// A cut piece of a frond keeps the original's leaflets: the record's frond length gives their
 	// size, and the piece's own run gives only how many of its places it carries. A whole plant's
@@ -419,30 +456,34 @@ export function palmFoliage(input: MeshInput, level: MeshLevel): MeshArrays {
 		if (length < 0.05) continue;
 		// A dead frond hangs as a brown mass in the skirt, where its leaflets read as the mass rather
 		// than as blades: it takes the coarsest grid and the fewest places at every level.
-		const dead = frond.age > 0.99;
-		const drawn = dead ? 2 : level;
+		const mass = frond.age > 0.99;
 		const origin = hasStem ? length : Math.max(length, recordFrond);
 		// A close cut piece takes its density from the picture's own leaflet spacing; a whole
 		// frond, grown or cut, takes the frond's count.
-		const closeCut = !hasStem && length < recordFrond * 0.5;
-		const count = closeCut
-			? Math.max(1, Math.round(length / CUT_PINNA_SPACING))
-			: Math.max(1, Math.round(spreadMean(pinnae.count) * (length / origin)));
+		const closeCut = style.closeCut !== undefined && !hasStem && length < recordFrond * 0.5;
+		const count =
+			closeCut && style.closeCut
+				? Math.max(1, Math.round(length / style.closeCut.spacing))
+				: Math.max(1, Math.round(spreadMean(pinnae.count) * (length / origin)));
 		const places = pinnaPlaces({ ...pinnae, count }, 1);
 		const closeBlade = closeCut ? spreadMean(leaf.length) : undefined;
-		const petioleShare = spanned
-			? Math.max(0, Math.min(1, (shape.petiole.length - cutFrom) / Math.max(length, 1e-6)))
-			: Math.min(0.3, shape.petiole.length / Math.max(origin, 1e-6));
+		// The bare stalk's share of the run. A species with a close cut measures it on the whole
+		// frond, and a spanned piece of it carries only the part of the stalk its span covers.
+		const petioleShare = !style.closeCut
+			? Math.min(0.3, shape.petiole.length / Math.max(length, 1e-6))
+			: spanned
+				? Math.max(0, Math.min(1, (shape.petiole.length - cutFrom) / Math.max(length, 1e-6)))
+				: Math.min(0.3, shape.petiole.length / Math.max(origin, 1e-6));
 		const list = leafletsOf(
 			pinnae,
 			origin,
-			drawn,
 			places,
 			petioleShare,
+			mass ? style.deadShare : style.share[level],
+			style.group,
 			closeBlade,
-			dead ? DEAD_PINNA_SHARE : undefined,
 		);
-		const frondRibbon = dead ? deadRibbon : closeCut ? cutRibbon : ribbon;
+		const frondRibbon = mass ? deadRibbon : closeCut ? cutRibbon : ribbon;
 		const bytes: number[] = [0, 0, 0, 0];
 		const record = base + frond.record;
 		const brown = Math.max(0, Math.min(1, (frond.age - 0.5) * 2));

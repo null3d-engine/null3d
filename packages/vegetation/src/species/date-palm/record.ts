@@ -94,6 +94,8 @@ export const record: Species = {
 				droop: 10,
 				// Still 07: the base of the frond carries stiff yellow spines.
 				spines: 8,
+				// Stills 12 and 13: the leaf picture is one narrow leaflet, stiff and simple.
+				leaflet: 'blade',
 			},
 		},
 	},
