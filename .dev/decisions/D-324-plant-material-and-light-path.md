@@ -233,4 +233,6 @@ shown to work, because a material opacity is inert on this shader, so how the sh
 pixels is unproven inside that pair. The count now takes every drawn pixel: the page clears to black,
 the background sums to 0 and the plant's darkest pixels sum to 1. The two heads then read within 0.3
 points of each other, and the test keeps its relative bound with the ceiling moved to 0.64. The look
-change itself stands and is the owner's to see: the crown's shade on bark is brighter than it was.
+change itself is the owner's ruling: he looked at the holm oak's four panels at the shade commit's
+parent and at the milestone head, side by side, and said the shades look good. The brighter bark stays
+as it is.
