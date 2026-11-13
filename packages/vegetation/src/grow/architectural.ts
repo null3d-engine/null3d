@@ -61,7 +61,7 @@ const TOP_WHORL = 0.97;
 /** The most children one parent node puts out from a whorled arrangement. */
 const MOST_WHORL = 8;
 /** The share of the way each measured height is rounded toward its azimuthal mean. */
-const ENVELOPE_ROUND = 0.35;
+export const ENVELOPE_ROUND = 0.35;
 
 /** The choices an axis makes, each its own hash purpose. */
 const Purpose = {
