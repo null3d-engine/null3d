@@ -102,6 +102,27 @@ pub(super) fn list_room(picked: u32) -> u32 {
 /// The indices that a view's list keeps beyond a sixteenth of what it picks: a few patches' worth.
 const LIST_SPARE_INDICES: u32 = 4 * 3 * 128;
 
+/// A hash of a tree's patch records and its indices, so a rebuild that changes neither keeps the
+/// tables that the GPU holds.
+fn table_hash(patches: &[[u32; 8]], indices: &[u32]) -> u64 {
+    let mut hash = 0xcbf2_9ce4_8422_2325u64;
+    let mut mix = |word: u32| {
+        hash ^= u64::from(word);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    };
+    mix(patches.len() as u32);
+    for patch in patches {
+        for &word in patch {
+            mix(word);
+        }
+    }
+    mix(indices.len() as u32);
+    for &word in indices {
+        mix(word);
+    }
+    hash
+}
+
 /// The scene's cluster tables and each view's buffers.
 #[derive(Debug, Default)]
 pub(super) struct Clusters {
@@ -109,6 +130,9 @@ pub(super) struct Clusters {
     tables: [u32; 2],
     /// The patches and the meshes of the table that the GPU holds.
     table_words: [u32; 2],
+    /// A hash of the patch table and the index table that the GPU holds. A structure change that
+    /// leaves the trees alone keeps both tables, so only the mesh records upload again.
+    tables_hash: u64,
     /// The mesh records that the GPU holds, the scene layout's then the casters', so a record
     /// that changes without a new layout writes the table again: a tree's copy moves with its
     /// bucket's slice, and the casters' layout changes on its own.
@@ -211,24 +235,39 @@ impl Clusters {
         };
         let records_changed =
             self.records.len() != 2 * trees || (0..2 * trees).any(|k| self.records[k] != record(k));
-        if recreated || layout_changed || records_changed || self.table_words != words {
+        let tables_hash = table_hash(&layout.cluster_patches, &layout.cluster_indices);
+        let tables_changed =
+            recreated || self.tables_hash != tables_hash || self.table_words != words;
+        // The patch table and the index table change only with the trees. A structure change that
+        // leaves them alone, such as a level arriving, writes only the mesh records, which follow
+        // the patches in the same buffer.
+        if tables_changed {
+            self.tables_hash = tables_hash;
             self.table_words = words;
-            self.records.clear();
-            self.records.extend((0..2 * trees).map(record));
-            let mut table: Vec<u32> = Vec::with_capacity((patches * PATCH_WORDS) as usize);
-            for patch in &layout.cluster_patches {
-                table.extend_from_slice(patch);
-            }
-            for record in &self.records {
-                table.extend_from_slice(record);
-            }
-            if !table.is_empty() {
+            if !layout.cluster_patches.is_empty() {
+                let mut table: Vec<u32> = Vec::with_capacity((patches * PATCH_WORDS) as usize);
+                for patch in &layout.cluster_patches {
+                    table.extend_from_slice(patch);
+                }
                 let (at, length) = arena.push(words_as_bytes(&table))?;
                 list.push(Op::WriteBuffer, &[ids::CLUSTER_PATCHES, 0, at, length])?;
             }
             if !layout.cluster_indices.is_empty() {
                 let (at, length) = arena.push(words_as_bytes(&layout.cluster_indices))?;
                 list.push(Op::WriteBuffer, &[ids::CLUSTER_INDICES, 0, at, length])?;
+            }
+        }
+        if tables_changed || records_changed || layout_changed {
+            self.records.clear();
+            self.records.extend((0..2 * trees).map(record));
+            let mut records: Vec<u32> = Vec::with_capacity(self.records.len() * 8);
+            for record in &self.records {
+                records.extend_from_slice(record);
+            }
+            if !records.is_empty() {
+                let (at, length) = arena.push(words_as_bytes(&records))?;
+                let offset = patches * PATCH_WORDS * 4;
+                list.push(Op::WriteBuffer, &[ids::CLUSTER_PATCHES, offset, at, length])?;
             }
         }
         Ok(recreated)
