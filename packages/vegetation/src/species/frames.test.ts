@@ -36,6 +36,8 @@ import { frame as hawthornShrub } from './hawthorn-shrub/directed';
 import { record as hawthornShrubRecord } from './hawthorn-shrub/record';
 import { frame as holmOak } from './holm-oak/directed';
 import { record as holmOakRecord } from './holm-oak/record';
+import { frame as olive } from './olive/directed';
+import { record as oliveRecord } from './olive/record';
 import { frame as silverBirch } from './silver-birch/directed';
 import { record as silverBirchRecord } from './silver-birch/record';
 import { frame as weepingWillow } from './weeping-willow/directed';
@@ -151,6 +153,17 @@ const HELD: readonly Held[] = [
 		plumb: ['trunk'],
 		// The outline's top is blunt, so the bunches on the highest tips stand a little over it.
 		tall: [0.95, 1.05],
+	},
+	{
+		id: 'olive',
+		spec: olive,
+		record: oliveRecord,
+		counts: { trunk: 1, outer: 3, centre: 2, branch: 15, spray: 30 },
+		// Three outer limbs stand a third of a turn apart.
+		round: { rule: 'outer', gap: 152, lean: 0.25 },
+		base: { outer: 0.34, centre: 0.55, branch: 0.6, spray: 0.6 },
+		plumb: ['trunk'],
+		tall: [0.93, 1.05],
 	},
 ];
 
