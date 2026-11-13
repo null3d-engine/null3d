@@ -118,6 +118,14 @@ const SKIN_CLOSE: SlotRule = {
 	note: 'a cactus skin close-up: judged on the waxy ribbed skin at close range',
 };
 
+/**
+ * Whether a picture's name is a cactus's skin close-up: its ribs, areoles or spines. A leaf's ribs
+ * and veins, such as a hosta's ribbed blade, are the leaf's own surface.
+ */
+function cactusSkin(name: string): boolean {
+	return /rib|areole|spine/.test(name) && !/leaf/.test(name);
+}
+
 /** A woodpecker's nest holes in an old cactus trunk: the same skin, framed wider. */
 const NEST_HOLES: SlotRule = {
 	view: 'bark-mid',
@@ -163,12 +171,9 @@ const SLOT_RULES: readonly { readonly test: (name: string) => boolean; readonly 
 			test: (n) => /spine-cluster|single-areole/.test(n),
 			slot: { view: 'leaf-upper', framed: false },
 		},
-		// Its ribs and areole rows are the skin's own close view: the species has no leaf or twig for
-		// the leaf and twig views to cut, and its body is one ribbed surface.
-		{ test: (n) => /rib|areoles/.test(n), slot: SKIN_CLOSE },
 		// A cactus's ribs, areoles and spine clusters are the skin's own close view: the species has no
 		// leaf or twig for the leaf and twig views to cut, and its body is one ribbed surface.
-		{ test: (n) => /rib|areole|spine/.test(n), slot: SKIN_CLOSE },
+		{ test: cactusSkin, slot: SKIN_CLOSE },
 		{ test: (n) => /\bnest|\bholes?\b/.test(n), slot: NEST_HOLES },
 		// A cactus's arms are its limbs: the whole arm, its underside and its elbow are limb views,
 		// and the crownless plant has no fork for the fork view to find.
@@ -514,7 +519,7 @@ function formOf(name: string, forms: readonly string[]): string | undefined {
 /** The texture rule of a texture source that its number does not name. */
 function textureRule(number: number, name: string): SlotRule {
 	// A cactus's texture sources hold its spine clusters, not leaves: its surface is the ribbed stem.
-	if (/rib|areole|spine/.test(name)) return SKIN_CLOSE;
+	if (cactusSkin(name)) return SKIN_CLOSE;
 	const known = TEXTURE_BY_NUMBER[number];
 	if (known) return known;
 	if (/leaf|needle|frond|blade/.test(name))

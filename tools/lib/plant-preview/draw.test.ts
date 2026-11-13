@@ -23,7 +23,11 @@ function kitOf(front: number, back: number, fallByte = 0): SpeciesKitData {
 			color[(layer * SIZE * SIZE + i) * 4 + 3] = Math.round((layer === 0 ? front : back) * 255);
 			surface[(layer * SIZE * SIZE + i) * 4 + 2] = fallByte;
 		}
-	return { box: BOX, cards: { size: SIZE, color, surface } } as unknown as SpeciesKitData;
+	return {
+		box: BOX,
+		cards: { size: SIZE, color, surface },
+		prototypes: [],
+	} as unknown as SpeciesKitData;
 }
 
 /**

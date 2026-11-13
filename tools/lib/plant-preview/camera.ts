@@ -187,12 +187,13 @@ export function restood(camera: PreviewCamera, scale: number): PreviewCamera {
 	};
 }
 
-/** The same camera drawing a picture a whole number of times as large. */
-export function enlarged(camera: PreviewCamera, factor: number): PreviewCamera {
+/** The same camera drawing a picture of another width, its height in the same proportion. */
+export function atWidth(camera: PreviewCamera, width: number): PreviewCamera {
+	const factor = width / camera.width;
 	return {
 		...camera,
-		width: camera.width * factor,
-		height: camera.height * factor,
+		width,
+		height: Math.max(1, Math.round(camera.height * factor)),
 		focal: camera.focal * factor,
 		scale: camera.scale * factor,
 	};
