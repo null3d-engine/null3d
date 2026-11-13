@@ -740,6 +740,10 @@ impl Layout {
             Some(bucket)
         };
         let fades = drawn == Drawn::Scene && settings.levels_fade();
+        // A measured level fades when the governed threshold is high enough that its switch shows.
+        // It is a level's own hand-over, so it draws in every layout whose builds can fade, as a
+        // hand-set level does.
+        let measured_fades = settings.measured_levels_fade();
         // The keys whose sources draw in a distance band, which need a fade bucket beside each of
         // their levels only while the quality settings fade those bands.
         let mut ranged_keys: Vec<BucketKey> = Vec::new();
@@ -766,6 +770,7 @@ impl Layout {
             key_counts,
             levels,
             fades,
+            measured_fades,
             self.codes,
             ranged,
             eligible,
@@ -856,6 +861,7 @@ impl Layout {
                 &*key_counts,
                 levels,
                 self.codes,
+                measured_fades,
                 bands,
                 eligible,
                 &level_bucket,

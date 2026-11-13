@@ -31,12 +31,14 @@
 //! so every view and both frame builders pick the same level for the same source: the job workers
 //! through [`LevelRule::pick`], and the GPU's culling shader by the same steps.
 //!
-//! A level with a measured error changes the picture by under a pixel at its switch, so it switches
-//! at once. A level given by distance or by a hand-set error changes the picture far more, and its
-//! bands fade where the switch would show: past each switch distance lies a fading band,
-//! [`FADE_BAND`] of the switch distance long, in which the new level and the one before both draw.
-//! A fade amount `t` runs from 0 to 1 across the band, and a dither gives each pixel to one level
-//! (see [`fade_values`]). The frame builders make a fade bucket only for a level that fades.
+//! A level with a measured error changes the picture by under a pixel at the threshold the asset
+//! tool measures it at, so it switches at once. A governed threshold above
+//! [`MEASURED_FADE_FROM`] makes the switch show, and the measured level then fades too. A level
+//! given by distance or by a hand-set error changes the picture far more, and it always fades
+//! where the switch would show: past each switch distance lies a fading band, [`FADE_BAND`] of the
+//! switch distance long, in which the new level and the one before both draw. A fade amount `t`
+//! runs from 0 to 1 across the band, and a dither gives each pixel to one level (see
+//! [`fade_values`]). The frame builders make a fade bucket only for a level that fades.
 //!
 //! A source whose bounding sphere covers fewer pixels than the threshold draws nothing: the last
 //! level holds no geometry. The sphere's world diameter times the factor measures the pixels it
@@ -81,6 +83,14 @@ pub fn level_code(level: u32, hidden: bool, fade: f32) -> u32 {
 
 /// The share of the switch distance over which two levels hand over.
 pub const FADE_BAND: f32 = 0.08;
+
+/// The governed threshold, in pixels, above which a measured level hands over in a fading band.
+///
+/// A measured error covers this many pixels at its switch, so the switch shows once the governed
+/// threshold rises past about one and a half pixels. Below this the picture changes by under a
+/// pixel and the band costs a second draw for nothing. The threshold here is the one in force after
+/// the governor's detail steps, which the frame receives.
+pub const MEASURED_FADE_FROM: f32 = 1.5;
 
 /// The smallest fade value of the new level in a band, so that its sign marks it even at the
 /// band's start, where it covers no pixel yet.
@@ -1312,6 +1322,54 @@ mod tests {
 
     fn links_without_fades() -> Vec<LevelLink> {
         links([0.0, 0.01, 0.04, 0.2], false)
+    }
+
+    #[test]
+    fn a_measured_bands_error_span_scales_with_the_governed_threshold() {
+        // A level's error covers the governed threshold in pixels at its switch, and the band
+        // hands over while the error falls by the band's share of that. A larger threshold shows a
+        // larger error, so the pixels the band spans grow with it.
+        let links = links([0.0, 0.01, 0.04, 0.2], true);
+        let span = |threshold: f32| {
+            let rule = LevelRule::new(1000.0, 1.0, false, threshold, FADE_BAND);
+            let switch = rule.switch_distance(&links[1], 1.0, 0.5, 1.0);
+            let band_end = switch * (1.0 + FADE_BAND);
+            // The rule compares an error of `e` through `e × scale × height × P11 / (2 × distance)`,
+            // which is the pixels the error covers.
+            let pixels = |distance: f32| links[1].value * 1000.0 / (2.0 * distance);
+            (pixels(switch) - pixels(band_end), pixels(switch))
+        };
+        let (two_pixels, at_two) = span(2.0);
+        let (four_pixels, at_four) = span(4.0);
+        let (eight_pixels, at_eight) = span(8.0);
+        assert!((at_two - 2.0).abs() < 1e-4, "{at_two}");
+        assert!((at_four - 4.0).abs() < 1e-4, "{at_four}");
+        assert!((at_eight - 8.0).abs() < 1e-4, "{at_eight}");
+        assert!((four_pixels - 2.0 * two_pixels).abs() < 1e-4);
+        assert!((eight_pixels - 2.0 * four_pixels).abs() < 1e-4);
+        assert!(eight_pixels > four_pixels && four_pixels > two_pixels);
+    }
+
+    #[test]
+    fn a_measured_bands_fade_leaves_the_level_choice_alone() {
+        // The band changes only the hand-over: the level picked inside it is the level the same
+        // rule picks where the set takes no fade buckets.
+        let banded = links([0.0, 0.01, 0.04, 0.2], true);
+        let plain = links_without_fades();
+        let rule = LevelRule::new(1000.0, 1.0, false, 4.0, FADE_BAND);
+        let switch = rule.switch_distance(&banded[1], 1.0, 0.5, 1.0);
+        let middle = switch * (1.0 + FADE_BAND / 2.0);
+        let picked = pick(&rule, &banded, middle);
+        let Picked::Fade { new, old, t } = picked else {
+            panic!("no fade in the band");
+        };
+        assert_eq!((new, old), (5, 4));
+        assert!((t - 0.5).abs() < 1e-4);
+        assert_eq!(pick(&rule, &plain, middle), Picked::One(1));
+        // Past the band both pick the same level, with or without fade buckets.
+        let past = switch * (1.0 + FADE_BAND) + 0.01;
+        assert_eq!(pick(&rule, &banded, past), Picked::One(1));
+        assert_eq!(pick(&rule, &plain, past), Picked::One(1));
     }
 
     #[test]

@@ -34,7 +34,7 @@ const BALL: u32 = 2;
 /// is 360 pixels high and its camera 60 degrees high, so at a threshold of 1 pixel a level switches
 /// in past its error times 311.8: level 1 past 3.1 m, and level 2 past 15.6 m. The ball 20 m away
 /// draws level 2, past its fading band, which ends at 17.9 m.
-fn give_levels<B: FrameBuilder>(world: &mut World<B>, fades: u16) -> [u32; 2] {
+fn give_levels<B: FrameBuilder>(world: &mut World<B>, flags: u32) -> [u32; 2] {
     let settings = world.renderer.settings_mut();
     let meshes = [base_sphere(0.5, [6, 4]), base_sphere(0.5, [4, 3])]
         .map(|level| settings.meshes_mut().add(&level).unwrap() + 1);
@@ -45,7 +45,7 @@ fn give_levels<B: FrameBuilder>(world: &mut World<B>, fades: u16) -> [u32; 2] {
             &[0.01, 0.05],
             &[Switch::Error; 2],
             &[0, 0],
-            fades,
+            flags,
         )
         .unwrap();
     meshes
@@ -184,7 +184,7 @@ fn each_level_has_a_bucket_and_a_fade_bucket_whose_pipelines_dither_on_webgpu() 
     give_levels(&mut world, 0b110);
     let fading = indirect_draws(&mut world);
     let mut crisp = World::new();
-    give_levels(&mut crisp, 0);
+    give_levels(&mut crisp, 0b110 << 16);
     let switching = indirect_draws(&mut crisp);
     assert!(switching > plain, "{plain} {switching}");
     assert_eq!(
@@ -218,8 +218,62 @@ fn a_level_that_switches_at_once_adds_no_fade_bucket() {
     // A level measured by the asset tool changes the picture by under a pixel at its switch, so
     // it hands over at once and takes no fade bucket.
     let mut crisp = World::new();
-    give_levels(&mut crisp, 0);
+    give_levels(&mut crisp, 0b110 << 16);
     assert!(indirect_draws(&mut crisp) < fading);
+}
+
+#[test]
+fn a_measured_level_fades_only_above_the_governed_threshold() {
+    // The quality settings report a rebuild only where the governed threshold crosses the point
+    // where a measured switch shows.
+    let mut world = World::new();
+    give_levels(&mut world, 0);
+    let settings = world.renderer.settings_mut();
+    assert!(settings.set_level_quality(LevelQuality {
+        threshold: 4.0,
+        ..LevelQuality::default()
+    }));
+    assert!(!settings.set_level_quality(LevelQuality {
+        threshold: 2.0,
+        ..LevelQuality::default()
+    }));
+    assert!(settings.set_level_quality(LevelQuality {
+        threshold: 1.0,
+        ..LevelQuality::default()
+    }));
+    // Above it, a measured set draws the buckets of a set that names its fades, and at the default
+    // threshold it draws none of them.
+    let mut measured = World::new();
+    give_levels(&mut measured, 0b110 << 16);
+    measured
+        .renderer
+        .settings_mut()
+        .set_level_quality(LevelQuality {
+            threshold: 4.0,
+            ..LevelQuality::default()
+        });
+    let mut named = World::new();
+    give_levels(&mut named, 0b110);
+    let mut crisp = World::new();
+    give_levels(&mut crisp, 0b110 << 16);
+    let above = indirect_draws(&mut measured);
+    let naming = indirect_draws(&mut named);
+    let at_once_gpu = indirect_draws(&mut crisp);
+    assert_eq!(above, naming);
+    assert!(at_once_gpu < naming);
+    // The WebGL2 path draws the hand-over buckets only where a source lies in a band: at the
+    // raised threshold the ball sits in level 1's band, and at the default one it does not.
+    let mut cpu = cpu_world();
+    give_levels(&mut cpu, 0b110 << 16);
+    ball_at(&mut cpu, 1.3);
+    cpu.record(true);
+    let at_once = draws(&cpu).len();
+    cpu.renderer.settings_mut().set_level_quality(LevelQuality {
+        threshold: 4.0,
+        ..LevelQuality::default()
+    });
+    cpu.record(true);
+    assert!(draws(&cpu).len() > at_once);
 }
 
 /// The world drawn by the WebGL2 frame builder, one draw per bucket.
@@ -347,7 +401,7 @@ fn copies(world: &World) -> [u32; 5] {
 
 /// Gives the world's ball one lower level for each error, each simpler than the one before, and
 /// fading bands when `fades`. Returns their engine mesh ids.
-fn give_levels_of<B: FrameBuilder>(world: &mut World<B>, errors: &[f32], fades: u16) -> Vec<u32> {
+fn give_levels_of<B: FrameBuilder>(world: &mut World<B>, errors: &[f32], flags: u32) -> Vec<u32> {
     let finest = [[6, 4], [4, 3], [3, 2], [2, 1]];
     let settings = world.renderer.settings_mut();
     let meshes: Vec<u32> = errors
@@ -368,7 +422,7 @@ fn give_levels_of<B: FrameBuilder>(world: &mut World<B>, errors: &[f32], fades: 
             errors,
             &vec![Switch::Error; errors.len()],
             &vec![0; errors.len()],
-            fades,
+            flags,
         )
         .unwrap();
     meshes
@@ -405,7 +459,7 @@ fn give_distance_levels<B: FrameBuilder>(world: &mut World<B>, distances: &[f32]
 
 /// Moves the world's visible ball `distance` metres in front of the camera, which looks down -z
 /// from 20 m out.
-fn ball_at(world: &mut World, distance: f32) {
+fn ball_at<B: FrameBuilder>(world: &mut World<B>, distance: f32) {
     let ball = world.objects[2];
     world
         .scene
