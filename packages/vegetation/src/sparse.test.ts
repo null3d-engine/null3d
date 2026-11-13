@@ -451,7 +451,8 @@ for (const [name, load] of SOCKET_PLANTS)
 				expect([name, sockets !== undefined]).toEqual([name, true]);
 				const rank = skeleton.buds.sockets?.rank as Uint32Array;
 				const limbs = kit.record.sparse?.limbs ?? GREAT_LIMB_SHARE;
-				const order = sparseOrder(skeleton, shoots, limbs);
+				const floor = kit.record.sparse?.foliage ?? FOLIAGE_FLOOR;
+				const order = sparseOrder(skeleton, shoots, limbs, [], floor);
 				expect(order.bySockets).toBe(true);
 				const rowsOf = new Map<number, number>();
 				for (let r = 0; r < shoots.count; r++)
