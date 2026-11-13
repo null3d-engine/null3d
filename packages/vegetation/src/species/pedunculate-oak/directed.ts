@@ -111,6 +111,38 @@ const boughs: FrameBranchRule = {
 };
 
 /**
+ * The skirts of a low limb: short branches from its outer half that leave its sides lowered toward
+ * the ground, each under a small clump. Stills 01, 02 and 18: the crown's underside hangs lower far
+ * out than near the bole, in lobes of leaf under the low limbs' outer reach. A skirt's branch ends
+ * where the piece at its end meets the lower boundary, so its leaf hangs down to the boundary and
+ * never under it.
+ */
+const skirts: FrameBranchRule = {
+	name: 'skirt',
+	role: 'branch',
+	count: { every: 0.07, least: 2, most: 4 },
+	along: [0.5, 0.95],
+	stagger: 0.3,
+	around: 'sides',
+	lift: -45,
+	jitter: 20,
+	angle: 80,
+	from: 'parent',
+	angleSpread: 8,
+	length: { outline: 0.95 },
+	vary: 0.1,
+	least: 0.03,
+	most: 0.1,
+	radius: 0.4,
+	taper: 0.35,
+	sway: 30,
+	elbows: 5,
+	crook: 0.4,
+	apart: 0.006,
+	patch: clump(0.11),
+};
+
+/**
  * One side of the crown as a whole still shows it, read on the still's own columns from the
  * trunk's line. Every figure is a share of the tree's height in that still.
  */
@@ -339,7 +371,7 @@ export const frame: FrameSpec = {
 				// Still 03, from below: the limbs spread to every side and none lies along another.
 				apart: 0.02,
 				patch: clump(0.2),
-				children: [boughs],
+				children: [skirts, boughs],
 			},
 			{
 				name: 'crown',
