@@ -852,6 +852,7 @@ function rowsCopy(rows: ShootRows): ShootRows {
 		order: rows.order.slice(),
 		...(rows.back ? { back: rows.back.slice() } : {}),
 		...(rows.node ? { node: rows.node.slice() } : {}),
+		...(rows.socket ? { socket: rows.socket.slice() } : {}),
 	};
 }
 

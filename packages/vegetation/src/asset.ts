@@ -180,6 +180,11 @@ export interface ShootRows {
 	/** The skeleton node each row stands on. Absent on rows that stand on no skeleton. */
 	readonly node?: Uint32Array;
 	/**
+	 * The socket each row stands at, on a plant of sockets: its bud site's index in the skeleton the
+	 * rows stand on. Every row of one piece names the same socket. Absent on other plants.
+	 */
+	readonly socket?: Uint32Array;
+	/**
 	 * Each row's index in the plant as grown, on a plant that rows were removed from, so a choice
 	 * keyed on a row stays the same on the sparser plant. Absent on rows as grown.
 	 */
@@ -483,6 +488,7 @@ function rowViews(rows: ShootRows): ArrayBufferView[] {
 		rows.order,
 		...(rows.node ? [rows.node] : []),
 		...(rows.id ? [rows.id] : []),
+		...(rows.socket ? [rows.socket] : []),
 	];
 }
 

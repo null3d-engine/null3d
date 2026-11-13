@@ -70,6 +70,9 @@ const OCTANT_LEAST = 40;
 const QUARTER_SLACK = 0.2;
 const QUARTER_LEAST = 8;
 
+/** The least share of the plant's kept share that a quarter round it keeps of its own sockets. */
+const QUARTER_RATIO = 0.5;
+
 /**
  * How far apart the kept shares of the sockets at the axes' tips and the sockets along the axes may
  * stand at half sparseness: a plant that keeps its tips and strips its limbs stands 0.58 apart.
@@ -454,6 +457,20 @@ for (const [name, load] of SOCKET_PLANTS)
 				const floor = kit.record.sparse?.foliage ?? FOLIAGE_FLOOR;
 				const order = sparseOrder(skeleton, shoots, limbs, [], floor);
 				expect(order.bySockets).toBe(true);
+				// Each row's shoot is the shoot of the socket it names: the same node and the same group,
+				// so two pieces of different groups at one place thin apart.
+				const named = shoots.socket;
+				if (named)
+					for (let r = 0; r < shoots.count; r++) {
+						const own = named[r] as number;
+						const shoot = sockets[r] as number;
+						expect([
+							name,
+							r,
+							skeleton.buds.node[shoot],
+							skeleton.buds.sockets?.lobe[shoot],
+						]).toEqual([name, r, skeleton.buds.node[own], skeleton.buds.sockets?.lobe[own]]);
+					}
 				const rowsOf = new Map<number, number>();
 				for (let r = 0; r < shoots.count; r++)
 					rowsOf.set(sockets[r] as number, (rowsOf.get(sockets[r] as number) ?? 0) + 1);
@@ -543,8 +560,18 @@ for (const [name, load] of SOCKET_PLANTS)
 					for (let q = 0; q < 4; q++) {
 						const grown = quarterGrown[q] as number;
 						if (grown < QUARTER_LEAST) continue;
-						const off = Math.abs((quarterKept[q] as number) / grown - share);
+						const keptShare = (quarterKept[q] as number) / grown;
+						const off = Math.abs(keptShare - share);
 						expect([at, 'quarter', q, off <= QUARTER_SLACK]).toEqual([at, 'quarter', q, true]);
+						// A quarter whose share is a socket or more keeps at least half the plant's share
+						// of its own, so a side kept bare fails at any sparseness.
+						if (grown * share >= 1)
+							expect([at, 'quarter', q, keptShare >= QUARTER_RATIO * share]).toEqual([
+								at,
+								'quarter',
+								q,
+								true,
+							]);
 					}
 					if (sparse === 1)
 						for (let octant = 0; octant < 8; octant++)
@@ -555,6 +582,26 @@ for (const [name, load] of SOCKET_PLANTS)
 									octant,
 									true,
 								]);
+					// No branch kept bare for one piece: an axis that grew three sockets or more keeps none of
+					// them or at least half. The stems and great limbs stay at every sparseness.
+					const perAxis = new Map<number, [number, number]>();
+					for (const socket of rowsOf.keys()) {
+						const axis = skeleton.buds.axis[socket] as number;
+						const count = perAxis.get(axis) ?? [0, 0];
+						count[0]++;
+						if (kept.has(socket)) count[1]++;
+						perAxis.set(axis, count);
+					}
+					for (const [axis, [grown, held]] of perAxis) {
+						if (grown < 3 || structural[axis] === 1) continue;
+						expect([at, 'axis', axis, grown, held === 0 || held >= Math.ceil(grown / 2)]).toEqual([
+							at,
+							'axis',
+							axis,
+							grown,
+							true,
+						]);
+					}
 					// Clothed along its length: at half, the sockets at the axes' tips and the sockets
 					// along them keep shares near each other, not the tips alone.
 					if (sparse === 0.5) {
