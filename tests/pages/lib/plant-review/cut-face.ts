@@ -19,6 +19,8 @@ export interface CutPlane {
 
 /** The largest value of a 16-bit quantised coordinate. */
 const STEPS = 65535;
+/** Half the range of a 16-bit coordinate. */
+const HALF_STEPS = 32767;
 /** The largest magnitude of an 8-bit quantised normal's component. */
 const NORMAL_STEPS = 127;
 
@@ -35,9 +37,11 @@ interface Crossing {
  * triangles from the plane's point to each wood triangle's crossing, wound to face along the normal.
  * Each rim vertex takes the crossed edge's bark coordinates and its second coordinates, the radius
  * and the junction, where it crosses, and the vertex bytes of the nearer end. The middle vertex of
- * each fan triangle takes its rim's, so the face draws in the colour of the skin at its rim. A
- * crossing farther from the point than the reach belongs to another stem the plane crosses, and
- * is left out.
+ * each fan triangle takes its rim's radius, junction and bytes, and bark coordinates half their
+ * range away, so the bark across the face reads at its coarsest level: the face draws flat in the
+ * skin's mean colour, where the rim's own coordinates would drag the skin's pattern in as streaks.
+ * The grower holds no flesh, so the face shows the cut's outline and no inner structure. A crossing
+ * farther from the point than the reach belongs to another stem the plane crosses, and is left out.
  *
  * @param part The wood part.
  * @param box The species box its positions are quantised in.
@@ -109,23 +113,24 @@ export function cutFace(part: PlantPart, box: SpeciesBox, plane: CutPlane): Plan
 			(array[c.from * width + k] as number) +
 				((array[c.to * width + k] as number) - (array[c.from * width + k] as number)) * c.t,
 		);
-	const write = (out: number, at: V3, rim: Crossing) => {
+	const write = (out: number, at: V3, rim: Crossing, middle: boolean) => {
 		const nearer = rim.t < 0.5 ? rim.from : rim.to;
 		for (let k = 0; k < 3; k++) {
 			positions[out * 3 + k] = quantised(at, k);
 			normals[out * 3 + k] = facing[k] as number;
 		}
 		for (let k = 0; k < 2; k++) {
-			uvs[out * 2 + k] = lerp(source.uvs, 2, rim, k);
+			const uv = lerp(source.uvs, 2, rim, k);
+			uvs[out * 2 + k] = middle ? (uv <= HALF_STEPS ? uv + HALF_STEPS : uv - HALF_STEPS) : uv;
 			uvs1[out * 2 + k] = lerp(source.uvs1, 2, rim, k);
 		}
 		colors.set(source.colors.subarray(nearer * 4, nearer * 4 + 4), out * 4);
 		tangents?.set((source.tangents as Int8Array).subarray(nearer * 4, nearer * 4 + 4), out * 4);
 	};
 	rims.forEach(([first, second], r) => {
-		write(r * 3, plane.at, first);
-		write(r * 3 + 1, first.at, first);
-		write(r * 3 + 2, second.at, second);
+		write(r * 3, plane.at, first, true);
+		write(r * 3 + 1, first.at, first, false);
+		write(r * 3 + 2, second.at, second, false);
 	});
 	const order = count <= STEPS + 1 ? new Uint16Array(count) : new Uint32Array(count);
 	for (let i = 0; i < count; i++) order[i] = i;

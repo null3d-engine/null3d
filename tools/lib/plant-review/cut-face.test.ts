@@ -99,14 +99,20 @@ describe("a section's cut face", () => {
 			expect([...face.arrays.normals.subarray(v, v + 3)]).toEqual([0, 127, 0]);
 	});
 
-	test("carries the skin's bark coordinates and radius where it crosses, and the nearer end's bytes", () => {
+	test("carries the skin's bark coordinates and radius at its rim, and the nearer end's bytes", () => {
 		const face = cutFace(stem(), BOX, plane) as PlantPart;
 		const { uvs, uvs1, colors } = face.arrays;
 		for (let v = 0; v < uvs.length / 2; v++) {
-			// A quarter of the way up the stem.
-			expect(uvs[v * 2 + 1]).toBe(TOP_V / 4);
 			expect(uvs1[v * 2]).toBe(1000);
 			expect([...colors.subarray(v * 4, v * 4 + 4)]).toEqual([1, 2, 3, 4]);
+		}
+		for (let t = 0; t < uvs.length / 2; t += 3) {
+			// The rim a quarter of the way up the stem; the middle half the coordinates' range from
+			// its rim, so the bark across the face reads at its coarsest level.
+			expect(uvs[(t + 1) * 2 + 1]).toBe(TOP_V / 4);
+			expect(uvs[(t + 2) * 2 + 1]).toBe(TOP_V / 4);
+			expect(Math.abs((uvs[t * 2] as number) - (uvs[(t + 1) * 2] as number))).toBe(32767);
+			expect(Math.abs((uvs[t * 2 + 1] as number) - TOP_V / 4)).toBe(32767);
 		}
 	});
 
