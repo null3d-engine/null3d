@@ -49,7 +49,7 @@ export const VIDEO_TOLERANCE = 24;
  * of its own every frame, such as the values that a draw reads, and a paused video adds nothing:
  * this bound holds those writes and is far below one frame of a video.
  */
-const PAUSED_ALLOWANCE = 16 * 1024;
+export const PAUSED_ALLOWANCE = 16 * 1024;
 
 /** The largest difference of one channel between two colours. */
 function channelGap(a: readonly number[], b: readonly number[]): number {
