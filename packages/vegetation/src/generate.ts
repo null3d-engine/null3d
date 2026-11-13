@@ -79,6 +79,7 @@ import { grower, loadGrower } from './grow/models';
 import { extrasMesh } from './leaf/extras';
 import { dressShoots, pruneLight } from './leaf/instancer';
 import { foliage, loadFoliage } from './leaf/kinds';
+import { type PiecePrototype, type PieceRule, piecePrototypes } from './leaf/piece';
 import { inLeaf } from './leaf/season';
 import { shootPrototypes } from './leaf/shoot';
 import { bakeCards } from './lod/card-bake';
@@ -371,6 +372,24 @@ function scaledCurve(curve: Curve, factor: number): Curve {
 	return typeof curve === 'number'
 		? curve * factor
 		: curve.map(([at, value]) => [at, value * factor] as [number, number]);
+}
+
+/**
+ * Builds a species' branch pieces on this thread, each variant at every detail tier, from the
+ * species' own leaf meshes. Call `loadPlantCode` first.
+ *
+ * @param source The species' record and texture manifest, such as its module.
+ * @param rules The species' piece rules.
+ * @returns The pieces, each rule's variants together, in the rules' order.
+ */
+export function buildPiecesNow(source: KitSource, rules: readonly PieceRule[]): PiecePrototype[] {
+	const builder = foliage(source.record.foliage.kind);
+	const manifest = source.textures.manifest;
+	return piecePrototypes(
+		source.record,
+		rules,
+		DETAILS.map((tier) => builder.leaves(source.record, manifest, tier)),
+	);
 }
 
 /**
