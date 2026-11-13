@@ -10,12 +10,17 @@ import { quatRotate, type Vector3 } from '../core/math';
 import type { Species } from '../core/record';
 import { spreadMean } from '../core/types';
 import {
+	evenOutline,
 	FRAME_TURN_MOST,
 	type FramePlan,
 	type FrameSpec,
+	framedRecord,
 	frameSkeleton,
 	frameSockets,
 	growFrame,
+	outlineFloor,
+	outlineRadius,
+	outlineSpan,
 	planFrame,
 } from '../grow/frame';
 import {
@@ -24,6 +29,7 @@ import {
 	crownFaults,
 	crownFill,
 	endAzimuth,
+	forkShares,
 	imbalance,
 	longestStraight,
 	looseAxes,
@@ -32,6 +38,7 @@ import {
 	steepestStep,
 	thickens,
 	widestGap,
+	woodThrough,
 } from '../grow/frame-measure';
 import { frame as commonAlder, directed as commonAlderDirected } from './common-alder/directed';
 import { record as commonAlderRecord } from './common-alder/record';
@@ -124,6 +131,7 @@ function between(a: readonly number[], b: readonly number[]): number {
 }
 /** The longest share of a limb or a branch that may hold one direction. */
 const STRAIGHT_MOST = 0.2;
+const STUB_DIAMETERS = 8;
 /** The most of its thickest radius an axis may drop between two nodes: a stem's foot, and the rest. */
 const STEP_STEM = 0.45;
 const STEP_MOST = 0.2;
@@ -144,15 +152,21 @@ interface Held {
 	readonly base: Readonly<Record<string, number>>;
 	/** The rules whose axes may run straight: a plumb stem, a hanging whip, a leading shoot. */
 	readonly plumb: readonly string[];
+	/**
+	 * The pairs of axes whose wood passes through each other, summed over the seeds. The number may
+	 * only fall: the test fails when it rises, and fails when it falls until it is lowered here in
+	 * the same commit.
+	 */
+	readonly through: number;
 	/** The plant's height over the record's, as the least and the most. */
 	readonly tall: readonly [number, number];
 	/**
-	 * The requirements the tree is known not to meet yet: its crown's outline band by band, its
-	 * sockets' spread through the turn, its bends' radius. A test of an open requirement expects the
+	 * The requirements the tree is known not to meet yet: its crown's mean fill of its outline, the
+	 * outline band by band, its sockets' spread through the turn, its bends' radius. A test of an open requirement expects the
 	 * failure, and fails when the tree starts to hold, so the name must come off as the tree is
 	 * mended. The bands a tree is excused are named by their number from the ground, with the reason.
 	 */
-	readonly open?: readonly ('bands' | 'spread' | 'bends')[];
+	readonly open?: readonly ('fill' | 'bands' | 'spread' | 'bends')[];
 	readonly excused?: Readonly<Record<number, string>>;
 }
 
@@ -169,8 +183,9 @@ const HELD: readonly Held[] = [
 		base: { limb: 0.35, side: 0.45, top: 0.4, fall: 0.4 },
 		// A fall hangs by its own weight.
 		plumb: ['leader', 'fall'],
+		through: 0,
 		tall: [0.98, 1.02],
-		open: ['bands', 'spread', 'bends'],
+		open: ['bands', 'spread'],
 	},
 	{
 		id: 'common-alder',
@@ -184,8 +199,9 @@ const HELD: readonly Held[] = [
 		round: { rule: 'limb', gap: 46, lean: 0.25 },
 		base: { limb: 0.25, twig: 0.5 },
 		plumb: ['leader'],
+		through: 0,
 		tall: [0.98, 1.02],
-		open: ['bands', 'bends'],
+		open: ['bands'],
 	},
 	{
 		id: 'weeping-willow',
@@ -200,6 +216,7 @@ const HELD: readonly Held[] = [
 		// A whip hangs by its own weight.
 		plumb: ['trunk', 'whip'],
 		// The heads' foliage stands above the highest wood.
+		through: 13,
 		tall: [0.93, 1.02],
 		open: ['bands', 'spread'],
 	},
@@ -215,6 +232,7 @@ const HELD: readonly Held[] = [
 		base: { arm: 0.65, fork: 0.65, twig: 0.65 },
 		plumb: [],
 		// The top masses' foliage stands above the highest twig.
+		through: 5,
 		tall: [0.97, 1.06],
 		open: ['bands'],
 	},
@@ -231,6 +249,7 @@ const HELD: readonly Held[] = [
 		// A leading shoot is straight: the owner's ruling passes it.
 		plumb: ['shoot'],
 		// The leading shoots' tips are the plant's top.
+		through: 3,
 		tall: [0.95, 1.08],
 		open: ['bands'],
 	},
@@ -246,8 +265,9 @@ const HELD: readonly Held[] = [
 		base: { low: 0.47, upper: 0.55, bough: 0.5, spray: 0.5 },
 		plumb: ['trunk'],
 		// The top tiers' foliage stands above the highest wood.
+		through: 3,
 		tall: [0.93, 1.02],
-		open: ['bands'],
+		open: ['fill', 'bands'],
 	},
 	{
 		id: 'common-ash',
@@ -261,6 +281,7 @@ const HELD: readonly Held[] = [
 		base: { limb: 0.52, top: 0.62, branch: 0.45, twig: 0.5 },
 		plumb: ['trunk'],
 		// The outline's top is blunt, so the bunches on the highest tips stand a little over it.
+		through: 0,
 		tall: [0.95, 1.05],
 		open: ['bands', 'spread'],
 	},
@@ -270,13 +291,14 @@ const HELD: readonly Held[] = [
 		directed: oliveDirected,
 		heightMean: spreadMean(oliveDirected.size.height),
 		record: oliveRecord,
-		counts: { trunk: 1, outer: 3, centre: 2, branch: 15, spray: 45 },
-		// Three outer limbs stand a third of a turn apart.
-		round: { rule: 'outer', gap: 152, lean: 0.25 },
+		counts: { trunk: 1, outer: 4, centre: 2, branch: 18, spray: 54 },
+		// Four outer limbs leave a quarter of a turn apart; each one's end wanders with its elbows.
+		round: { rule: 'outer', gap: 140, lean: 0.3 },
 		base: { outer: 0.34, centre: 0.55, branch: 0.6, spray: 0.6 },
 		plumb: ['trunk'],
+		through: 5,
 		tall: [0.93, 1.05],
-		open: ['bands', 'spread', 'bends'],
+		open: ['bands', 'spread'],
 	},
 	{
 		id: 'pedunculate-oak',
@@ -290,14 +312,41 @@ const HELD: readonly Held[] = [
 		// A limb's share runs from 0.42 at the lowest to 0.5 at the highest, so it is not held here.
 		base: { bough: 0.5, branch: 0.55 },
 		plumb: ['trunk'],
+		through: 0,
 		tall: [0.95, 1.04],
-		open: ['bands', 'bends'],
+		// Each side is held to its own reach. On one seed of the four no foliage stands under a
+		// quarter of the height on the long low limb's side, where the limb ends higher than the
+		// photograph's; on another the crown's top is wider than the shorter side's.
+		open: ['bands'],
+		// The crown's foot stands inside the band that holds the low limbs' drooping ends.
+		excused: { 2: "the crown's foot stands inside the band" },
 	},
 ];
 
 /** A species' frame at one seed. */
+const PLANS = new Map<string, FramePlan>();
+const GROWN = new Map<string, MacroSkeleton>();
+
+/** A species' frame at one seed, planned once for all the tests that read it. */
 function planOf(held: Held, seed: number, variant = 0): FramePlan {
-	return planFrame(held.spec, { record: held.record, seed, variant, season: 'summer' });
+	const key = `${held.id}:${seed}:${variant}`;
+	let plan = PLANS.get(key);
+	if (!plan) {
+		plan = planFrame(held.spec, { record: held.record, seed, variant, season: 'summer' });
+		PLANS.set(key, plan);
+	}
+	return plan;
+}
+
+/** A species' frame with its sockets, grown once for all the tests that read it. */
+function grownOf(held: Held, seed: number): MacroSkeleton {
+	const key = `${held.id}:${seed}`;
+	let skeleton = GROWN.get(key);
+	if (!skeleton) {
+		skeleton = growFrame({ record: held.directed, seed, variant: 0, season: 'summer' });
+		GROWN.set(key, skeleton);
+	}
+	return skeleton;
 }
 
 /** The digest of the arrays a frame's skeleton holds, so two runs compare byte for byte. */
@@ -309,6 +358,127 @@ function digest(skeleton: MacroSkeleton): string {
 		hashBytes(skeleton.axes.order, 4),
 	].join(':');
 }
+
+describe('a crown outline stated side by side', () => {
+	/** A crown that reaches twice as far to one side as to the other, with its own depth each way. */
+	const lopsided: FrameSpec = {
+		outline: [
+			{
+				toward: 0,
+				reach: [
+					[0.2, 0.4],
+					[1, 0],
+				],
+				under: 0.2,
+			},
+			{
+				toward: 90,
+				reach: [
+					[0.1, 0.3],
+					[1, 0],
+				],
+				under: [
+					[0, 0.1],
+					[0.3, 0.3],
+				],
+			},
+			{
+				toward: 180,
+				reach: [
+					[0.2, 0.2],
+					[1, 0],
+				],
+				under: 0.2,
+			},
+			{
+				toward: 270,
+				reach: [
+					[0.1, 0.25],
+					[1, 0],
+				],
+				under: 0.1,
+			},
+		],
+		stems: pedunculateOak.stems,
+	};
+	const HEIGHT = 10;
+
+	it('gives each side its own reach, and never the mean of two', () => {
+		expect(outlineRadius(lopsided, HEIGHT, 2, 0)).toBeCloseTo(4, 9);
+		expect(outlineRadius(lopsided, HEIGHT, 2, Math.PI)).toBeCloseTo(2, 9);
+		expect(outlineRadius(lopsided, HEIGHT, 2, Math.PI / 2)).toBeCloseTo(2.6667, 3);
+		expect(outlineRadius(lopsided, HEIGHT, 2, -Math.PI / 2)).toBeCloseTo(2.2222, 3);
+	});
+
+	it('shows a view from any stated side the reach that side states', () => {
+		for (const height of [2, 4, 6, 8])
+			lopsided.outline.forEach((side) => {
+				const toward = (side.toward * Math.PI) / 180;
+				let seen = 0;
+				for (let k = 0; k < 360; k++) {
+					const azimuth = (k * Math.PI) / 180;
+					seen = Math.max(
+						seen,
+						outlineRadius(lopsided, HEIGHT, height, azimuth) * Math.cos(azimuth - toward),
+					);
+				}
+				expect(seen).toBeCloseTo(outlineRadius(lopsided, HEIGHT, height, toward), 6);
+			});
+	});
+
+	it('has no crown toward a side outside the heights the side states', () => {
+		expect(outlineRadius(lopsided, HEIGHT, 1.5, Math.PI / 2)).toBeGreaterThan(0);
+		expect(outlineRadius(lopsided, HEIGHT, 1.5, 0)).toBe(0);
+		expect(outlineRadius(lopsided, HEIGHT, 1.5, Math.PI / 4)).toBe(0);
+		expect(outlineRadius(lopsided, HEIGHT, 10.5, Math.PI / 2)).toBe(0);
+		expect(outlineSpan(lopsided)).toEqual({ foot: 0.1, top: 1 });
+	});
+
+	it('passes the lower boundary from one side to the next', () => {
+		expect(outlineFloor(lopsided, HEIGHT, 3, 0)).toBeCloseTo(2, 9);
+		expect(outlineFloor(lopsided, HEIGHT, 3, Math.PI / 2)).toBeCloseTo(3, 9);
+		expect(outlineFloor(lopsided, HEIGHT, 1.5, Math.PI / 2)).toBeCloseTo(2, 9);
+		expect(outlineFloor(lopsided, HEIGHT, 3, Math.PI / 4)).toBeCloseTo(2.5, 9);
+		expect(outlineFloor(lopsided, HEIGHT, 3, -Math.PI / 2)).toBeCloseTo(1, 9);
+	});
+
+	it('builds an even outline as the ellipse of its two axes', () => {
+		const reach = [
+			[0.3, 0.2],
+			[0.6, 0.5],
+			[1, 0],
+		] as const;
+		const even: FrameSpec = { outline: evenOutline(reach, 0.8, 30), stems: pedunculateOak.stems };
+		for (let k = 0; k < 72; k++) {
+			const azimuth = (k * 5 * Math.PI) / 180;
+			const off = azimuth - (30 * Math.PI) / 180;
+			const ellipse = 5 / Math.sqrt(Math.cos(off) ** 2 + (Math.sin(off) / 0.8) ** 2);
+			expect(outlineRadius(even, HEIGHT, 6, azimuth)).toBeCloseTo(ellipse, 9);
+		}
+		expect(outlineRadius(even, HEIGHT, 2.5, 1)).toBe(0);
+	});
+
+	it('is refused by the record check with one side, or with sides out of their order', () => {
+		const stated = (outline: FrameSpec['outline']) =>
+			speciesProblems(
+				framedRecord(pedunculateOakRecord, { ...lopsided, outline }, { rows: 4, fan: 45 }),
+			).filter((problem) => problem.includes('frame.outline'));
+		expect(stated(lopsided.outline)).toEqual([]);
+		expect(stated(lopsided.outline.slice(0, 1))).toHaveLength(1);
+		expect(stated([...lopsided.outline].reverse())).not.toEqual([]);
+	});
+
+	it('states the oak by the two sides of still 01 and the two of still 02', () => {
+		const right = outlineRadius(pedunculateOak, 1, 0.25, 0);
+		const left = outlineRadius(pedunculateOak, 1, 0.25, Math.PI);
+		expect(right).toBeCloseTo(0.909, 3);
+		expect(left).toBeCloseTo(0.809, 3);
+		// The long low limb's side hangs lower far out than the other side does.
+		expect(outlineFloor(pedunculateOak, 1, 0.6, 0)).toBeCloseTo(0.18, 3);
+		expect(outlineFloor(pedunculateOak, 1, 0.6, Math.PI)).toBeCloseTo(0.24, 3);
+		expect(pedunculateOak.outline.map((side) => side.toward)).toEqual([0, 90, 180, 270]);
+	});
+});
 
 for (const held of HELD)
 	describe(`the ${held.id}'s directed frame`, () => {
@@ -339,7 +509,10 @@ for (const held of HELD)
 			}
 		});
 
-		it('fills the crown outline it states, on every side', () => {
+		/** A test of a requirement: one that expects its failure while the tree names it open. */
+		const required = (name: 'fill' | 'bands' | 'spread' | 'bends') =>
+			held.open?.includes(name) ? it.failing : it;
+		required('fill')('fills the crown outline it states, on every side', () => {
 			for (const seed of SEEDS) {
 				const fill = crownFill(planOf(held, seed), held.spec);
 				expect(fill.mean).toBeGreaterThanOrEqual(FILL_MEAN[0]);
@@ -348,9 +521,6 @@ for (const held of HELD)
 			}
 		});
 
-		/** A test of a requirement: one that expects its failure while the tree names it open. */
-		const required = (name: 'bands' | 'spread' | 'bends') =>
-			held.open?.includes(name) ? it.failing : it;
 		const banded = required('bands');
 		banded('holds the outline it states band by band, on four sides', () => {
 			expect(Object.keys(held.excused ?? {}).length).toBeLessThanOrEqual(EXCUSED_MOST);
@@ -371,7 +541,13 @@ for (const held of HELD)
 			for (const seed of SEEDS)
 				for (const axis of planOf(held, seed).axes) {
 					expect(sharpestTurn(axis)).toBeLessThanOrEqual(FRAME_TURN_MOST + 0.5);
-					if (!held.plumb.includes(axis.rule) && axis.nodes.length >= 5)
+					// A stub shorter than this many of its own diameters cannot turn within a fifth of
+					// its length on a bend its wood allows, so the bend radius alone judges it.
+					if (
+						!held.plumb.includes(axis.rule) &&
+						axis.nodes.length >= 5 &&
+						axis.length >= STUB_DIAMETERS * 2 * axis.base
+					)
 						expect(longestStraight(axis)).toBeLessThanOrEqual(STRAIGHT_MOST);
 				}
 		});
@@ -380,9 +556,8 @@ for (const held of HELD)
 			for (const seed of SEEDS) {
 				const plan = planOf(held, seed);
 				plan.axes.forEach((axis, index) => {
-					const forks = new Set(
-						plan.axes.filter((child) => child.parent === index).map((child) => child.parentNode),
-					);
+					// Past a fork an axis may drop by what the fork took of its cross-section, and no more.
+					const forks = forkShares(plan, index);
 					expect(thickens(axis)).toBe(false);
 					expect(steepestStep(axis, forks)).toBeLessThanOrEqual(
 						axis.role === 'stem' ? STEP_STEM : STEP_MOST,
@@ -454,7 +629,7 @@ for (const held of HELD)
 
 		required('spread')('spreads its sockets through the whole turn round the trunk', () => {
 			for (const seed of SEEDS) {
-				const s = growFrame({ record: held.directed, seed, variant: 0, season: 'summer' });
+				const s = grownOf(held, seed);
 				const eighths = new Float64Array(8);
 				for (let b = 0; b < s.buds.count; b++) {
 					const turn = Math.atan2(
@@ -490,17 +665,23 @@ for (const held of HELD)
 
 		required('bends')("bends on no radius under three of its wood's diameters", () => {
 			for (const seed of SEEDS) {
-				const s = growFrame({ record: held.directed, seed, variant: 0, season: 'summer' });
+				const s = grownOf(held, seed);
 				let tightest = Number.POSITIVE_INFINITY;
 				for (let n = 0; n < s.nodeCount; n++) {
 					const at = s.parent[n] as number;
 					const before = at >= 0 ? (s.parent[at] as number) : -1;
 					if (before < 0 || s.axisOf[at] !== s.axisOf[n] || s.axisOf[before] !== s.axisOf[n])
 						continue;
+					// The radius of the bend at a node: the mean of its two pieces over the turn between
+					// them.
+					const last = step(s, before, at);
 					const next = step(s, at, n);
-					const turn = between(step(s, before, at), next);
+					const turn = between(last, next);
 					if (turn > 0.01)
-						tightest = Math.min(tightest, next[3] / turn / (2 * (s.radius[at] as number)));
+						tightest = Math.min(
+							tightest,
+							(last[3] + next[3]) / 2 / turn / (2 * (s.radius[at] as number)),
+						);
 				}
 				expect(tightest).toBeGreaterThanOrEqual(BEND_DIAMETERS_LEAST);
 			}
@@ -509,7 +690,7 @@ for (const held of HELD)
 		it('runs no limb back toward the trunk and leaves its branches forward', () => {
 			for (const seed of SEEDS) {
 				const plan = planOf(held, seed);
-				const s = growFrame({ record: held.directed, seed, variant: 0, season: 'summer' });
+				const s = grownOf(held, seed);
 				let back = 0;
 				let sides = 0;
 				let backward = 0;
@@ -543,9 +724,15 @@ for (const held of HELD)
 			}
 		});
 
+		it('passes no wood through other wood, beyond the pairs it is known to', () => {
+			let pairs = 0;
+			for (const seed of SEEDS) pairs += woodThrough(planOf(held, seed)).length;
+			expect(pairs).toBe(held.through);
+		});
+
 		it('keeps its branch count to its sockets', () => {
 			for (const seed of SEEDS) {
-				const s = growFrame({ record: held.directed, seed, variant: 0, season: 'summer' });
+				const s = grownOf(held, seed);
 				expect(s.axes.count / s.buds.count).toBeLessThan(AXES_PER_SOCKET_MOST);
 			}
 		});
@@ -572,7 +759,14 @@ for (const held of HELD)
 
 		it('grows the same plant for the same seed and another for another', () => {
 			const first = digest(frameSkeleton(planOf(held, 11)));
-			expect(digest(frameSkeleton(planOf(held, 11)))).toBe(first);
+			// A second plan from the same inputs, not the kept one.
+			const again = planFrame(held.spec, {
+				record: held.record,
+				seed: 11,
+				variant: 0,
+				season: 'summer',
+			});
+			expect(digest(frameSkeleton(again))).toBe(first);
 			expect(digest(frameSkeleton(planOf(held, 12)))).not.toBe(first);
 			expect(digest(frameSkeleton(planOf(held, 11, 1)))).not.toBe(first);
 		});

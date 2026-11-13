@@ -82,6 +82,17 @@ export interface DressInput extends GrowInput {
 	readonly pruneLight?: CrownLight;
 	/** The cutting this variant is, where it is a piece rather than a whole plant. */
 	readonly cutting?: CuttingOptions;
+	/**
+	 * The plant as grown, on a plant that sparseness took foliage from: its skeleton and its rows
+	 * before the thinning. They keep the number each site and stem had as grown, so a choice keyed
+	 * on one falls the same way on the sparser plant. Absent on a plant as grown.
+	 */
+	readonly grown?: { readonly skeleton: MacroSkeleton; readonly rows: ShootRows };
+	/**
+	 * The share of each extra's sites that draws it, from 0 to 1, where a triangle maximum thins the
+	 * extras. A site that draws at a share draws at every larger one. Every site when absent.
+	 */
+	readonly extrasShare?: number;
 }
 
 /**

@@ -309,9 +309,6 @@ export const record: Species = {
 	},
 	lod: {
 		nearFoliage: 'instanced',
-		// The cards stand a quarter larger than the shoots they picture, so a gap between one
-		// shoot's leaves falls on a neighbour's leaves rather than on sky.
-		cardGrow: 1.25,
 		// A card draws its twig at least three pixels across, from the parent's end to the leaves'
 		// centre, so a spray over a fine twig does not read as a piece in air.
 		cardStalk: 3,
@@ -344,9 +341,9 @@ export const record: Species = {
 	textures: 'own',
 	variants: 6,
 	seedSalt: 1477281293,
-	// A first pass at the floors a phone's lighter form keeps, set from the species' form and to
-	// be measured on the phone set before they are trusted.
-	sparse: { limbs: 0.4, leaves: 0.5, coarseness: 0.55 },
+	// The sparsest form keeps this share of the crown's shoots, each whole: about the leaf area
+	// below which the crown stops reading as its species.
+	sparse: { foliage: 0.31 },
 	roundBand,
 	cuttings: {
 		branch: { shoot: 'spray' },
