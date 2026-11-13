@@ -271,16 +271,17 @@ export interface MeshLevelOptions {
 	 */
 	fade?: boolean;
 	/**
-	 * The vertical field of view, in degrees, at which a level given by its error covers the
-	 * threshold's pixels, and a level given by its coverage covers that share of the screen. The
-	 * default is 50, three.js's default for a perspective camera.
+	 * The vertical field of view, in degrees, that checks the order of the levels when the mesh
+	 * takes them. Each frame compares a level's error or coverage with the field of view of the
+	 * view that draws it, so this option moves no switch. The default is 50, three.js's default
+	 * for a perspective camera.
 	 */
 	fov?: number;
 }
 
-/** The screen height in pixels at which the engine compares a level's error and coverage. */
+/** The screen height in pixels at which the engine orders a mesh's levels when it takes them. */
 const LEVEL_REFERENCE_HEIGHT = 1080;
-/** The field of view in degrees at which the engine compares a level's error and coverage. */
+/** The field of view in degrees at which the engine orders a mesh's levels when it takes them. */
 const LEVEL_REFERENCE_FOV = 50;
 /** The most lower levels a mesh takes: the core's levels, less the base mesh. */
 const MAX_LOWER_LEVELS = LEVELS_MAX - 1;
@@ -329,7 +330,7 @@ export interface BuildLevelsOptions {
 /**
  * The levels of detail that a mesh made in code plans on its own. By default it plans them the
  * first time the scene draws it, when it holds `geometry.automaticLevelTriangles` triangles or
- * more, or when its copies hold `geometry.automaticDrawnTriangles` together; `false` plans none,
+ * more, or when it holds at least `geometry.automaticCopyTriangles` triangles and its copies hold `geometry.automaticDrawnTriangles` together; `false` plans none,
  * and `true` or options plan them when the mesh is made, at any size. `'pieces'` plans no lower
  * levels, and sorts a mesh of 32,768 triangles or more into pieces by space at its first draw, as
  * a merged far cell or a large ground whose levels come from elsewhere gains from.
@@ -582,7 +583,8 @@ export class MeshGeometry {
 	 * fewer pixels on the screen than the `lodThreshold` quality setting. A level may name a material of its own, so a far level shades
 	 * more cheaply; a level without one draws with the level before's material. A bound that
 	 * covers fewer pixels than the threshold draws nothing, so the mesh's last level holds no
-	 * geometry. The shadow maps pick a coarser level still. An empty list takes the levels away.
+	 * geometry. The shadow maps pick their own levels, by each map's texel size, so a caster's
+	 * shadow shows the detail that the map can hold. An empty list takes the levels away.
 	 * Morphed objects, and materials that blend or let light through, draw the base mesh. A
 	 * skinned object draws a level while the level names the base mesh's own vertices.
 	 * Destroying a level's mesh takes every level away. Levels set here win over the ones that
@@ -619,7 +621,8 @@ export class MeshGeometry {
 	 * copies of a large mesh keep their levels' pieces alone.
 	 *
 	 * A mesh made in code plans its levels on its own the first time the scene draws it, when it
-	 * holds `geometry.automaticLevelTriangles` triangles or more, or when its copies hold
+	 * holds `geometry.automaticLevelTriangles` triangles or more, or when it holds at least
+	 * `geometry.automaticCopyTriangles` triangles and its copies hold
 	 * `geometry.automaticDrawnTriangles` together. Call this to plan another mesh's, to plan again
 	 * after `updateVertices`, or to await the levels of a plan that runs: a call while a plan with
 	 * the same options runs returns that plan's promise. `setLevels` wins over a plan, and
@@ -845,8 +848,8 @@ export class MeshGeometry {
 	/**
 	 * @internal Notes that the scene draws `copies` more copies of the mesh with `material`, and
 	 * plans the mesh's levels as the automatic default asks: once the mesh holds
-	 * `AUTOMATIC_LEVEL_TRIANGLES` triangles, or its copies hold `AUTOMATIC_DRAWN_TRIANGLES`
-	 * together. A flat mesh, whose shape a shader may give it, plans none, and neither does a mesh
+	 * `AUTOMATIC_LEVEL_TRIANGLES` triangles, or it holds at least `AUTOMATIC_COPY_TRIANGLES` triangles and its copies hold
+	 * `AUTOMATIC_DRAWN_TRIANGLES` together. A flat mesh, whose shape a shader may give it, plans none, and neither does a mesh
 	 * that only materials that blend or let light through draw, which draw the base level alone.
 	 * A material that moves the
 	 * vertices in its shader draws another shape than the one that the levels simplify, so the mesh
@@ -1118,7 +1121,7 @@ export interface ShapeLevels {
 	/**
 	 * The levels of detail that the mesh plans on its own. By default it plans them the first time
 	 * the scene draws it, when it holds `geometry.automaticLevelTriangles` triangles or more, or
-	 * when its copies hold `geometry.automaticDrawnTriangles` together; `false` plans none, and
+	 * when it holds at least `geometry.automaticCopyTriangles` triangles and its copies hold `geometry.automaticDrawnTriangles` together; `false` plans none, and
 	 * `true` or options plan them when the mesh is made, at any size.
 	 */
 	levels?: LevelsOption;
@@ -1563,7 +1566,8 @@ export interface MeshArrays {
 	/**
 	 * The levels of detail that the mesh plans on its own, on the job workers, as
 	 * `mesh.buildLevels` plans them. By default it plans them the first time the scene draws it,
-	 * when it holds `geometry.automaticLevelTriangles` triangles or more, or when its copies hold
+	 * when it holds `geometry.automaticLevelTriangles` triangles or more, or when it holds at least
+	 * `geometry.automaticCopyTriangles` triangles and its copies hold
 	 * `geometry.automaticDrawnTriangles` together. A mesh with joints, morph targets or `targets`
 	 * plans none, and neither does one that lies flat or that a material with moving vertices
 	 * draws. `false` plans none: give it to a mesh whose shape a shader moves, or whose levels you
