@@ -708,9 +708,11 @@ for (const held of HELD)
 					const piece = growth.model === 'frame' && growth.sockets.piece !== undefined;
 					expect(table.scale[b]).toBeCloseTo(piece ? 1 : plan.scale / held.heightMean, 5);
 					expect(skeleton.buds.position[b * 3 + 1]).toBeCloseTo(socket.at[1], 4);
-					// The bud runs along its socket's heading, or within the tilt the record states.
+					// The bud runs along its socket's heading, or within the tilt and the tip the record
+					// states.
 					quatRotate(skeleton.buds.frame, b * 4, [0, 1, 0], along);
-					const tilt = growth.model === 'frame' ? (growth.sockets.turn?.tilt ?? 0) : 0;
+					const turn = growth.model === 'frame' ? growth.sockets.turn : undefined;
+					const tilt = (turn?.tilt ?? 0) + (turn?.out ?? 0);
 					expect(
 						along[0] * socket.heading[0] +
 							along[1] * socket.heading[1] +

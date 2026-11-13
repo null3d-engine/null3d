@@ -740,11 +740,14 @@ export interface Framed {
 		readonly piece?: string;
 		/**
 		 * The most degrees each piece turns at its socket: its roll about its own line, from the
-		 * side toward the sky, and its tilt off the wood's line. Each is a share spread evenly over
-		 * the sockets in their order, so no two neighbours turn alike and the crown's leaf faces
-		 * every way. Absent, every piece's flat side faces the sky.
+		 * side its upper face starts toward, and its tilt off the wood's line. Each is a share spread
+		 * evenly over the sockets in their order, so no two neighbours turn alike and the crown's
+		 * leaf faces every way. With `out`, each piece's line first tips that many degrees down from
+		 * its socket's heading, which runs out of its patch, so its upper face starts out of the
+		 * patch and up, as a crown's outer leaves turn their upper faces to the light; else its upper
+		 * face starts toward the sky. Absent, every piece's flat side faces the sky.
 		 */
-		readonly turn?: { readonly roll: number; readonly tilt: number };
+		readonly turn?: { readonly roll: number; readonly tilt: number; readonly out?: number };
 	};
 }
 
