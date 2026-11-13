@@ -5,13 +5,14 @@
 // the review tool's sky gap and outline overlap beside it.
 //
 //   bun run plants:preview <species> [--seed <n>] [--variant <n>] [--form <name>] [--season <name>]
-//     [--refs <folder or slug>] [--out <dir>] [--name <prefix>] [--no-match]
+//     [--refs <folder or slug>] [--out <dir>] [--name <prefix>] [--no-match] [--level <0|1|2>]
 //
 // A species' reference folder is `<id>` under the corpus that NULL3D_PLANT_REFERENCES names, or the
 // repository's `.internal/coordination/tree-corpus/generated`; `--refs` names another. The pictures
 // go to `target/plant-preview/<species>/`, or the folder `--out` names, as `<prefix>-skeleton.png`,
 // `<prefix>-plant.png` and `<prefix>-match.png`, with every figure in `<prefix>.json`. The match
-// compares the whole-plant stills the envelope fit reads, each at its own turn. The review's own
+// compares the whole-plant stills the envelope fit reads, each at its own turn, with the plant drawn
+// at the first card level, or at the level `--level` names: 0 is the leaf form. The review's own
 // run stays the judge of a species: this preview draws leaves and wood as flat shapes, not as the
 // engine shades them.
 import { spawnSync } from 'node:child_process';
@@ -80,6 +81,7 @@ const seed = Number(option('seed', '11'));
 const variant = Number(option('variant', '0'));
 const form = flag('form') ? option('form') : undefined;
 const out = resolve(option('out', join(REPO_ROOT, 'target/plant-preview', species)));
+const matchLevel = Math.min(2, Math.max(0, Math.round(Number(option('level', '1'))))) as 0 | 1 | 2;
 const prefix = option('name', `${species}-s${seed}-v${variant}${form ? `-${form}` : ''}`);
 
 /** The commit the plant was grown at, and whether the tree had changes. */
@@ -217,13 +219,22 @@ if (folder) {
 			continue;
 		}
 		const turn = still.turn ?? 0;
-		const render = renderView(kit, asset, reference.framing, turn, 1, reference.widthShare);
+		const render = renderView(
+			kit,
+			asset,
+			reference.framing,
+			turn,
+			matchLevel,
+			reference.widthShare,
+		);
 		const match = matchFigures(reference, render);
 		figures[still.file] = match;
-		strips.push(matchStrip(`${still.file} at turn ${turn}`, reference, render, match));
+		strips.push(
+			matchStrip(`${still.file} at turn ${turn}, level ${matchLevel}`, reference, render, match),
+		);
 		if (match)
 			console.log(
-				`  ${still.file} turn ${turn}: sky gap ${match.gap.render} against ${match.gap.reference} (${match.gap.inBand ? 'inside' : 'OUTSIDE'} the band), outline overlap ${match.shapeIou}, plant w/h ${match.plantAspect.render} against ${match.plantAspect.reference}`,
+				`  ${still.file} turn ${turn} level ${matchLevel}: sky gap ${match.gap.render} against ${match.gap.reference} (${match.gap.inBand ? 'inside' : 'OUTSIDE'} the band), outline overlap ${match.shapeIou}, plant w/h ${match.plantAspect.render} against ${match.plantAspect.reference}`,
 			);
 	}
 	if (strips.length > 0) save('match', stacked(strips));
@@ -250,6 +261,7 @@ const summary = {
 	rows: asset.shoots.count,
 	triangles: asset.stats.triangles,
 	shootTriangles: asset.stats.shoots,
+	matchLevel,
 	match: figures,
 };
 writeFileSync(join(out, `${prefix}.json`), `${JSON.stringify(summary, null, '\t')}\n`);
