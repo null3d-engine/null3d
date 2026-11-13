@@ -1,59 +1,72 @@
-// The holm oak's pieces: the bare forked branch end with a leaf tuft at each arm's end, and the leafy
-// shoot of a tuft's own top. Each value names the reference picture it was measured on. On still 21 a tuft
-// is 20 to 25 centimetres across and a leaf about 6.5 centimetres, against the record's 8, so a piece
-// draws its leaves at 0.8 of the record's until the record's own length moves. Acorns are not part
-// of a piece yet.
+// The holm oak's pieces: the thick forked branch end with a tuft of upright leafy shoots at each
+// arm's end, and one such leafy shoot. Each value names the reference picture it was measured on.
+// Acorns are not part of a piece yet.
+//
+// The leaf is the ruler. On still 21 at full size a leaf is 45 to 55 pixels of a branch 720 pixels
+// tall, 0.07 of it, and the record's leaf is 8 centimetres, so the branch is 1.14 metres tall. A
+// piece's rule states its lengths as shares of the piece's height, and names that size.
 import type { PieceLeaves, PieceRule, PieceStem, PieceStudio } from '../../leaf/piece';
 
-/** A piece's leaf over the record's: 6.5 centimetres measured on still 21, over 8. */
-const LEAF_SCALE = 0.8;
+/** A leaf's length over the record's, with the branch's height as the unit: 0.07 over 0.08. */
+const LEAF_SCALE = 0.875;
+/**
+ * The same for still 22's shoot, whose rule states its lengths in metres at a caption of 35
+ * centimetres: at full size a leaf is 0.15 of the shoot's height, so the shoot is 0.53 metres tall.
+ * The shoot carries about ten leaves along it and three to four side shoots of four to six.
+ */
+const TWIG_LEAF_SCALE = 0.8;
 
 /**
- * The tuft at an arm's end. Stills 10, 11 and 23: fourteen to sixteen leaves crowd toward the shoot's
- * tip round a bud cluster, standing 45 to 60 degrees from the stem, the tip ones nearly along it.
+ * The leaves of one shoot. Still 21 at full size and stills 10 and 11: a shoot is lined with small
+ * oval leaves along its whole length, one each centimetre and a half, held up at about 45 degrees,
+ * the tip ones nearly along it.
  */
-function tuft(length: number, leaves: number, run: number): PieceLeaves {
+function shootLeaves(from: number): PieceLeaves {
 	return {
-		gap: run / leaves,
-		from: 1 - run / length,
+		gap: 0.014,
+		from,
 		angle: [
-			[1 - run / length, 62],
+			[from, 55],
 			[1, 30],
 		],
 		angleSpread: 8,
 		scale: LEAF_SCALE,
+		// The cut branch's turning video: edge on it is 0.30 as wide as face on.
+		flat: 0.5,
 	};
 }
 
-/** A short side twig of a tuft. Still 09: 5 to 12 centimetres long at 50 to 70 degrees, eight to twelve leaves. */
-const SIDE_TWIG: PieceStem = {
-	length: { mean: 0.12, spread: 0.03 },
-	radius: [0.0015, 0.001],
-	leaves: tuft(0.12, 10, 0.07),
+/** One upright leafy shoot of a tuft. Still 21: 0.14 to 0.21 of the branch's height long. */
+const TUFT_SHOOT: PieceStem = {
+	length: { mean: 0.15, spread: 0.035 },
+	radius: [0.003, 0.0015],
+	leaves: shootLeaves(0.12),
 };
 
 /**
- * An arm of the Y with its tuft. Still 21: bare, grey and a little bent, it ends in a tuft 20 to 25
- * centimetres across. Still 09: a tuft is the arm's last 20 centimetres with a side twig each 3.5
- * centimetres, each ending in its own leaves.
+ * An arm with its tuft. Still 21: thick grey crooked wood, bare to its end, where `shoots` leafy
+ * shoots stand up in a tight tuft, the arm's own end among them.
  */
-function arm(length: number, radius: number, forks: PieceStem['sides'] = []): PieceStem {
+function arm(
+	length: number,
+	radius: number,
+	shoots: number,
+	forks: PieceStem['sides'] = [],
+): PieceStem {
+	const run = 0.03 * shoots;
 	return {
-		length: { mean: length, spread: length * 0.06 },
-		radius: [radius, 0.0025],
-		kink: { length: 0.16, angle: 10 },
-		leaves: tuft(length, 14, 0.1),
+		length: { mean: length, spread: length * 0.05 },
+		radius: [radius, 0.003],
+		kink: { length: 0.14, angle: 14 },
+		leaves: shootLeaves(1 - 0.12 / length),
 		sides: [
 			{
-				stem: SIDE_TWIG,
-				gap: 0.035,
-				from: 1 - 0.2 / length,
-				to: 0.97,
-				// The cut branch's turning video: edge on it is 0.30 as wide as face on, so a tuft's side
-				// twigs stand nearer the branch's plane than round it.
+				stem: TUFT_SHOOT,
+				gap: 0.03,
+				from: 1 - run / length - 0.04 / length,
+				to: 1 - 0.04 / length,
 				arrangement: 'alternate',
-				spread: 40,
-				angle: { mean: 60, spread: 10 },
+				angle: { mean: 38, spread: 10 },
 			},
 			...(forks ?? []),
 		],
@@ -84,36 +97,58 @@ function fork(
 
 /** The holm oak's pieces. */
 export const PIECES: readonly PieceRule[] = [
-	// Still 21: a bare grey Y a metre tall, 0.037 of its height thick at its cut (26 to 28 of 718
-	// pixels), its arms about 0.6 of that. The stem forks at a
-	// quarter of its height; the right arm forks again at half its own length, and two shorter arms
-	// leave the stem higher up. Five to six tufts, each at an arm's end. The piece is as wide as it
-	// is tall, and the turning video shows it flat: edge on it is a third as wide. It holds more
-	// leaves than one prototype may, so it is built in parts that one socket carries together.
+	// Still 21 at full size, in shares of the branch's height: a thick crooked stem, 0.037 thick at
+	// its cut. It forks at 0.2, where an arm leaves to the right at 50 degrees and ends in a tuft at
+	// 0.4 to 0.6 of the height. It forks again at 0.44 into a right arm, whose tuft is a third of
+	// the height across, and its own end, whose tuft is the largest, 0.42 across. Two small tufts
+	// stand on short shoots at 0.5 and 0.63. It holds more leaves than one prototype may, so it is
+	// built in parts that one socket carries together.
 	{
 		name: 'branch-end',
 		attitude: 'along',
 		variants: 2,
 		scale: 1 / LEAF_SCALE,
-		stem: arm(0.8, 0.0155, [
-			fork(arm(0.55, 0.011, [fork(arm(0.3, 0.007), 0.45, 0.55, 50)]), 0.27, 0.8, 52),
-			fork(arm(0.32, 0.008), 0.5, 0.8, 50, true),
-			fork(arm(0.25, 0.007), 0.75, 0.8, 55),
-		]),
+		// The turning video of the cut branch: edge on it is 0.30 as wide as face on.
+		depth: 22,
+		stem: {
+			length: 0.44,
+			radius: [0.0185, 0.012],
+			kink: { length: 0.14, angle: 14 },
+			bud: false,
+			sides: [
+				fork(arm(0.48, 0.011, 5), 0.45, 0.44, 50),
+				fork(
+					arm(0.42, 0.011, 6, [
+						fork(arm(0.13, 0.005, 2), 0.25, 0.42, 55),
+						fork(arm(0.12, 0.005, 2), 0.5, 0.42, 60, true),
+					]),
+					1,
+					0.44,
+					33,
+					true,
+				),
+				fork(arm(0.4, 0.011, 5), 0.97, 0.44, 30),
+			],
+		},
 	},
-	// Still 22: a shoot 35 centimetres long with fifteen to twenty leaves, one each 1.5 centimetres,
-	// and four to five side shoots at 40 to 50 degrees.
 	{
 		name: 'twig',
 		attitude: 'along',
 		variants: 2,
-		scale: 1 / LEAF_SCALE,
+		scale: 1 / TWIG_LEAF_SCALE,
 		stem: {
 			length: { mean: 0.35, spread: 0.03 },
 			// Still 22: the shoot is 0.026 of its height thick (19 of 729 pixels).
 			radius: [0.0046, 0.0015],
 			// The sub-branch's turning video: edge on it is 0.35 as wide as face on.
-			leaves: { gap: 0.016, from: 0.2, angle: 52, angleSpread: 8, scale: LEAF_SCALE, flat: 0.6 },
+			leaves: {
+				gap: 0.026,
+				from: 0.2,
+				angle: 52,
+				angleSpread: 8,
+				scale: TWIG_LEAF_SCALE,
+				flat: 0.6,
+			},
 			sides: [
 				{
 					stem: {
@@ -121,11 +156,11 @@ export const PIECES: readonly PieceRule[] = [
 						radius: [0.0015, 0.001],
 						// The sub-branch's turning video: edge on it is 0.35 as wide as face on.
 						leaves: {
-							gap: 0.016,
+							gap: 0.026,
 							from: 0.2,
 							angle: 52,
 							angleSpread: 8,
-							scale: LEAF_SCALE,
+							scale: TWIG_LEAF_SCALE,
 							flat: 0.6,
 						},
 					},
@@ -133,7 +168,7 @@ export const PIECES: readonly PieceRule[] = [
 					from: 0.3,
 					to: 0.8,
 					arrangement: 'alternate',
-					spread: 20,
+					spread: 12,
 					angle: { mean: 45, spread: 5 },
 				},
 			],
