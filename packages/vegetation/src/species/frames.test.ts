@@ -26,6 +26,8 @@ import {
 	thickens,
 	widestGap,
 } from '../grow/frame-measure';
+import { frame as commonAlder } from './common-alder/directed';
+import { record as commonAlderRecord } from './common-alder/record';
 import { frame as silverBirch } from './silver-birch/directed';
 import { record as silverBirchRecord } from './silver-birch/record';
 
@@ -64,6 +66,17 @@ const HELD: readonly Held[] = [
 		// Twelve limbs a golden angle apart leave no gap wider than two even shares and their jitter.
 		round: { rule: 'limb', gap: 80, lean: 0.25 },
 		base: { limb: 0.35, side: 0.45, top: 0.4 },
+		plumb: ['leader'],
+		tall: [0.98, 1.02],
+	},
+	{
+		id: 'common-alder',
+		spec: commonAlder,
+		record: commonAlderRecord,
+		counts: { leader: 1, limb: 16, twig: [16, 80] },
+		// Sixteen limbs a golden angle apart leave no gap wider than two even shares and their jitter.
+		round: { rule: 'limb', gap: 62, lean: 0.25 },
+		base: { limb: 0.25, twig: 0.5 },
 		plumb: ['leader'],
 		tall: [0.98, 1.02],
 	},
