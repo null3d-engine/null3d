@@ -2167,6 +2167,11 @@ export interface BranchPieceOptions {
 	 */
 	readonly span?: number;
 	readonly along?: number;
+	/**
+	 * Radians round the plant the camera stands at, where the view should frame a piece that heads
+	 * toward the camera, as a photograph of one leaf turned to face the lens does.
+	 */
+	readonly turn?: number;
 }
 
 /**
@@ -2246,7 +2251,8 @@ export function placedPieceShot(
 ): Solved {
 	const pieces = piecesOfClass(subjects, name);
 	if (isAbsent(pieces)) return pieces;
-	const piece = pieces[0] as BranchPiece;
+	const piece =
+		options.turn === undefined ? (pieces[0] as BranchPiece) : headingToward(pieces, options.turn);
 	const shot = branchPieceShot(piece, lens, options);
 	if (isAbsent(shot)) return shot;
 	const distance = Math.hypot(
@@ -2268,6 +2274,26 @@ export function placedPieceShot(
 		far: distance + slab,
 		facts: { ...shot.facts, class: piece.class, socket: piece.socket, of: pieces.length },
 	};
+}
+
+/** How nearly a piece must head toward the camera, against the best, to be taken in its outward order. */
+const HEADING_SHARE = 0.9;
+
+/**
+ * The piece that heads toward a camera standing at a turn round the plant: the outermost of those
+ * whose run across the ground points toward the camera nearly as well as the best one's does.
+ */
+function headingToward(pieces: readonly BranchPiece[], turn: number): BranchPiece {
+	const toward = facing(turn);
+	const heading = (piece: BranchPiece) => {
+		const across = Math.hypot(piece.direction[0], piece.direction[2]);
+		return across > 1e-6
+			? (piece.direction[0] * toward[0] + piece.direction[2] * toward[2]) / across
+			: -1;
+	};
+	const best = Math.max(...pieces.map(heading));
+	return (pieces.find((piece) => heading(piece) >= best * HEADING_SHARE) ??
+		pieces[0]) as BranchPiece;
 }
 
 /** Whether a shot's subject is in its picture, and where each of its points landed. */

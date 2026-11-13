@@ -87,8 +87,11 @@ export const record: Species = {
 		classes: [
 			{
 				// Stills 10, 11 and 24: one areole's pad carries the cluster, and the cluster's card is
-				// the species' leaf. The pad stands a few millimetres proud of the skin.
+				// the species' leaf. The pad stands a few millimetres proud of the skin. A plant carries
+				// thousands, so each draws as its card alone, two triangles, and the card's picture
+				// carries the pad and the spines.
 				name: 'spur',
+				cards: true,
 				vigor: [0, 1],
 				share: 1,
 				length: { mean: 0.008, spread: 0.001 },
