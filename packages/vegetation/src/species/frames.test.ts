@@ -10,12 +10,17 @@ import { quatRotate, type Vector3 } from '../core/math';
 import type { Species } from '../core/record';
 import { spreadMean } from '../core/types';
 import {
+	evenOutline,
 	FRAME_TURN_MOST,
 	type FramePlan,
 	type FrameSpec,
+	framedRecord,
 	frameSkeleton,
 	frameSockets,
 	growFrame,
+	outlineFloor,
+	outlineRadius,
+	outlineSpan,
 	planFrame,
 } from '../grow/frame';
 import {
@@ -309,8 +314,11 @@ const HELD: readonly Held[] = [
 		plumb: ['trunk'],
 		through: 0,
 		tall: [0.95, 1.04],
-		// The crown's foot stands at 0.13 of the height, inside the band from 0.125 to 0.1875, and
-		// only the low limbs' drooping ends reach it.
+		// Each side is held to its own reach. On one seed of the four no foliage stands under a
+		// quarter of the height on the long low limb's side, where the limb ends higher than the
+		// photograph's; on another the crown's top is wider than the shorter side's.
+		open: ['bands'],
+		// The crown's foot stands inside the band that holds the low limbs' drooping ends.
 		excused: { 2: "the crown's foot stands inside the band" },
 	},
 ];
@@ -350,6 +358,127 @@ function digest(skeleton: MacroSkeleton): string {
 		hashBytes(skeleton.axes.order, 4),
 	].join(':');
 }
+
+describe('a crown outline stated side by side', () => {
+	/** A crown that reaches twice as far to one side as to the other, with its own depth each way. */
+	const lopsided: FrameSpec = {
+		outline: [
+			{
+				toward: 0,
+				reach: [
+					[0.2, 0.4],
+					[1, 0],
+				],
+				under: 0.2,
+			},
+			{
+				toward: 90,
+				reach: [
+					[0.1, 0.3],
+					[1, 0],
+				],
+				under: [
+					[0, 0.1],
+					[0.3, 0.3],
+				],
+			},
+			{
+				toward: 180,
+				reach: [
+					[0.2, 0.2],
+					[1, 0],
+				],
+				under: 0.2,
+			},
+			{
+				toward: 270,
+				reach: [
+					[0.1, 0.25],
+					[1, 0],
+				],
+				under: 0.1,
+			},
+		],
+		stems: pedunculateOak.stems,
+	};
+	const HEIGHT = 10;
+
+	it('gives each side its own reach, and never the mean of two', () => {
+		expect(outlineRadius(lopsided, HEIGHT, 2, 0)).toBeCloseTo(4, 9);
+		expect(outlineRadius(lopsided, HEIGHT, 2, Math.PI)).toBeCloseTo(2, 9);
+		expect(outlineRadius(lopsided, HEIGHT, 2, Math.PI / 2)).toBeCloseTo(2.6667, 3);
+		expect(outlineRadius(lopsided, HEIGHT, 2, -Math.PI / 2)).toBeCloseTo(2.2222, 3);
+	});
+
+	it('shows a view from any stated side the reach that side states', () => {
+		for (const height of [2, 4, 6, 8])
+			lopsided.outline.forEach((side) => {
+				const toward = (side.toward * Math.PI) / 180;
+				let seen = 0;
+				for (let k = 0; k < 360; k++) {
+					const azimuth = (k * Math.PI) / 180;
+					seen = Math.max(
+						seen,
+						outlineRadius(lopsided, HEIGHT, height, azimuth) * Math.cos(azimuth - toward),
+					);
+				}
+				expect(seen).toBeCloseTo(outlineRadius(lopsided, HEIGHT, height, toward), 6);
+			});
+	});
+
+	it('has no crown toward a side outside the heights the side states', () => {
+		expect(outlineRadius(lopsided, HEIGHT, 1.5, Math.PI / 2)).toBeGreaterThan(0);
+		expect(outlineRadius(lopsided, HEIGHT, 1.5, 0)).toBe(0);
+		expect(outlineRadius(lopsided, HEIGHT, 1.5, Math.PI / 4)).toBe(0);
+		expect(outlineRadius(lopsided, HEIGHT, 10.5, Math.PI / 2)).toBe(0);
+		expect(outlineSpan(lopsided)).toEqual({ foot: 0.1, top: 1 });
+	});
+
+	it('passes the lower boundary from one side to the next', () => {
+		expect(outlineFloor(lopsided, HEIGHT, 3, 0)).toBeCloseTo(2, 9);
+		expect(outlineFloor(lopsided, HEIGHT, 3, Math.PI / 2)).toBeCloseTo(3, 9);
+		expect(outlineFloor(lopsided, HEIGHT, 1.5, Math.PI / 2)).toBeCloseTo(2, 9);
+		expect(outlineFloor(lopsided, HEIGHT, 3, Math.PI / 4)).toBeCloseTo(2.5, 9);
+		expect(outlineFloor(lopsided, HEIGHT, 3, -Math.PI / 2)).toBeCloseTo(1, 9);
+	});
+
+	it('builds an even outline as the ellipse of its two axes', () => {
+		const reach = [
+			[0.3, 0.2],
+			[0.6, 0.5],
+			[1, 0],
+		] as const;
+		const even: FrameSpec = { outline: evenOutline(reach, 0.8, 30), stems: pedunculateOak.stems };
+		for (let k = 0; k < 72; k++) {
+			const azimuth = (k * 5 * Math.PI) / 180;
+			const off = azimuth - (30 * Math.PI) / 180;
+			const ellipse = 5 / Math.sqrt(Math.cos(off) ** 2 + (Math.sin(off) / 0.8) ** 2);
+			expect(outlineRadius(even, HEIGHT, 6, azimuth)).toBeCloseTo(ellipse, 9);
+		}
+		expect(outlineRadius(even, HEIGHT, 2.5, 1)).toBe(0);
+	});
+
+	it('is refused by the record check with one side, or with sides out of their order', () => {
+		const stated = (outline: FrameSpec['outline']) =>
+			speciesProblems(
+				framedRecord(pedunculateOakRecord, { ...lopsided, outline }, { rows: 4, fan: 45 }),
+			).filter((problem) => problem.includes('frame.outline'));
+		expect(stated(lopsided.outline)).toEqual([]);
+		expect(stated(lopsided.outline.slice(0, 1))).toHaveLength(1);
+		expect(stated([...lopsided.outline].reverse())).not.toEqual([]);
+	});
+
+	it('states the oak by the two sides of still 01 and the two of still 02', () => {
+		const right = outlineRadius(pedunculateOak, 1, 0.25, 0);
+		const left = outlineRadius(pedunculateOak, 1, 0.25, Math.PI);
+		expect(right).toBeCloseTo(0.909, 3);
+		expect(left).toBeCloseTo(0.809, 3);
+		// The long low limb's side hangs lower far out than the other side does.
+		expect(outlineFloor(pedunculateOak, 1, 0.6, 0)).toBeCloseTo(0.18, 3);
+		expect(outlineFloor(pedunculateOak, 1, 0.6, Math.PI)).toBeCloseTo(0.24, 3);
+		expect(pedunculateOak.outline.map((side) => side.toward)).toEqual([0, 90, 180, 270]);
+	});
+});
 
 for (const held of HELD)
 	describe(`the ${held.id}'s directed frame`, () => {

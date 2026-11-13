@@ -2,32 +2,34 @@
 // one at a time, and the side branches whose ends arch over and hang. Each figure names the
 // reference picture it was read on. Shares are of the tree's height, measured from the true foot of
 // each picture. Still 01 and the whole-tree turning video are the one tree the frame follows.
-import { type FrameSpec, framedRecord } from '../../grow/frame';
+import { evenOutline, type FrameSpec, framedRecord } from '../../grow/frame';
 import { record } from './record';
 
 /** The silver birch's frame. */
 export const frame: FrameSpec = {
 	// Still 01, the outline's half width in 24 bands from the top down, each at its own height.
-	outline: [
-		[0.243, 0.084],
-		[0.282, 0.149],
-		[0.32, 0.182],
-		[0.359, 0.228],
-		[0.398, 0.247],
-		[0.437, 0.261],
-		[0.515, 0.256],
-		[0.592, 0.27],
-		[0.631, 0.238],
-		[0.709, 0.228],
-		[0.786, 0.191],
-		[0.864, 0.168],
-		[0.903, 0.13],
-		[0.942, 0.075],
-		[0.981, 0.037],
-		[1, 0],
-	],
-	// The crown is built nearly round. Still 01 looks across the wide side.
-	plan: { narrow: 0.8, turn: 0 },
+	outline: evenOutline(
+		[
+			[0.243, 0.084],
+			[0.282, 0.149],
+			[0.32, 0.182],
+			[0.359, 0.228],
+			[0.398, 0.247],
+			[0.437, 0.261],
+			[0.515, 0.256],
+			[0.592, 0.27],
+			[0.631, 0.238],
+			[0.709, 0.228],
+			[0.786, 0.191],
+			[0.864, 0.168],
+			[0.903, 0.13],
+			[0.942, 0.075],
+			[0.981, 0.037],
+			[1, 0],
+		],
+		// The crown is built nearly round. Still 01 looks across the wide side.
+		0.8,
+	),
 	stems: {
 		name: 'leader',
 		count: 1,

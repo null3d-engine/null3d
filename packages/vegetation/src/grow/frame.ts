@@ -288,15 +288,35 @@ export interface FrameBranchRule extends FrameAxisRule {
 }
 
 /**
+ * One side of a crown's outline: what a whole view of the plant shows to one side of the trunk's
+ * line. A view gives two sides, and each is stated by itself.
+ *
+ * @category api/vegetation
+ */
+export interface FrameSide {
+	/** The direction round the plant that the side faces, in degrees from 0 to 360. */
+	readonly toward: number;
+	/** The crown's reach to this side as a share of the height, by the share of the height. */
+	readonly reach: Curve;
+	/**
+	 * The crown's lower boundary on this side: the height that no foliage stands under, by the
+	 * distance from the trunk's line, both as shares of the height.
+	 */
+	readonly under: Curve;
+}
+
+/**
  * A plant's directed frame as a species states it.
  *
  * @category api/vegetation
  */
 export interface FrameSpec {
-	/** The crown's radius on its wide side as a share of the height, by the share of the height. */
-	readonly outline: Curve;
-	/** The crown's narrow side as a share of its wide side, and the degrees its wide side lies at. */
-	readonly plan: { readonly narrow: number; readonly turn: number };
+	/**
+	 * The crown's outline: its sides in their order round the plant, two or more. Between two sides
+	 * the plan runs as a quarter of an ellipse runs between its half-axes, and the lower boundary
+	 * passes from the one side's to the other's.
+	 */
+	readonly outline: readonly FrameSide[];
 	/** The stems. */
 	readonly stems: FrameStemRule;
 }
@@ -530,8 +550,77 @@ interface Built {
 }
 
 /**
- * The crown outline's radius in metres at a height and a direction round the plant: the species'
- * wide-side radius, drawn in across the plan's wide side to the plan's narrow share.
+ * An outline that is the same to both sides of each of its two axes: the stated reach along one
+ * axis and a share of it along the other, over a level lower boundary at the reach's first height.
+ * It states a crown that one curve was read for; a crown read side by side states its sides.
+ *
+ * @param reach The crown's reach along its wide axis as a share of the height, by the share of the
+ * height.
+ * @param narrow The reach along the other axis as a share of that.
+ * @param turn The degrees round the plant that the wide axis lies at.
+ * @returns The four sides.
+ * @category api/vegetation
+ */
+export function evenOutline(reach: Curve, narrow: number, turn = 0): FrameSide[] {
+	const share = clamp(narrow, 0.5, 1);
+	const drawn: Curve =
+		typeof reach === 'number' ? reach * share : reach.map(([at, width]) => [at, width * share]);
+	const under = typeof reach === 'number' ? 0 : (reach[0]?.[0] ?? 0);
+	return [0, 90, 180, 270].map((quarter) => ({
+		toward: (((turn + quarter) % 360) + 360) % 360,
+		reach: quarter % 180 === 0 ? reach : drawn,
+		under,
+	}));
+}
+
+/** A side's reach at a share of the height; outside the heights the side states there is no crown. */
+function reachAt(side: FrameSide, at: number): number {
+	if (typeof side.reach !== 'number') {
+		const first = side.reach[0];
+		const last = side.reach[side.reach.length - 1];
+		if ((last && at > last[0]) || (first && at < first[0])) return 0;
+	}
+	return curveAt(side.reach, at);
+}
+
+/**
+ * The two stated sides a direction stands between, and each one's weight there: all the first's on
+ * the first side, all the second's on the second, as the squares of a quarter turn's cosine and
+ * sine between them.
+ */
+function sidesAt(
+	spec: FrameSpec,
+	azimuth: number,
+): {
+	readonly from: FrameSide;
+	readonly to: FrameSide;
+	readonly first: number;
+	readonly second: number;
+} {
+	const sides = spec.outline;
+	const degrees = ((((azimuth * 180) / PI) % 360) + 360) % 360;
+	for (let k = 0; k < sides.length; k++) {
+		const from = sides[k] as FrameSide;
+		const to = sides[(k + 1) % sides.length] as FrameSide;
+		const span = (((to.toward - from.toward) % 360) + 360) % 360 || 360;
+		const off = (((degrees - from.toward) % 360) + 360) % 360;
+		if (off > span) continue;
+		const quarter = ((off / span) * PI) / 2;
+		const c = cos(quarter);
+		const s = sin(quarter);
+		return { from, to, first: c * c, second: s * s };
+	}
+	const only = sides[0] as FrameSide;
+	return { from: only, to: only, first: 1, second: 0 };
+}
+
+/** A weight under which a side has no say in a direction. */
+const SIDE_LEAST = 1e-9;
+
+/**
+ * The crown outline's radius in metres at a height and a direction round the plant. On a stated
+ * side it is that side's reach; between two it is the radius of the quarter ellipse whose half-axes
+ * are the two reaches, so a view from either side shows the reach that side states.
  *
  * @param spec The frame.
  * @param scale The plant's height in metres.
@@ -541,19 +630,58 @@ interface Built {
  * @category api/vegetation
  */
 export function outlineRadius(spec: FrameSpec, scale: number, y: number, azimuth: number): number {
-	// Above the outline's last stated height and below its first there is no crown.
-	if (typeof spec.outline !== 'number') {
-		const first = spec.outline[0];
-		const last = spec.outline[spec.outline.length - 1];
-		if ((last && y / scale > last[0]) || (first && y / scale < first[0])) return 0;
+	const { from, to, first, second } = sidesAt(spec, azimuth);
+	const a = first > SIDE_LEAST ? reachAt(from, y / scale) : 1;
+	const b = second > SIDE_LEAST ? reachAt(to, y / scale) : 1;
+	// A side with no crown at the height draws the outline in to the trunk's line.
+	if (a <= 0 || b <= 0) return 0;
+	return scale / Math.sqrt(first / (a * a) + second / (b * b));
+}
+
+/**
+ * The height of the crown's lower boundary in metres at a distance from the trunk's line and a
+ * direction round the plant: a stated side's own boundary on that side, and between two sides the
+ * two boundaries by their weights.
+ *
+ * @param spec The frame.
+ * @param scale The plant's height in metres.
+ * @param reach The distance from the trunk's line in metres.
+ * @param azimuth Radians round the plant.
+ * @returns The height in metres.
+ * @category api/vegetation
+ */
+export function outlineFloor(
+	spec: FrameSpec,
+	scale: number,
+	reach: number,
+	azimuth: number,
+): number {
+	const { from, to, first, second } = sidesAt(spec, azimuth);
+	return (
+		(first * curveAt(from.under, reach / scale) + second * curveAt(to.under, reach / scale)) * scale
+	);
+}
+
+/**
+ * The heights an outline's crown stands between, as shares of the plant's height: the lowest
+ * height any side states a reach at, and the highest.
+ *
+ * @param spec The frame.
+ * @returns The crown's foot and its top.
+ * @category api/vegetation
+ */
+export function outlineSpan(spec: FrameSpec): { readonly foot: number; readonly top: number } {
+	let foot = Number.POSITIVE_INFINITY;
+	let top = Number.NEGATIVE_INFINITY;
+	for (const side of spec.outline) {
+		const stated = typeof side.reach !== 'number' && side.reach.length > 0;
+		foot = Math.min(foot, stated ? (side.reach[0] as readonly [number, number])[0] : 0);
+		top = Math.max(
+			top,
+			stated ? (side.reach[side.reach.length - 1] as readonly [number, number])[0] : 1,
+		);
 	}
-	const wide = curveAt(spec.outline, y / scale) * scale;
-	const off = azimuth - radians(spec.plan.turn);
-	const narrow = clamp(spec.plan.narrow, 0.5, 1);
-	// An ellipse's radius toward a direction, its long half-axis 1 and its short one the narrow share.
-	const c = cos(off);
-	const s = sin(off) / narrow;
-	return wide / Math.sqrt(c * c + s * s);
+	return { foot, top };
 }
 
 /**
@@ -577,9 +705,10 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 	const wood: { readonly at: Vector3; readonly radius: number; readonly axis: number }[] = [];
 	// The height of the crown's widest row, in metres: the middle the outline is drawn in toward.
 	let middle = scale / 2;
-	if (typeof spec.outline !== 'number') {
-		let widest = Number.NEGATIVE_INFINITY;
-		for (const [at, radius] of spec.outline)
+	let widest = Number.NEGATIVE_INFINITY;
+	for (const side of spec.outline) {
+		if (typeof side.reach === 'number') continue;
+		for (const [at, radius] of side.reach)
 			if (radius > widest) {
 				widest = radius;
 				middle = at * scale;

@@ -9,6 +9,7 @@ import {
 	type FramePlan,
 	type FrameSpec,
 	outlineRadius,
+	outlineSpan,
 } from './frame';
 
 /** The degrees a run of an axis may stray from its first piece and still count as straight. */
@@ -436,9 +437,7 @@ export function crownFaults(
 	most = 1.2,
 ): CrownFault[] {
 	const out: CrownFault[] = [];
-	const foot = typeof spec.outline === 'number' ? 0 : (spec.outline[0]?.[0] ?? 0);
-	const top =
-		typeof spec.outline === 'number' ? 1 : (spec.outline[spec.outline.length - 1]?.[0] ?? 1);
+	const { foot, top } = outlineSpan(spec);
 	crownBands(plan, spec, sides, bands).forEach((row, side) => {
 		row.forEach((band, k) => {
 			if (band.height < foot || band.height > 0.9 * top || band.stated <= 0) return;
