@@ -4,6 +4,8 @@
 // stands every piece on its cut wood.
 import { beforeAll, describe, expect, it } from 'bun:test';
 import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
+import type { Rgba } from '../../../../tools/lib/plant-review/image.ts';
+import { matteMask, measurePlant } from '../../../../tools/lib/plant-review/references.ts';
 import { quatRotate } from '../core/math';
 import type { SpeciesModule } from '../core/record';
 import type { SpeciesId } from '../core/registry';
@@ -262,9 +264,9 @@ for (const { id, pieces, studio } of SPECIES)
 
 /**
  * What each species' turning videos show of its two cuts (still 21 with `branch-turntable`, still 22
- * with `subbranch-turntable`): `depth` is the cut's narrowest outline over its widest as it turns,
- * and `edge` is the share of its own box that the cut covers in the narrowest frame. Both are read
- * by `bun run plants:piece <species> --turns`.
+ * with `subbranch-turntable`): `depth` is the cut's narrowest outline's width over its widest as it
+ * turns, and `gap` is the review's enclosed sky gap of the narrowest frame. Both are read by
+ * `bun run plants:piece <species> --turns`.
  */
 const TURNING: readonly {
 	readonly id: SpeciesId;
@@ -272,19 +274,19 @@ const TURNING: readonly {
 	readonly studio: readonly PieceStudio[];
 	readonly still: number;
 	readonly depth: number;
-	readonly edge: number;
+	readonly gap: number;
 }[] = [
-	{ id: 'pedunculate-oak', pieces: OAK, studio: OAK_STUDIO, still: 21, depth: 0.33, edge: 0.358 },
-	{ id: 'pedunculate-oak', pieces: OAK, studio: OAK_STUDIO, still: 22, depth: 0.37, edge: 0.366 },
-	{ id: 'silver-birch', pieces: BIRCH, studio: BIRCH_STUDIO, still: 21, depth: 0.21, edge: 0.493 },
-	{ id: 'silver-birch', pieces: BIRCH, studio: BIRCH_STUDIO, still: 22, depth: 0.27, edge: 0.233 },
+	{ id: 'pedunculate-oak', pieces: OAK, studio: OAK_STUDIO, still: 21, depth: 0.33, gap: 0.145 },
+	{ id: 'pedunculate-oak', pieces: OAK, studio: OAK_STUDIO, still: 22, depth: 0.37, gap: 0.1 },
+	{ id: 'silver-birch', pieces: BIRCH, studio: BIRCH_STUDIO, still: 21, depth: 0.21, gap: 0.085 },
+	{ id: 'silver-birch', pieces: BIRCH, studio: BIRCH_STUDIO, still: 22, depth: 0.27, gap: 0.176 },
 	{
 		id: 'weeping-willow',
 		pieces: WILLOW,
 		studio: WILLOW_STUDIO,
 		still: 21,
 		depth: 0.37,
-		edge: 0.55,
+		gap: 0.194,
 	},
 	{
 		id: 'weeping-willow',
@@ -292,32 +294,25 @@ const TURNING: readonly {
 		studio: WILLOW_STUDIO,
 		still: 22,
 		depth: 0.23,
-		edge: 0.466,
+		gap: 0.179,
 	},
-	{ id: 'olive', pieces: OLIVE, studio: OLIVE_STUDIO, still: 21, depth: 0.38, edge: 0.297 },
-	{ id: 'olive', pieces: OLIVE, studio: OLIVE_STUDIO, still: 22, depth: 0.31, edge: 0.252 },
-	{
-		id: 'european-beech',
-		pieces: BEECH,
-		studio: BEECH_STUDIO,
-		still: 21,
-		depth: 0.24,
-		edge: 0.248,
-	},
-	{ id: 'european-beech', pieces: BEECH, studio: BEECH_STUDIO, still: 22, depth: 0.29, edge: 0.31 },
-	{ id: 'common-ash', pieces: ASH, studio: ASH_STUDIO, still: 21, depth: 0.18, edge: 0.269 },
-	{ id: 'common-ash', pieces: ASH, studio: ASH_STUDIO, still: 22, depth: 0.33, edge: 0.207 },
-	{ id: 'common-alder', pieces: ALDER, studio: ALDER_STUDIO, still: 21, depth: 0.29, edge: 0.365 },
-	{ id: 'common-alder', pieces: ALDER, studio: ALDER_STUDIO, still: 22, depth: 0.2, edge: 0.325 },
-	{ id: 'holm-oak', pieces: HOLM, studio: HOLM_STUDIO, still: 21, depth: 0.3, edge: 0.427 },
-	{ id: 'holm-oak', pieces: HOLM, studio: HOLM_STUDIO, still: 22, depth: 0.35, edge: 0.365 },
+	{ id: 'olive', pieces: OLIVE, studio: OLIVE_STUDIO, still: 21, depth: 0.38, gap: 0.357 },
+	{ id: 'olive', pieces: OLIVE, studio: OLIVE_STUDIO, still: 22, depth: 0.31, gap: 0.252 },
+	{ id: 'european-beech', pieces: BEECH, studio: BEECH_STUDIO, still: 21, depth: 0.24, gap: 0.155 },
+	{ id: 'european-beech', pieces: BEECH, studio: BEECH_STUDIO, still: 22, depth: 0.29, gap: 0.087 },
+	{ id: 'common-ash', pieces: ASH, studio: ASH_STUDIO, still: 21, depth: 0.18, gap: 0.092 },
+	{ id: 'common-ash', pieces: ASH, studio: ASH_STUDIO, still: 22, depth: 0.33, gap: 0.196 },
+	{ id: 'common-alder', pieces: ALDER, studio: ALDER_STUDIO, still: 21, depth: 0.29, gap: 0.09 },
+	{ id: 'common-alder', pieces: ALDER, studio: ALDER_STUDIO, still: 22, depth: 0.2, gap: 0.091 },
+	{ id: 'holm-oak', pieces: HOLM, studio: HOLM_STUDIO, still: 21, depth: 0.3, gap: 0.047 },
+	{ id: 'holm-oak', pieces: HOLM, studio: HOLM_STUDIO, still: 22, depth: 0.35, gap: 0.104 },
 	{
 		id: 'hawthorn-shrub',
 		pieces: HAWTHORN,
 		studio: HAWTHORN_STUDIO,
 		still: 21,
 		depth: 0.22,
-		edge: 0.402,
+		gap: 0.166,
 	},
 	{
 		id: 'hawthorn-shrub',
@@ -325,32 +320,51 @@ const TURNING: readonly {
 		studio: HAWTHORN_STUDIO,
 		still: 22,
 		depth: 0.39,
-		edge: 0.301,
+		gap: 0.166,
 	},
 ];
-/** How far a built cut's depth over width may stand from its video's, as a share of the video's. */
-const DEPTH_SHARE = 0.3;
-/** The same for its cover seen edge on. */
-const EDGE_SHARE = 0.35;
+/** The review standard's band: a drawn sky gap at most this far above its reference's. */
+const GAP_ABOVE = 0.05;
+/** And at most this far below it. */
+const GAP_BELOW = 0.02;
 /**
- * The cuts that do not yet hold their video's figure, each with what is wrong. The test holds every
- * other cut inside its band, and holds these outside it, so a cut that is mended leaves this list.
+ * How far a cut's depth over width may stand from its video's either way. The standard gives no
+ * depth band, so this one is as wide as the open side of its sky band.
  */
-const OPEN_DEPTH: Readonly<Record<string, string>> = {
-	'common-alder 22':
-		"0.27 against 0.20: its cones hang to the twig's own ground side, behind it, where the photograph's hang below a twig that stands in a clamp",
-	'weeping-willow 22':
-		"0.31 against 0.23: its strands' leaves hang to every side, and at the high tier each long blade is a folded card that keeps its tilt but not its curl (0.29 as meshed blades)",
+const DEPTH_BAND = 0.05;
+/** The rounding of a listed figure, within which a cut counts as no worse than its figure. */
+const FIGURE_ROUNDING = 0.0005;
+/**
+ * The cuts that stand outside their band, each with its figure now, read by the review's measure as
+ * it stands: a cut on a list may only move toward its video's figure, and one that comes inside its
+ * band leaves the list.
+ */
+const OPEN_DEPTH: Readonly<Record<string, number>> = {
+	'olive 22': 0.377,
+	'european-beech 22': 0.216,
+	'common-ash 22': 0.244,
+	// Its cones hang to the twig's own ground side, behind it, where the photograph's hang below a
+	// twig that stands in a clamp.
+	'common-alder 22': 0.26,
 };
-const OPEN_EDGE: Readonly<Record<string, string>> = {
-	'silver-birch 21':
-		'0.29 against 0.49: about a third of its blades show their faces edge on, and the video shows a column of whole leaves',
-	'weeping-willow 22':
-		"0.26 against 0.47: a strand's leaves stand to every side, so half show their faces from any side, and the video shows each leaf whole in every frame",
-	'hawthorn-shrub 21': '0.20 against 0.40: its arms and tufts stand in one plane',
+const OPEN_GAP: Readonly<Record<string, number>> = {
+	// In the birch's and the willow's videos nearly every leaf shows its whole face in every frame,
+	// which fixed leaves cannot; their stills judge them.
+	'silver-birch 21': 0.46,
+	'silver-birch 22': 0.362,
+	'weeping-willow 21': 0.278,
+	'weeping-willow 22': 0.388,
+	'olive 21': 0.426,
+	'european-beech 22': 0.348,
+	'common-ash 21': 0.223,
+	'common-ash 22': 0.359,
+	'common-alder 22': 0.055,
+	'holm-oak 21': 0.171,
+	'holm-oak 22': 0.322,
+	// Its arms and tufts stand in one plane.
+	'hawthorn-shrub 21': 0.548,
 };
 
-/** A laid cut's triangles: three corners each, with each corner's leaf texture place. */
 interface Laid {
 	readonly points: Float64Array;
 	readonly uvs: Float32Array;
@@ -414,19 +428,26 @@ function laidTriangles(
 	return out;
 }
 
-/** Pixels down the edge-on picture that a cut's cover is read on. */
-const EDGE_ROWS = 240;
+/** Pixels down a cut's drawings, about the height a turning video's frame gives a cut. */
+const VIEW_ROWS = 300;
+/** Clear pixels round a drawing, so its outline stands free of the frame. */
+const VIEW_MARGIN = 8;
+/** Samples a side of each drawing's pixel, which its matte averages into the pixel's cover. */
+const VIEW_SAMPLES = 3;
 /** Texels a side of the leaf outline the card bake makes. */
 const LEAF_MASK = 512;
 
 /**
- * A laid cut's depth over its width, and the share of its own box it covers seen edge on: its
- * triangles drawn along the layout's X axis, a leaf's kept only where its outline covers it.
+ * One drawing of a laid cut, as the sheet tool's matte: each pixel as dark as the share of it the
+ * cut covers, on white. Its triangles are drawn with X across (face on) or Z across (edge on), at
+ * three samples a side, a leaf's kept only where its outline covers it. `columns` counts the
+ * columns that hold a pixel the cut covers at least half of.
  */
-function turned(
+function drawnMatte(
 	module: SpeciesModule,
 	meshes: readonly Laid[],
-): { readonly depth: number; readonly edge: number } {
+	across: 0 | 2,
+): { readonly image: Rgba; readonly columns: number } {
 	const low = [Infinity, Infinity, Infinity];
 	const high = [-Infinity, -Infinity, -Infinity];
 	for (const mesh of meshes)
@@ -434,21 +455,28 @@ function turned(
 			low[i % 3] = Math.min(low[i % 3] as number, mesh.points[i] as number);
 			high[i % 3] = Math.max(high[i % 3] as number, mesh.points[i] as number);
 		}
-	const [x0, y0, z0] = low as [number, number, number];
-	const [x1, y1, z1] = high as [number, number, number];
-	const scale = EDGE_ROWS / (y1 - y0);
-	const width = Math.max(2, Math.ceil((z1 - z0) * scale) + 2);
-	const target = rasterTarget(width, EDGE_ROWS + 2);
-	const covered = new Uint8Array(width * (EDGE_ROWS + 2));
+	const behind = across === 0 ? 2 : 0;
+	const n = VIEW_SAMPLES;
+	const scale = (VIEW_ROWS * n) / ((high[1] as number) - (low[1] as number));
+	const width =
+		Math.ceil(((high[across] as number) - (low[across] as number)) * (scale / n)) +
+		2 * VIEW_MARGIN +
+		1;
+	const height = VIEW_ROWS + 2 * VIEW_MARGIN + 1;
+	const target = rasterTarget(width * n, height * n);
+	const covered = new Uint8Array(width * n * height * n);
 	const mask = paletteOf(module.record, module.textures.manifest).mask;
 	for (const mesh of meshes) {
 		const count = mesh.points.length / 3;
 		const screen = new Float64Array(count * 3);
 		const indices = new Uint32Array(count);
 		for (let k = 0; k < count; k++) {
-			screen[k * 3] = ((mesh.points[k * 3 + 2] as number) - z0) * scale + 1;
-			screen[k * 3 + 1] = (y1 - (mesh.points[k * 3 + 1] as number)) * scale + 1;
-			screen[k * 3 + 2] = (mesh.points[k * 3] as number) - x0 + 1;
+			screen[k * 3] =
+				((mesh.points[k * 3 + across] as number) - (low[across] as number)) * scale +
+				VIEW_MARGIN * n;
+			screen[k * 3 + 1] =
+				((high[1] as number) - (mesh.points[k * 3 + 1] as number)) * scale + VIEW_MARGIN * n;
+			screen[k * 3 + 2] = (mesh.points[k * 3 + behind] as number) - (low[behind] as number) + 1;
 			indices[k] = k;
 		}
 		rasterise(target, screen, indices, (f) => {
@@ -466,39 +494,79 @@ function turned(
 				const my = Math.min(LEAF_MASK - 1, Math.max(0, Math.floor(v * LEAF_MASK)));
 				if (!mask[my * LEAF_MASK + mx]) return false;
 			}
-			covered[f.y * width + f.x] = 1;
+			covered[f.y * width * n + f.x] = 1;
 			return true;
 		});
 	}
-	// The covered pixels' own box, and the share of it they fill.
+	const data = new Uint8Array(width * height * 4);
 	let left = width;
 	let right = -1;
-	let top = EDGE_ROWS + 2;
-	let bottom = -1;
-	let count = 0;
-	for (let y = 0; y < EDGE_ROWS + 2; y++)
-		for (let x = 0; x < width; x++)
-			if (covered[y * width + x]) {
-				count++;
+	for (let y = 0; y < height; y++)
+		for (let x = 0; x < width; x++) {
+			let cover = 0;
+			for (let sy = 0; sy < n; sy++)
+				for (let sx = 0; sx < n; sx++)
+					cover += covered[(y * n + sy) * width * n + x * n + sx] as number;
+			const value = Math.round(255 * (1 - cover / (n * n)));
+			const at = (y * width + x) * 4;
+			data[at] = value;
+			data[at + 1] = value;
+			data[at + 2] = value;
+			data[at + 3] = 255;
+			if (value < 128) {
 				left = Math.min(left, x);
 				right = Math.max(right, x);
-				top = Math.min(top, y);
-				bottom = Math.max(bottom, y);
 			}
+		}
+	return { image: { width, height, data }, columns: Math.max(0, right - left + 1) };
+}
+
+/**
+ * A laid cut's depth over its width, as its turning sheet reads it: its outline's width edge on
+ * over its width face on, at one height; and its enclosed sky gap edge on, by the review's measure.
+ */
+function turned(
+	module: SpeciesModule,
+	meshes: readonly Laid[],
+): { readonly depth: number; readonly gap: number } {
+	const face = drawnMatte(module, meshes, 0);
+	const edge = drawnMatte(module, meshes, 2);
 	return {
-		depth: (z1 - z0) / (x1 - x0),
-		edge: count / Math.max(1, (right - left + 1) * (bottom - top + 1)),
+		depth: edge.columns / Math.max(1, face.columns),
+		gap: measurePlant(edge.image, matteMask(edge.image)).gapFraction,
 	};
 }
 
 describe('a cut keeps what its turning video shows from the side', () => {
 	it(
-		'is as deep against its width, and covers as much of its box edge on, as its video, all eighteen cuts',
+		"is as deep against its width as its video, and edge on stands inside the standard's sky band, all eighteen cuts",
 		async () => {
 			const seen: string[] = [];
-			// The cuts that stand on the wrong side of their band's edge for their list.
+			// The cuts that break their band or their listed figure.
 			const wrong: string[] = [];
-			for (const { id, pieces, studio, still, depth, edge } of TURNING) {
+			const held = (
+				key: string,
+				drawn: number,
+				video: number,
+				inside: boolean,
+				list: Readonly<Record<string, number>>,
+				what: string,
+			): void => {
+				const listed = list[key];
+				if (listed === undefined) {
+					if (!inside) wrong.push(`${key}: ${what} ${drawn.toFixed(3)} against ${video}, outside`);
+					return;
+				}
+				if (inside)
+					wrong.push(
+						`${key}: ${what} ${drawn.toFixed(3)} against ${video} is inside; take it off the list`,
+					);
+				else if (Math.abs(drawn - video) > Math.abs(listed - video) + FIGURE_ROUNDING)
+					wrong.push(
+						`${key}: ${what} ${drawn.toFixed(3)} against ${video}, worse than its listed ${listed}`,
+					);
+			};
+			for (const { id, pieces, studio, still, depth, gap } of TURNING) {
 				const module = await loadPieces(id);
 				await loadPlantCode(module.record);
 				const layout = studio.find((candidate) => candidate.still === still);
@@ -507,15 +575,25 @@ describe('a cut keeps what its turning video shows from the side', () => {
 				const built = turned(module, laidTriangles(module, pieces, layout));
 				const key = `${id} ${still}`;
 				seen.push(
-					`${key}: depth ${built.depth.toFixed(2)} against ${depth}, edge-on cover ${built.edge.toFixed(2)} against ${edge}`,
+					`${key}: depth ${built.depth.toFixed(3)} against ${depth}, edge-on sky gap ${built.gap.toFixed(3)} against ${gap}`,
 				);
-				const depthHeld = Math.abs(built.depth - depth) <= DEPTH_SHARE * depth;
-				const edgeHeld = Math.abs(built.edge - edge) <= EDGE_SHARE * edge;
-				// A cut on a list is held outside its band; every other cut inside it.
-				if (depthHeld === key in OPEN_DEPTH)
-					wrong.push(`${key}: depth ${built.depth.toFixed(2)} against ${depth}`);
-				if (edgeHeld === key in OPEN_EDGE)
-					wrong.push(`${key}: edge-on cover ${built.edge.toFixed(2)} against ${edge}`);
+				held(
+					key,
+					built.depth,
+					depth,
+					Math.abs(built.depth - depth) <= DEPTH_BAND,
+					OPEN_DEPTH,
+					'depth',
+				);
+				const over = built.gap - gap;
+				held(
+					key,
+					built.gap,
+					gap,
+					over <= GAP_ABOVE && over >= -GAP_BELOW,
+					OPEN_GAP,
+					'edge-on sky gap',
+				);
 			}
 			if (process.env.NULL3D_PIECE_FIGURES) console.log(seen.join('\n'));
 			expect(wrong).toEqual([]);
@@ -883,6 +961,18 @@ describe("a hanging piece's blades", () => {
  * Each piece's triangles at the high tier, its first variant, when its leaves, wood and buds took the
  * crown's own cut: what a whole tree carrying thousands of pieces could not afford.
  */
+/** The nine broadleaf species whose pieces the cost is held for. */
+const BROADLEAF: ReadonlySet<SpeciesId> = new Set<SpeciesId>([
+	'pedunculate-oak',
+	'holm-oak',
+	'european-beech',
+	'common-ash',
+	'common-alder',
+	'olive',
+	'weeping-willow',
+	'silver-birch',
+	'hawthorn-shrub',
+]);
 const CROWN_CUT_HIGH: Readonly<Record<string, number>> = {
 	'pedunculate-oak branch-end': 9604,
 	'pedunculate-oak twig': 4698,
@@ -913,8 +1003,7 @@ describe("a piece's cost", () => {
 		"takes the pieces' cut at the high tier: at most a fifth of the crown cut, every piece of nine species",
 		async () => {
 			const high = DETAILS.indexOf('high');
-			// The nine broadleaf trees' pieces; the pine's bough is a conifer's and its own tests hold it.
-			for (const { id, pieces } of SPECIES.filter((species) => species.id !== 'scots-pine')) {
+			for (const { id, pieces } of SPECIES.filter((species) => BROADLEAF.has(species.id))) {
 				const module = await loadPieces(id);
 				await loadPlantCode(module.record);
 				const built = buildPiecesNow(module, pieces);

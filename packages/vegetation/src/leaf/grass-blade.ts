@@ -2,7 +2,7 @@
 // by the record's fold, so the blade is a shallow V that lights as two faces; it twists along its
 // length; its width follows the record's profile, then closes in its tip: a short blunt hood whose
 // halves rise to meet like a boat's prow (meadow grass), or a long fine point (sedge). The dry tip
-// browns. The tuft grower writes every blade of a plant along its own axis with `writeBlade`; the
+// browns. A blade that comes to rest on the soil unwinds its twist where it lands, so it lies flat. The tuft grower writes every blade of a plant along its own axis with `writeBlade`; the
 // kit's one blade, for the 'leaf' cutting, arches from the leaf frame's origin up +Y with its upper
 // face toward +Z, its colour bytes those a cutting copies (flutter phase first, full sky last) and its
 // second coordinate the share along it and its browning, as the plant's own blades carry them.
@@ -19,6 +19,12 @@ import { MeshWriter } from './writer';
 
 /** Degrees each half of a hooded tip rises at its very end, closing over the keel. */
 const HOOD_FOLD = 72;
+/**
+ * How a point closes: its width is one less the share into the point raised to this power. Still
+ * 12 reads 0.43 of the width one width from the tip, 0.70 two widths from it and 0.89 three widths
+ * from it, on a point four and a half widths long.
+ */
+const POINT_CLOSE = 2.2;
 
 /** Steps a metre of a blade's keel offset is packed in, within a signed byte's range. */
 export const KEEL_STEPS = 8192;
@@ -33,6 +39,11 @@ export interface BladeForm {
 	readonly blade: GrassBlade;
 	/** Degrees of twist from collar to tip, this blade's own. */
 	readonly twist: number;
+	/**
+	 * For a blade that comes to rest on the soil: the shares along it where it turns down onto the
+	 * soil and where it lies on it. Its twist unwinds between them, so it lies flat.
+	 */
+	readonly flat?: readonly [number, number];
 	/** How far the blade has browned overall, 0 to 1, and how much its dry tip browns. */
 	readonly browning: number;
 	readonly dry: number;
@@ -67,8 +78,10 @@ export function bladeWidth(width: number, blade: GrassBlade, t: number): number 
 	const start = 1 - blade.tipLength;
 	if (t <= start) return at;
 	const u = Math.min(1, (t - start) / Math.max(1e-6, blade.tipLength));
-	// A hood closes round, as a quarter ellipse; a point narrows nearly straight to nothing.
-	const close = blade.tip === 'hooded' ? Math.sqrt(Math.max(0, 1 - u * u)) : pow(1 - u, 0.85);
+	// A hood closes round, as a quarter ellipse. A point holds most of its width through its first
+	// half and narrows ever faster to nothing, as the sedge's leaf on still 12 does.
+	const close =
+		blade.tip === 'hooded' ? Math.sqrt(Math.max(0, 1 - u * u)) : 1 - pow(u, POINT_CLOSE);
 	return at * close;
 }
 
@@ -118,6 +131,28 @@ export function bladeTexture(manifest: TextureManifest): BladeTexture {
 
 const frame: PathFrame = emptyFrame();
 
+/** Rows a blade's tip holds inside it beside its ends, at a near tier and at a far one. */
+const TIP_ROWS: readonly [number, number] = [3, 1];
+
+/**
+ * The shares along a blade where its rows stand, collar first: the path's own cuts, or rows that
+ * crowd toward the tip, where the blade closes and arches most. Rows are added inside the tip, so
+ * its closing shape shows however few cuts the path gives it.
+ */
+function rowShares(blade: GrassBlade, detail: BladeDetail): number[] {
+	const cuts = detail.along;
+	const rows = cuts ? cuts.length - 1 : Math.max(2, detail.rows);
+	const shares: number[] = [];
+	for (let r = 0; r <= rows; r++)
+		shares.push(cuts ? (cuts[r] as number) : 1 - pow(1 - r / rows, 1.35));
+	const inside = detail.rows >= 7 ? TIP_ROWS[0] : TIP_ROWS[1];
+	const start = 1 - blade.tipLength;
+	for (let k = 1; k <= inside; k++) shares.push(start + (blade.tipLength * k) / (inside + 1));
+	shares.sort((a, b) => a - b);
+	// Rows nearer than a thousandth of the blade are one row.
+	return shares.filter((t, i) => i === 0 || t - (shares[i - 1] as number) > 1e-3);
+}
+
 /**
  * Writes one blade along a path from its collar to its tip: rows of a keeled section, the halves
  * rising from the keel, twisted along the blade, normals from the written faces.
@@ -145,20 +180,19 @@ export function writeBlade(
 	const points =
 		detail.across === 0 ? [-1, 1] : detail.across === 1 ? [-1, 0, 1] : [-1, -0.5, 0, 0.5, 1];
 	const columns = points.length;
-	const cuts = detail.along;
-	const rows = cuts ? cuts.length - 1 : Math.max(2, detail.rows);
+	const shares = rowShares(form.blade, detail);
+	const rows = shares.length - 1;
 	const colour = [bytes.high, bytes.low, bytes.phase, 255];
 	const p = [0, 0, 0];
 	const packed = [0, 0, 0, 127];
 	const dryStart = 1 - form.blade.dryTip;
 	for (let r = 0; r <= rows; r++) {
-		// Rows crowd toward the tip, where the blade closes and arches most, unless the path's own
-		// cuts place them.
-		const t = cuts ? (cuts[r] as number) : 1 - pow(1 - r / rows, 1.35);
+		const t = shares[r] as number;
 		frameAt(path, t * path.length, frame);
 		const half = bladeHalf(form, t);
 		const fold = radians(foldAt(form, t));
-		const twist = radians(form.twist * t);
+		const unwound = form.flat ? 1 - smoothstep(form.flat[0], form.flat[1], t) : 1;
+		const twist = radians(form.twist * t * unwound);
 		const ct = cos(twist);
 		const st = sin(twist);
 		const cf = cos(fold);

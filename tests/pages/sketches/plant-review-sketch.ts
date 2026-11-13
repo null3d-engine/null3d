@@ -75,12 +75,18 @@ import {
 	forkShot,
 	insideShot,
 	junctionShot,
+	placedPieceShot,
 	type Solved,
 	underRimShot,
 } from '../lib/plant-review/subject-shots';
-import { isAbsent, type PlantSubjects, subjectsOfSkeleton } from '../lib/plant-review/subjects';
+import {
+	isAbsent,
+	type PlantSubjects,
+	piecesOfRows,
+	subjectsOfSkeleton,
+} from '../lib/plant-review/subjects';
 import { BACKGROUND_COLOURS, type PlantView, VIEW_SPECS } from '../lib/plant-review/views';
-import { wholeStand } from '../lib/plant-review/whole-stand';
+import { liftedToGround, wholeStand } from '../lib/plant-review/whole-stand';
 
 const QUERY = readPlantReviewQuery(new URL(import.meta.url).searchParams);
 const VIEW: PlantView = QUERY.view ?? 'whole';
@@ -412,7 +418,7 @@ function fit(bounds: Bounds, turn: number, elevation: number, aspect: number, fo
 	return orbit(centre, distance, elevation, turn, fov);
 }
 
-/** Where the first whole view's drawn points landed in its frame, which the page posts with its facts. */
+/** Where each whole view's drawn points landed in its frame; the page posts the last, the stand it drew. */
 const STAND_ROWS: Record<string, number | string>[] = [];
 
 /**
@@ -462,16 +468,16 @@ function standView(
 		},
 		height,
 	);
-	if (STAND_ROWS.length < 1)
-		STAND_ROWS.push({
-			top: Number(stand.extent.top.toFixed(4)),
-			base: Number(stand.extent.base.toFixed(4)),
-			left: Number(stand.extent.left.toFixed(4)),
-			right: Number(stand.extent.right.toFixed(4)),
-			askedTop: Number(stand.asked.top.toFixed(4)),
-			askedBase: Number((stand.asked.base ?? 1).toFixed(4)),
-			held: stand.held,
-		});
+	STAND_ROWS.push({
+		top: Number(stand.extent.top.toFixed(4)),
+		base: Number(stand.extent.base.toFixed(4)),
+		left: Number(stand.extent.left.toFixed(4)),
+		right: Number(stand.extent.right.toFixed(4)),
+		askedTop: Number(stand.asked.top.toFixed(4)),
+		askedBase: Number((stand.asked.base ?? 1).toFixed(4)),
+		held: stand.held,
+		points: points === undefined ? 0 : Math.floor(points.length / 3),
+	});
 	return { position: stand.position as V3, target: stand.target as V3, fov: FOV };
 }
 
@@ -687,7 +693,9 @@ export default defineSketch(async (ctx) => {
 		...(QUERY.cardJoin !== undefined && { cardJoin: QUERY.cardJoin }),
 	};
 	const turn0 = (QUERY.turn ?? 0) * DEG;
-	const cuttingPart = VIEW === 'panels' ? 'cluster' : SPEC.cutting;
+	// A view that names a class of piece frames that piece on the grown plant, so it cuts none.
+	const cuttingPart =
+		VIEW === 'panels' ? 'cluster' : QUERY.piece === undefined ? SPEC.cutting : undefined;
 	const cutting = cuttingPart && {
 		part: cuttingPart,
 		...(QUERY.cut !== undefined && { length: QUERY.cut }),
@@ -713,7 +721,7 @@ export default defineSketch(async (ctx) => {
 		...(QUERY.age !== undefined && { age: QUERY.age }),
 		...(QUERY.young !== undefined && { young: QUERY.young }),
 	};
-	const needsWhole = !SPEC.cutting;
+	const needsWhole = !cuttingPart;
 	// A piece whose record hint names one of the species' cutting classes grows from a kit of its
 	// own, which holds that class and no cards: the piece is only ever drawn at the nearest level.
 	const cutHint = cutting ? record.cuttings?.[cutting.part] : undefined;
@@ -819,7 +827,8 @@ export default defineSketch(async (ctx) => {
 		const near = parts === main.levels[0]?.parts;
 		const lists = [
 			...parts.map((part) => partPositions(part, mainKit.box)),
-			...(near ? [shootPositions(main, mainKit)] : []),
+			// A leaf that dips through the ground is drawn down to it, so its points count there.
+			...(near ? [liftedToGround(shootPositions(main, mainKit), foot[1])] : []),
 		].filter((list) => list.length > 0);
 		let out: Float32Array | undefined;
 		if (lists.length > 0) {
@@ -837,7 +846,7 @@ export default defineSketch(async (ctx) => {
 	const placedView = {
 		height: SIZE[1] / rows,
 		fov: FOV,
-		...((LOD === 0 || SPEC.cutting !== undefined) && { switchBias: -FORCED_NEAR_STOPS }),
+		...((LOD === 0 || cuttingPart !== undefined) && { switchBias: -FORCED_NEAR_STOPS }),
 	};
 	/**
 	 * A framed whole view of the plant as the level it draws at: the stand is found on the nearest
@@ -901,12 +910,16 @@ export default defineSketch(async (ctx) => {
 		};
 	};
 
-	/** The plant's subjects, which the solved close views frame, read from its skeleton once. */
+	/**
+	 * The plant's subjects, which the solved close views frame, read once: from its skeleton, and
+	 * its placed pieces from its rows.
+	 */
 	let subjectsRead: PlantSubjects | undefined;
 	const subjectsOf = (): PlantSubjects => {
-		subjectsRead ??= subjectsOfSkeleton(skeleton, {
-			...(leafLength !== undefined && { leafLength }),
-		});
+		subjectsRead ??= {
+			...subjectsOfSkeleton(skeleton, { ...(leafLength !== undefined && { leafLength }) }),
+			pieces: piecesOfRows(main.shoots, mainKit, foot),
+		};
 		return subjectsRead;
 	};
 	/** Each solved view's shot, or why the plant gives none, with the lens it was solved for. */
@@ -944,7 +957,23 @@ export default defineSketch(async (ctx) => {
 		const fov = QUERY.fov ?? spec.fov;
 		const out = facing(turn);
 		const lens = { fov, aspect };
-		switch (view) {
+		// A close view that names a class of piece frames the outermost placed piece of that class.
+		const placed = QUERY.piece !== undefined && SPEC.whole !== true;
+		switch (placed ? 'placed piece' : view) {
+			case 'placed piece': {
+				const found = solvedAt(
+					view,
+					lens,
+					() =>
+						placedPieceShot(subjectsOf(), QUERY.piece as string, lens, {
+							laid: (QUERY.roll ?? 0) !== 0,
+							edge: QUERY.edge === true,
+						}),
+					0,
+				);
+				if (found) return found;
+				break;
+			}
 			case 'turntable':
 			case 'whole':
 			case 'skeleton':
@@ -1576,7 +1605,11 @@ export default defineSketch(async (ctx) => {
 		notes.push(`${missing}, so the ${view} view shows the whole plant`);
 		// A plant of wood that has no such part is at fault. A ground plant draws no wood at all, so
 		// a wood view of it is a fault of the file's mapping to a view.
-		const lacks = solved !== undefined && isAbsent(solved) && solved.lacks && hasWood(main);
+		const lacks =
+			solved !== undefined &&
+			isAbsent(solved) &&
+			solved.lacks &&
+			(QUERY.piece !== undefined || hasWood(main));
 		plainSubjects.set(view, { kind: 'the whole plant', missing, ...(lacks && { lacks: true }) });
 		return fit(bounds, turn, e, aspect, fov);
 	};
@@ -2037,6 +2070,7 @@ export default defineSketch(async (ctx) => {
 			},
 		}),
 		...(limb >= 0 && { limb: { axis: limb, nodes: chainOf(skeleton, limb).length } }),
+		...(STAND_ROWS.length > 0 && { stand: STAND_ROWS[STAND_ROWS.length - 1] }),
 		elevation,
 		cells: cells.map((cell) => ({
 			turn: cell.turn / DEG,

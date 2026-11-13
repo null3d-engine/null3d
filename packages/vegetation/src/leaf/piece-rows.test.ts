@@ -12,6 +12,7 @@ import type { SpeciesModule } from '../core/record';
 import { loadSpecies } from '../core/registry';
 import { DETAILS } from '../core/types';
 import { buildKitNow, buildPiecesNow, growPlantNow, loadPlantCode } from '../generate';
+import { drawnAtOnce } from '../lod/drawn';
 import { directed as oakDirected } from '../species/pedunculate-oak/directed';
 import { directed as willowDirected } from '../species/weeping-willow/directed';
 import { PIECES as WILLOW_PIECES } from '../species/weeping-willow/pieces';
@@ -267,4 +268,79 @@ describe('a kit that carries pieces', () => {
 			},
 			LONG,
 		);
+});
+
+describe("the Scots pine's boughs at sockets, by the pine's own figures", () => {
+	let kit: SpeciesKitData;
+	let asset: PlantAsset;
+
+	beforeAll(async () => {
+		const module = await loadSpecies('scots-pine');
+		await loadPlantCode(module.record);
+		kit = buildKitNow(module, { detail: 'high', placeholders: 'missing' });
+		asset = growPlantNow(kit, { seed: 11, variant: 0, season: 'summer', near: true });
+	}, LONG);
+
+	it("counts the triangles of its boughs beside its wood's", () => {
+		const tier = DETAILS.indexOf(kit.detail);
+		let rows = 0;
+		for (let r = 0; r < asset.shoots.count; r++)
+			rows +=
+				(kit.prototypes[asset.shoots.prototype[r] as number]?.tiers[tier]?.indices.length ?? 0) / 3;
+		expect(asset.stats.shoots).toBe(rows);
+		// The boughs hold far more of the plant than its wood does.
+		expect(asset.stats.shoots).toBeGreaterThan(asset.stats.triangles[0]);
+	});
+
+	it('draws at once, from an eye inside its fullest pad, within its near budget', () => {
+		// The near form, every bough at the kit's tier, is more than one view draws: the engine
+		// switches each bough to its card past the switch distance. From the worst stated eye, inside
+		// the fullest foliage or standing under the crown, the count drawn at once stays within the
+		// record's own budget for the nearest level.
+		const drawn = drawnAtOnce(kit, asset);
+		expect(drawn.eye).toBe('foliage');
+		expect(drawn.triangles).toBeLessThanOrEqual(kit.record.lod.budget.lod0Triangles);
+		expect(drawn.triangles).toBeGreaterThanOrEqual(drawnAtOnce(kit, asset, false).triangles);
+	});
+
+	it('stands on a round foot 1.6 times as wide as the bole, with low roots and no buttress', () => {
+		const height = asset.skeleton.height;
+		/** The wood's farthest reach from the trunk's line in each of 36 directions, between two heights. */
+		const ring = (from: number, to: number): number[] => {
+			const reach = new Array<number>(36).fill(0);
+			for (const part of asset.levels[0].parts) {
+				if (part.name !== 'wood') continue;
+				const positions = part.arrays.positions;
+				for (let i = 0; i < positions.length; i += 3) {
+					const at = [0, 1, 2].map((k) => {
+						const low = kit.box.min[k] as number;
+						return (
+							low + ((positions[i + k] as number) / 65535) * ((kit.box.max[k] as number) - low)
+						);
+					});
+					if ((at[1] as number) < from * height || (at[1] as number) > to * height) continue;
+					const turn = Math.atan2(at[2] as number, at[0] as number) / (2 * Math.PI);
+					const sector = Math.floor((((turn % 1) + 1) % 1) * 36) % 36;
+					reach[sector] = Math.max(
+						reach[sector] as number,
+						Math.hypot(at[0] as number, at[2] as number),
+					);
+				}
+			}
+			return reach.sort((a, b) => a - b);
+		};
+		// Still 02: the foot at the ground is 1.6 times the bole at a tenth of the height. Between
+		// the roots the ground ring is the bole's own, so its lower quarter reads the foot.
+		const ground = ring(0, 0.005);
+		const bole = ring(0.09, 0.11);
+		const foot = (ground[9] as number) / (bole[18] as number);
+		expect(foot).toBeGreaterThanOrEqual(1.45);
+		expect(foot).toBeLessThanOrEqual(1.75);
+		// Stills 14 and 17: above the roots the bole is round, with no buttress and no flute.
+		const above = ring(0.03, 0.06);
+		expect((above[35] as number) / (above[0] as number)).toBeLessThanOrEqual(1.05);
+		// Still 14: the roots run out over the ground no farther than three bole widths.
+		expect(ground[35] as number).toBeGreaterThan((ground[9] as number) * 1.2);
+		expect(ground[35] as number).toBeLessThanOrEqual((bole[18] as number) * 2 * 3);
+	});
 });

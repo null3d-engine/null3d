@@ -189,6 +189,26 @@ export function outlineOverlap(a: OutlineMatte, b: OutlineMatte): number {
 }
 
 /**
+ * Where a height on a plant stands in its matte, as a share of the matte's height from its lowest
+ * row. The crown base's place is the row a sky share is read from, above the bare trunk and the
+ * roots.
+ *
+ * @param asset The plant.
+ * @param height The height in metres.
+ * @returns The share, from 0 to 1.
+ */
+export function matteShare(asset: PlantAsset, height: number): number {
+	const bounds = asset.skeleton.bounds;
+	const reach = Math.max(
+		bounds.max[0] - bounds.min[0],
+		bounds.max[1] - bounds.min[1],
+		bounds.max[2] - bounds.min[2],
+	);
+	const low = bounds.min[1] - reach * FRAME_MARGIN;
+	return Math.min(1, Math.max(0, (height - low) / (reach * (1 + 2 * FRAME_MARGIN))));
+}
+
+/**
  * The share of sky inside a plant's outline in the front view of a matte: over the rows of pixels a
  * crown stands in, the pixels between each row's first and last covered pixel that nothing covers.
  * Two mattes of one plant are read against one outline, the first's, so a level that draws less is

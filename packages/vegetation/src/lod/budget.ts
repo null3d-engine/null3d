@@ -25,6 +25,7 @@ import { AXIS_LIMB, AXIS_STEM, AXIS_STIPE } from '../core/graph';
 import { DETAILS, type Detail } from '../core/types';
 import { grower } from '../grow/models';
 import { extrasMesh } from '../leaf/extras';
+import { writesPieces } from '../leaf/piece-rows';
 import type { MeshInput, MeshLevel } from '../stages';
 import { woodLadderTriangles, woodPartTriangles } from '../wood/estimate';
 import { type TubeDetail, tubeDetail } from '../wood/tube';
@@ -215,9 +216,13 @@ const trianglesOf = (mesh: MeshArrays | undefined) => (mesh ? mesh.indices.lengt
 /** Whether a plant's foliage is one mesh its grower builds, not shoot rows. */
 const isMerged = (mesh: MeshInput) => mesh.record.lod.nearFoliage === 'merged';
 
-/** A merged plant's foliage at a level, or none where its grower builds none. */
+/**
+ * The foliage mesh a plant's grower builds itself at a level: a merged plant's foliage, or the
+ * part a plant of written pieces draws beside them, such as a tuft's stool and what lies in the
+ * soil under it. None where the grower builds none.
+ */
 function mergedFoliage(mesh: MeshInput, level: MeshLevel): MeshArrays | undefined {
-	if (!isMerged(mesh)) return undefined;
+	if (!isMerged(mesh) && !writesPieces(mesh.record)) return undefined;
 	return grower(mesh.record.growth.model).foliage?.(mesh, level);
 }
 

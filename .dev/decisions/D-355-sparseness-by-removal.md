@@ -100,6 +100,15 @@ first carriers of the order and every axis from each of them to the root.
 - **Same choices.** A thinned plant records the index each axis, bud site and shoot row had as
   grown. The extras, the bark's peel, a column's ribs, the stem's flare and the wind phase key on
   those. So the fruit that stays hangs where the grown plant hung it.
+- **A plant of sockets.** A plant whose foliage stands at sockets, such as a tuft of pieces or a
+  directed frame, thins by whole sockets. A socket's rows all stand at its place, so each row
+  belongs to the socket at its node that stands nearest it. Each socket takes the earliest place
+  any of its rows takes in the walk's order, and its rows take that place. So a piece stays whole or
+  goes whole, and the sockets thin as evenly as the rows would. Wood that carries no kept socket
+  goes, unless it is a stem, a great limb or the wood to the plant's top. The thinned skeleton keeps
+  each kept socket's size, rank, mass and piece. The evenness is judged on sockets: a plant of
+  about fifty sockets, such as the sedge, has too few in an octant to judge, since one socket is a
+  sixth of it.
 
 Rejected:
 
@@ -112,6 +121,10 @@ Rejected:
   data shows.
 - **Trimming each axis back to its last shoot.** The crown's outline shrinks as it thins, and an
   axis's own key changes, which moves a ground plant's leaves.
+- **The grower's own rank of its sockets** as the order of a plant of sockets. It keeps a level's
+  crown shape, but it is less even round the crown: the worst octant of the Scots pine stands 0.17
+  from the plant's kept share, and of the sedge 0.15, where the walk's order holds every tree within
+  0.031 and the test allows 0.12.
 
 The floors that eight species named were shares of a regrown plant: limbs, leaf area and
 coarseness. Each of those species now names a share of its shoots. That share holds the leaf area

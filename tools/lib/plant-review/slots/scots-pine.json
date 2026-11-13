@@ -118,7 +118,8 @@
 		"sunRise": 50,
 		"skyShare": 0.42,
 		"background": "studio-grey",
-		"sky": "#c4c8ca"
+		"sky": "#c4c8ca",
+		"piece": "bough"
 	},
 	"22-subbranch-studio.png": {
 		"sunAzimuth": -40,

@@ -55,16 +55,18 @@ import {
 /**
  * How each tier meshes a piece's wood and buds. A tree carries thousands of pieces, so a piece's
  * wood has the fewest sides a twig needs, three, widened to the round stem's mean width, with a ring
- * only where the stem bends: 8 degrees at the high tier and 15 at the medium. An axil's bud hides
- * under its leaf, so the medium tier draws none and the high tier only one long enough to show, as
- * the beech's long buds are. The tip clusters, which mark a species, are separate three-sided buds
- * at the high tier and one cone at the medium. Thorns are three-sided at both, and a fruiting body
- * is round at the high tier. The ultra tier keeps the crown's finest cut.
+ * only where the stem bends: 8 degrees at the high tier and 15 at the medium. Where a piece's leaves
+ * close round its stem, at every tier, no ring of the wood they hide shows, so its rings stand far
+ * apart. An axil's bud hides under its leaf, so the medium tier draws none and the high tier only
+ * one long enough to show, as the beech's long buds are. The tip clusters, which mark a species, are
+ * separate three-sided buds at the high tier and one cone at the medium. Thorns are three-sided at
+ * both, and a fruiting body is round at the high tier. The ultra tier keeps the crown's finest cut.
  */
 export const PIECE_CUTS: Readonly<Record<Detail, ShootCut>> = {
-	low: SHOOT_CUTS.low,
+	low: { ...SHOOT_CUTS.low, thinHidden: true },
 	medium: {
 		stemSides: 3,
+		thinHidden: true,
 		meanWidth: true,
 		ringTurn: 15,
 		cluster: { sides: 3, round: false },
@@ -73,6 +75,7 @@ export const PIECE_CUTS: Readonly<Record<Detail, ShootCut>> = {
 	},
 	high: {
 		stemSides: 3,
+		thinHidden: true,
 		meanWidth: true,
 		ringTurn: 8,
 		cluster: { sides: 3, round: false },
@@ -81,7 +84,7 @@ export const PIECE_CUTS: Readonly<Record<Detail, ShootCut>> = {
 		thorn: { sides: 3, round: false },
 		body: { sides: 4, round: true },
 	},
-	ultra: SHOOT_CUTS.ultra,
+	ultra: { ...SHOOT_CUTS.ultra, thinHidden: true },
 };
 
 /**
@@ -594,6 +597,7 @@ export function planPiece(
 		const direction = toward(
 			leaf.direction,
 			square(down, normal, leaf.direction),
+			// Only a blade hangs on a stalk; a needle keeps the line it leaves its twig on.
 			foliage.kind === 'blade' ? foliage.leaf.petiole.droop : 0,
 		);
 		const rotation = [0, 0, 0, 1];
@@ -1048,7 +1052,9 @@ export function pieceSites(plan: ShootPlan): PieceSite[] {
 		});
 	}
 	const ranked = (sites: Omit<PieceSite, 'rank'>[]): PieceSite[] => {
-		const bits = Math.max(1, Math.ceil(Math.log2(Math.max(2, sites.length))));
+		// The bits that count the sites, found by doubling: a whole number, the same on every engine.
+		let bits = 1;
+		while (1 << bits < sites.length) bits++;
 		return sites
 			.map((site, index) => ({ site, order: reversed(index, bits) }))
 			.sort((a, b) => a.order - b.order)

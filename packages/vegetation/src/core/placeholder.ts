@@ -21,7 +21,7 @@ import type {
 } from '../asset';
 import { crownPrototypes } from '../asset';
 import type { UncardedPrototype } from '../leaf/shoot';
-import { REFERENCE_VIEW } from '../lod/levels';
+import { firstCardStart, REFERENCE_VIEW } from '../lod/levels';
 import { TEXTURE_UV_STEPS } from '../lod/quantise';
 import { HEADER, HEADER_ROWS, RECORDS_WIDTH } from '../render/records';
 import type { CardAtlas, CrownLight, DressInput, FarBake, GrowInput, MeshInput } from '../stages';
@@ -888,7 +888,12 @@ function distanceFor(size: number, pixels: number): number {
 	return (size * REFERENCE_VIEW.height) / (2 * tan(radians(REFERENCE_VIEW.fov / 2)) * pixels);
 }
 
-/** The stand-in level distances: a shoot's length, a card's width and the plant's height at the record's pixels. */
+/**
+ * The stand-in level distances: a shoot's length, a card's width and the plant's height at the
+ * record's pixels. A real kit's first card level starts where its page hands its shoots over to
+ * cards, by the one rule both read; a stand-in kit keeps the shoot's length, so the scenes that
+ * place stand-ins draw the same as real stages land.
+ */
 export function placeholderStarts(input: MeshInput): readonly [number, number, number] {
 	const { record, kit, skeleton } = input;
 	let shoot = 0.4;
@@ -898,7 +903,11 @@ export function placeholderStarts(input: MeshInput): readonly [number, number, n
 		card = Math.max(card, prototype.radius * 2);
 	}
 	const [first, second, far] = record.lod.switchPixels;
-	return [distanceFor(shoot, first), distanceFor(card, second), distanceFor(skeleton.height, far)];
+	return [
+		kit.placeholders === true ? distanceFor(shoot, first) : firstCardStart(kit, REFERENCE_VIEW),
+		distanceFor(card, second),
+		distanceFor(skeleton.height, far),
+	];
 }
 
 /** The stand-in far bake: every view a disc in the leaf's colour. */
