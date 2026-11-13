@@ -91,7 +91,7 @@ export const PIECE_CUTS: Readonly<Record<Detail, ShootCut>> = {
 		coneBelow: 0.015,
 		thorn: { sides: 3, round: false, cone: true },
 		body: { sides: 3, round: false, double: true },
-		roundBody: { sides: 4, round: true },
+		roundBody: { sides: 4, round: false, double: true, widest: 0.65 },
 	},
 	ultra: { ...SHOOT_CUTS.ultra, thinHidden: true },
 };
