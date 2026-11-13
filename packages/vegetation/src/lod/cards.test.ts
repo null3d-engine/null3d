@@ -299,6 +299,39 @@ describe('a cell of the card bake', () => {
 		expect(Math.abs(whole - cover)).toBeLessThanOrEqual(2);
 	});
 
+	it('browns a placed piece by its own browning, as the nearest level does', () => {
+		// A placed piece across the square, green at its left edge and wholly browned at its right.
+		const mesh = quads([[0, 1, 0, 1, SURFACE_PIECE]]);
+		const uvs1 = new Float32Array(mesh.uvs1.length);
+		for (let v = 0; v < 4; v++) uvs1[v * 2 + 1] = mesh.positions[v * 3] as number;
+		const piece = { ...mesh, uvs1 };
+		const size = 12;
+		const color = new Uint8Array(size * size * 8);
+		const surface = new Uint8Array(size * size * 8);
+		const plane = { centre: [0.5, 0.5, 0], right: [0.5, 0, 0], up: [0, 0.5, 0], normal: [0, 0, 1] };
+		const browned = { ...FLAT, browned: { upper: [3, 0.5, 1] as Rgb, lower: [3, 0.5, 1] as Rgb } };
+		bakeCell(piece, plane, [2, 2, 8, 8], size, browned, color, surface);
+		const at = (x: number) => texelAt(x, 3);
+		// Each column's share of the way browned is its centre's place across the square.
+		for (const x of [0, 7]) {
+			const brown = (x + 0.5) / 8;
+			expect(linear(color[at(x)] as number)).toBeCloseTo(0.1 * (1 + 2 * brown), 2);
+			expect(linear(color[at(x) + 1] as number)).toBeCloseTo(0.3 * (1 - 0.5 * brown), 2);
+		}
+		// A leaf of the shoot's own, not a placed piece, keeps its colour.
+		const leaf = new Uint8Array(size * size * 8);
+		bakeCell(
+			quads([[0, 1, 0, 1, SURFACE_LEAF]]),
+			plane,
+			[2, 2, 8, 8],
+			size,
+			browned,
+			leaf,
+			surface,
+		);
+		expect(linear(leaf[at(7)] as number)).toBeCloseTo(0.1, 2);
+	});
+
 	it('gives a texel the kind that covers most of it, in the mean colour of what covers it', () => {
 		// In the fifth column of texels, leaf covers three quarters and twig the last quarter.
 		const mesh = quads([

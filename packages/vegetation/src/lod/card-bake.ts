@@ -32,6 +32,7 @@ import { DETAILS, type Detail } from '../core/types';
 import { outlineMask, textureOutline } from '../leaf/outline';
 import type { UncardedPrototype } from '../leaf/shoot';
 import { leafSurface, SURFACE_EXTRA, SURFACE_PIECE, SURFACE_PIECE_SHEATH } from '../leaf/writer';
+import { foliageOptics } from '../render/records';
 import type { CardAtlas } from '../stages';
 import { rasterise, rasterTarget } from './raster';
 
@@ -538,6 +539,12 @@ export interface Palette {
 	readonly tip: number;
 	readonly mask: Uint8Array | undefined;
 	readonly extras: readonly Rgb[];
+	/**
+	 * How a fully browned piece's leaf colour turns on each face, where the record gives autumn
+	 * colours: the autumn reflectance over the face's own, as the plant material turns a placed
+	 * piece by its browning at the nearest level.
+	 */
+	readonly browned?: { readonly upper: Rgb; readonly lower: Rgb };
 }
 
 /**
@@ -587,6 +594,22 @@ export function paletteOf(record: Species, manifest: TextureManifest): Palette {
 	const extras = (record.extras ?? []).map((extra) => extra.colour);
 	const sheathColour = record.growth.model === 'tuft' ? record.growth.sheathColour : undefined;
 	const sheath = sheathColour ? { sheath: sheathColour.foot } : {};
+	const leafOptics = foliageOptics(record);
+	const autumn = record.seasons.autumn?.reflectance;
+	const turn = (face: Rgb, to: Rgb): Rgb => [
+		to[0] / Math.max(face[0], 1e-4),
+		to[1] / Math.max(face[1], 1e-4),
+		to[2] / Math.max(face[2], 1e-4),
+	];
+	const browning =
+		leafOptics && autumn
+			? {
+					browned: {
+						upper: turn(leafOptics.reflectance, autumn),
+						lower: turn(leafOptics.reflectanceBack, autumn),
+					},
+				}
+			: {};
 	if (leaf) {
 		const outline = textureOutline(leaf);
 		const mask = outlineMask(outline.points, MASK_SIZE);
@@ -606,6 +629,7 @@ export function paletteOf(record: Species, manifest: TextureManifest): Palette {
 			tip,
 			mask,
 			extras,
+			...browning,
 		};
 	}
 	return {
@@ -618,6 +642,7 @@ export function paletteOf(record: Species, manifest: TextureManifest): Palette {
 		tip: 1,
 		mask: undefined,
 		extras,
+		...browning,
 	};
 }
 
@@ -1038,6 +1063,16 @@ function drawPlane(
 				] as number;
 			}
 			rgb = [mean[0] * gain, mean[1] * gain, mean[2] * gain];
+			// A placed piece browns by its own second coordinates' y, as the nearest level draws it.
+			if (palette.browned && kind === SURFACE_PIECE) {
+				const brown = Math.min(1, Math.max(0, lerp(mesh.uvs1, 2, 1)));
+				const turned = upper ? palette.browned.upper : palette.browned.lower;
+				rgb = [
+					rgb[0] * (1 + (turned[0] - 1) * brown),
+					rgb[1] * (1 + (turned[1] - 1) * brown),
+					rgb[2] * (1 + (turned[2] - 1) * brown),
+				];
+			}
 		} else if (kind === SURFACE_EXTRA) {
 			const index = Math.min(
 				palette.extras.length - 1,
