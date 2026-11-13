@@ -144,6 +144,8 @@ export interface PlantReviewQuery {
 	 * stands the plant by its top row and its share of the width, with no foot row.
 	 */
 	readonly footLost?: boolean;
+	/** Whether a placed piece's view frames a piece that heads toward the camera, not the outermost. */
+	readonly toward?: boolean;
 	/**
 	 * A limb view's subject as a great limb by its rank, the thickest first: the view frames that
 	 * limb across its run from the side, as a cactus's arm or a limb's elbow is photographed.
@@ -490,6 +492,7 @@ const SWITCHES = [
 	'surface',
 	'edge',
 	'footLost',
+	'toward',
 	'lifted',
 	'barkMask',
 	'leafyBark',
@@ -726,5 +729,6 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 		surface: params.get('surface') === '1',
 		edge: params.get('edge') === '1',
 		footLost: params.get('footLost') === '1',
+		toward: params.get('toward') === '1',
 	};
 }
