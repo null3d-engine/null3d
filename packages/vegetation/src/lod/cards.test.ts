@@ -5,9 +5,12 @@ import { describe, expect, it } from 'bun:test';
 import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
 import type { PrototypeArrays, SpeciesKitData } from '../asset';
 import { placeholderSkeleton } from '../core/placeholder';
+import type { Species, SpeciesModule } from '../core/record';
+import { loadSpecies } from '../core/registry';
 import { standInSpecies } from '../core/stand-in';
 import { STAND_IN_BARK, type TextureManifest } from '../core/textures';
 import type { Rgb } from '../core/types';
+import { buildKitNow, growPlantNow, loadPlantCode } from '../generate';
 import { placeShoots } from '../leaf/instancer';
 import { OAK_MANIFEST, oakRecord, testKit } from '../leaf/oak.test-support';
 import { SURFACE_LEAF, SURFACE_STEM } from '../leaf/writer';
@@ -20,7 +23,8 @@ import {
 	type Palette,
 	paletteOf,
 } from './card-bake';
-import { cardKeep, cardMesh, cardRows, connectedCards, foliageHull } from './cards';
+import { cardKeep, cardMesh, cardRows, connectedCards, foliageHull, supportAxes } from './cards';
+import { assetMeshInput } from './mesh-input.test-support';
 
 /** sRGB byte to linear. */
 const linear = (byte: number) => {
@@ -591,4 +595,142 @@ describe('a record that asks for a finer card cell', () => {
 		expect(fine.cells[0]?.planes[0]?.front).toEqual([2, 2, 124, 124]);
 		expect(base.cells[0]?.planes[0]?.front).toEqual([2, 2, 60, 60]);
 	});
+});
+
+/** The plants of framed wood whose first card level draws support branches. */
+const FRAMED: readonly (readonly [name: string, load: () => Promise<SpeciesModule>])[] = [
+	['hawthorn shrub', () => loadSpecies('hawthorn-shrub')],
+	[
+		'directed pedunculate oak',
+		async () => ({
+			record: (await import('../species/pedunculate-oak/directed')).directed as Species,
+			textures: (await import('@null3d/vegetation-textures/pedunculate-oak')).files,
+		}),
+	],
+	[
+		'directed Scots pine',
+		async () => ({
+			record: (await import('../species/scots-pine/directed')).directed as Species,
+			textures: (await import('@null3d/vegetation-textures/scots-pine')).files,
+		}),
+	],
+	['framed common ash', () => loadSpecies('common-ash')],
+];
+
+/**
+ * The most first-level cards that one support branch may hold. A support branch holds the pieces
+ * whose feet lie within their own length of it: on a framed plant, the sockets of the clump it
+ * carries and of the clumps beside it. The most measured is 69, on one clump branch of the framed oak
+ * at a fill spacing of 0.82 (the directed oak's most is 50, the pine's 29, the ash's 23); a support
+ * that held a crown's free cards by chains holds 108 on that oak, and hundreds on a sparser frame.
+ */
+const MOST_ON_SUPPORT = 80;
+
+/**
+ * How far past its own length a card's foot may stand from drawn wood when the branch it stands on is
+ * drawn: a shoot whose bare twig the skeleton trims stands where that twig was. On the hawthorn, 43 of
+ * 3,762 first-level cards stand so, up to 0.10 m past their length; a card that hangs from another
+ * card, or one under which no wood is drawn, stands a metre or more past it.
+ */
+const TRIMMED_SLACK = 0.15;
+
+/** The triangles of a level's wood. */
+function woodOf(
+	asset: {
+		levels: readonly {
+			parts: readonly { name: string; arrays: { indices: ArrayLike<number> } }[];
+		}[];
+	},
+	level: number,
+): number {
+	let triangles = 0;
+	for (const part of asset.levels[level]?.parts ?? [])
+		if (part.name === 'wood') triangles += part.arrays.indices.length / 3;
+	return triangles;
+}
+
+describe("the first card level's support wood", () => {
+	for (const [name, load] of FRAMED)
+		it(
+			`hangs every card of the ${name} from drawn wood within its own piece's length`,
+			async () => {
+				const module = await load();
+				await loadPlantCode(module.record);
+				const kit = buildKitNow(module, { placeholders: 'missing', detail: 'low' });
+				const plant = growPlantNow(kit, { seed: 11, variant: 0 });
+				const input = assetMeshInput(kit, plant);
+				const { axes, axisOf, nodeCount, position } = plant.skeleton;
+				const rows = plant.shoots;
+				const keep = kit.record.lod.woodOrders[0] ?? 255;
+				const support = supportAxes(input, 1) ?? new Uint8Array(axes.count);
+				const own = (a: number) => (axes.order[a] as number) <= keep;
+				const drawn = connectedCards(input, 1);
+				let cards = 0;
+				let needed = 0;
+				let far = 0;
+				let worst = 0;
+				const onSupport = new Map<number, number>();
+				for (let r = 0; r < rows.count; r++) {
+					if (drawn[r] !== 1) continue;
+					cards++;
+					const reach =
+						(kit.prototypes[rows.prototype[r] as number]?.length ?? 0) * (rows.scale[r] as number);
+					let best = Number.POSITIVE_INFINITY;
+					let bestOwn = Number.POSITIVE_INFINITY;
+					let bestAxis = -1;
+					for (let n = 0; n < nodeCount; n++) {
+						const a = axisOf[n] as number;
+						if (!own(a) && support[a] !== 1) continue;
+						// The foot's distance to the span of wood from this node to the next of its axis.
+						const m = n + 1 < nodeCount && axisOf[n + 1] === a ? n + 1 : n;
+						const foot = [0, 1, 2].map(
+							(k) => (rows.position[r * 3 + k] as number) - (position[n * 3 + k] as number),
+						);
+						const run = [0, 1, 2].map(
+							(k) => (position[m * 3 + k] as number) - (position[n * 3 + k] as number),
+						);
+						const runs =
+							(run[0] as number) ** 2 + (run[1] as number) ** 2 + (run[2] as number) ** 2;
+						const along =
+							runs > 0
+								? Math.max(
+										0,
+										Math.min(1, foot.reduce((s, v, k) => s + v * (run[k] as number), 0) / runs),
+									)
+								: 0;
+						const d = Math.hypot(...foot.map((v, k) => v - along * (run[k] as number)));
+						if (own(a)) bestOwn = Math.min(bestOwn, d);
+						if (d < best) {
+							best = d;
+							bestAxis = a;
+						}
+					}
+					if (bestOwn > reach) needed++;
+					// A card past its reach of drawn wood counts unless its own branch is drawn and it stands
+					// no more than the trimmed twig's slack past it.
+					const ownAxis = rows.node ? (axisOf[rows.node[r] as number] as number) : -1;
+					const standsOnDrawn = ownAxis >= 0 && (own(ownAxis) || support[ownAxis] === 1);
+					if (best > reach && !(standsOnDrawn && best - reach <= TRIMMED_SLACK)) {
+						far++;
+						worst = Math.max(worst, best - reach);
+					}
+					if (bestAxis >= 0 && !own(bestAxis))
+						onSupport.set(bestAxis, (onSupport.get(bestAxis) ?? 0) + 1);
+				}
+				const most = Math.max(0, ...onSupport.values());
+				console.log(
+					`${name}: ${cards} first-level cards, ${needed} beyond their length of the level's own wood, ${far} beyond it of all drawn wood (worst ${worst.toFixed(2)} m past), ${onSupport.size} supports holding cards, most on one ${most}`,
+				);
+				// Every card hangs from drawn wood within its own length, never from another card.
+				expect([name, far]).toEqual([name, 0]);
+				expect([name, most <= MOST_ON_SUPPORT]).toEqual([name, true]);
+				// A level whose cards stand beyond their length of its own wood draws the wood they hang
+				// from: more wood than the same plant joined by twig lines alone.
+				if (needed > 0) {
+					const twigs = growPlantNow(kit, { seed: 11, variant: 0, cardJoin: 'twig' });
+					expect([name, woodOf(plant, 1) > woodOf(twigs, 1)]).toEqual([name, true]);
+				}
+			},
+			scaledBudget(150_000),
+		);
 });

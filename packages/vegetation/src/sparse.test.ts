@@ -31,7 +31,7 @@ import {
 } from './grow/sparse';
 import { cardRows, connectedCards } from './lod/cards';
 import { connectedBody } from './lod/connect';
-import type { MeshInput } from './stages';
+import { assetMeshInput } from './lod/mesh-input.test-support';
 
 /** A species grows, meshes and thins at five values; a busy machine takes tens of seconds. */
 const LONG = scaledBudget(180_000);
@@ -97,28 +97,6 @@ async function kitOf(id: (typeof SPECIES)[number]): Promise<SpeciesKitData> {
 /** One plant at every sparseness value. */
 function levelsOf(kit: SpeciesKitData, seed: number): PlantAsset[] {
 	return LEVELS.map((sparse) => growPlantNow(kit, { seed, variant: 0, near: true, sparse }));
-}
-
-/** The meshing input of a grown variant, with an open crown: the light moves no vertex. */
-function meshInput(kit: SpeciesKitData, asset: PlantAsset): MeshInput {
-	const { min, max } = asset.skeleton.bounds;
-	return {
-		record: kit.record,
-		seed: asset.seed,
-		variant: asset.variant,
-		season: asset.season,
-		kit,
-		skeleton: asset.skeleton,
-		coarseness: asset.coarseness,
-		rows: asset.shoots,
-		crown: {
-			cells: [1, 1, 1] as const,
-			min,
-			cell: Math.max(max[0] - min[0], max[1] - min[1], max[2] - min[2]),
-			sky: new Float32Array([1]),
-		},
-		detail: 'low' as const,
-	};
 }
 
 /** A key of some numbers of a typed array, exact to the bit. */
@@ -206,7 +184,7 @@ const SECOND_LEVEL_SLACK = 0.2;
  */
 function carriesEverySocket(kit: SpeciesKitData, plant: PlantAsset, at: string): void {
 	const rows = plant.shoots;
-	const input = meshInput(kit, plant);
+	const input = assetMeshInput(kit, plant);
 	const middle = [0, 0, 0];
 	for (let r = 0; r < rows.count; r++)
 		for (let k = 0; k < 3; k++)
@@ -316,7 +294,7 @@ for (const id of SPECIES) {
 					const plants = levelsOf(kit, seed);
 					const full = plants[0] as PlantAsset;
 					const fullCarriers = carriers(full);
-					const fullInput = meshInput(kit, full);
+					const fullInput = assetMeshInput(kit, full);
 					const fullExtras = vertexSet(full, 0, 'extras');
 					// The stems and great limbs, which every sparseness keeps whole.
 					const great = structuralAxes(full.skeleton, kit.record.sparse?.limbs ?? GREAT_LIMB_SHARE);
@@ -378,7 +356,7 @@ for (const id of SPECIES) {
 							]);
 						// Every level shows this same plant: a card level draws each card its share of
 						// the rows keeps, none dropped for want of a branch.
-						const input = meshInput(kit, plant);
+						const input = assetMeshInput(kit, plant);
 						for (const level of [0, 1, 2] as const) {
 							const body = connectedBody(input, level);
 							const grown = connectedBody(fullInput, level);
