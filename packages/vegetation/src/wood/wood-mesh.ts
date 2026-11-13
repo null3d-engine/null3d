@@ -112,6 +112,10 @@ const BLEND_RINGS = [5, 3, 2] as const;
  */
 const SUPPORT_SECTIONS = 1;
 
+/** The parts of a plant's wood: its trunk, its great limbs and its branches. */
+const PART_TRUNK = 0;
+const PART_BRANCH = 2;
+
 /** One axis to mesh: its points from base to tip, and where it hangs. */
 interface WoodAxis {
 	/** The skeleton's axis. */
@@ -146,6 +150,37 @@ interface WoodAxis {
 	readonly cut: boolean;
 	/** How finely the piece is meshed, where it differs from its level's own detail. */
 	readonly tube?: TubeDetail;
+	/** The part of the plant it belongs to: 0 its trunk, 1 a great limb, 2 a branch. */
+	readonly part: number;
+}
+
+/**
+ * How a level's wood is drawn part by part, where a triangle maximum sets it: the trunk, the great
+ * limbs and the branches each at a detail of their own, and the branches thinned to those that
+ * still fit.
+ *
+ * @category api/vegetation
+ */
+export interface WoodPlan {
+	/**
+	 * The detail of the trunk, of the great limbs and of the branches: a tube detail, `null` for a
+	 * part the level does not draw, or undefined for the level's own detail.
+	 */
+	readonly tubes: readonly (TubeDetail | null | undefined)[];
+	/** Per axis, 1 for a branch the level draws; every branch of the level's own orders when absent. */
+	readonly keep?: Uint8Array;
+}
+
+/**
+ * The wood of one level with the triangles of each of its parts.
+ *
+ * @category api/vegetation
+ */
+export interface WoodParts {
+	/** The wood's mesh, with UVs in metres of bark. */
+	readonly mesh: MeshArrays;
+	/** The triangles of the trunk, of the great limbs and of the branches. */
+	readonly triangles: readonly [number, number, number];
 }
 
 /** The skeleton's largest pipe radius. */
@@ -175,19 +210,28 @@ function keptNodes(skeleton: MacroSkeleton): Int32Array {
  * fork's leaders: each takes the piece's last ring as its own first ring, so the piece needs no
  * rounded end. A thinner child at that end hangs on the thickest leader instead.
  */
-function woodAxes(input: MeshInput, keep: number, level: MeshLevel): WoodAxis[] {
+function woodAxes(
+	input: MeshInput,
+	keep: number,
+	level: MeshLevel,
+	parts?: Uint8Array,
+	plan?: WoodPlan,
+): WoodAxis[] {
 	const { skeleton } = input;
 	const axes = skeleton.axes;
 	const p = skeleton.position;
 	const radius = skeleton.radius;
 	const base = input.variant * VARIANT_RECORDS;
 	const lastKept = keptNodes(skeleton);
+	const partOf = (a: number) => parts?.[a] ?? PART_BRANCH;
+	/** The detail a plan gives an axis: undefined for the level's own, null for none. */
+	const planned = (a: number) => plan?.tubes[partOf(a)];
 	// The thinnest sections draw an axis as one run: its wood does not divide at a codominant child.
-	const single = (input.sections ?? 0) >= 1;
+	const single = (a: number) => (planned(a)?.sections ?? input.sections ?? 0) >= 1;
 	// The branches a card level draws beside its own orders, so the cards it keeps stay joined. Such
 	// a branch is finer than the level's wood and stands under a far card, so it draws as one
-	// straight run of the fewest sides.
-	const support = level > 0 ? supportAxes(input, level as 1 | 2) : undefined;
+	// straight run of the fewest sides. A plan joins its cards itself and draws no such branch.
+	const support = level > 0 && !plan ? supportAxes(input, level as 1 | 2) : undefined;
 	const supportTube = support
 		? tubeDetail(level, input.detail, input.coarseness ?? 0, SUPPORT_SECTIONS)
 		: undefined;
@@ -198,19 +242,20 @@ function woodAxes(input: MeshInput, keep: number, level: MeshLevel): WoodAxis[] 
 		(axes.kind[a] as number) === AXIS_STEM || (axes.kind[a] as number) === AXIS_STIPE;
 	const meshed = (a: number) =>
 		((axes.order[a] as number) <= keep || support?.[a] === 1) &&
+		planned(a) !== null &&
+		(partOf(a) !== PART_BRANCH || !plan?.keep || plan.keep[a] === 1) &&
 		(lastKept[a] as number) >= (axes.first[a] as number) &&
 		((axes.parent[a] as number) >= 0 || rooted(a) || (axes.kind[a] as number) === AXIS_LIMB);
 	// Where each axis divides: the nodes short of its end where a codominant side child leaves.
 	const divides = new Uint8Array(skeleton.nodeCount);
-	if (!single)
-		for (let a = 0; a < axes.count; a++) {
-			const parent = axes.parent[a] as number;
-			const node = axes.parentNode[a] as number;
-			if (parent < 0 || !meshed(a) || (axes.parentT[a] as number) > 1e-6) continue;
-			if (node < (axes.first[parent] as number) || node >= (lastKept[parent] as number)) continue;
-			if ((radius[axes.first[a] as number] as number) >= CODOMINANT * (radius[node] as number))
-				divides[node] = 1;
-		}
+	for (let a = 0; a < axes.count; a++) {
+		const parent = axes.parent[a] as number;
+		const node = axes.parentNode[a] as number;
+		if (parent < 0 || single(parent) || !meshed(a) || (axes.parentT[a] as number) > 1e-6) continue;
+		if (node < (axes.first[parent] as number) || node >= (lastKept[parent] as number)) continue;
+		if ((radius[axes.first[a] as number] as number) >= CODOMINANT * (radius[node] as number))
+			divides[node] = 1;
+	}
 	// The pieces: each axis's runs of nodes between the nodes where it divides.
 	const pieceAxis: number[] = [];
 	const pieceFirst: number[] = [];
@@ -344,9 +389,36 @@ function woodAxes(input: MeshInput, keep: number, level: MeshLevel): WoodAxis[] 
 			if (parentNode < 0 || parentNode > parentLast) continue;
 			const next = parentNode < parentLast ? parentNode + 1 : parentNode;
 			const t = fromT[k] as number;
-			const jx = (p[parentNode * 3] as number) * (1 - t) + (p[next * 3] as number) * t;
-			const jy = (p[parentNode * 3 + 1] as number) * (1 - t) + (p[next * 3 + 1] as number) * t;
-			const jz = (p[parentNode * 3 + 2] as number) * (1 - t) + (p[next * 3 + 2] as number) * t;
+			let jx = (p[parentNode * 3] as number) * (1 - t) + (p[next * 3] as number) * t;
+			let jy = (p[parentNode * 3 + 1] as number) * (1 - t) + (p[next * 3 + 1] as number) * t;
+			let jz = (p[parentNode * 3 + 2] as number) * (1 - t) + (p[next * 3 + 2] as number) * t;
+			// A parent that a plan draws as one straight run stands on the line from its base to its
+			// tip, not on its own curve, so the child leaves that line at the nearest place on it.
+			const drawnParent = list[indexOf[own] as number];
+			if (drawnParent?.tube && drawnParent.tube.sections >= 1) {
+				const from = drawnParent.points;
+				const end = (drawnParent.count - 1) * 3;
+				const dx = (from[end] as number) - (from[0] as number);
+				const dy = (from[end + 1] as number) - (from[1] as number);
+				const dz = (from[end + 2] as number) - (from[2] as number);
+				const length = dx * dx + dy * dy + dz * dz;
+				const along =
+					length > 1e-12
+						? Math.min(
+								1,
+								Math.max(
+									0,
+									((jx - (from[0] as number)) * dx +
+										(jy - (from[1] as number)) * dy +
+										(jz - (from[2] as number)) * dz) /
+										length,
+								),
+							)
+						: 0;
+				jx = (from[0] as number) + dx * along;
+				jy = (from[1] as number) + dy * along;
+				jz = (from[2] as number) + dz * along;
+			}
 			const gap = Math.sqrt(
 				(jx - (p[first * 3] as number)) ** 2 +
 					(jy - (p[first * 3 + 1] as number)) ** 2 +
@@ -387,10 +459,16 @@ function woodAxes(input: MeshInput, keep: number, level: MeshLevel): WoodAxis[] 
 			leader: leads[k] === 1,
 			stub: ((skeleton.flags[first] as number) & NODE_STUB) !== 0,
 			cut: parent < 0 && (axes.kind[a] as number) === AXIS_LIMB,
-			...(supportTube && (axes.order[a] as number) > keep ? { tube: supportTube } : {}),
+			...(supportTube && (axes.order[a] as number) > keep
+				? { tube: supportTube }
+				: planned(a)
+					? { tube: planned(a) as TubeDetail }
+					: {}),
+			part: partOf(a),
 		});
 		// Roots lie in the soil, below the ground the far views stand on, so only the nearest level draws them.
-		if (stem && level === 0)
+		// A plan that thins the trunk's sections folds its roots away with them.
+		if (stem && level === 0 && (planned(a)?.sections ?? 0) === 0)
 			addRoots(input, list, list.length - 1, base + (axes.record[a] as number));
 		for (const child of children[k] ?? []) queue.push(child);
 	}
@@ -446,6 +524,8 @@ function addRoots(input: MeshInput, list: WoodAxis[], stemIndex: number, record:
 			axis: -1 - (stem.stem * 64 + k),
 			key: -1 - (stem.stem * 64 + k),
 			seedKey: -1 - (stem.stem * 64 + k),
+			part: PART_TRUNK,
+			...(stem.tube ? { tube: stem.tube } : {}),
 			parent: stemIndex,
 			record,
 			points: root.points,
@@ -738,9 +818,18 @@ class Mesher {
 		return this.built[index];
 	}
 
-	/** Meshes every axis, parents first. */
+	/** The triangles written for the trunk, for the great limbs and for the branches. */
+	readonly triangles: [number, number, number] = [0, 0, 0];
+
+	/** Meshes every axis, parents first, and counts each part's triangles. */
 	run(axes: readonly WoodAxis[], variant: number): MeshArrays {
-		for (let i = 0; i < axes.length; i++) this.axis(axes, i, variant);
+		for (let i = 0; i < axes.length; i++) {
+			const before = this.writer.indices.length;
+			this.axis(axes, i, variant);
+			const part = (axes[i] as WoodAxis).part;
+			this.triangles[part] =
+				(this.triangles[part] as number) + (this.writer.indices.length - before) / 3;
+		}
 		return this.writer.finish();
 	}
 
@@ -1745,7 +1834,10 @@ class Mesher {
 	/** The rounded end of an axis: a dome of rings and an apex ring of no radius. */
 	private tip(context: AxisContext, rings: AxisRings, fork: boolean): void {
 		// The thinnest sections leave an axis open at its end: the crown's surface hides the tip.
-		if (this.tube.sections >= 1) return;
+		if (this.tube.sections >= 1) {
+			rings.open = true;
+			return;
+		}
 		const path = context.path;
 		const last = rings.count - 1;
 		if (last < 0) return;
@@ -1986,8 +2078,9 @@ class Mesher {
 				);
 			}
 		}
-		const apex = count - 1;
-		for (let e = 0; e < apex; e++) {
+		// An axis that ends open has no apex: its last two rings join as any two rings do.
+		const apex = rings.open ? -1 : count - 1;
+		for (let e = 0; e < count - 1; e++) {
 			if (bark.restart[e + 1]) continue;
 			const a = starts[e] as number;
 			const b = starts[e + 1] as number;
@@ -1999,7 +2092,7 @@ class Mesher {
 			}
 			stitch(writer.indices, a, sidesA, b, rings.sides[bark.ring[e + 1] as number] as number);
 		}
-		if (this.tube.level === 0) this.fins(rings, bark, context, wood);
+		if (this.tube.level === 0 && this.tube.fins !== false) this.fins(rings, bark, context, wood);
 		if (this.welds) {
 			this.welds.axisFirst.set(wood.key, [firstVertex, writer.vertices - firstVertex]);
 			if (wood.parent >= 0) {
@@ -2116,4 +2209,30 @@ export function meshWood(input: MeshInput, level: MeshLevel): MeshArrays {
 		woodAxes(input, ordersKept(input, level), level),
 		input.variant,
 	);
+}
+
+/**
+ * The wood of one variant at a level, with the triangles of its trunk, its great limbs and its
+ * branches. A plan draws each part at a detail of its own and may leave branches out; without one
+ * the level draws its own wood.
+ *
+ * @param input The dressed variant.
+ * @param level The level.
+ * @param parts The part of each skeleton axis: 0 its trunk, 1 a great limb, 2 a branch.
+ * @param plan How each part is drawn, where a triangle maximum sets it.
+ * @returns The wood's mesh and each part's triangles.
+ * @category api/vegetation
+ */
+export function meshWoodParts(
+	input: MeshInput,
+	level: MeshLevel,
+	parts: Uint8Array,
+	plan?: WoodPlan,
+): WoodParts {
+	const mesher = new Mesher(input, level, false);
+	const mesh = mesher.run(
+		woodAxes(input, ordersKept(input, level), level, parts, plan),
+		input.variant,
+	);
+	return { mesh, triangles: [mesher.triangles[0], mesher.triangles[1], mesher.triangles[2]] };
 }
