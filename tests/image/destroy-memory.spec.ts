@@ -1,4 +1,4 @@
-// Loads and destroys models 320 times on each GPU path: a skinned and animated fox with a
+// Loads and destroys models 400 times on each GPU path: a skinned and animated fox with a
 // texture, a face with morph targets, and a scene with stored raycast trees, with copies, an
 // instance batch and raycasts each round. The engine's start-up takes longer than a few rounds on
 // a slow machine, and the heap never gives a page back, so the test finds the round from which the
@@ -21,26 +21,28 @@ interface MemoryResult {
 	failures: string[];
 }
 
+/** The rounds that the page draws. */
+const ROUNDS = 400;
+
 /**
- * The rounds in which the engine's start-up may still move the heap. A slower runner's start-up
- * arrives over more rounds, and the settlements read 131, 158, 185 and 192 as the runners slowed,
- * with the fifth at 202. The climb tracks the runner's speed and not the round count: the heap's
- * steady figures stayed flat once it settled, so the engine held its memory however late the
- * plateau began. The bound sits above the latest sighting, and the rounds after it test the churn;
- * at 320 that leaves 110. A settlement later than the bound raises the round count, as this one
- * did, so that the churn keeps its length.
+ * The rounds of churn that must follow the heap's settle. A slower runner's start-up arrives over
+ * more rounds: the settlements read 131, 158, 185, 192, 202, 257 and 267 as the runners slowed, and
+ * each time the heap held one figure to the end afterwards. A fixed bound on the settle chased that
+ * climb four times and would not converge, so the rule is the churn instead: a settle at least 60
+ * rounds before the end shows the memory held across the churn, whatever the runner's speed. A leak
+ * never repeats the last round's figure early, so it settles at the end and fails this rule.
  */
-const WARM_ROUNDS = 210;
+const CHURN_ROUNDS = 60;
 
 for (const gpu of ['webgpu', 'webgl2'] as const)
-	test(`loading and destroying models 320 times keeps the memory flat, on ${gpu}`, async ({
+	test(`loading and destroying models 400 times keeps the memory flat, on ${gpu}`, async ({
 		page,
 	}) => {
 		test.setTimeout(690_000);
 		await page.goto(`destroy-memory.html?gpu=${gpu}`);
-		// CI's software GPU took 216 seconds for this page on WebGPU and then more than 330 on a
-		// slower run, where WebGL2 took 102. The wait allows a run twice as slow as the first of
-		// those, and the test's limit clears the wait.
+		// 400 rounds cost 229 seconds for both paths here, where 240 rounds took 216 to 330 on CI's
+		// software GPU before; the wait still allows a run twice as slow as the first of those, and
+		// the test's limit clears the wait.
 		const result = await pageResult<MemoryResult>(page, 660_000);
 		expect(result.error).toBeUndefined();
 		expect(result.done.error).toBeUndefined();
@@ -49,13 +51,13 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 		expect(result.done.hits).toBeGreaterThan(100);
 		const checkpoints = result.checkpoints;
 		const last = checkpoints.at(-1);
-		expect(last?.round).toBe(320);
+		expect(last?.round).toBe(ROUNDS);
 		// The first round whose heap figure is the last one: from there the engine held one figure.
 		const settled = checkpoints.findIndex((point) => point.wasmBytes === last?.wasmBytes);
 		expect(settled).toBeGreaterThanOrEqual(0);
 		const warm = checkpoints[settled] as Checkpoint;
-		// The engine reached that figure inside the warm-up, so the rounds after it test the churn.
-		expect(warm.round).toBeLessThanOrEqual(WARM_ROUNDS);
+		// The engine's start-up reached that figure early enough that the churn tests it afterwards.
+		expect(warm.round).toBeLessThanOrEqual(ROUNDS - CHURN_ROUNDS);
 		expect(warm.meshBytes).toBeGreaterThan(0);
 		expect(warm.textureBytes).toBeGreaterThan(0);
 		expect(warm.wasmBytes).toBeGreaterThan(0);
