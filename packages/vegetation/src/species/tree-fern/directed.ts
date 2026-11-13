@@ -41,27 +41,32 @@ export const directed: Species = {
 			lean: { mean: 1, spread: 1 },
 		},
 		fronds: {
-			// Picture 01 at full size: about 17 fronds from one side (seven on the left, three facing
-			// the lens, seven on the right), and the dome hides those behind it; picture 05, a close
-			// view from below, shows 16 stalks of the inner crown. About 22 in all, 20 to 24.
-			count: { mean: 22, spread: 2 },
+			// Picture 01 at full size: about 20 living fronds from one side (3 rising and 4 spreading
+			// on each side, 2 hanging on each side, 3 facing the lens), and the turning video 18 to 24
+			// a frame; the dome hides those behind it. About 32 in all, 28 to 36.
+			count: { mean: 32, spread: 4 },
 			divergence: 137.5,
 			// Pictures 06 and 07: the stalks leave one growing point, packed side by side.
 			clasp: 0.15,
 			// Picture 01, from the growing point: the inner fronds leave at 60 to 70 degrees, the middle
 			// ones at 30 to 40 and the outer ones at 0 to 15; the middle and outer share one arch.
+			// Picture 01 and the turning video: the fronds fill one dense dome from the steep inner
+			// ones to the level outer ones, so each rank spreads over about half the gap to its
+			// neighbours.
 			ranks: [
-				{ share: 0.25, leave: 60, piece: 'frond-inner', length: 1 },
-				{ share: 0.4, leave: 35, piece: 'frond-arched', length: 1 },
-				{ share: 0.35, leave: 5, piece: 'frond-arched', length: 1 },
+				{ share: 0.25, leave: 60, spread: 12, piece: 'frond-inner', length: 1 },
+				{ share: 0.4, leave: 35, spread: 12, piece: 'frond-arched', length: 1 },
+				{ share: 0.35, leave: 5, spread: 15, piece: 'frond-arched', length: 1 },
 			],
 		},
-		// Pictures 01, 16 and 20: 14 dead fronds (12 to 16) hang flat against the trunk under the living
-		// crown, shrivelled to 0.25 of the height (0.42 of a living frond), their tips at 0.42 of the
-		// height; the turning video hangs the skirt to 0.45.
+		// Pictures 01, 16 and 20: 14 dead fronds (12 to 16) hang under the living crown, shrivelled to
+		// 0.25 of the height (0.42 of a living frond), their tips at 0.42 of the height; the turning
+		// video hangs the skirt to 0.45. Picture 01 at full size: the skirt flares as a bell about
+		// 0.36 of the height across round a trunk of 0.15, so the fronds hang 70 degrees below level
+		// rather than flat against the trunk.
 		dead: {
 			count: { mean: 14, spread: 2 },
-			hang: { mean: 84, spread: 4 },
+			hang: { mean: 70, spread: 4 },
 			from: 0.12,
 			to: 0.3,
 			piece: 'frond-dead',
