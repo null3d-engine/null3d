@@ -199,17 +199,24 @@ const HELD: readonly Held[] = [
 		directed: silverBirchDirected,
 		heightMean: spreadMean(silverBirchDirected.size.height),
 		record: silverBirchRecord,
-		counts: { leader: 1, limb: 12, top: 5, side: [24, 72], fall: [12, 36] },
-		// Twelve limbs a golden angle apart leave no gap wider than two even shares and their jitter.
+		counts: {
+			leader: 1,
+			limb: 18,
+			top: 8,
+			side: [150, 190],
+			fall: [72, 90],
+			twig: [1200, 1450],
+		},
+		// Eighteen limbs a golden angle apart leave no gap wider than two even shares and their jitter.
 		round: { rule: 'limb', gap: 80, lean: 0.25 },
-		base: { limb: 0.35, side: 0.45, top: 0.4, fall: 0.4 },
+		base: { limb: 0.35, side: 0.45, top: 0.4 },
 		// A fall hangs by its own weight.
 		plumb: ['leader', 'fall'],
-		through: 0,
-		crossings: [0, 9],
-		axesPerSocket: 1.0,
+		through: 5,
+		crossings: [39, 13],
+		// Each socket carries a spray, a short branch of strands, so a branch carries few sockets.
+		axesPerSocket: 0.372,
 		tall: [0.98, 1.02],
-		open: ['spread'],
 	},
 	{
 		id: 'common-alder',
@@ -903,7 +910,7 @@ for (const held of HELD)
  * frame. A merge can take another line's entry, which gives the record the old grower grows, so
  * this list changes in the same commit as an entry does.
  */
-const REGISTERED_FRAMES = ['pedunculate-oak'] as const;
+const REGISTERED_FRAMES = ['pedunculate-oak', 'silver-birch'] as const;
 
 describe('a species entry that gives its frame', () => {
 	for (const id of REGISTERED_FRAMES)

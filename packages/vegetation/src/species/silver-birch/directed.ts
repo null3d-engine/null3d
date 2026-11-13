@@ -2,8 +2,61 @@
 // one at a time, and the side branches whose ends arch over and hang. Each figure names the
 // reference picture it was read on. Shares are of the tree's height, measured from the true foot of
 // each picture. Still 01 and the whole-tree turning video are the one tree the frame follows.
-import { evenOutline, type FrameSpec, framedRecord } from '../../grow/frame';
+
+import type { ExtraSpec } from '../../core/record';
+import { evenOutline, type FrameBranchRule, type FrameSpec, framedRecord } from '../../grow/frame';
+import { PIECES } from './pieces';
 import { record } from './record';
+
+/**
+ * A strand of still 21, 0.5 m long on a tree 21 m tall, as a share of the height: the length the
+ * sockets are spaced by. Each socket carries a spray, a short branch with strands hanging along it.
+ */
+const STRAND = 0.5 / 21;
+/** Sockets down a fall, so its sprays hang with a little overlap. */
+const DOWN_A_FALL = { every: STRAND * 0.6, angle: 10 } as const;
+/**
+ * Sockets along a branch: four fifths of a strand apart, the spacing at which the crown's sky at
+ * stills 01, 02 and 18 stands inside the standard's band at the first card level.
+ */
+const ALONG_AN_END = { every: STRAND * 0.8, angle: 60 } as const;
+
+/**
+ * The fine arms a side branch carries. Stills 21 and 22: arms leave the branch on both sides every
+ * few decimetres, rise a little, arch over and hang, each clothed with strands along its run.
+ */
+const twigs: FrameBranchRule = {
+	name: 'twig',
+	role: 'branch',
+	count: { every: 0.008, least: 3, most: 14 },
+	along: [0.15, 0.95],
+	stagger: 0.25,
+	around: 'sides',
+	jitter: 20,
+	angle: 35,
+	from: 'parent',
+	angleSpread: 8,
+	length: {
+		parent: [
+			[0, 0.45],
+			[1, 0.3],
+		],
+	},
+	vary: 0.15,
+	radius: 0.5,
+	taper: 0.3,
+	bends: [{ from: 0.1, to: 1, level: -35 }],
+	sway: 10,
+	elbows: 3,
+	patch: {
+		kind: 'hang',
+		width: 0.05,
+		depth: 0.04,
+		offset: -0.5,
+		along: 0.1,
+		sockets: ALONG_AN_END,
+	},
+};
 
 /** The silver birch's frame. */
 export const frame: FrameSpec = {
@@ -50,15 +103,15 @@ export const frame: FrameSpec = {
 		// Still 17: the bole is straight over its whole run.
 		sway: 0.6,
 		elbows: 4,
-		patch: { kind: 'hang', width: 0.05, depth: 0.05 },
+		patch: { kind: 'hang', width: 0.05, depth: 0.05, sockets: ALONG_AN_END },
 		children: [
 			{
 				name: 'limb',
 				role: 'limb',
 				// Stills 01 and 18: 11 to 12 limbs show in outline, leaving from 0.39 to 0.85 of the height
 				// at even steps of about 0.04. The shares here are of the leader's own length.
-				count: 12,
-				along: [0.4, 0.872],
+				count: 18,
+				along: [0.28, 0.88],
 				stagger: 0.25,
 				// Stills 06 and 07: single, alternate, turning round the leader.
 				around: 'spiral',
@@ -71,8 +124,15 @@ export const frame: FrameSpec = {
 				],
 				from: 'plumb',
 				angleSpread: 3,
-				// Still 01: the wood shows to 250 px of a 355 px half width.
-				length: { outline: 0.7 },
+				// Still 01: the wood shows to 250 px of a 355 px half width; the low limbs reach nearer the
+				// crown's widest row, so their strands fill its lower half.
+				length: {
+					outline: [
+						[0, 0.88],
+						[0.4, 0.78],
+						[1, 0.7],
+					],
+				},
 				vary: 0.08,
 				// Still 07: a limb is 0.3 to 0.4 of the trunk's width at the join.
 				radius: 0.35,
@@ -92,7 +152,7 @@ export const frame: FrameSpec = {
 				],
 				// Still 06: a limb's line shifts a little to one side and the other along its run.
 				sway: 10,
-				elbows: 5,
+				elbows: 6,
 				// Still 19: a limb end hangs 9 strands, the longest a metre. Still 01: the hanging twigs
 				// stand out past the wood's end by 0.3 of the crown's half width, and the fringe under
 				// the lowest limbs is a tenth of the height deep.
@@ -104,6 +164,9 @@ export const frame: FrameSpec = {
 						[1, 0.05],
 					],
 					offset: -0.5,
+					// Still 01: strands hang along most of a limb's run, hugging it from near the trunk.
+					along: 0.2,
+					sockets: ALONG_AN_END,
 				},
 				children: [
 					{
@@ -112,34 +175,34 @@ export const frame: FrameSpec = {
 						// Stills 01 and 18: the outer part of a limb ends in hanging wood, a tenth of the
 						// height long and more under the lowest limbs, which carries the fringe down to a
 						// quarter of the height.
-						count: { every: 0.04, least: 1, most: 3 },
-						along: [0.72, 1],
+						count: { every: 0.02, least: 2, most: 6 },
+						along: [0.5, 1],
 						around: 'spiral',
 						angle: 165,
 						from: 'plumb',
 						angleSpread: 6,
 						length: {
 							share: [
-								[0, 0.15],
-								[0.5, 0.08],
+								[0, 0.22],
+								[0.5, 0.1],
 								[1, 0.04],
 							],
 						},
 						vary: 0.15,
-						radius: 0.4,
+						radius: 0.12,
 						taper: 0.3,
 						bends: [{ from: 0, to: 0.15, level: -90 }],
 						sway: 0,
 						elbows: 1,
-						patch: { kind: 'hang', width: 0.07, depth: 0.05, along: 0 },
+						patch: { kind: 'hang', width: 0.07, depth: 0.05, along: 0, sockets: DOWN_A_FALL },
 					},
 					{
 						name: 'side',
 						role: 'branch',
 						// Still 05: one limb with six side branches in view, alternate, on its outer two
 						// thirds.
-						count: { every: 0.04, least: 2, most: 6 },
-						along: [0.36, 0.93],
+						count: { every: 0.015, least: 4, most: 16 },
+						along: [0.15, 0.93],
 						stagger: 0.2,
 						around: 'sides',
 						jitter: 14,
@@ -162,12 +225,20 @@ export const frame: FrameSpec = {
 						radius: 0.45,
 						taper: 0.3,
 						// Stills 21 and 22: an arm rises, arches over and ends pointing down.
-						bends: [{ from: 0.12, to: 1, level: -65 }],
+						bends: [{ from: 0.12, to: 1, level: -40 }],
 						sway: 9,
 						elbows: 4,
-						// Still 09: a side branch carries strands 17 to 28 cm long, and still 19 up to a
-						// metre at its end.
-						patch: { kind: 'hang', width: 0.08, depth: 0.06, offset: -0.5 },
+						// Still 09: a side branch carries strands 17 to 28 cm long along its run, and still 19
+						// up to a metre at its end.
+						patch: {
+							kind: 'hang',
+							width: 0.08,
+							depth: 0.06,
+							offset: -0.5,
+							along: 0.05,
+							sockets: ALONG_AN_END,
+						},
+						children: [twigs],
 					},
 				],
 			},
@@ -175,7 +246,7 @@ export const frame: FrameSpec = {
 				name: 'top',
 				role: 'branch',
 				// The leader's top 0.15 of the height carries branch ends directly, at a limb's spacing.
-				count: 5,
+				count: 8,
 				along: [0.9, 0.99],
 				stagger: 0.2,
 				around: 'spiral',
@@ -195,16 +266,39 @@ export const frame: FrameSpec = {
 				taper: 0.3,
 				bends: [{ from: 0.5, to: 1, level: -30 }],
 				sway: 8,
-				elbows: 4,
-				patch: { kind: 'hang', width: 0.05, depth: 0.05, offset: -0.5 },
+				elbows: 5,
+				patch: {
+					kind: 'hang',
+					width: 0.05,
+					depth: 0.05,
+					offset: -0.5,
+					along: 0.2,
+					sockets: ALONG_AN_END,
+				},
 			},
 		],
 	},
 };
 
 /**
- * The silver birch's record with the frame as its growth. A socket holds four shoot rows that fan 45
- * degrees from its line. These two are working figures, not measured ones: they stand until the
- * species' branch pieces are placed at its sockets, which then state what a socket holds.
+ * The share of the rows that bear catkins: the record's 0.08 of the old grower's 6,174 rows at seed 11
+ * over the frame's 4,457, so the tree hangs the catkins the record means.
  */
-export const directed = framedRecord(record, frame, { rows: { mean: 4, spread: 1 }, fan: 45 });
+const CATKIN_SHARE = (0.08 * 6174) / 4457;
+
+/** The record's catkins, hung at the frame's share of its rows. */
+const catkins = (extra: ExtraSpec): ExtraSpec =>
+	extra.kind === 'fruit' && extra.at === 'shoot-tip' ? { ...extra, share: CATKIN_SHARE } : extra;
+
+/**
+ * The silver birch's record with the frame as its growth and a spray at each socket. The shoot
+ * rows are working figures, not measured ones: a kit with no pieces draws them.
+ */
+export const directed = {
+	...framedRecord(record, frame, { rows: { mean: 4, spread: 1 }, fan: 45, piece: 'spray' }),
+	// The frame's trunk already flares to still 01's foot, so the stem base adds no flare of its own
+	// and keeps still 14's low lobes and roots.
+	base: { ...record.base, flare: { amount: 0, height: 0.4 } },
+	extras: record.extras?.map(catkins),
+	pieces: PIECES.filter((piece) => piece.name === 'spray'),
+};
