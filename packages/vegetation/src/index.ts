@@ -23,8 +23,10 @@ export const NAMESPACE = declareAddonNamespace({
 
 export {
 	type CardCell,
+	type ClusterCount,
 	type MeshArrays,
 	type PartName,
+	type PartTriangles,
 	type PlantAsset,
 	type PlantLevel,
 	type PlantPart,
@@ -56,9 +58,7 @@ export {
 	type KitSource,
 	kitKey,
 	loadPlantCode,
-	SPARSE_LEAST,
 	variantKey,
-	withSparse,
 } from './generate';
 export * from './grass/public';
 export * from './grid/public';

@@ -67,6 +67,10 @@ its level must hold, with the blockiness that budget buys accepted at the distan
 coarse setting that thins the plant, or a density setting that changes how smooth it looks, has mixed
 the two dials and is wrong.
 
+Sparseness removes parts from one grown plant: a sparser plant is a subset of the denser one, with
+whole shoots and whole branches taken out evenly, and no leaf scaled
+([D-355](decisions/D-355-sparseness-by-removal.md)).
+
 Sparseness is where the connectedness rule shows first, because thinning is when parents are lost. A
 sparse picture that scatters leaf clumps through air is a failed picture even where its density figure
 sits inside its band.
