@@ -12,7 +12,7 @@ import type { SpeciesModule } from '../core/record';
 import { loadSpecies } from '../core/registry';
 import { DETAILS } from '../core/types';
 import { buildKitNow, buildPiecesNow, growPlantNow, loadPlantCode } from '../generate';
-import { drawnAtOnce } from '../lod/drawn';
+import { drawnAtOnce, TALLEST_VIEWS } from '../lod/drawn';
 import { directed as oakDirected } from '../species/pedunculate-oak/directed';
 import { directed as willowDirected } from '../species/weeping-willow/directed';
 import { PIECES as WILLOW_PIECES } from '../species/weeping-willow/pieces';
@@ -292,15 +292,18 @@ describe("the Scots pine's boughs at sockets, by the pine's own figures", () => 
 		expect(asset.stats.shoots).toBeGreaterThan(asset.stats.triangles[0]);
 	});
 
-	it('draws at once, from an eye inside its fullest pad, within its near budget', () => {
-		// The near form, every bough at the kit's tier, is more than one view draws: the engine
-		// switches each bough to its card past the switch distance. From the worst stated eye, inside
-		// the fullest foliage or standing under the crown, the count drawn at once stays within the
-		// record's own budget for the nearest level.
-		const drawn = drawnAtOnce(kit, asset);
+	it('draws at once the most from an eye inside its fullest pad, within its budget at the reference lens', () => {
+		// The engine draws every bough whose bounds come within its switch distance at the kit's one
+		// tier. An eye inside a pad has the most boughs in reach, and at the tallest view the High
+		// preset gives, through the engine's reference lens, the pine's boughs stay within the
+		// record's budget for the nearest level. The species walk holds the narrower lens.
+		const [reference] = TALLEST_VIEWS;
+		expect(reference).toBeDefined();
+		if (!reference) return;
+		const drawn = drawnAtOnce(kit, asset, reference);
 		expect(drawn.eye).toBe('foliage');
+		expect(drawn.triangles).toBeGreaterThan(drawnAtOnce(kit, asset, reference, false).triangles);
 		expect(drawn.triangles).toBeLessThanOrEqual(kit.record.lod.budget.lod0Triangles);
-		expect(drawn.triangles).toBeGreaterThanOrEqual(drawnAtOnce(kit, asset, false).triangles);
 	});
 
 	it('stands on a round foot 1.6 times as wide as the bole, with low roots and no buttress', () => {

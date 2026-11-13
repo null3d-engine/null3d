@@ -1,5 +1,6 @@
 {
 	"04-arms-outside.png": {
+		"limbRank": 1,
 		"span": 4.5,
 		"thin": 0.22,
 		"along": 0.62,
@@ -10,6 +11,7 @@
 		"elevation": -10
 	},
 	"05-arm-underside.png": {
+		"limbRank": 1,
 		"span": 2.2,
 		"thin": 0.22,
 		"along": 0.5,
@@ -20,9 +22,10 @@
 		"elevation": -55
 	},
 	"06-between-arms.png": {
+		"limbRank": 1,
 		"span": 2.2,
 		"thin": 0.22,
-		"along": 0.62,
+		"along": 0.3,
 		"sunAzimuth": -15,
 		"sunRise": 55,
 		"skyShare": 0.3,
@@ -30,6 +33,7 @@
 		"elevation": -14
 	},
 	"08-arm-elbow.png": {
+		"limbRank": 1,
 		"span": 2,
 		"thin": 0.22,
 		"along": 0.5,
@@ -65,6 +69,7 @@
 		"daylight": 1.2
 	},
 	"20-nest-holes.png": {
+		"site": "dormant",
 		"view": "bark-mid",
 		"span": 1,
 		"barkHeight": 8,
@@ -138,5 +143,7 @@
 	},
 	"saguaro-wind-motion.mp4": {
 		"sway": 100
-	}
+	},
+	"24-spine-texture-face.png": { "site": "areole" },
+	"25-spine-texture-side.png": { "site": "areole", "edge": true }
 }

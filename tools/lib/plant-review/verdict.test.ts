@@ -32,6 +32,7 @@ function pair(file: string, over: Partial<StillResult> = {}): StillResult {
 		gap: null,
 		crownBoxGap: null,
 		frameGap: null,
+		frameScale: null,
 		foliageDeltaE: null,
 		barkDeltaE: null,
 		crownBox: null,

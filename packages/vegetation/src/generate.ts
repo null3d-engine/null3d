@@ -103,6 +103,7 @@ import {
 import { carriesPieces, kitPiece, PROTOTYPES_MOST, writesPieces } from './leaf/piece-rows';
 import { inLeaf } from './leaf/season';
 import { shootPrototypes } from './leaf/shoot';
+import { bakeWithBrushes } from './lod/brush-cards';
 import {
 	type BudgetInput,
 	type LevelBuild,
@@ -113,7 +114,6 @@ import {
 	referenceTriangles,
 	shootPartTriangles,
 } from './lod/budget';
-import { bakeCards } from './lod/card-bake';
 import { cardMesh } from './lod/cards';
 import { bakeFar } from './lod/impostor';
 import { levelStarts } from './lod/levels';
@@ -500,19 +500,24 @@ export function buildKitNow(source: KitSource, options: KitOptions = {}): Specie
 			throw new Error(
 				`@null3d/vegetation: '${record.id}' builds ${uncarded.length} prototypes; a kit holds ${PROTOTYPES_MOST} at most`,
 			);
-		// A cutting kit holds no card levels: its pieces are drawn at the nearest level alone.
+		// A cutting kit holds no card levels: its pieces are drawn at the nearest level alone. A piece
+		// that draws brush cards takes them in the bake, which pictures its leaves first.
 		const baked = cutting
-			? { atlas: cards, cells: uncarded.map(() => ({ planes: [] })) }
+			? {
+					atlas: cards,
+					cells: uncarded.map(() => ({ planes: [] })),
+					prototypes: uncarded.map(({ brushes: _brushes, ...prototype }) => prototype),
+				}
 			: stage(
 					placeholders,
-					() => bakeCards(record, manifest, detail, uncarded),
-					() => placeholderCardBake(record, uncarded),
+					() => bakeWithBrushes(record, manifest, detail, uncarded),
+					() => ({ ...placeholderCardBake(record, uncarded), prototypes: uncarded }),
 				);
 		// The kit keeps its own tier's meshes and the tiers below it, which the near band draws
 		// farther out; a page draws at one preset, so the tiers above it are left empty. The card
 		// bake, the lengths and the radii read the full build first.
 		const kept = DETAILS.indexOf(detail);
-		prototypes = uncarded.map((prototype, index) => {
+		prototypes = baked.prototypes.map((prototype, index) => {
 			const card = baked.cells[index];
 			if (!card) throw new Error(`the card bake gave no cells for prototype ${index}`);
 			const tiers = prototype.tiers.map((tier, t) =>

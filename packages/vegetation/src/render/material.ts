@@ -7,6 +7,8 @@ import type { Material, MeshGeometry, SketchContext, Texture, Textures } from '@
 import type { WindField } from '@null3d/wind';
 import type { PlantAsset, PrototypeArrays, QuantisedArrays, SpeciesKitData } from '../asset';
 import type { SpeciesBox } from '../core/box';
+import { DETAILS } from '../core/types';
+import { leafSurface, SURFACE_BRUSH } from '../leaf/writer';
 import { dequantisePosition } from '../lod/quantise';
 import plantShader from './plant.wgsl';
 import viewFaceShader from './plant-viewface.wgsl';
@@ -203,9 +205,12 @@ export function plantMaterials(
 			{ colour: t.barkColor, relief: t.barkNormal, second: t.youngColor, third: t.youngNormal },
 			false,
 		),
+		// Shoot rows that draw brush cards draw no leaf, so they read the card atlas in its place.
 		shoots: make(
 			'shoots',
-			{ colour: t.leafColor, relief: t.leafNormal, second: t.near, third: t.youngColor },
+			drawsBrushes(kit)
+				? { colour: t.cardColor, relief: t.cardSurface, second: t.near, third: t.youngColor }
+				: { colour: t.leafColor, relief: t.leafNormal, second: t.near, third: t.youngColor },
 			true,
 		),
 		cards: make('cards', { colour: t.cardColor, relief: t.cardSurface }, true),
@@ -218,6 +223,33 @@ export function plantMaterials(
 		foliageFar: make('foliage', { colour: t.leafColor, relief: t.leafNormal }, true),
 		extras: make('extras', { colour: t.leafColor, relief: t.leafNormal }, true),
 	};
+}
+
+/**
+ * Whether a kit's shoot rows draw brush cards at its tier. A kit's pieces draw either brush cards or
+ * leaves at a tier, since the shoots' material reads one texture or the other.
+ *
+ * @param kit The species' kit.
+ * @returns Whether its rows draw brush cards.
+ */
+function drawsBrushes(kit: SpeciesKit): boolean {
+	const tier = DETAILS.indexOf(kit.detail);
+	let brushes = false;
+	let leaves = false;
+	for (const prototype of kit.prototypes) {
+		const colors = prototype.tiers[tier]?.colors;
+		if (!colors) continue;
+		for (let v = 2; v < colors.length; v += 4) {
+			const kind = colors[v] as number;
+			if (kind === SURFACE_BRUSH) brushes = true;
+			else if (leafSurface(kind)) leaves = true;
+		}
+	}
+	if (brushes && leaves)
+		throw new Error(
+			`@null3d/vegetation: '${kit.record.id}' draws brush cards and leaves at its ${kit.detail} tier; a kit's rows draw one or the other`,
+		);
+	return brushes;
 }
 
 /**
