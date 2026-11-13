@@ -59,6 +59,7 @@ import {
 	twigView,
 	walkedRound,
 } from '../lib/plant-review/close';
+import { cutFace } from '../lib/plant-review/cut-face';
 import { type CutRows, cutCamera, leafFrame, spanDistance } from '../lib/plant-review/framing';
 import { measurePlant, partPositions, shootPositions } from '../lib/plant-review/measure';
 import { readPlantReviewQuery } from '../lib/plant-review/query';
@@ -73,11 +74,14 @@ import {
 	crownOutsideShot,
 	crownUndersideShot,
 	forkShot,
+	insideBesideTrunk,
 	insideShot,
 	junctionShot,
 	limbShot,
 	placedPieceShot,
 	type Solved,
+	sectionCut,
+	sectionShot,
 	siteShot,
 	underRimShot,
 } from '../lib/plant-review/subject-shots';
@@ -116,9 +120,10 @@ const PLAIN = MATTE || PARTS;
  * The level forced at every distance: the query's, or the nearest for a view of the wood alone,
  * which judges the whole branching rather than what a level keeps at its distance. A view of the
  * fruit takes the nearest too: a plant's cones, keys and flowers stand on the grown plant's extras,
- * and only the nearest level carries them, so a farther level frames leaves where the fruit is.
+ * and only the nearest level carries them, so a farther level frames leaves where the fruit is. A
+ * section takes the nearest too: its cut face is laid from the nearest level's wood.
  */
-const LOD = QUERY.lod ?? (WOOD_ONLY || QUERY.fruit ? 0 : undefined);
+const LOD = QUERY.lod ?? (WOOD_ONLY || QUERY.fruit || VIEW === 'section' ? 0 : undefined);
 const DEG = Math.PI / 180;
 /**
  * A colour scaled by another colour's channels, which is how a picture's own white balance tints a
@@ -767,6 +772,8 @@ export default defineSketch(async (ctx) => {
 	}
 	const foot: V3 = [stemFootPoint[0], Math.min(stemFootPoint[1], baseY), stemFootPoint[2]];
 	const height = Math.max(0.05, (bounds.max[1] as number) - foot[1]);
+	/** The height a section cuts the stem across at: the slot's, or two fifths of the plant's. */
+	const sectionHeight = QUERY.barkHeight ?? height * 0.4;
 
 	// The turns a sheet draws, each in a cell of its own.
 	const turns = VIEW === 'turntable' ? (QUERY.turns ?? 8) : (QUERY.turns ?? 1);
@@ -1129,11 +1136,11 @@ export default defineSketch(async (ctx) => {
 				break;
 			}
 			case 'inside': {
-				// A plant with no trunk, or with no limb leaving one, keeps its stalks at the crown's own
-				// centre, so its inside photograph is of the stalk bundle: the camera stands just outside
-				// it at the crown's height and looks at the bundle. A tree is framed beside its trunk.
-				const { trunk: stemSubject, limbs: limbSubjects } = subjectsOf();
-				if (isAbsent(stemSubject) || isAbsent(limbSubjects) || limbSubjects.length === 0) {
+				// A plant with no trunk, or a trunk whose crown stands only at its top, keeps its stalks at
+				// the crown's own centre, so its inside photograph is of the stalk bundle: the camera stands
+				// just outside it at the crown's height and looks at the bundle. A tree, or a trunk its
+				// crown clothes from low down, is framed beside its trunk.
+				if (!insideBesideTrunk(subjectsOf())) {
 					const middle = Math.max(0.05, 0.45 * main.crown.top);
 					plainSubjects.set(view, {
 						kind: 'the stalk bundle at the crown',
@@ -1206,6 +1213,12 @@ export default defineSketch(async (ctx) => {
 					0,
 					0.05,
 				);
+				if (found) return found;
+				break;
+			}
+			case 'section': {
+				// The stem cut across at the slot's height, seen straight down its line.
+				const found = solvedAt(view, lens, () => sectionShot(subjectsOf(), lens, sectionHeight), 0);
 				if (found) return found;
 				break;
 			}
@@ -1597,23 +1610,27 @@ export default defineSketch(async (ctx) => {
 			case 'leaf-under': {
 				// A span frames a part of the piece rather than the whole of it: the frame's middle
 				// stands on the piece at the share the query names, halfway up by default, and the
-				// span is the width it shows there.
+				// span is the width it shows there. A roll turns the frame about its line of sight, as
+				// a photograph that lays the piece across the frame does.
 				if (QUERY.span !== undefined && piece) {
 					const part = boundsOf(piece as PlantAsset, pieceKit);
 					const low = part.min[1] as number;
 					const high = part.max[1] as number;
 					const at = low + (high - low) * (QUERY.along ?? 0.5);
-					return orbit(
-						[
-							((part.min[0] as number) + (part.max[0] as number)) / 2,
-							at,
-							((part.min[2] as number) + (part.max[2] as number)) / 2,
-						],
-						spanDistance(QUERY.span, fov, aspect),
-						e,
-						turn,
-						fov,
-					);
+					return {
+						...orbit(
+							[
+								((part.min[0] as number) + (part.max[0] as number)) / 2,
+								at,
+								((part.min[2] as number) + (part.max[2] as number)) / 2,
+							],
+							spanDistance(QUERY.span, fov, aspect),
+							e,
+							turn,
+							fov,
+						),
+						...(QUERY.roll !== undefined && { roll: QUERY.roll * DEG }),
+					};
 				}
 				// A piece framed at the scale its photograph shows, in leaf lengths, stands on its cut:
 				// the cut on the frame's lower edge, the piece running up across it and off its far edge
@@ -1775,13 +1792,15 @@ export default defineSketch(async (ctx) => {
 	const colours = BACKGROUND_COLOURS[BACKGROUND];
 	scene.setBackground(PLAIN ? '#ffffff' : (QUERY.sky ?? colours.sky));
 	const groundColour = QUERY.ground ?? colours.ground;
-	if (groundColour && !PLAIN && !SPEC.cutting && !QUERY.lifted) {
+	if (groundColour && !PLAIN && (!SPEC.cutting || QUERY.meadow) && !QUERY.lifted) {
 		// The meadow is unlit and casts nothing back, so it shows its measured colour everywhere and a
-		// mask can tell it from the plant by colour alone.
+		// mask can tell it from the plant by colour alone. A cut piece stands on its background alone,
+		// unless its slot stands it in its field, where the meadow lies at the piece's own foot.
 		scene.createMesh({
 			mesh: geometry.plane({ width: 8000, height: 8000 }),
 			material: materials.unlit({ color: groundColour }),
 			rotation: FLAT,
+			...(SPEC.cutting && { position: [0, bounds.min[1] as number, 0] as V3 }),
 		});
 	}
 	if (PLAIN && SPEC.whole && !SPEC.cutting && !QUERY.lifted) {
@@ -1964,6 +1983,27 @@ export default defineSketch(async (ctx) => {
 	// A matte or a picture of the parts draws the level alone that the colour picture draws from the
 	// first cell's camera. The colour picture leaves a level it does not draw out of its picture,
 	// and a matte that drew it too would read plant the picture does not show.
+	/**
+	 * A section's plant with the cut face laid over its nearest level's wood, where the stem is cut
+	 * across; any other view's plant as it is. The wood is a skin, so without the face the cut would
+	 * show an empty tube.
+	 */
+	const cutAcross = (asset: PlantAsset): PlantAsset => {
+		if (VIEW !== 'section') return asset;
+		const cut = sectionCut(subjectsOf(), sectionHeight);
+		if (isAbsent(cut)) return asset;
+		const nearest = asset.levels[0];
+		const faces = nearest.parts
+			.filter((part) => part.name === 'wood')
+			.map((part) => cutFace(part, mainKit.box, cut))
+			.filter((face): face is PlantPart => face !== undefined);
+		const level = {
+			...nearest,
+			parts: [...nearest.parts, ...faces],
+			triangles: faces.reduce((n, face) => n + face.arrays.indices.length / 3, nearest.triangles),
+		};
+		return { ...asset, levels: [level, asset.levels[1], asset.levels[2]] };
+	};
 	const plainLevel =
 		PLAIN && LOD === undefined && cells[0]
 			? drawnLevel(
@@ -1974,10 +2014,8 @@ export default defineSketch(async (ctx) => {
 					false,
 				).level
 			: undefined;
-	const drawn = shaped(
-		main,
-		WOOD_ONLY,
-		plainLevel !== undefined && plainLevel < 3 ? plainLevel : LOD,
+	const drawn = cutAcross(
+		shaped(main, WOOD_ONLY, plainLevel !== undefined && plainLevel < 3 ? plainLevel : LOD),
 	);
 	const far = LOD === 3 && whole ? [await bakeFarPlant(kit, whole)] : undefined;
 	place(drawn, [0, 0, 0], mainKit, far);

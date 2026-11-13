@@ -7,6 +7,7 @@ import { describe, expect, it } from 'bun:test';
 import { scaledBudget } from '../../../tests/lib/run-budget.ts';
 import { type PlantAsset, plantAssetDigest, type SpeciesKitData } from './asset';
 import { speciesProblems } from './core/check';
+import { AXIS_STEM, SkeletonBuilder } from './core/graph';
 import type { Species, SpeciesModule } from './core/record';
 import { loadSpecies } from './core/registry';
 import {
@@ -69,6 +70,9 @@ const OCTANT_LEAST = 40;
  */
 const QUARTER_SLACK = 0.2;
 const QUARTER_LEAST = 8;
+
+/** The least share of the plant's kept share that a quarter round it keeps of its own sockets. */
+const QUARTER_RATIO = 0.5;
 
 /**
  * How far apart the kept shares of the sockets at the axes' tips and the sockets along the axes may
@@ -454,6 +458,20 @@ for (const [name, load] of SOCKET_PLANTS)
 				const floor = kit.record.sparse?.foliage ?? FOLIAGE_FLOOR;
 				const order = sparseOrder(skeleton, shoots, limbs, [], floor);
 				expect(order.bySockets).toBe(true);
+				// Each row's shoot is the shoot of the socket it names: the same node and the same group,
+				// so two pieces of different groups at one place thin apart.
+				const named = shoots.socket;
+				if (named)
+					for (let r = 0; r < shoots.count; r++) {
+						const own = named[r] as number;
+						const shoot = sockets[r] as number;
+						expect([
+							name,
+							r,
+							skeleton.buds.node[shoot],
+							skeleton.buds.sockets?.lobe[shoot],
+						]).toEqual([name, r, skeleton.buds.node[own], skeleton.buds.sockets?.lobe[own]]);
+					}
 				const rowsOf = new Map<number, number>();
 				for (let r = 0; r < shoots.count; r++)
 					rowsOf.set(sockets[r] as number, (rowsOf.get(sockets[r] as number) ?? 0) + 1);
@@ -543,8 +561,18 @@ for (const [name, load] of SOCKET_PLANTS)
 					for (let q = 0; q < 4; q++) {
 						const grown = quarterGrown[q] as number;
 						if (grown < QUARTER_LEAST) continue;
-						const off = Math.abs((quarterKept[q] as number) / grown - share);
+						const keptShare = (quarterKept[q] as number) / grown;
+						const off = Math.abs(keptShare - share);
 						expect([at, 'quarter', q, off <= QUARTER_SLACK]).toEqual([at, 'quarter', q, true]);
+						// A quarter whose share is a socket or more keeps at least half the plant's share
+						// of its own, so a side kept bare fails at any sparseness.
+						if (grown * share >= 1)
+							expect([at, 'quarter', q, keptShare >= QUARTER_RATIO * share]).toEqual([
+								at,
+								'quarter',
+								q,
+								true,
+							]);
 					}
 					if (sparse === 1)
 						for (let octant = 0; octant < 8; octant++)
@@ -555,6 +583,26 @@ for (const [name, load] of SOCKET_PLANTS)
 									octant,
 									true,
 								]);
+					// No branch kept bare for one piece: an axis that grew three sockets or more keeps none of
+					// them or at least half. The stems and great limbs stay at every sparseness.
+					const perAxis = new Map<number, [number, number]>();
+					for (const socket of rowsOf.keys()) {
+						const axis = skeleton.buds.axis[socket] as number;
+						const count = perAxis.get(axis) ?? [0, 0];
+						count[0]++;
+						if (kept.has(socket)) count[1]++;
+						perAxis.set(axis, count);
+					}
+					for (const [axis, [grown, held]] of perAxis) {
+						if (grown < 3 || structural[axis] === 1) continue;
+						expect([at, 'axis', axis, grown, held === 0 || held >= Math.ceil(grown / 2)]).toEqual([
+							at,
+							'axis',
+							axis,
+							grown,
+							true,
+						]);
+					}
 					// Clothed along its length: at half, the sockets at the axes' tips and the sockets
 					// along them keep shares near each other, not the tips alone.
 					if (sparse === 0.5) {
@@ -640,6 +688,97 @@ for (const [name, load] of SOCKET_PLANTS)
 			LONG,
 		);
 	});
+
+/**
+ * A crown of fronds on a trunk, as a palm or a tree fern grows: a stem of twelve nodes, a frond at
+ * each of the top eight nodes turning by the golden angle, each a socket of its own group, ranked by
+ * the grower so the lowest ranks stand spread round the trunk; and a flower site at a top node, in
+ * a group of its own, that holds no row. One row stands at each frond.
+ */
+function frondCrown() {
+	const builder = new SkeletonBuilder();
+	const axis = builder.addAxis({ parent: -1, parentNode: -1, order: 0, kind: AXIS_STEM });
+	for (let n = 0; n < 12; n++)
+		builder.addNode({ x: 0, y: n * 0.5, z: 0, radius: 0.2, parent: n - 1, axis });
+	const fronds = 8;
+	// The ranks the grower states: reversed bits round the turn, so the first ranks face apart.
+	const ranks = [0, 4, 2, 6, 1, 5, 3, 7];
+	for (let k = 0; k < fronds; k++) {
+		const turn = k * 2.39996;
+		builder.addBud({
+			node: 4 + k,
+			x: Math.cos(turn),
+			y: (4 + k) * 0.5,
+			z: Math.sin(turn),
+			frame: [0, 0, 0, 1],
+			kind: 0,
+			vigor: 1,
+			light: 1,
+			axis,
+			woodRadius: 0.2,
+			socket: { scale: 1, rank: ranks[k] as number, lobe: k },
+		});
+	}
+	builder.addBud({
+		node: 11,
+		x: 0.3,
+		y: 5.5,
+		z: 0,
+		frame: [0, 0, 0, 1],
+		kind: 0,
+		vigor: 1,
+		light: 1,
+		axis,
+		woodRadius: 0.2,
+		socket: { scale: 1, rank: fronds, lobe: fronds },
+	});
+	const skeleton = builder.finish(0);
+	const count = fronds;
+	const rows = {
+		count,
+		prototype: new Uint8Array(count),
+		position: new Float32Array(count * 3),
+		rotation: new Float32Array(count * 4),
+		scale: new Float32Array(count).fill(1),
+		record: new Uint16Array(count),
+		phase: new Uint8Array(count),
+		sky: new Uint8Array(count),
+		bent: new Uint8Array(count),
+		order: Uint32Array.from({ length: count }, (_, r) => r),
+		node: new Uint32Array(count),
+		socket: new Uint32Array(count),
+	};
+	for (let r = 0; r < count; r++) {
+		rows.position.set(skeleton.buds.position.subarray(r * 3, r * 3 + 3), r * 3);
+		rows.rotation[r * 4 + 3] = 1;
+		rows.node[r] = skeleton.buds.node[r] as number;
+		rows.socket[r] = r;
+	}
+	return { skeleton, rows, ranks };
+}
+
+describe('sparseness on a crown of fronds', () => {
+	it("thins a stem's own sockets by their stated rank and keeps a flower site while its node stays", () => {
+		const { skeleton, rows, ranks } = frondCrown();
+		const order = sparseOrder(skeleton, rows, GREAT_LIMB_SHARE, [], 0.25);
+		expect(order.bySockets).toBe(true);
+		const thinned = sparsePlant(skeleton, rows, order, sparseKeep(order, 1, 0.25));
+		if (!thinned) throw new Error('nothing went');
+		// The fronds that stay, past the ones that never go, are the lowest ranks.
+		const kept = new Set<number>();
+		for (let r = 0; r < thinned.rows.count; r++) kept.add(thinned.rows.id?.[r] ?? r);
+		const free = [...kept].filter((r) => (order.place[r] as number) >= order.least);
+		const highestKept = Math.max(-1, ...free.map((r) => ranks[r] as number));
+		for (let r = 0; r < rows.count; r++)
+			if (!kept.has(r) && (order.place[r] as number) >= order.least)
+				expect([r, (ranks[r] as number) > highestKept]).toEqual([r, true]);
+		// The flower site holds no row and is no socket: it stays with its node.
+		let flower = 0;
+		for (let b = 0; b < thinned.skeleton.buds.count; b++)
+			if ((thinned.skeleton.buds.origin?.[b] ?? b) === 8) flower++;
+		expect(flower).toBe(1);
+	});
+});
 
 describe('the sparseness option', () => {
 	it('keys a sparser plant apart from the plant as grown', async () => {

@@ -134,6 +134,39 @@ export function standingCamera(
 }
 
 /**
+ * The camera a page drew a picture from, as the page posted it: where it stood, the point it looked
+ * at and its vertical field of view, for a picture of a size.
+ *
+ * @param position Where the camera stood, in plant space.
+ * @param target The point it looked at.
+ * @param fov The vertical field of view in degrees.
+ * @param width The picture's width in pixels.
+ * @param height The picture's height in pixels.
+ * @returns The camera.
+ */
+export function aimedCamera(
+	position: V3,
+	target: V3,
+	fov: number,
+	width: number,
+	height: number,
+): PreviewCamera {
+	const forward = unit([target[0] - position[0], target[1] - position[1], target[2] - position[2]]);
+	const right = unit(cross(forward, [0, 1, 0]));
+	return {
+		width,
+		height,
+		position,
+		right,
+		up: cross(right, forward),
+		forward,
+		focal: height / 2 / Math.tan((fov * DEG) / 2),
+		scale: 0,
+		focus: target,
+	};
+}
+
+/**
  * A stand camera moved along its own line to the point it looks at, by a scale of its distance, as
  * a review redraw corrects a picture's margin from the width the picture itself measured.
  *
@@ -154,12 +187,13 @@ export function restood(camera: PreviewCamera, scale: number): PreviewCamera {
 	};
 }
 
-/** The same camera drawing a picture a whole number of times as large. */
-export function enlarged(camera: PreviewCamera, factor: number): PreviewCamera {
+/** The same camera drawing a picture of another width, its height in the same proportion. */
+export function atWidth(camera: PreviewCamera, width: number): PreviewCamera {
+	const factor = width / camera.width;
 	return {
 		...camera,
-		width: camera.width * factor,
-		height: camera.height * factor,
+		width,
+		height: Math.max(1, Math.round(camera.height * factor)),
 		focal: camera.focal * factor,
 		scale: camera.scale * factor,
 	};

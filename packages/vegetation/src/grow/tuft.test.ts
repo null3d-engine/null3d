@@ -11,6 +11,7 @@ import { loadSpecies } from '../core/registry';
 import { DETAILS, spreadMean } from '../core/types';
 import { buildKitNow, growPlantNow, loadPlantCode } from '../generate';
 import { SURFACE_PIECE, SURFACE_PIECE_SHEATH } from '../leaf/writer';
+import { drawnAtTallest } from '../lod/drawn';
 import { dequantisePosition } from '../lod/quantise';
 import { bodies, type TestMesh, toMesh } from './body.fixture';
 import { targetHeight } from './height';
@@ -564,6 +565,20 @@ for (const id of TUFTS) {
 		});
 	});
 }
+
+describe('the meadow grass at the finest tier', () => {
+	it('draws at once within its near budget at the tallest view', async () => {
+		// The walk reads the default tier; the meadow grass's many blades cost most at the finest,
+		// and its near cap holds that tier too.
+		const module = await loadSpecies('meadow-grass');
+		await loadPlantCode(module.record);
+		const kit = buildKitNow(module, { detail: 'ultra', placeholders: 'missing' });
+		const asset = growPlantNow(kit, { seed: 11, variant: 0, near: true });
+		expect(drawnAtTallest(kit, asset).triangles).toBeLessThanOrEqual(
+			module.record.lod.budget.lod0Triangles,
+		);
+	});
+});
 
 describe('the meadow grass out of flower', () => {
 	it('stands no flowering stem in winter', async () => {

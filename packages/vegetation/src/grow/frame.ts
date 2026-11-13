@@ -444,6 +444,8 @@ export interface FrameAxis {
 	readonly nodes: readonly FrameNode[];
 	/** The share of its length at each node. */
 	readonly along: readonly number[];
+	/** Whether it is the finest wood, a twig grown to clothe a patch. */
+	readonly fine?: true;
 }
 
 /**
@@ -695,6 +697,7 @@ interface Built {
 	base: number;
 	nodes: FrameNode[];
 	along: number[];
+	fine?: true;
 }
 
 /**
@@ -2043,6 +2046,7 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 				axes.push({
 					rule: 'twig',
 					role: 'branch',
+					fine: true,
 					order: (axes[parent] as Built).order + 1,
 					parent,
 					parentNode: node,
@@ -2123,6 +2127,7 @@ function writeAxes(plan: FramePlan, builder: SkeletonBuilder): Written[] {
 			kind: axis.role === 'stem' ? AXIS_STEM : AXIS_LIMB,
 			barkV: parent ? (parent.runs[axis.parentNode] as number) : 0,
 			barkU: radians(axis.azimuth),
+			...(axis.fine ? { fine: true } : {}),
 		});
 		const nodes: number[] = [];
 		const runs: number[] = [];

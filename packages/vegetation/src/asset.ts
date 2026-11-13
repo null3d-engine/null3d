@@ -136,6 +136,13 @@ export interface CardCell {
 		readonly front: readonly [x: number, y: number, w: number, h: number];
 		/** Atlas rectangle of the back face, in texels. */
 		readonly back: readonly [x: number, y: number, w: number, h: number];
+		/**
+		 * What the plane shows of its prototype: 0 its face, 1 its edge, 2 across its line. A level
+		 * that draws fewer planes keeps those of the lower roles.
+		 */
+		readonly role: 0 | 1 | 2;
+		/** The share of the prototype's line the plane spans, from its base: 0 to 1 on an uncut card. */
+		readonly along: readonly [from: number, to: number];
 	}[];
 }
 
@@ -172,6 +179,11 @@ export interface ShootRows {
 	readonly back?: Float32Array;
 	/** The skeleton node each row stands on. Absent on rows that stand on no skeleton. */
 	readonly node?: Uint32Array;
+	/**
+	 * The socket each row stands at, on a plant of sockets: its bud site's index in the skeleton the
+	 * rows stand on. Every row of one piece names the same socket. Absent on other plants.
+	 */
+	readonly socket?: Uint32Array;
 	/**
 	 * Each row's index in the plant as grown, on a plant that rows were removed from, so a choice
 	 * keyed on a row stays the same on the sparser plant. Absent on rows as grown.
@@ -359,6 +371,11 @@ export interface PlantAsset {
 	readonly stats: {
 		readonly milliseconds: number;
 		readonly bytes: number;
+		/**
+		 * Each level's triangles as it draws whole: the sum of its parts. The nearest level counts its
+		 * shoot rows at the tier they draw at beside its own meshes, so a plant of pieces counts every
+		 * piece placed at a socket. A level's own meshes alone are its `triangles`.
+		 */
 		readonly triangles: readonly [number, number, number];
 		/**
 		 * Each level's triangles part by part. The nearest level counts its shoot rows at the tier
@@ -476,6 +493,7 @@ function rowViews(rows: ShootRows): ArrayBufferView[] {
 		rows.order,
 		...(rows.node ? [rows.node] : []),
 		...(rows.id ? [rows.id] : []),
+		...(rows.socket ? [rows.socket] : []),
 	];
 }
 
