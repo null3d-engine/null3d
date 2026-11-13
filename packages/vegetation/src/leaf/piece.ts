@@ -91,7 +91,8 @@ export const PIECE_CUTS: Readonly<Record<Detail, ShootCut>> = {
 		axilLeast: 0.015,
 		coneBelow: 0.015,
 		thorn: { sides: 3, round: false, cone: true },
-		body: { sides: 4, round: true },
+		body: { sides: 3, round: false, double: true },
+		roundBody: { sides: 4, round: true },
 	},
 	ultra: { ...SHOOT_CUTS.ultra, thinHidden: true },
 };
@@ -299,6 +300,12 @@ export interface PieceMark {
 	readonly stalk?: number;
 	/** Bodies at one place, each on a stalk of its own. */
 	readonly count?: Spread;
+	/**
+	 * Whether a body keeps its rounded shape at the high tier, for a berry or a woody cone whose
+	 * close view reads round. Absent, the high tier draws a body as a double cone, as suits a slim
+	 * catkin.
+	 */
+	readonly round?: boolean;
 }
 
 /**
@@ -976,6 +983,7 @@ export function planPiece(
 						cluster: true,
 						stack: size,
 						mark: 'body',
+						...(mark.round ? { round: true } : {}),
 					});
 				}
 			}
