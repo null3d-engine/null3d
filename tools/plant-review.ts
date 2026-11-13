@@ -580,6 +580,18 @@ function drawnShare(
 	};
 }
 
+/** A picture's width correction: the share it aims at, how its width is read, and its scale. */
+interface WidthFix {
+	readonly target: number;
+	readonly silhouette: boolean;
+	readonly scale: number;
+	/** A close view of the crown's outside, whose subject is its span. */
+	readonly close: boolean;
+	/** A whole view stood on its photograph's rows, which a redraw moves only out. */
+	readonly stood: boolean;
+	readonly fraction: number;
+}
+
 /**
  * Redraws a whole view whose drawn width is outside the band from its reference's, at a stand
  * corrected by the width the picture itself measured, and once more if the residual stays outside.
@@ -595,47 +607,55 @@ async function correctWidths(
 	const frameOf = (file: string): RunFrame | undefined =>
 		frames.find((frame) => frame.file === file);
 	const matteOf = (file: string): string | undefined => frameOf(file)?.matte;
-	const fixes = new Map<
-		string,
-		{ target: number; silhouette: boolean; scale: number; close: boolean; fraction: number }
-	>();
+	/**
+	 * The redraw a picture takes from the width its last drawing measured, or undefined where it
+	 * keeps that drawing: inside the band and uncropped, or a correction outside what its view takes.
+	 */
+	const redraw = (file: string, fix: WidthFix): WidthFix | undefined => {
+		const matte = matteOf(file);
+		const measured = drawnShare(
+			join(dir, file),
+			fix.silhouette,
+			matte ? join(dir, matte) : undefined,
+			frameOf(file),
+		);
+		if (measured === null) return undefined;
+		// A box that touches the frame's sides is a crop whatever its share reads, so it is redrawn
+		// even inside the band: a cropped frame cannot judge its subject.
+		const off = Math.abs(measured.share - fix.target) > WIDTH_BAND;
+		const cropped = measured.clipped && fix.target < 1;
+		if (!off && !cropped) return undefined;
+		const scale = correctedScale(measured.share, fix.target, fix.fraction);
+		if (fix.close) return scale > CLOSE_CROP_MAX ? undefined : { ...fix, scale };
+		if (scale < WHOLE_SCALE_MIN || scale > WHOLE_SCALE_MAX) {
+			console.warn(
+				`width: ${file} keeps its stand: the target needs a scale of ${scale.toFixed(3)}, outside ${WHOLE_SCALE_MIN} to ${WHOLE_SCALE_MAX}`,
+			);
+			return undefined;
+		}
+		// A whole view's stand already puts the plant's top and foot on its photograph's rows and
+		// moves only out for a redraw, so a plant drawn narrower than its photograph keeps its
+		// drawing: the width error is the plant's.
+		if (fix.stood && scale < 1) return undefined;
+		return { ...fix, scale };
+	};
+	const fixes = new Map<string, WidthFix>();
 	for (const shot of stills) {
 		const target = shot.query.widthShare;
 		if (target === undefined || target >= 1) continue;
 		const file = shot.cells[0]?.file;
 		if (!file) continue;
-		const matte = matteOf(file);
-		const measured = drawnShare(
-			join(dir, file),
-			shot.query.view === 'silhouette',
-			matte ? join(dir, matte) : undefined,
-			frameOf(file),
-		);
-		if (measured === null) continue;
-		// A box that touches the frame's sides is a crop whatever its share reads, so it is redrawn
-		// even inside the band: a cropped frame cannot judge its subject.
-		const off = Math.abs(measured.share - target) > WIDTH_BAND;
-		const cropped = measured.clipped && target < 1;
-		if (!off && !cropped) continue;
-		const close = shot.query.view === 'limb' && shot.query.surface === true;
 		// A species whose crown's openness passes its band between the framing's stand and the full
 		// correction names the share of the correction it takes; every other picture takes it all.
-		const fraction = Math.min(1, Math.max(0, shot.query.widthFraction ?? 1));
-		const scale = correctedScale(measured.share, target, fraction);
-		if (close && scale > CLOSE_CROP_MAX) continue;
-		if (!close && (scale < WHOLE_SCALE_MIN || scale > WHOLE_SCALE_MAX)) {
-			console.warn(
-				`width: ${file} keeps its stand: the target needs a scale of ${scale.toFixed(3)}, outside ${WHOLE_SCALE_MIN} to ${WHOLE_SCALE_MAX}`,
-			);
-			continue;
-		}
-		fixes.set(file, {
+		const fix = redraw(file, {
 			target,
 			silhouette: shot.query.view === 'silhouette',
-			scale,
-			close,
-			fraction,
+			scale: 1,
+			close: shot.query.view === 'limb' && shot.query.surface === true,
+			stood: shot.query.view === 'whole' || shot.query.view === 'silhouette',
+			fraction: Math.min(1, Math.max(0, shot.query.widthFraction ?? 1)),
 		});
+		if (fix) fixes.set(file, fix);
 	}
 	for (let pass = 0; pass < 2 && fixes.size > 0; pass++) {
 		// A picture that takes a share of the correction keeps the stand that share gives: a second
@@ -670,30 +690,10 @@ async function correctWidths(
 			if (at >= 0) frames[at] = frame;
 			else frames.push(frame);
 		}
-		const next = new Map<
-			string,
-			{ target: number; silhouette: boolean; scale: number; close: boolean; fraction: number }
-		>();
+		const next = new Map<string, WidthFix>();
 		for (const [file, fix] of fixes) {
-			const matte = matteOf(file);
-			const measured = drawnShare(
-				join(dir, file),
-				fix.silhouette,
-				matte ? join(dir, matte) : undefined,
-				frameOf(file),
-			);
-			if (measured === null) continue;
-			const off = Math.abs(measured.share - fix.target) > WIDTH_BAND;
-			const cropped = measured.clipped && fix.target < 1;
-			const scale = correctedScale(measured.share, fix.target, fix.fraction);
-			if (fix.close && scale > CLOSE_CROP_MAX) continue;
-			if (!fix.close && (scale < WHOLE_SCALE_MIN || scale > WHOLE_SCALE_MAX)) {
-				console.warn(
-					`width: ${file} keeps its stand: the target needs a scale of ${scale.toFixed(3)}, outside ${WHOLE_SCALE_MIN} to ${WHOLE_SCALE_MAX}`,
-				);
-				continue;
-			}
-			if (off || cropped) next.set(file, { ...fix, scale });
+			const again = redraw(file, fix);
+			if (again) next.set(file, again);
 		}
 		fixes.clear();
 		for (const [file, fix] of next) fixes.set(file, fix);
