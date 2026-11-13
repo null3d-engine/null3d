@@ -13,7 +13,7 @@ import { record } from './record';
  * still 21. A branch end is 0.81 m long and 0.7 m wide on a tree 22 m tall, so the sockets stand a
  * branch end's width apart over the bunch's surface and a branch end's reach inside it.
  */
-const ENDS = { pitch: 0.8 / 22, reach: 0.81 / 22 } as const;
+const ENDS = { pitch: 1.12 / 22, reach: 0.81 / 22 } as const;
 
 /**
  * A bunch of leaves at a shoot tip, which fine wood clothes. Still 01: nine or ten separate masses
@@ -33,15 +33,17 @@ const branches: FrameBranchRule = {
 	role: 'branch',
 	// Still 01: the low sweeping branches leave the limbs at 0.40 to 0.48 of the height, a fifth of
 	// the way along a limb.
-	count: { every: 0.07, least: 3, most: 6 },
-	along: [0.12, 0.88],
+	count: { every: 0.05, least: 4, most: 8 },
+	along: [0.06, 0.88],
 	stagger: 0.2,
 	// The first of a limb's branches leaves its ground side, which on a steep limb is level and
 	// outward, and the next two leave its flanks; the three stand so again up the limb.
 	around: [180, 80, 280],
 	jitter: 14,
+	// More branches stand on a limb than it once carried, so each keeps clear of the wood before it.
+	apart: 0.004,
 	angle: [
-		[0, 55],
+		[0, 62],
 		[1, 42],
 	],
 	from: 'parent',
@@ -62,9 +64,9 @@ const branches: FrameBranchRule = {
 			from: 0.1,
 			to: 0.6,
 			level: [
-				[0, -14],
-				[0.4, 0],
-				[1, 4],
+				[0, 6],
+				[0.4, 4],
+				[1, 6],
 			],
 		},
 		{ from: 0.72, to: 1, by: -35 },
@@ -76,11 +78,12 @@ const branches: FrameBranchRule = {
 		{
 			name: 'side',
 			role: 'branch',
-			count: { every: 0.045, least: 2, most: 6 },
-			along: [0.15, 0.92],
+			count: { every: 0.045, least: 2, most: 7 },
+			along: [0.12, 0.94],
 			stagger: 0.2,
 			around: 'opposite',
 			jitter: 12,
+			apart: 0.003,
 			angle: 48,
 			from: 'parent',
 			angleSpread: 6,
@@ -112,11 +115,12 @@ const branches: FrameBranchRule = {
 const spurs: FrameBranchRule = {
 	name: 'spur',
 	role: 'branch',
-	count: { every: 0.06, least: 2, most: 6 },
-	along: [0.4, 0.92],
+	count: { every: 0.05, least: 2, most: 8 },
+	along: [0.22, 0.94],
 	stagger: 0.25,
 	around: 'spiral',
 	jitter: 20,
+	apart: 0.003,
 	angle: 50,
 	from: 'parent',
 	angleSpread: 8,
@@ -154,8 +158,9 @@ export const frame: FrameSpec = {
 			[0.98, 0.119],
 			[1, 0],
 		],
-		// The crown is built nearly round. Still 01 looks across the wide side.
-		0.88,
+		// Still 01 looks across the wide side. The turning video: the crown is about 0.95 as wide
+		// as tall at still 01's turn and about 0.72 a quarter turn on.
+		0.78,
 	),
 	stems: {
 		name: 'trunk',
@@ -241,7 +246,15 @@ const KEYS_SHARE = 0.023;
  * socket. The shoot rows are working figures, not measured ones: a kit with no pieces draws them.
  */
 export const directed = {
-	...framedRecord(record, frame, { rows: { mean: 4, spread: 1 }, fan: 45, piece: 'branch-end' }),
+	...framedRecord(record, frame, {
+		rows: { mean: 4, spread: 1 },
+		fan: 45,
+		piece: 'branch-end',
+		// With every branch end's flat side to the sky, a crown seen from the side shows most of its
+		// leaves slanted or edge on. Still 04: an ash's tip bunches face every way, so each piece
+		// rolls up to a quarter turn either way about its own line and tilts a little off the wood's.
+		turn: { roll: 90, tilt: 25 },
+	}),
 	pieces: PIECES.filter((piece) => piece.name === 'branch-end'),
 	// The record's keys hang from a share of the shoot tips, and the old grower's tree has 1,399 of
 	// them at seed 11, so the record means about 84 bunches. The frame carries a branch end at each
