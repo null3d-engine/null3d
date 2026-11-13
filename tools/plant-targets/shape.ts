@@ -6,7 +6,13 @@
 //
 // Lengths are shares of the plant's height unless a figure says otherwise, so a figure read from a
 // picture of any size compares with one read from another.
-import { type Box, components, PIECE_BRIDGE, rowSpans } from '../lib/plant-review/references.ts';
+import {
+	axisRuns,
+	type Box,
+	components,
+	PIECE_BRIDGE,
+	rowSpans,
+} from '../lib/plant-review/references.ts';
 
 /** Height bands of an outline's radius profile, from the ground up. */
 export const ENVELOPE_BANDS = 16;
@@ -16,6 +22,8 @@ const STEM_BANDS = [
 	[0.06, 0.12],
 	[0.12, 0.18],
 ] as const;
+/** The share of the plant's height that the bands reach up to. */
+const STEM_REACH = STEM_BANDS[2][1];
 /** How many widths of the stem below the crown a band above the crown's start may stand. */
 const STEM_ALIKE = 1.5;
 /** The most of a row's whole span that a stem behind hanging foliage may fill. */
@@ -62,33 +70,6 @@ const GRID_CELL_FLOOR = 0.01;
 export function rounded(value: number, digits = 4): number {
 	const fixed = Number(value.toFixed(digits));
 	return fixed === 0 ? 0 : fixed;
-}
-
-/**
- * Each row's run of plant nearest the axis: its first and last column, or -1 for an empty row.
- * Below the crown the run is the stem, apart from the boughs and the foliage that hang beside it.
- */
-export function axisRuns(mask: Uint8Array, width: number, box: Box, axis: number): Int32Array {
-	const runs = new Int32Array((box.bottom + 1) * 2).fill(-1);
-	for (let y = box.top; y <= box.bottom; y++) {
-		let start = -1;
-		let nearest = Number.POSITIVE_INFINITY;
-		for (let x = box.left; x <= box.right + 1; x++) {
-			const on = x <= box.right && mask[y * width + x] !== 0;
-			if (on && start < 0) start = x;
-			if (!on && start >= 0) {
-				const end = x - 1;
-				const distance = axis < start ? start - axis : axis > end ? axis - end : 0;
-				if (distance < nearest) {
-					nearest = distance;
-					runs[y * 2] = start;
-					runs[y * 2 + 1] = end;
-				}
-				start = -1;
-			}
-		}
-	}
-	return runs;
 }
 
 /**
@@ -142,6 +123,10 @@ export interface StemFigures {
  * @param breastShare Breast height as a share of the plant's height, or null when it is not known.
  * @param trustedBottom The lowest row whose outline is trusted: the plant's foot, or the row above
  *   the horizon where the foot stands below it and the ground hides part of the stem.
+ * @param fine The width of the stem's run in a row, in mask pixels, read from the picture at its
+ *   own size, or null where it cannot be read. The stem's width, its width at breast height and
+ *   its flare take it in place of the mask's whole pixels, which read a slim stem a pixel wide or
+ *   narrow.
  */
 export function stemOf(
 	mask: Uint8Array,
@@ -151,11 +136,13 @@ export function stemOf(
 	crownRow: number,
 	breastShare: number | null,
 	trustedBottom = box.bottom,
+	fine?: (row: number) => number | null,
 ): StemFigures {
 	const tall = box.bottom - box.top + 1;
 	const bottom = Math.min(box.bottom, Math.max(box.top, trustedBottom));
 	const runs = axisRuns(mask, width, box, axis);
 	const runWidth = (y: number): number => spanWidth(runs, y);
+	const fineWidth = (y: number): number => (runWidth(y) > 0 ? (fine?.(y) ?? runWidth(y)) : 0);
 	const spans = rowSpans(mask, width, box.bottom + 1);
 	const none = (reason: string): StemFigures => ({
 		bareShare: null,
@@ -186,7 +173,7 @@ export function stemOf(
 		const first = Math.min(bottom, box.bottom - Math.round(tall * from));
 		const last = Math.max(floor, box.bottom - Math.max(2, Math.round(tall * to)));
 		for (let y = first; y > last; y--) {
-			low.push(runWidth(y));
+			low.push(fineWidth(y));
 			const across = spanWidth(spans, y);
 			shares.push(across === 0 ? 1 : runWidth(y) / across);
 		}
@@ -211,7 +198,7 @@ export function stemOf(
 		return none(
 			box.bottom - crownRow < 2
 				? 'the crown starts at the foot, so no stem shows below it'
-				: bottom - crownRow < 2
+				: bottom - Math.max(crownRow, box.bottom - Math.round(tall * STEM_REACH)) < 2
 					? 'the stem below the crown stands under the horizon, where the ground hides it'
 					: 'the outline holds no run of plant at its foot',
 		);
@@ -249,7 +236,7 @@ export function stemOf(
 	else {
 		const foot: number[] = [];
 		for (let r = bottom; r > bottom - Math.max(2, Math.round(tall * FLARE_BAND)); r--)
-			foot.push(runWidth(r));
+			foot.push(fineWidth(r));
 		foot.sort((p, q) => p - q);
 		// The wider rows of the foot band: a row broken by grass reads narrow, and is not the foot.
 		flare = rounded((foot[Math.floor(foot.length * FLARE_QUANTILE)] as number) / stem, 3);
@@ -264,7 +251,7 @@ export function stemOf(
 			missing.breastHeightWidth = 'breast height stands above the bare stem in this view';
 		else if (row > bottom)
 			missing.breastHeightWidth = 'breast height stands below the horizon in this view';
-		else breastHeightWidth = rounded(runWidth(row) / tall);
+		else breastHeightWidth = rounded(fineWidth(row) / tall);
 	}
 	// A line through the middle of the stem's run in each row where the run is the stem alone.
 	let lean: number | null = null;
@@ -399,30 +386,96 @@ export function risingRuns(mask: Uint8Array, width: number, box: Box): Run[][] {
 	return rows;
 }
 
+/** Where one side of an outline first stands clear of the stem, from the foot up. */
+export interface ClearRow {
+	/** The row, counted from the top. */
+	readonly row: number;
+	/** Its height over the plant's height, up from the foot. */
+	readonly share: number;
+}
+
+/** The outline's reach to each side of the axis, as shares of the plant's height. */
+export interface Envelope {
+	/** Each side's greatest reach in each height band, from the ground up. */
+	readonly left: readonly number[];
+	readonly right: readonly number[];
+	/** Each side's mean reach over the rows of each band: a lone tip near a band's edge moves it little. */
+	readonly leftMean: readonly number[];
+	readonly rightMean: readonly number[];
+	/**
+	 * The lowest row on each side whose outline reaches further from the axis than half the stem's
+	 * width and a share of the plant's height, or null where no row does. An outline cannot tell
+	 * foliage from a bare limb or a second stem there, so any of them counts.
+	 */
+	readonly clear: { readonly left: ClearRow | null; readonly right: ClearRow | null };
+}
+
+/** How far past half the stem's width, as a share of the plant's height, an outline stands clear. */
+const OUTLINE_CLEAR = 0.05;
+
 /**
- * The outline's reach to each side of the axis in each height band, from the ground up, as shares
- * of the plant's height.
+ * The outline's reach to each side of the axis in each height band, from the ground up, and the
+ * row where each side first stands clear of the stem.
+ *
+ * @param stemWidth The stem's own width in mask pixels, or null where it is not known; the middle
+ *   width of the run at the axis over the lowest band then stands for it.
  */
 export function envelopeOf(
 	mask: Uint8Array,
 	width: number,
 	box: Box,
 	axis: number,
+	stemWidth: number | null = null,
 	bands = ENVELOPE_BANDS,
-): { readonly left: number[]; readonly right: number[] } {
+): Envelope {
 	const tall = box.bottom - box.top + 1;
 	const left = new Array<number>(bands).fill(0);
 	const right = new Array<number>(bands).fill(0);
+	const leftSum = new Array<number>(bands).fill(0);
+	const rightSum = new Array<number>(bands).fill(0);
+	const rows = new Array<number>(bands).fill(0);
 	const spans = rowSpans(mask, width, box.bottom + 1);
+	const reach = (y: number): readonly [number, number] =>
+		(spans[y * 2] as number) < 0
+			? [0, 0]
+			: [
+					Math.max(0, axis - (spans[y * 2] as number)),
+					Math.max(0, (spans[y * 2 + 1] as number) - axis),
+				];
+	const bandOf = (y: number): number =>
+		Math.min(bands - 1, Math.floor(((box.bottom - y) * bands) / tall));
 	for (let y = box.top; y <= box.bottom; y++) {
-		if ((spans[y * 2] as number) < 0) continue;
-		const band = Math.min(bands - 1, Math.floor(((box.bottom - y) * bands) / tall));
-		left[band] = Math.max(left[band] as number, axis - (spans[y * 2] as number));
-		right[band] = Math.max(right[band] as number, (spans[y * 2 + 1] as number) - axis);
+		const band = bandOf(y);
+		const [toLeft, toRight] = reach(y);
+		rows[band] = (rows[band] as number) + 1;
+		leftSum[band] = (leftSum[band] as number) + toLeft;
+		rightSum[band] = (rightSum[band] as number) + toRight;
+		left[band] = Math.max(left[band] as number, toLeft);
+		right[band] = Math.max(right[band] as number, toRight);
 	}
+	let stem = stemWidth;
+	if (stem === null) {
+		const runs = axisRuns(mask, width, box, axis);
+		const widths: number[] = [];
+		for (let y = box.bottom; y >= box.top && bandOf(y) === 0; y--)
+			if ((runs[y * 2] as number) >= 0) widths.push(spanWidth(runs, y));
+		widths.sort((a, b) => a - b);
+		stem = widths[widths.length >> 1] ?? 0;
+	}
+	const beyond = stem / 2 + OUTLINE_CLEAR * tall;
+	const clearOf = (side: 0 | 1): ClearRow | null => {
+		for (let y = box.bottom; y >= box.top; y--)
+			if ((reach(y)[side] as number) > beyond)
+				return { row: y, share: rounded((box.bottom - y) / tall) };
+		return null;
+	};
+	const share = (v: number) => rounded(v / tall);
 	return {
-		left: left.map((v) => rounded(Math.max(0, v) / tall)),
-		right: right.map((v) => rounded(Math.max(0, v) / tall)),
+		left: left.map(share),
+		right: right.map(share),
+		leftMean: leftSum.map((v, band) => share(v / Math.max(1, rows[band] as number))),
+		rightMean: rightSum.map((v, band) => share(v / Math.max(1, rows[band] as number))),
+		clear: { left: clearOf(0), right: clearOf(1) },
 	};
 }
 
