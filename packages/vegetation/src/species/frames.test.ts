@@ -242,15 +242,15 @@ const HELD: readonly Held[] = [
 		directed: holmOakDirected,
 		heightMean: spreadMean(holmOakDirected.size.height),
 		record: holmOakRecord,
-		counts: { stem: 10, arm: 20, fork: 40, branch: 120, side: [20, 80], twig: [300, 1200] },
+		counts: { stem: 10, arm: 20, fork: 40, branch: [110, 120], side: [20, 80], twig: [300, 1200] },
 		// Eight outer stems stand an eighth of a turn apart, and the two inner ones lean where they
 		// will.
 		round: { rule: 'stem', gap: 80, lean: 0.2 },
 		base: { arm: 0.65, fork: 0.65, branch: 0.65, side: 0.5 },
 		plumb: [],
-		through: 3,
+		through: 2,
 		// Every twig that clothes a clump is an axis that ends in a socket.
-		axesPerSocket: 1.08,
+		axesPerSocket: 1.079,
 		fine: ['twig'],
 		tall: [0.97, 1.06],
 	},
