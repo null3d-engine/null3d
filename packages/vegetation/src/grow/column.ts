@@ -20,7 +20,7 @@ import {
 	SkeletonBuilder,
 } from '../core/graph';
 import { unitAt } from '../core/hash';
-import { cos, normalize3, PI, quatFromFrame, radians, sin, type Vector3 } from '../core/math';
+import { asin, cos, normalize3, PI, quatFromFrame, radians, sin, type Vector3 } from '../core/math';
 import type { Column, ColumnArmTier, Species } from '../core/record';
 import { curveAt, spreadAt } from '../core/types';
 import type { GrowInput } from '../stages';
@@ -293,7 +293,7 @@ function armArch(
 	// An arm close beside the stem has no room to turn from the record's angle on an elbow of its
 	// own width, so it leaves rising, at the angle that turns it on that elbow within its reach.
 	if (room < least * across) {
-		leave = Math.asin(Math.min(1, Math.max(-1, 1 - room / least)));
+		leave = asin(Math.min(1, Math.max(-1, 1 - room / least)));
 		across = 1 - sin(leave);
 	}
 	const elbow = Math.max(least, Math.min(growth.arms.elbow * 2 * radius, room / across));
