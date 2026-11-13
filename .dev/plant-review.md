@@ -264,7 +264,10 @@ own light they read 1.9, and the head's oak reads 2.2, so the light makes most o
 - A cut branch's density is judged against a picture of the same piece at the same scale, by four
   figures. The wood per tip and the tips per area must fall within a quarter of the reference's. The
   share of fan joints, where four or more twigs leave one point, may stand at most a tenth above it.
-  The kinks must reach at least half of the reference's.
+  The kinks must reach at least half of the reference's. The wood per tip and the kinks are sound
+  on bare wood only: a winter piece, or a drawing's wood drawn alone against a hand count on the
+  photograph. On a piece in leaf, a leaf across a stem makes false tips and a straight twig passes
+  the kinks, so no verdict on a leafy piece quotes either.
 - The oak's winter branch is judged on the cut branch of the winter oak's own set. Still 20's outline
   is void. It shows a limb end about 35 cm across, and a limb that enters the frame's side reads as a
   horizon.
@@ -306,8 +309,11 @@ own light they read 1.9, and the head's oak reads 2.2, so the light makes most o
 ## Pictures that do not judge the primary plant
 
 Some reference pictures are compared and shown, and still do not judge the plant. The species'
-review data names each one with its reason, in its slot file under `_pictures`. The tool keeps such
-a picture out of every row's evidence and figures, and the verdict lists it beside the row.
+review data names each one with its reason, in its slot file under `_pictures`. Each entry cites
+the ruling that took the picture out: who ruled, and what. The tool refuses an entry with no
+ruling, so no picture leaves a row by the tool's own choice. The tool keeps such a picture out of
+every row's evidence and figures, the verdict lists it beside the row, and the count prints each
+one under its species with its ruling.
 
 - **A second form.** A picture of another form of the species judges that form, not the primary
   plant. The silver birch's picture `33`, the dense old tree, is a second form.

@@ -80,7 +80,7 @@ import {
 	singleShot,
 	turnShots,
 } from './lib/plant-review/render.ts';
-import { reviewDataOfSpecies } from './lib/plant-review/review-data.ts';
+import { pictureRulings, reviewDataOfSpecies } from './lib/plant-review/review-data.ts';
 import { type SheathTarget, sheathTargetOf } from './lib/plant-review/sheath.ts';
 import {
 	mergeVerdict,
@@ -1007,6 +1007,7 @@ function compareRun(
 		coverage,
 		slots: set.stills,
 		stills,
+		rulings: pictureRulings(reviewDataOfSpecies(SLOTS, manifest.species)),
 		...verdictViews(manifest, set, turns, limit),
 	});
 	const verdict = existsSync(verdictPath)

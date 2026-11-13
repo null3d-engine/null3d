@@ -304,6 +304,7 @@ describe('the pictures a verdict keeps apart', () => {
 				cutBranch: {
 					reference: { woodPerTip: 0.2, tipsPerArea: 40, fanShare: 0.1, kinks: 6 },
 					render: { woodPerTip: 0.22, tipsPerArea: 55, fanShare: 0.15, kinks: 2 },
+					bare: true,
 				},
 			}),
 		);
@@ -317,6 +318,29 @@ describe('the pictures a verdict keeps apart', () => {
 		expect(row.figures.map((figure) => inBand(figure))).toEqual([true, false, true, false]);
 		// The reviewer judges the row: it also counts the limbs.
 		expect(row.verdict).toBe('unjudged');
+		// A piece in leaf quotes neither the wood per tip nor the kinks, and a figure that a picture
+		// could not give is left out: here the photograph's piece has no joint.
+		stills.set(
+			'21-branch-studio.png',
+			pair('21-branch-studio.png', {
+				view: 'branch',
+				cutBranch: {
+					reference: { woodPerTip: 0.2, tipsPerArea: 40, fanShare: null, kinks: 6 },
+					render: { woodPerTip: 0.22, tipsPerArea: 55, fanShare: 0.15, kinks: 2 },
+				},
+			}),
+		);
+		const leafy = rowOf(toolVerdict({ ...base, slots, stills }), 2);
+		expect(leafy.figures.map((figure) => figure.name)).toEqual(['cut branch tips per area']);
+		// A side with no measure at all gives the row no cut-branch figure.
+		stills.set(
+			'21-branch-studio.png',
+			pair('21-branch-studio.png', {
+				view: 'branch',
+				cutBranch: { reference: null, render: null, bare: true },
+			}),
+		);
+		expect(rowOf(toolVerdict({ ...base, slots, stills }), 2).figures).toEqual([]);
 	});
 });
 

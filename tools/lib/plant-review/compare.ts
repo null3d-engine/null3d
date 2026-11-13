@@ -1635,10 +1635,15 @@ export interface StillResult extends PairMetrics {
 	 * pictures alone.
 	 */
 	readonly subjectChecked?: boolean;
-	/** A cut branch's four density figures on both pictures, where the run measured them. */
+	/**
+	 * A cut branch's four density figures on both pictures, where the run measured them. A side
+	 * is null where its picture gave no measure. `bare` says the piece carries no leaf: two of the
+	 * figures are sound on bare wood only.
+	 */
 	readonly cutBranch?: {
-		readonly reference: CutBranchFigures;
-		readonly render: CutBranchFigures;
+		readonly reference: CutBranchFigures | null;
+		readonly render: CutBranchFigures | null;
+		readonly bare?: boolean;
 	};
 	/**
 	 * Why the picture is void: its view has no subject in the plant, or the picture does not show
@@ -1650,16 +1655,20 @@ export interface StillResult extends PairMetrics {
 	readonly error?: string;
 }
 
-/** The four figures a cut branch's density is judged by, read on one picture of the piece. */
+/**
+ * The four figures a cut branch's density is judged by, read on one picture of the piece. Lengths
+ * are in piece lengths, so a photograph and a drawing of one piece compare whatever their scale. A
+ * figure is null where the picture cannot give it.
+ */
 export interface CutBranchFigures {
-	/** Metres of wood for each twig tip. */
-	readonly woodPerTip: number;
-	/** Twig tips for each square metre of the piece's outline. */
-	readonly tipsPerArea: number;
-	/** The share of joints where four or more twigs leave one point. */
-	readonly fanShare: number;
-	/** Bends in the wood for each metre of it. */
-	readonly kinks: number;
+	/** Piece lengths of wood for each twig tip. */
+	readonly woodPerTip: number | null;
+	/** Twig tips for each square piece length of the piece's outline. */
+	readonly tipsPerArea: number | null;
+	/** The share of joints where four or more twigs leave one point; null where the piece has no joint. */
+	readonly fanShare: number | null;
+	/** Bends in the wood for each piece length of it. */
+	readonly kinks: number | null;
 }
 
 /** How far a whole view's drawn plant may differ in size from its photograph's, as a share of it. */

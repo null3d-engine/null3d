@@ -2,7 +2,8 @@
 // about single reference pictures before it reads a figure. The data lives in the species' slot
 // file under reserved keys, which name no reference file. `_habit` says how the plant stands where
 // that changes how its outline is read. `_pictures` names the pictures that do not judge the
-// primary plant, or whose outline cannot be read, each with its reason.
+// primary plant, or whose outline cannot be read, each with its reason and the ruling that took it
+// out. A picture leaves a row only by a ruling someone made, never by the tool's own choice.
 
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -35,6 +36,8 @@ export interface PictureNote {
 	/** For a stand: how many plants the photograph shows, and the metres between them. */
 	readonly count?: number;
 	readonly spacing?: number;
+	/** Who ruled that the picture is read this way, and what they ruled. */
+	readonly ruling?: string;
 }
 
 /** A species' review data. */
@@ -58,6 +61,10 @@ export function reviewDataOf(slots: Readonly<Record<string, unknown>>): ReviewDa
 			throw new Error(`${PICTURES_KEY} sets ${file} aside as ${note.standing} with no reason.`);
 		if (note.standing === undefined && note.outline === undefined)
 			throw new Error(`${PICTURES_KEY} names ${file} and says nothing of it.`);
+		if (!note.ruling)
+			throw new Error(
+				`${PICTURES_KEY} takes ${file} out of its rows and cites no ruling: say who ruled it and what they ruled.`,
+			);
 	}
 	return { ...(habit !== undefined && { habit }), pictures };
 }
@@ -67,6 +74,27 @@ export function reviewDataOfSpecies(folder: string, species: string): ReviewData
 	const path = join(folder, `${species}.json`);
 	if (!existsSync(path)) return { pictures: {} };
 	return reviewDataOf(JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>);
+}
+
+/** One picture that a ruling takes out of its rows or of its outline figures, as a verdict lists it. */
+export interface PictureRuling {
+	readonly picture: string;
+	/** How the picture is read: set aside under a standing, or kept with its outline void. */
+	readonly effect: Standing | 'outline-void';
+	readonly reason: string;
+	readonly ruling: string;
+}
+
+/** The rulings of a species' review data, a line for each picture, in the files' order. */
+export function pictureRulings(data: ReviewData): PictureRuling[] {
+	return Object.entries(data.pictures)
+		.sort(([a], [b]) => a.localeCompare(b))
+		.map(([picture, note]) => ({
+			picture,
+			effect: note.standing ?? 'outline-void',
+			reason: note.reason ?? note.outline ?? '',
+			ruling: note.ruling ?? '',
+		}));
 }
 
 /** Why a stand picture is not judged, in words for the record. */
