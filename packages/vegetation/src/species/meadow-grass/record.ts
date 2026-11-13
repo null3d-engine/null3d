@@ -24,9 +24,11 @@ export const record: Species = {
 		model: 'tuft',
 		// Still 01: the leaf mound is 262 px tall under heads that reach 525 px.
 		mound: 0.5,
-		// Still 01: twelve flowering stems; still 04: about forty-five blades at its fullest ring,
-		// three or four to a shoot. So about sixteen shoots.
-		shoots: { mean: 16, spread: 3 },
+		// Still 01: twelve flowering stems. Still 04 shows about forty-five blades at its fullest
+		// ring, but from above only the outer ring shows: still 01 shows forty to fifty blades in
+		// the tuft's front alone, and sixteen shoots of three or four blades drew 0.85 of sky inside
+		// its outline against the photograph's 0.49. Still 01's cover asks for three times that.
+		shoots: { mean: 48, spread: 9 },
 		// Still 01: the sheath bases span 96 px at the soil against a mound of 262 px.
 		stool: 0.36,
 		// Stills 01 and 03: pale green sheath columns stand 0.12 to 0.15 of the mound's height, each
@@ -168,18 +170,15 @@ export const record: Species = {
 			kitBytes: { low: 821_000, medium: 1_031_000, high: 1_293_000, ultra: 1_626_000 },
 			// A plant is rows of the kit's pieces, so a variant's bytes are the same at every tier.
 			// Measured over the four variants at seed 11, in summer and in blossom: the largest reads
-			// 68,951 bytes, 19,468 of them the root ball of stills 14 and 21, and its cap keeps a
-			// twentieth above that read, as the lead ruled for the roots the pictures ask for. Drawn
-			// at once at the tallest view, the first variant reads 22,268 triangles at the high tier
-			// and 31,436 at the ultra; the two card levels read 658 and 354 at most. The card bake's
-			// cut and the blades' quarter twist moved the second card level from 300 to 354, so its
-			// cap keeps a twentieth above that read, as the lead ruled. The other caps keep about
-			// fifteen per cent above their reads before the card bake's cut, and the nearest level's
-			// holds the ultra tier.
-			variantBytes: { low: 72_400, medium: 72_400, high: 72_400, ultra: 72_400 },
+			// 140,151 bytes with the root ball of stills 14 and 21 and the forty-eight shoots still
+			// 01's cover asks for, and the two card levels 1,624 and 822 triangles. Those three caps
+			// keep a twentieth above their reads, as the lead ruled. Drawn at once at the tallest
+			// view, the first variant reads 30,268 triangles at the high tier, under the nearest
+			// level's cap, and 49,148 at the ultra, over it.
+			variantBytes: { low: 147_200, medium: 147_200, high: 147_200, ultra: 147_200 },
 			lod0Triangles: 33_700,
-			lod1Triangles: 680,
-			lod2Triangles: 372,
+			lod1Triangles: 1_706,
+			lod2Triangles: 864,
 			downloadBytes: 350_000,
 			downloadHalfBytes: 120_000,
 			growMilliseconds: 150,
