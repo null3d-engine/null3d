@@ -216,7 +216,7 @@ const HELD: readonly Held[] = [
 		directed: commonAlderDirected,
 		heightMean: spreadMean(commonAlderDirected.size.height),
 		record: commonAlderRecord,
-		counts: { leader: 1, limb: 24, side: [70, 105], twig: [2600, 3500] },
+		counts: { leader: 1, limb: 24, side: [70, 105], twig: [3300, 4100] },
 		// Twenty-four limbs a golden angle apart leave no gap wider than two even shares and their
 		// jitter.
 		round: { rule: 'limb', gap: 46, lean: 0.25 },
@@ -313,10 +313,10 @@ const HELD: readonly Held[] = [
 			trunk: 1,
 			limb: 4,
 			top: 2,
-			branch: [18, 36],
-			side: [90, 140],
-			spur: [16, 26],
-			twig: [2800, 3900],
+			branch: [32, 42],
+			side: [150, 190],
+			spur: [28, 40],
+			twig: [2800, 3400],
 		},
 		// Two crossed pairs stand a quarter turn apart.
 		round: { rule: 'limb', gap: 110, lean: 0.2 },
@@ -324,7 +324,7 @@ const HELD: readonly Held[] = [
 		plumb: ['trunk'],
 		// The outline's top is blunt, so the bunches on the highest tips stand a little over it.
 		through: 0,
-		crossings: [2, 0],
+		crossings: [3, 3],
 		axesPerSocket: 1.0,
 		fine: ['twig'],
 		tall: [0.95, 1.05],
