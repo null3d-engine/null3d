@@ -173,6 +173,49 @@ describe('the blade leaf mesh', () => {
 	});
 });
 
+describe("a branch piece's leaf", () => {
+	const record = oakRecord();
+	const foliage = record.foliage;
+	if (foliage.kind !== 'blade') throw new Error('the test oak has blade leaves');
+	/** The oak with a stalk no longer than the texture's own, so a card draws no stalk of its own. */
+	const stubby = {
+		...record,
+		foliage: {
+			...foliage,
+			leaf: { ...foliage.leaf, petiole: { ...foliage.leaf.petiole, length: 0 } },
+		},
+	};
+	const pieceLeaves = builder.pieceLeaves;
+	if (!pieceLeaves) throw new Error('the blade builder cuts piece leaves');
+	const triangles = (detail: Detail) =>
+		(pieceLeaves(stubby, OAK_MANIFEST, detail)[0]?.indices.length ?? 0) / 3;
+
+	it('is a cut-out card at the low and medium tiers, folded along its midrib at the high tier', () => {
+		expect(triangles('low')).toBe(2);
+		expect(triangles('medium')).toBe(2);
+		expect(triangles('high')).toBe(4);
+	});
+
+	it("keeps the crown's meshed outline at the ultra tier", () => {
+		const own = pieceLeaves(record, OAK_MANIFEST, 'ultra')[0];
+		const crown = builder.leaves(record, OAK_MANIFEST, 'ultra')[0];
+		expect(own?.indices.length).toBe(crown?.indices.length);
+		expect([...(own?.positions ?? [])]).toEqual([...(crown?.positions ?? [])]);
+	});
+
+	it("draws a ribbon stalk on a card where the leaf's stalk runs past the texture's", () => {
+		const long = {
+			...record,
+			foliage: {
+				...foliage,
+				leaf: { ...foliage.leaf, petiole: { ...foliage.leaf.petiole, length: 0.03 } },
+			},
+		};
+		expect((pieceLeaves(long, OAK_MANIFEST, 'high')[0]?.indices.length ?? 0) / 3).toBe(8);
+		expect((pieceLeaves(long, OAK_MANIFEST, 'low')[0]?.indices.length ?? 0) / 3).toBe(2);
+	});
+});
+
 describe('the compound leaf', () => {
 	it('places pinnate leaflets in opposite pairs with a terminal one', () => {
 		const places = leafletPlaces(

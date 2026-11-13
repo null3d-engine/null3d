@@ -47,7 +47,7 @@ export interface LeafCut {
 }
 
 /** How finely each tier meshes a leaf. */
-interface LeafTier extends LeafCut {
+export interface LeafTier extends LeafCut {
 	/** Sides of the stalk tube; 0 draws a two-triangle ribbon, and -1 no stalk. */
 	readonly stalkSides: number;
 	/**
@@ -56,6 +56,11 @@ interface LeafTier extends LeafCut {
 	 * smaller than a pixel and a cut-out edge is as sharp as a meshed one.
 	 */
 	readonly card?: boolean;
+	/**
+	 * Whether a card is split along its midrib into two planes, four triangles, so the leaf's fold
+	 * shades it as the two halves of a V.
+	 */
+	readonly folded?: boolean;
 }
 
 /**
@@ -67,6 +72,19 @@ const TIERS: Readonly<Record<Detail, LeafTier>> = {
 	medium: { rows: 3, columns: 1, smooth: 2, points: 24, stalkSides: 0 },
 	high: { rows: 6, columns: 2, smooth: 3, points: 48, stalkSides: 3 },
 	ultra: { rows: 12, columns: 4, smooth: 3, points: 96, stalkSides: 3 },
+};
+
+/**
+ * The tiers' leaf meshes on a branch piece. A tree carries thousands of pieces, so its leaves are
+ * cut-out cards below the finest tier: a flat card at the low and medium tiers, and a card folded
+ * along its midrib at the high tier. A card draws a ribbon stalk only where the leaf's stalk runs
+ * past the texture's own. The ultra tier keeps the meshed outline.
+ */
+const PIECE_TIERS: Readonly<Record<Detail, LeafTier>> = {
+	low: TIERS.low,
+	medium: { ...TIERS.low, stalkSides: 0 },
+	high: { ...TIERS.low, stalkSides: 0, folded: true },
+	ultra: TIERS.ultra,
 };
 
 /** Texels the mesh's outline stands outside the measured contour. */
@@ -115,25 +133,31 @@ function splitAcross(points: readonly number[], at: number): number[][] {
  *
  * @param outline The leaf's outline.
  * @param detail The tier.
+ * @param tier How the tier cuts a leaf; the crown's own cut by default.
  * @returns The points, u then v, and the triangles, three indices each.
  * @category api/vegetation
  */
 export function leafTriangles(
 	outline: LeafOutline,
 	detail: Detail,
+	tier: LeafTier = TIERS[detail],
 ): { readonly points: number[]; readonly triangles: number[] } {
-	const tier = TIERS[detail];
-	return tier.card ? cardLeaf(outline) : cutLeaf(outline, tier);
+	return tier.card ? cardLeaf(outline, tier.folded === true) : cutLeaf(outline, tier);
 }
 
 /**
- * A leaf as one cut-out card: two triangles over the bounds of its outline, pushed out by the
- * margin, from the stalk's foot to the tip, so the texture's coverage draws the whole leaf.
+ * A leaf as one cut-out card over the bounds of its outline, pushed out by the margin, from the
+ * stalk's foot to the tip, so the texture's coverage draws the whole leaf: two triangles, or four
+ * with the card split along its midrib.
  *
  * @param outline The leaf's outline.
- * @returns The points, u then v, and the two triangles.
+ * @param folded Whether the card is split along its midrib.
+ * @returns The points, u then v, and the triangles.
  */
-function cardLeaf(outline: LeafOutline): {
+function cardLeaf(
+	outline: LeafOutline,
+	folded: boolean,
+): {
 	readonly points: number[];
 	readonly triangles: number[];
 } {
@@ -154,6 +178,11 @@ function cardLeaf(outline: LeafOutline): {
 	right = Math.min(1, right + margin);
 	low = Math.max(0, low - margin);
 	high = Math.min(1, high + margin);
+	if (folded)
+		return {
+			points: [left, low, 0.5, low, right, low, right, high, 0.5, high, left, high],
+			triangles: [0, 1, 4, 0, 4, 5, 1, 2, 3, 1, 3, 4],
+		};
 	return {
 		points: [left, low, right, low, right, high, left, high],
 		triangles: [0, 1, 2, 0, 2, 3],
@@ -224,6 +253,7 @@ export function cutLeaf(
  * @param outline The leaf's outline.
  * @param detail The tier.
  * @param length The blade's length in metres; the record's mean by default.
+ * @param tier How the tier cuts the leaf; the crown's own cut by default.
  * @returns The mesh.
  * @category api/vegetation
  */
@@ -232,9 +262,10 @@ export function bladeMesh(
 	outline: LeafOutline,
 	detail: Detail,
 	length = spreadMean(shape.length),
+	tier: LeafTier = TIERS[detail],
 ): PrototypeArrays {
 	const surface = new LeafSurface(shape, outline, length);
-	const { points, triangles } = leafTriangles(outline, detail);
+	const { points, triangles } = leafTriangles(outline, detail, tier);
 	const mesh = new MeshWriter();
 	const made = new Map<number, number>();
 	const p = [0, 0, 0];
@@ -270,7 +301,8 @@ export function bladeMesh(
 			mesh.indices.push(vertex);
 		}
 	}
-	const stalkSides = TIERS[detail].stalkSides;
+	// A card's texture draws the stalk it holds, so a card adds one only where the stalk runs past it.
+	const stalkSides = tier.card && surface.extra <= 0 ? -1 : tier.stalkSides;
 	if (stalkSides >= 0) addStalk(mesh, surface, shape, outline, stalkSides);
 	return mesh.finishPrototype();
 }
@@ -354,33 +386,50 @@ function shortenedStalk(outline: LeafOutline, share: number): LeafOutline {
 	return { ...outline, petiole: [outline.petiole[0], outline.base[1] - drawn * share] };
 }
 
-export const builder: FoliageBuilder = {
-	leaves(record: Species, manifest: TextureManifest, detail: Detail): readonly PrototypeArrays[] {
-		const foliage = record.foliage;
-		if (foliage.kind !== 'blade')
-			throw new Error(`@null3d/vegetation: the blade builder got '${foliage.kind}' foliage`);
-		const outline = outlineOf(foliage.leaf, manifest);
-		if (!foliage.compound) return [bladeMesh(foliage.leaf, outline, detail)];
-		// A leaflet is a fraction of the leaf's size, so it takes a coarser cut unless the record asks
-		// for the leaf's own.
-		const step = Math.max(0, Math.min(2, Math.round(foliage.compound.leafletStep ?? 1)));
-		const leafletDetail = DETAILS[Math.max(0, DETAILS.indexOf(detail) - step)] ?? detail;
-		// Each leaflet keeps a short stalk of its own and no droop: the rachis carries the droop. A
-		// record may shorten that stalk, and at nothing the blade begins where the leaflet meets the
-		// rachis, so no stalk texels stand between the two.
-		const stalk = Math.min(1, Math.max(0, foliage.compound.leafletStalk ?? 1));
-		const leaflet = bladeMesh(
-			{
-				...foliage.leaf,
-				petiole: {
-					...foliage.leaf.petiole,
-					length: foliage.leaf.petiole.length * 0.12 * stalk,
-					droop: 0,
-				},
+/**
+ * A blade species' leaf meshes at one tier: one leaf, or one compound leaf, each leaf or leaflet cut
+ * as the tier table says.
+ */
+function bladeLeaves(
+	record: Species,
+	manifest: TextureManifest,
+	detail: Detail,
+	tiers: Readonly<Record<Detail, LeafTier>>,
+): readonly PrototypeArrays[] {
+	const foliage = record.foliage;
+	if (foliage.kind !== 'blade')
+		throw new Error(`@null3d/vegetation: the blade builder got '${foliage.kind}' foliage`);
+	const outline = outlineOf(foliage.leaf, manifest);
+	if (!foliage.compound)
+		return [bladeMesh(foliage.leaf, outline, detail, undefined, tiers[detail])];
+	// A leaflet is a fraction of the leaf's size, so it takes a coarser cut unless the record asks
+	// for the leaf's own. A tier that draws its leaves as cards draws its leaflets as cards too, and
+	// any other takes the crown's meshed cut at the coarser tier.
+	const step = Math.max(0, Math.min(2, Math.round(foliage.compound.leafletStep ?? 1)));
+	const leafletDetail = DETAILS[Math.max(0, DETAILS.indexOf(detail) - step)] ?? detail;
+	const leafletTier = tiers[detail].card ? tiers[detail] : TIERS[leafletDetail];
+	// Each leaflet keeps a short stalk of its own and no droop: the rachis carries the droop. A
+	// record may shorten that stalk, and at nothing the blade begins where the leaflet meets the
+	// rachis, so no stalk texels stand between the two.
+	const stalk = Math.min(1, Math.max(0, foliage.compound.leafletStalk ?? 1));
+	const leaflet = bladeMesh(
+		{
+			...foliage.leaf,
+			petiole: {
+				...foliage.leaf.petiole,
+				length: foliage.leaf.petiole.length * 0.12 * stalk,
+				droop: 0,
 			},
-			stalk === 1 ? outline : shortenedStalk(outline, stalk),
-			leafletDetail,
-		);
-		return [compoundLeaf(foliage.leaf, foliage.compound, outline, leaflet, detail)];
-	},
+		},
+		stalk === 1 ? outline : shortenedStalk(outline, stalk),
+		leafletDetail,
+		undefined,
+		leafletTier,
+	);
+	return [compoundLeaf(foliage.leaf, foliage.compound, outline, leaflet, detail)];
+}
+
+export const builder: FoliageBuilder = {
+	leaves: (record, manifest, detail) => bladeLeaves(record, manifest, detail, TIERS),
+	pieceLeaves: (record, manifest, detail) => bladeLeaves(record, manifest, detail, PIECE_TIERS),
 };

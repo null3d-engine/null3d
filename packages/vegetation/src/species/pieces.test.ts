@@ -337,6 +337,8 @@ const EDGE_SHARE = 0.35;
 const OPEN_DEPTH: Readonly<Record<string, string>> = {
 	'common-alder 22':
 		"0.27 against 0.20: its cones hang to the twig's own ground side, behind it, where the photograph's hang below a twig that stands in a clamp",
+	'weeping-willow 22':
+		"0.31 against 0.23: its strands' leaves hang to every side, and at the high tier each long blade is a flat card that keeps its tilt but not its curl (0.29 as meshed blades)",
 };
 const OPEN_EDGE: Readonly<Record<string, string>> = {
 	'silver-birch 21':
@@ -873,6 +875,58 @@ describe("a hanging piece's blades", () => {
 			expect(lean).toBeLessThan(0.21);
 		}
 	});
+});
+
+/**
+ * Each piece's triangles at the high tier, its first variant, when its leaves, wood and buds took the
+ * crown's own cut: what a whole tree carrying thousands of pieces could not afford.
+ */
+const CROWN_CUT_HIGH: Readonly<Record<string, number>> = {
+	'pedunculate-oak branch-end': 9604,
+	'pedunculate-oak twig': 4698,
+	'holm-oak branch-end': 36432,
+	'holm-oak twig': 4166,
+	'european-beech branch-end': 18186,
+	'european-beech twig': 2062,
+	'common-ash branch-end': 2864,
+	'common-ash twig': 1686,
+	'common-alder branch-end': 6914,
+	'common-alder twig': 1840,
+	'olive branch-end': 39850,
+	'olive twig': 5040,
+	'weeping-willow strand-short': 1962,
+	'weeping-willow strand': 5758,
+	'weeping-willow strand-long': 10498,
+	'silver-birch strand-short': 2082,
+	'silver-birch strand': 2840,
+	'silver-birch strand-long': 6582,
+	'silver-birch strand-arch-short': 3090,
+	'silver-birch strand-arch': 3382,
+	'hawthorn-shrub branch-end': 9822,
+	'hawthorn-shrub twig': 5958,
+};
+
+describe("a piece's cost", () => {
+	it(
+		'is at most a third of the crown cut at the high tier, every piece of the nine species',
+		async () => {
+			const high = DETAILS.indexOf('high');
+			for (const { id, pieces } of SPECIES) {
+				const module = await loadPieces(id);
+				await loadPlantCode(module.record);
+				const built = buildPiecesNow(module, pieces);
+				for (const rule of pieces) {
+					const drawn = built
+						.filter((piece) => piece.piece === rule.name && piece.variant === 0)
+						.reduce((sum, piece) => sum + (piece.tiers[high]?.indices.length ?? 0) / 3, 0);
+					const crown = CROWN_CUT_HIGH[`${id} ${rule.name}`];
+					expect(crown).toBeDefined();
+					expect(drawn).toBeLessThanOrEqual((crown ?? 0) / 3);
+				}
+			}
+		},
+		LONG,
+	);
 });
 
 describe("a species' marks", () => {

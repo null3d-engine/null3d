@@ -390,8 +390,15 @@ export function buildPiecesNow(
 	const record = pieceRecord(source.record, leaf);
 	const builder = foliage(record.foliage.kind);
 	const manifest = source.textures.manifest;
+	// A piece wears its kind's piece leaves where the kind cuts them apart from the crown's.
 	const leavesOf = (from: Species) =>
-		DETAILS.map((tier) => (bare ? [] : builder.leaves(from, manifest, tier)));
+		DETAILS.map((tier) =>
+			bare
+				? []
+				: builder.pieceLeaves
+					? builder.pieceLeaves(from, manifest, tier)
+					: builder.leaves(from, manifest, tier),
+		);
 	const leaves = leavesOf(record);
 	// A rule whose blades bend in their own plane takes leaves built with no bend at the stalk.
 	const straight =
