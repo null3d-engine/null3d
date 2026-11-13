@@ -6,6 +6,7 @@
 import type { PlantAsset, PlantPart, SpeciesKitData } from '../asset';
 import { quatRotate, type Vector3 } from '../core/math';
 import { DETAILS } from '../core/types';
+import { SURFACE_BRUSH } from '../leaf/writer';
 import type { MeshInput } from '../stages';
 import { cardMesh } from './cards';
 import { dequantisePosition } from './quantise';
@@ -137,7 +138,21 @@ export function outlineMatte(
 				placed[i + 1] = to[1] + (rows.position[r * 3 + 1] as number);
 				placed[i + 2] = to[2] + (rows.position[r * 3 + 2] as number);
 			}
-			draw(placed, arrays.indices);
+			// A brush card is a picture of a run of leaves: it covers where the card atlas's picture does,
+			// as the shoot material draws it. Every other triangle covers whole.
+			const brush: number[] = [];
+			const whole: number[] = [];
+			for (let t = 0; t < arrays.indices.length; t += 3) {
+				const kind = arrays.colors[(arrays.indices[t] as number) * 4 + 2] as number;
+				const into = kind === SURFACE_BRUSH ? brush : whole;
+				into.push(
+					arrays.indices[t] as number,
+					arrays.indices[t + 1] as number,
+					arrays.indices[t + 2] as number,
+				);
+			}
+			if (whole.length > 0) draw(placed, whole);
+			if (brush.length > 0) draw(placed, brush, arrays.uvs);
 		}
 	}
 	// The nearest level's shoot rows, where it draws them: as their cards.
