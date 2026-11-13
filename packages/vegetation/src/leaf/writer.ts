@@ -312,6 +312,7 @@ export function tube(
  * @param sides Faces around.
  * @param colour The colour bytes.
  * @param hint A direction the shape's u seam leans toward.
+ * @param pointed Whether a ring of no radius closes the shape with one triangle a side.
  */
 export function lathe(
 	mesh: MeshWriter,
@@ -321,6 +322,7 @@ export function lathe(
 	sides: number,
 	colour: ArrayLike<number>,
 	hint: Readonly<Vector3> = [0, 0, 1],
+	pointed = false,
 ): void {
 	const [x, y] = sideAxes(direction, hint);
 	let previous = -1;
@@ -360,7 +362,10 @@ export function lathe(
 		}
 		if (previous >= 0)
 			for (let j = 0; j < sides; j++)
-				mesh.quad(previous + j, previous + j + 1, first + j + 1, first + j);
+				// A pointed lathe closes on a ring of no radius with one triangle a side, not a quad
+				// whose second half has no area.
+				if (pointed && radius === 0) mesh.tri(previous + j, previous + j + 1, first + j + 1);
+				else mesh.quad(previous + j, previous + j + 1, first + j + 1, first + j);
 		previous = first;
 	}
 }

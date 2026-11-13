@@ -109,12 +109,6 @@ const FACING = 0.15;
 /** The most blend rings at each level. */
 const BLEND_RINGS = [5, 3, 2] as const;
 
-/**
- * The section sparsity of a branch that a card level draws only to hold a card: one straight run of
- * three sides, with square ends and no blend onto its parent.
- */
-const SUPPORT_SECTIONS = 1;
-
 /** The parts of a plant's wood: its trunk, its great limbs and its branches. */
 const PART_TRUNK = 0;
 const PART_BRANCH = 2;
@@ -231,13 +225,10 @@ function woodAxes(
 	const planned = (a: number) => plan?.tubes[partOf(a)];
 	// The thinnest sections draw an axis as one run: its wood does not divide at a codominant child.
 	const single = (a: number) => (planned(a)?.sections ?? input.sections ?? 0) >= 1;
-	// The branches a card level draws beside its own orders, so the cards it keeps stay joined. Such
-	// a branch is finer than the level's wood and stands under a far card, so it draws as one
-	// straight run of the fewest sides. A plan joins its cards itself and draws no such branch.
+	// The branches a card level draws beside its own orders, so the cards it keeps stay joined. Each
+	// draws along its own path at the level's own detail and joins its parent as the level's wood
+	// does. A plan joins its cards itself and draws no such branch.
 	const support = level > 0 && !plan ? supportAxes(input, level as 1 | 2) : undefined;
-	const supportTube = support
-		? tubeDetail(level, input.detail, input.coarseness ?? 0, SUPPORT_SECTIONS)
-		: undefined;
 	// Axes rooted at the ground, stems and a frond colony's stipes, take the stem base's flare,
 	// lobes and roots. A limb, a rachis or a column's arm without a parent is the cut end of a
 	// piece, such as a cut branch or a cut frond, and starts plain: it is severed wood, and the
@@ -470,11 +461,7 @@ function woodAxes(
 			leader: leads[k] === 1,
 			stub: ((skeleton.flags[first] as number) & NODE_STUB) !== 0,
 			cut: parent < 0 && (axes.kind[a] as number) === AXIS_LIMB,
-			...(supportTube && (axes.order[a] as number) > keep
-				? { tube: supportTube }
-				: planned(a)
-					? { tube: planned(a) as TubeDetail }
-					: {}),
+			...(planned(a) ? { tube: planned(a) as TubeDetail } : {}),
 			part: partOf(a),
 		});
 		// Roots lie in the soil, below the ground the far views stand on, so only the nearest level draws them.

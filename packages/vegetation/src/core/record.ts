@@ -1813,6 +1813,12 @@ export interface ShootClass {
 	 */
 	readonly stem?: { readonly radius: readonly [base: number, tip: number] };
 	/**
+	 * Whether the shoot draws as its leaves alone, each a cut-out card of two triangles at every
+	 * tier, with no stem and no bud: a cactus's spine cluster, whose card carries its pad and spines
+	 * in its picture and stands in thousands on one plant.
+	 */
+	readonly cards?: boolean;
+	/**
 	 * How this class's leaves or buds stand along its shoots, where the species' arrangement does not
 	 * fit: a studio cutting's photograph shows leaves two-ranked along the twig, while the crown's
 	 * shoots spiral so they fill from every side. The species' `phyllotaxis` by default.
@@ -1921,6 +1927,11 @@ export interface LeafShape {
 	 * texture leaf.
 	 */
 	readonly breadth?: number;
+	/**
+	 * Bands a cut-out card of the leaf takes along its length where a tier bends its cards, so a long
+	 * curled blade keeps its curl; one where absent.
+	 */
+	readonly cardBands?: number;
 	/** The leaf stalk. */
 	readonly petiole: {
 		/** Metres long. */

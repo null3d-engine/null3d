@@ -278,7 +278,9 @@ describe('coarseness on the oak', () => {
 describe('the section sparsity', () => {
 	const wood = (sections: number, level: MeshLevel) => {
 		const { input, rows } = dressed(0, 0);
-		const mesh = meshInput({ ...input, sections }, rows);
+		// The level's own orders alone: a card that reaches no drawn wood goes, so no branch is drawn
+		// to hold it, and the count is the section sparsity's.
+		const mesh = { ...meshInput({ ...input, sections }, rows), cardJoin: 'remove' as const };
 		return {
 			mesh,
 			triangles: meshWood(mesh, level).indices.length / 3,
