@@ -367,6 +367,10 @@ function thinnedGrowth(growth: Species['growth'], thin: number): Species['growth
 				...growth,
 				crown: { ...growth.crown, fronds: scaledSpread(growth.crown.fronds, thin) },
 			};
+		// A directed crown ranks its sockets for thinning, so the share keeps the leading share of
+		// them: an even share of every rank of fronds, spread round the trunk.
+		case 'frond-crown':
+			return { ...growth, keep: (growth.keep ?? 1) * thin };
 		case 'culm':
 			return { ...growth, culms: scaledSpread(growth.culms, thin) };
 		case 'rosette':
@@ -792,9 +796,12 @@ function dress(kit: SpeciesKitData, options: GrowOptions): MeshInput {
 	// keeps its own size. An instanced plant draws its cards, and a merged plant its foliage mesh;
 	// both are scaled through the skeleton, and each is measured at its own drawn level.
 	const merged = record.lod.nearFoliage === 'merged';
+	// A directed crown lays its trunk and its fronds at the variant's drawn height itself: a scale
+	// of the skeleton alone would leave the pieces at its sockets their own size.
 	const target =
 		!options.cutting &&
 		placeholders !== true &&
+		record.growth.model !== 'frond-crown' &&
 		(merged
 			? grower(record.growth.model).foliage !== undefined
 			: record.lod.nearFoliage === 'instanced' && kit.prototypes.length > 0)
