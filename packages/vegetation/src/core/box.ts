@@ -17,6 +17,14 @@ export interface SpeciesBox {
 	readonly max: Vec3;
 }
 
+/** The longest main stem among the record's pieces, in metres: a crown's longest frond. */
+function longestPiece(record: Species): number {
+	let longest = 0;
+	for (const piece of record.pieces ?? [])
+		longest = Math.max(longest, spreadMax(piece.stem.length));
+	return longest;
+}
+
 /** The tallest a plant of the record can grow, before the box's margin. */
 function tallest(record: Species): number {
 	const growth = record.growth;
@@ -24,6 +32,9 @@ function tallest(record: Species): number {
 	switch (growth.model) {
 		case 'crown-rosette':
 			height = Math.max(height, spreadMax(growth.stem.height) + spreadMax(growth.frond.length));
+			break;
+		case 'frond-crown':
+			height = Math.max(height, growth.trunk.height + longestPiece(record));
 			break;
 		case 'culm':
 			height = Math.max(height, spreadMax(growth.height));
@@ -64,9 +75,11 @@ export function speciesBox(record: Species): SpeciesBox {
 	const fronds =
 		growth.model === 'crown-rosette'
 			? spreadMax(growth.frond.length)
-			: growth.model === 'frond-colony'
-				? growth.rhizome.length + spreadMax(growth.frond.length)
-				: 0;
+			: growth.model === 'frond-crown'
+				? longestPiece(record)
+				: growth.model === 'frond-colony'
+					? growth.rhizome.length + spreadMax(growth.frond.length)
+					: 0;
 	const reach = Math.max(
 		Math.max(0.5 * record.size.aspect, envelopeReach(record), 0.25) * height,
 		fronds,

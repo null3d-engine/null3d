@@ -4,7 +4,12 @@
 // variant is a row of its own at the socket's place, with one turn, one scale, one wind record and
 // one phase, so the parts move as one body. No shade or sky line thins the rows afterwards: the
 // grower placed the sockets where the foliage stands.
+//
+// A grower whose sockets carry several pieces, such as a crown's living and dead fronds, names each
+// socket's piece by its bud's vigor: each of the record's pieces owns one even band of vigor, in the
+// record's order. A flower site carries the record's extras and no piece.
 import type { ShootPrototype } from '../asset';
+import { BUD_FLOWER } from '../core/graph';
 import { hashAt } from '../core/hash';
 import { quatRotate, type Vector3 } from '../core/math';
 import type { GrowthModel, Species } from '../core/record';
@@ -17,7 +22,7 @@ import type { UncardedPrototype } from './shoot';
 export const PROTOTYPES_MOST = 255;
 
 /** The growth models that end their wood in sockets. */
-const DIRECTED: readonly GrowthModel[] = ['conifer'];
+const DIRECTED: readonly GrowthModel[] = ['conifer', 'frond-crown'];
 
 /** The hash purposes of a socket's choices, apart from the shoot rows' own. */
 const Purpose = { Variant: 0x31, Phase: 0x32 } as const;
@@ -60,6 +65,18 @@ export function kitPiece(piece: PiecePrototype, index: number): UncardedPrototyp
 	};
 }
 
+/**
+ * The bud vigor that names the record's piece at `index` among `count` pieces: the middle of the
+ * piece's band.
+ *
+ * @param index The piece's place in the record's pieces.
+ * @param count The record's pieces.
+ * @returns The vigor a socket of that piece takes.
+ */
+export function pieceVigor(index: number, count: number): number {
+	return (index + 0.5) / count;
+}
+
 /** The piece that a record's sockets carry, by name, where its growth names one. */
 function socketPiece(record: Species): string | undefined {
 	return record.growth.model === 'conifer' ? record.growth.patch.sockets?.piece : undefined;
@@ -97,14 +114,22 @@ export function pieceRows(input: DressInput): Row[] {
 		parts[piece.part] = prototype;
 	}
 	const named = socketPiece(record);
+	const rules = record.pieces ?? [];
 	// A stand-in kit holds no pieces: each socket then carries the kit's first prototype.
-	const variants = (
-		(named !== undefined ? byName.get(named) : undefined) ??
-		byName.values().next().value ?? [[kit.prototypes[0] as ShootPrototype]]
-	).filter((parts) => parts !== undefined && parts.length > 0);
-	if (variants.length === 0) return rows;
+	const fallback = byName.values().next().value ?? [[kit.prototypes[0] as ShootPrototype]];
+	const offered = (name: string | undefined) =>
+		((name !== undefined ? byName.get(name) : undefined) ?? fallback).filter(
+			(parts) => parts !== undefined && parts.length > 0,
+		);
+	const single = named !== undefined || record.growth.model === 'conifer';
+	const variantsOf = rules.map((rule) => offered(rule.name));
+	const one = offered(named);
 	const heading: Vector3 = [0, 0, 0];
 	for (let b = 0; b < buds.count; b++) {
+		if ((buds.kind[b] as number) === BUD_FLOWER) continue;
+		const band = Math.min(rules.length - 1, Math.floor((buds.vigor[b] as number) * rules.length));
+		const variants = single || rules.length === 0 ? one : (variantsOf[Math.max(0, band)] ?? one);
+		if (variants.length === 0) continue;
 		const parts = variants[pick(Purpose.Variant, b) % variants.length] as ShootPrototype[];
 		const first = parts[0] as ShootPrototype;
 		quatRotate(buds.frame, b * 4, [0, 1, 0], heading);

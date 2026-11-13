@@ -24,7 +24,16 @@ import {
 	type Vector3,
 } from '../core/math';
 import type { Phyllotaxis, Species } from '../core/record';
-import { type Curve, curveAt, type Spread, spreadAt, spreadMean, type Vec3 } from '../core/types';
+import {
+	type Curve,
+	curveAt,
+	DETAILS,
+	type Detail,
+	type Spread,
+	spreadAt,
+	spreadMean,
+	type Vec3,
+} from '../core/types';
 import {
 	type AxisPoint,
 	addBudCluster,
@@ -82,6 +91,14 @@ export interface PieceLeaves {
 	 * `hang` is named, the leaf takes no turn toward the sky side.
 	 */
 	readonly face?: { readonly turn: number; readonly spread: number };
+	/**
+	 * Leaves in two ranks along the stem's two sides, as a frond's leaflets or pinnae stand: every
+	 * node holds one group a side, a leaf at each lift, in degrees out of the plane of the two sides
+	 * toward the sky side (below 0 away from it). A frond whose pinnae lie in its plane names one
+	 * lift of 0; a date palm's leaflets leave in threes at -30, 0 and 30. At most four lifts. Where
+	 * this is named, the arrangement's own places round the stem are not used.
+	 */
+	readonly ranked?: readonly number[];
 	/**
 	 * A flat rosette: the stem's leaves fan out in the plane that faces the piece's sky side, spread
 	 * evenly to `reach` degrees either side of the stem, the lowest leaf the widest, and each blade
@@ -150,6 +167,13 @@ export interface PieceStem {
 	 * side and the other in turn. An oak's twig runs straight between its kinks.
 	 */
 	readonly kink?: { readonly length: number; readonly angle: number };
+	/**
+	 * The most degrees the stem turns between two rings that the low tier keeps. The low tier draws a
+	 * stem as straight runs between the rings it keeps, its foot and its tip where this is absent, as
+	 * suits a short twig; a long arched stem, such as a palm frond's rachis, names a bend so its far
+	 * mesh keeps its arch.
+	 */
+	readonly rings?: number;
 	/** Its leaves, where it carries any. */
 	readonly leaves?: PieceLeaves;
 	/** Its side stems, one rule for each kind. */
@@ -180,6 +204,13 @@ export interface PieceRule {
 	 * upright on its socket names the way back along its line, so its side stems lift toward its tip.
 	 */
 	readonly ground?: Vec3;
+	/**
+	 * The finest leaf mesh the piece's leaves take: at a finer tier they take this tier's mesh. A
+	 * piece of hundreds of small leaves, such as a palm frond, takes the low tier's cut-out card, so
+	 * the frond keeps its count of leaflets inside the kit's bytes and the near level's triangles.
+	 * Absent, every tier takes its own leaf mesh.
+	 */
+	readonly leafDetail?: Detail;
 	/** Its main stem. */
 	readonly stem: PieceStem;
 }
@@ -302,10 +333,14 @@ export function planPiece(
 		const skyTurn = Math.min(1, Math.max(0, own.skyward ?? shoots.placement.skyward));
 		const flatten = phyllotaxis.kind === 'distichous' ? phyllotaxis.flatten : 0;
 		const share = Math.min(1, skyTurn + flatten * (1 - skyTurn));
+		// Two ranks: the first side's leaves rise toward the sky side by their lift, and the second
+		// side's mirror them, so both sides stand alike.
+		const azimuths = own.ranked?.flatMap((lift) => [lift, 180 - lift]);
 		return {
 			salt,
 			key: PIECE_KEY + key,
 			phyllotaxis,
+			...(azimuths ? { azimuths } : {}),
 			leafAngle: own.angle,
 			leafAngleSpread: own.angleSpread ?? 0,
 			leafAzimuthSpread: 0,
@@ -389,6 +424,7 @@ export function planPiece(
 		const hook = stem.hook;
 		let direction: Vector3 = [...start.line];
 		let sky = square(start.sky, direction, [0, 0, 1]);
+		let ringDirection: Vector3 = [...direction];
 		if (hook) {
 			const a = radians(hook.angle);
 			direction = normalize3([
@@ -447,7 +483,28 @@ export function planPiece(
 			along += run;
 			const share = (k + 1) / steps;
 			const radius = footRadius + (tipRadius - footRadius) * share;
-			points.push({ at: [...at], radius, along });
+			// The low tier keeps a ring wherever the stem has turned its rule's bend since the last.
+			const ring =
+				stem.rings !== undefined &&
+				k < steps - 1 &&
+				(acos(
+					Math.min(
+						1,
+						Math.max(
+							-1,
+							direction[0] * ringDirection[0] +
+								direction[1] * ringDirection[1] +
+								direction[2] * ringDirection[2],
+						),
+					),
+				) *
+					180) /
+					PI >=
+					stem.rings;
+			if (ring) ringDirection = [...direction];
+			points.push(
+				ring ? { at: [...at], radius, along, unitEnd: true } : { at: [...at], radius, along },
+			);
 			frames.push({ at: [...at], direction: [...direction], sky: [...sky], along });
 			if (atNode && leavesBy && from + run >= leafFrom - 1e-9) {
 				const first = leaves.length;
@@ -655,9 +712,12 @@ export function piecePrototypes(
 	leaves: readonly (readonly PrototypeArrays[])[],
 ): PiecePrototype[] {
 	const leafMeshes = Math.min(...leaves.map((tier) => tier.length));
-	const finest = leaves[leaves.length - 1] ?? [];
 	const out: PiecePrototype[] = [];
-	for (const [r, rule] of rules.entries())
+	for (const [r, rule] of rules.entries()) {
+		// Each tier takes its own leaf mesh, or the rule's finest where the tier is finer.
+		const most = rule.leafDetail ? DETAILS.indexOf(rule.leafDetail) : leaves.length - 1;
+		const own = leaves.map((_, t) => leaves[Math.min(t, most)] ?? []);
+		const finest = own[own.length - 1] ?? [];
 		for (let variant = 0; variant < Math.min(16, Math.max(1, rule.variants)); variant++) {
 			const parts = splitPlan(planPiece(record, rule, pieceKey(r, variant), leafMeshes), finest);
 			for (const [part, plan] of parts.entries())
@@ -668,9 +728,10 @@ export function piecePrototypes(
 					part,
 					parts: parts.length,
 					...(rule.plane ? { plane: rule.plane } : {}),
-					...meshedPlan(plan, leaves),
+					...meshedPlan(plan, own),
 				});
 		}
+	}
 	return out;
 }
 

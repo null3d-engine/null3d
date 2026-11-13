@@ -212,6 +212,7 @@ export type Growth =
 	| Architectural
 	| Conifer
 	| CrownRosette
+	| FrondCrown
 	| Culm
 	| Rosette
 	| FrondColony
@@ -942,6 +943,100 @@ export interface CrownRosette {
 	};
 	/** One frond. */
 	readonly frond: FrondShape;
+}
+
+/**
+ * A directed crown of fronds: one trunk to a single growing point, with every frond a piece of the
+ * record's `pieces` at a socket round that point, the youngest innermost and steepest. Palms and
+ * tree ferns. Such a plant grows taller by its trunk, not by larger fronds: a variant's height
+ * changes the trunk alone, and the crown keeps its measured size.
+ *
+ * @category api/vegetation
+ */
+export interface FrondCrown {
+	/** The model's name. */
+	readonly model: 'frond-crown';
+	/** The trunk, from the ground to the growing point. */
+	readonly trunk: {
+		/**
+		 * Metres from the ground to the growing point on a plant of the species' mean height. A
+		 * variant of another height takes the difference in its trunk.
+		 */
+		readonly height: number;
+		/** The trunk's width in metres, by the share of its height (0 the ground, 1 the growing point). */
+		readonly width: Curve;
+		/** Degrees the trunk leans from plumb; it leans one way and stays straight. */
+		readonly lean: Spread;
+	};
+	/** The living fronds: a spiral round the growing point, youngest first. */
+	readonly fronds: {
+		/** Living fronds. */
+		readonly count: Spread;
+		/** Degrees between one frond and the next round the trunk; 137.5 for most. */
+		readonly divergence: number;
+		/** Metres under the growing point over which the frond bases stand, the oldest lowest. */
+		readonly clasp: number;
+		/** The ranks from the youngest out, each a share of the fronds; the shares sum to 1. */
+		readonly ranks: readonly FrondRank[];
+	};
+	/** Dead fronds that hang under the living crown, where the plant keeps them. */
+	readonly dead?: {
+		/** Dead fronds. */
+		readonly count: Spread;
+		/** Degrees below level that a dead frond hangs at, 0 to 90. */
+		readonly hang: Spread;
+		/** Metres under the growing point between which the dead fronds' bases stand. */
+		readonly from: number;
+		readonly to: number;
+		/** The piece a dead frond is. */
+		readonly piece: string;
+		/** Its length as a share of the piece's own. */
+		readonly length: number;
+	};
+	/**
+	 * Croziers: a fern's young fronds, still rolled, drawn as wood from the growing point: their
+	 * count, the metres of their stalk, the degrees the head coils through, the metres of radius at
+	 * the foot and the most degrees they lean out from plumb.
+	 */
+	readonly croziers?: {
+		readonly count: Spread;
+		readonly length: Spread;
+		readonly coil: number;
+		readonly radius: number;
+		readonly lean: number;
+	};
+	/**
+	 * Flower sites for the record's extras at `flower`, such as a date palm's bunches: their count,
+	 * the metres under the growing point between which they leave the trunk, and the degrees below
+	 * level they leave at.
+	 */
+	readonly flowers?: {
+		readonly count: Spread;
+		readonly from: number;
+		readonly to: number;
+		readonly leave: number;
+	};
+	/**
+	 * The share of the sockets the plant keeps, by rank: a sparse plant keeps its leading share, an
+	 * even share of every rank spread round the trunk. 1, the default, keeps them all.
+	 */
+	readonly keep?: number;
+}
+
+/**
+ * One rank of a crown's living fronds.
+ *
+ * @category api/vegetation
+ */
+export interface FrondRank {
+	/** The share of the living fronds in the rank. */
+	readonly share: number;
+	/** Degrees above level that its fronds leave at; below 0 they leave downward. */
+	readonly leave: number;
+	/** The piece its fronds are. */
+	readonly piece: string;
+	/** Its fronds' length as a share of the piece's own. */
+	readonly length: number;
 }
 
 /**
