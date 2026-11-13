@@ -5,7 +5,9 @@
 // it. Each tier then keeps its wood, stems and buds, and its leaves give way to the quads, laid
 // along each run's stem and stretched to its length. A prototype's own cells are baked from its
 // leaves, before the quads take their place, so its card at the far levels pictures the leaves.
+
 import type { CardCell, PrototypeArrays } from '../asset';
+import { length3 } from '../core/math';
 import type { Species } from '../core/record';
 import type { TextureManifest } from '../core/textures';
 import { DETAILS, type Detail, type Vec3 } from '../core/types';
@@ -177,6 +179,6 @@ function toward(run: BrushRun, v: Readonly<Vec3>, stretch: number): [number, num
 
 /** A vector at unit length, or straight up where it has none. */
 function unit(v: [number, number, number]): [number, number, number] {
-	const length = Math.hypot(v[0], v[1], v[2]);
+	const length = length3(v[0], v[1], v[2]);
 	return length > 1e-9 ? [v[0] / length, v[1] / length, v[2] / length] : [0, 1, 0];
 }
