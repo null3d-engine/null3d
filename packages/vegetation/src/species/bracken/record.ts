@@ -20,41 +20,51 @@ export const record: Species = {
 	size: { height: { mean: 1.2, spread: 0.3 }, aspect },
 	envelope,
 	roundBand,
-	// The sparsest form still reads as a bracken patch: six fronds of the colony's fifteen keep
-	// the four masses apart.
+	// The sparsest form still reads as a bracken patch: the least five fronds of the colony's
+	// twenty-six keep its footprint.
 	sparse: { foliage: 0.4 },
 	growth: {
 		model: 'frond-colony',
-		// Still 01 and the turntable: about twenty fronds stand in one patch, their blades
-		// overlapping into a level roof.
-		fronds: { mean: 15, spread: 3 },
-		// Still 01: the patch spreads about a metre and a quarter each way from its middle, the
-		// fronds a stipe apart along lines that wander out from it, so the plan reads round.
-		rhizome: {
-			length: 0.95,
-			branches: { mean: 10, spread: 1 },
-			spacing: { mean: 0.55, spread: 0.1 },
-			// Stills 01 and 18: the fronds stand in four separate masses with ground between them,
-			// their blades fanning away from the colony's middle, not one continuous roof.
-			clump: { count: 4, radius: 0.05, ring: 1.1 },
-		},
-		// Still 02: the bare stipe is about as long as the blade it carries, and leans a little.
-		stipe: { length: { mean: 0.8, spread: 0.16 }, lean: { mean: 6, spread: 5 } },
+		// Still 18: 22 to 30 stalks. Still 01's sixteen feet, counted on a 1.6 times crop, are those
+		// one side shows: a foot behind another frond cannot be seen from there.
+		fronds: { mean: 26, spread: 4 },
+		// Still 01 and the turning video's first and end-on frames: the feet stand over a patch
+		// 1.75 plant heights the long way and 1.04 the short way, each on its own, about 0.29 of a
+		// height from the next. They are not gathered into bunches.
+		patch: { long: 1.75, short: 1.04 },
+		// Still 17: the black rhizome lies four to five stalk widths under the surface and is three
+		// stalk widths thick.
+		rhizome: { depth: 0.06, radius: 0.02 },
+		// Still 01: thirteen of the sixteen fronds stand from 0.65 to 1 of the tallest, and three
+		// short ones, 0.42 to 0.5, stand at the front edge.
+		heights: { tall: [0.65, 1], short: [0.42, 0.5], shortShare: 0.19 },
+		// Stills 01 and 02: the stalk is 0.75 to 0.85 of its frond's height, so the tallest frond
+		// of a plant 1.2 m tall stands on 0.96 m of stalk. Stills 01 and 06: plumb and straight,
+		// leaning under 5 degrees.
+		// Still 02: the stalk turns over into the leaf in one smooth curve whose radius is 0.12 of
+		// the frond's height, 0.15 of the stalk's length.
+		stipe: { length: { mean: 0.96, spread: 0.06 }, lean: { mean: 2.5, spread: 2.5 }, bend: 0.15 },
+		// Stills 02 and 01: the leaf's midrib is held level on the single frond, and 10 to 30
+		// degrees above level in the patch.
+		tilt: [0, 30],
+		// The least patch that still reads as bracken: five whole fronds over the same footprint.
+		least: 5,
 		frond: {
 			// Stills 12 and 21: the blade is bipinnate and broadly triangular, about as long as
 			// its stipe, and the blades of a stand overlap into a continuous roof.
 			kind: 'bipinnate',
-			length: { mean: 0.95, spread: 0.15 },
+			// Still 02 shows a leaf 0.95 of its frond's height long and the fact sheet a stalk about
+			// as long as its blade, so the leaf is as long as its stalk. Still 01 reads 0.5 to 0.6
+			// because it looks along the near-level leaves, which foreshortens them.
+			length: { mean: 0.96, spread: 0.08 },
 			// Stills 06 and 16: a stipe stout enough to carry the blade.
 			petiole: { length: 0, width: 0.014, teeth: 0 },
-			// Still 02: the rachis leaves the stipe's top rising, turns over through the blade's
-			// first third to near level, and lets the tip fall a little below it.
+			// Still 02: the stalk's top does the turning over, and the leaf's own midrib is nearly
+			// straight: it leaves a little above the line it is held on and its tip falls a little
+			// below, about 15 degrees of turn along the blade.
 			droop: [
 				[0, 0],
-				[0.12, 42],
-				[0.4, 76],
-				[0.75, 88],
-				[1, 92],
+				[1, 15],
 			],
 			// Still 12: the blade turns a little about its rachis, so one side stands higher.
 			twist: 8,
@@ -153,15 +163,22 @@ export const record: Species = {
 		flutter: { kind: 'leaflet', amplitude: 0.04, frequency: 1.2 },
 	},
 	lod: {
-		nearFoliage: 'merged',
+		nearFoliage: 'instanced',
 		// A frond's blade fills many pixels before its card does, so it switches later than a
 		// broadleaf shoot's.
 		switchPixels: [40, 16, 120],
+		// A leaf's card first shows where the leaf spans 40 pixels, so a cell of 32 texels nearly
+		// holds it at every tier, and the kit stays inside the ground class's 2 MB.
+		cardCell: { low: 32, medium: 32, high: 32, ultra: 32 },
 		woodOrders: [1, 0],
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
-			kitBytes: { low: 1_000_000, medium: 1_000_000, high: 1_000_000, ultra: 1_000_000 },
+			// The kit holds eight leaves, grown at three tilts, young in two stages, browning in two
+			// and lying dead, and their cards in cells of 32 texels. It reads 479,036, 551,224,
+			// 715,112 and 1,058,180 bytes at the four tiers, and each cap keeps about fifteen per
+			// cent above its read.
+			kitBytes: { low: 551_000, medium: 634_000, high: 823_000, ultra: 1_217_000 },
 			variantBytes: { low: 1_500_000, medium: 1_500_000, high: 1_500_000, ultra: 1_500_000 },
 			lod0Triangles: 200_000,
 			lod1Triangles: 30_000,

@@ -24,7 +24,7 @@ import {
 } from './types';
 
 /** The growth models whose skeletons carry sockets, so their rows need no shoots. */
-const SOCKET_MODELS: readonly GrowthModel[] = ['tuft'];
+const SOCKET_MODELS: readonly GrowthModel[] = ['tuft', 'frond-colony'];
 
 const MODELS: readonly GrowthModel[] = [
 	'self-organizing',
@@ -543,16 +543,31 @@ function growthProblems(record: Species, out: string[]): void {
 			out.push('growth.pipe needs an exponent and a tip radius above 0');
 	}
 	if (growth.model === 'frond-colony') {
-		const clump = growth.rhizome.clump;
-		if (clump !== undefined) {
-			wholeProblem(clump.count, 'growth.rhizome.clump.count', 1, 16, out);
-			if (!(clump.radius >= 0))
+		const { patch, rhizome, heights, tilt } = growth;
+		if (!(patch.long > 0 && patch.short > 0 && patch.short <= patch.long))
+			out.push(
+				`growth.patch is ${patch.long} by ${patch.short}; both are shares of the height above 0, the short no more than the long`,
+			);
+		if (!(rhizome.depth > 0 && rhizome.radius > 0))
+			out.push('growth.rhizome needs a depth and a radius in metres above 0');
+		for (const [name, range] of [
+			['tall', heights.tall],
+			['short', heights.short],
+		] as const)
+			if (!(range[0] > 0 && range[0] <= range[1] && range[1] <= 1))
 				out.push(
-					`growth.rhizome.clump.radius is ${clump.radius}; it is metres and is not negative`,
+					`growth.heights.${name} is ${range[0]} to ${range[1]}; it is shares of the tallest frond, above 0 to 1, least first`,
 				);
-			if (!(clump.ring >= 0))
-				out.push(`growth.rhizome.clump.ring is ${clump.ring}; it is metres and is not negative`);
-		}
+		shareProblem(heights.shortShare, 'growth.heights.shortShare', out);
+		if (!(tilt[0] >= -30 && tilt[0] <= tilt[1] && tilt[1] <= 80))
+			out.push(
+				`growth.tilt is ${tilt[0]} to ${tilt[1]}; it is degrees above level from -30 to 80, least first`,
+			);
+		wholeProblem(growth.least, 'growth.least', 1, 64, out);
+		if (!(growth.stipe.bend > 0 && growth.stipe.bend <= 1))
+			out.push(
+				`growth.stipe.bend is ${growth.stipe.bend}; it is a share of the stalk's length above 0 to 1`,
+			);
 	}
 	if (growth.model === 'rosette') {
 		if (record.foliage.kind !== 'thick') out.push("a rosette's foliage is 'thick'");

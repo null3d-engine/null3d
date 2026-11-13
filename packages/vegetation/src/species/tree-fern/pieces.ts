@@ -89,7 +89,6 @@ function frond(name: string, droop: number, droopOver: readonly [number, number]
 		name,
 		attitude: 'along',
 		variants: 1,
-		lengthwise: true,
 		roll: ROLL,
 		stem: rachis(droop, droopOver),
 	};
@@ -114,7 +113,6 @@ export const PIECES: readonly PieceRule[] = [
 		name: 'frond-dead',
 		attitude: 'along',
 		variants: 1,
-		lengthwise: true,
 		// A dead frond is brown to the tips (pictures 01, 05 and 20).
 		browning: 1,
 		stem: {
