@@ -14,7 +14,7 @@ import { record } from './record';
  * it: the spacing that keeps every branch end within the alder's near budget and closes the crown's
  * leaf form to stills 01, 02 and 18.
  */
-const ENDS = { pitch: 0.8 / 20, reach: 0.82 / 20 } as const;
+const ENDS = { pitch: 0.75 / 20, reach: 0.82 / 20 } as const;
 
 /** The common alder's frame. */
 export const frame: FrameSpec = {
@@ -96,9 +96,9 @@ export const frame: FrameSpec = {
 				// 0.12 across sits round each branch's end, so the wood ends 0.06 short of the outline.
 				length: {
 					outline: [
-						[0, 0.93],
-						[0.5, 0.88],
-						[1, 0.85],
+						[0, 0.89],
+						[0.5, 0.86],
+						[1, 0.83],
 					],
 				},
 				vary: 0.06,
@@ -123,7 +123,7 @@ export const frame: FrameSpec = {
 				sway: 10,
 				elbows: 5,
 				// Still 30: a clump is 0.10 to 0.15 of the height across.
-				patch: { kind: 'clump', width: 0.19, depth: 0.14, fill: ENDS },
+				patch: { kind: 'clump', width: 0.18, depth: 0.135, fill: ENDS },
 				children: [
 					{
 						name: 'side',
@@ -157,7 +157,7 @@ export const frame: FrameSpec = {
 						sway: 10,
 						elbows: 3,
 						// Still 30: the smaller clumps on a branch's side twigs.
-						patch: { kind: 'clump', width: 0.15, depth: 0.11, fill: ENDS },
+						patch: { kind: 'clump', width: 0.14, depth: 0.105, fill: ENDS },
 					},
 				],
 			},
