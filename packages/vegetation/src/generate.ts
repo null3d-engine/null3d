@@ -92,7 +92,7 @@ import {
 import { extrasMesh } from './leaf/extras';
 import { writtenPieces } from './leaf/ground-piece';
 import { dressShoots, pruneLight } from './leaf/instancer';
-import { foliage, loadFoliage } from './leaf/kinds';
+import { type FoliageBuilder, foliage, loadFoliage } from './leaf/kinds';
 import {
 	type PieceLeaf,
 	type PiecePrototype,
@@ -254,7 +254,7 @@ export function buildPiecesNow(
 	const builder = foliage(record.foliage.kind);
 	const manifest = source.textures.manifest;
 	const leavesOf = (from: Species) =>
-		DETAILS.map((tier) => (bare ? [] : builder.leaves(from, manifest, tier)));
+		bare ? DETAILS.map(() => []) : pieceLeaves(builder, from, manifest);
 	const leaves = leavesOf(record);
 	// A rule whose blades bend in their own plane takes leaves built with no bend at the stalk.
 	const straight =
@@ -271,6 +271,23 @@ export function buildPiecesNow(
 				})
 			: leaves;
 	return piecePrototypes(record, rules, leaves, straight);
+}
+
+/**
+ * A species' leaf meshes for its branch pieces at every tier, low first: its kind's piece cut where
+ * the kind cuts a piece's leaves apart from the crown's, since a tree carries thousands of pieces,
+ * and the crown's own leaves where it does not.
+ */
+function pieceLeaves(
+	builder: FoliageBuilder,
+	record: Species,
+	manifest: TextureManifest,
+): (readonly PrototypeArrays[])[] {
+	return DETAILS.map((tier) =>
+		builder.pieceLeaves
+			? builder.pieceLeaves(record, manifest, tier)
+			: builder.leaves(record, manifest, tier),
+	);
 }
 
 /**
@@ -462,7 +479,9 @@ export function buildKitNow(source: KitSource, options: KitOptions = {}): Specie
 					placeholders,
 					() =>
 						pieces
-							? piecePrototypes(record, pieces, leavesByTier).map(kitPiece)
+							? piecePrototypes(record, pieces, pieceLeaves(builder, record, manifest)).map(
+									kitPiece,
+								)
 							: shootPrototypes(record, manifest, leavesByTier, cutting !== false),
 					() => placeholderPrototypes(record, leavesByTier),
 				);

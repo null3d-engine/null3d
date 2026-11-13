@@ -7,6 +7,7 @@ import { describe, expect, it } from 'bun:test';
 import { scaledBudget } from '../../../tests/lib/run-budget.ts';
 import { type PlantAsset, plantAssetDigest, type SpeciesKitData } from './asset';
 import { speciesProblems } from './core/check';
+import type { Species, SpeciesModule } from './core/record';
 import { loadSpecies } from './core/registry';
 import {
 	buildKitNow,
@@ -18,7 +19,15 @@ import {
 	variantKey,
 } from './generate';
 import { cardTop } from './grow/height';
-import { FOLIAGE_FLOOR, GREAT_LIMB_SHARE, structuralAxes } from './grow/sparse';
+import {
+	FOLIAGE_FLOOR,
+	GREAT_LIMB_SHARE,
+	rowSockets,
+	sparseKeep,
+	sparseOrder,
+	sparsePlant,
+	structuralAxes,
+} from './grow/sparse';
 import { cardRows } from './lod/cards';
 import { connectedBody } from './lod/connect';
 import type { MeshInput } from './stages';
@@ -155,10 +164,26 @@ function vertexSet(asset: PlantAsset, level: 0 | 1 | 2, name: string): Set<numbe
 	return out;
 }
 
-/** Where each foliage carrier of a plant stands: its shoot rows, or its end axes' tips. */
+/**
+ * Where each foliage carrier of a plant stands: its sockets on a plant of sockets, each with all its
+ * rows, its shoot rows, or its end axes' tips. A carrier keeps its number as grown.
+ */
 function carriers(asset: PlantAsset): Map<number, readonly [number, number, number]> {
 	const out = new Map<number, readonly [number, number, number]>();
 	const rows = asset.shoots;
+	const { buds } = asset.skeleton;
+	const sockets = rowSockets(asset.skeleton, rows);
+	if (sockets) {
+		for (let r = 0; r < rows.count; r++) {
+			const b = sockets[r] as number;
+			out.set(buds.origin?.[b] ?? b, [
+				buds.position[b * 3] as number,
+				buds.position[b * 3 + 1] as number,
+				buds.position[b * 3 + 2] as number,
+			]);
+		}
+		return out;
+	}
 	if (rows.count > 0) {
 		for (let r = 0; r < rows.count; r++)
 			out.set(rows.id?.[r] ?? r, [
@@ -370,6 +395,133 @@ for (const id of SPECIES) {
 		);
 	});
 }
+
+/** The plants of sockets: a tuft of pieces, and the pine and the oak as directed frames. */
+const SOCKET_PLANTS: readonly (readonly [name: string, load: () => Promise<SpeciesModule>])[] = [
+	['sedge', () => loadSpecies('sedge')],
+	[
+		'directed Scots pine',
+		async () => ({
+			record: (await import('./species/scots-pine/directed')).directed as Species,
+			textures: (await import('@null3d/vegetation-textures/scots-pine')).files,
+		}),
+	],
+	[
+		'directed pedunculate oak',
+		async () => ({
+			record: (await import('./species/pedunculate-oak/directed')).directed as Species,
+			textures: (await import('@null3d/vegetation-textures/pedunculate-oak')).files,
+		}),
+	],
+];
+
+for (const [name, load] of SOCKET_PLANTS)
+	describe(`sparseness on the ${name}, a plant of sockets`, () => {
+		it(
+			'keeps whole sockets, evenly round the crown, and only the wood that carries them',
+			async () => {
+				const module = await load();
+				await loadPlantCode(module.record);
+				const kit = buildKitNow(module, { placeholders: 'missing', detail: 'low' });
+				const full = growPlantNow(kit, { seed: 11, variant: 0 });
+				const { skeleton, shoots } = full;
+				const sockets = rowSockets(skeleton, shoots) as Uint32Array;
+				expect([name, sockets !== undefined]).toEqual([name, true]);
+				const rank = skeleton.buds.sockets?.rank as Uint32Array;
+				const limbs = kit.record.sparse?.limbs ?? GREAT_LIMB_SHARE;
+				const order = sparseOrder(skeleton, shoots, limbs);
+				expect(order.bySockets).toBe(true);
+				const rowsOf = new Map<number, number>();
+				for (let r = 0; r < shoots.count; r++)
+					rowsOf.set(sockets[r] as number, (rowsOf.get(sockets[r] as number) ?? 0) + 1);
+				expect(order.carriers).toBe(rowsOf.size);
+				const structural = structuralAxes(skeleton, limbs);
+				for (const sparse of [0.5, 1]) {
+					const at = `${name} sparse ${sparse}`;
+					const keep = sparseKeep(order, sparse, kit.record.sparse?.foliage ?? FOLIAGE_FLOOR);
+					const thinned = sparsePlant(skeleton, shoots, order, keep);
+					if (!thinned) throw new Error(`${at}: nothing went`);
+					// Whole sockets: each socket that stays keeps every row it held.
+					const kept = new Map<number, number>();
+					for (let r = 0; r < thinned.rows.count; r++) {
+						const socket = sockets[thinned.rows.id?.[r] ?? r] as number;
+						kept.set(socket, (kept.get(socket) ?? 0) + 1);
+					}
+					expect([at, kept.size < rowsOf.size]).toEqual([at, true]);
+					for (const [socket, count] of kept)
+						expect([at, socket, count]).toEqual([at, socket, rowsOf.get(socket) ?? -1]);
+					// Even round the crown: each octant about the foliage's middle keeps the plant's
+					// share of its own sockets.
+					const middle = [0, 0, 0];
+					for (let r = 0; r < shoots.count; r++)
+						for (let k = 0; k < 3; k++)
+							middle[k] =
+								(middle[k] as number) + (shoots.position[r * 3 + k] as number) / shoots.count;
+					const grownIn = new Array<number>(8).fill(0);
+					const keptIn = new Array<number>(8).fill(0);
+					const counted = new Set<number>();
+					for (let r = 0; r < shoots.count; r++) {
+						const socket = sockets[r] as number;
+						if (counted.has(socket)) continue;
+						counted.add(socket);
+						let octant = 0;
+						for (let k = 0; k < 3; k++)
+							if ((shoots.position[r * 3 + k] as number) > (middle[k] as number)) octant += 1 << k;
+						grownIn[octant] = (grownIn[octant] as number) + 1;
+						if (kept.has(socket)) keptIn[octant] = (keptIn[octant] as number) + 1;
+					}
+					const share = kept.size / rowsOf.size;
+					for (let octant = 0; octant < 8; octant++) {
+						const grown = grownIn[octant] as number;
+						if (grown < OCTANT_LEAST) continue;
+						const off = Math.abs((keptIn[octant] as number) / grown - share);
+						expect([at, octant, off <= OCTANT_SLACK]).toEqual([at, octant, true]);
+					}
+					// The sockets that stay keep their sockets' records.
+					const buds = thinned.skeleton.buds;
+					expect([at, buds.sockets?.rank.length]).toEqual([at, buds.count]);
+					for (let b = 0; b < buds.count; b++) {
+						const origin = buds.origin?.[b] ?? b;
+						expect([at, buds.sockets?.rank[b]]).toEqual([at, rank[origin]]);
+					}
+					// The wood: every axis is a stem or a great limb, lies under the plant's top, or
+					// carries a kept socket on itself or on a branch that leaves it.
+					const axes = thinned.skeleton.axes;
+					const carries = new Uint8Array(axes.count);
+					for (let r = 0; r < thinned.rows.count; r++)
+						for (
+							let a = thinned.skeleton.axisOf[thinned.rows.node?.[r] as number] as number;
+							a >= 0 && carries[a] !== 1;
+							a = axes.parent[a] as number
+						)
+							carries[a] = 1;
+					let highest = 0;
+					for (let n = 0; n < thinned.skeleton.nodeCount; n++)
+						if (
+							(thinned.skeleton.position[n * 3 + 1] as number) >
+							(thinned.skeleton.position[highest * 3 + 1] as number)
+						)
+							highest = n;
+					for (
+						let a = thinned.skeleton.axisOf[highest] as number;
+						a >= 0;
+						a = axes.parent[a] as number
+					)
+						carries[a] = 1;
+					for (let a = 0; a < axes.count; a++)
+						expect([at, a, carries[a] === 1 || structural[axes.origin?.[a] ?? a] === 1]).toEqual([
+							at,
+							a,
+							true,
+						]);
+				}
+				// The grown plant at its sparsest keeps the sockets' records too.
+				const sparsest = growPlantNow(kit, { seed: 11, variant: 0, sparse: 1 });
+				expect(sparsest.skeleton.buds.sockets?.rank.length).toBe(sparsest.skeleton.buds.count);
+			},
+			LONG,
+		);
+	});
 
 describe('the sparseness option', () => {
 	it('keys a sparser plant apart from the plant as grown', async () => {
