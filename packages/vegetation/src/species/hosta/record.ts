@@ -39,10 +39,11 @@ export const record: Species = {
 			[1, 58],
 		],
 		// Still 02: a stalk leaves upright, then arches out and down, the oldest bending furthest.
+		// Still 17: the stalks of the middle and outer leaves arch well over into the dome.
 		arch: [
-			[0, 2],
-			[0.5, 10],
-			[1, 30],
+			[0, 3],
+			[0.5, 18],
+			[1, 36],
 		],
 		// Still 22: the stalks are long against the blade, the oldest nearly as long as the leaf.
 		stalk: [
@@ -56,11 +57,14 @@ export const record: Species = {
 			[0.3, 0.95],
 			[1, 1],
 		],
-		// Still 02: the blade turns down from its stalk's line, the oldest hanging furthest.
+		// Still 02: the blade turns down from its stalk's line, the oldest hanging furthest. Still
+		// 17: only the youngest open leaves point up at the heart; from middle age the blades hang
+		// tips down in layers under the dome, the oldest about sixty degrees below level, where
+		// lesser figures held the middle leaves level like plates.
 		pitch: [
-			[0, 10],
-			[0.5, 38],
-			[1, 56],
+			[0, 12],
+			[0.4, 55],
+			[1, 62],
 		],
 		// Still 23: about a sixth of a shoot's leaves are still rolled at the crown's heart.
 		rolled: 0.17,
