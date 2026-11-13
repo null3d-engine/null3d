@@ -274,6 +274,30 @@ describe('a cell of the card bake', () => {
 		expect(Math.abs(whole - 16)).toBeLessThanOrEqual(2);
 	});
 
+	it('keeps a thin leaflet whole to its end, and the cell its cover', () => {
+		// A broad leaf on whole texels with a leaflet under a quarter of a texel wide running from it
+		// through the middle of a row of texels, out to six tenths of the way across its fourteenth.
+		// The bake samples each texel four by four, so the leaflet holds one row of samples.
+		const CELL = 16;
+		const mesh = quads([
+			[1 / CELL, 5 / CELL, 5 / CELL, 11 / CELL, SURFACE_LEAF],
+			[5 / CELL, 13.6 / CELL, 7.3 / CELL, 7.45 / CELL, SURFACE_LEAF],
+		]);
+		const { color } = bakeSquare(mesh, CELL);
+		let reach = -1;
+		let whole = 0;
+		for (let y = 0; y < CELL; y++)
+			for (let x = 0; x < CELL; x++) {
+				if ((color[texelAt(x, y, CELL) + 3] as number) !== 255) continue;
+				whole++;
+				if (y === 7) reach = Math.max(reach, x);
+			}
+		expect(reach).toBe(13);
+		// The leaf and the leaflet cover 25.3 texels' worth; the dither keeps that, give or take two.
+		const cover = 4 * 6 + (13.6 - 5) * 0.15;
+		expect(Math.abs(whole - cover)).toBeLessThanOrEqual(2);
+	});
+
 	it('gives a texel the kind that covers most of it, in the mean colour of what covers it', () => {
 		// In the fifth column of texels, leaf covers three quarters and twig the last quarter.
 		const mesh = quads([

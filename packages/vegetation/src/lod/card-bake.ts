@@ -17,9 +17,10 @@
 // level, and one byte of the surface kind (a leaf adds 128) with the shade inside the shoot in its
 // low seven bits.
 // Colour then spreads into the empty texels of each cell, so the mip levels the GPU averages never
-// darken a card's edge. Then each texel the shoot covers half or more turns whole, and error
-// diffusion keeps each cell's cover through the texels under half, the parts thinner than a texel
-// among them, so the mip levels average to the shoot's own cover. Last, each cell
+// darken a card's edge. Then each texel that ends a thin run turns whole, with the cover that adds
+// taken from the run behind it, so a leaflet's tip keeps its reach; each texel the shoot covers half
+// or more turns whole, and error diffusion keeps each cell's cover through the texels under half,
+// the parts thinner than a texel among them, so the mip levels average to the shoot's own cover. Last, each cell
 // measures how fast the coverage it must reach to draw has to fall as the GPU's mip levels average
 // it, so a far card keeps the cover the near one draws.
 import type { CardCell, PrototypeArrays } from '../asset';
@@ -874,11 +875,14 @@ export function bakeCell(
 		Math.min(size, drawn[1] + drawn[3] + BORDER) - bottom,
 	];
 	const cover = new Float32Array(drawn[2] * drawn[3]);
+	const centred = new Uint8Array(drawn[2] * drawn[3]);
 	for (let layer = 0; layer < 2; layer++) {
 		cover.fill(0);
-		drawPlane(mesh, triangles, plane, drawn, size, layer, palette, color, surface, cover);
+		centred.fill(0);
+		drawPlane(mesh, triangles, plane, drawn, size, layer, palette, color, surface, cover, centred);
 		spread(surface, color, size, layer, bordered, false);
 		spread(color, color, size, layer, bordered, true);
+		keepRunEnds(cover, centred, drawn[2], drawn[3]);
 		dither(color, cover, size, layer, drawn);
 		const fall = Math.round((cutFall(color, size, layer, drawn) / CARD_CUT_FALL_MOST) * 255);
 		for (let y = bordered[1]; y < bordered[1] + bordered[3]; y++)
@@ -905,6 +909,7 @@ function drawPlane(
 	color: Uint8Array,
 	surface: Uint8Array,
 	cover: Float32Array,
+	centred: Uint8Array,
 ): void {
 	const [rx, ry, rw, rh] = rect;
 	const w = rw * SAMPLES;
@@ -1033,6 +1038,7 @@ function drawPlane(
 		for (let x = 0; x < rw; x++) {
 			let covered = 0;
 			let leaves = 0;
+			let middle = 0;
 			sum.fill(0);
 			for (let sy = 0; sy < SAMPLES; sy++)
 				for (let sx = 0; sx < SAMPLES; sx++) {
@@ -1040,6 +1046,7 @@ function drawPlane(
 					const kind = kindAt[at] as number;
 					if (kind < 0) continue;
 					covered++;
+					if (Math.abs(2 * sx + 1 - SAMPLES) <= 1 && Math.abs(2 * sy + 1 - SAMPLES) <= 1) middle++;
 					leaves += kind;
 					for (let k = 0; k < 3; k++) {
 						sum[k] = (sum[k] as number) + (rgbAt[at * 3 + k] as number);
@@ -1069,7 +1076,98 @@ function drawPlane(
 			// The kind that covers most of the texel names it, a leaf on a tie.
 			surface[at + 3] = (2 * leaves >= covered ? 128 : 0) + Math.min(127, shade);
 			cover[y * rw + x] = covered / whole;
+			centred[y * rw + x] = middle > 0 ? 1 : 0;
 		}
+}
+
+/**
+ * The most cover, in whole texels, that a run's end holds in its three by three neighbourhood with
+ * itself: a thin run's end holds a texel or two, a broad part's edge three or more.
+ */
+const END_MOST = 2;
+
+/** How far to one side a run's end's neighbours' cover must lie, as the mean offset in texels. */
+const END_SIDE = 0.5;
+
+/** The most texels back along its run that a run's end takes its added cover from. */
+const END_REACH = 8;
+
+/**
+ * Makes whole each texel that ends a thin run of a cell's picture, such as a leaflet's tip or a
+ * needle's end, and takes the cover that adds from the run behind it, so the run's whole texels
+ * shift to reach its end and the cell keeps its cover. A texel ends a run where the run passes
+ * through its middle, it holds under half cover, little cover stands round it, and what does stands
+ * to one side. The added cover is taken from the run's thin texels, each time from the neighbour
+ * that holds most, back to a texel of half cover or a few texels along; a run that cannot pay for
+ * its end in full keeps its cover as it was.
+ *
+ * @param cover Each texel's cover in the cell, row by row, which this changes.
+ * @param centred Whether the part covers each texel's middle.
+ * @param w The cell's width in texels.
+ * @param h The cell's height in texels.
+ */
+function keepRunEnds(cover: Float32Array, centred: Uint8Array, w: number, h: number): void {
+	const ends: number[] = [];
+	for (let y = 0; y < h; y++)
+		for (let x = 0; x < w; x++) {
+			const own = cover[y * w + x] as number;
+			if (own <= 0 || own >= 0.5 || !centred[y * w + x]) continue;
+			let around = 0;
+			let ox = 0;
+			let oy = 0;
+			for (let dy = -1; dy <= 1; dy++)
+				for (let dx = -1; dx <= 1; dx++) {
+					if ((dx === 0 && dy === 0) || x + dx < 0 || y + dy < 0 || x + dx >= w || y + dy >= h)
+						continue;
+					const value = cover[(y + dy) * w + x + dx] as number;
+					around += value;
+					ox += dx * value;
+					oy += dy * value;
+				}
+			if (around <= 0 || own + around > END_MOST) continue;
+			if (length3(ox / around, oy / around, 0) >= END_SIDE) ends.push(y * w + x);
+		}
+	const taken = new Uint8Array(w * h);
+	const paid: number[] = [];
+	for (const end of ends) {
+		const own = cover[end] as number;
+		let owed = 1 - own;
+		paid.length = 0;
+		let at = end;
+		for (let step = 0; step < END_REACH && owed > 1e-6; step++) {
+			const x = at % w;
+			const y = (at - x) / w;
+			let next = -1;
+			let most = 0;
+			for (let dy = -1; dy <= 1; dy++)
+				for (let dx = -1; dx <= 1; dx++) {
+					if (x + dx < 0 || y + dy < 0 || x + dx >= w || y + dy >= h) continue;
+					const there = (y + dy) * w + x + dx;
+					const value = cover[there] as number;
+					if (taken[there] || value <= 0 || value >= 0.5 || value <= most) continue;
+					most = value;
+					next = there;
+				}
+			if (next < 0) break;
+			const share = Math.min(owed, most);
+			cover[next] = most - share;
+			owed -= share;
+			taken[next] = 1;
+			paid.push(next, share);
+			at = next;
+		}
+		// A run too short to pay for its end, such as a needle's second end, keeps its cover as it was.
+		if (owed > 1e-6) {
+			for (let k = 0; k < paid.length; k += 2) {
+				const texel = paid[k] as number;
+				cover[texel] = (cover[texel] as number) + (paid[k + 1] as number);
+				taken[texel] = 0;
+			}
+			continue;
+		}
+		cover[end] = 1;
+		taken[end] = 1;
+	}
 }
 
 /**
