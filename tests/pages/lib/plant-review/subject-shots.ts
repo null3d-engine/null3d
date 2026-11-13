@@ -2105,8 +2105,10 @@ export function placedPieceShot(
 		middle[1] - shot.camera.position[1],
 		middle[2] - shot.camera.position[2],
 	);
-	// The piece's own depth is at most its spread, as it faces the camera.
-	const slab = Math.max(piece.spread, 0.1 * piece.length);
+	// The slab is the piece's own depth along the line of sight, so what stands beside it in the
+	// plant is cut away; a piece that states no depth takes its spread.
+	const deep = piece.depth ? (options.edge ? piece.depth.side : piece.depth.face) : piece.spread;
+	const slab = Math.max(deep, 0.05 * piece.length);
 	return {
 		...shot,
 		kind: `one placed ${piece.class} from its socket to its tips`,
