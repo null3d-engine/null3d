@@ -482,7 +482,11 @@ function standView(
 		held: stand.held,
 		points: points === undefined ? 0 : Math.floor(points.length / 3),
 	});
-	return { position: stand.position as V3, target: stand.target as V3, fov: FOV };
+	// The near plane stands closer than half the eye's height, so a camera near the ground still
+	// draws the ground in front of it down to the frame's lower edge.
+	const span = Math.hypot(...sub(stand.target as V3, stand.position as V3));
+	const near = Math.max(0.002, Math.min(0.5, span * 0.02, stand.height * 0.5));
+	return { position: stand.position as V3, target: stand.target as V3, fov: FOV, near };
 }
 
 /**
