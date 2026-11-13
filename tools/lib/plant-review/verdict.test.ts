@@ -113,10 +113,11 @@ describe("the tool's verdict of a run", () => {
 		expect(verdictFaults(verdict)).toEqual([]);
 	});
 
-	test('passes row 6 on the sky gap of every whole view, each inside its band', () => {
+	test('proposes row 6 from the sky gap of every whole view, and leaves the pass to a reviewer', () => {
 		const row = rowOf(verdict, 6);
-		expect(row.verdict).toBe('pass');
-		expect(row.judge).toBe('tool');
+		expect(row.verdict).toBe('unjudged');
+		expect(row.judge).toBe(null);
+		expect(row.proposed).toEqual({ figures: 'in band' });
 		// The two numbered whole views, the silhouette and the other whole view of the set.
 		expect(row.figures.map((figure) => figure.picture)).toEqual([
 			'01-whole-distant.png',
@@ -135,27 +136,34 @@ describe("the tool's verdict of a run", () => {
 		expect(row.evidence).toContain('stills/01-whole-distant.png');
 	});
 
-	test('fails row 6 when one view is more open or more closed than its band, and says which', () => {
+	test('says which view is more open or more closed than its band, and still judges nothing', () => {
 		const open = toolVerdict(
 			input({ '02-whole-profile.png': { gap: { reference: 0.2, render: 0.26 }, masked: true } }),
 		);
-		expect(rowOf(open, 6).verdict).toBe('fail');
-		expect(rowOf(open, 6).reason).toBe(
-			'02-whole-profile.png: sky gap enclosed by the crown outline 0.26 outside 0.18 to 0.25',
-		);
+		expect(rowOf(open, 6).verdict).toBe('unjudged');
+		expect(rowOf(open, 6).proposed).toEqual({
+			figures: 'out of band',
+			outside:
+				'02-whole-profile.png: sky gap enclosed by the crown outline 0.26 outside 0.18 to 0.25',
+		});
 		const closed = toolVerdict(
 			input({ '02-whole-profile.png': { gap: { reference: 0.2, render: 0.17 }, masked: true } }),
 		);
-		expect(rowOf(closed, 6).verdict).toBe('fail');
+		expect(rowOf(closed, 6).proposed?.figures).toBe('out of band');
+		expect(verdictFaults(open)).toEqual([]);
 	});
 
-	test('passes the color rows at three steps or fewer, and fails them above', () => {
-		expect(rowOf(verdict, 10).verdict).toBe('pass');
+	test('proposes the color rows in band at three steps or fewer, and out of band above', () => {
+		expect(rowOf(verdict, 10).proposed).toEqual({ figures: 'in band' });
 		expect(rowOf(verdict, 10).figures.length).toBe(2);
-		expect(rowOf(verdict, 8).verdict).toBe('pass');
+		expect(rowOf(verdict, 8).proposed).toEqual({ figures: 'in band' });
 		const off = toolVerdict(input({ '15-bark-mid-trunk.png': { barkDeltaE: 10.5 } }));
-		expect(rowOf(off, 8).verdict).toBe('fail');
-		expect(rowOf(off, 8).reason).toContain('bark color difference 10.5 outside any to 3');
+		expect(rowOf(off, 8).verdict).toBe('unjudged');
+		expect(rowOf(off, 8).proposed?.outside).toContain(
+			'bark color difference 10.5 outside any to 3',
+		);
+		// No row of a tool's verdict passes.
+		expect(verdict.rows.filter((row) => row.verdict === 'pass')).toEqual([]);
 	});
 
 	test('leaves a row unjudged where the standard states no band, with its figures', () => {
@@ -243,7 +251,7 @@ describe('the pictures a verdict keeps apart', () => {
 			}),
 		);
 		const row = rowOf(verdict, 6);
-		expect(row.verdict).toBe('pass');
+		expect(row.proposed).toEqual({ figures: 'in band' });
 		expect(row.figures.map((figure) => figure.picture)).not.toContain('30-woodland-form-whole.png');
 		expect(row.evidence).not.toContain('stills/30-woodland-form-whole.png');
 		expect(row.setAside).toEqual([
@@ -327,7 +335,7 @@ describe("a reviewer's rows", () => {
 		});
 		expect(rowOf(merged, 11).neighbour).toBe('holm-oak');
 		// The tool's own rows are the fresh ones.
-		expect(rowOf(merged, 6).verdict).toBe('fail');
+		expect(rowOf(merged, 6).proposed?.figures).toBe('out of band');
 	});
 
 	test('are not carried to another run, whose pictures they never saw', () => {
@@ -387,17 +395,14 @@ describe('an unsound verdict', () => {
 		expect(verdictFaults(voided)).toEqual([
 			'row 4 passes though every picture it names shows no subject',
 		]);
-		// The tool passes only on figures inside stated bands.
-		expect(verdictFaults(withRow(4, { verdict: 'pass', judge: 'tool' }))).toEqual([
-			'row 4 is passed by the tool though leaf outline overlap of 12-single-leaf-upper.png is without a band',
+		// The tool passes no row, whatever its figures say.
+		expect(verdictFaults(withRow(10, { verdict: 'pass', judge: 'tool' }))).toEqual([
+			'row 10 is passed by the tool: only a reviewer passes a row',
 		]);
 		const row = rowOf(sound, 10);
 		const out = {
 			figures: [{ ...(row.figures[0] as (typeof row.figures)[number]), value: 7 }],
 		};
-		expect(verdictFaults(withRow(10, { ...out, verdict: 'pass', judge: 'tool' }))).toEqual([
-			'row 10 is passed by the tool though foliage color difference of 01-whole-distant.png is outside its band',
-		]);
 		// A reviewer may overrule the figure, and says why.
 		expect(verdictFaults(withRow(10, { ...out, verdict: 'pass', judge: 'reviewer' }))).toEqual([
 			'row 10 is passed by a reviewer against a figure outside its band, and gives no reason',

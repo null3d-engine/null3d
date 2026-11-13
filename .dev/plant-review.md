@@ -133,7 +133,10 @@ Row 11 is judged against a built neighbor, named in the verdict. A species with 
 states that instead of passing.
 
 Row 6 is read from the sky gap: the share of background enclosed by the crown's own outline, on both
-pictures at each whole view. The verdict names this figure beside each value. The share of
+pictures at each whole view. The verdict names this figure beside each value. Both pictures are
+read one way: a texel is sky or plant. A render's matte also holds each texel's clear share, and a
+figure read by that share is about 0.015 more closed than the same outline read as a photograph's
+is. The summary prints that reading beside the figure, since earlier figures were read by it. The share of
 the crown's box that shows background is a different figure, and it does not judge this row. Some
 plants do not fill their box by shape: a spire, a cone, or any crown seen from below. Sky stands
 beside such a plant inside its box, so the box figure measures its taper. The Italian cypress read
@@ -607,10 +610,13 @@ would notice them, not the order they are cheapest to fix.
 
 The reviewer writes the rows into the run's verdict file, `verdict.json`, beside the tool's own.
 Each row is `pass`, `fail`, `void` or `unjudged`. It names its pictures, its figures and their
-bands, and its judge. The file names the run and the commit the pictures were drawn at. The tool
-fills the rows whose band this page states: rows 6, 8 and 10 from their figures. It fails row 12
-where a piece hangs free. The reviewer fills every other row, and may overrule the tool's with a
-reason.
+bands, and its judge. The file names the run and the commit the pictures were drawn at.
+
+The tool passes no row. A plant can hold every figure and still not look like its photograph, so
+only a reviewer's entry passes a row. For rows 6, 8 and 10, whose bands this page states, the tool
+records the figures and a proposal: figures in band, or figures out of band with the ones outside.
+A row with only a proposal is unjudged, and the count reads it as unjudged. The tool fails row 12
+alone where a piece hangs free, and it marks a row void where every picture of it is void.
 
 ## The count is generated
 

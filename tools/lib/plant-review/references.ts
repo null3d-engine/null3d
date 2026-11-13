@@ -1589,6 +1589,13 @@ export interface PlantMeasures {
 	readonly crownBox: { readonly width: number; readonly height: number };
 	/** The share of the crown's outline that shows background: the sky or ground through it. */
 	readonly gapFraction: number;
+	/**
+	 * The same gap with each clear texel of a render's matte counted by its clear share. A
+	 * photograph's outline has no such share, so the two sides of a pair are compared on
+	 * `gapFraction`, where a texel is sky or plant on both. This reading is kept beside it for a
+	 * render, since earlier figures were read this way; null for a picture with no coverage.
+	 */
+	readonly gapByCoverage: number | null;
 	/** The share of the crown's box that shows background: the figure the plant is judged on. */
 	readonly crownBoxGap: number;
 	/**
@@ -1968,6 +1975,7 @@ export function measurePlant(image: Rgba, plant: PlantMask, habit?: PlantHabit):
 			crownStart: 0,
 			crownBox: { width: 0, height: 0 },
 			gapFraction: 0,
+			gapByCoverage: null,
 			crownBoxGap: 0,
 			frameGap: 0,
 			solidity: 0,
@@ -1987,6 +1995,7 @@ export function measurePlant(image: Rgba, plant: PlantMask, habit?: PlantHabit):
 	// The crown's outline: in each crown row, everything between the row's outermost plant pixels.
 	let hull = 0;
 	let gaps = 0;
+	let clear = 0;
 	let crownWidth = 0;
 	let crownLeft = width;
 	let crownRight = -1;
@@ -2001,10 +2010,12 @@ export function measurePlant(image: Rgba, plant: PlantMask, habit?: PlantHabit):
 		for (let x = left; x <= right; x++) {
 			hull++;
 			if (!mask[y * width + x]) {
-				// A render's matte carries how much of the texel a leaf covers, so the sky between
-				// thin leaves weighs as the part of the texel it holds rather than a whole one.
+				// A texel is sky or plant, on a render as on a photograph, so both sides of a pair
+				// count their sky one way. A render's matte also carries how much of the texel a
+				// leaf covers, which gives the second reading.
 				const at = y * width + x;
-				gaps += coverage ? 1 - (coverage[at] as number) / 255 : 1;
+				gaps++;
+				if (coverage) clear += 1 - (coverage[at] as number) / 255;
 			} else inCrown[y * width + x] = 1;
 		}
 	}
@@ -2034,6 +2045,7 @@ export function measurePlant(image: Rgba, plant: PlantMask, habit?: PlantHabit):
 		crownStart: Number(((box.bottom - start) / tall).toFixed(4)),
 		crownBox: { width: crownWidth, height: start - box.top + 1 },
 		gapFraction: hull > 0 ? Number((gaps / hull).toFixed(4)) : 0,
+		gapByCoverage: coverage ? (hull > 0 ? Number((clear / hull).toFixed(4)) : 0) : null,
 		crownBoxGap: crownBoxArea > 0 ? Number((crownBoxSky / crownBoxArea).toFixed(4)) : 0,
 		frameGap: Number((frameSky / (width * height)).toFixed(4)),
 		solidity: Number((covered / ((box.right - box.left + 1) * tall)).toFixed(4)),

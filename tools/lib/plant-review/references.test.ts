@@ -1088,11 +1088,13 @@ describe('the coverage matte', () => {
 		const image = blank(width, height, [0, 0, 0]);
 		const binary = measurePlant(image, mattePlant(width, height, mask));
 		const fractional = measurePlant(image, mattePlant(width, height, mask, coverage));
-		// The hole is four texels of the crown's hundred; two are half covered, so the fractional
-		// gap gives back the half texel each of them leaves. The measure rounds the share to four
-		// places, which is where three per cent sits.
+		// The hole is four texels of the crown's hundred, and both pictures count four. Two are
+		// half covered, so the reading by clear share gives back the half texel each of them
+		// leaves. The measure rounds the share to four places, which is where three per cent sits.
 		expect(binary.gapFraction).toBeCloseTo(4 / 100, 4);
-		expect(fractional.gapFraction).toBeCloseTo(3 / 100, 4);
+		expect(fractional.gapFraction).toBeCloseTo(4 / 100, 4);
+		expect(fractional.gapByCoverage as number).toBeCloseTo(3 / 100, 4);
+		expect(binary.gapByCoverage).toBe(null);
 		// The crown's own box holds the same hole as the outline, so its gap agrees; the frame keeps
 		// the empty sky around the plant and reads far larger.
 		expect(binary.crownBoxGap).toBeCloseTo(4 / 100, 4);
