@@ -52,7 +52,7 @@ function tuft(length: number, leaves: number): PieceLeaves {
 function arm(length: number): PieceStem {
 	return {
 		length: { mean: length, spread: length * 0.06 },
-		radius: [0.003, 0.0012],
+		radius: [0.004, 0.0015],
 		kink: { length: 0.045, angle: 16 },
 		leaves: tuft(length, 4),
 		sides: [
@@ -100,7 +100,8 @@ export const PIECES: readonly PieceRule[] = [
 		depth: 20,
 		stem: {
 			length: 0.155,
-			radius: [0.0065, 0.004],
+			// Still 21: the stem is 0.03 of the branch's height thick at its cut (19 to 24 of 743 pixels).
+			radius: [0.0055, 0.004],
 			bud: false,
 			sides: [
 				fork(arm(0.205), 1, 0.155, 37, true),
@@ -119,7 +120,8 @@ export const PIECES: readonly PieceRule[] = [
 		depth: 10,
 		stem: {
 			length: { mean: 0.33, spread: 0.03 },
-			radius: [0.0025, 0.001],
+			// Still 22: the twig is 0.025 of its height thick (16 to 20 of 725 pixels).
+			radius: [0.004, 0.0015],
 			kink: { length: 0.04, angle: 14 },
 			leaves: { gap: 0.004, from: 0.93, angle: 55, angleSpread: 12 },
 			sides: [spurs(0.05, 0.2)],

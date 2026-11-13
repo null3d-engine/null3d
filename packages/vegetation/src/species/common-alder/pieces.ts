@@ -24,7 +24,7 @@ function leaves(from: number, scale = LEAF_SCALE, flat = 0.7): PieceLeaves {
 /** A side shoot. Still 21: 15 to 25 centimetres long with four to six leaves. */
 const SHOOT: PieceStem = {
 	length: { mean: 0.2, spread: 0.05 },
-	radius: [0.002, 0.001],
+	radius: [0.003, 0.0012],
 	leaves: leaves(0.2),
 };
 
@@ -32,7 +32,9 @@ const SHOOT: PieceStem = {
 function arm(length: number): PieceStem {
 	return {
 		length: { mean: length, spread: 0.05 },
-		radius: [0.004, 0.0012],
+		radius: [0.008, 0.002],
+		// Still 21: the arms bend a little along their length.
+		kink: { length: 0.15, angle: 8 },
 		leaves: leaves(0.55),
 		sides: [
 			{
@@ -60,7 +62,8 @@ export const PIECES: readonly PieceRule[] = [
 		depth: 16,
 		stem: {
 			...arm(1),
-			radius: [0.006, 0.0012],
+			// Still 21: the stem is 0.028 of the branch's height thick at its cut (20 of 725 pixels).
+			radius: [0.014, 0.003],
 			sides: [
 				{
 					stem: arm(0.6),
@@ -91,13 +94,14 @@ export const PIECES: readonly PieceRule[] = [
 		variants: 2,
 		stem: {
 			length: { mean: 0.35, spread: 0.03 },
-			radius: [0.0025, 0.001],
+			// Still 22: the twig is 0.028 of its height thick (20 of 708 pixels).
+			radius: [0.005, 0.0015],
 			leaves: leaves(0.2, 1, 0.85),
 			sides: [
 				{
 					stem: {
 						length: { mean: 0.2, spread: 0.02 },
-						radius: [0.002, 0.001],
+						radius: [0.003, 0.0012],
 						leaves: leaves(0.15, 1, 0.85),
 					},
 					gap: 0.1,

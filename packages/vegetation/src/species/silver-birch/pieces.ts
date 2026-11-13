@@ -10,10 +10,10 @@ import type { PieceRule, PieceStem, PieceStudio } from '../../leaf/piece';
  * a few centimetres from the branch, the blade hanging within thirty degrees of the strand. Stills
  * 11 and 22: some nodes carry a short shoot of two leaves. Stills 10 and 23: a bud at the tip.
  */
-function strand(length: number, spread: number, hook: PieceStem['hook']): PieceStem {
+function strand(length: number, spread: number, hook: PieceStem['hook'], foot = 0.001): PieceStem {
 	return {
 		length: { mean: length, spread },
-		radius: [0.001, 0.0006],
+		radius: [foot, 0.0006],
 		hook,
 		zigzag: 5,
 		leaves: {
@@ -72,7 +72,8 @@ export const PIECES: readonly PieceRule[] = [
 		name: 'strand-arch-short',
 		attitude: 'plumb',
 		variants: 2,
-		stem: strand(0.35, 0.04, { angle: 165, rise: 0.2, length: 0.13 }),
+		// Still 22: the twig is 0.016 of its height thick at its cut (11 to 13 of 712 pixels).
+		stem: strand(0.35, 0.04, { angle: 165, rise: 0.2, length: 0.13 }, 0.0019),
 	},
 	// Still 21: the arms of a cut branch rise, arch over and hang 30 to 72 centimetres. A branch's own
 	// end is this piece.
@@ -80,7 +81,7 @@ export const PIECES: readonly PieceRule[] = [
 		name: 'strand-arch',
 		attitude: 'plumb',
 		variants: 3,
-		stem: strand(0.62, 0.2, { angle: 150, rise: 0.03, length: 0.12 }),
+		stem: strand(0.62, 0.2, { angle: 150, rise: 0.03, length: 0.12 }, 0.002),
 	},
 ];
 

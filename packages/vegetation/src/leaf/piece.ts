@@ -147,8 +147,9 @@ export interface PieceStem {
 	/** Degrees it turns at each node, to one side and the other in turn. */
 	readonly zigzag?: number;
 	/**
-	 * Kinks along it: the metres between one and the next, and the degrees it turns at each, to one
-	 * side and the other in turn. An oak's twig runs straight between its kinks.
+	 * Bends along it: the metres between one and the next, and the degrees it turns at each, to one
+	 * side and the other in turn. Each bend is taken over a few short runs, so the stem curves
+	 * through it and shows no corner.
 	 */
 	readonly kink?: { readonly length: number; readonly angle: number };
 	/** Its leaves, where it carries any. */
@@ -234,6 +235,10 @@ const STEP_MOST = 0.025;
 const STEPS_LEAST = 6;
 /** Degrees either side of its arrangement's place a side stem stands, where no rule names a depth. */
 const SIDE_SPREAD = 7;
+/** The most degrees a hook turns in one straight run. */
+const HOOK_TURN_MOST = 12;
+/** The straight runs a bend's turn is spread over, so a stem curves and never kinks. */
+const BEND_RUNS = 3;
 /** The share of a kink's angle by which it also turns out of the stem's plane. */
 const KINK_OUT = 0.4;
 /** The most stems a plan may hold, which guards a rule that would never end. */
@@ -434,8 +439,12 @@ export function planPiece(
 		const leavesBy = leafRule(stem);
 		const gap = stem.leaves ? Math.max(0.002, stem.leaves.gap) : 0;
 		// A stem runs in straight steps short enough to read as a curve, and a node falls on a step's end.
-		const perNode = gap > 0 ? Math.max(1, Math.ceil(gap / STEP_MOST)) : 1;
-		const step = gap > 0 ? gap / perNode : Math.min(STEP_MOST, length / STEPS_LEAST);
+		// A hook turns at most a few degrees a step, so a strand leaves its branch on a curve.
+		const most = stem.hook
+			? Math.min(STEP_MOST, (stem.hook.length * HOOK_TURN_MOST) / Math.max(1, stem.hook.angle))
+			: STEP_MOST;
+		const perNode = gap > 0 ? Math.max(1, Math.ceil(gap / most)) : 1;
+		const step = gap > 0 ? gap / perNode : Math.min(most, length / STEPS_LEAST);
 		const steps = Math.max(1, Math.round(length / step));
 		const run = length / steps;
 		const leafFrom = (stem.leaves?.from ?? 0) * length;
@@ -458,6 +467,10 @@ export function planPiece(
 		let zig = 1;
 		let node = 0;
 		let kinks = 0;
+		// The turn still owed from the last bend, in and out of the stem's plane, and the runs left.
+		let bendIn = 0;
+		let bendOut = 0;
+		let bendRuns = 0;
 		const ownLeaves = leaves.length;
 		// Leaves that stand closer than a third of a leaf's length crowd into a tuft at the stem's end.
 		const crowded = gap > 0 ? Math.min(1, Math.max(0, 1 - gap / (leafMean / 3))) : 0;
@@ -473,28 +486,36 @@ export function planPiece(
 			if (stem.droop && mid >= droopFrom * length && mid <= droopTo * length)
 				direction = toward(direction, down, (stem.droop * run) / droopSpan);
 			const atNode = gap > 0 && (k + 1) % perNode === 0;
+			if (atNode && stem.zigzag) {
+				// A zigzag is a bend at each node, owed over the runs to the next node.
+				bendIn += zig * stem.zigzag;
+				zig = -zig;
+				bendRuns = Math.max(bendRuns, Math.min(BEND_RUNS, perNode));
+			}
 			const kink = stem.kink;
 			if (
 				kink &&
 				k > 0 &&
 				Math.floor(from / kink.length) > Math.floor((from - run) / kink.length)
 			) {
-				// A kink turns the stem in its own plane, and a little out of it, so no two lie alike.
+				// A bend turns the stem in its own plane, and a little out of it, so no two lie alike.
+				// It is owed over the next few runs, not taken at once, so the stem curves through it.
 				const turned = kinks++;
-				direction = turn(
-					direction,
-					sky,
-					(turned % 2 === 0 ? 1 : -1) * kink.angle * (0.6 + 0.8 * draw(Purpose.Kink, axis, turned)),
-				);
+				bendIn +=
+					(turned % 2 === 0 ? 1 : -1) * kink.angle * (0.6 + 0.8 * draw(Purpose.Kink, axis, turned));
+				bendOut += (draw(Purpose.Kink, axis, turned + 512) - 0.5) * kink.angle * KINK_OUT;
+				bendRuns = BEND_RUNS;
+			}
+			if (bendRuns > 0) {
+				direction = turn(direction, sky, bendIn / bendRuns);
 				direction = turn(
 					direction,
 					normalize3(cross3(direction, sky, [0, 0, 0])),
-					(draw(Purpose.Kink, axis, turned + 512) - 0.5) * kink.angle * KINK_OUT,
+					bendOut / bendRuns,
 				);
-			}
-			if (atNode && stem.zigzag) {
-				direction = turn(direction, sky, zig * stem.zigzag);
-				zig = -zig;
+				bendIn -= bendIn / bendRuns;
+				bendOut -= bendOut / bendRuns;
+				bendRuns--;
 			}
 			normalize3(direction);
 			sky = square(sky, direction, [0, 0, 1]);

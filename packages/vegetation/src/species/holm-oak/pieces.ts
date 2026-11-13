@@ -40,7 +40,7 @@ const SIDE_TWIG: PieceStem = {
 function arm(length: number, radius: number, forks: PieceStem['sides'] = []): PieceStem {
 	return {
 		length: { mean: length, spread: length * 0.06 },
-		radius: [radius, 0.0015],
+		radius: [radius, 0.0025],
 		kink: { length: 0.16, angle: 10 },
 		leaves: tuft(length, 14, 0.1),
 		sides: [
@@ -84,7 +84,8 @@ function fork(
 
 /** The holm oak's pieces. */
 export const PIECES: readonly PieceRule[] = [
-	// Still 21: a bare grey Y a metre tall, 1.8 centimetres thick at its cut. The stem forks at a
+	// Still 21: a bare grey Y a metre tall, 0.037 of its height thick at its cut (26 to 28 of 718
+	// pixels), its arms about 0.6 of that. The stem forks at a
 	// quarter of its height; the right arm forks again at half its own length, and two shorter arms
 	// leave the stem higher up. Five to six tufts, each at an arm's end. The piece is as wide as it
 	// is tall, and the turning video shows it flat: edge on it is a third as wide. It holds more
@@ -94,10 +95,10 @@ export const PIECES: readonly PieceRule[] = [
 		attitude: 'along',
 		variants: 2,
 		scale: 1 / LEAF_SCALE,
-		stem: arm(0.8, 0.009, [
-			fork(arm(0.55, 0.006, [fork(arm(0.3, 0.004), 0.45, 0.55, 50)]), 0.27, 0.8, 52),
-			fork(arm(0.32, 0.005), 0.5, 0.8, 50, true),
-			fork(arm(0.25, 0.004), 0.75, 0.8, 55),
+		stem: arm(0.8, 0.0155, [
+			fork(arm(0.55, 0.011, [fork(arm(0.3, 0.007), 0.45, 0.55, 50)]), 0.27, 0.8, 52),
+			fork(arm(0.32, 0.008), 0.5, 0.8, 50, true),
+			fork(arm(0.25, 0.007), 0.75, 0.8, 55),
 		]),
 	},
 	// Still 22: a shoot 35 centimetres long with fifteen to twenty leaves, one each 1.5 centimetres,
@@ -109,7 +110,8 @@ export const PIECES: readonly PieceRule[] = [
 		scale: 1 / LEAF_SCALE,
 		stem: {
 			length: { mean: 0.35, spread: 0.03 },
-			radius: [0.0025, 0.001],
+			// Still 22: the shoot is 0.026 of its height thick (19 of 729 pixels).
+			radius: [0.0046, 0.0015],
 			// The sub-branch's turning video: edge on it is 0.35 as wide as face on.
 			leaves: { gap: 0.016, from: 0.2, angle: 52, angleSpread: 8, scale: LEAF_SCALE, flat: 0.6 },
 			sides: [

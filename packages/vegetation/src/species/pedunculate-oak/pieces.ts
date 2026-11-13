@@ -41,12 +41,12 @@ function tuft(length: number, leaves: number, scale = LEAF_SCALE): PieceLeaves {
 function sideShoot(length: number, spread: number): PieceStem {
 	return {
 		length: { mean: length, spread },
-		radius: [0.004, 0.002],
-		kink: { length: 0.13, angle: 16 },
+		radius: [0.006, 0.004],
+		kink: { length: 0.07, angle: 20 },
 		leaves: tuft(length, 9),
 		sides: [
 			{
-				stem: { length: 0.08, radius: [0.0025, 0.0018], leaves: tuft(0.08, 6) },
+				stem: { length: 0.08, radius: [0.004, 0.003], leaves: tuft(0.08, 6) },
 				gap: 0.2,
 				from: 0.3,
 				to: 0.8,
@@ -59,6 +59,10 @@ function sideShoot(length: number, spread: number): PieceStem {
 	};
 }
 
+// The wood. Still 21: the stem is 0.023 of the branch's height thick at its cut (17 of 733 pixels),
+// and holds that to a quarter of the height. The winter oak's 21: 0.034, stouter, with twig ends
+// about 0.011 thick, and a bend at every node, each rounded over a few centimetres. Still 22: the
+// twig's stem is 0.032 of its height thick.
 /** The pedunculate oak's pieces. */
 export const PIECES: readonly PieceRule[] = [
 	// Still 21: a branch end a metre long, 1.2 centimetres thick at its cut. Five side shoots leave
@@ -73,8 +77,8 @@ export const PIECES: readonly PieceRule[] = [
 		depth: 22,
 		stem: {
 			length: { mean: 1, spread: 0.06 },
-			radius: [0.006, 0.0025],
-			kink: { length: 0.115, angle: 9 },
+			radius: [0.0115, 0.005],
+			kink: { length: 0.08, angle: 14 },
 			leaves: tuft(1, 9),
 			sides: [
 				{
@@ -107,14 +111,14 @@ export const PIECES: readonly PieceRule[] = [
 		depth: 34,
 		stem: {
 			length: { mean: 0.35, spread: 0.03 },
-			radius: [0.004, 0.002],
-			kink: { length: 0.09, angle: 12 },
+			radius: [0.0068, 0.003],
+			kink: { length: 0.07, angle: 24 },
 			leaves: tuft(0.35, 6, TWIG_LEAF_SCALE),
 			sides: [
 				{
 					stem: {
 						length: { mean: 0.12, spread: 0.02 },
-						radius: [0.0025, 0.0018],
+						radius: [0.003, 0.0025],
 						leaves: tuft(0.12, 6, TWIG_LEAF_SCALE),
 					},
 					gap: 0.09,
