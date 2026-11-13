@@ -2750,7 +2750,9 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [480, 270],
 		sameOnEveryTier: true,
-		tolerance: { maxDiffRatio: 0.005 },
+		// The third row's two copies cover 564 pixels. A tolerance below that fails when both draw
+		// the wrong level together, which the old 0.5 per cent could not see.
+		tolerance: { maxDiffRatio: 0.004 },
 	},
 	// The same copies and the same levels, with each level picked by its distance on this canvas
 	// rather than by its measured error, and then by the share of the screen its bounds cover. All
@@ -2861,7 +2863,9 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [480, 270],
 		sameOnEveryTier: true,
-		tolerance: { maxDiffRatio: 0.005 },
+		// The copies cover 199 pixels. A tolerance below that fails on an empty frame, which the
+		// old 0.5 per cent let pass.
+		tolerance: { maxDiffRatio: 0.0015 },
 	},
 	// The levels view: each copy draws its level in the level's color, at the same places as the
 	// first test's copies. A crisp level switches at once, so the picture holds on every path.
@@ -2893,7 +2897,8 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [480, 270],
 		switches: ['view=levels', 'compile=wait'],
-		tolerance: { maxDiffRatio: 0.005 },
+		// The markers cover 474 pixels. A tolerance below that fails on an empty frame.
+		tolerance: { maxDiffRatio: 0.003 },
 	},
 	// The built-in values of custom materials, at a held time: frame, camera and object, and the
 	// surface's world position, in a surface function and a vertex offset.
