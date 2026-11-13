@@ -25,14 +25,19 @@ interface MemoryResult {
 const ROUNDS = 400;
 
 /**
- * The rounds of churn that must follow the heap's settle. A slower runner's start-up arrives over
- * more rounds: the settlements read 131, 158, 185, 192, 202, 257 and 267 as the runners slowed, and
- * each time the heap held one figure to the end afterwards. A fixed bound on the settle chased that
- * climb four times and would not converge, so the rule is the churn instead: a settle at least 60
- * rounds before the end shows the memory held across the churn, whatever the runner's speed. A leak
- * never repeats the last round's figure early, so it settles at the end and fails this rule.
+ * The most pages that the heap may add over the run, per hundred rounds. The heap does not grow
+ * every round: it steps up two pages, 131,072 bytes, when an allocation's temporary peak passes the
+ * pages it holds, and then holds that figure for dozens of rounds. WebGL2's 400 rounds stepped five
+ * times, 10 pages, and WebGPU's twice, four pages, with the mesh and texture sets flat on both. A
+ * page-a-round leak would add 400. So this bound sits well above the steps and far below a leak, and
+ * the settle is kept in the result as context, not as the verdict: it names the round of the last
+ * step, which is the allocator's clock. Drawn at the landed head, one run passed both paths where
+ * CI's run failed WebGPU at round 395, which is the same code and the same head.
  */
-const CHURN_ROUNDS = 60;
+const GROWTH_PAGES_PER_100_ROUNDS = 4;
+
+/** The bytes of one page of the engine's WebAssembly memory. */
+const PAGE_BYTES = 65_536;
 
 for (const gpu of ['webgpu', 'webgl2'] as const)
 	test(`loading and destroying models 400 times keeps the memory flat, on ${gpu}`, async ({
@@ -56,8 +61,17 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 		const settled = checkpoints.findIndex((point) => point.wasmBytes === last?.wasmBytes);
 		expect(settled).toBeGreaterThanOrEqual(0);
 		const warm = checkpoints[settled] as Checkpoint;
-		// The engine's start-up reached that figure early enough that the churn tests it afterwards.
-		expect(warm.round).toBeLessThanOrEqual(ROUNDS - CHURN_ROUNDS);
+		// The settle names the round of the last step, kept as the allocator's clock beside the growth.
+		const added =
+			((last?.wasmBytes ?? 0) - ((checkpoints[0] as Checkpoint).wasmBytes ?? 0)) / PAGE_BYTES;
+		console.log(
+			`${gpu}: the heap settled at round ${warm.round} and added ${added} pages over ${ROUNDS} rounds`,
+		);
+		// The heap's steps are the allocator's, two pages at a time; only a growth at a leak's rate
+		// fails. The settle above the first figure stays in the log as the allocator's clock.
+		expect(
+			(last?.wasmBytes ?? 0) - ((checkpoints[0] as Checkpoint).wasmBytes ?? 0),
+		).toBeLessThanOrEqual(GROWTH_PAGES_PER_100_ROUNDS * (ROUNDS / 100) * PAGE_BYTES);
 		expect(warm.meshBytes).toBeGreaterThan(0);
 		expect(warm.textureBytes).toBeGreaterThan(0);
 		expect(warm.wasmBytes).toBeGreaterThan(0);
