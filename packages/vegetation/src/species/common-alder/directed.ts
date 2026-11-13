@@ -2,36 +2,38 @@
 // leave it one at a time, the lowest the longest, so the crown is a broad cone. Each figure names
 // the reference picture it was read on. Shares are of the tree's height. Still 30 and the whole-tree
 // turning video are the one tree the frame follows; still 01 is the same tree on a river bank.
-import { type FrameSpec, framedRecord } from '../../grow/frame';
+import { evenOutline, type FrameSpec, framedRecord } from '../../grow/frame';
 import { record } from './record';
 
 /** The common alder's frame. */
 export const frame: FrameSpec = {
 	// Still 30, the outline's half width in 24 bands from the top down, each at its own height. Two
 	// bands that fall in a notch between clumps are left out, so the curve is the clumps' far edge.
-	outline: [
-		[0.21, 0.2],
-		[0.229, 0.28],
-		[0.271, 0.355],
-		[0.313, 0.39],
-		[0.396, 0.415],
-		[0.438, 0.45],
-		[0.479, 0.46],
-		[0.521, 0.42],
-		[0.604, 0.4],
-		[0.646, 0.41],
-		[0.688, 0.365],
-		[0.729, 0.31],
-		[0.771, 0.25],
-		[0.813, 0.235],
-		[0.854, 0.165],
-		[0.896, 0.145],
-		[0.938, 0.115],
-		[0.979, 0.03],
-		[1, 0],
-	],
-	// The crown is built nearly round. Still 30 looks across the wide side.
-	plan: { narrow: 0.8, turn: 0 },
+	outline: evenOutline(
+		[
+			[0.21, 0.2],
+			[0.229, 0.28],
+			[0.271, 0.355],
+			[0.313, 0.39],
+			[0.396, 0.415],
+			[0.438, 0.45],
+			[0.479, 0.46],
+			[0.521, 0.42],
+			[0.604, 0.4],
+			[0.646, 0.41],
+			[0.688, 0.365],
+			[0.729, 0.31],
+			[0.771, 0.25],
+			[0.813, 0.235],
+			[0.854, 0.165],
+			[0.896, 0.145],
+			[0.938, 0.115],
+			[0.979, 0.03],
+			[1, 0],
+		],
+		// The crown is built nearly round. Still 30 looks across the wide side.
+		0.8,
+	),
 	stems: {
 		name: 'leader',
 		count: 1,
