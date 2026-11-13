@@ -30,6 +30,7 @@ The run folder holds:
 - `manifest.json`: the commit, the species, the references, and each frame's query, hash, time and the facts the page posted, its measures among them.
 - `sheet-*.png`: the contact sheets. The still sheets show each reference, its render and their outline overlay in a row. The turn and wind sheets show a grid of tiles: the reference frame over the render matched to it, then the outlines.
 - `metrics.json`, `summary.md`, `coverage.json` and `coverage.md`.
+- `verdict.json`: the run's verdict for each of the twelve rows, which `bun run plants:ledger` counts.
 
 Look at the sheets first. In an outline overlay, the reference is magenta and the render green, and grey is where both have plant.
 
@@ -88,9 +89,9 @@ The command ends with status 1 when a frame failed or when the coverage is not c
 | `horizon`, `fill`, `targetY`, `targetX`, `top`, `eye` | A whole-plant framing in screen shares, which stands the camera on the ground as a reference's camera stood. |
 | `along`, `span` | How far along a limb a limb view looks, and the metres of bark a bark view frames. |
 | `thin` | Metres of radius that a limb view frames: it picks the exposed limb that carries that thickness, so young bark shows. A fork view takes the fork whose limb is nearest that radius. |
-| `surface` | A limb view of the crown's outer rim, seen from under it looking up past its edge, rather than of one branch against a plain ground. |
-| `forkRow`, `aside` | A view up the stem: the row on which the bark where the stem divides lands, and the degrees the look turns to the right of the stem. |
-| `footRow`, `crownRow` | A view up the stem from a few steps back: the rows on which the ground at the bark and the crown's base land, the crown's at least a tenth of the frame above the foot's. A crown's base under twice a person's eye height takes the plain view up the stem, with a warning. |
+| `surface` | A limb view of the crown's outside: one foliage mass at the crown's edge, seen from outside the crown and below it, in place of one branch against a plain ground. |
+| `forkRow` | A view up the stem: the row on which the stem's first fork lands. |
+| `footRow`, `crownRow` | A view up the stem from a few steps back: the rows on which the ground at the bark and the crown's base land, the crown's at least a tenth of the frame above the foot's. |
 | `girth` | A bark view of a great limb that shows the limb itself: the share of the frame's height that the limb's thickness fills, above 0 and up to 1. |
 | `leaves`, `roll` | A cut piece framed at its photograph's scale: the leaf lengths that the frame's height covers, with the piece standing on its cut at the lower edge. Then the degrees the camera turns about its line of sight: a quarter turn lays the piece across the frame. |
 | `turns`, `step`, `columns` | A sheet of turns, each in a cell of its own camera. |
@@ -99,15 +100,34 @@ The page posts a `plant-review` message with the form it grew, the plant's drawn
 
 ## How the measures work
 
-- **The outline.** `plantMask` fits a smooth colour surface to the frame's border, above and below the horizon apart, and calls a pixel background when it lies near the surface. A border that is not plain can still separate a plant when the surface models it closely: a sky with no horizon whose fit is at least 0.99 with a residual of at most 24, or a soil below a horizon whose ground fit and residual meet the same bounds. The fit and residual are printed beside the figure, and a ground region outside a soil band's usual share of the frame is flagged, so a bad model is refused or named rather than masked on a guess. A band that the surfaces miss, such as a river or a far bank along the horizon, is cleared where it reaches both sides of the frame, or one side in a thin strip. Below the horizon a pixel is plant only when it hangs down from the plant above and is not a darker copy of the meadow. A render's outline comes from its matte, so it is exact.
+- **The outline.** `plantMask` fits a smooth colour surface to the frame's border, above and below the horizon apart, and calls a pixel background when it lies near the surface. A border that is not plain can still separate a plant when the surface models it closely: a sky with no horizon whose fit is at least 0.99 with a residual of at most 24, or a soil below a horizon whose ground fit and residual meet the same bounds. The fit and residual are printed beside the figure, and a ground region outside a soil band's usual share of the frame is flagged, so a bad model is refused or named rather than masked on a guess. A band that the surfaces miss, such as a river or a far bank along the horizon, is cleared where it reaches both sides of the frame, or one side in a thin strip. Below the horizon a pixel is plant only when it hangs down from the plant above and is not a darker copy of the meadow. A stem that reaches the horizon is then followed down to its foot: each row below is the stem's while the columns under it differ in colour from the ground beside them, so a dark foot on dark ground is not cut off at the horizon and the plant's height counts from its root collar. A render's outline comes from its matte, so it is exact.
 - **The turn's pairing.** Each outline is scaled so the plant's height fills a fixed canvas, with the trunk on its middle column. The overlap of every reference frame with every render fills a table, and the pairing tries every start and both directions, at the video's own step against the renders' step, and keeps the best mean overlap. A frame is covered when its render lies within half a frame's turn of the frame's own angle.
-- **The measures of a pair.** Shape and frame overlap, the width profile's error, the gap inside the crown's box with the whole frame's gap beside it, the crown box, and the CIEDE2000 colour difference of foliage and bark (about 2 is a visible step). The crown-box gap is the share of the crown's box that shows background; the frame's gap is the share of the whole picture, which widens with the empty sky a photograph keeps around its plant. The enclosed gap is the crown's own: the background between the crown's outermost plant pixels in each row, which is the sky seen through the foliage. **A crown-box gap is an envelope figure and cannot judge foliage density**: most of its background is the hollow between the outline and its box, so a row that asks see-through quotes the enclosed gap, and the box figure is printed beside it so the two are never read as one. A bark texture gives the colour difference of the middle of each picture.
+- **The measures of a pair.** Shape and frame overlap, the width profile's error, the gap inside the crown's box with the whole frame's gap beside it, the crown box, and the CIEDE2000 colour difference of foliage and bark (about 2 is a visible step). The crown-box gap is the share of the crown's box that shows background; the frame's gap is the share of the whole picture, which widens with the empty sky a photograph keeps around its plant. The enclosed gap is the crown's own: the background between the crown's outermost plant pixels in each row, which is the sky seen through the foliage. Both pictures count it one way, a texel as sky or as plant. A render's matte also holds each texel's clear share, and the summary prints the gap read by that share beside the figure, since earlier figures were read by it. **A crown-box gap is an envelope figure and cannot judge foliage density**: most of its background is the hollow between the outline and its box, so a row that asks see-through quotes the enclosed gap, and the box figure is printed beside it so the two are never read as one. A bark texture gives the colour difference of the middle of each picture.
 - **The sheath surface's figure.** A junction or crown-foot still of a species whose review data names its sheath target reads both pictures' foot and collar patches at the two ends of the surface's non-green rows, and prints the render's step against the photograph as the row's figure, with the render's step against the authored target beside it as the material check, and the patch areas. A target is an albedo and the render is lit, so a shaded sheath cannot pass it; the photograph is the same lit surface the render draws. Where the photograph's sheath cannot be isolated — its outline is refused — the figure says so as the carrier's limit and leaves the row unjudged. Those views draw their outline as a matte, so the patches stand on the plant alone even where a photograph does not separate from its soil. Only a still at one of those views, with a sheath target in the review data, takes the figure, and no other view or measure changes.
 - **The two-dial sweep.** A full round also draws the whole view six times — sparseness 0, 0.5 and 1 by the record's preset and a coarse one — and reads each in order: its connectedness, its height against the record's band, and its crown-box gap. A sparse picture that scatters clumps fails as a generator fault whatever its figures; a coarse picture that thins the plant has mixed the two dials and fails. `--sweeps` draws them alone. The gaps and heights of the sweep are read across the settings and against the record, not as a species verdict; a species whose height calibration lands later moves its heights.
 - **The connectivity gate.** The owner's rule is that no piece hangs free at any level or sparseness setting: every leaf, twig, card or bough that loses its parent is joined to its piece or removed. The review reads each still's matte as components at the picture's own width, names each piece that meets nothing inside the frame with its area and box, and fails the picture as a **generator fault** whatever the piece count says. The picture's own width decides: a downscale to the tool's work width can drop a hairline shoot the picture keeps and invent a floating piece, so the work-width read is printed beside it as a second figure and does not decide. A component the frame's border carries may run on outside the picture, so it is not counted as floating. The figure prints the component count beside it, and the sparseness the picture was drawn at where its query names one, so a row read above the record's density is checked at the sparse setting too.
 - **The mask check's gate.** A turning video's matte is checked against a colour outline read from each frame: the two outlines' overlap, averaged over the frames the outline can read. A colour outline covering under the plant mask's own 2 per cent subject floor cannot see the plant — a plant that fills the frame leaves the fitted background nothing to find — so those frames are reported as unreadable, and a turn with no readable frame is neither passed nor failed on the check. The gate is 0.6 for a turn on a natural background and 0.9 for a plain-background cut piece, each set from the corpus of 856 turn checks read on 12 November 2026: natural-background turns read 0.717 to 0.978 a frame and sound turns as low as 0.750, so their gate sits 0.15 under the lowest sound turn; plain-background cut pieces read 0.941 to 0.978 a frame, so their gate sits 0.045 under. A turn below its gate fails coverage, and the summary names the turn. A plain-background subject filling under 5 per cent of the frame reports rather than fails, since at that size the overlap is dominated by the boundary band: the holm oak's subbranch turn reads 0.846 with its colour outline at 2.7 to 4.0 per cent and its matte at 2 to 3, where a one-pixel edge costs about 0.15 of the overlap. Where the figure cannot see the subject it reports; it judges only where the subject is large enough and the outline a plant outline.
 - **The crown box's spread** at the rubric's eight angles that the video covers, for the reference and the render, against the rubric's band, which the reference's own spread widens.
-- **The close views' cameras.** Each close view first finds its subject in the plant. The subjects are the stem from its foot, the most level thick limb leaving the stem, and a limb dividing into two even arms. The others are the crown's lower rim, a branch with its side branches, and the ring of flower sites a plant carries at its crown, which a crown-flowering plant such as a cactus draws in place of a shoot tip. From inside the crown, the subject is the most level stretch of the most level great limb. A bark view of a limb takes a great limb. The trunk view draws the plant in leaf, as its photograph shows the crown above the bole, and takes the bole from the side that the fewest branches and leaves cross. It stands at a person's eye height and looks up, so the bole's foot stands on the frame's lower margin and its first fork a fifth of the frame below the top, with the limbs leaving the fork above it. The first fork is where a limb of a fifth of the stem's cross-section or more leaves, as the grower's tests count it. A camera at a person's eye height walks round the stem to a stand clear of low branches. A view frames its subject at the share of the picture that its photograph gives it. Then it weighs cameras round the subject on a coarse grid, as spheres for the wood and the shoots. It keeps the camera with the least of the rest of the plant in front of the subject. Where the photograph shows a plain ground, it also wants the least behind it. A fork view turns its picture until the limb comes up to the fork from the lower edge. The page posts the subject and that clutter with its facts. A tuft whose crown leaves no main stem has no limb for the junction view to find, so its junction picture stands at the crown's foot instead of the whole plant. A view that finds no subject of its own draws a plain camera instead, and its facts then name what it drew and carry a warning that says why. A view up the stem whose walk finds no clear stand warns the same way. The summary lists each still's subject, its clutter and any warning.
+- **The close views' cameras.** A close view is solved from its subject, with no search over the picture. The page reads the plant's subjects through one interface, `tests/pages/lib/plant-review/subjects.ts`: the trunk and its first fork, the great limbs with their joints, the forks, the crown's lobes, the twig tips, the branch pieces and a leaf. A generator that cannot name a subject reports it as absent, with the reason. The adapter in that file fills the interface from a macro skeleton. A skeleton names no lobes, so the bud sites of one branch stand in for one, in a ball of at most 0.12 of the plant's height in radius. It instances no branch pieces, so the cut views still draw the review cutting. Each view stands its camera so that the subject's points land where its photograph has them (`subject-shots.ts`). The table gives each view's contract. Shares count from the frame's left and top edges.
+
+  | View | Subject | What the frame must hold |
+  | --- | --- | --- |
+  | `below` | The trunk from its foot, up into the crown | The top of the bole on the middle column, 0.42 down. The bole ends at the lowest great limb's joint. The trunk at the lower edge takes 0.42 of the width, or what a stem too thin for that can take from 0.25 m away. The eye stands at 1.6 m, or at 0.45 of the bole's height under a lower crown, so it is always below the limbs. The camera looks up 25 degrees or more. A trunk that leans is seen from the side it leans away from. With `footRow` and `crownRow`, the view frames the bole between those rows |
+  | `below`, a plant with no trunk | The plant from a low eye inside its rim | Its foot on the middle column, 0.92 down. The lens stands at 0.07 of the plant's height above the ground and 0.45 of its height from its foot, so it looks up 20 to 30 degrees and the leaves arch over the frame |
+  | `limb` with `surface` | One foliage mass at the crown's edge | The lobe on the middle, its width 0.7 of the frame's shorter side. The camera stands outside the crown and looks up 20 degrees |
+  | `crown-underside` | The crown from under a great limb | The limb halfway to the trunk on the middle, seen at 60 degrees up or more. The camera stands under the limb, at 1.6 m or at 0.6 of the joint's height. The limb's joint stands in the frame's lower part. A foliage mass stands in the frame. A plant with no trunk is seen from under its rim: the lens at 0.12 of its height, 0.3 of its reach out from the foot, looking out and up at the leaves' arch |
+  | `inside` | The trunk inside the crown | The trunk ahead on the middle, 0.28 of the width, seen at 40 degrees up from the widest gap between the limbs. The camera stands above the bole's top and no farther out than half the plant's reach. A limb's joint in the frame. Where the trunk ends at the bole's top, the camera looks along the thickest limb |
+  | `junction` | A great limb leaving the trunk | The collar 0.47 across and halfway down. The trunk to its left and the limb leaving to the right. The limb's base takes 0.35 of the height, in a frame no shorter than 0.9 of the trunk's diameter. The camera stands square to the join and looks up 10 degrees |
+  | `fork` | A limb dividing into two arms | The joint on the middle column, 0.58 down. The limb below it takes 0.22 of the width. One arm leaves to each side above the joint. The limb sought is 0.27 as thick as the trunk at breast height, or as thick as `thin` names. The page draws only the wood within four limb radii of the joint's depth |
+  | `bark-base` | The trunk's foot and the ground | The foot 0.85 down. The trunk takes half the width, whatever its thickness |
+  | `bark-mid` | The bark at mid-trunk | Bark from edge to edge. A frame with no `span` covers at most 0.8 of the trunk's width |
+  | `bark-limb` with `girth` | The bark on a great limb | The limb's thickness takes `girth` of the height. The limb crosses the frame |
+  | `trunk` | The bole from its foot to its top | The foot 0.92 down and the bole's top 0.2 down, from eye height |
+
+  A solve takes the subject that fits its photograph: the thickest limb that leaves at 25 degrees or more, a great limb's fork whose thinner arm has half the limb's radius. It then takes the first one that no trunk or great limb hides from the camera. A camera that looks up the trunk walks round it in steps of 15 degrees to a stand clear of the limbs. A slot's `distance` still moves the camera along its line of sight, and the contract is then checked on the camera that drew. The other close views find their subject in the skeleton and the shoot rows, and weigh cameras round it on a coarse grid (`close.ts`): one branch with its side branches, a twig with its end clusters, a limb's hanging strands, a tuft's flowering heads, and a bark view that names a `thin` radius. A tuft whose crown leaves no main stem has no limb for the junction view, so its junction picture stands at the crown's foot. The page posts each view's subject with its facts, and the summary lists it.
+- **The subject check and the void picture.** The page projects each point of a solved view's contract through the camera that drew. A point must land in front of the lens, inside its frame box and at its contracted size. The page posts the result with the contract's regions: the parts of the picture that must show plant, or open ground. Where the run drew a matte, the tool reads the plant's cover in each region (`subject-check.ts`). A picture is void when the plant has no subject for its view, when a point misses its box, or when a region fails. The tool reads no figure from a void picture. It lays the picture on the sheet beside its reference with the word VOID, lists the reason in the summary and the coverage list, and counts the file as not compared. A void picture is a fault of the tool's camera or of the file's mapping to a view. It never passes or fails a row. The page draws a matte, the plant black on white, and it can draw the wood alone. It draws no picture of the plant's parts in flat colours, so the check cannot yet see foliage that hides a subject whose points are in the frame.
+- **The whole view's framing check.** A whole view or a silhouette whose render drew a matte is checked before any figure is read. A render whose plant runs to an edge of the frame that the photograph's plant stands clear of is void, with the edges in the reason. The plant's box must also match the photograph's within a fifth, in height or in width. A render smaller in both, or larger in both, is void, with both sizes in the reason. The plant's place in the frame is not compared, because a photograph's outline can cut its foot short and a render's can run to the frame's lower edge.
+- **The species' review data.** A species' slot file holds two reserved keys beside its slot queries (`review-data.ts`). `_habit` names how the plant stands where that changes the outline's reading: `clump` for several bare stems from one stool, whose crown starts where the rows fill with foliage. `_pictures` names single pictures. A picture with a `standing` of `second-form`, `reference-limit` or `stand`, and a `reason`, does not judge the primary plant. A `stand` is drawn, set beside its reference and not measured; its `count` and `spacing` say what the page must plant once it can. A picture with an `outline` reason has outline figures that are void, and keeps its color figures. The run reads these keys from the species' own file whether or not `--slot-query` names it.
 - **The cut pieces of close stills.** A still of one branch or one twig on a plain ground is drawn as a cut piece, as the studio stills are. It is framed at the photograph's own scale in leaf lengths and stands on its cut at the frame's lower edge. A branch lies across the frame, as its photograph lays it.
 - **The studio pieces.** A cut piece is fitted to the points it draws: its parts', and the vertices of its shoot rows, which draw the leaves of a piece cut from an instanced plant. A studio still or a cut piece's turning video also gives the rows its piece's top and foot stand on, measured from the picture. The page then puts the piece's highest point on the top row and its lowest on the base row, or on the frame's foot where the picture's piece runs off it.
 - **The wind's motion.** In six height bands of the plant, base first, the share of the outline that changes from frame to frame, averaged over each clip.
@@ -124,5 +144,82 @@ The page posts a `plant-review` message with the form it grew, the plant's drawn
 - A stand-in's nearest level has no shoots: it shows its wood and its cards up close.
 - A ground plant such as a sedge or a hosta draws its whole body as merged foliage, with no wood. A
   view that asks for the wood alone keeps that foliage, since the plant has nothing else to show,
-  and a view up the stem stands low at the rim of the plant's spread instead of at a person's eye
-  height, since the plant has no stem to look up.
+  and a view up the stem stands at a low eye beside the plant instead of at a person's eye height,
+  since the plant has no stem to look up. A bark view of such a plant is void: its slot must name
+  the view of the surface that the photograph shows.
+
+## The verdict and the ledger
+
+A run writes `verdict.json` into its folder. The file holds one entry for each of the twelve rows
+of the [plant review standard](../../../.dev/plant-review.md): `pass`, `fail`, `void` or `unjudged`,
+the pictures the row rests on, each figure with its band, who judged the row, and the run and commit
+the pictures were drawn at.
+
+- The tool passes no row. For the rows whose band the standard states, it writes a proposal under
+  `proposed`: figures in band, or out of band with the figures outside. Row 6's band runs from 0.02
+  below the reference's sky gap to 0.05 above it, on every whole view. Rows 8 and 10 take a color
+  difference of 3 or less. A row with only a proposal is `unjudged`. The tool fails row 12 alone
+  when a picture draws a piece that hangs free.
+- The tool writes the figures of rows 4 and 9 with no band, since the standard states none, and
+  leaves those rows and the rows the eye judges as `unjudged`.
+- A row whose pictures are all void is `void`. A row with some void pictures names them beside its
+  evidence.
+- Row 6's figure is the sky gap enclosed by the crown's outline. The crown box's sky share does not
+  judge the row, since it measures the taper of a plant that does not fill its box.
+- A picture that the review data sets aside is listed under the row's `setAside`, with its reason.
+  It is not among the row's evidence, and its figures are not among the row's figures. A picture
+  whose outline is void is listed under `outlineVoids`.
+- Row 2 holds a cut branch's four density figures where a run measured them (`cutBranch` on the
+  still's result): the wood per tip and the tips per area within a quarter of the photograph's, the
+  share of fan joints at most a tenth above it, and the kinks at least half of it. The reviewer
+  judges the row.
+- A picture of a part that the plant does not have is listed under the row's `lacking`, and the
+  tool fails the row on it. The species' reference set holds the photograph, so the species has the
+  part, and a plant grown without it is wrong. A void is different: the plant has the part and the
+  camera did not frame it.
+- A picture with no subject check is listed under the row's `unchecked`. A solved view is checked
+  by its contract, and a whole view by the crop and size checks. No row passes on unchecked
+  pictures alone.
+- A reference picture of the row that the run did not compare is listed under `notCompared`.
+- Rows 1 to 3 name the run's picture of the wood alone, `views/skeleton.png`, among their evidence.
+  A run that draws every still draws that picture too. None of those rows passes without it.
+- `balance` holds the plant's balance through the eight angles of the standard's coverage rule. Its
+  figures are the spread of the crown box's width and of its height over the whole-plant turning
+  video, each against its band. The tool fails the balance where a spread leaves its band.
+  Otherwise the balance waits for a reviewer, like a row.
+- A reviewer edits the file: sets a row's `verdict`, sets `judge` to `reviewer`, and gives a
+  `reason`. A pass also needs `review`: the reviewer's name, the day as year, month and day, and
+  the path of the review file that holds the reading. That file must exist and must name the row
+  as `row 6`, or name the `balance`. Row 11 names its `neighbour`. A run compared again keeps
+  every row a reviewer judged and refreshes the rest.
+
+`bun run plants:ledger <path...>` reads the verdict files of run folders and prints the species by
+row table and the total. A path is a run folder or a folder of run folders.
+
+```sh
+bun run plants:ledger /tmp/plant-renders
+```
+
+The table always holds the standard's twenty species, and the total's base is always 240 rows. A
+species with no verdict counts as none of its twelve. Under each species the command prints how many
+pictures each row lost: not compared, void, of a part the plant lacks, set aside, or with no
+subject check. A species is done when its twelve rows and its balance pass and its run compared
+every reference file.
+
+The command ends with status 1 and prints no total when a verdict is unsound. A verdict is unsound
+in each of these cases:
+
+- A row is missing, a judged row names no judge, or a fail or a void gives no reason.
+- A figure names another run than the file's.
+- The file is not `verdict.json` in its run folder, or the folder holds no manifest, or the
+  manifest names another run, commit or species.
+- The commit is not a commit's full name.
+- A picture the verdict names is not in the run folder.
+- A pass is the tool's, or lacks its reason, reviewer, day or review file.
+- A pass rests on no picture, only on void pictures, or only on pictures with no subject check.
+- A pass stands on a run drawn from a tree with changes, or on a run that did not compare every
+  reference file.
+- A row passes though the plant lacks a part its photograph shows.
+- Two verdict files name one species, or a file names a species outside the twenty.
+
+Quote a count of passing rows only from this command's output.
