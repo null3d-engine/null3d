@@ -1087,12 +1087,41 @@ function bendByte(along: number, span: number): number {
 	return Math.min(255, Math.max(0, Math.round((along / span) * 255)));
 }
 
+/** Metres between the rings of a stem run that its leaves hide. */
+const HIDDEN_RING_GAP = 0.04;
+
+/**
+ * The runs of each axis that its leaves hide, as metres along the shoot from and to: where one leaf
+ * stands within two of the stem's radii of the next, the leaves close round the stem between them.
+ */
+function hiddenRuns(plan: ShootPlan): (readonly [number, number])[][] {
+	const alongs: number[][] = plan.axes.map(() => []);
+	for (const leaf of plan.leaves) alongs[leaf.axis]?.push(leaf.along);
+	return plan.axes.map((points, axis) => {
+		const runs: [number, number][] = [];
+		const leaves = (alongs[axis] as number[]).sort((a, b) => a - b);
+		let k = 0;
+		for (let i = 1; i < leaves.length; i++) {
+			const from = leaves[i - 1] as number;
+			const to = leaves[i] as number;
+			while (k < points.length - 1 && (points[k + 1] as AxisPoint).along <= from) k++;
+			if (to - from > 2 * ((points[k] as AxisPoint | undefined)?.radius ?? 0)) continue;
+			const last = runs[runs.length - 1];
+			if (last && last[1] >= from) last[1] = to;
+			else runs.push([from, to]);
+		}
+		return runs;
+	});
+}
+
 /**
  * Meshes a prototype's plan at one tier, every vertex unoccluded.
  *
  * @param plan The plan.
  * @param leafMeshes The leaf meshes at this tier.
  * @param detail The tier.
+ * @param thinHidden Whether a stem run that its leaves hide takes rings far apart, since no ring
+ *   of it shows.
  * @returns The mesh.
  * @category api/vegetation
  */
@@ -1100,11 +1129,18 @@ export function meshShoot(
 	plan: ShootPlan,
 	leafMeshes: readonly PrototypeArrays[],
 	detail: Detail,
+	thinHidden = false,
 ): MeshWriter {
 	const mesh = new MeshWriter();
 	const sides = STEM_SIDES[detail];
-	for (const points of plan.axes) {
-		// Rings no closer than twice the stem's radius; the low tier keeps one ring at each year's end.
+	const hidden = thinHidden ? hiddenRuns(plan) : undefined;
+	plan.axes.forEach((points, axis) => {
+		const runs = hidden?.[axis] ?? [];
+		/** Whether the stem between two places along the shoot lies inside one hidden run. */
+		const covered = (from: number, to: number): boolean =>
+			runs.some(([start, end]) => from >= start && to <= end);
+		// Rings no closer than twice the stem's radius, and far apart where leaves hide the stem; the
+		// low tier keeps one ring at each year's end.
 		const path: TubePoint[] = [];
 		for (let k = 0; k < points.length; k++) {
 			const point = points[k] as AxisPoint;
@@ -1112,7 +1148,10 @@ export function meshShoot(
 			const end = k === points.length - 1;
 			if (last && !end) {
 				const gap = point.along - last.along;
-				if (gap < point.radius * 2 || (detail === 'low' && !point.unitEnd)) continue;
+				const least = covered(last.along, point.along)
+					? Math.max(HIDDEN_RING_GAP, point.radius * 2)
+					: point.radius * 2;
+				if (gap < least || (detail === 'low' && !point.unitEnd)) continue;
 			}
 			path.push(point);
 		}
@@ -1128,7 +1167,7 @@ export function meshShoot(
 			// the least drawn width, as it widens the wood.
 			(_ring, radius) => [Math.min(1, radius / WOOD_RADIUS_RANGE), 0],
 		);
-	}
+	});
 	for (const bud of plan.buds) {
 		const shape = (bud.cluster ? CLUSTER_BUD : AXIL_BUD)[detail];
 		mesh.mark();
@@ -1211,13 +1250,17 @@ export function meshShoot(
  *
  * @param plan The plan.
  * @param leaves The species' leaf meshes at every tier, low first.
+ * @param thinHidden Whether a stem run that its leaves hide takes rings far apart.
  * @returns The meshes and the measures.
  */
 export function meshedPlan(
 	plan: ShootPlan,
 	leaves: readonly (readonly PrototypeArrays[])[],
+	thinHidden = false,
 ): Pick<UncardedPrototype, 'length' | 'radius' | 'leaves' | 'tiers'> {
-	const writers = DETAILS.map((detail, tier) => meshShoot(plan, leaves[tier] ?? [], detail));
+	const writers = DETAILS.map((detail, tier) =>
+		meshShoot(plan, leaves[tier] ?? [], detail, thinHidden),
+	);
 	shootOcclusion(writers, SHADE_TIER);
 	const tiers = writers.map((writer) =>
 		writer.finishPrototype(),

@@ -115,11 +115,16 @@ const BY_ORDER: Paint = {
 	mark: [40, 150, 70],
 };
 
-/** A foliage patch as the sheet rings it. */
+/**
+ * A foliage patch as the sheet rings it: as wide as its width across and, where it lies along a
+ * limb, as long as its length along the level direction it lies in.
+ */
 interface Ringed {
 	readonly centre: readonly [number, number, number];
 	readonly width: number;
 	readonly depth: number;
+	readonly length?: number;
+	readonly along?: readonly [number, number, number];
 }
 
 /** A directed frame as the sheet draws it, whichever planner made it. */
@@ -143,9 +148,12 @@ function patchMarks(patches: readonly Ringed[]): Float32Array {
 		for (const lift of [0.5, -0.5])
 			for (let k = 0; k < RING; k++) {
 				const angle = (k / RING) * 2 * Math.PI;
-				marks[at++] = patch.centre[0] + (Math.cos(angle) * patch.width) / 2;
+				const [ax, , az] = patch.along ?? [1, 0, 0];
+				const u = (Math.cos(angle) * (patch.length ?? patch.width)) / 2;
+				const v = (Math.sin(angle) * patch.width) / 2;
+				marks[at++] = patch.centre[0] + ax * u - az * v;
 				marks[at++] = patch.centre[1] + lift * patch.depth;
-				marks[at++] = patch.centre[2] + (Math.sin(angle) * patch.width) / 2;
+				marks[at++] = patch.centre[2] + az * u + ax * v;
 			}
 	return marks;
 }
@@ -307,6 +315,7 @@ async function coniferFrame(directed: Species): Promise<Drawn> {
 				place: Number(limb.place.toFixed(3)),
 				reach: share(limb.reach, H),
 				leaves: share(plan.trunk[limb.trunkNode]?.y ?? 0, H),
+				patchLength: share(limb.patch.length, H),
 				patchWidth: share(limb.patch.width, H),
 				patchDepth: share(limb.patch.depth, H),
 			})),

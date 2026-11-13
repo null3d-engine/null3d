@@ -1012,7 +1012,9 @@ export function piecePrototypes(
 					parts: parts.length,
 					...(rule.plane ? { plane: rule.plane } : {}),
 					sites: pieceSites(plan),
-					...meshedPlan(plan, leaves),
+					// A piece's leaves close round its stems where they stand densely, and no ring of
+					// the wood they hide shows.
+					...meshedPlan(plan, leaves, true),
 				});
 		}
 	return out;
