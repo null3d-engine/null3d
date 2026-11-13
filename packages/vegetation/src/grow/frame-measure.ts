@@ -543,6 +543,9 @@ function covered(stretches: [number, number][]): number {
 	return total;
 }
 
+/** The depth under a boundary, as a share of the height, that is the arithmetic's own grain. */
+const ON_BOUNDARY = 1e-9;
+
 /** A foliage patch that a view shows under the crown's lower boundary. */
 export interface UnderFault {
 	/** Degrees round the plant that the side faces whose boundary the patch stands under. */
@@ -586,7 +589,8 @@ export function underBoundary(
 			if (reach < 0 || reach > within) continue;
 			read++;
 			const by = curveAt(side.under, reach) - (patch.centre[1] - patch.depth / 2) / crown.scale;
-			if (by > slack) under.push({ side: side.toward, patch, reach, by });
+			// A foot that stands on the boundary is not under it, whatever the last digit says.
+			if (by > slack + ON_BOUNDARY) under.push({ side: side.toward, patch, reach, by });
 		}
 	}
 	return { read, under };

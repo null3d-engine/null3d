@@ -55,6 +55,12 @@ const STRAIGHT_STEP = 3;
 const TRIAL_STEPS = 32;
 const LENGTH_PASSES = 22;
 /**
+ * The steps a course is walked in to find where it first runs under the crown's lower boundary, and
+ * the halvings that place the crossing inside a step.
+ */
+const UNDER_STEPS = 16;
+const UNDER_PASSES = 10;
+/**
  * How far a crooked axis may stray from its own line, sideways and up or down, as shares of its
  * rule's sway: wide enough that its mean line wanders, and bounded so it keeps its course.
  */
@@ -551,8 +557,8 @@ interface Built {
 
 /**
  * An outline that is the same to both sides of each of its two axes: the stated reach along one
- * axis and a share of it along the other, over a level lower boundary at the reach's first height.
- * It states a crown that one curve was read for; a crown read side by side states its sides.
+ * axis and a share of it along the other. It states a crown that one curve was read for, and no
+ * lower boundary; a crown read side by side states its sides.
  *
  * @param reach The crown's reach along its wide axis as a share of the height, by the share of the
  * height.
@@ -565,11 +571,10 @@ export function evenOutline(reach: Curve, narrow: number, turn = 0): FrameSide[]
 	const share = clamp(narrow, 0.5, 1);
 	const drawn: Curve =
 		typeof reach === 'number' ? reach * share : reach.map(([at, width]) => [at, width * share]);
-	const under = typeof reach === 'number' ? 0 : (reach[0]?.[0] ?? 0);
 	return [0, 90, 180, 270].map((quarter) => ({
 		toward: (((turn + quarter) % 360) + 360) % 360,
 		reach: quarter % 180 === 0 ? reach : drawn,
-		under,
+		under: 0,
 	}));
 }
 
@@ -636,6 +641,29 @@ export function outlineRadius(spec: FrameSpec, scale: number, y: number, azimuth
 	// A side with no crown at the height draws the outline in to the trunk's line.
 	if (a <= 0 || b <= 0) return 0;
 	return scale / Math.sqrt(first / (a * a) + second / (b * b));
+}
+
+/**
+ * The height that no foliage may stand under at a place beside the plant, in metres. Each stated
+ * side's lower boundary is read as the view across that side shows it, by the place's distance from
+ * the trunk's line in that view, and the place answers to every side it stands on: the highest of
+ * their boundaries there.
+ *
+ * @param spec The frame.
+ * @param scale The plant's height in metres.
+ * @param x The place's x in metres.
+ * @param z The place's z in metres.
+ * @returns The height in metres.
+ * @category api/vegetation
+ */
+export function outlineUnder(spec: FrameSpec, scale: number, x: number, z: number): number {
+	let highest = 0;
+	for (const side of spec.outline) {
+		const toward = radians(side.toward);
+		const reach = x * cos(toward) + z * sin(toward);
+		if (reach >= 0) highest = Math.max(highest, curveAt(side.under, reach / scale));
+	}
+	return highest * scale;
 }
 
 /**
@@ -893,6 +921,37 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 						? curveAt(lengthRule.parent, place) * parentLength
 						: 0.3 * scale;
 			shaped(length);
+			/**
+			 * The length, up to a stated one, at which a course that runs down first takes its tip
+			 * under the crown's lower boundary, or deeper under it than where it left. A course that
+			 * does not run down keeps its length, since wood may run along the boundary.
+			 */
+			const aboveUnder = (most: number): number => {
+				// A tip stands a length along the course's mean heading, whatever the length.
+				const run = tipOf([0, 0, 0], tangent, 1);
+				if (run[1] >= 0) return most;
+				const under = (trial: number): number =>
+					outlineUnder(spec, scale, start[0] + run[0] * trial, start[2] + run[2] * trial) -
+					(start[1] + run[1] * trial);
+				const from = Math.max(0, under(0));
+				let clear = 0;
+				for (let k = 1; k <= UNDER_STEPS; k++) {
+					const trial = (most * k) / UNDER_STEPS;
+					if (under(trial) <= from) {
+						clear = trial;
+						continue;
+					}
+					let low = clear;
+					let high = trial;
+					for (let pass = 0; pass < UNDER_PASSES; pass++) {
+						const middle = (low + high) / 2;
+						if (under(middle) <= from) low = middle;
+						else high = middle;
+					}
+					return low;
+				}
+				return most;
+			};
 			/** Finds the length from the course as it stands. */
 			const measure = (): void => {
 				if ('share' in lengthRule) length = curveAt(lengthRule.share, place) * scale;
@@ -926,6 +985,7 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 				if (rule.vary) length *= 1 + (draw(Purpose.Vary, id) * 2 - 1) * rule.vary;
 				if (rule.most !== undefined) length = Math.min(length, curveAt(rule.most, place) * scale);
 				if (rule.least !== undefined) length = Math.max(length, curveAt(rule.least, place) * scale);
+				if ('outline' in lengthRule) length = aboveUnder(length);
 				length = Math.max(length, 0.01 * scale);
 			};
 			// The bends are shaped for the length, and the length is found from the bends, twice over.
@@ -1113,7 +1173,17 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 			let width = curveAt(patch.width, place) * scale;
 			let depth = curveAt(patch.depth, place) * scale;
 			let centre: Vector3;
-			if (patch.along === undefined) centre = [end.x, end.y + (patch.offset ?? 0) * depth, end.z];
+			if (patch.along === undefined)
+				// Foliage stands on the crown's lower boundary where its wood runs along it or ends at
+				// it, and never under it.
+				centre = [
+					end.x,
+					Math.max(
+						end.y + (patch.offset ?? 0) * depth,
+						outlineUnder(spec, scale, end.x, end.z) + depth / 2,
+					),
+					end.z,
+				];
 			else {
 				// The patch clothes the axis: it holds every node past the share where it begins.
 				const low = [Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY];

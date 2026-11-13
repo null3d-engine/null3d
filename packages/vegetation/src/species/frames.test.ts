@@ -23,6 +23,7 @@ import {
 	growFrame,
 	outlineRadius,
 	outlineSpan,
+	outlineUnder,
 	planFrame,
 } from '../grow/frame';
 import {
@@ -103,6 +104,12 @@ const BEND_DIAMETERS_LEAST = 3;
 const BACK_MOST = 0.03;
 const BACKWARD_JOINTS_MOST = 0.02;
 const AXES_PER_SOCKET_MOST = 1.6;
+/**
+ * How far, as a share of the height, the end of an axis that runs down may stand under the lower
+ * boundary beyond where the axis left: its length is found on a course summed in steps, and the
+ * course is then laid in arches.
+ */
+const UNDER_SLACK = 0.02;
 const DEG = 180 / Math.PI;
 
 /** The unit step from one node of a skeleton to another, and its length. */
@@ -262,7 +269,7 @@ const HELD: readonly Held[] = [
 		plumb: ['shoot'],
 		// The leading shoots' tips are the plant's top.
 		through: 3,
-		bandFaults: 269,
+		bandFaults: 268,
 		axesPerSocket: 1.0,
 		tall: [0.95, 1.08],
 	},
@@ -332,7 +339,10 @@ const HELD: readonly Held[] = [
 		base: { bough: 0.5, branch: 0.55 },
 		plumb: ['trunk'],
 		through: 0,
-		bandFaults: 178,
+		// The count rose from 178 when the planner began to hold the lower boundary. A low band's
+		// stated reach is the farthest of anything that touches the band, which the hanging tips of
+		// the low limbs set, and the crown no longer fills its lowest bands out to those tips.
+		bandFaults: 212,
 		axesPerSocket: 1.005,
 		tall: [0.95, 1.04],
 	},
@@ -473,6 +483,17 @@ describe('a crown outline stated side by side', () => {
 		expect(underBoundary({ scale: HEIGHT, patches: [hung] }, lopsided, 0.2).read).toBe(0);
 	});
 
+	it('answers at a place to every side the place stands on', () => {
+		// Toward the first side and the second: the higher of the two boundaries there.
+		expect(outlineUnder(lopsided, HEIGHT, 3, 3)).toBeCloseTo(3, 9);
+		expect(outlineUnder(lopsided, HEIGHT, 3, 1.5)).toBeCloseTo(2, 9);
+		// Toward the third side and the fourth.
+		expect(outlineUnder(lopsided, HEIGHT, -3, -3)).toBeCloseTo(2, 9);
+		// An outline of one curve states no lower boundary.
+		const even: FrameSpec = { outline: evenOutline(0.4, 0.8), stems: pedunculateOak.stems };
+		expect(outlineUnder(even, HEIGHT, 3, 3)).toBe(0);
+	});
+
 	it('builds an even outline as the ellipse of its two axes', () => {
 		const reach = [
 			[0.3, 0.2],
@@ -550,6 +571,23 @@ for (const held of HELD)
 				expect(fill.mean).toBeGreaterThanOrEqual(FILL_MEAN[0]);
 				expect(fill.mean).toBeLessThanOrEqual(FILL_MEAN[1]);
 				expect(fill.least).toBeGreaterThanOrEqual(FILL_SIDE);
+			}
+		});
+
+		it('stands no foliage under the lower boundary it states, and ends down-running wood at it', () => {
+			for (const seed of SEEDS) {
+				const plan = planOf(held, seed);
+				expect(underBoundary(plan, held.spec).under).toEqual([]);
+				const under = (node: { x: number; y: number; z: number }): number =>
+					outlineUnder(held.spec, plan.scale, node.x, node.z) - node.y;
+				for (const axis of plan.axes) {
+					const first = axis.nodes[0];
+					const last = axis.nodes[axis.nodes.length - 1];
+					if (axis.order === 0 || !first || !last || last.y >= first.y) continue;
+					expect(under(last)).toBeLessThanOrEqual(
+						Math.max(0, under(first)) + UNDER_SLACK * plan.scale,
+					);
+				}
 			}
 		});
 
@@ -887,8 +925,8 @@ describe('the crown test, on crowns made by hand', () => {
  * The pedunculate oak against what its photographs show and a smooth dome does not. Four things
  * are held: no foliage under the fork near the bole, a rim broken into lumps with sky bays
  * between, great limbs of the thickness each has in the view from below, and the reach of the long
- * low limb the tree is known by. The oak built with its clumps placed first passed every other
- * test here and read as a clipped dome; its patches are kept beside the record, and it must fail.
+ * low limb the tree is known by. The oak built with its clumps placed first passed every test of
+ * its day and read as a clipped dome; its patches are kept beside the record, and it must fail.
  */
 describe("the pedunculate oak's frame against its photographs", () => {
 	const oak = HELD.find((held) => held.id === 'pedunculate-oak') as Held;
@@ -897,12 +935,6 @@ describe("the pedunculate oak's frame against its photographs", () => {
 	 * bole's flare is a tenth of the height to each side, and the limbs leave inside this.
 	 */
 	const FORK_NEAR = 0.15;
-	/**
-	 * The patches that a view shows under the lower boundary inside that distance, summed over the
-	 * seeds and the four sides. The photograph has none. They are the hanging ends of the low limbs
-	 * that point at the camera and away from it. A number that may only fall.
-	 */
-	const UNDER_FORK = 18;
 	/**
 	 * The lumps a whole view's rim divides into: the least and the most over the 193 frames of the
 	 * turning video. Still 01 has seven and still 02 five. A view is read from its still's own
@@ -983,10 +1015,8 @@ describe("the pedunculate oak's frame against its photographs", () => {
 	const reachHolds = (facts: Facts): boolean =>
 		Math.abs(reach(facts) - LANDMARK_REACH) <= REACH_WITHIN;
 
-	it('shows no more foliage under the fork near the bole than it is known to', () => {
-		let under = 0;
-		for (const seed of SEEDS) under += underFork(factsOf(planOf(oak, seed)));
-		expect(under).toBe(UNDER_FORK);
+	it('shows no foliage under the fork near the bole', () => {
+		for (const seed of SEEDS) expect(underFork(factsOf(planOf(oak, seed)))).toBe(0);
 	});
 
 	it('breaks its rim into lumps with sky bays between, as its stills and its turn do', () => {
@@ -1018,8 +1048,8 @@ describe("the pedunculate oak's frame against its photographs", () => {
 
 	it('fails the oak built with its clumps first on three of the four', () => {
 		expect(clumpsFirst.commit).toBe('5b5c56272');
-		// On one seed it shows more foliage under the fork than the frame may over four.
-		expect(underFork(clumps)).toBeGreaterThan(UNDER_FORK);
+		// One patch in eight that a view shows near the trunk's line hangs under the boundary.
+		expect(underFork(clumps)).toBe(26);
 		expect(lumps(clumps)).toEqual([2, 1]);
 		expect(lumpsHold(clumps)).toBe(false);
 		const shares = thickness(clumps);
