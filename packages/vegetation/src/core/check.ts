@@ -368,6 +368,10 @@ function frondCrownProblems(record: Species, growth: FrondCrown, out: string[]):
 		shareProblem(rank.share, `growth.fronds.ranks[${i}].share`, out);
 		if (!(rank.leave >= -90 && rank.leave <= 90))
 			out.push(`growth.fronds.ranks[${i}].leave is ${rank.leave}; it is degrees from -90 to 90`);
+		if (rank.spread !== undefined && !(rank.spread >= 0 && rank.spread <= 45))
+			out.push(
+				`growth.fronds.ranks[${i}].spread is ${rank.spread}; it is degrees either side, from 0 to 45`,
+			);
 		if (!(rank.length > 0 && rank.length <= 1))
 			out.push(
 				`growth.fronds.ranks[${i}].length is ${rank.length}; it is a share of the piece's length, above 0 and at most 1`,

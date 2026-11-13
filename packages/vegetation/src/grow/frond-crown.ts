@@ -11,8 +11,9 @@
 //
 // Every socket carries a rank, ranked once across the plant. Within each group (a rank of fronds,
 // the dead fronds) a socket's place in the spiral is turned into a share by the radical inverse, so
-// any leading run of the ranks stands spread round the trunk with an even share of every group. A
-// sparser plant thins whole sockets by the plant's own order (grow/sparse.ts).
+// any leading run of the ranks stands spread round the trunk with an even share of every group. Each
+// frond is a foliage mass of its own, so a sparser plant keeps a leading run of the ranks
+// (grow/sparse.ts).
 import {
 	AXIS_RACHIS,
 	AXIS_STEM,
@@ -64,7 +65,7 @@ const DRAW = {
 
 /** Metres between the trunk's nodes. */
 const TRUNK_NODE = 0.3;
-/** Degrees a living frond's leaving angle strays from its rank's, either way. */
+/** Degrees a frond's leaving angle strays from its rank's, either way, in a rank with no spread. */
 const LEAVE_JITTER = 4;
 /** Degrees a frond's place round the trunk strays from the spiral's, either way. */
 const TURN_JITTER = 6;
@@ -116,6 +117,22 @@ export function radicalInverse(index: number): number {
 		unit /= 2;
 	}
 	return value;
+}
+
+/**
+ * Each of `n` fronds' step through its rank's spread, from 0 to `n - 1`: the place of its radical
+ * inverse among the rank's, so the steps run evenly through the spread whatever the rank's leading
+ * run and stand in no order round the trunk.
+ */
+function leaveSteps(n: number): number[] {
+	const order = Array.from({ length: n }, (_, k) => k).sort(
+		(a, b) => radicalInverse(a) - radicalInverse(b),
+	);
+	const steps = new Array<number>(n);
+	order.forEach((k, place) => {
+		steps[k] = place;
+	});
+	return steps;
 }
 
 /**
@@ -193,7 +210,9 @@ export function crownRise(record: Species): number {
 	for (const rank of growth.fronds.ranks) {
 		const { rule, index } = pieceNamed(record, rank.piece);
 		const plan = planPiece(record, rule, pieceKey(index, 0), 1);
-		const held = pieceTurn(rule.attitude, heading(0, Math.min(LEAVE_MOST, rank.leave)));
+		// A rank with a stated spread rises by its steepest frond.
+		const steepest = rank.leave + (rank.spread ?? 0);
+		const held = pieceTurn(rule.attitude, heading(0, Math.min(LEAVE_MOST, steepest)));
 		quatAxisAngle([0, 1, 0], radians(rule.roll ?? 0), turn);
 		quatMultiply(held, 0, turn, 0, rolled);
 		const top = (at: Readonly<Vector3>) => {
@@ -301,14 +320,18 @@ export function growFrondCrown(input: GrowInput): MacroSkeleton {
 		sum += rank.share;
 		const last = r === ranks.length - 1 ? count : Math.max(first + 1, Math.round(sum * count));
 		const { rule, index } = pieceNamed(record, rank.piece);
+		const steps = leaveSteps(last - first);
 		for (let i = first; i < last; i++) {
 			const age = count > 1 ? i / (count - 1) : 0;
 			const azimuth =
 				start + i * divergence + radians((draw(DRAW.frondTurn, i) * 2 - 1) * TURN_JITTER);
-			const leave = Math.min(
-				LEAVE_MOST,
-				rank.leave + (draw(DRAW.frondLeave, i) * 2 - 1) * LEAVE_JITTER,
-			);
+			// A rank with a stated spread lays its fronds evenly over it, in an order unlike the
+			// spiral's round the trunk; one without strays by a few degrees.
+			const offset =
+				rank.spread === undefined
+					? (draw(DRAW.frondLeave, i) * 2 - 1) * LEAVE_JITTER
+					: ((2 * ((steps[i - first] as number) + 0.5)) / (last - first) - 1) * rank.spread;
+			const leave = Math.min(LEAVE_MOST, rank.leave + offset);
 			const drop = growth.fronds.clasp * age;
 			const out = radiusUnder(drop) * (BASE_IN + (BASE_OUT - BASE_IN) * age);
 			planned.push({
@@ -369,7 +392,9 @@ export function growFrondCrown(input: GrowInput): MacroSkeleton {
 			light: 1,
 			axis: trunk,
 			woodRadius: topRadius,
-			socket: { scale: socket.scale, rank, lobe: socket.group, piece: socket.piece },
+			// Each frond is a foliage mass of its own, so a sparser plant takes its fronds one by one
+			// in their ranks, never a whole rank at once.
+			socket: { scale: socket.scale, rank, lobe: rank, piece: socket.piece },
 		});
 		lowest = Math.min(lowest, socket.at[1] + socket.bottom);
 	});

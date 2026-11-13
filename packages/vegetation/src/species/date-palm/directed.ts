@@ -19,6 +19,10 @@ const { forms: _forms, ...own } = record;
 const leaflet = record.foliage.kind === 'blade' ? record.foliage.leaf : undefined;
 if (!leaflet) throw new Error("@null3d/vegetation: the date palm's record lost its blade leaflet");
 
+/** The record's bark, which the directed palm keeps and tints where it draws a rachis. */
+const bark = record.bark;
+if (!bark) throw new Error("@null3d/vegetation: the date palm's record lost its bark");
+
 /** The palm's height: the fact sheet's least, at which picture 01's proportions fit it best. */
 const HEIGHT = 15;
 
@@ -47,20 +51,23 @@ export const directed: Species = {
 			lean: { mean: 1, spread: 1 },
 		},
 		fronds: {
-			// Picture 05, the view from below: about 28 living fronds, 24 to 32 (about 10 above the
-			// crown's centre, 4 to 5 each side, 4 to 6 hanging); picture 01 shows about 20 from one side.
-			count: { mean: 28, spread: 4 },
+			// Picture 01 at full size shows 22 to 24 living fronds from one side (some 6 steep, 9
+			// spreading, 8 hanging), the turning video 18 to 24 a frame and picture 05 from below 24:
+			// about 40 in all, 36 to 44.
+			count: { mean: 40, spread: 4 },
 			divergence: 137.5,
 			// Picture 05: the frond bases clasp about the top metre of the trunk.
 			clasp: 0.9,
 			// Picture 01, from the growing point: the share of fronds in each rank and the angle they
-			// leave at. The inner, young fronds are 0.7 of a full frond long.
+			// leave at. The inner, young fronds are 0.7 of a full frond long. Pictures 01 and 04 and
+			// the turning video: the fronds fill one even dome from near upright to hanging, in layers
+			// 10 to 15 degrees apart, so each rank spreads over about half the gap to its neighbours.
 			ranks: [
-				{ share: 0.2, leave: 82, piece: 'frond-straight', length: 0.7 },
-				{ share: 0.27, leave: 55, piece: 'frond-arched', length: 1 },
-				{ share: 0.27, leave: 30, piece: 'frond-arched', length: 1 },
-				{ share: 0.18, leave: 8, piece: 'frond-arched', length: 1 },
-				{ share: 0.08, leave: -30, piece: 'frond-straight', length: 1 },
+				{ share: 0.2, leave: 82, spread: 6, piece: 'frond-straight', length: 0.7 },
+				{ share: 0.27, leave: 55, spread: 12, piece: 'frond-arched', length: 1 },
+				{ share: 0.27, leave: 30, spread: 11, piece: 'frond-arched', length: 1 },
+				{ share: 0.18, leave: 8, spread: 11, piece: 'frond-arched', length: 1 },
+				{ share: 0.08, leave: -30, spread: 15, piece: 'frond-straight', length: 1 },
 			],
 		},
 		// Picture 05 shows 5 to 6 dead fronds from one side; the turning video hangs them to 0.35 of
@@ -175,6 +182,13 @@ export const directed: Species = {
 			},
 			fold: 30,
 		},
+	},
+	bark: {
+		...bark,
+		// The frond's rachis draws the young layer, the bark photograph smoothed to a rachis. Still
+		// 22: the photograph's rachis is 1.51 / 1.29 / 0.65 of its leaflets' colour, where the drawing's
+		// stood at 1.30 / 0.99 / 0.98, tan; this tint takes it to the photograph's pale yellow-green.
+		youngTint: [1.16, 1.3, 0.66],
 	},
 	base: {
 		// Picture 01: the foot flares to 0.078 of the height over its lowest 0.06; still 14: short
