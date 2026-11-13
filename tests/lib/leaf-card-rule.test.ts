@@ -3,7 +3,8 @@
 // engine share, which thins cards of a mesh from a file or from arrays. D-241 chose that split, so
 // this test holds both to one rule: a level keeps every second card of the one above in a
 // space-filling order, and each kept card grows about its middle by the square root of that step.
-// A change to either side that breaks the rule fails here.
+// The add-on holds that growth inside the plant's leaf form, so its levels are one size; the tool
+// has no leaf form to hold it to. A change to either side that breaks the rule fails here.
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -27,7 +28,7 @@ describe('the leaf-card level rule, which the vegetation add-on and the asset to
 	test('both keep every second card of the level above', () => {
 		// The add-on's first card level holds every row; its second keeps every second. The step is
 		// written as a shift so the count is exact in every engine.
-		expect(CARDS).toContain('const every = 1 << (level - 1);');
+		expect(CARDS).toContain('return 1 << (level - 1);');
 		// The planner's step names the base mesh's cards for each kept card: 2 ** level.
 		expect(TOOL).toContain('const every = 2 ** (levels.length + 1);');
 		expect(TOOL).toContain('thinCards(list, Math.min(every, Math.max(1, list.cards.length)))');
@@ -39,11 +40,11 @@ describe('the leaf-card level rule, which the vegetation add-on and the asset to
 		expect(CARDS).toContain('const grow = Math.sqrt(every);');
 		expect(TOOL).toContain('const grow = Math.sqrt(every);');
 		expect(cardKeep(2, 2)).toBeCloseTo(Math.SQRT2, 12);
-		// The add-on scales each plane's half-extents about the plane's centre, and the record's own
-		// card growth multiplies that; the tool rewrites the vertices around the card's middle by
-		// the same factor.
+		// The add-on scales each plane's half-extents about the plane's centre, by that factor where
+		// the leaf form has the room; the tool rewrites the vertices around the card's middle by it.
+		expect(CARDS).toContain('const grow = growthInHull(input, r, most, back);');
 		expect(CARDS).toContain(
-			'grow * widen * (sx * (plane.right[c] as number) + sy * (plane.up[c] as number))',
+			'grow * (sx * (plane.right[c] as number) + sy * (plane.up[c] as number))',
 		);
 		expect(TOOL).toContain('centre + (value - centre) * grow');
 	});

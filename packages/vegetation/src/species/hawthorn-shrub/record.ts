@@ -398,10 +398,6 @@ export const record: Species = {
 	lod: {
 		nearFoliage: 'instanced',
 		switchPixels: [240, 12, 160],
-		// The cards stand a quarter larger than the shoots they picture, so a gap between one
-		// shoot's leaves falls on a neighbour's leaves rather than on sky, while the crown stays
-		// within the outline the camera frames.
-		cardGrow: 1.25,
 		// A card's twig is thinner than a pixel at a whole view, so each draws its supporting twig as
 		// a line wide enough to hold the leaf group in the picture, running on to the card's foliage.
 		cardStalk: 3,
