@@ -136,7 +136,13 @@ Row 6 is read from the sky gap: the share of background enclosed by the crown's 
 pictures at each whole view. The verdict names this figure beside each value. Both pictures are
 read one way: a texel is sky or plant. A render's matte also holds each texel's clear share, and a
 figure read by that share is about 0.015 more closed than the same outline read as a photograph's
-is. The summary prints that reading beside the figure, since earlier figures were read by it. The share of
+is. The summary prints that reading beside the figure, since earlier figures were read by it. Both
+pictures are also read at one size: each is shrunk to 640 pixels wide first. A photograph's figure
+moves with its size, since fine gaps close when a picture shrinks: read at its own 1,024 pixels, a
+silhouette's sky gap stands 0.02 to 0.10 higher, and a daylight whole view's up to 0.03 higher. The
+band is drawn round the figure at the work size, and a figure read at another size is not the
+row's figure. The summary also prints each plant's foot row, since a reference outline that loses
+its trunk's foot below the horizon reads the plant short and moves every share of its height. The share of
 the crown's box that shows background is a different figure, and it does not judge this row. Some
 plants do not fill their box by shape: a spire, a cone, or any crown seen from below. Sky stands
 beside such a plant inside its box, so the box figure measures its taper. The Italian cypress read

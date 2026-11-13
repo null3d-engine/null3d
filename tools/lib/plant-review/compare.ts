@@ -631,6 +631,11 @@ interface PairMetrics {
 	} | null;
 	readonly crownBoxGap: { readonly reference: number; readonly render: number } | null;
 	readonly frameGap: { readonly reference: number; readonly render: number } | null;
+	/**
+	 * The row share of each plant's foot, the lowest row of its outline. Every figure that is a
+	 * share of the plant's height counts from this row, so it stands beside them.
+	 */
+	readonly footRow?: { readonly reference: number; readonly render: number } | null;
 	readonly foliageDeltaE: number | null;
 	readonly barkDeltaE: number | null;
 	readonly crownBox: {
@@ -653,6 +658,15 @@ function pairMetrics(reference: Side, render: Side): PairMetrics {
 				? Number(iou(reference.normal, render.normal).toFixed(4))
 				: null,
 		frameIou: both ? Number(frameIou(reference.plant, render.plant).toFixed(4)) : null,
+		footRow:
+			reference.measures.box && render.measures.box
+				? {
+						reference: Number(
+							((reference.measures.box.bottom + 1) / reference.plant.height).toFixed(4),
+						),
+						render: Number(((render.measures.box.bottom + 1) / render.plant.height).toFixed(4)),
+					}
+				: null,
 		profileError: both
 			? Number(
 					profileError(reference.measures.widthProfile, render.measures.widthProfile).toFixed(4),
