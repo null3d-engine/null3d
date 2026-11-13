@@ -57,8 +57,8 @@ export interface LeafTier extends LeafCut {
 	 */
 	readonly card?: boolean;
 	/**
-	 * Whether a card is split along its midrib into two planes, four triangles, so the leaf's fold
-	 * shades it as the two halves of a V.
+	 * Whether a card is split along its midrib into two planes, four triangles, so it keeps the leaf's
+	 * fold: seen edge on, it shows the V of its two halves where a flat card shows a line.
 	 */
 	readonly folded?: boolean;
 }
@@ -76,9 +76,10 @@ const TIERS: Readonly<Record<Detail, LeafTier>> = {
 
 /**
  * The tiers' leaf meshes on a branch piece. A tree carries thousands of pieces, so its leaves are
- * cut-out cards below the finest tier: a flat card at the low and medium tiers, and a card folded
- * along its midrib at the high tier. A card draws a ribbon stalk only where the leaf's stalk runs
- * past the texture's own. The ultra tier keeps the meshed outline.
+ * cut-out cards below the finest tier: flat cards of two triangles at the low and medium tiers, and
+ * cards folded along the midrib at the high tier, which keep a piece's depth seen edge on. At the
+ * medium and high tiers a card draws a one-quad ribbon stalk where the leaf's stalk runs past the
+ * texture's own. The ultra tier keeps the meshed outline.
  */
 const PIECE_TIERS: Readonly<Record<Detail, LeafTier>> = {
 	low: TIERS.low,
@@ -301,23 +302,28 @@ export function bladeMesh(
 			mesh.indices.push(vertex);
 		}
 	}
-	// A card's texture draws the stalk it holds, so a card adds one only where the stalk runs past it.
+	// A card's texture draws the stalk it holds, so a card adds one, of one run, only where the stalk
+	// runs past it.
 	const stalkSides = tier.card && surface.extra <= 0 ? -1 : tier.stalkSides;
-	if (stalkSides >= 0) addStalk(mesh, surface, shape, outline, stalkSides);
+	if (stalkSides >= 0) addStalk(mesh, surface, shape, outline, stalkSides, tier.card ? 1 : 2);
 	return mesh.finishPrototype();
 }
 
-/** The stalk: a tube of a few sides, or a ribbon, from the attach point to the blade's base. */
+/**
+ * The stalk: a tube of a few sides, or a ribbon, from the attach point to the blade's base, in two
+ * runs that follow its droop, or in one.
+ */
 function addStalk(
 	mesh: MeshWriter,
 	surface: LeafSurface,
 	shape: LeafShape,
 	outline: LeafOutline,
 	sides: number,
+	runs: number,
 ): void {
 	const radius = shape.petiole.radius;
 	if (radius <= 0 || surface.stalk <= 0) return;
-	const rings = 3;
+	const rings = runs + 1;
 	// A flat stalk is wider along the blade's normal than across the blade.
 	const flat = shape.petiole.flat;
 	const across = radius * (1 - 0.6 * flat);

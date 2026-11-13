@@ -203,7 +203,7 @@ describe("a branch piece's leaf", () => {
 		expect([...(own?.positions ?? [])]).toEqual([...(crown?.positions ?? [])]);
 	});
 
-	it("draws a ribbon stalk on a card where the leaf's stalk runs past the texture's", () => {
+	it("draws a one-quad ribbon stalk on a card where the leaf's stalk runs past the texture's", () => {
 		const long = {
 			...record,
 			foliage: {
@@ -211,7 +211,7 @@ describe("a branch piece's leaf", () => {
 				leaf: { ...foliage.leaf, petiole: { ...foliage.leaf.petiole, length: 0.03 } },
 			},
 		};
-		expect((pieceLeaves(long, OAK_MANIFEST, 'high')[0]?.indices.length ?? 0) / 3).toBe(8);
+		expect((pieceLeaves(long, OAK_MANIFEST, 'high')[0]?.indices.length ?? 0) / 3).toBe(6);
 		expect((pieceLeaves(long, OAK_MANIFEST, 'low')[0]?.indices.length ?? 0) / 3).toBe(2);
 	});
 });

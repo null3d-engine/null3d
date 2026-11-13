@@ -338,7 +338,7 @@ const OPEN_DEPTH: Readonly<Record<string, string>> = {
 	'common-alder 22':
 		"0.27 against 0.20: its cones hang to the twig's own ground side, behind it, where the photograph's hang below a twig that stands in a clamp",
 	'weeping-willow 22':
-		"0.31 against 0.23: its strands' leaves hang to every side, and at the high tier each long blade is a flat card that keeps its tilt but not its curl (0.29 as meshed blades)",
+		"0.31 against 0.23: its strands' leaves hang to every side, and at the high tier each long blade is a folded card that keeps its tilt but not its curl (0.29 as meshed blades)",
 };
 const OPEN_EDGE: Readonly<Record<string, string>> = {
 	'silver-birch 21':
@@ -908,7 +908,7 @@ const CROWN_CUT_HIGH: Readonly<Record<string, number>> = {
 
 describe("a piece's cost", () => {
 	it(
-		'is at most a third of the crown cut at the high tier, every piece of the nine species',
+		"takes the pieces' cut at the high tier: at most a fifth of the crown cut, every piece of nine species",
 		async () => {
 			const high = DETAILS.indexOf('high');
 			for (const { id, pieces } of SPECIES) {
@@ -921,7 +921,10 @@ describe("a piece's cost", () => {
 						.reduce((sum, piece) => sum + (piece.tiers[high]?.indices.length ?? 0) / 3, 0);
 					const crown = CROWN_CUT_HIGH[`${id} ${rule.name}`];
 					expect(crown).toBeDefined();
-					expect(drawn).toBeLessThanOrEqual((crown ?? 0) / 3);
+					expect(drawn).toBeLessThanOrEqual((crown ?? 0) / 5);
+					// The oak carries thousands of branch ends, so its own is held to 1,000 triangles.
+					if (id === 'pedunculate-oak' && rule.name === 'branch-end')
+						expect(drawn).toBeLessThanOrEqual(1000);
 				}
 			}
 		},
