@@ -261,10 +261,10 @@ const HELD: readonly Held[] = [
 		plumb: [],
 		// Raised from 2 with the crown drawn in a quarter turn on to its turning video's width: the
 		// same wood stands nearer together there.
-		through: 5,
-		crossings: [14, 5],
+		through: 3,
+		crossings: [11, 0],
 		// Every twig that clothes a clump is an axis that ends in a socket.
-		axesPerSocket: 1.09,
+		axesPerSocket: 1.08,
 		fine: ['twig'],
 		tall: [0.97, 1.06],
 	},
