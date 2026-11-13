@@ -8,14 +8,17 @@ import type { PieceLeaves, PieceRule, PieceStem, PieceStudio } from '../../leaf/
 
 /** A piece's leaf over the record's: 8.5 centimetres measured on still 21, over 13. */
 const LEAF_SCALE = 0.65;
+/** The twig's leaf over the record's: on still 22 a leaf is a fifth of the 35-centimetre twig, 7 centimetres. */
+const TWIG_LEAF_SCALE = 0.55;
 
 /**
- * The leaves along a twig. Stills 09 and 04: alternate in two rows, one each 0.6 to 0.8 of a leaf's
- * length, lying in the spray's own plane.
+ * The leaves along a twig. Stills 09 and 04: alternate in two rows, lying in the spray's own plane.
+ * A row's leaves stand 0.6 to 0.8 of a leaf's length apart, so a node comes each three centimetres.
+ * Still 21: a spray of 50 centimetres carries about thirty leaves.
  */
 function rows(from: number): PieceLeaves {
 	return {
-		gap: 0.045,
+		gap: 0.03,
 		from,
 		phyllotaxis: { kind: 'distichous', flatten: 0.9 },
 		angle: 55,
@@ -103,14 +106,14 @@ export const PIECES: readonly PieceRule[] = [
 			length: { mean: 0.35, spread: 0.03 },
 			radius: [0.002, 0.0008],
 			zigzag: 14,
-			leaves: { ...rows(0.25), gap: 0.05 },
+			leaves: { ...rows(0.25), gap: 0.05, scale: TWIG_LEAF_SCALE },
 			sides: [
 				{
 					stem: {
 						length: { mean: 0.11, spread: 0.02 },
 						radius: [0.0012, 0.0008],
 						zigzag: 14,
-						leaves: { ...rows(0.3), gap: 0.05 },
+						leaves: { ...rows(0.3), gap: 0.05, scale: TWIG_LEAF_SCALE },
 					},
 					gap: 0.09,
 					from: 0.18,
