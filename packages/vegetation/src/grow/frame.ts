@@ -60,6 +60,19 @@ const LENGTH_PASSES = 22;
  */
 const WANDER_SIDE = 0.8;
 const WANDER_NOD = 0.5;
+/**
+ * Masses placed first. A mass is covered, and left out, where a stated patch's middle stands
+ * nearer than this share of the masses' spacing. A mass is not reached from wood nearer than this
+ * share of the spacing, where its branch would be a stub, nor from wood that would have to turn
+ * more than this many times the branch's leaving angle to point at it.
+ */
+const MASS_COVER = 0.7;
+const MASS_NEAR = 0.35;
+const MASS_TURN = 1.6;
+/** The most a grown branch's radius where it leaves may be, as a share of its length. */
+const MASS_THICK = 1 / 24;
+/** The least pieces a grown branch is cut into. */
+const MASS_PIECES = 6;
 /** The rise of a unit direction above which a parent stands near plumb and has no ground side. */
 const PLUMB_NEAR = 0.9;
 /** The least radius a bend may have, in diameters of the wood where it bends. */
@@ -86,6 +99,7 @@ const Purpose = {
 	Lean: 11,
 	Spot: 12,
 	Nod: 13,
+	Mass: 14,
 } as const;
 
 /**
@@ -283,6 +297,49 @@ export interface FrameSpec {
 	readonly plan: { readonly narrow: number; readonly turn: number };
 	/** The stems. */
 	readonly stems: FrameStemRule;
+	/** The foliage masses that are placed first, with the last wood grown to them. */
+	readonly masses?: FrameMassRule;
+}
+
+/**
+ * Foliage masses placed before the wood that carries them. The masses stand evenly over the crown
+ * outline's surface, and over the same outline drawn in for each further layer, so the sky is
+ * spread evenly through the crown by the way it is built. A mass that a stated axis's own patch
+ * already covers is left out. Each other mass is given to the nearest wood that can reach it at
+ * a gentle angle, and a branch is grown from that wood to the mass, where it ends in a socket. A
+ * mass that no wood can reach is not placed, so no wood is grown that feeds no foliage.
+ *
+ * @category api/vegetation
+ */
+export interface FrameMassRule {
+	/** What a mass holds. */
+	readonly kind: string;
+	/** The distance between two masses over a layer's surface, as a share of the height. */
+	readonly spacing: number;
+	/** The shares of the crown outline that the masses' middles stand on, the outermost first. */
+	readonly layers: readonly number[];
+	/** A mass's width and depth as shares of the height, by the share of the height it stands at. */
+	readonly width: Curve;
+	readonly depth: Curve;
+	/** The rules whose axes may carry a branch to a mass. A grown branch may carry another. */
+	readonly from: readonly string[];
+	/** The branch that is grown to each mass. */
+	readonly branch: {
+		/** The name its axes carry. */
+		readonly name: string;
+		/** The most degrees it leaves its parent at. */
+		readonly leave: number;
+		/** The longest it may run, as a share of the height. */
+		readonly reach: number;
+		/**
+		 * Its radius where it leaves as a share of its parent's there, or a twenty-fourth of its own
+		 * length where that is less, and its tip's radius over that.
+		 */
+		readonly radius: number;
+		readonly taper: number;
+		/** How far it strays to one side of its line and back, as a share of its length. */
+		readonly wander: number;
+	};
 }
 
 /** One point of an axis of the frame. */
@@ -1081,6 +1138,251 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 			0,
 			scale,
 		);
+	}
+
+	if (spec.masses && typeof spec.outline !== 'number') {
+		const rule = spec.masses;
+		const gap = Math.max(0.01, rule.spacing) * scale;
+		const foot = (spec.outline[0] as readonly [number, number])[0] * scale;
+		const crownTop =
+			(spec.outline[spec.outline.length - 1] as readonly [number, number])[0] * scale;
+		// Where the masses stand: on each layer, rows a gap apart down the layer's own curve, and in
+		// each row the masses a gap apart round it, every row turned on from the last.
+		const stand: Vector3[] = [];
+		rule.layers.forEach((layer, l) => {
+			const share = clamp(layer, 0.05, 1);
+			const low = middle + (foot - middle) * share;
+			const high = middle + (crownTop - middle) * share;
+			/** The layer's radius at a height and a direction round the plant. */
+			const reach = (y: number, azimuth: number): number =>
+				share * outlineRadius(spec, scale, middle + (y - middle) / share, azimuth);
+			const wide = radians(spec.plan.turn);
+			const fine = gap / 16;
+			let row = 0;
+			let run = gap / 2;
+			let before = 0;
+			for (let y = high; y >= low; y -= fine) {
+				const here = reach(y, wide);
+				run += Math.sqrt(fine * fine + (here - before) * (here - before));
+				before = here;
+				if (run < gap) continue;
+				run = 0;
+				const round = 2 * PI * here * (0.5 + clamp(spec.plan.narrow, 0.5, 1) / 2);
+				const count = Math.max(1, Math.round(round / gap));
+				const turn = draw(Purpose.Mass, l * 64 + row, 0) * 2 * PI + row * radians(GOLDEN);
+				for (let k = 0; k < count; k++) {
+					const azimuth = turn + (k * 2 * PI) / count;
+					const out = count > 1 ? reach(y, azimuth) : 0;
+					if (count > 1 && out <= 0) continue;
+					const jx = (draw(Purpose.Mass, l * 64 + row, k * 4 + 1) * 2 - 1) * 0.15 * gap;
+					const jy = (draw(Purpose.Mass, l * 64 + row, k * 4 + 2) * 2 - 1) * 0.15 * gap;
+					const jz = (draw(Purpose.Mass, l * 64 + row, k * 4 + 3) * 2 - 1) * 0.15 * gap;
+					stand.push([cos(azimuth) * out + jx, y + jy, sin(azimuth) * out + jz]);
+				}
+				row++;
+			}
+		});
+		// A mass that a stated patch already covers is left out.
+		const covered = (at: Readonly<Vector3>): boolean =>
+			patches.some((patch) => {
+				const dx = at[0] - patch.centre[0];
+				const dy = at[1] - patch.centre[1];
+				const dz = at[2] - patch.centre[2];
+				return Math.sqrt(dx * dx + dy * dy + dz * dz) < gap * MASS_COVER;
+			});
+		const open = stand.filter((at) => !covered(at));
+		// The wood that may carry a branch: each node of a carrying axis, with the way the axis runs
+		// there.
+		interface Hold {
+			readonly axis: number;
+			readonly node: number;
+			readonly at: Vector3;
+			readonly along: Vector3;
+			readonly radius: number;
+		}
+		const holds: Hold[] = [];
+		const offer = (index: number): void => {
+			const axis = axes[index] as Built;
+			// An axis's first and last nodes carry nothing: a branch leaves along its run.
+			for (let k = 1; k + 1 < axis.nodes.length; k++) {
+				const here = axis.nodes[k] as FrameNode;
+				const next = axis.nodes[k + 1] as FrameNode;
+				holds.push({
+					axis: index,
+					node: k,
+					at: [here.x, here.y, here.z],
+					along: unit(next.x - here.x, next.y - here.y, next.z - here.z),
+					radius: here.radius,
+				});
+			}
+		};
+		axes.forEach((axis, index) => {
+			if (rule.from.includes(axis.rule)) offer(index);
+		});
+		const most = rule.branch.reach * scale;
+		const leave = radians(clamp(rule.branch.leave, 5, 120));
+		/** The hold a mass is best reached from: the nearest, weighed by how far the wood must turn. */
+		const reached = (
+			at: Readonly<Vector3>,
+		): { hold: Hold; far: number; turn: number } | undefined => {
+			let best: { hold: Hold; far: number; turn: number } | undefined;
+			let bestCost = Number.POSITIVE_INFINITY;
+			for (const hold of holds) {
+				const dx = at[0] - hold.at[0];
+				const dy = at[1] - hold.at[1];
+				const dz = at[2] - hold.at[2];
+				const far = Math.sqrt(dx * dx + dy * dy + dz * dz);
+				if (far > most || far < gap * MASS_NEAR) continue;
+				const turn = acos(
+					clamp((dx * hold.along[0] + dy * hold.along[1] + dz * hold.along[2]) / far, -1, 1),
+				);
+				if (turn > leave * MASS_TURN) continue;
+				const cost = far * (1 + turn / leave);
+				if (cost < bestCost) {
+					bestCost = cost;
+					best = { hold, far, turn };
+				}
+			}
+			return best;
+		};
+		// The masses nearest the wood are reached first, so a later branch may leave an earlier one.
+		const waiting = open.map((at) => ({ at, far: reached(at)?.far ?? Number.POSITIVE_INFINITY }));
+		waiting.sort((a, b) => a.far - b.far);
+		let grown = 0;
+		for (const mass of waiting) {
+			const found = reached(mass.at);
+			if (!found) continue;
+			const { hold, far } = found;
+			const id = axes.length;
+			const to: Vector3 = [
+				(mass.at[0] - hold.at[0]) / far,
+				(mass.at[1] - hold.at[1]) / far,
+				(mass.at[2] - hold.at[2]) / far,
+			];
+			// The branch leaves between the wood's own line and the line to the mass, no farther from
+			// the wood's line than the rule allows, and curves to the mass.
+			const lean = found.turn > 1e-6 ? Math.min(1, leave / found.turn) : 1;
+			const first = unit(
+				hold.along[0] + (to[0] - hold.along[0]) * lean * 0.7,
+				hold.along[1] + (to[1] - hold.along[1]) * lean * 0.7,
+				hold.along[2] + (to[2] - hold.along[2]) * lean * 0.7,
+			);
+			const knee: Vector3 = [
+				hold.at[0] + first[0] * far * 0.5,
+				hold.at[1] + first[1] * far * 0.5,
+				hold.at[2] + first[2] * far * 0.5,
+			];
+			// It strays to one side of its line and back, so it is not a straight rod.
+			const flat = Math.sqrt(to[0] * to[0] + to[2] * to[2]);
+			const side: Vector3 = flat > 0.1 ? [-to[2] / flat, 0, to[0] / flat] : [1, 0, 0];
+			const lift: Vector3 = [
+				to[1] * side[2] - to[2] * side[1],
+				to[2] * side[0] - to[0] * side[2],
+				to[0] * side[1] - to[1] * side[0],
+			];
+			const stray = rule.branch.wander * far;
+			// The sideways stray is never under three fifths of the rule's, so no branch is a rod.
+			const s1 =
+				(draw(Purpose.Mass, 4000 + grown, 3) < 0.5 ? 1 : -1) *
+				stray *
+				(0.6 + 0.4 * draw(Purpose.Mass, 4000 + grown, 1));
+			const s2 = (draw(Purpose.Mass, 4000 + grown, 2) * 2 - 1) * stray;
+			// A branch is no thicker than its length lets it bend: a share of its parent's radius, and
+			// no more than a stated part of its own length.
+			const base = Math.min(
+				Math.min(BASE_MOST, rule.branch.radius) * hold.radius,
+				far * MASS_THICK,
+			);
+			/** The branch's line at a share of the way to its mass. */
+			const lineAt = (t: number): Vector3 => {
+				const a = (1 - t) * (1 - t);
+				const b = 2 * (1 - t) * t;
+				const c = t * t;
+				// Three half-waves to the side and two up and down, so its direction never holds
+				// still for long.
+				const w1 = s1 * sin(3 * PI * t);
+				const w2 = (s2 / 2) * sin(2 * PI * t);
+				return [
+					a * hold.at[0] + b * knee[0] + c * mass.at[0] + side[0] * w1 + lift[0] * w2,
+					a * hold.at[1] + b * knee[1] + c * mass.at[1] + side[1] * w1 + lift[1] * w2,
+					a * hold.at[2] + b * knee[2] + c * mass.at[2] + side[2] * w1 + lift[2] * w2,
+				];
+			};
+			// It is cut into as many pieces as keep every turn inside the bound, and no fewer than a
+			// short axis needs.
+			let pieces = MASS_PIECES;
+			let points: Vector3[] = [];
+			for (let pass = 0; pass < 3; pass++) {
+				points = [];
+				for (let k = 0; k <= pieces; k++) points.push(lineAt(k / pieces));
+				let sharpest = 0;
+				for (let k = 1; k < pieces; k++) {
+					const p = points[k - 1] as Vector3;
+					const q = points[k] as Vector3;
+					const r = points[k + 1] as Vector3;
+					sharpest = Math.max(
+						sharpest,
+						between(
+							unit(q[0] - p[0], q[1] - p[1], q[2] - p[2]),
+							unit(r[0] - q[0], r[1] - q[1], r[2] - q[2]),
+						),
+					);
+				}
+				if (sharpest <= FRAME_TURN_MOST * 0.9) break;
+				pieces = Math.ceil((pieces * sharpest) / (FRAME_TURN_MOST * 0.8));
+			}
+			const nodes: FrameNode[] = [];
+			const along: number[] = [];
+			for (let k = 1; k <= pieces; k++) {
+				const t = k / pieces;
+				const point = points[k] as Vector3;
+				nodes.push({
+					x: point[0],
+					y: point[1],
+					z: point[2],
+					radius: Math.max(RADIUS_LEAST, base * (1 - (1 - clamp(rule.branch.taper, 0.02, 1)) * t)),
+				});
+				along.push(t);
+			}
+			let length = 0;
+			let last: FrameNode = { x: hold.at[0], y: hold.at[1], z: hold.at[2], radius: base };
+			for (const node of nodes) {
+				length += Math.sqrt(
+					(node.x - last.x) * (node.x - last.x) +
+						(node.y - last.y) * (node.y - last.y) +
+						(node.z - last.z) * (node.z - last.z),
+				);
+				last = node;
+			}
+			axes.push({
+				rule: rule.branch.name,
+				role: 'branch',
+				order: (axes[hold.axis] as Built).order + 1,
+				parent: hold.axis,
+				parentNode: hold.node,
+				index: grown,
+				place: 0,
+				azimuth: (atan2(first[2], first[0]) * 180) / PI,
+				length,
+				base,
+				nodes,
+				along,
+			});
+			const end = nodes[nodes.length - 1] as FrameNode;
+			const width = curveAt(rule.width, end.y / scale) * scale;
+			const level: Vector3 = flat > 0.1 ? [to[0] / flat, 0, to[2] / flat] : [1, 0, 0];
+			patches.push({
+				kind: rule.kind,
+				axis: id,
+				centre: [end.x, end.y, end.z],
+				begins: Math.max(0, Math.sqrt(end.x * end.x + end.z * end.z) - width / 2),
+				width,
+				depth: curveAt(rule.depth, end.y / scale) * scale,
+				along: level,
+			});
+			offer(id);
+			grown++;
+		}
 	}
 
 	let top = 0;
