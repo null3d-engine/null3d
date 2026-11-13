@@ -1,8 +1,9 @@
 // The rows of a plant that carries pieces at its sockets: its kit holds its pieces' parts as
-// prototypes, each socket carries every part of one variant at one place with one turn, wind record
-// and phase, and the same seed places the same rows.
+// prototypes, built as the piece builder builds them, each socket carries every part of one variant
+// at one place with one turn, wind record and phase, and the same seed places the same rows.
 import { beforeAll, describe, expect, it } from 'bun:test';
 import { files as oakTextures } from '@null3d/vegetation-textures/pedunculate-oak';
+import { files as willowTextures } from '@null3d/vegetation-textures/weeping-willow';
 import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
 import type { PlantAsset, SpeciesKitData } from '../asset';
 import { hashBytes } from '../core/hash';
@@ -10,9 +11,11 @@ import { quatRotate, type Vector3 } from '../core/math';
 import type { SpeciesModule } from '../core/record';
 import { loadSpecies } from '../core/registry';
 import { DETAILS } from '../core/types';
-import { buildKitNow, growPlantNow, loadPlantCode } from '../generate';
+import { buildKitNow, buildPiecesNow, growPlantNow, loadPlantCode } from '../generate';
 import { drawnAtOnce, TALLEST_VIEWS } from '../lod/drawn';
 import { directed as oakDirected } from '../species/pedunculate-oak/directed';
+import { directed as willowDirected } from '../species/weeping-willow/directed';
+import { PIECES as WILLOW_PIECES } from '../species/weeping-willow/pieces';
 import { carriesPieces, PROTOTYPES_MOST } from './piece-rows';
 
 const LONG = scaledBudget(120_000);
@@ -102,6 +105,18 @@ const DRESSED: readonly Dressed[] = [
 		title: 'the pedunculate oak, framed, with its branch ends at sockets',
 		module: async () => ({ record: oakDirected, textures: oakTextures }),
 		piece: 'branch-end',
+		flat: false,
+	},
+	{
+		title: 'the holm oak, framed, with its branch ends at sockets',
+		module: () => loadSpecies('holm-oak'),
+		piece: 'branch-end',
+		flat: false,
+	},
+	{
+		title: 'the weeping willow, framed, with its long strands at sockets',
+		module: async () => ({ record: willowDirected, textures: willowTextures }),
+		piece: 'strand-long',
 		flat: false,
 	},
 ];
@@ -215,6 +230,51 @@ for (const dressed of DRESSED)
 			LONG,
 		);
 	});
+
+/** A plant that carries pieces, with the rules its kit builds. */
+const KITS: readonly { readonly title: string; readonly module: SpeciesModule }[] = [
+	{
+		title: "the pedunculate oak's branch ends",
+		module: { record: oakDirected, textures: oakTextures },
+	},
+	{
+		title: "the weeping willow's strands, whose blades bend in their own plane",
+		module: { record: { ...willowDirected, pieces: WILLOW_PIECES }, textures: willowTextures },
+	},
+];
+
+/** The digest of a mesh's positions, so two builds compare byte for byte. */
+const positionsDigest = (positions: Float32Array | undefined): number =>
+	hashBytes(new Uint8Array(positions?.buffer ?? new ArrayBuffer(0)), 1);
+
+describe('a kit that carries pieces', () => {
+	for (const { title, module } of KITS)
+		it(
+			`builds ${title} as the piece builder does, in the leaves cut for pieces`,
+			async () => {
+				await loadPlantCode(module.record);
+				const kit = buildKitNow(module, { detail: 'high', placeholders: 'missing' });
+				const built = buildPiecesNow(module, module.record.pieces ?? []);
+				expect(kit.prototypes.length).toBe(built.length);
+				const high = DETAILS.indexOf('high');
+				kit.prototypes.forEach((prototype, index) => {
+					const own = built[index];
+					expect(prototype.piece?.name).toBe(own?.piece);
+					for (let tier = 0; tier <= high; tier++) {
+						expect(prototype.tiers[tier]?.indices.length).toBe(own?.tiers[tier]?.indices.length);
+						expect(positionsDigest(prototype.tiers[tier]?.positions)).toBe(
+							positionsDigest(own?.tiers[tier]?.positions),
+						);
+					}
+				});
+				// The oak carries thousands of branch ends, so its own is held to 1,000 triangles.
+				if (module.record.id === 'pedunculate-oak')
+					for (const prototype of kit.prototypes)
+						expect((prototype.tiers[high]?.indices.length ?? 0) / 3).toBeLessThanOrEqual(1000);
+			},
+			LONG,
+		);
+});
 
 describe("the Scots pine's boughs at sockets, by the pine's own figures", () => {
 	let kit: SpeciesKitData;
