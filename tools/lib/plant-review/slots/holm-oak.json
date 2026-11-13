@@ -29,5 +29,8 @@
 	"07-stems-leaving-base.png": {
 		"view": "bark-base"
 	},
+	"09-secondary-branching.png": {
+		"leaves": 23
+	},
 	"_habit": "clump"
 }

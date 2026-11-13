@@ -25,6 +25,7 @@ import {
 	project,
 	type Solved,
 	type SubjectShot,
+	sectionShot,
 	siteShot,
 	underRimShot,
 } from '../../../tests/pages/lib/plant-review/subject-shots.ts';
@@ -983,6 +984,31 @@ describe('the view of one branch piece', () => {
 		// A plant that places no pieces at all is a fault of the view's mapping, not of the plant.
 		const none = placedPieceShot(tree({ pieces: absent('its rows are shoots') }), 'bough', TALL);
 		expect(isAbsent(none) && none.lacks).toBeFalsy();
+	});
+});
+
+describe('the view of the stem cut across', () => {
+	test('looks straight down the stem at the cut, the outline filling the frame, a short slab drawn', () => {
+		const plant = tree();
+		const shot = shotOf(sectionShot(plant, WIDE, 4));
+		const { forward } = cameraAxes(shot.camera);
+		expect(forward[1]).toBeCloseTo(-1, 6);
+		const cut = landing(shot, WIDE, 'the cut');
+		expect(cut.x).toBeCloseTo(0.5, 6);
+		expect(cut.y).toBeCloseTo(0.5, 6);
+		const radius = shot.facts.radius as number;
+		expect(
+			(2 * radius) / (2 * cut.depth * Math.tan((WIDE.fov * DEG) / 2) * WIDE.aspect),
+		).toBeCloseTo(0.88, 6);
+		// The slab starts at the cut and runs a little way down the stem.
+		expect(shot.near as number).toBeLessThan(cut.depth);
+		expect(shot.far as number).toBeCloseTo(cut.depth + 0.6 * radius, 6);
+		expect(checkShot(shot, WIDE).present).toBe(true);
+	});
+
+	test('fails the plant whose stem does not reach the cut', () => {
+		const missing = sectionShot(tree(), WIDE, 40);
+		expect(isAbsent(missing) && missing.lacks).toBe(true);
 	});
 });
 
