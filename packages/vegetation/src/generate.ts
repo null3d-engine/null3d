@@ -114,6 +114,7 @@ import {
 	referenceTriangles,
 	shootPartTriangles,
 } from './lod/budget';
+import { cardLevelMost } from './lod/card-bake';
 import { cardMesh } from './lod/cards';
 import { bakeFar } from './lod/impostor';
 import { levelStarts } from './lod/levels';
@@ -534,7 +535,7 @@ export function buildKitNow(source: KitSource, options: KitOptions = {}): Specie
 	}
 	const header = stage(
 		placeholders,
-		() => speciesHeader(record, manifest, box),
+		() => speciesHeader(record, manifest, box, cardLevelMost(prototypes)),
 		() => placeholderHeader(record, box),
 	);
 	return {

@@ -139,6 +139,9 @@ const HEADER_EXTRA_STALKS: i32 = 51;
 const HEADER_CARD_STALK: i32 = 55;
 const HEADER_SCAR: i32 = 69;
 const HEADER_SCAR_COLOUR: i32 = 70;
+/// The coarsest mip level a card's sample reads: the deepest where the species' smallest leaf cell
+/// still holds four texels a side.
+const HEADER_CARD_LEVEL_MOST: i32 = 71;
 // The second coordinate that marks a card's stalk, in a place that the card planes leave free.
 const STALK_PLANE: f32 = 0.75;
 // How much of the young bark's tone a card's stalk keeps: it stands inside the crown, where the
@@ -988,6 +991,20 @@ fn card_level(gx: vec2f, gy: vec2f) -> f32 {
     return max(log2(max(footprint, 1.0)), 0.0);
 }
 
+/// How much a card's texture gradients shrink so its sample reads no coarser mip level than the
+/// species' coarsest useful one. Past that level a cell holds under four texels a side and its
+/// average takes in the empty border and the cells beside it, so a card seen at a slant, whose
+/// footprint runs long across its cell, would read its neighbours' gaps and lose its cover.
+fn card_hold(gx: vec2f, gy: vec2f) -> f32 {
+    let most = header(HEADER_CARD_LEVEL_MOST).x;
+    if (most <= 0.0) {
+        return 1.0;
+    }
+    let texels = vec2f(textureDimensions(colour).xy);
+    let footprint = max(length(gx * texels), length(gy * texels));
+    return min(1.0, exp2(most) / max(footprint, 1.0));
+}
+
 /// A card's alpha, raised with the mip level that its sample reads. A mip level averages the leaves'
 /// coverage with the gaps between them, so far away a card's alpha falls under the cutoff and its
 /// leaves would vanish; raising it a little for each level keeps the share of the card that leaves
@@ -1016,7 +1033,10 @@ fn coverage(input: SurfaceInput) -> f32 {
         // A card's stalk is a solid line that the vertex stage widens, so it casts its whole width.
         if (abs(input.uv1.y - STALK_PLANE) >= 0.1) {
             let layer = select(1, 0, input.frontFacing);
-            alpha = card_alpha(textureSampleGrad(colour, colourSampler, uv, layer, gx, gy).a, gx, gy);
+            let hold = card_hold(gx, gy);
+            let hx = gx * hold;
+            let hy = gy * hold;
+            alpha = card_alpha(textureSampleGrad(colour, colourSampler, uv, layer, hx, hy).a, hx, hy);
         }
     } else if (mode == MODE_SHOOTS && abs(input.vertexColor.b * 255.0 - KIND_BRUSH) < 0.5) {
         let layer = select(1, 0, input.frontFacing);
@@ -1253,8 +1273,11 @@ fn surface(input: SurfaceInput) -> Surface {
             }
         } else {
             let layer = select(1, 0, upper);
-            let texel = textureSampleGrad(colour, colourSampler, uv, layer, gx, gy);
-            let surface_texel = textureSampleGrad(relief, reliefSampler, uv, layer, gx, gy);
+            let hold = card_hold(gx, gy);
+            let hx = gx * hold;
+            let hy = gy * hold;
+            let texel = textureSampleGrad(colour, colourSampler, uv, layer, hx, hy);
+            let surface_texel = textureSampleGrad(relief, reliefSampler, uv, layer, hx, hy);
             let kind = surface_texel.a * 255.0;
             let leaf = kind >= 127.5;
             let self_shade = (kind - select(0.0, 128.0, leaf)) * 2.0 / 255.0;
@@ -1267,8 +1290,8 @@ fn surface(input: SurfaceInput) -> Surface {
             } else {
                 base = texel.rgb;
             }
-            alpha = card_alpha(texel.a, gx, gy);
-            cut_alpha = card_cut_alpha(texel.a, surface_texel.z, card_level(gx, gy));
+            alpha = card_alpha(texel.a, hx, hy);
+            cut_alpha = card_cut_alpha(texel.a, surface_texel.z, card_level(hx, hy));
             // A card's coverage: a hashed share of the crown's leaf groups gives way, so the crown
             // shows sky between them while the leaves of the rest keep their mass. At 1, or when the
             // record names none, the card draws whole.
