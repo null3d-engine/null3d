@@ -79,7 +79,7 @@ function branches(along: readonly [number, number], length: FrameLength): FrameB
 	return {
 		name: 'branch',
 		role: 'branch',
-		count: { every: 0.016, least: 5, most: 18 },
+		count: { every: 0.02, least: 4, most: 15 },
 		along,
 		stagger: 0.25,
 		// Each turned on round its limb from the last, so no two leave together, and none from a
@@ -103,7 +103,7 @@ function branches(along: readonly [number, number], length: FrameLength): FrameB
 		sway: 10,
 		elbows: 4,
 		// A branch's wood passes through no other wood.
-		apart: 0.01,
+		apart: 0.014,
 		// Stills 01 and 18: strands hang from the whole arching run of a branch, over the crown's
 		// top as well as at its rim, each leaving the branch's upper side or flank and turning plumb.
 		patch: {
@@ -111,7 +111,7 @@ function branches(along: readonly [number, number], length: FrameLength): FrameB
 			width: 0.07,
 			depth: 0.1,
 			along: 0.25,
-			sockets: { every: 0.35 / 13, angle: 70 },
+			sockets: { every: 0.25 / 13, angle: 70 },
 		},
 		// Stills 02 and 18: the falls hang from a branch's outer arch, at the curtain, and the crown
 		// stands open under it, where the trunk and the limbs show.
@@ -272,11 +272,11 @@ export const frame: FrameSpec = {
 						role: 'limb',
 						// Still 18: 6 to 8 secondary limbs in one view, a profile count, so the tree has
 						// about half as many again round its near and far sides. Three leave each great
-						// limb, to one side and the other in turn, so the nine stand round the tree.
+						// limb's end evenly round it, so the nine stand round the tree and no two leave
+						// on one side.
 						count: 3,
 						along: [1, 1],
-						around: 'sides',
-						lift: -10,
+						around: 'ring',
 						jitter: 8,
 						// Still 08: a limb divides in a narrow Y.
 						angle: 21,
