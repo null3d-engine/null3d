@@ -46,6 +46,8 @@ const WANDER_WAVE = 0.4;
  */
 const PATCH_MOST = 0.45;
 const PATCH_MOST_TOP = 0.8;
+/** The most of its reach that the leader's patch takes: it stands over the trunk's line and past it. */
+const PATCH_MOST_LEADER = 1.5;
 /** How much shorter the last top limb's reach is than the first's, as a share of it. */
 const TOP_SHORTER = 0.2;
 /** Passes that find the crown's stretch across its plan. */
@@ -66,6 +68,8 @@ const ARMS_FROM = 0.1;
 const ARMS_TO = 0.55;
 /** The share of a patch's radius inside which an arm ends. */
 const ARM_INSIDE = 0.95;
+/** A limb's radius at its end over its radius where its patch begins. */
+const LIMB_END = 0.35;
 /** An arm's radius at its end over its radius where it leaves. */
 const ARM_TAPER = 0.5;
 /** The most degrees an arm runs above or below level, and the step it lowers by under the plant's height. */
@@ -109,6 +113,9 @@ const SOCKET_APART = 0.7;
 const TWIG_FOOT = 0.6;
 /** The limbs that stand one toward each side of the crown's plan. */
 const GREAT_LIMBS = 4;
+/** The sectors round the trunk that the foliage is balanced over, and the samples across one patch. */
+const SECTORS = 16;
+const SECTOR_SAMPLES = 8;
 /** Years the oldest wood of a plant has stood, for the bark's age. */
 const AGE_MOST = 12;
 
@@ -157,6 +164,11 @@ export interface ConiferPatch {
 	readonly width: number;
 	/** The patch's depth in metres, along plant +Y. */
 	readonly depth: number;
+	/**
+	 * The metres its floor rises for each metre along its limb's direction, measured from its middle:
+	 * none where the limb runs level or rises, and below none where the limb falls under it.
+	 */
+	readonly slope: number;
 	/** The level direction the limb runs in under the patch, a unit vector. */
 	readonly along: Vector3;
 }
@@ -725,8 +737,10 @@ function socketsOf(
 			});
 			return;
 		}
-		const { centre, width, depth } = limb.patch;
-		const floor = centre[1] - depth / 2;
+		const { centre, width, depth, slope, along } = limb.patch;
+		/** The height of the patch's floor at a place. */
+		const floorAt = (x: number, z: number): number =>
+			centre[1] - depth / 2 + slope * ((x - centre[0]) * along[0] + (z - centre[2]) * along[2]);
 		const drafts: Draft[] = [
 			endOf(limb.nodes, -1, trunkFrom),
 			...limb.arms.map((arm, a) => endOf(arm.nodes, a, limb.nodes[arm.node] as ConiferNode)),
@@ -756,11 +770,9 @@ function socketsOf(
 			const t = heights[i] as number;
 			const ring = Math.sqrt(Math.max(0, 1 - t * t));
 			const turn = phase + i * radians(GOLDEN);
-			const at: Vector3 = [
-				centre[0] + half * ring * cos(turn),
-				floor + tall * t,
-				centre[2] + half * ring * sin(turn),
-			];
+			const x = centre[0] + half * ring * cos(turn);
+			const z = centre[2] + half * ring * sin(turn);
+			const at: Vector3 = [x, floorAt(x, z) + tall * t, z];
 			if (!clear(at)) continue;
 			// A piece leaves the dome the way the dome faces, no steeper than the record's lift, and
 			// swung to one side or the other by its own share of the most, so neighbours do not stand
@@ -977,7 +989,8 @@ export function planConifer(input: GrowInput): ConiferPlan {
 	const trunkTop = dividesAt * height - tipDepth / 2;
 
 	// The limbs' places round the trunk and up it. Each level stands its limbs evenly and turns on
-	// from the level below by the golden angle, so no limb stands over another.
+	// from the level below by the golden share of its own spacing, so no limb stands over another
+	// and the levels together fill every direction.
 	interface Seat {
 		readonly level: number;
 		readonly slot: number;
@@ -996,7 +1009,7 @@ export function planConifer(input: GrowInput): ConiferPlan {
 			);
 			const azimuth =
 				turn +
-				k * GOLDEN +
+				(((k * GOLDEN) / 360) % 1) * (360 / count) +
 				(slot * 360) / count +
 				(draw(Purpose.Jitter, k, slot) * 2 - 1) * g.limbs.jitter;
 			seats.push({ level: k, slot, y, azimuth });
@@ -1009,17 +1022,35 @@ export function planConifer(input: GrowInput): ConiferPlan {
 	 * A patch's width in metres, from its limb's place in the length order and its reach. A top
 	 * limb's patch runs in nearly to the trunk's line, so the top limbs' patches close the crown's top.
 	 */
-	const patchWidth = (place: number, reach: number, top = false): number =>
+	const patchWidth = (place: number, reach: number, most: number): number =>
 		Math.min(
 			(g.patch.width[0] + (g.patch.width[1] - g.patch.width[0]) * place) * height,
-			(top ? PATCH_MOST_TOP : PATCH_MOST) * reach,
+			most * reach,
 		);
+
+	// The top limbs carry on where the trunk divides, evenly round it, the first near the plan's wide
+	// side. Each further one reaches a little less.
+	const topCount = g.top && dividesAt < 1 ? Math.max(1, Math.round(g.top.limbs)) : 0;
+	const topStart = g.limbs.plan.turn + (draw(Purpose.TopTurn) * 2 - 1) * g.limbs.jitter;
+	// The first carries on as the leader where the record says so: it reaches a share as far, and
+	// its patch stands over the trunk's line.
+	const leader = g.top?.leader;
+	const tops = Array.from({ length: topCount }, (_, slot) => ({
+		slot,
+		azimuth: topStart + (slot * 360) / topCount,
+		place: 1 - slot / (2 * topCount),
+		span:
+			levelReach(trunkTop) *
+			(slot === 0 && leader !== undefined ? leader : 1 - (TOP_SHORTER * slot) / topCount),
+		most: slot === 0 && leader !== undefined ? PATCH_MOST_LEADER : PATCH_MOST_TOP,
+	}));
 
 	// Each limb's place in the length order, longest first. The two longest are the pair of seats on
 	// different levels that stand most nearly opposite, where the crown reaches far; the whole plant
 	// turns so that the pair lies along the plan's wide side. The next two take the free seats
-	// nearest the plan's narrow sides. Each further limb takes the free seat that best balances the
-	// limbs already placed, so long and short limbs stand on every side of the trunk.
+	// nearest the plan's narrow sides. Each further limb takes the free seat that leaves the foliage
+	// most evenly shared round the trunk and up it, counted in sectors with the top limbs' foliage
+	// and by level, so no side of the crown and no height of it stands empty.
 	const places = seats.map((_, i) => (seats.length > 1 ? i / (seats.length - 1) : 1));
 	const placeOf = new Array<number>(seats.length).fill(-1);
 	let reachMost = 0;
@@ -1061,21 +1092,70 @@ export function planConifer(input: GrowInput): ConiferPlan {
 		const seat = seats[i] as Seat;
 		seats[i] = { ...seat, azimuth: seat.azimuth + swing };
 	}
-	let pullX = 0;
-	let pullZ = 0;
+	const sectors = new Array<number>(SECTORS).fill(0);
+	const byLevel = new Array<number>(levels.length).fill(0);
+	/**
+	 * Adds one limb's foliage to the sectors its patch spans as seen from the trunk and to its
+	 * level, and gives how unevenly the foliage then stands: the spread of the sectors about their
+	 * mean and the spread of the levels about theirs, each as a share of its mean, squared. A sector
+	 * counts a patch by its plan area. A level counts a limb by the square of its reach as a share
+	 * of the crown's at its height, so a level high or low in the crown counts the same as one at
+	 * its widest. A top limb has no level. With `keep` false nothing is added.
+	 */
+	const share = (
+		azimuth: number,
+		reach: number,
+		place: number,
+		most: number,
+		level: number,
+		keep: boolean,
+	): number => {
+		const width = patchWidth(place, reach, most);
+		const half = (atan2(width / 2, Math.max(1e-6, reach - width / 2)) * 180) / PI;
+		const added = new Array<number>(SECTORS).fill(0);
+		for (let k = 0; k < SECTOR_SAMPLES; k++) {
+			const at = azimuth - half + ((k + 0.5) / SECTOR_SAMPLES) * 2 * half;
+			const sector = Math.floor(((((at % 360) + 360) % 360) / 360) * SECTORS) % SECTORS;
+			(added[sector] as number) += (width * width) / SECTOR_SAMPLES;
+		}
+		const long =
+			reach / Math.max(1e-6, levelReach(level < 0 ? trunkTop : height * (levels[level] as number)));
+		const uneven = (held: number[], extra: (k: number) => number): number => {
+			let sum = 0;
+			let squares = 0;
+			for (let k = 0; k < held.length; k++) {
+				const now = (held[k] as number) + extra(k);
+				sum += now;
+				squares += now * now;
+				if (keep) held[k] = now;
+			}
+			return sum > 0 ? (squares * held.length) / (sum * sum) - 1 : 0;
+		};
+		return (
+			uneven(sectors, (k) => added[k] as number) +
+			uneven(byLevel, (k) => (k === level ? long * long : 0))
+		);
+	};
 	const seatLimb = (i: number, n: number): void => {
 		const seat = seats[i] as Seat;
-		const reach = curveAt(g.limbs.reachShare, places[n] as number) * levelReach(seat.y);
-		pullX += cos(radians(seat.azimuth)) * reach;
-		pullZ += sin(radians(seat.azimuth)) * reach;
-		placeOf[i] = places[n] as number;
+		const place = places[n] as number;
+		share(
+			seat.azimuth,
+			curveAt(g.limbs.reachShare, place) * levelReach(seat.y),
+			place,
+			PATCH_MOST,
+			seat.level,
+			true,
+		);
+		placeOf[i] = place;
 	};
+	for (const limb of tops) share(limb.azimuth, limb.span, limb.place, limb.most, -1, true);
 	let n = seats.length - 1;
 	seatLimb(longest, n--);
 	if (second >= 0) seatLimb(second, n--);
 	const narrowFirst = draw(Purpose.Narrow) < 0.5 ? 90 : 270;
 	for (; n >= 0; n--) {
-		const share = curveAt(g.limbs.reachShare, places[n] as number);
+		const place = places[n] as number;
 		const great = seats.length - 1 - n;
 		const side =
 			great < GREAT_LIMBS
@@ -1087,12 +1167,16 @@ export function planConifer(input: GrowInput): ConiferPlan {
 			if ((placeOf[i] as number) >= 0) continue;
 			const seat = seats[i] as Seat;
 			let score: number;
-			if (side === undefined) {
-				const reach = share * levelReach(seat.y);
-				const x = pullX + cos(radians(seat.azimuth)) * reach;
-				const z = pullZ + sin(radians(seat.azimuth)) * reach;
-				score = x * x + z * z;
-			} else score = apart(seat.azimuth, side) + 180 * lacks(seat);
+			if (side === undefined)
+				score = share(
+					seat.azimuth,
+					curveAt(g.limbs.reachShare, place) * levelReach(seat.y),
+					place,
+					PATCH_MOST,
+					seat.level,
+					false,
+				);
+			else score = apart(seat.azimuth, side) + 180 * lacks(seat);
 			if (score < bestScore - 1e-9) {
 				bestScore = score;
 				best = i;
@@ -1135,17 +1219,6 @@ export function planConifer(input: GrowInput): ConiferPlan {
 		return best;
 	};
 
-	// The top limbs carry on where the trunk divides, evenly round it, the first near the plan's wide
-	// side. Each further one reaches a little less.
-	const topCount = g.top && dividesAt < 1 ? Math.max(1, Math.round(g.top.limbs)) : 0;
-	const topStart = g.limbs.plan.turn + (draw(Purpose.TopTurn) * 2 - 1) * g.limbs.jitter;
-	const tops = Array.from({ length: topCount }, (_, slot) => ({
-		slot,
-		azimuth: topStart + (slot * 360) / topCount,
-		place: 1 - slot / (2 * topCount),
-		span: levelReach(trunkTop) * (1 - (TOP_SHORTER * slot) / topCount),
-	}));
-
 	// The crown's plan. Every limb's reach is stretched by its direction, none along the wide side
 	// and by one factor across it, and that factor is found so that the built crown's narrow side is
 	// the record's share of its wide side, measured over the patches' far edges.
@@ -1154,6 +1227,7 @@ export function planConifer(input: GrowInput): ConiferPlan {
 			azimuth: seat.azimuth,
 			place: placeOf[i] as number,
 			span: curveAt(g.limbs.reachShare, placeOf[i] as number) * levelReach(seat.y),
+			most: PATCH_MOST,
 		})),
 		...tops,
 	];
@@ -1171,7 +1245,7 @@ export function planConifer(input: GrowInput): ConiferPlan {
 		let high = 0;
 		for (const limb of spans) {
 			const reach = limb.span * stretch(limb.azimuth);
-			const width = patchWidth(limb.place, reach, 'slot' in limb);
+			const width = patchWidth(limb.place, reach, limb.most);
 			const at = (reach - width / 2) * cos(radians(limb.azimuth - g.limbs.plan.turn - quarter));
 			low = Math.min(low, at - width / 2);
 			high = Math.max(high, at + width / 2);
@@ -1197,12 +1271,13 @@ export function planConifer(input: GrowInput): ConiferPlan {
 		span: number,
 		baseRatio: number,
 		lifts: { leave: number; run: number; end: number },
+		most: number,
 		lower?: number,
 	): void => {
 		const node = trunkNodeAt(y);
 		const start = trunk[node] as ConiferNode;
 		const reach = Math.max(start.radius * 2, span * stretch(azimuth));
-		const width = patchWidth(place, reach, top);
+		const width = patchWidth(place, reach, most);
 		const depth = width * g.patch.depth;
 		// Under one patch a limb, the wood runs on past the patch's middle. With a patch at each end,
 		// the limb stops at the middle of its own.
@@ -1221,38 +1296,64 @@ export function planConifer(input: GrowInput): ConiferPlan {
 			wave: WANDER_WAVE * height,
 			phase: draw(Purpose.Wander, level, slot) * 2 * PI,
 		};
+		// A patch's floor passes through its limb's end. It falls with the limb where the limb falls
+		// under it, from where the limb comes under the patch to its end, and is level where the
+		// limb rises or carries a patch on each end.
+		const floorOf = (walked: Path): { slope: number; middle: number } => {
+			const last = walked.points[walked.points.length - 1] as Vector3;
+			if (perEnd || lower !== undefined) return { slope: 0, middle: last[1] };
+			const span = width * UNDER_PATCH;
+			let at = walked.points.length - 1;
+			while (at > 0 && walked.length - (walked.along[at - 1] as number) <= span) at--;
+			const near = walked.points[at] as Vector3;
+			const run = Math.sqrt(
+				(last[0] - near[0]) * (last[0] - near[0]) + (last[2] - near[2]) * (last[2] - near[2]),
+			);
+			const slope = run > 1e-6 ? Math.min(0, (last[1] - near[1]) / run) : 0;
+			return { slope, middle: last[1] - slope * (span - width / 2) };
+		};
+		/** The height of a patch's top over its floor's middle: a dome on a sloped floor stands higher. */
+		const rise = (slope: number): number =>
+			Math.sqrt(depth * depth + ((slope * width) / 2) * ((slope * width) / 2));
+		const topOf = (walked: Path): number => {
+			const floor = floorOf(walked);
+			return perEnd ? floor.middle + depth / 2 : floor.middle + rise(floor.slope);
+		};
 		// A top limb ends where its patch's top stands at the plant's height, less its own step down.
 		// Any other limb whose patch would stand above the plant's height reaches less far, which
 		// rounds the crown's top.
-		const above = perEnd ? depth / 2 : depth;
 		let path =
 			lower === undefined
 				? coursePath(course)
 				: courseTo(course, height - depth * (1 + TOP_STEP * lower));
-		if (lower === undefined) {
-			const topOf = (walked: Path): number =>
-				((walked.points[walked.points.length - 1] as Vector3)[1] as number) + above;
-			if (topOf(path) > height) {
-				let low = course.out * REACH_LEAST;
-				let high = course.out;
-				for (let pass = 0; pass < 12; pass++) {
-					const mid = (low + high) / 2;
-					if (topOf(coursePath({ ...course, out: mid })) > height) high = mid;
-					else low = mid;
-				}
-				path = coursePath({ ...course, out: low });
+		if (lower === undefined && topOf(path) > height) {
+			let low = course.out * REACH_LEAST;
+			let high = course.out;
+			for (let pass = 0; pass < 12; pass++) {
+				const mid = (low + high) / 2;
+				if (topOf(coursePath({ ...course, out: mid })) > height) high = mid;
+				else low = mid;
 			}
+			path = coursePath({ ...course, out: low });
 		}
+		const floor = floorOf(path);
 		// The radius beside the trunk is the record's ratio of the trunk's; the swelling fades over
-		// the collar's distance, and the limb then thins evenly to where its patch begins.
+		// the collar's distance, and the limb then thins evenly to the record's share where its
+		// patch begins. Under the patch its arms and twigs take its wood, and it thins on to its
+		// end. A top limb is the trunk divided, so it has no collar.
 		const beside = Math.max(1e-4, baseRatio * start.radius);
-		const swell = Math.max(1, g.limbs.collar.swell);
+		const swell = top ? 1 : Math.max(1, g.limbs.collar.swell);
 		const collar = Math.max(1e-6, g.limbs.collar.over * height);
 		const past = beside / swell;
+		const taper = clamp(g.limbs.taper, 0.05, 1);
+		const bare = Math.max(1e-6, path.length - (perEnd ? 0 : width * UNDER_PATCH));
 		const nodes: ConiferNode[] = path.points.map((point, k) => {
 			const s = path.along[k] as number;
 			const fade = 1 + (swell - 1) * (1 - eased(s / collar));
-			const thin = 1 - (1 - clamp(g.limbs.taper, 0.05, 1)) * (s / path.length);
+			const thin =
+				s <= bare
+					? 1 - (1 - taper) * (s / bare)
+					: taper * (1 - (1 - LIMB_END) * ((s - bare) / Math.max(1e-6, path.length - bare)));
 			return { x: point[0], y: point[1], z: point[2], radius: Math.max(1e-4, past * fade * thin) };
 		});
 		const end = path.points[path.points.length - 1] as Vector3;
@@ -1261,13 +1362,19 @@ export function planConifer(input: GrowInput): ConiferPlan {
 		const arms: ConiferArm[] = [];
 		const count = Math.max(0, Math.round(g.limbs.arms.count));
 		const under = perEnd ? path.length * ARMS_OVER : width * UNDER_PATCH;
-		const patchAt = (centre: Vector3, heading: Vector3, begins: number): ConiferPatch => ({
+		const patchAt = (
+			centre: Vector3,
+			heading: Vector3,
+			begins: number,
+			slope = 0,
+		): ConiferPatch => ({
 			kind: g.patch.kind,
 			limb: limbs.length,
 			centre,
 			begins,
 			width,
 			depth,
+			slope,
 			along: heading,
 		});
 		const firstSide = draw(Purpose.ArmSide, level, slot) < 0.5 ? 1 : -1;
@@ -1372,11 +1479,12 @@ export function planConifer(input: GrowInput): ConiferPlan {
 				: patchAt(
 						[
 							end[0] - path.heading[0] * (under - width / 2),
-							end[1] + depth / 2,
+							floor.middle + depth / 2,
 							end[2] - path.heading[2] * (under - width / 2),
 						],
 						path.heading,
 						reach - width,
+						floor.slope,
 					),
 		});
 	};
@@ -1384,6 +1492,14 @@ export function planConifer(input: GrowInput): ConiferPlan {
 	seats.forEach((seat, i) => {
 		const place = placeOf[i] as number;
 		const at = seat.y / height;
+		// A limb is as thick for its trunk as it is long for its level: its reach share's place
+		// between the shortest limb's and the longest's.
+		const shortest = curveAt(g.limbs.reachShare, 0);
+		const long = clamp(
+			(curveAt(g.limbs.reachShare, place) - shortest) / Math.max(1e-6, 1 - shortest),
+			0,
+			1,
+		);
 		addLimb(
 			seat.level,
 			seat.slot,
@@ -1392,12 +1508,13 @@ export function planConifer(input: GrowInput): ConiferPlan {
 			seat.azimuth,
 			place,
 			curveAt(g.limbs.reachShare, place) * levelReach(seat.y),
-			g.limbs.radius[0] + (g.limbs.radius[1] - g.limbs.radius[0]) * place,
+			g.limbs.radius[0] + (g.limbs.radius[1] - g.limbs.radius[0]) * long,
 			{
 				leave: curveAt(g.limbs.leave, at),
 				run: curveAt(g.limbs.run, at),
 				end: curveAt(g.limbs.end, at),
 			},
+			PATCH_MOST,
 		);
 	});
 
@@ -1416,6 +1533,7 @@ export function planConifer(input: GrowInput): ConiferPlan {
 				limb.span,
 				g.top.radius,
 				{ leave: g.top.leave, run: g.top.leave / 2, end: g.top.end },
+				limb.most,
 				limb.slot,
 			);
 	const tip = trunk[trunk.length - 1] as ConiferNode;
@@ -1429,6 +1547,7 @@ export function planConifer(input: GrowInput): ConiferPlan {
 						begins: 0,
 						width: tipWidth,
 						depth: tipDepth,
+						slope: 0,
 						along: [1, 0, 0] as Vector3,
 					},
 				]
@@ -1438,8 +1557,14 @@ export function planConifer(input: GrowInput): ConiferPlan {
 	];
 	let crownBase = height;
 	for (const patch of patches) {
-		top = Math.max(top, patch.centre[1] + patch.depth / 2);
-		crownBase = Math.min(crownBase, patch.centre[1] - patch.depth / 2);
+		const fall = (Math.abs(patch.slope) * patch.width) / 2;
+		top = Math.max(
+			top,
+			patch.slope === 0
+				? patch.centre[1] + patch.depth / 2
+				: patch.centre[1] - patch.depth / 2 + Math.sqrt(patch.depth * patch.depth + fall * fall),
+		);
+		crownBase = Math.min(crownBase, patch.centre[1] - patch.depth / 2 - fall);
 	}
 	const { twigs, sockets } = socketsOf(record, limbs, patches, trunk, (limb, carrier) =>
 		draw(Purpose.TwigSide, limb, carrier),

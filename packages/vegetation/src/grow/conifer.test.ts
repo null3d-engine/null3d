@@ -306,6 +306,183 @@ describe("the giant sequoia's frame", () => {
 	});
 });
 
+describe("the pine's frame against its photographs", () => {
+	/** The metres a bough reaches from its socket to the outside of its foliage. */
+	const bough = directed.pieces?.find((piece) => piece.name === growth.patch.sockets?.piece);
+	const reach = (bough ? spreadMean(bough.stem.length) : 0) * 0.85;
+	/**
+	 * Still 01, the crown's width by height: each band's lower edge as a share of the height, and
+	 * the outline's two sides there summed, in heights. The band from 0.45 is left out: the stills
+	 * disagree on where the crown begins (0.459, 0.331 and 0.388 of the height).
+	 */
+	const WIDTHS: readonly (readonly [from: number, width: number])[] = [
+		[0.5, 0.92],
+		[0.55, 0.98],
+		[0.6, 0.9],
+		[0.65, 1.05],
+		[0.7, 1.07],
+		[0.75, 0.83],
+		[0.8, 0.71],
+		[0.85, 0.68],
+		[0.9, 0.44],
+		[0.95, 0.21],
+	];
+	/** The foliage's width in a band of heights seen from a turn, in heights. */
+	const widthAt = (plan: ReturnType<typeof planConifer>, from: number, turn: number): number => {
+		const angle = (turn * Math.PI) / 180;
+		let low = 0;
+		let high = 0;
+		for (const socket of plan.sockets) {
+			if ((socket.at[1] + reach) / plan.height < from) continue;
+			if (socket.at[1] / plan.height >= from + 0.05) continue;
+			const across = socket.at[0] * Math.cos(angle) + socket.at[2] * Math.sin(angle);
+			low = Math.min(low, across - reach);
+			high = Math.max(high, across + reach);
+		}
+		return (high - low) / plan.height;
+	};
+
+	it('holds 18 limbs: 2, 3, 3, 3 and 3 on five levels and 4 at the top', () => {
+		for (const seed of SEEDS) {
+			const plan = planConifer(input(seed));
+			expect(plan.perLevel).toEqual([2, 3, 3, 3, 3]);
+			expect(plan.limbs.filter((limb) => limb.top).length).toBe(4);
+			expect(plan.limbs.length).toBe(18);
+		}
+	});
+
+	it("is as wide at each height as still 01's outline, from four sides", () => {
+		for (const seed of SEEDS) {
+			const plan = planConifer(input(seed));
+			for (const [from, width] of WIDTHS) {
+				let sum = 0;
+				for (const turn of [0, 45, 90, 135]) {
+					const built = widthAt(plan, from, turn);
+					sum += built;
+					// From any side a band is no narrower than six tenths of the photograph's and no
+					// wider than a quarter of the height more.
+					expect(built).toBeGreaterThanOrEqual(width * 0.6);
+					expect(built).toBeLessThanOrEqual(width + 0.25);
+				}
+				// Over the four sides a band stands within a quarter of the height of the photograph's.
+				expect(Math.abs(sum / 4 - width)).toBeLessThanOrEqual(0.25);
+			}
+		}
+	});
+
+	it('shares its foliage round the trunk: no eighth of the plan empty and no half heavy', () => {
+		for (const seed of SEEDS) {
+			const plan = planConifer(input(seed));
+			const eighths = new Array<number>(8).fill(0);
+			for (const socket of plan.sockets) {
+				const turn = Math.atan2(socket.at[2], socket.at[0]) / (2 * Math.PI);
+				(eighths[Math.floor((((turn % 1) + 1) % 1) * 8) % 8] as number)++;
+			}
+			const even = plan.sockets.length / 8;
+			for (const held of eighths) {
+				expect(held).toBeGreaterThanOrEqual(even * 0.4);
+				expect(held).toBeLessThanOrEqual(even * 1.6);
+			}
+			for (let first = 0; first < 8; first++) {
+				let half = 0;
+				for (let k = 0; k < 4; k++) half += eighths[(first + k) % 8] as number;
+				expect(half).toBeLessThanOrEqual(plan.sockets.length * 0.6);
+			}
+		}
+	});
+
+	it('rises, runs and falls along every long limb, none of them straight', () => {
+		for (const seed of SEEDS) {
+			const plan = planConifer(input(seed));
+			for (const limb of plan.limbs) {
+				if (limb.top || limb.reach < 0.45 * plan.height) continue;
+				const from = plan.trunk[limb.trunkNode];
+				const last = limb.nodes[limb.nodes.length - 1];
+				expect(from && last).toBeTruthy();
+				if (!from || !last) continue;
+				const highest = Math.max(...limb.nodes.map((node) => node.y));
+				// Still 01's traced limb rises 0.06 of the height and falls 0.12; still 02's lowest
+				// limbs fall about 0.04.
+				const rise = (highest - from.y) / plan.height;
+				const fall = (highest - last.y) / plan.height;
+				expect(rise).toBeGreaterThanOrEqual(0.03);
+				expect(rise).toBeLessThanOrEqual(0.08);
+				expect(fall).toBeGreaterThanOrEqual(0.02);
+				expect(fall).toBeLessThanOrEqual(0.12);
+				// Its wood stands off the straight line from its foot to its end.
+				const chord = [last.x - from.x, last.y - from.y, last.z - from.z];
+				const length = Math.hypot(chord[0] as number, chord[1] as number, chord[2] as number);
+				let off = 0;
+				for (const node of limb.nodes) {
+					const to = [node.x - from.x, node.y - from.y, node.z - from.z];
+					const t =
+						((to[0] as number) * (chord[0] as number) +
+							(to[1] as number) * (chord[1] as number) +
+							(to[2] as number) * (chord[2] as number)) /
+						(length * length);
+					off = Math.max(
+						off,
+						Math.hypot(
+							(to[0] as number) - (chord[0] as number) * t,
+							(to[1] as number) - (chord[1] as number) * t,
+							(to[2] as number) - (chord[2] as number) * t,
+						),
+					);
+				}
+				expect(off / length).toBeGreaterThanOrEqual(0.05);
+			}
+		}
+	});
+
+	it('makes every long limb three to four tenths of the trunk where it leaves, and thinner past its collar', () => {
+		for (const seed of SEEDS) {
+			const plan = planConifer(input(seed));
+			for (const limb of plan.limbs) {
+				if (limb.top || limb.reach < 0.45 * plan.height) continue;
+				const from = plan.trunk[limb.trunkNode];
+				expect(from).toBeDefined();
+				if (!from) continue;
+				/** The limb's radius over the trunk's, a share of the height out from the trunk's line. */
+				const ratioAt = (out: number): number => {
+					let best = limb.nodes[0];
+					let least = Number.POSITIVE_INFINITY;
+					for (const node of limb.nodes) {
+						const off = Math.abs(Math.hypot(node.x - from.x, node.z - from.z) - out * plan.height);
+						if (off < least) {
+							least = off;
+							best = node;
+						}
+					}
+					return (best?.radius ?? 0) / from.radius;
+				};
+				// Still 01: 0.30 to 0.41 of the trunk's width at 0.06 of the height from its line,
+				// and 0.26 and 0.24 at 0.15 and 0.20.
+				expect(ratioAt(0.06)).toBeGreaterThanOrEqual(0.3);
+				expect(ratioAt(0.06)).toBeLessThanOrEqual(0.41 + 0.005);
+				expect(ratioAt(0.15)).toBeGreaterThanOrEqual(0.2);
+				expect(ratioAt(0.15)).toBeLessThanOrEqual(0.3);
+				expect(ratioAt(0.2)).toBeLessThan(ratioAt(0.06));
+			}
+		}
+	});
+
+	it("tops the crown with one pad over the trunk's line and the others lower round it", () => {
+		for (const seed of SEEDS) {
+			const plan = planConifer(input(seed));
+			const tops = plan.limbs.filter((limb) => limb.top);
+			const [leader, ...others] = tops;
+			expect(leader).toBeDefined();
+			if (!leader) continue;
+			const off = Math.hypot(leader.patch.centre[0], leader.patch.centre[2]);
+			expect(off).toBeLessThanOrEqual(leader.patch.width / 2);
+			for (const other of others) {
+				expect(other.patch.centre[1]).toBeLessThan(leader.patch.centre[1]);
+				expect(Math.hypot(other.patch.centre[0], other.patch.centre[2])).toBeGreaterThan(off);
+			}
+		}
+	});
+});
+
 describe("the pine's sockets", () => {
 	const rule = growth.patch.sockets;
 	const pitch = rule?.pitch ?? 0;
@@ -362,7 +539,12 @@ describe("the pine's sockets", () => {
 			const plan = planConifer(input(seed));
 			plan.patches.forEach((patch, index) => {
 				const own = plan.sockets.filter((socket) => socket.patch === index);
-				const floor = patch.centre[1] - patch.depth / 2;
+				/** The height of the pad's floor at a place: it falls with the limb. */
+				const floorAt = (x: number, z: number): number =>
+					patch.centre[1] -
+					patch.depth / 2 +
+					patch.slope *
+						((x - patch.centre[0]) * patch.along[0] + (z - patch.centre[2]) * patch.along[2]);
 				// No place on the pad's dome stands farther from a socket than a bough's reach and
 				// one pitch.
 				for (let turn = 0; turn < 24; turn++)
@@ -370,30 +552,31 @@ describe("the pine's sockets", () => {
 						const t = (band + 0.5) / 8;
 						const ring = Math.sqrt(1 - t * t);
 						const angle = (turn / 24) * 2 * Math.PI;
-						const place = [
-							patch.centre[0] + (patch.width / 2) * ring * Math.cos(angle),
-							floor + patch.depth * t,
-							patch.centre[2] + (patch.width / 2) * ring * Math.sin(angle),
-						];
+						const x = patch.centre[0] + (patch.width / 2) * ring * Math.cos(angle);
+						const z = patch.centre[2] + (patch.width / 2) * ring * Math.sin(angle);
+						const place = [x, floorAt(x, z) + patch.depth * t, z];
 						const nearest = Math.min(...own.map((socket) => apart(socket.at, place)));
 						expect(nearest).toBeLessThanOrEqual(reach + pitch);
 					}
 				// A pad wide enough to hold a dome of sockets is as deep for its width as the record
 				// says, within a tenth, measured over its boughs' reach.
 				if (patch.width < 8 * pitch) return;
-				const top = Math.max(...own.map((socket) => socket.at[1]));
+				/** A socket's height above the pad's floor under it. */
+				const above = (socket: (typeof own)[number]): number =>
+					socket.at[1] - floorAt(socket.at[0], socket.at[2]);
+				const top = Math.max(...own.map(above));
 				const rim = Math.max(
 					...own.map((socket) =>
 						Math.hypot(socket.at[0] - patch.centre[0], socket.at[2] - patch.centre[2]),
 					),
 				);
-				const built = (top - floor + reach) / (2 * (rim + reach));
+				const built = (top + reach) / (2 * (rim + reach));
 				expect(Math.abs(built - growth.patch.depth)).toBeLessThanOrEqual(growth.patch.depth * 0.1);
 				// Its sockets stand through its depth: a fifth of them or more in each third.
 				const thirds = [0, 0, 0];
 				for (const socket of own)
 					(thirds[
-						Math.min(2, Math.floor(((socket.at[1] - floor) / (top - floor + 1e-9)) * 3))
+						Math.min(2, Math.max(0, Math.floor((above(socket) / (top + 1e-9)) * 3)))
 					] as number)++;
 				for (const third of thirds) expect(third).toBeGreaterThanOrEqual(own.length / 5);
 			});
