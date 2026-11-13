@@ -8,7 +8,7 @@ summary: "LOD groups; levels that meshes made in code plan on the job workers; g
 
 # Levels of detail
 
-> Roadmap step 0.2, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. Morphed objects, and materials that blend or let light through, draw their base mesh at every distance. A skinned object draws a level while the level names the base mesh's own vertices, as the asset tool's levels do. Custom materials, and masks with the `'hash'` alpha mode, switch levels at once, with no fading band. A distance band cuts at once for them too.
+> Roadmap step 0.2, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. Morphed objects, and materials that blend or let light through, draw their base mesh at every distance. A skinned object draws a level while the level names the base mesh's own vertices, as the asset tool's levels do. Masks with the `'hash'` alpha mode switch levels at once, with no fading band. A distance band cuts at once for them too.
 
 ```mermaid
 flowchart LR
@@ -26,7 +26,7 @@ A mesh with levels draws one of them per frame in every object and every instanc
 
 ## Levels of meshes made in code
 
-A mesh made in code plans its levels the first time the scene draws it, when it holds 4,096 triangles or more, or when its copies hold 65,536 triangles together, whether `geometry.fromArrays` or a generator made it. A page's meshes and an add-on's plan alike. A mesh that no object draws plans nothing, and the plan sees the material that draws the mesh first. The plan runs on the job workers, never in a frame, and the mesh draws its full shape until the levels arrive. It runs the planner that the asset tool's `--lod` runs, with the same build of meshoptimizer's simplifier, so the same mesh gets the same levels in code as in a file. The copies that already draw the mesh then pick their levels, as the streamed levels of a file refine in place.
+A mesh made in code plans its levels the first time the scene draws it, when it holds 4,096 triangles or more, or when it holds at least 256 triangles and its copies hold 65,536 triangles together, whether `geometry.fromArrays` or a generator made it. A page's meshes and an add-on's plan alike. A mesh that no object draws plans nothing, and the plan sees the material that draws the mesh first. The plan runs on the job workers, never in a frame, and the mesh draws its full shape until the levels arrive. It runs the planner that the asset tool's `--lod` runs, with the same build of meshoptimizer's simplifier, so the same mesh gets the same levels in code as in a file. The copies that already draw the mesh then pick their levels, as the streamed levels of a file refine in place.
 
 ```ts
 const rock = geometry.fromArrays(rockArrays(20_000));
@@ -136,13 +136,14 @@ A level given by its error switches in where that error covers fewer pixels than
 pixels = error × scale × render height / (2 × distance × tan(field of view / 2))
 ```
 
-The setting is 1 pixel from Medium up, and 2 on Low. The render height includes the render scale. So on a taller screen, or at a higher render scale, such a level switches in farther away. When the frame-budget governor lowers the render scale, coarser levels draw. When frames still take too long, the governor doubles the threshold, twice at most.
+The factor is the render height in pixels times the projection's `P[1][1]`, over twice the threshold in pixels. The setting is 1 pixel from Medium up, and 2 on Low. The render height includes the render scale. So on a taller screen, or at a higher render scale, such a level switches in farther away. When the frame-budget governor lowers the render scale, coarser levels draw. When frames still take too long, the governor doubles this threshold and the shadow maps' threshold together, twice at most.
 
 A level given by its distance switches where the camera is that far from the object's nearest point. The camera's field of view, the screen height and the render scale do not move it. A level given by its coverage switches where the object's bounds cover that share of the render's height. A taller screen does not move that switch either.
 
-An orthographic camera's pixels do not shrink with distance. So its levels follow the object's scale and the camera's zoom alone.
+An orthographic camera's pixels do not shrink with distance. So its levels given by an error follow the object's scale and the camera's zoom alone. A level given by a distance, and a distance band, measure the camera's distance to the object's nearest point in every view, so an orthographic camera still switches and hides them by that distance.
 
-For a level given by its error, the distance runs from the camera to the center of the object's bounding sphere, less half the sphere's radius. A level's error is its largest anywhere on the mesh, so a large object switches by a point between its near side and its middle: it does not turn coarse too early, and its far side does not keep detail that only its near side shows. A level given by its distance or its coverage measures to the nearest point of the bounding sphere, as its author set it. Turning the camera never changes a level. A camera inside the bounds, or near its middle, measures almost no distance, so the object keeps its full detail. A view with a camera of its own, such as a render pass, picks with that camera. Mirrors and the outline effect pick as the main camera does.
+For a level given by its error, the distance runs from the camera to the center of the object's bounding sphere, less half the sphere's radius, and is capped at twice the distance to the sphere's nearest point. A level's error is its largest anywhere on the mesh. A large object therefore switches at a point between its near side and its middle: it does not turn coarse too early, and its far side does not keep detail that only its near side shows. The cap keeps a camera standing on a large mesh measuring the surface below it. Half the radius of a ground two kilometers across would be hundreds of meters. The near side then shows an error of up to two pixels rather than one. A level given by its distance or its coverage measures to the nearest point of the bounding sphere, as its author set it. Turning the camera never changes a level. A camera inside the bounds, or near its middle, measures almost no distance, so the object keeps its full detail. A view with a camera of its own, such as a render pass, picks with that camera. Mirrors and the outline effect pick as the main camera does.
+
 The same threshold hides an object of a mesh with levels that has nothing left to show. A bound that covers fewer pixels than the threshold draws nothing, and the mesh's last level holds no geometry. [Small objects](#small-objects) gives the distance and the fade.
 
 Levels add no second copy of each object's data. Each view keeps about the room of one copy for each object and instance row that draws, whatever the number of levels and fading bands. A forest of 40,000 copies with four levels takes about 2.6 MB in a view.
@@ -176,7 +177,7 @@ mesh.setLevels([{ mesh: low, distance: 80, fade: false }]);
 
 The fragments that the dither drops cost a tile GPU, such as a phone's or an Apple GPU's, its hidden-surface removal. So only the objects inside a band draw with the dither. The shader builds of the bands download with the first mesh whose levels fade. These builds follow the level, whatever the `lodFade` quality setting, because a hand-set level pops without them.
 
-[Custom materials](../shaders/surface-functions.md) fade too, through their own builds, which download with the material's first use. Three kinds switch at once: a material that tests its mask by the [alpha hash](../api/materials.md#alpha-modes), a skinned material, and one that lets light through.
+[Custom materials](../shaders/surface-functions.md) fade too, through their own builds, which download with the material's first use. Three kinds switch at once: a material that tests its mask by the [alpha hash](../api/materials.md#alpha-modes), a skinned material, and a material whose displacement moves its vertices.
 
 One add-on morphs a level instead of fading it. The terrain add-on moves each block's vertices toward its parent block's surface over the last part of the approach. The block then matches its parent when the selection hands over. It writes the target in the mesh's four-number vertex record, which its own custom material's `vertexOffset` reads. The morph adds no draw and writes no vertex in a frame. The vegetation add-on fades its card levels with the dither instead. Each level draws on until the next stands at full coverage, then thins out, so no pixel drops out of both. File meshes keep the dither too: the asset tool's simplifier records no mapping between one level's vertices and the next.
 
@@ -209,9 +210,9 @@ The mesh draws only while the camera's distance to its nearest point lies inside
 
 ## See the levels
 
-The development build draws a levels view: `debug.view('levels')` from the sketch, or `?view=levels` in a page's address. Each draw takes a color for its level, from blue for the base mesh to cyan for the sixth lower level. Every level past it draws gray. Where two levels hand over in a fading band, the view dithers the two colors, so the band shows. A source that the size rule or a draw range hid draws at its base level in a striped magenta marker, at the place it would have drawn. The view then shows what the culling dropped, rather than a hole.
+The development build draws a levels view: `debug.view('levels')` from the sketch, or `?view=levels` in a page's address. Each draw takes a color for its level, from blue for the base mesh to cyan for the sixth lower level. Every level past it draws gray. Where two levels hand over in a fading band, the view dithers the two colors, so the band shows. A source that the size rule or a draw range hid draws at its base level in a checked magenta marker, at the place it would have drawn. The view then shows what the culling dropped, rather than a hole.
 
-The view reads the level that the culling picks, so it needs no shader for each material. `debug.cullingSpheres(true)` draws the bounding sphere that culling tests for each object whose mesh has levels, so a sphere that hid by its size shows where it lies. It draws in a development build only. An add-on registers a view of its own through the `debugViews` field of its [feature description](../api/features.md#the-fields).
+The view reads the level that the culling picks, so it needs no shader for each material. `debug.cullingSpheres(true)` draws the bounding sphere that culling tests for each object whose mesh has levels, up to the first 128 objects, so a sphere that hid by its size shows where it lies. It draws in a development build only. An add-on registers a view of its own through the `debugViews` field of its [feature description](../api/features.md#the-fields).
 
 ## Shadows
 
@@ -244,7 +245,7 @@ A bake stores the object from many directions, folded onto an octahedral grid, i
 | `lod.getCurrentLevel()` | None |
 | `SimplifyModifier` from three/addons, to make the far copies | None: a mesh of 4,096 triangles or more plans its levels on the job workers when it first draws, and `mesh.buildLevels()` plans a smaller one |
 
-A three.js `LOD` holds whole objects. In null3D the levels belong to the mesh, and every object and instance batch that draws it picks its own level. A level given by its distance switches in at that distance for an object of scale 1, on every screen. The distance measures to the nearest point of the object's bounds. three.js measures to the object's position instead, so a large object switches later in null3D. A level given by its error or its coverage compares at a field of view of 50 degrees, three.js's default. The `fov` option of `setLevels` names another one.
+A three.js `LOD` holds whole objects. In null3D the levels belong to the mesh, and every object and instance batch that draws it picks its own level. A level given by its distance switches in at that distance for an object of scale 1, on every screen. The distance measures to the nearest point of the object's bounds. three.js measures to the object's position instead, so a large object switches later in null3D. A level given by its error or its coverage is compared with the field of view of the view that draws it. The `fov` option of `setLevels` only checks the order of the levels when the mesh takes them, and moves no switch.
 
 ## API reference
 

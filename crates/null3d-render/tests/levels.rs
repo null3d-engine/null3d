@@ -6,10 +6,10 @@ mod common;
 use common::{World, base_sphere, count, grid};
 use null3d_core::jobs::JobSystem;
 use null3d_core::levels::{
-    DrawRange, LEAST_DISTANCE, LEVEL_RADIUS_SHARE, LevelLink, LevelRule, LightLens, NO_LINK,
-    Picked, Switch, fade_values,
+    DrawRange, LEAST_DISTANCE, LEVEL_NEAREST_SHARE, LEVEL_RADIUS_SHARE, LevelLink, LevelRule,
+    LightLens, NO_LINK, Picked, Switch, fade_values,
 };
-use null3d_core::scene::Command;
+use null3d_core::scene::{Command, flags};
 use null3d_gpu::drawlist::{Op, permutation, template};
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::frame::{FrameBuilder, LevelQuality};
@@ -1204,8 +1204,11 @@ fn shader_pick(
     let bias = if bias > 0.0 { bias } else { 1.0 };
     let factor = whole / bias;
     let nearest = (length(center) - radius).max(LEAST_DISTANCE);
-    let distance = if orthographic { 1.0 } else { nearest };
-    let toward = (length(center) - LEVEL_RADIUS_SHARE * radius).max(LEAST_DISTANCE);
+    // A distance level, a coverage level and a distance band measure to the nearest point in
+    // every view, an orthographic camera included.
+    let distance = nearest;
+    let half = (length(center) - LEVEL_RADIUS_SHARE * radius).max(LEAST_DISTANCE);
+    let toward = half.min(LEVEL_NEAREST_SHARE * nearest);
     let error_camera = if orthographic { 1.0 } else { toward };
     let error = if measure[3] > 1.5 {
         (length([
@@ -1528,11 +1531,14 @@ fn the_culling_shader_repeats_the_core_level_rule() {
     for line in [
         "const LEAST_DISTANCE: f32 = 1.0e-3;",
         "const LEVEL_RADIUS_SHARE: f32 = 0.5;",
+        "const LEVEL_NEAREST_SHARE: f32 = 2.0;",
         "const SWITCH_ERROR: u32 = 0u;",
         "const SWITCH_DISTANCE: u32 = 1u;",
         "const SWITCH_COVERAGE: u32 = 2u;",
         "let nearest = max(length(s.center) - s.radius, LEAST_DISTANCE);",
-        "let toward = max(length(s.center) - LEVEL_RADIUS_SHARE * s.radius, LEAST_DISTANCE);",
+        "let distance = nearest;",
+        "let half = max(length(s.center) - LEVEL_RADIUS_SHARE * s.radius, LEAST_DISTANCE);",
+        "let toward = min(half, LEVEL_NEAREST_SHARE * nearest);",
         "return bucket.value * scale * factor;",
         "return bucket.value * scale / bias;",
         "return radius * p11 / (bucket.value * bias);",
@@ -1546,10 +1552,11 @@ fn the_culling_shader_repeats_the_core_level_rule() {
     }
     assert_eq!(LEAST_DISTANCE, 1.0e-3);
     assert_eq!(LEVEL_RADIUS_SHARE, 0.5);
+    assert_eq!(LEVEL_NEAREST_SHARE, 2.0);
     assert_eq!(fade_values(0.0).0, 1.0e-6);
-    let culling = include_str!("../../null3d-core/src/culling.rs");
+    let levels = include_str!("../../null3d-core/src/levels.rs");
     assert!(
-        culling.contains("let fade = t.max(1.0e-6);"),
+        levels.contains("[entry(bucket, t.max(LEAST_FADE), false), PickedEntry::default()],"),
         "the CPU path's least fade moved"
     );
     assert_eq!(
@@ -1559,5 +1566,104 @@ fn the_culling_shader_repeats_the_core_level_rule() {
             Switch::Coverage as u32
         ),
         (0, 1, 2)
+    );
+}
+
+/// The shader's dither value for the pixel at `x`, `y` in the 4 x 4 tile, from `lod_kept` in
+/// `mesh.wgsl`, with the tile moved by `phase`.
+fn dither_value(x: u32, y: u32, phase: u32) -> u32 {
+    let px = (x + (phase & 3)) & 3;
+    let py = (y + (phase >> 2)) & 3;
+    let (low_x, low_y) = (px & 1, py & 1);
+    let (high_x, high_y) = (px >> 1, py >> 1);
+    4 * (2 * (low_x ^ low_y) + low_y) + 2 * (high_x ^ high_y) + high_y
+}
+
+/// True when a pixel of `value` is kept at `fade`, as `lod_kept` decides it.
+fn dither_kept(fade: f32, value: f32) -> bool {
+    if fade > 0.0 {
+        value < fade
+    } else {
+        value >= -fade
+    }
+}
+
+#[test]
+fn the_dither_keeps_every_pixel_of_a_band_once() {
+    let mesh = include_str!("../../null3d-shaders/wgsl/lib/mesh.wgsl");
+    for line in [
+        "return pcg(source) & 15u;",
+        "let p = (vec2u(pixel) + vec2u(phase & 3u, phase >> 2u)) & vec2u(3u);",
+        "let cell = 4u * (2u * (low.x ^ low.y) + low.y) + 2u * (high.x ^ high.y) + high.y;",
+        "let value = (f32(cell) + 0.5) / 16.0;",
+        "let new_side = fade > 0.0;",
+        "let kept_new = value < fade;",
+        "return select(value >= -fade, kept_new, new_side);",
+    ] {
+        assert!(mesh.contains(line), "the dither moved:\n{line}");
+    }
+    // The 4 x 4 tile is a true permutation of 0 to 15, for every phase.
+    for phase in 0..16 {
+        let mut seen = [false; 16];
+        for y in 0..4 {
+            for x in 0..4 {
+                seen[dither_value(x, y, phase) as usize] = true;
+            }
+        }
+        assert!(seen.iter().all(|&one| one), "phase {phase}");
+    }
+    // The two sides of a band keep exactly complementary pixels at every share, from none through
+    // the whole band, and the least fade keeps the new side at no pixel rather than all of them.
+    for t in [0.0, 0.01, 0.25, 0.5, 31.0 / 32.0, 0.99, 1.0, 2.0] {
+        let (new, old) = fade_values(t);
+        for cell in 0..16 {
+            let value = (cell as f32 + 0.5) / 16.0;
+            assert_ne!(
+                dither_kept(new, value),
+                dither_kept(old, value),
+                "t {t}, cell {cell}: new {new}, old {old}"
+            );
+        }
+    }
+    let (new, old) = fade_values(0.0);
+    assert_eq!(new, 1.0e-6);
+    assert!(old == 0.0);
+}
+
+#[test]
+fn a_shadow_view_picks_a_casters_level_in_its_own_texels() {
+    // A ball two metres in front of the camera draws its base level there, since level 1 switches
+    // at 3.1 m. The far cascades of the sun's shadow cover about 4 cm of world per texel, so they
+    // pick level 1, whose 3 cm error covers under a texel. A shadow rule that read the camera's
+    // distance would draw the base level in every cascade.
+    let mut world = cpu_world();
+    world.cast_sun_shadows(4);
+    let ball = world.objects[2];
+    world.scene.set_position(ball, [0.0, 0.0, 18.0]).unwrap();
+    world
+        .scene
+        .apply_commands(
+            &[Command::set_flags(
+                ball,
+                flags::CAST_SHADOWS,
+                flags::CAST_SHADOWS,
+            )],
+            world.frame,
+        )
+        .unwrap();
+    let levels = give_levels_of(&mut world, &[0.01, 0.03], 0);
+    world.record(true);
+    let drawn = draws(&world);
+    assert!(
+        drawn
+            .iter()
+            .any(|&(indices, _)| indices == indices_of(&world, BALL)),
+        "the camera draws the base level: {drawn:?}"
+    );
+    assert!(
+        drawn
+            .iter()
+            .any(|&(indices, _)| indices == indices_of(&world, levels[0])),
+        "a cascade draws the first lower level: {drawn:?}"
     );
 }
