@@ -74,6 +74,16 @@ function fork(stem: PieceStem, at: number, length: number, angle: number, left =
 	};
 }
 
+/** A shoot of the twig: zigzag, with a leaf each 0.13 of the twig's height from a third of its length. */
+function twigShoot(length: number): PieceStem {
+	return {
+		length: { mean: length, spread: length * 0.08 },
+		radius: [0.0022, 0.001],
+		zigzag: 18,
+		leaves: { ...rows(0.3), gap: 0.055, angle: 70, scale: TWIG_LEAF_SCALE },
+	};
+}
+
 /** The European beech's pieces. */
 export const PIECES: readonly PieceRule[] = [
 	// Still 21: a slender grey stem a metre tall, bare for its lowest 0.28. Three limbs: one to the
@@ -109,27 +119,17 @@ export const PIECES: readonly PieceRule[] = [
 		scale: 1 / TWIG_LEAF_SCALE,
 		// The turning video of the sub-branch: edge on it is 0.29 as wide as face on.
 		depth: 16,
+		// Still 22 at full size, in shares of the twig's height: a zigzag stem with a shoot to the
+		// right at 0.4 (0.5 long, 50 degrees) and one to the left at 0.6 (0.28 long). Twelve oval
+		// leaves, each 0.17 of the height, one each 0.13 along a shoot, held 60 to 80 degrees out in
+		// the twig's plane. A long slim bud at each of the three ends.
 		stem: {
-			length: { mean: 0.35, spread: 0.03 },
+			length: { mean: 0.38, spread: 0.02 },
 			// Still 22: the twig is 0.02 of its height thick at its cut.
 			radius: [0.0036, 0.0012],
-			zigzag: 14,
-			leaves: { ...rows(0.25), gap: 0.05, scale: TWIG_LEAF_SCALE },
-			sides: [
-				{
-					stem: {
-						length: { mean: 0.11, spread: 0.02 },
-						radius: [0.0018, 0.001],
-						zigzag: 14,
-						leaves: { ...rows(0.3), gap: 0.05, scale: TWIG_LEAF_SCALE },
-					},
-					gap: 0.09,
-					from: 0.18,
-					to: 0.75,
-					arrangement: 'alternate',
-					angle: { mean: 45, spread: 5 },
-				},
-			],
+			zigzag: 18,
+			leaves: { ...rows(0.2), gap: 0.055, angle: 70, scale: TWIG_LEAF_SCALE },
+			sides: [fork(twigShoot(0.21), 0.44, 0.38, 50), fork(twigShoot(0.12), 0.66, 0.38, 50, true)],
 		},
 	},
 ];
