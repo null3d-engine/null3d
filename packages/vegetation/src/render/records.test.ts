@@ -419,6 +419,35 @@ describe('the plant shader', () => {
 		return Number(match[1]);
 	};
 
+	test("draws a silhouette black at the colour picture's cut edge in both plant shaders", () => {
+		// The matte keeps each texel's own coverage, which on a coarse mip of fine leaflets is grey,
+		// a smear to the eye; a silhouette draws black with the colour picture's sharpened edge.
+		const viewFace = readFileSync(new URL('./plant-viewface.wgsl', import.meta.url), 'utf8');
+		for (const source of [wgsl, viewFace]) {
+			expect(source).toMatch(/let parts = material\.matte > 1\.5 && material\.matte < 2\.5;/);
+			expect(source).toMatch(/let silhouette = material\.matte > 2\.5;/);
+			expect(source).toMatch(/let matte = material\.matte > 0\.5 && material\.matte < 1\.5;/);
+			expect(source).toMatch(
+				/s\.baseColor = select\(base, vec3f\(0\.0\), matte \|\| parts \|\| silhouette\);/,
+			);
+			// Only the matte keeps the raw coverage: the alpha's choice names the matte alone.
+			expect(source).toMatch(/s\.alpha = select\([^;]*, matte\);/);
+		}
+	});
+
+	test("draws the review matte's soft coverage only where the colour picture draws", () => {
+		// A card drawn larger than its texels blurs: the colour picture cuts it at the cutoff into
+		// the fragments it shows, and a matte that kept every texel's soft coverage drew the blur as
+		// a smear. The matte keeps a texel's own coverage only where the sharpened coverage, the
+		// colour picture's, draws it.
+		expect(wgsl).toMatch(/let drawn = sharpen\(cut, width\);/);
+		expect(wgsl).toMatch(/s\.alpha = select\(drawn, select\(0\.0, alpha, drawn > 0\.0\), matte\);/);
+		// A placed piece's fine edges draw a pixel wide in the matte, as merged foliage's do.
+		expect(wgsl).toMatch(
+			/mode == MODE_SHOOTS &&\s*material\.matte > 0\.5 &&\s*material\.matte < 1\.5 &&\s*abs\(input\.colors\.b \* 255\.0 - KIND_PIECE\) < 0\.5/,
+		);
+	});
+
 	test('reads the texels that the header writes', () => {
 		const names: Record<string, number> = {
 			HEADER_UPPER: HEADER.upper,

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { blank, type Rgba } from '../lib/plant-review/image.ts';
-import type { Box } from '../lib/plant-review/references.ts';
-import { endsAtHorizon, footInView, wideFoot } from './foot.ts';
+import type { Box, PlantMask } from '../lib/plant-review/references.ts';
+import { endsAtHorizon, footInView, footLost } from './foot.ts';
 import {
 	ENVELOPE_BANDS,
 	envelopeOf,
@@ -251,14 +251,63 @@ describe('the stem below a crown', () => {
 });
 
 describe('an outline that ends at the horizon', () => {
-	test('is told by its last row, and a wide foot from a stem', () => {
+	test('is told by its last row', () => {
 		const stem = lollipop(0).mask;
 		expect(endsAtHorizon(boxOf(stem), 380, HEIGHT)).toBe(true);
 		expect(endsAtHorizon(boxOf(stem), 340, HEIGHT)).toBe(false);
-		expect(wideFoot(stem, WIDTH, boxOf(stem), 200)).toBe(false);
-		const tuft = empty();
-		fill(tuft, 100, 200, 299, 380);
-		expect(wideFoot(tuft, WIDTH, boxOf(tuft), 200)).toBe(true);
+	});
+});
+
+describe('a lost foot', () => {
+	/**
+	 * A picture 200 by 120 with its horizon at row 60: sky above, grass below with a little noise, and
+	 * stalks rising from the grass, of a colour above the horizon and the grass's below it. The mask
+	 * holds the stalks above the horizon, as an outline that ends there does.
+	 */
+	function stalks(above: readonly number[]): { image: Rgba; plant: PlantMask; box: Box } {
+		const width = 200;
+		const height = 120;
+		const image = blank(width, height, [170, 200, 235]);
+		const mask = new Uint8Array(width * height);
+		for (let y = 60; y < height; y++)
+			for (let x = 0; x < width; x++) {
+				const n = ((x * 7 + y * 13) % 9) - 4;
+				const at = (y * width + x) * 4;
+				image.data[at] = 90 + n;
+				image.data[at + 1] = 130 + n;
+				image.data[at + 2] = 60 + n;
+			}
+		for (const x0 of [80, 100, 120])
+			for (let y = 20; y < 110; y++)
+				for (let x = x0; x < x0 + 2; x++) {
+					const at = (y * width + x) * 4;
+					const colour = y < 60 ? above : [90, 130, 60];
+					image.data[at] = colour[0] as number;
+					image.data[at + 1] = colour[1] as number;
+					image.data[at + 2] = colour[2] as number;
+					if (y < 60) mask[y * width + x] = 1;
+				}
+		const surface = { coefficients: [[0], [0], [0]], noise: 5, fit: 1 };
+		const plant = {
+			width,
+			height,
+			mask,
+			background: { horizon: 60, sky: surface, ground: surface, plain: false },
+		} as unknown as PlantMask;
+		return { image, plant, box: { left: 80, top: 20, right: 121, bottom: 59 } };
+	}
+
+	test('marks thin stalks that stand in grass of their own colour', () => {
+		const { image, plant, box } = stalks([86, 126, 58]);
+		expect(footLost(image, plant, box, 0.5, 100)).toBe(true);
+	});
+
+	test('keeps a foot that stands in view on ground of another colour, or that the follower followed', () => {
+		const trunk = stalks([110, 70, 40]);
+		expect(footLost(trunk.image, trunk.plant, trunk.box, 0.5, 100)).toBe(false);
+		const lost = stalks([86, 126, 58]);
+		const followed = { ...lost.plant, footFollowedFrom: 50 } as PlantMask;
+		expect(footLost(lost.image, followed, lost.box, 0.5, 100)).toBe(false);
 	});
 });
 
