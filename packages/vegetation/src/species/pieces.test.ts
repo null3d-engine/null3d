@@ -288,15 +288,12 @@ const EDGE_SHARE = 0.35;
  * The cuts that do not yet hold their video's figure, each with what is wrong. The test holds every
  * other cut inside its band, and holds these outside it, so a cut that is mended leaves this list.
  */
-const OPEN_DEPTH: Readonly<Record<string, string>> = {
-	'silver-birch 22':
-		'0.49 against 0.27: a blade bends at its stalk out of its own face, so a blade that faces the camera reaches toward it',
-	'weeping-willow 22': '0.46 against 0.23: the same bend at the stalk, 40 degrees in the record',
-};
+const OPEN_DEPTH: Readonly<Record<string, string>> = {};
 const OPEN_EDGE: Readonly<Record<string, string>> = {
 	'silver-birch 21':
-		'0.20 against 0.49: its strands hang in the planes of their arms, so edge on they stack into a line',
-	'weeping-willow 22': '0.14 against 0.47: three strands in one plane, edge on',
+		'0.29 against 0.49: about a third of its blades show their faces edge on, and the video shows a column of whole leaves',
+	'weeping-willow 22':
+		"0.26 against 0.47: a strand's leaves stand to every side, so half show their faces from any side, and the video shows each leaf whole in every frame",
 	'hawthorn-shrub 21': '0.20 against 0.40: its arms and tufts stand in one plane',
 };
 
@@ -656,6 +653,151 @@ describe("the beech's branch end, as still 21 shows it at full size", () => {
 			expect(
 				plan.axes.filter((other) => distance(other[0]?.at ?? [9, 9, 9], top) < SAME).length,
 			).toBe(2);
+		}
+	});
+});
+
+/** The dot product of two vectors. */
+const dot = (a: readonly number[], b: readonly number[]): number =>
+	(a[0] as number) * (b[0] as number) +
+	(a[1] as number) * (b[1] as number) +
+	(a[2] as number) * (b[2] as number);
+
+/** A rule with the species' own bend at the stalk. */
+function speciesDroop(rule: PieceRule): PieceRule {
+	const { leafDroop: _droop, ...rest } = rule;
+	return rest;
+}
+
+/**
+ * The root mean square of the leaves' reach to the piece's flank over their reach to its sky
+ * side: 1 where the leaves stand to every side alike, 0 where they lie in the piece's plane.
+ */
+function flankOverSky(plan: ShootPlan): number {
+	let flank = 0;
+	let sky = 0;
+	for (const leaf of plan.leaves) {
+		flank += (leaf.direction[0] as number) ** 2;
+		sky += (leaf.direction[2] as number) ** 2;
+	}
+	return Math.sqrt(flank / Math.max(sky, 1e-9));
+}
+
+describe("a hanging piece's blades", () => {
+	it(
+		"turn at their stalks about their own normals, toward the ground, by the species' droop",
+		async () => {
+			for (const [id, rules] of [
+				['weeping-willow', WILLOW],
+				['silver-birch', BIRCH],
+			] as const) {
+				const module = await loadSpecies(id);
+				await loadPlantCode(module.record);
+				const foliage = module.record.foliage;
+				if (foliage.kind !== 'blade') throw new Error(`${id} has no blade leaf`);
+				const droop = foliage.leaf.petiole.droop;
+				for (const [r, rule] of rules.entries()) {
+					expect(rule.leafDroop).toBe('plane');
+					const bent = planPiece(module.record, rule, pieceKey(r, 0), 4);
+					const straight = planPiece(module.record, speciesDroop(rule), pieceKey(r, 0), 4);
+					expect(bent.leaves.length).toBe(straight.leaves.length);
+					for (const [i, leaf] of bent.leaves.entries()) {
+						const before = straight.leaves[i] ?? leaf;
+						const normal = quatRotate(leaf.rotation, 0, [0, 0, 1], [0, 0, 0]);
+						// The blade keeps its face, and its midrib stays in its own plane.
+						expect(
+							dot(normal, quatRotate(before.rotation, 0, [0, 0, 1], [0, 0, 0])),
+						).toBeGreaterThan(0.9999);
+						expect(Math.abs(dot(leaf.direction, normal))).toBeLessThan(1e-4);
+						// It turns no farther than the species' stalk droop, and toward the ground side,
+						// which is the way a hanging piece's line runs.
+						const turned = Math.min(1, dot(leaf.direction, before.direction));
+						expect((Math.acos(turned) * 180) / Math.PI).toBeLessThanOrEqual(droop + 0.01);
+						expect(leaf.direction[1] as number).toBeGreaterThanOrEqual(
+							(before.direction[1] as number) - 1e-6,
+						);
+					}
+				}
+			}
+		},
+		LONG,
+	);
+
+	it(
+		"keep the built willow blade within 12 degrees of its own plane, where the species' leaf leaves it by 40",
+		async () => {
+			const module = await loadSpecies('weeping-willow');
+			await loadPlantCode(module.record);
+			const strand = WILLOW[0] as PieceRule;
+			// One leaf on a short stem, by the strand's own leaf rule.
+			const one: PieceRule = {
+				...strand,
+				variants: 1,
+				stem: {
+					length: 0.02,
+					radius: [0.001, 0.001],
+					bud: false,
+					leaves: {
+						...(strand.stem.leaves as NonNullable<PieceRule['stem']['leaves']>),
+						gap: 0.02,
+						from: 0.5,
+					},
+				},
+			};
+			/** The built blade's greatest distance from its planned plane over its reach. */
+			const offPlane = (rule: PieceRule): number => {
+				const plan = planPiece(module.record, rule, pieceKey(0, 0), 4);
+				expect(plan.leaves.length).toBe(1);
+				const leaf = plan.leaves[0] as ShootPlan['leaves'][number];
+				const normal = quatRotate(leaf.rotation, 0, [0, 0, 1], [0, 0, 0]);
+				const mesh = buildPiecesNow(module, [rule])[0]?.tiers[DETAILS.indexOf('high')];
+				if (!mesh) throw new Error('the one-leaf piece built no mesh');
+				let off = 0;
+				let reach = 0;
+				for (let i = 0; i < mesh.positions.length / 3; i++) {
+					if ((mesh.colors[i * 4 + 2] as number) !== SURFACE_LEAF) continue;
+					const v = [
+						(mesh.positions[i * 3] as number) - (leaf.at[0] as number),
+						(mesh.positions[i * 3 + 1] as number) - (leaf.at[1] as number),
+						(mesh.positions[i * 3 + 2] as number) - (leaf.at[2] as number),
+					];
+					off = Math.max(off, Math.abs(dot(v, normal)));
+					reach = Math.max(reach, Math.hypot(v[0] as number, v[1] as number, v[2] as number));
+				}
+				expect(reach).toBeGreaterThan(0.05);
+				return off / reach;
+			};
+			// The sine of 12 degrees, and of 25.
+			expect(offPlane(one)).toBeLessThan(0.21);
+			expect(offPlane(speciesDroop(one))).toBeGreaterThan(0.42);
+		},
+		LONG,
+	);
+
+	it("hang to every side of a willow strand, and near the plane of a birch strand's arch", async () => {
+		// The willow sub-branch's turning video, frames 0 and 30: a strand's leafy band is 0.10 to
+		// 0.13 of the twig's height wide face on, and the three strands in line make a column 0.15
+		// wide, so a strand is as deep as it is wide.
+		const willow = await loadSpecies('weeping-willow');
+		await loadPlantCode(willow.record);
+		for (const [r, rule] of WILLOW.entries()) {
+			const ratio = flankOverSky(planPiece(willow.record, rule, pieceKey(r, 0), 4));
+			expect(ratio).toBeGreaterThan(0.6);
+			expect(ratio).toBeLessThan(1.67);
+		}
+		// The birch sub-branch's turning video, frame 72: edge on, the arching twig is 0.214 as wide
+		// as tall against 0.781 face on, and its leaves hang beside it. Their midribs lean out of
+		// the arch's plane by under 12 degrees in the root mean square, and not by nothing.
+		const birch = await loadSpecies('silver-birch');
+		await loadPlantCode(birch.record);
+		for (const [r, rule] of BIRCH.entries()) {
+			const leaves = planPiece(birch.record, rule, pieceKey(r, 0), 4).leaves;
+			const lean = Math.sqrt(
+				leaves.reduce((sum, leaf) => sum + (leaf.direction[0] as number) ** 2, 0) /
+					Math.max(1, leaves.length),
+			);
+			expect(lean).toBeGreaterThan(0.02);
+			expect(lean).toBeLessThan(0.21);
 		}
 	});
 });
