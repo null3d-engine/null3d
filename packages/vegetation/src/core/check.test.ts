@@ -211,6 +211,18 @@ describe('the record check', () => {
 			expect(speciesProblems(withStalk(cardStalk)).some((p) => p.startsWith('lod.cardStalk'))).toBe(
 				true,
 			);
+		const withCuts = (cardCuts: NonNullable<Species['lod']['cardCuts']>): Species => ({
+			...template,
+			lod: { ...template.lod, cardCuts },
+		});
+		for (const cuts of [
+			{ most: 1 },
+			{ most: 8, cells: 'full' as const },
+			{ cells: 'half' as const },
+		])
+			expect(speciesProblems(withCuts(cuts))).toEqual([]);
+		for (const cuts of [{ most: 0 }, { most: 9 }, { most: 2.5 }, { cells: 'quarter' as 'half' }])
+			expect(speciesProblems(withCuts(cuts)).some((p) => p.startsWith('lod.cardCuts'))).toBe(true);
 		const withTurning = (turning: number): Species => ({
 			...within,
 			growth: { ...growth, floor: 0.15, turning },
