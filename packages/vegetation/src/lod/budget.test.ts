@@ -98,13 +98,14 @@ const table = new Map<string, number>();
 
 for (const id of SPECIES) {
 	describe(`a triangle maximum on the ${id}`, () => {
-		it(
-			'keeps every level within the maximum, each part within its allowance, and one body',
-			async () => {
-				const kit = await kitOf(id);
-				// Every overlap under its floor, named, so one run shows them all.
-				const low: string[] = [];
-				for (const sparse of LEVELS) {
+		// One test a sparseness value, so a large plant's run of eight maxima fits a job of its own.
+		for (const sparse of LEVELS)
+			it(
+				`keeps every level within the maximum, each part within its allowance, and one body, at sparseness ${sparse}`,
+				async () => {
+					const kit = await kitOf(id);
+					// Every overlap under its floor, named, so one run shows them all.
+					const low: string[] = [];
 					const base = { seed: 11, variant: 0, near: true, sparse } as const;
 					const full = growPlantNow(kit, base);
 					const matte = outlineMatte(kit, full, 0);
@@ -172,11 +173,10 @@ for (const id of SPECIES) {
 						];
 						if (overlap < floor) low.push(`${at}: ${overlap.toFixed(3)} under ${floor}`);
 					}
-				}
-				expect(low).toEqual([]);
-			},
-			LONG,
-		);
+					expect(low).toEqual([]);
+				},
+				LONG,
+			);
 
 		it(
 			'gives the same bytes twice, and the uncapped plant under a maximum it never reaches',
@@ -229,7 +229,8 @@ describe('the triangle maximum option', () => {
 					`| ${id} | ${sparse} | ${MAXIMA.map((max) => table.get(`${id}|${sparse}|${max}`)?.toFixed(3) ?? '-').join(' | ')} |`,
 				);
 		console.log(lines.join('\n'));
-		// A run may pick some species; each one that ran gave every cell of its rows.
-		expect(table.size % (LEVELS.length * MAXIMA.length)).toBe(0);
+		// A run may pick some species and sparseness values; each one that ran gave every cell of its
+		// row.
+		expect(table.size % MAXIMA.length).toBe(0);
 	});
 });

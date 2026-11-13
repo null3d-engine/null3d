@@ -24,7 +24,9 @@ import {
 	atan2,
 	cos,
 	PI,
+	quatAxisAngle,
 	quatFromFrame,
+	quatMultiply,
 	radians,
 	sin,
 	tan,
@@ -141,7 +143,14 @@ const Purpose = {
 	Spot: 12,
 	Nod: 13,
 	Fill: 14,
+	Turn: 15,
 } as const;
+/**
+ * The steps of the plastic number's sequence, which spreads pairs of shares evenly over a run of
+ * any length: a piece's roll takes the first and its tilt the second.
+ */
+const SPREAD_ROLL = 0.7548776662466927;
+const SPREAD_TILT = 0.5698402909980532;
 
 /**
  * What an axis of a frame is.
@@ -375,6 +384,13 @@ export interface FrameSide {
 	 * as shares of the height.
 	 */
 	readonly under: Curve;
+	/**
+	 * The direction round the plant, in degrees, that the view showing this side was taken from. A
+	 * place behind the trunk from there, inside the trunk's width, is hidden by the trunk in that
+	 * view, so this side's lower boundary does not bind it. Left out, the boundary binds every place
+	 * on the side.
+	 */
+	readonly seen?: number;
 }
 
 /**
@@ -773,7 +789,8 @@ export function outlineRadius(spec: FrameSpec, scale: number, y: number, azimuth
  * The height that no foliage may stand under at a place beside the plant, in metres. Each stated
  * side's lower boundary is read as the view across that side shows it, by the place's distance from
  * the trunk's line in that view, and the place answers to every side it stands on: the highest of
- * their boundaries there.
+ * their boundaries there. A side does not bind a place that its view sees only as the trunk, behind
+ * it and inside its width.
  *
  * @param spec The frame.
  * @param scale The plant's height in metres.
@@ -787,7 +804,16 @@ export function outlineUnder(spec: FrameSpec, scale: number, x: number, z: numbe
 	for (const side of spec.outline) {
 		const toward = radians(side.toward);
 		const reach = x * cos(toward) + z * sin(toward);
-		if (reach >= 0) highest = Math.max(highest, curveAt(side.under, reach / scale));
+		if (reach < 0) continue;
+		if (side.seen !== undefined) {
+			// The trunk's half width where the view shows its bole bare, which hides what stands
+			// behind it.
+			const bare = curveAt(side.under, 0);
+			const hidden = (curveAt(spec.stems.width, bare) * scale) / 2;
+			const from = radians(side.seen);
+			if (x * cos(from) + z * sin(from) < 0 && reach < hidden) continue;
+		}
+		highest = Math.max(highest, curveAt(side.under, reach / scale));
 	}
 	return highest * scale;
 }
@@ -1785,15 +1811,15 @@ export function planFrame(spec: FrameSpec, input: GrowInput): FramePlan {
 				centre[1] = (over + under) / 2;
 			}
 			const flat = Math.sqrt(run[0] * run[0] + run[2] * run[2]);
+			// The patch covers the piece's footprint: the piece is the pitch wide and lies its reach
+			// out from the socket, so a piece longer than it is wide lies along a patch as long.
+			const width = Math.max(fill.pitch, fill.reach * flat);
 			return {
 				kind: 'spray',
 				axis,
 				centre,
-				begins: Math.max(
-					0,
-					Math.sqrt(centre[0] * centre[0] + centre[2] * centre[2]) - fill.pitch / 2,
-				),
-				width: fill.pitch,
+				begins: Math.max(0, Math.sqrt(centre[0] * centre[0] + centre[2] * centre[2]) - width / 2),
+				width,
 				depth,
 				along: flat > 0.2 ? [run[0] / flat, 0, run[2] / flat] : [1, 0, 0],
 			};
@@ -2271,13 +2297,28 @@ export function growFrame(input: GrowInput): MacroSkeleton {
 			? plan.scale / Math.max(1e-6, spreadMean(input.record.size.height))
 			: 1;
 	const frame = new Float32Array(4);
-	for (const socket of frameSockets(plan)) {
+	const spin = new Float32Array(4);
+	// Each piece's roll and tilt are its socket's place in two evenly spread runs of shares, each
+	// started at the plant's own draw.
+	const turn = growth.sockets.turn;
+	const seed = input.seed >>> 0;
+	const salt = input.record.seedSalt >>> 0;
+	const rollFrom = unitAt(seed, salt, input.variant, Purpose.Turn, 0);
+	const tiltFrom = unitAt(seed, salt, input.variant, Purpose.Turn, 1);
+	frameSockets(plan).forEach((socket, k) => {
 		const wood = written[socket.axis] as Written;
 		quatFromFrame(
 			socket.heading,
 			Math.abs(socket.heading[1]) > 0.99 ? [1, 0, 0] : [0, 1, 0],
 			frame,
 		);
+		if (turn) {
+			const share = (from: number, step: number): number => ((from + k * step) % 1) * 2 - 1;
+			quatAxisAngle([0, 1, 0], radians(share(rollFrom, SPREAD_ROLL) * turn.roll), spin);
+			quatMultiply(frame, 0, spin, 0, frame);
+			quatAxisAngle([1, 0, 0], radians(share(tiltFrom, SPREAD_TILT) * turn.tilt), spin);
+			quatMultiply(frame, 0, spin, 0, frame);
+		}
 		builder.addBud({
 			node: wood.nodes[socket.node] as number,
 			x: socket.at[0],
@@ -2291,7 +2332,7 @@ export function growFrame(input: GrowInput): MacroSkeleton {
 			woodRadius: ((plan.axes[socket.axis] as FrameAxis).nodes[socket.node] as FrameNode).radius,
 			socket: { scale, rank: socket.rank, lobe: socket.patch },
 		});
-	}
+	});
 	return builder.finish(plan.crownBase);
 }
 

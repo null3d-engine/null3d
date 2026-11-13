@@ -84,12 +84,15 @@ export interface KeptSkeleton {
  * @param skeleton The skeleton.
  * @param keepTo The last node kept of each axis, or -1 for an axis that goes.
  * @param crownBase The height the kept skeleton's crown stands on, in metres.
+ * @param budKept One flag per bud site, 1 for a site that stays; every site on a kept node stays
+ *   where it is absent.
  * @returns The kept skeleton, and each axis's and node's index in it.
  */
 export function keptSkeleton(
 	skeleton: MacroSkeleton,
 	keepTo: Int32Array,
 	crownBase: number,
+	budKept?: Uint8Array,
 ): KeptSkeleton {
 	const { axes, buds } = skeleton;
 	const builder = new SkeletonBuilder();
@@ -130,6 +133,7 @@ export function keptSkeleton(
 	for (let b = 0; b < buds.count; b++) {
 		const axis = buds.axis[b] as number;
 		if ((axisOut[axis] as number) < 0 || (nodeOut[buds.node[b] as number] as number) < 0) continue;
+		if (budKept && budKept[b] !== 1) continue;
 		builder.addBud({
 			node: nodeOut[buds.node[b] as number] as number,
 			x: buds.position[b * 3] as number,
