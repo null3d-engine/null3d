@@ -1602,6 +1602,25 @@ export interface FramedBox {
 	readonly height: number;
 }
 
+/** The edges of a frame, in the order a crop is named. */
+const EDGES = ['left', 'top', 'right', 'bottom'] as const;
+
+/**
+ * Why a whole view's render crops the plant, or undefined when it does not: the render's plant runs
+ * to an edge of the frame that the photograph's plant stands clear of. A cropped plant's outline,
+ * gap and width are the crop's, so no figure is read from it. A photograph that itself crops the
+ * plant at an edge allows the same crop.
+ */
+export function cropFault(
+	reference: Readonly<Record<(typeof EDGES)[number], boolean>>,
+	render: Readonly<Record<(typeof EDGES)[number], boolean>>,
+): string | undefined {
+	const cropped = EDGES.filter((edge) => render[edge] && !reference[edge]);
+	return cropped.length === 0
+		? undefined
+		: `the render's plant runs off the frame's ${cropped.join(' and ')} edge${cropped.length === 1 ? '' : 's'}, where the photograph holds it whole`;
+}
+
 /**
  * Why a whole view's render does not hold the plant at its photograph's size, or undefined when it
  * does. A render smaller in both height and width by more than the size band, or larger in both,
@@ -1960,8 +1979,8 @@ export function compareStills(
 		const refPlant = plantMask(refImage);
 		const refSide = side(slot.file, refImage, refPlant, false, habit);
 		const render = renderSideOf(runDir, frame, frame.file, false, habit);
-		// A whole view whose plant stands at another size than its photograph's compares unlike
-		// things, so it is void before any figure is read.
+		// A whole view whose plant is cropped by the frame, or stands at another size than its
+		// photograph's, compares unlike things, so it is void before any figure is read.
 		const misframed =
 			slot.framed &&
 			(slot.view === 'whole' || slot.view === 'silhouette') &&
@@ -1969,10 +1988,11 @@ export function compareStills(
 			pictureNote?.outline === undefined &&
 			refSide.measures.box &&
 			render.measures.box
-				? framingFault(
+				? (cropFault(refSide.measures.clipped, render.measures.clipped) ??
+					framingFault(
 						{ box: refSide.measures.box, width: refPlant.width, height: refPlant.height },
 						{ box: render.measures.box, width: render.plant.width, height: render.plant.height },
-					)
+					))
 				: undefined;
 		if (misframed !== undefined) {
 			unread({ void: `the frame does not hold the plant as its photograph does: ${misframed}` }, [
