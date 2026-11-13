@@ -62,6 +62,8 @@ export interface LeafTier extends LeafCut {
 	 * fold: seen edge on, it shows the V of its two halves where a flat card shows a line.
 	 */
 	readonly folded?: boolean;
+	/** Whether a card takes the leaf's own bands along its length, so it bends with the leaf's curl. */
+	readonly bends?: boolean;
 }
 
 /**
@@ -78,14 +80,15 @@ const TIERS: Readonly<Record<Detail, LeafTier>> = {
 /**
  * The tiers' leaf meshes on a branch piece. A tree carries thousands of pieces, so its leaves are
  * cut-out cards below the finest tier: flat cards of two triangles at the low and medium tiers, and
- * cards folded along the midrib at the high tier, which keep a piece's depth seen edge on. At the
+ * cards folded along the midrib at the high tier, which keep a piece's depth seen edge on, in as
+ * many bands along their length as the leaf asks, so a long curled blade keeps its curl. At the
  * medium and high tiers a card draws a one-quad ribbon stalk where the leaf's stalk runs past the
  * texture's own. The ultra tier keeps the meshed outline.
  */
 const PIECE_TIERS: Readonly<Record<Detail, LeafTier>> = {
 	low: TIERS.low,
 	medium: { ...TIERS.low, stalkSides: 0 },
-	high: { ...TIERS.low, stalkSides: 0, folded: true },
+	high: { ...TIERS.low, stalkSides: 0, folded: true, bends: true },
 	ultra: TIERS.ultra,
 };
 
@@ -156,8 +159,11 @@ export function leafTriangles(
 	outline: LeafOutline,
 	detail: Detail,
 	tier: LeafTier = TIERS[detail],
+	bands = 1,
 ): { readonly points: number[]; readonly triangles: number[] } {
-	return tier.card ? cardLeaf(outline, tier.folded === true) : cutLeaf(outline, tier);
+	return tier.card
+		? cardLeaf(outline, tier.folded === true, tier.bends ? Math.max(1, Math.round(bands)) : 1)
+		: cutLeaf(outline, tier);
 }
 
 /**
@@ -167,11 +173,13 @@ export function leafTriangles(
  *
  * @param outline The leaf's outline.
  * @param folded Whether the card is split along its midrib.
+ * @param bands Bands along its length, each a row of the card's cells.
  * @returns The points, u then v, and the triangles.
  */
 function cardLeaf(
 	outline: LeafOutline,
 	folded: boolean,
+	bands: number,
 ): {
 	readonly points: number[];
 	readonly triangles: number[];
@@ -193,6 +201,21 @@ function cardLeaf(
 	right = Math.min(1, right + margin);
 	low = Math.max(0, low - margin);
 	high = Math.min(1, high + margin);
+	if (bands > 1) {
+		// A grid of the card's columns, split at the midrib where it folds, by its bands.
+		const columns = folded ? [left, 0.5, right] : [left, right];
+		const points: number[] = [];
+		for (let r = 0; r <= bands; r++)
+			for (const u of columns) points.push(u, low + ((high - low) * r) / bands);
+		const across = columns.length;
+		const triangles: number[] = [];
+		for (let r = 0; r < bands; r++)
+			for (let c = 0; c < across - 1; c++) {
+				const a = r * across + c;
+				triangles.push(a, a + 1, a + across + 1, a, a + across + 1, a + across);
+			}
+		return { points, triangles };
+	}
 	if (folded)
 		return {
 			points: [left, low, 0.5, low, right, low, right, high, 0.5, high, left, high],
@@ -280,7 +303,7 @@ export function bladeMesh(
 	tier: LeafTier = TIERS[detail],
 ): PrototypeArrays {
 	const surface = new LeafSurface(shape, outline, length);
-	const { points, triangles } = leafTriangles(outline, detail, tier);
+	const { points, triangles } = leafTriangles(outline, detail, tier, shape.cardBands);
 	const mesh = new MeshWriter();
 	const made = new Map<number, number>();
 	const p = [0, 0, 0];

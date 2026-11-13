@@ -145,9 +145,9 @@ console.log(full.shoots.count, thin.shoots.count);
 - **One body.** A branch goes only when all its foliage has gone, so no branch ends bare and no piece hangs free. Each branch that stays keeps its whole length and its outermost shoot, so the crown keeps its outline and its height.
 - **Even.** Every limb, branch and twig keeps the plant's share of its own foliage. The crown thins evenly round the plant and through its height.
 - **The sparsest plant.** At 1, the plant keeps its trunk, its great limbs and the share of its foliage that its record's `sparse.foliage` names, 0.1 when the record names none. A great limb is a limb that leaves the trunk with at least half the radius of the thickest one, or the share that `sparse.limbs` names.
-- **Every level.** The card levels and the far cards draw the same sparse plant.
+- **Every level.** The card levels and the far cards draw the same sparse plant. A card level keeps every card it holds. Where a card would hang free, the level draws the branch under it.
 
-A plant with no shoots, such as a hosta, loses whole leaves in the same way. A plant whose foliage stands at sockets, such as a sedge of pieces, loses whole sockets: each piece stays whole or goes whole, with the wood that carried it. A stand-in species and a cut piece grow as they are at every sparseness. A change of sparseness alone does not grow the plant again while the thread that grew it still keeps it. `sparse` changes what the plant holds, and `coarseness` changes how finely that is drawn: neither moves the other.
+A plant with no shoots, such as a hosta, loses whole leaves in the same way. A plant whose foliage stands at sockets, such as a sedge of pieces, loses whole sockets: each piece stays whole or goes whole. Such a plant thins its branches first. Each kept branch keeps at least half its pieces, spread along it, and past that whole branches go. Each axis ends at its last kept piece. A stand-in species and a cut piece grow as they are at every sparseness. A change of sparseness alone does not grow the plant again while the thread that grew it still keeps it. `sparse` changes what the plant holds, and `coarseness` changes how finely that is drawn: neither moves the other.
 
 ### A triangle maximum
 

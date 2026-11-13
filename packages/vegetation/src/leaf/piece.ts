@@ -64,9 +64,11 @@ import { SURFACE_LEAF, SURFACE_PIECE } from './writer';
  * only where the stem bends: 8 degrees at the high tier and 15 at the medium. Where a piece's leaves
  * close round its stem, at every tier, no ring of the wood they hide shows, so its rings stand far
  * apart. An axil's bud hides under its leaf, so the medium tier draws none and the high tier only
- * one long enough to show, as the beech's long buds are. The tip clusters, which mark a species, are
- * separate three-sided buds at the high tier and one cone at the medium. Thorns are three-sided at
- * both, and a fruiting body is round at the high tier. The ultra tier keeps the crown's finest cut.
+ * one long enough to show, as the beech's long buds are. A bud under 1.5 centimetres is a few pixels
+ * long in a piece's own picture, so at the high tier it is a three-sided cone of one band, and a
+ * longer one keeps its swell; the tip clusters, which mark a species, keep their buds apart there and
+ * draw as one cone at the medium tier. Thorns are three-sided cones at both, and a fruiting body is
+ * round at the high tier. The ultra tier keeps the crown's finest cut.
  */
 export const PIECE_CUTS: Readonly<Record<Detail, ShootCut>> = {
 	low: { ...SHOOT_CUTS.low, thinHidden: true },
@@ -87,7 +89,8 @@ export const PIECE_CUTS: Readonly<Record<Detail, ShootCut>> = {
 		cluster: { sides: 3, round: false },
 		axil: { sides: 3, round: false },
 		axilLeast: 0.015,
-		thorn: { sides: 3, round: false },
+		coneBelow: 0.015,
+		thorn: { sides: 3, round: false, cone: true },
 		body: { sides: 4, round: true },
 	},
 	ultra: { ...SHOOT_CUTS.ultra, thinHidden: true },
@@ -373,7 +376,7 @@ export interface PieceRule {
  * fields over it. A species states one while its record's leaf also grows the crown it ships, which
  * keeps its own leaf until a plant built of pieces replaces it.
  */
-export interface PieceLeaf extends Partial<Pick<LeafShape, 'length' | 'breadth'>> {
+export interface PieceLeaf extends Partial<Pick<LeafShape, 'length' | 'breadth' | 'cardBands'>> {
 	/** Metres of stalk from the stem to the blade's base. */
 	readonly stalk?: number;
 }
@@ -398,6 +401,13 @@ export function pieceRecord(record: Species, leaf: PieceLeaf | undefined): Speci
 		throw new Error(
 			`@null3d/vegetation: the pieces' leaf breadth of '${record.id}' is ${leaf.breadth}; it is a share of the outline's width, above 0 and at most 2`,
 		);
+	if (
+		leaf.cardBands !== undefined &&
+		!(Number.isInteger(leaf.cardBands) && leaf.cardBands >= 1 && leaf.cardBands <= 4)
+	)
+		throw new Error(
+			`@null3d/vegetation: the pieces' leaf card bands of '${record.id}' is ${leaf.cardBands}; it is a whole number from 1 to 4`,
+		);
 	if (leaf.stalk !== undefined && !(leaf.stalk > 0))
 		throw new Error(
 			`@null3d/vegetation: the pieces' leaf stalk of '${record.id}' is ${leaf.stalk}; it is metres and must be above 0`,
@@ -411,6 +421,7 @@ export function pieceRecord(record: Species, leaf: PieceLeaf | undefined): Speci
 				...own,
 				length: leaf.length ?? own.length,
 				...(leaf.breadth === undefined ? {} : { breadth: leaf.breadth }),
+				...(leaf.cardBands === undefined ? {} : { cardBands: leaf.cardBands }),
 				petiole: { ...own.petiole, length: leaf.stalk ?? own.petiole.length },
 			},
 		},

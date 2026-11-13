@@ -698,19 +698,16 @@ function woodMakeUp(input: MeshInput, drawn: (axis: number) => boolean): number 
 }
 
 /**
- * How a level joins its cards to the plant. A plant that sparseness took foliage from keeps every
- * card its level keeps, and draws the branch under each card that would otherwise hang free: the
- * sparseness has chosen what the plant holds, and every level shows that same plant. A plant as
- * grown drops such a card unless its options say otherwise.
+ * How a level joins its cards to the plant. By default a level keeps every card its rule keeps and
+ * draws the branch under each card that would otherwise hang free, as grown and at every sparseness
+ * alike: what the plant holds is chosen once, every level shows that same plant, and a sparser plant
+ * never draws more than a denser one.
  */
 type CardJoin = NonNullable<MeshInput['cardJoin']> | 'support';
 
-/**
- * The join rule of a dressed variant. A skeleton that names where its axes stood as grown is one
- * that sparseness took foliage from.
- */
+/** The join rule of a dressed variant: its options' rule, or the default. */
 function joinOf(input: MeshInput): CardJoin {
-	return input.cardJoin ?? (input.skeleton.axes.origin ? 'support' : 'remove');
+	return input.cardJoin ?? 'support';
 }
 
 /** The card rows a level keeps, by the level's share of the rows' space-filling order. */
