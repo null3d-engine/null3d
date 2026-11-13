@@ -64,6 +64,26 @@
 						"spread": 0.2472,
 						"frames": 193
 					},
+					"footBelowHorizon": {
+						"min": 0.0756,
+						"low": 0.0819,
+						"median": 0.0912,
+						"high": 0.1037,
+						"mean": 0.0928,
+						"max": 0.1096,
+						"spread": 0.3663,
+						"frames": 193
+					},
+					"footFollowed": {
+						"min": 0,
+						"low": 0,
+						"median": 0,
+						"high": 0,
+						"mean": 0,
+						"max": 0,
+						"spread": 0,
+						"frames": 193
+					},
 					"crownHeightToWidth": {
 						"min": 0.4214,
 						"low": 0.5903,
@@ -258,6 +278,12 @@
 				"figures": {
 					"heightToWidth": 0.6317,
 					"foot": {
+						"rows": {
+							"frame": 688,
+							"horizon": 559,
+							"outline": 604,
+							"foot": 604
+						},
 						"belowHorizon": 0.0949,
 						"followed": 0
 					},
@@ -341,6 +367,12 @@
 				"figures": {
 					"heightToWidth": 1.3246,
 					"foot": {
+						"rows": {
+							"frame": 1024,
+							"horizon": 916,
+							"outline": 962,
+							"foot": 962
+						},
 						"belowHorizon": 0.0532,
 						"followed": 0
 					},
@@ -424,6 +456,12 @@
 				"figures": {
 					"heightToWidth": 0.6396,
 					"foot": {
+						"rows": {
+							"frame": 688,
+							"horizon": 637,
+							"outline": 636,
+							"foot": 636
+						},
 						"belowHorizon": 0,
 						"followed": 0
 					},
