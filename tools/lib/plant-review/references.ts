@@ -1635,6 +1635,9 @@ function followStemFoot(plant: PlantMask, lab: Float32Array): number | undefined
 	while (last > box.top && !holds(last)) last--;
 	const stem = followStem(lab, width, height, cleaned, { ...box, bottom: last }, column);
 	if (stem.kind !== 'stem') return undefined;
+	// The followed rows would hold up a horizon line or a strip of grass beside them, so the mask
+	// takes the cleaned rows before the stem joins it.
+	mask.set(cleaned);
 	stem.runs.forEach(([from, to], k) => {
 		mask.fill(1, (last + 1 + k) * width + from, (last + 1 + k) * width + to + 1);
 	});
