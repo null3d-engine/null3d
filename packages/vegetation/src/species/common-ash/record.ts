@@ -437,14 +437,18 @@ export const record: Species = {
 			// cutting class among them; each cap sits above its figure, and the low tier's just under
 			// the owner's cap for a tree.
 			kitBytes: { low: 2_680_000, medium: 3_150_000, high: 5_900_000, ultra: 11_600_000 },
-			// The largest of seed 11's six variants measures 5.84, 5.92, 6.00 and 6.09 MB, the keys'
-			// bunches of 34 taking close to half of it.
-			variantBytes: { low: 5_970_000, medium: 6_040_000, high: 6_120_000, ultra: 6_210_000 },
+			// The ash as its frame of branch ends, measured on 14 November 2026 at seed 11 over every
+			// variant and the seasons the walk grows: its largest variant is 6.67, 6.73, 6.81 and 6.93
+			// MB from the coarsest tier up, the keys' bunches and its first card level's supporting
+			// wood among them; each cap is that measure and a twentieth, by the lead's ruling for a
+			// species that has passed its side-by-side.
+			variantBytes: { low: 7_002_000, medium: 7_063_000, high: 7_147_000, ultra: 7_273_000 },
 			lod0Triangles: 2_500_000,
-			// The heaviest variant's first card level draws 20,704, 23,700, 26,754 and 30,594
-			// triangles from the coarsest tier up, and its second 8,521, 9,181, 10,092 and 10,932.
-			lod1Triangles: 38_000,
-			lod2Triangles: 14_000,
+			// The same day, its first card level draws 74,065, 76,322, 79,785 and 85,317 triangles
+			// from the coarsest tier up, every free card held on a shared supporting branch, and its
+			// second 20,294, 20,716, 21,100 and 21,638; each cap is the largest and a twentieth.
+			lod1Triangles: 89_600,
+			lod2Triangles: 22_800,
 			downloadBytes: 1_000_000,
 			downloadHalfBytes: 350_000,
 			// A variant grows in 156 to 260 ms.
