@@ -913,6 +913,25 @@ describe('the view of one branch piece', () => {
 		expect(shotOf(placedPieceShot(plant, 'stalk', TALL)).facts.class).toBe('stalk-0');
 	});
 
+	test("looks along an arching piece's side when asked, so its arch shows", () => {
+		const stalk = {
+			class: 'stalk-0',
+			socket: [0, 0.2, 0] as V3,
+			direction: normalize([0, 1, 1]),
+			length: 0.8,
+			spread: 0.15,
+			face: normalize([0, 1, -1]),
+			side: [1, 0, 0] as V3,
+		};
+		const shot = shotOf(placedPieceShot(tree({ pieces: [stalk] }), 'stalk', TALL, { edge: true }));
+		const { forward } = cameraAxes(shot.camera);
+		expect(forward[0]).toBeCloseTo(-1, 6);
+		expect(checkShot(shot, TALL).present).toBe(true);
+		// Square to its face, the camera looks down onto the arch instead.
+		const faced = shotOf(placedPieceShot(tree({ pieces: [stalk] }), 'stalk', TALL));
+		expect(cameraAxes(faced.camera).forward[0]).toBeCloseTo(0, 6);
+	});
+
 	test('fails the plant that places pieces but none of the class its photograph shows', () => {
 		const plant = tree({ pieces: [piece] });
 		const missing = placedPieceShot(plant, 'cone', TALL);

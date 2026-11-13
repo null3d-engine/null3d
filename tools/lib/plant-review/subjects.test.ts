@@ -317,13 +317,14 @@ function rowsOf(
 }
 
 describe('the placed pieces of a plant', () => {
-	// A bough of two parts, a tuft's flowering stalk, and a shoot that is no piece.
+	// A bough of two parts, a tuft's flowering stalk that arches out along its +Z, and a shoot that
+	// is no piece.
 	const kit = {
 		detail: 'high' as const,
 		prototypes: [
 			prototype(0, 'piece', [0, 0, 0, 0, 0.5, 0, 0.1, 0.4, 0], 'bough'),
 			prototype(1, 'piece', [0, 0, 0, 0, 0.55, 0, -0.2, 0.3, 0], 'bough'),
-			prototype(2, 'piece-stalk-0', [0, 0, 0, 0, 0.8, 0]),
+			prototype(2, 'piece-stalk-0', [0, 0, 0, 0, 0.5, 0.1, 0, 0.6, 0.5]),
 			prototype(3, 'twig' as ShootPrototype['class'], [0, 0, 0, 0, 0.3, 0]),
 		],
 	};
@@ -352,12 +353,17 @@ describe('the placed pieces of a plant', () => {
 		expect(outer.direction[0]).toBeCloseTo(1, 6);
 		expect(outer.direction[1]).toBeCloseTo(0, 6);
 		expect(outer.face?.[2]).toBeCloseTo(1, 6);
+		expect(outer.side?.[1]).toBeCloseTo(-1, 6);
 		// The piece runs as far as its farthest part, and spreads as far as either part does.
 		expect(outer.length).toBeCloseTo(0.55, 6);
 		expect(outer.spread).toBeCloseTo(0.2, 6);
 		expect(inner.length).toBeCloseTo(1.1, 6);
 		expect(inner.spread).toBeCloseTo(0.4, 6);
-		expect(stalk.length).toBeCloseTo(0.8, 6);
+		// An arching piece runs to its tip, not along its own +Y.
+		expect(stalk.length).toBeCloseTo(Math.hypot(0.6, 0.5), 6);
+		expect(stalk.direction[1]).toBeCloseTo(0.6 / Math.hypot(0.6, 0.5), 6);
+		expect(stalk.direction[2]).toBeCloseTo(0.5 / Math.hypot(0.6, 0.5), 6);
+		expect(stalk.side?.[0]).toBeCloseTo(1, 6);
 	});
 
 	test('finds the pieces of a class by its name or its leading words', () => {

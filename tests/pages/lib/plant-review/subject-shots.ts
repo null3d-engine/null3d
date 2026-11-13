@@ -2030,6 +2030,8 @@ export interface BranchPieceOptions {
 	readonly fill?: number;
 	/** Whether the piece lies across the frame, its cut at the left, in place of standing on its cut. */
 	readonly laid?: boolean;
+	/** Whether the camera looks along the piece's side, so an arching piece shows its arch, in place of its face. */
+	readonly edge?: boolean;
 }
 
 /**
@@ -2046,7 +2048,8 @@ export function branchPieceShot(
 	if (!(piece.length > 0)) return absent('the branch piece has no length');
 	const fill = options.fill ?? 0.85;
 	const face = piece.face ?? across(piece.direction);
-	const forward: V3 = [-face[0], -face[1], -face[2]];
+	const look = options.edge ? (piece.side ?? normalize(cross(piece.direction, face))) : face;
+	const forward: V3 = [-look[0], -look[1], -look[2]];
 	const laid = options.laid === true;
 	const roll = rollUp(forward, piece.direction) + (laid ? -Math.PI / 2 : 0);
 	const tall = laid
