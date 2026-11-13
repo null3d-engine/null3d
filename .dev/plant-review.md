@@ -370,7 +370,12 @@ matte, it checks the picture too. A picture is void in three cases:
 - The subject is not in the frame.
 - The frame shows a wall of plant where the photograph has open ground.
 
-A whole view is void too when its plant is not drawn at its photograph's size. The plant's box must
+A whole view is void too when the frame crops its plant. The tool voids a render whose plant runs
+to an edge of the frame that the photograph's plant stands clear of, and names the edges. On the
+saved runs the oak's profile ran off the right and lower edges, and the Scots pine's and the weeping
+willow's whole views ran off the lower edge.
+
+A whole view is void as well when its plant is not drawn at its photograph's size. The plant's box must
 match the photograph's within a fifth, in height or in width. A render smaller in both, or larger in
 both, was framed from the wrong distance. Its figures would compare a small plant with a large one.
 The olive's whole views drew the plant at 0.34 of the frame's height against the photograph's 0.86,

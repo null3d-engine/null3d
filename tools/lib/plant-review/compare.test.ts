@@ -10,6 +10,7 @@ import {
 	alignTurn,
 	anchorColumn,
 	cameraWidthShare,
+	cropFault,
 	crownBoxSpread,
 	edgeDifference,
 	edgeProfile,
@@ -891,6 +892,20 @@ describe("a whole view's frame against its photograph's", () => {
 		);
 		expect(framingFault(framed(0.3, 0.5, 0.7, 0.9), framed(0.05, 0.1, 0.95, 0.9))).toContain(
 			'so it is drawn too large',
+		);
+	});
+
+	test('fails a plant the frame crops where the photograph holds it whole', () => {
+		const clear = { left: false, top: false, right: false, bottom: false };
+		expect(cropFault(clear, clear)).toBe(undefined);
+		expect(cropFault(clear, { ...clear, bottom: true, right: true })).toBe(
+			"the render's plant runs off the frame's right and bottom edges, where the photograph holds it whole",
+		);
+		// A photograph that crops its own plant allows the same crop, and no other.
+		const cropped = { ...clear, bottom: true };
+		expect(cropFault(cropped, cropped)).toBe(undefined);
+		expect(cropFault(cropped, { ...clear, bottom: true, top: true })).toContain(
+			"frame's top edge,",
 		);
 	});
 });
