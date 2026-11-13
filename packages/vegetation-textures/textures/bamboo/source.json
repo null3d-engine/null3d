@@ -1,0 +1,33 @@
+{
+	"caps": "palm",
+	"leaf": {
+		"upper": 24,
+		"lower": 25,
+		"alpha": { "floor": 16, "solid": 240 },
+		"frame": { "petiole": [30, 988], "tip": [1000, 26] },
+		"relief": { "veins": 1, "pucker": 0.25, "depth": 0.0015 }
+	},
+	"bark": {
+		"zones": [
+			{
+				"name": "culm",
+				"slot": 26,
+				"crop": [500, 1200, 844],
+				"tile": [0.4, 0.45],
+				"depth": 0.002,
+				"normal": 0.8,
+				"smooth": 4,
+				"delight": { "radius": 0.2, "strength": 1 }
+			}
+		],
+		"young": {
+			"name": "young",
+			"slot": 26,
+			"crop": [500, 1200, 844],
+			"tile": [0.12, 0.12],
+			"depth": 0.0006,
+			"smooth": 3,
+			"delight": { "radius": 0.12 }
+		}
+	}
+}

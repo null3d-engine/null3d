@@ -1430,6 +1430,12 @@ export interface ShootClass {
 	 * down the stem. Absent, each shoot takes a turn of its own from the hash.
 	 */
 	readonly azimuth?: number;
+	/**
+	 * Degrees each leaf's azimuth varies from the arrangement's own, from 0 to 90: a two-ranked
+	 * shoot's leaves then lie in a shallow cup rather than one plane, so its fan keeps a width as it
+	 * turns edge-on.
+	 */
+	readonly leafAzimuthSpread?: number;
 	/** Degrees the shoot hangs over its length (willow whips, birch). */
 	readonly droop: number;
 	/**
@@ -1975,7 +1981,8 @@ export interface ExtraSpec {
 		| 'spike'
 		| 'thorn'
 		| 'spine-cluster'
-		| 'berry';
+		| 'berry'
+		| 'sheath';
 	/**
 	 * Which bud sites carry it: 'flower' takes the grower's flower sites (a head's spikelets,
 	 * florets or hanging spikes), 'stem-tip' the tip of each flowering stem.
@@ -1988,7 +1995,8 @@ export interface ExtraSpec {
 		| 'areole'
 		| 'crown-top'
 		| 'flower'
-		| 'stem-tip';
+		| 'stem-tip'
+		| 'culm-node';
 	/** Share of matching bud sites that carry one. */
 	readonly share: number;
 	/** How many stand at one site, 1 by default: an oak's acorns share a stalk in ones to threes. */
