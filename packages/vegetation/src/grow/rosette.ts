@@ -451,6 +451,9 @@ export function meshRosette(input: MeshInput, level: MeshLevel): MeshArrays {
 				crown,
 			);
 		const key = axisKey(skeleton, a);
+		// Only a leaf the grower stands rolled, upright and unbent, is meshed rolled: an open leaf is
+		// pitched and curled, and a roll on top of that turns its faces in.
+		const rolled = age < growth.rolled;
 		writeThickBlade(
 			mesh,
 			midrib,
@@ -458,7 +461,7 @@ export function meshRosette(input: MeshInput, level: MeshLevel): MeshArrays {
 				length: midrib.length,
 				leaf,
 				outline,
-				roll: Math.max(0, 1 - age / Math.max(1e-6, 1.4 * growth.rolled)),
+				roll: rolled ? Math.max(0, 1 - age / Math.max(1e-6, 1.4 * growth.rolled)) : 0,
 				browning,
 				along: [bladeStart, 1],
 				wavePhase: unitAt(input.seed, key, 3),
