@@ -18,12 +18,13 @@ export const record: Species = {
 	latin: 'Poa pratensis',
 	form: 'loose tuft of flat blades under slender stems with open panicles',
 	// The fact sheet: flowering stems 30 to 60 cm, the tuft 15 to 30 cm in leaf. Still 01 stands the
-	// tallest head at twice the leaf mound's height.
+	// tallest head at about twice the leaf mound's height, still 02 at 1.8 times.
 	size: { height: { mean: 0.5, spread: 0.08 }, aspect },
 	growth: {
 		model: 'tuft',
-		// Still 01: the leaf mound is 262 px tall under heads that reach 525 px.
-		mound: 0.5,
+		// Still 01: the leaf mound is 262 px tall under heads that reach 525 px; still 02's vase of
+		// blades stands taller, about 0.55 of the plant's height.
+		mound: 0.55,
 		// Still 01: twelve flowering stems. Still 04 shows about forty-five blades at its fullest
 		// ring, but from above only the outer ring shows: still 01 shows forty to fifty blades in
 		// the tuft's front alone, and sixteen shoots of three or four blades drew 0.85 of sky inside
@@ -43,12 +44,12 @@ export const record: Species = {
 		// Still 01, read on a 2.6 times crop, in mound heights. The inner blades stand within 10
 		// degrees of plumb; the middle ones leave at 20 to 30 degrees from plumb and end 0.6 to 0.8
 		// high; the outer ones leave at 45 to 60 degrees, arch at 0.4 to 0.5 and end 0.1 to 0.35 above
-		// the soil, 0.7 to 0.8 out. The baseline drew no blade arching low, so the outer pose takes
-		// the low end: 0.12 above the soil, 0.8 out.
+		// the soil, 0.7 to 0.8 out. The outer pose takes the middle of that: it arches out low and
+		// ends 0.23 above the soil, 0.75 out, where the low end drew the blades lying on the soil.
 		poses: [
 			{ share: 0.4, leave: 85, apex: 0.95, drop: 0, reach: 0.08 },
 			{ share: 0.35, leave: 65, apex: 0.72, drop: 0.02, reach: 0.4 },
-			{ share: 0.25, leave: 38, apex: 0.45, drop: 0.33, reach: 0.8 },
+			{ share: 0.25, leave: 38, apex: 0.45, drop: 0.22, reach: 0.75 },
 		],
 		bladeSpread: 0.12,
 		stalks: {
@@ -56,8 +57,9 @@ export const record: Species = {
 			count: { mean: 12, spread: 1 },
 			// The fact sheet: in flower in late spring and early summer.
 			seasons: ['blossom', 'summer'],
-			// Still 01: the heads' tips spread evenly from 1.45 to 2.0 of the mound's height.
-			top: [1.45, 2],
+			// Still 01: the heads' tips spread evenly from 0.725 to 1.0 of the plant's height, 1.32 to
+			// 1.82 of the mound's.
+			top: [1.32, 1.82],
 			// Still 01: the middle stem is plumb and the rim's lean up to 35 degrees.
 			lean: [0, 35],
 			// Still 01: a stem is straight, with a slight outward curve over its upper part.
@@ -65,17 +67,18 @@ export const record: Species = {
 			// Still 01: a stem is 2 to 3 px across against a mound of 262 px.
 			width: 0.012,
 			sides: 5,
-			// Still 01: a head 0.44 of the mound's height long and 0.3 wide: three or four whorls,
-			// two branches showing at each, each branch ending in four to six spikelets. The fact
-			// sheet: three to five branches a whorl and a spikelet of 4 to 6 mm.
+			// Still 02: a head is a narrow dense panicle 0.4 of the mound's height long and 0.22 wide
+			// at its lowest whorl, six or seven whorls of short branches held close to the stem, each
+			// carrying a few plump spikelets. The fact sheet: three to five branches a whorl and a
+			// spikelet of 4 to 6 mm.
 			head: {
 				kind: 'panicle',
-				length: 0.44,
-				width: 0.3,
-				whorls: 4,
-				branches: 4,
-				angle: 45,
-				spikelets: 5,
+				length: 0.4,
+				width: 0.22,
+				whorls: 7,
+				branches: 3,
+				angle: 30,
+				spikelets: 4,
 				spikelet: 0.03,
 			},
 		},
@@ -97,9 +100,8 @@ export const record: Species = {
 			// blade is as long as the mound is tall and 9 px across against a mound of 262 px, so
 			// 0.034 of its length. Still 23, the full-size studio shoot, shows four full blades read
 			// base to tip at 0.04 to 0.05 of their length wide, so the pictures' broad blade holds
-			// over the fact sheet's 2 to 4 mm; both figures stand for the owner. A 3 mm blade drew the
-			// tuft as hairs at the whole view.
-			length: { mean: 0.26, spread: 0.03 },
+			// over the fact sheet's 2 to 4 mm; both figures stand for the owner.
+			length: { mean: 0.28, spread: 0.03 },
 			width: 0.0085,
 			profile: [
 				[0, 0.85],
