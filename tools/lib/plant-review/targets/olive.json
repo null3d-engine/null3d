@@ -824,12 +824,13 @@
 					"foliageShare": null,
 					"woodShare": null,
 					"branch": null,
-					"droop": -87.7,
+					"droop": null,
 					"clipped": ["bottom"],
 					"missing": {
 						"foliageShare": "too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood",
 						"woodShare": "too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood",
-						"branch": "too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood"
+						"branch": "too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood",
+						"droop": "the subject rises from the frame's lower edge, as a standing plant or a stood cutting does, so its angle is not a branch's droop"
 					}
 				},
 				"missing": {}
@@ -1159,6 +1160,10 @@
 		{
 			"path": "pieces.stills[10-fine-twigs.png].figures.branch",
 			"reason": "too much of the piece is not leaf-green (grey, blue or yellow foliage), so colour cannot part its leaves from its wood"
+		},
+		{
+			"path": "pieces.stills[10-fine-twigs.png].figures.droop",
+			"reason": "the subject rises from the frame's lower edge, as a standing plant or a stood cutting does, so its angle is not a branch's droop"
 		},
 		{
 			"path": "pieces.stills[20-hollow-trunk.png].figures",

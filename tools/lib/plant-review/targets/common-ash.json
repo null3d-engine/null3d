@@ -823,9 +823,11 @@
 						"meanKink": null,
 						"woodLength": 3.1212
 					},
-					"droop": -89.8,
+					"droop": null,
 					"clipped": ["bottom"],
-					"missing": {}
+					"missing": {
+						"droop": "the subject rises from the frame's lower edge, as a standing plant or a stood cutting does, so its angle is not a branch's droop"
+					}
 				},
 				"missing": {}
 			},
@@ -1247,6 +1249,10 @@
 		{
 			"path": "pieces.stills[10-fine-twigs.png].figures",
 			"reason": "a limb or a band of the backdrop crosses the frame and reads as a horizon, so the outline is not trusted"
+		},
+		{
+			"path": "pieces.stills[20-winter-black-buds.png].figures.droop",
+			"reason": "the subject rises from the frame's lower edge, as a standing plant or a stood cutting does, so its angle is not a branch's droop"
 		},
 		{
 			"path": "pieces.stills[21-branch-studio.png].figures.droop",
