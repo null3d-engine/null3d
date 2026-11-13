@@ -124,13 +124,7 @@ export const MODEL_CAPS: Readonly<Record<CapClass, ModelCaps>> = {
 		growMilliseconds: 300,
 	},
 	ground: {
-		// A ground plant built of placed pieces holds a card atlas in its kit, as a tree does, where
-		// a merged ground plant's kit held a leaf or two. Eleven pieces take twenty-four card cells,
-		// 1.64 MB of atlas, and the pieces' meshes at the four tiers: the sedge's kit reads 1.70 to
-		// 1.89 MB and the meadow grass's 1.76 to 2.44 MB, so the cap holds the largest with about 15
-		// per cent to spare. The plant's own bytes fall far more than the kit's rise: a sedge
-		// variant reads 0.22 MB where the merged one read 4.10 MB.
-		kitBytes: { low: 2.85 * MB, medium: 2.85 * MB, high: 2.85 * MB, ultra: 2.85 * MB },
+		kitBytes: { low: 2 * MB, medium: 2 * MB, high: 2 * MB, ultra: 2 * MB },
 		// The largest of hosta, pendulous sedge and meadow grass once measured 1.35, 1.39, 1.44 and
 		// 3.30 MB, with about 15 per cent to spare, so Hosta's ribs at the finest tier fit. The sedge's
 		// tussock needs more blades than the old figures held, so the batch raised the medium and high

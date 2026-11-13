@@ -172,15 +172,18 @@ export const record: Species = {
 	lod: {
 		nearFoliage: 'instanced',
 		switchPixels: [24, 12, 120],
+		// A piece's card first shows where the piece spans 24 pixels, so a cell of 32 texels holds
+		// it at every tier; a tree leaf's 64 would hold four times the texels for no pixel more.
+		cardCell: { low: 32, medium: 32, high: 32, ultra: 32 },
 		woodOrders: [0, 0],
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
 			// The kit holds eleven pieces, the sheath column, seven blade shapes and three flowering
-			// stems, and their card atlas of twenty-four cells. It reads 1,699,532, 1,739,372,
-			// 1,801,532 and 1,892,712 bytes at the four tiers, and each cap keeps about fifteen per
-			// cent above its read.
-			kitBytes: { low: 1_955_000, medium: 2_000_000, high: 2_072_000, ultra: 2_177_000 },
+			// stems, and their card atlas of twenty-four cells of 32 texels. It reads 470,732,
+			// 510,572, 572,732 and 663,912 bytes at the four tiers, and each cap keeps about fifteen
+			// per cent above its read.
+			kitBytes: { low: 542_000, medium: 588_000, high: 659_000, ultra: 764_000 },
 			// A plant is rows of the kit's pieces, so a variant's bytes are the same at every tier.
 			// Measured over the six variants at seed 11, in summer and in blossom: the largest reads
 			// 218,144 bytes; 41,224 triangles at the nearest level at the high tier and 77,360 at

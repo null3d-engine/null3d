@@ -916,9 +916,9 @@ export function speciesProblems(record: Species): string[] {
 	if (cardCell)
 		for (const detail of ['low', 'medium', 'high', 'ultra'] as const) {
 			const side = cardCell[detail];
-			if (!Number.isInteger(side) || side < 64 || side > 256 || (side & (side - 1)) !== 0)
+			if (!Number.isInteger(side) || side < 32 || side > 256 || (side & (side - 1)) !== 0)
 				out.push(
-					`lod.cardCell.${detail} is ${side}; a card cell is a power of two from 64 to 256 texels`,
+					`lod.cardCell.${detail} is ${side}; a card cell is a power of two from 32 to 256 texels`,
 				);
 		}
 	if (lod.impostor.views < 2 || lod.impostor.texels < 8)
