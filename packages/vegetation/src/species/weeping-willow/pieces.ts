@@ -13,8 +13,8 @@ const LEAF_SCALE = 0.74;
 /**
  * One hanging strand of a stated length. Stills 19 and 21: a strand leaves the top or the outer side
  * of an arching twig and turns plumb within a few centimetres. Stills 10 and 28: the stem is about
- * two millimetres thick. Still 21: one leaf each two centimetres (14 pixels at 1.4 millimetres),
- * alternate, to both sides of the strand, tip down. A leafy strand is 7 to 8 centimetres wide, which
+ * two millimetres thick. Still 21: a strand of 45 to 85 centimetres carries 30 to 45 leaves, one each
+ * 1.75 centimetres, alternate, to both sides of the strand, tip down. A leafy strand is 7 to 8 centimetres wide, which
  * a leaf of 8.5 centimetres makes at 24 degrees off the strand. Stills 10 and 23: the tip's
  * leaves are young and small, and a slim bud lies in each axil.
  */
@@ -25,7 +25,7 @@ function strand(length: number, spread: number): PieceStem {
 		hook: { angle: 100, length: 0.045 },
 		zigzag: 2,
 		leaves: {
-			gap: 0.02,
+			gap: 0.0175,
 			from: 0.05 / length,
 			phyllotaxis: { kind: 'distichous', flatten: 0, turn: 35 },
 			angle: 24,
@@ -52,13 +52,14 @@ export const PIECES: readonly PieceRule[] = [
 		scale: 1 / LEAF_SCALE,
 		stem: strand(0.3, 0.04),
 	},
-	// Still 21: the strands of the cut branch hang 45 to 85 centimetres.
+	// Still 21, read at full size: seventeen strands. Most hang 0.6 to 0.85 of the branch's height,
+	// from the arch nearly to the branch's foot; a few at its middle hang 0.45.
 	{
 		name: 'strand',
 		attitude: 'plumb',
 		variants: 3,
 		scale: 1 / LEAF_SCALE,
-		stem: strand(0.65, 0.2),
+		stem: strand(0.72, 0.13),
 	},
 	// Still 19: one complete strand is 10.5 leaf lengths, about 1.1 metres.
 	{
@@ -86,19 +87,37 @@ export const STUDIO: readonly PieceStudio[] = [
 				radius: [0.0075, 0.005],
 				bud: false,
 				sides: [
+					// The left arm rises steeply and arches over at the branch's top; the right arm
+					// leaves at about 50 degrees and reaches 0.3 of the height to the right before
+					// it arches.
 					{
 						stem: {
-							length: { mean: 0.55, spread: 0.05 },
+							length: 0.5,
 							radius: [0.004, 0.002],
 							droop: 100,
 							droopOver: [0.55, 1],
 							bud: false,
 						},
 						gap: 0.03,
-						from: 0.9,
+						from: 0.95,
 						to: 1,
 						arrangement: 'alternate',
-						angle: { mean: 35, spread: 5 },
+						angle: { mean: 25, spread: 0 },
+						turn: 180,
+					},
+					{
+						stem: {
+							length: 0.6,
+							radius: [0.004, 0.002],
+							droop: 90,
+							droopOver: [0.55, 1],
+							bud: false,
+						},
+						gap: 0.03,
+						from: 0.95,
+						to: 1,
+						arrangement: 'alternate',
+						angle: { mean: 50, spread: 0 },
 					},
 					{
 						stem: {
@@ -116,6 +135,7 @@ export const STUDIO: readonly PieceStudio[] = [
 					},
 				],
 			},
+			// Six strands on the left arm, five on the right and three on each side twig.
 			along: { piece: 'strand', gap: 0.055, from: 0.5 },
 		},
 	},
