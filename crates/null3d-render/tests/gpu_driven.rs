@@ -1604,3 +1604,30 @@ fn a_material_that_keeps_its_display_color_draws_the_tone_mask() {
         );
     }
 }
+
+#[test]
+fn a_skinned_object_with_its_own_bias_draws_from_a_bucket_of_its_own() {
+    // Two skinned objects of one mesh share a bucket, whose sphere holds both, so one instanced
+    // draw covers them. A bucket holds one threshold bias, so an object that sets a bias of its own
+    // must draw from a bucket of its own: the shader reads the bias from the bucket alone, and
+    // before this it read the shared bucket's 1 and ignored the object's.
+    let mut world = World::new();
+    let first = world.add_skinned([-1.0, 0.0, 0.0]);
+    let second = world.add_twin(first, [1.0, 0.0, 0.0]);
+    // The first frames build the skinned pipelines, so compare two frames that both draw them.
+    world.record(true);
+    world.frame += 1;
+    world.record(true);
+    let shared = count(&world.commands(), Op::DrawIndexedIndirect);
+    world
+        .scene
+        .apply_commands(&[Command::set_level_bias(second, 0.5)], world.frame)
+        .unwrap();
+    world.frame += 1;
+    world.record(true);
+    assert_eq!(
+        count(&world.commands(), Op::DrawIndexedIndirect),
+        shared + 1,
+        "the biased skinned object draws from a bucket of its own"
+    );
+}
