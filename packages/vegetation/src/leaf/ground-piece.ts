@@ -14,6 +14,7 @@
 import type { PrototypeArrays } from '../asset';
 import { length3 } from '../core/math';
 import { DETAILS } from '../core/types';
+import { smoothstep } from '../grow/ground';
 import type { PieceAttitude, PiecePrototype } from './piece';
 import type { UncardedPrototype } from './shoot';
 import { MeshWriter, SURFACE_PIECE, SURFACE_PIECE_SHEATH, SURFACE_SHEATH } from './writer';
@@ -37,6 +38,12 @@ export interface WrittenPiece {
 	 */
 	readonly leaves: number;
 	/**
+	 * For a piece whose attach point stands on the soil: the metres above it under which the piece
+	 * lies on the soil, as a blade that has come to rest does. Its bend falls to nothing there, so
+	 * the wind does not lift it off the ground.
+	 */
+	readonly lies?: number;
+	/**
 	 * Writes each part at a detail tier into a mesh, as the merged foliage meshers write: its attach
 	 * point at the origin and +Y the piece's own up. A socket carries every part at one place with
 	 * one turn, so a part drawn apart from another, such as a stem's head, stays on it.
@@ -45,13 +52,15 @@ export interface WrittenPiece {
 }
 
 /** A written mesh as a prototype's arrays, its colours the row material's. */
-function pieceTier(mesh: MeshWriter, phase: number): PrototypeArrays {
+function pieceTier(mesh: MeshWriter, phase: number, lies: number | undefined): PrototypeArrays {
 	const count = mesh.vertices;
 	for (let i = 0; i < count; i++) {
-		// A part bends by how far along it a vertex stands; a sheath column keeps its mark.
+		// A part bends by how far along it a vertex stands, and not where it lies on the soil; a
+		// sheath column keeps its mark.
 		const along = Math.min(1, Math.max(0, mesh.uvs1[i * 2] as number));
+		const held = lies === undefined ? 1 : smoothstep(0, lies, mesh.positions[i * 3 + 1] as number);
 		const sheath = (mesh.colors[i * 4 + 2] as number) === SURFACE_SHEATH;
-		mesh.colors[i * 4] = Math.round(255 * along);
+		mesh.colors[i * 4] = Math.round(255 * along * held);
 		mesh.colors[i * 4 + 1] = phase;
 		mesh.colors[i * 4 + 2] = sheath ? SURFACE_PIECE_SHEATH : SURFACE_PIECE;
 		mesh.colors[i * 4 + 3] = 255;
@@ -75,7 +84,7 @@ export function writtenPieces(pieces: readonly WrittenPiece[]): PiecePrototype[]
 				const mesh = new MeshWriter();
 				write(mesh, tier);
 				// Each part flutters on its own beat, so two blades side by side do not flap as one.
-				return pieceTier(mesh, (out.length * 89) & 255);
+				return pieceTier(mesh, (out.length * 89) & 255, piece.lies);
 			}) as unknown as UncardedPrototype['tiers'];
 			const positions = (tiers[DETAILS.indexOf('high')] as PrototypeArrays).positions;
 			let radius = 0;

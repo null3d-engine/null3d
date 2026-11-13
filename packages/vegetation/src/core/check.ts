@@ -572,8 +572,14 @@ function growthProblems(record: Species, out: string[]): void {
 			const head = stalks.head;
 			if (!(head.length > 0 && head.width > 0))
 				out.push('growth.stalks.head needs a length and a width above 0');
-			if (head.kind === 'spike') wholeProblem(head.count, 'growth.stalks.head.count', 1, 8, out);
-			else {
+			if (head.kind === 'spike') {
+				wholeProblem(head.count, 'growth.stalks.head.count', 1, 8, out);
+				const [high, low] = head.hang;
+				if (!(high <= 90 && low >= -90 && high >= low))
+					out.push(
+						`growth.stalks.head.hang is ${head.hang}; the highest spike's angle comes first, both within 90 degrees of level`,
+					);
+			} else {
 				wholeProblem(head.whorls, 'growth.stalks.head.whorls', 1, 12, out);
 				wholeProblem(head.branches, 'growth.stalks.head.branches', 1, 8, out);
 				wholeProblem(head.spikelets, 'growth.stalks.head.spikelets', 1, 12, out);

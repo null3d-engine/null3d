@@ -318,16 +318,29 @@ describe('the pendulous sedge', () => {
 		// The plant's bytes with the soil block stripped, at this record: a plant that names no
 		// soil grows exactly these. A deliberate record change re-records the figure, and the
 		// growth path that reads no soil must not move it.
-		expect(plantAssetDigest(growPlantNow(kit, OPTIONS))).toBe('05786b92d2488e6b');
+		expect(plantAssetDigest(growPlantNow(kit, OPTIONS))).toBe('145315533f53ec11');
 	});
 
 	it('ends its blades in long fine points', () => {
-		const blade = bladeOf(sedgeRecord);
+		// The point's own closing, read on a blade of even width so its outline does not mix in.
+		const shaped = bladeOf(sedgeRecord);
+		const blade: GrassBlade = {
+			...shaped,
+			profile: [
+				[0, 1],
+				[1, 1],
+			],
+		};
 		const form = { length: 0.8, width: blade.width, blade, twist: 0, browning: 0, dry: 0 };
 		expect(bladeHalf(form, 1)).toBeLessThan(1e-6);
-		expect(bladeHalf(form, 1 - blade.tipLength / 2)).toBeLessThan(
-			0.6 * bladeHalf(form, 1 - blade.tipLength),
-		);
+		// Still 12: half way along the point the leaf keeps about three quarters of the width it
+		// had where the point began, and nine tenths of the way along about a fifth.
+		const start = bladeHalf(form, 1 - blade.tipLength);
+		const into = (share: number) => bladeHalf(form, 1 - blade.tipLength * (1 - share)) / start;
+		expect(into(0.5)).toBeGreaterThan(0.7);
+		expect(into(0.5)).toBeLessThan(0.85);
+		expect(into(0.9)).toBeGreaterThan(0.15);
+		expect(into(0.9)).toBeLessThan(0.3);
 	});
 });
 
