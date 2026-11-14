@@ -31,7 +31,14 @@
 // it keeps, or the last branch that leaves it, so nothing kept ends in bare wood.
 
 import type { ShootRows } from '../asset';
-import { AXIS_ARM, AXIS_LIMB, AXIS_ROOT, AXIS_STEM, type MacroSkeleton } from '../core/graph';
+import {
+	AXIS_ARM,
+	AXIS_LIMB,
+	AXIS_ROOT,
+	AXIS_STEM,
+	BUD_JOINT,
+	type MacroSkeleton,
+} from '../core/graph';
 import { hashAt } from '../core/hash';
 import { atan2 } from '../core/math';
 import { keptSkeleton } from './coarsen';
@@ -431,6 +438,12 @@ function shootOf(skeleton: MacroSkeleton): Uint32Array | undefined {
 	const first = new Map<string, number>();
 	const out = new Uint32Array(buds.count);
 	for (let b = 0; b < buds.count; b++) {
+		// A joint bud carries no shoot of its own: it groups with nothing, so a ring on a culm
+		// stays while the piece beside it thins.
+		if ((buds.kind[b] as number) === BUD_JOINT) {
+			out[b] = b;
+			continue;
+		}
 		const key = `${buds.node[b] as number}:${sockets.lobe[b] as number}`;
 		const at = first.get(key);
 		if (at === undefined) first.set(key, b);
@@ -449,6 +462,8 @@ function socketFinder(
 	const { buds } = skeleton;
 	const atNode = new Map<number, number[]>();
 	for (let b = 0; b < buds.count; b++) {
+		// A joint bud stands at the node but carries no shoot, so it is no socket for a row.
+		if ((buds.kind[b] as number) === BUD_JOINT) continue;
 		const node = buds.node[b] as number;
 		const list = atNode.get(node);
 		if (list) list.push(b);

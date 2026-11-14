@@ -95,6 +95,8 @@ The three detail levels are one plant in size. The nearest level draws each shoo
 
 Every value that reaches geometry comes from an integer hash and the core's own trigonometry. So a variant has the same bytes in every browser. `plantAssetDigest(asset)` hashes those bytes to compare two growths.
 
+An extra's lathe measures its profile in metres. A record that sets `byWoodRadius` measures the profile in the width of the wood at its site instead. One shape then fits a thick stem and a thin one: a bamboo's node rings share one profile, from the thick culms to the thin ones. The sites name the wood: a culm's joint buds come at every joint, and its sheathed nodes at the joints low on a culm.
+
 A stage that is not built yet throws a `NotBuiltError`. A kit built with `placeholders: true` grows a simple stand-in at every stage, built or not, so a stand-in species draws the same while the real stages land. A kit built with `placeholders: 'missing'` runs every built stage and grows a stand-in only where a stage is not built yet, so a species can grow through its own stages before the rest exist. Prepare the oak that way until its level distances and far cards are built. It then loads its own textures and grows its own skeleton, shoots, leaves, wood, wind records and cards.
 
 ### Keeping results
