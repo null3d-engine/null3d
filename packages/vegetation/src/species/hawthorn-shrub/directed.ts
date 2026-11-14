@@ -178,19 +178,31 @@ export const directed = {
 			// its leaves slanted or edge on. Stills 03 and 06: the tufts face every way, so each piece
 			// rolls up to a quarter turn either way about its own line and tilts a little off the
 			// wood's.
-			turn: { roll: 90, tilt: 25 },
+			turn: { roll: 90, tilt: 35 },
 		}),
 		PIECE_LEAF,
 	),
+	// At a card level a haw or a blossom spans a few pixels, where its mesh costs thousands of
+	// triangles the leaf form alone can afford; the card levels leave the extras out.
+	lod: { ...record.lod, extrasFrom: 1 as const },
 	pieces: PIECES.filter((piece) => piece.name === 'branch-end'),
 	// The record's haws and blossom stand at a share of the shoot tips, and the old grower's shrub
 	// has 3,762 of them at seed 11, where the frame has a socket for each of about 2,200 branch
 	// ends; each share is raised to keep the record's own totals until a count from a picture
 	// exists. Each branch end draws its own thorns, so the record's thorns at the nodes are left
 	// out.
-	extras: record.extras
-		?.filter((extra) => extra.kind !== 'thorn')
-		.map((extra) =>
-			extra.at === 'shoot-tip' ? { ...extra, share: Math.min(1, extra.share * TIP_SHARE) } : extra,
-		),
+	extras: [
+		...(record.extras ?? [])
+			.filter((extra) => extra.kind !== 'thorn')
+			.map((extra) =>
+				extra.at === 'shoot-tip'
+					? { ...extra, share: Math.min(1, extra.share * TIP_SHARE) }
+					: extra,
+			),
+		// The leading shoots carry no branch end, so the record's thorn stands at their tips, where
+		// it reads as the photographs' spikes past the mass.
+		...(record.extras ?? [])
+			.filter((extra) => extra.kind === 'thorn')
+			.map((extra) => ({ ...extra, at: 'shoot-tip' as const, share: 0.5, tipShare: 1 })),
+	],
 };
