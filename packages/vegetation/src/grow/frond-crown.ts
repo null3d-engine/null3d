@@ -42,6 +42,7 @@ import { type PieceRule, pieceKey, pieceTurn, planPiece } from '../leaf/piece';
 import type { GrowInput } from '../stages';
 import { targetHeight } from './height';
 import type { Grower } from './models';
+import { pieceNamed, radicalInverse } from './ranked';
 
 /** Draw purposes, so no two draws share a key. The height takes the shared height purpose, 1. */
 const DRAW = {
@@ -109,20 +110,6 @@ function crownOf(record: Species): FrondCrown {
 }
 
 /**
- * The radical inverse of `index` in a base, two by default: an order whose every leading run is
- * spread evenly.
- */
-export function radicalInverse(index: number, base = 2): number {
-	let value = 0;
-	let unit = 1 / base;
-	for (let i = index; i > 0; i = Math.floor(i / base)) {
-		value += (i % base) * unit;
-		unit /= base;
-	}
-	return value;
-}
-
-/**
  * Each of `n` fronds' step through a range, from 0 to `n - 1`: the place of its radical inverse in
  * the base among the rank's, so the steps of any leading run of the rank stand spread through the
  * range. Two bases give two orders that do not follow one another.
@@ -174,14 +161,6 @@ export function stemReach(
 		bottom = Math.min(bottom, y);
 	}
 	return { top, bottom, reach: x };
-}
-
-/** The record's piece named `name`, and its place in the record's pieces. */
-function pieceNamed(record: Species, name: string): { rule: PieceRule; index: number } {
-	const pieces = record.pieces ?? [];
-	const index = pieces.findIndex((piece) => piece.name === name);
-	if (index < 0) throw new Error(`@null3d/vegetation: '${record.id}' has no piece named '${name}'`);
-	return { rule: pieces[index] as PieceRule, index };
 }
 
 /** Each record's crown rise, found once: planning its fronds is the costly part. */
