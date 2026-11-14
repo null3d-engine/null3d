@@ -11,7 +11,7 @@ import {
 	type FrameSpec,
 	framedRecord,
 } from '../../grow/frame';
-import { PIECES } from './pieces';
+import { CUT_SCALE, PIECES } from './pieces';
 import { record } from './record';
 
 /**
@@ -257,7 +257,15 @@ const base = { ...record.base, flare: { amount: 0, height: 0.5 } } as const;
  * socket. The shoot rows are working figures, not measured ones: a kit with no pieces draws them.
  */
 export const directed = {
-	...framedRecord(record, frame, { rows: { mean: 4, spread: 1 }, fan: 45, piece: 'branch-end' }),
+	...framedRecord(record, frame, {
+		rows: { mean: 4, spread: 1 },
+		fan: 45,
+		piece: 'branch-end',
+		// Still 04: the crown is a fine haze of leaf faces, so its sprays wear the species' own
+		// nine-centimetre leaf. The piece's own scale is the cutting view's, which makes picture 09
+		// read its photograph's size; the crown undoes that share, and the cut keeps picture 09.
+		scale: 1 / CUT_SCALE,
+	}),
 	base,
 	pieces: PIECES.filter((piece) => piece.name === 'branch-end'),
 };
