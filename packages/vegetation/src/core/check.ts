@@ -4,7 +4,15 @@
 // and the budget under the owner's caps). Each grower may hold its model's finer rules beside it.
 import { capProblems } from './caps';
 import { FORM_FIELDS, formRecord } from './forms';
-import type { BaseSpec, Envelope, GrowthModel, ShootClass, ShootSpec, Species } from './record';
+import type {
+	BaseSpec,
+	Envelope,
+	FrondCrown,
+	GrowthModel,
+	ShootClass,
+	ShootSpec,
+	Species,
+} from './record';
 import {
 	BEND_PIECE_LEAST,
 	type Curve,
@@ -25,6 +33,7 @@ const MODELS: readonly GrowthModel[] = [
 	'architectural',
 	'conifer',
 	'crown-rosette',
+	'frond-crown',
 	'culm',
 	'rosette',
 	'frond-colony',
@@ -333,6 +342,71 @@ function shootProblems(shoots: ShootSpec, out: string[]): void {
 	}
 }
 
+/** The problems of a directed crown of fronds: its trunk, its ranks and the pieces they name. */
+function frondCrownProblems(record: Species, growth: FrondCrown, out: string[]): void {
+	const pieces = new Set((record.pieces ?? []).map((piece) => piece.name));
+	const named = (piece: string, path: string) => {
+		if (!pieces.has(piece))
+			out.push(
+				`${path} is '${piece}', which names no piece of the record; give one of: ${[...pieces].join(', ') || 'none (the record has no pieces)'}`,
+			);
+	};
+	const { trunk, fronds, dead, croziers, flowers } = growth;
+	if (!(trunk.height > 0))
+		out.push(`growth.trunk.height is ${trunk.height}; it is metres to the growing point, above 0`);
+	curveProblems(trunk.width, 'growth.trunk.width', out);
+	spreadProblems(trunk.lean, 'growth.trunk.lean', false, out);
+	spreadProblems(fronds.count, 'growth.fronds.count', true, out);
+	notNegative(fronds.clasp, 'growth.fronds.clasp', out);
+	if (fronds.ranks.length === 0) out.push('growth.fronds.ranks is empty; give one rank at least');
+	const shares = fronds.ranks.reduce((sum, rank) => sum + rank.share, 0);
+	if (Math.abs(shares - 1) > 0.01)
+		out.push(
+			`growth.fronds.ranks' shares sum to ${shares}; they share the fronds out, so sum to 1`,
+		);
+	fronds.ranks.forEach((rank, i) => {
+		shareProblem(rank.share, `growth.fronds.ranks[${i}].share`, out);
+		if (!(rank.leave >= -90 && rank.leave <= 90))
+			out.push(`growth.fronds.ranks[${i}].leave is ${rank.leave}; it is degrees from -90 to 90`);
+		if (rank.spread !== undefined && !(rank.spread >= 0 && rank.spread <= 45))
+			out.push(
+				`growth.fronds.ranks[${i}].spread is ${rank.spread}; it is degrees either side, from 0 to 45`,
+			);
+		if (!(rank.length > 0 && rank.length <= 1))
+			out.push(
+				`growth.fronds.ranks[${i}].length is ${rank.length}; it is a share of the piece's length, above 0 and at most 1`,
+			);
+		named(rank.piece, `growth.fronds.ranks[${i}].piece`);
+	});
+	if (dead) {
+		spreadProblems(dead.count, 'growth.dead.count', false, out);
+		if (!(spreadMean(dead.hang) >= 0 && spreadMean(dead.hang) <= 90))
+			out.push(`growth.dead.hang is ${spreadMean(dead.hang)}; it is degrees below level, 0 to 90`);
+		if (!(dead.from >= 0 && dead.to >= dead.from))
+			out.push(
+				'growth.dead.from and to are metres under the growing point, from no higher than to',
+			);
+		if (!(dead.length > 0 && dead.length <= 1))
+			out.push(`growth.dead.length is ${dead.length}; it is a share above 0 and at most 1`);
+		named(dead.piece, 'growth.dead.piece');
+	}
+	if (croziers) {
+		spreadProblems(croziers.count, 'growth.croziers.count', false, out);
+		spreadProblems(croziers.length, 'growth.croziers.length', true, out);
+		if (!(croziers.radius > 0))
+			out.push(`growth.croziers.radius is ${croziers.radius}; it is above 0`);
+		if (!(croziers.lean >= 0 && croziers.lean <= 90))
+			out.push(`growth.croziers.lean is ${croziers.lean}; it is degrees from 0 to 90`);
+	}
+	if (flowers) {
+		spreadProblems(flowers.count, 'growth.flowers.count', false, out);
+		if (!(flowers.from >= 0 && flowers.to >= flowers.from))
+			out.push(
+				'growth.flowers.from and to are metres under the growing point, from no higher than to',
+			);
+	}
+}
+
 function growthProblems(record: Species, out: string[]): void {
 	const growth = record.growth;
 	if (!MODELS.includes(growth.model)) {
@@ -513,6 +587,7 @@ function growthProblems(record: Species, out: string[]): void {
 			shareProblem(growth.scapes.raceme, 'growth.scapes.raceme', out);
 		}
 	}
+	if (growth.model === 'frond-crown') frondCrownProblems(record, growth, out);
 	if (growth.model === 'culm') {
 		spreadProblems(growth.culms, 'growth.culms', true, out);
 		if (!(growth.spacing > 0))

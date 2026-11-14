@@ -25,7 +25,7 @@ import { VARIANT_RECORDS } from '../wind/records';
 import { type AxisPath, axisPath, emptyFrame, frameAt, type PathFrame } from '../wood/frames';
 
 import { type LeafOutline, textureOutline } from './outline';
-import { MeshWriter } from './writer';
+import { MeshWriter, phaseByte } from './writer';
 
 /** Leaflet rows along its length, and columns across it, at the two levels past the nearest. */
 const FAR_GRID: Readonly<Record<1 | 2, { readonly rows: number; readonly columns: number }>> = {
@@ -555,7 +555,7 @@ export function palmFoliage(input: MeshInput, level: MeshLevel): MeshArrays {
 				(at) => {
 					bytes[0] = record >> 8;
 					bytes[1] = record & 255;
-					bytes[2] = (frond.phase + Math.round(leaflet.at * 64)) & 255;
+					bytes[2] = phaseByte(frond.phase + Math.round(leaflet.at * 64));
 					const sky = crownSkyAt(input.crown, at[0] as number, at[1] as number, at[2] as number);
 					bytes[3] = Math.round(255 * Math.max(0, Math.min(1, sky)));
 					return bytes;

@@ -10,6 +10,7 @@ import type { MacroSkeleton } from '../core/graph';
 import { hashBytes } from '../core/hash';
 import { quatRotate, type Vector3 } from '../core/math';
 import type { Species } from '../core/record';
+import { loadSpecies } from '../core/registry';
 import { curveAt, spreadMean } from '../core/types';
 import {
 	evenOutline,
@@ -363,7 +364,7 @@ const HELD: readonly Held[] = [
 			skirt: [12, 24],
 			bough: [45, 72],
 			branch: [90, 288],
-			twig: [6000, 9000],
+			twig: [9000, 14000],
 		},
 		// Six low limbs at their own stated directions: five a seventh of a turn apart and one gap of
 		// two, 103 degrees, where the rising limbs stand; each limb's end wanders with its elbows.
@@ -897,6 +898,24 @@ for (const held of HELD)
  * are the independent reviewer's, which a test of four sides by the farthest patch let pass. Each
  * is a set of patches placed against a plain dome's outline.
  */
+/**
+ * The species whose registered entry gives the frame record, so the review and the scenes draw the
+ * frame. A merge can take another line's entry, which gives the record the old grower grows, so
+ * this list changes in the same commit as an entry does.
+ */
+const REGISTERED_FRAMES = ['pedunculate-oak'] as const;
+
+describe('a species entry that gives its frame', () => {
+	for (const id of REGISTERED_FRAMES)
+		it(`registers the ${id} as its frame record`, async () => {
+			const held = HELD.find((candidate) => candidate.id === id);
+			expect(held).toBeDefined();
+			const module = await loadSpecies(id);
+			expect(module.record.growth.model).toBe('frame');
+			expect(module.record === held?.directed).toBe(true);
+		});
+});
+
 describe('the crown test, on crowns made by hand', () => {
 	const SCALE = 20;
 	const dome: FrameSpec = {
@@ -1248,6 +1267,33 @@ describe("the pedunculate oak's frame against its photographs", () => {
 					});
 			}
 		}
+	});
+
+	it('clothes the end of every twig when its piece reaches further than it is wide', () => {
+		// The common alder's branch end reaches 1.22 times its width; the oak's 1.09.
+		const reaching = (rule: FrameBranchRule): FrameBranchRule => ({
+			...rule,
+			...(rule.patch?.fill
+				? {
+						patch: {
+							...rule.patch,
+							fill: { pitch: rule.patch.fill.pitch, reach: rule.patch.fill.pitch * 1.22 },
+						},
+					}
+				: {}),
+			...(rule.children ? { children: rule.children.map(reaching) } : {}),
+		});
+		const long: FrameSpec = {
+			...oak.spec,
+			stems: {
+				...oak.spec.stems,
+				children: (oak.spec.stems.children ?? []).map(reaching),
+			},
+		};
+		for (const seed of SEEDS)
+			expect(
+				bareEnds(planFrame(long, { record: oak.record, seed, variant: 0, season: 'summer' })),
+			).toEqual([]);
 	});
 
 	it('fails the oak built with its clumps first on three of the four', () => {

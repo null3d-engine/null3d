@@ -92,6 +92,19 @@ const PIECE_TIERS: Readonly<Record<Detail, LeafTier>> = {
 	ultra: TIERS.ultra,
 };
 
+/**
+ * The tiers' leaf meshes on a piece of narrow leaflets (`LeafShape.narrow`): a palm frond's or a
+ * fern frond's hundreds of leaflets are flat cards at the low and medium tiers and folded cards at
+ * the high and ultra tiers, never the meshed outline, and draw no stalk of their own: the card runs
+ * from the stalk's foot.
+ */
+const NARROW_TIERS: Readonly<Record<Detail, LeafTier>> = {
+	low: TIERS.low,
+	medium: TIERS.low,
+	high: { ...TIERS.low, folded: true },
+	ultra: { ...TIERS.low, folded: true },
+};
+
 /** Texels the mesh's outline stands outside the measured contour. */
 const MARGIN_TEXELS = 3;
 
@@ -546,5 +559,11 @@ function bladeLeaves(
 
 export const builder: FoliageBuilder = {
 	leaves: (record, manifest, detail) => bladeLeaves(record, manifest, detail, TIERS),
-	pieceLeaves: (record, manifest, detail) => bladeLeaves(record, manifest, detail, PIECE_TIERS),
+	pieceLeaves: (record, manifest, detail) =>
+		bladeLeaves(
+			record,
+			manifest,
+			detail,
+			record.foliage.kind === 'blade' && record.foliage.leaf.narrow ? NARROW_TIERS : PIECE_TIERS,
+		),
 };

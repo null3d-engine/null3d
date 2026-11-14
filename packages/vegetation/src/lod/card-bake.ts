@@ -127,8 +127,12 @@ const PIECE_LONG = 1.5;
  * are already fine, and more cells would cost atlas memory for nothing seen.
  */
 const CUT_LEAST = 0.25;
-/** The most cards along one prototype where its record names no other. */
-const CUTS_MOST = 4;
+/**
+ * The most cards along one prototype where its record names no other: one, so a card is cut along
+ * its piece only where the record asks. Each stretch draws planes of its own, so a cut card costs
+ * more triangles at every card level and more atlas cells.
+ */
+const CUTS_MOST = 1;
 
 /** A prototype's line: points from its base to its tip, and each triangle's place along it. */
 interface PieceLine {

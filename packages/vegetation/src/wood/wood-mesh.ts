@@ -109,6 +109,9 @@ const FACING = 0.15;
 /** The most blend rings at each level. */
 const BLEND_RINGS = [5, 3, 2] as const;
 
+/** The section sparsity of the finest wood, the twigs a frame grows to clothe its foliage. */
+const FINE_SECTIONS = 1;
+
 /**
  * The section sparsity of a branch that a card level draws only to hold a card: near the fewest, so
  * it takes the longest steps and one ring to meet its parent, short of the sparsest, whose branches
@@ -230,8 +233,12 @@ function woodAxes(
 	const partOf = (a: number) => parts?.[a] ?? PART_BRANCH;
 	/** The detail a plan gives an axis: undefined for the level's own, null for none. */
 	const planned = (a: number) => plan?.tubes[partOf(a)];
+	// The finest wood, grown to clothe a foliage patch, draws as straight runs of the fewest sides
+	// with no blend onto its parent: its picture is a thin twig among leaves.
+	const fine = (a: number) => (axes.fine?.[a] ?? 0) === 1;
+	const fineTube = tubeDetail(level, input.detail, input.coarseness ?? 0, FINE_SECTIONS);
 	// The thinnest sections draw an axis as one run: its wood does not divide at a codominant child.
-	const single = (a: number) => (planned(a)?.sections ?? input.sections ?? 0) >= 1;
+	const single = (a: number) => fine(a) || (planned(a)?.sections ?? input.sections ?? 0) >= 1;
 	// The branches a card level draws beside its own orders, so the cards it keeps stay joined. Each
 	// draws along its own path and joins its parent as the level's wood does, in nearly the fewest
 	// sections, since it stands under a card. A plan joins its cards itself and draws no such branch.
@@ -471,11 +478,13 @@ function woodAxes(
 			leader: leads[k] === 1,
 			stub: ((skeleton.flags[first] as number) & NODE_STUB) !== 0,
 			cut: parent < 0 && (axes.kind[a] as number) === AXIS_LIMB,
-			...(supportTube && (axes.order[a] as number) > keep
-				? { tube: supportTube }
-				: planned(a)
-					? { tube: planned(a) as TubeDetail }
-					: {}),
+			...(fine(a)
+				? { tube: fineTube }
+				: supportTube && (axes.order[a] as number) > keep
+					? { tube: supportTube }
+					: planned(a)
+						? { tube: planned(a) as TubeDetail }
+						: {}),
 			part: partOf(a),
 		});
 		// Roots lie in the soil, below the ground the far views stand on, so only the nearest level draws them.
