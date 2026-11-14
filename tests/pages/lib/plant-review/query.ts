@@ -139,6 +139,8 @@ export interface PlantReviewQuery {
 	readonly piece?: string;
 	/** Whether a placed piece's view looks along the piece's side, so an arching piece shows its arch. */
 	readonly edge?: boolean;
+	/** Whether a piece's camera keeps the world's up, so the stem it leaves stands upright. */
+	readonly upright?: boolean;
 	/**
 	 * Whether a whole view's photograph has lost the plant's foot below its horizon: the view then
 	 * stands the plant by its top row and its share of the width, with no foot row.
@@ -502,6 +504,7 @@ const SWITCHES = [
 	'fruit',
 	'surface',
 	'edge',
+	'upright',
 	'footLost',
 	'toward',
 	'lifted',
@@ -743,6 +746,7 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 		fruit: params.get('fruit') === '1',
 		surface: params.get('surface') === '1',
 		edge: params.get('edge') === '1',
+		upright: params.get('upright') === '1',
 		footLost: params.get('footLost') === '1',
 		toward: params.get('toward') === '1',
 	};
