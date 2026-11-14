@@ -24,7 +24,12 @@ import {
  * of their blade's length, with a median of 0.36: 1.25 centimetres on the record's 3.5 centimetre
  * blade.
  */
-export const PIECE_LEAF: PieceLeaf = { stalk: 0.0125 };
+export const PIECE_LEAF: PieceLeaf = {
+	// The photographs' leaves are three to four centimetres, and the branch end wears the top of
+	// that range: a larger blade covers the crown more with the same leaves.
+	length: { mean: 0.04, spread: 0.016 },
+	stalk: 0.0125,
+};
 
 /**
  * The thorns along a stem. Stills 19, 21 and 22: one straight woody thorn at most nodes, one and a
@@ -56,7 +61,7 @@ function tuft(length: number, leaves: number): PieceLeaves {
 			[1 - run / length, 1],
 			[1, 0.45],
 		],
-		fan: { reach: 110, tilt: 25 },
+		fan: { reach: 115, tilt: 28, cone: 35 },
 	};
 }
 
@@ -91,6 +96,8 @@ function arm(length: number): PieceStem {
 	return {
 		length: { mean: length, spread: length * 0.06 },
 		radius: [0.004, 0.0015],
+		// Still 21 at full size: no bud shows in a tuft, whose leaves hide its tip.
+		bud: false,
 		kink: { length: 0.045, angle: 16 },
 		leaves: tuft(length, 4),
 		marks: [thorns(0.054, 0.75)],
@@ -99,6 +106,7 @@ function arm(length: number): PieceStem {
 				stem: {
 					length: { mean: 0.012, spread: 0.004 },
 					radius: [0.0012, 0.0009],
+					bud: false,
 					leaves: tuft(0.012, 4),
 				},
 				gap: 0.054,
@@ -136,7 +144,7 @@ export const PIECES: readonly PieceRule[] = [
 		attitude: 'along',
 		variants: 2,
 		// The turning video of the cut branch: edge on it is 0.22 as wide as face on.
-		depth: 14,
+		depth: 12,
 		stem: {
 			length: 0.155,
 			// Still 21: the stem is 0.03 of the branch's height thick at its cut (19 to 24 of 743 pixels).

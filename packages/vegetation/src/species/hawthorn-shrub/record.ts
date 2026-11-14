@@ -425,18 +425,23 @@ export const record: Species = {
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
-			// The kit's leaves and six shoot prototypes measure 2.46, 3.36, 5.29 and 9.05 MB; each
-			// cap sits above its figure, under the class's own ceiling.
+			// The kit holds two branch-end prototypes and the piece's leaf meshes: 0.33, 0.37, 0.44
+			// and 1.97 MB at the four tiers; each cap sits above its figure, under the class's own
+			// ceiling.
 			kitBytes: { low: 2_600_000, medium: 3_500_000, high: 5_600_000, ultra: 9_500_000 },
-			// The six variants measure 5.1 to 9.1 MB in leaf, and the blossom season reaches 13.93 MB
+			// The six variants measure 5.30 to 6.01 MB in leaf, and the blossom season reaches 13.34 MB
 			// with the flowers' own mesh; each cap sits above the largest, under the class's own ceiling.
 			variantBytes: { low: 14_000_000, medium: 14_000_000, high: 14_000_000, ultra: 14_000_000 },
-			// The near band measures 483,068 triangles once the height calibration's scale is applied
-			// before the light grid, so the cap keeps its 17,728-triangle spare above that read, 3.67
-			// per cent of it; the earlier 481,806 stood the same spare, 3.82 per cent, above the
-			// pre-calibration 464,078. The first card level measures at most 152,498 and the second at
-			// most 22,761 over the variants and seasons, under the class's shared card caps.
-			lod0Triangles: 500_796,
+			// The shrub as its directed frame of branch ends at sockets, measured on 14 November 2026 at
+			// seed 11 and the high tier: its leaf form is 1,149,351 triangles, all of them draw at once
+			// at the tallest view, and 734,736 at the reference view. The largest of the six variants
+			// measures 1,154,985 at its leaf form, so the cap keeps 65,015 above that read, 5.6 per
+			// cent, and sits under the tree class's own 2,900,000. The earlier 500,796 was read before
+			// the plant became a frame of pieces, by a count that drew farther shoots at coarser tiers
+			// than the engine does, so it no longer described the plant. The first card level measures
+			// at most 137,400 and the second at most 18,400 over the variants and seasons, under the
+			// class's shared card caps.
+			lod0Triangles: 1_220_000,
 			lod1Triangles: 155_000,
 			lod2Triangles: 25_000,
 			downloadBytes: 1_000_000,

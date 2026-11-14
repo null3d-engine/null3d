@@ -283,16 +283,17 @@ const HELD: readonly Held[] = [
 		directed: hawthornShrubDirected,
 		heightMean: spreadMean(hawthornShrubDirected.size.height),
 		record: hawthornShrubRecord,
-		counts: { stem: 8, limb: [24, 32], twig: [24, 64], shoot: [56, 104] },
+		counts: { stem: 8, limb: [24, 32], side: [22, 32], shoot: [56, 104], twig: [1800, 2400] },
 		// Seven outer stems stand a seventh of a turn apart round the one at the middle.
 		round: { rule: 'stem', gap: 75, lean: 0.2 },
-		base: { limb: 0.7, twig: 0.7, shoot: 0.7 },
+		base: { limb: 0.7, side: 0.7, shoot: 0.7 },
 		// A leading shoot is straight: the owner's ruling passes it.
 		plumb: ['shoot'],
 		// The leading shoots' tips are the plant's top.
 		through: 3,
 		crossings: [5, 0],
 		axesPerSocket: 1.0,
+		fine: ['twig'],
 		tall: [0.95, 1.08],
 	},
 	{
@@ -807,7 +808,8 @@ for (const held of HELD)
 				let backward = 0;
 				for (let a = 0; a < s.axes.count; a++) {
 					// A hanging axis leaves its branch downward, which on rising wood is backward, and a
-					// twig that clothes a clump leaves toward the clump's surface, wherever that is.
+					// twig that clothes a clump leaves toward the clump's surface, wherever that is;
+					// neither is held to a limb's bounds.
 					const hangs =
 						plan.axes[a]?.role === 'whip' || held.fine?.includes(plan.axes[a]?.rule ?? '') === true;
 					const joint = s.axes.parentNode[a] as number;
@@ -820,7 +822,7 @@ for (const held of HELD)
 						)
 							backward++;
 					}
-					if ((s.axes.order[a] as number) !== 1 || joint < 0) continue;
+					if ((s.axes.order[a] as number) !== 1 || joint < 0 || hangs) continue;
 					// How far the limb stands out from where it leaves its stem, node by node.
 					let reach = -1;
 					for (let n = s.axes.first[a] as number; n <= (s.axes.last[a] as number); n++) {
