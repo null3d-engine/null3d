@@ -5,9 +5,9 @@
 // one tree the frame follows.
 //
 // The trunk here is one axis with the bundle's measured width. Its surface is the wood mesher's
-// work: six columns wound half a turn from the ground to the fork, each 0.3 of the waist wide, with
-// grooves 0.4 of a column deep, a dark opening 0.05 wide and 0.075 tall at 0.20 of the height, two
-// or three burrs on the lower bole, and one or two roots from each column.
+// work: five deep columns wound a little over half a turn from the ground to the fork, their grooves
+// a third of a column deep, a tall dark hollow up the front between the columns, a two-lobed
+// buttress with burred crests at the foot, and a few thick roots that run from the lobes.
 
 import type { ExtraSpec } from '../../core/record';
 import { evenOutline, type FrameBranchRule, type FrameSpec, framedRecord } from '../../grow/frame';
@@ -20,7 +20,7 @@ import { record } from './record';
  * a branch end's reach inside the mass's surface and closer together than its width, so neighbouring
  * branch ends overlap as a real crown's do.
  */
-const ENDS = { pitch: (0.95 * 1.06 * 0.65) / 7, reach: 0.95 / 7 } as const;
+const ENDS = { pitch: (0.95 * 1.06 * 0.72) / 7, reach: 0.9 / 7 } as const;
 
 /**
  * What a great limb's own wood shares. Stills 05, 01 and 18: a limb is crooked, with two or three
@@ -30,14 +30,14 @@ const ENDS = { pitch: (0.95 * 1.06 * 0.65) / 7, reach: 0.95 / 7 } as const;
 const crooked = { sway: 32, elbows: 4, crook: 0.35 } as const;
 
 /**
- * The branches a limb ends in. Still 05: a limb divides into two or three branches, and those
- * divide again before the leafy sprays. Still 01: each limb carries its own airy mass, 0.3 to 0.45
- * of the crown's width across, on drooping sprays, and the wood behind the sprays is bare.
+ * The branches a limb ends in. Still 05: a limb divides into two branches, and those divide again
+ * before the leafy sprays. Still 01: each limb carries its own airy mass on drooping sprays, and
+ * the wood behind the sprays is bare.
  */
 const branches: FrameBranchRule = {
 	name: 'branch',
 	role: 'branch',
-	count: 3,
+	count: 2,
 	along: [1, 1],
 	around: 'ring',
 	jitter: 25,
@@ -63,7 +63,7 @@ const branches: FrameBranchRule = {
 			angleSpread: 8,
 			// A mass's sprays stand a little outside the wood's end, and its upright branch ends stand
 			// above them, so the sprays end inside the outline by about a branch end's height.
-			length: { outline: 0.82 },
+			length: { outline: 0.9 },
 			vary: 0.08,
 			least: 0.06,
 			most: 0.32,
@@ -73,10 +73,11 @@ const branches: FrameBranchRule = {
 			bends: [{ from: 0.35, to: 1, by: 38 }],
 			sway: 22,
 			elbows: 3,
-			// Still 01: each limb's airy mass is 0.3 to 0.45 of the crown's width across, made of its
-			// sprays' masses together.
-			// Still 01: a mass hangs from its sprays' ends, its body under them.
-			patch: { kind: 'mass', width: 0.34, depth: 0.26, offset: -0.35, fill: ENDS },
+			// Still 05: the sprays of one mass keep clear of one another.
+			apart: 0.015,
+			// Stills 01 and 18: each limb carries two great masses whose sprays join into a cloud,
+			// with sky between the masses of neighbouring limbs.
+			patch: { kind: 'mass', width: 0.4, depth: 0.32, offset: -0.3, fill: ENDS },
 		},
 	],
 };
@@ -143,7 +144,12 @@ export const frame: FrameSpec = {
 				count: 4,
 				along: [0.66, 0.76],
 				around: 'ring',
+				// Stills 01 and 18: the first limb stands on the plant's +X axis, which leaves the
+				// bays between the masses open where 18's photograph shows them.
+				first: 0,
 				jitter: 12,
+				// Still 05: the outer limbs keep clear of one another as they run out level.
+				apart: 0.012,
 				// Still 01: the far left limb leaves at 65 to 70 degrees from plumb and the right one
 				// at 60, and each runs out nearly level.
 				angle: [
@@ -205,28 +211,37 @@ export const directed = {
 	base: {
 		...record.base,
 		// The frame's trunk already widens to still 01's foot, so the stem base adds no flare of its
-		// own and keeps still 14's lobes and roots.
+		// own.
 		flare: { amount: 0, height: 0.25 },
-		// The frame's trunk also widens toward the ground, so the lobes swell less than the record's
-		// and its roots run lower and shorter: still 01's foot is 0.6 of the height across at 0.03 of
-		// it, half at 0.06, 0.37 at 0.1 and 0.32 at 0.15, and its roots lie low as they spread.
-		buttress: record.base?.buttress && { ...record.base.buttress, amount: 0.3 },
+		// Stills 14 and 20: two great lobes with burred crests carry the bole, and a few thick roots
+		// run from them over the ground rather than a skirt of thin ones.
+		buttress: record.base?.buttress && {
+			...record.base.buttress,
+			lobes: { mean: 2, spread: 0 },
+			amount: 0.5,
+			sharpness: 1.8,
+			height: 0.8,
+			round: 0.7,
+		},
 		roots: record.base?.roots && {
 			...record.base.roots,
-			radius: 0.2,
-			length: { mean: 1, spread: 0.3 },
+			count: { mean: 3, spread: 0 },
+			length: { mean: 0.9, spread: 0.2 },
+			radius: 0.16,
+			dive: 0.45,
+			ridge: 0.9,
 		},
-		// Still 01: the bole is six columns that wind about half a turn from the ground to the fork, at
-		// 0.49 of the height, with grooves between them 0.4 of a column deep.
-		flutes: { count: { mean: 6, spread: 0 }, depth: 0.25, height: 3.4, twist: 0.4, hold: 0.8 },
-		// Still 01: a dark opening 0.05 of the height wide and 0.077 tall at 0.21 of it, facing the
-		// camera; the review turns the plant's +Z side to the camera.
+		// Stills 17 and 20: five deep columns wind a little over half a turn from the ground to the
+		// fork, their grooves a third of a column deep, so the ridges stand as braided strands.
+		flutes: { count: { mean: 5, spread: 0 }, depth: 0.34, height: 3.4, twist: 0.55, hold: 0.85 },
+		// Stills 14, 17, 18 and 20: a tall dark hollow runs up the bole's front between the columns and
+		// opens between the lobes at the ground; the review turns the plant's +Z side to the camera.
 		scar: {
-			from: 1.14,
-			to: 1.66,
+			from: 0.02,
+			to: 2.4,
 			angle: 90,
-			width: 20,
-			depth: 0.3,
+			width: 16,
+			depth: 0.45,
 			colour: [0.03, 0.026, 0.02] as const,
 			shade: 0.9,
 		},

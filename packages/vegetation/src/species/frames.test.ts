@@ -345,18 +345,17 @@ const HELD: readonly Held[] = [
 		directed: oliveDirected,
 		heightMean: spreadMean(oliveDirected.size.height),
 		record: oliveRecord,
-		counts: { trunk: 1, outer: 4, centre: 2, branch: 18, spray: 72, twig: [1600, 2000] },
+		counts: { trunk: 1, outer: 4, centre: 2, branch: 12, spray: 48, twig: [1551, 1589] },
 		// Four outer limbs leave a quarter of a turn apart; each one's end wanders with its elbows.
 		round: { rule: 'outer', gap: 140, lean: 0.3 },
 		base: { outer: 0.34, centre: 0.55, branch: 0.6, spray: 0.6 },
 		plumb: ['trunk'],
-		through: 4,
-		crossings: [5, 1],
+		through: 6,
+		crossings: [6, 1],
 		// Every twig that clothes a mass is an axis that ends in a socket.
-		axesPerSocket: 1.013,
+		axesPerSocket: 1.012,
 		fine: ['twig'],
 		tall: [0.93, 1.05],
-		open: ['spread'],
 	},
 	{
 		id: 'pedunculate-oak',
