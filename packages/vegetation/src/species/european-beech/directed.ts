@@ -20,7 +20,7 @@ import { record } from './record';
  * leaf form's cap holds about 2,750 of them, so the sockets stand a little over a branch end's
  * width apart and each stands a branch end's reach inside the surface.
  */
-const ENDS = { pitch: 1.26 / 20, reach: 1.17 / 20 } as const;
+const ENDS = { pitch: 1.62 / 20, reach: 1.17 / 20 } as const;
 
 /**
  * A layered spray of foliage that fine wood clothes. Still 04: flat sprays of oval leaves overlap
@@ -28,7 +28,7 @@ const ENDS = { pitch: 1.26 / 20, reach: 1.17 / 20 } as const;
  * across and half as deep. The sprays overlap and the fill drops the points inside another spray,
  * so a layer of the dome's surface carries one row of branch ends.
  */
-const SPRAY = { kind: 'clump', width: 0.22, depth: 0.11, fill: ENDS } as const;
+const SPRAY = { kind: 'clump', width: 0.24, depth: 0.3, fill: ENDS } as const;
 
 /**
  * The boughs of a great limb, each ending at the dome's surface in a spray. Stills 05 and 06: the
@@ -38,7 +38,7 @@ const SPRAY = { kind: 'clump', width: 0.22, depth: 0.11, fill: ENDS } as const;
 const boughs: FrameBranchRule = {
 	name: 'bough',
 	role: 'branch',
-	count: { every: 0.05, least: 3, most: 7 },
+	count: { every: 0.04, least: 4, most: 9 },
 	along: [0.3, 1],
 	stagger: 0.3,
 	around: 'spiral',
