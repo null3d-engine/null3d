@@ -449,6 +449,12 @@ export const record: Species = {
 		// the twig's own width where that is wider than the least below, which at a whole view it is
 		// not: the least keeps the crown's mass.
 		cardStalk: 5,
+		// Still 01: the crown's box shows 0.45 of sky in the photograph and 0.69 at the first card
+		// level, whose weeping shoots stand open. At the medium tier the card levels read 0.0955 and
+		// 0.1113 more sky than the leaf form; 1.25 brings them to 0.0147 and 0.0190, where each card
+		// pictures its shoot. Larger values draw the second level outside the leaf form's outline:
+		// 0.0328 at 1.3 against the 0.03 the card test allows.
+		cardGrow: 1.25,
 		cardStalkWidth: true,
 		woodOrders: [2, 1],
 		impostor: { views: 8, texels: 64 },

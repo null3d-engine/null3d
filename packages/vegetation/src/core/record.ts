@@ -463,7 +463,7 @@ export interface SelfOrganizing {
 		 */
 		readonly leader?: number;
 	};
-	/** A bottle, a twist or a gnarl in the stem. */
+	/** A bottle or a gnarl in the stem. */
 	readonly trunk?: TrunkShape;
 	/** Roots that drop from the limbs and become pillars (banyan). */
 	readonly aerialRoots?: AerialRoots;
@@ -596,8 +596,6 @@ export interface StemSpec {
 export interface TrunkShape {
 	/** Radius times this curve by height (t = height / plant height): a baobab's bottle. */
 	readonly profile?: Curve;
-	/** Turns of spiral twist over the stem (olive). */
-	readonly twist?: number;
 	/** Slow bends, burrs and hollows, 0 to 1. */
 	readonly gnarl?: number;
 }
@@ -742,11 +740,14 @@ export interface Framed {
 		readonly piece?: string;
 		/**
 		 * The most degrees each piece turns at its socket: its roll about its own line, from the
-		 * side toward the sky, and its tilt off the wood's line. Each is a share spread evenly over
-		 * the sockets in their order, so no two neighbours turn alike and the crown's leaf faces
-		 * every way. Absent, every piece's flat side faces the sky.
+		 * side its upper face starts toward, and its tilt off the wood's line. Each is a share spread
+		 * evenly over the sockets in their order, so no two neighbours turn alike and the crown's
+		 * leaf faces every way. With `out`, each piece's line first tips that many degrees down from
+		 * its socket's heading, which runs out of its patch, so its upper face starts out of the
+		 * patch and up, as a crown's outer leaves turn their upper faces to the light; else its upper
+		 * face starts toward the sky. Absent, every piece's flat side faces the sky.
 		 */
-		readonly turn?: { readonly roll: number; readonly tilt: number };
+		readonly turn?: { readonly roll: number; readonly tilt: number; readonly out?: number };
 	};
 }
 
@@ -2503,10 +2504,25 @@ export interface BaseSpec {
 		readonly ridge?: number;
 	};
 	/**
-	 * Vertical flutes up the stem (yew, old olive): how many, the groove's depth in metres at the
-	 * ground (from 0) and the height in metres they fade out by (above 0).
+	 * Flutes up the stem (yew, old olive): how many, the groove's depth in metres at the ground (from
+	 * 0) and the height in metres they fade out by (above 0).
 	 */
-	readonly flutes?: { readonly count: Spread; readonly depth: number; readonly height: number };
+	readonly flutes?: {
+		readonly count: Spread;
+		readonly depth: number;
+		readonly height: number;
+		/**
+		 * Turns the grooves wind round the stem from the ground to their height, so the ridges between
+		 * them stand as twisted columns (old olive); positive winds one way and negative the other.
+		 * Absent, the grooves run straight up.
+		 */
+		readonly twist?: number;
+		/**
+		 * The share of their height over which the grooves keep their full depth before they fade to
+		 * nothing at it, from 0 to below 1. Absent, they fade from the ground.
+		 */
+		readonly hold?: number;
+	};
 	/**
 	 * An old fire scar on the first stem's foot: the strong trees carry one where a ground fire
 	 * burned through the bark and the wood closed over it for a century. It cuts a hollow into the

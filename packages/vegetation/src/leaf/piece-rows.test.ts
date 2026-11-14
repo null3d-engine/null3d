@@ -57,6 +57,18 @@ const DRESSED: readonly Dressed[] = [
 		piece: 'strand-long',
 		flat: false,
 	},
+	{
+		title: 'the silver birch, framed, with its sprays at sockets',
+		module: () => loadSpecies('silver-birch'),
+		piece: 'spray',
+		flat: false,
+	},
+	{
+		title: 'the olive, framed, with its branch ends at sockets',
+		module: () => loadSpecies('olive'),
+		piece: 'branch-end',
+		flat: false,
+	},
 ];
 
 for (const dressed of DRESSED)

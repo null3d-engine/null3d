@@ -174,14 +174,6 @@ describe('a card level keeps the plant size', () => {
 			},
 			LONG,
 		);
-
-	it('names no card growth in any record', async () => {
-		const { speciesIds } = await import('../core/registry');
-		for (const id of speciesIds()) {
-			const { record } = await loadSpecies(id);
-			expect([id, 'cardGrow' in (record.lod as Species['lod'])]).toEqual([id, false]);
-		}
-	});
 });
 
 /** A level's card area as drawn, in square metres: the cards' triangles at their places. */

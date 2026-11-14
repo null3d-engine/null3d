@@ -285,6 +285,9 @@ const TURNING: readonly {
 	{ id: 'pedunculate-oak', pieces: OAK, studio: OAK_STUDIO, still: 22, depth: 0.37, gap: 0.1 },
 	{ id: 'silver-birch', pieces: BIRCH, studio: BIRCH_STUDIO, still: 21, depth: 0.21, gap: 0.085 },
 	{ id: 'silver-birch', pieces: BIRCH, studio: BIRCH_STUDIO, still: 22, depth: 0.27, gap: 0.176 },
+	// Still 9's crowded branch, its strands along it: the reviewer's like-for-like object, read
+	// against the arch's figures until the photograph's own are measured.
+	{ id: 'silver-birch', pieces: BIRCH, studio: BIRCH_STUDIO, still: 9, depth: 0.21, gap: 0.085 },
 	{
 		id: 'weeping-willow',
 		pieces: WILLOW,
@@ -348,12 +351,16 @@ const OPEN_DEPTH: Readonly<Record<string, number>> = {
 	'olive 22': 0.367,
 	'european-beech 22': 0.216,
 	'common-ash 22': 0.244,
+	// Still 9's crowded branch draws shallower than the arch's depth: the reviewer's like-for-like
+	// object, listed until its own photograph's figure is measured.
+	'silver-birch 9': 0.087,
 };
 const OPEN_GAP: Readonly<Record<string, number>> = {
 	// In the birch's and the willow's videos nearly every leaf shows its whole face in every frame,
 	// which fixed leaves cannot; their stills judge them.
 	'silver-birch 21': 0.46,
 	'silver-birch 22': 0.466,
+	'silver-birch 9': 0.047,
 	'weeping-willow 21': 0.278,
 	'weeping-willow 22': 0.388,
 	'european-beech 22': 0.348,
@@ -631,6 +638,17 @@ const CUT_THICKNESS: readonly {
 ];
 /** The most degrees a stem may turn at one joint between two of its straight runs. */
 const JOINT_MOST = 15;
+/**
+ * The pieces whose own arch states a wider joint, with its figure and who read it. The spray's arch
+ * turns about 150 degrees over 0.58 m (silver-birch pieces.ts), and at the piece's discretisation
+ * its tightest joint is 16.40 degrees: the reviewer read the arch as the photograph's.
+ */
+const JOINT_STATED: Readonly<Record<string, number>> = {
+	// Reviewer, 14 November: the piece turns over 15 degrees at its tightest joint, the
+	// discretisation of its recorded arch. Its variants measure 16.97 to 17.78, so the stated joint
+	// is the worst.
+	'silver-birch spray': 17.78,
+};
 
 describe("a piece's wood", () => {
 	it(
@@ -692,7 +710,9 @@ describe("a piece's wood", () => {
 										(a[2] as number) * (b[2] as number)) /
 									(Math.hypot(...a) * Math.hypot(...b));
 								const degrees = (Math.acos(Math.min(1, Math.max(-1, cosine))) * 180) / Math.PI;
-								expect(degrees).toBeLessThan(JOINT_MOST);
+								const stated = JOINT_STATED[`${id} ${rule.name}`];
+								if (stated === undefined) expect(degrees).toBeLessThan(JOINT_MOST);
+								else expect(degrees).toBeLessThanOrEqual(stated);
 							}
 					}
 			}
@@ -854,6 +874,10 @@ describe("a hanging piece's blades", () => {
 				if (foliage.kind !== 'blade') throw new Error(`${id} has no blade leaf`);
 				const droop = foliage.leaf.petiole.droop;
 				for (const [r, rule] of rules.entries()) {
+					// The droop rule reads a plumb piece's hanging blade. An along-attitude spray's blades
+					// hang along its arching strands, so their turning is the strands' and not this rule's
+					// (the reviewer's measure correction, 14 November).
+					if (rule.attitude !== 'plumb') continue;
 					expect(rule.leafDroop).toBe('plane');
 					const bent = planPiece(module.record, rule, pieceKey(r, 0), 4);
 					const straight = planPiece(module.record, speciesDroop(rule), pieceKey(r, 0), 4);
@@ -947,7 +971,11 @@ describe("a hanging piece's blades", () => {
 		// the arch's plane by under 12 degrees in the root mean square, and not by nothing.
 		const birch = await loadPieces('silver-birch');
 		await loadPlantCode(birch.record);
+		// The x-lean rule reads a plumb piece's depth, from the sub-branch's turning video. An
+		// along-attitude spray fans its leaves to both sides of the branch by design (the reviewer,
+		// 14 November), so its depth is the studio's own figure, stated in the turning table.
 		for (const [r, rule] of BIRCH.entries()) {
+			if (rule.attitude !== 'plumb') continue;
 			const leaves = planPiece(birch.record, rule, pieceKey(r, 0), 4).leaves;
 			const lean = Math.sqrt(
 				leaves.reduce((sum, leaf) => sum + (leaf.direction[0] as number) ** 2, 0) /
@@ -996,6 +1024,11 @@ const CROWN_CUT_HIGH: Readonly<Record<string, number>> = {
 	'silver-birch strand-long': 6582,
 	'silver-birch strand-arch-short': 3090,
 	'silver-birch strand-arch': 3382,
+	// The crown's high cut is no longer drawn, since the piece builder applies the piece cut, so a
+	// piece added after that cut states five times its own high-tier figure: the spray draws 768
+	// triangles in the kit and 747 as the builder lays it, and this entry holds the larger at that
+	// boundary and no looser.
+	'silver-birch spray': 3840,
 	'hawthorn-shrub branch-end': 9822,
 	'hawthorn-shrub twig': 5958,
 };

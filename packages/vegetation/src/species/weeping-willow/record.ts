@@ -518,6 +518,11 @@ export const record: Species = {
 		// Stills 01 and 02: a card's twig is thinner than a pixel at a whole view, so each draws its
 		// supporting twig as a line and the join shows.
 		cardStalk: 4,
+		// Stills 01 and 02: the card levels' enclosed sky reads 0.28 and 0.21 against the photographs'
+		// 0.02 and 0.17, their long hanging shoots standing open. The cards grow to make up the
+		// cover, 0.25 and 0.18 at this value. Larger values stand on the leaf form's outline: 1.4
+		// draws 0.0299 of it outside against the 0.03 the card test allows, and 1.3 reads 0.0256.
+		cardGrow: 1.3,
 		// A hanging shoot's card stands its whole length ahead of the row that draws it, so the
 		// stalk runs on to the card's centre and the curtain meets the wood it grows from.
 		cardStalkToFoliage: true,

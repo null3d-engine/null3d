@@ -448,6 +448,11 @@ export const record: Species = {
 		nearFoliage: 'instanced',
 		switchPixels: [240, 12, 160],
 		woodOrders: [2, 1],
+		// Stills 01 and 02: the crown's box shows 0.37 and 0.33 of sky in the photographs and 0.48 and
+		// 0.43 at the first card level, whose kept cards stand sparse. The field's largest value that
+		// keeps the second card level within the card tests' sky band, 0.02, reads 0.1433 of sky
+		// against the leaf form's 0.1625 at the medium tier; 1.05 reads 0.1562, 1.2 reads 0.1263.
+		cardGrow: 1.1,
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {

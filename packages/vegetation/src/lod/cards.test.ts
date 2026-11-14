@@ -784,6 +784,40 @@ describe('the card levels', () => {
 		expect(width(grown)).toBeGreaterThan(width(plain) * 1.01);
 	});
 
+	it("draws each card's stalk only where the record gives a least width", () => {
+		const plain = cardMesh(mesh, 1);
+		expect(plain.indices.length / 3).toBe(drawnRows(1).length * 6);
+		const stalked = cardMesh(
+			{ ...mesh, record: { ...record, lod: { ...record.lod, cardStalk: 1 } } },
+			1,
+		);
+		const drawn = drawnRows(1);
+		let stretched = 0;
+		for (const r of drawn) {
+			const bx = (rows.back?.[r * 3] as number) ?? 0;
+			const by = (rows.back?.[r * 3 + 1] as number) ?? 0;
+			const bz = (rows.back?.[r * 3 + 2] as number) ?? 0;
+			if (Math.hypot(bx, by, bz) > 1e-6) stretched++;
+		}
+		expect(stretched).toBeGreaterThan(0);
+		// Each stalk is one quad from either side, so it shows whichever way the view turns it.
+		expect(stalked.indices.length / 3).toBe(drawn.length * 6 + stretched * 4);
+		let stalks = 0;
+		for (let v = 0; v < stalked.uvs1.length / 2; v++) {
+			if (Math.abs((stalked.uvs1[v * 2 + 1] as number) - 0.75) >= 1e-6) continue;
+			stalks++;
+			expect([0, 1]).toContain(stalked.uvs[v * 2] as number);
+			expect(
+				Math.hypot(
+					stalked.normals[v * 3] as number,
+					stalked.normals[v * 3 + 1] as number,
+					stalked.normals[v * 3 + 2] as number,
+				),
+			).toBeCloseTo(1, 5);
+		}
+		expect(stalks).toBe(stretched * 4);
+	});
+
 	it('draws no card stalk where the record asks for none', () => {
 		const plain = cardMesh(mesh, 1);
 		expect(planeTriangles(plain)).toBe(drawnRows(1).length * 6);

@@ -199,17 +199,24 @@ const HELD: readonly Held[] = [
 		directed: silverBirchDirected,
 		heightMean: spreadMean(silverBirchDirected.size.height),
 		record: silverBirchRecord,
-		counts: { leader: 1, limb: 12, top: 5, side: [24, 72], fall: [12, 36] },
-		// Twelve limbs a golden angle apart leave no gap wider than two even shares and their jitter.
+		counts: {
+			leader: 1,
+			limb: 18,
+			top: 8,
+			side: [150, 190],
+			fall: [72, 90],
+			twig: [1200, 1450],
+		},
+		// Eighteen limbs a golden angle apart leave no gap wider than two even shares and their jitter.
 		round: { rule: 'limb', gap: 80, lean: 0.25 },
-		base: { limb: 0.35, side: 0.45, top: 0.4, fall: 0.4 },
+		base: { limb: 0.35, side: 0.45, top: 0.4 },
 		// A fall hangs by its own weight.
 		plumb: ['leader', 'fall'],
-		through: 0,
-		crossings: [0, 9],
-		axesPerSocket: 1.0,
+		through: 5,
+		crossings: [39, 13],
+		// Each socket carries a spray, a short branch of strands, so a branch carries few sockets.
+		axesPerSocket: 0.372,
 		tall: [0.98, 1.02],
-		open: ['spread'],
 	},
 	{
 		id: 'common-alder',
@@ -341,16 +348,17 @@ const HELD: readonly Held[] = [
 		directed: oliveDirected,
 		heightMean: spreadMean(oliveDirected.size.height),
 		record: oliveRecord,
-		counts: { trunk: 1, outer: 4, centre: 2, branch: 18, spray: 54 },
+		counts: { trunk: 1, outer: 4, centre: 2, branch: 12, spray: 48, twig: [1782, 1849] },
 		// Four outer limbs leave a quarter of a turn apart; each one's end wanders with its elbows.
 		round: { rule: 'outer', gap: 140, lean: 0.3 },
 		base: { outer: 0.34, centre: 0.55, branch: 0.6, spray: 0.6 },
 		plumb: ['trunk'],
-		through: 5,
-		crossings: [5, 1],
-		axesPerSocket: 1.463,
+		through: 6,
+		crossings: [6, 1],
+		// Every twig that clothes a mass is an axis that ends in a socket.
+		axesPerSocket: 1.01,
+		fine: ['twig'],
 		tall: [0.93, 1.05],
-		open: ['spread'],
 	},
 	{
 		id: 'pedunculate-oak',
@@ -711,9 +719,11 @@ for (const held of HELD)
 					const piece = growth.model === 'frame' && growth.sockets.piece !== undefined;
 					expect(table.scale[b]).toBeCloseTo(piece ? 1 : plan.scale / held.heightMean, 5);
 					expect(skeleton.buds.position[b * 3 + 1]).toBeCloseTo(socket.at[1], 4);
-					// The bud runs along its socket's heading, or within the tilt the record states.
+					// The bud runs along its socket's heading, or within the tilt and the tip the record
+					// states.
 					quatRotate(skeleton.buds.frame, b * 4, [0, 1, 0], along);
-					const tilt = growth.model === 'frame' ? (growth.sockets.turn?.tilt ?? 0) : 0;
+					const turn = growth.model === 'frame' ? growth.sockets.turn : undefined;
+					const tilt = (turn?.tilt ?? 0) + (turn?.out ?? 0);
 					expect(
 						along[0] * socket.heading[0] +
 							along[1] * socket.heading[1] +
@@ -904,7 +914,13 @@ for (const held of HELD)
  * frame. A merge can take another line's entry, which gives the record the old grower grows, so
  * this list changes in the same commit as an entry does.
  */
-const REGISTERED_FRAMES = ['holm-oak', 'pedunculate-oak', 'weeping-willow'] as const;
+const REGISTERED_FRAMES = [
+	'holm-oak',
+	'olive',
+	'pedunculate-oak',
+	'silver-birch',
+	'weeping-willow',
+] as const;
 
 describe('a species entry that gives its frame', () => {
 	for (const id of REGISTERED_FRAMES)

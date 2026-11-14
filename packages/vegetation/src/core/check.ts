@@ -163,6 +163,10 @@ function baseProblems(base: BaseSpec, out: string[]): void {
 		notNegative(flutes.depth, 'base.flutes.depth', out);
 		if (!(flutes.height > 0))
 			out.push(`base.flutes.height is ${flutes.height}; it is metres and must be above 0`);
+		if (flutes.twist !== undefined && !Number.isFinite(flutes.twist))
+			out.push(`base.flutes.twist is ${flutes.twist}; it is turns and must be a number`);
+		if (flutes.hold !== undefined && !(flutes.hold >= 0 && flutes.hold < 1))
+			out.push(`base.flutes.hold is ${flutes.hold}; it is a share from 0 to below 1`);
 	}
 	const scar = base.scar;
 	if (scar) {

@@ -132,6 +132,8 @@ export function stemSection(
 			)
 		: 0;
 	const flutePhase = (hashAt(seed, salt, variant, Purpose.Flutes, stem + 1) / 0x100000000) * 2 * PI;
+	const fluteTwist = flutes ? (flutes.twist ?? 0) * 2 * PI : 0;
+	const fluteHold = flutes ? Math.max(0, Math.min(0.99, flutes.hold ?? 0)) : 0;
 	// A fire scar carves the first stem alone: the strong trees carry one, and a multi-stemmed plant
 	// would not show the same hollow on every stem.
 	const scar = stem === 0 ? base.scar : undefined;
@@ -180,8 +182,11 @@ export function stemSection(
 			factor *= 1 + swell * smoothEnough;
 			let radius = r * factor;
 			if (flutes && fluteCount > 0 && height < flutes.height) {
-				const fade = 1 - height / flutes.height;
-				const groove = 0.5 + 0.5 * cos(fluteCount * theta + flutePhase);
+				// A groove keeps its depth up to the held share of its height, then fades to nothing at
+				// it; a twisting groove's place turns round the stem in step with the height.
+				const up = height / flutes.height;
+				const fade = up <= fluteHold ? 1 : 1 - (up - fluteHold) / (1 - fluteHold);
+				const groove = 0.5 + 0.5 * cos(fluteCount * (theta - fluteTwist * up) + flutePhase);
 				radius -= flutes.depth * groove * groove * fade * fade * smoothEnough;
 			}
 			radius -= scarDepth * hollow;
