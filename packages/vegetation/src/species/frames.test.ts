@@ -305,15 +305,15 @@ const HELD: readonly Held[] = [
 		directed: europeanBeechDirected,
 		heightMean: spreadMean(europeanBeechDirected.size.height),
 		record: europeanBeechRecord,
-		counts: { trunk: 1, limb: 10, bough: [67, 70], skirt: [15, 19], twig: [803, 846] },
+		counts: { trunk: 1, limb: 10, bough: [67, 70], skirt: [15, 19], twig: [2575, 2708] },
 		// Ten limbs a golden angle apart leave no gap wider than that and their jitter.
 		round: { rule: 'limb', gap: 66, lean: 0.08 },
 		base: { limb: 0.5, bough: 0.45, skirt: 0.35 },
 		plumb: ['trunk'],
 		through: 4,
-		crossings: [11, 6],
+		crossings: [11, 5],
 		// Every twig that clothes a spray is an axis that ends in a socket.
-		axesPerSocket: 1.001,
+		axesPerSocket: 1.0,
 		fine: ['twig'],
 		tall: [0.92, 1.02],
 	},
