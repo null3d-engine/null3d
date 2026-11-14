@@ -225,6 +225,25 @@ describe('the card bake', () => {
 		expect(leaves).toBeGreaterThan(100);
 		expect(whiteTexels / leaves).toBeGreaterThan(0.9);
 	});
+
+	it("pictures a placed piece's whole mesh where it carries one", () => {
+		// A tier that holds only the small neck a piece is cut at, and the whole piece around it.
+		const neck = quads([[0.4, 0.6, 0.4, 0.6, SURFACE_LEAF]]);
+		const whole = quads([[-0.5, 0.5, -0.5, 0.5, SURFACE_LEAF]]);
+		const planesOf = (prototype: UncardedPrototype) =>
+			(
+				bakeCards(oakRecord(), OAK_MANIFEST, 'high', [prototype]).cells[0] as {
+					planes: readonly { right: readonly number[]; up: readonly number[] }[];
+				}
+			).planes;
+		const width = (planes: readonly { right: readonly number[] }[]): number =>
+			Math.hypot(...(planes[0] as { right: readonly number[] }).right);
+		const short = planesOf(prototypeOf(neck, 'piece', 1));
+		const full = planesOf({ ...prototypeOf(neck, 'piece', 1), bake: whole });
+		// The planes stand on the mesh the cards picture: the whole piece's card is wider than the
+		// neck's, though its own tier mesh is the same small one.
+		expect(width(full)).toBeGreaterThan(width(short));
+	});
 });
 
 /** Flat quads in the plane z = 0 facing +z, each `[x0, x1, y0, y1, kind]` in a unit square. */
