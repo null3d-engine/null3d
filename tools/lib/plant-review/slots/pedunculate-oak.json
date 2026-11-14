@@ -118,8 +118,7 @@
 		"lamp": "#f5f0b4"
 	},
 	"15-bark-mid-trunk.png": {
-		"barkMask": true,
-		"daylight": 2.0
+		"daylight": 0.95
 	},
 	"16-bark-on-limb.png": {
 		"barkMask": true,
@@ -135,8 +134,7 @@
 		"span": 0.12
 	},
 	"26-bark-texture.png": {
-		"barkMask": true,
-		"daylight": 1.25,
+		"daylight": 1.4,
 		"barkHeight": 2.4
 	}
 }
