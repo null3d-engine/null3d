@@ -3,6 +3,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
 	frameExtent,
+	groundCrossings,
 	liftedToGround,
 	type WholeFraming,
 	wholeStand,
@@ -302,6 +303,87 @@ describe('the stand of a whole view', () => {
 		const dropped = frameExtent(leaves, eye, level, 38, 1.5, -1e-3).base;
 		expect(kept).toBeGreaterThanOrEqual(meeting);
 		expect(dropped).toBeLessThan(meeting);
+	});
+
+	test('reads a trunk that meets the ground between two of its rings where it meets the ground', () => {
+		// A trunk of two rings, one buried and one 3 m up, under a crown: no vertex lies on the ground.
+		const sides = 16;
+		const ring = (y: number) =>
+			Array.from({ length: sides }, (_, k) => [
+				0.5 * Math.cos((k / sides) * 2 * Math.PI),
+				y,
+				0.5 * Math.sin((k / sides) * 2 * Math.PI),
+			]).flat();
+		const trunk = [...ring(-0.3), ...ring(3)];
+		const indices: number[] = [];
+		for (let k = 0; k < sides; k++) {
+			const next = (k + 1) % sides;
+			indices.push(k, next, sides + k, next, sides + next, sides + k);
+		}
+		const crossings = groundCrossings(new Float32Array(trunk), indices, 0);
+		// Each side's two triangles cross the ground on its two upright edges and its diagonal.
+		expect(crossings.length).toBe(sides * 4 * 3);
+		for (let i = 0; i < crossings.length; i += 3) {
+			expect(crossings[i + 1]).toBe(0);
+			expect(Math.hypot(crossings[i] as number, crossings[i + 2] as number)).toBeLessThanOrEqual(
+				0.5 + 1e-6,
+			);
+		}
+		expect(groundCrossings(new Float32Array(ring(1)), [0, 1, 2], 0).length).toBe(0);
+		const canopy = cloud((u, v) => {
+			const lift = (u * Math.PI) / 2;
+			return [
+				3 * Math.cos(lift) * Math.cos(v),
+				3 + 5 * Math.sin(lift),
+				3 * Math.cos(lift) * Math.sin(v),
+			];
+		});
+		const framing = FRAMINGS[0]?.framing as WholeFraming;
+		const vertices = new Float32Array([...trunk, ...canopy]);
+		const drawn = new Float32Array([...vertices, ...crossings]);
+		// The trunk's near side at the ground, from each stand's camera.
+		const footRow = (stand: ReturnType<typeof wholeStand>): number => {
+			const forward = [0, 1, 2].map(
+				(k) => (stand.target[k] as number) - (stand.position[k] as number),
+			);
+			const length = Math.hypot(...forward);
+			return frameExtent(
+				new Float32Array([0, 0, 0.5]),
+				stand.position,
+				forward.map((v) => v / length) as never,
+				framing.fov,
+				framing.aspect,
+			).base;
+		};
+		// With the meetings counted, the drawn foot lands on the asked row; on the vertices alone the
+		// ring above the ground does, and the trunk is drawn on below it toward the frame's edge.
+		expect(footRow(wholeStand(drawn, [0, 0, 0], 0, framing, 8))).toBeCloseTo(
+			framing.base as number,
+			2,
+		);
+		expect(footRow(wholeStand(vertices, [0, 0, 0], 0, framing, 8))).toBeGreaterThan(
+			(framing.base as number) + 0.02,
+		);
+	});
+
+	test("keeps the plant's size where its photograph's foot stands on the horizon", () => {
+		// A photograph taken from near the ground: its foot row is its horizon's. A lens above the
+		// ground sees the foot below the horizon, so on that horizon the camera would stand back
+		// until the foot rose into the frame, and the plant would shrink.
+		const framing: WholeFraming = {
+			fov: 30,
+			aspect: 1.5,
+			horizon: 0.9837,
+			top: 0.0256,
+			base: 0.9837,
+			targetX: 0.5,
+			widthShare: 0.87,
+		};
+		const stand = wholeStand(stem(0.5, 11), [0, 0, 0], 0, framing, 11);
+		expect(stand.held).toBe('rows');
+		expect(stand.extent.top).toBeCloseTo(framing.top, 2);
+		expect(stand.extent.base).toBeCloseTo(framing.base as number, 2);
+		expect(stand.height).toBeGreaterThanOrEqual(0.1);
 	});
 
 	test('leaves out what grows under the ground, which the ground hides', () => {

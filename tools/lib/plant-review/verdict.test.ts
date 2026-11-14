@@ -74,20 +74,26 @@ const SLOTS: Slot[] = [
 /** A run of the oak with sound whole views, a void fork and a bark close view. */
 function input(over: Partial<Record<string, Partial<StillResult>>> = {}): VerdictInput {
 	const whole = {
-		gap: { reference: 0.1, render: 0.12 },
+		gap: { reference: 0.1, render: 0.12, rule: 'half-dark' as const },
 		crownBox: { reference: { width: 500, height: 250 }, render: { width: 480, height: 260 } },
 		foliageDeltaE: 2.1,
 		masked: true,
 	};
 	const results: Record<string, Partial<StillResult>> = {
 		'01-whole-distant.png': whole,
-		'02-whole-profile.png': { ...whole, gap: { reference: 0.2, render: 0.19 } },
+		'02-whole-profile.png': {
+			...whole,
+			gap: { reference: 0.2, render: 0.19, rule: 'half-dark' as const },
+		},
 		'07-limb-leaving-trunk.png': { view: 'junction' },
 		'08-limb-fork.png': { view: 'fork', void: 'the view has no subject: no limb divides' },
 		'12-single-leaf-upper.png': { view: 'leaf-upper', shapeIou: 0.84, masked: true },
 		'15-bark-mid-trunk.png': { view: 'bark-mid', barkDeltaE: 2.4 },
 		'18-silhouette.png': { ...whole, view: 'silhouette', foliageDeltaE: null },
-		'30-woodland-form-whole.png': { ...whole, gap: { reference: 0.3, render: 0.31 } },
+		'30-woodland-form-whole.png': {
+			...whole,
+			gap: { reference: 0.3, render: 0.31, rule: 'half-dark' as const },
+		},
 		...over,
 	};
 	return {
@@ -139,7 +145,7 @@ describe("the tool's verdict of a run", () => {
 		expect(row.figures[0]).toEqual({
 			picture: '01-whole-distant.png',
 			run: 'oak-run-1',
-			name: 'sky gap enclosed by the crown outline',
+			name: 'sky gap enclosed by the crown outline, by the half-dark rule on both pictures',
 			value: 0.12,
 			reference: 0.1,
 			band: { min: 0.08, max: 0.15 },
@@ -149,44 +155,62 @@ describe("the tool's verdict of a run", () => {
 
 	test('says which view is more open or more closed than its band, and still judges nothing', () => {
 		const open = toolVerdict(
-			input({ '02-whole-profile.png': { gap: { reference: 0.2, render: 0.26 }, masked: true } }),
+			input({
+				'02-whole-profile.png': {
+					gap: { reference: 0.2, render: 0.26, rule: 'half-dark' as const },
+					masked: true,
+				},
+			}),
 		);
 		expect(rowOf(open, 6).verdict).toBe('unjudged');
 		expect(rowOf(open, 6).proposed).toEqual({
 			figures: 'out of band',
 			outside:
-				'02-whole-profile.png: sky gap enclosed by the crown outline 0.26 outside 0.18 to 0.25',
+				'02-whole-profile.png: sky gap enclosed by the crown outline, by the half-dark rule on both pictures 0.26 outside 0.18 to 0.25',
 		});
 		const closed = toolVerdict(
-			input({ '02-whole-profile.png': { gap: { reference: 0.2, render: 0.17 }, masked: true } }),
+			input({
+				'02-whole-profile.png': {
+					gap: { reference: 0.2, render: 0.17, rule: 'half-dark' as const },
+					masked: true,
+				},
+			}),
 		);
 		expect(rowOf(closed, 6).proposed?.figures).toBe('out of band');
 		expect(verdictFaults(open)).toEqual([]);
 	});
 
-	test("reads the colour still's gap where it parts from the matte's by more than 0.05", () => {
-		const laced = toolVerdict(
-			input({
-				'01-whole-distant.png': {
-					gap: { reference: 0.29, render: 0.15, renderByColour: 0.56 },
-					masked: true,
-				},
-			}),
+	test("reads a whole view's gap on its colour still by the photograph's rule, and quotes no unlike gap", () => {
+		const colour = (render: number, renderByColour: number) =>
+			rowOf(
+				toolVerdict(
+					input({
+						'01-whole-distant.png': {
+							gap: { reference: 0.29, render, renderByColour, rule: 'colour' as const },
+							masked: true,
+						},
+					}),
+				),
+				6,
+			).figures.find((f) => f.picture === '01-whole-distant.png');
+		// The colour still's figure, whether the matte's stands far from it or near.
+		for (const [render, byColour] of [
+			[0.15, 0.56],
+			[0.28, 0.31],
+		] as const) {
+			const figure = colour(render, byColour);
+			expect(figure?.value).toBe(byColour);
+			expect(figure?.name).toBe(
+				"sky gap enclosed by the crown outline, by the photograph's colour rule on both pictures",
+			);
+		}
+		// The drawing's matte against the photograph's colour mask is an instrument figure only.
+		const unlike = toolVerdict(
+			input({ '01-whole-distant.png': { gap: { reference: 0.29, render: 0.28 }, masked: true } }),
 		);
-		const figure = rowOf(laced, 6).figures.find((f) => f.picture === '01-whole-distant.png');
-		expect(figure?.value).toBe(0.56);
-		expect(figure?.name).toBe('sky gap enclosed by the crown outline, read on the colour still');
-		const near = toolVerdict(
-			input({
-				'01-whole-distant.png': {
-					gap: { reference: 0.29, render: 0.28, renderByColour: 0.31 },
-					masked: true,
-				},
-			}),
-		);
-		const kept = rowOf(near, 6).figures.find((f) => f.picture === '01-whole-distant.png');
-		expect(kept?.value).toBe(0.28);
-		expect(kept?.name).toBe('sky gap enclosed by the crown outline');
+		expect(
+			rowOf(unlike, 6).figures.find((f) => f.picture === '01-whole-distant.png'),
+		).toBeUndefined();
 	});
 
 	test('proposes the color rows in band at three steps or fewer, and out of band above', () => {
@@ -281,7 +305,7 @@ describe('the pictures a verdict keeps apart', () => {
 		const verdict = toolVerdict(
 			input({
 				'30-woodland-form-whole.png': {
-					gap: { reference: 0.3, render: 0.6 },
+					gap: { reference: 0.3, render: 0.6, rule: 'half-dark' as const },
 					masked: true,
 					standing: { kind: 'second-form', reason: 'a named second form' },
 				},
@@ -467,7 +491,12 @@ describe("a reviewer's rows", () => {
 	test('are sound with their reasons, and are kept when the run is compared again', () => {
 		expect(verdictFaults(judged)).toEqual([]);
 		const again = toolVerdict(
-			input({ '01-whole-distant.png': { gap: { reference: 0.1, render: 0.3 }, masked: true } }),
+			input({
+				'01-whole-distant.png': {
+					gap: { reference: 0.1, render: 0.3, rule: 'half-dark' as const },
+					masked: true,
+				},
+			}),
 		);
 		const merged = mergeVerdict(judged, again);
 		expect(rowOf(merged, 1)).toMatchObject({
@@ -506,7 +535,7 @@ describe('an unsound verdict', () => {
 			figures: [{ ...(row.figures[0] as (typeof row.figures)[number]), run: 'oak-run-0' }],
 		});
 		expect(verdictFaults(borrowed)).toEqual([
-			"row 6 quotes sky gap enclosed by the crown outline of 01-whole-distant.png from run oak-run-0, not the file's run oak-run-1",
+			"row 6 quotes sky gap enclosed by the crown outline, by the half-dark rule on both pictures of 01-whole-distant.png from run oak-run-0, not the file's run oak-run-1",
 		]);
 	});
 

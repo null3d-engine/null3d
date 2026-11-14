@@ -25,6 +25,7 @@ import {
 	type Lobe,
 	lacking,
 	type PlantSubjects,
+	pieceRowsAt,
 	piecesOfClass,
 	piecesOfRows,
 	sampleAlong,
@@ -391,6 +392,25 @@ describe('the placed pieces of a plant', () => {
 		expect(piecesOfClass(subjects, 'cone')).toEqual(
 			lacking('the plant places no piece of the class cone; its pieces are bough, stalk-0'),
 		);
+	});
+
+	test('keeps the rows of the one piece placed at a socket, for a picture of it alone', () => {
+		const whole = {
+			...rows,
+			record: new Uint16Array(rows.count).map((_, r) => r),
+			phase: new Uint8Array(rows.count),
+			sky: new Uint8Array(rows.count),
+			bent: new Uint8Array(rows.count),
+			order: new Uint32Array(rows.count),
+		};
+		const outer = pieceRowsAt(whole, [8, 9, 0]);
+		expect(outer.count).toBe(2);
+		expect([...outer.prototype]).toEqual([0, 1]);
+		expect([...outer.record]).toEqual([4, 5]);
+		expect([...outer.position]).toEqual([8, 9, 0, 8, 9, 0]);
+		expect(outer.rotation.length).toBe(8);
+		expect(pieceRowsAt(whole, [1, 10, 0]).count).toBe(2);
+		expect(pieceRowsAt(whole, [5, 5, 5]).count).toBe(0);
 	});
 
 	test('reports a plant whose rows are shoots as placing no piece', () => {

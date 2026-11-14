@@ -77,7 +77,10 @@ describe('the plant core with stand-ins', () => {
 		const box = kit.box;
 		expect(asset.skeleton.bounds.max[1]).toBeLessThan(box.max[1]);
 		expect(asset.skeleton.bounds.min[0]).toBeGreaterThan(box.min[0]);
-		expect(asset.stats.triangles[0]).toBe(asset.levels[0].triangles);
+		// The nearest level's figure counts its meshes and every shoot row at the kit's tier.
+		expect(asset.stats.shoots).toBeGreaterThan(0);
+		expect(asset.stats.triangles[0]).toBe(asset.levels[0].triangles + asset.stats.shoots);
+		expect(asset.stats.triangles[1]).toBe(asset.levels[1].triangles);
 	});
 
 	it('grows the same bytes from the same seed and variant, and other bytes from another', () => {

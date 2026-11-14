@@ -296,8 +296,9 @@ describe("the Scots pine's boughs at sockets, by the pine's own figures", () => 
 			rows +=
 				(kit.prototypes[asset.shoots.prototype[r] as number]?.tiers[tier]?.indices.length ?? 0) / 3;
 		expect(asset.stats.shoots).toBe(rows);
+		expect(asset.stats.triangles[0]).toBe(asset.levels[0].triangles + rows);
 		// The boughs hold far more of the plant than its wood does.
-		expect(asset.stats.shoots).toBeGreaterThan(asset.stats.triangles[0]);
+		expect(asset.stats.shoots).toBeGreaterThan(asset.levels[0].triangles);
 	});
 
 	it('draws at once the most from an eye inside its fullest pad, within its budget at the reference lens', () => {
