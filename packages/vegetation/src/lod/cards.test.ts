@@ -586,6 +586,32 @@ describe('the card bake along a long piece', () => {
 			.planes;
 	type CardPlanes = SpeciesKitData['prototypes'][number]['card']['planes'];
 
+	it('cuts a stouter piece where the record names a lower threshold', () => {
+		// A strip 0.3 m along and 0.12 m wide: its length over width is 2.5, under the class's own
+		// threshold for a shoot, so only a record that asks cuts it.
+		const stout = prototypeOf(
+			ribbon(
+				Array.from({ length: 13 }, (_, k) => [(k / 12) * 0.3, 0] as const),
+				0.12,
+			),
+			'long',
+			1,
+		);
+		const plain = { ...record, lod: { ...record.lod, cardCuts: { most: 4 } } };
+		const asked = {
+			...record,
+			lod: { ...record.lod, cardCuts: { most: 4 }, cardCutLength: 2 },
+		};
+		const count = (species: typeof plain) =>
+			(
+				bakeCards(species, OAK_MANIFEST, 'high', [stout]).cells[0] as {
+					planes: readonly unknown[];
+				}
+			).planes.length;
+		expect(count(plain)).toBe(3);
+		expect(count(asked)).toBeGreaterThan(3);
+	});
+
 	it('cuts a piece many times longer than wide into cards along it, each in cells of its own', () => {
 		// A strip 1.2 m long and 6 cm wide, straight up its line.
 		const strip = prototypeOf(
