@@ -215,14 +215,16 @@ export const record: Species = {
 			// tiers, and each cap keeps about fifteen per cent above its read.
 			kitBytes: { low: 754_000, medium: 810_000, high: 895_000, ultra: 1_025_000 },
 			// A plant is rows of the kit's pieces, so a variant's bytes are the same at every tier.
-			// Measured over the six variants at seed 11, in summer and in blossom: the largest reads
-			// 218,144 bytes; 41,224 triangles at the nearest level at the high tier and 77,360 at
-			// the ultra; and 2,668 and 1,338 at the two card levels. Each cap keeps about fifteen
-			// per cent above its read, and the nearest level's holds the ultra tier.
-			variantBytes: { low: 251_000, medium: 251_000, high: 251_000, ultra: 251_000 },
+			// Measured over the six variants at seed 11, in summer and in blossom on 14 November
+			// 2026, an outside date that names the measure, with the cards' twig lines at the stems'
+			// widths and run on to the card centers: the largest reads 271,352 bytes and the two
+			// card levels 4,094 and 2,056 triangles. The caps take those measures plus a twentieth,
+			// by the lead's ruling. The lines darken the crown's mean, and two spike groups still
+			// read apart at the first card level; both are recorded as limits.
+			variantBytes: { low: 285_000, medium: 285_000, high: 285_000, ultra: 285_000 },
 			lod0Triangles: 89_000,
-			lod1Triangles: 3_100,
-			lod2Triangles: 1_550,
+			lod1Triangles: 4_300,
+			lod2Triangles: 2_160,
 			downloadBytes: 350_000,
 			downloadHalfBytes: 120_000,
 			growMilliseconds: 150,
