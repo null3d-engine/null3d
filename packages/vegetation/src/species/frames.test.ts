@@ -235,7 +235,9 @@ const HELD: readonly Held[] = [
 		directed: weepingWillowDirected,
 		heightMean: spreadMean(weepingWillowDirected.size.height),
 		record: weepingWillowRecord,
-		counts: { trunk: 1, great: 3, upper: 3, secondary: 9, branch: [100, 200], whip: [600, 1400] },
+		// The top limbs carry branches only on their rising part and the secondary limbs none on their
+		// first stretch, so 96 to 104 branches and 566 to 619 whips grow over the seeds.
+		counts: { trunk: 1, great: 3, upper: 3, secondary: 9, branch: [90, 200], whip: [530, 1400] },
 		// Nine level limbs, three to each great limb, leave no gap wider than a great limb's share
 		// and its jitter.
 		round: { rule: 'secondary', gap: 110, lean: 0.25 },
@@ -243,10 +245,10 @@ const HELD: readonly Held[] = [
 		// A whip hangs by its own weight.
 		plumb: ['trunk', 'whip'],
 		// The heads' foliage stands above the highest wood.
-		through: 13,
-		crossings: [30, 4],
+		through: 12,
+		crossings: [30, 1],
 		// Every whip and branch carries strands along it, so an axis carries several sockets.
-		axesPerSocket: 0.195,
+		axesPerSocket: 0.117,
 		tall: [0.93, 1.02],
 	},
 	{
@@ -901,7 +903,7 @@ for (const held of HELD)
  * frame. A merge can take another line's entry, which gives the record the old grower grows, so
  * this list changes in the same commit as an entry does.
  */
-const REGISTERED_FRAMES = ['pedunculate-oak'] as const;
+const REGISTERED_FRAMES = ['holm-oak', 'pedunculate-oak', 'weeping-willow'] as const;
 
 describe('a species entry that gives its frame', () => {
 	for (const id of REGISTERED_FRAMES)

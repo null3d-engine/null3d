@@ -76,7 +76,6 @@ const NEAR_OVER: Readonly<Record<string, number>> = {
 	olive: 30_065_894,
 	'pedunculate-oak': 43_550_406,
 	'silver-birch': 81_019_038,
-	'weeping-willow': 12_556_895,
 };
 
 /** The vertices of a variant's nearest merged foliage that carry the sheath column's mark. */
