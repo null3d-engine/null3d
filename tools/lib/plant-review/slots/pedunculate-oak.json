@@ -30,7 +30,8 @@
 		"sunRise": 65,
 		"skyShare": 0.19,
 		"sky": "#98bcec",
-		"daylight": 2.334
+		"daylight": 2.334,
+		"elevation": 45
 	},
 	"18-silhouette.png": {
 		"fov": 30,
@@ -117,7 +118,7 @@
 		"lamp": "#f5f0b4"
 	},
 	"15-bark-mid-trunk.png": {
-		"barkMask": true
+		"daylight": 0.95
 	},
 	"16-bark-on-limb.png": {
 		"barkMask": true,
@@ -128,10 +129,12 @@
 	},
 	"28-young-bark.png": {
 		"barkMask": true,
-		"daylight": 1.2
+		"daylight": 1.2,
+		"thin": 0.025,
+		"span": 0.12
 	},
 	"26-bark-texture.png": {
-		"barkMask": true,
-		"daylight": 1.25
+		"daylight": 1.4,
+		"barkHeight": 2.4
 	}
 }

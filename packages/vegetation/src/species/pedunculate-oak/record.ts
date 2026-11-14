@@ -243,6 +243,30 @@ export const record: Species = {
 				],
 				droop: 5,
 			},
+			{
+				// Stills 11 and 23: this year's short shoot, one rosette round its bud cluster. The
+				// crown's own short class cannot reach a cutting's kit, which holds the classes a cut
+				// piece draws alone, so the cluster piece repeats its figures here.
+				name: 'twig',
+				cutOnly: true,
+				vigor: [0, 0.04],
+				share: 0,
+				years: 1,
+				length: { mean: 0.14, spread: 0.02 },
+				nodes: { mean: 7, spread: 0.5 },
+				internode: ROSETTE,
+				leafScale: [
+					[0, 0.85],
+					[1, 1.05],
+				],
+				leafAngle: [
+					[0, 150],
+					[0.5, 95],
+					[1, 40],
+				],
+				leafAngleSpread: 30,
+				droop: 3,
+			},
 		],
 		phyllotaxis: { kind: 'spiral', divergence: 144 },
 		orders: 3,
@@ -486,12 +510,14 @@ export const record: Species = {
 	forms,
 	cuttings: {
 		// Stills 20, 21 and 22: the branch keeps the spray, whose length stills 20 and 21 ask for. The
-		// sub-branch takes the short dense class, which draws the photographs' tighter twigs.
+		// sub-branch takes the short dense class, which draws the photographs' tighter twigs. A
+		// cutting's kit holds no crown class, so both hints presently draw the kit's branch-end piece.
 		branch: { shoot: 'spray' },
 		subbranch: { shoot: 'cut' },
-		// Stills 11 and 23 hold one rosette round its buds at the end of this year's shoot, as the
-		// short shoot draws it; the long shoot draws a sprig of two or three rosettes.
-		cluster: { shoot: 'short' },
+		// Stills 11 and 23 hold one rosette round its buds at the end of this year's shoot; the long
+		// shoot draws a sprig of two or three rosettes. The cutting's kit holds no crown class, so the
+		// twig class repeats the short shoot's figures for the cut.
+		cluster: { shoot: 'twig' },
 		// Stills 12, 13, 24 and 25 lay the leaf flat on a copy stand.
 		leaf: { pressed: true },
 	},

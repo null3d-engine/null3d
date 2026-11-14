@@ -1154,7 +1154,7 @@ export default defineSketch(async (ctx) => {
 					() =>
 						isAbsent(subjectsOf().trunk)
 							? underRimShot(subjectsOf(), turn)
-							: crownUndersideShot(subjectsOf(), lens, { turn }),
+							: crownUndersideShot(subjectsOf(), lens, { turn, pitch: e }),
 					0,
 					0.1,
 				);
