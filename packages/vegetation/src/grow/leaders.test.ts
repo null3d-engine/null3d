@@ -12,7 +12,7 @@ import {
 	SkeletonBuilder,
 } from '../core/graph';
 import { loadPlantCode } from '../generate';
-import { species } from '../species/pedunculate-oak';
+import { record as oakRecord } from '../species/pedunculate-oak/record';
 import { leadOnThickest } from './leaders';
 import { grower } from './models';
 
@@ -447,7 +447,7 @@ describe('sympodial leaders', () => {
 	});
 
 	it('grows an oak with a plumb, straight bole to its fork, and no cone or loop', async () => {
-		const record = species.record;
+		const record = oakRecord;
 		await loadPlantCode(record);
 		for (const variant of [0, 1]) {
 			const led = leadOnThickest(
@@ -491,7 +491,7 @@ describe('sympodial leaders', () => {
 		// At this seed and variant the last season grows past the pipe counts the last shedding made,
 		// so the final righting reads no count for the newest wood; a wood mesh stores positions as
 		// 16-bit integers and would hide a position that is not a number, so the raw growth is read.
-		const record = species.record;
+		const record = oakRecord;
 		await loadPlantCode(record);
 		const grown = grower('self-organizing').grow({ record, seed: 7, variant: 4, season: 'summer' });
 		expect(grown.position.every(Number.isFinite)).toBe(true);
@@ -499,7 +499,7 @@ describe('sympodial leaders', () => {
 	});
 
 	it('grows a plumb bole at other seeds too', async () => {
-		const record = species.record;
+		const record = oakRecord;
 		await loadPlantCode(record);
 		// Seeds whose bole grew leaning 5 to 7.5 degrees from its foot to where it divided.
 		for (const [seed, variant] of [
@@ -526,7 +526,7 @@ describe('sympodial leaders', () => {
 	it(
 		'grows an oak whose bole and crown follow stills 01, 03, 17 and 18',
 		async () => {
-			const record = species.record;
+			const record = oakRecord;
 			await loadPlantCode(record);
 			let greatLimbs = 0;
 			for (let variant = 0; variant < 6; variant++) {
