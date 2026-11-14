@@ -151,6 +151,49 @@ export function liftedToGround(points: Float32Array, ground: number): Float32Arr
 }
 
 /**
+ * Where a mesh's triangles cross the ground. The ground hides what lies under it, so a surface
+ * that passes through it is drawn down to the line where it meets it, and that line can lie far
+ * from any vertex: a trunk whose last ring is buried and whose next stands well above the ground
+ * meets the ground between the two. These points are the drawn foot that the vertices alone miss.
+ *
+ * @param points The mesh's positions as x, y and z.
+ * @param indices The mesh's triangles, three indices each.
+ * @param ground The ground's height.
+ * @returns A point on each triangle edge that runs from under the ground to above it, as x, y and z.
+ */
+export function groundCrossings(
+	points: ArrayLike<number>,
+	indices: ArrayLike<number>,
+	ground: number,
+): Float32Array {
+	let buried = false;
+	for (let i = 1; i < points.length && !buried; i += 3) buried = (points[i] as number) < ground;
+	if (!buried) return new Float32Array(0);
+	const out: number[] = [];
+	const cross = (a: number, b: number): void => {
+		const ya = points[a * 3 + 1] as number;
+		const yb = points[b * 3 + 1] as number;
+		if (ya < ground === yb < ground) return;
+		const t = (ground - ya) / (yb - ya);
+		out.push(
+			(points[a * 3] as number) + t * ((points[b * 3] as number) - (points[a * 3] as number)),
+			ground,
+			(points[a * 3 + 2] as number) +
+				t * ((points[b * 3 + 2] as number) - (points[a * 3 + 2] as number)),
+		);
+	};
+	for (let i = 0; i + 2 < indices.length; i += 3) {
+		const a = indices[i] as number;
+		const b = indices[i + 1] as number;
+		const c = indices[i + 2] as number;
+		cross(a, b);
+		cross(b, c);
+		cross(c, a);
+	}
+	return new Float32Array(out);
+}
+
+/**
  * The stand of a whole view of a plant on the points it draws.
  *
  * The horizon's row sets the camera's pitch. The camera then stands where the highest drawn point
@@ -176,8 +219,20 @@ export function wholeStand(
 	framing: WholeFraming,
 	height: number,
 ): WholeStand {
-	const first = standCamera(framing, height);
 	const lowest = Math.min(LOWEST_EYE, LOWEST_EYE_SHARE * height);
+	// A photograph taken from near the ground can show its plant's foot on its horizon, or above it,
+	// where a lens above the ground sees the foot below the horizon by its height over its distance.
+	// The horizon then stands above the foot's row by what an eye at twice the least height gives
+	// at the rows' distance, so the camera tilts down a little and the plant keeps its size, where a
+	// camera on the photograph's horizon would stand back until its foot rose into the frame.
+	const horizon =
+		framing.base === undefined
+			? framing.horizon
+			: Math.min(
+					framing.horizon,
+					framing.base - (2 * lowest * (framing.base - framing.top)) / Math.max(height, 1e-3),
+				);
+	const first = standCamera({ ...framing, horizon }, height);
 	const { pitch, yaw } = first;
 	const half = Math.tan((framing.fov * Math.PI) / 360);
 	const ground = foot[1] - 1e-3;
