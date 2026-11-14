@@ -14,17 +14,36 @@ The tool looks for the reference folders in a folder that git ignores, so give i
 asks only for stills draws nothing and says so, and a run that names its own views draws those views
 with no comparison.
 
-## Three measures, and what each is for
+## Five measures, and what each is for
 
 | Measure | What it compares | When it is available |
 | --- | --- | --- |
 | Outline | Both pictures' plant outlines, scaled to the same height and centered on the trunk: shape IoU, width error, sky gap, crown box | Both pictures separate the plant from a plain background |
+| Crown balance | The crown's covered area either side of the trunk's column, as a share of the whole crown, in the render and in the reference | Both pictures give an outline, or a matte that separates the crown from the sky |
+| Crown foliage share | The share of the crown's own covered area that is foliage rather than wood, in the render and in the reference | The render draws its parts as separate layers, and the reference's crown separates into its foliage and bark colors |
 | Surface color | The CIEDE2000 difference of the middle of each picture | Always, and it is the figure for a texture source |
 | Edge directions | The share of edge strength in each of twelve 15-degree directions over the whole frame | Always |
 
 The outline is the strongest measure, and the shape rows rest on it. It needs a plain background in
 the reference. The tool separates the plant by color against a backdrop fitted to the picture's
 border. 15 of the 28 stills of the oak give one.
+
+The crown foliage share answers the question the sky gap cannot: whether the crown's material is
+leaves or bare wood. A lace of twigs and a mass of leaves can enclose the same sky, and only this
+figure tells them apart. The render's side comes from the parts picture, where the wood and the
+foliage are drawn as separate layers; the reference's side comes from the foliage green and bark
+brown inside its crown box. It cannot see a crown whose photograph mixes the two colors, such as a
+bare winter tree against brown ground, and it says so rather than guess.
+
+The crown balance answers whether the mass sits where the plant's does. The crown's covered area is
+read in six horizontal bands, each band split at the trunk's column, and each band's left share is
+compared with the reference's at the same height. Six is the review's crown-band granularity: each
+band holds thousands of pixels, so one leaf clump cannot set a band. The figure is sensitive to the
+band count: the same drawing reads 0.089 at six bands and 0.124 at eight. So a reading within a few
+hundredths of the band is a note, not a verdict, and the eye decides there. A whole-crown split is not
+enough: a drawing whose fuller left flank is balanced by a limb reaching far out on the right reads an
+even split while the eye still sees a lean. It cannot see a lean along the view's own axis, so a plant
+that leans toward or away from the camera is judged on the other views.
 
 A fruit view is drawn with an outline whatever its photograph does, because a part that hangs from
 nothing has a sound outline and shows only as a separate piece. Its outline gives the piece count;
