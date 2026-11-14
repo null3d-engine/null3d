@@ -20,13 +20,15 @@ const PAIRS = 32;
 
 /**
  * A pinna's length over its frond's, by its place along the frond: the blade is a broad lance,
- * narrow at the base, widest at 0.45 and tapering to a long tip (pictures 01 and 04).
+ * narrow at the base, widest at 0.45 and tapering to a long tip (pictures 01 and 04). The last
+ * pinnae keep a quarter of the longest: at 0.15 the drawn fronds ended in a wisp of bare rachis,
+ * where the pictures' blades carry pinnae to their points.
  */
 const PINNA_ALONG: readonly (readonly [number, number])[] = [
 	[STIPE, 0.35],
 	[0.45, 1],
-	[0.9, 0.3],
-	[1, 0.15],
+	[0.9, 0.35],
+	[1, 0.25],
 ];
 
 /**
