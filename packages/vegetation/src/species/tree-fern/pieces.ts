@@ -20,15 +20,17 @@ const PAIRS = 32;
 
 /**
  * A pinna's length over its frond's, by its place along the frond: the blade is a broad lance,
- * narrow at the base, widest at 0.45 and tapering to a long tip (pictures 01 and 04). The last
- * pinnae keep a quarter of the longest: at 0.15 the drawn fronds ended in a wisp of bare rachis,
- * where the pictures' blades carry pinnae to their points.
+ * narrow at the base, widest at 0.45 and tapering to a long tip (pictures 01 and 04). The drawn tips
+ * read wispier than the pictures'. Raising this curve's last share from 0.15 to 0.25 and starting
+ * the taper later moved the preview's own match by at most 0.006 at 01, 02 and 18 (enclosed sky
+ * 0.321 to 0.323, 0.307 to 0.305, 0.323 to 0.322; outline overlap 0.620 to 0.620, 0.568 to 0.562,
+ * 0.633 to 0.634), so that lever is inert. The next attempt is the tip's pinna count or its length.
  */
 const PINNA_ALONG: readonly (readonly [number, number])[] = [
 	[STIPE, 0.35],
 	[0.45, 1],
-	[0.9, 0.35],
-	[1, 0.25],
+	[0.9, 0.3],
+	[1, 0.15],
 ];
 
 /**
