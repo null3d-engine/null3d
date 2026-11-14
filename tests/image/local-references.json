@@ -173,11 +173,23 @@
 		"date": "2026-11-12",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the change that added the picture; CI has not drawn its own reference yet, and its next drawing replaces this one"
 	},
+	"chromium-swiftshader/compat/plant-bamboo.png": {
+		"test": "plant-bamboo",
+		"tier": "compat",
+		"date": "2026-11-14",
+		"reason": "the artifact download of run 43592306311 stalled, so this picture was drawn on this machine's SwiftShader; CI's own drawing is owed at the next run"
+	},
 	"chromium-swiftshader/compat/plant-bracken.png": {
 		"test": "plant-bracken",
 		"tier": "compat",
 		"date": "2026-11-10",
 		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head in the one idle window, each drawing completed and compared before acceptance, and a CI drawing on a pull request replaces them"
+	},
+	"chromium-swiftshader/compat/plant-date-palm.png": {
+		"test": "plant-date-palm",
+		"tier": "compat",
+		"date": "2026-11-14",
+		"reason": "the artifact download of run 43592306311 stalled, so this picture was drawn on this machine's SwiftShader; CI's own drawing is owed at the next run"
 	},
 	"chromium-swiftshader/compat/plant-european-beech.png": {
 		"test": "plant-european-beech",
@@ -221,6 +233,12 @@
 		"date": "2026-11-08",
 		"reason": "the olive's crown gathered more densely, so this Mac redrew the software set with CI=1"
 	},
+	"chromium-swiftshader/compat/plant-saguaro.png": {
+		"test": "plant-saguaro",
+		"tier": "compat",
+		"date": "2026-11-14",
+		"reason": "the artifact download of run 43592306311 stalled, so this picture was drawn on this machine's SwiftShader; CI's own drawing is owed at the next run"
+	},
 	"chromium-swiftshader/compat/plant-scots-pine.png": {
 		"test": "plant-scots-pine",
 		"tier": "compat",
@@ -238,6 +256,18 @@
 		"tier": "compat",
 		"date": "2026-11-09",
 		"reason": "the cut-piece curve fix moved the pieces the panels view draws; this Mac's SwiftShader redrew the set from the branch, and CI's own drawing judges it"
+	},
+	"chromium-swiftshader/compat/plant-wind-still.png": {
+		"test": "plant-wind-still",
+		"tier": "compat",
+		"date": "2026-11-14",
+		"reason": "the artifact download of run 43592306311 stalled, so this page was drawn on this machine and its SwiftShader reference is owed at the next CI run"
+	},
+	"chromium-swiftshader/compat/plant-wind-sway.png": {
+		"test": "plant-wind-sway",
+		"tier": "compat",
+		"date": "2026-11-14",
+		"reason": "the artifact download of run 43592306311 stalled, so this page was drawn on this machine and its SwiftShader reference is owed at the next CI run"
 	},
 	"chromium-swiftshader/compat/probe-grid-wall-night.png": {
 		"test": "probe-grid-wall-night",
@@ -485,11 +515,23 @@
 		"date": "2026-11-12",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the change that added the picture; CI has not drawn its own reference yet, and its next drawing replaces this one"
 	},
+	"chromium-swiftshader/webgl2/plant-bamboo.png": {
+		"test": "plant-bamboo",
+		"tier": "webgl2",
+		"date": "2026-11-14",
+		"reason": "the artifact download of run 43592306311 stalled, so this picture was drawn on this machine's SwiftShader; CI's own drawing is owed at the next run"
+	},
 	"chromium-swiftshader/webgl2/plant-bracken.png": {
 		"test": "plant-bracken",
 		"tier": "webgl2",
 		"date": "2026-11-10",
 		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head in the one idle window, each drawing completed and compared before acceptance, and a CI drawing on a pull request replaces them"
+	},
+	"chromium-swiftshader/webgl2/plant-date-palm.png": {
+		"test": "plant-date-palm",
+		"tier": "webgl2",
+		"date": "2026-11-14",
+		"reason": "the artifact download of run 43592306311 stalled, so this picture was drawn on this machine's SwiftShader; CI's own drawing is owed at the next run"
 	},
 	"chromium-swiftshader/webgl2/plant-european-beech.png": {
 		"test": "plant-european-beech",
@@ -539,6 +581,12 @@
 		"date": "2026-11-13",
 		"reason": "CI run 43395162151 kept no drawn artifact for heavy shard 12, which drew this picture, so this Mac's SwiftShader drew it at 1c5fde9a1; CI's next drawing replaces it"
 	},
+	"chromium-swiftshader/webgl2/plant-saguaro.png": {
+		"test": "plant-saguaro",
+		"tier": "webgl2",
+		"date": "2026-11-14",
+		"reason": "the artifact download of run 43592306311 stalled, so this picture was drawn on this machine's SwiftShader; CI's own drawing is owed at the next run"
+	},
 	"chromium-swiftshader/webgl2/plant-scots-pine.png": {
 		"test": "plant-scots-pine",
 		"tier": "webgl2",
@@ -556,6 +604,18 @@
 		"tier": "webgl2",
 		"date": "2026-11-09",
 		"reason": "the cut-piece curve fix moved the pieces the panels view draws; this Mac's SwiftShader redrew the set from the branch, and CI's own drawing judges it"
+	},
+	"chromium-swiftshader/webgl2/plant-wind-still.png": {
+		"test": "plant-wind-still",
+		"tier": "webgl2",
+		"date": "2026-11-14",
+		"reason": "the artifact download of run 43592306311 stalled, so this page was drawn on this machine and its SwiftShader reference is owed at the next CI run"
+	},
+	"chromium-swiftshader/webgl2/plant-wind-sway.png": {
+		"test": "plant-wind-sway",
+		"tier": "webgl2",
+		"date": "2026-11-14",
+		"reason": "the artifact download of run 43592306311 stalled, so this page was drawn on this machine and its SwiftShader reference is owed at the next CI run"
 	},
 	"chromium-swiftshader/webgl2/probe-grid-wall-night.png": {
 		"test": "probe-grid-wall-night",
@@ -839,11 +899,23 @@
 		"date": "2026-11-12",
 		"reason": "drawn on this Mac's SwiftShader with CI=1 from the change that added the picture; CI has not drawn its own reference yet, and its next drawing replaces this one"
 	},
+	"chromium-swiftshader/webgpu/plant-bamboo.png": {
+		"test": "plant-bamboo",
+		"tier": "webgpu",
+		"date": "2026-11-14",
+		"reason": "the artifact download of run 43592306311 stalled, so this picture was drawn on this machine's SwiftShader; CI's own drawing is owed at the next run"
+	},
 	"chromium-swiftshader/webgpu/plant-bracken.png": {
 		"test": "plant-bracken",
 		"tier": "webgpu",
 		"date": "2026-11-10",
 		"reason": "a push to a milestone branch draws no picture, so the software set is drawn here at the range's head in the one idle window, each drawing completed and compared before acceptance, and a CI drawing on a pull request replaces them"
+	},
+	"chromium-swiftshader/webgpu/plant-date-palm.png": {
+		"test": "plant-date-palm",
+		"tier": "webgpu",
+		"date": "2026-11-14",
+		"reason": "the artifact download of run 43592306311 stalled, so this picture was drawn on this machine's SwiftShader; CI's own drawing is owed at the next run"
 	},
 	"chromium-swiftshader/webgpu/plant-european-beech.png": {
 		"test": "plant-european-beech",
@@ -887,6 +959,12 @@
 		"date": "2026-11-08",
 		"reason": "the olive's crown gathered more densely, so this Mac redrew the software set with CI=1"
 	},
+	"chromium-swiftshader/webgpu/plant-saguaro.png": {
+		"test": "plant-saguaro",
+		"tier": "webgpu",
+		"date": "2026-11-14",
+		"reason": "the artifact download of run 43592306311 stalled, so this picture was drawn on this machine's SwiftShader; CI's own drawing is owed at the next run"
+	},
 	"chromium-swiftshader/webgpu/plant-scots-pine.png": {
 		"test": "plant-scots-pine",
 		"tier": "webgpu",
@@ -904,6 +982,18 @@
 		"tier": "webgpu",
 		"date": "2026-11-09",
 		"reason": "the cut-piece curve fix moved the pieces the panels view draws; this Mac's SwiftShader redrew the set from the branch, and CI's own drawing judges it"
+	},
+	"chromium-swiftshader/webgpu/plant-wind-still.png": {
+		"test": "plant-wind-still",
+		"tier": "webgpu",
+		"date": "2026-11-14",
+		"reason": "the artifact download of run 43592306311 stalled, so this page was drawn on this machine and its SwiftShader reference is owed at the next CI run"
+	},
+	"chromium-swiftshader/webgpu/plant-wind-sway.png": {
+		"test": "plant-wind-sway",
+		"tier": "webgpu",
+		"date": "2026-11-14",
+		"reason": "the artifact download of run 43592306311 stalled, so this page was drawn on this machine and its SwiftShader reference is owed at the next CI run"
 	},
 	"chromium-swiftshader/webgpu/probe-grid-wall-night.png": {
 		"test": "probe-grid-wall-night",
