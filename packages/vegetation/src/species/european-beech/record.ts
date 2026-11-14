@@ -497,6 +497,14 @@ export const record: Species = {
 			],
 		},
 	},
+	// The directed form draws this crown, and its mass is a recorded limit the owner accepted. The
+	// crown carries 2,659 sockets at 971 triangles a row, 2,582,550 drawn at the tallest view against
+	// the near cap of 2,750,000. The photographs' crown box reads 0.2895 and their gap 0.0729 where
+	// the drawn leaf form reads 0.5435 and 0.1303. The gap needs about 7,000 sockets, about 6.8
+	// million near-form triangles: 2.5 times this cap and 2.3 times the owner's 2.9 million class
+	// cap, where the crown would read 0.127. The bound is the piece rather than the budget: a branch
+	// end is 858 triangles, 402 of them wood, and a cheaper leaf piece is the lever if the species is
+	// taken up again. No rule 9 verdict has been given for this form.
 	lod: {
 		nearFoliage: 'instanced',
 		switchPixels: [240, 12, 160],
