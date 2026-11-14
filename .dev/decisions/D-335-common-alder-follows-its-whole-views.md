@@ -42,7 +42,14 @@ angles, because the generated tree drifts between frames. The envelope the fitti
 1.015 of the plant's height wide at its widest, which is a third measure again and the widest of
 any of them.
 
-The same views' sky gaps, which row 6 reads: `01` 0.140, `02` 0.091, `18` 0.180, `30` 0.138.
+The whole views' sky gaps, which row 6 reads, by the photograph's color rule: `02` 0.101 and `30`
+0.138. Still `01` is void, because the far river bank behind the tree joins its outline. Still `18`
+is another tree, a recorded reference conflict, so it counts neither way; both levels read 0.175 on
+it by the half-dark rule.
+
+The record's card level, the level a whole view draws, reads 0.108 at `02` and 0.133 at `30`, 0.007
+open and 0.005 closed, both inside the band. The leaf form reads 0.075 at `02`, 0.026 closed and
+0.006 past the closed side.
 
 The cut pieces, width over length, photograph against the run before the fix:
 
@@ -96,9 +103,10 @@ record grows outlines 0.67 against `02`, 0.60 against `18`, 0.62 against `30` an
 - The piece count at a whole view is two to three against the photograph's one, at `lod.cardGrow`
   1.7. Neither a wider card stalk nor a denser crown moved them; the card's size did, halving them
   from five, four, three and three to two, three, three and two. The record does not claim one.
-- Row 6 cannot pass on every whole view, and the record states why: still `02` needs a gap of 0.141
-  or less and still `18` needs 0.16 or more, an empty band. The crown sits where three of the four
-  views pass and `02` misses by 0.02.
+- Row 6 is read on two whole views, `02` and `30`. Still `01` is void, because the far river bank
+  joins its outline, and still `18` is another tree, so neither counts. At the card level the two
+  readable views stand inside the band, 0.007 open at `02` and 0.005 closed at `30`. The leaf form
+  is 0.006 past the closed side at `02`, which is the species' residual.
 - The cut pieces are fixed by their proportions. The stem pieces splay side shoots at 70 degrees
   from the stem (`lateral`), and the cluster's leaves stand along a stem with its internodes
   showing rather than crowded at one point. Rejected: thinning leaves, which a studio still scales
