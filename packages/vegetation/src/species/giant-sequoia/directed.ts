@@ -172,9 +172,12 @@ export const directed: Species = {
 			each: 'limb',
 			width: [0.04, 0.06],
 			depth: 1,
-			// Still 01: the pieces tile the crown's outline evenly. Clumps about two metres apart
-			// thin the rim to a net of wood and flakes, which reads further from the photographs'
-			// dense column than this even tiling does; the clumps are recorded in the build log.
+			// Still 01: the pieces tile the crown's outline evenly. The sockets rule's clump reads a
+			// mass only at about a third of a metre between pieces, where a two-metre clump holds
+			// about eight boughs a square metre; the crown's clumps then take about 6,200 boughs,
+			// whose 3.2 million triangles at once from the tallest stated eye stand 28 per cent over
+			// the record's 2,500,000. So the crown keeps the even tiling, and the clump waits in the
+			// record type and the grower, inert, for a cheaper piece or a farther card switch.
 			sockets: { piece: 'bough', pitch: 0.55, rise: 0.55, lift: 20 },
 		},
 		// The crown's shaded depth behind the boughs: the clumps stand on it, and the sky between
