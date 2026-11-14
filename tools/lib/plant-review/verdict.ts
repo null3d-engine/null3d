@@ -326,20 +326,19 @@ function figuresOf(row: number, pair: StillResult, run: string): Figure[] {
 				? []
 				: [{ ...base, name: 'leaf outline overlap', value: pair.shapeIou, band: null }];
 		case 6: {
-			// The sky seen through the crown: the gap enclosed by the plant's own outline, read on the
-			// matte. The crown box's sky share is not this figure: on a plant that does not fill its
-			// box by shape, such as a spire or a cone, it measures the taper.
-			if (!pair.gap) return [];
-			// The matte's gap, or the colour still's where the two part by more than the colour band.
-			const read = rowGap(pair.gap);
-			return pair.gap
+			// The sky seen through the crown: the gap enclosed by the plant's own outline, read alike on
+			// both sides. The crown box's sky share is not this figure: on a plant that does not fill its
+			// box by shape, such as a spire or a cone, it measures the taper. A gap the two sides read by
+			// different rules is not quoted.
+			const read = pair.gap ? rowGap(pair.gap) : undefined;
+			return pair.gap && read
 				? [
 						{
 							...base,
 							name:
-								read.read === 'matte'
-									? 'sky gap enclosed by the crown outline'
-									: 'sky gap enclosed by the crown outline, read on the colour still',
+								read.rule === 'colour'
+									? "sky gap enclosed by the crown outline, by the photograph's colour rule on both pictures"
+									: 'sky gap enclosed by the crown outline, by the half-dark rule on both pictures',
 							value: read.value,
 							reference: pair.gap.reference,
 							band: {
