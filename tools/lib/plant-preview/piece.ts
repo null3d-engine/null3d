@@ -202,7 +202,7 @@ export interface PieceCards {
 
 /**
  * Bakes the cards of a scene's pieces through the package's own card bake: one cell per prototype
- * on three planes, at the tier a review draws.
+ * on three planes, at the tier a review draws, from the mesh the bake pictures in a kit.
  *
  * @param scene The scene.
  * @returns The atlas and the cells, in the pieces' order.
@@ -220,6 +220,7 @@ export function pieceCards(scene: StudioScene): PieceCards {
 			radius: piece.radius,
 			leaves: piece.leaves,
 			tiers: piece.tiers,
+			...(piece.bake ? { bake: piece.bake } : {}),
 		})),
 	);
 }
