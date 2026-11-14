@@ -109,6 +109,7 @@ import {
 	type LevelBuild,
 	levelBuild,
 	levelWithin,
+	mergedFoliage,
 	NO_CLUSTERS,
 	NO_TRIANGLES,
 	partTotal,
@@ -1183,11 +1184,7 @@ function levelParts(mesh: MeshInput, level: MeshLevel): PlantPart[] {
 	if (record.lod.nearFoliage === 'merged') {
 		const merged = stage(
 			placeholders,
-			() => {
-				const build = grower(record.growth.model).foliage;
-				if (!build) throw new NotBuiltError(`merged ${record.growth.model} foliage`);
-				return build(mesh, level);
-			},
+			() => mergedFoliage(mesh, level),
 			() => placeholderFoliage(mesh, level),
 		);
 		parts.push(...partOf(kit, 'foliage', merged, TEXTURE_UV_STEPS));
