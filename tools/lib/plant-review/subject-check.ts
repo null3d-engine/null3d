@@ -356,6 +356,25 @@ export function areaCovers(
 	return parts && regions.length > 0 ? partsCheck(parts, regions).covers : [];
 }
 
+/** The least and the greatest wood radius, in metres, that a bark view's colour reads. */
+export interface WoodBounds {
+	readonly least: number;
+	readonly most: number;
+}
+
+/**
+ * The wood radius bounds a bark view's colour reads: the subject's own where the page posted a
+ * region of wood, the radius the slot asks for where the view has no contract, and every wood
+ * where it names neither. A bark close view draws other wood behind the subject, such as the
+ * trunk below a limb, so the radius keeps the colour on the material the photograph shows.
+ */
+export function subjectWoodBounds(facts: unknown, thin: number | undefined): WoodBounds {
+	const wood = (postedSubject(facts)?.regions ?? []).find((region) => region.of === 'wood');
+	if (wood) return { least: wood.thick ?? 0, most: wood.thickMost ?? Number.POSITIVE_INFINITY };
+	if (thin !== undefined) return { least: 0.75 * thin, most: 1.4 * thin };
+	return { least: 0, most: Number.POSITIVE_INFINITY };
+}
+
 /**
  * Whether a picture's regions were read: a view that names regions of wood or of foliage is
  * checked only where the run drew its picture of the parts.

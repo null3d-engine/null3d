@@ -15,6 +15,7 @@ import {
 	regionCover,
 	regionsRead,
 	subjectFault,
+	subjectWoodBounds,
 	voidReason,
 } from './subject-check.ts';
 
@@ -304,5 +305,37 @@ describe('a void picture', () => {
 			kind: 'the bole',
 			contract: { present: true },
 		});
+	});
+});
+
+describe("the wood radius a bark view's colour reads", () => {
+	test('takes the region of wood the page posted', () => {
+		const facts = {
+			subject: {
+				kind: 'the bark on a great limb',
+				regions: [
+					{
+						name: "the limb's bark",
+						box: [0.4, 0.4, 0.6, 0.6],
+						min: 0.85,
+						of: 'wood',
+						thick: 0.016,
+						thickMost: 0.03,
+					},
+					{ name: 'the ground beside the limb', box: [0, 0, 1, 1], max: 0.9 },
+				],
+			},
+		};
+		expect(subjectWoodBounds(facts, 0.5)).toEqual({ least: 0.016, most: 0.03 });
+	});
+
+	test('falls back to the radius the slot asks for where the view has no contract', () => {
+		const bounds = subjectWoodBounds({}, 0.04);
+		expect(bounds.least).toBeCloseTo(0.03, 6);
+		expect(bounds.most).toBeCloseTo(0.056, 6);
+	});
+
+	test('reads every wood where neither names a radius', () => {
+		expect(subjectWoodBounds({}, undefined)).toEqual({ least: 0, most: Number.POSITIVE_INFINITY });
 	});
 });

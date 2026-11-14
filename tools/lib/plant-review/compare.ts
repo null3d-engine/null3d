@@ -74,6 +74,7 @@ import {
 	partsFoliageShare,
 	partsOf,
 	regionsRead,
+	subjectWoodBounds,
 	voidReason,
 } from './subject-check.ts';
 
@@ -2238,6 +2239,46 @@ export function patchLab(image: Rgba, onPlant = false, barkOnly = false): number
 }
 
 /**
+ * The mean CIELAB colour of a picture's own wood, read over the same nine patches as `patchLab`
+ * and selected from the picture of the parts. A bark close view draws the subject's wood against
+ * sky, ground or a trunk behind it, and the four corners are not always the backdrop: a limb across
+ * the frame can touch them, so the corner rule keeps the sky and drops the bark. The parts picture
+ * names each texel's part and its wood radius, so the material is read on the wood the picture is
+ * of. Returns undefined where the patches hold no wood of the named thickness, and the corner rule
+ * then answers.
+ */
+export function patchWoodLab(
+	image: Rgba,
+	parts: Parts | undefined,
+	least: number,
+	most: number,
+): number[] | undefined {
+	if (!parts || parts.width !== image.width || parts.height !== image.height) return undefined;
+	const lab = labImage(image);
+	const sum = [0, 0, 0];
+	let n = 0;
+	const share = 0.2;
+	for (const fy of [0.2, 0.5, 0.8])
+		for (const fx of [0.2, 0.5, 0.8]) {
+			const x0 = Math.round((fx - share / 2) * image.width);
+			const x1 = Math.round((fx + share / 2) * image.width);
+			const y0 = Math.round((fy - share / 2) * image.height);
+			const y1 = Math.round((fy + share / 2) * image.height);
+			for (let y = y0; y < y1; y++)
+				for (let x = x0; x < x1; x++) {
+					const texel = y * parts.width + x;
+					if (parts.kind[texel] !== PART.wood) continue;
+					const radius = parts.radius[texel] as number;
+					if (radius < least || radius > most) continue;
+					const at = (y * image.width + x) * 3;
+					for (let c = 0; c < 3; c++) sum[c] = (sum[c] as number) + (lab[at + c] as number);
+					n++;
+				}
+		}
+	return n === 0 ? undefined : sum.map((v) => v / n);
+}
+
+/**
  * The colour difference between two pictures' nine-patch means, read on the plant alone when asked.
  * A texture source and its render are cut out on different colours, so asking for the plant drops
  * both backdrops and compares the material. With `barkOnly`, both sides drop their foliage too.
@@ -2635,10 +2676,26 @@ export function compareStills(
 		// The shot carries the query the page was asked for, which is where a species' slot file
 		// reaches; the reference rule's own query is a different thing and is often empty.
 		const barkMaskOn = frame.query?.barkMask === true;
+		// The wood a bark view's colour reads: the subject's own radius where the page posted a
+		// contract, or the radius its slot asks for where the view has none. A close view can draw
+		// sky, ground or another wood at the frame's corners, so the corner rule alone is not the
+		// material; the parts picture keeps the colour on the wood the picture is of.
+		const barkBounds = subjectWoodBounds(frame.facts, frame.query?.thin);
+		const renderBark =
+			(bark || BARK_VIEWS.has(drawn)) && partsPicture
+				? patchWoodLab(render.image, partsPicture, barkBounds.least, barkBounds.most)
+				: undefined;
 		// A texture source is a cut-out laid on one colour and the render stands on another, so an
 		// unmasked average lifts both sides and the lifts nearly cancel. With the flag set, the
 		// material is read on the bark alone.
-		const surfaceDeltaE = bark ? patchDifference(refImage, render.image, barkMaskOn) : null;
+		const surfaceDeltaE = bark
+			? Number(
+					deltaE2000(
+						patchLab(refImage, barkMaskOn),
+						renderBark ?? patchLab(render.image, barkMaskOn),
+					).toFixed(2),
+				)
+			: null;
 		// A bark close view photographs the bark against the bark, so neither picture separates
 		// from its own background and neither draws a matte. The patches compare the material.
 		// A close view of the bark is named by the view it draws, not by the words in its file name: a
@@ -2654,7 +2711,7 @@ export function compareStills(
 		const barkColour = barkClose
 			? {
 					reference: patchLab(refImage, barkMaskOn, barkOnly),
-					render: patchLab(render.image, barkMaskOn, barkOnly),
+					render: renderBark ?? patchLab(render.image, barkMaskOn, barkOnly),
 				}
 			: null;
 		// A junction or crown-foot still's subject is the sheath surface itself, so its foot and

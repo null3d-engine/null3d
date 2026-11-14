@@ -79,8 +79,18 @@ export const frame: FrameSpec = {
 				along: [0.238, 0.975],
 				stagger: 0.25,
 				// Stills 07, 17 and 03: single, at clearly different heights, on every side.
-				around: 'spiral',
-				jitter: 8,
+				// Still 30: the photograph's lowest sixth carries more of its mass right of the trunk, and
+				// still 02's lowest sixth is close to even. The two long lowest limbs are placed for that:
+				// the lower stands square to the landmark view's right, and its neighbour stands left and
+				// away, which reads right of the trunk at the profile view. Every other limb keeps the
+				// degree its place in the spiral gave it, and each is stated so the crown's sides hold
+				// from seed to seed.
+				around: [
+					34.71, 0, 200, 91.13, -125.82, 9.96, 143.61, -71.33, 62.34, -168.15, -19.54, 106.98,
+					-111.77, 25.54, 169.13, -60.17, 79.23, -147.27, 2.41, 138.1, -87.03, 42.57, -177.04,
+					-38.47,
+				],
+				jitter: 0,
 				// Stills 30, 18 and 17: the lowest leave at 70 to 85 degrees from plumb, the middle at
 				// 60 to 70 and the upper at 40 to 55. Still 30: the lowest two end a little below the
 				// height they leave at.
@@ -176,6 +186,10 @@ export const directed = {
 			rows: { mean: 4, spread: 1 },
 			fan: 45,
 			piece: 'branch-end',
+			// The crown's clumps stand a little larger than the cut branch's measured piece, so
+			// neighbouring clumps meet into the one leafy mass the whole views show; the cutting still
+			// draws the piece its studio photograph measured.
+			scale: 1.05,
 			// With every branch end's flat side to the sky, a crown seen from the side shows most of
 			// its leaves slanted or edge on. Stills 07 and 17: the alder's leafy shoots face every way,
 			// so each piece rolls up to a quarter turn either way about its own line and tilts a
