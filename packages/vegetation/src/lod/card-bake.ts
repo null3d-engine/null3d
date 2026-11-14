@@ -382,14 +382,19 @@ function pointAlong(line: PieceLine, at: number): [number, number, number] {
  * @param most The most stretches it is cut into.
  * @returns The planes, base first on a cut card.
  */
-function cardPlanes(prototype: UncardedPrototype, mesh: MeshArrays, most: number): PlannedPlane[] {
+function cardPlanes(
+	prototype: UncardedPrototype,
+	mesh: MeshArrays,
+	most: number,
+	cutLength: number | undefined,
+): PlannedPlane[] {
 	const triangles = mesh.indices.length / 3;
 	// A prototype only a cutting draws is drawn at the nearest level alone, so its card stays whole.
 	if (triangles === 0 || prototype.cutting) return planesOf(mesh);
 	const line = pieceLine(mesh);
 	const length = line.lengths[line.lengths.length - 1] as number;
 	const width = Math.max(line.width, 1e-6);
-	const long = prototype.class === 'piece' ? PIECE_LONG : SHOOT_LONG;
+	const long = cutLength ?? (prototype.class === 'piece' ? PIECE_LONG : SHOOT_LONG);
 	if (line.reach < CUT_LEAST || length < long * width) return planesOf(mesh);
 	const cuts = Math.min(most, Math.max(2, Math.round(length / width)));
 	if (cuts < 2) return planesOf(mesh);
@@ -690,7 +695,7 @@ export function bakeCards(
 ): { readonly atlas: CardAtlas; readonly cells: readonly CardCell[] } {
 	const cuts = record.lod.cardCuts;
 	const planned = prototypes.map((prototype) =>
-		cardPlanes(prototype, bakeMeshOf(prototype), cuts?.most ?? CUTS_MOST),
+		cardPlanes(prototype, bakeMeshOf(prototype), cuts?.most ?? CUTS_MOST, record.lod.cardCutLength),
 	);
 	// A prototype without leaves holds thin stems and buds, so its planes take half cells; so do a cut
 	// prototype's stretches, unless the record asks for whole ones.

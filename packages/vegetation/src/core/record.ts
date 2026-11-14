@@ -2684,6 +2684,22 @@ export interface LodSpec {
 	 */
 	readonly cardCuts?: { readonly most?: number; readonly cells?: 'full' | 'half' };
 	/**
+	 * The length over width from which a card is cut along its piece, in place of the class's own
+	 * threshold of 4 for a shoot and 1.5 for a placed piece. A species whose shoots are stouter than
+	 * the class's rule assumes asks for a lower threshold, so a whip whose leaves fall under the
+	 * card's cut at a whole view gets finer texels along it. Only a record that also names
+	 * `cardCuts` is cut at all.
+	 */
+	readonly cardCutLength?: number;
+	/**
+	 * How many times the cover a kept card must make up, 1 or more and 1 by default. A card level
+	 * that drops much of its cover, such as a crown of sparse shoots seen whole, grows each card
+	 * about its middle to recover it; a species whose cards still read thin at that scale asks for
+	 * more. Growth stays inside the leaf form's hull, so the card level never stands larger than
+	 * the leaves it pictures.
+	 */
+	readonly cardGrow?: number;
+	/**
 	 * The least width, in pixels, that a card's own stalk draws at any distance, from 0 to 8. A card
 	 * stands on its axis's twig, whose wood may be thinner than a pixel at a whole view, so the
 	 * card's leaves read as a piece in air where the twig does not draw. At 1 or more the card
@@ -2700,6 +2716,13 @@ export interface LodSpec {
 	 * record without it draws exactly the fixed width it names.
 	 */
 	readonly cardStalkWidth?: boolean;
+	/**
+	 * How much of the young bark's tone a card's stalk line keeps, from 0.05 to 1, where the default
+	 * suits the species less well. The line stands inside the crown, so its default draws shaded
+	 * wood; a pale, sparse crown shows a dark line over a large share of itself, and a species there
+	 * may lighten the line toward the bark's own tone.
+	 */
+	readonly cardStalkShade?: number;
 	/**
 	 * Whether a card's stalk runs on past the row to the centre of the foliage the card carries. A
 	 * card's plane stands ahead of the row that draws it by the shoot's own length, so the stretch

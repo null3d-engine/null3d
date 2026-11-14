@@ -586,6 +586,32 @@ describe('the card bake along a long piece', () => {
 			.planes;
 	type CardPlanes = SpeciesKitData['prototypes'][number]['card']['planes'];
 
+	it('cuts a stouter piece where the record names a lower threshold', () => {
+		// A strip 0.3 m along and 0.12 m wide: its length over width is 2.5, under the class's own
+		// threshold for a shoot, so only a record that asks cuts it.
+		const stout = prototypeOf(
+			ribbon(
+				Array.from({ length: 13 }, (_, k) => [(k / 12) * 0.3, 0] as const),
+				0.12,
+			),
+			'long',
+			1,
+		);
+		const plain = { ...record, lod: { ...record.lod, cardCuts: { most: 4 } } };
+		const asked = {
+			...record,
+			lod: { ...record.lod, cardCuts: { most: 4 }, cardCutLength: 2 },
+		};
+		const count = (species: typeof plain) =>
+			(
+				bakeCards(species, OAK_MANIFEST, 'high', [stout]).cells[0] as {
+					planes: readonly unknown[];
+				}
+			).planes.length;
+		expect(count(plain)).toBe(3);
+		expect(count(asked)).toBeGreaterThan(3);
+	});
+
 	it('cuts a piece many times longer than wide into cards along it, each in cells of its own', () => {
 		// A strip 1.2 m long and 6 cm wide, straight up its line.
 		const strip = prototypeOf(
@@ -740,6 +766,23 @@ describe('the card levels', () => {
 		}
 	});
 
+	it("grows a card further where the record asks, inside the leaf form's hull", () => {
+		const asked = {
+			...mesh,
+			record: { ...record, lod: { ...record.lod, cardGrow: 2 } },
+		};
+		const plain = cardMesh(mesh, 1);
+		const grown = cardMesh(asked, 1);
+		// The first card's quad: its first two corners are its plane's left and right edges.
+		const width = (arrays: { positions: Float32Array }) =>
+			Math.hypot(
+				(arrays.positions[3] as number) - (arrays.positions[0] as number),
+				(arrays.positions[4] as number) - (arrays.positions[1] as number),
+				(arrays.positions[5] as number) - (arrays.positions[2] as number),
+			);
+		expect(width(grown)).toBeGreaterThan(width(plain) * 1.01);
+	});
+
 	it('draws no card stalk where the record asks for none', () => {
 		const plain = cardMesh(mesh, 1);
 		expect(planeTriangles(plain)).toBe(drawnRows(1).length * 6);
@@ -796,8 +839,17 @@ describe('the card levels', () => {
 		expect(stalks).toBe(stretched * 4);
 	});
 
-	it('reaches the carried foliage only where the record asks', () => {
-		const stalked = { ...record, lod: { ...record.lod, cardStalk: 1, cardStalkToFoliage: false } };
+	it("joins a marked card's stalk to the wood and to the card, as the record asks", () => {
+		// The marker names the line's width; the join is what this test proves, so both sides name it.
+		const stalked = {
+			...record,
+			lod: {
+				...record.lod,
+				cardStalk: 1,
+				cardStalkWidth: true,
+				cardStalkToFoliage: false,
+			},
+		};
 		const reaching = { ...stalked, lod: { ...stalked.lod, cardStalkToFoliage: true } };
 		const off = cardMesh({ ...mesh, record: stalked }, 1);
 		const on = cardMesh({ ...mesh, record: reaching }, 1);
