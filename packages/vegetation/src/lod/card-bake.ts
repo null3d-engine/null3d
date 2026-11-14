@@ -449,10 +449,28 @@ function cardPlanes(
 			);
 		const faceCentre = placed(mid[0] as number, tip ? dot(tip, thin) : (mid[2] as number));
 		const edgeCentre = placed(tip ? dot(tip, wide) : (mid[0] as number), mid[2] as number);
-		const indices = new Uint32Array(group.length * 3);
-		group.forEach((t, i) => {
-			for (let j = 0; j < 3; j++) indices[i * 3 + j] = mesh.indices[t * 3 + j] as number;
-		});
+		// Each leaf pictured once, on the plane it faces most: a leaf turned edge-on to the face
+		// plane shows on the edge plane, as it shows edge-on from the face's side on the plant. The
+		// stretch's wood is pictured on both, as a stem shows from every side.
+		const faceTriangles: number[] = [];
+		const edgeTriangles: number[] = [];
+		for (const t of group) {
+			const ia = mesh.indices[t * 3] as number;
+			const ib = mesh.indices[t * 3 + 1] as number;
+			const ic = mesh.indices[t * 3 + 2] as number;
+			const a = vertexAt(mesh, ia);
+			const b = vertexAt(mesh, ib);
+			const c = vertexAt(mesh, ic);
+			const n = cross(
+				[b[0] - a[0], b[1] - a[1], b[2] - a[2]],
+				[c[0] - a[0], c[1] - a[1], c[2] - a[2]],
+			);
+			const leaf = leafSurface(mesh.colors[ia * 4 + 2] as number);
+			const toFace = Math.abs(dot(n, thin));
+			const toEdge = Math.abs(dot(n, wide));
+			if (!leaf || toFace >= toEdge) faceTriangles.push(ia, ib, ic);
+			if (!leaf || toEdge > toFace) edgeTriangles.push(ia, ib, ic);
+		}
 		const span = [k / cuts, (k + 1) / cuts] as const;
 		const up = along.map((value) => value * (half[1] as number));
 		// The face: across the piece's width and along its line; the edge: across its depth.
@@ -466,7 +484,7 @@ function cardPlanes(
 				normal: unit(cross(faceRight, up), thin),
 				role: 0,
 				along: span,
-				triangles: indices,
+				triangles: Uint32Array.from(faceTriangles),
 			},
 			{
 				centre: edgeCentre,
@@ -475,7 +493,7 @@ function cardPlanes(
 				normal: unit(cross(edgeRight, up), wide),
 				role: 1,
 				along: span,
-				triangles: indices,
+				triangles: Uint32Array.from(edgeTriangles),
 			},
 		);
 	});

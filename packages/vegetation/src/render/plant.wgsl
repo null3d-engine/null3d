@@ -135,8 +135,6 @@ const HEADER_EXTRA_BANDS: i32 = 43;
 const HEADER_EXTRA_SCALES: i32 = 47;
 // An extra's stalk colour and its band's roughness, per extra in record order.
 const HEADER_EXTRA_STALKS: i32 = 51;
-// The least width in pixels that a card's stalk draws, or 0 where the record gives none.
-const HEADER_CARD_STALK: i32 = 55;
 const HEADER_SCAR: i32 = 69;
 const HEADER_SCAR_COLOUR: i32 = 70;
 /// The coarsest mip level a card's sample reads: the deepest where the species' smallest leaf cell
@@ -626,13 +624,13 @@ fn bark_lift(input: VertexInput) -> f32 {
     return (luminance - tiling.z) * tiling.w * weight;
 }
 
-/// The plant-space offset that widens a card's stalk to the record's least width on screen. The two
-/// vertices at each end of the stalk start at one point, so the vertex stage gives the line its
-/// width: it turns the width across the stalk's own direction on screen, and brings it back into
-/// the plant's space through the frame's projection and the object's transform.
+/// The plant-space offset that widens a card's stalk to the width of the twig it stands for on
+/// screen, or to the wood's least drawn width where the twig is thinner, so the stalk draws as that
+/// wood would. The two vertices at each end of the stalk start at one point, so the vertex stage
+/// gives the line its width: it turns the width across the stalk's own direction on screen, and
+/// brings it back into the plant's space through the frame's projection and the object's transform.
 fn stalk_widen(input: VertexInput, plant: vec3f) -> vec3f {
-    let least = header(HEADER_CARD_STALK).x;
-    if (least <= 0.0 || frame.resolution.x <= 0.0 || frame.resolution.y <= 0.0) {
+    if (frame.resolution.x <= 0.0 || frame.resolution.y <= 0.0) {
         return vec3f(0.0);
     }
     let model = object.worldMatrix;
@@ -652,9 +650,15 @@ fn stalk_widen(input: VertexInput, plant: vec3f) -> vec3f {
     }
     let side = select(-1.0, 1.0, input.uv.x > 0.5 * TEXTURE_UV_STEPS);
     let across = vec2f(-along.y, along.x) * side;
-    // Half the least width, in normalized device coordinates.
-    let ndc = across * (least * 0.5) / frame.resolution * 2.0;
+    // The twig's own half-width in pixels, from the radius the card mesh writes in the second texture
+    // coordinate, and never under half the wood's least drawn width.
     let projection = camera.projection;
+    let scale = sqrt(max(dot(model[0].xyz, model[0].xyz), 0.000001));
+    let radius = input.uv.y / TEXTURE_UV_STEPS * WOOD_RADIUS_SPAN * scale;
+    let half_own = radius * projection[1][1] * frame.resolution.y * 0.5 / clip.w;
+    let half = max(half_own, WOOD_LEAST_PIXELS * 0.5);
+    // That half-width, in normalized device coordinates.
+    let ndc = across * half / frame.resolution * 2.0;
     let view = vec3f(ndc.x * clip.w / projection[0][0], ndc.y * clip.w / projection[1][1], 0.0);
     let world_offset = (transpose(camera.view) * vec4f(view, 0.0)).xyz;
     // The object's linear part is a uniform scale and a turn, so its inverse is the transpose over
