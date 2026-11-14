@@ -1125,6 +1125,8 @@ export function speciesProblems(record: Species): string[] {
 		out.push(`lod.cardCuts.most is ${cuts.most}; a card is cut into 1 to 8 stretches`);
 	if (cuts?.cells !== undefined && cuts.cells !== 'full' && cuts.cells !== 'half')
 		out.push(`lod.cardCuts.cells is ${cuts.cells}; a stretch takes 'full' or 'half' cells`);
+	if (lod.cardGrow !== undefined && !(Number.isFinite(lod.cardGrow) && lod.cardGrow >= 1))
+		out.push(`lod.cardGrow is ${lod.cardGrow}; it is 1 or more`);
 	if (lod.impostor.views < 2 || lod.impostor.texels < 8)
 		out.push('lod.impostor needs at least 2 views across and 8 texels a view');
 	for (const [key, value] of Object.entries(lod.budget))
