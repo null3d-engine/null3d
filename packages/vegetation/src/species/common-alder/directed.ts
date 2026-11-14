@@ -14,7 +14,7 @@ import { record } from './record';
  * it: the spacing that keeps every branch end within the alder's near budget and closes the crown's
  * leaf form to stills 01, 02 and 18.
  */
-const ENDS = { pitch: 0.75 / 20, reach: 0.82 / 20 } as const;
+const ENDS = { pitch: 0.73 / 20, reach: 0.82 / 20 } as const;
 
 /** The common alder's frame. */
 export const frame: FrameSpec = {
