@@ -197,6 +197,27 @@ describe('a limb dividing into two', () => {
 		expect(found.map((f) => f.arm)).toEqual([5, 6]);
 		for (const f of found) expect(f.armRadius).toBeGreaterThan(0.5 * f.radius);
 	});
+
+	test('reads a stem that ends in two arms as one fork, with both arms', () => {
+		const b = new SkeletonBuilder();
+		const main = b.addAxis({ parent: -1, parentNode: -1, order: 0, kind: AXIS_STEM });
+		run(b, main, -1, [0, 0, 0], [0, 1, 0], 6, 0.3, 0.1);
+		const forking = b.addAxis({ parent: -1, parentNode: -1, order: 0, kind: AXIS_STEM });
+		const nodes = run(b, forking, -1, [1, 0, 0], [0, 1, 0], 5, 0.2, 0.1);
+		const top = nodes[4] as number;
+		const left = b.addAxis({ parent: forking, parentNode: top, order: 1, kind: AXIS_LIMB });
+		run(b, left, top, [0.95, 4.8, 0], [-0.3, 0.7, 0], 4, 0.12, 0.2);
+		const right = b.addAxis({ parent: forking, parentNode: top, order: 1, kind: AXIS_LIMB });
+		run(b, right, top, [1.05, 4.8, 0], [0.3, 0.7, 0], 4, 0.12, 0.2);
+		const found = forks(b.finish(6)).filter((fork) => fork.node === top);
+		// The node carries one fork, not one for each arm.
+		expect(found.length).toBe(1);
+		expect(found[0]?.radius).toBeCloseTo(0.18, 6);
+		expect(found[0]?.armRadii?.map((radius) => Number(radius.toFixed(6)))).toEqual([0.12, 0.12]);
+		// The arms part to either side of the stem's line.
+		expect(found[0]?.armDirections?.[0][0] ?? 0).toBeLessThan(0);
+		expect(found[0]?.armDirections?.[1][0] ?? 0).toBeGreaterThan(0);
+	});
 });
 
 describe("the stem's first division", () => {
