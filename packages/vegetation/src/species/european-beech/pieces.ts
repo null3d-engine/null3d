@@ -182,7 +182,10 @@ export const PIECES: readonly PieceRule[] = [
 		name: 'branch-end',
 		attitude: 'level',
 		variants: 2,
-		scale: LEAF / LEAF_SHARE,
+		// The photograph's own cutting, 519 by 408 px at the tool's 640, is 1.272 wide over tall as
+		// still 21's piece is, but it reads 29 per cent larger than the picture at picture 09's
+		// frame: the piece stands at 0.776 of the size its leaf share alone gives.
+		scale: (LEAF / LEAF_SHARE) * 0.776,
 		// The turning video of the cut branch: edge on it is 0.24 as wide as face on.
 		depth: 13,
 		// Every bud draws as a three-sided cone at the high tier: a bud is a few pixels wide in the
