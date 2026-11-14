@@ -9,6 +9,16 @@
 // Parts the pictures show that this record does not draw: the rhizome (picture 14), which shows only
 // where the ground is cut; the hollow culm and its wall (picture 20), which shows only on a cut culm;
 // and the leaf litter round the foot (pictures 06 and 19), a stand's ground.
+//
+// Reference conflict, the crown's openness: picture 01 shows a fuller crown than pictures 02 and 18,
+// which show airy vases of separated fans. The drawing stands 0.05 open at 01 against the first and
+// 0.15 to 0.20 closed at 02 and 18 against the others, and every opening lever moves all three
+// together. The CPU preview's own pairs, enclosed sky at the first card level and the leaf form
+// (photographs 0.127, 0.376 and 0.206 by the same rule): base 01 0.176 and 0.223, 02 0.171 and
+// 0.224, 18 0.199 and 0.246; the full and whip pairs' sub-branch count from four to three 0.212 and
+// 0.264, 0.210 and 0.257, 0.246 and 0.288; the whips alone from four to two 0.220 and 0.260, 0.215
+// and 0.255, 0.254 and 0.292. The three stills cannot be met by one crown, so the eye decides; the
+// sub-branch count of four to three is the candidate, its move the smallest.
 import type { Species } from '../../core/record';
 import { PIECES } from './pieces';
 import { record } from './record';
