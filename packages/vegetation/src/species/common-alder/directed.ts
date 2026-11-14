@@ -79,8 +79,18 @@ export const frame: FrameSpec = {
 				along: [0.238, 0.975],
 				stagger: 0.25,
 				// Stills 07, 17 and 03: single, at clearly different heights, on every side.
-				around: 'spiral',
-				jitter: 8,
+				// Still 30: the photograph's lowest sixth carries more of its mass right of the trunk, and
+				// still 02's lowest sixth is close to even. The two long lowest limbs are placed for that:
+				// the lower stands square to the landmark view's right, and its neighbour stands left and
+				// away, which reads right of the trunk at the profile view. Every other limb keeps the
+				// degree its place in the spiral gave it, and each is stated so the crown's sides hold
+				// from seed to seed.
+				around: [
+					34.71, 0, 200, 91.13, -125.82, 9.96, 143.61, -71.33, 62.34, -168.15, -19.54, 106.98,
+					-111.77, 25.54, 169.13, -60.17, 79.23, -147.27, 2.41, 138.1, -87.03, 42.57, -177.04,
+					-38.47,
+				],
+				jitter: 0,
 				// Stills 30, 18 and 17: the lowest leave at 70 to 85 degrees from plumb, the middle at
 				// 60 to 70 and the upper at 40 to 55. Still 30: the lowest two end a little below the
 				// height they leave at.
