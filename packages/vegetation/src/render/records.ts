@@ -122,8 +122,6 @@ export const HEADER = {
 	 * hold the others' in record order.
 	 */
 	extraStalks: 51,
-	/** The least width in pixels that a card's stalk draws, or 0 where the record gives none. */
-	cardStalk: 55,
 	/** Young bark: the tint its thin wood takes, where the record gives one. */
 	youngTint: 56,
 	/**
@@ -419,7 +417,6 @@ export function speciesHeader(
 		texel(header, HEADER.winterReflectance, [...winterLeaves.reflectance, 1]);
 		texel(header, HEADER.winterTransmittance, [...winterLeaves.transmittance, 0]);
 	}
-	texel(header, HEADER.cardStalk, [record.lod.cardStalk ?? 0, 0, 0, 0]);
 	texel(header, HEADER.cardCoverage, [record.shoots?.placement.cardCoverage ?? 1, 0, 0, 0]);
 	const scar = record.base?.scar;
 	texel(

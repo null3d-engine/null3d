@@ -13,6 +13,7 @@ import { OAK_MANIFEST, oakRecord, testKit } from '../leaf/oak.test-support';
 import type { UncardedPrototype } from '../leaf/shoot';
 import { SURFACE_LEAF, SURFACE_PIECE, SURFACE_STEM } from '../leaf/writer';
 import { record as oak } from '../species/pedunculate-oak/record';
+import { WOOD_RADIUS_RANGE } from '../wood/wood-mesh';
 import {
 	bakeCards,
 	bakeCell,
@@ -702,24 +703,38 @@ describe('the card levels', () => {
 		for (let r = 0; r < rows.count; r++) if (flags[r] === 1) out.push(r);
 		return out;
 	};
+	/** A level's card plane triangles, leaving out its stalks' lines. */
+	const planeTriangles = (arrays: { indices: ArrayLike<number>; uvs1: ArrayLike<number> }) => {
+		let count = 0;
+		for (let t = 0; t < arrays.indices.length; t += 3)
+			if (Math.abs((arrays.uvs1[(arrays.indices[t] as number) * 2 + 1] as number) - 0.75) >= 1e-6)
+				count++;
+		return count;
+	};
 
 	it("draws each row's three planes at the first level", () => {
 		const first = cardMesh(mesh, 1);
-		expect(first.indices.length / 3).toBe(drawnRows(1).length * 6);
+		expect(planeTriangles(first)).toBe(drawnRows(1).length * 6);
 		for (let i = 0; i < first.uvs.length; i++) {
 			expect(first.uvs[i]).toBeGreaterThanOrEqual(0);
 			expect(first.uvs[i]).toBeLessThanOrEqual(1);
 		}
 	});
 
-	it("draws each card's stalk only where the record gives a least width", () => {
+	it('draws no card stalk where the record asks for none', () => {
 		const plain = cardMesh(mesh, 1);
+		expect(planeTriangles(plain)).toBe(drawnRows(1).length * 6);
 		expect(plain.indices.length / 3).toBe(drawnRows(1).length * 6);
-		const stalked = cardMesh(
-			{ ...mesh, record: { ...record, lod: { ...record.lod, cardStalk: 1 } } },
-			1,
-		);
+	});
+
+	it("draws each card's stalk where the record asks, at its twig's own radius", () => {
+		const asked = {
+			...mesh,
+			record: { ...record, lod: { ...record.lod, cardStalk: 1 } },
+		};
+		const stalked = cardMesh(asked, 1);
 		const drawn = drawnRows(1);
+		const thickest = Math.max(...mesh.skeleton.radius);
 		let stretched = 0;
 		for (const r of drawn) {
 			const bx = (rows.back?.[r * 3] as number) ?? 0;
@@ -735,6 +750,10 @@ describe('the card levels', () => {
 			if (Math.abs((stalked.uvs1[v * 2 + 1] as number) - 0.75) >= 1e-6) continue;
 			stalks++;
 			expect([0, 1]).toContain(stalked.uvs[v * 2] as number);
+			// The second texture coordinate holds the twig's radius over the wood's radius span.
+			const radius = (stalked.uvs[v * 2 + 1] as number) * WOOD_RADIUS_RANGE;
+			expect(radius).toBeGreaterThan(0);
+			expect(radius).toBeLessThanOrEqual(thickest);
 			expect(
 				Math.hypot(
 					stalked.normals[v * 3] as number,
@@ -747,7 +766,7 @@ describe('the card levels', () => {
 	});
 
 	it('reaches the carried foliage only where the record asks', () => {
-		const stalked = { ...record, lod: { ...record.lod, cardStalk: 1 } };
+		const stalked = { ...record, lod: { ...record.lod, cardStalk: 1, cardStalkToFoliage: false } };
 		const reaching = { ...stalked, lod: { ...stalked.lod, cardStalkToFoliage: true } };
 		const off = cardMesh({ ...mesh, record: stalked }, 1);
 		const on = cardMesh({ ...mesh, record: reaching }, 1);
@@ -809,7 +828,7 @@ describe('the card levels', () => {
 		const second = cardMesh(mesh, 2);
 		const keeps = cardRows(mesh, 2);
 		const drawn = new Set(drawnRows(2));
-		expect(second.indices.length / 3).toBe(drawn.size * 6);
+		expect(planeTriangles(second)).toBe(drawn.size * 6);
 		const rim = foliageHull(mesh).rim;
 		expect(rim.some((flag) => flag === 1)).toBe(true);
 		// Each step of two rows keeps its own row, or the row of the rim that stands in its place.
@@ -844,7 +863,7 @@ describe('the card levels', () => {
 				if ((rows.order[r] as number) % every !== 0)
 					expect([share, r, (keeps[r] as number) > 0]).toEqual([share, r, rim[r] === 1]);
 			}
-			expect(level.indices.length / 3).toBe(drawn * 6);
+			expect(planeTriangles(level)).toBe(drawn * 6);
 		}
 		expect(cardKeep(0, 2, 0.5)).toBe(2);
 		expect(cardKeep(2, 2, 0.5)).toBe(0);
