@@ -77,6 +77,45 @@ function strand(
 /** The hook of a strand that leaves a level branch: it starts a little above level. */
 const SIDE_HOOK = { angle: 105, length: 0.045 } as const;
 
+/** The spray's own twig and the strands that hang from it. */
+const SPRAY_OWN = strand(0.45, 0.06, { angle: 20, length: 0.05 }, 0.004);
+const SPRAY_STRAND = strand(0.31, 0.07, SIDE_HOOK);
+/**
+ * A short branch with strands hanging along it. Still 09: a branch that leaves a little below level
+ * and bends down, leafy along its outer half, with a strand hanging from it each eight to ten
+ * centimetres, five to seven and a half leaf lengths long, the nearest its foot the longest. Still
+ * 21: each arm of the cut branch ends the same way. A crown carries one at each socket, and its
+ * length is kept short, since a piece's length sets how far off the nearest level draws it.
+ */
+const SPRAY: PieceRule = {
+	name: 'spray',
+	attitude: 'along',
+	leafDroop: 'plane',
+	variants: 3,
+	stem: {
+		...SPRAY_OWN,
+		// Still 09: the branch's own leaves stand on its outer half, past the strands' feet.
+		...(SPRAY_OWN.leaves ? { leaves: { ...SPRAY_OWN.leaves, from: 0.5 } } : {}),
+		droop: 30,
+		sides: [
+			...(SPRAY_OWN.sides ?? []),
+			{
+				// Each strand leaves the branch's flank and turns down to hang.
+				stem: { ...SPRAY_STRAND, droop: 110, droopOver: [0, 0.3] },
+				gap: 0.09,
+				from: 0.15,
+				to: 0.95,
+				arrangement: 'alternate',
+				angle: { mean: 60, spread: 10 },
+				lengthAlong: [
+					[0, 1.2],
+					[1, 0.8],
+				],
+			},
+		],
+	},
+};
+
 /** The silver birch's pieces. */
 export const PIECES: readonly PieceRule[] = [
 	// Still 09: the strands along a side branch are five to seven and a half leaf lengths long,
@@ -125,6 +164,7 @@ export const PIECES: readonly PieceRule[] = [
 		variants: 3,
 		stem: strand(0.62, 0.2, { angle: 150, rise: 0.03, length: 0.12 }, 0.002),
 	},
+	SPRAY,
 ];
 
 /**

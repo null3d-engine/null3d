@@ -2312,11 +2312,7 @@ export function growFrame(input: GrowInput): MacroSkeleton {
 	const tiltFrom = unitAt(seed, salt, input.variant, Purpose.Turn, 1);
 	frameSockets(plan).forEach((socket, k) => {
 		const wood = written[socket.axis] as Written;
-		quatFromFrame(
-			socket.heading,
-			Math.abs(socket.heading[1]) > 0.99 ? [1, 0, 0] : [0, 1, 0],
-			frame,
-		);
+		socketFrame(socket, turn?.out, frame);
 		if (turn) {
 			const share = (from: number, step: number): number => ((from + k * step) % 1) * 2 - 1;
 			quatAxisAngle([0, 1, 0], radians(share(rollFrom, SPREAD_ROLL) * turn.roll), spin);
@@ -2339,6 +2335,36 @@ export function growFrame(input: GrowInput): MacroSkeleton {
 		});
 	});
 	return builder.finish(plan.crownBase);
+}
+
+/**
+ * Writes the frame a socket's piece stands in before its turn: its line along the socket's heading
+ * and its upper face toward the sky. With `out`, the line tips that many degrees down from the
+ * heading, which runs out of the patch, so the piece's upper face leans out of the patch and up, as a
+ * crown's outer leaves turn their upper faces to the light.
+ */
+function socketFrame(socket: FrameSocket, out: number | undefined, frame: Float32Array): void {
+	const [hx, hy, hz] = socket.heading;
+	const sky: Vector3 = Math.abs(hy) > 0.99 ? [1, 0, 0] : [0, 1, 0];
+	// The way down square to the heading; a plumb heading has none, and keeps its face to the sky.
+	const dx = hx * hy;
+	const dy = hy * hy - 1;
+	const dz = hz * hy;
+	const down = Math.sqrt(dx * dx + dy * dy + dz * dz);
+	if (out === undefined || down < 1e-3) {
+		quatFromFrame(socket.heading, sky, frame);
+		return;
+	}
+	const a = radians(out);
+	const c = cos(a);
+	const s = sin(a);
+	const line = unit(c * hx + (s * dx) / down, c * hy + (s * dy) / down, c * hz + (s * dz) / down);
+	const toward: Vector3 = [
+		s * hx - (c * dx) / down,
+		s * hy - (c * dy) / down,
+		s * hz - (c * dz) / down,
+	];
+	quatFromFrame(line, toward, frame);
 }
 
 /**
