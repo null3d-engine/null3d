@@ -169,10 +169,10 @@ export const directed: Species = {
 		// already make the foot 0.296 of the height across at the ground, so the lobes ridge it
 		// rather than widen it.
 		...(foot.buttress
-			? { buttress: { ...foot.buttress, lobes: { mean: 17, spread: 1 }, amount: 0.15 } }
+			? { buttress: { ...foot.buttress, lobes: { mean: 17, spread: 1 }, amount: 0.06 } }
 			: {}),
 		// Still 01: the foot is 0.296 of the height across at the ground and 0.173 at 0.06 of the
 		// height, on its root lobes.
-		flare: { amount: 0.56, height: 1.2 },
+		flare: { amount: 0.15, height: 0.8 },
 	},
 };
