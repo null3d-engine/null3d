@@ -197,10 +197,6 @@ export const record: Species = {
 		// A piece's card first shows where the piece spans 24 pixels, so a cell of 32 texels holds
 		// it at every tier; a tree leaf's 64 would hold four times the texels for no pixel more.
 		cardCell: { low: 32, medium: 32, high: 32, ultra: 32 },
-		// A blade and a flowering stem are long and narrow, so one square cell holds a stem about a
-		// texel wide and its cover falls under the cut; each stretch takes cells of its own instead,
-		// which keeps the stem's line to the head that hangs from it.
-		cardCuts: { most: 8, cells: 'half' },
 		woodOrders: [0, 0],
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
