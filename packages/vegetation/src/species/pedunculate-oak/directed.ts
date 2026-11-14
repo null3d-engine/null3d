@@ -509,11 +509,12 @@ function acorn(extra: ExtraSpec): ExtraSpec {
  * level's triangles at the finest tier. The fill's sockets stand closer than a branch end's width so
  * the crown reads closed, which the review judged better than the old oak (round
  * pedunculate-oak-0bc6547f1); that takes 11,725 rows where the old record's budget held 7,935.
- * Measured: 11,287,017, 11,435,505, 11,631,759 and 11,877,447 bytes from low to ultra; the second
- * card level 38,273 to 42,476 triangles. The first card level, 95,793 to 119,799, keeps the record's
- * own budget.
+ * Measured: 12,049,487, 12,196,112, 12,394,235 and 12,641,108 bytes from low to ultra, the merged
+ * crown's largest variant at each tier; each cap sits a twentieth above its figure. The second card
+ * level measures 40,469 to 42,992 triangles. The first card level, 107,111 to 122,840, keeps the
+ * record's own budget.
  */
-const VARIANT_BYTES = { low: 11_860_000, medium: 12_010_000, high: 12_220_000, ultra: 12_480_000 };
+const VARIANT_BYTES = { low: 12_660_000, medium: 12_810_000, high: 13_020_000, ultra: 13_280_000 };
 const LEVEL_2_TRIANGLES = 44_600;
 
 /**

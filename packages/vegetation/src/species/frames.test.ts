@@ -9,7 +9,7 @@ import { speciesProblems } from '../core/check';
 import type { MacroSkeleton } from '../core/graph';
 import { hashBytes } from '../core/hash';
 import { quatRotate, type Vector3 } from '../core/math';
-import type { Species } from '../core/record';
+import type { Framed, Species } from '../core/record';
 import { loadSpecies } from '../core/registry';
 import { curveAt, spreadMean } from '../core/types';
 import {
@@ -717,10 +717,14 @@ for (const held of HELD)
 					expect(table.lobe[b]).toBe(socket.patch);
 					expect(table.rank[b]).toBe(socket.rank);
 					// Shoot rows are the plant's own height over the species' middle height; a branch
-					// piece is the size its leaves make it.
+					// piece is the size its leaves make it, or the size the record names for its crown.
 					const growth = held.directed.growth;
 					const piece = growth.model === 'frame' && growth.sockets.piece !== undefined;
-					expect(table.scale[b]).toBeCloseTo(piece ? 1 : plan.scale / held.heightMean, 5);
+					const named =
+						growth.model === 'frame' && growth.sockets.scale !== undefined
+							? growth.sockets.scale
+							: 1;
+					expect(table.scale[b]).toBeCloseTo(piece ? named : plan.scale / held.heightMean, 5);
 					expect(skeleton.buds.position[b * 3 + 1]).toBeCloseTo(socket.at[1], 4);
 					// The bud runs along its socket's heading, or within the tilt and the tip the record
 					// states.
@@ -936,6 +940,84 @@ describe('a species entry that gives its frame', () => {
 			expect(module.record.growth.model).toBe('frame');
 			expect(module.record === held?.directed).toBe(true);
 		});
+});
+
+describe('the size a frame socket carries its piece at', () => {
+	/** One stem with three boughs whose ends are sockets, small enough to grow in a moment. */
+	const spec: FrameSpec = {
+		outline: evenOutline(0.62, 1),
+		stems: {
+			name: 'trunk',
+			count: 1,
+			width: [
+				[0, 0.09],
+				[1, 0.06],
+			],
+			length: { share: 0.55 },
+			sway: 2,
+			elbows: 2,
+			children: [
+				{
+					name: 'bough',
+					role: 'branch',
+					count: 3,
+					along: [0.4, 1],
+					around: 'spiral',
+					angle: 50,
+					from: 'parent',
+					length: { share: 0.28 },
+					radius: 0.4,
+					taper: 0.4,
+					sway: 4,
+					elbows: 2,
+					patch: { kind: 'clump', width: 0.2, depth: 0.12 },
+				},
+			],
+		},
+	};
+	const sockets = (extra: {
+		readonly piece?: string;
+		readonly scale?: number;
+	}): Framed['sockets'] => ({
+		rows: { mean: 4, spread: 1 },
+		fan: 45,
+		...extra,
+	});
+	const grown = (named: { readonly piece?: string; readonly scale?: number }) =>
+		growFrame({
+			record: framedRecord(europeanBeechRecord, spec, sockets(named)),
+			seed: 11,
+			variant: 0,
+			season: 'summer',
+		});
+
+	it("stands every piece at its rule's own size unless the record names one", () => {
+		const own = grown({ piece: 'branch-end' });
+		const scale = own.buds.sockets?.scale;
+		expect(scale?.length).toBeGreaterThan(0);
+		for (const piece of scale ?? []) expect(piece).toBe(1);
+		const named = grown({ piece: 'branch-end', scale: 1.25 });
+		expect(named.buds.sockets?.scale.length).toBe(scale?.length);
+		for (const piece of named.buds.sockets?.scale ?? []) expect(piece).toBeCloseTo(1.25, 6);
+	});
+
+	it('is inert on a plant of shoot rows, which names no piece', () => {
+		const rows = grown({});
+		const named = grown({ scale: 1.25 });
+		expect(rows.buds.sockets?.scale.length).toBeGreaterThan(0);
+		expect(named.buds.sockets?.scale).toEqual(rows.buds.sockets?.scale);
+	});
+
+	it('is refused by the record check with a size of zero or less', () => {
+		const framed = framedRecord(
+			europeanBeechRecord,
+			spec,
+			sockets({ piece: 'branch-end', scale: 0 }),
+		);
+		expect(
+			speciesProblems(framed).some((problem) => problem.includes('growth.sockets.scale')),
+		).toBe(true);
+	});
 });
 
 describe('the crown test, on crowns made by hand', () => {
