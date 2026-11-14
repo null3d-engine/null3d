@@ -202,6 +202,11 @@ export const record: Species = {
 			shadePrune: 0.1,
 			skyward: 0.0,
 			scale: { mean: 1.3, spread: 0.15 },
+			// Row 6 is open: at the first card level picture 01's enclosed sky reads 0.050 against
+			// the photograph's 0.110. A third of the leaf groups giving way closes it to 0.0869, but
+			// the reviewer refused that value: it closes the figure only by shrinking the crown
+			// (shape overlap 0.80 to 0.67, width error 0.052 to 0.138, colour difference 7.1 to 11.7
+			// at 01 and 6.4 to 10.1 at 02) and reads as a dense ball on a thin trunk. No value is set.
 		},
 	},
 	foliage: {

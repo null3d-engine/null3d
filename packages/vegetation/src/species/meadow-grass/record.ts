@@ -18,16 +18,21 @@ export const record: Species = {
 	latin: 'Poa pratensis',
 	form: 'loose tuft of flat blades under slender stems with open panicles',
 	// The fact sheet: flowering stems 30 to 60 cm, the tuft 15 to 30 cm in leaf. Still 01 stands the
-	// tallest head at twice the leaf mound's height.
+	// tallest head at about twice the leaf mound's height, still 02 at 1.8 times.
 	size: { height: { mean: 0.5, spread: 0.08 }, aspect },
 	growth: {
 		model: 'tuft',
-		// Still 01: the leaf mound is 262 px tall under heads that reach 525 px.
-		mound: 0.5,
+		// Still 01: the leaf mound is 262 px tall under heads that reach 525 px; still 02's vase of
+		// blades stands taller, about 0.55 of the plant's height.
+		mound: 0.55,
 		// Still 01: twelve flowering stems. Still 04 shows about forty-five blades at its fullest
 		// ring, but from above only the outer ring shows: still 01 shows forty to fifty blades in
 		// the tuft's front alone, and sixteen shoots of three or four blades drew 0.85 of sky inside
 		// its outline against the photograph's 0.49. Still 01's cover asks for three times that.
+		// With the narrowed poses below, still 01's enclosed sky reads 0.78 at the first card level
+		// against the photograph's 0.49, a named limit: a crown of seventy-two shoots reads 0.77, so
+		// the cover the gap wants cannot come from the shoot count while the crown keeps the stills'
+		// width.
 		shoots: { mean: 48, spread: 9 },
 		// Still 01: the sheath bases span 96 px at the soil against a mound of 262 px.
 		stool: 0.36,
@@ -36,46 +41,56 @@ export const record: Species = {
 		sheath: { height: 0.14, width: 0.035 },
 		// Stills 07 and 15: the sheaths are pale straw-green from foot to collar.
 		sheathColour: { foot: [0.366, 0.38, 0.309], collar: [0.366, 0.38, 0.309], reach: 0.85 },
-		// The fact sheet: two to four blades a tiller; still 22 shows three or four.
-		blades: { mean: 3.2, spread: 0.6 },
+		// The fact sheet: two to four blades a tiller; still 22 shows three or four, and still 02's
+		// vase of many blades asks for the upper part of that.
+		blades: { mean: 3.6, spread: 0.6 },
 		// The fact sheet and stills 22 and 23: blades in two ranks.
 		ranks: 2,
 		// Still 01, read on a 2.6 times crop, in mound heights. The inner blades stand within 10
 		// degrees of plumb; the middle ones leave at 20 to 30 degrees from plumb and end 0.6 to 0.8
 		// high; the outer ones leave at 45 to 60 degrees, arch at 0.4 to 0.5 and end 0.1 to 0.35 above
-		// the soil, 0.7 to 0.8 out. The baseline drew no blade arching low, so the outer pose takes
-		// the low end: 0.12 above the soil, 0.8 out.
+		// the soil, 0.7 to 0.8 out. Still 02's vase is taller: most of its blades reach the vase's
+		// top at about half the plant's height, so the inner blades end at the mound's top and the
+		// middle ones at 0.85 of it, where 0.72 drew a vase a third of the height. The outer pose
+		// reaches 0.58, short of still 01's traced 0.7 to 0.8, because the whole-plant stills stand
+		// the plant 1.26 times as tall as wide and the crown must keep that width; the turning video's
+		// wider plant is recorded as a reference conflict.
 		poses: [
-			{ share: 0.4, leave: 85, apex: 0.95, drop: 0, reach: 0.08 },
-			{ share: 0.35, leave: 65, apex: 0.72, drop: 0.02, reach: 0.4 },
-			{ share: 0.25, leave: 38, apex: 0.45, drop: 0.33, reach: 0.8 },
+			{ share: 0.4, leave: 85, apex: 1, drop: 0, reach: 0.08 },
+			{ share: 0.35, leave: 65, apex: 0.85, drop: 0.02, reach: 0.4 },
+			{ share: 0.25, leave: 38, apex: 0.45, drop: 0.15, reach: 0.58 },
 		],
 		bladeSpread: 0.12,
 		stalks: {
-			// Stills 01, 04 and 17: twelve stems.
-			count: { mean: 12, spread: 1 },
+			// Stills 01 and 02: some twenty flowering stems, whose heads overlap into one crown;
+			// stills 04 and 17 show about twelve from the sides they look from.
+			count: { mean: 20, spread: 2 },
 			// The fact sheet: in flower in late spring and early summer.
 			seasons: ['blossom', 'summer'],
-			// Still 01: the heads' tips spread evenly from 1.45 to 2.0 of the mound's height.
-			top: [1.45, 2],
-			// Still 01: the middle stem is plumb and the rim's lean up to 35 degrees.
-			lean: [0, 35],
+			// Still 01: the heads' tips spread evenly from 0.725 to 1.0 of the plant's height, 1.32 to
+			// 1.82 of the mound's.
+			top: [1.32, 1.82],
+			// Still 01: the middle stem is plumb and the rim's lean up to 35 degrees. The stills'
+			// height over width of 1.26 sets the rim's lean at 22 degrees, short of the traced 35, so
+			// the heads' spread stays inside the stills' width.
+			lean: [0, 22],
 			// Still 01: a stem is straight, with a slight outward curve over its upper part.
 			bow: { from: 0.5, turn: [4, 12] },
 			// Still 01: a stem is 2 to 3 px across against a mound of 262 px.
 			width: 0.012,
 			sides: 5,
-			// Still 01: a head 0.44 of the mound's height long and 0.3 wide: three or four whorls,
-			// two branches showing at each, each branch ending in four to six spikelets. The fact
-			// sheet: three to five branches a whorl and a spikelet of 4 to 6 mm.
+			// Still 02: a head is an open panicle 0.4 of the mound's height long and 0.22 wide at its
+			// lowest whorl, six or seven whorls of short branches leaving the stem at about 45 degrees
+			// with sky inside the head, each carrying a few plump spikelets. The fact sheet: three to
+			// five branches a whorl and a spikelet of 4 to 6 mm.
 			head: {
 				kind: 'panicle',
-				length: 0.44,
-				width: 0.3,
-				whorls: 4,
-				branches: 4,
+				length: 0.4,
+				width: 0.22,
+				whorls: 7,
+				branches: 3,
 				angle: 45,
-				spikelets: 5,
+				spikelets: 4,
 				spikelet: 0.03,
 			},
 		},
@@ -94,12 +109,12 @@ export const record: Species = {
 		kind: 'grass-blade',
 		blade: {
 			// Stills 12 and 24: blades of even width that close in a short blunt hood. Still 01: a
-			// blade is as long as the mound is tall and 9 px across against a mound of 262 px, so
-			// 0.034 of its length. Still 23, the full-size studio shoot, shows four full blades read
+			// blade is 9 px across against a mound of 262 px, 0.034 of the mound's height, and still
+			// 02's blades arch up and out to the vase's top, so along its curve a blade is longer
+			// than the mound is tall. Still 23, the full-size studio shoot, shows four full blades read
 			// base to tip at 0.04 to 0.05 of their length wide, so the pictures' broad blade holds
-			// over the fact sheet's 2 to 4 mm; both figures stand for the owner. A 3 mm blade drew the
-			// tuft as hairs at the whole view.
-			length: { mean: 0.26, spread: 0.03 },
+			// over the fact sheet's 2 to 4 mm; both figures stand for the owner.
+			length: { mean: 0.32, spread: 0.03 },
 			width: 0.0085,
 			profile: [
 				[0, 0.85],
@@ -158,6 +173,15 @@ export const record: Species = {
 		// A piece's card first shows where the piece spans 24 pixels, so a cell of 32 texels holds
 		// it at every tier; a tree leaf's 64 would hold four times the texels for no pixel more.
 		cardCell: { low: 32, medium: 32, high: 32, ultra: 32 },
+		// The plant scales to its leaf form's top, the measure its whole views were judged with, so
+		// no card change can shorten it.
+		heightAtLeafTop: true,
+		// The first card level carries two limits here until a line lighter than the young bark's
+		// tone lands. A flowering stem is thinner than a pixel, so its card loses its cover and the
+		// panicle reads as a piece in air: 13 components with 12 floating. The card's twig line
+		// would join them, and it does join eight of them, but on this pale, sparse crown its dark
+		// tone pulls the mean from #9ebe78 (13.27 from the photograph) to #323a2a (32.38), so the
+		// record asks for no line.
 		woodOrders: [0, 0],
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
@@ -170,16 +194,15 @@ export const record: Species = {
 			kitBytes: { low: 821_000, medium: 1_031_000, high: 1_293_000, ultra: 1_626_000 },
 			// A plant is rows of the kit's pieces, so a variant's bytes are the same at every tier.
 			// Measured over the four variants at seed 11, in summer and in blossom: the largest reads
-			// 140,151 bytes with the root ball of stills 14 and 21 and the forty-eight shoots still
-			// 01's cover asks for, and the two card levels 1,624 and 822 triangles. Those three caps
-			// keep a twentieth above their reads, as the lead ruled. Drawn at once at the tallest
-			// view, the first variant reads 30,268 triangles at the high tier and 49,148 at the ultra,
-			// and the nearest level's cap keeps a twentieth above the ultra's read, so it holds at
-			// every tier.
-			variantBytes: { low: 147_200, medium: 147_200, high: 147_200, ultra: 147_200 },
-			lod0Triangles: 51_610,
-			lod1Triangles: 1_706,
-			lod2Triangles: 864,
+			// 153,687 bytes with the root ball of stills 14 and 21, the forty-eight shoots still 01's
+			// cover asks for and the twenty flowering stems of stills 01 and 02; the two card levels
+			// read 1,534 and 762 triangles. Drawn at once at the tallest view, the first variant reads
+			// 43,682 triangles at the high tier and 66,612 at the ultra. The caps stand a twentieth or
+			// more above the reads, the nearest level's above the ultra's draw, as the lead ruled.
+			variantBytes: { low: 162_600, medium: 162_600, high: 162_600, ultra: 162_600 },
+			lod0Triangles: 71_710,
+			lod1Triangles: 1_914,
+			lod2Triangles: 977,
 			downloadBytes: 350_000,
 			downloadHalfBytes: 120_000,
 			growMilliseconds: 150,

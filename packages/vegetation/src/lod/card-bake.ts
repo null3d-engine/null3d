@@ -23,7 +23,7 @@
 // the parts thinner than a texel among them, so the mip levels average to the shoot's own cover. Last, each cell
 // measures how fast the coverage it must reach to draw has to fall as the GPU's mip levels average
 // it, so a far card keeps the cover the near one draws.
-import type { CardCell, PrototypeArrays } from '../asset';
+import type { CardCell, MeshArrays } from '../asset';
 import { atan2, cos, length3, pow, sin } from '../core/math';
 import type { Species } from '../core/record';
 import { barkColourOf, type TextureManifest } from '../core/textures';
@@ -95,7 +95,7 @@ interface PlannedPlane extends CardPlane {
 }
 
 /** The three planes of a prototype through the middle of its bounds, each across the whole of it. */
-function planesOf(mesh: PrototypeArrays): PlannedPlane[] {
+function planesOf(mesh: MeshArrays): PlannedPlane[] {
 	const lo = [Infinity, Infinity, Infinity];
 	const hi = [-Infinity, -Infinity, -Infinity];
 	for (let i = 0; i < mesh.positions.length; i += 3)
@@ -174,7 +174,7 @@ function unit(v: readonly number[], fallback: readonly number[]): [number, numbe
 }
 
 /** A vertex's place. */
-function vertexAt(mesh: PrototypeArrays, v: number): [number, number, number] {
+function vertexAt(mesh: MeshArrays, v: number): [number, number, number] {
 	return [
 		mesh.positions[v * 3] as number,
 		mesh.positions[v * 3 + 1] as number,
@@ -187,7 +187,7 @@ function vertexAt(mesh: PrototypeArrays, v: number): [number, number, number] {
  * of their spread in the plane square to the line.
  */
 function crossAxes(
-	mesh: PrototypeArrays,
+	mesh: MeshArrays,
 	vertices: Iterable<number>,
 	line: readonly number[],
 ): { wide: [number, number, number]; thin: [number, number, number] } {
@@ -234,7 +234,7 @@ function crossAxes(
  * droops; any other prototype is taken by distance from its attach point, which grows from base to
  * tip along a strand, a frond or a twig.
  */
-function pieceLine(mesh: PrototypeArrays): PieceLine {
+function pieceLine(mesh: MeshArrays): PieceLine {
 	const triangles = mesh.indices.length / 3;
 	let pieceVertices = 0;
 	for (let i = 2; i < mesh.colors.length; i += 4)
@@ -384,8 +384,9 @@ function pointAlong(line: PieceLine, at: number): [number, number, number] {
  */
 function cardPlanes(
 	prototype: UncardedPrototype,
-	mesh: PrototypeArrays,
+	mesh: MeshArrays,
 	most: number,
+	cutLength: number | undefined,
 ): PlannedPlane[] {
 	const triangles = mesh.indices.length / 3;
 	// A prototype only a cutting draws is drawn at the nearest level alone, so its card stays whole.
@@ -393,7 +394,7 @@ function cardPlanes(
 	const line = pieceLine(mesh);
 	const length = line.lengths[line.lengths.length - 1] as number;
 	const width = Math.max(line.width, 1e-6);
-	const long = prototype.class === 'piece' ? PIECE_LONG : SHOOT_LONG;
+	const long = cutLength ?? (prototype.class === 'piece' ? PIECE_LONG : SHOOT_LONG);
 	if (line.reach < CUT_LEAST || length < long * width) return planesOf(mesh);
 	const cuts = Math.min(most, Math.max(2, Math.round(length / width)));
 	if (cuts < 2) return planesOf(mesh);
@@ -449,10 +450,28 @@ function cardPlanes(
 			);
 		const faceCentre = placed(mid[0] as number, tip ? dot(tip, thin) : (mid[2] as number));
 		const edgeCentre = placed(tip ? dot(tip, wide) : (mid[0] as number), mid[2] as number);
-		const indices = new Uint32Array(group.length * 3);
-		group.forEach((t, i) => {
-			for (let j = 0; j < 3; j++) indices[i * 3 + j] = mesh.indices[t * 3 + j] as number;
-		});
+		// Each leaf pictured once, on the plane it faces most: a leaf turned edge-on to the face
+		// plane shows on the edge plane, as it shows edge-on from the face's side on the plant. The
+		// stretch's wood is pictured on both, as a stem shows from every side.
+		const faceTriangles: number[] = [];
+		const edgeTriangles: number[] = [];
+		for (const t of group) {
+			const ia = mesh.indices[t * 3] as number;
+			const ib = mesh.indices[t * 3 + 1] as number;
+			const ic = mesh.indices[t * 3 + 2] as number;
+			const a = vertexAt(mesh, ia);
+			const b = vertexAt(mesh, ib);
+			const c = vertexAt(mesh, ic);
+			const n = cross(
+				[b[0] - a[0], b[1] - a[1], b[2] - a[2]],
+				[c[0] - a[0], c[1] - a[1], c[2] - a[2]],
+			);
+			const leaf = leafSurface(mesh.colors[ia * 4 + 2] as number);
+			const toFace = Math.abs(dot(n, thin));
+			const toEdge = Math.abs(dot(n, wide));
+			if (!leaf || toFace >= toEdge) faceTriangles.push(ia, ib, ic);
+			if (!leaf || toEdge > toFace) edgeTriangles.push(ia, ib, ic);
+		}
 		const span = [k / cuts, (k + 1) / cuts] as const;
 		const up = along.map((value) => value * (half[1] as number));
 		// The face: across the piece's width and along its line; the edge: across its depth.
@@ -466,7 +485,7 @@ function cardPlanes(
 				normal: unit(cross(faceRight, up), thin),
 				role: 0,
 				along: span,
-				triangles: indices,
+				triangles: Uint32Array.from(faceTriangles),
 			},
 			{
 				centre: edgeCentre,
@@ -475,7 +494,7 @@ function cardPlanes(
 				normal: unit(cross(edgeRight, up), wide),
 				role: 1,
 				along: span,
-				triangles: indices,
+				triangles: Uint32Array.from(edgeTriangles),
 			},
 		);
 	});
@@ -579,15 +598,15 @@ function bandAreas(mask: Uint8Array, base: number, tip: number, bands: number): 
 	return areas;
 }
 
-/** The colours a bake reads: the manifest's means and profiles, else the record's optics. */
+/**
+ * The colours a bake reads: the leaf texture's means and profiles. The plant shader divides a card
+ * texel by its texture's mean and multiplies it by the record's reflectance, as it draws a leaf,
+ * so a leaf texel holds the texture's colour and not the reflectance. A species with no leaf
+ * texture samples a white texel, so its leaf texels hold white and the shader gives the leaf its
+ * colour from the record's optics alone.
+ */
 export function paletteOf(record: Species, manifest: TextureManifest): Palette {
 	const leaf = manifest.leaf;
-	const optics =
-		record.foliage.kind === 'blade' || record.foliage.kind === 'thick'
-			? record.foliage.leaf.optics
-			: record.foliage.kind === 'needle' || record.foliage.kind === 'fascicle'
-				? record.foliage.needle.optics
-				: undefined;
 	// A card's twigs take the young bark as the drawn wood does: its texture's mean times the
 	// record's tint of thin wood.
 	const young = manifest.bark?.young.mean;
@@ -637,8 +656,8 @@ export function paletteOf(record: Species, manifest: TextureManifest): Palette {
 		};
 	}
 	return {
-		upper: optics?.reflectance ?? [0.08, 0.16, 0.04],
-		lower: optics?.reflectanceBack ?? optics?.reflectance ?? [0.08, 0.16, 0.04],
+		upper: [1, 1, 1],
+		lower: [1, 1, 1],
 		stem,
 		...sheath,
 		profile: undefined,
@@ -648,6 +667,15 @@ export function paletteOf(record: Species, manifest: TextureManifest): Palette {
 		extras,
 		...browning,
 	};
+}
+
+/**
+ * The mesh a prototype's cards picture: a placed piece's whole mesh where it carries one, since a
+ * cut piece's tier may hold only the neck it is cut at, else the prototype's own mesh at the bake's
+ * tier.
+ */
+function bakeMeshOf(prototype: UncardedPrototype): MeshArrays {
+	return prototype.bake ?? (prototype.tiers[BAKE_TIER] as MeshArrays);
 }
 
 /**
@@ -667,7 +695,7 @@ export function bakeCards(
 ): { readonly atlas: CardAtlas; readonly cells: readonly CardCell[] } {
 	const cuts = record.lod.cardCuts;
 	const planned = prototypes.map((prototype) =>
-		cardPlanes(prototype, prototype.tiers[BAKE_TIER] as PrototypeArrays, cuts?.most ?? CUTS_MOST),
+		cardPlanes(prototype, bakeMeshOf(prototype), cuts?.most ?? CUTS_MOST, record.lod.cardCutLength),
 	);
 	// A prototype without leaves holds thin stems and buds, so its planes take half cells; so do a cut
 	// prototype's stretches, unless the record asks for whole ones.
@@ -687,7 +715,7 @@ export function bakeCards(
 	const surface = new Uint8Array(layerBytes * 2);
 	const palette = paletteOf(record, manifest);
 	const cells: CardCell[] = prototypes.map((prototype, p) => {
-		const mesh = prototype.tiers[BAKE_TIER] as PrototypeArrays;
+		const mesh = bakeMeshOf(prototype);
 		const planes = planned[p] as PlannedPlane[];
 		return {
 			planes: planes.map((plane, k) => {
@@ -921,7 +949,7 @@ export interface CardPlane {
  * where absent.
  */
 export function bakeCell(
-	mesh: PrototypeArrays,
+	mesh: MeshArrays,
 	plane: CardPlane,
 	rect: readonly [number, number, number, number],
 	size: number,
@@ -964,7 +992,7 @@ export function bakeCell(
  * value a texel of the cell, for the dither that sets the alpha after it.
  */
 function drawPlane(
-	mesh: PrototypeArrays,
+	mesh: MeshArrays,
 	triangles: ArrayLike<number>,
 	plane: CardPlane,
 	rect: [number, number, number, number],

@@ -79,14 +79,16 @@ masks of frames 1, 25, 49 and so on of the turntable.
   of 0.28 m with a 40 degree turn draws two pieces. The second is a leaf group of 41 pixels, and
   the outline holds at 0.745. No setting tried draws one piece. The oak's record sets neither field.
 - **A card draws the twig it stands on.** A card's leaves may read as a piece in air where the
-  twig under them is thinner than a pixel. A record may give `lod.cardStalk` in pixels. The card
-  then draws a line from its bud site back along the stretch to the previous bud or the parent
-  node. The vertex stage widens it to at least that many pixels across the twig's direction on
-  screen. 0 or absent, a card draws no stalk. With a clearance of 0.28 m and a turn of 40 degrees,
-  a stalk of 2 pixels brings the whole view to one piece. Its outline is 0.7469, against 0.7448
-  without the stalk. Its sky gap closes from 0.1402 to 0.1354, against the reference's 0.1145.
-  One pixel draws a broken line at that distance, so the piece stays. The other whole views close
-  by 0.001 to 0.009, and no view gains a piece.
+  twig under them is thinner than a pixel. A record asks for the line with `lod.cardStalk` at 1 or
+  more and a least width in pixels, or names `lod.cardStalkWidth` to draw the line at the twig's own
+  width instead. The card then draws a line from its bud site back along the stretch to the previous
+  bud or the parent node. The vertex stage widens it to the named least, or to the twig's width
+  floored at that least. 0 or absent, a card draws no stalk, as the oak's record asks. With a
+  clearance of 0.28 m and a turn of 40 degrees, the line brings the whole view to one piece. Its
+  outline is 0.7469, against 0.7448 without the stalk. Its sky gap closes from 0.1402 to 0.1354,
+  against the reference's 0.1145. A line narrower than the wood's least draws broken at that
+  distance, so the piece stays. The other whole views close by 0.001 to 0.009, and no view gains a
+  piece.
 - **The clearance bites only where the wood is thick.** A record may give `clearanceThickness`,
   a share of the trunk's radius from 0 to 1. Wood below it does not keep the clearance, so thin
   twigs keep their own layout. With no floor, at a clearance of 0.3 m and a turn of 30 degrees,

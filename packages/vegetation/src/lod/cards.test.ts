@@ -14,6 +14,7 @@ import { OAK_MANIFEST, oakRecord, testKit } from '../leaf/oak.test-support';
 import type { UncardedPrototype } from '../leaf/shoot';
 import { SURFACE_LEAF, SURFACE_PIECE, SURFACE_STEM } from '../leaf/writer';
 import { record as oak } from '../species/pedunculate-oak/record';
+import { WOOD_RADIUS_RANGE } from '../wood/wood-mesh';
 import {
 	bakeCards,
 	bakeCell,
@@ -190,6 +191,59 @@ describe('the card bake', () => {
 			},
 		};
 		expect(paletteOf(plain, bare).stem).toEqual([...STAND_IN_BARK]);
+	});
+
+	it('bakes white leaf texels for a species with no leaf texture, as the leaf form samples white', () => {
+		// The shader divides a card texel by its texture's mean and multiplies it by the record's
+		// reflectance. A textured species bakes the texture's own colour, so the division gives the
+		// reflectance back. A species with no leaf texture samples a white texel, so its cards must
+		// bake white too: baking the reflectance instead squares the leaf's colour and darkens the
+		// card level against the leaf form.
+		const textured = bakedKit().atlas;
+		let coloured = 0;
+		for (let i = 0; i < textured.size * textured.size; i++) {
+			if (textured.color[i * 4 + 3] !== 255) continue;
+			if ((textured.surface[i * 4 + 3] as number) < 128) continue;
+			if (textured.color[i * 4] !== 255 || textured.color[i * 4 + 1] !== 255) coloured++;
+		}
+		expect(coloured).toBeGreaterThan(100);
+		const bare = { ...OAK_MANIFEST, leaf: undefined } as TextureManifest;
+		const white = bakedKit(bare).atlas;
+		let leaves = 0;
+		let whiteTexels = 0;
+		for (let i = 0; i < white.size * white.size; i++) {
+			if (white.color[i * 4 + 3] !== 255) continue;
+			if ((white.surface[i * 4 + 3] as number) < 128) continue;
+			leaves++;
+			// A texel that a leaf covers alone holds white; one that a stem crosses holds their mean.
+			if (
+				white.color[i * 4] === 255 &&
+				white.color[i * 4 + 1] === 255 &&
+				white.color[i * 4 + 2] === 255
+			)
+				whiteTexels++;
+		}
+		expect(leaves).toBeGreaterThan(100);
+		expect(whiteTexels / leaves).toBeGreaterThan(0.9);
+	});
+
+	it("pictures a placed piece's whole mesh where it carries one", () => {
+		// A tier that holds only the small neck a piece is cut at, and the whole piece around it.
+		const neck = quads([[0.4, 0.6, 0.4, 0.6, SURFACE_LEAF]]);
+		const whole = quads([[-0.5, 0.5, -0.5, 0.5, SURFACE_LEAF]]);
+		const planesOf = (prototype: UncardedPrototype) =>
+			(
+				bakeCards(oakRecord(), OAK_MANIFEST, 'high', [prototype]).cells[0] as {
+					planes: readonly { right: readonly number[]; up: readonly number[] }[];
+				}
+			).planes;
+		const width = (planes: readonly { right: readonly number[] }[]): number =>
+			Math.hypot(...(planes[0] as { right: readonly number[] }).right);
+		const short = planesOf(prototypeOf(neck, 'piece', 1));
+		const full = planesOf({ ...prototypeOf(neck, 'piece', 1), bake: whole });
+		// The planes stand on the mesh the cards picture: the whole piece's card is wider than the
+		// neck's, though its own tier mesh is the same small one.
+		expect(width(full)).toBeGreaterThan(width(short));
 	});
 });
 
@@ -533,6 +587,32 @@ describe('the card bake along a long piece', () => {
 			.planes;
 	type CardPlanes = SpeciesKitData['prototypes'][number]['card']['planes'];
 
+	it('cuts a stouter piece where the record names a lower threshold', () => {
+		// A strip 0.3 m along and 0.12 m wide: its length over width is 2.5, under the class's own
+		// threshold for a shoot, so only a record that asks cuts it.
+		const stout = prototypeOf(
+			ribbon(
+				Array.from({ length: 13 }, (_, k) => [(k / 12) * 0.3, 0] as const),
+				0.12,
+			),
+			'long',
+			1,
+		);
+		const plain = { ...record, lod: { ...record.lod, cardCuts: { most: 4 } } };
+		const asked = {
+			...record,
+			lod: { ...record.lod, cardCuts: { most: 4 }, cardCutLength: 2 },
+		};
+		const count = (species: typeof plain) =>
+			(
+				bakeCards(species, OAK_MANIFEST, 'high', [stout]).cells[0] as {
+					planes: readonly unknown[];
+				}
+			).planes.length;
+		expect(count(plain)).toBe(3);
+		expect(count(asked)).toBeGreaterThan(3);
+	});
+
 	it('cuts a piece many times longer than wide into cards along it, each in cells of its own', () => {
 		// A strip 1.2 m long and 6 cm wide, straight up its line.
 		const strip = prototypeOf(
@@ -669,24 +749,67 @@ describe('the card levels', () => {
 		for (let r = 0; r < rows.count; r++) if (flags[r] === 1) out.push(r);
 		return out;
 	};
+	/** A level's card plane triangles, leaving out its stalks' lines. */
+	const planeTriangles = (arrays: { indices: ArrayLike<number>; uvs1: ArrayLike<number> }) => {
+		let count = 0;
+		for (let t = 0; t < arrays.indices.length; t += 3)
+			if (Math.abs((arrays.uvs1[(arrays.indices[t] as number) * 2 + 1] as number) - 0.75) >= 1e-6)
+				count++;
+		return count;
+	};
 
 	it("draws each row's three planes at the first level", () => {
 		const first = cardMesh(mesh, 1);
-		expect(first.indices.length / 3).toBe(drawnRows(1).length * 6);
+		expect(planeTriangles(first)).toBe(drawnRows(1).length * 6);
 		for (let i = 0; i < first.uvs.length; i++) {
 			expect(first.uvs[i]).toBeGreaterThanOrEqual(0);
 			expect(first.uvs[i]).toBeLessThanOrEqual(1);
 		}
 	});
 
-	it("draws each card's stalk only where the record gives a least width", () => {
+	it("grows a card further where the record asks, inside the leaf form's hull", () => {
+		const asked = {
+			...mesh,
+			record: { ...record, lod: { ...record.lod, cardGrow: 2 } },
+		};
 		const plain = cardMesh(mesh, 1);
+		const grown = cardMesh(asked, 1);
+		// The first card's quad: its first two corners are its plane's left and right edges.
+		const width = (arrays: { positions: Float32Array }) =>
+			Math.hypot(
+				(arrays.positions[3] as number) - (arrays.positions[0] as number),
+				(arrays.positions[4] as number) - (arrays.positions[1] as number),
+				(arrays.positions[5] as number) - (arrays.positions[2] as number),
+			);
+		expect(width(grown)).toBeGreaterThan(width(plain) * 1.01);
+	});
+
+	it('draws no card stalk where the record asks for none', () => {
+		const plain = cardMesh(mesh, 1);
+		expect(planeTriangles(plain)).toBe(drawnRows(1).length * 6);
 		expect(plain.indices.length / 3).toBe(drawnRows(1).length * 6);
-		const stalked = cardMesh(
-			{ ...mesh, record: { ...record, lod: { ...record.lod, cardStalk: 1 } } },
+	});
+
+	it("draws each card's stalk where the record asks, at its twig's radius where it names so", () => {
+		const asked = {
+			...mesh,
+			record: { ...record, lod: { ...record.lod, cardStalk: 1 } },
+		};
+		const stalked = cardMesh(asked, 1);
+		// Without the marker a stalk's second coordinate holds no radius: the shader draws the
+		// record's least width.
+		for (let v = 0; v < stalked.uvs1.length / 2; v++)
+			if (Math.abs((stalked.uvs1[v * 2 + 1] as number) - 0.75) < 1e-6)
+				expect(stalked.uvs[v * 2 + 1]).toBe(0);
+		const marked = cardMesh(
+			{
+				...mesh,
+				record: { ...record, lod: { ...record.lod, cardStalk: 1, cardStalkWidth: true } },
+			},
 			1,
 		);
 		const drawn = drawnRows(1);
+		const thickest = Math.max(...mesh.skeleton.radius);
 		let stretched = 0;
 		for (const r of drawn) {
 			const bx = (rows.back?.[r * 3] as number) ?? 0;
@@ -696,25 +819,38 @@ describe('the card levels', () => {
 		}
 		expect(stretched).toBeGreaterThan(0);
 		// Each stalk is one quad from either side, so it shows whichever way the view turns it.
-		expect(stalked.indices.length / 3).toBe(drawn.length * 6 + stretched * 4);
+		expect(marked.indices.length / 3).toBe(drawn.length * 6 + stretched * 4);
 		let stalks = 0;
-		for (let v = 0; v < stalked.uvs1.length / 2; v++) {
-			if (Math.abs((stalked.uvs1[v * 2 + 1] as number) - 0.75) >= 1e-6) continue;
+		for (let v = 0; v < marked.uvs1.length / 2; v++) {
+			if (Math.abs((marked.uvs1[v * 2 + 1] as number) - 0.75) >= 1e-6) continue;
 			stalks++;
-			expect([0, 1]).toContain(stalked.uvs[v * 2] as number);
+			expect([0, 1]).toContain(marked.uvs[v * 2] as number);
+			// The second texture coordinate holds the twig's radius over the wood's radius span.
+			const radius = (marked.uvs[v * 2 + 1] as number) * WOOD_RADIUS_RANGE;
+			expect(radius).toBeGreaterThan(0);
+			expect(radius).toBeLessThanOrEqual(thickest);
 			expect(
 				Math.hypot(
-					stalked.normals[v * 3] as number,
-					stalked.normals[v * 3 + 1] as number,
-					stalked.normals[v * 3 + 2] as number,
+					marked.normals[v * 3] as number,
+					marked.normals[v * 3 + 1] as number,
+					marked.normals[v * 3 + 2] as number,
 				),
 			).toBeCloseTo(1, 5);
 		}
 		expect(stalks).toBe(stretched * 4);
 	});
 
-	it('reaches the carried foliage only where the record asks', () => {
-		const stalked = { ...record, lod: { ...record.lod, cardStalk: 1 } };
+	it("joins a marked card's stalk to the wood and to the card, as the record asks", () => {
+		// The marker names the line's width; the join is what this test proves, so both sides name it.
+		const stalked = {
+			...record,
+			lod: {
+				...record.lod,
+				cardStalk: 1,
+				cardStalkWidth: true,
+				cardStalkToFoliage: false,
+			},
+		};
 		const reaching = { ...stalked, lod: { ...stalked.lod, cardStalkToFoliage: true } };
 		const off = cardMesh({ ...mesh, record: stalked }, 1);
 		const on = cardMesh({ ...mesh, record: reaching }, 1);
@@ -776,7 +912,7 @@ describe('the card levels', () => {
 		const second = cardMesh(mesh, 2);
 		const keeps = cardRows(mesh, 2);
 		const drawn = new Set(drawnRows(2));
-		expect(second.indices.length / 3).toBe(drawn.size * 6);
+		expect(planeTriangles(second)).toBe(drawn.size * 6);
 		const rim = foliageHull(mesh).rim;
 		expect(rim.some((flag) => flag === 1)).toBe(true);
 		// Each step of two rows keeps its own row, or the row of the rim that stands in its place.
@@ -811,7 +947,7 @@ describe('the card levels', () => {
 				if ((rows.order[r] as number) % every !== 0)
 					expect([share, r, (keeps[r] as number) > 0]).toEqual([share, r, rim[r] === 1]);
 			}
-			expect(level.indices.length / 3).toBe(drawn * 6);
+			expect(planeTriangles(level)).toBe(drawn * 6);
 		}
 		expect(cardKeep(0, 2, 0.5)).toBe(2);
 		expect(cardKeep(2, 2, 0.5)).toBe(0);

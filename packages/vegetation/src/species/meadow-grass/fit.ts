@@ -100,8 +100,15 @@ export const crownBox = {
 /** The all-round test's band: the form's, or the reference's own crown-box spread where wider. */
 export const roundBand = 0.25;
 
-/** Crown width over plant height, and the crown's base as a share of the height, over the views. */
-export const aspect = 0.76;
+/**
+ * Crown width over plant height, and the crown's base as a share of the height, over the views.
+ *
+ * The turning video's hull reads 0.76 wide over high, which is the video's plant. The whole-plant
+ * stills read 1.04, 1.24, 1.40 and 1.36 tall over wide, a mean of 1.26, and they are the standard
+ * that judges a plant, so this takes their mean: 1/1.26, 0.79 wide over high. The video's figure is
+ * recorded as a reference conflict.
+ */
+export const aspect = 0.79;
 export const crownBase = 0.052;
 
 /**
