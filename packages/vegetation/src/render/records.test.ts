@@ -524,6 +524,15 @@ describe('the plant shader', () => {
 		expect(Math.abs(asFraction - metres)).toBeLessThan(0.000005);
 	});
 
+	test("draws a card's stalk at the tone the record names, or the default", () => {
+		// The stalk's tone must follow the header's third component where a record names one; a
+		// shader that ignored it would draw every species' line at the default shade.
+		for (const file of ['./plant.wgsl', './plant-viewface.wgsl'] as const) {
+			const source = readFileSync(new URL(file, import.meta.url), 'utf8');
+			expect(source).toContain('header(HEADER_CARD_STALK).z');
+			expect(source).toContain('select(CARD_STALK_SHADE, shade, shade > 0.0)');
+		}
+	});
 	test('declares six textures and fits its uniforms beside them', () => {
 		expect(wgsl.match(/^var \w+: texture_2d(_array)?<f32>;/gm)?.length).toBe(6);
 		const block = /struct Uniforms \{([^}]*)\}/.exec(wgsl)?.[1] ?? '';
