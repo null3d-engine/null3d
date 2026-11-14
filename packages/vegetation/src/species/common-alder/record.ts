@@ -330,9 +330,10 @@ export const record: Species = {
 				// Stills 11 and 23: this year's shoot of alternate leaves gathered at its end round one
 				// purple bud. The field photograph carries eight and the studio seven, so the count's
 				// spread is wide enough for the class's two shoots to draw those two numbers, and the
-				// leaves stand between the two sizes each wants. A cutting class never offers itself to
-				// the crown, so the tree keeps its own spurs.
+				// leaves stand between the two sizes each wants. The cluster cut draws this class,
+				// which never offers itself to the crown, so the tree keeps its own spurs.
 				name: 'spur',
+				cutOnly: true,
 				vigor: [0, 1],
 				share: 0,
 				years: 1,
