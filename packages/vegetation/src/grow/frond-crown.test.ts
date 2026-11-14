@@ -28,7 +28,7 @@ import { targetHeight } from './height';
 
 const LONG = scaledBudget(120_000);
 /** The species the grower serves. */
-const SPECIES = ['date-palm'] as const;
+const SPECIES = ['date-palm', 'tree-fern'] as const;
 /** The variants each test grows. */
 const VARIANTS = [0, 1, 2] as const;
 
@@ -248,6 +248,22 @@ describe('the frond-crown grower', () => {
 						expect(Math.max(...leaves)).toBeLessThanOrEqual(rank.leave + rank.spread + 0.01);
 						// An even spread covers more than half its width with three fronds or more.
 						expect(Math.max(...leaves) - Math.min(...leaves)).toBeGreaterThan(rank.spread);
+					});
+				}
+			});
+
+			it('spaces each rank evenly round the trunk where the record lays its fronds in rings', () => {
+				const { kit, growth, record } = of(id);
+				if (growth.fronds.layout !== 'rings') return;
+				for (const variant of VARIANTS) {
+					const { skeleton } = growPlantNow(kit, { seed: 11, variant, near: true });
+					growth.fronds.ranks.forEach((_, r) => {
+						const bearings = socketsOf(skeleton, record)
+							.filter((s) => s.group === r)
+							.map((s) => azimuthOf(skeleton, s.bud));
+						if (bearings.length < 3) return;
+						// One even step, and a few degrees of stray on either neighbour.
+						expect(largestGap(bearings)).toBeLessThan(360 / bearings.length + 13);
 					});
 				}
 			});
