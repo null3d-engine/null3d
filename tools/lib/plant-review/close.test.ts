@@ -4,7 +4,7 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { ShootRows } from '../../../packages/vegetation/src/asset.ts';
+import type { ShootPrototype, ShootRows } from '../../../packages/vegetation/src/asset.ts';
 import {
 	AXIS_CULM,
 	AXIS_LIMB,
@@ -23,7 +23,14 @@ import {
 	stemSurfaceAt,
 	type V3,
 } from '../../../tests/pages/lib/plant-review/anatomy.ts';
-import { departures, forks, walkedRound } from '../../../tests/pages/lib/plant-review/close.ts';
+import {
+	type ClosePlant,
+	type CloseView,
+	departures,
+	forks,
+	strandsView,
+	walkedRound,
+} from '../../../tests/pages/lib/plant-review/close.ts';
 import { spanDistance } from '../../../tests/pages/lib/plant-review/framing.ts';
 import {
 	clutterOf,
@@ -31,6 +38,7 @@ import {
 	type Spheres,
 	sharedRecords,
 } from '../../../tests/pages/lib/plant-review/sight.ts';
+import { checkShot } from '../../../tests/pages/lib/plant-review/subject-shots.ts';
 import { closeFraming } from './compare.ts';
 
 /** No shoot rows, for a plant drawn as its wood alone. */
@@ -430,5 +438,75 @@ describe('a sheet of turns of a close view', () => {
 		expect(walked.target).toEqual(view.target);
 		expect(walked.position[1]).toBeCloseTo(2, 6);
 		expect(Math.hypot(walked.position[0], walked.position[2])).toBeCloseTo(5, 6);
+	});
+});
+
+describe('the view of hanging shoots', () => {
+	/** One shoot row's prototype: a shoot a little over a metre long. */
+	const PROTOTYPE = { length: 1.2, radius: 0.01, tiers: [] } as unknown as ShootPrototype;
+
+	/**
+	 * A willow-like plant: a stem whose one limb rises steeply to the crown's rim, so no level
+	 * stretch of limb carries the shoots, and three shoots hanging from the rim's mid band.
+	 */
+	function hangingPlant(): ClosePlant {
+		const b = new SkeletonBuilder();
+		const stem = b.addAxis({ parent: -1, parentNode: -1, order: 0, kind: AXIS_STEM });
+		const trunk = run(b, stem, -1, [0, 0, 0], [0, 1, 0], 6, 0.4, 0.3);
+		const limb = b.addAxis({
+			parent: stem,
+			parentNode: trunk[4] as number,
+			order: 1,
+			kind: AXIS_LIMB,
+		});
+		run(b, limb, trunk[4] as number, [0, 4, 0], [0.8, 0.5, 0], 5, 0.15, 0.5);
+		// A rotation about Z by -120 degrees turns the shoot's +Y to (0.866, -0.5, 0): 30 degrees down.
+		const q = [0, 0, -0.866, 0.5];
+		const rows: ShootRows = {
+			count: 3,
+			prototype: new Uint8Array([0, 0, 0]),
+			position: new Float32Array([3.1, 5, 0, 3.1, 5, 0.2, 3.1, 5, -0.2]),
+			rotation: new Float32Array([...q, ...q, ...q]),
+			scale: new Float32Array([1, 1, 1]),
+			record: new Uint16Array(3),
+			phase: new Uint8Array(3),
+			sky: new Uint8Array([200, 200, 200]),
+			bent: new Uint8Array(12),
+			order: new Uint32Array(3),
+		};
+		// The crown starts where the limb leaves the stem's upper third, so the rim's mid band holds
+		// the steep limb and the hanging shoots.
+		return { skeleton: b.finish(4.2), shoots: rows, prototypes: [PROTOTYPE] };
+	}
+
+	test('frames one hanging shoot from its origin to its tip where no limb stretch carries one', () => {
+		const view = strandsView(hangingPlant(), { fov: 45, aspect: 1 });
+		expect(view?.subject.kind).toBe('one hanging shoot from its origin to its tip');
+		expect(view?.points?.length).toBe(2);
+		expect(view?.regions?.length).toBe(2);
+		// The camera stands level at the shoot's middle, inside the crown, looking outward.
+		expect(view?.position[1]).toBeCloseTo(view?.target[1] as number, 6);
+	});
+
+	test('holds its points in the frame of the camera that drew it', () => {
+		const view = strandsView(hangingPlant(), { fov: 45, aspect: 1 }) as CloseView;
+		const checked = checkShot(
+			{
+				kind: String(view.subject.kind),
+				camera: { position: view.position, target: view.target },
+				points: view.points ?? [],
+				regions: view.regions ?? [],
+				facts: view.subject,
+			},
+			{ fov: 45, aspect: 1 },
+		);
+		expect(checked.present).toBe(true);
+	});
+
+	test('gives no view for a plant whose shoots all stand up', () => {
+		const plant = hangingPlant();
+		plant.shoots.rotation.fill(0);
+		for (let row = 0; row < plant.shoots.count; row++) plant.shoots.rotation[row * 4 + 3] = 1;
+		expect(strandsView(plant, { fov: 45, aspect: 1 })).toBeUndefined();
 	});
 });

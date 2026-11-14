@@ -80,18 +80,13 @@
 		"leaves": 7.46
 	},
 	"19-hanging-shoot.png": {
-		"view": "strands",
-		"fov": 10,
-		"distance": 8
+		"view": "strands"
 	},
 	"20-spring-catkins.png": {
-		"view": "crown",
+		"view": "strands",
 		"background": "sky",
 		"fov": 45,
-		"distance": 2.5,
-		"season": "blossom",
-		"thin": null,
-		"span": null
+		"season": "blossom"
 	},
 	"12-single-leaf-upper.png": {
 		"leaves": 1.25,

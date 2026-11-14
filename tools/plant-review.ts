@@ -179,14 +179,35 @@ function sheathTargetOfSpecies(species: string): SheathTarget | undefined {
 	return sheathTargetOf(JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>);
 }
 
-/** The metres a bark view frames, from the species' texture manifest when it has one. */
-function barkSpan(species: string): number | undefined {
+/** A species' texture manifest, which holds the metres its bark sources were taken at. */
+function textureManifest(species: string):
+	| {
+			bark?: {
+				layers?: { tile?: [number, number]; height?: { offset?: number; depth?: number } }[];
+			};
+	  }
+	| undefined {
 	const path = join(REPO_ROOT, 'packages/vegetation-textures/textures', species, 'manifest.json');
 	if (!existsSync(path)) return undefined;
-	const manifest = JSON.parse(readFileSync(path, 'utf8')) as {
-		bark?: { layers?: { tile?: [number, number] }[] };
-	};
-	return manifest.bark?.layers?.[0]?.tile?.[1];
+	return JSON.parse(readFileSync(path, 'utf8'));
+}
+
+/** The metres a bark view frames, from the species' texture manifest when it has one. */
+function barkSpan(species: string): number | undefined {
+	return textureManifest(species)?.bark?.layers?.[0]?.tile?.[1];
+}
+
+/**
+ * The height above the ground that a species' bark texture was captured at, as the manifest's share
+ * of the plant's height: a texture source is drawn where its own photograph was taken, so it does
+ * not repeat the still of the same surface.
+ */
+async function barkTextureHeight(species: string): Promise<number | undefined> {
+	const offset = textureManifest(species)?.bark?.layers?.[0]?.height?.offset;
+	if (typeof offset !== 'number' || !isSpeciesId(species)) return undefined;
+	const height = (await loadSpecies(species)).record.size.height;
+	const mean = typeof height === 'number' ? height : height.mean;
+	return offset * mean;
 }
 
 /** The query of a still's render: its view, and the framing and colours measured from the still. */
@@ -1036,6 +1057,7 @@ function compareRun(
 	const floating = [...stills.values()].filter(
 		(pair) => (pair.connectivity?.floating.length ?? 0) > 0,
 	);
+	const withheld = [...stills.values()].filter((pair) => pair.connectivityWithheld !== undefined);
 	const voids = [...stills.values()].filter((pair) => pair.void !== undefined);
 	// The run's verdict: the tool's rows are written fresh, and a row a reviewer judged is kept.
 	const verdictPath = join(dir, VERDICT_FILE);
@@ -1082,6 +1104,12 @@ function compareRun(
 		...(floating.length + sweepFloating.length > 0
 			? [
 					`- ${floating.length + sweepFloating.length} picture${floating.length + sweepFloating.length === 1 ? '' : 's'} draw${floating.length + sweepFloating.length === 1 ? 's' : ''} a piece hanging free: ${[...floating.map((pair) => `${pair.file} (foot row ${pair.connectivity?.footRow ?? '-'}, ground band ${pair.connectivity?.groundBand ? `${pair.connectivity.groundBand.top} to ${pair.connectivity.groundBand.base}` : 'not named'})`), ...sweepFloating].join(', ')}. A piece standing on the ground band the plant's feet span is rooted in the soil and is not counted; the rest meet nothing inside the picture. The owner's rule is that no piece hangs free at any level or sparseness, so the fault is the generator's and the run fails.`,
+				]
+			: []),
+		...(withheld.length > 0
+			? [
+					`- The connectivity check is withheld in ${withheld.map((pair) => `${pair.file}: the picture draws the ${pair.connectivityWithheld?.drawn}, where the engine draws the ${pair.connectivityWithheld?.engine} at its distance`).join('; ')}. A support thinner than a pixel of the finer level is not drawn there, and the engine's own level ties the piece with its stalk line, so no piece is counted floating.`,
+					'',
 				]
 			: []),
 		'',
@@ -1416,6 +1444,7 @@ async function main(): Promise<void> {
 	}
 	if (set) {
 		const span = barkSpan(species);
+		const textureHeight = await barkTextureHeight(species);
 		// A species' own file sits beside the guide, and a round drawn without it loses every
 		// override in it: the camera a picture needs and the light it was taken in. Reading the file
 		// unasked would move every species that omits the flag, so the miss is named instead.
@@ -1432,8 +1461,17 @@ async function main(): Promise<void> {
 				>)
 			: {};
 		if (wanted.has('stills'))
-			for (const slot of stillList(set.stills))
-				shots.push(stillShot(set, slot, base, matte, span, slotQueries[slot.file], habit));
+			for (const slot of stillList(set.stills)) {
+				// A texture source of the bark is drawn at the height its own photograph was taken
+				// at, where the still of the same surface keeps the picture's own height.
+				const extra = {
+					...(slot.kind === 'texture' &&
+						slot.view.startsWith('bark') &&
+						textureHeight !== undefined && { barkHeight: textureHeight }),
+					...slotQueries[slot.file],
+				};
+				shots.push(stillShot(set, slot, base, matte, span, extra, habit));
+			}
 		// The owner's two-dial sweep: a full round draws the whole view at the record's density and
 		// toward the sparse form, at the record's coarseness and a coarse one, so connectedness,
 		// height and the row's own density figure are read at every setting rather than only the

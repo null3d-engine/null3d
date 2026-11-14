@@ -31,6 +31,7 @@ import {
 	type SubjectMark,
 	type Weighing,
 } from './sight';
+import type { ContractPoint, ContractRegion } from './subject-shots';
 
 /** What a close view reads of the grown plant. */
 export interface ClosePlant {
@@ -51,6 +52,9 @@ export interface CloseView extends Shot {
 	readonly subject: Readonly<Record<string, unknown>>;
 	/** The clutter of the chosen frame, when the view weighed its sides. */
 	readonly clutter?: Clutter;
+	/** The subject's points and the picture's regions, where the view states a contract for them. */
+	readonly points?: readonly ContractPoint[];
+	readonly regions?: readonly ContractRegion[];
 }
 
 /** The frame a close view draws: its vertical field of view in degrees and its width over height. */
@@ -630,7 +634,7 @@ export function strandsView(plant: ClosePlant, lens: Lens): CloseView | undefine
 				best = { axis, point, hanging: weighed.hanging, occluded: weighed.occluded };
 		}
 	}
-	if (!best) return undefined;
+	if (!best) return strandShootView(plant, lens, low, high);
 	const outward = normalize([best.point.at[0], 0, best.point.at[2]]);
 	if (!Number.isFinite(outward[0])) return undefined;
 	const target: V3 = [best.point.at[0], best.point.at[1] - STRANDS_LIMB_ABOVE, best.point.at[2]];
@@ -640,15 +644,95 @@ export function strandsView(plant: ClosePlant, lens: Lens): CloseView | undefine
 		target[1],
 		target[2] - outward[2] * distance,
 	];
+	const below = 0.5;
 	return {
 		position,
 		target,
+		points: [
+			{ name: 'the carrying limb', at: best.point.at, within: [0.2, 0, 0.8, 0.25] },
+			{
+				name: 'the hanging shoots',
+				at: [best.point.at[0], best.point.at[1] - below, best.point.at[2]],
+				within: [0.1, 0.3, 0.9, 0.95],
+			},
+		],
+		regions: [
+			{ name: 'the hanging shoots', box: [0.2, 0.2, 0.8, 0.95], min: 0.08, of: 'foliage' },
+			{ name: 'the sky beside the strand', box: [0, 0, 1, 1], max: 0.95 },
+		],
 		subject: {
 			kind: 'a limb stretch with hanging shoots',
 			hanging: best.hanging,
 			occluded: best.occluded,
 			height: best.point.at[1],
 			frame: STRANDS_SPAN,
+		},
+	};
+}
+
+/** The fewest degrees a shoot must hang below level to stand as the strand view's subject. */
+const STRANDS_HANG = 20;
+/** How much a shoot's sky visibility adds to its score, against a metre of drop. */
+const STRANDS_SKY_WEIGHT = 0.002;
+
+/**
+ * The view of one hanging shoot where the crown hangs from no limb, as a willow's whips do: the
+ * longest shoot that hangs from the crown's rim in its mid band, framed from its origin to its tip
+ * with the sky behind it, as a photograph of one complete shoot shows it.
+ */
+function strandShootView(
+	plant: ClosePlant,
+	lens: Lens,
+	low: number,
+	high: number,
+): CloseView | undefined {
+	const { shoots: rows, prototypes } = plant;
+	if (rows.count === 0) return undefined;
+	let best:
+		| {
+				readonly origin: V3;
+				readonly direction: V3;
+				readonly length: number;
+				readonly score: number;
+		  }
+		| undefined;
+	for (let row = 0; row < rows.count; row++) {
+		const direction = shootDirection(rows, row);
+		if (direction[1] > -Math.sin((STRANDS_HANG * Math.PI) / 180)) continue;
+		const length =
+			(prototypes[rows.prototype[row] as number]?.length ?? 0) * (rows.scale[row] as number);
+		if (!(length > 0.3)) continue;
+		const origin: V3 = [
+			rows.position[row * 3] as number,
+			rows.position[row * 3 + 1] as number,
+			rows.position[row * 3 + 2] as number,
+		];
+		if (origin[1] < low || origin[1] > high) continue;
+		const score = -direction[1] * length + STRANDS_SKY_WEIGHT * (rows.sky[row] as number);
+		if (!best || score > best.score) best = { origin, direction, length, score };
+	}
+	if (!best) return undefined;
+	const tip = step(best.origin, best.direction, best.length);
+	const middle = step(best.origin, best.direction, best.length / 2);
+	const outward = normalize([middle[0], 0, middle[2]]);
+	if (!Number.isFinite(outward[0])) return undefined;
+	const height = Math.max(STRANDS_SPAN, best.length * 1.08);
+	const distance = distanceFor(height, lens.fov);
+	return {
+		position: [middle[0] - outward[0] * distance, middle[1], middle[2] - outward[2] * distance],
+		target: middle,
+		points: [
+			{ name: "the shoot's origin", at: best.origin, within: [0.2, 0, 0.8, 0.28] },
+			{ name: "the shoot's tip", at: tip, within: [0.2, 0.45, 0.8, 0.98] },
+		],
+		regions: [
+			{ name: 'the hanging shoot', box: [0.2, 0.15, 0.8, 0.9], min: 0.08, of: 'foliage' },
+			{ name: 'the sky beside the shoot', box: [0, 0, 1, 1], max: 0.95 },
+		],
+		subject: {
+			kind: 'one hanging shoot from its origin to its tip',
+			length: best.length,
+			frame: height,
 		},
 	};
 }
