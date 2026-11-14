@@ -24,7 +24,7 @@ its new structure passes the gate and a ready branch switches it.
 | Scots pine | Passed | `f35754914` | Directed |
 | Common ash | Passed, narrowly | `706139ce0` | Directed |
 | Italian cypress | Passed, plainly | `3fa5d861a` | Directed |
-| Sedge | Passed | `8bf4c3d5c` | Directed |
+| Sedge | Passed; holds at its shipped files | `8bf4c3d5c`; confirmed at `743390cef` | Directed |
 | Bracken | Passed | `65344adbc` | Directed |
 | Saguaro | Passed | `0765d087a` | Directed |
 | Date palm | Passed, narrowly | `c6da1d7a8` | Directed |
@@ -34,7 +34,7 @@ its new structure passes the gate and a ready branch switches it.
 | Hosta | Passed; both its conditions met | `c0daa59ff`; conditions met at `743390cef` | Directed |
 | Silver birch | Not passed | `963981822` | Old grower |
 | Hawthorn | Not yet drawn as a real round | none | Old grower |
-| Meadow grass | Not passed, close | `138dc4fb8` | Old grower |
+| Meadow grass | Passed narrowly on build, on one condition | `743390cef` | Old grower until its card level draws its heads on their stems |
 | European beech | Not yet drawn | none | Old grower |
 | Olive | Not yet drawn | none | Old grower |
 | Giant sequoia | Not yet drawn | none | Old grower |
@@ -120,12 +120,15 @@ A closed dark green column of fans round a tinted inner body.
 
 A wide mound of arching blades with flowering stems round the whole tuft.
 
-- **Gate:** passed at `8bf4c3d5c` against the old, fuller tuft. The shipped record also carries the
-  flowering stems on most shoots, which no round has judged yet.
-- **Open faults:** Spike and blade color. The card levels not judged.
-- **Reference conflicts:** `01` (an upright fountain) against `02` (a wide mound). `02` and the turning
-  video govern.
-- **Next:** a round at the shipped record, with a picture at a card level.
+- **Gate:** passed at `8bf4c3d5c` against the old, fuller tuft. The round at its shipped files,
+  `743390cef`, holds the pass and is nearer: flowering stems arch over the mound all round, and the sky at
+  `02` is inside (0.37 against 0.36).
+- **Open faults:** The first card level draws a near-black smear of vertical streaks, with its spikes as
+  loose dashes floating over the mound (leaf color 31.6 at `02`). Every card-level drawing of the sedge
+  shows it. The lower blades read blue-gray, and the spikes are dark.
+- **Reference conflicts:** `01` (an upright fountain) against `02` (a wide mound). Picture `02` and the
+  turning video govern.
+- **Next:** the card level's color and its spikes, by testing the card bake's color for thin blades first.
 
 ## Bracken
 
@@ -228,14 +231,15 @@ A mound on many stems, leafy to the ground, in autumn with haws.
 
 ## Meadow grass
 
-A vase of blades with open feathery heads.
+A vase of blades to half the height, with open feathery heads on tall stems above it.
 
-- **Gate:** not passed, close, at `138dc4fb8`: twenty stems and open heads, nearer than the old grass's dots
-  on wire. The old grass still holds the blade vase and the color.
-- **Open faults:** The blade vase too low. Pale blades and lime heads. Small, at 0.63 of the scale at `02`.
-  Too open at every view (`01` 0.493 against 0.595).
-- **Reference conflicts:** `01` and `02` ask for opposite sky. Recorded.
-- **Next:** a round at the raised vase.
+- **Gate:** passed narrowly on build at `743390cef`, against the old grower's single mass of blades with
+  dot heads. It ships once its first card level draws its heads on their stems.
+- **Open faults:** At the first card level the blades draw as streaks and the heads float off their stems.
+  The blades are pale and sparse, and the heads lime where the photograph's are buff. Too open at `01`
+  (0.49 against 0.59) and `02` (0.51 against 0.74). Drawn at 0.63 of the photograph's scale at `02`.
+- **Reference conflicts:** `01` and `02` ask for opposite sky; recorded.
+- **Next:** the card level's heads, then the blades' density and color.
 
 ## Bamboo
 
