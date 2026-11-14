@@ -10,9 +10,11 @@ import { record } from './record';
 /**
  * The fine wood that clothes a clump, each twig ending in a socket that carries the branch end of
  * still 21. A branch end is 0.82 m long and 0.6 m wide on a tree 20 m tall, so the sockets stand a
- * branch end's width apart over the clump's surface and a branch end's reach inside it.
+ * little over a branch end's width apart over the clump's surface and a branch end's reach inside
+ * it: the spacing that keeps every branch end within the alder's near budget and closes the crown's
+ * leaf form to stills 01, 02 and 18.
  */
-const ENDS = { pitch: 0.67 / 20, reach: 0.82 / 20 } as const;
+const ENDS = { pitch: 0.75 / 20, reach: 0.82 / 20 } as const;
 
 /** The common alder's frame. */
 export const frame: FrameSpec = {
@@ -41,8 +43,9 @@ export const frame: FrameSpec = {
 			[1, 0],
 		],
 		// Still 30 looks across the wide side. The turning video: a quarter turn on, the crown is
-		// about 0.65 as wide as tall against 0.85 at still 30's turn.
-		0.72,
+		// about 0.65 as wide as tall against 0.85 at still 30's turn; the plan's narrow way is held
+		// to at least three quarters of its wide way.
+		0.75,
 	),
 	stems: {
 		name: 'leader',
@@ -59,7 +62,7 @@ export const frame: FrameSpec = {
 			[1, 0.002],
 		],
 		// The leader's own tip carries a clump, whose fine wood and pieces make the tree's top.
-		length: { height: 0.955 },
+		length: { height: 0.93 },
 		// Stills 01 and 17: no lean and no bend.
 		sway: 0.6,
 		elbows: 4,
@@ -91,7 +94,13 @@ export const frame: FrameSpec = {
 				angleSpread: 4,
 				// Still 30: the longest branches reach 0.46 of the height from the leader, and a clump
 				// 0.12 across sits round each branch's end, so the wood ends 0.06 short of the outline.
-				length: { outline: 0.87 },
+				length: {
+					outline: [
+						[0, 0.89],
+						[0.5, 0.86],
+						[1, 0.83],
+					],
+				},
 				vary: 0.06,
 				// Still 30: the highest branches are half a metre long at the least.
 				least: 0.025,
@@ -114,7 +123,7 @@ export const frame: FrameSpec = {
 				sway: 10,
 				elbows: 5,
 				// Still 30: a clump is 0.10 to 0.15 of the height across.
-				patch: { kind: 'clump', width: 0.16, depth: 0.12, fill: ENDS },
+				patch: { kind: 'clump', width: 0.18, depth: 0.135, fill: ENDS },
 				children: [
 					{
 						name: 'side',
@@ -148,7 +157,7 @@ export const frame: FrameSpec = {
 						sway: 10,
 						elbows: 3,
 						// Still 30: the smaller clumps on a branch's side twigs.
-						patch: { kind: 'clump', width: 0.12, depth: 0.09, fill: ENDS },
+						patch: { kind: 'clump', width: 0.14, depth: 0.105, fill: ENDS },
 					},
 				],
 			},
@@ -163,7 +172,16 @@ export const frame: FrameSpec = {
  */
 export const directed = {
 	...pieceRecord(
-		framedRecord(record, frame, { rows: { mean: 4, spread: 1 }, fan: 45, piece: 'branch-end' }),
+		framedRecord(record, frame, {
+			rows: { mean: 4, spread: 1 },
+			fan: 45,
+			piece: 'branch-end',
+			// With every branch end's flat side to the sky, a crown seen from the side shows most of
+			// its leaves slanted or edge on. Stills 07 and 17: the alder's leafy shoots face every way,
+			// so each piece rolls up to a quarter turn either way about its own line and tilts a
+			// little off the wood's.
+			turn: { roll: 90, tilt: 25 },
+		}),
 		PIECE_LEAF,
 	),
 	pieces: PIECES.filter((piece) => piece.name === 'branch-end'),
