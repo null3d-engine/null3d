@@ -223,7 +223,9 @@ describe("a placement's pools of real pieces", () => {
 		expect(placed.advance(10.25)).toBe(false);
 		expect(card4(1)).toEqual([6, 6, 1]);
 		// The grant moves to the copy at 80 m: it takes the other slot and fades in while the copy at
-		// 40 m keeps its rows, fading out, and its cards cross back from its switch to none.
+		// 40 m keeps its rows, fading out, and its cards cross back from its switch to none. Both copies
+		// draw their rows while they cross: the budget caps the settled grants, so on a full budget a
+		// crossing draws one copy's cost over it for the quarter second.
 		placed.apply(new Uint8Array([GRANT_NONE, GRANT_NONE, GRANT_SWITCH]), [0, 1, 2], 11);
 		expect([rowsNear(40), rowsNear(80)]).toEqual([rows, rows]);
 		expect([card4(1), card4(2)]).toEqual([

@@ -2,7 +2,8 @@
 // while the budget lasts, then to the range where their cards' cells draw at their own texels, and
 // every copy past the first that does not fit keeps its cards. The hand-out never passes the budget,
 // spends it up to the first copy that does not fit, keeps each grant by the copy's own key, and a
-// copy at the budget's edge does not flicker as the eye moves or sways.
+// copy at the budget's edge does not flicker as the eye moves or sways. The budget caps the settled
+// grants: while a moved grant crosses over, both copies draw, one copy's cost over for a quarter second.
 import { describe, expect, it } from 'bun:test';
 import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
 import type { PlantAsset } from '../asset';

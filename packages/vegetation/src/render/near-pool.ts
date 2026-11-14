@@ -1,7 +1,9 @@
 // The near pool: one per scene, the scene's budget of real pieces. The page gives it its camera and
 // calls `update` once a frame; when the camera has moved half a metre, the pool hands its budget out
 // over every placement that joined it, nearest copy first, and each placement writes the grants
-// into its pools of slots and its copies' card edges. A stand-in kit's pool draws no real shoots.
+// into its pools of slots and its copies' card edges. The budget caps the settled grants: a moved
+// grant crosses over a quarter second with both copies drawing, so for that time the pieces drawn
+// can pass the budget by one copy's cost. A stand-in kit's pool draws no real shoots.
 import type { SketchContext, Vec3Like } from '@null3d/engine';
 import { NEAR_CAPS } from '../core/caps';
 import { length3 } from '../core/math';
