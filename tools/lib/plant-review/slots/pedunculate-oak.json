@@ -30,7 +30,8 @@
 		"sunRise": 65,
 		"skyShare": 0.19,
 		"sky": "#98bcec",
-		"daylight": 2.334
+		"daylight": 2.334,
+		"elevation": 45
 	},
 	"18-silhouette.png": {
 		"fov": 30,
