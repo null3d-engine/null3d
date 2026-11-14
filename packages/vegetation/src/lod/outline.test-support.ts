@@ -158,8 +158,11 @@ export function outlineMatte(
 	// The nearest level's shoot rows, where it draws them: as their cards.
 	if (level === 0 && shoots === 'cards' && asset.shoots.count > 0 && asset.shootDetail !== 'none') {
 		const input = {
-			// The nearest level draws all its wood, so its cards make up for none.
-			record: { ...kit.record, lod: { ...kit.record.lod, woodOrders: [255, 255] } },
+			// The nearest level draws all its wood, so its cards make up for none. Its rows are the
+			// leaves themselves, drawn as their cards for this outline only: no card level keeps or
+			// drops them, so a record's card growth, which makes up a card level's lost cover, does
+			// not apply to this picture.
+			record: { ...kit.record, lod: { ...kit.record.lod, woodOrders: [255, 255], cardGrow: 1 } },
 			seed: asset.seed,
 			variant: asset.variant,
 			season: asset.season,
