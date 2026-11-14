@@ -256,6 +256,18 @@ export function labImage(image: Rgba): Float32Array {
 	return out;
 }
 
+/**
+ * The sRGB byte of a linear value clamped between 0 and 1: the transfer that a display-encoded
+ * canvas applies when it stores a blend made in linear light.
+ *
+ * @param value The linear value.
+ * @returns The byte.
+ */
+export function srgbByte(value: number): number {
+	const v = Math.max(0, Math.min(1, value));
+	return Math.round(255 * (v <= 0.0031308 ? 12.92 * v : 1.055 * v ** (1 / 2.4) - 0.055));
+}
+
 /** The sRGB bytes of a CIELAB colour, clamped to the gamut. */
 export function srgbOf(lab: readonly number[]): [number, number, number] {
 	const [l = 0, a = 0, b = 0] = lab;
@@ -269,11 +281,7 @@ export function srgbOf(lab: readonly number[]): [number, number, number] {
 	const lr = 3.2404542 * x - 1.5371385 * y - 0.4985314 * z;
 	const lg = -0.969266 * x + 1.8760108 * y + 0.041556 * z;
 	const lb = 0.0556434 * x - 0.2040259 * y + 1.0572252 * z;
-	const g = (c: number) => {
-		const v = Math.max(0, Math.min(1, c));
-		return Math.round(255 * (v <= 0.0031308 ? 12.92 * v : 1.055 * v ** (1 / 2.4) - 0.055));
-	};
-	return [g(lr), g(lg), g(lb)];
+	return [srgbByte(lr), srgbByte(lg), srgbByte(lb)];
 }
 
 /** A colour as sRGB hex, such as #c9d9e6. */
