@@ -1115,7 +1115,10 @@ fn surface(input: SurfaceInput) -> Surface {
         if (abs(input.uv1.y - STALK_PLANE) < 0.1) {
             // A card's stalk: a shade of the young bark's tone, so the join the card's leaves stand
             // on shows without the line standing out pale against the leaves.
-            base = header(HEADER_YOUNG).rgb * header(HEADER_YOUNG_TINT).rgb * CARD_STALK_SHADE;
+            let shade = header(HEADER_CARD_STALK).z;
+            base =
+                header(HEADER_YOUNG).rgb * header(HEADER_YOUNG_TINT).rgb *
+                select(CARD_STALK_SHADE, shade, shade > 0.0);
             roughness = 0.85;
             occlusion = 1.0;
             if (near_copy && length(input.relativePosition) < material.nearDistance * 0.96) {
