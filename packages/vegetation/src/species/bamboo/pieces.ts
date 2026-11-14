@@ -3,24 +3,30 @@
 // on; lengths are metres on a clump 8 m tall with culms 0.15 m across (see directed.ts).
 //
 // A joint carries two branches from one point, the first the stouter, leaving 30 to 40 degrees from
-// the culm and curving out to level; each carries 4 to 6 alternate twigs, and each twig ends in a
-// fan of 4 to 7 narrow leaves spread through some 120 degrees (pictures 01, 22 and 23).
+// the culm and curving out to level; each carries 4 to 6 alternate sub-branches, each sub-branch 4
+// twigs and its own tip, and each ends in a fan of 3 to 5 narrow leaves spread through some 120
+// degrees (pictures 01, 21, 22 and 23).
 import type { PieceLeaves, PieceRule, PieceSides, PieceStem, PieceStudio } from '../../leaf/piece';
 
 /** A thick culm's diameter at its foot (directed.ts): pictures 01 and 17, 0.019 of the height. */
 const CULM = 0.15;
 
-/** A leaf over the species' own leaf: pictures 10 and 11, 0.020 of the height, against 0.17 m. */
+/**
+ * A leaf over the species' own leaf: picture 01 at full size shows leaves 13 to 20 px long on a
+ * clump 676 px tall, 0.02 to 0.03 of the height, 0.16 m against the species' 0.17.
+ */
 const LEAF = 0.16 / 0.17;
 
 /**
- * A twig's fan: its leaves crowded into the twig's last stretch, spread flat to 60 degrees either
- * side of the twig, the lowest the widest (pictures 10, 11 and 23), each leaf a little below the
- * one before it in size toward the fan's tip.
+ * A twig's fan: 3 to 5 leaves crowded into the twig's last stretch (pictures 22 and 23; 21 shows
+ * up to 10), spread flat to 60 degrees either side of the twig, the lowest the widest, each a
+ * little below the one before it in size toward the fan's tip, drooping a little (pictures 01 and
+ * 22).
  */
 const FAN: PieceLeaves = {
-	gap: 0.012,
+	gap: 0.011,
 	from: 0.7,
+	hang: 0.25,
 	angle: [
 		[0, 50],
 		[1, 20],
@@ -33,19 +39,45 @@ const FAN: PieceLeaves = {
 	fan: { reach: 60, tilt: 25, cone: 15 },
 };
 
-/** A twig: 0.2 to 0.3 m long (picture 22), thin and a little drooping, ending in its fan. */
+/** A twig: about as long as its leaves (picture 22), thin and a little drooping, ending in its fan. */
 const TWIG: PieceStem = {
-	length: { mean: 0.25, spread: 0.05 },
-	radius: [0.003, 0.0012],
-	droop: 10,
+	length: { mean: 0.16, spread: 0.04 },
+	radius: [0.0025, 0.001],
+	droop: 15,
 	bud: false,
 	leaves: FAN,
 };
 
-/** The twigs along a branch: alternate, from a quarter of its length, 40 to 50 degrees out. */
-function twigs(length: number, count: number): PieceSides {
+/**
+ * A sub-branch, as picture 22 stands one: a jointed stem 0.4 m long carrying 4 alternate twigs from
+ * 0.3 of its length, 40 to 60 degrees out, and its own fan at its tip, so 5 fans a sub-branch.
+ */
+const SUB_BRANCH: PieceStem = {
+	length: { mean: 0.4, spread: 0.08 },
+	radius: [0.004, 0.0015],
+	droop: 20,
+	droopOver: [0.2, 1],
+	bud: false,
+	leaves: FAN,
+	sides: [
+		{
+			stem: TWIG,
+			gap: (0.65 * 0.4) / 4,
+			from: 0.3,
+			to: 0.95,
+			arrangement: 'alternate',
+			angle: { mean: 50, spread: 10 },
+		},
+	],
+};
+
+/**
+ * The sub-branches along a branch: alternate, from a quarter of its length, 40 to 50 degrees out;
+ * picture 01's plume shows each branch as sub-branches of fans, 10 to 20 fans a branch.
+ */
+function subBranches(length: number, count: number): PieceSides {
 	return {
-		stem: TWIG,
+		stem: SUB_BRANCH,
 		gap: (0.75 * length) / count,
 		from: 0.25,
 		arrangement: 'alternate',
@@ -58,7 +90,7 @@ function twigs(length: number, count: number): PieceSides {
 }
 
 /**
- * One branch of a pair: its length, its width at the foot over the culm's, its twigs, and the
+ * One branch of a pair: its length, its width at the foot over the culm's, its sub-branches, and the
  * degrees it turns down to level over its run (pictures 01 and 22).
  */
 function branch(length: number, width: number, count: number, droop: number): PieceStem {
@@ -68,7 +100,7 @@ function branch(length: number, width: number, count: number, droop: number): Pi
 		droop,
 		droopOver: [0.1, 1],
 		bud: false,
-		sides: [twigs(length, count)],
+		sides: [subBranches(length, count)],
 	};
 }
 
@@ -79,7 +111,7 @@ function branch(length: number, width: number, count: number, droop: number): Pi
  */
 function pair(name: string, length: number, count: number, droop: number): PieceRule {
 	const first = branch(length, 0.35, count, droop);
-	const second = branch(0.7 * length, 0.2, Math.max(3, count - 1), droop);
+	const second = branch(0.7 * length, 0.2, Math.max(2, count - 1), droop);
 	return {
 		name,
 		attitude: 'along',
@@ -102,14 +134,14 @@ function pair(name: string, length: number, count: number, droop: number): Piece
 
 /**
  * The bamboo's pieces, by their place up the branching zone (directed.ts): the low pairs short,
- * 0.06 of the height, with four twigs; the middle ones full, 0.11 of the height, with five; the top
- * ones slender whips, 0.09 of the height, with six that droop further (pictures 01 and 02, and the
+ * 0.06 of the height, with four sub-branches; the middle ones full, 0.11 of the height, with five;
+ * the top ones slender whips, 0.09 of the height, with six that droop further (pictures 01 and 02, and the
  * turning video: the plume's longest branches stand about its middle).
  */
 export const PIECES: readonly PieceRule[] = [
-	pair('pair-low', 0.06 * 8, 4, 45),
-	pair('pair-full', 0.11 * 8, 5, 55),
-	pair('pair-whip', 0.09 * 8, 6, 65),
+	pair('pair-low', 0.06 * 8, 3, 45),
+	pair('pair-full', 0.11 * 8, 4, 55),
+	pair('pair-whip', 0.09 * 8, 4, 65),
 ];
 
 /** The studio photograph of a branch: still 21 stands one branch with its twigs and fans. */
