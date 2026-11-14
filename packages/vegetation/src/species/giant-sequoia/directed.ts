@@ -172,7 +172,15 @@ export const directed: Species = {
 			each: 'limb',
 			width: [0.04, 0.06],
 			depth: 1,
-			sockets: { piece: 'bough', pitch: 0.55, rise: 0.55, lift: 20 },
+			// Still 01: the crown's clumps stand two metres apart with the crown's shade between
+			// them, so its rim breaks into lobes rather than closing as one smooth edge.
+			sockets: {
+				piece: 'bough',
+				pitch: 0.55,
+				rise: 0.55,
+				lift: 20,
+				clump: { spacing: 2, radius: 0.95 },
+			},
 		},
 		// The crown's shaded depth behind the boughs: the clumps stand on it, and the sky between
 		// them is the photograph's dark interior rather than open air.
