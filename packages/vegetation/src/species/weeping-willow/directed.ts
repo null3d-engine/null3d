@@ -65,7 +65,7 @@ function whips(along: readonly [number, number], every: number, most: number): F
 			width: 0.07,
 			depth: 0.1,
 			along: 0,
-			sockets: { every: STRAND * 0.48, angle: 10 },
+			sockets: { every: STRAND * 0.72, angle: 10 },
 		},
 	};
 }
@@ -127,7 +127,7 @@ function branches(
 		},
 		// Stills 02 and 18: the falls hang from a branch's outer arch, at the curtain, and the crown
 		// stands open under it, where the trunk and the limbs show.
-		children: [whips([0.6, 1], 0.025, 8)],
+		children: [whips([0.6, 1], 0.017, 10)],
 	};
 }
 

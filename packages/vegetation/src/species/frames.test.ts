@@ -252,12 +252,12 @@ const HELD: readonly Held[] = [
 		// A whip hangs by its own weight.
 		plumb: ['trunk', 'whip'],
 		// The heads' foliage stands above the highest wood.
-		through: 12,
-		crossings: [30, 1],
-		// Every whip and branch carries strands along it, so an axis carries several sockets. A strand
-		// carries a leaf each 1.75 cm, as still 21's does, so a whip carries fewer strands to keep the
-		// leaf form under its cap, and the figure rose from 0.117 with the leaves.
-		axesPerSocket: 0.129,
+		through: 17,
+		crossings: [29, 1],
+		// Every whip and branch carries strands along it, so an axis carries several sockets. A whip
+		// now stands closer to the next and carries fewer strands, so the curtain reads as finer bars
+		// at the same leaf form.
+		axesPerSocket: 0.173,
 		tall: [0.93, 1.02],
 	},
 	{
