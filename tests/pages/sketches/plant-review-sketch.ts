@@ -43,6 +43,7 @@ import {
 	stemAt,
 	stemFoot,
 	stemSurfaceAt,
+	stoolRadius,
 	sunlitTip,
 	turnedAbout,
 	type V3,
@@ -69,6 +70,7 @@ import {
 	barkBaseShot,
 	barkLimbShot,
 	barkMidShot,
+	baseSwell,
 	belowShot,
 	boleShot,
 	checkShot,
@@ -1532,6 +1534,7 @@ export default defineSketch(async (ctx) => {
 							turn,
 							lookDown: e,
 							...(record.base !== undefined && { base: record.base }),
+							stool: stoolRadius(skeleton, baseSwell(record.base)),
 						}),
 					0,
 				);
