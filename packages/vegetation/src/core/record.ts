@@ -2646,11 +2646,11 @@ export interface LodSpec {
 	 */
 	readonly cardCuts?: { readonly most?: number; readonly cells?: 'full' | 'half' };
 	/**
-	 * The least width, in pixels, that a card's own stalk draws at any distance, from 0 to 8. A card
-	 * stands on its axis's twig, whose wood may be thinner than a pixel at a whole view, so the
-	 * card's leaves read as a piece in air where the twig does not draw. At 1 or more the card
-	 * draws its supporting twig as a line of at least this width, in the young bark's tone, so the
-	 * join shows. 0 or absent, a card draws no stalk.
+	 * Whether a card draws the twig it stands on, from 0 to 8. A card stands on its axis's twig,
+	 * whose wood may be thinner than a pixel at a whole view, so the card's leaves read as a piece
+	 * in air where the twig does not draw. At 1 or more the card draws its supporting twig as a
+	 * line in the young bark's tone, as wide as that twig on screen and never under the wood's least
+	 * drawn width, so the join shows at any distance. 0 or absent, a card draws no stalk.
 	 */
 	readonly cardStalk?: number;
 	/**
