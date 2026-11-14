@@ -7,6 +7,7 @@
 // picture is void, with the reason, and nothing is measured on it. The solves read only the
 // subjects interface, so they hold for any generator that fills it.
 
+import type { BaseSpec } from '../../../../packages/vegetation/src/core/record.ts';
 import { across, cross, dot, facing, normalize, step, turnedAbout, type V3 } from './anatomy';
 import type { Lens } from './close';
 import type { CutPlane } from './cut-face';
@@ -1863,6 +1864,12 @@ export interface BarkBaseOptions {
 	readonly turn: number;
 	/** Degrees the camera looks down on the foot. */
 	readonly lookDown?: number;
+	/**
+	 * The stem base's flare, taper and buttress swells, as the record states them. The frame takes
+	 * the flared foot for its width, not the pipe above it, so the ground beside the foot stays in
+	 * the picture; a record with no base holds the pipe's own width.
+	 */
+	readonly base?: BaseSpec;
 }
 
 /** The share of the frame's width that the trunk's foot takes. */
@@ -1889,10 +1896,16 @@ export function barkBaseShot(
 	if (isAbsent(subjects.trunk)) return subjects.trunk;
 	const trunk = subjects.trunk;
 	const ground = trunk.base[1];
-	const radius = Math.max(
-		(trunk.axis[0] as AxisSample).radius,
-		trunkRadius(trunk, ground + FLARE_HEIGHT),
-	);
+	// The foot's own width: the pipe swells at the ground by the record's flare, its bole taper and
+	// the crests of its buttresses. The frame follows the foot, so the ground beside it stays in the
+	// picture; a base that states none of these keeps the pipe's width.
+	const swell =
+		(options.base?.flare.amount ?? 0) +
+		(options.base?.taper?.amount ?? 0) +
+		(options.base?.buttress?.amount ?? 0);
+	const radius =
+		Math.max((trunk.axis[0] as AxisSample).radius, trunkRadius(trunk, ground + FLARE_HEIGHT)) *
+		(1 + swell);
 	const tall = (2 * radius) / BASE_TRUNK_SHARE / lens.aspect;
 	const lookDown = Math.max(options.lookDown ?? 0, lens.fov / 2 + BASE_EDGE_BELOW_LEVEL) * DEG;
 	const out = facing(options.turn);

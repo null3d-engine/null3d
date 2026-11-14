@@ -1527,7 +1527,12 @@ export default defineSketch(async (ctx) => {
 				const found = solvedAt(
 					view,
 					lens,
-					() => barkBaseShot(subjectsOf(), lens, { turn, lookDown: e }),
+					() =>
+						barkBaseShot(subjectsOf(), lens, {
+							turn,
+							lookDown: e,
+							...(record.base !== undefined && { base: record.base }),
+						}),
 					0,
 				);
 				if (found) return found;
