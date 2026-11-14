@@ -20,5 +20,8 @@
 		"thin": 0.015,
 		"span": 0.1,
 		"barkMask": true
+	},
+	"09-secondary-branching.png": {
+		"leaves": 13.6
 	}
 }

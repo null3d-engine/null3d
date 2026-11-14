@@ -35,7 +35,7 @@ import {
 	writeArtifacts,
 } from './build-wasm';
 import { CACHE_ROOT } from './lib/build-cache';
-import { inputFiles } from './lib/shader-modules';
+import { compilerInputStamp, inputFiles } from './lib/shader-modules';
 
 /** The crate folders of the modules that the tools and the add-ons load, whose files key their entry. */
 const TOOL_FOLDERS = [
@@ -428,6 +428,81 @@ describe('toolInputs', () => {
 		expect(inputs.length).toBe(TOOL_FOLDERS.length);
 		for (const input of inputs) expect(input).toMatch(/^[0-9a-f]{64}$/);
 		expect(new Set(inputs).size).toBe(inputs.length);
+	});
+});
+
+describe('compilerInputStamp', () => {
+	/** The manifest of a tiny shader crate: one template, one engine entry shader. */
+	const MANIFEST = [
+		'[shaders.lit]',
+		'file = "lit.wgsl"',
+		'custom_materials = true',
+		'variants.webgpu = { targets = ["wgsl"] }',
+		'',
+		'[shaders.cull]',
+		'file = "cull.wgsl"',
+		'variants.webgpu = { targets = ["wgsl"] }',
+		'',
+	].join('\n');
+	/** The files of a tree whose compile reads the template and one library module. */
+	const FILES: Record<string, string> = {
+		'Cargo.toml': '[workspace]\nmembers = ["crates/null3d-shaders"]\n',
+		'Cargo.lock': 'version = 4\n',
+		'rust-toolchain.toml': '[toolchain]\nchannel = "nightly"\n',
+		'crates/null3d-shaders/Cargo.toml': '[package]\nname = "null3d-shaders"\nversion = "0.0.0"\n',
+		'crates/null3d-shaders/src/lib.rs': '// the compiler\n',
+		'crates/null3d-shaders/shaders.toml': MANIFEST,
+		'crates/null3d-shaders/wgsl/lit.wgsl': '#define_import_path null3d::lit\n',
+		'crates/null3d-shaders/wgsl/cull.wgsl': '// the cull pass\n',
+		'crates/null3d-shaders/wgsl/lib/math.wgsl': '#define_import_path null3d::math\n',
+		'crates/null3d-shaders-wasm/Cargo.toml':
+			'[package]\nname = "null3d-shaders-wasm"\nversion = "0.0.0"\n',
+		'crates/null3d-shaders-wasm/src/lib.rs': '// the wrapper\n',
+	};
+	/** The stamp of a tree of `FILES`, with `changes` written over it. */
+	const stampOf = (changes: Record<string, string> = {}): string => {
+		const root = mkdtempSync(join(tmpdir(), 'null3d-compiler-inputs-'));
+		try {
+			for (const [file, text] of Object.entries({ ...FILES, ...changes })) {
+				mkdirSync(dirname(join(root, file)), { recursive: true });
+				writeFileSync(join(root, file), text);
+			}
+			return compilerInputStamp(root);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	};
+
+	it('keeps its stamp when an engine entry shader or its table changes', () => {
+		// A project's compile reads the library modules and a marked template, never an engine entry
+		// shader, so a change to one costs no compile of the project's shaders.
+		const base = stampOf();
+		expect(stampOf({ 'crates/null3d-shaders/wgsl/cull.wgsl': '// a changed pass\n' })).toBe(base);
+		expect(
+			stampOf({
+				'crates/null3d-shaders/shaders.toml': `${MANIFEST}\n[shaders.other]\nfile = "cull.wgsl"\nvariants.webgpu = { targets = ["wgsl"] }\n`,
+			}),
+		).toBe(base);
+	});
+
+	it('moves its stamp when a library module, a template, a template table or the code changes', () => {
+		const base = stampOf();
+		expect(
+			stampOf({ 'crates/null3d-shaders/wgsl/lib/math.wgsl': '// a changed module\n' }),
+		).not.toBe(base);
+		expect(stampOf({ 'crates/null3d-shaders/wgsl/lit.wgsl': '// a changed template\n' })).not.toBe(
+			base,
+		);
+		expect(
+			stampOf({
+				'crates/null3d-shaders/shaders.toml': MANIFEST.replace(
+					'custom_materials = true',
+					'custom_materials = true\nmore = 1',
+				),
+			}),
+		).not.toBe(base);
+		expect(stampOf({ 'crates/null3d-shaders/src/lib.rs': '// changed\n' })).not.toBe(base);
+		expect(stampOf({ 'crates/null3d-shaders-wasm/src/lib.rs': '// changed\n' })).not.toBe(base);
 	});
 });
 

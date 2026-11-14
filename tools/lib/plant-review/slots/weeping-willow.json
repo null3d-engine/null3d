@@ -114,7 +114,7 @@
 	},
 	"16-bark-on-limb.png": {
 		"girth": null,
-		"thin": 0.153,
+		"thin": 0.05,
 		"span": 0.5,
 		"along": 0.3,
 		"barkMask": true,

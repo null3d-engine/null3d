@@ -229,6 +229,28 @@ describe('the view up the trunk', () => {
 		expect(checkShot(shot, lens).present).toBe(true);
 	});
 
+	test('never looks down at the ground beside a thick trunk whose top leans away', () => {
+		// A bole a metre through, leaning so its limbs part well to the side of where it stands at the
+		// eye; the camera stands on the side it leans away from, so its top is farther off than its foot.
+		const lens = { fov: 70, aspect: 4 / 3 };
+		const leaning: TrunkSubject = {
+			...trunkOf(8, 1, 4),
+			axis: axis([0, 0, 0], [0.25, 1, 0], Math.hypot(2, 8), 1, 0.5, 17),
+			firstFork: { at: [1, 4, 0], radius: 0.8 },
+		};
+		const subjects = tree({
+			trunk: leaning,
+			crownBase: 4,
+			limbs: [{ ...limbOf(1, 4, [1, 0.25, 0], 0.5, 8, 0.9), joint: [1, 4, 0] }],
+		});
+		const shot = shotOf(belowShot(subjects, lens, { turn: 0 }));
+		expect(shot.camera.position[0]).toBeLessThan(0);
+		expect(pitchOf(shot.camera)).toBeCloseTo(40, 4);
+		expect(landing(shot, lens, 'the top of the bole').y).toBeCloseTo(0.42, 6);
+		expect(landing(shot, lens, 'the horizon').y).toBeGreaterThan(1);
+		expect(checkShot(shot, lens).present).toBe(true);
+	});
+
 	test('keeps the fork on the middle column of a trunk that leans', () => {
 		// A stool's stem: its fork stands 1.2 m to the side of its foot.
 		const lens = { fov: 70, aspect: 3 / 4 };
@@ -445,6 +467,25 @@ describe('the view of a limb leaving the trunk', () => {
 		expect(shotOf(junctionShot(thin, TALL)).facts.frame as number).toBeCloseTo(0.9 * 1.8, 9);
 	});
 
+	test('reads the trunk below the join from the collar, where a limb leaves a thick trunk steeply', () => {
+		// A bole 2 m through with a limb about a metre through rising at 57 degrees: the limb comes out
+		// of the bark some 1.5 m above its joint on the trunk's line.
+		const lens = { fov: 50, aspect: 1 };
+		const trunk = trunkOf(14, 1, 5);
+		const lie = 57 * DEG;
+		const subjects = tree({
+			trunk,
+			limbs: [limbOf(1, 5, [Math.cos(lie), Math.sin(lie), 0], 0.48, 9, 1)],
+		});
+		const shot = shotOf(junctionShot(subjects, lens, { limbShare: 0.25, column: 0.45, lie: 45 }));
+		const below = landing(shot, lens, 'the trunk below the joint');
+		const collar = landing(shot, lens, 'the collar, where the limb meets the trunk');
+		expect(below.x).toBeLessThan(collar.x);
+		expect(below.y).toBeGreaterThan(collar.y);
+		expect(below.y).toBeLessThan(1);
+		expect(checkShot(shot, lens).present).toBe(true);
+	});
+
 	test("takes the photograph's own subject box shares where the tool measured them", () => {
 		const shot = shotOf(junctionShot(tree(), WIDE, { shares: { width: 0.2, height: 0.5 } }));
 		// The limb's 0.6 m takes half the height, unless the trunk's 0.8 m at a fifth of the width needs more.
@@ -654,10 +695,18 @@ describe("the view of the crown's outside", () => {
 		expect(checkShot(shot, WIDE).present).toBe(true);
 	});
 
-	test('gives no shot where the generator names no lobes', () => {
+	test('gives no shot where the generator names no lobes, and frames the crown edge where it names none', () => {
 		const solved = crownOutsideShot(tree({ lobes: absent('no bud sites') }), WIDE, { turn: 0 });
 		expect(solved).toEqual({ absent: 'no bud sites' });
-		expect(isAbsent(crownOutsideShot(tree({ lobes: [] }), WIDE, { turn: 0 }))).toBe(true);
+		// A crown that names no mass is framed on its own edge, as a willow's is, whose foliage hangs
+		// in strands along long whips and leaves no compact subtree for a lobe.
+		const shot = shotOf(crownOutsideShot(tree({ lobes: [] }), WIDE, { turn: 0 }));
+		expect(shot.kind).toBe("one foliage mass at the crown's edge, against the sky");
+		expect(checkShot(shot, WIDE).present).toBe(true);
+		// The mass stands in the crown's mid-band at its outer reach.
+		const lobe = shot.points.find((point) => point.name === 'the lobe');
+		expect(lobe?.at[1]).toBeCloseTo(5 + 11 * 0.45, 6);
+		expect(Math.hypot(lobe?.at[0] ?? 0, lobe?.at[2] ?? 0)).toBeCloseTo(8 * 0.9, 6);
 	});
 });
 
@@ -872,6 +921,24 @@ describe('the bark views', () => {
 		expect(checkShot(shot, TALL).present).toBe(true);
 	});
 
+	test('frames the limb whose radius the photograph shows, in place of the thickest', () => {
+		// A willow: a thick low limb with trunk-like furrowed bark, and thin limbs far out with smooth
+		// bark. Picture 16 shows the thin one, so the slot names its radius.
+		const limbs = [
+			limbOf(1, 4, [1, 0.2, 0], 0.4, 9, 0.5),
+			limbOf(2, 7, [-1, 0.4, 0.3], 0.06, 6, 0.3),
+			limbOf(3, 6, [0.3, 0.5, -1], 0.12, 7, 0.35),
+		];
+		const subjects = tree({ limbs });
+		const thickest = shotOf(barkLimbShot(subjects, TALL, { girth: 0.38, along: 0.3 }));
+		expect(thickest.facts.limb).toBe(1);
+		const thin = shotOf(barkLimbShot(subjects, TALL, { girth: 0.38, along: 0.3, thin: 0.06 }));
+		expect(thin.facts.limb).toBe(2);
+		expect(thin.facts.radius as number).toBeLessThan(0.1);
+		expect(thickest.facts.radius as number).toBeGreaterThan(0.3);
+		expect(checkShot(thin, TALL).present).toBe(true);
+	});
+
 	test('a bark view of a plant with no wood gives no shot', () => {
 		const tuft = tree({ trunk: absent('a tuft has no stem'), limbs: absent('a tuft has no stem') });
 		expect(barkBaseShot(tuft, WIDE, { turn: 0 })).toEqual({ absent: 'a tuft has no stem' });
@@ -969,6 +1036,32 @@ describe('the view of one branch piece', () => {
 		// Square to its face, the camera looks down onto the arch instead.
 		const faced = shotOf(placedPieceShot(tree({ pieces: [stalk] }), 'stalk', TALL));
 		expect(cameraAxes(faced.camera).forward[0]).toBeCloseTo(0, 6);
+	});
+
+	test("stands an arched piece's whole run in the frame, square to its line", () => {
+		// A frond whose blade bends away from its socket: its run from cut to tip leans 42 degrees off
+		// its blade's face, so a camera square to the face would see it shortened.
+		const frond = {
+			class: 'frond-arched',
+			socket: [0, 2.6, 0] as V3,
+			direction: normalize([0, 0.743, 0.669]),
+			length: 2.4,
+			spread: 0.7,
+			face: normalize([0, 0.2, 1]),
+			side: [1, 0, 0] as V3,
+			depth: { face: 1.6, side: 0.47 },
+		};
+		const shot = shotOf(placedPieceShot(tree({ pieces: [frond] }), 'frond', TALL));
+		const cut = landing(shot, TALL, 'the cut');
+		const tip = landing(shot, TALL, 'the tip');
+		expect(cut.y - tip.y).toBeCloseTo(0.85, 6);
+		expect(checkShot(shot, TALL).present).toBe(true);
+		// The camera looks square to the line, and the blade's width lies across the frame.
+		const { forward } = cameraAxes(shot.camera);
+		expect(dot(forward, frond.direction)).toBeCloseTo(0, 6);
+		expect(forward[0]).toBeCloseTo(0, 6);
+		// Nothing of the piece stands farther off its line than its spread, so the slab holds it.
+		expect((shot.far as number) - (shot.near as number)).toBeCloseTo(2 * frond.spread, 6);
 	});
 
 	test('frames the piece that heads toward the camera when asked, not the outermost', () => {

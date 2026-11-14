@@ -1,6 +1,7 @@
 // The card bake and the card levels: three cells a prototype in the atlas, a leaf colour whose mean
 // is the texture's mean, coverage and colour that keep through the mip levels the GPU averages, and
-// card levels that place each row's planes and keep every second card in the thinned level.
+// card levels that place each row's planes and keep every second card and the rim's in the thinned
+// level.
 import { describe, expect, it } from 'bun:test';
 import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
 import type { PrototypeArrays, SpeciesKitData } from '../asset';

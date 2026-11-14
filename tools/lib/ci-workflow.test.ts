@@ -443,6 +443,28 @@ describe("CI's workflow", () => {
 		expect(browser).not.toContain('package.json');
 	});
 
+	it('builds the packages a spec loads in every job that runs one', () => {
+		// A spec's import of a package's sub-path resolves to its built `lib` in the bare Bun loader
+		// that Playwright's runner uses, and only the pack step makes that `lib`. The browser jobs
+		// build it by hand, so a job that gains the browser action without the build fails every
+		// spec it runs at once, which is how drawn run 43336665928 lost 55 shards.
+		const runners = Object.entries(jobs).filter(([, job]) =>
+			(job.steps ?? []).some(
+				(step) =>
+					step.uses === './.github/actions/playwright-chromium' &&
+					step.with?.['cache-only'] !== 'true',
+			),
+		);
+		expect(runners.length).toBeGreaterThan(0);
+		for (const [name, job] of runners)
+			expect(
+				(job.steps ?? []).some(
+					(step) => typeof step.run === 'string' && step.run.includes('tools/build-package.ts'),
+				),
+				name,
+			).toBe(true);
+	});
+
 	it('makes each load build in a job of its own, which every job that serves it waits for', () => {
 		/** The load build of each job, by the folder that its command names. */
 		const loadJobs: Record<string, string> = {
@@ -528,6 +550,30 @@ describe("CI's workflow", () => {
 				dropped.some((pattern) => pattern.test(file)),
 		);
 		expect(missing).toEqual([]);
+	});
+
+	it("keys the fresh project's shader cache on the inputs that its build reads", () => {
+		const cache = (jobNamed('packages').steps ?? []).find(
+			({ uses, with: given }) =>
+				uses === 'actions/cache@v4' && String(given?.path).endsWith('fresh-project-shaders'),
+		);
+		const key = String(cache?.with?.key);
+		// The build records the inputs of a project's shader compile beside the compiler: its own
+		// sources, the library modules, the templates and the engine's version. The demos and the
+		// site page decide the requests.
+		for (const input of [
+			'packages/vite-plugin/dist/shader-compiler.stamp.json',
+			'packages/engine/package.json',
+			'examples/**',
+			'tests/fresh-project.ts',
+		])
+			expect(key, input).toContain(input);
+		// An engine entry shader that the site never compiles is not an input, so its change keeps
+		// every compiled entry.
+		expect(key).not.toContain('crates/null3d-shaders');
+		expect(key).not.toContain('Cargo.lock');
+		// A broad restore reuses every entry that a changed input leaves valid.
+		expect(String(cache?.with?.['restore-keys']).trim()).toBe('fresh-project-shaders-');
 	});
 
 	it('makes git give up on a stalled transfer, so a checkout tries its fetch again', () => {

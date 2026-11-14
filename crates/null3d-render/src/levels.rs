@@ -68,8 +68,12 @@ pub struct LevelSet {
     materials: [u32; MAX_LEVELS],
     count: u8,
     /// The levels that hand over in a fading band, from the bits at their number: a level fades
-    /// only where its switch would show, which a measured error does not.
+    /// where its own switch would show whatever the threshold.
     fades: u16,
+    /// The levels whose switch is a measured error, from the bits at their number, as the asset
+    /// tool and the planner write one. Such a level switches at once at a small threshold and
+    /// fades once the governed threshold makes its switch show.
+    measured: u16,
     /// True when every level draws the base mesh's own vertices, so a skinned object may pick a
     /// level: the skin then moves the same vertices whichever level draws.
     shared: bool,
@@ -107,9 +111,22 @@ impl LevelSet {
         self.materials[level]
     }
 
-    /// True when level `level` hands over in a fading band.
+    /// True when level `level` hands over in a fading band. A level names a fade for itself. A
+    /// measured level switches at once at a small threshold, and `measured` says the governed
+    /// threshold has risen far enough that the switch shows; it then fades too. The base level
+    /// never hands over to a finer level, so it has no band of its own.
+    pub fn fades_at(&self, level: usize, measured: bool) -> bool {
+        level > 0 && (self.fades(level) || (measured && self.measured(level)))
+    }
+
+    /// True when level `level` hands over in a fading band, as its own set names it.
     pub fn fades(&self, level: usize) -> bool {
         self.fades & (1 << level.min(MAX_LEVELS - 1)) != 0
+    }
+
+    /// True when level `level` switches by a measured error.
+    pub fn measured(&self, level: usize) -> bool {
+        self.measured & (1 << level.min(MAX_LEVELS - 1)) != 0
     }
 
     /// True when every level draws the base mesh's own vertices, from indices of its own.
@@ -143,10 +160,11 @@ pub struct Levels {
 impl Levels {
     /// Gives the mesh with engine id `base` the lower levels `meshes`, with their switch `values`
     /// and the `switches` that measure them, and the `materials` that they draw with (0 for the
-    /// level before's). The bits of `fades` mark the levels that hand over in a fading band, and
-    /// `shared` says that every level draws the base mesh's own vertices. With no levels it takes
-    /// them away. The caller checks that every mesh id names a live mesh, and that the switch
-    /// distances grow from level to level.
+    /// level before's). The low 16 bits of `flags` mark the levels that hand over in a fading band,
+    /// and the high 16 bits the levels whose switch is a measured error, each from the bit at the
+    /// level's number; `shared` says that every level draws the base mesh's own vertices. With no
+    /// levels it takes them away. The caller checks that every mesh id names a live mesh, and that
+    /// the switch distances grow from level to level.
     #[allow(clippy::too_many_arguments)]
     pub fn set(
         &mut self,
@@ -155,7 +173,7 @@ impl Levels {
         values: &[f32],
         switches: &[Switch],
         materials: &[u32],
-        fades: u16,
+        flags: u32,
         shared: bool,
     ) -> Result<(), LevelError> {
         if meshes.len() + 1 > MAX_LEVELS
@@ -209,7 +227,8 @@ impl Levels {
         }
         *set = LevelSet {
             count: meshes.len() as u8 + 1,
-            fades,
+            fades: flags as u16,
+            measured: (flags >> 16) as u16,
             shared,
             ..LevelSet::default()
         };
@@ -322,18 +341,22 @@ pub(crate) type LevelBucket<'a> = &'a dyn Fn(&BucketKey, usize) -> Option<Bucket
 /// Adds the keys of the level buckets of every key in `keys` whose mesh has levels and that
 /// `eligible` lets pick them: one key for each lower level, and one fade bucket for each level
 /// alike, where the level or the one after it fades, or where `ranged` says its sources draw in a
-/// distance band and `distance_fades` turns those bands on. With `codes`, a levels debug view
-/// draws every level through its own bucket and adds no fade bucket, since each of its entries
-/// carries the level's code. A key without levels gets a fade bucket
-/// when its sources draw in a distance band. Each takes the count of the key it comes from, since
-/// any of its sources may draw any level. `level_bucket` gives the bucket of a level, whose
-/// material may differ from the base key's, so the level's pipeline and map group come from the
-/// level's own mesh and material. The keys are sorted again, and equal keys merge as
-/// [`crate::frame::collect_bucket_keys`] merges them. Allocates nothing once `keys` has room.
+/// distance band and `distance_fades` turns those bands on. A level fades when its set names a
+/// fade, and a measured level fades too when `measured_fades` says the governed threshold is high
+/// enough that its switch shows. With `codes`, a levels debug view draws every level through its
+/// own bucket and adds no fade bucket, since each of its entries carries the level's code. A key
+/// without levels gets a fade bucket when its sources draw in a distance band. Each takes the
+/// count of the key it comes from, since any of its sources may draw any level. `level_bucket`
+/// gives the bucket of a level, whose material may differ from the base key's, so the level's
+/// pipeline and map group come from the level's own mesh and material. The keys are sorted again,
+/// and equal keys merge as [`crate::frame::collect_bucket_keys`] merges them. Allocates nothing
+/// once `keys` has room.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn expand_level_keys(
     keys: &mut Vec<(BucketKey, u32)>,
     levels: &Levels,
     distance_fades: bool,
+    measured_fades: bool,
     codes: bool,
     ranged: impl Fn(&BucketKey) -> bool,
     eligible: impl Fn(&BucketKey) -> bool,
@@ -368,7 +391,7 @@ pub(crate) fn expand_level_keys(
         };
         // The base level's fade bucket takes the band of level 1, and the edges of a distance
         // range.
-        if fades && (range || set.fades(1)) {
+        if fades && (range || set.fades_at(1, measured_fades)) {
             keys.push((fade_key(key), count));
         }
         // Each level inherits the material of the level before it, so the key that finds a level
@@ -380,9 +403,10 @@ pub(crate) fn expand_level_keys(
             };
             keys.push((level_key, count));
             // A level's own material may fade where the base material does not.
-            let band =
-                (range || set.fades(level) || (level + 1 < set.len() && set.fades(level + 1)))
-                    && fades_its_way(level_key.0);
+            let band = (range
+                || set.fades_at(level, measured_fades)
+                || (level + 1 < set.len() && set.fades_at(level + 1, measured_fades)))
+                && fades_its_way(level_key.0);
             if band {
                 keys.push((fade_key(level_key), count));
             }
@@ -418,11 +442,15 @@ pub(crate) struct KeyLinks {
 /// [`expand_level_keys`] made, with the same `level_bucket` that made them. A fade bucket has none.
 /// A bucket of a mesh without levels, and a base level's bucket that `eligible` keeps from picking,
 /// have no level links, but each keeps its fade key, which a distance band draws through.
+/// `measured_fades` says whether a measured level hands over in a fading band, as
+/// [`expand_level_keys`] read it.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn links_of(
     key: BucketKey,
     keys: &[(BucketKey, u32)],
     levels: &Levels,
     codes: bool,
+    measured_fades: bool,
     bands: impl Fn(&BucketKey) -> bool,
     eligible: impl Fn(&BucketKey) -> bool,
     level_bucket: LevelBucket<'_>,
@@ -443,8 +471,10 @@ pub(crate) fn links_of(
     // distance band, the level's own fade, or the fade of the level after it, as a fade bucket
     // takes the band of the level that hands over to it.
     let fades = bands(&key)
-        || set
-            .is_some_and(|set| set.fades(level) || (level + 1 < set.len() && set.fades(level + 1)));
+        || set.is_some_and(|set| {
+            set.fades_at(level, measured_fades)
+                || (level + 1 < set.len() && set.fades_at(level + 1, measured_fades))
+        });
     let fade = if codes {
         find(Some(key)).filter(|_| fades)
     } else {
@@ -540,6 +570,7 @@ mod tests {
             &levels,
             true,
             false,
+            false,
             |_| true,
             |_| true,
             &no_level,
@@ -550,6 +581,107 @@ mod tests {
         };
         assert!(faded(template::INSTANCED_LIT));
         assert!(faded(template::CUSTOM_FIRST));
+    }
+
+    /// A bucket key of a standard lit mesh whose mesh field is `mesh`.
+    fn lit_key(mesh: u32) -> BucketKey {
+        (
+            DrawKey {
+                template: template::INSTANCED_LIT,
+                permutation: 0,
+                vertex_format: 0,
+                state: 0,
+                bias: DepthBias::NONE,
+            },
+            0,
+            0,
+            mesh,
+            5,
+            0,
+        )
+    }
+
+    #[test]
+    fn a_measured_level_fades_only_at_a_governed_threshold_that_shows_its_switch() {
+        let mut levels = Levels::default();
+        // Two measured levels: error switches with no fade bit of their own, as the planner and the
+        // asset tool set them.
+        levels
+            .set(
+                1,
+                &[2, 3],
+                &[0.1, 0.2],
+                &[Switch::Error; 2],
+                &[0, 0],
+                0b110 << 16,
+                false,
+            )
+            .unwrap();
+        let set = levels.of(1).unwrap();
+        assert!(!set.fades_at(1, false));
+        assert!(set.fades_at(1, true));
+        assert!(set.fades_at(2, true));
+        // A base level never hands over to a finer level, whatever the threshold.
+        assert!(!set.fades_at(0, true));
+        // A distance level that names no fade switches at once at every threshold.
+        levels
+            .set(1, &[2], &[10.0], &[Switch::Distance], &[0], 0, false)
+            .unwrap();
+        let set = levels.of(1).unwrap();
+        assert!(!set.fades_at(1, false));
+        assert!(!set.fades_at(1, true));
+        // A level that names a fade keeps it at a small threshold.
+        levels
+            .set(1, &[2], &[10.0], &[Switch::Distance], &[0], 0b10, false)
+            .unwrap();
+        assert!(levels.of(1).unwrap().fades_at(1, false));
+    }
+
+    #[test]
+    fn a_measured_level_takes_a_fade_bucket_only_at_a_governed_threshold_that_shows_its_switch() {
+        let mut levels = Levels::default();
+        levels
+            .set(
+                1,
+                &[2, 3],
+                &[0.1, 0.2],
+                &[Switch::Error; 2],
+                &[0, 0],
+                0b110 << 16,
+                false,
+            )
+            .unwrap();
+        let level_bucket = |base: &BucketKey, level: usize| {
+            let (mesh, _) = key_level(base.3);
+            Some(lit_key(level_key(mesh, level)))
+        };
+        let eligible = |_: &BucketKey| true;
+        let mut keys = vec![(lit_key(1), 3)];
+        expand_level_keys(
+            &mut keys,
+            &levels,
+            false,
+            false,
+            false,
+            |_| false,
+            eligible,
+            &level_bucket,
+        );
+        // At a small threshold a measured level switches at once, so it takes no fade bucket.
+        assert!(!keys.iter().any(|(key, _)| is_fade_key(key)));
+        let mut keys = vec![(lit_key(1), 3)];
+        expand_level_keys(
+            &mut keys,
+            &levels,
+            false,
+            true,
+            false,
+            |_| false,
+            eligible,
+            &level_bucket,
+        );
+        // Above it the base level and both lower levels each take one, so the band hands over.
+        assert_eq!(keys.iter().filter(|(key, _)| is_fade_key(key)).count(), 3);
     }
 
     #[test]
@@ -652,6 +784,7 @@ mod tests {
             &levels,
             false,
             false,
+            false,
             |_| false,
             eligible,
             &level_bucket,
@@ -671,6 +804,7 @@ mod tests {
                 key,
                 &keys,
                 &levels,
+                false,
                 false,
                 |_| false,
                 eligible,
@@ -727,7 +861,7 @@ mod tests {
                 &deepest,
                 &[Switch::Error; MAX_LEVELS - 1],
                 &[0; MAX_LEVELS - 1],
-                u16::MAX << 1,
+                (u16::MAX << 1) as u32,
                 false,
             )
             .unwrap();

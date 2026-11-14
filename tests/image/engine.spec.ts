@@ -675,7 +675,13 @@ for (const gpu of ['webgpu', 'webgl2'] as const) {
 			Boolean(process.env.CI) || test.info().project.name.startsWith('chromium-swiftshader');
 		const seconds = soft ? 30 : 4;
 		await page.goto(`engine.html?gpu=${gpu}&seconds=${seconds}&${mode.query}&sketch=busy`);
-		const result = await pageResult<EngineResult & { error?: string }>(page, 60_000);
+		// The wait covers the page's own window plus the start of a slow software GPU, which alone
+		// measured about a third of a minute: a wait of the window plus a small multiple of the
+		// start leaves room for both on a loaded runner. The project's own minute would kill the
+		// test before that wait ran out, as it did in the production build, so the test sets a
+		// limit that contains it.
+		test.setTimeout(180_000);
+		const result = await pageResult<EngineResult & { error?: string }>(page, 90_000);
 		expect(result.error).toBeUndefined();
 		expect(engineProblems(result, mode, gpu, notPacing)).toEqual([]);
 		const jobThreads = Object.keys(result.stats.threads).filter((name) => name.startsWith('job-'));

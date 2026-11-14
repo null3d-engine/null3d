@@ -231,6 +231,18 @@ describe('the hold loop', () => {
 		expect(drawn).toEqual([1, 2]);
 		expect(Atomics.load(slots, Slot.FramesSkipped)).toBe(0);
 	});
+
+	it('fails by the stopped clock when the page runs no callbacks', async () => {
+		const { metrics, slots, renderer } = setup();
+		const hold = new HoldLoop(slots, renderer, metrics);
+		Atomics.store(slots, Slot.FramesPublished, 5);
+		const ended = hold.drawHeld(5).then(
+			() => 'resolved',
+			(error: Error) => error.message,
+		);
+		// No refresh: the page's animation-frame clock stopped, as a hidden or throttled page's does.
+		expect(await ended).toContain('the frame clock stopped');
+	});
 });
 
 describe("a capture's wait for the next frame", () => {
@@ -284,6 +296,27 @@ describe("a capture's wait for the next frame", () => {
 		const stopped = waitForFrame(slots);
 		await Promise.resolve();
 		expect([paused.ended, stopped.ended]).toEqual([true, true]);
+	});
+
+	it('fails by the stopped clock when no callback comes at all', async () => {
+		const { slots } = setup();
+		const ended = nextFrameTaken(slots, 5).then(
+			() => 'resolved',
+			(error: Error) => error.message,
+		);
+		expect(await ended).toContain('the frame clock stopped');
+	});
+
+	it('still captures a slow page whose callbacks come slowly', async () => {
+		const { slots } = setup();
+		const wait = nextFrameTaken(slots, 200).then(
+			() => 'resolved',
+			(error: Error) => error.message,
+		);
+		await new Promise((resolve) => setTimeout(resolve, 50));
+		Atomics.add(slots, Slot.FramesTaken, 1);
+		refresh(DISPLAY_HZ, 1);
+		expect(await wait).toBe('resolved');
 	});
 
 	it('gives up when no frame comes, as after a sketch error', async () => {

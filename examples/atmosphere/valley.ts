@@ -11,6 +11,7 @@ import { type PlacedPlants, type PlantMaterial, setWindLayer } from '@null3d/veg
 import { createWind } from '@null3d/wind';
 import { type PlantSpot, plantSpecies } from '../lib/plants';
 import { Noise, rock, type TexelSample, textureSet } from '../lib/procedural';
+import { ATMOSPHERE_SPRUCE } from '../lib/stand-ins';
 
 /** Quads along each side of the land, its width in metres, and the lake's height. */
 const QUADS = 320;
@@ -33,9 +34,9 @@ const BOULDERS = 260;
  * every device.
  */
 const PINE = {
-	id: 'norway-spruce',
+	id: ATMOSPHERE_SPRUCE.id,
 	height: 15,
-	standIn: { height: 15, aspect: 0.45, leaf: [0.08, 0.2, 0.09], bark: [0.26, 0.18, 0.13] },
+	standIn: ATMOSPHERE_SPRUCE.standIn,
 } as const;
 const SEED = 11;
 const VARIANTS = 3;

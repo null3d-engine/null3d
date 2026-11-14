@@ -78,10 +78,12 @@ fn one_patch() -> PatchTree {
 /// view draws all of them, which fills multi-draw calls of more than one range.
 fn separate_patches(count: u32) -> PatchTree {
     let count = count as usize;
+    // Each patch's run starts one slot past the last, so no run joins the run before it and each
+    // takes a range of its own.
     PatchTree::new(
-        (0..count).flat_map(|_| [0, 1, 2]).collect(),
+        (0..count).flat_map(|_| [0, 1, 2, 0, 1, 2]).collect(),
         vec![[0.0, 0.0, 0.0, 1.0]; count],
-        vec![[0, 3, 0, 0]; count],
+        (0..count as u32).map(|k| [k * 6, 3, 0, 0]).collect(),
         0,
         4,
     )

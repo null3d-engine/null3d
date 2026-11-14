@@ -11,6 +11,7 @@ import {
 	anchorColumn,
 	blankFrame,
 	cameraWidthShare,
+	colourRuleGap,
 	cropFault,
 	crownBoxSpread,
 	edgeDifference,
@@ -45,7 +46,7 @@ import {
 	spread,
 } from './compare.ts';
 import { blank, deltaE2000, labImage } from './image.ts';
-import { boxOf, type PlantMask, type PlantMeasures, pieceCount } from './references.ts';
+import { boxOf, matteMask, type PlantMask, type PlantMeasures, pieceCount } from './references.ts';
 
 /** A plant mask of a rectangle crown on a one-pixel trunk, with the background fields filled in. */
 function rectangle(
@@ -1020,5 +1021,52 @@ describe("a picture's rows against its plant's own height", () => {
 			},
 		} as unknown as Parameters<typeof frameTilt>[0];
 		expect(frameTilt(frame)?.pitch as number).toBeCloseTo(tilt.pitch, 6);
+	});
+});
+
+describe("a whole view's sky gap, read like with like", () => {
+	const W = 160;
+	const H = 120;
+	const SKY = [196, 214, 236] as const;
+	const LEAF = [40, 80, 30] as const;
+	const linear = (b: number) => {
+		const c = b / 255;
+		return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+	};
+	const encode = (c: number) =>
+		Math.round((c <= 0.0031308 ? c * 12.92 : 1.055 * c ** (1 / 2.4) - 0.055) * 255);
+	/** Whether a pixel is the crown's: an ellipse, with a grid of holes through it. */
+	const crown = (x: number, y: number) =>
+		((x - 80) / 50) ** 2 + ((y - 55) / 35) ** 2 <= 1 && !(x % 8 < 2 && y % 8 < 2);
+	const trunk = (x: number, y: number) => x >= 77 && x <= 83 && y > 85 && y < 112;
+
+	test('reads a still of half-covered plant pixels as a photograph of the same pixels', () => {
+		// Each crown pixel half leaf and half sky, mixed in linear light as a camera or the engine
+		// draws a texel half covered.
+		const half = LEAF.map((c, k) => encode((linear(c) + linear(SKY[k] as number)) / 2));
+		const still = blank(W, H, SKY);
+		for (let y = 0; y < H; y++)
+			for (let x = 0; x < W; x++) {
+				const colour = trunk(x, y) ? LEAF : crown(x, y) ? half : undefined;
+				if (colour) still.data.set(colour, (y * W + x) * 4);
+			}
+		const photograph = { ...still, data: new Uint8Array(still.data) };
+		const byColour = colourRuleGap(still);
+		expect(byColour).toBe(colourRuleGap(photograph));
+		expect(byColour).toBeGreaterThan(0);
+		// The engine's matte of the same half cover is stored display-encoded, 188 on white: the
+		// half-dark rule reads it as sky, so a matte against a photograph's colour mask is unlike.
+		const matte = blank(W, H, [255, 255, 255]);
+		for (let y = 0; y < H; y++)
+			for (let x = 0; x < W; x++) {
+				if (trunk(x, y)) matte.data.set([0, 0, 0], (y * W + x) * 4);
+				else if (crown(x, y)) matte.data.set([188, 188, 188], (y * W + x) * 4);
+			}
+		const read = matteMask(matte);
+		let crownPlant = 0;
+		for (let y = 0; y < read.height; y++)
+			for (let x = 0; x < read.width; x++)
+				if (crown(x, y) && !trunk(x, y) && read.mask[y * read.width + x]) crownPlant++;
+		expect(crownPlant).toBe(0);
 	});
 });

@@ -739,9 +739,10 @@ export interface SparsePlant {
 
 /**
  * The plant that keeps the first `keep` carriers of its order: those rows, or those end axes, every
- * axis from each of them to the root, and the bare branches whose places pass. An axis stays whole or goes whole, and the wood that stays keeps its place and its
- * radii. The plant keeps the bounds, the height and the crown base it grew with, so every
- * sparseness of one plant shares one frame.
+ * axis from each of them to the root, and the bare branches whose places pass. An axis stays whole
+ * or goes whole, and the wood that stays keeps its place and its radii. A plant of sockets keeps the
+ * node of each kept row's socket and every node from the root to it. The plant keeps the bounds, the
+ * height and the crown base it grew with, so every sparseness of one plant shares one frame.
  *
  * @param skeleton The skeleton as grown.
  * @param rows The shoot rows as grown, each with its node and, as its record, its axis.
@@ -790,6 +791,22 @@ export function sparsePlant(
 	const keepTo = new Int32Array(count);
 	for (let a = 0; a < count; a++) keepTo[a] = stays[a] ? (axes.last[a] as number) : -1;
 	if (order.bySockets && nodes) cutBack(skeleton, rows, order, kept, keepTo);
+	// A kept row keeps the node its socket stands on and every node from the root to it, so the
+	// thinned skeleton holds the socket the row names and the wood that carries it. Without this, a
+	// parent can be cut below the node where a socket's axis leaves it, since an axis with no rows of
+	// its own passes no attachment node up, and the row is left on cut-away wood with no socket.
+	if (order.bySockets && nodes && buds.sockets) {
+		const named = rows.socket;
+		for (let r = 0; r < rows.count; r++) {
+			if ((order.place[r] as number) >= kept) continue;
+			const socket = named ? (named[r] as number) : (order.socketOf?.[r] ?? -1);
+			if (socket < 0) continue;
+			for (let n = buds.node[socket] as number; n >= 0; n = skeleton.parent[n] as number) {
+				const axis = skeleton.axisOf[n] as number;
+				if ((keepTo[axis] as number) < n) keepTo[axis] = n;
+			}
+		}
+	}
 	// On a plant of sockets the bud sites are its sockets, and a socket whose shoot holds no kept
 	// piece leaves with it.
 	let budKept: Uint8Array | undefined;

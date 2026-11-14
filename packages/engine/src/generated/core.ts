@@ -713,4 +713,8 @@ export const LEVEL_PROBLEM_ERRORS = 2;
 export const LEVEL_PROBLEM_MESH = 3;
 export const LEVEL_PROBLEM_FORMAT = 4;
 
+export const LEVEL_SWITCH_ERROR = 0;
+export const LEVEL_SWITCH_DISTANCE = 1;
+export const LEVEL_SWITCH_COVERAGE = 2;
+
 export const LEVELS_MAX = 16;

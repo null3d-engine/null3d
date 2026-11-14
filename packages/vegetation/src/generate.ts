@@ -109,6 +109,7 @@ import {
 	type LevelBuild,
 	levelBuild,
 	levelWithin,
+	mergedFoliage,
 	NO_CLUSTERS,
 	NO_TRIANGLES,
 	partTotal,
@@ -762,9 +763,13 @@ function growFull(kit: SpeciesKitData, options: GrowOptions): GrownPlant {
 	// keeps its own size. An instanced plant draws its cards, and a merged plant its foliage mesh;
 	// both are scaled through the skeleton, and each is measured at its own drawn level.
 	const merged = record.lod.nearFoliage === 'merged';
+	// A directed crown lays its trunk and its fronds at the variant's drawn height itself: a palm
+	// grows taller by its trunk, and a scale of the skeleton alone would leave the pieces at its
+	// sockets their own size.
 	const target =
 		!options.cutting &&
 		placeholders !== true &&
+		record.growth.model !== 'frond-crown' &&
 		(merged
 			? grower(record.growth.model).foliage !== undefined
 			: record.lod.nearFoliage === 'instanced' && kit.prototypes.length > 0)
@@ -1179,11 +1184,7 @@ function levelParts(mesh: MeshInput, level: MeshLevel): PlantPart[] {
 	if (record.lod.nearFoliage === 'merged') {
 		const merged = stage(
 			placeholders,
-			() => {
-				const build = grower(record.growth.model).foliage;
-				if (!build) throw new NotBuiltError(`merged ${record.growth.model} foliage`);
-				return build(mesh, level);
-			},
+			() => mergedFoliage(mesh, level),
 			() => placeholderFoliage(mesh, level),
 		);
 		parts.push(...partOf(kit, 'foliage', merged, TEXTURE_UV_STEPS));
@@ -1414,7 +1415,7 @@ export function growNearWoodNow(kit: SpeciesKitData, options: GrowOptions): read
 
 /**
  * Bakes a variant's far cards on this thread: the impostor atlases from its first card level. Call
- * `loadPlantCode` first.
+ * `loadPlantCode` and `loadFarBaker` first.
  *
  * @param kit The species' kit.
  * @param asset The grown variant.

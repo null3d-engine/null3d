@@ -144,6 +144,17 @@ function wakeUp(): void {}
 export const CAPTURE_WAIT_CALLBACKS = 120;
 
 /**
+ * How long a capture waits for any animation frame callback before it fails by the stopped clock.
+ * A page that is hidden or throttled runs no callbacks at all, so the callback count alone never
+ * ends the wait. A working page also runs none while it builds its pipelines: the island's first
+ * frame takes about 200 seconds on CI's software renderer, and one run drew no frame of the island
+ * within 300 while its twelve heavy shards shared a runner. The clock therefore sits above a whole
+ * first frame, so a slow page ends its wait by taking a frame, and a page that has stopped still
+ * fails inside the page budgets, the tightest of which is ten minutes.
+ */
+export const CAPTURE_CLOCK_MS = 480_000;
+
+/**
  * Resolves once the frame loop on this thread has taken a frame after this call. It checks in this
  * thread's animation frame callbacks, which run after the loop's own, so the loop takes and draws
  * any frame that is ready before a capture replays the frame taken last. A thread that a blocking
@@ -152,19 +163,29 @@ export const CAPTURE_WAIT_CALLBACKS = 120;
  * and after `CAPTURE_WAIT_CALLBACKS` callbacks without one. A hidden page runs no callbacks, so the
  * wait goes on once the page shows again.
  */
-export function nextFrameTaken(slots: Int32Array): Promise<void> {
+export function nextFrameTaken(slots: Int32Array, clockMs = CAPTURE_CLOCK_MS): Promise<void> {
 	const taken = Atomics.load(slots, Slot.FramesTaken);
 	let callbacks = 0;
-	return new Promise((resolve) => {
+	return new Promise((resolve, reject) => {
+		// A page whose animation-frame clock stops runs no callbacks, so the count alone cannot end
+		// the wait. The timer ends it by naming the stopped clock rather than one day timing out.
+		const clock = setTimeout(() => {
+			reject(
+				new Error(
+					`the frame clock stopped: no animation frame callback came within ${(clockMs / 1000).toFixed(0)} seconds, so a capture cannot wait for a frame`,
+				),
+			);
+		}, clockMs);
 		const check = () => {
 			if (
 				Atomics.load(slots, Slot.Paused) !== 0 ||
 				Atomics.load(slots, Slot.Running) === 0 ||
 				Atomics.load(slots, Slot.FramesTaken) !== taken ||
 				callbacks++ === CAPTURE_WAIT_CALLBACKS
-			)
+			) {
+				clearTimeout(clock);
 				resolve();
-			else requestAnimationFrame(check);
+			} else requestAnimationFrame(check);
 		};
 		check();
 	});
@@ -500,16 +521,32 @@ export class HoldLoop implements RenderLoop {
 		this.presenter = new Presenter(slots, renderer, metrics, {}, undefined, presented);
 	}
 
-	drawHeld(): Promise<void> {
+	drawHeld(clockMs = CAPTURE_CLOCK_MS): Promise<void> {
 		this.drawn ??= new Promise((resolve, reject) => {
 			let drawn = 0;
+			// The hold's frames draw from animation frame callbacks, so a page whose clock stops runs
+			// none and this promise never settles. The clock ends it by naming the stopped clock, as a
+			// capture's wait for a live frame does.
+			const clock = setTimeout(
+				() =>
+					reject(
+						new Error(
+							`the frame clock stopped: no animation frame callback came within ${(clockMs / 1000).toFixed(0)} seconds, so the held frame cannot draw`,
+						),
+					),
+				clockMs,
+			);
 			const attempt = (timestamp: number) => {
 				const published = Atomics.load(this.slots, Slot.FramesPublished);
 				const from = Atomics.load(this.slots, Slot.HeldFrom);
 				const frame = drawn > 0 ? drawn + 1 : from > 0 && from <= published ? from : published;
-				if (this.stopped) reject(new Error('the engine stopped before it drew the held frame'));
-				else if (published === 0) reject(new Error('the sketch thread published no held frame'));
-				else
+				if (this.stopped) {
+					clearTimeout(clock);
+					reject(new Error('the engine stopped before it drew the held frame'));
+				} else if (published === 0) {
+					clearTimeout(clock);
+					reject(new Error('the sketch thread published no held frame'));
+				} else
 					try {
 						// The held frames draw in the order they were recorded, so a plan that a later
 						// held frame changed leaves an earlier one safe. Only a list of an older GPU
@@ -524,8 +561,12 @@ export class HoldLoop implements RenderLoop {
 						this.presenter.draw(frame, timestamp, stale);
 						drawn = frame;
 						if (frame < published) requestAnimationFrame(attempt);
-						else resolve();
+						else {
+							clearTimeout(clock);
+							resolve();
+						}
 					} catch (error) {
+						clearTimeout(clock);
 						reject(error);
 					}
 			};

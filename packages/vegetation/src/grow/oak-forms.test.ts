@@ -6,7 +6,7 @@ import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
 import { formRecord } from '../core/forms';
 import type { MacroSkeleton } from '../core/graph';
 import { loadPlantCode } from '../generate';
-import { species } from '../species/pedunculate-oak';
+import { record as oakRecord } from '../species/pedunculate-oak/record';
 import { leadOnThickest } from './leaders';
 import { grower } from './models';
 
@@ -82,7 +82,7 @@ function figuresOf(skeleton: MacroSkeleton): FormFigures {
 
 /** Grows one variant of a form, with the stem led on as the generator leads it. */
 async function grownForm(form: string, variant: number): Promise<FormFigures> {
-	const record = formRecord(species.record, form);
+	const record = formRecord(oakRecord, form);
 	await loadPlantCode(record);
 	return figuresOf(
 		leadOnThickest(grower('self-organizing').grow({ record, seed: 11, variant, season: 'summer' })),
@@ -93,7 +93,7 @@ describe("the pedunculate oak's other forms", () => {
 	it(
 		'grows a woodland oak with a long clean bole under a small high crown, as stills 30 and 31 show',
 		async () => {
-			for (let variant = 0; variant < species.record.variants; variant++) {
+			for (let variant = 0; variant < oakRecord.variants; variant++) {
 				const figures = await grownForm('woodland', variant);
 				expect(figures.nonFinite).toBe(0);
 				// Stills 30 and 31: no limb leaves the bole below about half the height, and the foliage
@@ -113,11 +113,11 @@ describe("the pedunculate oak's other forms", () => {
 	);
 
 	it('grows a young oak as one slim stem with thin limbs, as still 32 shows', async () => {
-		const record = formRecord(species.record, 'young');
+		const record = formRecord(oakRecord, 'young');
 		// A young oak bears no acorns and stands on a plain foot.
 		expect(record.extras).toBeUndefined();
 		expect(record.base?.buttress).toBeUndefined();
-		for (let variant = 0; variant < species.record.variants; variant++) {
+		for (let variant = 0; variant < oakRecord.variants; variant++) {
 			const figures = await grownForm('young', variant);
 			expect(figures.nonFinite).toBe(0);
 			// Still 32: about four metres tall.

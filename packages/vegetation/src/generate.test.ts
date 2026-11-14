@@ -20,6 +20,7 @@ import {
 	variantKey,
 } from './generate';
 import type { PlantTaskInput } from './generate-task';
+import { loadFarBaker } from './lod/impostor';
 
 const stub = standInSpecies('stub');
 
@@ -92,6 +93,26 @@ describe('the plant core with stand-ins', () => {
 		expect(variantKey(kit, options)).not.toBe(variantKey(kit, { ...options, variant: 2 }));
 	});
 
+	it('names merged foliage that its model does not build, and stands in where a kit asks', () => {
+		// A species whose nearest foliage is merged asks its growth model for that mesh, and the
+		// self-organizing model builds none. The kit with stand-ins turns that into the placeholder,
+		// and a kit without them reports the stage that is not built.
+		const merged = {
+			...stub,
+			record: { ...stub.record, lod: { ...stub.record.lod, nearFoliage: 'merged' as const } },
+		};
+		expect(() =>
+			growPlantNow(buildKitNow(merged, { placeholders: false }), { seed: 11, variant: 0 }),
+		).toThrow(NotBuiltError);
+		const stood = growPlantNow(buildKitNow(merged, { placeholders: 'missing' }), {
+			seed: 11,
+			variant: 0,
+		});
+		expect(stood.levels.some((level) => level.parts.some((part) => part.name === 'foliage'))).toBe(
+			true,
+		);
+	});
+
 	it('meshes the nearest wood later as it would have at once', () => {
 		const later = growPlantNow(kit, { seed: 11, variant: 0 });
 		expect(later.levels[0].parts).toHaveLength(0);
@@ -103,7 +124,8 @@ describe('the plant core with stand-ins', () => {
 
 	it('bakes the far cards and cuts the review pieces', async () => {
 		const asset = growPlantNow(kit, { seed: 11, variant: 0, near: true });
-		const far = await bakeFarNow(kit, asset);
+		await loadFarBaker();
+		const far = bakeFarNow(kit, asset);
 		expect(far.views).toBe(stub.record.lod.impostor.views);
 		expect(far.color.length).toBe((far.views * far.texels) ** 2 * 4);
 		for (const part of ['leaf', 'cluster', 'subbranch', 'branch'] as const) {
@@ -116,12 +138,12 @@ describe('the plant core with stand-ins', () => {
 
 	it('grows the same stand-ins as real stages land, so scenes that place them draw the same', () => {
 		const frozen = [
-			['stub', {}, 3667806437, '6b3580f98a8ac9bd'],
+			['stub', {}, 3667806437, '9b5641d2decd8f61'],
 			[
 				'pedunculate-oak',
 				{ height: { mean: 20, spread: 3 }, aspect: 1.2 },
 				843710834,
-				'0ab62314c7bf2788',
+				'62bb081c6c160bb7',
 			],
 		] as const;
 		for (const [id, options, kitHash, assetDigest] of frozen) {
@@ -154,10 +176,12 @@ describe('the plant core with stand-ins', () => {
 		expect(asset.levels[1].from).toBeGreaterThan(0);
 	});
 
-	it('throws where a stage is not built and the kit asks for no stand-ins', () => {
-		// Every kit stage is built; a variant's growth still meets a stage that is not.
+	it('grows every stage without stand-ins for a model that is built', () => {
 		const kit = buildKitNow(stub);
-		expect(() => growPlantNow(kit, { seed: 11, variant: 0, near: true })).toThrow(NotBuiltError);
+		const asset = growPlantNow(kit, { seed: 11, variant: 0, near: true });
+		expect(asset.wind.count).toBe(asset.skeleton.axes.count);
+		expect(asset.levels[1].from).toBeGreaterThan(0);
+		expect(asset.impostor.from).toBeGreaterThan(asset.levels[2].from);
 	});
 
 	it('grows the same bytes in a worker that runs the job-worker task', async () => {

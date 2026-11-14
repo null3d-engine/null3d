@@ -444,7 +444,7 @@ export const record: Species = {
 			// species that has passed its side-by-side.
 			variantBytes: { low: 7_002_000, medium: 7_063_000, high: 7_147_000, ultra: 7_273_000 },
 			lod0Triangles: 2_500_000,
-			// The same day, its first card level draws 74,065, 76,322, 79,785 and 85,317 triangles
+			// Its first card level draws 74,065, 76,322, 79,785 and 85,317 triangles
 			// from the coarsest tier up, every free card held on a shared supporting branch, and its
 			// second 20,294, 20,716, 21,100 and 21,638; each cap is the largest and a twentieth.
 			lod1Triangles: 89_600,

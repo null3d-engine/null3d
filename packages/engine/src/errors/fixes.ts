@@ -59,7 +59,7 @@ export const ERROR_FIXES = {
 	E1220:
 		"Give render.addPass the options of its kind, such as { kind: 'scene', camera, writes: 'minimap', size: [256, 256] }. Give a compute pass a workgroup size that the shader declares and that a device runs, and a fallback for WebGL2. Give each pass a name and a texture name of its own. Remove passes that no longer draw before you add more.",
 	E1221:
-		'List the levels from the most detailed down, each with a larger error or distance than the one before, at most 7 of them. Make each level from the same kind of arrays as the base mesh, with the same attributes, such as the same texture coordinates and tangents. Give a mesh that poses or moves its levels with setLevels, not buildLevels.',
+		'List the levels from the most detailed down, each with a larger error, a farther distance or a smaller coverage than the one before, at most 15 of them. Make each level from the same kind of arrays as the base mesh, with the same attributes, such as the same texture coordinates and tangents. Give a mesh that poses or moves its levels with setLevels, not buildLevels.',
 	E1222:
 		"Make the grid's texture with LightProbeGridData.toTexture(), which a 3D texture alone holds, or with textures.fromVolumeData(). An image texture, or one made with textures.fromData() and a depth, is a texture array, which the probe grid cannot bind.",
 	E1223:

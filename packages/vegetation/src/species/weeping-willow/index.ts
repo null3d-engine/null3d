@@ -2,7 +2,7 @@
 // willow names. The generated registry loads this entry as a chunk of its own.
 import { files } from '@null3d/vegetation-textures/weeping-willow';
 import type { SpeciesModule } from '../../core/record';
-import { record } from './record';
+import { directed } from './directed';
 
-/** The weeping willow. */
-export const species: SpeciesModule = { record, textures: files };
+/** The weeping willow, grown as a directed frame that carries its hanging strands at sockets. */
+export const species: SpeciesModule = { record: directed, textures: files };

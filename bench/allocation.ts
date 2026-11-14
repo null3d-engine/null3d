@@ -235,6 +235,15 @@ const SWIFTSHADER_WARMUP_FRAMES = 1200;
  * event that happens once, such as the browser installing code it has just optimized, lands in one.
  */
 const SAMPLES = 2;
+/**
+ * Frames that the samples must hold before their per-frame readings are judged. A place's bytes a
+ * frame divide its allocations by the sample's frames, so a page that drew few frames reads high at
+ * every place. The wind run at `4e1883f32` drew 16 frames on CI's software GPU and crossed the
+ * sketch worker's (V8 API) budget at 1,468.5 bytes a frame against 32, where the same head drawn
+ * here over 306 frames held every budget. A healthy CI run read 93 frames without the wind and 110
+ * with it, so this floor sits well above the thin run and below a healthy one.
+ */
+const FRAME_FLOOR = 60;
 /** The scenes that the check runs. */
 const ALLOCATION_SCENES = ['s1', 's1-cells', 's3', 's4', 's5', 's6'] as const;
 /** How long a scene that streams in may take to be whole, in milliseconds. */
@@ -1092,35 +1101,41 @@ async function main(): Promise<void> {
 		const samples = new Map<string, Sample[]>();
 		const bytes = new Map<string, number>();
 		let frames = 0;
-		for (let k = 0; k < SAMPLES; k++) {
-			await sampler.start(SAMPLING_INTERVAL);
-			const startFrames = await framesSoFar();
-			const startCalls = await callsSoFar();
-			const startTasks = await tasksSoFar();
-			await sleep(seconds * 1000);
-			const profiles = await sampler.stop();
-			for (const profile of profiles.values())
-				if (server.names) nameNodes(profile.head, server.names);
-			const sampleFrames = (await framesSoFar()) - startFrames;
-			const endCalls = await callsSoFar();
-			const endTasks = await tasksSoFar();
-			frames += sampleFrames;
-			const calls = startCalls === null || endCalls === null ? undefined : endCalls - startCalls;
-			const tasks = startTasks === null || endTasks === null ? undefined : endTasks - startTasks;
-			for (const [name, profile] of profiles) {
-				// Each worker counts the calls that its own places are judged by.
-				const counted = name === 'sketch-worker' ? tasks : calls;
-				samples.set(name, [
-					...(samples.get(name) ?? []),
-					{
-						places: profilePlaces(profile),
-						frames: sampleFrames,
-						...(counted !== undefined && { calls: counted }),
-					},
-				]);
-				bytes.set(name, (bytes.get(name) ?? 0) + totalSize(profile.head));
+		// A page that the runner starved re-samples rather than convicting a place, while the page's
+		// own wait holds the time it may take; a page still short at the end fails below by its
+		// frame count, so a slowdown cannot hide behind the retry.
+		const sampleDeadline = performance.now() + WHOLE_TIMEOUT_MS;
+		do
+			for (let k = 0; k < SAMPLES; k++) {
+				await sampler.start(SAMPLING_INTERVAL);
+				const startFrames = await framesSoFar();
+				const startCalls = await callsSoFar();
+				const startTasks = await tasksSoFar();
+				await sleep(seconds * 1000);
+				const profiles = await sampler.stop();
+				for (const profile of profiles.values())
+					if (server.names) nameNodes(profile.head, server.names);
+				const sampleFrames = (await framesSoFar()) - startFrames;
+				const endCalls = await callsSoFar();
+				const endTasks = await tasksSoFar();
+				frames += sampleFrames;
+				const calls = startCalls === null || endCalls === null ? undefined : endCalls - startCalls;
+				const tasks = startTasks === null || endTasks === null ? undefined : endTasks - startTasks;
+				for (const [name, profile] of profiles) {
+					// Each worker counts the calls that its own places are judged by.
+					const counted = name === 'sketch-worker' ? tasks : calls;
+					samples.set(name, [
+						...(samples.get(name) ?? []),
+						{
+							places: profilePlaces(profile),
+							frames: sampleFrames,
+							...(counted !== undefined && { calls: counted }),
+						},
+					]);
+					bytes.set(name, (bytes.get(name) ?? 0) + totalSize(profile.head));
+				}
 			}
-		}
+		while (frames < FRAME_FLOOR && performance.now() < sampleDeadline);
 		driving = false;
 		const inputSteps = driven.steps - stepsBefore;
 		// On SwiftShader a mouse or key press now and then never returns. The input then stops, and
@@ -1133,6 +1148,10 @@ async function main(): Promise<void> {
 		console.log(
 			`${scene.toUpperCase()} on ${gpu} with ${n} instances${animatedCount > 0 ? ` and ${animatedCount} animated characters` : ''}${morphedCount > 0 ? ` and ${morphedCount} morphed objects` : ''}${labelCount > 0 ? ` and ${labelCount} labels` : ''}${chosen.map(({ flag }) => ` ${flag}`).join('')}, ${pagesText(dev)}${noInline ? ', inlining off' : ''}, sampled ${SAMPLES} times for ${seconds} s after ${warmup} s: ${frames} frames, ${inputSteps} input steps`,
 		);
+		if (frames < FRAME_FLOOR)
+			throw new Error(
+				`${scene.toUpperCase()} drew ${frames} frames in its samples, below the ${FRAME_FLOOR} that a per-frame reading needs: the page is starved, so its budgets were not judged.`,
+			);
 		console.log(
 			'Bytes per frame, or per call where the worker counts calls, in the sample where each place allocated least, its budget, and the most:',
 		);

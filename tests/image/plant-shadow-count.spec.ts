@@ -31,6 +31,14 @@ interface Result {
 /** The longest that one page may take to draw and measure. */
 const PAGE_MS = 300_000;
 
+/**
+ * The room beyond the two pages' own waits: the browser starts on a software GPU by building every
+ * pipeline, and the second page starts after the first has measured. A limit at their sum would
+ * leave a page no time to start, so the test would fail on a slow machine rather than on the row it
+ * measures.
+ */
+const SLACK_MS = 120_000;
+
 /** The row and the wind, which both pages share. */
 const PLANTS = 12;
 const WIND = 2;
@@ -68,7 +76,7 @@ async function measured(page: Page, gpu: string, sway: number): Promise<Result> 
 
 for (const gpu of ['webgpu', 'webgl2'] as const)
 	test(`a plant past its sway distance leaves a far cascade cached on ${gpu}`, async ({ page }) => {
-		test.setTimeout(2 * PAGE_MS);
+		test.setTimeout(2 * PAGE_MS + SLACK_MS);
 		const reaching = await measured(page, gpu, 200);
 		const past = await measured(page, gpu, 1);
 		// The far cascade draws its row every second frame at High. A mover in it forces every
