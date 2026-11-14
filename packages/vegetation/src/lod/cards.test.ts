@@ -190,6 +190,40 @@ describe('the card bake', () => {
 		};
 		expect(paletteOf(plain, bare).stem).toEqual([...STAND_IN_BARK]);
 	});
+
+	it('bakes white leaf texels for a species with no leaf texture, as the leaf form samples white', () => {
+		// The shader divides a card texel by its texture's mean and multiplies it by the record's
+		// reflectance. A textured species bakes the texture's own colour, so the division gives the
+		// reflectance back. A species with no leaf texture samples a white texel, so its cards must
+		// bake white too: baking the reflectance instead squares the leaf's colour and darkens the
+		// card level against the leaf form.
+		const textured = bakedKit().atlas;
+		let coloured = 0;
+		for (let i = 0; i < textured.size * textured.size; i++) {
+			if (textured.color[i * 4 + 3] !== 255) continue;
+			if ((textured.surface[i * 4 + 3] as number) < 128) continue;
+			if (textured.color[i * 4] !== 255 || textured.color[i * 4 + 1] !== 255) coloured++;
+		}
+		expect(coloured).toBeGreaterThan(100);
+		const bare = { ...OAK_MANIFEST, leaf: undefined } as TextureManifest;
+		const white = bakedKit(bare).atlas;
+		let leaves = 0;
+		let whiteTexels = 0;
+		for (let i = 0; i < white.size * white.size; i++) {
+			if (white.color[i * 4 + 3] !== 255) continue;
+			if ((white.surface[i * 4 + 3] as number) < 128) continue;
+			leaves++;
+			// A texel that a leaf covers alone holds white; one that a stem crosses holds their mean.
+			if (
+				white.color[i * 4] === 255 &&
+				white.color[i * 4 + 1] === 255 &&
+				white.color[i * 4 + 2] === 255
+			)
+				whiteTexels++;
+		}
+		expect(leaves).toBeGreaterThan(100);
+		expect(whiteTexels / leaves).toBeGreaterThan(0.9);
+	});
 });
 
 /** Flat quads in the plane z = 0 facing +z, each `[x0, x1, y0, y1, kind]` in a unit square. */

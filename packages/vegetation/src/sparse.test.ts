@@ -19,7 +19,7 @@ import {
 	sparseForDevice,
 	variantKey,
 } from './generate';
-import { cardTop } from './grow/height';
+import { leafTop } from './grow/height';
 import {
 	FOLIAGE_FLOOR,
 	GREAT_LIMB_SHARE,
@@ -237,12 +237,12 @@ function carriers(asset: PlantAsset): Map<number, readonly [number, number, numb
 	return out;
 }
 
-/** The highest point a plant draws: its top node, or the top of its highest shoot's cards. */
+/** The highest point a plant draws: its top node, or the top of its highest shoot's nearest mesh. */
 function drawnTop(kit: SpeciesKitData, asset: PlantAsset): number {
 	let top = Number.NEGATIVE_INFINITY;
 	const { position, nodeCount } = asset.skeleton;
 	for (let n = 0; n < nodeCount; n++) top = Math.max(top, position[n * 3 + 1] as number);
-	return Math.max(top, cardTop(kit, asset.shoots));
+	return Math.max(top, leafTop(kit, asset.shoots));
 }
 
 for (const id of SPECIES) {
