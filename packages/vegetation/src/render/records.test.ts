@@ -192,6 +192,15 @@ describe('the species header', () => {
 			lod: { ...record.lod, cardStalk: 1.5, cardStalkWidth: true },
 		};
 		expect(texel(speciesHeader(wide, manifest, box), HEADER.cardStalk)).toEqual([1.5, 1, 0, 0]);
+		const pale: Species = {
+			...record,
+			lod: { ...record.lod, cardStalk: 1, cardStalkShade: 0.8 },
+		};
+		const paleTexel = texel(speciesHeader(pale, manifest, box), HEADER.cardStalk);
+		expect(paleTexel[0]).toBe(1);
+		expect(paleTexel[1]).toBe(0);
+		expect(paleTexel[2]).toBeCloseTo(0.8, 6);
+		expect(paleTexel[3]).toBe(0);
 	});
 	test("writes a fire scar's hollow and char into the header, or zeroes it where the record gives none", () => {
 		expect(texel(header, HEADER.scar)).toEqual([0, 0, 0, 0]);
