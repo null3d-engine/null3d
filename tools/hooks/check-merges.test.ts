@@ -152,3 +152,78 @@ export function volume(width: number, height: number, depth: number): number {
 		expect(analyseMerge(...mergeWith({ 'scene.ts': resolved }), '2999-01-01T00:00:00Z')).toBeNull();
 	});
 });
+
+// A message-only rewrite leaves its line holding a copy of the other's history under new ids, so
+// the merge that restores the ancestry joins two histories with no commit in common. Git writes no
+// automatic tree for such a merge, so the check reads it by its trees and its trailer instead.
+describe('analyseMerge on two histories that share no commit', () => {
+	const gitCase = (name: string, fn: () => void) => it(name, fn, scaledBudget(30_000));
+
+	/**
+	 * A repository whose main and rewritten branches are orphans of each other, each holding the
+	 * same files. The merge takes one side's tree; `changeTree` then edits the merge's own files.
+	 * It returns the merge's hash and the repository.
+	 */
+	function unrelatedMerge(
+		options: { changeTree?: boolean; trailer?: string } = {},
+	): [string, string] {
+		const dir = mkdtempSync(join(tmpdir(), 'null3d-merges-'));
+		dirs.push(dir);
+		const git = (...args: string[]) =>
+			execFileSync('git', args, { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+		const write = (path: string, text: string) => writeFileSync(join(dir, path), text);
+		git('init', '-q', '-b', 'main');
+		git('config', 'user.email', 'test@example.com');
+		git('config', 'user.name', 'Test');
+		git('config', 'commit.gpgsign', 'false');
+		write('scene.ts', BASE);
+		git('add', '.');
+		git('commit', '-qm', 'base');
+		git('checkout', '-q', '--orphan', 'rewritten');
+		write('scene.ts', BASE);
+		git('add', '.');
+		git('commit', '-qm', 'the same files under a new id');
+		git('checkout', '-q', 'main');
+		const message = [
+			'Merge the rewritten line',
+			...(options.trailer ? ['', options.trailer] : []),
+		].join('\n');
+		git('merge', '--allow-unrelated-histories', '-s', 'ours', 'rewritten', '-m', message);
+		if (options.changeTree) {
+			write('scene.ts', BASE.replace('LIMIT = 16', 'LIMIT = 99'));
+			git('add', '.');
+			git('commit', '-q', '--amend', '--no-edit');
+		}
+		return [git('rev-parse', 'HEAD').trim(), dir];
+	}
+
+	gitCase("accepts it when it keeps the first parent's files and names the rewrite", () => {
+		const finding = analyseMerge(
+			...unrelatedMerge({
+				trailer:
+					'Merge-Edit: the message-only rewrite made the two histories unrelated; the tree already holds the milestone copy',
+			}),
+			'',
+		);
+		expect(finding?.unrelated).toBe("kept its first parent's tree");
+		expect(finding && mergeProblem(finding)).toBeNull();
+	});
+
+	gitCase('refuses it without a Merge-Edit trailer', () => {
+		const finding = analyseMerge(...unrelatedMerge({}), '');
+		expect(finding?.unrelated).toBe("kept its first parent's tree");
+		expect(finding && mergeProblem(finding)).toContain('Merge-Edit');
+	});
+
+	gitCase("refuses it when it changes the first parent's files, trailer or not", () => {
+		const finding = analyseMerge(
+			...unrelatedMerge({
+				changeTree: true,
+				trailer: 'Merge-Edit: the rewrite made the histories unrelated',
+			}),
+			'',
+		);
+		expect(finding?.unrelated).toBe("changed its first parent's tree");
+		expect(finding && mergeProblem(finding)).toContain("first parent's files");
+	});
+});
