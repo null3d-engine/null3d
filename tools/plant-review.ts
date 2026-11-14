@@ -300,6 +300,9 @@ function stillShot(
 	// A still's own query fields, such as a camera its picture needs, go over the rest, and a field
 	// given as null is dropped, so a still can trade the framing's fill for a top row and an eye.
 	query = withSlot(query, extra);
+	// The crown's foliage share reads the picture of the parts, so a whole or crown view draws one
+	// whether or not the run draws a matte.
+	const crownView = query.view === 'whole' || query.view === 'crown';
 	// A still whose own picture separates the plant from a plain background can be compared by
 	// outline, whatever part of the plant it frames: the render draws the same mask. A texture source
 	// is a flat swatch rather than a picture of the plant, so it is not given one. A fruit view keeps
@@ -324,8 +327,10 @@ function stillShot(
 		// A view solved from the plant's subjects, or framing a placed piece, draws its parts in
 		// flat colours too: its contract names areas of the picture that must show wood, foliage or
 		// open air, and that picture says which each texel shows. A matte cannot: close up it
-		// blends every level's soft coverage and reads fuller than the colour picture.
-		matte && (SOLVED_VIEWS.has(query.view ?? slot.view) || query.piece !== undefined),
+		// blends every level's soft coverage and reads fuller than the colour picture. A whole or
+		// crown view draws one for the crown's foliage share.
+		crownView ||
+			(matte && (SOLVED_VIEWS.has(query.view ?? slot.view) || query.piece !== undefined)),
 	);
 }
 
@@ -928,7 +933,7 @@ function compareRun(
 			`- ${result.pairs.filter((pair) => !pair.error).length} of ${result.pairs.length} files drawn beside a render of their view; ${masked.length} give an outline on a plain background in both pictures.`,
 			...masked.map(
 				(pair) =>
-					`- ${pair.file}: shape IoU ${fixed(pair.shapeIou)}, width error ${fixed(pair.profileError, 3)}, ${gapClause(pair)}; sky share of the crown's box: photograph ${fixed(pair.crownBoxGap?.reference)}, drawing ${fixed(pair.crownBoxGap?.render)}; ${frameShareClause(pair)}; foot row: photograph ${fixed(pair.footRow?.reference, 3)}, drawing ${fixed(pair.footRow?.render, 3)}; leaf colour difference ${fixed(pair.foliageDeltaE, 1)}${barkClause(pair)}${pieceClause(pair)}${fittedMaskClause(pair)}; drawn at the ${pair.level ?? 'level the page did not report'}.`,
+					`- ${pair.file}: shape IoU ${fixed(pair.shapeIou)}${crownBalanceClause(pair)}, width error ${fixed(pair.profileError, 3)}, ${gapClause(pair)}${crownFoliageClause(pair)}; sky share of the crown's box: photograph ${fixed(pair.crownBoxGap?.reference)}, drawing ${fixed(pair.crownBoxGap?.render)}; ${frameShareClause(pair)}; foot row: photograph ${fixed(pair.footRow?.reference, 3)}, drawing ${fixed(pair.footRow?.render, 3)}; leaf colour difference ${fixed(pair.foliageDeltaE, 1)}${barkClause(pair)}${pieceClause(pair)}${fittedMaskClause(pair)}; drawn at the ${pair.level ?? 'level the page did not report'}.`,
 			),
 			...result.pairs.flatMap((pair) =>
 				pair.surfaceDeltaE !== null
@@ -1232,6 +1237,35 @@ function gapClause(pair: StillResult): string {
 	if (read?.rule === 'half-dark')
 		return `sky gap enclosed by the crown's outline (row 6's figure), by the half-dark rule on both pictures: photograph ${fixed(gap.reference)}, drawing ${fixed(read.value)}${clear}`;
 	return `sky gap enclosed by the crown's outline, the drawing's matte against the photograph's colour mask, instrument only and not quoted in row 6: photograph ${fixed(gap.reference)}, drawing ${fixed(gap.render)}${clear}`;
+}
+
+/**
+ * A pair's crown balance for its summary line, beside the shape overlap: the share of the crown's
+ * covered area on each side of the trunk's column. It sits beside row 1's other evidence, since a
+ * crown can match its reference's outline and still gather its mass on one side.
+ */
+function crownBalanceClause(pair: StillResult): string {
+	const balance = pair.crownBalance;
+	if (!balance) return '';
+	const side = (value: { readonly left: number; readonly right: number } | null, why?: string) =>
+		value === null
+			? `not read${why ? ` (${why})` : ''}`
+			: `left ${fixed(value.left)} right ${fixed(value.right)}`;
+	return `, crown balance (row 1's figure): photograph ${side(balance.reference, balance.referenceWhy)}, drawing ${side(balance.render, balance.renderWhy)}`;
+}
+
+/**
+ * A pair's crown foliage share for its summary line: the share of the crown's covered area that is
+ * foliage rather than wood, read on both sides. It sits beside the sky gap as row 6's second
+ * figure. A side that cannot read names why, so a photograph whose colours mix its foliage with
+ * its bark is never read as a share.
+ */
+function crownFoliageClause(pair: StillResult): string {
+	const foliage = pair.crownFoliage;
+	if (!foliage) return '';
+	const side = (value: number | null, why?: string) =>
+		value === null ? `not read${why ? ` (${why})` : ''}` : fixed(value);
+	return `; crown foliage share (row 6's second figure): photograph ${side(foliage.reference, foliage.referenceWhy)}, drawing ${side(foliage.render, foliage.renderWhy)}`;
 }
 
 /**

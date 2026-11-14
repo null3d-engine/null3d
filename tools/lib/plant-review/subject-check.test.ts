@@ -9,6 +9,7 @@ import {
 	PART_RADIUS_SPAN,
 	partCover,
 	partsCheck,
+	partsFoliageShare,
 	partsOf,
 	postedSubject,
 	regionCover,
@@ -135,6 +136,21 @@ describe('a picture of the parts', () => {
 		const across = [0.1, 0.375, 0.3, 0.625] as const;
 		expect(partCover(parts, { name: 'wood', box: across, of: 'wood' })).toBe(1);
 		expect(partCover(parts, { name: 'limb', box: across, of: 'wood', thick: 0.2 })).toBe(0.8);
+	});
+
+	test('reads the foliage share of the crown box as foliage over wood and foliage', () => {
+		const read = partsFoliageShare(parts, { left: 0, top: 30, right: 99, bottom: 49 }, 1);
+		// Rows 30 to 49 hold the limb across the frame and the foliage over its right 30 columns.
+		expect(read?.pixels).toBe(2000);
+		expect(read?.share).toBeCloseTo(0.3, 2);
+	});
+
+	test('maps a work-size crown box to the parts picture and leaves extras out', () => {
+		const read = partsFoliageShare(parts, { left: 0, top: 35, right: 49, bottom: 39 }, 2);
+		// Columns 0 to 98 of rows 70 to 78 hold the twig alone here; the extras at the lower left
+		// are neither wood nor foliage, so they are left out of both sides of the share.
+		expect(read?.pixels).toBe(36);
+		expect(read?.share).toBe(0);
 	});
 
 	test('sees leaves that lie over a subject whose points are all in the frame', () => {
