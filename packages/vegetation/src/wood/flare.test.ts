@@ -106,6 +106,59 @@ describe('the stem base', () => {
 		expect(other.radius(2, centre, 1)).toBeCloseTo(a.radius(2, centre, 1), 6);
 	});
 
+	it('winds its flutes the stated turns up to their held height, as one closed surface', () => {
+		const height = 4;
+		const twist = 0.5;
+		const hold = 0.8;
+		const fluted: BaseSpec = {
+			flare: { amount: 0, height: 0.5 },
+			flutes: { count: { mean: 6, spread: 0 }, depth: 0.2, height, twist, hold },
+		};
+		const section = stemSection(fluted, 11, 7, 0, 0);
+		if (!section) throw new Error('no section');
+		const samples = 3600;
+		const step = (2 * Math.PI) / samples;
+		/** The angle of the deepest groove at a height, and the groove's depth there. */
+		const groove = (h: number): { at: number; depth: number } => {
+			let at = 0;
+			let least = Infinity;
+			let most = -Infinity;
+			for (let k = 0; k < samples; k++) {
+				const r = section.radius(h, k * step, 1);
+				if (r < least) {
+					least = r;
+					at = k * step;
+				}
+				most = Math.max(most, r);
+			}
+			return { at, depth: most - least };
+		};
+		const pitch = (2 * Math.PI) / 6;
+		/** The angle between two places on the stem, both taken round one groove's pitch. */
+		const apart = (a: number, b: number): number => {
+			const d = (((a - b) % pitch) + pitch) % pitch;
+			return Math.min(d, pitch - d);
+		};
+		const foot = groove(0);
+		const held = groove(height * hold);
+		// The groove has turned by the stated share of its turns at the held height, and kept its depth.
+		const turned = 2 * Math.PI * twist * hold;
+		expect(apart(held.at, foot.at + turned)).toBeLessThan(step * 2);
+		expect(foot.depth).toBeCloseTo(0.2, 3);
+		expect(held.depth).toBeCloseTo(0.2, 3);
+		// Above the held height it fades, and at its height it is gone.
+		expect(groove(height * 0.9).depth).toBeLessThan(0.2);
+		expect(groove(height).depth).toBeCloseTo(0, 6);
+		// One closed surface: round the stem the radius meets itself, with no step between neighbours.
+		for (const h of [0, 1, 2.5, 3.2, 3.8]) {
+			expect(section.radius(h, 2 * Math.PI, 1)).toBeCloseTo(section.radius(h, 0, 1), 9);
+			for (let k = 0; k < samples; k++)
+				expect(
+					Math.abs(section.radius(h, (k + 1) * step, 1) - section.radius(h, k * step, 1)),
+				).toBeLessThan(0.01);
+		}
+	});
+
 	it('widens a tapered bole evenly toward the ground, and leaves it plain above the taper', () => {
 		const plain: BaseSpec = { flare: { amount: 0.3, height: 0.5 } };
 		const tapered: BaseSpec = { ...plain, taper: { amount: 0.2, height: 4 } };

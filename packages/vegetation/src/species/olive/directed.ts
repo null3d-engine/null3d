@@ -202,9 +202,26 @@ const fruit = (extra: ExtraSpec): ExtraSpec =>
  */
 export const directed = {
 	...framedRecord(record, frame, { rows: { mean: 4, spread: 1 }, fan: 45, piece: 'branch-end' }),
-	// The frame's trunk already widens to still 01's foot, so the stem base adds no flare of its own
-	// and keeps still 14's lobes and roots.
-	base: { ...record.base, flare: { amount: 0, height: 0.25 } },
+	base: {
+		...record.base,
+		// The frame's trunk already widens to still 01's foot, so the stem base adds no flare of its
+		// own and keeps still 14's lobes and roots.
+		flare: { amount: 0, height: 0.25 },
+		// Still 01: the bole is six columns that wind about half a turn from the ground to the fork, at
+		// 0.49 of the height, with grooves between them 0.4 of a column deep.
+		flutes: { count: { mean: 6, spread: 0 }, depth: 0.25, height: 3.4, twist: 0.4, hold: 0.8 },
+		// Still 01: a dark opening 0.05 of the height wide and 0.077 tall at 0.21 of it, facing the
+		// camera; the review turns the plant's +Z side to the camera.
+		scar: {
+			from: 1.14,
+			to: 1.66,
+			angle: 90,
+			width: 20,
+			depth: 0.3,
+			colour: [0.03, 0.026, 0.02] as const,
+			shade: 0.9,
+		},
+	},
 	extras: record.extras?.map(fruit),
 	pieces: PIECES.filter((piece) => piece.name === 'branch-end'),
 };
