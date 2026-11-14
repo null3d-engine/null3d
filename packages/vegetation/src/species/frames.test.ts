@@ -665,6 +665,8 @@ for (const held of HELD)
 			}
 		});
 
+		// A plan of five seeds takes 6.2 seconds beside the file's other tests and 7.0 to 7.3 alone on
+		// the reference Mac, over the default five seconds, so it takes this limit.
 		it('ends every axis in a socket or in a fork', () => {
 			for (const seed of SEEDS) {
 				const plan = planOf(held, seed);
@@ -685,7 +687,7 @@ for (const held of HELD)
 				});
 				expect(bareEnds(plan)).toEqual([]);
 			}
-		});
+		}, 10_000);
 
 		it('gives its sockets as bud sites in the socket record, ranked once across the plant', () => {
 			expect(speciesProblems(held.directed)).toEqual([]);
@@ -1286,6 +1288,8 @@ describe("the pedunculate oak's frame against its photographs", () => {
 		}
 	});
 
+	// The oak's plan of five seeds takes 5.8 seconds beside the file's other tests on the reference
+	// Mac, over the default five seconds, so it takes this limit.
 	it('clothes the end of every twig when its piece reaches further than it is wide', () => {
 		// The common alder's branch end reaches 1.22 times its width; the oak's 1.09.
 		const reaching = (rule: FrameBranchRule): FrameBranchRule => ({
@@ -1311,7 +1315,7 @@ describe("the pedunculate oak's frame against its photographs", () => {
 			expect(
 				bareEnds(planFrame(long, { record: oak.record, seed, variant: 0, season: 'summer' })),
 			).toEqual([]);
-	});
+	}, 10_000);
 
 	it('fails the oak built with its clumps first on three of the four', () => {
 		expect(clumpsFirst.commit).toBe('5b5c56272');
