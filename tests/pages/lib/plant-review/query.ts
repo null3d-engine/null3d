@@ -204,6 +204,11 @@ export interface PlantReviewQuery {
 	 * its background alone.
 	 */
 	readonly meadow?: boolean;
+	/**
+	 * Whether a view of a placed piece draws that piece alone, as a studio photograph shows one cut
+	 * piece: its own rows on the background, with no wood, no cards and no other piece of the plant.
+	 */
+	readonly alone?: boolean;
 	/** Whether the page draws a 1 m scale bar beside the view's target. */
 	readonly scale?: boolean;
 	/**
@@ -501,6 +506,7 @@ const SWITCHES = [
 	'toward',
 	'lifted',
 	'meadow',
+	'alone',
 	'barkMask',
 	'leafyBark',
 	'noOutline',
@@ -724,6 +730,7 @@ export function readPlantReviewQuery(params: URLSearchParams): PlantReviewQuery 
 		measure: params.get('measure') === '1',
 		lifted: params.get('lifted') === '1',
 		meadow: params.get('meadow') === '1',
+		alone: params.get('alone') === '1',
 		barkMask: params.get('barkMask') === '1',
 		leafyBark: params.get('leafyBark') === '1',
 		noOutline: params.get('noOutline') === '1',

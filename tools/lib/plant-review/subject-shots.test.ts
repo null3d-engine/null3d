@@ -1012,6 +1012,32 @@ describe('the view of one branch piece', () => {
 		expect(cameraAxes(faced.camera).forward[0]).toBeCloseTo(0, 6);
 	});
 
+	test("stands an arched piece's whole run in the frame, square to its line", () => {
+		// A frond whose blade bends away from its socket: its run from cut to tip leans 42 degrees off
+		// its blade's face, so a camera square to the face would see it shortened.
+		const frond = {
+			class: 'frond-arched',
+			socket: [0, 2.6, 0] as V3,
+			direction: normalize([0, 0.743, 0.669]),
+			length: 2.4,
+			spread: 0.7,
+			face: normalize([0, 0.2, 1]),
+			side: [1, 0, 0] as V3,
+			depth: { face: 1.6, side: 0.47 },
+		};
+		const shot = shotOf(placedPieceShot(tree({ pieces: [frond] }), 'frond', TALL));
+		const cut = landing(shot, TALL, 'the cut');
+		const tip = landing(shot, TALL, 'the tip');
+		expect(cut.y - tip.y).toBeCloseTo(0.85, 6);
+		expect(checkShot(shot, TALL).present).toBe(true);
+		// The camera looks square to the line, and the blade's width lies across the frame.
+		const { forward } = cameraAxes(shot.camera);
+		expect(dot(forward, frond.direction)).toBeCloseTo(0, 6);
+		expect(forward[0]).toBeCloseTo(0, 6);
+		// Nothing of the piece stands farther off its line than its spread, so the slab holds it.
+		expect((shot.far as number) - (shot.near as number)).toBeCloseTo(2 * frond.spread, 6);
+	});
+
 	test('frames the piece that heads toward the camera when asked, not the outermost', () => {
 		const outward = { ...piece, direction: normalize([1, 0.2, 0]) };
 		const toward = { ...piece, socket: [0, 6, 1] as V3, direction: normalize([0, 0.2, 1]) };
