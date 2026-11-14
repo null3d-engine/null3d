@@ -461,7 +461,7 @@ export interface SelfOrganizing {
 		 */
 		readonly leader?: number;
 	};
-	/** A bottle, a twist or a gnarl in the stem. */
+	/** A bottle or a gnarl in the stem. */
 	readonly trunk?: TrunkShape;
 	/** Roots that drop from the limbs and become pillars (banyan). */
 	readonly aerialRoots?: AerialRoots;
