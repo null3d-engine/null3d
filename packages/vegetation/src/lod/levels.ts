@@ -60,21 +60,15 @@ export function switchSizes(kit: SpeciesKitData): {
 } {
 	const record = kit.record;
 	const scale = record.shoots ? spreadMax(record.shoots.placement.scale) : 1;
-	let shoot = 0;
 	let card = 0;
-	for (const prototype of kit.prototypes) {
-		shoot = Math.max(shoot, prototype.length * scale);
-		card = Math.max(card, prototype.radius * 2 * scale);
-	}
-	if (shoot === 0)
-		for (const leaf of kit.leaves) {
-			const reach = meshReach(leaf.positions);
-			shoot = Math.max(shoot, reach);
-			card = Math.max(card, reach);
-		}
-	const least = 0.05;
-	return { shoot: Math.max(shoot, least), card: Math.max(card, least) };
+	for (const prototype of kit.prototypes) card = Math.max(card, prototype.radius * 2 * scale);
+	if (kit.prototypes.length === 0)
+		for (const leaf of kit.leaves) card = Math.max(card, meshReach(leaf.positions));
+	return { shoot: shootReach(kit), card: Math.max(card, LEAST_CARD) };
 }
+
+/** The narrowest shoot card the second card level's start is measured from, in metres. */
+const LEAST_CARD = 0.05;
 
 /**
  * Metres at which the first card level, the second card level and the impostor start, at a view.
@@ -105,19 +99,22 @@ export function levelDistances(
 const LEAST_SHOOT = 0.4;
 
 /**
- * The longest shoot of a kit at its largest placement scale, in metres, and never shorter than the
- * least the first card level's start is measured from.
+ * The longest shoot of a kit at its largest placement scale, in metres, or the longest leaf's reach
+ * for a plant with merged foliage, and never shorter than the least the first card level's start is
+ * measured from. The page's hand-over to cards and the asset's level distances both read it.
  *
  * @param kit The species' kit.
  * @returns Metres.
  * @category api/vegetation
  */
-export function shootReach(kit: Pick<SpeciesKitData, 'record' | 'prototypes'>): number {
+export function shootReach(kit: Pick<SpeciesKitData, 'record' | 'prototypes' | 'leaves'>): number {
 	let longest = 0;
-	for (const prototype of kit.prototypes) longest = Math.max(longest, prototype.length);
 	const shoots = kit.record.shoots;
 	const scale = shoots ? spreadMax(shoots.placement.scale) : 1;
-	return Math.max(LEAST_SHOOT, longest * scale);
+	for (const prototype of kit.prototypes) longest = Math.max(longest, prototype.length * scale);
+	if (kit.prototypes.length === 0)
+		for (const leaf of kit.leaves) longest = Math.max(longest, meshReach(leaf.positions));
+	return Math.max(LEAST_SHOOT, longest);
 }
 
 /**
@@ -132,7 +129,7 @@ export function shootReach(kit: Pick<SpeciesKitData, 'record' | 'prototypes'>): 
  * @category api/vegetation
  */
 export function firstCardStart(
-	kit: Pick<SpeciesKitData, 'record' | 'prototypes'>,
+	kit: Pick<SpeciesKitData, 'record' | 'prototypes' | 'leaves'>,
 	view: { readonly height: number; readonly fov: number },
 ): number {
 	return (
