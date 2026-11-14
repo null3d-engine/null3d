@@ -917,7 +917,7 @@ export function cardMesh(input: MeshInput, level: 1 | 2): MeshArrays {
 		(axis) => (skeleton.axes.order[axis] as number) <= keep || support?.[axis] === 1,
 	);
 	for (let r = 0; r < rows.count; r++) {
-		const most = (grows[r] as number) * more;
+		const most = (grows[r] as number) * more * (input.record.lod.cardGrow ?? 1);
 		if (most === 0 || connected[r] === 0) continue;
 		const prototype = kit.prototypes[rows.prototype[r] as number];
 		if (!prototype) continue;

@@ -2654,6 +2654,14 @@ export interface LodSpec {
 	 */
 	readonly cardCutLength?: number;
 	/**
+	 * How many times the cover a kept card must make up, 1 or more and 1 by default. A card level
+	 * that drops much of its cover, such as a crown of sparse shoots seen whole, grows each card
+	 * about its middle to recover it; a species whose cards still read thin at that scale asks for
+	 * more. Growth stays inside the leaf form's hull, so the card level never stands larger than
+	 * the leaves it pictures.
+	 */
+	readonly cardGrow?: number;
+	/**
 	 * The least width, in pixels, that a card's own stalk draws at any distance, from 0 to 8. A card
 	 * stands on its axis's twig, whose wood may be thinner than a pixel at a whole view, so the
 	 * card's leaves read as a piece in air where the twig does not draw. At 1 or more the card
