@@ -71,7 +71,7 @@ describe("a view's regions read on its matte", () => {
 		const read = matteCheck(wall, 100, 100, regions);
 		expect(read.present).toBe(false);
 		expect(read.reason).toBe(
-			'the open ground beside the limb shows plant over 1.00 of its part of the picture, over 0.6',
+			'the open ground beside the limb: plant covers 1.00 of its box, over the most 0.60',
 		);
 	});
 
@@ -79,7 +79,7 @@ describe("a view's regions read on its matte", () => {
 		const air = maskOf(100, 100, [[60, 0, 70, 30]]);
 		const read = matteCheck(air, 100, 100, regions);
 		expect(read.present).toBe(false);
-		expect(read.reason).toContain('the trunk beside the joint shows plant over 0.00');
+		expect(read.reason).toContain('the trunk beside the joint: plant covers 0.00');
 	});
 });
 
@@ -145,7 +145,7 @@ describe('a picture of the parts', () => {
 		const read = partsCheck(parts, regions);
 		expect(read.present).toBe(false);
 		expect(read.reason).toBe(
-			"the limb's bark shows wood 0.20 m in radius or more over 0.00 of its part of the picture, under 0.85; the leaves over the limb shows leaves over 0.75 of its part of the picture, over 0.25",
+			"the limb's bark: wood 0.20 m in radius or more covers 0.00 of its box, under the least 0.85; the leaves over the limb: leaves covers 0.75 of its box, over the most 0.25",
 		);
 		const facts = {
 			subject: { kind: 'the bark on a great limb', contract: { present: true }, regions },
@@ -166,7 +166,45 @@ describe('a picture of the parts', () => {
 		expect(regionsRead(facts, false, true)).toBe(true);
 		expect(regionsRead({ subject: { kind: 'the whole plant' } }, false, false)).toBe(true);
 	});
+
+	test("names each figure's own box when thinner wood lies across the trunk", () => {
+		// The olive's bark-base at `olive-9b4955aba`: the whole box is wood, but roots thinner than the
+		// trunk lie over it, so only a part of the box is trunk-thick. The cover is a share of the box
+		// and the least is the least share; the radius is metres and is no figure to read as a share.
+		const rooted = partsOf(rootedPicture());
+		const box = [0.45, 0.3, 0.55, 0.75] as const;
+		const region = { name: 'the trunk', box, min: 0.8, of: 'wood', thick: 0.86 } as const;
+		expect(partCover(rooted, { name: 'any wood', box, of: 'wood' })).toBe(1);
+		expect(partCover(rooted, region)).toBeCloseTo(0.56, 2);
+		const read = partsCheck(rooted, [region]);
+		expect(read.present).toBe(false);
+		expect(read.covers).toEqual([{ name: 'the trunk', cover: 0.5556 }]);
+		expect(read.reason).toBe(
+			'the trunk: wood 0.86 m in radius or more covers 0.56 of its box, under the least 0.80',
+		);
+	});
 });
+
+/**
+ * A picture of the parts where thinner wood lies over a thicker one: an olive's foot, with roots
+ * across the trunk over the box's lower rows.
+ */
+function rootedPicture(): { data: Uint8Array; width: number; height: number } {
+	const width = 100;
+	const height = 100;
+	const data = new Uint8Array(width * height * 4).fill(255);
+	const paint = (
+		[left, top, right, bottom]: readonly [number, number, number, number],
+		[r, g, b]: readonly [number, number, number],
+	) => {
+		for (let y = top; y < bottom; y++)
+			for (let x = left; x < right; x++) data.set([r, g, b, 255], (y * width + x) * 4);
+	};
+	// Roots of 0.2 m in radius across the whole box, and the trunk's bark of 1.1 m over its top.
+	paint([45, 30, 55, 75], [255, 0, radiusByte(0.2)]);
+	paint([45, 30, 55, 55], [255, 0, radiusByte(1.1)]);
+	return { data, width, height };
+}
 
 describe('a void picture', () => {
 	const junction = { kind: 'a great limb leaving the trunk' };
@@ -218,7 +256,7 @@ describe('a void picture', () => {
 		expect(subjectFault(held, wall)).toEqual({
 			kind: 'plant',
 			reason:
-				"the camera holds the subject's place and the picture does not show it: the open ground beside the limb shows plant over 1.00 of its part of the picture, over 0.6",
+				"the camera holds the subject's place and the picture does not show it: the open ground beside the limb: plant covers 1.00 of its box, over the most 0.60",
 		});
 		expect(voidReason(held, wall)).toBe(undefined);
 		// A plant with no such part at all fails the same way, on the page's own word.
