@@ -707,6 +707,12 @@ describe("the view of the crown's outside", () => {
 		const lobe = shot.points.find((point) => point.name === 'the lobe');
 		expect(lobe?.at[1]).toBeCloseTo(5 + 11 * 0.45, 6);
 		expect(Math.hypot(lobe?.at[0] ?? 0, lobe?.at[2] ?? 0)).toBeCloseTo(8 * 0.9, 6);
+		// A curtain crown frames no single branch that carries its leaves, so that region reports
+		// its figure rather than failing a picture whose subject is the mass and the sky.
+		const branch = shot.regions.find(
+			(region) => region.name === 'the branch that carries the leaves',
+		);
+		expect(branch?.report).toBe(true);
 	});
 });
 

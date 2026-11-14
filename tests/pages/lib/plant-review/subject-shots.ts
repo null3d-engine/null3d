@@ -1473,13 +1473,16 @@ export function crownOutsideShot(
 					]),
 			{ name: 'the sky round the lobe', box: [0, 0, 1, 1], max: CROWN_MOST_COVER },
 			// A lobe hangs on wood and stands in the open: its branch shows in the frame, and sky
-			// shows at both its sides. A wall of leaves under a strip of sky has neither.
+			// shows at both its sides. A wall of leaves under a strip of sky has neither. A crown
+			// that names no carried limb, such as a willow's curtain of hanging shoots, has no
+			// single branch for the frame to show: the region gives its figure and judges nothing.
 			{
 				name: 'the branch that carries the leaves',
 				box: [0, 0, 1, 1],
 				min: CROWN_LEAST_WOOD,
 				max: 0.4,
 				of: 'wood',
+				...(carried === undefined && { report: true }),
 			},
 			{ name: "the sky at the lobe's left", box: [0, 0.15, 0.12, 0.85], max: CROWN_SIDE_MOST },
 			{ name: "the sky at the lobe's right", box: [0.88, 0.15, 1, 0.85], max: CROWN_SIDE_MOST },
@@ -1899,6 +1902,10 @@ export function barkBaseShot(
 		-out[2] * Math.cos(lookDown),
 	];
 	const above = sampleAtHeight(trunk.axis, ground + 0.3 * tall) ?? trunk.breast;
+	// The trunk's region reaches from below the foot to the frame's upper part, where a tapering
+	// trunk stands thinner than the sample the view's own point reads: the least thickness is read
+	// at the box's top, so the wood across the whole box is as thick as the trunk there.
+	const boxTop = sampleAtHeight(trunk.axis, ground + 0.45 * tall) ?? above;
 	const camera = aim(trunk.base, 0.5, BASE_ROW, forward, tall, lens);
 	return {
 		kind: "the trunk's foot and the ground it stands on",
@@ -1923,7 +1930,7 @@ export function barkBaseShot(
 				box: [0.45, 0.3, 0.55, 0.75],
 				min: 0.8,
 				of: 'wood',
-				thick: SUBJECT_WOOD * above.radius,
+				thick: SUBJECT_WOOD * boxTop.radius,
 			},
 			{ name: 'the ground and air beside the trunk', box: [0, 0.1, 0.1, 0.6], max: 0.7 },
 		],
