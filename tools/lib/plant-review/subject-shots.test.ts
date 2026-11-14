@@ -1009,6 +1009,27 @@ describe('the view of one branch piece', () => {
 		expect(shotOf(placedPieceShot(plant, 'stalk', TALL)).facts.class).toBe('stalk-0');
 	});
 
+	test('keeps the world up when asked, so the stem the piece leaves stands upright', () => {
+		// A piece leaving a vertical stem: its own line is mostly up, so the frame lies along it.
+		const uprightPiece = {
+			class: 'pair',
+			socket: [1, 5, 0] as V3,
+			direction: normalize([0.4, 0.9, 0.1]),
+			length: 1.2,
+			spread: 0.3,
+		};
+		const rolled = shotOf(branchPieceShot(uprightPiece, TALL));
+		const upright = shotOf(branchPieceShot(uprightPiece, TALL, { upright: true }));
+		// The upright frame's up is the world's up; the rolled frame turns it about the line of sight.
+		expect(cameraAxes(upright.camera).up[1]).toBeCloseTo(1, 6);
+		// The default frame turns about the line of sight to lay the piece across; upright does not.
+		expect(cameraAxes(rolled.camera).up[1]).toBeLessThan(0.999);
+		const cut = landing(upright, TALL, 'the cut');
+		const tip = landing(upright, TALL, 'the tip');
+		expect(cut.y - tip.y).toBeGreaterThan(0.5);
+		expect(checkShot(upright, TALL).present).toBe(true);
+	});
+
 	test("looks along an arching piece's side when asked, so its arch shows", () => {
 		const stalk = {
 			class: 'stalk-0',

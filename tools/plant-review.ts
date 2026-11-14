@@ -1036,6 +1036,7 @@ function compareRun(
 	const floating = [...stills.values()].filter(
 		(pair) => (pair.connectivity?.floating.length ?? 0) > 0,
 	);
+	const withheld = [...stills.values()].filter((pair) => pair.connectivityWithheld !== undefined);
 	const voids = [...stills.values()].filter((pair) => pair.void !== undefined);
 	// The run's verdict: the tool's rows are written fresh, and a row a reviewer judged is kept.
 	const verdictPath = join(dir, VERDICT_FILE);
@@ -1082,6 +1083,12 @@ function compareRun(
 		...(floating.length + sweepFloating.length > 0
 			? [
 					`- ${floating.length + sweepFloating.length} picture${floating.length + sweepFloating.length === 1 ? '' : 's'} draw${floating.length + sweepFloating.length === 1 ? 's' : ''} a piece hanging free: ${[...floating.map((pair) => `${pair.file} (foot row ${pair.connectivity?.footRow ?? '-'}, ground band ${pair.connectivity?.groundBand ? `${pair.connectivity.groundBand.top} to ${pair.connectivity.groundBand.base}` : 'not named'})`), ...sweepFloating].join(', ')}. A piece standing on the ground band the plant's feet span is rooted in the soil and is not counted; the rest meet nothing inside the picture. The owner's rule is that no piece hangs free at any level or sparseness, so the fault is the generator's and the run fails.`,
+				]
+			: []),
+		...(withheld.length > 0
+			? [
+					`- The connectivity check is withheld in ${withheld.map((pair) => `${pair.file}: the picture draws the ${pair.connectivityWithheld?.drawn}, where the engine draws the ${pair.connectivityWithheld?.engine} at its distance`).join('; ')}. A support thinner than a pixel of the finer level is not drawn there, and the engine's own level ties the piece with its stalk line, so no piece is counted floating.`,
+					'',
 				]
 			: []),
 		'',

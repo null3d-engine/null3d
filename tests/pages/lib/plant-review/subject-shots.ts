@@ -2344,6 +2344,11 @@ export interface BranchPieceOptions {
 	/** Whether the camera looks along the piece's side, so an arching piece shows its arch, in place of its face. */
 	readonly edge?: boolean;
 	/**
+	 * Whether the camera keeps the world's up, so the stem the piece leaves stands upright in the
+	 * frame: a photograph of a node shows its culm upright, not laid across.
+	 */
+	readonly upright?: boolean;
+	/**
 	 * The metres the frame's width shows, where the view frames a part of the piece rather than the
 	 * whole of it: the frame's middle then stands on the piece at the share `along` of its run.
 	 */
@@ -2415,7 +2420,10 @@ export function branchPieceShot(
 		const face = squareTo(given, line);
 		const look = options.edge ? (piece.side ?? normalize(cross(line, face))) : face;
 		const forward: V3 = [-look[0], -look[1], -look[2]];
-		return { forward, roll: rollUp(forward, line) + (laid ? -Math.PI / 2 : 0) };
+		return {
+			forward,
+			roll: options.upright ? 0 : rollUp(forward, line) + (laid ? -Math.PI / 2 : 0),
+		};
 	};
 	if (options.span !== undefined) {
 		// A part of the piece, the span wide, round the share of its run asked, on its centre line.
@@ -2445,20 +2453,22 @@ export function branchPieceShot(
 	const span = (centre: number): readonly [number, number] => [centre - 0.06, centre + 0.06];
 	const cut = span(0.5 + (laid ? -run : run) / 2);
 	const end = span(0.5 + (laid ? run : -run) / 2);
+	// An upright frame keeps the world's up where the piece leans off its own line's vertical: its
+	// cut and tip still stand at the frame's lower and upper rows, but across the width they lie
+	// where the piece's lean puts them, so the window takes the frame's own width.
+	const acrossWindow = options.upright ? ([0.1, 0.9] as const) : ([0.3, 0.7] as const);
+	const cutWindow: readonly [number, number, number, number] = laid
+		? [cut[0], acrossWindow[0], cut[1], acrossWindow[1]]
+		: [acrossWindow[0], cut[0], acrossWindow[1], cut[1]];
+	const tipWindow: readonly [number, number, number, number] = laid
+		? [end[0], acrossWindow[0], end[1], acrossWindow[1]]
+		: [acrossWindow[0], end[0], acrossWindow[1], end[1]];
 	return {
 		kind: 'one branch piece from its cut to its tips',
 		camera,
 		points: [
-			{
-				name: 'the cut',
-				at: piece.socket,
-				within: laid ? [cut[0], 0.3, cut[1], 0.7] : [0.3, cut[0], 0.7, cut[1]],
-			},
-			{
-				name: 'the tip',
-				at: tip,
-				within: laid ? [end[0], 0.3, end[1], 0.7] : [0.3, end[0], 0.7, end[1]],
-			},
+			{ name: 'the cut', at: piece.socket, within: cutWindow },
+			{ name: 'the tip', at: tip, within: tipWindow },
 		],
 		regions: [{ name: 'the plain ground round the piece', box: [0, 0, 1, 1], min: 0.03, max: 0.8 }],
 		facts: { length: piece.length, spread: piece.spread, frame: tall, laid },

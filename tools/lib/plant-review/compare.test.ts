@@ -17,6 +17,7 @@ import {
 	edgeDifference,
 	edgeProfile,
 	emptySubject,
+	engineLevelAt,
 	fittedMaskClause,
 	frameFiguresHold,
 	frameScale,
@@ -988,6 +989,25 @@ describe('a picture that answers nothing', () => {
 		);
 		expect(levelName({ level: { name: 'leaf form', forced: true } })).toBe('leaf form, forced');
 		expect(levelName({})).toBe(undefined);
+	});
+
+	test("reads the level the engine draws at a cell's distance, not the level the query forced", () => {
+		const starts = [0, 3.7, 156.6, 1e9];
+		const cell = (distance: number, forced?: number) => ({
+			level: {
+				distance,
+				starts,
+				forced: forced !== undefined,
+				...(forced !== undefined && { level: forced }),
+			},
+		});
+		expect(engineLevelAt(cell(86))).toBe(1);
+		expect(engineLevelAt(cell(2))).toBe(0);
+		expect(engineLevelAt(cell(200))).toBe(2);
+		// A forced leaf form at a whole view's distance is a diagnosis: the engine draws the card level.
+		expect(engineLevelAt(cell(86, 0))).toBe(1);
+		expect(engineLevelAt({})).toBe(undefined);
+		expect(engineLevelAt({ level: { distance: 86 } })).toBe(undefined);
 	});
 });
 

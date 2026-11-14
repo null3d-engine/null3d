@@ -61,6 +61,7 @@ import {
 } from '../lib/plant-review/close';
 import { cutFace } from '../lib/plant-review/cut-face';
 import { type CutRows, cutCamera, leafFrame, spanDistance } from '../lib/plant-review/framing';
+import { cellLevel } from '../lib/plant-review/levels';
 import { measurePlant, partPositions, shootPositions } from '../lib/plant-review/measure';
 import { readPlantReviewQuery } from '../lib/plant-review/query';
 import { sharedRecords } from '../lib/plant-review/sight';
@@ -168,8 +169,6 @@ const FRUIT_TUBE = 0.6;
 const FRUIT_ELEVATION = -12;
 /** Stops of switch bias that carry a forced nearest level's shoots past every far plane. */
 const FORCED_NEAR_STOPS = 20;
-/** The levels of detail in words, by the number a query forces. */
-const LEVEL_WORDS = ['leaf form', 'first card level', 'second card level', 'far card'] as const;
 /** The most cells a sheet draws: the scene's views less the camera's own. */
 const MOST_CELLS = 31;
 
@@ -1032,6 +1031,7 @@ export default defineSketch(async (ctx) => {
 						placedPieceShot(subjectsOf(), QUERY.piece as string, lens, {
 							laid: (QUERY.roll ?? 0) !== 0,
 							edge: QUERY.edge === true,
+							upright: QUERY.upright === true,
 							...(span !== undefined && { span, along: QUERY.along ?? 0.5 }),
 							...(QUERY.toward && { turn }),
 						}),
@@ -2158,18 +2158,19 @@ export default defineSketch(async (ctx) => {
 	// The level of detail each cell's picture draws, which every figure read from it must name.
 	// The distance is from the lens to the plant's foot, as the placement measures a copy.
 	const levelOf = (cell: Cell) => {
-		if (LOD !== undefined)
-			return { forced: true, level: LOD, name: LEVEL_WORDS[LOD] ?? 'far card' };
+		// A forced or plain-background picture draws a level its distance alone would not choose, so
+		// read the bands from the source plant: the record names the level the picture shows and the
+		// level the engine draws at its distance.
 		const at = cell.piece === 'away' ? AWAY : ([0, 0, 0] as const);
 		const distance = Math.hypot(...sub(cell.view.position, at));
-		const found = drawnLevel(mainKit, drawn, placedView, distance, far !== undefined);
-		return {
-			forced: false,
-			level: found.level,
-			name: found.name,
+		const found = drawnLevel(
+			mainKit,
+			LOD === undefined && plainLevel === undefined ? drawn : main,
+			placedView,
 			distance,
-			starts: found.starts,
-		};
+			far !== undefined,
+		);
+		return cellLevel(found, LOD, plainLevel, distance);
 	};
 	const rowsByClass = piece
 		? (() => {
