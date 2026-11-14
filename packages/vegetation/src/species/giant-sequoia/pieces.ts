@@ -60,7 +60,7 @@ function branchlet(length: number): PieceStem {
 							from: 0.2,
 							to: 0.95,
 							arrangement: 'alternate',
-							angle: { mean: 45, spread: 5 },
+							angle: { mean: 38, spread: 5 },
 						},
 					],
 				},
@@ -70,7 +70,7 @@ function branchlet(length: number): PieceStem {
 				from: 0.3,
 				to: 1,
 				arrangement: 'alternate',
-				angle: { mean: 40, spread: 10 },
+				angle: { mean: 34, spread: 10 },
 			},
 		],
 	};
