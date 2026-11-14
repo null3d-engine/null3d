@@ -23,9 +23,18 @@ const CONTOUR_WIDTH = 0.75;
  * species ships, so it keeps its own length and outline until a plant built of pieces replaces
  * that crown.
  */
+/**
+ * Degrees per side of the V a piece's blade keeps: edge on it stands the blade wide, where the
+ * crown's shallow fold shows a line, and a folded blade shows its face a share narrower, so the
+ * breadth below is widened by the same share.
+ */
+const PIECE_FOLD = 35;
+const FOLD_FLATTEN = Math.cos((PIECE_FOLD * Math.PI) / 180);
+
 export const PIECE_LEAF: PieceLeaf = {
 	length: { mean: LEAF, spread: 0.014 },
-	breadth: LEAF_WIDTH / CONTOUR_WIDTH,
+	breadth: LEAF_WIDTH / CONTOUR_WIDTH / FOLD_FLATTEN,
+	fold: PIECE_FOLD,
 };
 
 /** A leaf's share of the branch end's height on still 21: 55 to 65 pixels of 715. */
@@ -48,7 +57,7 @@ const ROW_GAP = (1.1 * LEAF_WIDTH * LEAF_SHARE) / 2;
  * @param tilt Degrees the two rows stand round the twig off the piece's own plane; a drawn place
  * where absent.
  */
-function rows(from: number, tilt?: number): PieceLeaves {
+function rows(from: number, tilt?: number, axils = true): PieceLeaves {
 	return {
 		gap: ROW_GAP,
 		from,
@@ -57,6 +66,7 @@ function rows(from: number, tilt?: number): PieceLeaves {
 		angle: 70,
 		angleSpread: 8,
 		scale: LEAF_SCALE,
+		...(axils ? {} : { axilBuds: false }),
 	};
 }
 
@@ -66,7 +76,9 @@ function rows(from: number, tilt?: number): PieceLeaves {
  * its own thin brown end and on thin side twigs, 0.1 to 0.2 of the branch's height long, that leave
  * to one side and the other at 50 to 80 degrees, four or five leaves on each. A spray is 0.4 to 0.5
  * of the height long and 0.2 to 0.3 wide and holds about thirty leaves. Seen edge on, each spray's
- * plane is tilted from the branch's own.
+ * plane is tilted from the branch's own. The wood runs smooth between its joints: the photograph's
+ * twigs curve gently, and a kink at each of the piece's hundred-odd leaf nodes would cost a ring of
+ * the three-sided wood at every one.
  *
  * @param length The limb's length in shares of the branch's height.
  * @param arc Degrees the limb turns away from the branch's line over its length.
@@ -82,22 +94,21 @@ function limb(
 	from = 0.28,
 	own = 0.62,
 	radius = 0.005,
+	axils = true,
 ): PieceStem {
 	// A side twig of a long limb is 0.17 of the branch's height long, and a short limb's are shorter.
 	const twig = Math.min(0.17, 0.4 * length);
 	return {
 		length: { mean: length, spread: length * 0.07 },
 		radius: [radius, 0.0012],
-		zigzag: 10,
 		arc,
-		leaves: rows(own, tilt),
+		leaves: rows(own, tilt, axils),
 		sides: [
 			{
 				stem: {
 					length: { mean: twig, spread: twig * 0.18 },
 					radius: [0.0018, 0.001],
-					zigzag: 12,
-					leaves: rows(0.15, tilt),
+					leaves: rows(0.15, tilt, axils),
 				},
 				// Still 21: six side twigs on the left limb between 0.1 and 0.67 of its length.
 				gap: 0.07,
@@ -171,30 +182,35 @@ export const PIECES: readonly PieceRule[] = [
 		name: 'branch-end',
 		attitude: 'level',
 		variants: 2,
-		scale: LEAF / LEAF_SHARE,
+		// The photograph's own cutting, 519 by 408 px at the tool's 640, is 1.272 wide over tall as
+		// still 21's piece is, but it reads 29 per cent larger than the picture at picture 09's
+		// frame: the piece stands at 0.776 of the size its leaf share alone gives.
+		scale: (LEAF / LEAF_SHARE) * 0.776,
 		// The turning video of the cut branch: edge on it is 0.24 as wide as face on.
 		depth: 13,
+		// Every bud draws as a three-sided cone at the high tier: a bud is a few pixels wide in the
+		// piece's own picture, and the long buds' swells cost more than the leaves.
+		budCones: true,
 		stem: {
 			length: { mean: 0.44, spread: 0.02 },
 			// Still 21: the stem is 0.021 of the branch's height thick at its cut (15 of 727 pixels).
 			radius: [0.0103, 0.0075],
 			bud: false,
 			sides: [
-				fork(limb(0.61, 28, -20, 0.33, 0.45), 0.64, 0.44, 55),
+				fork(limb(0.61, 28, -20, 0.33, 0.45, 0.005, false), 0.64, 0.44, 55),
 				// A short twig of three leaves below the fork.
 				fork(
 					{
 						length: { mean: 0.12, spread: 0.02 },
 						radius: [0.0018, 0.001],
-						zigzag: 12,
-						leaves: rows(0.3, 0),
+						leaves: rows(0.3, 0, false),
 					},
 					0.84,
 					0.44,
 					75,
 					true,
 				),
-				fork(limb(0.72, 45, 25, 0.1), 1.02, 0.44, 50, true),
+				fork(limb(0.72, 45, 25, 0.1, 0.62, 0.005, false), 1.02, 0.44, 50, true),
 				fork(
 					{
 						length: { mean: 0.36, spread: 0.02 },
@@ -202,9 +218,9 @@ export const PIECES: readonly PieceRule[] = [
 						bud: false,
 						sides: [
 							// A thin twig of the top spray is leafy from a third of its length.
-							fork(limb(0.22, 10, 15, 0.28, 0.35, 0.002), 1.02, 0.36, 95, true),
-							fork(limb(0.17, 0, 0, 0.28, 0.35, 0.002), 1.02, 0.36, 22, true),
-							fork(limb(0.33, 25, -10, 0.28, 0.35, 0.0025), 1.02, 0.36, 28),
+							fork(limb(0.22, 10, 15, 0.28, 0.35, 0.002, false), 1.02, 0.36, 95, true),
+							fork(limb(0.17, 0, 0, 0.28, 0.35, 0.002, false), 1.02, 0.36, 22, true),
+							fork(limb(0.33, 25, -10, 0.28, 0.35, 0.0025, false), 1.02, 0.36, 28),
 						],
 					},
 					1.02,

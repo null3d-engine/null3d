@@ -304,17 +304,17 @@ const HELD: readonly Held[] = [
 		directed: europeanBeechDirected,
 		heightMean: spreadMean(europeanBeechDirected.size.height),
 		record: europeanBeechRecord,
-		counts: { trunk: 1, low: 4, upper: 3, bough: [28, 63], spray: [28, 252] },
-		// Four limbs a quarter turn apart leave no gap wider than that and their jitter.
-		round: { rule: 'low', gap: 112, lean: 0.25 },
-		base: { low: 0.47, upper: 0.55, bough: 0.5, spray: 0.5 },
+		counts: { trunk: 1, limb: 10, bough: [85, 86], skirt: [14, 17], twig: [2481, 2691] },
+		// Ten limbs a golden angle apart leave no gap wider than that and their jitter.
+		round: { rule: 'limb', gap: 67, lean: 0.09 },
+		base: { limb: 0.5, bough: 0.45, skirt: 0.35 },
 		plumb: ['trunk'],
-		// The top tiers' foliage stands above the highest wood.
-		through: 3,
-		crossings: [6, 3],
-		axesPerSocket: 1.007,
-		tall: [0.93, 1.02],
-		open: ['fill'],
+		through: 8,
+		crossings: [11, 5],
+		// Every twig that clothes a spray is an axis that ends in a socket.
+		axesPerSocket: 1.0,
+		fine: ['twig'],
+		tall: [1.02, 1.08],
 	},
 	{
 		id: 'common-ash',
@@ -917,6 +917,7 @@ for (const held of HELD)
  * this list changes in the same commit as an entry does.
  */
 const REGISTERED_FRAMES = [
+	'european-beech',
 	'holm-oak',
 	'olive',
 	'pedunculate-oak',

@@ -31,8 +31,12 @@ function shootLeaves(from: number): PieceLeaves {
 		],
 		angleSpread: 8,
 		scale: LEAF_SCALE,
-		// The cut branch's turning video: edge on it is 0.30 as wide as face on.
-		flat: 0.5,
+		// Stills 11 and 23 and the leaf cluster's turning video: about a quarter of a shoot's leaves
+		// show their grey felted undersides, each blade rolled about its midrib its own way. The
+		// cut branch's turning video: edge on it is 0.30 as wide as face on, so the midribs lie
+		// in the piece's plane and only the rolled blades stand out of it.
+		flat: 0.8,
+		face: { turn: 0, spread: 75 },
 	};
 }
 

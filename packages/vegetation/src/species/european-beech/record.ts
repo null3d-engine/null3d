@@ -281,12 +281,13 @@ export const record: Species = {
 			// seven pairs of straight parallel veins, a wavy untoothed margin and a very short stalk.
 			// The stalk is a stub rather than the photograph's four millimetres, so a blade drawn on a
 			// twig at a cut view meets the wood instead of standing a pixel or two clear of it.
-			// This leaf grows the crown the species ships, and that crown keeps it. The branch pieces
-			// wear the photographs' leaf (`PIECE_LEAF` in pieces.ts): 9 centimetres long, and drawn at
-			// 0.73 of the texture contour's width, because 24 full leaves on stills 11, 22 and 23 read
-			// 0.42 to 0.65 as wide as long, median 0.55, where the contour reads 0.75. The record takes
-			// that length and breadth when the plant built of pieces replaces this crown.
-			length: { mean: 0.13, spread: 0.02 },
+			// The beech has no fact sheet, so the photographs are the ruler: 24 full leaves on stills
+			// 11, 22 and 23 read 8 to 9 centimetres, and some full leaves on still 21 the same. The
+			// branch pieces already wear that leaf (`PIECE_LEAF` in pieces.ts), and the crown wears it
+			// too, at the photographs' width: 0.42 to 0.65 as wide as long, median 0.55, over the
+			// texture contour's 0.75.
+			length: { mean: 0.09, spread: 0.014 },
+			breadth: 0.733,
 			outline: 'texture',
 			petiole: { length: 0.0015, radius: 0.0012, flat: 0, droop: 12 },
 			fold: 12,

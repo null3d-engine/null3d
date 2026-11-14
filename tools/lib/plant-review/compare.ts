@@ -132,6 +132,8 @@ export const SOLVED_VIEWS: ReadonlySet<string> = new Set([
 	'bark-base',
 	'bark-mid',
 	'bark-limb',
+	// A hanging-shoot view now states its own contract, so its parts picture is drawn too.
+	'strands',
 ]);
 
 /**
@@ -1810,6 +1812,12 @@ export interface StillResult extends PairMetrics {
 			readonly floating: readonly { readonly area: number; readonly box: string }[];
 		} | null;
 	} | null;
+	/**
+	 * Why the connectivity check read no piece here: the picture was forced to a finer level than
+	 * the engine draws at its distance, where a support thinner than a pixel of the finer level
+	 * joins a piece that the card level ties with its stalk line.
+	 */
+	readonly connectivityWithheld?: { readonly drawn: string; readonly engine: string };
 	/** The sparseness the picture was drawn at, where its query names one above the record. */
 	readonly sparse?: number;
 	/** What a close view's camera framed, and how clear it found its subject, as the page posted it. */
@@ -1946,6 +1954,29 @@ export function levelName(cell: unknown): string | undefined {
 	const level = (cell as { level?: { name?: unknown; forced?: unknown } } | undefined)?.level;
 	if (!level || typeof level.name !== 'string') return undefined;
 	return level.forced === true ? `${level.name}, forced` : level.name;
+}
+
+/** The levels of detail, in level order, for a record that names them. */
+const LEVEL_NAMES = ['leaf form', 'first card level', 'second card level', 'far card'] as const;
+
+/**
+ * The level the engine draws at a cell's distance, from the levels' starts that the page posted:
+ * the last level whose start the distance reaches, and the far card past the last. Undefined where
+ * the cell posted no starts, as a page too old to record them.
+ */
+export function engineLevelAt(cell: unknown): number | undefined {
+	const level = (cell as { level?: { distance?: unknown; starts?: unknown } } | undefined)?.level;
+	if (!level || typeof level.distance !== 'number' || !Array.isArray(level.starts))
+		return undefined;
+	const starts = level.starts as readonly unknown[];
+	let drawn = 0;
+	// A band with no start is not drawn at any distance, as the shaped plant's starts read for the
+	// levels it left empty.
+	for (let at = 0; at < Math.min(3, starts.length); at++) {
+		const start = starts[at];
+		if (typeof start === 'number' && start <= level.distance) drawn = at;
+	}
+	return drawn;
 }
 
 /** How far a whole view's drawn plant may differ in size from its photograph's, as a share of it. */
@@ -2526,8 +2557,20 @@ export function compareStills(
 		// work-width read is kept beside it as a second figure.
 		// A fork's picture draws only the wood near the joint's depth, so the cut leaves pieces that
 		// hang free in it by design, and the gate does not read it.
+		// A picture forced to a finer level than the engine draws at its distance is a diagnosis: a
+		// support thinner than one pixel of that level is not drawn, while the card level ties the
+		// piece with a stalk line. The gate reads no piece there, and the summary names why.
+		const forcedLevel = (
+			frame.cell as { level?: { forced?: unknown; level?: unknown } } | undefined
+		)?.level;
+		const engineLevel = engineLevelAt(frame.cell);
+		const forcedFiner =
+			forcedLevel?.forced === true &&
+			typeof forcedLevel.level === 'number' &&
+			engineLevel !== undefined &&
+			forcedLevel.level < engineLevel;
 		const ownParts =
-			own && drawn !== 'fork' && !closeInside
+			own && drawn !== 'fork' && !closeInside && !forcedFiner
 				? piecePartsAtOwnWidth(own.mask, own.width, own.height)
 				: null;
 		const pieces = parts
@@ -2622,6 +2665,12 @@ export function compareStills(
 			edgeDifference: edges,
 			pieces,
 			connectivity,
+			...(forcedFiner && {
+				connectivityWithheld: {
+					drawn: LEVEL_NAMES[forcedLevel.level as number] ?? 'leaf form',
+					engine: LEVEL_NAMES[engineLevel as number] ?? 'far card',
+				},
+			}),
 			...(frame.query?.sparse !== undefined ? { sparse: frame.query.sparse } : {}),
 			...(sheathFigure ? { sheath: sheathFigure } : {}),
 			...(framing ? { framing } : {}),

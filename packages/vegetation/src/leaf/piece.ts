@@ -133,6 +133,11 @@ export interface PieceLeaves {
 	readonly angleSpread?: number;
 	/** A leaf's size over the species' own leaf, foot to tip. */
 	readonly scale?: Curve;
+	/**
+	 * Whether a bud stands in each leaf's axil on this stem; it does where absent. A stem that
+	 * leaves its axils bare keeps the piece's cost for the leaves and the wood.
+	 */
+	readonly axilBuds?: boolean;
 	/** The share a leaf's upper face turns toward the sky side; the species' own where absent. */
 	readonly skyward?: number;
 	/**
@@ -377,6 +382,12 @@ export interface PieceRule {
 	 */
 	readonly brushCards?: boolean;
 	/**
+	 * Whether the piece's buds take the fewest triangles a close view reads: every bud a three-sided
+	 * cone of one band at the high tier, with no swell. A piece with a bud in every leaf's axil pays
+	 * more for its buds than for its leaves, where a bud is a few pixels wide in its picture.
+	 */
+	readonly budCones?: boolean;
+	/**
 	 * The most metres between neighbouring leaves on a stem that one brush card pictures as a run.
 	 * Absent, two of the stem's radii, where needles close round their stem; a piece whose leaves
 	 * are sprays that overlap along their stem states the spacing they overlap at.
@@ -389,7 +400,8 @@ export interface PieceRule {
  * fields over it. A species states one while its record's leaf also grows the crown it ships, which
  * keeps its own leaf until a plant built of pieces replaces it.
  */
-export interface PieceLeaf extends Partial<Pick<LeafShape, 'length' | 'breadth' | 'cardBands'>> {
+export interface PieceLeaf
+	extends Partial<Pick<LeafShape, 'length' | 'breadth' | 'cardBands' | 'fold'>> {
 	/** Metres of stalk from the stem to the blade's base. */
 	readonly stalk?: number;
 }
@@ -435,6 +447,7 @@ export function pieceRecord(record: Species, leaf: PieceLeaf | undefined): Speci
 				length: leaf.length ?? own.length,
 				...(leaf.breadth === undefined ? {} : { breadth: leaf.breadth }),
 				...(leaf.cardBands === undefined ? {} : { cardBands: leaf.cardBands }),
+				...(leaf.fold === undefined ? {} : { fold: leaf.fold }),
 				petiole: { ...own.petiole, length: leaf.stalk ?? own.petiole.length },
 			},
 		},
@@ -631,6 +644,7 @@ export function planPiece(
 			leafMean,
 			// Only a blade carries a bud in its axil.
 			leafLength: foliage.kind === 'blade' ? leafMean : 0,
+			...(own.axilBuds === undefined ? {} : { axilBuds: own.axilBuds }),
 			leafMeshes,
 			budLength: shoots.bud.length,
 			budWidth: shoots.bud.width,
@@ -1326,6 +1340,10 @@ export function piecePrototypes(
 		const own = rule.leafDroop === 'plane' ? straight : leaves;
 		const leafMeshes = Math.min(...own.map((tier) => tier.length));
 		const finest = own[own.length - 1] ?? [];
+		// A piece that takes the fewest triangles for its buds draws each as a cone at the high tier.
+		const cuts = rule.budCones
+			? { ...PIECE_CUTS, high: { ...PIECE_CUTS.high, coneAll: true } }
+			: PIECE_CUTS;
 		// A piece that draws brush cards pictures two runs of its first variant: its own stem's
 		// longest, and its side stems' longest. Every run draws from the one of its kind.
 		let pictures: BrushPicture[] | undefined;
@@ -1359,7 +1377,7 @@ export function piecePrototypes(
 								pictures: drawn,
 							}
 						: undefined;
-				const meshed = meshedPlan(plan, own, PIECE_CUTS);
+				const meshed = meshedPlan(plan, own, cuts);
 				if (rule.browning)
 					for (const tier of meshed.tiers) browned(tier, rule.browning, leafLength);
 				out.push({
