@@ -108,25 +108,28 @@ function crownOf(record: Species): FrondCrown {
 	return record.growth;
 }
 
-/** The radical inverse of `index` in base two: an order whose every leading run is spread evenly. */
-export function radicalInverse(index: number): number {
+/**
+ * The radical inverse of `index` in a base, two by default: an order whose every leading run is
+ * spread evenly.
+ */
+export function radicalInverse(index: number, base = 2): number {
 	let value = 0;
-	let unit = 0.5;
-	for (let i = index; i > 0; i >>>= 1) {
-		if (i & 1) value += unit;
-		unit /= 2;
+	let unit = 1 / base;
+	for (let i = index; i > 0; i = Math.floor(i / base)) {
+		value += (i % base) * unit;
+		unit /= base;
 	}
 	return value;
 }
 
 /**
- * Each of `n` fronds' step through its rank's spread, from 0 to `n - 1`: the place of its radical
- * inverse among the rank's, so the steps run evenly through the spread whatever the rank's leading
- * run and stand in no order round the trunk.
+ * Each of `n` fronds' step through a range, from 0 to `n - 1`: the place of its radical inverse in
+ * the base among the rank's, so the steps of any leading run of the rank stand spread through the
+ * range. Two bases give two orders that do not follow one another.
  */
-function leaveSteps(n: number): number[] {
+function orderSteps(n: number, base: number): number[] {
 	const order = Array.from({ length: n }, (_, k) => k).sort(
-		(a, b) => radicalInverse(a) - radicalInverse(b),
+		(a, b) => radicalInverse(a, base) - radicalInverse(b, base),
 	);
 	const steps = new Array<number>(n);
 	order.forEach((k, place) => {
@@ -320,11 +323,17 @@ export function growFrondCrown(input: GrowInput): MacroSkeleton {
 		sum += rank.share;
 		const last = r === ranks.length - 1 ? count : Math.max(first + 1, Math.round(sum * count));
 		const { rule, index } = pieceNamed(record, rank.piece);
-		const steps = leaveSteps(last - first);
+		// In rings, a rank's fronds stand evenly round the trunk, their places in the order the
+		// plant thins them by, and their leaving angles in an order of another base.
+		const rings = growth.fronds.layout === 'rings';
+		const places = orderSteps(last - first, 2);
+		const steps = orderSteps(last - first, rings ? 3 : 2);
 		for (let i = first; i < last; i++) {
 			const age = count > 1 ? i / (count - 1) : 0;
 			const azimuth =
-				start + i * divergence + radians((draw(DRAW.frondTurn, i) * 2 - 1) * TURN_JITTER);
+				(rings
+					? start + r * divergence + (2 * PI * (places[i - first] as number)) / (last - first)
+					: start + i * divergence) + radians((draw(DRAW.frondTurn, i) * 2 - 1) * TURN_JITTER);
 			// A rank with a stated spread lays its fronds evenly over it, in an order unlike the
 			// spiral's round the trunk; one without strays by a few degrees.
 			const offset =

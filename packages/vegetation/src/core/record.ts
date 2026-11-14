@@ -1019,6 +1019,12 @@ export interface FrondCrown {
 		readonly count: Spread;
 		/** Degrees between one frond and the next round the trunk; 137.5 for most. */
 		readonly divergence: number;
+		/**
+		 * How the living fronds stand round the trunk: `spiral`, each the divergence on from the last
+		 * across the whole crown, or `rings`, each rank spaced evenly round the trunk and each rank
+		 * turned the divergence on from the last. A spiral where absent.
+		 */
+		readonly layout?: 'spiral' | 'rings';
 		/** Metres under the growing point over which the frond bases stand, the oldest lowest. */
 		readonly clasp: number;
 		/** The ranks from the youngest out, each a share of the fronds; the shares sum to 1. */
