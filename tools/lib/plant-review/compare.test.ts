@@ -1006,6 +1006,8 @@ describe('a picture that answers nothing', () => {
 		expect(engineLevelAt(cell(200))).toBe(2);
 		// A forced leaf form at a whole view's distance is a diagnosis: the engine draws the card level.
 		expect(engineLevelAt(cell(86, 0))).toBe(1);
+		// A band with no start draws at no distance: the shaped plant's empty levels post nulls.
+		expect(engineLevelAt({ level: { distance: 86, starts: [0, null, null, 1e9] } })).toBe(0);
 		expect(engineLevelAt({})).toBe(undefined);
 		expect(engineLevelAt({ level: { distance: 86 } })).toBe(undefined);
 	});
