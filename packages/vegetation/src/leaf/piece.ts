@@ -1280,7 +1280,7 @@ export function piecePrototypes(
 				const runs = plannedBrushes(whole, rule.brushGap, rule.brushSubtrees);
 				const longest = (own: boolean) =>
 					runs
-						.filter((run) => (rule.brushSubtrees ? run.main : run.axis === 0) === own)
+						.filter((run) => run.main === own)
 						.reduce<PlannedBrush | undefined>(
 							(best, run) => (!best || run.length > best.length ? run : best),
 							undefined,
@@ -1300,14 +1300,11 @@ export function piecePrototypes(
 					drawn.length > 0
 						? {
 								runs: plannedBrushes(plan, rule.brushGap, rule.brushSubtrees).map(
-									({ axis, main, leaves: _leaves, ...run }) => ({
+									({ main, leaves: _leaves, ...run }) => ({
 										...run,
-										// A run on the main stem draws its own stem's picture; a piece of whole
-										// side stems names that stem by its place, any other by its index.
-										picture: Math.min(
-											drawn.length - 1,
-											(rule.brushSubtrees ? main : axis === 0) ? 0 : 1,
-										),
+										// A run on the piece's own main stem draws the main picture; every other
+										// run draws its side stems' picture, in a part as in the whole piece.
+										picture: Math.min(drawn.length - 1, main ? 0 : 1),
 									}),
 								),
 								pictures: drawn,
