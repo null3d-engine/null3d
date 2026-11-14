@@ -120,3 +120,48 @@ figure and is not reported.
 4. Run the review. Work the rows in the reviewer's own order.
 5. Keep a state file for the species: every accepted figure, and every rejected route with the
    figure that rejected it. A route that is not written down gets tried again.
+
+## Targets for the generator
+
+`bun run plants:targets <species...>` measures the figures that decide a plant's shape and writes
+them to `tools/lib/plant-review/targets/<species>.json`. The plant generator reads its shape from
+that file, so no shape figure is set by hand. The file's type is `SpeciesTargets` in
+`tools/plant-targets/schema.ts`. Give the tool the store as the review takes it:
+`NULL3D_PLANT_REFERENCES=<store>/generated bun run plants:targets <species>`.
+
+The pictures of one species show different individual plants, since each was made on its own. So
+the file keeps them apart:
+
+- **The primary individual** is picture `01` and the whole plant's turning video. Every frame of
+  the video is measured at its own angle, and each figure has its range round the plant.
+- **The secondary views** are the other whole views numbered up to `18`. They show other
+  individuals of the same habit, and match the primary one in form and proportions only.
+- **The spread** lists each figure in the primary still, round the turn and in each secondary view.
+  It gives the largest distance of a secondary view from the primary still. It also says when the
+  primary still stands outside its own video's range. One of the two outlines is then at fault.
+- A picture that the species' slot file names as having no separable outline is not measured.
+- A frame can lose the plant's foot or its top. Its plant then stands more than 15 per cent taller
+  or shorter than the turn's middle height, and the frame is left out.
+- Whole views numbered above `18` show other forms, ages and seasons. They are listed apart and join
+  no spread.
+
+| Figure | How it is measured | What it cannot see |
+| --- | --- | --- |
+| Height to width, crown base, crown box | The review's own outline and crown start, on the outline that the fit tool cleans of the ground strip at the foot. The review's outline follows a stem below the horizon to its foot, so the plant's height runs to its root collar. Each view records the horizon's row, the row where the outline ended before the stem was followed, and the foot's row | A picture whose plant leaves the frame or whose background is not plain gives no figure. A tuft or a colony that ends at the horizon above a wide ground has lost its lower part, and gives none, unless the ground under its foot is of another color than the foot, which then stands in view on it. On a trunk as thick as the olive's the review's crown start reads low, and the bare stem is the better figure |
+| Stem width, flare, lean, bare stem | The run of plant nearest the foot's column, in the rows below the crown and above the horizon. The stem's width is the narrowest middle width of three bands of those rows. Each row's width is read from the picture at its own size, between the two places where the stem's contrast with the sky falls to half | Below the horizon the ground hides the stem, so those rows are left out. On a short flared bole the lean follows the flare. A tuft's narrow foot reads as a stem. A plant whose foot's run never forks is marked a column, since an outline cannot tell a cactus's stem from a cypress's foliage |
+| Breast-height width | The stem's run at 1.3 m, placed by the middle of the fact sheet's stated height | A species with no fact sheet, or one shorter than two breast heights, has none |
+| Stems | The runs that rise from the foot at three rows of the bare stem | Foliage that hangs to the foot cannot be told from a stem, so the figure is null there |
+| Outline envelope | The reach each side of the foot's column in 16 height bands: the greatest, and the mean over the band's rows, which a lone tip near a band's edge moves little. Each side also gives the lowest row, and its share of the height, where the outline reaches more than 0.05 of the height past half the stem's width. The turn gives the greatest, the mean and the spread of each band's greatest reach, and the mean by direction | Outlines cannot tell which way a video turns, so the directions run with the frames or against them. The row clear of the stem cannot tell foliage from a bare limb or a second stem |
+| Lumps on the crown's edge | Rays from the crown's base find the edge. A notch is where the edge falls inside the crown's convex hull by 0.04 of the crown's size, the square root of the hull's area. The lumps are the stretches between notches | Only the lumps on the outline show. A lump in front of the crown or behind it is not counted |
+| Sky inside the crown | The review's enclosed gap and crown-box gap, the holes that plant closes on every side, and the gap in each cell of a three by three grid over the crown's box | Sky counts only where it matches the fitted sky's color |
+| Limbs at the first fork | Arcs at 1.5, 2 and 2.5 stem widths round the fork each cross the limbs. A count stands when no arc meets foliage and all three agree | Foliage covers the fork in most pictures, so the figure is usually null |
+| Cut-branch figures | The piece's pixels that are not leaf green are its wood. The wood is thinned to lines, and the lines give the tips, the wood for each tip, the tips for each area, the share of joints where four or more twigs leave one point, and the kinks for each length | Gray, blue or yellow foliage cannot be parted from the wood by color. Wood behind a leaf is not seen, and two twigs that cross read as one joint |
+
+Lengths are shares of the plant's height, and a piece's lengths are in piece lengths, the longer
+side of the piece's box. Every picture is measured at the review's work width.
+
+A figure that a picture cannot give is `null`. Its reason stands in the `missing` list beside it,
+and the file's `nulls` list repeats every reason with its path. The `stated` section holds what the
+species' `FACTS.md` states. That is the height, the spread, the crown and clear trunk shares, the
+leaf size, the leaf arrangement and the habit words. Those are stated, never measured, and a measured figure is
+never filled from them. Only breast height uses a stated figure, to place 1.3 m on the picture.
