@@ -16,17 +16,20 @@ import { record } from './record';
 
 /**
  * The fine wood that clothes a spray, each twig ending in a socket that carries the branch end of
- * still 21. A branch end is 1.2 m long and 1.3 m wide on a tree 20 m tall, so the sockets stand a
- * branch end's width apart over the spray's surface and a branch end's reach inside it.
+ * still 21. A branch end is 1.2 m long and 1.3 m wide on a tree 20 m tall. The leaf form's cap
+ * holds about a thousand branch ends, so the sockets stand about 2.3 m apart, twice a branch end's
+ * width, and each stands a branch end's reach inside the surface: the leaf form reads open, and
+ * the whole views draw the first card level, where the crown's cover is.
  */
-const ENDS = { pitch: 1.2 / 20, reach: 1.17 / 20 } as const;
+const ENDS = { pitch: 2.26 / 20, reach: 1.17 / 20 } as const;
 
 /**
  * A layered spray of foliage that fine wood clothes. Still 04: flat sprays of oval leaves overlap
  * like shingles. Still 01: the dome's surface is a scale of rounded layers a sixth of the height
- * across and half as deep.
+ * across and half as deep. The sprays overlap and the fill drops the points inside another spray,
+ * so a layer of the dome's surface carries one row of branch ends.
  */
-const SPRAY = { kind: 'clump', width: 0.17, depth: 0.08, fill: ENDS } as const;
+const SPRAY = { kind: 'clump', width: 0.22, depth: 0.11, fill: ENDS } as const;
 
 /**
  * The boughs of a great limb, each ending at the dome's surface in a spray. Stills 05 and 06: the
@@ -36,7 +39,7 @@ const SPRAY = { kind: 'clump', width: 0.17, depth: 0.08, fill: ENDS } as const;
 const boughs: FrameBranchRule = {
 	name: 'bough',
 	role: 'branch',
-	count: { every: 0.03, least: 4, most: 10 },
+	count: { every: 0.05, least: 3, most: 7 },
 	along: [0.3, 1],
 	stagger: 0.3,
 	around: 'spiral',
@@ -60,10 +63,48 @@ const boughs: FrameBranchRule = {
 	taper: 0.3,
 	// Still 01: the boughs bow down toward the dome's rim.
 	bends: [{ from: 0.3, to: 1, by: 35 }],
-	sway: 14,
-	elbows: 3,
+	sway: 16,
+	elbows: 4,
 	apart: 0.006,
 	patch: SPRAY,
+};
+
+/**
+ * The skirt of a low limb: short branches from its outer half that leave its sides lowered toward
+ * the ground, run out under the limb and end where their clump meets the crown's lower boundary.
+ * Still 01: the foliage falls away from the bare bole and hangs to 0.04 of the height at the rim,
+ * so the lowest bands of the crown carry leaf out to the outline.
+ */
+const skirt: FrameBranchRule = {
+	name: 'skirt',
+	role: 'branch',
+	count: { every: 0.06, least: 2, most: 6 },
+	along: [0.45, 0.95],
+	stagger: 0.3,
+	around: 'sides',
+	lift: -45,
+	clear: 0,
+	jitter: 15,
+	angle: 80,
+	from: 'parent',
+	angleSpread: 8,
+	length: {
+		height: [
+			[0, 0.13],
+			[1, 0.07],
+		],
+	},
+	vary: 0.1,
+	least: 0.05,
+	most: 0.45,
+	radius: 0.35,
+	taper: 0.35,
+	bends: [{ from: 0.2, to: 1, by: 45 }],
+	sway: 20,
+	elbows: 5,
+	crook: 0.3,
+	apart: 0.006,
+	patch: { kind: 'clump', width: 0.19, depth: 0.06, fill: ENDS },
 };
 
 /**
@@ -197,7 +238,9 @@ export const frame: FrameSpec = {
 				elbows: 4,
 				// Still 05: the limbs fan round the tree and none lies along another.
 				apart: 0.012,
-				children: [boughs],
+				// A limb's end carries a spray of its own, so no limb ends bare inside the crown.
+				patch: { kind: 'clump', width: 0.13, depth: 0.06 },
+				children: [boughs, skirt],
 			},
 		],
 	},
