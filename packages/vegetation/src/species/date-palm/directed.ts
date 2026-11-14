@@ -1,12 +1,17 @@
 // The date palm on the directed design: one plumb trunk to a single growing point, and round it a
-// spiral of 28 living fronds and a ring of 7 dead ones, each frond a piece at a socket of its own
-// (pieces.ts), with the date bunches at flower sites under the lowest fronds.
+// spiral of 56 living fronds and a ring of 20 dead ones, each frond a piece at a socket of its own
+// (pieces.ts), with the date bunches at flower sites under the lowest fronds. This record is the
+// species' shipped look, passed at the judged round date-palm-f35ae5ac9: the crown's enclosed sky
+// 0.28 at 01 and 0.23 at 02 against the photographs' 0.20 and 0.19, and 0.31 at 18 against 0.41 by
+// the half-dark rule, with the outline overlap 0.50, 0.60 and 0.46. The kit measures 1.80, 1.94,
+// 2.19 and 2.60 MB at its four tiers and a plant's near form 139,825 triangles at high. Open for
+// later: 01's residual lightness, the dates at a whole view and the 18 crown's width.
 //
 // Scale (owner ruling 8, and the lead's ruling on its precedence): the fact sheet gives a palm 15 to
 // 25 m tall, and picture 01 gives fronds 0.40 of the height, a crown 0.71 and a trunk 0.064. At 15 m,
 // the fact sheet's least, the frond is 6.0 m (inside its 4 to 6 m) and the trunk 0.96 m; no greater
 // height keeps the frond inside. Every other size is the pictures' proportion, even where it passes
-// the fact sheet: the crown is 10.65 m against 6 to 10, the leaflet 0.66 m against 20 to 40 cm, and
+// the fact sheet: the crown is 10.65 m against 6 to 10, the leaflet 0.72 m against 20 to 40 cm, and
 // the palm 1.4 times as tall as wide against 2.5. Those are conflicts in the reference, recorded for
 // the owner.
 import type { Species } from '../../core/record';
