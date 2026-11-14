@@ -39,7 +39,8 @@
 		"piece": "pair-full",
 		"span": 0.45,
 		"along": 0,
-		"edge": true
+		"edge": true,
+		"upright": true
 	},
 	"10-fine-branchlets.png": {
 		"lod": 0
