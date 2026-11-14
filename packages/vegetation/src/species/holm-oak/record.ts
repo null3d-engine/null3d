@@ -156,12 +156,14 @@ export const record: Species = {
 				droop: 7,
 			},
 		],
-		// The cluster stills' own rosette, drawn as the 'spur' class only by the cluster cutting: the references are
-		// whorls of about fifteen leaves crowded at the tip, where the crown's short shoot spreads
-		// eight along a twig. The crown never draws this class.
+		// The cluster stills' own rosette, drawn as the 'spur' class only by the cluster cutting: the
+		// references are whorls of about fifteen leaves crowded at the tip, where the crown's short
+		// shoot spreads eight along a twig. The crown never draws this class, and it is cut-only, so
+		// a cutting kit holds it and the plant's kit leaves it out.
 		cuttingClasses: [
 			{
 				name: 'spur',
+				cutOnly: true,
 				vigor: [0, 1],
 				share: 0,
 				years: 1,
