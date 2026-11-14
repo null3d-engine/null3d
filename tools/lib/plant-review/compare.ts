@@ -1234,7 +1234,7 @@ export interface TurnResult {
 }
 
 /**
- * The mask check's gates, measured over every turn check in the tree on 12 November 2026. A frame's
+ * The mask check's gates, measured over every turn check in the tree. A frame's
  * colour outline can only be read against its matte when the outline is a plant outline, so the
  * gates are set from the corpus of sound turns and give a margin under each kind's lowest reading.
  * A turn on a natural background reads a frame as low as 0.717 and a sound turn as low as 0.750, so
