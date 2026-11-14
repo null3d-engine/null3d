@@ -9,6 +9,7 @@ import { type PlantAsset, plantAssetDigest, type SpeciesKitData } from '../asset
 import { shootTriangles } from '../coarseness';
 import { loadSpecies } from '../core/registry';
 import {
+	bakeFarNow,
 	buildKitNow,
 	forgetGrownPlants,
 	growNearWoodNow,
@@ -18,6 +19,7 @@ import {
 } from '../generate';
 import { bodyFill } from './body.test-support';
 import { partTotal } from './budget';
+import { loadFarBaker } from './impostor';
 import { outlineMatte, outlineOverlap } from './outline.test-support';
 
 /** A species grows once and is cut and capped many times; a busy machine takes tens of seconds. */
@@ -212,6 +214,27 @@ describe('the triangle maximum option', () => {
 			variantKey(kit, { seed: 11, variant: 0, maxTriangles: 100 }),
 		);
 	});
+
+	it(
+		"bakes a capped plant's far card as the plant at its best look bakes it",
+		async () => {
+			// The far card is two triangles whatever it shows, so a maximum that thins the first card
+			// level's wood leaves the far card as the best look draws it.
+			const kit = await kitOf('hawthorn-shrub');
+			await loadFarBaker();
+			const base = { seed: 11, variant: 0 } as const;
+			const best = bakeFarNow(kit, growPlantNow(kit, base));
+			const capped = growPlantNow(kit, { ...base, maxTriangles: 2_000 });
+			const wood = (plant: PlantAsset) =>
+				plant.levels[1].parts.find((part) => part.name === 'wood')?.arrays.indices.length ?? 0;
+			// The maximum does thin the level's wood, so the far card's wood is the restored one.
+			expect(wood(capped)).toBeLessThan(wood(growPlantNow(kit, base)));
+			const far = bakeFarNow(kit, capped);
+			expect(far.color).toEqual(best.color);
+			expect(far.surface).toEqual(best.surface);
+		},
+		LONG,
+	);
 
 	it('refuses a maximum that is no positive count', async () => {
 		const kit = await kitOf('hosta');

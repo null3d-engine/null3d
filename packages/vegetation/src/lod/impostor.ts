@@ -9,10 +9,13 @@
 // inside reads darker from afar. The bake is arithmetic on the arrays, so every device gets the
 // same pixels.
 import type { ImpostorBakePart } from '@null3d/impostors/bake';
-import type { PlantAsset, PlantPart, SpeciesKitData } from '../asset';
+import type { MeshArrays, PlantAsset, PlantPart, SpeciesKitData } from '../asset';
 import type { Rgb } from '../core/types';
-import type { FarBake } from '../stages';
-import { TEXTURE_UV_STEPS, WOOD_UV_STEPS } from './quantise';
+import { lightCrown } from '../crown/visibility';
+import { GREAT_LIMB_SHARE, woodParts } from '../grow/sparse';
+import type { DressInput, FarBake, MeshInput } from '../stages';
+import { levelBuild } from './budget';
+import { quantiseParts, TEXTURE_UV_STEPS, WOOD_UV_STEPS } from './quantise';
 
 /**
  * A variant's far cards on a page: its impostor bake, which the impostors add-on's cards draw.
@@ -48,15 +51,22 @@ const SHADED = 0.4;
 /** The bark colour where neither the manifest nor the record names one. */
 const BARK: Rgb = [0.2, 0.16, 0.12];
 
-/** A part's arrays back in the plant's metres, its normals as unit floats, and its uvs as fractions. */
-function unpack(
-	part: PlantPart,
-	kit: SpeciesKitData,
-	uvSteps: number,
-	min: number[],
-	max: number[],
-): { positions: Float32Array; normals: Float32Array; uvs: Float32Array } {
+/** One part of the first card level in the plant's metres, as the bake draws it. */
+interface LevelPart {
+	readonly name: string;
+	readonly positions: Float32Array;
+	readonly normals: Float32Array;
+	/** Fractions of the texture for cards and leaves; the wood's are not read. */
+	readonly uvs: Float32Array;
+	/** 4 bytes per vertex: the wind record, then a byte the part defines, then the sky visibility. */
+	readonly colors: Uint8Array;
+	readonly indices: Uint16Array | Uint32Array;
+}
+
+/** A drawn part's arrays back in the plant's metres, its normals as unit floats, and its uvs as fractions. */
+function unpack(part: PlantPart, kit: SpeciesKitData): LevelPart {
 	const a = part.arrays;
+	const uvSteps = part.name === 'wood' ? WOOD_UV_STEPS : TEXTURE_UV_STEPS;
 	const count = a.positions.length / 3;
 	const positions = new Float32Array(count * 3);
 	const normals = new Float32Array(count * 3);
@@ -64,20 +74,62 @@ function unpack(
 		const k = i % 3;
 		const low = kit.box.min[k] as number;
 		const span = (kit.box.max[k] as number) - low;
-		const v = low + ((a.positions[i] as number) / 65535) * span;
-		positions[i] = v;
-		if (v < (min[k] as number)) min[k] = v;
-		if (v > (max[k] as number)) max[k] = v;
+		positions[i] = low + ((a.positions[i] as number) / 65535) * span;
 		normals[i] = (a.normals[i] as number) / 127;
 	}
 	const uvs = new Float32Array(a.uvs.length);
 	for (let i = 0; i < uvs.length; i++) uvs[i] = (a.uvs[i] as number) / uvSteps;
-	return { positions, normals, uvs };
+	return { name: part.name, positions, normals, uvs, colors: a.colors, indices: a.indices };
+}
+
+/**
+ * The first card level as the plant's best look draws it, rebuilt from a grown asset: its wood, its
+ * cards, its merged foliage and its extras, with the crown lit again on a copy of the rows, so the
+ * sky visibility each vertex carries is the drawn level's, and each part quantised as the asset's
+ * own parts are. A triangle maximum thins the level the asset draws, but the far card is two
+ * triangles whatever it shows, so it pictures the best look.
+ */
+function bestFirstLevel(kit: SpeciesKitData, asset: PlantAsset): LevelPart[] {
+	const dress: DressInput = {
+		record: kit.record,
+		seed: asset.seed,
+		variant: asset.variant,
+		season: asset.season,
+		kit,
+		skeleton: asset.skeleton,
+		coarseness: asset.coarseness,
+	};
+	const rows = { ...asset.shoots, sky: asset.shoots.sky.slice(), bent: asset.shoots.bent.slice() };
+	const mesh: MeshInput = { ...dress, rows, crown: lightCrown(dress, rows), detail: kit.detail };
+	const limbs = kit.record.sparse?.limbs ?? GREAT_LIMB_SHARE;
+	const build = levelBuild({ mesh, parts: woodParts(asset.skeleton, limbs), wood: false }, 1);
+	const parts: LevelPart[] = [];
+	const add = (name: PlantPart['name'], arrays: MeshArrays | undefined, rest = false): void => {
+		if (!arrays || arrays.indices.length === 0) return;
+		const steps = name === 'wood' ? WOOD_UV_STEPS : TEXTURE_UV_STEPS;
+		for (const quantised of quantiseParts(arrays, kit.box, steps, rest))
+			parts.push(unpack({ name, arrays: quantised }, kit));
+	};
+	add('wood', build.wood);
+	add('foliage', build.foliage);
+	add('cards', build.cards);
+	// Fruit and cones are quantised in finer steps, as the asset's own extras are.
+	add('extras', build.extras, true);
+	return parts;
+}
+
+/** Widens a box to hold a part's positions. */
+function widen(positions: Float32Array, min: number[], max: number[]): void {
+	for (let i = 0; i < positions.length; i++) {
+		const k = i % 3;
+		const v = positions[i] as number;
+		if (v < (min[k] as number)) min[k] = v;
+		if (v > (max[k] as number)) max[k] = v;
+	}
 }
 
 /** Linear colours per vertex: a part's colour, darkened by the vertex's sky visibility byte. */
-function shadedColours(part: PlantPart, colour: (vertex: number) => Rgb): Float32Array {
-	const bytes = part.arrays.colors;
+function shadedColours(bytes: Uint8Array, colour: (vertex: number) => Rgb): Float32Array {
 	const count = bytes.length / 4;
 	const out = new Float32Array(count * 3);
 	for (let v = 0; v < count; v++) {
@@ -188,40 +240,45 @@ export function bakeFar(kit: SpeciesKitData, asset: PlantAsset): FarBake {
 	const bark = barkMean(kit);
 	const size = kit.cards.size;
 	const cards: ImpostorBakePart[] = [];
-	for (const part of asset.levels[1].parts) {
-		if (part.arrays.indices.length === 0) continue;
+	const level =
+		asset.maxTriangles === undefined
+			? asset.levels[1].parts.map((part) => unpack(part, kit))
+			: bestFirstLevel(kit, asset);
+	for (const part of level) {
+		if (part.indices.length === 0) continue;
+		const { positions, normals, uvs } = part;
 		if (part.name === 'wood') {
-			const { positions, normals } = unpack(part, kit, WOOD_UV_STEPS, min, max);
+			widen(positions, min, max);
 			parts.push({
 				positions,
 				normals,
-				colors: shadedColours(part, () => bark),
-				indices: part.arrays.indices,
+				colors: shadedColours(part.colors, () => bark),
+				indices: part.indices,
 			});
 		} else if (part.name === 'cards' && size > 0) {
-			const { positions, normals, uvs } = unpack(part, kit, TEXTURE_UV_STEPS, min, max);
+			widen(positions, min, max);
 			cards.push({
 				positions,
 				normals,
 				uvs,
-				colors: shadedColours(part, () => [1, 1, 1]),
-				indices: part.arrays.indices,
+				colors: shadedColours(part.colors, () => [1, 1, 1]),
+				indices: part.indices,
 				doubleSided: true,
 			});
 		} else if (part.name === 'extras' || part.name === 'foliage') {
-			const { positions, normals } = unpack(part, kit, TEXTURE_UV_STEPS, min, max);
+			widen(positions, min, max);
 			const extras = kit.record.extras ?? [];
-			const bytes = part.arrays.colors;
+			const bytes = part.colors;
 			const leaf = kit.manifest.leaf?.mean.upper ?? [0.1, 0.2, 0.06];
 			parts.push({
 				positions,
 				normals,
-				colors: shadedColours(part, (v) =>
+				colors: shadedColours(bytes, (v) =>
 					part.name === 'extras'
 						? (extras[bytes[v * 4 + 2] as number]?.colour ?? leaf)
 						: (leaf as Rgb),
 				),
-				indices: part.arrays.indices,
+				indices: part.indices,
 				doubleSided: true,
 			});
 		}
