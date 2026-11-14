@@ -2646,13 +2646,22 @@ export interface LodSpec {
 	 */
 	readonly cardCuts?: { readonly most?: number; readonly cells?: 'full' | 'half' };
 	/**
-	 * Whether a card draws the twig it stands on, from 0 to 8. A card stands on its axis's twig,
-	 * whose wood may be thinner than a pixel at a whole view, so the card's leaves read as a piece
-	 * in air where the twig does not draw. At 1 or more the card draws its supporting twig as a
-	 * line in the young bark's tone, as wide as that twig on screen and never under the wood's least
-	 * drawn width, so the join shows at any distance. 0 or absent, a card draws no stalk.
+	 * The least width, in pixels, that a card's own stalk draws at any distance, from 0 to 8. A card
+	 * stands on its axis's twig, whose wood may be thinner than a pixel at a whole view, so the
+	 * card's leaves read as a piece in air where the twig does not draw. At 1 or more the card
+	 * draws its supporting twig as a line of at least this width, in the young bark's tone, so the
+	 * join shows. 0 or absent, a card draws no stalk. A record that names `cardStalkWidth` draws
+	 * the line as wide as the twig instead.
 	 */
 	readonly cardStalk?: number;
+	/**
+	 * Whether a card's stalk line draws at its supporting twig's own width on screen, instead of the
+	 * least width `cardStalk` names, and never under the wood's least drawn width. A record names
+	 * this where its stems are thinner than a pixel at the distances its cards draw: a flowering
+	 * stem then shows at every distance, where a fixed least would draw it wider than the stem. A
+	 * record without it draws exactly the fixed width it names.
+	 */
+	readonly cardStalkWidth?: boolean;
 	/**
 	 * Whether a card's stalk runs on past the row to the centre of the foliage the card carries. A
 	 * card's plane stands ahead of the row that draws it by the shoot's own length, so the stretch

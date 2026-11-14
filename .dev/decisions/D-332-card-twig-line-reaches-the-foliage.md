@@ -1,20 +1,22 @@
 # D-332: a card draws the twig it stands on
 
-Status: decided and built as the optional record fields `lod.cardStalk` and
-`lod.cardStalkToFoliage`. A card whose record asks draws its supporting twig as a line at the twig's
-own width on screen, never under the wood's least drawn width. The beech, birch, alder, cypress,
-holm oak and willow ask; the oak, ash, saguaro and olive do not, so their judged pictures keep no
-line. Task: none.
+Status: decided and built as the optional record fields `lod.cardStalk`, `lod.cardStalkWidth` and
+`lod.cardStalkToFoliage`. A card whose record asks with `cardStalk` draws its supporting twig as a
+line. Where the record also names `cardStalkWidth`, the line is as wide as that twig on screen,
+floored at the record's least and the wood's least drawn width; every other record draws the fixed
+least it names, as it was judged. The beech, birch, alder, ash, cypress, holm oak, pine and willow
+ask; the oak, saguaro and olive do not, so their judged pictures keep no line. Task: none.
 
 Summary: A card's plane stands ahead of the row that draws it. The card's twig line ran only
 backwards, so a card could float clear of its wood. The beech's planes stand 0.64 to 1.44 meters
 ahead of their rows. Its whole views broke into 5 to 10 pieces, each 2 to 4 work pixels from the
 crown. With the line to the plane's center the beech's whole views draw 2, 3 and 3 pieces. The oak's
-planes stand 0.14 to 0.27 meters ahead, and its line closes its crown. The line's width was a fixed
-least in pixels; it now follows the twig, so a flowering stem thinner than a texel draws at any
-distance and a thick twig draws its own width. The tufts' first card level is what a width that
-follows the stem answers: at picture 02 the sedge drew 11 pieces with 9 floating, the meadow grass
-14 with 13, because their stems fell under the card's cut while their heads drew.
+planes stand 0.14 to 0.27 meters ahead, and its line closes its crown. A record could name only a fixed least in
+pixels. `lod.cardStalkWidth` adds a line that follows the twig, so a flowering stem thinner than a
+texel draws at any distance and a thick twig draws its own width; the record's least stays a floor,
+so a species that needs the line's mass keeps it. The tufts' first card level is what the marker
+answers: at picture 02 the sedge drew 11 pieces with 9 floating, the meadow grass 14 with 13,
+because their stems fell under the card's cut while their heads drew.
 
 ## Question
 
@@ -27,9 +29,11 @@ beech's pieces without moving the oak's or the ash's judged figures?
   that does not ask draws exactly as before: the oak's, the ash's, the saguaro's and the olive's
   figures were judged without a line, and a shared default would put them in question for a fault
   none has.
-- The line is as wide as the twig its row grows from, which the card mesh writes in its second
-  texture coordinates, and never narrower than the wood's least drawn width. The record's value asks
-  for the line; it no longer sets a fixed width.
+- A record without `lod.cardStalkWidth` draws the fixed least width it names, exactly as its judged
+  pictures did: a change to a switched species' line would stop its merge.
+- A record that names `lod.cardStalkWidth` draws the line as wide as the twig its row grows from,
+  which the card mesh writes in its second texture coordinates, floored at the record's least and at
+  the wood's least drawn width. The sedge, the meadow grass and the birch name it.
 - The line ends at the stretch behind the row, or at the card plane's center where
   `lod.cardStalkToFoliage` asks. A card cut along its piece starts at the piece's base, so its line
   ends at the row.
@@ -38,6 +42,8 @@ beech's pieces without moving the oak's or the ash's judged figures?
   levels without one, and 4,094 and 2,056 with it, against its own 3,100 and 1,550. On the shipped
   tuft shapes, whose card levels read 1,822 and 930, the line's cost fits those caps. The tufts ask
   only where their own walk holds their caps.
+- The card mesh writes a radius in its second texture coordinates only where the record names the
+  marker, so every record without it keeps the mesh bytes and the digest it had.
 - A test holds that a record that asks for no stalk draws none, and that a record that asks draws one
   quad a card at its twig's radius.
 
@@ -94,10 +100,11 @@ and every judged picture.
 - The card mesh writes the twig's radius in the second texture coordinates, which the vertex stage
   reads to widen the line. `packages/vegetation/src/render/plant.wgsl` and its view-face copy hold
   that, and the species header's stalk-width texel is gone.
-- A record that names a stalk draws one at its twigs' own widths; the beech, birch, alder, cypress,
-  holm oak and willow do. The oak, ash, saguaro and olive do not.
+- A record that names a stalk draws one: at the fixed least where it names only `cardStalk`, and at
+  its twigs' widths where it also names `cardStalkWidth`. The oak, saguaro and olive name neither.
 - `packages/vegetation/src/lod/cards.test.ts` holds that a record with no stalk draws none, and that
-  one that asks draws one quad a card at its twig's radius, between that radius and the thickest.
+  one that asks draws one quad a card, whose second coordinate holds the twig's radius only where
+  the record names the marker. `records.test.ts` holds the header's width and marker.
 - A stated fault remains at the whole view's scale. The line joined the first wave: the beech's whole
   views fell from 8, 5 and 10 pieces to 2, 3 and 3. Edge density then took the silhouette from 9 to 7
   and the default view to 1. The rest are the card tips' own outer leaves, standing 2 to 8 pixels

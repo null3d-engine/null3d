@@ -1026,7 +1026,8 @@ export function cardMesh(input: MeshInput, level: 1 | 2): MeshArrays {
 				// coincident vertices at each end, which the vertex stage widens to the twig's own
 				// width on screen, or the wood's least drawn width where the twig is thinner.
 				const normal: Vector3 = [dx / length, dy / length, dz / length];
-				const twig = stalkRadius(input, r);
+				// The twig's radius reaches the shader only where the record draws at the twig's width.
+				const twig = input.record.lod.cardStalkWidth ? stalkRadius(input, r) : 0;
 				const first = mesh.vertices;
 				mesh.vertex(from, normal, [0, twig], [0, STALK_PLANE], colour);
 				mesh.vertex(from, normal, [1, twig], [0, STALK_PLANE], colour);
@@ -1658,7 +1659,7 @@ export function clusterCardMesh(
 		if (length <= 1e-6) continue;
 		// A line of two faces, which the vertex stage widens to the twig's own width on screen.
 		const normal: Vector3 = [dx / length, dy / length, dz / length];
-		const twig = stalkRadius(input, cluster.row);
+		const twig = input.record.lod.cardStalkWidth ? stalkRadius(input, cluster.row) : 0;
 		const first = mesh.vertices;
 		mesh.vertex(from, normal, [0, twig], [0, STALK_PLANE], colour);
 		mesh.vertex(from, normal, [1, twig], [0, STALK_PLANE], colour);
