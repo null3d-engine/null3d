@@ -42,13 +42,17 @@ function emptyTier(): PrototypeArrays {
 	};
 }
 
-/** A piece's or a stand's meshes as a kit prototype that holds the drawn tier alone. */
+/**
+ * A piece's or a stand's meshes as a kit prototype that holds the drawn tier alone. A piece whose
+ * tiers hold only its wood, its leaves drawn by brush cards at every tier, draws the whole mesh
+ * that its card bake pictures, leaves included; the drawing reads its indices at any width.
+ */
 function drawn(
-	source: Pick<PiecePrototype, 'length' | 'radius' | 'leaves' | 'tiers'>,
+	source: Pick<PiecePrototype, 'length' | 'radius' | 'leaves' | 'tiers' | 'bake'>,
 	index: number,
 ): ShootPrototype {
 	const tiers = source.tiers.map((tier, t) =>
-		t === TIER ? tier : emptyTier(),
+		t === TIER ? ((source.bake as PrototypeArrays | undefined) ?? tier) : emptyTier(),
 	) as unknown as ShootPrototype['tiers'];
 	return {
 		index,

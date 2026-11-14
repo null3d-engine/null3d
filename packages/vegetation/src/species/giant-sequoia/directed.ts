@@ -3,11 +3,16 @@
 // whole-tree turning video are one tree, and every figure is that tree's unless its line says
 // another still.
 import type { BaseSpec, Species } from '../../core/record';
+import { PIECES } from './pieces';
 import { record } from './record';
+
+/** The record's stem base without its surface roots. */
+const { roots: _roots, ...foot } = record.base as BaseSpec;
 
 /** The giant sequoia's record with the directed frame in place of the grown one. */
 export const directed: Species = {
 	...record,
+	pieces: PIECES,
 	// Still 01: the trunk is 0.21 of the height across at breast height, on its flare.
 	size: { ...record.size, dbh: 12 },
 	growth: {
@@ -33,8 +38,10 @@ export const directed: Species = {
 		},
 		limbs: {
 			// Still 01: twelve limb levels show at the outline between the crown's base, at 0.31 of
-			// the height, and its top, 0.055 of the height apart.
-			levels: [0.33, 0.385, 0.44, 0.495, 0.55, 0.605, 0.66, 0.715, 0.77, 0.825, 0.88, 0.935],
+			// the height, and its top, about 0.055 of the height apart. A lower limb dips before it
+			// hooks up and its clump is a ball on its end, so the lowest level stands above the
+			// crown's base and its clumps' floors fall to it.
+			levels: [0.395, 0.447, 0.499, 0.551, 0.603, 0.655, 0.707, 0.759, 0.811, 0.863, 0.915, 0.97],
 			// Twelve levels show on each side and about eight clumps stand before the trunk: four or
 			// five limbs a level. The count is worked out, not counted on a picture.
 			count: 54,
@@ -100,10 +107,55 @@ export const directed: Species = {
 			arms: { count: 2, angle: 25, radius: 0.7 },
 		},
 		// Still 01: separate rounded clumps 0.04 to 0.06 of the height across, one on each end.
-		patch: { kind: 'dome', each: 'end', width: [0.04, 0.06], depth: 1 },
+		patch: {
+			kind: 'dome',
+			each: 'limb',
+			width: [0.04, 0.06],
+			along: 0.5,
+			depth: 1,
+			// No picture shows a clump opened. A dome 2.9 m across clothed with boughs 0.84 m long
+			// takes 20 to 40 of them, which a bough to each 0.45 m square of a dome a bough's reach
+			// inside the clump's gives. At that pitch the nearest wood is 11.3 MB against the class's
+			// 8.9 MB, and the boughs drawn at once 4.66 million against 2.5 million; a bough to each
+			// 0.70 m square holds every limit (6.0 MB, 1.98 million). Still 04: the boughs point up
+			// and out of the clump.
+			sockets: { piece: 'bough', pitch: 0.7, lift: 45 },
+		},
+	},
+	lod: {
+		...record.lod,
+		// A bough's card holds its whole bough, as the pine's does, so the boughs draw whole from
+		// the size at which the pine's do.
+		switchPixels: [320, record.lod.switchPixels[1], record.lod.switchPixels[2]],
+		// A cord's brush picture is many times longer than wide, and a bough carries about eighty
+		// cords: each takes one stretch, three quads, so the bough's brushes cost a few hundred
+		// triangles.
+		cardCuts: { most: 1 },
+		// A card level draws the branch under every card it keeps, so each level keeps the wood its
+		// cards stand on: the arms at the first, whose ends carry clumps, and the limbs at the second.
+		// With the trunk alone at the second the branches under its cards cost 73,486 triangles of
+		// its 42,800; with the limbs 7,763.
+		woodOrders: [2, 1],
+		// Each card level draws the branch under any card that would hang free, so no card draws a
+		// stalk of its own: the stalks cost 4 of each card's 10 triangles.
+		cardStalk: 0,
+		cardStalkToFoliage: false,
+		// The second level keeps every second of its cards, each grown by the root of two, and keeps
+		// the cards' area within a hundredth: 75,940 card triangles become 22,740 with no stalks.
+		cardShare: [1, 0.5],
+		// Still 21: a bough carries two cones 6.5 cm long, under a pixel or a few at the card levels'
+		// distances, where they cost 66,572 triangles of the first level's 152,000.
+		extrasFrom: 1,
 	},
 	base: {
-		...(record.base as BaseSpec),
+		...foot,
+		// Stills 01 and 02: 8 to 9 root lobes show across the front of the foot, about 17 round it,
+		// and no root runs out over the ground beyond the flare. The trunk's width and the flare
+		// already make the foot 0.296 of the height across at the ground, so the lobes ridge it
+		// rather than widen it.
+		...(foot.buttress
+			? { buttress: { ...foot.buttress, lobes: { mean: 17, spread: 1 }, amount: 0.15 } }
+			: {}),
 		// Still 01: the foot is 0.296 of the height across at the ground and 0.173 at 0.06 of the
 		// height, on its root lobes.
 		flare: { amount: 0.56, height: 1.2 },

@@ -969,339 +969,357 @@ function socketsOf(
 			};
 		};
 		const trunkFrom = trunk[limb.trunkNode] as ConiferNode;
-		if (!filled) {
-			// One socket on each end, each end its own patch: the end runs on into its piece.
-			rankInto(patchIndex.get(limb.patch) as number, [endOf(limb.nodes, -1, trunkFrom, true)]);
-			limb.arms.forEach((arm, a) => {
-				if (!arm.patch) return;
-				rankInto(patchIndex.get(arm.patch) as number, [
-					endOf(arm.nodes, a, limb.nodes[arm.node] as ConiferNode, true),
-				]);
-			});
-			return;
+		/** Wood whose nodes a patch's twigs may leave: the limb's own (-1) or an arm's. */
+		interface Wood {
+			readonly arm: number;
+			readonly nodes: readonly ConiferNode[];
+			/** Whether every node may carry a twig, or only those under the patch. */
+			readonly whole: boolean;
 		}
-		const { centre, width, length, depth, slope, along } = limb.patch;
-		/** A place's metres from the patch's middle along its limb and across it. */
-		const laid = (x: number, z: number): [number, number] => [
-			(x - centre[0]) * along[0] + (z - centre[2]) * along[2],
-			(z - centre[2]) * along[0] - (x - centre[0]) * along[2],
-		];
-		/** The height of the patch's floor at a place. */
-		const floorAt = (x: number, z: number): number => centre[1] - depth / 2 + slope * laid(x, z)[0];
-		const drafts: Draft[] = onShell
-			? []
-			: [
-					endOf(limb.nodes, -1, trunkFrom),
-					...limb.arms.map((arm, a) => endOf(arm.nodes, a, limb.nodes[arm.node] as ConiferNode)),
-				];
-		/** A socket the dome or the shell asks for, before wood reaches it. */
-		const wanted: { at: Vector3; heading: Vector3; scale: number; end: boolean }[] = [];
-		const least = pitch * SOCKET_APART * (pitch * SOCKET_APART);
-		const apart = (a: Readonly<Vector3>, b: Readonly<Vector3>): boolean =>
-			(a[0] - b[0]) * (a[0] - b[0]) +
-				(a[1] - b[1]) * (a[1] - b[1]) +
-				(a[2] - b[2]) * (a[2] - b[2]) >=
-			least;
-		const clear = (at: Readonly<Vector3>): boolean =>
-			drafts.every((draft) => apart(draft.at, at)) && wanted.every((want) => apart(want.at, at));
-		if (onShell) {
-			for (const place of byLimb[l] as ShellPlace[]) if (clear(place.at)) wanted.push(place);
-		} else {
-			// The patch is a dome on its floor: as long as the patch along its limb, as wide across
-			// it, as deep at its middle. The pieces' tips stand on the dome, so their sockets stand on
-			// a dome inside it, a piece's reach smaller.
-			const long = shellInside(length / 2, pieceReach);
-			const half = shellInside(width / 2, pieceReach);
-			const tall = shellInside(depth, pieceReach);
-			// One socket to each square pitch of the dome that passes midway through the pieces.
-			const count = Math.max(
-				1,
-				Math.round(
-					domeArea((length / 2 + long) / 2, (width / 2 + half) / 2, (depth + tall) / 2) /
-						(pitch * pitch),
-				),
-			);
-			const places = domePlaces(long, half, tall, count, draw(l, 63));
-			for (let i = 0; i < places.length; i++) {
-				const { t, turn } = places[i] as (typeof places)[number];
-				const ring = Math.sqrt(Math.max(0, 1 - t * t));
-				const u = long * ring * cos(turn);
-				const v = half * ring * sin(turn);
-				const x = centre[0] + along[0] * u - along[2] * v;
-				const z = centre[2] + along[2] * u + along[0] * v;
-				const at: Vector3 = [x, floorAt(x, z) + tall * t, z];
-				if (!clear(at)) continue;
-				// A piece leaves the dome the way the dome faces, no steeper than the record's lift, and
-				// swung to one side or the other by its own share of the most, so neighbours do not stand
-				// as a comb. Each piece takes its own size.
-				const outU = (ring * cos(turn)) / long;
-				const outV = (ring * sin(turn)) / half;
-				const out = Math.sqrt(outU * outU + outV * outV);
-				const faceUp = (atan2(t / tall, out) * 180) / PI;
-				const lift = radians(Math.min(faceUp, steepest));
-				// The level way the dome faces there, in the plant's space.
-				const faces = atan2(along[2] * outU + along[0] * outV, along[0] * outU - along[2] * outV);
-				const swing = radians(
-					(draw(l * 64 + 1, 4096 + i) < 0.5 ? 1 : -1) *
-						BOUGH_SWING *
-						(0.3 + 0.7 * draw(l * 64 + 2, 4096 + i)),
+		/** Fills one patch with sockets, after the sockets it starts with, from the wood it names. */
+		const fill = (patch: ConiferPatch, drafts: Draft[], woods: readonly Wood[]): void => {
+			const { centre, width, length, depth, slope, along } = patch;
+			/** A place's metres from the patch's middle along its limb and across it. */
+			const laid = (x: number, z: number): [number, number] => [
+				(x - centre[0]) * along[0] + (z - centre[2]) * along[2],
+				(z - centre[2]) * along[0] - (x - centre[0]) * along[2],
+			];
+			/** The height of the patch's floor at a place. */
+			const floorAt = (x: number, z: number): number =>
+				centre[1] - depth / 2 + slope * laid(x, z)[0];
+			/** A socket the dome or the shell asks for, before wood reaches it. */
+			const wanted: { at: Vector3; heading: Vector3; scale: number; end: boolean }[] = [];
+			const least = pitch * SOCKET_APART * (pitch * SOCKET_APART);
+			const apart = (a: Readonly<Vector3>, b: Readonly<Vector3>): boolean =>
+				(a[0] - b[0]) * (a[0] - b[0]) +
+					(a[1] - b[1]) * (a[1] - b[1]) +
+					(a[2] - b[2]) * (a[2] - b[2]) >=
+				least;
+			const clear = (at: Readonly<Vector3>): boolean =>
+				drafts.every((draft) => apart(draft.at, at)) && wanted.every((want) => apart(want.at, at));
+			if (onShell) {
+				for (const place of byLimb[l] as ShellPlace[]) if (clear(place.at)) wanted.push(place);
+			} else {
+				// The patch is a dome on its floor: as long as the patch along its limb, as wide across
+				// it, as deep at its middle. The pieces' tips stand on the dome, so their sockets stand on
+				// a dome inside it, a piece's reach smaller.
+				const long = shellInside(length / 2, pieceReach);
+				const half = shellInside(width / 2, pieceReach);
+				const tall = shellInside(depth, pieceReach);
+				// One socket to each square pitch of the dome that passes midway through the pieces.
+				const count = Math.max(
+					1,
+					Math.round(
+						domeArea((length / 2 + long) / 2, (width / 2 + half) / 2, (depth + tall) / 2) /
+							(pitch * pitch),
+					),
 				);
-				wanted.push({
-					at,
-					heading: [cos(lift) * cos(faces + swing), sin(lift), cos(lift) * sin(faces + swing)],
-					scale: BOUGH_SIZE[0] + (BOUGH_SIZE[1] - BOUGH_SIZE[0]) * draw(l * 64 + 3, 8192 + i),
-					end: false,
-				});
-			}
-		}
-		// The wood a twig can leave: the limb's run under the patch and each arm, then each twig
-		// that leaves them. A twig that leaves a twig carries no twig of its own.
-		const inside = (node: ConiferNode): boolean => {
-			const [u, v] = laid(node.x, node.z);
-			return (u * u) / ((length / 2) * (length / 2)) + (v * v) / ((width / 2) * (width / 2)) <= 1;
-		};
-		const feet: Foot[] = [];
-		limb.nodes.forEach((node, i) => {
-			if (inside(node))
-				feet.push({
-					at: [node.x, node.y, node.z],
-					radius: node.radius,
-					twig: -1,
-					arm: -1,
-					node: i,
-					depth: 0,
-					forks: true,
-				});
-		});
-		limb.arms.forEach((arm, a) => {
-			arm.nodes.forEach((node, i) => {
-				feet.push({
-					at: [node.x, node.y, node.z],
-					radius: node.radius,
-					twig: -1,
-					arm: a,
-					node: i,
-					depth: 0,
-					forks: true,
-				});
-			});
-		});
-		if (feet.length === 0) {
-			const last = limb.nodes[limb.nodes.length - 1] as ConiferNode;
-			feet.push({
-				at: [last.x, last.y, last.z],
-				radius: last.radius,
-				twig: -1,
-				arm: -1,
-				node: limb.nodes.length - 1,
-				depth: 0,
-				forks: true,
-			});
-		}
-		// The way a piece leaves its socket: the way its twig arrives, held between level and the
-		// record's lift, so a piece on a twig that comes down to it still turns up.
-		const leaves = (arrives: Readonly<Vector3>, wanted: Readonly<Vector3>): Vector3 => {
-			const flat = Math.sqrt(arrives[0] * arrives[0] + arrives[2] * arrives[2]);
-			if (flat < 1e-4) return [wanted[0], wanted[1], wanted[2]];
-			const lift = radians(clamp((atan2(arrives[1], flat) * 180) / PI, 0, steepest));
-			return [(cos(lift) * arrives[0]) / flat, sin(lift), (cos(lift) * arrives[2]) / flat];
-		};
-		type Want = (typeof wanted)[number];
-		/** The way from a foot to a wanted socket, a unit vector, and its length. */
-		const wayTo = (foot: Foot, want: Want): { way: Vector3; far: number } => {
-			const x = want.at[0] - foot.at[0];
-			const y = want.at[1] - foot.at[1];
-			const z = want.at[2] - foot.at[2];
-			const far = Math.sqrt(x * x + y * y + z * z);
-			return { way: far < 1e-6 ? [0, 1, 0] : [x / far, y / far, z / far], far };
-		};
-		/**
-		 * Whether the twig that ends at a foot can run on to a wanted socket: without a sharp turn,
-		 * and on outward along the line from where the twig leaves to its end, so a twig reaches
-		 * out from its wood and does not wind over the patch.
-		 */
-		const runsOn = (foot: Foot, want: Want): boolean => {
-			if (foot.runs === undefined || foot.line === undefined) return false;
-			const { way } = wayTo(foot, want);
-			return between(way, foot.runs) <= TWIG_ON && between(way, foot.line) <= TWIG_LINE;
-		};
-		// What a twig from a foot to a wanted socket costs: its length, and more the further the way
-		// to the socket lies from the way the piece leaves, so wood runs on into its piece. A foot
-		// that no new twig may leave serves only the twig that ends there.
-		const costOf = (foot: Foot, want: Want): number => {
-			if (!foot.forks && !runsOn(foot, want)) return Number.POSITIVE_INFINITY;
-			const { way, far } = wayTo(foot, want);
-			const along = way[0] * want.heading[0] + way[1] * want.heading[1] + way[2] * want.heading[2];
-			return far * (1 + TWIG_ASIDE * (1 - along));
-		};
-		const bestOf = (want: Want, from = 0): { foot: number; cost: number } => {
-			let foot = 0;
-			let cost = Number.POSITIVE_INFINITY;
-			for (let f = from; f < feet.length; f++) {
-				const c = costOf(feet[f] as Foot, want);
-				if (c < cost) {
-					cost = c;
-					foot = f;
+				const places = domePlaces(long, half, tall, count, draw(l, 63));
+				for (let i = 0; i < places.length; i++) {
+					const { t, turn } = places[i] as (typeof places)[number];
+					const ring = Math.sqrt(Math.max(0, 1 - t * t));
+					const u = long * ring * cos(turn);
+					const v = half * ring * sin(turn);
+					const x = centre[0] + along[0] * u - along[2] * v;
+					const z = centre[2] + along[2] * u + along[0] * v;
+					const at: Vector3 = [x, floorAt(x, z) + tall * t, z];
+					if (!clear(at)) continue;
+					// A piece leaves the dome the way the dome faces, no steeper than the record's lift, and
+					// swung to one side or the other by its own share of the most, so neighbours do not stand
+					// as a comb. Each piece takes its own size.
+					const outU = (ring * cos(turn)) / long;
+					const outV = (ring * sin(turn)) / half;
+					const out = Math.sqrt(outU * outU + outV * outV);
+					const faceUp = (atan2(t / tall, out) * 180) / PI;
+					const lift = radians(Math.min(faceUp, steepest));
+					// The level way the dome faces there, in the plant's space.
+					const faces = atan2(along[2] * outU + along[0] * outV, along[0] * outU - along[2] * outV);
+					const swing = radians(
+						(draw(l * 64 + 1, 4096 + i) < 0.5 ? 1 : -1) *
+							BOUGH_SWING *
+							(0.3 + 0.7 * draw(l * 64 + 2, 4096 + i)),
+					);
+					wanted.push({
+						at,
+						heading: [cos(lift) * cos(faces + swing), sin(lift), cos(lift) * sin(faces + swing)],
+						scale: BOUGH_SIZE[0] + (BOUGH_SIZE[1] - BOUGH_SIZE[0]) * draw(l * 64 + 3, 8192 + i),
+						end: false,
+					});
 				}
 			}
-			return { foot, cost };
-		};
-		const best = wanted.map((want) => bestOf(want));
-		/** A twig as it grows: where it leaves, its nodes, the metres to each, and what stands on it. */
-		interface Growing {
-			readonly foot: Foot;
-			readonly depth: number;
-			readonly points: Vector3[];
-			readonly along: number[];
-			/** The drafts of the sockets on it, and the node each stands at. */
-			readonly carries: { draft: number; node: number }[];
-			/** The foot at its end, which runs on while the twig does. */
-			end: Foot;
-		}
-		const growing: Growing[] = [];
-		const first = twigs.length;
-		// Each socket in turn, the cheapest first, pulls wood from its best foot: the twig that ends
-		// there runs on to it where that needs no sharp turn, and a new twig leaves otherwise. So
-		// the wood grows outward from the limb and its arms, and one twig carries several pieces.
-		const left = wanted.map((_, i) => i);
-		while (left.length > 0) {
-			let pick = 0;
-			for (let k = 1; k < left.length; k++)
-				if (
-					(best[left[k] as number] as (typeof best)[number]).cost <
-					(best[left[pick] as number] as (typeof best)[number]).cost
-				)
-					pick = k;
-			const w = left[pick] as number;
-			const want = wanted[w] as Want;
-			const held = best[w] as (typeof best)[number];
-			const foot = feet[held.foot] as Foot;
-			// A foot whose twig has run on since it was chosen is chosen again.
-			if (costOf(foot, want) > held.cost + 1e-9) {
-				best[w] = bestOf(want);
-				continue;
+			// The wood a twig can leave: the limb's run under the patch and each arm, then each twig
+			// that leaves them. A twig that leaves a twig carries no twig of its own.
+			const inside = (node: ConiferNode): boolean => {
+				const [u, v] = laid(node.x, node.z);
+				return (u * u) / ((length / 2) * (length / 2)) + (v * v) / ((width / 2) * (width / 2)) <= 1;
+			};
+			const feet: Foot[] = [];
+			for (const wood of woods)
+				wood.nodes.forEach((node, i) => {
+					if (wood.whole || inside(node))
+						feet.push({
+							at: [node.x, node.y, node.z],
+							radius: node.radius,
+							twig: -1,
+							arm: wood.arm,
+							node: i,
+							depth: 0,
+							forks: true,
+						});
+				});
+			const own = woods[0];
+			if (feet.length === 0 && own && own.nodes.length > 0) {
+				const end = own.nodes.length - 1;
+				const last = own.nodes[end] as ConiferNode;
+				feet.push({
+					at: [last.x, last.y, last.z],
+					radius: last.radius,
+					twig: -1,
+					arm: own.arm,
+					node: end,
+					depth: 0,
+					forks: true,
+				});
 			}
-			left.splice(pick, 1);
-			const on = runsOn(foot, want) ? (growing[foot.twig - first] as Growing) : undefined;
-			const path = twigPath(foot.at, want.at, want.heading, on ? foot.runs : undefined);
-			if (!path) {
-				// The socket stands on the wood itself.
+			// The way a piece leaves its socket: the way its twig arrives, held between level and the
+			// record's lift, so a piece on a twig that comes down to it still turns up.
+			const leaves = (arrives: Readonly<Vector3>, wanted: Readonly<Vector3>): Vector3 => {
+				const flat = Math.sqrt(arrives[0] * arrives[0] + arrives[2] * arrives[2]);
+				if (flat < 1e-4) return [wanted[0], wanted[1], wanted[2]];
+				const lift = radians(clamp((atan2(arrives[1], flat) * 180) / PI, 0, steepest));
+				return [(cos(lift) * arrives[0]) / flat, sin(lift), (cos(lift) * arrives[2]) / flat];
+			};
+			type Want = (typeof wanted)[number];
+			/** The way from a foot to a wanted socket, a unit vector, and its length. */
+			const wayTo = (foot: Foot, want: Want): { way: Vector3; far: number } => {
+				const x = want.at[0] - foot.at[0];
+				const y = want.at[1] - foot.at[1];
+				const z = want.at[2] - foot.at[2];
+				const far = Math.sqrt(x * x + y * y + z * z);
+				return { way: far < 1e-6 ? [0, 1, 0] : [x / far, y / far, z / far], far };
+			};
+			/**
+			 * Whether the twig that ends at a foot can run on to a wanted socket: without a sharp turn,
+			 * and on outward along the line from where the twig leaves to its end, so a twig reaches
+			 * out from its wood and does not wind over the patch.
+			 */
+			const runsOn = (foot: Foot, want: Want): boolean => {
+				if (foot.runs === undefined || foot.line === undefined) return false;
+				const { way } = wayTo(foot, want);
+				return between(way, foot.runs) <= TWIG_ON && between(way, foot.line) <= TWIG_LINE;
+			};
+			// What a twig from a foot to a wanted socket costs: its length, and more the further the way
+			// to the socket lies from the way the piece leaves, so wood runs on into its piece. A foot
+			// that no new twig may leave serves only the twig that ends there.
+			const costOf = (foot: Foot, want: Want): number => {
+				if (!foot.forks && !runsOn(foot, want)) return Number.POSITIVE_INFINITY;
+				const { way, far } = wayTo(foot, want);
+				const along =
+					way[0] * want.heading[0] + way[1] * want.heading[1] + way[2] * want.heading[2];
+				return far * (1 + TWIG_ASIDE * (1 - along));
+			};
+			const bestOf = (want: Want, from = 0): { foot: number; cost: number } => {
+				let foot = 0;
+				let cost = Number.POSITIVE_INFINITY;
+				for (let f = from; f < feet.length; f++) {
+					const c = costOf(feet[f] as Foot, want);
+					if (c < cost) {
+						cost = c;
+						foot = f;
+					}
+				}
+				return { foot, cost };
+			};
+			const best = wanted.map((want) => bestOf(want));
+			/** A twig as it grows: where it leaves, its nodes, the metres to each, and what stands on it. */
+			interface Growing {
+				readonly foot: Foot;
+				readonly depth: number;
+				readonly points: Vector3[];
+				readonly along: number[];
+				/** The drafts of the sockets on it, and the node each stands at. */
+				readonly carries: { draft: number; node: number }[];
+				/** The foot at its end, which runs on while the twig does. */
+				end: Foot;
+			}
+			const growing: Growing[] = [];
+			const first = twigs.length;
+			// Each socket in turn, the cheapest first, pulls wood from its best foot: the twig that ends
+			// there runs on to it where that needs no sharp turn, and a new twig leaves otherwise. So
+			// the wood grows outward from the limb and its arms, and one twig carries several pieces.
+			const left = wanted.map((_, i) => i);
+			while (left.length > 0) {
+				let pick = 0;
+				for (let k = 1; k < left.length; k++)
+					if (
+						(best[left[k] as number] as (typeof best)[number]).cost <
+						(best[left[pick] as number] as (typeof best)[number]).cost
+					)
+						pick = k;
+				const w = left[pick] as number;
+				const want = wanted[w] as Want;
+				const held = best[w] as (typeof best)[number];
+				const foot = feet[held.foot] as Foot;
+				// A foot whose twig has run on since it was chosen is chosen again.
+				if (costOf(foot, want) > held.cost + 1e-9) {
+					best[w] = bestOf(want);
+					continue;
+				}
+				left.splice(pick, 1);
+				const on = runsOn(foot, want) ? (growing[foot.twig - first] as Growing) : undefined;
+				const path = twigPath(foot.at, want.at, want.heading, on ? foot.runs : undefined);
+				if (!path) {
+					// The socket stands on the wood itself.
+					drafts.push({
+						end: want.end,
+						scale: want.scale,
+						twig: foot.twig,
+						limb: l,
+						arm: foot.arm,
+						node: foot.node,
+						radius: foot.radius,
+						at: [foot.at[0], foot.at[1], foot.at[2]],
+						heading: want.heading,
+					});
+					continue;
+				}
+				const twig = on ? foot.twig : first + growing.length;
+				const grown: Growing =
+					on ??
+					({
+						foot,
+						depth: foot.depth + 1,
+						points: [],
+						along: [],
+						carries: [],
+						end: foot,
+					} satisfies Growing);
+				if (!on) growing.push(grown);
+				const before = grown.along[grown.along.length - 1] ?? 0;
+				const start = grown.points.length;
+				for (let k = 0; k < path.points.length; k++) {
+					grown.points.push(path.points[k] as Vector3);
+					grown.along.push(before + (path.along[k] as number));
+				}
+				grown.carries.push({ draft: drafts.length, node: grown.points.length - 1 });
 				drafts.push({
 					end: want.end,
 					scale: want.scale,
-					twig: foot.twig,
+					twig,
 					limb: l,
 					arm: foot.arm,
-					node: foot.node,
-					radius: foot.radius,
-					at: [foot.at[0], foot.at[1], foot.at[2]],
-					heading: want.heading,
+					node: grown.points.length - 1,
+					radius: tipRadius,
+					at: [want.at[0], want.at[1], want.at[2]],
+					// A piece on a shell stands up the shell however its twig arrives.
+					heading: onShell ? want.heading : leaves(path.arrives, want.heading),
 				});
-				continue;
+				// The twig's old end no longer runs on; its new end does. Every new node below the
+				// deepest order is a place a new twig may leave.
+				if (on) grown.end.runs = undefined;
+				const forks = grown.depth < TWIG_ORDERS;
+				const from = feet.length;
+				for (let k = start; k < grown.points.length; k++) {
+					const last = k === grown.points.length - 1;
+					if (!forks && !last) continue;
+					const made: Foot = {
+						at: grown.points[k] as Vector3,
+						radius: 0,
+						twig,
+						arm: foot.arm,
+						node: k,
+						depth: grown.depth,
+						forks,
+						...(last ? { runs: path.arrives, line: wayTo(grown.foot, want).way } : {}),
+					};
+					feet.push(made);
+					if (last) grown.end = made;
+				}
+				for (const other of left) {
+					const now = bestOf(wanted[other] as Want, from);
+					if (now.cost < (best[other] as (typeof best)[number]).cost) best[other] = now;
+				}
 			}
-			const twig = on ? foot.twig : first + growing.length;
-			const grown: Growing =
-				on ??
-				({
-					foot,
-					depth: foot.depth + 1,
-					points: [],
-					along: [],
-					carries: [],
-					end: foot,
-				} satisfies Growing);
-			if (!on) growing.push(grown);
-			const before = grown.along[grown.along.length - 1] ?? 0;
-			const start = grown.points.length;
-			for (let k = 0; k < path.points.length; k++) {
-				grown.points.push(path.points[k] as Vector3);
-				grown.along.push(before + (path.along[k] as number));
+			// A twig is as thick at each place as the pieces it carries past there ask: a piece's own
+			// stem for one, and the cross-sections add. It is no thicker than a share of the wood it
+			// leaves. The twigs are taken last first, so each has its own twigs' loads.
+			const loads = growing.map((grown) => new Array<number>(grown.points.length).fill(0));
+			for (let g = growing.length - 1; g >= 0; g--) {
+				const grown = growing[g] as Growing;
+				const load = loads[g] as number[];
+				for (const carried of grown.carries) (load[carried.node] as number) += 1;
+				for (let k = load.length - 2; k >= 0; k--) (load[k] as number) += load[k + 1] as number;
+				if (grown.foot.twig >= first)
+					((loads[grown.foot.twig - first] as number[])[grown.foot.node] as number) +=
+						load[0] as number;
 			}
-			grown.carries.push({ draft: drafts.length, node: grown.points.length - 1 });
-			drafts.push({
-				end: want.end,
-				scale: want.scale,
-				twig,
-				limb: l,
-				arm: foot.arm,
-				node: grown.points.length - 1,
-				radius: tipRadius,
-				at: [want.at[0], want.at[1], want.at[2]],
-				// A piece on a shell stands up the shell however its twig arrives.
-				heading: onShell ? want.heading : leaves(path.arrives, want.heading),
+			const radii: number[][] = [];
+			growing.forEach((grown, g) => {
+				const parent =
+					grown.foot.twig >= first
+						? ((radii[grown.foot.twig - first] as number[])[grown.foot.node] as number)
+						: grown.foot.radius;
+				const most = Math.min(parent, Math.max(tipRadius, parent * TWIG_FOOT));
+				const load = loads[g] as number[];
+				radii.push(
+					load.map((carried) => Math.min(most, tipRadius * Math.sqrt(Math.max(1, carried)))),
+				);
 			});
-			// The twig's old end no longer runs on; its new end does. Every new node below the
-			// deepest order is a place a new twig may leave.
-			if (on) grown.end.runs = undefined;
-			const forks = grown.depth < TWIG_ORDERS;
-			const from = feet.length;
-			for (let k = start; k < grown.points.length; k++) {
-				const last = k === grown.points.length - 1;
-				if (!forks && !last) continue;
-				const made: Foot = {
-					at: grown.points[k] as Vector3,
-					radius: 0,
-					twig,
-					arm: foot.arm,
-					node: k,
-					depth: grown.depth,
-					forks,
-					...(last ? { runs: path.arrives, line: wayTo(grown.foot, want).way } : {}),
-				};
-				feet.push(made);
-				if (last) grown.end = made;
-			}
-			for (const other of left) {
-				const now = bestOf(wanted[other] as Want, from);
-				if (now.cost < (best[other] as (typeof best)[number]).cost) best[other] = now;
-			}
-		}
-		// A twig is as thick at each place as the pieces it carries past there ask: a piece's own
-		// stem for one, and the cross-sections add. It is no thicker than a share of the wood it
-		// leaves. The twigs are taken last first, so each has its own twigs' loads.
-		const loads = growing.map((grown) => new Array<number>(grown.points.length).fill(0));
-		for (let g = growing.length - 1; g >= 0; g--) {
-			const grown = growing[g] as Growing;
-			const load = loads[g] as number[];
-			for (const carried of grown.carries) (load[carried.node] as number) += 1;
-			for (let k = load.length - 2; k >= 0; k--) (load[k] as number) += load[k + 1] as number;
-			if (grown.foot.twig >= first)
-				((loads[grown.foot.twig - first] as number[])[grown.foot.node] as number) +=
-					load[0] as number;
-		}
-		const radii: number[][] = [];
-		growing.forEach((grown, g) => {
-			const parent =
-				grown.foot.twig >= first
-					? ((radii[grown.foot.twig - first] as number[])[grown.foot.node] as number)
-					: grown.foot.radius;
-			const most = Math.min(parent, Math.max(tipRadius, parent * TWIG_FOOT));
-			const load = loads[g] as number[];
-			radii.push(
-				load.map((carried) => Math.min(most, tipRadius * Math.sqrt(Math.max(1, carried)))),
+			growing.forEach((grown, g) => {
+				const radius = radii[g] as number[];
+				twigs.push({
+					limb: l,
+					arm: grown.foot.arm,
+					twig: grown.foot.twig,
+					node: grown.foot.node,
+					nodes: grown.points.map((point, k) => ({
+						x: point[0],
+						y: point[1],
+						z: point[2],
+						radius: radius[k] as number,
+					})),
+				});
+				for (const carried of grown.carries)
+					drafts[carried.draft] = {
+						...(drafts[carried.draft] as Draft),
+						radius: radius[carried.node] as number,
+					};
+			});
+			rankInto(patchIndex.get(patch) as number, drafts);
+		};
+		const armFrom = (arm: ConiferArm): ConiferNode => limb.nodes[arm.node] as ConiferNode;
+		if (filled)
+			// One patch a limb: the limb's run under it and every arm carry its twigs.
+			fill(
+				limb.patch,
+				onShell
+					? []
+					: [
+							endOf(limb.nodes, -1, trunkFrom),
+							...limb.arms.map((arm, a) => endOf(arm.nodes, a, armFrom(arm))),
+						],
+				[
+					{ arm: -1, nodes: limb.nodes, whole: false },
+					...limb.arms.map((arm, a) => ({ arm: a, nodes: arm.nodes, whole: true })),
+				],
 			);
-		});
-		growing.forEach((grown, g) => {
-			const radius = radii[g] as number[];
-			twigs.push({
-				limb: l,
-				arm: grown.foot.arm,
-				twig: grown.foot.twig,
-				node: grown.foot.node,
-				nodes: grown.points.map((point, k) => ({
-					x: point[0],
-					y: point[1],
-					z: point[2],
-					radius: radius[k] as number,
-				})),
+		else {
+			// A patch on each end: the end runs on into its own piece, and the rest of the patch
+			// fills from that end's own wood.
+			fill(
+				limb.patch,
+				[endOf(limb.nodes, -1, trunkFrom, true)],
+				[{ arm: -1, nodes: limb.nodes, whole: false }],
+			);
+			limb.arms.forEach((arm, a) => {
+				if (arm.patch)
+					fill(
+						arm.patch,
+						[endOf(arm.nodes, a, armFrom(arm), true)],
+						[{ arm: a, nodes: arm.nodes, whole: false }],
+					);
 			});
-			for (const carried of grown.carries)
-				drafts[carried.draft] = {
-					...(drafts[carried.draft] as Draft),
-					radius: radius[carried.node] as number,
-				};
-		});
-		rankInto(patchIndex.get(limb.patch) as number, drafts);
+		}
 	});
 	// One order across the plant. Every end comes first. Each other socket then stands at its share
 	// of its own patch's order, so the sockets below any rank are the same share of every patch,

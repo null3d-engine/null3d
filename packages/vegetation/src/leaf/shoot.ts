@@ -12,7 +12,7 @@
 //
 // Prototype space: the attach point at the origin, the shoot leaving along +Y, +Z toward the sky
 // side of the bud it grows from.
-import type { PrototypeArrays, ShootPrototype } from '../asset';
+import type { MeshArrays, PrototypeArrays, ShootPrototype } from '../asset';
 import { hashAt, unitAt } from '../core/hash';
 import {
 	acos,
@@ -46,7 +46,15 @@ import {
 import { WOOD_RADIUS_RANGE } from '../wood/wood-mesh';
 import { shootOcclusion } from './occlusion';
 import { hasBareTwins } from './season';
-import { lathe, MeshWriter, SURFACE_BUD, SURFACE_STEM, type TubePoint, tube } from './writer';
+import {
+	lathe,
+	MeshWriter,
+	SURFACE_BUD,
+	SURFACE_STEM,
+	type TubePoint,
+	tube,
+	withoutLeaves,
+} from './writer';
 
 /**
  * A shoot prototype before the card bake gives it its atlas cells.
@@ -59,6 +67,12 @@ export type UncardedPrototype = Omit<ShootPrototype, 'card'> & {
 	 * lays over the tiers' dense runs of leaves. Absent on a prototype that draws its leaves whole.
 	 */
 	readonly brushes?: PrototypeBrushes;
+	/**
+	 * The whole mesh the card bake pictures, leaves included, where the tiers hold only the wood
+	 * that the brush cards stand on: a piece whose every tier draws brush cards in place of its
+	 * leaves, too large for one prototype with them. Absent, the bake pictures the high tier.
+	 */
+	readonly bake?: MeshArrays;
 };
 
 /**
@@ -90,6 +104,8 @@ export interface BrushPicture {
 export interface PrototypeBrushes {
 	readonly runs: readonly BrushRun[];
 	readonly pictures: readonly BrushPicture[];
+	/** Whether the finest tier draws the brushes too, in place of every leaf. */
+	readonly finest?: boolean;
 }
 
 /** The golden angle in degrees. */
@@ -168,6 +184,12 @@ export interface ShootCut {
 	readonly body?: BudShape;
 	/** Whether a stem run that its leaves hide takes rings far apart, since no ring of it shows. */
 	readonly thinHidden?: boolean;
+	/**
+	 * Whether a stem whose leaves hide it to its tip ends where they begin, for a tier where a card
+	 * stands for those leaves and hides the stem under it: a stem hidden along its whole length
+	 * draws no wood. Absent, every stem draws to its tip.
+	 */
+	readonly endHidden?: boolean;
 	/**
 	 * Whether a tube of few sides stands wider than its stem's radius, so its outline is as wide as
 	 * the round stem's when averaged over a turn: a three-sided tube on the radius reads a sixth thin.
@@ -1190,6 +1212,8 @@ function bendByte(along: number, span: number): number {
 
 /** Metres between the rings of a stem run that its leaves hide. */
 const HIDDEN_RING_GAP = 0.04;
+/** Metres short of its tip within which a stem's last hidden run counts as reaching it. */
+const HIDDEN_TIP = 0.02;
 
 /**
  * The runs of each axis that its leaves hide, as metres along the shoot from and to: where one leaf
@@ -1220,6 +1244,8 @@ function hiddenRuns(plan: ShootPlan, gap?: number): (readonly [number, number])[
 export interface PlannedBrush extends Omit<BrushRun, 'picture'> {
 	/** The run's axis: 0 for the piece's own stem, and its side stems after it. */
 	readonly axis: number;
+	/** Whether the run lies on the piece's own main stem. */
+	readonly main: boolean;
 	readonly leaves: readonly number[];
 }
 
@@ -1230,12 +1256,83 @@ export interface PlannedBrush extends Omit<BrushRun, 'picture'> {
  *
  * @param plan The plan.
  * @param gap The most metres between neighbouring leaves of a run; absent, two of the stem's radii.
+ * @param subtrees Whether each side stem of the main stem draws one brush of its whole subtree.
  * @returns The runs, axis by axis.
  */
-export function plannedBrushes(plan: ShootPlan, gap?: number): PlannedBrush[] {
+export function plannedBrushes(plan: ShootPlan, gap?: number, subtrees = false): PlannedBrush[] {
 	const runs = hiddenRuns(plan, gap);
+	const parents = stemParents(plan);
+	// The piece's own main stem starts at its attach point; a part of a split piece may hold none.
+	const main = plan.axes.map(
+		(points, a) => parents[a] === -1 && ((points[0] as AxisPoint | undefined)?.along ?? 0) < 1e-6,
+	);
+	/** The side stem of the main stem that a stem grows from, itself included. */
+	const rootOf = (a: number): number => {
+		let at = a;
+		while (!main[at] && (parents[at] as number) >= 0 && !main[parents[at] as number])
+			at = parents[at] as number;
+		return at;
+	};
 	const out: PlannedBrush[] = [];
+	/** One brush from a start to an end, over some of the plan's leaves. */
+	const brushOf = (
+		axis: number,
+		start: Vector3,
+		end: Vector3,
+		leaves: readonly number[],
+		middleAlong: number,
+	): void => {
+		if (leaves.length === 0) return;
+		const length = length3(end[0] - start[0], end[1] - start[1], end[2] - start[2]);
+		if (length < 1e-6) return;
+		const along = normalize3([end[0] - start[0], end[1] - start[1], end[2] - start[2]]);
+		const mean: Vector3 = [0, 0, 0];
+		for (const i of leaves) {
+			const sky = (plan.leaves[i] as PlannedLeaf).sky;
+			mean[0] += sky[0];
+			mean[1] += sky[1];
+			mean[2] += sky[2];
+		}
+		const lean = mean[0] * along[0] + mean[1] * along[1] + mean[2] * along[2];
+		let sky: Vector3 = [
+			mean[0] - along[0] * lean,
+			mean[1] - along[1] * lean,
+			mean[2] - along[2] * lean,
+		];
+		if (length3(sky[0], sky[1], sky[2]) < 1e-6) {
+			const up: Vector3 = Math.abs(along[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
+			const tilt = up[0] * along[0] + up[1] * along[1] + up[2] * along[2];
+			sky = [up[0] - along[0] * tilt, up[1] - along[1] * tilt, up[2] - along[2] * tilt];
+		}
+		sky = normalize3(sky);
+		const middle = plan.leaves[leaves[leaves.length >> 1] as number] as PlannedLeaf;
+		out.push({
+			axis,
+			main: main[axis] === true,
+			leaves,
+			start,
+			along,
+			sky,
+			side: cross3(along, sky, [0, 0, 0]),
+			length,
+			bend: bendByte(middleAlong, plan.span),
+			phase: middle.phase,
+		});
+	};
 	plan.axes.forEach((points, axis) => {
+		// With whole side stems pictured, a side stem of the main stem draws one brush of every leaf
+		// it and its own side stems carry, from its foot to its tip, and those side stems draw none.
+		if (subtrees && !main[axis]) {
+			if (rootOf(axis) !== axis) return;
+			const leaves: number[] = [];
+			plan.leaves.forEach((leaf, i) => {
+				if (rootOf(leaf.axis) === axis) leaves.push(i);
+			});
+			const foot = points[0] as AxisPoint;
+			const tip = points[points.length - 1] as AxisPoint;
+			brushOf(axis, [...foot.at], [...tip.at], leaves, (foot.along + tip.along) / 2);
+			return;
+		}
 		/** The stem's point `along` metres from the attach point. */
 		const pointAt = (along: number): Vector3 => {
 			for (let k = 1; k < points.length; k++) {
@@ -1258,46 +1355,32 @@ export function plannedBrushes(plan: ShootPlan, gap?: number): PlannedBrush[] {
 				if (leaf.axis === axis && leaf.along >= from - 1e-9 && leaf.along <= to + 1e-9)
 					leaves.push(i);
 			});
-			if (leaves.length === 0) continue;
-			const start = pointAt(from);
-			const end = pointAt(to);
-			const length = length3(end[0] - start[0], end[1] - start[1], end[2] - start[2]);
-			if (length < 1e-6) continue;
-			const along = normalize3([end[0] - start[0], end[1] - start[1], end[2] - start[2]]);
-			const mean: Vector3 = [0, 0, 0];
-			for (const i of leaves) {
-				const sky = (plan.leaves[i] as PlannedLeaf).sky;
-				mean[0] += sky[0];
-				mean[1] += sky[1];
-				mean[2] += sky[2];
-			}
-			const lean = mean[0] * along[0] + mean[1] * along[1] + mean[2] * along[2];
-			let sky: Vector3 = [
-				mean[0] - along[0] * lean,
-				mean[1] - along[1] * lean,
-				mean[2] - along[2] * lean,
-			];
-			if (length3(sky[0], sky[1], sky[2]) < 1e-6) {
-				const up: Vector3 = Math.abs(along[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
-				const tilt = up[0] * along[0] + up[1] * along[1] + up[2] * along[2];
-				sky = [up[0] - along[0] * tilt, up[1] - along[1] * tilt, up[2] - along[2] * tilt];
-			}
-			sky = normalize3(sky);
-			const middle = plan.leaves[leaves[leaves.length >> 1] as number] as PlannedLeaf;
-			out.push({
-				axis,
-				leaves,
-				start,
-				along,
-				sky,
-				side: cross3(along, sky, [0, 0, 0]),
-				length,
-				bend: bendByte((from + to) / 2, plan.span),
-				phase: middle.phase,
-			});
+			brushOf(axis, pointAt(from), pointAt(to), leaves, (from + to) / 2);
 		}
 	});
 	return out;
+}
+
+/**
+ * Each stem's parent in a plan: the earliest stem that holds the point its foot stands on, or -1
+ * for a stem that stands on none.
+ *
+ * @param plan The plan.
+ * @returns One parent per stem.
+ */
+export function stemParents(plan: ShootPlan): number[] {
+	return plan.axes.map((points, a) => {
+		const foot = (points[0] as AxisPoint).at;
+		for (let b = 0; b < a; b++)
+			if (
+				(plan.axes[b] as readonly AxisPoint[]).some(
+					(point) =>
+						length3(point.at[0] - foot[0], point.at[1] - foot[1], point.at[2] - foot[2]) < 1e-5,
+				)
+			)
+				return b;
+		return -1;
+	});
 }
 
 /**
@@ -1361,9 +1444,17 @@ export function meshShoot(
 	const sides = cut.stemSides;
 	// A regular polygon on a radius is, averaged over a turn, as wide as a circle that much smaller.
 	const widen = cut.meanWidth ? PI / (sides * sin(PI / sides)) : 1;
-	const hidden = cut.thinHidden ? hiddenRuns(plan) : undefined;
+	const hidden = cut.thinHidden || cut.endHidden ? hiddenRuns(plan) : undefined;
 	plan.axes.forEach((points, axis) => {
 		const runs = hidden?.[axis] ?? [];
+		// Where the stem's leaves hide it to its tip and a card stands for them, the stem ends where
+		// the hiding begins.
+		const tip = (points[points.length - 1] as AxisPoint | undefined)?.along ?? 0;
+		const tipRun = runs[runs.length - 1];
+		const stop =
+			cut.endHidden && tipRun && tipRun[1] >= tip - HIDDEN_TIP
+				? tipRun[0]
+				: Number.POSITIVE_INFINITY;
 		/** Whether the stem between two places along the shoot lies inside one hidden run. */
 		const covered = (from: number, to: number): boolean =>
 			runs.some(([start, end]) => from >= start && to <= end);
@@ -1374,6 +1465,7 @@ export function meshShoot(
 		const path: TubePoint[] = [];
 		for (let k = 0; k < points.length; k++) {
 			const point = points[k] as AxisPoint;
+			if (point.along > stop + 1e-9) break;
 			const last = path[path.length - 1];
 			const end = k === points.length - 1;
 			if (last && !end) {
@@ -1392,6 +1484,7 @@ export function meshShoot(
 			path.push(widen === 1 ? point : { ...point, radius: point.radius * widen });
 		}
 		mesh.mark();
+		if (path.length < 2) return;
 		tube(
 			mesh,
 			path,
@@ -1505,28 +1598,40 @@ export function meshShoot(
  * @param plan The plan.
  * @param leaves The species' leaf meshes at every tier, low first.
  * @param cuts How each tier meshes the wood and buds; the crown's own cuts by default.
+ * @param woodTiers Whether each tier keeps only its wood, stems and buds, for a piece whose brush
+ * cards draw its leaves at every tier; the high tier's whole mesh then goes to the card bake.
  * @returns The meshes and the measures.
  */
 export function meshedPlan(
 	plan: ShootPlan,
 	leaves: readonly (readonly PrototypeArrays[])[],
 	cuts: Readonly<Record<Detail, ShootCut>> = SHOOT_CUTS,
-): Pick<UncardedPrototype, 'length' | 'radius' | 'leaves' | 'tiers'> {
+	woodTiers = false,
+): Pick<UncardedPrototype, 'length' | 'radius' | 'leaves' | 'tiers' | 'bake'> {
 	const writers = DETAILS.map((detail, tier) =>
 		meshShoot(plan, leaves[tier] ?? [], detail, cuts[detail]),
 	);
 	shootOcclusion(writers, SHADE_TIER);
+	const high = DETAILS.indexOf('high');
+	// Tiers of wood alone keep the leaves of the high tier whole for the card bake, at any size.
+	const bake = woodTiers ? (writers[high] as MeshWriter).finishMesh() : undefined;
 	const tiers = writers.map((writer) =>
-		writer.finishPrototype(),
+		woodTiers ? withoutLeaves(writer.finishMesh()) : writer.finishPrototype(),
 	) as unknown as UncardedPrototype['tiers'];
 	let radius = 0;
-	const positions = (tiers[DETAILS.indexOf('high')] as PrototypeArrays).positions;
+	const positions = (bake ?? (tiers[high] as PrototypeArrays)).positions;
 	for (let i = 0; i < positions.length; i += 3)
 		radius = Math.max(
 			radius,
 			length3(positions[i] as number, positions[i + 1] as number, positions[i + 2] as number),
 		);
-	return { length: plan.reach, radius, leaves: plan.leaves.length, tiers };
+	return {
+		length: plan.reach,
+		radius,
+		leaves: plan.leaves.length,
+		tiers,
+		...(bake ? { bake } : {}),
+	};
 }
 
 /** One prototype from a plan: its tiers meshed and shaded, its reach and bounds measured. */

@@ -510,7 +510,7 @@ export function buildKitNow(source: KitSource, options: KitOptions = {}): Specie
 			? {
 					atlas: cards,
 					cells: uncarded.map(() => ({ planes: [] })),
-					prototypes: uncarded.map(({ brushes: _brushes, ...prototype }) => prototype),
+					prototypes: uncarded.map(({ brushes: _brushes, bake: _bake, ...prototype }) => prototype),
 				}
 			: stage(
 					placeholders,

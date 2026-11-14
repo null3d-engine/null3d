@@ -44,6 +44,53 @@ export function leafSurface(kind: number): boolean {
 	return kind < SURFACE_STEM / 2 && kind !== SURFACE_PIECE_SHEATH;
 }
 
+/**
+ * A mesh's wood, stems and buds alone: its leaf triangles left out, and the vertices the rest use
+ * kept in their order.
+ *
+ * @param mesh The mesh, of any size.
+ * @returns The arrays, with 16-bit indices.
+ */
+export function withoutLeaves(mesh: MeshArrays): PrototypeArrays {
+	const keep = new Int32Array(mesh.positions.length / 3).fill(-1);
+	const kept: number[] = [];
+	const indices: number[] = [];
+	for (let t = 0; t < mesh.indices.length; t += 3) {
+		if (leafSurface(mesh.colors[(mesh.indices[t] as number) * 4 + 2] as number)) continue;
+		for (let k = 0; k < 3; k++) {
+			const v = mesh.indices[t + k] as number;
+			if ((keep[v] as number) < 0) {
+				keep[v] = kept.length;
+				kept.push(v);
+			}
+			indices.push(keep[v] as number);
+		}
+	}
+	if (kept.length > 0xffff)
+		throw new Error('@null3d/vegetation: a shoot or leaf mesh passed 65,535 vertices');
+	const picked = <T extends Float32Array | Uint8Array | Int8Array>(
+		from: T,
+		size: number,
+		to: T,
+	) => {
+		kept.forEach((v, i) => {
+			to.set(from.subarray(v * size, v * size + size), i * size);
+		});
+		return to;
+	};
+	return {
+		positions: picked(mesh.positions, 3, new Float32Array(kept.length * 3)),
+		normals: picked(mesh.normals, 3, new Float32Array(kept.length * 3)),
+		uvs: picked(mesh.uvs, 2, new Float32Array(kept.length * 2)),
+		uvs1: picked(mesh.uvs1, 2, new Float32Array(kept.length * 2)),
+		colors: picked(mesh.colors, 4, new Uint8Array(kept.length * 4)),
+		...(mesh.tangents
+			? { tangents: picked(mesh.tangents, 4, new Int8Array(kept.length * 4)) }
+			: {}),
+		indices: Uint16Array.from(indices),
+	};
+}
+
 /** A mesh under construction, in plain number lists. */
 export class MeshWriter {
 	readonly positions: number[] = [];

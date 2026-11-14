@@ -53,6 +53,7 @@ import {
 	type ShootCut,
 	type ShootPlan,
 	square,
+	stemParents,
 	turn,
 	type UncardedPrototype,
 } from './shoot';
@@ -93,6 +94,23 @@ export const PIECE_CUTS: Readonly<Record<Detail, ShootCut>> = {
 		body: { sides: 4, round: true },
 	},
 	ultra: { ...SHOOT_CUTS.ultra, thinHidden: true },
+};
+
+/**
+ * The piece cuts of a piece whose brush cards hide its stems: below the finest tier, a stem its
+ * leaves hide to its tip ends where they begin.
+ */
+const BRUSH_STEM_CUTS: Readonly<Record<Detail, ShootCut>> = {
+	low: { ...PIECE_CUTS.low, endHidden: true },
+	medium: { ...PIECE_CUTS.medium, endHidden: true },
+	high: { ...PIECE_CUTS.high, endHidden: true },
+	ultra: PIECE_CUTS.ultra,
+};
+
+/** The piece cuts of a piece whose brush cards hide its stems at every tier, the finest too. */
+const BRUSH_STEM_CUTS_ALL: Readonly<Record<Detail, ShootCut>> = {
+	...BRUSH_STEM_CUTS,
+	ultra: { ...PIECE_CUTS.ultra, endHidden: true },
 };
 
 /**
@@ -352,6 +370,24 @@ export interface PieceRule {
 	 * are sprays that overlap along their stem states the spacing they overlap at.
 	 */
 	readonly brushGap?: number;
+	/**
+	 * Whether below the finest tier a stem whose leaves hide it to its tip ends where they begin,
+	 * since the brush card that stands for those leaves hides it: a piece of many short leafy stems
+	 * then draws little wood. Absent, every tier draws each stem whole.
+	 */
+	readonly brushHidesStems?: boolean;
+	/**
+	 * Whether each side stem of the main stem draws as one brush card of its whole subtree, its own
+	 * side stems' leaves included, so a branchlet hung with sprays draws as one card of its whole
+	 * tassel. Absent, each stem draws its own runs.
+	 */
+	readonly brushSubtrees?: boolean;
+	/**
+	 * Whether the finest tier draws the brush cards too, in place of every leaf, for a piece whose
+	 * leaves are too many to draw one by one within its kit's cap at that tier. Absent, the finest
+	 * tier keeps every leaf.
+	 */
+	readonly brushFinest?: boolean;
 }
 
 /**
@@ -413,7 +449,7 @@ export function pieceRecord(record: Species, leaf: PieceLeaf | undefined): Speci
 
 /** A piece's prototype: its meshes at every tier, with how a socket holds it. */
 export interface PiecePrototype
-	extends Pick<UncardedPrototype, 'length' | 'radius' | 'leaves' | 'tiers' | 'brushes'> {
+	extends Pick<UncardedPrototype, 'length' | 'radius' | 'leaves' | 'tiers' | 'brushes' | 'bake'> {
 	/** The rule it was planned by, and which of the rule's variants it is. */
 	readonly piece: string;
 	readonly variant: number;
@@ -1148,14 +1184,7 @@ export function splitPlan(
 			(a[1] as number) - (b[1] as number),
 			(a[2] as number) - (b[2] as number),
 		);
-	// Each stem's parent: the earliest stem that holds the point its foot stands on.
-	const parent = plan.axes.map((points, a) => {
-		const foot = (points[0] as AxisPoint).at;
-		for (let b = 0; b < a; b++)
-			if ((plan.axes[b] as readonly AxisPoint[]).some((point) => near(point.at, foot) < 1e-5))
-				return b;
-		return -1;
-	});
+	const parent = stemParents(plan);
 	// The side stem of the main stem that each stem grows from, itself included; -1 for the main stem.
 	const limb = plan.axes.map((_, a) => {
 		let at = a;
@@ -1217,7 +1246,8 @@ export function splitPlan(
 
 /**
  * Builds a species' pieces, each variant at every detail tier, from its leaf meshes. A variant too
- * large for one prototype comes as several parts.
+ * large for one prototype comes as several parts, unless its brush cards draw its leaves at every
+ * tier.
  *
  * @param record The species record.
  * @param rules The species' piece rules.
@@ -1247,10 +1277,10 @@ export function piecePrototypes(
 		for (let variant = 0; variant < Math.min(16, Math.max(1, rule.variants)); variant++) {
 			const whole = planPiece(record, rule, pieceKey(r, variant), leafMeshes, undefined, 0, fall);
 			if (rule.brushCards && !pictures) {
-				const runs = plannedBrushes(whole, rule.brushGap);
+				const runs = plannedBrushes(whole, rule.brushGap, rule.brushSubtrees);
 				const longest = (own: boolean) =>
 					runs
-						.filter((run) => (run.axis === 0) === own)
+						.filter((run) => (rule.brushSubtrees ? run.main : run.axis === 0) === own)
 						.reduce<PlannedBrush | undefined>(
 							(best, run) => (!best || run.length > best.length ? run : best),
 							undefined,
@@ -1259,19 +1289,29 @@ export function piecePrototypes(
 					.filter((run): run is PlannedBrush => run !== undefined)
 					.map((run) => brushPicture(whole, run, own[pictureTier] ?? [], BRUSH_PICTURE_TIER));
 			}
-			const parts = splitPlan(whole, finest);
+			// A piece whose brush cards draw its leaves at every tier holds only their wood and quads
+			// at each, so it stays whole: split, each part would draw a card of its own at the card
+			// levels.
+			const woodTiers = rule.brushFinest === true && (pictures?.length ?? 0) > 0;
+			const parts = woodTiers ? [whole] : splitPlan(whole, finest);
 			for (const [part, plan] of parts.entries()) {
 				const drawn = pictures ?? [];
 				const brushes =
 					drawn.length > 0
 						? {
-								runs: plannedBrushes(plan, rule.brushGap).map(
-									({ axis, leaves: _leaves, ...run }) => ({
+								runs: plannedBrushes(plan, rule.brushGap, rule.brushSubtrees).map(
+									({ axis, main, leaves: _leaves, ...run }) => ({
 										...run,
-										picture: Math.min(drawn.length - 1, axis === 0 ? 0 : 1),
+										// A run on the main stem draws its own stem's picture; a piece of whole
+										// side stems names that stem by its place, any other by its index.
+										picture: Math.min(
+											drawn.length - 1,
+											(rule.brushSubtrees ? main : axis === 0) ? 0 : 1,
+										),
 									}),
 								),
 								pictures: drawn,
+								...(rule.brushFinest ? { finest: true } : {}),
 							}
 						: undefined;
 				out.push({
@@ -1283,7 +1323,16 @@ export function piecePrototypes(
 					...(rule.plane ? { plane: rule.plane } : {}),
 					...(rule.roll ? { roll: rule.roll } : {}),
 					sites: pieceSites(plan),
-					...meshedPlan(plan, own, PIECE_CUTS),
+					...meshedPlan(
+						plan,
+						own,
+						!rule.brushCards || !rule.brushHidesStems
+							? PIECE_CUTS
+							: rule.brushFinest
+								? BRUSH_STEM_CUTS_ALL
+								: BRUSH_STEM_CUTS,
+						woodTiers,
+					),
 					...(brushes ? { brushes } : {}),
 				});
 			}

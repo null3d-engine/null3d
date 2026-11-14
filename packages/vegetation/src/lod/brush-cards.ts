@@ -12,7 +12,7 @@ import type { Species } from '../core/record';
 import type { TextureManifest } from '../core/textures';
 import { DETAILS, type Detail, type Vec3 } from '../core/types';
 import type { BrushPicture, BrushRun, PrototypeBrushes, UncardedPrototype } from '../leaf/shoot';
-import { leafSurface, SURFACE_BRUSH } from '../leaf/writer';
+import { SURFACE_BRUSH, withoutLeaves } from '../leaf/writer';
 import type { CardAtlas } from '../stages';
 import { bakeCards } from './card-bake';
 import { CARD_CORNERS } from './cards';
@@ -61,10 +61,10 @@ export function bakeWithBrushes(
 	const cellOf = (picture: BrushPicture): CardCell =>
 		baked.cells[prototypes.length + pictures.indexOf(picture)] as CardCell;
 	const out = prototypes.map((prototype): UncardedPrototype => {
-		const { brushes, ...rest } = prototype;
-		if (!brushes) return prototype;
+		const { brushes, bake: _bake, ...rest } = prototype;
+		if (!brushes) return rest;
 		const tiers = prototype.tiers.map((mesh, t) =>
-			t >= FINEST ? mesh : brushed(mesh, brushes, cellOf, baked.atlas.size),
+			t >= FINEST && !brushes.finest ? mesh : brushed(mesh, brushes, cellOf, baked.atlas.size),
 		) as unknown as UncardedPrototype['tiers'];
 		return { ...rest, tiers };
 	});
@@ -81,23 +81,9 @@ function brushed(
 	cellOf: (picture: BrushPicture) => CardCell,
 	size: number,
 ): PrototypeArrays {
-	const vertexCount = mesh.positions.length / 3;
-	// The vertices of the triangles that are not leaf, in their order.
-	const keep = new Int32Array(vertexCount).fill(-1);
-	const kept: number[] = [];
-	const indices: number[] = [];
-	for (let t = 0; t < mesh.indices.length; t += 3) {
-		const a = mesh.indices[t] as number;
-		if (leafSurface(mesh.colors[a * 4 + 2] as number)) continue;
-		for (let k = 0; k < 3; k++) {
-			const v = mesh.indices[t + k] as number;
-			if ((keep[v] as number) < 0) {
-				keep[v] = kept.length;
-				kept.push(v);
-			}
-			indices.push(keep[v] as number);
-		}
-	}
+	const wood = withoutLeaves(mesh);
+	const kept = wood.positions.length / 3;
+	const indices = Array.from(wood.indices);
 	// One quad for each plane of each run's picture: a long picture's cell is cut into stretches,
 	// each with planes of its own.
 	let quads = 0;
@@ -105,7 +91,7 @@ function brushed(
 		const picture = brushes.pictures[run.picture];
 		if (picture) quads += cellOf(picture).planes.length;
 	}
-	const total = kept.length + quads * 4;
+	const total = kept + quads * 4;
 	if (total > 65536)
 		throw new Error(
 			`@null3d/vegetation: a piece with brush cards holds ${total} vertices, over 65,536`,
@@ -115,16 +101,14 @@ function brushed(
 	const uvs = new Float32Array(total * 2);
 	const uvs1 = new Float32Array(total * 2);
 	const colors = new Uint8Array(total * 4);
-	const tangents = mesh.tangents ? new Int8Array(total * 4) : undefined;
-	kept.forEach((v, i) => {
-		positions.set(mesh.positions.subarray(v * 3, v * 3 + 3), i * 3);
-		normals.set(mesh.normals.subarray(v * 3, v * 3 + 3), i * 3);
-		uvs.set(mesh.uvs.subarray(v * 2, v * 2 + 2), i * 2);
-		uvs1.set(mesh.uvs1.subarray(v * 2, v * 2 + 2), i * 2);
-		colors.set(mesh.colors.subarray(v * 4, v * 4 + 4), i * 4);
-		if (tangents && mesh.tangents) tangents.set(mesh.tangents.subarray(v * 4, v * 4 + 4), i * 4);
-	});
-	let at = kept.length;
+	const tangents = wood.tangents ? new Int8Array(total * 4) : undefined;
+	positions.set(wood.positions);
+	normals.set(wood.normals);
+	uvs.set(wood.uvs);
+	uvs1.set(wood.uvs1);
+	colors.set(wood.colors);
+	if (tangents && wood.tangents) tangents.set(wood.tangents);
+	let at = kept;
 	for (const run of brushes.runs) {
 		const picture = brushes.pictures[run.picture];
 		if (!picture) continue;
