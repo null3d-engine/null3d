@@ -73,12 +73,12 @@ const boughs: FrameBranchRule = {
 	patch: {
 		kind: 'clump',
 		width: [
-			[0, 0.23],
-			[1, 0.14],
+			[0, 0.2],
+			[1, 0.12],
 		],
 		depth: [
-			[0, 0.16],
-			[1, 0.098],
+			[0, 0.14],
+			[1, 0.085],
 		],
 		fill: ENDS,
 	},
