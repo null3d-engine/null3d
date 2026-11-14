@@ -285,9 +285,6 @@ const TURNING: readonly {
 	{ id: 'pedunculate-oak', pieces: OAK, studio: OAK_STUDIO, still: 22, depth: 0.37, gap: 0.1 },
 	{ id: 'silver-birch', pieces: BIRCH, studio: BIRCH_STUDIO, still: 21, depth: 0.21, gap: 0.085 },
 	{ id: 'silver-birch', pieces: BIRCH, studio: BIRCH_STUDIO, still: 22, depth: 0.27, gap: 0.176 },
-	// The spray's own depth, read at its reference still, against the arch's figures: a branch of
-	// the same kind, so the same requirement names it.
-	{ id: 'silver-birch', pieces: BIRCH, studio: BIRCH_STUDIO, still: 9, depth: 0.21, gap: 0.085 },
 	{
 		id: 'weeping-willow',
 		pieces: WILLOW,
@@ -351,16 +348,12 @@ const OPEN_DEPTH: Readonly<Record<string, number>> = {
 	'olive 22': 0.367,
 	'european-beech 22': 0.216,
 	'common-ash 22': 0.244,
-	// The spray's strands hang well off its branch's plane: its depth is twice the arch's, and the
-	// piece is at fault by the studio's measure (the reviewer, 14 November).
-	'silver-birch 9': 0.418,
 };
 const OPEN_GAP: Readonly<Record<string, number>> = {
 	// In the birch's and the willow's videos nearly every leaf shows its whole face in every frame,
 	// which fixed leaves cannot; their stills judge them.
 	'silver-birch 21': 0.46,
 	'silver-birch 22': 0.466,
-	'silver-birch 9': 0.571,
 	'weeping-willow 21': 0.278,
 	'weeping-willow 22': 0.388,
 	'european-beech 22': 0.348,

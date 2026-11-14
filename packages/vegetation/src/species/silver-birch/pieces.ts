@@ -273,11 +273,11 @@ export const STUDIO: readonly PieceStudio[] = [
 	},
 	// Still 22: one arching twig of 35 centimetres, upright in its clamp.
 	{ still: 22, piece: 'strand-arch-short' },
-	// Still 09: the spray itself, a branch 60 centimetres long that leaves a little below level and
-	// bends down to the right, its strands hanging from it one each eight centimetres.
+	// Still 09: a branch 60 centimetres long that leaves a little below level and bends down to the
+	// right, with seven strands, one each eight centimetres.
 	{
 		still: 9,
-		piece: 'spray',
+		piece: 'strand-short',
 		stand: {
 			stem: {
 				length: 0.6,
@@ -286,6 +286,7 @@ export const STUDIO: readonly PieceStudio[] = [
 				bud: false,
 			},
 			lean: 97,
+			along: { piece: 'strand-short', gap: 0.08, from: 0.12 },
 		},
 	},
 ];
