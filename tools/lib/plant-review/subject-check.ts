@@ -156,6 +156,39 @@ export function partCover(parts: Parts, region: ContractRegion): number {
 	return count / area;
 }
 
+/**
+ * The share of a crown's plant pixels that foliage covers, read from a picture of the parts: the
+ * wood and the foliage layers inside the crown's box. Extras are neither layer, so they count
+ * toward neither. The region is in the measure's work pixels, and `scale` maps it to the picture's.
+ */
+export function partsFoliageShare(
+	parts: Parts,
+	region: {
+		readonly left: number;
+		readonly top: number;
+		readonly right: number;
+		readonly bottom: number;
+	},
+	scale: number,
+): { readonly share: number; readonly pixels: number } | null {
+	const left = Math.max(0, Math.floor(region.left * scale));
+	const top = Math.max(0, Math.floor(region.top * scale));
+	const right = Math.min(parts.width - 1, Math.ceil(region.right * scale));
+	const bottom = Math.min(parts.height - 1, Math.ceil(region.bottom * scale));
+	if (right < left || bottom < top) return null;
+	let wood = 0;
+	let foliage = 0;
+	for (let y = top; y <= bottom; y++)
+		for (let x = left; x <= right; x++) {
+			const kind = parts.kind[y * parts.width + x] as number;
+			if (kind === PART.wood) wood++;
+			else if (kind === PART.foliage) foliage++;
+		}
+	const pixels = wood + foliage;
+	if (pixels === 0) return null;
+	return { share: Number((foliage / pixels).toFixed(4)), pixels };
+}
+
 /** What a matte shows of a view's contract: each region's cover, and the first that fails it. */
 export interface MatteCheck {
 	readonly present: boolean;

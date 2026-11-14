@@ -191,6 +191,18 @@ const WHOLE_ROWS: ReadonlySet<number> = new Set([6, 9]);
 /** How far a render's sky gap may stand above its reference's, and below it, for row 6. */
 export const GAP_ABOVE = 0.05;
 export const GAP_BELOW = 0.02;
+/**
+ * How far a render's crown foliage share may stand below its reference's, for row 6: a render is
+ * allowed this much more wood than its photograph, since the outline can lose the photograph's
+ * thinnest leaves. A lace of limbs shows through far past it.
+ */
+export const FOLIAGE_BELOW = 0.1;
+/**
+ * How far a render's crown balance may stand from its reference's, for row 1: each side's share of
+ * the crown may differ by this much. The reference's own split is the mark, since some species are
+ * naturally one-sided.
+ */
+export const BALANCE_BELOW = 0.1;
 /** The most a color difference may be, in CIEDE2000 steps, for rows 8 and 10. */
 export const COLOUR_MOST = 3;
 /**
@@ -283,6 +295,24 @@ function rounded(value: number): number {
 function figuresOf(row: number, pair: StillResult, run: string): Figure[] {
 	const base = { picture: pair.file, run, ...(pair.level !== undefined && { level: pair.level }) };
 	switch (row) {
+		case 1: {
+			// The crown's mass either side of the trunk's column. The left share carries the figure,
+			// since the right share is its complement; the reference's own split is the mark.
+			const balance = pair.crownBalance;
+			if (!balance?.reference || !balance.render) return [];
+			return [
+				{
+					...base,
+					name: 'crown balance, left share',
+					value: balance.render.left,
+					reference: balance.reference.left,
+					band: {
+						min: rounded(balance.reference.left - BALANCE_BELOW),
+						max: rounded(balance.reference.left + BALANCE_BELOW),
+					},
+				},
+			];
+		}
 		case 2: {
 			// A cut branch's density, where the run measured it on both pictures of the piece. A
 			// figure that either picture could not give is left out. The wood per tip and the kinks
@@ -331,23 +361,33 @@ function figuresOf(row: number, pair: StillResult, run: string): Figure[] {
 			// box by shape, such as a spire or a cone, it measures the taper. A gap the two sides read by
 			// different rules is not quoted.
 			const read = pair.gap ? rowGap(pair.gap) : undefined;
-			return pair.gap && read
-				? [
-						{
-							...base,
-							name:
-								read.rule === 'colour'
-									? "sky gap enclosed by the crown outline, by the photograph's colour rule on both pictures"
-									: 'sky gap enclosed by the crown outline, by the half-dark rule on both pictures',
-							value: read.value,
-							reference: pair.gap.reference,
-							band: {
-								min: rounded(pair.gap.reference - GAP_BELOW),
-								max: rounded(pair.gap.reference + GAP_ABOVE),
-							},
-						},
-					]
-				: [];
+			const figures: Figure[] = [];
+			if (pair.gap && read)
+				figures.push({
+					...base,
+					name:
+						read.rule === 'colour'
+							? "sky gap enclosed by the crown outline, by the photograph's colour rule on both pictures"
+							: 'sky gap enclosed by the crown outline, by the half-dark rule on both pictures',
+					value: read.value,
+					reference: pair.gap.reference,
+					band: {
+						min: rounded(pair.gap.reference - GAP_BELOW),
+						max: rounded(pair.gap.reference + GAP_ABOVE),
+					},
+				});
+			// The crown's material: the share of its covered area that is foliage rather than wood. A
+			// render may read a tenth more wood than its photograph before the row fails.
+			const foliage = pair.crownFoliage;
+			if (foliage && foliage.reference !== null && foliage.render !== null)
+				figures.push({
+					...base,
+					name: 'crown foliage share',
+					value: foliage.render,
+					reference: foliage.reference,
+					band: { min: rounded(foliage.reference - FOLIAGE_BELOW), max: null },
+				});
+			return figures;
 		}
 		case 8: {
 			const value = pair.surfaceDeltaE ?? pair.barkDeltaE;

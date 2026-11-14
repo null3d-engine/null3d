@@ -37,6 +37,8 @@ const still = (file: string): StillResult => ({
 	profileError: 0.05,
 	gap: null,
 	crownBoxGap: null,
+	crownFoliage: null,
+	crownBalance: null,
 	frameGap: null,
 	frameScale: null,
 	foliageDeltaE: 3,

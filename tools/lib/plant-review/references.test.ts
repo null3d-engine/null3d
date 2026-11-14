@@ -10,9 +10,12 @@ import { blank, labImage, labOf, type Rgba } from './image.ts';
 import {
 	anyPlantMask,
 	boxOf,
+	type CrownRegion,
 	centralRuns,
 	classifySlot,
 	classifyTurn,
+	crownBalanceOf,
+	crownFoliageOf,
 	crownStartRow,
 	filledSpans,
 	findHorizon,
@@ -1309,5 +1312,114 @@ describe('the crown start of a clump', () => {
 		expect((spans[80 * 2 + 1] as number) - (spans[80 * 2] as number) + 1).toBe(15);
 		expect((spans[30 * 2 + 1] as number) - (spans[30 * 2] as number) + 1).toBe(160);
 		expect(Array.from(filledSpans(new Uint8Array(8), 4, 2))).toEqual([-1, -1, -1, -1]);
+	});
+});
+
+describe("the crown's foliage share", () => {
+	const width = 100;
+	const height = 60;
+	const region: CrownRegion = { left: 10, top: 10, right: 89, bottom: 49 };
+	const mask = new Uint8Array(width * height);
+	for (let y = region.top; y <= region.bottom; y++)
+		for (let x = region.left; x <= region.right; x++) mask[y * width + x] = 1;
+	const plant = mattePlant(width, height, mask);
+
+	/** A picture of the crown painted by column: the colours in the list, in equal bands. */
+	function crown(colours: readonly (readonly number[])[]): Rgba {
+		const image = blank(width, height, [255, 255, 255]);
+		const band = Math.ceil((region.right - region.left + 1) / colours.length);
+		for (let y = region.top; y <= region.bottom; y++)
+			for (let x = region.left; x <= region.right; x++) {
+				const at = Math.min(colours.length - 1, Math.floor((x - region.left) / band));
+				put(image, x, y, colours[at] as readonly number[]);
+			}
+		return image;
+	}
+
+	test('reads the greener of two fitted clusters as the foliage', () => {
+		const read = crownFoliageOf(
+			crown([
+				[35, 105, 35],
+				[130, 95, 60],
+			]),
+			plant,
+			region,
+		);
+		expect(read.pixels).toBe(3200);
+		expect(read.share).not.toBeNull();
+		expect(read.share as number).toBeCloseTo(0.5, 1);
+	});
+
+	test('reads a crown whose two clusters are both green as all foliage', () => {
+		const read = crownFoliageOf(
+			crown([
+				[35, 105, 35],
+				[85, 145, 55],
+			]),
+			plant,
+			region,
+		);
+		expect(read.share).toBe(1);
+	});
+
+	test('gives no share where both clusters are brown, as a winter tree against brown ground', () => {
+		const read = crownFoliageOf(
+			crown([
+				[130, 95, 60],
+				[100, 75, 50],
+			]),
+			plant,
+			region,
+		);
+		expect(read.share).toBeNull();
+		expect(read.why).toContain('not leaf green');
+	});
+
+	test('gives no share for a crown box too small to fit', () => {
+		const read = crownFoliageOf(
+			crown([
+				[35, 105, 35],
+				[130, 95, 60],
+			]),
+			plant,
+			{
+				left: 10,
+				top: 10,
+				right: 12,
+				bottom: 12,
+			},
+		);
+		expect(read.share).toBeNull();
+		expect(read.why).toContain('too few');
+	});
+});
+
+describe("the crown's balance", () => {
+	const width = 100;
+	const height = 80;
+	const mask = new Uint8Array(width * height);
+	// A crown 70 columns wide over a trunk whose column stands at its middle, with ground below.
+	for (let y = 10; y <= 49; y++) for (let x = 10; x <= 79; x++) mask[y * width + x] = 1;
+	for (let y = 50; y <= 59; y++) for (let x = 45; x <= 54; x++) mask[y * width + x] = 1;
+	const region: CrownRegion = { left: 10, top: 10, right: 79, bottom: 49 };
+
+	test('splits the covered area at the trunk’s column, giving each side its share', () => {
+		const balance = crownBalanceOf(mattePlant(width, height, mask), region);
+		expect(balance).not.toBeNull();
+		// The trunk's column is 49.5 on the picture: 40 crown columns left of it and 30 right.
+		expect(balance?.column).toBeCloseTo(49.5, 1);
+		expect(balance?.left).toBeCloseTo(40 / 70, 2);
+		expect(balance?.right).toBeCloseTo(30 / 70, 2);
+	});
+
+	test('gives no balance for a crown box with no plant', () => {
+		expect(
+			crownBalanceOf(mattePlant(width, height, mask), {
+				left: 0,
+				top: 60,
+				right: 9,
+				bottom: 70,
+			}),
+		).toBeNull();
 	});
 });

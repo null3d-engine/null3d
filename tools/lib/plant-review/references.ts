@@ -2040,6 +2040,25 @@ export function subjectShares(
 	return { width: across, height: down };
 }
 
+/**
+ * The green of a leaf in CIELAB a*, below which a pixel or a picture's greener cluster reads as
+ * foliage rather than bark. Leaves and the barks measured across the corpus stand apart at this
+ * bound. The crown foliage share fits its two clusters to each picture, and uses the bound only to
+ * refuse a fit whose greener cluster is not green, so a bare tree's browns read as no foliage
+ * rather than a guess.
+ */
+export const LEAF_GREEN = -5;
+
+/** The crown's box in the work picture: the columns and rows its plant pixels span. */
+export interface CrownRegion {
+	readonly left: number;
+	/** The crown's highest row, the top of the plant's box. */
+	readonly top: number;
+	readonly right: number;
+	/** The crown's lowest row, where the crown starts above the bare stem. */
+	readonly bottom: number;
+}
+
 /** The measures a reviewer reads from a plant's outline. Rows count down, shares run 0 to 1. */
 export interface PlantMeasures {
 	/** The work picture's size. */
@@ -2062,6 +2081,8 @@ export interface PlantMeasures {
 	readonly crownStart: number;
 	/** The crown's box: its widest run and its height to the crown's start, in work pixels. */
 	readonly crownBox: { readonly width: number; readonly height: number };
+	/** The columns and rows that hold the crown's plant pixels, or null for a picture with no plant. */
+	readonly crownRegion: CrownRegion | null;
 	/** The share of the crown's outline that shows background: the sky or ground through it. */
 	readonly gapFraction: number;
 	/**
@@ -2469,6 +2490,7 @@ export function measurePlant(
 			widthProfile: [],
 			crownStart: 0,
 			crownBox: { width: 0, height: 0 },
+			crownRegion: null,
 			gapFraction: 0,
 			gapByCoverage: null,
 			crownBoxGap: 0,
@@ -2545,6 +2567,10 @@ export function measurePlant(
 		widthProfile: widthProfile(spans, box).map((v) => Number(v.toFixed(4))),
 		crownStart: Number(((box.bottom - start) / tall).toFixed(4)),
 		crownBox: { width: crownWidth, height: start - box.top + 1 },
+		crownRegion:
+			crownRight >= crownLeft
+				? { left: crownLeft, top: box.top, right: crownRight, bottom: start }
+				: null,
 		gapFraction: hull > 0 ? Number((gaps / hull).toFixed(4)) : 0,
 		gapByCoverage: coverage ? (hull > 0 ? Number((clear / hull).toFixed(4)) : 0) : null,
 		crownBoxGap: crownBoxArea > 0 ? Number((crownBoxSky / crownBoxArea).toFixed(4)) : 0,
@@ -2559,6 +2585,232 @@ export function measurePlant(
 					})
 				: null,
 		light: crownLight(lab, inCrown, width, box, start),
+	};
+}
+
+/** The share of a crown's plant pixels that foliage covers, and why a picture gives none. */
+export interface CrownFoliage {
+	/** Foliage's share of the plant's pixels in the crown's box, or null where colour cannot part them. */
+	readonly share: number | null;
+	/** The plant pixels of the crown's box that the share counts. */
+	readonly pixels: number;
+	/** Why the share is null. */
+	readonly why?: string;
+}
+
+/** The fewest plant pixels a crown's box needs before its colours can be fitted. */
+const CROWN_FOLIAGE_PIXELS = 40;
+/** The least CIELAB a* between the two clusters that parts foliage from bark. */
+const FOLIAGE_GAP = 6;
+
+/**
+ * The crown's foliage share in a picture: of the plant pixels in the crown's box, the share that
+ * belongs to the greener of two colour clusters fitted to the box. The clusters are fitted in
+ * CIELAB chroma, since light and shade move a leaf's lightness but keep its hue. A picture whose
+ * greener cluster is not leaf green gives no share: a bare tree's browns, grey or blue foliage, or
+ * a crown that blends into a brown ground cannot be parted by colour, and the figure says so
+ * rather than guesses.
+ */
+export function crownFoliageOf(image: Rgba, plant: PlantMask, region: CrownRegion): CrownFoliage {
+	const work = image.width === plant.width ? image : resizeToWidth(image, plant.width);
+	const lab = labImage(work);
+	const width = plant.width;
+	const height = plant.height;
+	const left = Math.max(0, Math.min(width - 1, region.left));
+	const right = Math.max(0, Math.min(width - 1, region.right));
+	const top = Math.max(0, Math.min(height - 1, region.top));
+	const bottom = Math.max(0, Math.min(height - 1, region.bottom));
+	let count = 0;
+	for (let y = top; y <= bottom; y++)
+		for (let x = left; x <= right; x++) if (plant.mask[y * width + x]) count++;
+	if (count === 0) return { share: null, pixels: 0, why: "the crown's box covers no plant" };
+	if (count < CROWN_FOLIAGE_PIXELS)
+		return {
+			share: null,
+			pixels: count,
+			why: `the crown's box holds only ${count} plant pixels, too few to fit its colours`,
+		};
+	const chroma = new Float32Array(count * 2);
+	let at = 0;
+	let greenest = 0;
+	let brownest = 0;
+	let least = Number.POSITIVE_INFINITY;
+	let most = Number.NEGATIVE_INFINITY;
+	for (let y = top; y <= bottom; y++)
+		for (let x = left; x <= right; x++) {
+			const pixel = y * width + x;
+			if (!plant.mask[pixel]) continue;
+			const a = lab[pixel * 3 + 1] as number;
+			const b = lab[pixel * 3 + 2] as number;
+			chroma[at * 2] = a;
+			chroma[at * 2 + 1] = b;
+			if (a < least) {
+				least = a;
+				greenest = at;
+			}
+			if (a > most) {
+				most = a;
+				brownest = at;
+			}
+			at++;
+		}
+	// Two-means over the chroma, started at the greenest and brownest pixels so the fit finds the
+	// two colours a crown shows rather than an even cut through one colour's spread.
+	let greenA = chroma[greenest * 2] as number;
+	let greenB = chroma[greenest * 2 + 1] as number;
+	let brownA = chroma[brownest * 2] as number;
+	let brownB = chroma[brownest * 2 + 1] as number;
+	const side = new Uint8Array(count);
+	for (let step = 0; step < 24; step++) {
+		let greenSumA = 0;
+		let greenSumB = 0;
+		let greenCount = 0;
+		let brownSumA = 0;
+		let brownSumB = 0;
+		let brownCount = 0;
+		for (let i = 0; i < count; i++) {
+			const a = chroma[i * 2] as number;
+			const b = chroma[i * 2 + 1] as number;
+			const green = (a - greenA) ** 2 + (b - greenB) ** 2;
+			const brown = (a - brownA) ** 2 + (b - brownB) ** 2;
+			if (green <= brown) {
+				side[i] = 0;
+				greenSumA += a;
+				greenSumB += b;
+				greenCount++;
+			} else {
+				side[i] = 1;
+				brownSumA += a;
+				brownSumB += b;
+				brownCount++;
+			}
+		}
+		const nextGreenA = greenCount > 0 ? greenSumA / greenCount : greenA;
+		const nextGreenB = greenCount > 0 ? greenSumB / greenCount : greenB;
+		const nextBrownA = brownCount > 0 ? brownSumA / brownCount : brownA;
+		const nextBrownB = brownCount > 0 ? brownSumB / brownCount : brownB;
+		const settled =
+			Math.abs(nextGreenA - greenA) < 1e-6 &&
+			Math.abs(nextGreenB - greenB) < 1e-6 &&
+			Math.abs(nextBrownA - brownA) < 1e-6 &&
+			Math.abs(nextBrownB - brownB) < 1e-6;
+		greenA = nextGreenA;
+		greenB = nextGreenB;
+		brownA = nextBrownA;
+		brownB = nextBrownB;
+		if (settled) break;
+	}
+	let greenPixels = 0;
+	for (let i = 0; i < count; i++) if (side[i] === 0) greenPixels++;
+	let brownPixels = count - greenPixels;
+	// Name the clusters by their colour, whatever order the fit settles them in.
+	if (greenA > brownA) {
+		[greenA, brownA] = [brownA, greenA];
+		[greenPixels, brownPixels] = [brownPixels, greenPixels];
+	}
+	// With one cluster, every plant pixel of the crown is one colour: all green reads as all
+	// foliage, and any other colour gives no share.
+	if (brownPixels === 0 || greenPixels === 0) {
+		let sumA = 0;
+		for (let i = 0; i < count; i++) sumA += chroma[i * 2] as number;
+		const meanA = sumA / count;
+		return meanA < LEAF_GREEN
+			? { share: 1, pixels: count }
+			: {
+					share: null,
+					pixels: count,
+					why: `the crown's colours do not part its foliage from its wood: its plant pixels read a* ${meanA.toFixed(1)}, not leaf green`,
+				};
+	}
+	if (greenA >= LEAF_GREEN)
+		return {
+			share: null,
+			pixels: count,
+			why: `the crown's colours do not part its foliage from its wood: its greener cluster reads a* ${greenA.toFixed(1)}, not leaf green`,
+		};
+	if (brownA < LEAF_GREEN) return { share: 1, pixels: count };
+	if (brownA - greenA < FOLIAGE_GAP)
+		return {
+			share: null,
+			pixels: count,
+			why: `the crown's colours do not part its foliage from its wood: its two clusters stand ${(brownA - greenA).toFixed(1)} apart in a*`,
+		};
+	return { share: Number((greenPixels / count).toFixed(4)), pixels: count };
+}
+
+/** The median of a list of numbers, or undefined for an empty list. */
+export function median(values: readonly number[]): number | undefined {
+	if (values.length === 0) return undefined;
+	const sorted = [...values].sort((a, b) => a - b);
+	const mid = sorted.length >> 1;
+	return sorted.length % 2
+		? sorted[mid]
+		: ((sorted[mid - 1] as number) + (sorted[mid] as number)) / 2;
+}
+
+/**
+ * The column of the plant's trunk at its base, or the box's middle when the base is cut off.
+ *
+ * A low limb that sweeps out near the foot merges with the trunk in a row's outer extent, so each
+ * row of the base band gives the run nearest the plant's middle column, and the median of those
+ * centres stands for the trunk. The lowest few rows of a broad crown are then outvoted.
+ */
+export function anchorColumn(mask: Uint8Array, width: number, height: number, box: Box): number {
+	if (box.bottom >= height - 1) return (box.left + box.right) / 2;
+	const middle = (box.left + box.right) / 2;
+	const band = Math.max(2, Math.round((box.bottom - box.top + 1) * 0.15));
+	const centres: number[] = [];
+	for (let y = box.bottom; y > box.bottom - band; y--) {
+		let best: number | null = null;
+		let runStart = -1;
+		for (let x = 0; x <= width; x++) {
+			const on = x < width && mask[y * width + x] === 1;
+			if (on && runStart < 0) runStart = x;
+			if (!on && runStart >= 0) {
+				const centre = (runStart + x - 1) / 2;
+				if (best === null || Math.abs(centre - middle) < Math.abs(best - middle)) best = centre;
+				runStart = -1;
+			}
+		}
+		if (best !== null) centres.push(best);
+	}
+	return median(centres) ?? (box.left + box.right) / 2;
+}
+
+/** The crown's covered area either side of the trunk's column, as shares of the whole crown. */
+export interface CrownBalance {
+	/** The share of the crown's covered pixels left of the trunk's column. */
+	readonly left: number;
+	/** The share right of it. */
+	readonly right: number;
+	/** The column, in work pixels, that the crown is split at. */
+	readonly column: number;
+}
+
+/**
+ * The crown's covered area either side of the trunk's column, as shares of the whole crown. The
+ * column is the trunk's at its base, so a crown that gathers its mass on one side reads unevenly
+ * even where its outline matches its reference's. A crown whose column falls outside its box splits
+ * at the box's edge, which is the plant's own answer.
+ */
+export function crownBalanceOf(plant: PlantMask, region: CrownRegion): CrownBalance | null {
+	const box = boxOf(plant.mask, plant.width, plant.height);
+	if (!box) return null;
+	const column = anchorColumn(plant.mask, plant.width, plant.height, box);
+	let left = 0;
+	let right = 0;
+	for (let y = region.top; y <= region.bottom; y++)
+		for (let x = region.left; x <= region.right; x++) {
+			if (!plant.mask[y * plant.width + x]) continue;
+			if (x < column) left++;
+			else right++;
+		}
+	const covered = left + right;
+	if (covered === 0) return null;
+	return {
+		left: Number((left / covered).toFixed(4)),
+		right: Number((right / covered).toFixed(4)),
+		column: Number(column.toFixed(2)),
 	};
 }
 
