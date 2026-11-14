@@ -277,7 +277,7 @@ const HELD: readonly Held[] = [
 		directed: hawthornShrubDirected,
 		heightMean: spreadMean(hawthornShrubDirected.size.height),
 		record: hawthornShrubRecord,
-		counts: { stem: 8, limb: [24, 32], side: [22, 32], shoot: [56, 104], twig: [1800, 2200] },
+		counts: { stem: 8, limb: [24, 32], side: [22, 32], shoot: [56, 104], twig: [1800, 2400] },
 		// Seven outer stems stand a seventh of a turn apart round the one at the middle.
 		round: { rule: 'stem', gap: 75, lean: 0.2 },
 		base: { limb: 0.7, side: 0.7, shoot: 0.7 },
