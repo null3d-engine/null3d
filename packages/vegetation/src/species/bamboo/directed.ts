@@ -15,6 +15,10 @@ import { record } from './record';
 
 const { forms: _forms, ...own } = record;
 
+/** The record's bark, whose culm zone the directed clump tints. */
+const bark = record.bark;
+if (!bark) throw new Error("@null3d/vegetation: the bamboo's record lost its bark");
+
 /** The record's leaf, which the directed clump keeps and marks narrow. */
 const leaf = record.foliage.kind === 'blade' ? record.foliage.leaf : undefined;
 if (!leaf) throw new Error("@null3d/vegetation: the bamboo's record lost its blade leaf");
@@ -73,6 +77,14 @@ export const directed: Species = {
 		sheaths: { upTo: 0.06 },
 	},
 	pieces: PIECES,
+	bark: {
+		...bark,
+		// The culm texture keeps picture 26, a close-up far greener than the plant's own culms (green
+		// pixels' means, sRGB): 15 97 / 116 / 46, 17 72 / 102 / 47, 07 86 / 113 / 50 and 01 77 / 94 /
+		// 36, a mean of 0.088 / 0.146 / 0.026 in linear light against the texture's 0.127 / 0.342 /
+		// 0.012. The tint takes the texture to that mean.
+		zones: bark.zones.map((zone) => ({ ...zone, tint: [0.69, 0.43, 2.2] as const })),
+	},
 	// The leaf is narrow, about a sixth as wide as long (picture 12: 216 of 1,328 px): a card at the low and
 	// medium tiers and a card folded at its midrib at the high and ultra tiers, so a clump of some
 	// three hundred branch pairs stays inside its near budget.
