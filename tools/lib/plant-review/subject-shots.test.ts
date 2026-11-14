@@ -695,10 +695,18 @@ describe("the view of the crown's outside", () => {
 		expect(checkShot(shot, WIDE).present).toBe(true);
 	});
 
-	test('gives no shot where the generator names no lobes', () => {
+	test('gives no shot where the generator names no lobes, and frames the crown edge where it names none', () => {
 		const solved = crownOutsideShot(tree({ lobes: absent('no bud sites') }), WIDE, { turn: 0 });
 		expect(solved).toEqual({ absent: 'no bud sites' });
-		expect(isAbsent(crownOutsideShot(tree({ lobes: [] }), WIDE, { turn: 0 }))).toBe(true);
+		// A crown that names no mass is framed on its own edge, as a willow's is, whose foliage hangs
+		// in strands along long whips and leaves no compact subtree for a lobe.
+		const shot = shotOf(crownOutsideShot(tree({ lobes: [] }), WIDE, { turn: 0 }));
+		expect(shot.kind).toBe("one foliage mass at the crown's edge, against the sky");
+		expect(checkShot(shot, WIDE).present).toBe(true);
+		// The mass stands in the crown's mid-band at its outer reach.
+		const lobe = shot.points.find((point) => point.name === 'the lobe');
+		expect(lobe?.at[1]).toBeCloseTo(5 + 11 * 0.45, 6);
+		expect(Math.hypot(lobe?.at[0] ?? 0, lobe?.at[2] ?? 0)).toBeCloseTo(8 * 0.9, 6);
 	});
 });
 
