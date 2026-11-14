@@ -235,7 +235,7 @@ export const directed: Species = {
 			// variants (kit 1.80 / 1.94 / 2.19 / 2.60 MB at low / medium / high / ultra), after the
 			// leaflets went to 102 a side, the fronds to 48 and the leaflet to 0.72 m, which took the
 			// crown's own sky at 01 from 0.45 to 0.33 against the photographs' 0.20. The other tiers
-			// stay at 2.5 MB and the palm class's cap at 4 MB.
+			// stay at 2.5 MB, under the palm class's cap.
 			kitBytes: { low: 2_500_000, medium: 2_500_000, high: 2_500_000, ultra: 2_733_000 },
 			variantBytes: { low: 1_600_000, medium: 1_600_000, high: 1_600_000, ultra: 1_600_000 },
 		},

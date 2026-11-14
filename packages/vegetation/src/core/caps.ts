@@ -113,7 +113,10 @@ export const MODEL_CAPS: Readonly<Record<CapClass, ModelCaps>> = {
 		growMilliseconds: 600,
 	},
 	palm: {
-		kitBytes: { low: 4 * MB, medium: 4 * MB, high: 4 * MB, ultra: 4 * MB },
+		// The owner raised the ultra cap so the bamboo's directed clump keeps its fuller fan: the clump
+		// measures 6.32 MB with the fan and 5.25 MB without it, against the 4 MB that held every tier.
+		// The other tiers stay at 4 MB. Only the owner raises this cap.
+		kitBytes: { low: 4 * MB, medium: 4 * MB, high: 4 * MB, ultra: 6.64 * MB },
 		// The date palm's crown at twenty-two fronds and a hundred and twenty leaflets a side
 		// measures 3.15 MB. A crown of thirty fronds and a hundred and seventy leaflets measures
 		// 5.29 MB and closes its whole-view sky gap only from 0.74 to 0.66, so the greater figure

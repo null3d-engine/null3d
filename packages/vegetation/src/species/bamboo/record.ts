@@ -287,7 +287,10 @@ export const record: Species = {
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
 		budget: {
-			kitBytes: { low: 2_500_000, medium: 2_500_000, high: 3_500_000, ultra: 3_800_000 },
+			// The ultra kit's own cap rises once, to its measure plus a twentieth, under the rule for a
+			// species switching onto the shared line: the directed clump's kit measures 6,320,036 bytes
+			// at seed 11, so the cap is 6,640,000. The other tiers stay at their measures.
+			kitBytes: { low: 2_500_000, medium: 2_500_000, high: 3_500_000, ultra: 6_640_000 },
 			variantBytes: { low: 2_200_000, medium: 2_200_000, high: 2_700_000, ultra: 2_900_000 },
 			lod0Triangles: 580_000,
 			lod1Triangles: 75_000,
