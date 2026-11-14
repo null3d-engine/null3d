@@ -443,8 +443,8 @@ export const record: Species = {
 			// The front face stands as the single-leaf stills measure it. The underside carries a fifth
 			// more red and two thirds more blue than the texture's means gave, and the light through
 			// carries a quarter more green than its mean. A crown draws a mixture of the three: the
-			// whole views read their foliage at 2.4, 0.7 and 2.8 steps from the photographs, and the
-			// two underside stills at 2.5 and 2.8.
+			// whole views read their foliage at 2.45, 0.67 and 2.80 steps from the photographs, and
+			// the two underside stills at 2.5 and 2.8.
 			optics: {
 				reflectance: [0.0303, 0.0651, 0.0093],
 				reflectanceBack: [0.194, 0.2558, 0.0965],
@@ -458,13 +458,17 @@ export const record: Species = {
 		// texture set carries the tone; this zone pulls its red and blue down, because the drawn
 		// bole stands warm of its photographs. Thin wood draws the young bark instead and keeps
 		// none of this tint.
+		// Row 8's shared-light limit: still 14's foot draws its wood at 22.7 1.8 4.8 against the
+		// photograph's 31.7 3.0 8.8, about nine L darker, 7.47 steps. The bark-base camera and the
+		// foot's plant are right, and the light path is shared by every species, so the row records
+		// the limit rather than warming this bark away from its other four stills.
 		zones: [{ layer: 0, by: 'height', from: 0, to: 40, blend: 0, tint: [0.89, 1, 0.97] }],
 		young: 0,
 		// Stills 16 and 28: the plates give way to smooth purplish bark with pale orange lenticels on
 		// wood thinner than about seven centimetres across, which is how the limb of still 16 reads.
 		// Row 8's reference conflict: 16's shaded limb measures b* 5.3 and 28's flat young bark b*
 		// 13.9, a gap of 8.6, so one young bark cannot sit within 3 steps of both. The untinted
-		// texture source's own colour reads 28 at 3.00 and 16 at 3.77; a tint that takes 16 to 3.17
+		// texture source's own colour reads 28 at 2.98 and 16 at 3.77; a tint that takes 16 to 3.17
 		// takes 28 to 3.90. The material keeps the texture source's colour, and 16 is the conflict.
 		youngRadius: 0.075,
 		// Still 15: the plates stand wider on the thick bole than on the limbs below it.
