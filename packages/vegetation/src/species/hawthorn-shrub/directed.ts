@@ -160,8 +160,8 @@ export const frame: FrameSpec = {
 	},
 };
 
-/** The old grower's shoot tips over the frame's sockets at seed 11: 3,762 over 2,175. */
-const TIP_SHARE = 1.73;
+/** The old grower's shoot tips over the frame's sockets at seed 11: 3,762 over 2,425. */
+const TIP_SHARE = 1.55;
 
 /**
  * The hawthorn's record with the frame as its growth and the branch end of still 21 at each socket,
@@ -183,11 +183,16 @@ export const directed = {
 		PIECE_LEAF,
 	),
 	// At a card level a haw or a blossom spans a few pixels, where its mesh costs thousands of
-	// triangles the leaf form alone can afford; the card levels leave the extras out.
-	lod: { ...record.lod, extrasFrom: 1 as const },
+	// triangles the leaf form alone can afford; the card levels leave the extras out. The mound of
+	// pieces also leaves its card levels more sky than its leaf form shows: read over the crown's
+	// outline at the medium tier, the first card level stands at 0.168 of sky against the leaf
+	// form's 0.124. A card grows about its middle inside the leaf form's hull to recover the cover
+	// the dropped fine wood made, which brings the first level to 0.124 and the second to 0.121,
+	// inside the review's band.
+	lod: { ...record.lod, extrasFrom: 1 as const, cardGrow: 1.12 },
 	pieces: PIECES.filter((piece) => piece.name === 'branch-end'),
 	// The record's haws and blossom stand at a share of the shoot tips, and the old grower's shrub
-	// has 3,762 of them at seed 11, where the frame has a socket for each of about 2,200 branch
+	// has 3,762 of them at seed 11, where the frame has a socket for each of about 2,425 branch
 	// ends; each share is raised to keep the record's own totals until a count from a picture
 	// exists. Each branch end draws its own thorns, so the record's thorns at the nodes are left
 	// out.
