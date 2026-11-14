@@ -57,6 +57,7 @@ export type {
 	Conifer,
 	CrownRosette,
 	Culm,
+	CulmClump,
 	CutFromPlant,
 	CutFromShoots,
 	CutLeaf,

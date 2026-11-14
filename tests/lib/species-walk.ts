@@ -67,7 +67,6 @@ export function sliceOf(all: readonly Walked[], index: number, count: number): r
  * is mended.
  */
 const NEAR_OVER: Readonly<Record<string, number>> = {
-	bamboo: 2_522_635,
 	'common-alder': 24_439_959,
 	'european-beech': 15_687_335,
 	'giant-sequoia': 53_398_951,

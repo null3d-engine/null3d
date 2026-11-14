@@ -212,6 +212,7 @@ export type Growth =
 	| CrownRosette
 	| FrondCrown
 	| Culm
+	| CulmClump
 	| Rosette
 	| FrondColony
 	| Tuft
@@ -1199,6 +1200,64 @@ export interface Culm {
 	readonly sheaths: { readonly upTo: number; readonly length: number };
 	/** Degrees the culm arches over its height. */
 	readonly arch: Spread;
+}
+
+/**
+ * A clump of jointed culms on the directed design: bamboo. Each culm is one axis whose nodes are
+ * its joints; every joint above the branching height holds a socket that carries a branch pair from
+ * the species' pieces, and each tip holds one more. Lengths are metres and shares of the plant's
+ * height, as each field says.
+ *
+ * @category api/vegetation
+ */
+export interface CulmClump {
+	/** The model's name. */
+	readonly model: 'culm-clump';
+	/** Culms per plant. */
+	readonly culms: Spread;
+	/** The radius of the circle the culms' feet stand in, in metres. */
+	readonly foot: number;
+	/** The plume's depth over its width: a culm leans out less toward the narrow side. */
+	readonly depth: number;
+	/** A thick culm's height over the plant's height: its least and its most. */
+	readonly height: readonly [number, number];
+	/** A thick culm's diameter at its foot, in metres. */
+	readonly diameter: Spread;
+	/**
+	 * The thin culms, most of them at the clump's rim: their share of the culms, their height over
+	 * the plant's, their diameter over a thick culm's, and their pieces' size over the record's.
+	 */
+	readonly thin: {
+		readonly share: number;
+		readonly height: readonly [number, number];
+		readonly diameter: number;
+		readonly scale: number;
+	};
+	/** The length of a culm's joints in its own diameters, by height up the culm (t = share of it). */
+	readonly joints: Curve;
+	/** The raised ring at each joint, in metres over the culm's surface. */
+	readonly ridge: number;
+	/**
+	 * Degrees a culm at the clump's rim leans out at its foot and at its tip; a culm nearer the middle
+	 * leans by its distance out.
+	 */
+	readonly lean: { readonly foot: number; readonly tip: number };
+	/** The branch pairs, one a joint above the branching height. */
+	readonly branches: {
+		/** The lowest branching joint as a share of the culm's height, at the rim and in the middle. */
+		readonly from: { readonly rim: number; readonly centre: number };
+		/** Degrees a pair's first branch leaves above level, on a plumb culm. */
+		readonly leave: Spread;
+		/**
+		 * The pieces up the branching zone, each from its share of the zone (t = 0 at its lowest
+		 * joint, 1 at the tip); the first starts at 0.
+		 */
+		readonly pieces: readonly { readonly from: number; readonly piece: string }[];
+	};
+	/** The piece at each culm's tip, where it carries one. */
+	readonly tip?: string;
+	/** Dormant buds that carry the culm sheaths at the joints below this share of a culm's height. */
+	readonly sheaths?: { readonly upTo: number };
 }
 
 /**

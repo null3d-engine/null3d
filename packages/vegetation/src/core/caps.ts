@@ -176,6 +176,7 @@ export const MODEL_CLASS: Readonly<Record<GrowthModel, CapClass>> = {
 	'crown-rosette': 'palm',
 	'frond-crown': 'palm',
 	culm: 'palm',
+	'culm-clump': 'palm',
 	rosette: 'ground',
 	'frond-colony': 'ground',
 	tuft: 'ground',
