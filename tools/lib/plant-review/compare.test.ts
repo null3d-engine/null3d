@@ -37,6 +37,7 @@ import {
 	normalise,
 	patchDifference,
 	patchLab,
+	patchWoodLab,
 	plainTurnOf,
 	plantRows,
 	profileError,
@@ -48,6 +49,7 @@ import {
 } from './compare.ts';
 import { blank, deltaE2000, labImage } from './image.ts';
 import { boxOf, matteMask, type PlantMask, type PlantMeasures, pieceCount } from './references.ts';
+import { PART } from './subject-check.ts';
 
 /** A plant mask of a rectangle crown on a one-pixel trunk, with the background fields filled in. */
 function rectangle(
@@ -536,6 +538,41 @@ describe('the patch colour of a texture source', () => {
 		const render = barkOn(0);
 		expect(patchDifference(reference, render, true)).toBeLessThan(0.5);
 		expect(patchDifference(reference, render, false)).toBeGreaterThan(10);
+	});
+
+	test('reads a bark view on its own wood, not the corners the backdrop misses', () => {
+		// A young limb across the middle of the frame touches both side corners, so the corner rule
+		// keeps the sky above and the ground below. The parts picture names the limb's wood and its
+		// radius, and the wood read is the limb's own dark brown.
+		const size = 1000;
+		const data = new Uint8Array(size * size * 4);
+		const kind = new Uint8Array(size * size);
+		const radius = new Float32Array(size * size);
+		for (let y = 0; y < size; y++)
+			for (let x = 0; x < size; x++) {
+				const at = (y * size + x) * 4;
+				const limb = y >= 350 && y < 650;
+				const trunk = y >= 800;
+				if (limb) {
+					kind[y * size + x] = PART.wood;
+					radius[y * size + x] = 0.02;
+					data.set([90, 70, 60, 255], at);
+				} else if (trunk) {
+					kind[y * size + x] = PART.wood;
+					radius[y * size + x] = 0.3;
+					data.set([70, 60, 55, 255], at);
+				} else {
+					data.set(y < 350 ? [200, 220, 240, 255] : [110, 120, 80, 255], at);
+				}
+			}
+		const image = { width: size, height: size, data };
+		const parts = { kind, radius, width: size, height: size };
+		const wood = patchWoodLab(image, parts, 0.015, 0.03) as number[];
+		expect(wood[0] as number).toBeLessThan(40);
+		expect(patchLab(image, true)[0] as number).toBeGreaterThan(45);
+		// The trunk's radius is outside the limb's window, and no wood of that thickness gives none.
+		expect(patchWoodLab(image, parts, 0.9, 1.2)).toBeUndefined();
+		expect(patchWoodLab(image, undefined, 0, 1)).toBeUndefined();
 	});
 
 	test('reads the bark alone across a limb picture that carries leaves', () => {
