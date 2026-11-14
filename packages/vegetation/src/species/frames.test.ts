@@ -276,8 +276,10 @@ const HELD: readonly Held[] = [
 		// same wood stands nearer together there.
 		through: 3,
 		crossings: [11, 0],
-		// Every twig that clothes a clump is an axis that ends in a socket.
-		axesPerSocket: 1.08,
+		// Every twig that clothes a clump is an axis that ends in a socket. Raised from 1.08 with the
+		// sockets standing a quarter further apart over each clump's surface, so the same fine wood
+		// carries fewer of them.
+		axesPerSocket: 1.124,
 		fine: ['twig'],
 		tall: [0.97, 1.06],
 	},
