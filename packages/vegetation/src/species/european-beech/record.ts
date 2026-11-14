@@ -161,7 +161,10 @@ export const record: Species = {
 		],
 		// Stills 21 and 22: a cut twig forks at last year's joint into two long laterals, so the piece
 		// ends in three leafy sprays on a bare lower stem. The crown cannot carry twigs this bare, so
-		// the cuttings draw a class the crown never does. Its two prototypes differ in how widely they
+		// the cuttings draw a class the crown never does. The cluster's own class is cut-only, so a
+		// cutting kit holds it and the plant's kit leaves it out; the branch and sub-branch draw the
+		// cut class from the plant's kit, whose piece their photographs show, since the cutting kit's
+		// own seed draws that twig too open for them. Its two prototypes differ in how widely they
 		// spread, so the branch takes the wide piece and the sub-branch the tall one.
 		cuttingClasses: [
 			{
@@ -195,8 +198,10 @@ export const record: Species = {
 			},
 			{
 				// Stills 11 and 23: the cluster's own one-year spray, drawn only by the cluster cutting,
-				// with the crowding that stands its runs as plates. The crown never draws this class.
+				// with the crowding that stands its runs as plates. The crown never draws this class. It
+				// is cut-only, so a cutting kit holds it and the plant's kit leaves it out.
 				name: 'spur',
+				cutOnly: true,
 				vigor: [0, 1],
 				share: 0,
 				years: 1,
