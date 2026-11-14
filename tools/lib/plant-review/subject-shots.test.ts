@@ -878,6 +878,30 @@ describe('the bark views', () => {
 		}
 	});
 
+	test('the frame follows the flared foot, so the ground beside it stays in the picture', () => {
+		const trunk = trunkOf(14, 0.35, 5);
+		const base = {
+			flare: { amount: 0.4, height: 0.6 },
+			buttress: {
+				lobes: { mean: 5, spread: 1 },
+				amount: 0.45,
+				sharpness: 2.5,
+				height: 0.55,
+			},
+		};
+		const shot = shotOf(barkBaseShot(tree({ trunk }), WIDE, { turn: 0, base }));
+		const foot = 0.35 * (1 + 0.4 + 0.45);
+		// The foot's swell, not the pipe above it, fills the share the view asks for.
+		expect(shot.facts.radius as number).toBeCloseTo(foot, 6);
+		expect(shareOfWidth(shot, WIDE, [0, 0, 0], 2 * foot)).toBeCloseTo(0.5, 6);
+		// The flare's edge stands right of the left tenth, where the ground is read.
+		expect(0.5 - shareOfWidth(shot, WIDE, [0, 0, 0], foot)).toBeGreaterThan(0.1);
+		expect(checkShot(shot, WIDE).present).toBe(true);
+		// The same plant with no stated base keeps the pipe's own frame.
+		const pipe = shotOf(barkBaseShot(tree({ trunk }), WIDE, { turn: 0 }));
+		expect(shot.facts.frame as number).toBeCloseTo((pipe.facts.frame as number) * 1.85, 6);
+	});
+
 	test('the mid-trunk frame narrows to the bark a thin trunk has', () => {
 		const thin = tree({ trunk: trunkOf(10, 0.12, 5) });
 		const lens = { fov: 40, aspect: 1 };
