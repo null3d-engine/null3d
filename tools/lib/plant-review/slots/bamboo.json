@@ -35,7 +35,10 @@
 		"daylight": 1.8
 	},
 	"08-culm-branching.png": {
-		"lod": 0
+		"lod": 0,
+		"piece": "pair-full",
+		"span": 0.4,
+		"along": 0.02
 	},
 	"10-fine-branchlets.png": {
 		"lod": 0
@@ -73,7 +76,10 @@
 	},
 	"09-secondary-branching.png": {},
 	"11-leaf-spray.png": {},
-	"21-branch-studio.png": {},
+	"21-branch-studio.png": {
+		"piece": "pair-full",
+		"alone": true
+	},
 	"22-subbranch-studio.png": {},
 	"23-leaf-cluster-studio.png": {},
 	"leaf-cluster-turntable.mp4": {
