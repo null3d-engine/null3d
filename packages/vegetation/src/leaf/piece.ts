@@ -377,6 +377,13 @@ export interface PieceRule {
 	 */
 	readonly brushHidesStems?: boolean;
 	/**
+	 * The macro order of stems a brush piece keeps whole, so a card that stands for a subtree hangs
+	 * from the stem it grows on. Stems of that order or lower keep their wood to their tips, and the
+	 * stems below it end where their leaves hide them. Absent, every hidden stem that reaches its tip
+	 * ends.
+	 */
+	readonly brushStemKeep?: number;
+	/**
 	 * Whether each side stem of the main stem draws as one brush card of its whole subtree, its own
 	 * side stems' leaves included, so a branchlet hung with sprays draws as one card of its whole
 	 * tassel. Absent, each stem draws its own runs.
@@ -1245,6 +1252,20 @@ export function splitPlan(
 }
 
 /**
+ * A brush piece's cuts, keeping whole the stems of the orders it names: a card that stands for a
+ * subtree hangs from its own stem, while the stems below end where their leaves hide them.
+ */
+function stemCuts(
+	cuts: Readonly<Record<Detail, ShootCut>>,
+	keep: number | undefined,
+): Readonly<Record<Detail, ShootCut>> {
+	if (keep === undefined) return cuts;
+	const out = {} as Record<Detail, ShootCut>;
+	for (const detail of DETAILS) out[detail] = { ...cuts[detail], endHiddenFrom: keep + 1 };
+	return out;
+}
+
+/**
  * Builds a species' pieces, each variant at every detail tier, from its leaf meshes. A variant too
  * large for one prototype comes as several parts, unless its brush cards draw its leaves at every
  * tier.
@@ -1323,11 +1344,14 @@ export function piecePrototypes(
 					...meshedPlan(
 						plan,
 						own,
-						!rule.brushCards || !rule.brushHidesStems
-							? PIECE_CUTS
-							: rule.brushFinest
-								? BRUSH_STEM_CUTS_ALL
-								: BRUSH_STEM_CUTS,
+						stemCuts(
+							!rule.brushCards || !rule.brushHidesStems
+								? PIECE_CUTS
+								: rule.brushFinest
+									? BRUSH_STEM_CUTS_ALL
+									: BRUSH_STEM_CUTS,
+							rule.brushStemKeep,
+						),
 						woodTiers,
 					),
 					...(brushes ? { brushes } : {}),

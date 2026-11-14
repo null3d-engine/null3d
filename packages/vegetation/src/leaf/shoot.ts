@@ -191,6 +191,12 @@ export interface ShootCut {
 	 */
 	readonly endHidden?: boolean;
 	/**
+	 * The order from which `endHidden` ends a stem. A stem of a lower order keeps its wood to its tip,
+	 * so a card that stands for a whole subtree hangs from the stem it grows on. Absent, every hidden
+	 * stem that reaches its tip ends.
+	 */
+	readonly endHiddenFrom?: number;
+	/**
 	 * Whether a tube of few sides stands wider than its stem's radius, so its outline is as wide as
 	 * the round stem's when averaged over a turn: a three-sided tube on the radius reads a sixth thin.
 	 */
@@ -1445,14 +1451,21 @@ export function meshShoot(
 	// A regular polygon on a radius is, averaged over a turn, as wide as a circle that much smaller.
 	const widen = cut.meanWidth ? PI / (sides * sin(PI / sides)) : 1;
 	const hidden = cut.thinHidden || cut.endHidden ? hiddenRuns(plan) : undefined;
+	// A stem's own order under the piece's main stem, where a cut keeps the lower orders whole.
+	const parents = cut.endHiddenFrom === undefined ? undefined : stemParents(plan);
 	plan.axes.forEach((points, axis) => {
 		const runs = hidden?.[axis] ?? [];
 		// Where the stem's leaves hide it to its tip and a card stands for them, the stem ends where
-		// the hiding begins.
+		// the hiding begins, unless its order is one the cut keeps whole.
 		const tip = (points[points.length - 1] as AxisPoint | undefined)?.along ?? 0;
 		const tipRun = runs[runs.length - 1];
+		let order = 0;
+		if (parents) for (let a = axis; (parents[a] as number) >= 0; a = parents[a] as number) order++;
 		const stop =
-			cut.endHidden && tipRun && tipRun[1] >= tip - HIDDEN_TIP
+			cut.endHidden &&
+			(cut.endHiddenFrom === undefined || order >= cut.endHiddenFrom) &&
+			tipRun &&
+			tipRun[1] >= tip - HIDDEN_TIP
 				? tipRun[0]
 				: Number.POSITIVE_INFINITY;
 		/** Whether the stem between two places along the shoot lies inside one hidden run. */

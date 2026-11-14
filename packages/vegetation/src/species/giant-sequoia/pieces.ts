@@ -108,9 +108,11 @@ export const PIECES: readonly PieceRule[] = [
 		// Each variant takes cells of the card atlas for its card and its tassels' pictures.
 		variants: 1,
 		// A cord's scales close round it, so below the finest tier each cord draws as a card of its
-		// own picture, and the stem it hides draws no wood there.
+		// own picture. A stem's wood ends where its leaves hide it, save at the branchlets, whose wood
+		// runs to its tip so each tassel card hangs from its own branchlet.
 		brushCards: true,
 		brushHidesStems: true,
+		brushStemKeep: 1,
 		// Each branchlet draws as one card of its whole tassel, its sprays included.
 		brushSubtrees: true,
 		// A bough holds tens of thousands of scales, too many to draw one by one within the kit's cap
