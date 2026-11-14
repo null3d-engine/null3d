@@ -41,9 +41,15 @@
 		"barkZone": 0,
 		"daylight": 0.9
 	},
+	"14-bark-base.png": {
+		"daylight": 0.78
+	},
+	"16-bark-on-limb.png": {
+		"daylight": 0.86
+	},
 	"28-young-bark.png": {
 		"thin": 0.03,
-		"daylight": 0.6
+		"daylight": 1.2
 	},
 	"15-bark-mid-trunk.png": {
 		"daylight": 0.95
