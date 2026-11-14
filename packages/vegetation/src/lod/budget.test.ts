@@ -60,7 +60,12 @@ const LEVELS = [0, 0.5, 1] as const;
 const FLOORS: readonly (readonly [woody: number, ground: number])[] = [
 	[0.95, 0.97],
 	[0.95, 0.97],
-	[0.73, 0.84],
+	// The 50,000 maximum's woody floor is the rebuilt silver birch's: 0.715 at sparseness 0.5, less
+	// the margin. Its crown there covers 0.069 of the matte and its cap 0.067, the two outlines
+	// sitting on each other in the round's overlay, birch-cap-50000-sparse05.png, so the shortfall is
+	// speckle across the crown and no lost edge. The row was measured before the birch was rebuilt
+	// whole as a spray of strands at every socket.
+	[0.685, 0.84],
 	[0.5, 0.53],
 	[0.3, 0.39],
 	[0.26, 0.21],
