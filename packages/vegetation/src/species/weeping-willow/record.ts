@@ -414,13 +414,15 @@ export const record: Species = {
 			twist: 7,
 			wave: [0, 0],
 			optics: {
-				reflectance: [0.1, 0.22, 0.012],
-				// The crown draws a mixture of the three faces. Its whole views stand too green and
-				// too yellow against their photographs, so the back face and the light through the
-				// leaf carry the photograph-to-render ratio per channel: a tenth more red, a little
-				// more green and a third more blue. The front face keeps its measured values.
-				reflectanceBack: [0.228, 0.298, 0.158],
-				transmittance: [0.091, 0.186, 0.026],
+				// The texture's own upper and underside read within three colour steps of their
+				// photographs, but the drawn single leaf and cluster stand about seven steps off and
+				// short of blue: the front face under the leaf's blue, the underside short of red,
+				// green and blue alike. These faces carry the photograph-to-drawn-leaf ratio per
+				// channel in linear light, about a fifth more red and green and four fifths more blue
+				// on the underside, and more blue on the front.
+				reflectance: [0.1, 0.22, 0.022],
+				reflectanceBack: [0.265, 0.337, 0.23],
+				transmittance: [0.1, 0.2, 0.04],
 				roughness: [0.45, 0.6],
 			},
 		},
@@ -428,12 +430,13 @@ export const record: Species = {
 	bark: {
 		// Stills 14, 15 and 16: the foot, the mid-trunk and the great limbs draw under different light
 		// and read apart, so each takes its own tint of the one trunk layer. The foot stands too light
-		// and too yellow at the base picture, so it darkens and loses some yellow; the mid trunk and
-		// the limbs keep the measured colour until their own figures ask otherwise.
+		// and too yellow at the base picture, so it darkens and loses some yellow. The limb's bark
+		// reads far darker and yellower than its picture, so the upper zone lightens and takes back
+		// the blue the yellow tint took.
 		zones: [
 			{ layer: 0, by: 'height', from: 0, to: 1, blend: 0.25, tint: [0.75, 0.72, 0.62] },
 			{ layer: 0, by: 'height', from: 1, to: 1.9, blend: 0.3, tint: [1, 1, 1] },
-			{ layer: 0, by: 'height', from: 1.9, to: 40, blend: 0.5, tint: [1.15, 1.05, 0.18] },
+			{ layer: 0, by: 'height', from: 1.9, to: 40, blend: 0.5, tint: [1.4, 1.3, 0.55] },
 		],
 		young: 0,
 		// Still 16: the deep ridges fade to smooth grey-green bark on wood thinner than about six
@@ -516,8 +519,9 @@ export const record: Species = {
 		// carry only the shoots a walk up to the curtain needs.
 		switchPixels: [500, 12, 160],
 		// Stills 01 and 02: a card's twig is thinner than a pixel at a whole view, so each draws its
-		// supporting twig as a line and the join shows.
-		cardStalk: 4,
+		// supporting twig as a line and the join shows. The line stays two pixels wide: a wider one
+		// closes the hanging curtain into vertical bars at a whole view.
+		cardStalk: 2,
 		// A hanging shoot's card stands its whole length ahead of the row that draws it, so the
 		// stalk runs on to the card's centre and the curtain meets the wood it grows from.
 		cardStalkToFoliage: true,
