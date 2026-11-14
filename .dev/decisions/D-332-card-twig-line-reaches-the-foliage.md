@@ -105,6 +105,12 @@ and every judged picture.
 - `packages/vegetation/src/lod/cards.test.ts` holds that a record with no stalk draws none, and that
   one that asks draws one quad a card, whose second coordinate holds the twig's radius only where
   the record names the marker. `records.test.ts` holds the header's width and marker.
+- A named limit at the sedge's picture 02, first card level: with the line running to
+  the card plane's centre, five of seven floating spike groups join their stems, and two stay apart.
+  Their boxes are 9 by 43 pixels at 192,195 (251 pixels) and 8 by 37 at 591,230 (194). A sparse card
+  can have empty texels at its plane centre, so the line ends where the card draws nothing and the
+  join relies on the card's own pixels reaching that point. A line that ends at the nearest drawn
+  texel is a new rule, not taken.
 - A stated fault remains at the whole view's scale. The line joined the first wave: the beech's whole
   views fell from 8, 5 and 10 pieces to 2, 3 and 3. Edge density then took the silhouette from 9 to 7
   and the default view to 1. The rest are the card tips' own outer leaves, standing 2 to 8 pixels
