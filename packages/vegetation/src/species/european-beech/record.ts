@@ -506,6 +506,11 @@ export const record: Species = {
 		// 1.4 m ahead of the row, where the stretch behind the row cannot reach it.
 		cardStalk: 2,
 		cardStalkToFoliage: true,
+		// The crown's card levels stand more open than its leaf form: read over the crown's outline at
+		// the medium tier, the first reads 0.2525 and the second 0.2986 of sky against the leaf
+		// form's 0.2323. A card grows about its middle inside the leaf form's hull, which brings the
+		// first to 0.2195 and the second to 0.2491, inside the review's band.
+		cardGrow: 1.1,
 		woodOrders: [2, 1],
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,

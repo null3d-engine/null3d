@@ -450,11 +450,11 @@ export const record: Species = {
 		// not: the least keeps the crown's mass.
 		cardStalk: 5,
 		// Still 01: the crown's box shows 0.45 of sky in the photograph and 0.69 at the first card
-		// level, whose weeping shoots stand open. At the medium tier the card levels read 0.0955 and
-		// 0.1113 more sky than the leaf form; 1.25 brings them to 0.0147 and 0.0190, where each card
-		// pictures its shoot. Larger values draw the second level outside the leaf form's outline:
-		// 0.0328 at 1.3 against the 0.03 the card test allows.
-		cardGrow: 1.25,
+		// level, whose weeping shoots stand open. At the medium tier 1.12 brings the card levels to
+		// 0.0251 and 0.0140 more sky than the leaf form, where each card pictures its shoot, and
+		// keeps the second level 0.0294 outside the leaf form's outline against the 0.03 allowed;
+		// 1.15 there stands 0.0312 outside.
+		cardGrow: 1.12,
 		cardStalkWidth: true,
 		woodOrders: [2, 1],
 		impostor: { views: 8, texels: 64 },

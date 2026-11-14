@@ -1483,7 +1483,7 @@ export function crownOutsideShot(
 				min: CROWN_LEAST_WOOD,
 				max: 0.4,
 				of: 'wood',
-				...(carried === undefined && { report: true }),
+				...(lobe.limb === undefined && { report: true }),
 			},
 			{ name: "the sky at the lobe's left", box: [0, 0.15, 0.12, 0.85], max: CROWN_SIDE_MOST },
 			{ name: "the sky at the lobe's right", box: [0.88, 0.15, 1, 0.85], max: CROWN_SIDE_MOST },
