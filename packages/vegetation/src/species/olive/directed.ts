@@ -207,6 +207,15 @@ export const directed = {
 		// The frame's trunk already widens to still 01's foot, so the stem base adds no flare of its
 		// own and keeps still 14's lobes and roots.
 		flare: { amount: 0, height: 0.25 },
+		// The frame's trunk also widens toward the ground, so the lobes swell less than the record's
+		// and its roots run lower and shorter: still 01's foot is 0.6 of the height across at 0.03 of
+		// it, half at 0.06, 0.37 at 0.1 and 0.32 at 0.15, and its roots lie low as they spread.
+		buttress: record.base?.buttress && { ...record.base.buttress, amount: 0.3 },
+		roots: record.base?.roots && {
+			...record.base.roots,
+			radius: 0.2,
+			length: { mean: 1, spread: 0.3 },
+		},
 		// Still 01: the bole is six columns that wind about half a turn from the ground to the fork, at
 		// 0.49 of the height, with grooves between them 0.4 of a column deep.
 		flutes: { count: { mean: 6, spread: 0 }, depth: 0.25, height: 3.4, twist: 0.4, hold: 0.8 },
