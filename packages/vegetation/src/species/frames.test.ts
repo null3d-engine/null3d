@@ -345,14 +345,16 @@ const HELD: readonly Held[] = [
 		directed: oliveDirected,
 		heightMean: spreadMean(oliveDirected.size.height),
 		record: oliveRecord,
-		counts: { trunk: 1, outer: 4, centre: 2, branch: 18, spray: 54 },
+		counts: { trunk: 1, outer: 4, centre: 2, branch: 18, spray: 72, twig: [1600, 2000] },
 		// Four outer limbs leave a quarter of a turn apart; each one's end wanders with its elbows.
 		round: { rule: 'outer', gap: 140, lean: 0.3 },
 		base: { outer: 0.34, centre: 0.55, branch: 0.6, spray: 0.6 },
 		plumb: ['trunk'],
-		through: 5,
+		through: 4,
 		crossings: [5, 1],
-		axesPerSocket: 1.463,
+		// Every twig that clothes a mass is an axis that ends in a socket.
+		axesPerSocket: 1.013,
+		fine: ['twig'],
 		tall: [0.93, 1.05],
 		open: ['spread'],
 	},
@@ -910,7 +912,7 @@ for (const held of HELD)
  * frame. A merge can take another line's entry, which gives the record the old grower grows, so
  * this list changes in the same commit as an entry does.
  */
-const REGISTERED_FRAMES = ['pedunculate-oak', 'silver-birch'] as const;
+const REGISTERED_FRAMES = ['pedunculate-oak', 'silver-birch', 'olive'] as const;
 
 describe('a species entry that gives its frame', () => {
 	for (const id of REGISTERED_FRAMES)
