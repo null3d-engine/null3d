@@ -33,7 +33,7 @@ const STALK_PLANE = 0.75;
  * metre between a card and its wood shows, so a card joins only where its foot stands on drawn wood;
  * at the second, past a hundred metres, a few metres span a few pixels.
  */
-const SEED_REACH = [0.4, 2.5] as const;
+export const SEED_REACH = [0.4, 2.5] as const;
 
 /** Metres between two cards' feet within which one joins the other's clump, at each card level. */
 const CARD_REACH = [0.4, 2] as const;

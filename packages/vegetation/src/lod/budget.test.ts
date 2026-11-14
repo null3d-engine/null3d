@@ -18,6 +18,7 @@ import {
 } from '../generate';
 import { bodyFill } from './body.test-support';
 import { partTotal } from './budget';
+import { SEED_REACH } from './cards';
 import { outlineMatte, outlineOverlap } from './outline.test-support';
 
 /** A species grows once and is cut and capped many times; a busy machine takes tens of seconds. */
@@ -51,8 +52,17 @@ const FLOORS: readonly (readonly [woody: number, ground: number])[] = [
 	[0.09, 0],
 ];
 
-/** The side of the cells a level's triangles are read in, in metres, to see whether it is one body. */
+/** The side of the wood's cells, in metres, to see whether the level's wood is one body. */
 const BODY_CELL = 0.4;
+
+/**
+ * The distance in metres from a card's point to a joined point within which the card's level holds
+ * it, so a card the join holds does not read as free. Wood keeps the finer cell, since a gap between
+ * wood pieces of the join's reach shows at every distance.
+ */
+function cardReach(level: 0 | 1 | 2): number {
+	return level === 0 ? BODY_CELL : (SEED_REACH[level - 1] as number);
+}
 
 /** The triangles of a level's parts of one name. */
 function trianglesOf(asset: PlantAsset, level: 0 | 1 | 2, name: string): number {
@@ -110,14 +120,16 @@ for (const id of SPECIES) {
 						fullParts === fullCount,
 						`${id} sparse ${sparse} none: parts ${fullParts} against the levels' ${fullCount}`,
 					);
-					// The best look is one body too.
+					// The best look is one body too: its wood within the fine cell, and its cards within
+					// the reach that the level's own join allows.
 					for (const level of [1, 2] as const) {
 						const parts = full.stats.parts[level];
 						if (parts.trunk === 0) continue;
-						const body = bodyFill(kit, full, level, BODY_CELL, false, ['cards']);
+						const wood = bodyFill(kit, full, level, BODY_CELL, false, []);
+						const cards = bodyFill(kit, full, level, BODY_CELL, false, ['cards'], cardReach(level));
 						check(
-							body.freeWood === 0 && body.freeLeaves === 0,
-							`${id} sparse ${sparse} none level ${level}: ${body.freeWood} free wood, ${body.freeLeaves} free leaves`,
+							wood.freeWood === 0 && cards.freeLeaves === 0,
+							`${id} sparse ${sparse} none level ${level}: ${wood.freeWood} free wood, ${cards.freeLeaves} free leaves`,
 						);
 					}
 					for (const max of MAXIMA) {
@@ -158,13 +170,23 @@ for (const id of SPECIES) {
 							const joins = plant.stats.clusters?.[level];
 							if (parts.trunk > 0)
 								check(joins?.free === 0, `${at} level ${level}: ${joins?.free} free clusters`);
-							// The level's own triangles show it: a fill from the trunk's foot through cells
-							// of 0.4 m reaches every piece of wood and every card.
+							// The level's own meshes show it: a fill from the trunk's foot reaches every
+							// piece of wood in the fine cell, and every card within the level's own join
+							// reach.
 							if (joins && joins.clusters > 0 && parts.trunk > 0) {
-								const body = bodyFill(kit, plant, level, BODY_CELL, false, ['cards']);
+								const wood = bodyFill(kit, plant, level, BODY_CELL, false, []);
+								const cards = bodyFill(
+									kit,
+									plant,
+									level,
+									BODY_CELL,
+									false,
+									['cards'],
+									cardReach(level),
+								);
 								check(
-									body.freeWood === 0 && body.freeLeaves === 0,
-									`${at} level ${level}: ${body.freeWood} free wood, ${body.freeLeaves} free leaves`,
+									wood.freeWood === 0 && cards.freeLeaves === 0,
+									`${at} level ${level}: ${wood.freeWood} free wood, ${cards.freeLeaves} free leaves`,
 								);
 							}
 						}
