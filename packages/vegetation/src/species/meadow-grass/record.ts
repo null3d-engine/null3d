@@ -167,9 +167,11 @@ export const record: Species = {
 		// it at every tier; a tree leaf's 64 would hold four times the texels for no pixel more.
 		cardCell: { low: 32, medium: 32, high: 32, ultra: 32 },
 		// A flowering stem is thinner than a pixel at the card level, so its card loses its cover
-		// and the panicle on it reads as a piece in air; a card's twig line at the stem's own width
-		// keeps the panicle on its stem.
+		// and the panicle on it reads as a piece in air; a card's twig line keeps the panicle on its
+		// stem, and the marker draws that line at the stem's own width, floored at the least the
+		// wood draws.
 		cardStalk: 1,
+		cardStalkWidth: true,
 		woodOrders: [0, 0],
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
