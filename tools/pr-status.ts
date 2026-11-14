@@ -298,7 +298,25 @@ function readyLines(): string[] {
 	return lines;
 }
 
+/**
+ * Why this tool refuses a shallow clone, or null when the history is whole. A shallow clone keeps a
+ * stub of the branch, so the trailers the tool counts are not the branch's: it can print a count of
+ * almost nothing and still exit 0.
+ */
+export function shallowRefusal(answer: string): string | null {
+	return answer.trim() === 'true'
+		? 'pr-status counts the branch history, and this clone is shallow: run git fetch --unshallow origin first.'
+		: null;
+}
+
 function main(): void {
+	const refusal = shallowRefusal(
+		execFileSync('git', ['rev-parse', '--is-shallow-repository'], { encoding: 'utf8' }),
+	);
+	if (refusal !== null) {
+		console.error(refusal);
+		process.exit(1);
+	}
 	if (!existsSync(PLAN)) {
 		console.error(`pr-status reads the plan at ${PLAN}, which this clone does not keep.`);
 		process.exit(1);
@@ -349,4 +367,4 @@ function main(): void {
 	console.log(`wrote the description of pull request ${PR}`);
 }
 
-main();
+if (import.meta.main) main();
