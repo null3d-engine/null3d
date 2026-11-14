@@ -441,14 +441,15 @@ export const record: Species = {
 			twist: 4,
 			// Stills 12 and 13: the margin runs in small waves between its teeth.
 			wave: [0.0015, 4],
-			// The front face stands as the single-leaf stills measure it. The light through and the
-			// underside carry a fifth more red and two thirds more blue than the texture's means gave,
-			// because a crown draws a mixture of the three and the three whole views that read its own
-			// light stood four to nine steps too green and yellow against their photographs.
+			// The front face stands as the single-leaf stills measure it. The underside carries a fifth
+			// more red and two thirds more blue than the texture's means gave, and the light through
+			// carries a quarter more green than its mean. A crown draws a mixture of the three: the
+			// whole views read their foliage at 2.4, 0.7 and 2.8 steps from the photographs, and the
+			// two underside stills at 2.5 and 2.8.
 			optics: {
 				reflectance: [0.0303, 0.0651, 0.0093],
 				reflectanceBack: [0.194, 0.2558, 0.0965],
-				transmittance: [0.0895, 0.1401, 0.0343],
+				transmittance: [0.0895, 0.175, 0.0343],
 				roughness: [0.42, 0.62],
 			},
 		},
@@ -462,6 +463,10 @@ export const record: Species = {
 		young: 0,
 		// Stills 16 and 28: the plates give way to smooth purplish bark with pale orange lenticels on
 		// wood thinner than about seven centimetres across, which is how the limb of still 16 reads.
+		// Row 8's reference conflict: 16's shaded limb measures b* 5.3 and 28's flat young bark b*
+		// 13.9, a gap of 8.6, so one young bark cannot sit within 3 steps of both. The untinted
+		// texture source's own colour reads 28 at 3.00 and 16 at 3.77; a tint that takes 16 to 3.17
+		// takes 28 to 3.90. The material keeps the texture source's colour, and 16 is the conflict.
 		youngRadius: 0.075,
 		// Still 15: the plates stand wider on the thick bole than on the limbs below it.
 		girthScale: [

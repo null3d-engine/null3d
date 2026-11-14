@@ -120,6 +120,7 @@
 	"28-young-bark.png": {
 		"thin": 0.015,
 		"span": 0.1,
+		"girth": 0.9,
 		"barkMask": true
 	},
 	"_pictures": {
