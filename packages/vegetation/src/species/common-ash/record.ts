@@ -333,6 +333,9 @@ export const record: Species = {
 			{ layer: 0, by: 'radius', from: 0, to: 0.3, blend: 0.05, tint: [1.38, 1.4, 1.22] },
 		],
 		young: 0,
+		// Still 28: the young layer's own colour reads darker and cooler than the photograph, so thin
+		// wood takes a lift toward its warm grey.
+		youngTint: [1.68, 1.497, 1.552],
 		// Still 16: the diamond net fades to smooth pale grey on wood thinner than about six
 		// centimetres across.
 		youngRadius: 0.03,
