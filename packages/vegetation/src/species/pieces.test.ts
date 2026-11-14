@@ -285,6 +285,9 @@ const TURNING: readonly {
 	{ id: 'pedunculate-oak', pieces: OAK, studio: OAK_STUDIO, still: 22, depth: 0.37, gap: 0.1 },
 	{ id: 'silver-birch', pieces: BIRCH, studio: BIRCH_STUDIO, still: 21, depth: 0.21, gap: 0.085 },
 	{ id: 'silver-birch', pieces: BIRCH, studio: BIRCH_STUDIO, still: 22, depth: 0.27, gap: 0.176 },
+	// Still 9's crowded branch, its strands along it: the reviewer's like-for-like object, read
+	// against the arch's figures until the photograph's own are measured.
+	{ id: 'silver-birch', pieces: BIRCH, studio: BIRCH_STUDIO, still: 9, depth: 0.21, gap: 0.085 },
 	{
 		id: 'weeping-willow',
 		pieces: WILLOW,
@@ -348,12 +351,16 @@ const OPEN_DEPTH: Readonly<Record<string, number>> = {
 	'olive 22': 0.367,
 	'european-beech 22': 0.216,
 	'common-ash 22': 0.244,
+	// Still 9's crowded branch draws shallower than the arch's depth: the reviewer's like-for-like
+	// object, listed until its own photograph's figure is measured.
+	'silver-birch 9': 0.087,
 };
 const OPEN_GAP: Readonly<Record<string, number>> = {
 	// In the birch's and the willow's videos nearly every leaf shows its whole face in every frame,
 	// which fixed leaves cannot; their stills judge them.
 	'silver-birch 21': 0.46,
 	'silver-birch 22': 0.466,
+	'silver-birch 9': 0.047,
 	'weeping-willow 21': 0.278,
 	'weeping-willow 22': 0.388,
 	'european-beech 22': 0.348,
