@@ -799,7 +799,8 @@ for (const held of HELD)
 				let backward = 0;
 				for (let a = 0; a < s.axes.count; a++) {
 					// A hanging axis leaves its branch downward, which on rising wood is backward, and a
-					// twig that clothes a clump leaves toward the clump's surface, wherever that is.
+					// twig that clothes a clump leaves toward the clump's surface, wherever that is;
+					// neither is held to a limb's bounds.
 					const hangs =
 						plan.axes[a]?.role === 'whip' || held.fine?.includes(plan.axes[a]?.rule ?? '') === true;
 					const joint = s.axes.parentNode[a] as number;
@@ -812,7 +813,7 @@ for (const held of HELD)
 						)
 							backward++;
 					}
-					if ((s.axes.order[a] as number) !== 1 || joint < 0) continue;
+					if ((s.axes.order[a] as number) !== 1 || joint < 0 || hangs) continue;
 					// How far the limb stands out from where it leaves its stem, node by node.
 					let reach = -1;
 					for (let n = s.axes.first[a] as number; n <= (s.axes.last[a] as number); n++) {
