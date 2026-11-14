@@ -37,6 +37,13 @@ export interface LeafConfig {
 	/** Alpha bytes below `floor` are cleared; at or above `solid` the leaf is fully covered. */
 	readonly alpha: { readonly floor: number; readonly solid: number };
 	/**
+	 * The dark gaps a compound leaf's picture keeps between its lobes or pinnules, which its cut-out
+	 * counts as leaf: a covered texel whose linear luminance is under `luminance` is cleared, fading
+	 * back to its coverage over `ramp` times that luminance above it. Absent, no texel is cleared
+	 * for its darkness.
+	 */
+	readonly gaps?: { readonly luminance: number; readonly ramp: number };
+	/**
 	 * True to turn the lower face's picture left for right, false to keep it as drawn; by default the
 	 * tool takes whichever fits the upper face's outline better.
 	 */

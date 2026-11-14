@@ -103,9 +103,27 @@ function solidTexels(p: Picture, erode: number): Uint8Array {
 	return mask;
 }
 
-/** A face cleaned: coverage floored and stretched, colour bled out from the solid texels. */
+/**
+ * Clears the covered texels darker than a linear luminance, fading back to their coverage over a
+ * ramp above it: the gaps between a compound leaf's lobes, which its cut-out keeps.
+ */
+function clearGaps(p: Picture, gaps: NonNullable<LeafConfig['gaps']>): void {
+	const low = gaps.luminance;
+	const high = low * (1 + Math.max(1e-3, gaps.ramp));
+	for (let i = 0; i < p.a.length; i++) {
+		const a = p.a[i] as number;
+		if (a <= 0) continue;
+		const y =
+			0.2126 * (p.r[i] as number) + 0.7152 * (p.g[i] as number) + 0.0722 * (p.b[i] as number);
+		const t = unit((y - low) / (high - low));
+		p.a[i] = a * t * t * (3 - 2 * t);
+	}
+}
+
+/** A face cleaned: coverage floored and stretched, dark gaps cleared, colour bled out from the solid texels. */
 export function cleanFace(p: Picture, config: LeafConfig): Picture {
 	cleanAlpha(p, config.alpha.floor, config.alpha.solid);
+	if (config.gaps) clearGaps(p, config.gaps);
 	bleed(p, solidTexels(p, config.erode));
 	return p;
 }
