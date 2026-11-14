@@ -8,7 +8,7 @@
 // flower site carries the record's extras and no piece. No shade or sky line thins the rows
 // afterwards: the grower placed the sockets where the foliage stands.
 import type { ShootPrototype } from '../asset';
-import { BUD_FLOWER } from '../core/graph';
+import { BUD_DORMANT, BUD_FLOWER, BUD_JOINT } from '../core/graph';
 import { hashAt } from '../core/hash';
 import { quatAxisAngle, quatMultiply, quatRotate, radians, type Vector3 } from '../core/math';
 import type { GrowthModel, Species } from '../core/record';
@@ -21,7 +21,7 @@ import type { UncardedPrototype } from './shoot';
 export const PROTOTYPES_MOST = 255;
 
 /** The growth models that end their wood in sockets. */
-const DIRECTED: readonly GrowthModel[] = ['conifer', 'frame', 'frond-crown'];
+const DIRECTED: readonly GrowthModel[] = ['conifer', 'frame', 'frond-crown', 'culm-clump'];
 /** The growth models whose growers write the pieces their sockets carry. */
 const WRITTEN: readonly GrowthModel[] = ['tuft', 'frond-colony'];
 
@@ -138,7 +138,10 @@ export function pieceRows(input: DressInput): Row[] {
 	const growth = record.growth;
 	const turned = growth.model === 'frame' && growth.sockets.turn !== undefined;
 	for (let b = 0; b < buds.count; b++) {
-		if ((buds.kind[b] as number) === BUD_FLOWER) continue;
+		// A flower site carries the record's extras, a dormant bud its sheath and a joint bud its
+		// node ring, never a piece.
+		const kind = buds.kind[b] as number;
+		if (kind === BUD_FLOWER || kind === BUD_DORMANT || kind === BUD_JOINT) continue;
 		const choices = own && byPlace.length > 0 ? byPlace[own[b] as number] : variants;
 		if (!choices || choices.length === 0)
 			throw new Error(

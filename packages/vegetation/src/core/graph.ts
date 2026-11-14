@@ -116,6 +116,12 @@ export const BUD_FLOWER = 4;
  */
 export const BUD_AREOLE = 5;
 /**
+ * Bud kind: a joint of a culm, where a node ring stands. It carries no shoot.
+ *
+ * @category api/vegetation
+ */
+export const BUD_JOINT = 6;
+/**
  * One plant's grown structure: nodes joined into axes, and the bud sites shoots attach to. Plain
  * typed arrays in plant space (metres, +Y up, the main stem's base at the origin), so it crosses
  * from a job worker without a copy.

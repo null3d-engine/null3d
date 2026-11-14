@@ -2,7 +2,7 @@
 // names. The generated registry loads this entry as a chunk of its own.
 import { files } from '@null3d/vegetation-textures/bamboo';
 import type { SpeciesModule } from '../../core/record';
-import { record } from './record';
+import { directed } from './directed';
 
-/** The bamboo. */
-export const species: SpeciesModule = { record, textures: files };
+/** The bamboo, grown as a directed clump of culms that carries its branch pairs at sockets. */
+export const species: SpeciesModule = { record: directed, textures: files };

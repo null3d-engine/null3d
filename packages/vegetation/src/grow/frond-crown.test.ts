@@ -23,8 +23,8 @@ import {
 } from '../leaf/piece';
 import { SURFACE_LEAF, SURFACE_PIECE, SURFACE_STEM } from '../leaf/writer';
 import { azimuthOf, drawnTop, elevationOf, largestGap } from './directed.test-support';
-import { radicalInverse } from './frond-crown';
 import { targetHeight } from './height';
+import { radicalInverse } from './ranked';
 
 const LONG = scaledBudget(120_000);
 /** The species the grower serves. */
