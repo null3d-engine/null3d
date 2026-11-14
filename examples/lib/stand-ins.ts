@@ -9,10 +9,10 @@ import {
 } from '../showcase/creek/species';
 
 /**
- * The sparse level every demo that grows plants through the add-on starts at: every such demo
- * opens at the sparsest form the species allows, on every device, so a scene loads light and a
- * reader adds density from there. The ruling is not the device rule — a desktop opens sparse too.
- * A page that grows its own plants passes this beside the other options.
+ * The sparse level that the demos growing plants through the add-on pass unless they set their
+ * own: they open at the sparsest form the species allows, on every device, so a scene loads light
+ * and a reader adds density from there. The ruling is not the device rule — a desktop opens sparse
+ * too. A page that grows its own plants passes this beside the other options.
  */
 export const DEMO_SPARSENESS = 1;
 
