@@ -440,14 +440,15 @@ export const record: Species = {
 			twist: 4,
 			// Stills 12 and 13: the margin runs in small waves between its teeth.
 			wave: [0.0015, 4],
-			// The front face stands as the single-leaf stills measure it. The light through and the
-			// underside carry a fifth more red and two thirds more blue than the texture's means gave,
-			// because a crown draws a mixture of the three and the three whole views that read its own
-			// light stood four to nine steps too green and yellow against their photographs.
+			// The front face stands as the single-leaf stills measure it. The underside carries a fifth
+			// more red and two thirds more blue than the texture's means gave, and the light through
+			// carries a quarter more green than its mean. A crown draws a mixture of the three: the
+			// whole views read their foliage at 2.4, 0.7 and 2.8 steps from the photographs, and the
+			// two underside stills at 2.5 and 2.8.
 			optics: {
 				reflectance: [0.0303, 0.0651, 0.0093],
 				reflectanceBack: [0.194, 0.2558, 0.0965],
-				transmittance: [0.0895, 0.1401, 0.0343],
+				transmittance: [0.0895, 0.175, 0.0343],
 				roughness: [0.42, 0.62],
 			},
 		},
