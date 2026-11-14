@@ -579,15 +579,15 @@ function bandAreas(mask: Uint8Array, base: number, tip: number, bands: number): 
 	return areas;
 }
 
-/** The colours a bake reads: the manifest's means and profiles, else the record's optics. */
+/**
+ * The colours a bake reads: the leaf texture's means and profiles. The plant shader divides a card
+ * texel by its texture's mean and multiplies it by the record's reflectance, as it draws a leaf,
+ * so a leaf texel holds the texture's colour and not the reflectance. A species with no leaf
+ * texture samples a white texel, so its leaf texels hold white and the shader gives the leaf its
+ * colour from the record's optics alone.
+ */
 export function paletteOf(record: Species, manifest: TextureManifest): Palette {
 	const leaf = manifest.leaf;
-	const optics =
-		record.foliage.kind === 'blade' || record.foliage.kind === 'thick'
-			? record.foliage.leaf.optics
-			: record.foliage.kind === 'needle' || record.foliage.kind === 'fascicle'
-				? record.foliage.needle.optics
-				: undefined;
 	// A card's twigs take the young bark as the drawn wood does: its texture's mean times the
 	// record's tint of thin wood.
 	const young = manifest.bark?.young.mean;
@@ -637,8 +637,8 @@ export function paletteOf(record: Species, manifest: TextureManifest): Palette {
 		};
 	}
 	return {
-		upper: optics?.reflectance ?? [0.08, 0.16, 0.04],
-		lower: optics?.reflectanceBack ?? optics?.reflectance ?? [0.08, 0.16, 0.04],
+		upper: [1, 1, 1],
+		lower: [1, 1, 1],
 		stem,
 		...sheath,
 		profile: undefined,
