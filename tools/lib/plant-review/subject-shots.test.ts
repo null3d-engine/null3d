@@ -707,6 +707,12 @@ describe("the view of the crown's outside", () => {
 		const lobe = shot.points.find((point) => point.name === 'the lobe');
 		expect(lobe?.at[1]).toBeCloseTo(5 + 11 * 0.45, 6);
 		expect(Math.hypot(lobe?.at[0] ?? 0, lobe?.at[2] ?? 0)).toBeCloseTo(8 * 0.9, 6);
+		// A curtain crown frames no single branch that carries its leaves, so that region reports
+		// its figure rather than failing a picture whose subject is the mass and the sky.
+		const branch = shot.regions.find(
+			(region) => region.name === 'the branch that carries the leaves',
+		);
+		expect(branch?.report).toBe(true);
 	});
 });
 
@@ -1007,6 +1013,27 @@ describe('the view of one branch piece', () => {
 		expect((shot.far as number) - (shot.near as number)).toBeCloseTo(2 * piece.spread, 6);
 		// A class names its pieces by their leading words.
 		expect(shotOf(placedPieceShot(plant, 'stalk', TALL)).facts.class).toBe('stalk-0');
+	});
+
+	test('keeps the world up when asked, so the stem the piece leaves stands upright', () => {
+		// A piece leaving a vertical stem: its own line is mostly up, so the frame lies along it.
+		const uprightPiece = {
+			class: 'pair',
+			socket: [1, 5, 0] as V3,
+			direction: normalize([0.4, 0.9, 0.1]),
+			length: 1.2,
+			spread: 0.3,
+		};
+		const rolled = shotOf(branchPieceShot(uprightPiece, TALL));
+		const upright = shotOf(branchPieceShot(uprightPiece, TALL, { upright: true }));
+		// The upright frame's up is the world's up; the rolled frame turns it about the line of sight.
+		expect(cameraAxes(upright.camera).up[1]).toBeCloseTo(1, 6);
+		// The default frame turns about the line of sight to lay the piece across; upright does not.
+		expect(cameraAxes(rolled.camera).up[1]).toBeLessThan(0.999);
+		const cut = landing(upright, TALL, 'the cut');
+		const tip = landing(upright, TALL, 'the tip');
+		expect(cut.y - tip.y).toBeGreaterThan(0.5);
+		expect(checkShot(upright, TALL).present).toBe(true);
 	});
 
 	test("looks along an arching piece's side when asked, so its arch shows", () => {
