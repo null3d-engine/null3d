@@ -54,6 +54,39 @@ pub enum PatchError {
     /// A patch's sphere does not hold the sphere of a patch below it, or its error is smaller than
     /// that patch's. A view would then draw some parts of the mesh twice and leave holes.
     Nesting,
+    /// A chain of parents is deeper than [`MAX_PATCH_DEPTH`], which no tree that the asset tool
+    /// builds reaches. The walk needs a bound so that a file cannot make it descend without end.
+    Depth,
+    /// Two patches name the same index of the tree's list, so a view could draw one triangle
+    /// twice and grow its list past the size that the layout sized for it.
+    Overlap,
+    /// Memory could not grow for the tree. The caller reports this as running out of memory.
+    Memory,
+}
+
+/// The deepest chain of patches that a tree may hold. Every tree that the asset tool builds is
+/// shallower, and the walk needs a bound so that a file cannot make it descend without end.
+pub const MAX_PATCH_DEPTH: u32 = 64;
+
+/// Room for `more` more values in a list, or the error that the tree's memory could not grow.
+fn reserve_values<T>(v: &mut Vec<T>, more: usize) -> Result<(), PatchError> {
+    if v.capacity() - v.len() >= more {
+        return Ok(());
+    }
+    let step = more.max(v.len() / 4).max(64);
+    v.try_reserve_exact(step)
+        .or_else(|_| v.try_reserve_exact(more))
+        .map_err(|_| PatchError::Memory)
+}
+
+/// Room for `want` values in a list that the child links rebuild, or the error that memory could
+/// not grow.
+fn reserve_link<T>(v: &mut Vec<T>, want: usize) -> Result<(), PatchError> {
+    if v.capacity() >= want {
+        return Ok(());
+    }
+    v.try_reserve_exact(want - v.len())
+        .map_err(|_| PatchError::Memory)
 }
 
 /// The share of a parent's radius by which a child's sphere may reach past it: the rounding of the
@@ -118,13 +151,33 @@ impl PatchTree {
             tops: Vec::new(),
         };
         tree.check(vertices)?;
-        tree.link_children();
+        tree.link_children()?;
         Ok(tree)
     }
 
-    /// Lists each patch's children, and the patches with no parent, from the records.
-    fn link_children(&mut self) {
+    /// Lists each patch's children, and the patches with no parent, from the records. The list of
+    /// children fills from the back, so it needs no second count array and the walk visits the
+    /// children in the order that the records hold them.
+    fn link_children(&mut self) -> Result<(), PatchError> {
         let count = self.records.len();
+        let children = self.records.iter().filter(|record| record[2] != 0).count();
+        let roots = count - children;
+        // The sizes come from the file, so the lists grow only where memory allows.
+        if self.child_starts.capacity() < count + 1 {
+            self.child_starts
+                .try_reserve_exact(count + 1 - self.child_starts.len())
+                .map_err(|_| PatchError::Memory)?;
+        }
+        if self.child_list.capacity() < children {
+            self.child_list
+                .try_reserve_exact(children - self.child_list.len())
+                .map_err(|_| PatchError::Memory)?;
+        }
+        if self.tops.capacity() < roots {
+            self.tops
+                .try_reserve_exact(roots - self.tops.len())
+                .map_err(|_| PatchError::Memory)?;
+        }
         self.child_starts.clear();
         self.child_starts.resize(count + 1, 0);
         self.tops.clear();
@@ -138,15 +191,21 @@ impl PatchTree {
             self.child_starts[k + 1] += self.child_starts[k];
         }
         self.child_list.clear();
-        self.child_list.resize(self.child_starts[count] as usize, 0);
-        let mut next: Vec<u32> = self.child_starts[..count].to_vec();
-        for (k, record) in self.records.iter().enumerate() {
-            if let Some(parent) = record[2].checked_sub(1) {
-                let at = &mut next[parent as usize];
+        self.child_list.resize(children, 0);
+        for k in (0..count).rev() {
+            if let Some(parent) = self.records[k][2].checked_sub(1) {
+                let at = &mut self.child_starts[parent as usize + 1];
+                *at -= 1;
                 self.child_list[*at as usize] = k as u32;
-                *at += 1;
             }
         }
+        // The fill moved each boundary down to its slot's start. Shift the starts back to the
+        // ends that the walk reads, and close the last slot with the total.
+        for k in 0..count {
+            self.child_starts[k] = self.child_starts[k + 1];
+        }
+        self.child_starts[count] = children as u32;
+        Ok(())
     }
 
     /// The children of patch `patch` that the tree holds.
@@ -194,6 +253,38 @@ impl PatchTree {
                 return Err(PatchError::Parent);
             }
         }
+        // A band's runs lie one after another, and each band's list follows the ones before it, so
+        // no two patches of the whole tree name one index.
+        let mut runs: Vec<(u32, u32)> = Vec::new();
+        runs.try_reserve_exact(records.len())
+            .map_err(|_| PatchError::Memory)?;
+        for record in records {
+            runs.push((record[0], record[0] + record[1]));
+        }
+        runs.sort_unstable();
+        if runs.windows(2).any(|pair| pair[0].1 > pair[1].0) {
+            return Err(PatchError::Overlap);
+        }
+        // A parent stands in the tree or earlier in the band, so the depth of each patch follows
+        // from one that the tree already measured, and the chain stays within the bound.
+        let mut depths: Vec<u32> = Vec::new();
+        depths
+            .try_reserve_exact(records.len())
+            .map_err(|_| PatchError::Memory)?;
+        depths.resize(records.len(), 0);
+        for (k, record) in records.iter().enumerate() {
+            let depth = match record[2] {
+                0 => 0,
+                parent => match (parent - 1).checked_sub(total) {
+                    None => self.depth_of(parent - 1) + 1,
+                    Some(earlier) => depths[earlier as usize] + 1,
+                },
+            };
+            if depth > MAX_PATCH_DEPTH {
+                return Err(PatchError::Depth);
+            }
+            depths[k] = depth;
+        }
         if indices.iter().any(|&index| index >= vertices) {
             return Err(PatchError::Vertex);
         }
@@ -218,6 +309,20 @@ impl PatchTree {
                 }
             }
         }
+        // The lists grow only where memory allows, before anything changes, so a band that does
+        // not fit leaves the tree as it was.
+        reserve_values(&mut self.bands, 1)?;
+        reserve_values(&mut self.bounds, bounds.len())?;
+        reserve_values(&mut self.records, records.len())?;
+        reserve_values(&mut self.indices, indices.len())?;
+        let count = total as usize + records.len();
+        let children = records.iter().filter(|record| record[2] != 0).count()
+            + self.child_starts.last().copied().unwrap_or(0) as usize;
+        let roots = records.iter().filter(|record| record[2] == 0).count();
+        reserve_link(&mut self.child_starts, count + 1)?;
+        reserve_link(&mut self.child_list, children)?;
+        let top_count = self.tops.len() + roots;
+        reserve_link(&mut self.tops, top_count)?;
         self.bands.push(total);
         self.bounds.extend_from_slice(bounds);
         self.records.extend(
@@ -226,8 +331,19 @@ impl PatchTree {
                 .map(|&[first, count, parent, error]| [first + base, count, parent, error]),
         );
         self.indices.extend_from_slice(indices);
-        self.link_children();
+        self.link_children()?;
         Ok(())
+    }
+
+    /// The number of parents above `patch`, which is at most [`MAX_PATCH_DEPTH`].
+    fn depth_of(&self, patch: u32) -> u32 {
+        let mut depth = 0;
+        let mut at = patch;
+        while let Some(parent) = self.parent(at) {
+            at = parent;
+            depth += 1;
+        }
+        depth
     }
 
     /// Checks the tree against a mesh of `vertices` vertices.
@@ -241,17 +357,47 @@ impl PatchTree {
         if self.bounds.len() != self.records.len() {
             return Err(PatchError::Record);
         }
-        for (k, record) in self.records.iter().enumerate() {
-            let [first, count, parent, _] = *record;
+        for record in &self.records {
+            let [first, count, _, _] = *record;
             if count == 0
                 || !count.is_multiple_of(3)
                 || first.saturating_add(count) as usize > self.indices.len()
             {
                 return Err(PatchError::Record);
             }
-            if parent as usize == k + 1 || parent as usize > self.records.len() {
+        }
+        // A parent comes before its child, so the tree holds no cycle, and the depth of each patch
+        // follows from one that this pass measured. A chain past the bound is refused, so no file
+        // can make the walk descend without end.
+        let mut depths: Vec<u32> = Vec::new();
+        depths
+            .try_reserve_exact(self.records.len())
+            .map_err(|_| PatchError::Memory)?;
+        depths.resize(self.records.len(), 0);
+        for (k, record) in self.records.iter().enumerate() {
+            let parent = record[2];
+            if parent as usize > k {
                 return Err(PatchError::Parent);
             }
+            if parent != 0 {
+                let depth = depths[parent as usize - 1] + 1;
+                if depth > MAX_PATCH_DEPTH {
+                    return Err(PatchError::Depth);
+                }
+                depths[k] = depth;
+            }
+        }
+        // No two patches name one index of the tree's list, so a view cannot draw one triangle
+        // twice and grow its list past the size that the layout sized for it.
+        let mut runs: Vec<(u32, u32)> = Vec::new();
+        runs.try_reserve_exact(self.records.len())
+            .map_err(|_| PatchError::Memory)?;
+        for record in &self.records {
+            runs.push((record[0], record[0] + record[1]));
+        }
+        runs.sort_unstable();
+        if runs.windows(2).any(|pair| pair[0].1 > pair[1].0) {
+            return Err(PatchError::Overlap);
         }
         if self.indices.iter().any(|&index| index >= vertices) {
             return Err(PatchError::Vertex);
@@ -472,9 +618,41 @@ struct Walk<'a> {
 }
 
 impl Walk<'_> {
-    /// Picks `patch` where it passes, or goes down to its children where it does not. The walk
-    /// reaches a patch only where its parent does not pass, so its depth is the tree's.
-    fn down(&self, patch: u32, pick: &mut impl FnMut(u32)) {
+    /// Picks the patches below `top` that draw. The walk reaches a patch only where its parent
+    /// does not pass, so its depth is the tree's, which the load refused past [`MAX_PATCH_DEPTH`].
+    /// The fixed stack holds one frame for each level that the walk descends, so it allocates
+    /// nothing and cannot run out of stack on any file that the tree accepts.
+    fn down(&self, top: u32, pick: &mut impl FnMut(u32)) {
+        // A frame is a patch and the place of its next child to visit.
+        let mut stack = [(0u32, 0usize); MAX_PATCH_DEPTH as usize + 1];
+        let mut len = 0usize;
+        stack[0] = (top, 0);
+        len += 1;
+        while len > 0 {
+            let (patch, next) = stack[len - 1];
+            let children = self.tree.children_of(patch);
+            // The first visit tests the patch. Its children follow once, so a frame that already
+            // took a child does not test the patch again.
+            if next == 0 && self.visit(patch, pick) {
+                len -= 1;
+                continue;
+            }
+            let at = &mut stack[len - 1].1;
+            if *at >= children.len() {
+                len -= 1;
+                continue;
+            }
+            let child = children[*at];
+            *at += 1;
+            debug_assert!(len <= MAX_PATCH_DEPTH as usize);
+            stack[len] = (child, 0);
+            len += 1;
+        }
+    }
+
+    /// Tests `patch` for the view: picks it where its error passes, and stops its branch where it
+    /// passes or lies outside the frustum. False means the walk goes down to its children.
+    fn visit(&self, patch: u32, pick: &mut impl FnMut(u32)) -> bool {
         let sphere = self.tree.bounds[patch as usize];
         let [x, y, z, radius] =
             world_sphere_at(self.matrix, [sphere[0], sphere[1], sphere[2]], sphere[3]);
@@ -482,16 +660,14 @@ impl Walk<'_> {
         if self.frustum.is_some_and(|frustum| {
             !frustum.contains_sphere(centre[0], centre[1], centre[2], radius)
         }) {
-            return;
+            return true;
         }
         let distance = self.rule.patch_distance(centre, radius);
         if self.tree.fits(patch, self.reach, distance) {
             pick(patch);
-            return;
+            return true;
         }
-        for &child in self.tree.children_of(patch) {
-            self.down(child, pick);
-        }
+        false
     }
 }
 
@@ -499,6 +675,8 @@ impl Walk<'_> {
 #[derive(Clone, Debug, Default)]
 pub struct PatchStorage {
     trees: Vec<Option<PatchTree>>,
+    /// Counts the changes to the trees, so a layout keeps its tables while the trees are the same.
+    generation: u64,
 }
 
 impl PatchStorage {
@@ -513,7 +691,15 @@ impl PatchStorage {
             }
             self.trees.resize(index + 1, None);
         }
-        self.trees[index] = tree;
+        if self.trees[index] != tree {
+            self.trees[index] = tree;
+            self.generation = self.generation.wrapping_add(1);
+        }
+    }
+
+    /// A count of the changes to the trees. It changes when a tree is set, taken away or grown.
+    pub fn generation(&self) -> u64 {
+        self.generation
     }
 
     /// The tree of mesh `mesh`, or `None` for a mesh without one.
@@ -534,7 +720,11 @@ impl PatchStorage {
     ) -> Option<Result<(), PatchError>> {
         let index = mesh.checked_sub(1)? as usize;
         let tree = self.trees.get_mut(index)?.as_mut()?;
-        Some(tree.append(bounds, records, indices, vertices))
+        let result = tree.append(bounds, records, indices, vertices);
+        if result.is_ok() {
+            self.generation = self.generation.wrapping_add(1);
+        }
+        Some(result)
     }
 
     /// True while some mesh has a tree.
@@ -556,6 +746,7 @@ impl PatchStorage {
         for (k, tree) in self.trees.iter_mut().enumerate() {
             if tree.is_some() && !live(k as u32 + 1) {
                 *tree = None;
+                self.generation = self.generation.wrapping_add(1);
             }
         }
     }
@@ -571,9 +762,9 @@ pub(crate) struct BandView<'a> {
 }
 
 /// Notes, for each mesh that a loader watches, the bands whose patches a view draws this frame, so
-/// that the loader holds a band until the band above it drew. A mesh that the scene holds no
-/// source of restarts its warm-up, as a level does, so a page that loads a model before it
-/// instantiates it keeps its bands.
+/// that the loader holds a band until the band above it drew. A mesh that the path draws no tree
+/// of restarts its warm-up, as a level does, so a page that loads a model before it instantiates
+/// it keeps its bands.
 ///
 /// A patch that the tree's walk picks for the view is a pick, as it is for the walk that fills the
 /// view's patch runs ([`PatchTree::walk`]). The count reads the tree of each watched mesh alone, and a frame with no loader waiting
@@ -592,7 +783,10 @@ pub(crate) fn note_stage_bands(
     let mut slots = scene.slots().high_water() as usize;
     slots = slots.min(scene.meshes().len());
     let meshes = &scene.meshes()[..slots];
-    watches.hold(view.frame, |mesh| meshes.contains(&mesh));
+    // A tree that the path draws is present even when no scene object draws its mesh, as a batch
+    // of rows does. A watch held on the scene's slots alone would never find such a mesh, and the
+    // engine would keep counting every source without culling while the watch waited.
+    watches.hold(view.frame, &draws_tree);
     let placed = view.offsets;
     let world = scene.world(parity);
     let matrices = world.matrices();
@@ -737,9 +931,9 @@ mod tests {
     #[test]
     fn a_tree_refuses_a_parent_that_does_not_hold_its_child_or_errs_less() {
         let bits = |value: f32| value.to_bits();
-        let records = vec![[0, 3, 0, bits(1.0)], [0, 3, 1, bits(0.0)]];
+        let records = vec![[0, 3, 0, bits(1.0)], [3, 3, 1, bits(0.0)]];
         let build = |bounds: Vec<[f32; 4]>, records: Vec<[u32; 4]>| {
-            PatchTree::new(vec![0, 1, 2], bounds, records, 0, 3)
+            PatchTree::new(vec![0, 1, 2, 0, 1, 2], bounds, records, 0, 3)
         };
         // The child's sphere reaches past its parent's, as a sphere around the patch's own
         // triangles may.
@@ -755,7 +949,7 @@ mod tests {
         assert_eq!(
             build(
                 inside.clone(),
-                vec![[0, 3, 0, bits(0.1)], [0, 3, 1, bits(0.2)]]
+                vec![[0, 3, 0, bits(0.1)], [3, 3, 1, bits(0.2)]]
             ),
             Err(PatchError::Nesting)
         );
@@ -775,9 +969,9 @@ mod tests {
         // A wide parent and a small child at its far edge: the camera stands 10 m from the child
         // and 1 m from the parent's sphere.
         let tree = PatchTree::new(
-            vec![0, 1, 2],
+            vec![0, 1, 2, 0, 1, 2],
             vec![[0.0, 0.0, 0.0, 10.0], [9.0, 0.0, 0.0, 1.0]],
-            vec![[0, 3, 0, bits(0.05)], [0, 3, 1, bits(0.0)]],
+            vec![[0, 3, 0, bits(0.05)], [3, 3, 1, bits(0.0)]],
             0,
             3,
         )
@@ -880,6 +1074,84 @@ mod tests {
         );
         assert_eq!(tree.append(&[], &[], &[], 9), Err(PatchError::Empty));
         assert_eq!(tree, before);
+    }
+
+    /// A chain of `n` exact patches, each the child of the one before: the shape that a hostile
+    /// file uses to make a recursive walk run out of stack.
+    fn chain(n: u32) -> (Vec<u32>, Vec<[f32; 4]>, Vec<[u32; 4]>) {
+        (
+            (0..n).flat_map(|_| [0, 1, 2]).collect(),
+            vec![[0.0, 0.0, 0.0, 1.0]; n as usize],
+            (0..n).map(|k| [k * 3, 3, k, 1.0f32.to_bits()]).collect(),
+        )
+    }
+
+    #[test]
+    fn a_chain_deeper_than_the_bound_is_refused_and_one_at_it_walks() {
+        let (indices, bounds, records) = chain(MAX_PATCH_DEPTH + 2);
+        assert_eq!(
+            PatchTree::new(indices, bounds, records, 0, 3),
+            Err(PatchError::Depth)
+        );
+        let (indices, bounds, records) = chain(MAX_PATCH_DEPTH + 1);
+        let tree = PatchTree::new(indices, bounds, records, 0, 3).expect("a chain at the bound");
+        // Every patch errs a metre and the camera stands at the root's centre, so the walk
+        // descends the whole chain to the leaf. A loop over the fixed stack reaches it; a
+        // recursive walk would need one call for each patch.
+        let rule = LevelRule::new(1_000.0, 1.0, false, 1.0, 0.08);
+        let picked = tree.picked_indices(&null3d_core::math::IDENTITY, [0.0; 3], &rule, None);
+        assert_eq!(picked, 3, "the leaf alone draws");
+    }
+
+    #[test]
+    fn a_tree_refuses_a_parent_that_comes_later_and_runs_that_share_an_index() {
+        let bits = 0.0f32.to_bits();
+        // Patch 0 names patch 1 as its parent, which comes after it.
+        assert_eq!(
+            PatchTree::new(
+                vec![0, 1, 2, 0, 1, 2],
+                vec![[0.0; 4]; 2],
+                vec![[0, 3, 2, bits], [3, 3, 0, bits]],
+                0,
+                3,
+            ),
+            Err(PatchError::Parent)
+        );
+        // Two patches name one run, so a view could ask for the triangle twice.
+        assert_eq!(
+            PatchTree::new(
+                vec![0, 1, 2],
+                vec![[0.0; 4]; 2],
+                vec![[0, 3, 0, bits], [0, 3, 0, bits]],
+                0,
+                3,
+            ),
+            Err(PatchError::Overlap)
+        );
+    }
+
+    #[test]
+    fn a_band_that_names_one_index_twice_or_runs_too_deep_leaves_the_tree_as_it_was() {
+        let mut tree = partial();
+        let before = tree.clone();
+        // Both patches name the band's first triangle, so the tree would draw it twice.
+        let records = vec![[0, 3, 1, 0], [0, 3, 1, 0]];
+        assert_eq!(
+            tree.append(&[[0.0; 4]; 2], &records, &[0, 1, 2], 9),
+            Err(PatchError::Overlap)
+        );
+        assert_eq!(tree, before);
+        // A band below a chain that is already at the bound makes the chain too deep.
+        let (indices, bounds, records) = chain(MAX_PATCH_DEPTH + 1);
+        let mut chain_tree =
+            PatchTree::new(indices, bounds, records, 0, 3).expect("a chain at the bound");
+        let before = chain_tree.clone();
+        let parent = MAX_PATCH_DEPTH + 1;
+        assert_eq!(
+            chain_tree.append(&[[0.0; 4]], &[[0, 3, parent, 0]], &[0, 1, 2], 3),
+            Err(PatchError::Depth)
+        );
+        assert_eq!(chain_tree, before);
     }
 
     #[test]

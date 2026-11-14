@@ -1187,3 +1187,17 @@ What the ruling closes, by task:
 What it does not do: it does not settle any species' pictures, which follow the shipped records and
 are redrawn when a record moves; and it does not open the milestone to the vegetation session's
 branches, which wait for the owner's word before they merge.
+
+## Addendum: the valley's species line, revised
+
+Creek's design named a valley with maple and hemlock on north faces and pine on the dry south
+faces. The valley grew none of the three: its scatter rules place rush, sedge, weeping willow,
+common alder, pedunculate oak, European beech, silver birch, Norway spruce, bracken, hosta,
+wildflower and hawthorn, and no hemlock record exists. The scatter does favour a north face: the
+oak, the beech and the Norway spruce each carry a northness curve, so the gap was the species and
+not the aspect rule.
+
+The owner revised the line instead of growing the three. <!-- outside date --> The valley's species
+are the ones the add-on dresses it with, and the design's three names are withdrawn as a
+requirement. A species added later is a new record and a new picture set, not a promise this line
+holds open.

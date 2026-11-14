@@ -341,9 +341,11 @@ describe('the pendulous sedge', () => {
 			{ placeholders: 'missing', detail: 'high' },
 		);
 		// The plant's bytes with the soil block stripped, at this record: a plant that names no
-		// soil grows exactly these. A deliberate record change re-records the figure, and the
-		// growth path that reads no soil must not move it.
-		expect(plantAssetDigest(growPlantNow(kit, OPTIONS))).toBe('00ae860f2d533731');
+		// soil grows exactly these. The digest reads every typed array of the grown asset, and
+		// [D-314](../../../../.dev/decisions/D-314-plant-coarseness.md) lists them. It does not
+		// read the impostor cards, so their mesh moving leaves it alone. A deliberate record
+		// change re-records the figure, and the growth path that reads no soil must not move it.
+		expect(plantAssetDigest(growPlantNow(kit, OPTIONS))).toBe('11b484f6e4855bcd');
 	});
 
 	it('ends its blades in long fine points', () => {

@@ -64,7 +64,8 @@ The photograph's own crown is one piece at the same work width.
 
 Chosen: the optional line to the plane's center, taken by the beech. Rejected: `cardGrow` at the
 oak's 1.25. The card's center stays 0.64 to 1.44 m ahead, so it closes under a pixel of a 2 to 4
-pixel gap. Also rejected: `woodOrders` raised to draw order-2 twigs at the far level, which overruns
+pixel gap. The field this rejection names is removed since D-346's addendum on the card-level size.
+Also rejected: `woodOrders` raised to draw order-2 twigs at the far level, which overruns
 the 43,000 cap. Also rejected: moving the plane centers in the bake, which moves every species' cards
 and every judged picture.
 

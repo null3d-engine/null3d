@@ -393,6 +393,83 @@ export function compilerStamp(root: string): string {
 	);
 }
 
+/** The crate of the compiler module that the Vite plugin runs. */
+const COMPILER_WASM_CRATE = 'crates/null3d-shaders-wasm';
+
+/** The manifest flags that mark a template which a project's shader builds with. */
+const TEMPLATE_FLAGS = [
+	'custom_materials',
+	'custom_effects',
+	'custom_tone_curves',
+	'effect_group_host',
+	'effect_fold_host',
+	'sky_layers',
+	'sky_layer_maps',
+];
+
+/** One manifest table of a template that a project's shader builds with. */
+export interface TemplateTable {
+	/** The table's name after `shaders.`, such as `lit`. */
+	readonly name: string;
+	/** The WGSL file that the table names, relative to the shader folder. */
+	readonly file: string;
+	/** The table's lines, as the manifest writes them. */
+	readonly text: string;
+}
+
+/**
+ * The manifest's tables of the templates that a project's shader builds with: a custom material,
+ * a custom effect or tone curve, or a sky layer. Every other table names an engine shader that a
+ * project's compile never reads, so a change there compiles nothing again.
+ */
+export function templateTables(root: string): TemplateTable[] {
+	const tables: TemplateTable[] = [];
+	let name = '';
+	let file = '';
+	let text: string[] = [];
+	let template = false;
+	const finish = () => {
+		if (name !== '' && template && file !== '') tables.push({ name, file, text: text.join('\n') });
+	};
+	for (const line of readFileSync(join(root, MANIFEST), 'utf8').split('\n')) {
+		const table = /^\[shaders\.([A-Za-z0-9_]+)\]\s*$/.exec(line);
+		if (table || /^\[/.test(line)) {
+			finish();
+			name = table?.[1] ?? '';
+			file = '';
+			text = [];
+			template = false;
+			continue;
+		}
+		if (name === '') continue;
+		text.push(line);
+		const named = /^file\s*=\s*"([^"]+)"/.exec(line);
+		if (named) file = named[1] ?? '';
+		const flag = /^([a-z_]+)\s*=\s*true\s*$/.exec(line);
+		if (flag && TEMPLATE_FLAGS.includes(flag[1] ?? '')) template = true;
+	}
+	finish();
+	return tables;
+}
+
+/**
+ * A hash of the inputs that every project's shader compile may read: the compiler's sources, the
+ * library modules, the templates' WGSL and the manifest's template tables. An engine entry shader
+ * that no template marks is not one of them, so a change to it keeps the compiled entries that the
+ * Vite plugin holds. The manifest enters as its template tables alone, so a new engine shader's
+ * table does not compile a project's shaders again.
+ */
+export function compilerInputStamp(root: string): string {
+	const files = [...templateTables(root).map(({ file }) => `${SHADER_FOLDER}/${file}`)];
+	filesBelow(root, `${SHADER_FOLDER}/lib`, files);
+	if (existsSync(join(root, COMPILER_WASM_CRATE))) filesBelow(root, COMPILER_WASM_CRATE, files);
+	return hashOf(
+		compilerStamp(root),
+		...files.sort().flatMap((file) => [file, readFileSync(join(root, file))]),
+		...templateTables(root).flatMap(({ name, text }) => [`shaders.${name}`, text]),
+	);
+}
+
 /**
  * The fingerprint of the program that compiles this tree: a hash of its bytes. A program that this
  * machine already built from these sources serves, and one that cargo builds is kept under the

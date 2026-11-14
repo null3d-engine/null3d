@@ -10,6 +10,7 @@ import { type PlantMaterial, setWindLayer } from '@null3d/vegetation';
 import type { WindField } from '@null3d/wind';
 import { type PlantSpot, plantSpecies } from '../../lib/plants';
 import { random } from '../../lib/procedural';
+import { creekStandIn } from '../../lib/stand-ins';
 import { placeValley, SEED, SPECIES, VARIANTS } from './valley';
 
 /** The fallen lengths of dead wood: their longest and shortest length, and their girth, in meters. */
@@ -144,13 +145,8 @@ export async function createPlants(
 			if (spots.length === 0) return undefined;
 			return plantSpecies(ctx, {
 				id: species.id,
-				standIn: {
-					height: species.height,
-					// The stand-in's crown fills the room that the rules keep for the species.
-					aspect: (2 * species.crown) / species.height,
-					leaf: species.leaf,
-					bark: species.bark,
-				},
+				// The stand-in's crown fills the room that the rules keep for the species.
+				standIn: creekStandIn(species),
 				seed: SEED,
 				spots,
 				variants: VARIANTS,

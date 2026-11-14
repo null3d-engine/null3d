@@ -7,7 +7,9 @@
 // frame back and compares each band with a data texture of the same colour, which shows whether
 // the frame's colours arrive as they are, and the sketch reports the texture's size, which the
 // page scales to the size that the options allow.
+
 import { createEngine } from '@null3d/engine';
+import { PAUSED_ALLOWANCE } from '../lib/video-texture-checks';
 import { watchEngine } from './lib/engine-watch';
 import { progress, run } from './lib/result';
 
@@ -166,8 +168,24 @@ run('video-texture', async () => {
 	video.pause();
 	animating = false;
 	cancelAnimationFrame(painting);
-	// The last frame before the pause finishes its upload before this window opens.
-	await new Promise((resolve) => setTimeout(resolve, 500));
+	// A browser's decoder may deliver frames that it queued while the video played after the pause,
+	// and those uploads are not a page that keeps uploading while paused: Firefox in run
+	// 43312279951 played no frame in its playing window and delivered twelve in the one after the
+	// pause, 517,426 bytes at p99. So the paused window opens only after two windows in a row upload
+	// no more than a paused frame may, and a video that stays above that allowance fails with its
+	// figure rather than passing a backlog off as a paused video. Chromium here reads 2,464 to 2,904
+	// bytes in those windows, inside the allowance, so the wait ends for it.
+	let quiet = 0;
+	let waitedMs = 0;
+	while (quiet < 2) {
+		const window = await engine.measure(0.5);
+		waitedMs += 500;
+		quiet = window.uploadBytes.p99 <= PAUSED_ALLOWANCE ? quiet + 1 : 0;
+		if (waitedMs >= 10_000)
+			throw new Error(
+				`a paused video kept uploading for ${(waitedMs / 1000).toFixed(1)} s: ${window.uploadBytes.p99} bytes at p99 in its last window`,
+			);
+	}
 	const paused = await engine.measure(2);
 	progress('measured while paused');
 

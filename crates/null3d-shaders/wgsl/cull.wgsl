@@ -41,8 +41,10 @@
 // distance in meters at scale 1, or a share of the render's height that the bounds cover. An
 // instance's entry names its base level's bucket. The thread walks the links while the next
 // level's switch distance stays under its distance from the main camera: for a level given by its
-// error, to the center of its bounding sphere less half its radius, and for one given by a distance
-// or by coverage, to the sphere's nearest point. It appends the instance to the last level that
+// error, to the center of its bounding sphere less half its radius, but no more than twice the
+// nearest point, and for one given by a distance or by coverage, to the sphere's nearest point in
+// every view, an orthographic camera included. An orthographic camera compares an error at the
+// distance 1, since its pixels do not shrink with distance. It appends the instance to the last level that
 // passes. Every view places its instances relative to the main camera, shadow views
 // too, so they all pick by its distance. Past each switch distance lies a band in which the level
 // before still draws: there, the instance goes to both levels' fade buckets, whose pipelines dither
@@ -147,6 +149,10 @@ const LEAST_DISTANCE: f32 = 1.0e-3;
 /// The share of a bounding sphere's radius that the camera's level distance takes off the distance
 /// to its center (`LEVEL_RADIUS_SHARE` in `levels.rs`).
 const LEVEL_RADIUS_SHARE: f32 = 0.5;
+/// The multiple of the distance to a bounding sphere's nearest point that caps the level distance
+/// for an error, so a camera beside a large mesh measures the surface below it (`LEVEL_NEAREST_SHARE`
+/// in `levels.rs`).
+const LEVEL_NEAREST_SHARE: f32 = 2.0;
 /// The bit of a bucket's `indices` word that marks a bucket that draws pieces in its place.
 const PIECED: u32 = 1u << 31u;
 /// Where the count of a bucket's pieces sits in its `indices` word, above its first piece's bucket.
@@ -479,10 +485,14 @@ fn level_of(s: Survivor) -> Level {
     let bias = select(1.0, buckets[s.bucket].bias, buckets[s.bucket].bias > 0.0);
     let factor = whole / bias;
     let nearest = max(length(s.center) - s.radius, LEAST_DISTANCE);
-    let distance = select(nearest, 1.0, params.levels.y > 0.5);
+    // A distance level, a coverage level and a distance band measure to the sphere's nearest point
+    // in every view, an orthographic camera included.
+    let distance = nearest;
     // A level given by its error, and the rule that hides a small bound, measure the camera's
-    // level distance: to the sphere's center, less a share of its radius (`levels.rs`).
-    let toward = max(length(s.center) - LEVEL_RADIUS_SHARE * s.radius, LEAST_DISTANCE);
+    // level distance: to the sphere's center, less a share of its radius, capped by the nearest
+    // point so that a camera beside a large mesh measures the surface below it (`levels.rs`).
+    let half = max(length(s.center) - LEVEL_RADIUS_SHARE * s.radius, LEAST_DISTANCE);
+    let toward = min(half, LEVEL_NEAREST_SHARE * nearest);
     let error = error_distance(s.center, s.radius, select(toward, 1.0, params.levels.y > 0.5));
     out.distance = distance;
     var next = buckets[s.bucket].next;

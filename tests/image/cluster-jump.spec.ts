@@ -28,7 +28,7 @@ test('a cluster ground draws under meshes with levels, at the start and after ca
 	expect(result.error).toBeUndefined();
 	expect(result.failures).toEqual([]);
 	expect(result.tier).toBe('webgpu');
-	expect(result.shares).toHaveLength(4);
+	expect(result.shares).toHaveLength(7);
 	for (const [k, share] of result.shares.entries())
 		expect(share, `the background below the horizon at place ${k}`).toBeLessThan(MOST_BACKGROUND);
 });

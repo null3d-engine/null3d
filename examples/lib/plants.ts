@@ -1,9 +1,9 @@
 // Plants for the demos from the vegetation add-on's plant core. A demo names each species by its id
-// and gives the size, colours and ecology of its stand-in, and the species draws as that stand-in,
-// even once the species' own folder exists in the add-on: the demos keep their pictures until they
-// move to the real species and the scene-wide near pool together. Its kit and its variants grow in
-// the engine's job workers, and its copies stand where the demo puts them, with far cards past the
-// distance where a plant spans a few pixels.
+// and gives the size, colours and ecology of its stand-in, and the species draws as that stand-in
+// until the species lands in the add-on. Once it lands, the real species draws instead, and a page
+// that needs its approved picture to stay comparable holds its stand-in with keepStandIn. Its kit
+// and its variants grow in the engine's job workers, and its copies stand where the demo puts them,
+// with far cards past the distance where a plant spans a few pixels.
 import type { SketchContext } from '@null3d/engine';
 import {
 	bakeFarPlant,
@@ -17,17 +17,12 @@ import {
 	plantMaterials,
 	prepareSpecies,
 	type StandInOptions,
+	standInSpecies,
 } from '@null3d/vegetation';
 import type { WindField } from '@null3d/wind';
+import { DEMO_SPARSENESS } from './stand-ins';
 
-/**
- * The sparse level every demo that grows plants through the add-on starts at: every such demo
- * opens at the sparsest form the species allows, on every device, so a scene loads light and a
- * reader adds density from there. The ruling is not the
- * device rule — a desktop opens sparse too. A page that grows its own plants passes this beside
- * the other options.
- */
-export const DEMO_SPARSENESS = 1;
+export { DEMO_SPARSENESS } from './stand-ins';
 
 /** One copy of a plant: where it stands, its turn about +Y in radians, its scale and variant. */
 export interface PlantSpot {
@@ -59,6 +54,13 @@ export interface PlantSpeciesOptions {
 	readonly castShadows?: boolean;
 	/** The camera's vertical field of view in degrees, which sets the switch distances. */
 	readonly fov?: number;
+	/**
+	 * Keep this page's named stand-in even after the species lands. A page sets this when its
+	 * approved picture was drawn with the stand-in, so the picture stays comparable until the page
+	 * moves to the species. It is the page's own hold on its stand-in, not a fallback for a species
+	 * that is missing: without it, a landed species draws as itself.
+	 */
+	readonly keepStandIn?: boolean;
 }
 
 /** A species planted in a scene: its materials, for the wind, and its placement. */
@@ -119,11 +121,13 @@ export async function plantSpecies(
 	if (options.variants === undefined)
 		for (const spot of options.spots) variants = Math.max(variants, spot.variant + 1);
 	// A species that has landed in the add-on draws as itself; one that has not draws as the stand-in
-	// the demo names, at that stand-in's size, colours and ecology.
-	const module = loadSpeciesOrStandIn(options.id, {
-		variants: Math.max(1, variants),
-		...options.standIn,
-	});
+	// the demo names, at that stand-in's size, colours and ecology. A page that holds its stand-in
+	// keeps drawing it after the species lands, as its own explicit choice.
+	const named = { variants: Math.max(1, variants), ...options.standIn };
+	const module =
+		options.keepStandIn === true
+			? Promise.resolve(standInSpecies(options.id, named))
+			: loadSpeciesOrStandIn(options.id, named);
 	// A landed species takes its own textures and stages, and a stand-in takes the white textures the
 	// stand-in prepare draws. Passing the stand-in's flag for a landed species would draw its geometry
 	// with every texture white.
@@ -131,7 +135,9 @@ export async function plantSpecies(
 		prepareSpecies(
 			ctx,
 			await module,
-			isSpeciesId(options.id) ? { placeholders: 'missing' } : { placeholders: true },
+			options.keepStandIn === true || !isSpeciesId(options.id)
+				? { placeholders: true }
+				: { placeholders: 'missing' },
 		),
 	);
 	const grown = (async () => {

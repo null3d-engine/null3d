@@ -176,7 +176,6 @@ describe('mesh.setLevels', () => {
 			[() => base.setLevels([{ mesh: a, coverage: 0 }]), 'not a number above 0'],
 			[() => base.setLevels([{ mesh: base, error: 0.1 }]), 'the base mesh itself'],
 			[() => base.setLevels([{ mesh: c, error: 0.1 }], { fov: 180 }), 'not between 0 and 180'],
-			[() => base.setLevels(Array(8).fill({ mesh: a, error: 1 })), 'at most 7'],
 		];
 		for (const [call, words] of cases) {
 			const error = thrown(call);

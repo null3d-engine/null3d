@@ -2373,7 +2373,7 @@ fn mesh_failure(error: MeshError) -> u32 {
         MeshError::Morph(MorphError::NotFinite { array, at }) => {
             arrays(arrays_problem::MORPH_NOT_FINITE, at | array << 28)
         }
-        MeshError::SharedUnavailable => arrays(arrays_problem::LEVEL_BASE, 0),
+        MeshError::SharedUnavailable | MeshError::PageFull => arrays(arrays_problem::LEVEL_BASE, 0),
         MeshError::OutOfMemory { bytes } => out_of_memory(bytes),
         _ => render_failure(render_detail::BAD_MESH, 0),
     }
@@ -2515,34 +2515,63 @@ struct StagedPatches {
     vertices: u32,
 }
 
+/// Why the staging words do not hold a tree or a band: a length past the words, or memory that
+/// could not grow for the copy that the tree keeps.
+enum StagedPatchesError {
+    /// The words are too few for the counts, or no live mesh has the id.
+    Missing,
+    /// The copy could not take `bytes` more of memory.
+    OutOfMemory { bytes: u64 },
+}
+
 impl StagedPatches {
     /// Reads the patches for mesh `mesh`, by its id that counts from 1, and rewrites their
     /// indices, which name the mesh's own vertices, into the order of its parts' vertices, which
-    /// the tree's draws read. `None` when the staging words are too few or no live mesh has the id.
+    /// the tree's draws read. `Missing` when the staging words are too few or no live mesh has the
+    /// id, and `OutOfMemory` when a copy that the file's size asks for could not grow.
     fn read(
         staging: &[u32],
         records: usize,
         indices: usize,
         meshes: &MeshStorage,
         mesh: u32,
-    ) -> Option<Self> {
-        let first = records * 8;
-        let list = staging.get(first..first + indices)?;
-        let mut indices = list.to_vec();
-        let vertices = meshes.to_part_order(mesh.wrapping_sub(1), &mut indices);
+    ) -> Result<Self, StagedPatchesError> {
+        let missing = || StagedPatchesError::Missing;
+        let first = records.checked_mul(8).ok_or_else(missing)?;
+        let end = first.checked_add(indices).ok_or_else(missing)?;
+        let list = staging.get(first..end).ok_or_else(missing)?;
+        let mut words = Vec::new();
+        words
+            .try_reserve_exact(list.len())
+            .map_err(|_| StagedPatchesError::OutOfMemory {
+                bytes: list.len() as u64 * 4,
+            })?;
+        words.extend_from_slice(list);
+        let vertices = meshes.to_part_order(mesh.wrapping_sub(1), &mut words);
         if vertices == 0 {
-            return None;
+            return Err(StagedPatchesError::Missing);
         }
-        let bounds = (0..records)
-            .map(|k| [0, 1, 2, 3].map(|c| f32::from_bits(staging[k * 8 + c])))
-            .collect();
-        let runs = (0..records)
-            .map(|k| [0, 1, 2, 3].map(|c| staging[k * 8 + 4 + c]))
-            .collect();
-        Some(Self {
+        let mut bounds: Vec<[f32; 4]> = Vec::new();
+        bounds
+            .try_reserve_exact(records)
+            .map_err(|_| StagedPatchesError::OutOfMemory {
+                bytes: records as u64 * 16,
+            })?;
+        for k in 0..records {
+            bounds.push([0, 1, 2, 3].map(|c| f32::from_bits(staging[k * 8 + c])));
+        }
+        let mut runs: Vec<[u32; 4]> = Vec::new();
+        runs.try_reserve_exact(records)
+            .map_err(|_| StagedPatchesError::OutOfMemory {
+                bytes: records as u64 * 16,
+            })?;
+        for k in 0..records {
+            runs.push([0, 1, 2, 3].map(|c| staging[k * 8 + 4 + c]));
+        }
+        Ok(Self {
             bounds,
             runs,
-            indices,
+            indices: words,
             vertices,
         })
     }
@@ -2557,22 +2586,27 @@ pub fn set_mesh_patches(mesh: u32, patches: u32, indices: u32, root: u32) -> u32
     value_with_engine(|e| {
         let staging = std::mem::take(&mut e.staging);
         let records = patches as usize;
-        let tree = StagedPatches::read(
+        let bytes = ((records * 8 + indices as usize) * 4) as u64;
+        let tree = match StagedPatches::read(
             &staging,
             records,
             indices as usize,
             e.renderer.settings().meshes(),
             mesh,
-        )
-        .map(|staged| {
-            PatchTree::new(
+        ) {
+            Ok(staged) => Some(PatchTree::new(
                 staged.indices,
                 staged.bounds,
                 staged.runs,
                 root,
                 staged.vertices,
-            )
-        });
+            )),
+            Err(StagedPatchesError::Missing) => None,
+            Err(StagedPatchesError::OutOfMemory { bytes }) => {
+                drop(staging);
+                return Err(out_of_memory(bytes));
+            }
+        };
         drop(staging);
         match tree {
             Some(Ok(tree)) => {
@@ -2580,10 +2614,11 @@ pub fn set_mesh_patches(mesh: u32, patches: u32, indices: u32, root: u32) -> u32
                 e.structure_changed = true;
                 stored.map(|()| 1).map_err(|_| {
                     core_failure(CoreError::OutOfMemory {
-                        bytes: ((records * 8 + indices as usize) * 4) as u32,
+                        bytes: u32::try_from(bytes).unwrap_or(u32::MAX),
                     })
                 })
             }
+            Some(Err(PatchError::Memory)) => Err(out_of_memory(bytes)),
             Some(Err(error)) => Ok(patch_failure(error)),
             None => Ok(0),
         }
@@ -2591,17 +2626,21 @@ pub fn set_mesh_patches(mesh: u32, patches: u32, indices: u32, root: u32) -> u32
 }
 
 /// The code that a tree that the engine refused answers with: 2 for a tree without patches, 3 for
-/// a root that names none, 4 for a patch's run, 5 for a parent, 6 for an index, 7 for a sphere,
-/// and 8 for a patch whose sphere or error does not hold a child's.
+/// a root that names none, 4 for a patch's run, 5 for a parent or a chain that is too deep, 6 for
+/// an index, 7 for a sphere, 8 for a patch whose sphere or error does not hold a child's, and 9
+/// for two patches that name one index.
 fn patch_failure(error: PatchError) -> u32 {
     match error {
         PatchError::Empty => 2,
         PatchError::Root => 3,
         PatchError::Record => 4,
-        PatchError::Parent => 5,
+        PatchError::Parent | PatchError::Depth => 5,
         PatchError::Vertex => 6,
         PatchError::Bounds => 7,
         PatchError::Nesting => 8,
+        PatchError::Overlap => 9,
+        // Memory is reported as running out of memory, which the caller maps before this point.
+        PatchError::Memory => 2,
     }
 }
 
@@ -2615,13 +2654,21 @@ fn patch_failure(error: PatchError) -> u32 {
 pub fn append_mesh_patches(mesh: u32, patches: u32, indices: u32) -> u32 {
     value_with_engine(|e| {
         let staging = std::mem::take(&mut e.staging);
-        let band = StagedPatches::read(
+        let bytes = ((patches as usize * 8 + indices as usize) * 4) as u64;
+        let band = match StagedPatches::read(
             &staging,
             patches as usize,
             indices as usize,
             e.renderer.settings().meshes(),
             mesh,
-        );
+        ) {
+            Ok(staged) => Some(staged),
+            Err(StagedPatchesError::Missing) => None,
+            Err(StagedPatchesError::OutOfMemory { bytes }) => {
+                drop(staging);
+                return Err(out_of_memory(bytes));
+            }
+        };
         drop(staging);
         let appended = band.and_then(|staged| {
             e.renderer.append_mesh_patches(
@@ -2637,6 +2684,7 @@ pub fn append_mesh_patches(mesh: u32, patches: u32, indices: u32) -> u32 {
                 e.structure_changed = true;
                 Ok(1)
             }
+            Some(Err(PatchError::Memory)) => Err(out_of_memory(bytes)),
             Some(Err(error)) => Ok(patch_failure(error)),
             None => Ok(0),
         }
@@ -4439,11 +4487,12 @@ pub fn has_levels() -> u32 {
 /// Gives mesh `base`, by its id that counts from 1, the `count` lower levels of detail whose mesh
 /// ids, then whose switch values as the bits of 32-bit floats, then whose switch measures, then
 /// whose material ids, the staging words hold, from the most detailed down. A material of 0 draws
-/// the level with the level before's. With `count` 0 the mesh loses its levels. The bits of
-/// `fades`, counted from the base level, mark the levels that hand over in a fading band. The next
-/// frame rebuilds the draw tables. Fails with the problem for levels that the mesh cannot take.
+/// the level with the level before's. With `count` 0 the mesh loses its levels. The low 16 bits of
+/// `flags`, counted from the base level, mark the levels that hand over in a fading band, and the
+/// high 16 bits the levels whose switch is a measured error. The next frame rebuilds the draw
+/// tables. Fails with the problem for levels that the mesh cannot take.
 #[wasm_bindgen(js_name = setMeshLevels)]
-pub fn set_mesh_levels(base: u32, count: u32, fades: u32) -> u32 {
+pub fn set_mesh_levels(base: u32, count: u32, flags: u32) -> u32 {
     with_engine(|e| {
         let count = count as usize;
         if e.staging.len() < 4 * count {
@@ -4481,7 +4530,7 @@ pub fn set_mesh_levels(base: u32, count: u32, fades: u32) -> u32 {
             floats,
             measures,
             material_ids,
-            fades as u16,
+            flags,
         );
         match set {
             Ok(()) => {

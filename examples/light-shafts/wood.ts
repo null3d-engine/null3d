@@ -9,6 +9,7 @@ import { setWindLayer } from '@null3d/vegetation';
 import { createWind } from '@null3d/wind';
 import { type PlantSpot, plantSpecies } from '../lib/plants';
 import { Noise, rock, type TexelSample, terrain, textureSet } from '../lib/procedural';
+import { LIGHT_SHAFTS_SPRUCE } from '../lib/stand-ins';
 
 const [TREES, ROCKS] = [150, 24];
 /** Linear colors of the forest floor: fallen needles, moss and the path's bare earth. */
@@ -21,9 +22,9 @@ const EARTH = [0.17, 0.11, 0.06];
  * between the trunks.
  */
 const PINE = {
-	id: 'norway-spruce',
+	id: LIGHT_SHAFTS_SPRUCE.id,
 	height: 18,
-	standIn: { height: 18, aspect: 0.3, leaf: [0.1, 0.24, 0.1], bark: [0.26, 0.18, 0.13] },
+	standIn: LIGHT_SHAFTS_SPRUCE.standIn,
 } as const;
 
 const noise = new Noise(7);
