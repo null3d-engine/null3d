@@ -455,10 +455,11 @@ export const record: Species = {
 			// would drop nine cards in ten, and the olive kept its look with them.
 			variantBytes: { low: 6_730_000, medium: 6_770_000, high: 6_820_000, ultra: 6_870_000 },
 			lod0Triangles: 2_900_000,
-			// The largest variant draws at most 125,499 triangles at the middle card level and 8,066
-			// at the farthest over the four tiers, so each cap sits just above its own figure.
+			// The largest variant draws at most 125,499 triangles at the middle card level and 12,293
+			// at the farthest, the rebuilt crown's level-2 mesh at seed 11's high tier, so each cap
+			// sits just above its own figure; the class ceiling above them is the owner's and unchanged.
 			lod1Triangles: 128_000,
-			lod2Triangles: 11_000,
+			lod2Triangles: 12_293,
 			downloadBytes: 1_000_000,
 			downloadHalfBytes: 350_000,
 			growMilliseconds: 600,
