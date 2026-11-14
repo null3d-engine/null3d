@@ -1237,6 +1237,7 @@ export default defineSketch(async (ctx) => {
 						forkShot(subjectsOf(), lens, {
 							...(QUERY.thin !== undefined && { radius: QUERY.thin }),
 							...(QUERY.span !== undefined && { span: QUERY.span }),
+							...(QUERY.along !== undefined && { along: QUERY.along }),
 						}),
 					0,
 					0.05,

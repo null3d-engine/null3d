@@ -1118,6 +1118,11 @@ export interface ForkOptions {
 	readonly radius?: number;
 	/** The metres the frame's height covers, in place of the limb's share of its width. */
 	readonly span?: number;
+	/**
+	 * The share of the plant's height at which the picture centres its span. A slot names it, and a
+	 * fork outside the span the picture frames is another part of the plant than the photograph's.
+	 */
+	readonly along?: number;
 }
 
 /** The row share on which a fork's joint stands, a little under the frame's middle. */
@@ -1178,6 +1183,20 @@ export function forkShot(subjects: PlantSubjects, lens: Lens, options: ForkOptio
 		);
 	}
 	const limbShare = options.limbShare ?? 0.22;
+	// A picture that frames a named span at a named height shows the fork inside that span: one below
+	// it, such as a stem's own division at the ground, is another part of the plant than the
+	// photograph's. A picture that names no span, or whose span holds no fork, keeps the whole plant,
+	// so a species is never refused for where its division happens to stand.
+	const along = options.along;
+	const span = options.span;
+	const framed =
+		along === undefined || span === undefined
+			? candidates
+			: candidates.filter(
+					({ fork }) =>
+						Math.abs(fork.at[1] - subjects.foot[1] - along * subjects.height) <= span / 2,
+				);
+	const pool = framed.length > 0 ? framed : candidates;
 	const solve = ({ fork, index }: { fork: ForkSubject; index: number }) => {
 		const tall = options.span ?? (2 * fork.radius) / limbShare / lens.aspect;
 		const wide = tall * lens.aspect;
@@ -1196,9 +1215,9 @@ export function forkShot(subjects: PlantSubjects, lens: Lens, options: ForkOptio
 		const found = best as { camera: Camera; blocked: string | undefined };
 		return { fork, index, wide, tall, ...found };
 	};
-	let chosen = solve(candidates[0] as (typeof candidates)[number]);
-	for (let k = 1; k < candidates.length && chosen.blocked !== undefined; k++) {
-		const next = solve(candidates[k] as (typeof candidates)[number]);
+	let chosen = solve(pool[0] as (typeof pool)[number]);
+	for (let k = 1; k < pool.length && chosen.blocked !== undefined; k++) {
+		const next = solve(pool[k] as (typeof pool)[number]);
 		if (next.blocked === undefined) chosen = next;
 	}
 	const { fork, camera, tall } = chosen;

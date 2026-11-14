@@ -1497,3 +1497,23 @@ describe("a view's areas against pictures that do not show its subject", () => {
 		expect(fails((x, y) => (y < 0.6 && x > 0.25 && x < 0.75 ? LEAF : GROUND))).toBe(true);
 	});
 });
+
+// A picture names the span it frames and the share of the plant's height it centres it on. A stem's
+// own division at the ground is outside that span, and reading it gives another part of the plant
+// than the photograph's.
+describe('the fork a picture frames in its span', () => {
+	const low = forkOf({ at: [0, 1, 0], order: 1, radius: 0.16, armRadii: [0.14, 0.13] });
+	const high = forkOf({ at: [0, 7, 0], order: 2, radius: 0.08, armRadii: [0.06, 0.05] });
+
+	test('takes the fork inside the named span over a thicker one below it', () => {
+		// The plant stands 16 m tall, so 0.44 of it is 7 m, and a 1 m span round that holds only the
+		// high fork; the low one, a great limb's and thicker, would win on the solve's own order.
+		const shot = shotOf(forkShot(tree({ forks: [low, high] }), TALL, { along: 0.44, span: 1 }));
+		expect(shot.facts.fork).toBe(1);
+	});
+
+	test('falls back to the whole plant when the span holds no fork', () => {
+		const shot = shotOf(forkShot(tree({ forks: [low, high] }), TALL, { along: 0.9, span: 0.2 }));
+		expect(shot.facts.fork).toBe(0);
+	});
+});

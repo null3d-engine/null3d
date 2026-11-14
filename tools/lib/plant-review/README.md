@@ -89,7 +89,7 @@ The command's status says whether the run did what it was asked. A run asked for
 | `meadow` | Stand a cut piece on the meadow, laid at the piece's own foot, as a photograph of one frond standing alone in its field shows it; a cut piece otherwise stands on its background alone. |
 | `placeholders` | Grow stand-ins; on by default for an id that is not registered. |
 | `horizon`, `fill`, `targetY`, `targetX`, `top`, `eye` | A whole-plant framing in screen shares, which stands the camera on the ground as a reference's camera stood. |
-| `along`, `span` | How far along a limb a limb view looks, and the metres of bark a bark view frames. |
+| `along`, `span` | How far along a limb a limb view looks, and the metres of bark a bark view frames. A fork view takes the fork inside the `span` the picture names at `along` of the plant's height, and keeps the whole plant when no fork stands there. |
 | `thin` | Metres of radius that a limb view frames: it picks the exposed limb that carries that thickness, so young bark shows. A fork view takes the fork whose limb is nearest that radius. |
 | `barkHeight` | Metres above the ground at which a mid-trunk bark view reads the surface, where the photograph shows the surface of one height, such as a column's skin above its corky foot. It goes before the bark zone's own height. |
 | `surface` | A limb view of the crown's outside: one foliage mass at the crown's edge against the sky, seen from under the crown's rim, in place of one branch against a plain ground. |
