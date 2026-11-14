@@ -348,7 +348,10 @@ describe('the pendulous sedge', () => {
 		// The record names the leaf-form height measure, the one its whole views were judged with,
 		// and it draws its cards' twig lines at the twigs' widths and on to the cards' centres; all
 		// of these move the sedge's blades' scale and its card levels.
-		expect(plantAssetDigest(growPlantNow(kit, OPTIONS))).toBe('f1926c1fb4d54966');
+		// The forms merge joins those with this line's own sedge changes, the fine clump twigs and
+		// the first card start, so the soil-free plant is neither line's figure: d5639f211ed6d288
+		// before the merge, f1926c1fb4d54966 on the forms line, a5cc68968440acff after it.
+		expect(plantAssetDigest(growPlantNow(kit, OPTIONS))).toBe('a5cc68968440acff');
 	});
 
 	it('ends its blades in long fine points', () => {
