@@ -13,7 +13,7 @@
 	},
 	"15-bark-mid-stem.png": {
 		"barkMask": true,
-		"daylight": 1.2
+		"daylight": 0.89
 	},
 	"16-bark-on-limb.png": {
 		"barkMask": true,
