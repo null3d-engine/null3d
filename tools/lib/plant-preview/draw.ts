@@ -23,7 +23,7 @@ import {
 	rasterise,
 	rasterTarget,
 } from '../../../packages/vegetation/src/lod/raster.ts';
-import { blank, type Rgba } from '../plant-review/image.ts';
+import { blank, type Rgba, srgbByte } from '../plant-review/image.ts';
 import { type PreviewCamera, pixelsPerMetre, project } from './camera.ts';
 
 /** What covers a pixel. */
@@ -777,6 +777,8 @@ export function painted(from: Canvas, factor: number, paint: Paint): Rgba {
 /**
  * A canvas as a matte, shrunk by a whole factor: the plant dark on white, each pixel as dark as the
  * share of it the plant covers, which is the picture the review tool reads a render's outline from.
+ * The bytes are display-encoded as the engine's canvas stores them, so the half-dark rule counts a
+ * preview pixel as plant from the same cover it counts in an engine still.
  *
  * @param from The canvas.
  * @param factor Canvas pixels per matte pixel, a side.
@@ -793,7 +795,7 @@ export function matte(from: Canvas, factor: number): Rgba {
 			for (let sy = 0; sy < factor; sy++)
 				for (let sx = 0; sx < factor; sx++)
 					clear += from.clear[(y * factor + sy) * from.width + x * factor + sx] as number;
-			const value = Math.round((255 * clear) / samples);
+			const value = srgbByte(clear / samples);
 			const to = (y * width + x) * 4;
 			out.data[to] = value;
 			out.data[to + 1] = value;

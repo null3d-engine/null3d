@@ -3,8 +3,9 @@
 // Each test draws flat square cards of a uniform atlas, square to a camera without perspective.
 import { describe, expect, test } from 'bun:test';
 import type { PlantAsset, SpeciesKitData } from '../../../packages/vegetation/src/asset.ts';
+import { matteMask } from '../plant-review/references.ts';
 import type { PreviewCamera } from './camera.ts';
-import { COVER_LEAF, COVER_NONE, canvas, cardFootprint, drawCards } from './draw.ts';
+import { COVER_LEAF, COVER_NONE, canvas, cardFootprint, drawCards, matte } from './draw.ts';
 
 /** The atlas's texels a side. */
 const SIZE = 64;
@@ -140,5 +141,22 @@ describe("the preview's cards", () => {
 	test("read the atlas's back layer where a card's back faces the camera", () => {
 		expect(drawn(kitOf(0, 1), levelOf([0], true), 32).cover).toBe(COVER_LEAF);
 		expect(drawn(kitOf(0, 1), levelOf([0]), 32).cover).toBe(COVER_NONE);
+	});
+});
+
+describe("the preview's matte", () => {
+	test("stores a pixel's clear share display-encoded, as the engine's canvas does", () => {
+		const sheet = canvas(3, 1);
+		sheet.clear.set([0, 0.5, 1]);
+		const picture = matte(sheet, 1);
+		expect([0, 4, 8].map((at) => picture.data[at] as number)).toEqual([0, 188, 255]);
+	});
+
+	test('reads a pixel as plant from the same cover the half-dark rule counts on an engine still', () => {
+		// The display encoding puts a pixel just under three quarters of cover on the sky's side, and
+		// one at nine tenths of cover on the plant's, as the engine's stored matte reads them.
+		const sheet = canvas(2, 1);
+		sheet.clear.set([1 - 0.78, 1 - 0.9]);
+		expect([...matteMask(matte(sheet, 1)).mask]).toEqual([0, 1]);
 	});
 });

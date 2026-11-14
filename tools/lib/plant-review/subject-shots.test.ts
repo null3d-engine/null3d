@@ -695,10 +695,18 @@ describe("the view of the crown's outside", () => {
 		expect(checkShot(shot, WIDE).present).toBe(true);
 	});
 
-	test('gives no shot where the generator names no lobes', () => {
+	test('gives no shot where the generator names no lobes, and frames the crown edge where it names none', () => {
 		const solved = crownOutsideShot(tree({ lobes: absent('no bud sites') }), WIDE, { turn: 0 });
 		expect(solved).toEqual({ absent: 'no bud sites' });
-		expect(isAbsent(crownOutsideShot(tree({ lobes: [] }), WIDE, { turn: 0 }))).toBe(true);
+		// A crown that names no mass is framed on its own edge, as a willow's is, whose foliage hangs
+		// in strands along long whips and leaves no compact subtree for a lobe.
+		const shot = shotOf(crownOutsideShot(tree({ lobes: [] }), WIDE, { turn: 0 }));
+		expect(shot.kind).toBe("one foliage mass at the crown's edge, against the sky");
+		expect(checkShot(shot, WIDE).present).toBe(true);
+		// The mass stands in the crown's mid-band at its outer reach.
+		const lobe = shot.points.find((point) => point.name === 'the lobe');
+		expect(lobe?.at[1]).toBeCloseTo(5 + 11 * 0.45, 6);
+		expect(Math.hypot(lobe?.at[0] ?? 0, lobe?.at[2] ?? 0)).toBeCloseTo(8 * 0.9, 6);
 	});
 });
 
@@ -911,6 +919,24 @@ describe('the bark views', () => {
 		const other = landing(shot, TALL, 'the limb running the other way');
 		expect(Math.abs(one.y - other.y)).toBeGreaterThan(0.4);
 		expect(checkShot(shot, TALL).present).toBe(true);
+	});
+
+	test('frames the limb whose radius the photograph shows, in place of the thickest', () => {
+		// A willow: a thick low limb with trunk-like furrowed bark, and thin limbs far out with smooth
+		// bark. Picture 16 shows the thin one, so the slot names its radius.
+		const limbs = [
+			limbOf(1, 4, [1, 0.2, 0], 0.4, 9, 0.5),
+			limbOf(2, 7, [-1, 0.4, 0.3], 0.06, 6, 0.3),
+			limbOf(3, 6, [0.3, 0.5, -1], 0.12, 7, 0.35),
+		];
+		const subjects = tree({ limbs });
+		const thickest = shotOf(barkLimbShot(subjects, TALL, { girth: 0.38, along: 0.3 }));
+		expect(thickest.facts.limb).toBe(1);
+		const thin = shotOf(barkLimbShot(subjects, TALL, { girth: 0.38, along: 0.3, thin: 0.06 }));
+		expect(thin.facts.limb).toBe(2);
+		expect(thin.facts.radius as number).toBeLessThan(0.1);
+		expect(thickest.facts.radius as number).toBeGreaterThan(0.3);
+		expect(checkShot(thin, TALL).present).toBe(true);
 	});
 
 	test('a bark view of a plant with no wood gives no shot', () => {

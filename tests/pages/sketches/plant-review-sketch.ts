@@ -1579,6 +1579,7 @@ export default defineSketch(async (ctx) => {
 							barkLimbShot(subjectsOf(), lens, {
 								girth,
 								...(QUERY.along !== undefined && { along: QUERY.along }),
+								...(QUERY.thin !== undefined && { thin: QUERY.thin }),
 							}),
 						0,
 						0.02,

@@ -265,8 +265,8 @@ const GREAT = 0.35;
 /** The fewest bud sites a branch carries for its foliage to count as a lobe. */
 const LOBE_BUDS = 8;
 /** The most radius a lobe may have, as a share of the plant's height, and the least that most may be, in metres. */
-const LOBE_HEIGHT_SHARE = 0.12;
-const LOBE_LEAST_RADIUS = 0.3;
+export const LOBE_HEIGHT_SHARE = 0.12;
+export const LOBE_LEAST_RADIUS = 0.3;
 /** A solid ball's radius over the root mean square distance of its points from its middle. */
 const BALL = Math.sqrt(5 / 3);
 /** The most twig tips the adapter names, the best lit and farthest out first. */
