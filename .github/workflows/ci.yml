@@ -1191,7 +1191,7 @@ jobs:
     # the page's build.
     needs: build
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 24
     env:
       NULL3D_REQUIRE_FRESH_SHADERS: "1"
       HUSKY: "0"
@@ -1231,9 +1231,10 @@ jobs:
             fresh-project-shaders-
       # The step packs the packages, builds a fresh project and a website page of the demos, and
       # starts them in a browser. Its limit ends a stuck browser before the job's, with the step
-      # named as the one that ran out of time.
+      # named as the one that ran out of time. A cold run measures 18m37s when the shader cache
+      # stamp changes, which the branch's shader attribute does, so the limit holds that with room.
       - name: The packed packages in a fresh project
-        timeout-minutes: 18
+        timeout-minutes: 21
         env:
           # The build job's generated shader modules, which the artifact beside them carries. The
           # plugin uses them instead of the release asset, which no release offers yet, and instead
