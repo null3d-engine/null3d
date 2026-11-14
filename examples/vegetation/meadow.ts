@@ -44,11 +44,14 @@ export function createMeadow(
 	let grown = false;
 	/** The note that shows while the meadow grows, counting the species it has finished. */
 	const growing = (() => {
+		// A sketch runs in a worker, where the page has no document, so the note shows only on a
+		// thread that has one. The meadow grows either way.
+		const shows = typeof document !== 'undefined';
 		let box: HTMLElement | undefined;
 		let said: HTMLElement | undefined;
 		return {
 			begin(): void {
-				if (box) return;
+				if (!shows || box) return;
 				box = document.createElement('div');
 				box.style.cssText = [
 					'position:fixed',
@@ -83,7 +86,7 @@ export function createMeadow(
 	return async function growMeadow(seed: number): Promise<void> {
 		for (const piece of planted) piece.destroy();
 		planted = [];
-		const { season, sparse } = options.controls();
+		const { season, sparse, maxTriangles } = options.controls();
 		const ids = options.species ?? speciesIds();
 		const across = Math.max(1, Math.ceil(Math.sqrt(ids.length)));
 		const step = 34;
@@ -111,6 +114,7 @@ export function createMeadow(
 					near: true,
 					season,
 					sparse,
+					maxTriangles,
 				});
 				// Count each species as it finishes, so the note moves while the rest still grow.
 				done++;

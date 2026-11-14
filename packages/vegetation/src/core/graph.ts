@@ -693,6 +693,10 @@ export function skeletonCopy(skeleton: MacroSkeleton): MacroSkeleton {
 			record: axes.record.slice(),
 			barkV: axes.barkV.slice(),
 			barkU: axes.barkU.slice(),
+			cutFrom: axes.cutFrom.slice(),
+			cutTo: axes.cutTo.slice(),
+			grownBark: axes.grownBark.slice(),
+			...(axes.fine ? { fine: axes.fine.slice() } : {}),
 			...(axes.origin ? { origin: axes.origin.slice() } : {}),
 		},
 		buds: {
@@ -706,6 +710,17 @@ export function skeletonCopy(skeleton: MacroSkeleton): MacroSkeleton {
 			axis: buds.axis.slice(),
 			woodRadius: buds.woodRadius.slice(),
 			...(buds.origin ? { origin: buds.origin.slice() } : {}),
+			...(buds.sockets
+				? {
+						sockets: {
+							...buds.sockets,
+							scale: buds.sockets.scale.slice(),
+							rank: buds.sockets.rank.slice(),
+							lobe: buds.sockets.lobe.slice(),
+							...(buds.sockets.piece ? { piece: buds.sockets.piece.slice() } : {}),
+						},
+					}
+				: {}),
 		},
 	};
 }
@@ -737,6 +752,10 @@ export function skeletonBuffers(skeleton: MacroSkeleton): ArrayBuffer[] {
 		axes.record,
 		axes.barkV,
 		axes.barkU,
+		axes.cutFrom,
+		axes.cutTo,
+		axes.grownBark,
+		...(axes.fine ? [axes.fine] : []),
 		buds.node,
 		buds.position,
 		buds.frame,
