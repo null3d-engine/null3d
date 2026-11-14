@@ -216,6 +216,8 @@ export interface AxisPoint {
 	readonly along: number;
 	/** Whether a year's growth unit ends here, where the low tier keeps a ring. */
 	readonly unitEnd?: boolean;
+	/** Whether no tier keeps a ring here: a stem that rings by its bend rings only where it bends. */
+	readonly plain?: boolean;
 }
 
 /** One leaf of the plan. */
@@ -653,6 +655,12 @@ export interface LeafRule {
 	readonly salt: number;
 	readonly key: number;
 	readonly phyllotaxis: Phyllotaxis;
+	/**
+	 * Degrees round the stem of every node's leaves, from the stem's first side toward its sky
+	 * side, in place of the arrangement's own: a frond's leaflets stand at the same places on both
+	 * sides at every node. At most eight, the leaves a node's draws tell apart.
+	 */
+	readonly azimuths?: readonly number[];
 	/** Degrees a leaf stands from its stem, base to tip, and the half-width of its spread. */
 	readonly leafAngle: Curve;
 	readonly leafAngleSpread: number;
@@ -716,11 +724,13 @@ export function placeNodeLeaves(
 	// a tuft that turns with the stem.
 	const face = plateFace ?? sky;
 	const side = normalize3(cross3(stem, face, [0, 0, 0]));
-	const azimuths = nodeAzimuths(phyllotaxis, node, azimuthStart, (key) =>
-		phyllotaxis.kind === 'rosette-spur'
-			? spreadAt(phyllotaxis.leaves, draw(Purpose.Spur, axis, key))
-			: 1,
-	);
+	const azimuths =
+		rule.azimuths ??
+		nodeAzimuths(phyllotaxis, node, azimuthStart, (key) =>
+			phyllotaxis.kind === 'rosette-spur'
+				? spreadAt(phyllotaxis.leaves, draw(Purpose.Spur, axis, key))
+				: 1,
+		);
 	const spread = rule.leafAngleSpread;
 	const leafAngle =
 		rule.needleAngle ??
@@ -1388,6 +1398,7 @@ export function meshShoot(
 			const last = path[path.length - 1];
 			const end = k === points.length - 1;
 			if (last && !end) {
+				if (point.plain) continue;
 				const gap = point.along - last.along;
 				const least = covered(last.along, point.along)
 					? Math.max(HIDDEN_RING_GAP, point.radius * 2)

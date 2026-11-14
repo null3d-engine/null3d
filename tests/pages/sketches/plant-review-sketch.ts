@@ -74,6 +74,7 @@ import {
 	crownOutsideShot,
 	crownUndersideShot,
 	forkShot,
+	insideBesideTrunk,
 	insideShot,
 	junctionShot,
 	limbShot,
@@ -1135,11 +1136,11 @@ export default defineSketch(async (ctx) => {
 				break;
 			}
 			case 'inside': {
-				// A plant with no trunk, or with no limb leaving one, keeps its stalks at the crown's own
-				// centre, so its inside photograph is of the stalk bundle: the camera stands just outside
-				// it at the crown's height and looks at the bundle. A tree is framed beside its trunk.
-				const { trunk: stemSubject, limbs: limbSubjects } = subjectsOf();
-				if (isAbsent(stemSubject) || isAbsent(limbSubjects) || limbSubjects.length === 0) {
+				// A plant with no trunk, or a trunk whose crown stands only at its top, keeps its stalks at
+				// the crown's own centre, so its inside photograph is of the stalk bundle: the camera stands
+				// just outside it at the crown's height and looks at the bundle. A tree, or a trunk its
+				// crown clothes from low down, is framed beside its trunk.
+				if (!insideBesideTrunk(subjectsOf())) {
 					const middle = Math.max(0.05, 0.45 * main.crown.top);
 					plainSubjects.set(view, {
 						kind: 'the stalk bundle at the crown',
@@ -1609,23 +1610,27 @@ export default defineSketch(async (ctx) => {
 			case 'leaf-under': {
 				// A span frames a part of the piece rather than the whole of it: the frame's middle
 				// stands on the piece at the share the query names, halfway up by default, and the
-				// span is the width it shows there.
+				// span is the width it shows there. A roll turns the frame about its line of sight, as
+				// a photograph that lays the piece across the frame does.
 				if (QUERY.span !== undefined && piece) {
 					const part = boundsOf(piece as PlantAsset, pieceKit);
 					const low = part.min[1] as number;
 					const high = part.max[1] as number;
 					const at = low + (high - low) * (QUERY.along ?? 0.5);
-					return orbit(
-						[
-							((part.min[0] as number) + (part.max[0] as number)) / 2,
-							at,
-							((part.min[2] as number) + (part.max[2] as number)) / 2,
-						],
-						spanDistance(QUERY.span, fov, aspect),
-						e,
-						turn,
-						fov,
-					);
+					return {
+						...orbit(
+							[
+								((part.min[0] as number) + (part.max[0] as number)) / 2,
+								at,
+								((part.min[2] as number) + (part.max[2] as number)) / 2,
+							],
+							spanDistance(QUERY.span, fov, aspect),
+							e,
+							turn,
+							fov,
+						),
+						...(QUERY.roll !== undefined && { roll: QUERY.roll * DEG }),
+					};
 				}
 				// A piece framed at the scale its photograph shows, in leaf lengths, stands on its cut:
 				// the cut on the frame's lower edge, the piece running up across it and off its far edge
@@ -1787,13 +1792,15 @@ export default defineSketch(async (ctx) => {
 	const colours = BACKGROUND_COLOURS[BACKGROUND];
 	scene.setBackground(PLAIN ? '#ffffff' : (QUERY.sky ?? colours.sky));
 	const groundColour = QUERY.ground ?? colours.ground;
-	if (groundColour && !PLAIN && !SPEC.cutting && !QUERY.lifted) {
+	if (groundColour && !PLAIN && (!SPEC.cutting || QUERY.meadow) && !QUERY.lifted) {
 		// The meadow is unlit and casts nothing back, so it shows its measured colour everywhere and a
-		// mask can tell it from the plant by colour alone.
+		// mask can tell it from the plant by colour alone. A cut piece stands on its background alone,
+		// unless its slot stands it in its field, where the meadow lies at the piece's own foot.
 		scene.createMesh({
 			mesh: geometry.plane({ width: 8000, height: 8000 }),
 			material: materials.unlit({ color: groundColour }),
 			rotation: FLAT,
+			...(SPEC.cutting && { position: [0, bounds.min[1] as number, 0] as V3 }),
 		});
 	}
 	if (PLAIN && SPEC.whole && !SPEC.cutting && !QUERY.lifted) {
