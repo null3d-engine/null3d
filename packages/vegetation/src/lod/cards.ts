@@ -15,6 +15,7 @@ import { cos, length3, normalize3, quatRotate, sin, type Vector3 } from '../core
 import { MeshWriter } from '../leaf/writer';
 import type { MeshInput } from '../stages';
 import { VARIANT_RECORDS } from '../wind/records';
+import { WOOD_RADIUS_RANGE } from '../wood/wood-mesh';
 
 /** A card's corners: signs of its right and up half-extents. */
 export const CARD_CORNERS = [
@@ -1001,6 +1002,9 @@ export function cardMesh(input: MeshInput, level: 1 | 2): MeshArrays {
 	const { position, axisOf, nodeCount } = skeleton;
 	const keep = input.record.lod.woodOrders[level - 1] ?? 255;
 	const twigs = input.cardJoin === 'twig' ? new Set(cardTwigs(input, level)) : undefined;
+	// A record asks for its cards' stalks: a card's leaves may read as a piece in air where the
+	// twig under them is thinner than a pixel. The line draws at the twig's own width.
+	const stalk = Math.max(0, input.record.lod.cardStalk ?? 0);
 	const grows = cardRows(input, level);
 	const back: Vector3 = [0, 0, 0];
 	const support = supportAxes(input, level);
@@ -1086,7 +1090,6 @@ export function cardMesh(input: MeshInput, level: 1 | 2): MeshArrays {
 				mesh.quad(first + 3, first + 2, first + 1, first);
 			}
 		}
-		const stalk = Math.max(0, input.record.lod.cardStalk ?? 0);
 		if (stalk > 0 && rows.back) {
 			const bx = rows.back[r * 3] as number;
 			const by = rows.back[r * 3 + 1] as number;
@@ -1095,11 +1098,12 @@ export function cardMesh(input: MeshInput, level: 1 | 2): MeshArrays {
 			// the record asks, the centre of the foliage the card carries. That centre stands ahead
 			// of the row by the shoot's own length, so the stretch alone can end short of it and
 			// leave the leaves joined to nothing; the line then runs the whole way from the wood.
+			// A card cut along its piece starts at the piece's own base, so its line ends at the row.
 			const from: Vector3 = [px, py, pz];
 			let to: Vector3 = [px + bx, py + by, pz + bz];
-			const centre = input.record.lod.cardStalkToFoliage
-				? prototype.card.planes[0]?.centre
-				: undefined;
+			const cut = prototype.card.planes.some((plane) => plane.along[1] < 1);
+			const centre =
+				input.record.lod.cardStalkToFoliage && !cut ? prototype.card.planes[0]?.centre : undefined;
 			if (centre) {
 				quatRotate(
 					rows.rotation,
@@ -1115,14 +1119,15 @@ export function cardMesh(input: MeshInput, level: 1 | 2): MeshArrays {
 			const length = Math.sqrt(dx * dx + dy * dy + dz * dz);
 			if (length > 1e-6) {
 				// The supporting twig as a line from the parent's end to the leaves' centre: two
-				// coincident vertices at each end, which the vertex stage widens to the record's least
-				// width on screen.
+				// coincident vertices at each end, which the vertex stage widens to the twig's own
+				// width on screen, or the wood's least drawn width where the twig is thinner.
 				const normal: Vector3 = [dx / length, dy / length, dz / length];
+				const twig = stalkRadius(input, r);
 				const first = mesh.vertices;
-				mesh.vertex(from, normal, [0, 0], [0, STALK_PLANE], colour);
-				mesh.vertex(from, normal, [1, 0], [0, STALK_PLANE], colour);
-				mesh.vertex(to, normal, [1, 0], [1, STALK_PLANE], colour);
-				mesh.vertex(to, normal, [0, 0], [1, STALK_PLANE], colour);
+				mesh.vertex(from, normal, [0, twig], [0, STALK_PLANE], colour);
+				mesh.vertex(from, normal, [1, twig], [0, STALK_PLANE], colour);
+				mesh.vertex(to, normal, [1, twig], [1, STALK_PLANE], colour);
+				mesh.vertex(to, normal, [0, twig], [1, STALK_PLANE], colour);
 				mesh.quad(first, first + 1, first + 2, first + 3);
 				// The line shows from either side of the plant: the vertex stage widens it, so its
 				// winding turns with the view, and a back face is not culled.
@@ -1131,6 +1136,16 @@ export function cardMesh(input: MeshInput, level: 1 | 2): MeshArrays {
 		}
 	}
 	return mesh.finishMesh();
+}
+
+/**
+ * A card stalk's second texture coordinate: the radius of the twig its row grows from, over the
+ * span the wood's radius takes, so the vertex stage draws the line as that twig's own width.
+ */
+function stalkRadius(input: MeshInput, row: number): number {
+	const node = input.rows.node?.[row];
+	const radius = node === undefined ? 0 : (input.skeleton.radius[node] ?? 0);
+	return Math.min(1, Math.max(0, radius / WOOD_RADIUS_RANGE));
 }
 
 /** The triangles of one stalk: a line of two faces from a card to the wood. */
@@ -1630,9 +1645,10 @@ export function cardClusters(
 						}
 		}
 	}
+	const stalked = Math.max(0, input.record.lod.cardStalk ?? 0) > 0;
 	return made.map(({ joined, ...cluster }) => ({
 		...cluster,
-		stalk: !joined && cluster.anchor !== undefined,
+		stalk: stalked && !joined && cluster.anchor !== undefined,
 		faces:
 			kit.prototypes[rows.prototype[cluster.row] as number]?.card.planes.filter(
 				(plane) => plane.role < planes,
@@ -1736,13 +1752,14 @@ export function clusterCardMesh(
 		const dz = to[2] - from[2];
 		const length = Math.sqrt(dx * dx + dy * dy + dz * dz);
 		if (length <= 1e-6) continue;
-		// A line of two faces, which the vertex stage widens to the record's least width on screen.
+		// A line of two faces, which the vertex stage widens to the twig's own width on screen.
 		const normal: Vector3 = [dx / length, dy / length, dz / length];
+		const twig = stalkRadius(input, cluster.row);
 		const first = mesh.vertices;
-		mesh.vertex(from, normal, [0, 0], [0, STALK_PLANE], colour);
-		mesh.vertex(from, normal, [1, 0], [0, STALK_PLANE], colour);
-		mesh.vertex(to, normal, [1, 0], [1, STALK_PLANE], colour);
-		mesh.vertex(to, normal, [0, 0], [1, STALK_PLANE], colour);
+		mesh.vertex(from, normal, [0, twig], [0, STALK_PLANE], colour);
+		mesh.vertex(from, normal, [1, twig], [0, STALK_PLANE], colour);
+		mesh.vertex(to, normal, [1, twig], [1, STALK_PLANE], colour);
+		mesh.vertex(to, normal, [0, twig], [1, STALK_PLANE], colour);
 		mesh.quad(first, first + 1, first + 2, first + 3);
 		mesh.quad(first + 3, first + 2, first + 1, first);
 	}

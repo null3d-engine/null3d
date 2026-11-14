@@ -183,11 +183,6 @@ describe('the species header', () => {
 		}
 	});
 
-	test("writes the least width a card's stalk draws, or nothing where the record gives none", () => {
-		expect(texel(header, HEADER.cardStalk)[0]).toBe(0);
-		const stalked: Species = { ...record, lod: { ...record.lod, cardStalk: 1.5 } };
-		expect(texel(speciesHeader(stalked, manifest, box), HEADER.cardStalk)[0]).toBeCloseTo(1.5, 6);
-	});
 	test("writes a fire scar's hollow and char into the header, or zeroes it where the record gives none", () => {
 		expect(texel(header, HEADER.scar)).toEqual([0, 0, 0, 0]);
 		expect(texel(header, HEADER.scarColour)).toEqual([0, 0, 0, 0]);
@@ -484,7 +479,6 @@ describe('the plant shader', () => {
 			HEADER_WINTER_TRANSMITTANCE: HEADER.winterTransmittance,
 			HEADER_SHEATH: HEADER.sheath,
 			HEADER_EXTRA_BANDS: HEADER.extraBands,
-			HEADER_CARD_STALK: HEADER.cardStalk,
 			HEADER_CARD_COVERAGE: HEADER.cardCoverage,
 			HEADER_SCAR: HEADER.scar,
 			HEADER_SCAR_COLOUR: HEADER.scarColour,
