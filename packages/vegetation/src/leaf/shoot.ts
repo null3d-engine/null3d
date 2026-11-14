@@ -166,6 +166,12 @@ export interface ShootCut {
 	 */
 	readonly coneBelow?: number;
 	/**
+	 * Whether every bud draws as a plain cone of one band, whatever its length: a piece's own
+	 * picture shows a bud a few pixels wide, where its swell does not read. Absent, only a bud under
+	 * `coneBelow` draws as a cone.
+	 */
+	readonly coneAll?: boolean;
+	/**
 	 * Metres below which an axil's bud is left out: a smaller one hides under its leaf and spans a
 	 * pixel or two at the distances the tier draws. Absent, every axil's bud is drawn.
 	 */
@@ -676,6 +682,11 @@ export interface LeafRule {
 	readonly leafMean: number;
 	/** The blade's length in metres, 0 for a leaf that carries no axil bud. */
 	readonly leafLength: number;
+	/**
+	 * Whether a bud stands in each leaf's axil; it does where absent. A piece that leaves its axils
+	 * bare pays for the leaves and the wood alone.
+	 */
+	readonly axilBuds?: boolean;
 	/** The leaf meshes a leaf may draw. */
 	readonly leafMeshes: number;
 	readonly budLength: number;
@@ -785,7 +796,7 @@ export function placeNodeLeaves(
 			direction,
 			crowded,
 		});
-		if (rule.leafLength > 0 && rule.budLength > 0) {
+		if (rule.leafLength > 0 && rule.budLength > 0 && rule.axilBuds !== false) {
 			const lean = radians(BUD_LEAN);
 			buds.push({
 				at: [at[0] + radial[0] * radius, at[1] + radial[1] * radius, at[2] + radial[2] * radius],
@@ -1462,7 +1473,9 @@ export function meshShoot(
 		}
 		const w = bud.width / 2;
 		const l = bud.length;
-		const cone = shape.cone === true || (!bud.mark && bud.length < (cut.coneBelow ?? 0));
+		const cone =
+			shape.cone === true ||
+			(!bud.mark && (cut.coneAll === true || bud.length < (cut.coneBelow ?? 0)));
 		const double = shape.double === true && !cone;
 		const profile: [number, number][] = cone
 			? [

@@ -1002,7 +1002,7 @@ const CROWN_CUT_HIGH: Readonly<Record<string, number>> = {
 
 describe("a plant of pieces' kit", () => {
 	it(
-		"holds each piece it carries at a fifth of the crown cut at the high tier, the oak's branch end at 1,000, every directed record of the nine species that names pieces",
+		"holds each piece it carries at a fifth of the crown cut at the high tier, the oak's and the beech's branch ends at 1,000, every directed record of the nine species that names pieces",
 		async () => {
 			const high = DETAILS.indexOf('high');
 			let read = 0;
@@ -1031,7 +1031,8 @@ describe("a plant of pieces' kit", () => {
 					const crown = CROWN_CUT_HIGH[`${id} ${name}`];
 					expect(crown).toBeDefined();
 					expect(triangles).toBeLessThanOrEqual((crown ?? 0) / 5);
-					if (id === 'pedunculate-oak' && name === 'branch-end')
+					// The oak and the beech carry thousands of branch ends, so each is held to 1,000.
+					if ((id === 'pedunculate-oak' || id === 'european-beech') && name === 'branch-end')
 						expect(triangles).toBeLessThanOrEqual(1000);
 					read++;
 				}
@@ -1058,8 +1059,8 @@ describe("a piece's cost", () => {
 					const crown = CROWN_CUT_HIGH[`${id} ${rule.name}`];
 					expect(crown).toBeDefined();
 					expect(drawn).toBeLessThanOrEqual((crown ?? 0) / 5);
-					// The oak carries thousands of branch ends, so its own is held to 1,000 triangles.
-					if (id === 'pedunculate-oak' && rule.name === 'branch-end')
+					// The oak and the beech carry thousands of branch ends, so each is held to 1,000.
+					if ((id === 'pedunculate-oak' || id === 'european-beech') && rule.name === 'branch-end')
 						expect(drawn).toBeLessThanOrEqual(1000);
 				}
 			}
