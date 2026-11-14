@@ -135,6 +135,7 @@
 	},
 	"26-bark-texture.png": {
 		"barkMask": true,
-		"daylight": 1.25
+		"daylight": 1.25,
+		"barkHeight": 2.4
 	}
 }
