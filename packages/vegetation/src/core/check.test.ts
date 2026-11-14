@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'bun:test';
 import { meadowGrassRecord } from '../grow/ground.fixture';
 import { record as template } from '../species/_template/record';
+import { directed as sequoia } from '../species/giant-sequoia/directed';
 import { record as meadow } from '../species/meadow-grass/record';
 import { capProblems, capsFor, MODEL_CAPS } from './caps';
 import { checkSpecies, speciesProblems } from './check';
-import type { ShootSpec, Species } from './record';
+import type { Conifer, ShootSpec, Species } from './record';
 import type { Spread } from './types';
 
 describe('the record check', () => {
@@ -643,5 +644,32 @@ describe('a tuft sheath colour', () => {
 		expect(speciesProblems(overReach).some((p) => p.startsWith('growth.sheathColour.reach'))).toBe(
 			true,
 		);
+	});
+});
+
+describe("a shell's clumps", () => {
+	const conifer = sequoia.growth as Conifer;
+	const shell = conifer.patch.sockets as NonNullable<Conifer['patch']['sockets']>;
+	/** The sequoia's crown as a shell, or a dome, with another sockets rule. */
+	const withPatch = (
+		kind: 'shell' | 'dome',
+		sockets: NonNullable<Conifer['patch']['sockets']>,
+	): Species => ({
+		...sequoia,
+		growth: { ...conifer, patch: { ...conifer.patch, kind, sockets } },
+	});
+
+	it('takes a clump of a size, on a shell alone', () => {
+		const clump = { spacing: 2, radius: 0.8 };
+		expect(speciesProblems(withPatch('shell', { ...shell, clump }))).toEqual([]);
+		expect(speciesProblems(withPatch('dome', { ...shell, clump }))).toContain(
+			"growth.patch.sockets.clump is given but growth.patch.kind is not 'shell'",
+		);
+		expect(
+			speciesProblems(withPatch('shell', { ...shell, clump: { ...clump, spacing: 0 } })),
+		).toContain('growth.patch.sockets.clump.spacing is 0; it is metres and must be above 0');
+		expect(
+			speciesProblems(withPatch('shell', { ...shell, clump: { ...clump, radius: 0 } })),
+		).toContain('growth.patch.sockets.clump.radius is 0; it is metres and must be above 0');
 	});
 });

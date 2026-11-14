@@ -622,6 +622,33 @@ function shellPlaces(rule: ShellRule): ShellPlace[] {
 }
 
 /**
+ * A shell's places thinned into clumps: a centre stands wherever a place lies a clump's spacing from
+ * every centre before it, and a place is kept only while it stands within the clump's radius of one
+ * of them. The pieces then carry the shell in rounded masses with bare shell between them, as a
+ * crown's clumps stand against its shade, and the crown's rim breaks into lobes.
+ *
+ * @param places The shell's places, its rows from the foot up.
+ * @param clump The clump's spacing and radius in metres, or undefined to keep every place.
+ * @returns The places the clumps keep.
+ */
+function clumpShell(
+	places: readonly ShellPlace[],
+	clump: { readonly spacing: number; readonly radius: number } | undefined,
+): ShellPlace[] {
+	if (!clump) return [...places];
+	const spacing = Math.max(0.05, clump.spacing);
+	const radius = Math.max(0.01, Math.min(clump.radius, spacing / 2));
+	const apart = (a: Readonly<Vector3>, b: Readonly<Vector3>): number =>
+		(a[0] - b[0]) * (a[0] - b[0]) + (a[1] - b[1]) * (a[1] - b[1]) + (a[2] - b[2]) * (a[2] - b[2]);
+	const centres: Vector3[] = [];
+	for (const place of places)
+		if (centres.every((centre) => apart(centre, place.at) >= spacing * spacing))
+			centres.push(place.at);
+	const reach = radius * radius;
+	return places.filter((place) => centres.some((centre) => apart(centre, place.at) <= reach));
+}
+
+/**
  * A dome cut into level bands of equal height from its rim up, and each band into equal turns: half
  * an ellipsoid whose floor reaches `long` one way and `wide` the other and whose top stands `tall`
  * above it. Each band holds its area up to each turn, the last being the band's whole area.
@@ -2082,19 +2109,22 @@ export function planConifer(input: GrowInput): ConiferPlan {
 	const rule = g.patch.sockets;
 	const shell =
 		onShell && rule
-			? shellPlaces({
-					outline,
-					lineAt,
-					from: shellFrom,
-					to: shellTo,
-					pitch: Math.max(0.05, rule.pitch),
-					rise: Math.max(0.05, rule.rise ?? rule.pitch),
-					lean: rule.lift,
-					inset: pieceLength * SHELL_FACE,
-					length: pieceLength,
-					turn: draw(Purpose.ShellTurn) * 2 * PI,
-					draw: (row, place) => draw(Purpose.ShellPlace, row, place),
-				})
+			? clumpShell(
+					shellPlaces({
+						outline,
+						lineAt,
+						from: shellFrom,
+						to: shellTo,
+						pitch: Math.max(0.05, rule.pitch),
+						rise: Math.max(0.05, rule.rise ?? rule.pitch),
+						lean: rule.lift,
+						inset: pieceLength * SHELL_FACE,
+						length: pieceLength,
+						turn: draw(Purpose.ShellTurn) * 2 * PI,
+						draw: (row, place) => draw(Purpose.ShellPlace, row, place),
+					}),
+					rule.clump,
+				)
 			: [];
 	// A shell's foliage stands from its foot to its top.
 	if (shell.length > 0) {

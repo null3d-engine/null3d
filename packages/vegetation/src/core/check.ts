@@ -857,6 +857,19 @@ function growthProblems(record: Species, out: string[]): void {
 		const rise = patch.sockets?.rise;
 		if (rise !== undefined && !(rise > 0))
 			out.push(`growth.patch.sockets.rise is ${rise}; it is metres and must be above 0`);
+		const clump = patch.sockets?.clump;
+		if (clump !== undefined) {
+			if (patch.kind !== 'shell')
+				out.push("growth.patch.sockets.clump is given but growth.patch.kind is not 'shell'");
+			if (!(clump.spacing > 0))
+				out.push(
+					`growth.patch.sockets.clump.spacing is ${clump.spacing}; it is metres and must be above 0`,
+				);
+			if (!(clump.radius > 0))
+				out.push(
+					`growth.patch.sockets.clump.radius is ${clump.radius}; it is metres and must be above 0`,
+				);
+		}
 		if (growth.body) curveProblems(growth.body.radius, 'growth.body.radius', out);
 	}
 	if (growth.model === 'architectural') {

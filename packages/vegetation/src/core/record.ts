@@ -908,6 +908,14 @@ export interface Conifer {
 			 * the pitch.
 			 */
 			readonly rise?: number;
+			/**
+			 * On a shell, the clumps its sockets stand in: the metres between one clump's centre and
+			 * the next over the shell, and the metres from a centre within which its sockets stand.
+			 * The pieces then carry the shell's foliage in rounded masses with bare shell between
+			 * them, as a crown's clumps stand against its shade at a whole view. Absent, the sockets
+			 * tile the shell evenly.
+			 */
+			readonly clump?: { readonly spacing: number; readonly radius: number };
 		};
 	};
 }
