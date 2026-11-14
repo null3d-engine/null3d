@@ -12,7 +12,7 @@
 //
 // Prototype space: the attach point at the origin, the shoot leaving along +Y, +Z toward the sky
 // side of the bud it grows from.
-import type { PrototypeArrays, ShootPrototype } from '../asset';
+import type { MeshArrays, PrototypeArrays, ShootPrototype } from '../asset';
 import { hashAt, unitAt } from '../core/hash';
 import {
 	acos,
@@ -59,6 +59,12 @@ export type UncardedPrototype = Omit<ShootPrototype, 'card'> & {
 	 * lays over the tiers' dense runs of leaves. Absent on a prototype that draws its leaves whole.
 	 */
 	readonly brushes?: PrototypeBrushes;
+	/**
+	 * A placed piece's whole mesh, for a piece whose tier holds only the neck it is cut at: the
+	 * card bake pictures this where it stands, rather than the tier's mesh. Absent, the bake draws
+	 * the tier's own mesh.
+	 */
+	readonly bake?: MeshArrays;
 };
 
 /**
