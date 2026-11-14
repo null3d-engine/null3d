@@ -21,6 +21,8 @@ import {
 	type ForkSubject,
 	type GreatLimb,
 	isAbsent,
+	LOBE_HEIGHT_SHARE,
+	LOBE_LEAST_RADIUS,
 	type Lobe,
 	lacking,
 	type Maybe,
@@ -1287,6 +1289,12 @@ const CROWN_SIDE_MOST = 0.92;
 /** The least radius of a lobe a crown view frames, against the plant's largest. */
 const LOBE_LEAST = 0.25;
 
+/** How far out along the crown's reach a mass stands that a crown with no lobe is framed on. */
+const CROWN_EDGE = 0.9;
+
+/** A mass of that crown's own height, above its base, that such a crown is framed on. */
+const CROWN_MASS_HEIGHT = 0.45;
+
 /** How far along the great limb that carries a lobe a crown view frames it. */
 const CARRIER_ALONG = 0.85;
 
@@ -1323,20 +1331,39 @@ export function crownOutsideShot(
 	const lobes = subjects.lobes.filter(
 		(lobe) => lobe.radius >= LOBE_LEAST * largest && lobe.radius > 0,
 	);
-	if (lobes.length === 0) return lacking('the plant has no foliage mass');
 	const foot = subjects.foot;
+	// A crown that names no foliage mass leaves no compact subtree to frame: a willow's foliage hangs
+	// in strands along long whips, so each whip's sites spread over more than a mass may. Such a crown
+	// is framed on its own edge instead, a mass of the crown's mid-band at the outer reach and as
+	// large as a mass may be, which is what its photograph shows: foliage against open sky.
+	const crownBase = isAbsent(subjects.crownBase) ? 0 : subjects.crownBase;
+	const sized: readonly Lobe[] =
+		lobes.length > 0
+			? lobes
+			: [
+					{
+						centre: [
+							foot[0] + facing(options.turn)[0] * subjects.reach * CROWN_EDGE,
+							crownBase + (subjects.height - crownBase) * CROWN_MASS_HEIGHT,
+							foot[2] + facing(options.turn)[2] * subjects.reach * CROWN_EDGE,
+						],
+						radius: Math.max(LOBE_LEAST_RADIUS, LOBE_HEIGHT_SHARE * (subjects.height - crownBase)),
+					},
+				];
 	const out = (lobe: Lobe) =>
 		Math.hypot(lobe.centre[0] - foot[0], lobe.centre[2] - foot[2]) + lobe.radius;
-	const farthest = lobes.reduce((most, lobe) => Math.max(most, out(lobe)), 1e-6);
-	const base = isAbsent(subjects.crownBase) ? 0 : subjects.crownBase;
+	const farthest = sized.reduce((most, lobe) => Math.max(most, out(lobe)), 1e-6);
 	const toward = facing(options.turn);
 	const worth = (lobe: Lobe) =>
 		out(lobe) / farthest +
 		0.3 * dot(outwardOf(foot, lobe.centre, options.turn), toward) +
 		0.2 *
 			(1 -
-				Math.max(0, Math.min(1, (lobe.centre[1] - base) / Math.max(subjects.height - base, 1e-6))));
-	const lobe = lobes.reduce((best, next) => (worth(next) > worth(best) ? next : best));
+				Math.max(
+					0,
+					Math.min(1, (lobe.centre[1] - crownBase) / Math.max(subjects.height - crownBase, 1e-6)),
+				));
+	const lobe = sized.reduce((best, next) => (worth(next) > worth(best) ? next : best));
 	const fill = options.fill ?? 0.6;
 	const tall = (2 * lobe.radius) / fill / Math.min(1, lens.aspect);
 	const distance = tall / 2 / tanHalf(lens);
