@@ -202,6 +202,9 @@ export const record: Species = {
 		// and the marker draws that line at the stem's own width, floored at the least the wood draws.
 		cardStalk: 1,
 		cardStalkWidth: true,
+		// A card's plane stands ahead of the row that draws it, so the line spans only the stretch
+		// behind the row and stops short of the spike card's centre; this runs it on to that centre.
+		cardStalkToFoliage: true,
 		woodOrders: [0, 0],
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,

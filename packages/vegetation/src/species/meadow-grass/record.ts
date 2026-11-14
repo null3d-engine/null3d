@@ -172,6 +172,9 @@ export const record: Species = {
 		// wood draws.
 		cardStalk: 1,
 		cardStalkWidth: true,
+		// A card's plane stands ahead of the row that draws it, so the line spans only the stretch
+		// behind the row and stops short of the panicle card's centre; this runs it on to that centre.
+		cardStalkToFoliage: true,
 		woodOrders: [0, 0],
 		impostor: { views: 8, texels: 64 },
 		shadowLevel: 1,
