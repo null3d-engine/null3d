@@ -5,8 +5,11 @@ mod common;
 
 use common::{World, base_sphere, count, grid};
 use null3d_core::jobs::JobSystem;
-use null3d_core::levels::Switch;
-use null3d_core::scene::Command;
+use null3d_core::levels::{
+    DrawRange, LEAST_DISTANCE, LEVEL_NEAREST_SHARE, LEVEL_RADIUS_SHARE, LevelLink, LevelRule,
+    LightLens, NO_LINK, Picked, Switch, fade_values,
+};
+use null3d_core::scene::{Command, flags};
 use null3d_gpu::drawlist::{Op, permutation, template};
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::frame::{FrameBuilder, LevelQuality};
@@ -31,7 +34,7 @@ const BALL: u32 = 2;
 /// is 360 pixels high and its camera 60 degrees high, so at a threshold of 1 pixel a level switches
 /// in past its error times 311.8: level 1 past 3.1 m, and level 2 past 15.6 m. The ball 20 m away
 /// draws level 2, past its fading band, which ends at 17.9 m.
-fn give_levels<B: FrameBuilder>(world: &mut World<B>, fades: u16) -> [u32; 2] {
+fn give_levels<B: FrameBuilder>(world: &mut World<B>, flags: u32) -> [u32; 2] {
     let settings = world.renderer.settings_mut();
     let meshes = [base_sphere(0.5, [6, 4]), base_sphere(0.5, [4, 3])]
         .map(|level| settings.meshes_mut().add(&level).unwrap() + 1);
@@ -42,7 +45,7 @@ fn give_levels<B: FrameBuilder>(world: &mut World<B>, fades: u16) -> [u32; 2] {
             &[0.01, 0.05],
             &[Switch::Error; 2],
             &[0, 0],
-            fades,
+            flags,
         )
         .unwrap();
     meshes
@@ -181,7 +184,7 @@ fn each_level_has_a_bucket_and_a_fade_bucket_whose_pipelines_dither_on_webgpu() 
     give_levels(&mut world, 0b110);
     let fading = indirect_draws(&mut world);
     let mut crisp = World::new();
-    give_levels(&mut crisp, 0);
+    give_levels(&mut crisp, 0b110 << 16);
     let switching = indirect_draws(&mut crisp);
     assert!(switching > plain, "{plain} {switching}");
     assert_eq!(
@@ -215,8 +218,62 @@ fn a_level_that_switches_at_once_adds_no_fade_bucket() {
     // A level measured by the asset tool changes the picture by under a pixel at its switch, so
     // it hands over at once and takes no fade bucket.
     let mut crisp = World::new();
-    give_levels(&mut crisp, 0);
+    give_levels(&mut crisp, 0b110 << 16);
     assert!(indirect_draws(&mut crisp) < fading);
+}
+
+#[test]
+fn a_measured_level_fades_only_above_the_governed_threshold() {
+    // The quality settings report a rebuild only where the governed threshold crosses the point
+    // where a measured switch shows.
+    let mut world = World::new();
+    give_levels(&mut world, 0);
+    let settings = world.renderer.settings_mut();
+    assert!(settings.set_level_quality(LevelQuality {
+        threshold: 4.0,
+        ..LevelQuality::default()
+    }));
+    assert!(!settings.set_level_quality(LevelQuality {
+        threshold: 2.0,
+        ..LevelQuality::default()
+    }));
+    assert!(settings.set_level_quality(LevelQuality {
+        threshold: 1.0,
+        ..LevelQuality::default()
+    }));
+    // Above it, a measured set draws the buckets of a set that names its fades, and at the default
+    // threshold it draws none of them.
+    let mut measured = World::new();
+    give_levels(&mut measured, 0b110 << 16);
+    measured
+        .renderer
+        .settings_mut()
+        .set_level_quality(LevelQuality {
+            threshold: 4.0,
+            ..LevelQuality::default()
+        });
+    let mut named = World::new();
+    give_levels(&mut named, 0b110);
+    let mut crisp = World::new();
+    give_levels(&mut crisp, 0b110 << 16);
+    let above = indirect_draws(&mut measured);
+    let naming = indirect_draws(&mut named);
+    let at_once_gpu = indirect_draws(&mut crisp);
+    assert_eq!(above, naming);
+    assert!(at_once_gpu < naming);
+    // The WebGL2 path draws the hand-over buckets only where a source lies in a band: at the
+    // raised threshold the ball sits in level 1's band, and at the default one it does not.
+    let mut cpu = cpu_world();
+    give_levels(&mut cpu, 0b110 << 16);
+    ball_at(&mut cpu, 1.3);
+    cpu.record(true);
+    let at_once = draws(&cpu).len();
+    cpu.renderer.settings_mut().set_level_quality(LevelQuality {
+        threshold: 4.0,
+        ..LevelQuality::default()
+    });
+    cpu.record(true);
+    assert!(draws(&cpu).len() > at_once);
 }
 
 /// The world drawn by the WebGL2 frame builder, one draw per bucket.
@@ -344,7 +401,7 @@ fn copies(world: &World) -> [u32; 5] {
 
 /// Gives the world's ball one lower level for each error, each simpler than the one before, and
 /// fading bands when `fades`. Returns their engine mesh ids.
-fn give_levels_of<B: FrameBuilder>(world: &mut World<B>, errors: &[f32], fades: u16) -> Vec<u32> {
+fn give_levels_of<B: FrameBuilder>(world: &mut World<B>, errors: &[f32], flags: u32) -> Vec<u32> {
     let finest = [[6, 4], [4, 3], [3, 2], [2, 1]];
     let settings = world.renderer.settings_mut();
     let meshes: Vec<u32> = errors
@@ -365,7 +422,7 @@ fn give_levels_of<B: FrameBuilder>(world: &mut World<B>, errors: &[f32], fades: 
             errors,
             &vec![Switch::Error; errors.len()],
             &vec![0; errors.len()],
-            fades,
+            flags,
         )
         .unwrap();
     meshes
@@ -402,7 +459,7 @@ fn give_distance_levels<B: FrameBuilder>(world: &mut World<B>, distances: &[f32]
 
 /// Moves the world's visible ball `distance` metres in front of the camera, which looks down -z
 /// from 20 m out.
-fn ball_at(world: &mut World, distance: f32) {
+fn ball_at<B: FrameBuilder>(world: &mut World<B>, distance: f32) {
     let ball = world.objects[2];
     world
         .scene
@@ -1157,4 +1214,510 @@ fn a_ball_off_its_origin_keeps_its_switch_when_it_turns_half_round() {
             "{rotation:?}: past the switch, level 1"
         );
     }
+}
+
+/// The shader's decision for one source, as `level_of` and `append` make it in `cull.wgsl`: one
+/// bucket, a fading pair, a band at a range's edge, or nothing.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum ShaderPick {
+    One(u32),
+    Fade { new: u32, old: u32, t: f32 },
+    FadeIn { bucket: u32, t: f32 },
+    FadeOut { bucket: u32, t: f32 },
+    Hidden,
+}
+
+/// One bucket as the shader reads it: the next coarser level's place plus one, its switch code and
+/// value, and its fade bucket plus one.
+struct ShaderBucket {
+    next: u32,
+    switch: u32,
+    value: f32,
+    fade: u32,
+}
+
+/// The shader's level rule, line for line as `level_of` and `append` in `cull.wgsl` apply it. The
+/// copy exists so that a change to either side of the rule fails a test: the shader's own lines are
+/// pinned beside it, and the two answers are compared over random sources and views.
+#[allow(clippy::too_many_arguments)]
+fn shader_pick(
+    buckets: &[ShaderBucket],
+    home: u32,
+    center: [f32; 3],
+    radius: f32,
+    scale: f32,
+    range: DrawRange,
+    bias: f32,
+    whole: f32,
+    orthographic: bool,
+    band: f32,
+    p11: f32,
+    measure: [f32; 4],
+) -> ShaderPick {
+    let length = |v: [f32; 3]| (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
+    let bias = if bias > 0.0 { bias } else { 1.0 };
+    let factor = whole / bias;
+    let nearest = (length(center) - radius).max(LEAST_DISTANCE);
+    // A distance level, a coverage level and a distance band measure to the nearest point in
+    // every view, an orthographic camera included.
+    let distance = nearest;
+    let half = (length(center) - LEVEL_RADIUS_SHARE * radius).max(LEAST_DISTANCE);
+    let toward = half.min(LEVEL_NEAREST_SHARE * nearest);
+    let error_camera = if orthographic { 1.0 } else { toward };
+    let error = if measure[3] > 1.5 {
+        (length([
+            center[0] - measure[0],
+            center[1] - measure[1],
+            center[2] - measure[2],
+        ]) - radius)
+            .max(LEAST_DISTANCE)
+    } else if measure[3] > 0.5 {
+        1.0
+    } else {
+        error_camera
+    };
+    let switch = |bucket: &ShaderBucket| -> f32 {
+        if bucket.switch == 1 {
+            return bucket.value * scale / bias;
+        }
+        if bucket.switch == 2 {
+            return if bucket.value <= 0.0 || p11 <= 0.0 {
+                f32::INFINITY
+            } else {
+                radius * p11 / (bucket.value * bias)
+            };
+        }
+        bucket.value * scale * factor
+    };
+    let distance_for =
+        |bucket: &ShaderBucket| -> f32 { if bucket.switch == 0 { error } else { distance } };
+    let mut before = home;
+    let mut level = home;
+    let mut next = buckets[home as usize].next;
+    let mut past = 0.0;
+    if next != 0 && whole > 0.0 {
+        while next != 0 {
+            let candidate = &buckets[next as usize - 1];
+            // The same comparison as the core's walk: a switch distance that is not a number
+            // stops both walks here, as it stops the shader's.
+            if switch(candidate).partial_cmp(&distance_for(candidate))
+                != Some(std::cmp::Ordering::Less)
+            {
+                break;
+            }
+            before = level;
+            level = next - 1;
+            next = buckets[level as usize].next;
+        }
+        if level != home {
+            past = distance_for(&buckets[level as usize]) / switch(&buckets[level as usize]) - 1.0;
+        }
+    }
+    let hide = 2.0 * radius * factor;
+    let small = buckets[home as usize].next != 0 && hide > 0.0 && hide < error;
+    let hidden = small || distance < range.start || distance > range.end;
+    let hide_past = if small { error / hide - 1.0 } else { 0.0 };
+    let new_fade = buckets[level as usize].fade;
+    let old_fade = buckets[before as usize].fade;
+    if distance < range.start || distance > range.end {
+        return ShaderPick::Hidden;
+    }
+    if band > 0.0 && new_fade != 0 {
+        if range.start > 0.0 && distance < range.start * (1.0 + band) {
+            let t = (distance / range.start - 1.0) / band;
+            return ShaderPick::FadeIn {
+                bucket: new_fade - 1,
+                t: t.max(1e-6),
+            };
+        }
+        if distance > range.end / (1.0 + band) {
+            let inner = range.end / (1.0 + band);
+            let t = (distance - inner) / (range.end - inner);
+            return ShaderPick::FadeOut {
+                bucket: new_fade - 1,
+                t: t.max(0.0),
+            };
+        }
+    }
+    if level != home && band > 0.0 && new_fade != 0 && old_fade != 0 {
+        let t = past / band;
+        if t < 1.0 {
+            return ShaderPick::Fade {
+                new: new_fade - 1,
+                old: old_fade - 1,
+                t: t.max(1e-6),
+            };
+        }
+    }
+    if hidden {
+        if band > 0.0 && new_fade != 0 && hide_past < band {
+            return ShaderPick::FadeOut {
+                bucket: new_fade - 1,
+                t: (hide_past / band).max(0.0),
+            };
+        }
+        return ShaderPick::Hidden;
+    }
+    ShaderPick::One(level)
+}
+
+/// The core's answer in the shader copy's shape.
+fn core_pick(picked: Picked) -> ShaderPick {
+    match picked {
+        Picked::One(bucket) => ShaderPick::One(bucket),
+        Picked::Fade { new, old, t } => ShaderPick::Fade { new, old, t },
+        Picked::FadeIn { bucket, t } => ShaderPick::FadeIn { bucket, t },
+        Picked::FadeOut { old, t } => ShaderPick::FadeOut { bucket: old, t },
+        Picked::Hidden => ShaderPick::Hidden,
+    }
+}
+
+/// A small deterministic generator, so a failed case can be written down and run again.
+struct Rng(u64);
+
+impl Rng {
+    fn word(&mut self) -> u32 {
+        self.0 = self
+            .0
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        (self.0 >> 33) as u32
+    }
+
+    fn unit(&mut self) -> f32 {
+        self.word() as f32 / u32::MAX as f32
+    }
+
+    fn range(&mut self, low: f32, high: f32) -> f32 {
+        low + (high - low) * self.unit()
+    }
+}
+
+/// True when a distance lies within a rounding hair of a switch, where the core and the shader may
+/// divide in another order and land on either side. A drift of 0.01 per cent or more is a fault.
+fn at_a_switch(
+    rule: &LevelRule,
+    links: &[LevelLink],
+    scale: f32,
+    radius: f32,
+    bias: f32,
+    distance: f32,
+) -> bool {
+    links.iter().any(|link| {
+        let switch = rule.switch_distance(link, scale, radius, bias);
+        switch.is_finite() && (distance / switch - 1.0).abs() < 1.0e-5
+    })
+}
+
+/// True when the two answers name the same buckets and the same fade share, within a rounding hair.
+fn same_pick(core: ShaderPick, shader: ShaderPick) -> bool {
+    match (core, shader) {
+        (ShaderPick::One(a), ShaderPick::One(b)) => a == b,
+        (
+            ShaderPick::Fade {
+                new: an,
+                old: ao,
+                t: at,
+            },
+            ShaderPick::Fade {
+                new: bn,
+                old: bo,
+                t: bt,
+            },
+        ) => an == bn && ao == bo && (at - bt).abs() <= 1.0e-5,
+        (ShaderPick::FadeIn { bucket: a, t: at }, ShaderPick::FadeIn { bucket: b, t: bt }) => {
+            a == b && (at - bt).abs() <= 1.0e-5
+        }
+        (ShaderPick::FadeOut { bucket: a, t: at }, ShaderPick::FadeOut { bucket: b, t: bt }) => {
+            a == b && (at - bt).abs() <= 1.0e-5
+        }
+        (ShaderPick::Hidden, ShaderPick::Hidden) => true,
+        _ => false,
+    }
+}
+
+#[test]
+fn the_culling_shader_picks_the_levels_that_the_core_picks() {
+    let mut rng = Rng(0x05ee_d10d);
+    let mut compared = 0;
+    for case in 0..20_000 {
+        // A chain of up to eight lower levels, each given by an error, a distance or a coverage.
+        let levels = rng.word() % 9;
+        let fades = rng.word();
+        let mut links = Vec::with_capacity(levels as usize + 1);
+        let mut buckets = Vec::with_capacity(levels as usize + 1);
+        let fade_of = |k: u32| {
+            if fades & (1 << k) != 0 {
+                100 + k
+            } else {
+                NO_LINK
+            }
+        };
+        links.push(LevelLink {
+            value: 0.0,
+            switch: Switch::Error,
+            next: if levels > 0 { 1 } else { NO_LINK },
+            fade: fade_of(0),
+        });
+        buckets.push(ShaderBucket {
+            next: if levels > 0 { 2 } else { 0 },
+            switch: 0,
+            value: 0.0,
+            fade: if fades & 1 != 0 { 101 } else { 0 },
+        });
+        for k in 1..=levels {
+            let switch = match rng.word() % 3 {
+                0 => Switch::Error,
+                1 => Switch::Distance,
+                _ => Switch::Coverage,
+            };
+            let value = match switch {
+                Switch::Error => rng.range(0.001, 1.0),
+                Switch::Distance => rng.range(0.5, 200.0),
+                Switch::Coverage => rng.range(0.0001, 1.0),
+            };
+            links.push(LevelLink {
+                value,
+                switch,
+                next: if k < levels { k + 1 } else { NO_LINK },
+                fade: fade_of(k),
+            });
+            buckets.push(ShaderBucket {
+                next: if k < levels { k + 2 } else { 0 },
+                switch: switch as u32,
+                value,
+                fade: if fades & (1 << k) != 0 {
+                    100 + k + 1
+                } else {
+                    0
+                },
+            });
+        }
+        // A camera rule, or a light's view through a parallel or a perspective lens.
+        let height = rng.range(100.0, 2_200.0);
+        let p11 = rng.range(0.3, 3.0);
+        let orthographic = rng.word() & 1 == 0;
+        let threshold = rng.range(0.5, 4.0);
+        let band = if rng.word() & 1 == 0 { 0.0 } else { 0.08 };
+        let camera = LevelRule::new(height, p11, orthographic, threshold, band);
+        let rule = match rng.word() % 3 {
+            0 => camera,
+            1 => LevelRule::for_light(
+                &camera,
+                LightLens::Parallel {
+                    texel: rng.range(0.001, 0.1),
+                },
+                threshold,
+            ),
+            _ => LevelRule::for_light(
+                &camera,
+                LightLens::Point {
+                    eye: [
+                        rng.range(-1_000.0, 1_000.0),
+                        rng.range(-1_000.0, 1_000.0),
+                        rng.range(-1_000.0, 1_000.0),
+                    ],
+                    texel: rng.range(0.001, 0.1),
+                },
+                threshold,
+            ),
+        };
+        let center = [
+            rng.range(-3_000.0, 3_000.0),
+            rng.range(-3_000.0, 3_000.0),
+            rng.range(-3_000.0, 3_000.0),
+        ];
+        let radius = rng.range(0.05, 3_000.0);
+        let scale = rng.range(0.01, 100.0);
+        let bias = if rng.word() & 3 == 0 {
+            1.0
+        } else {
+            rng.range(0.2, 5.0)
+        };
+        let range = if rng.word() & 1 == 0 {
+            DrawRange::NONE
+        } else {
+            let start = rng.range(0.0, 50.0);
+            DrawRange {
+                start,
+                end: start + rng.range(1.0, 4_000.0),
+            }
+        };
+        let distance = rule.distances(center, radius);
+        let core = core_pick(rule.pick(&links, 0, scale, radius, distance, bias, range));
+        let shader = shader_pick(
+            &buckets,
+            0,
+            center,
+            radius,
+            scale,
+            range,
+            bias,
+            rule.factor,
+            rule.orthographic,
+            rule.band,
+            rule.p11,
+            rule.measure_uniform(),
+        );
+        let near = at_a_switch(
+            &rule,
+            &links,
+            scale,
+            radius,
+            bias,
+            distance.of(Switch::Error),
+        ) || at_a_switch(&rule, &links, scale, radius, bias, distance.camera);
+        if near {
+            continue;
+        }
+        assert!(
+            same_pick(core, shader),
+            "case {case}: core {core:?}, shader {shader:?}"
+        );
+        compared += 1;
+    }
+    assert!(compared > 10_000, "only {compared} cases compared");
+}
+
+#[test]
+fn the_culling_shader_repeats_the_core_level_rule() {
+    let cull = include_str!("../../null3d-shaders/wgsl/cull.wgsl");
+    for line in [
+        "const LEAST_DISTANCE: f32 = 1.0e-3;",
+        "const LEVEL_RADIUS_SHARE: f32 = 0.5;",
+        "const LEVEL_NEAREST_SHARE: f32 = 2.0;",
+        "const SWITCH_ERROR: u32 = 0u;",
+        "const SWITCH_DISTANCE: u32 = 1u;",
+        "const SWITCH_COVERAGE: u32 = 2u;",
+        "let nearest = max(length(s.center) - s.radius, LEAST_DISTANCE);",
+        "let distance = nearest;",
+        "let half = max(length(s.center) - LEVEL_RADIUS_SHARE * s.radius, LEAST_DISTANCE);",
+        "let toward = min(half, LEVEL_NEAREST_SHARE * nearest);",
+        "return bucket.value * scale * factor;",
+        "return bucket.value * scale / bias;",
+        "return radius * p11 / (bucket.value * bias);",
+        "let hide = 2.0 * s.radius * factor;",
+        "append_to(s, new_fade - 1u, draws_before, max(t, 1e-6), false);",
+    ] {
+        assert!(
+            cull.contains(line),
+            "the shader's level rule moved:\n{line}"
+        );
+    }
+    assert_eq!(LEAST_DISTANCE, 1.0e-3);
+    assert_eq!(LEVEL_RADIUS_SHARE, 0.5);
+    assert_eq!(LEVEL_NEAREST_SHARE, 2.0);
+    assert_eq!(fade_values(0.0).0, 1.0e-6);
+    let levels = include_str!("../../null3d-core/src/levels.rs");
+    assert!(
+        levels.contains("entry(bucket, t.max(LEAST_FADE), false),"),
+        "the CPU path's least fade moved"
+    );
+    assert_eq!(
+        (
+            Switch::Error as u32,
+            Switch::Distance as u32,
+            Switch::Coverage as u32
+        ),
+        (0, 1, 2)
+    );
+}
+
+/// The shader's dither value for the pixel at `x`, `y` in the 4 x 4 tile, from `lod_kept` in
+/// `mesh.wgsl`, with the tile moved by `phase`.
+fn dither_value(x: u32, y: u32, phase: u32) -> u32 {
+    let px = (x + (phase & 3)) & 3;
+    let py = (y + (phase >> 2)) & 3;
+    let (low_x, low_y) = (px & 1, py & 1);
+    let (high_x, high_y) = (px >> 1, py >> 1);
+    4 * (2 * (low_x ^ low_y) + low_y) + 2 * (high_x ^ high_y) + high_y
+}
+
+/// True when a pixel of `value` is kept at `fade`, as `lod_kept` decides it.
+fn dither_kept(fade: f32, value: f32) -> bool {
+    if fade > 0.0 {
+        value < fade
+    } else {
+        value >= -fade
+    }
+}
+
+#[test]
+fn the_dither_keeps_every_pixel_of_a_band_once() {
+    let mesh = include_str!("../../null3d-shaders/wgsl/lib/mesh.wgsl");
+    for line in [
+        "return pcg(source) & 15u;",
+        "let p = (vec2u(pixel) + vec2u(phase & 3u, phase >> 2u)) & vec2u(3u);",
+        "let cell = 4u * (2u * (low.x ^ low.y) + low.y) + 2u * (high.x ^ high.y) + high.y;",
+        "let value = (f32(cell) + 0.5) / 16.0;",
+        "let new_side = fade > 0.0;",
+        "let kept_new = value < fade;",
+        "return select(value >= -fade, kept_new, new_side);",
+    ] {
+        assert!(mesh.contains(line), "the dither moved:\n{line}");
+    }
+    // The 4 x 4 tile is a true permutation of 0 to 15, for every phase.
+    for phase in 0..16 {
+        let mut seen = [false; 16];
+        for y in 0..4 {
+            for x in 0..4 {
+                seen[dither_value(x, y, phase) as usize] = true;
+            }
+        }
+        assert!(seen.iter().all(|&one| one), "phase {phase}");
+    }
+    // The two sides of a band keep exactly complementary pixels at every share, from none through
+    // the whole band, and the least fade keeps the new side at no pixel rather than all of them.
+    for t in [0.0, 0.01, 0.25, 0.5, 31.0 / 32.0, 0.99, 1.0, 2.0] {
+        let (new, old) = fade_values(t);
+        for cell in 0..16 {
+            let value = (cell as f32 + 0.5) / 16.0;
+            assert_ne!(
+                dither_kept(new, value),
+                dither_kept(old, value),
+                "t {t}, cell {cell}: new {new}, old {old}"
+            );
+        }
+    }
+    let (new, old) = fade_values(0.0);
+    assert_eq!(new, 1.0e-6);
+    assert!(old == 0.0);
+}
+
+#[test]
+fn a_shadow_view_picks_a_casters_level_in_its_own_texels() {
+    // A ball two metres in front of the camera draws its base level there, since level 1 switches
+    // at 3.1 m. The far cascades of the sun's shadow cover about 4 cm of world per texel, so they
+    // pick level 1, whose 3 cm error covers under a texel. A shadow rule that read the camera's
+    // distance would draw the base level in every cascade.
+    let mut world = cpu_world();
+    world.cast_sun_shadows(4);
+    let ball = world.objects[2];
+    world.scene.set_position(ball, [0.0, 0.0, 18.0]).unwrap();
+    world
+        .scene
+        .apply_commands(
+            &[Command::set_flags(
+                ball,
+                flags::CAST_SHADOWS,
+                flags::CAST_SHADOWS,
+            )],
+            world.frame,
+        )
+        .unwrap();
+    let levels = give_levels_of(&mut world, &[0.01, 0.03], 0);
+    world.record(true);
+    let drawn = draws(&world);
+    assert!(
+        drawn
+            .iter()
+            .any(|&(indices, _)| indices == indices_of(&world, BALL)),
+        "the camera draws the base level: {drawn:?}"
+    );
+    assert!(
+        drawn
+            .iter()
+            .any(|&(indices, _)| indices == indices_of(&world, levels[0])),
+        "a cascade draws the first lower level: {drawn:?}"
+    );
 }

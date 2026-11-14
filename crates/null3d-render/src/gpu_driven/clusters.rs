@@ -109,6 +109,8 @@ pub(super) struct Clusters {
     tables: [u32; 2],
     /// The patches and the meshes of the table that the GPU holds.
     table_words: [u32; 2],
+    /// The build count of the tables that the GPU holds, or `None` before it holds them.
+    tables_epoch: Option<u64>,
     /// The mesh records that the GPU holds, the scene layout's then the casters', so a record
     /// that changes without a new layout writes the table again: a tree's copy moves with its
     /// bucket's slice, and the casters' layout changes on its own.
@@ -211,24 +213,39 @@ impl Clusters {
         };
         let records_changed =
             self.records.len() != 2 * trees || (0..2 * trees).any(|k| self.records[k] != record(k));
-        if recreated || layout_changed || records_changed || self.table_words != words {
+        // The patch table and the index table change only with the trees, which the layout counts.
+        // A structure change that leaves them alone, such as a level arriving, writes only the mesh
+        // records, which follow the patches in the same buffer.
+        let tables_changed = recreated
+            || self.tables_epoch != Some(layout.cluster_tables_epoch())
+            || self.table_words != words;
+        if tables_changed {
+            self.tables_epoch = Some(layout.cluster_tables_epoch());
             self.table_words = words;
-            self.records.clear();
-            self.records.extend((0..2 * trees).map(record));
-            let mut table: Vec<u32> = Vec::with_capacity((patches * PATCH_WORDS) as usize);
-            for patch in &layout.cluster_patches {
-                table.extend_from_slice(patch);
-            }
-            for record in &self.records {
-                table.extend_from_slice(record);
-            }
-            if !table.is_empty() {
+            if !layout.cluster_patches.is_empty() {
+                let mut table: Vec<u32> = Vec::with_capacity((patches * PATCH_WORDS) as usize);
+                for patch in &layout.cluster_patches {
+                    table.extend_from_slice(patch);
+                }
                 let (at, length) = arena.push(words_as_bytes(&table))?;
                 list.push(Op::WriteBuffer, &[ids::CLUSTER_PATCHES, 0, at, length])?;
             }
             if !layout.cluster_indices.is_empty() {
                 let (at, length) = arena.push(words_as_bytes(&layout.cluster_indices))?;
                 list.push(Op::WriteBuffer, &[ids::CLUSTER_INDICES, 0, at, length])?;
+            }
+        }
+        if tables_changed || records_changed || layout_changed {
+            self.records.clear();
+            self.records.extend((0..2 * trees).map(record));
+            let mut records: Vec<u32> = Vec::with_capacity(self.records.len() * 8);
+            for record in &self.records {
+                records.extend_from_slice(record);
+            }
+            if !records.is_empty() {
+                let (at, length) = arena.push(words_as_bytes(&records))?;
+                let offset = patches * PATCH_WORDS * 4;
+                list.push(Op::WriteBuffer, &[ids::CLUSTER_PATCHES, offset, at, length])?;
             }
         }
         Ok(recreated)

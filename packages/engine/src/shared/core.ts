@@ -519,10 +519,11 @@ export interface CoreGlue extends CoreErrors {
 	/**
 	 * Gives mesh `base` `count` lower levels of detail, whose mesh ids, then whose switch values as
 	 * 32-bit floats, then whose switch measures, `meshArrays`'s words hold, from the most detailed
-	 * down. The bits of `fades`, from the base level, mark the levels that hand over in a fading
-	 * band. With `count` 0 the mesh loses its levels. 0 for success.
+	 * down. The low 16 bits of `flags`, from the base level, mark the levels that hand over in a
+	 * fading band, and the high 16 bits the levels whose switch is a measured error. With `count`
+	 * 0 the mesh loses its levels. 0 for success.
 	 */
-	setMeshLevels(base: number, count: number, fades: number): number;
+	setMeshLevels(base: number, count: number, flags: number): number;
 	/**
 	 * Watches the levels that the views pick for the mesh `base`, from the frame that the renderer
 	 * began last on, in place of a watch that the mesh had. The loader of a model with staged levels

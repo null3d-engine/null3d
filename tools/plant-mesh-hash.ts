@@ -4,15 +4,20 @@
 // package's index also loads the engine for a page.
 //
 // Usage: bun tools/plant-mesh-hash.ts <species> [season]
+//        bun tools/plant-mesh-hash.ts --standins
 //
 // The species must be one of the registry's, and the season one of summer, autumn, winter or
-// blossom; the record's default when it is not given. Each build prints its hash with the commit and
-// the dirty flag, as every figure in the repository does, and the two builds' hashes must match.
+// blossom; the record's default when it is not given. `--standins` builds every demo page's stand-ins
+// with the page's own size, colours, seed and sparseness, so a change to the plant core can be proved
+// inert for the pages that draw stand-ins. Each build prints its hash with the commit and the dirty
+// flag, as every figure in the repository does, and the two builds' hashes must match.
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
+import { DEMO_SPARSENESS, PAGE_STAND_INS } from '../examples/lib/stand-ins.ts';
 import type { PlantAsset, ShootRows, SpeciesKitData } from '../packages/vegetation/src/asset.ts';
 import { isSpeciesId, loadSpecies, speciesIds } from '../packages/vegetation/src/core/registry.ts';
+import { standInSpecies } from '../packages/vegetation/src/core/stand-in.ts';
 import type { Season } from '../packages/vegetation/src/core/types.ts';
 import { buildKitNow, growPlantNow, loadPlantCode } from '../packages/vegetation/src/generate.ts';
 
@@ -123,9 +128,47 @@ function meshHash(kit: SpeciesKitData, asset: PlantAsset): MeshHash {
 }
 
 const [named, seasonName] = process.argv.slice(2);
+if (named === '--standins') {
+	if (seasonName !== undefined) {
+		console.error('usage: bun tools/plant-mesh-hash.ts --standins');
+		process.exit(2);
+	}
+	const { commit, dirty } = provenance();
+	let deterministic = true;
+	for (const page of PAGE_STAND_INS) {
+		for (const plant of page.plants) {
+			const module = standInSpecies(plant.id, {
+				variants: Math.max(1, page.variants ?? 1),
+				...plant.standIn,
+			});
+			await loadPlantCode(module.record);
+			const build = (): MeshHash => {
+				const kit = buildKitNow(module, { detail: DETAIL, placeholders: true });
+				const asset = growPlantNow(kit, {
+					seed: page.seed,
+					variant: 0,
+					near: true,
+					sparse: DEMO_SPARSENESS,
+					season: module.record.seasons.default,
+				});
+				return meshHash(kit, asset);
+			};
+			const first = build();
+			const second = build();
+			console.log(
+				`${page.page} ${plant.id} seed ${page.seed} commit ${commit} dirty ${dirty} sha256 ${first.hash} vertices ${first.vertices} indices ${first.indices}`,
+			);
+			if (first.hash !== second.hash) {
+				console.error(`${page.page} ${plant.id}: the two builds hashed differently`);
+				deterministic = false;
+			}
+		}
+	}
+	process.exit(deterministic ? 0 : 1);
+}
 if (!named) {
 	console.error(
-		`usage: bun tools/plant-mesh-hash.ts <species> [season]\n\nspecies: ${speciesIds().join(', ')}`,
+		`usage: bun tools/plant-mesh-hash.ts <species> [season]\n       bun tools/plant-mesh-hash.ts --standins\n\nspecies: ${speciesIds().join(', ')}`,
 	);
 	process.exit(2);
 }

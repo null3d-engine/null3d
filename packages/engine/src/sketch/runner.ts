@@ -383,8 +383,8 @@ export class SketchRunner {
 	/**
 	 * The engine's number of the frame it recorded last. The setup's frames, for warm-ups and the
 	 * preset check, count here but not in `time.frame`. The core, the draw lists and the thread that
-	 * draws use these numbers. `held` is true while hold mode steps the frames, so a mesh that hands
-	 * over its planned levels one a frame takes them all at once.
+	 * draws use these numbers. `held` is true while hold mode steps the frames, so a mesh that
+	 * makes its planned levels one a frame takes them all at once.
 	 */
 	private readonly recorded = { frame: 0, held: false };
 	/** The sketch's `engine.viewport`, which each frame updates in place when the canvas changed. */

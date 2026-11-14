@@ -8,7 +8,7 @@
 // measure draws the same picture.
 // Each copy stands where the rule puts that distance on this canvas, so it keeps its size on the
 // screen at any canvas size. Settings: `?batch` draws the copies as rows of one instance batch,
-// `?crisp` switches the levels at once, as a measured error does, `?mask` draws with a mask smoothed
+// `?crisp` switches the levels at once, as a hand-set error may ask, `?mask` draws with a mask smoothed
 // by alpha to coverage, as foliage does, which passes every pixel, `?material` gives each level a
 // material of its own in the level's color and white vertices, so a level that ignores its material
 // draws white and the picture shows the fault, `?shadows` draws one
@@ -113,8 +113,8 @@ export default defineSketch(({ scene, geometry, materials, quality, engine }) =>
 	);
 	if (!base) return;
 	// A hand-set error's switch shows, so its levels fade over a band; `?crisp` switches them at
-	// once, as the asset tool's measured errors do. A level's own material may draw without the
-	// mesh's vertex colors, in the level's color.
+	// once, as an author may ask. A level's own material may draw without the mesh's vertex colors,
+	// in the level's color.
 	const levelMaterial = (color: Vec3) => materials.standard({ color, roughness: 0.5 });
 	// The factor of the rule on this canvas: the drawn height in pixels times P[1][1], over twice
 	// the threshold. A copy of scale 1 switches to level j past ERRORS[j - 1] times it.

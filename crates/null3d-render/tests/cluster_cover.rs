@@ -318,3 +318,21 @@ fn the_rule_compares_open_bounds_and_draws_the_frontier() {
     assert!(tree.draws(0, 100.0, 10.001, |_| 10.001));
     assert!(tree.draws(1, 100.0, 10.0, |_| 10.0), "the frontier draws");
 }
+
+#[test]
+fn the_count_stage_skips_a_tree_that_this_frame_did_not_place() {
+    // After the camera jumps from one tree to another, the tree that left the view still holds the
+    // last frame's copy and its matrix. The culling pass writes the tree's instance count for this
+    // frame, so a count of zero must stop the tree before it counts its stale patches: otherwise
+    // those counts move every later tree's offset and the tree in view draws with holes.
+    let guard = "let drawn = indirect[(params.counts.w + mesh.first_draw) * INDIRECT_WORDS + 1u];\n    if drawn == 0u {\n        return 0u;\n    }";
+    let run_of = SHADER
+        .split("fn run_of(")
+        .nth(1)
+        .and_then(|rest| rest.split("fn count_patch(").next())
+        .expect("the shader counts a patch's run");
+    assert!(
+        run_of.contains(guard),
+        "a tree that the frame did not place counts its stale patches"
+    );
+}

@@ -93,6 +93,10 @@ import { basename, dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ASSET_FORMATS_URL } from '../packages/cli/src/assets/formats.js';
 import { memoryImportLimits } from '../packages/engine/src/shared/wasm-limits';
+import {
+	COMPILER_STAMP_FILE,
+	COMPILER_STAMP_FORMAT,
+} from '../packages/vite-plugin/src/compiler-stamp';
 import { SHADER_COMPILER_URL } from '../packages/vite-plugin/src/shader-compiler';
 import { explainedFiles, SIZE_GROWTH_GUIDANCE } from './hooks/check-size-growth';
 import { keptCommits } from './hooks/check-trailers';
@@ -111,11 +115,12 @@ import {
 	runCargoAsync,
 	secondsSince,
 	touchCacheEntry,
+	writeFileAtomic,
 	writeFolderAtomic,
 } from './lib/build-cache';
 import { coreSourcesStamp, stampGlue } from './lib/core-sources';
 import { refuseInQuietWindow } from './lib/quiet-window';
-import { ensureShaderModules, inputHash } from './lib/shader-modules';
+import { compilerInputStamp, ensureShaderModules, inputHash } from './lib/shader-modules';
 import {
 	type BaseChoice,
 	chooseBase,
@@ -1084,6 +1089,9 @@ async function buildToolModules(
 	const names = TOOL_MODULES.map(({ crate }) => `${crate}.wasm`);
 	const inputs = toolInputs(root);
 	const key = toolsKey(inputs, tools);
+	// The inputs of every project compile, read before the build so a source that changes during it
+	// leaves no record for inputs that the placed compiler does not hold.
+	const stamp = compilerInputStamp(root);
 	const cached = noCache ? null : readArtifacts(ARTIFACT_CACHE_BASE, key, names);
 	if (cached) {
 		log.say(
@@ -1094,6 +1102,7 @@ async function buildToolModules(
 		withInstallLock('tools', () => {
 			for (const { crate, path } of TOOL_MODULES) copyInPlace(join(cached, `${crate}.wasm`), path);
 		});
+		writeCompilerStamp(log, stamp);
 		return;
 	}
 	const targetDir = `${CARGO_TARGET_BASE}/wasm-shaders`;
@@ -1133,6 +1142,26 @@ async function buildToolModules(
 				true,
 			);
 	}
+	writeCompilerStamp(log, stamp);
+}
+
+/**
+ * Writes the record beside the compiler that names the inputs of a project's shader compile. A
+ * source that changed while the build ran names no record, because the placed compiler then holds
+ * a mix of the two trees and the record would vouch for inputs that it does not hold.
+ */
+function writeCompilerStamp(log: BuildLog, before: string): void {
+	if (compilerInputStamp(root) !== before) {
+		log.say(
+			'warning: the shader sources changed while this build ran, so the compiler names no record of its inputs; build again',
+			true,
+		);
+		return;
+	}
+	writeFileAtomic(
+		join(dirname(fileURLToPath(SHADER_COMPILER_URL)), COMPILER_STAMP_FILE),
+		`${JSON.stringify({ format: COMPILER_STAMP_FORMAT, version: before }, null, '\t')}\n`,
+	);
 }
 
 /**

@@ -93,8 +93,10 @@ record grows outlines 0.67 against `02`, 0.60 against `18`, 0.62 against `30` an
   `fit.ts` keeps the fitting tool's own hull beside it, and the record says why it is not used.
   Rejected: growing to the tool's hull, which draws a crown 1.015 of the plant's height wide, wider
   than any whole view.
-- The piece count at a whole view is two to three against the photograph's one, at `lod.cardGrow`
-  1.7. Neither a wider card stalk nor a denser crown moved them; the card's size did, halving them
+- The piece count at a whole view is two to three against the photograph's one, at the record's
+  `cardGrow` of 1.7. That field is removed since D-346's addendum on the card-level size, so the
+  figure is the history of a rule the records no longer hold.
+  Neither a wider card stalk nor a denser crown moved them; the card's size did, halving them
   from five, four, three and three to two, three, three and two. The record does not claim one.
 - Row 6 cannot pass on every whole view, and the record states why: still `02` needs a gap of 0.141
   or less and still `18` needs 0.16 or more, an empty band. The crown sits where three of the four

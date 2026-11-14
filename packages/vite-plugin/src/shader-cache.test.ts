@@ -3,6 +3,7 @@ import { readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { hashOf as sharedHashOf } from '../../../tools/lib/build-cache';
 import { fixture } from '../../../tools/lib/fixture';
+import { readCompilerStamp } from './compiler-stamp';
 import { ShaderPack } from './pack';
 import {
 	NO_CACHE,
@@ -139,6 +140,20 @@ afterEach(() => {
 describe('the shader cache folder', () => {
 	it('sits beside the asset tool cache, inside the project', () => {
 		expect(shaderCacheFolder('/a/project')).toBe('/a/project/node_modules/.cache/null3d-shaders');
+	});
+
+	it('names the compiler by the record that the build writes beside it', () => {
+		const version = 'a'.repeat(64);
+		const root = fixture({
+			'shader-compiler.stamp.json': JSON.stringify({ format: 1, version }),
+			'other-format.json': JSON.stringify({ format: 2, version }),
+			'bad-version.json': JSON.stringify({ format: 1, version: 'not a hash' }),
+		});
+		expect(readCompilerStamp(join(root, 'shader-compiler.stamp.json'))).toBe(version);
+		// A record of another format, or one that names no hash, names no version.
+		expect(readCompilerStamp(join(root, 'other-format.json'))).toBeUndefined();
+		expect(readCompilerStamp(join(root, 'bad-version.json'))).toBeUndefined();
+		expect(readCompilerStamp(join(root, 'missing.json'))).toBeUndefined();
 	});
 
 	it('turns the cache off with the canonical opt-out or the plugin alias', () => {

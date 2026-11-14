@@ -536,8 +536,9 @@ function arraysFailure(core: CoreMemory, arrays: MeshArrays, call: string): Engi
 /**
  * Builds a level that draws the live mesh `base`'s vertices with the triangles `indices`, and
  * returns its id: the level pays for its indices alone. Returns undefined when the base cannot
- * share its vertices, because the engine split it into parts or pose moves its vertices, so the
- * caller gives the level its own arrays instead. Other failures throw.
+ * share its vertices, because the engine split it into parts or pose moves its vertices, or when
+ * the base's page is full, so the caller gives the level its own arrays instead. Other failures
+ * throw.
  */
 export function meshFromLevel(
 	core: CoreMemory,

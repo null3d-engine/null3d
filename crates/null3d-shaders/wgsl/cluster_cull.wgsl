@@ -173,6 +173,13 @@ fn run_of(at: u32) -> u32 {
     if mesh.slot == NOT_DRAWN {
         return 0u;
     }
+    // The culling pass counts this tree's copies this frame. A tree that it drew nothing of holds
+    // none, and its copy's matrix may still hold the last frame that drew it, so a stale tree
+    // counts no patch and moves no later tree's offset.
+    let drawn = indirect[(params.counts.w + mesh.first_draw) * INDIRECT_WORDS + 1u];
+    if drawn == 0u {
+        return 0u;
+    }
     let copy = mesh.slot;
     let m0 = bitcast<vec4f>(visible[copy * COPY_WORDS]);
     let m1 = bitcast<vec4f>(visible[copy * COPY_WORDS + 1u]);

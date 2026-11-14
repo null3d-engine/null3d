@@ -65,6 +65,12 @@ function engine(options: { split?: boolean; format?: number; parts?: number } = 
 		split: 0,
 		reads: [] as number[],
 		updates: 0,
+		/** The sets of levels that the scene took. */
+		handOvers: 0,
+		/** The flags word of each set of levels: fading bits low, measured bits high. */
+		flags: [] as number[],
+		/** The ids of the level meshes that the plan made, in the order that it made them. */
+		made: [] as number[],
 		/** The pieces that each mesh took: over a list of its own, its own list, or at its making. */
 		pieceLists: [] as { mesh: number; count: number; indices: number }[],
 		pieces: [] as { mesh: number; count: number }[],
@@ -87,6 +93,7 @@ function engine(options: { split?: boolean; format?: number; parts?: number } = 
 			}
 			record.shared++;
 			const id = next++;
+			record.made.push(id);
 			vertices.set(id, vertices.get(base) ?? 0);
 			return id;
 		},
@@ -94,12 +101,14 @@ function engine(options: { split?: boolean; format?: number; parts?: number } = 
 			record.split++;
 			record.splitPieces.push(count);
 			const id = next++;
+			record.made.push(id);
 			vertices.set(id, vertices.get(base) ?? 0);
 			return id;
 		},
 		createLevelCopy: () => {
 			record.copies++;
 			const id = next++;
+			record.made.push(id);
 			vertices.set(id, 3);
 			return id;
 		},
@@ -127,7 +136,9 @@ function engine(options: { split?: boolean; format?: number; parts?: number } = 
 			record.pieces.push({ mesh, count });
 			return 1;
 		},
-		setMeshLevels: (base: number, count: number) => {
+		setMeshLevels: (base: number, count: number, flags: number) => {
+			record.handOvers++;
+			record.flags.push(flags);
 			record.levels.set(base, [...new Uint32Array(memory.buffer, staging, count)]);
 			record.values.set(base, [...new Float32Array(memory.buffer, staging + 4 * count, count)]);
 			return 0;
@@ -284,6 +295,21 @@ describe('the automatic levels of a mesh made in code', () => {
 		expect(await mesh.buildLevels()).toHaveLength(3);
 	});
 
+	test('mark planned levels as measured so a raised threshold fades their switch', async () => {
+		const { geometry, record } = engine();
+		const mesh = geometry.fromArrays(strip(20_000));
+		draw(mesh);
+		const planned = await mesh.buildLevels();
+		// The plan takes no fade bit and marks every lower level as a measured error, in the high
+		// half of the flags word, so the engine fades the level once the threshold shows it.
+		expect(record.flags.at(-1)).toBe(((1 << (planned.length + 1)) - 2) << 16);
+		// A level set by hand names no measured bit.
+		const level = planned[0];
+		if (!level) throw new Error('the plan made no level');
+		mesh.setLevels([{ mesh: level.mesh, distance: 50 }]);
+		expect(record.flags.at(-1)).toBe(0b10);
+	});
+
 	test('drop the automatic levels of a mesh that a material draws with moved vertices', async () => {
 		const { geometry, record } = engine();
 		const mesh = geometry.fromArrays(strip(20_000));
@@ -389,28 +415,29 @@ describe('the automatic levels of a mesh made in code', () => {
 		expect(cell.levels).toHaveLength(0);
 	});
 
-	test('hand over the levels one a frame, coarsest first, and all at once in hold mode', async () => {
+	test('make the levels one a frame and give the scene the whole set once', async () => {
 		const { geometry, record } = engine();
 		const pace = { frame: 1, held: false };
 		geometry.users = { userOf: () => undefined, pace };
 		const mesh = geometry.fromArrays(strip(20_000));
 		const plan = mesh.buildLevels();
-		// The next frame reads the mesh; the coarsest level arrives first, alone, with the
-		// planner's answer.
+		// The next frame reads the mesh, then the plan answers and makes the coarsest level.
 		pace.frame++;
-		for (let k = 0; k < 20 && mesh.levels.length === 0; k++) await settled();
-		expect(mesh.levels).toHaveLength(1);
-		const coarsest = mesh.levels[0]?.error as number;
-		await settled();
-		expect(mesh.levels).toHaveLength(1);
-		// Each frame adds the next finer level in front of the others.
+		for (let k = 0; k < 20 && record.shared === 0; k++) await settled();
+		expect(record.shared).toBe(1);
+		// The scene takes no level until the plan ends, so its draw tables rebuild once.
+		expect(mesh.levels).toHaveLength(0);
+		expect(record.handOvers).toBe(0);
+		// Each next frame makes the next level, and the scene keeps the set that it has.
 		pace.frame++;
-		for (let k = 0; k < 20 && mesh.levels.length === 1; k++) await settled();
-		expect(mesh.levels).toHaveLength(2);
-		expect(mesh.levels[1]?.error).toBe(coarsest);
+		for (let k = 0; k < 20 && record.shared === 1; k++) await settled();
+		expect(record.shared).toBe(2);
+		expect(mesh.levels).toHaveLength(0);
+		expect(record.handOvers).toBe(0);
 		pace.frame++;
 		const levels = await plan;
 		expect(levels).toHaveLength(3);
+		expect(record.handOvers).toBe(1);
 		expect(record.levels.get(mesh.id)).toEqual(levels.map((level) => level.mesh.id));
 		// A held frame waits for the plan, which hands over every level at once.
 		pace.held = true;
@@ -445,22 +472,21 @@ describe('the automatic levels of a mesh made in code', () => {
 		clearInterval(timer);
 	});
 
-	test('free the levels made so far when levels set by hand end the hand-over', async () => {
+	test('free the levels made so far when levels set by hand end the plan', async () => {
 		const { geometry, record } = engine();
 		const pace = { frame: 1, held: false };
 		geometry.users = { userOf: () => undefined, pace };
 		const mesh = geometry.fromArrays(strip(20_000));
 		const plan = mesh.buildLevels();
 		pace.frame++;
-		for (let k = 0; k < 20 && mesh.levels.length === 0; k++) await settled();
-		const first = mesh.levels[0]?.mesh as MeshGeometry;
-		const firstId = first.id;
+		for (let k = 0; k < 20 && record.made.length === 0; k++) await settled();
+		expect(record.made).toHaveLength(1);
+		const first = record.made[0] as number;
 		const far = geometry.fromArrays(strip(10, { levels: false }));
 		mesh.setLevels([{ mesh: far, distance: 50 }]);
 		pace.frame++;
 		expect((await plan).map((level) => level.mesh)).toEqual([far]);
-		expect(first.live).toBe(false);
-		expect(record.destroyed).toEqual([firstId]);
+		expect(record.destroyed).toContain(first);
 	});
 
 	test('give a level that the simplifier found exact an error above 0, and keep errors growing', async () => {
