@@ -1,113 +1,135 @@
-// The European beech as a directed frame: a thick short trunk that carries on as a centre column,
-// four great limbs that leave it singly below the column's top and three that divide from the top,
-// each limb's boughs, and the level tiers of foliage the boughs and their sprays carry. Each figure
-// names the reference picture it was read on. Shares are of the tree's height. Still 01 and the
-// whole-tree turning video are the one tree the frame follows; still 18 shows the limbs' course.
+// The European beech as a directed frame: a thick, barely tapering trunk that divides at a third of
+// the height into ten great limbs, which sweep out and up under a wide low dome, their boughs ending
+// in layered sprays over the dome's surface and in a skirt near the grass, which fine wood clothes
+// with the branch end of still 21. Each figure names the reference picture it was read on. Shares
+// are of the tree's height. Still 01 and the whole-tree turning video are the one tree the frame
+// follows.
+import type { Curve } from '../../core/types';
 import {
-	evenOutline,
-	type FrameBend,
 	type FrameBranchRule,
+	type FrameSide,
 	type FrameSpec,
 	framedRecord,
 } from '../../grow/frame';
+import { PIECES } from './pieces';
 import { record } from './record';
 
 /**
- * A level tier of foliage. Still 01: seven or eight tiers can be counted down each side, each 0.07
- * to 0.10 of the height thick, parted by shade.
+ * The fine wood that clothes a spray, each twig ending in a socket that carries the branch end of
+ * still 21. A branch end is 1.2 m long and 1.3 m wide on a tree 20 m tall, so the sockets stand a
+ * branch end's width apart over the spray's surface and a branch end's reach inside it.
  */
-const tier = (width: number) => ({ kind: 'tier', width, depth: 0.08 }) as const;
+const ENDS = { pitch: 1.2 / 20, reach: 1.17 / 20 } as const;
 
 /**
- * The boughs of a great limb and their sprays. Stills 05 and 06: foliage sits on the outer half of
- * every limb and on all its branches, and the inner half is bare. A bough leaves its limb, turns
- * level and ends at the crown's edge under a tier; its sprays lie beside it in the same tier.
+ * A layered spray of foliage that fine wood clothes. Still 04: flat sprays of oval leaves overlap
+ * like shingles. Still 01: the dome's surface is a scale of rounded layers a sixth of the height
+ * across and half as deep.
  */
-function boughs(ends: readonly FrameBend[]): FrameBranchRule {
+const SPRAY = { kind: 'clump', width: 0.17, depth: 0.08, fill: ENDS } as const;
+
+/**
+ * The boughs of a great limb, each ending at the dome's surface in a spray. Stills 05 and 06: the
+ * foliage sits on the outer half of every limb and on its boughs, and the inner wood is bare. Still
+ * 01: the low boughs' ends droop to the skirt.
+ */
+const boughs: FrameBranchRule = {
+	name: 'bough',
+	role: 'branch',
+	count: { every: 0.03, least: 4, most: 10 },
+	along: [0.3, 1],
+	stagger: 0.3,
+	around: 'spiral',
+	// None leaves a limb's underside, so none runs down into the open space under the crown.
+	clear: 120,
+	jitter: 20,
+	// Still 08: a fork opens about 40 degrees; a bough stands wider off its limb near the trunk.
+	angle: [
+		[0, 50],
+		[1, 30],
+	],
+	from: 'parent',
+	angleSpread: 8,
+	// A spray's pieces stand a tenth of the height outside the bough's end, so the end stands that
+	// far inside the outline.
+	length: { outline: 0.92 },
+	vary: 0.1,
+	least: 0.04,
+	most: 0.3,
+	radius: 0.45,
+	taper: 0.3,
+	// Still 01: the boughs bow down toward the dome's rim.
+	bends: [{ from: 0.3, to: 1, by: 35 }],
+	sway: 14,
+	elbows: 3,
+	apart: 0.006,
+	patch: SPRAY,
+};
+
+/**
+ * One side of the crown as a whole still shows it, from the species' measured targets: the greatest
+ * reach from the trunk's line in bands a sixteenth of the height deep, from the foot to the top, and
+ * the crown's lower boundary out from the trunk.
+ */
+interface Reading {
+	readonly reach: readonly number[];
+	readonly under: Curve;
+}
+
+/**
+ * The crown's lower boundary out from the trunk's line. Still 01: the bole shows bare to 0.21 of the
+ * height under the crown, the skirt falls away from it, and at the rim the foliage hangs to 0.04 of
+ * the height on the left and 0.036 on the right.
+ */
+const UNDER: Curve = [
+	[0, 0.22],
+	[0.12, 0.21],
+	[0.25, 0.14],
+	[0.4, 0.08],
+	[0.55, 0.045],
+	[0.75, 0.036],
+];
+
+// Still 01, right of the trunk's line, and left of it, foot band first.
+const STILL_01_RIGHT: Reading = {
+	reach: [
+		0.7039, 0.7303, 0.7138, 0.7072, 0.7303, 0.7138, 0.6579, 0.6678, 0.6579, 0.625, 0.6086, 0.5625,
+		0.5493, 0.4539, 0.3816, 0.2467,
+	],
+	under: UNDER,
+};
+const STILL_01_LEFT: Reading = {
+	reach: [
+		0.5592, 0.6382, 0.6875, 0.7105, 0.6908, 0.6875, 0.6908, 0.6579, 0.6349, 0.6382, 0.6118, 0.5395,
+		0.5066, 0.4539, 0.3586, 0.2829,
+	],
+	under: UNDER,
+};
+
+/** A side of the outline, from its reading on a still. */
+function side(toward: number, read: Reading): FrameSide {
 	return {
-		name: 'bough',
-		role: 'branch',
-		count: { every: 0.045, least: 4, most: 9 },
-		along: [0.3, 0.94],
-		stagger: 0.25,
-		// Still 05: boughs leave a limb on every side, and each turns level.
-		around: 'spiral',
-		jitter: 15,
-		// Still 08: a fork opens about 40 degrees; a bough stands wider off its limb.
-		angle: [
-			[0, 55],
-			[1, 40],
+		toward,
+		reach: [
+			[0, read.reach[0] as number],
+			...read.reach.map((reach, band) => [(band + 0.5) / 16, reach] as const),
+			[1, 0],
 		],
-		from: 'parent',
-		angleSpread: 6,
-		// Still 01: the tiers' ends are the outline's scallops.
-		length: { outline: 0.95 },
-		vary: 0.05,
-		least: 0.08,
-		most: 0.48,
-		radius: 0.5,
-		taper: 0.3,
-		bends: [{ from: 0.1, to: 0.55, level: 2 }, ...ends],
-		sway: 14,
-		elbows: 4,
-		patch: tier(0.22),
-		children: [
-			{
-				name: 'spray',
-				role: 'branch',
-				count: { every: 0.07, least: 1, most: 4 },
-				along: [0.35, 0.9],
-				stagger: 0.25,
-				around: 'sides',
-				jitter: 12,
-				angle: 50,
-				from: 'parent',
-				angleSpread: 6,
-				length: {
-					parent: [
-						[0, 0.4],
-						[1, 0.25],
-					],
-				},
-				vary: 0.1,
-				radius: 0.5,
-				taper: 0.3,
-				bends: [{ from: 0.1, to: 0.6, level: 0 }],
-				sway: 14,
-				elbows: 3,
-				patch: tier(0.16),
-			},
-		],
+		under: read.under,
 	};
 }
 
 /** The European beech's frame. */
 export const frame: FrameSpec = {
-	// Still 01, the outline's half width in 24 bands from the top down, each at its own height.
-	outline: evenOutline(
-		[
-			[0.021, 0.39],
-			[0.063, 0.655],
-			[0.104, 0.685],
-			[0.188, 0.71],
-			[0.271, 0.695],
-			[0.354, 0.69],
-			[0.438, 0.665],
-			[0.521, 0.635],
-			[0.604, 0.615],
-			[0.688, 0.585],
-			[0.729, 0.535],
-			[0.771, 0.525],
-			[0.813, 0.465],
-			[0.854, 0.435],
-			[0.896, 0.37],
-			[0.938, 0.275],
-			[0.979, 0.175],
-			[1, 0],
-		],
-		// The crown is built nearly round. Still 01 looks across the wide side.
-		0.8,
-	),
+	// The outline, side by side. The turning video reads the crown 0.69 to 0.70 tall over wide at
+	// every turn, so the crown is round in plan and still 01's two sides stand for the other two as
+	// well. Stills 02 and 18, 1.65 wide over tall, are other trees, which the frame does not follow.
+	outline: [
+		side(0, STILL_01_RIGHT),
+		side(90, STILL_01_RIGHT),
+		side(180, STILL_01_LEFT),
+		side(270, STILL_01_LEFT),
+	],
 	stems: {
 		name: 'trunk',
 		count: 1,
@@ -118,53 +140,47 @@ export const frame: FrameSpec = {
 			[0.04, 0.15],
 			[0.08, 0.118],
 			[0.3, 0.104],
-			[0.62, 0.08],
 		],
-		// Still 01: the centre column runs on to 0.62 of the height and divides there.
-		length: { share: 0.62 },
+		// Stills 01 and 17: the trunk divides at about a third of the height.
+		length: { share: 0.33 },
 		// Stills 01, 17 and 03: no lean and no bend.
 		sway: 1.5,
 		elbows: 3,
 		children: [
 			{
-				name: 'low',
+				name: 'limb',
 				role: 'limb',
-				// Still 01: a low pair leaves at 0.26 to 0.32 of the height and a middle pair at 0.38
-				// to 0.43. The shares here are of the column's own length.
-				count: 4,
-				along: [0.44, 0.68],
+				// Still 18: ten to twelve great limbs leave the trunk's top.
+				count: 10,
+				along: [0.82, 1],
 				stagger: 0.2,
-				// Stills 05 and 03: single, each at its own height, a quarter turn on from the last, so
-				// the four stand on every side of the trunk.
-				around: 'ring',
-				jitter: 10,
-				// Still 01: the low limbs leave at 55 to 60 degrees from plumb and the middle ones at
-				// 40 to 45.
+				around: 'spiral',
+				jitter: 15,
+				// Still 01: the lowest leave at 55 to 65 degrees from plumb and sweep out under the
+				// skirt; the middle ones stand at 40; the highest rise at 15 to 20.
 				angle: [
-					[0, 58],
-					[0.34, 56],
-					[0.66, 44],
-					[1, 41],
+					[0, 78],
+					[0.5, 50],
+					[1, 20],
 				],
 				from: 'plumb',
-				angleSpread: 3,
-				// Stills 01 and 18: the wood shows to 0.6 and to 0.8 of the crown's half width.
-				length: { outline: 0.7 },
-				vary: 0.05,
-				// Still 01: 0.47 of the bole where it leaves.
-				radius: 0.47,
-				taper: 0.25,
-				// Stills 01 and 18: a slow even rise, then level; the low limbs' ends dip below level
-				// over their last quarter.
+				angleSpread: 5,
+				// Stills 01 and 05: the bare wood shows to about 0.7 of the crown's half width.
+				length: { outline: 0.75 },
+				vary: 0.08,
+				// Still 07: a great limb is half the bole where it leaves.
+				radius: 0.5,
+				taper: 0.55,
+				// Still 01: the limbs sweep out and then up.
 				bends: [
 					{
-						from: 0.12,
-						to: 0.7,
+						from: 0.15,
+						to: 0.75,
 						level: [
-							[0, -4],
-							[0.34, 2],
-							[0.66, 22],
-							[1, 26],
+							[0, -10],
+							[0.4, 10],
+							[0.7, 30],
+							[1, 50],
 						],
 					},
 					{
@@ -172,49 +188,34 @@ export const frame: FrameSpec = {
 						to: 1,
 						by: [
 							[0, 30],
-							[0.34, 24],
-							[0.66, 6],
-							[1, 4],
+							[0.4, 15],
+							[1, 0],
 						],
 					},
 				],
-				sway: 12,
-				elbows: 5,
-				patch: tier(0.24),
-				// Still 01: the low boughs' ends hang to a skirt close to the grass.
-				children: [boughs([{ from: 0.5, to: 1, by: 48 }])],
-			},
-			{
-				name: 'upper',
-				role: 'limb',
-				// Still 01: two or three steep limbs divide from the column's top.
-				count: 3,
-				along: [1, 1],
-				around: 'ring',
-				jitter: 12,
-				// Still 01: 15 to 30 degrees from plumb.
-				angle: 24,
-				from: 'plumb',
-				angleSpread: 5,
-				// The upper limbs' ends are the crown's highest wood.
-				length: { outline: 0.95 },
-				vary: 0.05,
-				radius: 0.55,
-				taper: 0.25,
-				// Still 01: the upper limbs sweep up and outward in one slow curve.
-				bends: [{ from: 0.15, to: 0.9, level: 42 }],
-				sway: 12,
-				elbows: 5,
-				patch: tier(0.22),
-				children: [boughs([{ from: 0.7, to: 1, by: 8 }])],
+				sway: 10,
+				elbows: 4,
+				// Still 05: the limbs fan round the tree and none lies along another.
+				apart: 0.012,
+				children: [boughs],
 			},
 		],
 	},
 };
 
 /**
- * The European beech's record with the frame as its growth. A socket holds four shoot rows that fan 45
- * degrees from its line. These two are working figures, not measured ones: they stand until the
- * species' branch pieces are placed at its sockets, which then state what a socket holds.
+ * The foot of the framed beech. The frame's trunk already flares to still 01's foot, so the stem
+ * base adds no flare of its own, as the framed oak's and willow's do; the elephant-toe buttresses,
+ * the roots and the clefts of stills 14 and 17 stay.
  */
-export const directed = framedRecord(record, frame, { rows: { mean: 4, spread: 1 }, fan: 45 });
+const base = { ...record.base, flare: { amount: 0, height: 0.5 } } as const;
+
+/**
+ * The European beech's record with the frame as its growth and the branch end of still 21 at each
+ * socket. The shoot rows are working figures, not measured ones: a kit with no pieces draws them.
+ */
+export const directed = {
+	...framedRecord(record, frame, { rows: { mean: 4, spread: 1 }, fan: 45, piece: 'branch-end' }),
+	base,
+	pieces: PIECES.filter((piece) => piece.name === 'branch-end'),
+};
