@@ -2815,6 +2815,59 @@ export function crownBalanceOf(plant: PlantMask, region: CrownRegion): CrownBala
 }
 
 /**
+ * The bands the crown's balance is read in, top first. Six is the review's own granularity for a
+ * crown's vertical structure: a sixth of the crown's height is a few dozen rows at the work width,
+ * which holds thousands of covered pixels, so a band's split is stable. Fewer bands average a
+ * hollow flank with the full rows above and below it; more let one leaf clump set a band.
+ */
+export const BALANCE_BANDS = 6;
+/** The fewest covered pixels a band needs on each picture before its split is read. */
+const BAND_LEAST = 16;
+
+/** The crown's balance read in horizontal bands, top first. */
+export interface CrownBands {
+	/** Each band's left share of its covered area, top first; null for a band too thin to read. */
+	readonly left: readonly (number | null)[];
+	/** The column, in work pixels, that each band is split at. */
+	readonly column: number;
+}
+
+/**
+ * The crown's covered area in horizontal bands, each band split at the trunk's column: the left
+ * side's share of the band's covered area, top first. A hollow flank shows as a band whose split
+ * stands far from its reference's, even where the whole crown's two sides balance.
+ */
+export function crownBandsOf(
+	plant: PlantMask,
+	region: CrownRegion,
+	bands = BALANCE_BANDS,
+): CrownBands | null {
+	const box = boxOf(plant.mask, plant.width, plant.height);
+	if (!box) return null;
+	const column = anchorColumn(plant.mask, plant.width, plant.height, box);
+	const height = region.bottom - region.top + 1;
+	const left = new Array<number>(bands).fill(0);
+	const total = new Array<number>(bands).fill(0);
+	for (let y = region.top; y <= region.bottom; y++) {
+		const band = Math.min(bands - 1, Math.floor(((y - region.top) * bands) / height));
+		for (let x = region.left; x <= region.right; x++) {
+			if (!plant.mask[y * plant.width + x]) continue;
+			total[band] = (total[band] as number) + 1;
+			if (x < column) left[band] = (left[band] as number) + 1;
+		}
+	}
+	if (total.every((count) => count === 0)) return null;
+	return {
+		left: left.map((count, band) =>
+			(total[band] as number) < BAND_LEAST
+				? null
+				: Number((count / (total[band] as number)).toFixed(4)),
+		),
+		column: Number(column.toFixed(2)),
+	};
+}
+
+/**
  * Where a picture's light comes from, read off the crown's own shading. The brighter half of the
  * crown stands towards the sun, and a crown whose top is much brighter than its foot is lit from
  * higher. The figure is coarse by nature: one flat picture cannot say more than which side is lit.

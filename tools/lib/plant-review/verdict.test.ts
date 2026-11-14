@@ -33,6 +33,7 @@ function pair(file: string, over: Partial<StillResult> = {}): StillResult {
 		crownBoxGap: null,
 		crownFoliage: null,
 		crownBalance: null,
+		crownBands: null,
 		frameGap: null,
 		frameScale: null,
 		foliageDeltaE: null,
@@ -153,6 +154,46 @@ describe("the tool's verdict of a run", () => {
 			band: { min: 0.08, max: 0.15 },
 		});
 		expect(row.evidence).toContain('stills/01-whole-distant.png');
+	});
+
+	test('gives row 1 one figure for each band both pictures read', () => {
+		const bands = {
+			count: 6,
+			reference: [0.54, 0.53, 0.54, 0.5, 0.52, 0.46],
+			render: [0.7, 0.48, 0.56, 0.44, 0.46, 0.46],
+			worst: { band: 0, reference: 0.54, render: 0.7, difference: 0.16 },
+		};
+		const row = rowOf(
+			toolVerdict(input({ '01-whole-distant.png': { crownBands: bands, masked: true } })),
+			1,
+		);
+		expect(row.figures.map((figure) => figure.name)).toEqual([
+			'crown balance, left share in band 1 of 6',
+			'crown balance, left share in band 2 of 6',
+			'crown balance, left share in band 3 of 6',
+			'crown balance, left share in band 4 of 6',
+			'crown balance, left share in band 5 of 6',
+			'crown balance, left share in band 6 of 6',
+		]);
+		expect(row.figures[0]).toEqual({
+			picture: '01-whole-distant.png',
+			run: 'oak-run-1',
+			name: 'crown balance, left share in band 1 of 6',
+			value: 0.7,
+			reference: 0.54,
+			band: { min: 0.44, max: 0.64 },
+		});
+		expect(row.figures.map((figure) => inBand(figure))).toEqual([
+			false,
+			true,
+			true,
+			true,
+			true,
+			true,
+		]);
+		// Row 1 also reads the silhouette and the skeleton, so the tool leaves the pass to a reviewer.
+		expect(row.verdict).toBe('unjudged');
+		expect(row.proposed).toBeUndefined();
 	});
 
 	test('says which view is more open or more closed than its band, and still judges nothing', () => {
