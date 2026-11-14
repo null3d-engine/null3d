@@ -68,9 +68,9 @@ export type UncardedPrototype = Omit<ShootPrototype, 'card'> & {
 	 */
 	readonly brushes?: PrototypeBrushes;
 	/**
-	 * The whole mesh the card bake pictures, leaves included, where the tiers hold only the wood
-	 * that the brush cards stand on: a piece whose every tier draws brush cards in place of its
-	 * leaves, too large for one prototype with them. Absent, the bake pictures the high tier.
+	 * The whole mesh the card bake pictures: a placed piece's whole mesh, for a piece whose tiers
+	 * hold only the wood its brush cards stand on or the neck it is cut at. Absent, the bake pictures
+	 * the prototype's own mesh at the bake's tier.
 	 */
 	readonly bake?: MeshArrays;
 };

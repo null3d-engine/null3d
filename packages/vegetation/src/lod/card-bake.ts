@@ -64,11 +64,6 @@ const MASK_SIZE = 512;
 /** The tier whose meshes the bake draws. */
 const BAKE_TIER = DETAILS.indexOf('high');
 
-/** The mesh the bake pictures: a prototype's own bake mesh where it carries one, else its bake tier. */
-function bakeMesh(prototype: UncardedPrototype): MeshArrays {
-	return prototype.bake ?? (prototype.tiers[BAKE_TIER] as MeshArrays);
-}
-
 /** Linear to sRGB, as a byte. */
 function srgbByte(linear: number): number {
 	const x = Math.min(1, Math.max(0, linear));
@@ -648,6 +643,15 @@ export function paletteOf(record: Species, manifest: TextureManifest): Palette {
 }
 
 /**
+ * The mesh a prototype's cards picture: a placed piece's whole mesh where it carries one, since a
+ * cut piece's tier may hold only the neck it is cut at, else the prototype's own mesh at the bake's
+ * tier.
+ */
+function bakeMeshOf(prototype: UncardedPrototype): MeshArrays {
+	return prototype.bake ?? (prototype.tiers[BAKE_TIER] as MeshArrays);
+}
+
+/**
  * Bakes the card atlas of a species' prototypes, and each prototype's cells in it.
  *
  * @param record The species record.
@@ -664,7 +668,7 @@ export function bakeCards(
 ): { readonly atlas: CardAtlas; readonly cells: readonly CardCell[] } {
 	const cuts = record.lod.cardCuts;
 	const planned = prototypes.map((prototype) =>
-		cardPlanes(prototype, bakeMesh(prototype), cuts?.most ?? CUTS_MOST),
+		cardPlanes(prototype, bakeMeshOf(prototype), cuts?.most ?? CUTS_MOST),
 	);
 	// A prototype without leaves holds thin stems and buds, so its planes take half cells; so do a cut
 	// prototype's stretches, unless the record asks for whole ones.
@@ -684,7 +688,7 @@ export function bakeCards(
 	const surface = new Uint8Array(layerBytes * 2);
 	const palette = paletteOf(record, manifest);
 	const cells: CardCell[] = prototypes.map((prototype, p) => {
-		const mesh = bakeMesh(prototype);
+		const mesh = bakeMeshOf(prototype);
 		const planes = planned[p] as PlannedPlane[];
 		return {
 			planes: planes.map((plane, k) => {
