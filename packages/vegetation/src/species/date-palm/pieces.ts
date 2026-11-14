@@ -16,14 +16,14 @@ export const FROND = 6;
 const SPINE_ZONE = 0.22;
 
 /**
- * The leaflets: about 80 a side (picture 04: 22 to 26 along 300 px of a 1,000 px rachis), in groups
- * of three a side at lifts of -30, 0 and 30 degrees, a group every 0.17 m over the frond's upper
- * 0.78. Each leaves 50 degrees from the rachis, the specification's 40 to 50 degrees forward of
- * square (stills 09 and 22). The longest stand at the middle of the frond; they shorten to a third
- * of that at the tip (stills 10 and 21).
+ * The leaflets: about 102 a side, inside the re-audit's 100 to 200 (picture 04: 22 to 26
+ * along 300 px of a 1,000 px rachis), in groups of three a side at lifts of -30, 0 and 30 degrees, a
+ * group every 0.13 m over the frond's upper 0.78. Each leaves 50 degrees from the rachis, the
+ * specification's 40 to 50 degrees forward of square (stills 09 and 22). The longest stand at the
+ * middle of the frond; they shorten to a third of that at the tip (stills 10 and 21).
  */
 const LEAFLETS: PieceLeaves = {
-	gap: ((1 - SPINE_ZONE) * FROND) / 27,
+	gap: ((1 - SPINE_ZONE) * FROND) / 34,
 	from: SPINE_ZONE,
 	ranked: [-30, 0, 30],
 	angle: 50,
