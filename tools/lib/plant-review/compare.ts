@@ -132,6 +132,8 @@ export const SOLVED_VIEWS: ReadonlySet<string> = new Set([
 	'bark-base',
 	'bark-mid',
 	'bark-limb',
+	// A hanging-shoot view now states its own contract, so its parts picture is drawn too.
+	'strands',
 ]);
 
 /**

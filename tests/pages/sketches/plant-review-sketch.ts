@@ -928,21 +928,23 @@ export default defineSketch(async (ctx) => {
 			readonly lacks?: true;
 		}
 	>();
+	const closeLenses = new Map<string, Lens>();
 	const closeAt = (
 		key: string,
 		find: () => CloseView | undefined,
 		turn: number,
-		fov: number,
+		lens: Lens,
 		near: number,
 	): View | undefined => {
 		if (!closeViews.has(key)) closeViews.set(key, find());
 		const found = closeViews.get(key);
 		if (!found) return undefined;
+		closeLenses.set(key, lens);
 		const walked = walkedRound(found, turn);
 		return {
 			position: walked.position,
 			target: walked.target,
-			fov,
+			fov: lens.fov,
 			near,
 			...(walked.roll && { roll: walked.roll }),
 		};
@@ -1368,7 +1370,7 @@ export default defineSketch(async (ctx) => {
 				}
 				// A twig with its end clusters against a plain ground; a plant with no shoot rows takes
 				// its sunlit tip on the turn's side.
-				const twig = closeAt(view, () => twigView(closePlant(false), lens), turn, fov, 0.02);
+				const twig = closeAt(view, () => twigView(closePlant(false), lens), turn, lens, 0.02);
 				if (twig) return twig;
 				const tip = sunlitTip(skeleton, out, BUD_TERMINAL);
 				if (!tip) break;
@@ -1388,14 +1390,14 @@ export default defineSketch(async (ctx) => {
 			case 'spike': {
 				// A ground plant's flowering heads: one stem's hanging spikes, seen close and level
 				// against the plain ground as their photograph frames them.
-				const found = closeAt(view, () => spikeView(closePlant(false), lens), turn, fov, 0.05);
+				const found = closeAt(view, () => spikeView(closePlant(false), lens), turn, lens, 0.05);
 				if (found) return found;
 				break;
 			}
 			case 'strands': {
 				// A limb's hanging shoots at the crown's rim, seen level against the sky as a
 				// drooping-twig photograph shows them.
-				const found = closeAt(view, () => strandsView(closePlant(false), lens), turn, fov, 0.05);
+				const found = closeAt(view, () => strandsView(closePlant(false), lens), turn, lens, 0.05);
 				if (found) return found;
 				break;
 			}
@@ -1498,7 +1500,7 @@ export default defineSketch(async (ctx) => {
 					view,
 					() => limbView(closePlant(false), lens, framing),
 					turn,
-					fov,
+					lens,
 					0.02,
 				);
 				if (found) return scaledStand(found, QUERY.standScale);
@@ -2118,11 +2120,35 @@ export default defineSketch(async (ctx) => {
 					regions: solved.shot.regions,
 				}
 			: undefined;
-	const foundSubject =
-		solvedSubject ??
-		(close
-			? { ...close.subject, ...(close.clutter && { clutter: close.clutter }) }
-			: plainSubjects.get(VIEW));
+	// A close view solved from the plant's shoots states its own contract: its points and the
+	// picture's regions are checked on the camera that drew, so the tool confirms its subject as it
+	// does a solved view's.
+	const closeSubject = close
+		? {
+				...close.subject,
+				...(close.clutter && { clutter: close.clutter }),
+				...(close.points !== undefined && close.regions !== undefined && first
+					? {
+							contract: checkShot(
+								{
+									kind: String(close.subject.kind ?? VIEW),
+									camera: {
+										position: first.position,
+										target: first.target,
+										...(first.roll && { roll: first.roll }),
+									},
+									points: close.points,
+									regions: close.regions,
+									facts: close.subject,
+								},
+								closeLenses.get(VIEW) as Lens,
+							),
+							regions: close.regions,
+						}
+					: {}),
+			}
+		: undefined;
+	const foundSubject = solvedSubject ?? closeSubject ?? plainSubjects.get(VIEW);
 	const prior = (foundSubject as { warning?: string } | undefined)?.warning;
 	const subject = foundSubject
 		? {
