@@ -327,13 +327,19 @@ export interface Fork {
 	/** The limb that divides and the arm that leaves it. */
 	readonly limb: number;
 	readonly arm: number;
-	/** The limb's radius at the fork, and the radius of the arm. */
+	/** The limb's radius at the fork, and the thinner arm's radius. */
 	readonly radius: number;
 	readonly armRadius: number;
 	/** The limb's direction into the fork and on past it, and the arm's. */
 	readonly into: V3;
 	readonly on: V3;
 	readonly out: V3;
+	/**
+	 * The two arms' radii and directions where the limb ends at the fork, as a stem forks into
+	 * two. A fork where the limb runs on past the arm leaves these unset.
+	 */
+	readonly armRadii?: readonly [number, number];
+	readonly armDirections?: readonly [V3, V3];
 	/** Metres from the stem's axis to the fork. */
 	readonly reach: number;
 }
@@ -357,8 +363,44 @@ export function forks(skeleton: MacroSkeleton): Fork[] {
 		if (armRadius < FORK_ARM * radius) continue;
 		const next = nextOnAxis(skeleton, parent, node);
 		const before = skeleton.parent[node] as number;
-		if (next < 0 || before < 0) continue;
 		const at = nodeAt(skeleton, node);
+		if (next < 0) {
+			// The limb ends at the division: two arms leave it there, as a stem forks into two.
+			const siblings: number[] = [];
+			for (let s = 0; s < axes.count; s++) {
+				if ((axes.parent[s] as number) !== parent) continue;
+				if ((axes.parentNode[s] as number) !== node) continue;
+				siblings.push(s);
+			}
+			if (siblings.length < 2) continue;
+			const girth = (axis: number) => skeleton.radius[axes.first[axis] as number] as number;
+			siblings.sort((x, y) => girth(y) - girth(x) || x - y);
+			const [one, two] = siblings as [number, number];
+			// One fork stands at the node, not one for each arm.
+			if (a !== one) continue;
+			const [oneRadius, twoRadius] = [girth(one), girth(two)];
+			if (oneRadius < FORK_ARM * radius || twoRadius < FORK_ARM * radius) continue;
+			const armDirections: [V3, V3] = [
+				departure(skeleton, one, 2 * radius),
+				departure(skeleton, two, 2 * radius),
+			];
+			out.push({
+				node,
+				at,
+				limb: parent,
+				arm: two,
+				radius,
+				armRadius: Math.min(oneRadius, twoRadius),
+				into: before >= 0 ? between(skeleton, before, node) : ([0, 1, 0] as V3),
+				on: armDirections[0],
+				out: armDirections[1],
+				armRadii: [oneRadius, twoRadius],
+				armDirections,
+				reach: Math.hypot(at[0] - foot[0], at[2] - foot[2]),
+			});
+			continue;
+		}
+		if (before < 0) continue;
 		out.push({
 			node,
 			at,

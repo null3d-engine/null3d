@@ -490,10 +490,11 @@ export function subjectsOfSkeleton(
 				at: f.at,
 				order: skeleton.axes.order[f.limb] as number,
 				into: f.into,
-				// The limb runs on as one arm at its own thickness, and the axis that leaves is the other.
-				arms: [f.on, f.out] as const,
+				// A limb that runs on is one arm at its own thickness, and the axis that leaves is the
+				// other. A limb that ends at the fork has two arms, each the axis that leaves it.
+				arms: f.armDirections ?? ([f.on, f.out] as const),
 				radius: f.radius,
-				armRadii: [f.radius, f.armRadius] as const,
+				armRadii: f.armRadii ?? ([f.radius, f.armRadius] as const),
 			}))
 		: noTrunk;
 
