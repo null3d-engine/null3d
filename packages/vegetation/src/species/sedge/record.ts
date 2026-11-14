@@ -197,6 +197,9 @@ export const record: Species = {
 		// A piece's card first shows where the piece spans 24 pixels, so a cell of 32 texels holds
 		// it at every tier; a tree leaf's 64 would hold four times the texels for no pixel more.
 		cardCell: { low: 32, medium: 32, high: 32, ultra: 32 },
+		// The plant scales to its leaf form's top, the measure its whole views were judged with, so
+		// no card change can shorten it.
+		heightAtLeafTop: true,
 		// A flowering stem is thinner than a pixel at the card level, so its card loses its cover
 		// and the head on it reads as a piece in air; a card's twig line keeps the head on its stem,
 		// and the marker draws that line at the stem's own width, floored at the least the wood draws.
