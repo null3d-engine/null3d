@@ -31,14 +31,20 @@ import {
 	videoFrames,
 } from './image.ts';
 import {
+	anchorColumn,
 	anyPlantMask,
 	type Box,
 	boxOf,
+	type CrownRegion,
+	crownBalanceOf,
+	crownFoliageOf,
 	halfDarkMask,
 	hangingParts,
+	LEAF_GREEN,
 	matteMask,
 	matteOwnMask,
 	measurePlant,
+	median,
 	PIECE_BRIDGE,
 	type PlantHabit,
 	type PlantMask,
@@ -62,6 +68,9 @@ import {
 	contractHeld,
 	holdsWholePlant,
 	lackReason,
+	PART,
+	type Parts,
+	partsFoliageShare,
 	partsOf,
 	regionsRead,
 	voidReason,
@@ -90,10 +99,10 @@ const BARK_VIEWS: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * The green of a leaf in CIELAB a*, below which a patch pixel is foliage rather than bark. Foliage
- * over a bark close-up stands well below this; the barks measured across the corpus stay above it.
+ * The measure's own figures live in the module that reads the picture: the green of a leaf, the
+ * column at a plant's foot, and the median of a list. The comparison reads them from there.
  */
-export const LEAF_GREEN = -5;
+export { anchorColumn, LEAF_GREEN, median };
 
 /**
  * The close views of the wood from among the plant's own parts: a limb's join, a fork, the trunk
@@ -190,48 +199,9 @@ export interface ReferenceFraming {
 	readonly notes: readonly string[];
 }
 
-/** The median of a list of numbers, or undefined for an empty list. */
-export function median(values: readonly number[]): number | undefined {
-	if (values.length === 0) return undefined;
-	const sorted = [...values].sort((a, b) => a - b);
-	const mid = sorted.length >> 1;
-	return sorted.length % 2
-		? sorted[mid]
-		: ((sorted[mid - 1] as number) + (sorted[mid] as number)) / 2;
-}
-
 /** The mean of a list of numbers, or 0 for an empty list. */
 export function mean(values: readonly number[]): number {
 	return values.length === 0 ? 0 : values.reduce((a, b) => a + b, 0) / values.length;
-}
-
-/**
- * The column of the plant's trunk at its base, or the box's middle when the base is cut off.
- *
- * A low limb that sweeps out near the foot merges with the trunk in a row's outer extent, so each
- * row of the base band gives the run nearest the plant's middle column, and the median of those
- * centres stands for the trunk. The lowest few rows of a broad crown are then outvoted.
- */
-export function anchorColumn(mask: Uint8Array, width: number, height: number, box: Box): number {
-	if (box.bottom >= height - 1) return (box.left + box.right) / 2;
-	const middle = (box.left + box.right) / 2;
-	const band = Math.max(2, Math.round((box.bottom - box.top + 1) * 0.15));
-	const centres: number[] = [];
-	for (let y = box.bottom; y > box.bottom - band; y--) {
-		let best: number | null = null;
-		let runStart = -1;
-		for (let x = 0; x <= width; x++) {
-			const on = x < width && mask[y * width + x] === 1;
-			if (on && runStart < 0) runStart = x;
-			if (!on && runStart >= 0) {
-				const centre = (runStart + x - 1) / 2;
-				if (best === null || Math.abs(centre - middle) < Math.abs(best - middle)) best = centre;
-				runStart = -1;
-			}
-		}
-		if (best !== null) centres.push(best);
-	}
-	return median(centres) ?? (box.left + box.right) / 2;
 }
 
 /**
@@ -653,6 +623,27 @@ interface PairMetrics {
 		readonly rule?: 'colour' | 'half-dark';
 	} | null;
 	readonly crownBoxGap: { readonly reference: number; readonly render: number } | null;
+	/**
+	 * The crown's foliage share on each side: of the crown's own covered pixels, the share that is
+	 * foliage rather than wood. A side is null where its picture cannot give a share, with the
+	 * reason. It is read on the whole and crown views alone.
+	 */
+	readonly crownFoliage: {
+		readonly reference: number | null;
+		readonly referenceWhy?: string;
+		readonly render: number | null;
+		readonly renderWhy?: string;
+	} | null;
+	/**
+	 * The crown's covered area either side of the trunk's column, as shares of the whole crown, on
+	 * each side of the pair. It is read on the whole and crown views alone.
+	 */
+	readonly crownBalance: {
+		readonly reference: { readonly left: number; readonly right: number } | null;
+		readonly referenceWhy?: string;
+		readonly render: { readonly left: number; readonly right: number } | null;
+		readonly renderWhy?: string;
+	} | null;
 	readonly frameGap: { readonly reference: number; readonly render: number } | null;
 	/**
 	 * The drawn plant's share of the frame's height over its photograph's: its scale against the
@@ -771,6 +762,8 @@ function pairMetrics(reference: Side, render: Side): PairMetrics {
 		crownBoxGap: both
 			? { reference: reference.measures.crownBoxGap, render: render.measures.crownBoxGap }
 			: null,
+		crownFoliage: null,
+		crownBalance: null,
 		frameGap:
 			both && framed
 				? { reference: reference.measures.frameGap, render: render.measures.frameGap }
@@ -784,6 +777,65 @@ function pairMetrics(reference: Side, render: Side): PairMetrics {
 			reference: reference.measures.foliage?.hex ?? null,
 			render: render.measures.foliage?.hex ?? null,
 		},
+	};
+}
+
+/**
+ * The crown's foliage share on both sides of a picture, or null where neither side gives one. The
+ * reference's side fits two colour clusters inside its crown box. The render's side reads the wood
+ * and foliage layers of its parts picture, whose pixels are scaled to the measure's work size.
+ */
+function crownFoliagePair(
+	refImage: Rgba,
+	refPlant: PlantMask,
+	refRegion: CrownRegion | null,
+	parts: Parts | undefined,
+	render: Side,
+): NonNullable<PairMetrics['crownFoliage']> | null {
+	const reference = refRegion ? crownFoliageOf(refImage, refPlant, refRegion) : null;
+	const region = render.measures.crownRegion;
+	const read =
+		region && parts ? partsFoliageShare(parts, region, parts.width / render.plant.width) : null;
+	if (!reference && !read) return null;
+	const referenceWhy = refRegion === null ? 'the photograph gives no crown box' : reference?.why;
+	const renderWhy =
+		region === null
+			? 'the drawing has no crown box'
+			: parts === undefined
+				? 'the run drew no picture of its parts'
+				: 'the parts picture covers none of the crown';
+	return {
+		reference: reference?.share ?? null,
+		...(referenceWhy && { referenceWhy }),
+		render: read?.share ?? null,
+		...(!read && { renderWhy }),
+	};
+}
+
+/**
+ * The crown's balance on both sides of a picture: the covered area either side of the trunk's
+ * column, as shares of the whole crown. The reference's side reads its outline; the render's side
+ * reads its matte, which is the same outline.
+ */
+function crownBalancePair(
+	refPlant: PlantMask,
+	refRegion: CrownRegion | null,
+	render: Side,
+): NonNullable<PairMetrics['crownBalance']> | null {
+	const reference = refRegion ? crownBalanceOf(refPlant, refRegion) : null;
+	const region = render.measures.crownRegion;
+	const read = region ? crownBalanceOf(render.plant, region) : null;
+	if (!reference && !read) return null;
+	const referenceWhy =
+		refRegion === null ? 'the photograph gives no crown box' : 'the crown box covers no plant';
+	const renderWhy =
+		region === null ? 'the drawing has no crown box' : 'the crown box covers no plant';
+	const side = (value: NonNullable<typeof reference>) => ({ left: value.left, right: value.right });
+	return {
+		reference: reference ? side(reference) : null,
+		...(reference === null && { referenceWhy }),
+		render: read ? side(read) : null,
+		...(read === null && { renderWhy }),
 	};
 }
 
@@ -2312,6 +2364,8 @@ export function compareStills(
 			profileError: null,
 			gap: null,
 			crownBoxGap: null,
+			crownFoliage: null,
+			crownBalance: null,
 			frameGap: null,
 			frameScale: null,
 			foliageDeltaE: null,
@@ -2452,11 +2506,22 @@ export function compareStills(
 		// The same holds for a picture whose slot names its own background as the subject,
 		// such as a far scrub band the fitted sky and ground admit.
 		const drawn = frame.query?.view ?? slot.view;
+		// The crown's foliage share is a whole or crown view's figure: the parts picture gives the
+		// drawing's side, and the photograph's crown box gives the reference's. A silhouette has no
+		// colour to fit, so its reference side names why it cannot read.
+		const crownView = drawn === 'whole' || drawn === 'crown' || drawn === 'silhouette';
+		const crownFoliage = crownView
+			? crownFoliagePair(refImage, refPlant, refSide.measures.crownRegion, partsPicture, render)
+			: null;
+		const crownBalance = crownView
+			? crownBalancePair(refPlant, refSide.measures.crownRegion, render)
+			: null;
 		// A reference whose outline joins its background, as the review data records, has none to read.
 		// A solved close view stands inside the plant, where the frame cuts it and a matte reads
 		// fuller than the picture. Its outline is not compared and its pieces are not counted, save
-		// where its camera holds the whole plant, as a low plant's does.
-		const closeInside = partsPicture !== undefined && !holdsWholePlant(frame.facts);
+		// where its camera holds the whole plant, as a low plant's does. A whole or crown view is
+		// framed on the whole plant, so the parts picture its share reads does not make it one.
+		const closeInside = partsPicture !== undefined && !crownView && !holdsWholePlant(frame.facts);
 		const noOutline =
 			closeInside ||
 			!hasSeparableOutline(
@@ -2596,21 +2661,25 @@ export function compareStills(
 						: null,
 				}
 			: null;
-		const shown: PairMetrics = masked
-			? pair
-			: {
-					...pair,
-					shapeIou: null,
-					frameIou: null,
-					profileError: null,
-					gap: null,
-					crownBoxGap: null,
-					frameGap: null,
-					frameScale: null,
-					barkDeltaE: null,
-					crownBox: null,
-					foliageDeltaE: refPlant.background.plain ? pair.foliageDeltaE : null,
-				};
+		const shown: PairMetrics = {
+			...(masked
+				? pair
+				: {
+						...pair,
+						shapeIou: null,
+						frameIou: null,
+						profileError: null,
+						gap: null,
+						crownBoxGap: null,
+						frameGap: null,
+						frameScale: null,
+						barkDeltaE: null,
+						crownBox: null,
+						foliageDeltaE: refPlant.background.plain ? pair.foliageDeltaE : null,
+					}),
+			crownFoliage,
+			crownBalance,
+		};
 		const framing = closeFraming(frame.facts);
 		// The crown's box is read from an outline, so only a picture compared by outline has its note.
 		const tilt = frameTilt(frame);
