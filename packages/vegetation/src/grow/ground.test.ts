@@ -344,8 +344,9 @@ describe('the pendulous sedge', () => {
 		// soil grows exactly these. A deliberate record change re-records the figure, and the
 		// growth path that reads no soil must not move it.
 		// The height scales the leaf form's top, and the record draws its cards' twig lines at the
-		// twigs' widths, both of which move the sedge's blades' scale and its card levels.
-		expect(plantAssetDigest(growPlantNow(kit, OPTIONS))).toBe('7927b3bf72e18eb6');
+		// twigs' widths and on to the cards' centres, all of which move the sedge's blades' scale
+		// and its card levels.
+		expect(plantAssetDigest(growPlantNow(kit, OPTIONS))).toBe('f1926c1fb4d54966');
 	});
 
 	it('ends its blades in long fine points', () => {

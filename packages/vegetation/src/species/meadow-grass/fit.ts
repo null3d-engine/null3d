@@ -105,10 +105,10 @@ export const roundBand = 0.25;
  *
  * The turning video's hull reads 0.76 wide over high, which is the video's plant. The whole-plant
  * stills read 1.04, 1.24, 1.40 and 1.36 tall over wide, a mean of 1.26, and they are the standard
- * that judges a plant; the record takes the stills' standard of about 1.2 tall over wide, 1/1.2 or
- * about 0.83 wide over high. The video's figure is recorded as a reference conflict.
+ * that judges a plant, so this takes their mean: 1/1.26, 0.79 wide over high. The video's figure is
+ * recorded as a reference conflict.
  */
-export const aspect = 0.83;
+export const aspect = 0.79;
 export const crownBase = 0.052;
 
 /**
