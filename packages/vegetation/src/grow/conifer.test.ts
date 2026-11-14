@@ -2,6 +2,7 @@
 // round the trunk, every axis bends within its bound and joins the wood it leaves, and one seed
 // grows one plant. A closed shell's sockets tile its outline and its inner body stands behind them.
 import { describe, expect, it } from 'bun:test';
+import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
 import { VARIANTS_BY_PRESET } from '../core/caps';
 import { speciesProblems } from '../core/check';
 import { AXIS_STEM, type MacroSkeleton } from '../core/graph';
@@ -873,43 +874,47 @@ describe("the Italian cypress's closed shell", () => {
 		}
 	});
 
-	it('draws its inner body all round the trunk in the wood of the near form and of both card levels', async () => {
-		await loadPlantCode(cypressModule.record);
-		const kit = buildKitNow(cypressModule, { detail: 'high', placeholders: 'missing' });
-		const asset = growPlantNow(kit, { seed: 11, variant: 0, season: 'summer', near: true });
-		const plan = planConifer({
-			record: cypressModule.record,
-			seed: 11,
-			variant: 0,
-			season: 'summer',
-		});
-		// The grown plant is scaled so its drawn top stands at the record's height.
-		const scale = asset.skeleton.height / plan.height;
-		const middle = plan.body[plan.body.length >> 1] as (typeof plan.body)[number];
-		const { min, max } = kit.box;
-		for (const level of [0, 1, 2] as const) {
-			const wood = asset.levels[level].parts.find((part) => part.name === 'wood');
-			expect(wood).toBeDefined();
-			if (!wood) continue;
-			const raw = wood.arrays.positions;
-			const turns: number[] = [];
-			for (let v = 0; v < raw.length / 3; v++) {
-				const x = min[0] + (raw[v * 3] as number) * ((max[0] - min[0]) / 65535);
-				const y = min[1] + (raw[v * 3 + 1] as number) * ((max[1] - min[1]) / 65535);
-				const z = min[2] + (raw[v * 3 + 2] as number) * ((max[2] - min[2]) / 65535);
-				if (Math.abs(y - middle.y * scale) > 0.5) continue;
-				if (Math.abs(Math.hypot(x, z) - middle.radius * scale) > 0.1 * middle.radius * scale)
-					continue;
-				turns.push(Math.atan2(z, x));
+	it(
+		'draws its inner body all round the trunk in the wood of the near form and of both card levels',
+		async () => {
+			await loadPlantCode(cypressModule.record);
+			const kit = buildKitNow(cypressModule, { detail: 'high', placeholders: 'missing' });
+			const asset = growPlantNow(kit, { seed: 11, variant: 0, season: 'summer', near: true });
+			const plan = planConifer({
+				record: cypressModule.record,
+				seed: 11,
+				variant: 0,
+				season: 'summer',
+			});
+			// The grown plant is scaled so its drawn top stands at the record's height.
+			const scale = asset.skeleton.height / plan.height;
+			const middle = plan.body[plan.body.length >> 1] as (typeof plan.body)[number];
+			const { min, max } = kit.box;
+			for (const level of [0, 1, 2] as const) {
+				const wood = asset.levels[level].parts.find((part) => part.name === 'wood');
+				expect(wood).toBeDefined();
+				if (!wood) continue;
+				const raw = wood.arrays.positions;
+				const turns: number[] = [];
+				for (let v = 0; v < raw.length / 3; v++) {
+					const x = min[0] + (raw[v * 3] as number) * ((max[0] - min[0]) / 65535);
+					const y = min[1] + (raw[v * 3 + 1] as number) * ((max[1] - min[1]) / 65535);
+					const z = min[2] + (raw[v * 3 + 2] as number) * ((max[2] - min[2]) / 65535);
+					if (Math.abs(y - middle.y * scale) > 0.5) continue;
+					if (Math.abs(Math.hypot(x, z) - middle.radius * scale) > 0.1 * middle.radius * scale)
+						continue;
+					turns.push(Math.atan2(z, x));
+				}
+				// A closed tube of at least five sides: no two of its points stand more than a fifth of a
+				// turn apart round the trunk.
+				turns.sort((a, b) => a - b);
+				expect(turns.length).toBeGreaterThan(4);
+				let widest = 2 * Math.PI - ((turns.at(-1) as number) - (turns[0] as number));
+				for (let k = 1; k < turns.length; k++)
+					widest = Math.max(widest, (turns[k] as number) - (turns[k - 1] as number));
+				expect(widest).toBeLessThanOrEqual((2 * Math.PI) / 5);
 			}
-			// A closed tube of at least five sides: no two of its points stand more than a fifth of a
-			// turn apart round the trunk.
-			turns.sort((a, b) => a - b);
-			expect(turns.length).toBeGreaterThan(4);
-			let widest = 2 * Math.PI - ((turns.at(-1) as number) - (turns[0] as number));
-			for (let k = 1; k < turns.length; k++)
-				widest = Math.max(widest, (turns[k] as number) - (turns[k - 1] as number));
-			expect(widest).toBeLessThanOrEqual((2 * Math.PI) / 5);
-		}
-	}, 120_000);
+		},
+		scaledBudget(120_000),
+	);
 });

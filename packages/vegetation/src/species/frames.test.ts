@@ -5,6 +5,7 @@
 // The crown test is itself held to crowns made by hand that must fail it, and the pedunculate oak
 // is held to what its photographs show and a smooth dome does not.
 import { describe, expect, it } from 'bun:test';
+import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
 import { speciesProblems } from '../core/check';
 import type { MacroSkeleton } from '../core/graph';
 import { hashBytes } from '../core/hash';
@@ -668,27 +669,31 @@ for (const held of HELD)
 
 		// A plan of five seeds takes 6.2 seconds beside the file's other tests and 7.0 to 7.3 alone on
 		// the reference Mac, over the default five seconds, so it takes this limit.
-		it('ends every axis in a socket or in a fork', () => {
-			for (const seed of SEEDS) {
-				const plan = planOf(held, seed);
-				const sockets = frameSockets(plan);
-				plan.axes.forEach((axis, index) => {
-					const forks = plan.axes.some(
-						(child) => child.parent === index && (axis.along[child.parentNode] as number) >= 0.9,
-					);
-					const end = axis.nodes[axis.nodes.length - 1];
-					const socket = sockets.some(
-						(one) =>
-							one.axis === index &&
-							one.at[0] === end?.x &&
-							one.at[1] === end?.y &&
-							one.at[2] === end?.z,
-					);
-					expect(forks || socket).toBe(true);
-				});
-				expect(bareEnds(plan)).toEqual([]);
-			}
-		}, 10_000);
+		it(
+			'ends every axis in a socket or in a fork',
+			() => {
+				for (const seed of SEEDS) {
+					const plan = planOf(held, seed);
+					const sockets = frameSockets(plan);
+					plan.axes.forEach((axis, index) => {
+						const forks = plan.axes.some(
+							(child) => child.parent === index && (axis.along[child.parentNode] as number) >= 0.9,
+						);
+						const end = axis.nodes[axis.nodes.length - 1];
+						const socket = sockets.some(
+							(one) =>
+								one.axis === index &&
+								one.at[0] === end?.x &&
+								one.at[1] === end?.y &&
+								one.at[2] === end?.z,
+						);
+						expect(forks || socket).toBe(true);
+					});
+					expect(bareEnds(plan)).toEqual([]);
+				}
+			},
+			scaledBudget(10_000),
+		);
 
 		it('gives its sockets as bud sites in the socket record, ranked once across the plant', () => {
 			expect(speciesProblems(held.directed)).toEqual([]);
@@ -1375,32 +1380,36 @@ describe("the pedunculate oak's frame against its photographs", () => {
 
 	// The oak's plan of five seeds takes 5.8 seconds beside the file's other tests on the reference
 	// Mac, over the default five seconds, so it takes this limit.
-	it('clothes the end of every twig when its piece reaches further than it is wide', () => {
-		// The common alder's branch end reaches 1.22 times its width; the oak's 1.09.
-		const reaching = (rule: FrameBranchRule): FrameBranchRule => ({
-			...rule,
-			...(rule.patch?.fill
-				? {
-						patch: {
-							...rule.patch,
-							fill: { pitch: rule.patch.fill.pitch, reach: rule.patch.fill.pitch * 1.22 },
-						},
-					}
-				: {}),
-			...(rule.children ? { children: rule.children.map(reaching) } : {}),
-		});
-		const long: FrameSpec = {
-			...oak.spec,
-			stems: {
-				...oak.spec.stems,
-				children: (oak.spec.stems.children ?? []).map(reaching),
-			},
-		};
-		for (const seed of SEEDS)
-			expect(
-				bareEnds(planFrame(long, { record: oak.record, seed, variant: 0, season: 'summer' })),
-			).toEqual([]);
-	}, 10_000);
+	it(
+		'clothes the end of every twig when its piece reaches further than it is wide',
+		() => {
+			// The common alder's branch end reaches 1.22 times its width; the oak's 1.09.
+			const reaching = (rule: FrameBranchRule): FrameBranchRule => ({
+				...rule,
+				...(rule.patch?.fill
+					? {
+							patch: {
+								...rule.patch,
+								fill: { pitch: rule.patch.fill.pitch, reach: rule.patch.fill.pitch * 1.22 },
+							},
+						}
+					: {}),
+				...(rule.children ? { children: rule.children.map(reaching) } : {}),
+			});
+			const long: FrameSpec = {
+				...oak.spec,
+				stems: {
+					...oak.spec.stems,
+					children: (oak.spec.stems.children ?? []).map(reaching),
+				},
+			};
+			for (const seed of SEEDS)
+				expect(
+					bareEnds(planFrame(long, { record: oak.record, seed, variant: 0, season: 'summer' })),
+				).toEqual([]);
+		},
+		scaledBudget(10_000),
+	);
 
 	it('fails the oak built with its clumps first on three of the four', () => {
 		expect(clumpsFirst.commit).toBe('dee0437c9');
